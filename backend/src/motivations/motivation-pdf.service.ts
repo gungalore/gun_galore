@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import {
   GAP,
@@ -13,6 +13,7 @@ import {
   type PdfAnnexure,
 } from './motivation-pdf-merge';
 import type { AnnexureEntry, CertificationLevel } from './motivation-checklist';
+import * as K from './motivation-pdf-chrome';
 
 // ────────────────────────────────────────────────────────────────────
 // The formal motivation document. This is the thing the applicant signs and
@@ -56,9 +57,19 @@ import type { AnnexureEntry, CertificationLevel } from './motivation-checklist';
 // to chase.
 // ────────────────────────────────────────────────────────────────────
 
-/** Page geometry, in points. A4 with ~25 mm margins. */
-const PAGE_WIDTH = 595.28;
-const PAGE_HEIGHT = 841.89;
+/**
+ * Page geometry.
+ *
+ * \u26a0\ufe0f THESE NOW COME FROM THE HANDOFF, via motivation-pdf-chrome. The old
+ * numbers were measured off a Safari Outdoor pack \u2014 72 pt margins, an 11 pt
+ * Arial body, a two-line footer \u2014 and that document has been replaced by the
+ * operator's own design: a 16 mm gradient banner, a 10 mm footer strip and
+ * 14 mm side padding. The measured constants are gone rather than left
+ * alongside, because two sets of page geometry in one renderer is how half a
+ * document ends up laid out to the wrong one.
+ */
+const PAGE_WIDTH = K.PAGE_W;
+const PAGE_HEIGHT = K.PAGE_H;
 
 // ────────────────────────────────────────────────────────────────────
 // MEASURED OFF A SAFARI OUTDOOR MOTIVATION, not chosen.
@@ -91,8 +102,8 @@ const PAGE_HEIGHT = 841.89;
  * margins symmetrically and the left proves 72, so the page setup is 72/72.
  * Measure the ink, infer the box.
  */
-const MARGIN = 72;
-const MARGIN_RIGHT = 72;
+const MARGIN = K.PAD_X;
+const MARGIN_RIGHT = K.PAD_X;
 /**
  * Room for the footer block, which is TWO lines and sits low.
  *
@@ -101,9 +112,10 @@ const MARGIN_RIGHT = 72;
  * where the body does — using it left eight points of clearance and the body
  * would eventually have collided with the running title.
  */
-const MARGIN_BOTTOM = 92;
-/** The footer's first baseline: 89pt from the bottom edge, as theirs is. */
-const FOOTER_FROM_BOTTOM = 89;
+/** Room for the footer strip, plus air. */
+const MARGIN_BOTTOM = K.PAGE_H - K.BODY_BOTTOM;
+/** Where the body starts: under the running banner, plus 9 mm. */
+const MARGIN_TOP = K.BODY_TOP;
 
 // ⚠️ PURE BLACK, NOT A SOFT BLACK. Every one of the 62,295 coloured body
 // characters in their Barrett pack is (0,0,0). #111111 is a screen habit; on
@@ -118,16 +130,16 @@ const FONT_BOLD = 'Helvetica-Bold';
 const FONT_ITALIC = 'Helvetica-Oblique';
 const FONT_BOLD_ITALIC = 'Helvetica-BoldOblique';
 
-const BODY_SIZE = 11;
+const BODY_SIZE = K.BODY_SIZE;
 /**
  * Their baseline-to-baseline is 12.65pt at 11pt Arial. pdfkit's lineGap is
  * ADDITIONAL to the font's own line height, and Helvetica at 11pt renders
  * ~12.65 unaided — so the gap is zero and the paragraph spacing carries the
  * rhythm instead.
  */
-const BODY_LEADING = 0;
+const BODY_LEADING = K.BODY_LEADING;
 /** Their paragraph-to-paragraph step is 24.6pt — one clear blank line. */
-const PARA_GAP = 12;
+const PARA_GAP = K.PARA_GAP;
 /** Section headings: 49pt of air above, 24.8 below. */
 const HEADING_ABOVE = 49;
 const HEADING_BELOW = 25;
@@ -365,6 +377,25 @@ function titleCase(heading: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+/**
+ * "Gerhard Johan Petrus Fourie" -> "Gerhard J P Fourie".
+ *
+ * First name in full, middle names as initials, surname in full — which is
+ * how the handoff sets the banner and the footer, and how a South African
+ * legal document conventionally shortens a name without losing which person
+ * it is.
+ */
+function shortenName(full: string): string {
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 2) return full.trim();
+  const [first, ...rest] = parts;
+  const surname = rest.pop() as string;
+  return [first, ...rest.map((n) => n[0].toUpperCase()), surname].join(' ');
+}
+
+/** Millimetres, for the section spacing. Same unit the handoff is written in. */
+const mmGap = (n: number): number => K.mm(n);
+
 /** A short line ending in a colon reads as a section heading. */
 function isHeading(line: string): boolean {
   const t = line.trim();
@@ -386,6 +417,8 @@ export interface AnnexureImagePage {
 
 @Injectable()
 export class MotivationPdfService {
+  private readonly logger = new Logger(MotivationPdfService.name);
+
   // NO constructor dependencies, deliberately — same posture as Saps534Service.
   // It takes a plain object and returns bytes, so it unit-tests without Nest
   // and can be provided anywhere without dragging a dependency graph along.
@@ -400,8 +433,11 @@ export class MotivationPdfService {
   ): Promise<{ pdf: Buffer; filename: string }> {
     const doc = new PDFDocument({
       size: [PAGE_WIDTH, PAGE_HEIGHT],
+      // \u26a0\ufe0f THE TOP MARGIN CLEARS THE RUNNING BANNER. pdfkit paginates
+      // against these, so leaving them at the old values would have flowed
+      // body text underneath the banner on every page after the first.
       margins: {
-        top: MARGIN,
+        top: MARGIN_TOP,
         bottom: MARGIN_BOTTOM,
         left: MARGIN,
         right: MARGIN_RIGHT,
@@ -430,6 +466,19 @@ export class MotivationPdfService {
     // before the formats were consolidated renders as comprehensive.
     const feat = FORMAT_FEATURES[asFormat(input.format)];
     const C = SCHEMES[asScheme(input.colourway)];
+
+    // \u26a0\ufe0f A MISSING FONT MUST NOT FAIL A DOWNLOAD. registerFonts returns
+    // false when the assets did not ship \u2014 see the path-resolution note in
+    // motivation-pdf-chrome \u2014 and the document then renders in the standard
+    // faces. Ugly and readable beats a 500 on a licence application.
+    const realFonts = K.registerFonts(doc);
+    const F = K.faces(realFonts);
+    const chrome: K.Chrome = { doc, c: C, f: F };
+    if (!realFonts) {
+      this.logger.warn(
+        'Motivation fonts not found on disk \u2014 rendering in the standard faces',
+      );
+    }
 
     // ── Cover ─────────────────────────────────────────────────────────
     //
@@ -529,37 +578,36 @@ export class MotivationPdfService {
      * and it gives a reviewer working through forty pages somewhere for the
      * eye to land.
      */
+    /**
+     * A numbered section header, as the handoff draws them: a ring node, then
+     * the title on a highlight band.
+     *
+     * ⚠️ NUMBERED IN SEQUENCE, and the number is assigned HERE rather than
+     * carried on the section plan. motivation-structure.ts shuffles the middle
+     * sections by seed, so a number baked into the plan would come out
+     * "01, 04, 02" on the page. The reader wants to know this is the third
+     * thing they are reading, not which slot it occupies in a registry.
+     */
+    let sectionNo = 0;
     const renderHeading = (heading: string) => {
-      if (doc.y > MARGIN + 1) doc.y += HEADING_ABOVE - PARA_GAP;
+      sectionNo += 1;
+
+      // Keep a heading with at least a couple of lines of its section: if we
+      // are near the foot of the page, start the next one now rather than
+      // orphan it above the footer strip.
+      if (doc.y > K.BODY_BOTTOM - mmGap(34)) doc.addPage();
+      if (doc.y > MARGIN_TOP + 1) doc.y += mmGap(9);
+
       toc.push({ heading, page: doc.bufferedPageRange().count });
 
-      const top = doc.y - 5;
-      const h = BODY_SIZE + 11;
-      doc.rect(MARGIN, top, contentWidth, h).fill(C.band);
-      doc
-        .moveTo(MARGIN, top)
-        .lineTo(MARGIN + contentWidth, top)
-        .lineWidth(1.2)
-        .strokeColor(C.ink)
-        .stroke();
-      doc
-        .font(FONT_BOLD)
-        .fontSize(BODY_SIZE)
-        .fillColor(C.ink)
-        .text(heading, MARGIN, top + 6, {
-          width: contentWidth,
-          align: 'center',
-          lineGap: BODY_LEADING,
-          characterSpacing: 0.6,
-        });
+      const num = String(sectionNo).padStart(2, '0');
+      doc.y = K.sectionHeader(chrome, num, heading, doc.y);
+
       // ⚠️ PUT THE CURSOR BACK. pdfkit's text(str, x, y) leaves doc.x AT x, and
-      // every later text() that does not name an x inherits it. A heading
-      // drawn at MARGIN is harmless; the tables below are not, and the bug
-      // this caused was invisible in the section that caused it — the
-      // SIGNATURE BLOCK three sections later rendered at x=617 and the
-      // disclaimer ran off the right edge of the page.
+      // every later text() that does not name an x inherits it. The tables
+      // below are the ones that bite: the SIGNATURE BLOCK three sections later
+      // once rendered at x=617 with the disclaimer running off the page.
       doc.x = MARGIN;
-      doc.y = top + h + 10;
     };
 
     doc.addPage();
@@ -588,15 +636,21 @@ export class MotivationPdfService {
         // documents — "(Refer to Annexure B: Proficiency Certificates)" —
         // never justified into the paragraph above it.
         const isRef = /^\(Refer to Annexure/i.test(block);
+        // ⚠️ THE BODY IS SET IN THE SERIF, INDENTED UNDER THE SECTION RULE.
+        // The handoff runs a 1 px hairline down the left of every section's
+        // body at a 7 mm indent, which is what separates the argument from
+        // the furniture. Annexure cross-references are set italic in `deep`,
+        // as inline <em> in the reference.
         doc
-          .font(FONT)
+          .font(isRef ? F.serifItalic : F.serif)
           .fontSize(BODY_SIZE)
-          .fillColor(BLACK)
-          .text(block, {
-            width: contentWidth,
+          .fillColor(isRef ? C.deep : C.ink)
+          .text(block, MARGIN + K.SECTION_INDENT, doc.y, {
+            width: contentWidth - K.SECTION_INDENT,
             align: isRef ? 'left' : 'justify',
             lineGap: BODY_LEADING,
           });
+        doc.x = MARGIN;
         doc.y += PARA_GAP;
       }
     }
@@ -1321,7 +1375,29 @@ export class MotivationPdfService {
     ]
       .filter(Boolean)
       .join(' ');
+    // "Gerhard Johan Petrus Fourie" -> "Gerhard J P Fourie", as the handoff's
+    // banner and footer both set it. A full name at 8 pt with 0.28em tracking
+    // does not fit the strip beside the reference and the firearm.
+    const shortName = shortenName(input.applicantName);
+
+    // The banner's right-hand label: which section this page belongs to.
+    //
+    // Derived from `toc` rather than tracked separately, because toc already
+    // records exactly this — a heading and the page it started on. Filled
+    // FORWARD, so a section running over three pages labels all three, and a
+    // page before the first heading (the contents) labels itself.
     const range = doc.bufferedPageRange();
+    const pageLabels: string[] = [];
+    {
+      let current = 'Contents';
+      for (let i = 0; i < range.count; i++) {
+        const startedHere = toc.filter((t) => t.page === i + 1);
+        if (startedHere.length) {
+          current = titleCase(startedHere[startedHere.length - 1].heading);
+        }
+        pageLabels[i] = current;
+      }
+    }
     const totalPages = range.count + extraPageCount(merged.loaded);
     for (let i = 0; i < range.count; i++) {
       // ── Preview watermark ──────────────────────────────────
@@ -1394,44 +1470,37 @@ export class MotivationPdfService {
       // number in its identification block, so nothing is lost by leaving it
       // clean — and a cover that reads as a cover is most of why the pack
       // looks like it came from somebody who does this for a living.
-      if (i === 0) continue;
       doc.switchToPage(range.start + i);
       const keep = doc.page.margins.bottom;
+      const keepTop = doc.page.margins.top;
       doc.page.margins.bottom = 0;
-      // ⚠️ THEIR FOOTER IS THREE LINES, AND IT IS NOT DECORATION. Every page
-      // of a Safari Outdoor motivation carries "Page N of M" on the left and
-      // the running title beneath it — applicant, firearm, serial, section —
-      // in italic 8pt. A DFO works through a pile of loose sheets; a page
-      // that names its own application cannot be filed against the wrong one.
-      // Ours carried a single centred line with our own name in it, which
-      // told the reviewer nothing they needed.
-      // A 0.5pt rule separates the footer from the body — measured at y752.5
-      // in theirs, spanning the full column. Without it the running title
-      // reads as a stray paragraph that wandered to the bottom of the page.
-      const ruleAt = PAGE_HEIGHT - FOOTER_FROM_BOTTOM - 7;
-      doc
-        .moveTo(MARGIN, ruleAt)
-        .lineTo(PAGE_WIDTH - MARGIN_RIGHT, ruleAt)
-        .lineWidth(0.5)
-        .strokeColor(BLACK)
-        .stroke();
+      doc.page.margins.top = 0;
 
-      const footerY = PAGE_HEIGHT - FOOTER_FROM_BOTTOM;
-      doc
-        .font(FONT_ITALIC)
-        .fontSize(8)
-        .fillColor(BLACK)
-        .text(`Page ${i + 1} of ${totalPages}`, MARGIN, footerY, {
-          width: contentWidth,
-          align: 'left',
-          lineBreak: false,
-        });
-      doc.text(runningTitle, MARGIN, footerY + 11, {
-        width: contentWidth,
-        align: 'center',
-        lineGap: 0,
-      });
+      // \u26a0\ufe0f THE COVER CARRIES ITS OWN 80 MM BANNER, so it gets the footer
+      // strip and nothing else. Drawing the 16 mm running banner over it would
+      // put a second gradient across the title.
+      if (i > 0) {
+        K.banner(chrome, `${shortName} \u25c7 Motivation`, pageLabels[i] ?? '');
+      }
+
+      // The footer strip: one wash band, one line of small caps naming the
+      // application. A DFO works through a pile of loose sheets, and a page
+      // that names its own application cannot be filed against the wrong one.
+      K.footerStrip(
+        chrome,
+        [
+          input.referenceNumber,
+          shortName,
+          input.firearmLine ?? '',
+          input.licenceTypeLabel,
+          `Page ${i + 1} of ${totalPages}`,
+        ]
+          .filter(Boolean)
+          .join(' \u00b7 '),
+      );
+
       doc.page.margins.bottom = keep;
+      doc.page.margins.top = keepTop;
     }
 
     doc.end();
