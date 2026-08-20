@@ -55,6 +55,16 @@ export interface ScanButtonProps {
   fallback: React.ReactNode;
   disabled?: boolean;
   label?: string;
+  /**
+   * Icons only, no words.
+   *
+   * For the checklist rows, where the control sits inside the line it acts on
+   * — the row's own label already says what is being added, so repeating it
+   * on two buttons is the clutter the operator asked to be rid of. The
+   * accessible name and the tooltip still carry the full sentence, because a
+   * screen reader and a hover both have room for it.
+   */
+  compact?: boolean;
 }
 
 export default function ScanButton({
@@ -68,6 +78,7 @@ export default function ScanButton({
   fallback,
   disabled = false,
   label = 'Take a photo',
+  compact = false,
 }: ScanButtonProps) {
   const [open, setOpen] = useState(false);
   const [phone, setPhone] = useState(false);
@@ -127,7 +138,13 @@ export default function ScanButton({
           type="button"
           disabled={disabled}
           onClick={() => setPhone(true)}
-          className="gg-datecell inline-flex min-h-[44px] items-center gap-2 rounded border px-3 py-2 text-sm disabled:opacity-50"
+          aria-label={`Use my phone camera for ${title}`}
+          title="Use my phone camera"
+          className={
+            compact
+              ? 'gg-datecell inline-flex h-10 w-10 items-center justify-center rounded border disabled:opacity-50'
+              : 'gg-datecell inline-flex min-h-[44px] items-center gap-2 rounded border px-3 py-2 text-sm disabled:opacity-50'
+          }
           style={{
             borderColor: 'var(--red)',
             background: 'var(--bg-inset)',
@@ -135,7 +152,7 @@ export default function ScanButton({
           }}
         >
           <PhoneIcon />
-          Use my phone camera
+          {!compact && 'Use my phone camera'}
         </button>
       )}
 
@@ -151,7 +168,13 @@ export default function ScanButton({
           type="button"
           disabled={disabled}
           onClick={() => setOpen(true)}
-          className="gg-datecell inline-flex min-h-[44px] items-center gap-2 rounded border px-3 py-2 text-sm disabled:opacity-50"
+          aria-label={`${label} — ${title}`}
+          title={label}
+          className={
+            compact
+              ? 'gg-datecell inline-flex h-10 w-10 items-center justify-center rounded border disabled:opacity-50'
+              : 'gg-datecell inline-flex min-h-[44px] items-center gap-2 rounded border px-3 py-2 text-sm disabled:opacity-50'
+          }
           style={{
             borderColor: 'var(--border)',
             background: 'var(--bg-inset)',
@@ -159,7 +182,7 @@ export default function ScanButton({
           }}
         >
           <CameraIcon />
-          {label}
+          {!compact && label}
         </button>
       )}
 

@@ -52,15 +52,23 @@ export default function DocumentChecklist({
   rows,
   selected,
   onSelect,
-  children,
+  renderControls,
   onView,
   onRemove,
 }: {
   rows: ChecklistRow[];
   selected: string;
   onSelect: (kind: string) => void;
-  /** The single upload control, rendered under the list. */
-  children: React.ReactNode;
+  /**
+   * The add controls, rendered INSIDE the selected row.
+   *
+   * ⚠️ THEY USED TO SIT IN A PANEL UNDER THE LIST, with a line reading
+   * "Adding: A copy of your ID" to say which row they pointed at. That line
+   * existed because the controls were in the wrong place: a control that has
+   * to announce its own target is one the eye has to travel to and back. In
+   * the row, the row IS the label.
+   */
+  renderControls: (row: ChecklistRow) => React.ReactNode;
   onView: (id: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 }) {
@@ -89,6 +97,7 @@ export default function DocumentChecklist({
                   row={r}
                   checked={selected === r.kind}
                   onSelect={() => onSelect(r.kind)}
+                  controls={selected === r.kind ? renderControls(r) : null}
                   onView={onView}
                   onRemove={onRemove}
                 />
@@ -97,9 +106,6 @@ export default function DocumentChecklist({
           </div>
         );
       })}
-      <div className="border-t border-[var(--border-divider)] bg-[var(--bg-inset)] p-3">
-        {children}
-      </div>
     </div>
   );
 }
@@ -108,12 +114,15 @@ function Row({
   row,
   checked,
   onSelect,
+  controls,
   onView,
   onRemove,
 }: {
   row: ChecklistRow;
   checked: boolean;
   onSelect: () => void;
+  /** Rendered only on the selected row. */
+  controls: React.ReactNode;
   onView: (id: string) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
 }) {
@@ -202,6 +211,23 @@ function Row({
           {checked && row.why && (
             <span className="mt-1 block text-xs text-[var(--text-secondary)]">
               {row.why}
+            </span>
+          )}
+
+          {/* ⚠️ ONE LINE, AND ONLY ON THE SELECTED ROW. Seven rows each
+              carrying their own camera, picker and dropdown is the clutter
+              this replaced; the same three controls on the ONE row somebody
+              is acting on is a toolbar.
+              ⚠️ NO preventDefault ON THIS WRAPPER, however tempting. These
+              controls live inside the row's <label>, so the instinct is to
+              stop a click here re-firing the radio — but the file picker IS a
+              <label for> whose default action is to open the file dialog, and
+              cancelling the bubbled click kills it. Nothing needs guarding:
+              controls render only on the already-selected row, so re-checking
+              a checked radio fires no change at all. */}
+          {controls && (
+            <span className="mt-2 flex flex-wrap items-center gap-2">
+              {controls}
             </span>
           )}
 

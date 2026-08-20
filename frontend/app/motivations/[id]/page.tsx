@@ -4,7 +4,6 @@ import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
 import ScanButton from '@/components/scan/scan-button';
-import CredentialPicker from '@/components/credential-picker';
 import LibraryPicker from '@/components/library-picker';
 import DocumentChecklist, {
   ChecklistRow,
@@ -225,13 +224,33 @@ export default function MotivationWizardPage() {
       })
       .catch(() => undefined);
     if (row.suggestions?.length) {
-      // Only offer values for fields that are still empty — anything already
-      // answered stays exactly as they typed it.
+      // ⚠️ EMPTY BOXES ARE FILLED, FULL ONES ARE OFFERED. Two different
+      // situations that used to get the same treatment.
+      //
+      // Attaching a competency certificate to the line that asks for one is
+      // as clear a statement of intent as somebody can make, and making them
+      // scroll to a suggestions panel to accept a number they just
+      // photographed is a second question nobody asked. So an empty field
+      // takes the value. onlyIfEmpty is checked inside setAnswers against the
+      // state React actually holds, because one document can fill six boxes
+      // and each call would otherwise race the same stale snapshot.
+      //
+      // A field they have ALREADY typed into is the opposite case and keeps
+      // the old behaviour: it goes to the confirm list, because a misread
+      // digit silently overwriting their own answer would be a false
+      // statement on a form they sign.
+      for (const sg of row.suggestions) {
+        setAnswer(sg.key, sg.value, { onlyIfEmpty: true });
+      }
       setSuggestions((cur) => [
         ...cur,
         ...row.suggestions!.filter(
           (sg) =>
-            !(answers[sg.key] ?? '').trim() &&
+            // `answers` is this render's snapshot, which is the right basis
+            // here: it is what the member had typed when they pressed the
+            // button. The autofill above deliberately reads fresher state.
+            (answers[sg.key] ?? '').trim() &&
+            (answers[sg.key] ?? '').trim() !== sg.value.trim() &&
             !cur.some((c) => c.key === sg.key),
         ),
       ]);
@@ -302,30 +321,6 @@ export default function MotivationWizardPage() {
   useEffect(() => {
     void loadOffer();
   }, [loadOffer]);
-
-  /**
-   * Write a picked document's values into the answers.
-   *
-   * ⚠️ THESE OVERWRITE, unlike the offer panel's "fill everything" — and
-   * deliberately. Picking a document from a dropdown IS the member saying
-   * "use this one instead", and refusing to replace what is in the box would
-   * make the control appear to do nothing at exactly the moment it matters:
-   * when they are correcting a wrong pick.
-   */
-  const applyPicked = useCallback(
-    async (vals: Record<string, string>) => {
-      for (const [k, v] of Object.entries(vals)) {
-        setAnswer(k, v);
-        // The field may have been filled from the profile and locked; a
-        // deliberate pick has to be able to move it.
-        setUnlocked((u) => new Set(u).add(k));
-      }
-    },
-    // setAnswer is re-created every render by design (see its own note), so
-    // it is deliberately not a dependency.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
 
   /** Documents this member already has, for the "use one I have" pickers. */
   const [library, setLibrary] = useState<LibraryItem[]>([]);
@@ -487,26 +482,6 @@ export default function MotivationWizardPage() {
     // setAnswer is re-created every render by design (see its own note).
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [token, id, refreshUploads, loadLibrary],
-  );
-
-  const fillFromPhoto = useCallback(
-    async (kind: string, file: File) => {
-      const row = await motivationsApi.addUpload(token, id, kind, file);
-      setUploads((u) => [...u, row]);
-      for (const sg of row.suggestions ?? []) {
-        setAnswer(sg.key, sg.value);
-        setUnlocked((u) => new Set(u).add(sg.key));
-      }
-      await refreshUploads().catch(() => undefined);
-      if (!row.suggestions?.length) {
-        setUploadErr(
-          'We saved that, but could not read a number off it. Type it in and check the photograph in the checklist below.',
-        );
-      }
-    },
-    // setAnswer is re-created every render by design (see its own note).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [token, id, refreshUploads],
   );
 
   const removeOneUpload = async (uploadId: string) => {
@@ -835,80 +810,61 @@ export default function MotivationWizardPage() {
               onSelect={setPickedKind}
               onView={viewUpload}
               onRemove={removeOneUpload}
-            >
-              {/* ONE CONTROL, pointed at whichever line is selected. */}
-              <p className="mb-2 text-xs text-[var(--text-secondary)]">
-                {selectedRow
-                  ? `Adding: ${selectedRow.label}`
-                  : 'Choose a document above.'}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <LibraryPicker
-                  items={
-                    selectedRow
-                      ? library.filter((l) => l.kind === uploadKindFor(selectedRow))
-                      : []
+              renderControls={(r) => {
+                const k = uploadKindFor(r);
+                const take = async (files: File[]) => {
+                  const file = files[0];
+                  if (!file) return;
+                  setBusyKind(k);
+                  setUploadErr(null);
+                  try {
+                    await addOneUpload(k, file);
+                  } catch (ex) {
+                    setUploadErr(
+                      ex instanceof MotivationApiError
+                        ? ex.message
+                        : 'That upload did not work.',
+                    );
+                  } finally {
+                    setBusyKind(null);
                   }
-                  onPick={attachFromLibrary}
-                />
-                <ScanButton
-                  shape={shapeForKind(pickedKind)}
-                  title={selectedRow?.label ?? 'Photograph a document'}
-                  kind={uploadKindFor(selectedRow)}
-                  handoff={{ dest: 'motivation', motivationId: id }}
-                  onHandoffArrived={() => void refreshUploads()}
-                  disabled={!selectedRow || busyKind !== null}
-                  label={busyKind ? 'Reading…' : 'Photograph it'}
-                  onFiles={async (files) => {
-                    const file = files[0];
-                    if (!file || !selectedRow) return;
-                    const k = uploadKindFor(selectedRow);
-                    setBusyKind(k);
-                    setUploadErr(null);
-                    try {
-                      await addOneUpload(k, file);
-                    } catch (ex) {
-                      setUploadErr(
-                        ex instanceof MotivationApiError
-                          ? ex.message
-                          : 'That upload did not work.',
-                      );
-                    } finally {
-                      setBusyKind(null);
-                    }
-                  }}
-                  fallback={
-                    <FilePickerButton
-                      accept="image/jpeg,image/png,image/webp,application/pdf"
-                      disabled={!selectedRow || busyKind !== null}
-                      onFiles={async (files) => {
-                        const file = files[0];
-                        if (!file || !selectedRow) return;
-                        const k = uploadKindFor(selectedRow);
-                        setBusyKind(k);
-                        setUploadErr(null);
-                        try {
-                          await addOneUpload(k, file);
-                        } catch (ex) {
-                          setUploadErr(
-                            ex instanceof MotivationApiError
-                              ? ex.message
-                              : 'That upload did not work.',
-                          );
-                        } finally {
-                          setBusyKind(null);
-                        }
-                      }}
-                    >
-                      {busyKind ? 'Reading…' : 'Upload'}
-                    </FilePickerButton>
-                  }
-                />
-              </div>
-              {uploadErr && (
-                <p className="mt-2 text-sm text-[var(--red)]">{uploadErr}</p>
-              )}
-            </DocumentChecklist>
+                };
+                return (
+                  <>
+                    <LibraryPicker
+                      items={library.filter((l) => l.kind === k)}
+                      onPick={attachFromLibrary}
+                    />
+                    <ScanButton
+                      compact
+                      shape={shapeForKind(k)}
+                      title={r.label}
+                      kind={k}
+                      handoff={{ dest: 'motivation', motivationId: id }}
+                      onHandoffArrived={() => void refreshUploads()}
+                      disabled={busyKind !== null}
+                      label="Photograph it"
+                      onFiles={take}
+                      fallback={
+                        <FilePickerButton
+                          compact
+                          accept="image/jpeg,image/png,image/webp,application/pdf"
+                          disabled={busyKind !== null}
+                          aria-label={`Upload ${r.label}`}
+                          title="Upload a file"
+                          onFiles={take}
+                        />
+                      }
+                    />
+                    {uploadErr && (
+                      <span className="text-xs text-[var(--red)]">
+                        {uploadErr}
+                      </span>
+                    )}
+                  </>
+                );
+              }}
+            />
           </div>
         )}
 
@@ -1182,28 +1138,15 @@ export default function MotivationWizardPage() {
                     button; this is the answer to "I have two of those, which
                     one?" — and the only place that question makes sense is
                     beside the box it is about. */}
-                {f.key === 'competency_number' && (
-                  <CredentialPicker
-                    choices={offerChoices?.competency ?? []}
-                    label="Or take it off a competency certificate in your Licence Centre"
-                    photographLabel="Photograph your competency certificate"
-                    uploadKind="COMPETENCY_CERTIFICATE"
-                    motivationId={id}
-                    onUpload={fillFromPhoto}
-                    onPick={(vals) => applyPicked(vals)}
-                  />
-                )}
-                {f.key === 'association_number' && (
-                  <CredentialPicker
-                    choices={offerChoices?.dedicated ?? []}
-                    label="Or take it off a dedicated-status card in your Licence Centre"
-                    photographLabel="Photograph your association card"
-                    uploadKind="ASSOCIATION_CARD"
-                    motivationId={id}
-                    onUpload={fillFromPhoto}
-                    onPick={(vals) => applyPicked(vals)}
-                  />
-                )}
+                {/* ⚠️ THE PICKERS ARE GONE FROM HERE, and the documents fill
+                    these boxes instead. A camera, a file picker and a
+                    dropdown hanging under two questions duplicated the
+                    checklist below — the same three controls, for the same
+                    two documents, in a second place — and the operator's word
+                    for the result was cluttered. Attach the competency
+                    certificate in the documents section and this fills
+                    itself; see the note on applying suggestions in
+                    addOneUpload. */}
                 </div>
               ))}
 
@@ -1895,7 +1838,7 @@ function UploadPanel({
               variant="primary"
               onFiles={uploadFiles}
             >
-              Upload all my documents — we will identify each one
+              Upload all my documents
             </FilePickerButton>
           }
         />

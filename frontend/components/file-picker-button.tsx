@@ -32,6 +32,11 @@ export interface FilePickerButtonProps {
   variant?: 'primary' | 'secondary';
   /** Shown after a pick, so a member knows the file took. */
   showPicked?: boolean;
+  /** Icon only. The surrounding row already says what is being added. */
+  compact?: boolean;
+  /** Accessible name, required when compact leaves no visible words. */
+  'aria-label'?: string;
+  title?: string;
   className?: string;
   'aria-describedby'?: string;
 }
@@ -44,16 +49,21 @@ export default function FilePickerButton({
   children,
   variant = 'secondary',
   showPicked = false,
+  compact = false,
   className,
+  'aria-label': ariaLabel,
+  title,
   'aria-describedby': describedBy,
 }: FilePickerButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const id = useId();
 
-  const base =
-    'inline-flex items-center gap-2 rounded px-3 py-2 text-sm ' +
-    'min-h-[44px] cursor-pointer disabled:cursor-default disabled:opacity-50';
+  const base = compact
+    ? 'inline-flex h-10 w-10 items-center justify-center rounded ' +
+      'cursor-pointer disabled:cursor-default disabled:opacity-50'
+    : 'inline-flex items-center gap-2 rounded px-3 py-2 text-sm ' +
+      'min-h-[44px] cursor-pointer disabled:cursor-default disabled:opacity-50';
   const tone =
     variant === 'primary'
       ? 'bg-[var(--red)] text-white hover:bg-[var(--red-hover)]'
@@ -101,6 +111,11 @@ export default function FilePickerButton({
         // restored here so the control behaves like the button it looks like.
         tabIndex={disabled ? -1 : 0}
         role="button"
+        // ⚠️ COMPACT LEAVES NO VISIBLE WORDS, so the accessible name has to
+        // come from somewhere — without this the control announces as an
+        // unlabelled button and the icon means nothing to a screen reader.
+        aria-label={ariaLabel}
+        title={title}
         aria-disabled={disabled || undefined}
         onKeyDown={(e) => {
           if (disabled) return;
@@ -111,7 +126,7 @@ export default function FilePickerButton({
         }}
       >
         <PaperclipIcon />
-        {children ?? 'Choose a file'}
+        {!compact && (children ?? 'Choose a file')}
       </label>
       {showPicked && picked.length > 0 && (
         <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
