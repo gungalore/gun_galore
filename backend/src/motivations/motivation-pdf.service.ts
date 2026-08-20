@@ -79,8 +79,17 @@ const PAGE_HEIGHT = 841.89;
 /** L72 R66 T72 B61, measured from their text bbox. */
 const MARGIN = 72;
 const MARGIN_RIGHT = 66;
-/** Room for a THREE-LINE footer: page number plus the running title. */
-const MARGIN_BOTTOM = 61;
+/**
+ * Room for the footer block, which is TWO lines and sits low.
+ *
+ * Measured: their footer occupies 63-89pt from the bottom edge, so the body
+ * must stop above it. 61 (their text bbox) is where the FOOTER ends, not
+ * where the body does — using it left eight points of clearance and the body
+ * would eventually have collided with the running title.
+ */
+const MARGIN_BOTTOM = 95;
+/** The footer's first baseline: 89pt from the bottom edge, as theirs is. */
+const FOOTER_FROM_BOTTOM = 89;
 
 const BLACK = '#111111';
 const GREY = '#555555';
@@ -612,7 +621,7 @@ export class MotivationPdfService {
       // that names its own application cannot be filed against the wrong one.
       // Ours carried a single centred line with our own name in it, which
       // told the reviewer nothing they needed.
-      const footerY = PAGE_HEIGHT - MARGIN_BOTTOM + 8;
+      const footerY = PAGE_HEIGHT - FOOTER_FROM_BOTTOM;
       doc
         .font(FONT_ITALIC)
         .fontSize(8)
