@@ -150,10 +150,18 @@ export default function MotivationTemplatePicker({
               aria-checked={active}
               onClick={() => onChange({ format: f.key })}
               className="min-w-[74%] shrink-0 snap-start rounded p-3 text-left transition-colors sm:min-w-0"
+              // ⚠️ `rule`, NOT `ink`, FOR THE SELECTION — AND THE REASON IS THE
+              // DARK THEME. The five inks are PRINT colours, chosen to sit on
+              // white paper: slate is #37474F. Used as a 1.5px border on a
+              // near-black card it is invisible, so on prod the selected
+              // format was marked by a border nobody could see and a dot the
+              // same colour. `rule` is the light member of each triple
+              // (#9AA7AD for slate) and reads on both grounds while keeping
+              // the colour identity.
               style={{
                 background: active ? 'var(--bg-inset)' : 'var(--bg-card)',
                 border: `${active ? '1.5px' : '0.5px'} solid ${
-                  active ? chosenColour.ink : 'var(--border)'
+                  active ? chosenColour.rule : 'var(--border)'
                 }`,
               }}
             >
@@ -175,7 +183,7 @@ export default function MotivationTemplatePicker({
                   <span
                     aria-hidden
                     className="inline-block h-2 w-2 rounded-full"
-                    style={{ background: chosenColour.ink }}
+                    style={{ background: chosenColour.rule }}
                   />
                 )}
               </p>
@@ -209,12 +217,17 @@ export default function MotivationTemplatePicker({
               style={{
                 background: active ? 'var(--bg-inset)' : 'transparent',
                 border: `${active ? '1.5px' : '0.5px'} solid ${
-                  active ? c.ink : 'var(--border)'
+                  active ? c.rule : 'var(--border)'
                 }`,
               }}
             >
               <span
                 aria-hidden
+                // The circle stays the INK, because it is a sample of what
+                // actually prints — showing the lighter rule here would
+                // promise a colour the document does not use. The rule serves
+                // as its ring, which is what makes a dark ink legible against
+                // a dark card.
                 className="inline-block h-5 w-5 rounded-full"
                 style={{ background: c.ink, border: `1.5px solid ${c.rule}` }}
               />
@@ -392,6 +405,10 @@ function EnlargedPreview({
         </header>
 
         <div className="px-5 py-5">
+          {/* ⚠️ 200px, NOT 214. A comprehensive pack is four pages and at 214
+              they came to 944px inside a 920px panel — so the fourth wrapped
+              onto a row of its own and read as an afterthought rather than as
+              the page the format is chosen for. 4x200 + gaps + padding = 888. */}
           <div className="flex flex-wrap justify-center gap-4">
             {pages.map((p) => (
               <TemplatePreview
@@ -399,7 +416,7 @@ function EnlargedPreview({
                 page={p}
                 colour={colour}
                 format={format}
-                width={214}
+                width={200}
                 watermarked={watermarked}
               />
             ))}
