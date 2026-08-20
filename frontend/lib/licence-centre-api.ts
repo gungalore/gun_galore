@@ -45,6 +45,14 @@ export interface CredentialRow {
   confirmed: boolean;
   remindersMuted: boolean;
   state: ExpiryState;
+  /**
+   * Close enough that offering a renewal helps rather than nags — six months.
+   *
+   * ⚠️ NOT the same as `state === 'expiring'`, which turns amber at 90 days.
+   * Ninety days IS the section 24(1) deadline, so a renewal first offered
+   * there arrives on the last day it can be lodged.
+   */
+  renewalDue: boolean;
   details: Record<string, string>;
   /** Statute-derived expiry when the document prints none. See the proposal. */
   derivedExpiry?: { on: string; why: string } | null;

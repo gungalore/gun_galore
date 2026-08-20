@@ -22,6 +22,7 @@ import {
   expiryState,
   parseIsoDate,
   toIsoDate,
+  withinRenewalWindow,
 } from './licence-dates';
 
 // ────────────────────────────────────────────────────────────────────
@@ -143,6 +144,12 @@ export class LicenceCentreService {
       confirmed: r.confirmedAt !== null,
       remindersMuted: r.remindersMuted,
       state: expiryState(r.expiresOn, r.confirmedAt, now),
+      // ⚠️ DELIBERATELY NOT `state === 'expiring'`. The card turns amber at 90
+      // days, which is the section 24(1) deadline itself; the renewal is
+      // offered at six months so there is still time to act on it. Tying the
+      // two together would first mention renewal on the last day it can be
+      // lodged.
+      renewalDue: withinRenewalWindow(r.expiresOn, r.confirmedAt, now),
       details: this.readDetails(r.detailsEncrypted),
       // Same statutory arithmetic the upload path offers, so a document that
       // reaches the confirm step FROM THE LIST — which is how every

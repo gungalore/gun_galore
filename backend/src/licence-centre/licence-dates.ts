@@ -105,6 +105,30 @@ export type ExpiryState = 'valid' | 'expiring' | 'expired' | 'unknown';
  * nobody has confirmed must never be shown in green, because nothing is
  * watching it.
  */
+/**
+ * When a document stops reading as comfortably in date.
+ *
+ * NINETY DAYS, which is the number the industry works to and the number in the
+ * Act: section 24(1) requires a renewal application at least 90 days before
+ * expiry, and section 24(4) keeps the licence valid past its date if the
+ * application was lodged in time. So this is the line where "in date" stops
+ * being the useful thing to say.
+ *
+ * ⚠️ IT IS NOT THE SAME AS WHEN WE START TALKING ABOUT RENEWAL. The reminder
+ * schedule opens at T-180 and the renewal offer appears at RENEWAL_LEAD_DAYS,
+ * both deliberately earlier — a member who first hears about it ON the
+ * statutory deadline has no time left to gather anything. Amber here means
+ * "you are inside the window that matters", not "we have only just thought to
+ * mention it".
+ */
+export const EXPIRING_WITHIN_DAYS = 90;
+
+/**
+ * How far out we OFFER a renewal. Six months, per the operator: early enough
+ * to leave three clear months of slack over the section 24(1) deadline.
+ */
+export const RENEWAL_LEAD_DAYS = 180;
+
 export function expiryState(
   expiresOn: Date | null | undefined,
   confirmedAt: Date | null | undefined,
@@ -113,8 +137,18 @@ export function expiryState(
   if (!expiresOn || !confirmedAt) return 'unknown';
   const left = daysUntil(expiresOn, now);
   if (left < 0) return 'expired';
-  if (left <= 180) return 'expiring';
+  if (left <= EXPIRING_WITHIN_DAYS) return 'expiring';
   return 'valid';
+}
+
+/** Is this close enough that offering a renewal is helpful rather than noise? */
+export function withinRenewalWindow(
+  expiresOn: Date | null | undefined,
+  confirmedAt: Date | null | undefined,
+  now: Date,
+): boolean {
+  if (!expiresOn || !confirmedAt) return false;
+  return daysUntil(expiresOn, now) <= RENEWAL_LEAD_DAYS;
 }
 
 /**

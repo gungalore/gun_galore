@@ -1,5 +1,7 @@
 import {
+  EXPIRING_WITHIN_DAYS,
   REMINDER_STAGES,
+  withinRenewalWindow,
   competencyLapses,
   daysUntil,
   dueStage,
@@ -199,5 +201,62 @@ describe('competencyLapses', () => {
     const issued = new Date('2025-06-06T00:00:00Z');
     competencyLapses(issued);
     expect(toIsoDate(issued)).toBe('2025-06-06');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// NINETY DAYS, AND WHY IT IS NOT THE SAME NUMBER AS THE RENEWAL OFFER.
+//
+// The amber threshold was 180 and is now 90 — common practice, and the number
+// in the Act: section 24(1) requires the renewal application at least 90 days
+// before expiry. But 90 days is the DEADLINE, so a renewal first offered there
+// arrives on the last day it can be lodged. The offer therefore keeps its own
+// six-month window.
+//
+// These were one number sharing one meaning. Pinning them apart is the point
+// of this block: whichever moves next, the other must not follow silently.
+// ────────────────────────────────────────────────────────────────────
+describe('the amber line and the renewal offer are different lines', () => {
+  const now = new Date('2026-01-01T00:00:00.000Z');
+  const confirmed = new Date('2025-01-01T00:00:00.000Z');
+  const plus = (days: number) =>
+    new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+  it('stays green until 90 days out', () => {
+    expect(expiryState(plus(120), confirmed, now)).toBe('valid');
+    expect(expiryState(plus(91), confirmed, now)).toBe('valid');
+  });
+
+  it('turns amber AT 90 days, not before', () => {
+    expect(expiryState(plus(90), confirmed, now)).toBe('expiring');
+    expect(expiryState(plus(30), confirmed, now)).toBe('expiring');
+  });
+
+  it('⚠️ a licence four months out is GREEN but ALREADY offers renewal', () => {
+    // The whole reason the two numbers had to come apart. At 120 days the card
+    // is calm — nothing is wrong yet — and the renewal is nonetheless on
+    // screen, because in 30 days' time it will be too late to start.
+    expect(expiryState(plus(120), confirmed, now)).toBe('valid');
+    expect(withinRenewalWindow(plus(120), confirmed, now)).toBe(true);
+  });
+
+  it('offers renewal from six months out', () => {
+    expect(withinRenewalWindow(plus(181), confirmed, now)).toBe(false);
+    expect(withinRenewalWindow(plus(180), confirmed, now)).toBe(true);
+  });
+
+  it('offers nothing on a date nobody has confirmed', () => {
+    // Same safety rail as expiryState: an unconfirmed date is not a date.
+    expect(withinRenewalWindow(plus(30), null, now)).toBe(false);
+    expect(withinRenewalWindow(null, confirmed, now)).toBe(false);
+  });
+
+  it('keeps offering renewal once the date has passed', () => {
+    expect(withinRenewalWindow(plus(-10), confirmed, now)).toBe(true);
+  });
+
+  it('has the reminder schedule opening EARLIER than amber', () => {
+    // T-180 exists so the first word about a renewal is not the amber card.
+    expect(REMINDER_STAGES[0].days).toBeGreaterThan(EXPIRING_WITHIN_DAYS);
   });
 });

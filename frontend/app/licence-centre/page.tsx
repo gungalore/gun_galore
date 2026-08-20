@@ -943,14 +943,16 @@ function CredentialCard({
           somebody files a ten-year licence is noise on every card, every
           visit, for nine and a half years.
 
-          'expiring' already means 180 days — expiryState flips there, which
-          is the six months he asked for — so this needs no threshold of its
-          own, and it cannot drift away from the reminder schedule that shares
-          it. Section 24(1) requires the application at least 90 days before
-          expiry, so six months leaves three clear months of lead. */}
+          ⚠️ AND IT NO LONGER RIDES ON `state`. It used to, back when 'expiring'
+          meant 180 days and that happened to be the six months asked for. The
+          amber threshold has since moved to 90 days — common practice, and the
+          section 24(1) deadline itself — so gating on it would first mention
+          renewal on the very last day the application can be lodged. The two
+          numbers answer different questions and now have different names:
+          `renewalDue` is the six-month offer, `state` is how the card reads. */}
       {row.kind === 'FIREARM_LICENCE' &&
         row.confirmed &&
-        (row.state === 'expiring' || row.state === 'expired') && (
+        (row.renewalDue || row.state === 'expired') && (
           <div className="mt-3 rounded border border-[var(--border)] bg-[var(--bg-card)] p-3">
             <p className="text-sm font-medium">
               {row.state === 'expired'
