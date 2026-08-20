@@ -174,13 +174,26 @@ export class MotivationsController {
   }
 
   /**
-   * Draft the document. The expensive one — every call is a flagship
-   * generation plus a grading pass, so it is throttled hard. The service
-   * additionally compare-and-swaps the row, so two clicks that arrive inside
-   * the throttle window still cannot both spend money.
+   * Draft the document. The expensive one — a real call is a flagship
+   * generation plus a grading pass, so it stays throttled, and the service
+   * additionally compare-and-swaps the row so two clicks that arrive inside
+   * the window still cannot both spend money.
+   *
+   * ⚠️ NOT EVERY CALL IS THE EXPENSIVE ONE, which is what the old limit of
+   * three got wrong. generate() refuses ahead of the compare-and-swap for a
+   * missing declaration and for missing required answers, and neither refusal
+   * calls a model. The throttler charges in the guard, before the handler
+   * runs, and @nestjs/throttler has no way to refund a hit — so three
+   * rejected clicks bought an hour of ThrottlerException with nothing drafted
+   * and nothing spent. That happened to a live applicant.
+   *
+   * Ten leaves room for an honest retry after a validation refusal while
+   * still capping flagship spend per IP per hour. The real cost ceilings are
+   * elsewhere and unchanged: one in-flight generation per motivation (the
+   * CAS) and the beta seat cap.
    */
   @Post(':id/generate')
-  @Throttle({ default: { limit: 3, ttl: 3_600_000 } })
+  @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
   generate(@CurrentUser() clerkId: string, @Param('id') id: string) {
     return this.motivations.generate(clerkId, id);
   }

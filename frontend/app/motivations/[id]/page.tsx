@@ -479,16 +479,34 @@ export default function MotivationWizardPage() {
    */
   useEffect(() => {
     let alive = true;
+    // ⚠️ THIS POLL WAS COSTING 18 REQUESTS A MINUTE, standing still. Three
+    // fetches every ten seconds, and the API allows 60 a minute per IP — so
+    // an open wizard spent a third of the budget doing nothing, and with the
+    // QR dialog's own poll running alongside it (another 30) a save or an
+    // upload came back "Too Many Requests". The member was rate-limited by
+    // our own screensaver.
+    //
+    // The three do not change at the same rate. What is attached to this pack
+    // moves whenever a phone finishes a scan; the library and the vault offer
+    // move only when a document is added somewhere else entirely. So uploads
+    // every tick, the other two every third.
+    let tick = 0;
     const sync = () => {
       if (document.visibilityState !== 'visible') return;
+      // ⚠️ NOT WHILE AN OVERLAY IS UP. The scanner and the QR dialog both
+      // mark themselves blocking, and both are doing their own polling with
+      // their own refresh on completion — so this would be a second poll
+      // behind a screen the member cannot even see the results through.
+      if (document.querySelector('[data-blocking-overlay="true"]')) return;
+      tick += 1;
       void refreshUploads().catch(() => undefined);
-      void loadLibrary().catch(() => undefined);
-      // ⚠️ THE DROPDOWNS TOO. The operator photographed a competency
-      // certificate on his phone with the wizard open on the desktop, and the
-      // dropdown stayed empty because the offer was fetched once at mount and
-      // never again — the sync kept the checklist honest and left the pickers
-      // frozen at page-load.
-      void loadOffer().catch(() => undefined);
+      if (tick % 3 === 1) {
+        void loadLibrary().catch(() => undefined);
+        // The offer was fetched once at mount and never again, so a
+        // certificate photographed on a phone left the dropdowns frozen at
+        // page-load state.
+        void loadOffer().catch(() => undefined);
+      }
     };
     const onVisible = () => {
       if (document.visibilityState === 'visible') sync();
@@ -497,7 +515,7 @@ export default function MotivationWizardPage() {
     window.addEventListener('focus', onVisible);
     const timer = window.setInterval(() => {
       if (alive) sync();
-    }, 10_000);
+    }, 20_000);
     return () => {
       alive = false;
       window.clearInterval(timer);
@@ -714,10 +732,36 @@ export default function MotivationWizardPage() {
    * All that happens here is crossing off the ones already filled.
    */
   const serverOutstanding = detail?.missingRequired ?? [];
-  const outstanding = useMemo(
-    () => serverOutstanding.filter((k) => !(answers[k] ?? '').trim()),
-    [serverOutstanding, answers],
-  );
+  const outstanding = useMemo(() => {
+    const empty = (k: string) => !(answers[k] ?? '').trim();
+    // ⚠️ THE SNAPSHOT CAN ONLY SHRINK, AND THAT LOCKED SOMEBODY OUT.
+    //
+    // requiredKeys() on the server is answer-DEPENDENT: it filters the
+    // registry through isVisible(), so answering "Married" makes
+    // spouse_id_type and spouse_id_number required by fields that were not
+    // required — and not even visible — when the page loaded. Crossing items
+    // off a load-time list can never add those. The wizard therefore showed
+    // nothing outstanding, enabled Generate, and the server refused with
+    // "Some required answers are still missing".
+    //
+    // Generate is capped at a few calls an hour because a real one spends
+    // money on a flagship model. A refusal spends nothing but is charged the
+    // same, so three doomed clicks bought an hour of ThrottlerException.
+    //
+    // So the live registry is asked directly. `sections` is already
+    // visibleFields() — the same predicate as the server's isVisible — so
+    // anything required and empty in it is genuinely required and empty now.
+    const live = sections
+      .flatMap((s) => s.fields)
+      .filter((f) => f.required && empty(f.key))
+      .map((f) => f.key);
+    // UNION, not replacement. `sections` also drops rows the wizard chooses
+    // not to render yet (firearms beyond the first, the overlap question), and
+    // the server may require something on registry logic this component does
+    // not evaluate. Over-reporting shows a field to fill; under-reporting is
+    // the dead end above.
+    return Array.from(new Set([...serverOutstanding.filter(empty), ...live]));
+  }, [serverOutstanding, answers, sections]);
   // A question stays open until the applicant has REPLIED to it — a user
   // message with the same fieldKey later in the thread. The old check hid any
   // question whose field had text, but the gate asks about THIN fields, which

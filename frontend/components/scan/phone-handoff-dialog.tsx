@@ -109,6 +109,12 @@ export default function PhoneHandoffDialog({
     if (!handoffId) return;
     let alive = true;
     const tick = async () => {
+      // ⚠️ NOT WHILE THE TAB IS HIDDEN. The member has picked up their phone;
+      // whatever this learns cannot be seen, and the API allows 60 requests a
+      // minute per IP — a poll nobody is watching is budget taken from the
+      // upload the phone is about to make. The visibilitychange listener
+      // below catches up the moment they look back.
+      if (document.visibilityState !== 'visible') return;
       try {
         const res = await viewerFetch(`${API_URL}/scan-handoff/${handoffId}`);
         if (!res?.ok || !alive) return;
@@ -132,10 +138,20 @@ export default function PhoneHandoffDialog({
       }
     };
     void tick();
-    const id = window.setInterval(() => void tick(), 2000);
+    // ⚠️ THREE SECONDS, NOT TWO. At 2s this alone was 30 requests a minute
+    // against a 60-a-minute ceiling — half the budget, while the wizard
+    // behind it polled too and the phone still had to upload through the same
+    // limit. The member sees no difference; the difference is whether their
+    // scan gets through.
+    const id = window.setInterval(() => void tick(), 3000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       alive = false;
       window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handoffId]);

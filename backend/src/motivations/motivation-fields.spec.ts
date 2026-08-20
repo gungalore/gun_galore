@@ -407,3 +407,79 @@ describe('ID numbers typed like a human types them', () => {
     expect(answers.spouse_passport_number).toBe('A1234 567');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE REQUIRED SET GROWS AS THE FORM IS ANSWERED.
+//
+// This is the property that broke a live application. The wizard used to
+// compute "what is still outstanding" by crossing filled answers off the list
+// the server sent when the page loaded — a set that can only ever shrink. But
+// requiredKeys() filters the registry through isVisible(), so answering a
+// question can ADD requirements that were neither required nor visible at
+// load. The wizard then showed nothing outstanding, enabled Generate, and the
+// server refused with "Some required answers are still missing" and no field
+// on screen to fix.
+//
+// Anything that makes the wizard's view of "required" static again puts that
+// dead end back, so the growth is pinned here rather than left as a property
+// the registry happens to have today.
+// ────────────────────────────────────────────────────────────────────
+describe('requirements that appear only once something is answered', () => {
+  const married = (extra: Record<string, string> = {}) => ({
+    [SAPS271_OPT_KEY]: SAPS271_FILL,
+    marital_status: 'Married',
+    ...extra,
+  });
+
+  it('asks nothing about a spouse until the applicant says they have one', () => {
+    const single = { [SAPS271_OPT_KEY]: SAPS271_FILL, marital_status: 'Single' };
+    const keys = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, single);
+    expect(keys).not.toContain('spouse_name');
+    expect(keys).not.toContain('spouse_id_type');
+  });
+
+  it('ADDS spouse questions the moment marital status becomes Married', () => {
+    const before = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, {
+      [SAPS271_OPT_KEY]: SAPS271_FILL,
+      marital_status: 'Single',
+    });
+    const after = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, married());
+    const added = after.filter((k) => !before.includes(k));
+    // The exact list may grow; that it grows AT ALL is the point.
+    expect(added.length).toBeGreaterThan(0);
+    expect(added).toContain('spouse_name');
+    expect(added).toContain('spouse_id_type');
+  });
+
+  it('reports those spouse fields as MISSING, so generate refuses', () => {
+    // Exactly the shape of the live failure: every question the applicant
+    // could see was answered, and the document still would not generate.
+    const missing = missingRequired(MotivationLicenceType.S16_DEDICATED_SPORT, married());
+    expect(missing).toContain('spouse_name');
+    expect(missing).toContain('spouse_id_type');
+  });
+
+  it('keeps the spouse ID NUMBER behind the type it hangs off', () => {
+    // A two-step chain: marital_status reveals spouse_id_type, and only
+    // answering THAT reveals the number. A wizard that renders one step per
+    // section, in dependency order, is what makes the chain reachable.
+    const noType = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, married());
+    expect(noType).not.toContain('spouse_id_number');
+
+    const withType = requiredKeys(
+      MotivationLicenceType.S16_DEDICATED_SPORT,
+      married({ spouse_id_type: 'SA ID' }),
+    );
+    expect(withType).toContain('spouse_id_number');
+  });
+
+  it('asks no form-only spouse question at all on the dealer path', () => {
+    // Without the 271 opt-in the whole form-only block is out of scope, so
+    // marital status must not drag spouse fields in behind it.
+    const keys = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, {
+      marital_status: 'Married',
+    });
+    expect(keys).not.toContain('spouse_name');
+    expect(keys).not.toContain('marital_status');
+  });
+});
