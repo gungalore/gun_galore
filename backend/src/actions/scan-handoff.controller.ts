@@ -169,16 +169,42 @@ export class ScanHandoffController {
     // How many documents have landed SINCE the link was made. Counting rows
     // created after the token is what makes this work without threading a
     // session id all the way through the upload path.
+    //
+    // ⚠️ "LANDED" MEANS READ, NOT INSERTED. The upload service inserts the
+    // row first and runs the vision read after — deliberately, so a vision
+    // outage costs a convenience and not the upload. Counting on insert made
+    // this poll fire mid-read: the desktop closed its dialog, snapshotted the
+    // list, and showed the operator a competency certificate with no issue
+    // date, five seconds before the date landed in a row his screen had
+    // already copied. The firearm licence "read fine" purely because its
+    // timing fell the other side of the same race.
+    //
+    // So a row counts once its extraction has settled — or once it is old
+    // enough that it clearly finished another way, because extractionOk stays
+    // false FOREVER for a legitimately unreadable photograph and a document
+    // must never be invisible to its owner over that.
+    const settledBefore = new Date(Date.now() - 45_000);
+    const settled = {
+      OR: [
+        { extractionOk: true },
+        { createdAt: { lte: settledBefore } },
+      ],
+    };
     const added =
       meta.dest === 'motivation' && typeof meta.motivationId === 'string'
         ? await this.prisma.motivationUpload.count({
             where: {
               motivationId: meta.motivationId,
               createdAt: { gte: row.createdAt },
+              ...settled,
             },
           })
         : await this.prisma.credential.count({
-            where: { userId: user.id, createdAt: { gte: row.createdAt } },
+            where: {
+              userId: user.id,
+              createdAt: { gte: row.createdAt },
+              ...settled,
+            },
           });
 
     const expired = row.expiresAt <= new Date();
