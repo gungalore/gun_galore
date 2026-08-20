@@ -744,6 +744,17 @@ export function derivedCredentialTitle(
   kind: CredentialKind,
   details: Record<string, string>,
 ): string | null {
+  const clean = (v: string | undefined) => (v ?? '').trim().replace(/\s+/g, ' ');
+  // ⚠️ A MEMBER MAY HOLD SEVERAL OF THESE, one per association, and
+  // "Dedicated discipline" four times over is the same unlabelled filing
+  // cabinet the firearm licences were. The association is what distinguishes
+  // them — "SA Hunters — Dedicated Sport Shooter".
+  if (kind === 'DEDICATED_DISCIPLINE') {
+    const association = clean(details.association).slice(0, 60);
+    const status = clean(details.status_type).slice(0, 40);
+    const name = [association, status].filter(Boolean).join(' — ');
+    return name.length >= 3 ? name.slice(0, MAX_TITLE) : null;
+  }
   if (kind !== 'FIREARM_LICENCE') return null;
   const tidy = (v: string | undefined) =>
     (v ?? '')
@@ -760,6 +771,7 @@ export function derivedCredentialTitle(
 
 const DEFAULT_TITLE: Record<CredentialKind, string> = {
   FIREARM_LICENCE: 'Firearm licence',
+  DEDICATED_DISCIPLINE: 'Dedicated discipline',
   COMPETENCY_CERTIFICATE: 'Competency certificate',
   DEDICATED_HUNTER: 'Dedicated hunter status',
   PROFESSIONAL_HUNTER: 'Professional hunter registration',

@@ -1,5 +1,5 @@
 import { MotivationUploadKind } from '@prisma/client';
-import { CREDENTIAL_TO_UPLOAD } from './motivation-credentials';
+import { primaryUploadKind } from './motivation-credentials';
 
 // ────────────────────────────────────────────────────────────────────
 // THE MEMBER'S DOCUMENT LIBRARY.
@@ -111,7 +111,9 @@ export function buildLibrary(
 
   const takeCredential = (c: LibraryCredentialRow) => {
     if (!c.storageKey || c.purgedAt) return;
-    const kind = CREDENTIAL_TO_UPLOAD[c.kind];
+    // The row it would be filed as. A document covering several rows is still
+    // ONE library entry — the extra roles ride on the stored upload.
+    const kind = primaryUploadKind(c.kind);
     // A vault document with no motivation slot — a PROFESSIONAL_HUNTER
     // registration, an OTHER — is kept and tracked, and simply has nothing to
     // fill here.

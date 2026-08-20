@@ -63,6 +63,30 @@ const EMPTY: CredentialReading = {
  *
  * Exported so the tests exercise this and not a copy of it.
  */
+/**
+ * The four kinds that became DEDICATED_DISCIPLINE.
+ *
+ * ⚠️ THEY CANNOT BE DELETED FROM THE ENUM — Postgres has no ALTER TYPE ...
+ * DROP VALUE — so Object.values(CredentialKind) still offers them and the
+ * classifier would still accept one. It has also seen these names in every
+ * previous version of the prompt. A document filed under a retired kind is
+ * outside every query that now looks for DEDICATED_DISCIPLINE, so the answer
+ * is normalised forward here rather than trusted.
+ */
+const RETIRED_KINDS: ReadonlySet<string> = new Set([
+  'DEDICATED_STATUS',
+  'DEDICATED_HUNTER',
+  'PROFESSIONAL_HUNTER',
+  'GOOD_STANDING',
+]);
+
+/** A kind as we file it today, whatever name it arrived under. */
+export function currentKind(kind: CredentialKind): CredentialKind {
+  return RETIRED_KINDS.has(kind)
+    ? ('DEDICATED_DISCIPLINE' as CredentialKind)
+    : kind;
+}
+
 export function cleanAlsoCovers(
   kind: CredentialKind,
   raw: unknown,
@@ -97,6 +121,29 @@ const WANTED: Record<CredentialKind, string[]> = {
     'competency_number',
     'holder_name',
     'covers',
+  ],
+  // ⚠️ THE UNION OF THE FOUR KINDS THIS REPLACED, because WANTED is both the
+  // question and the filter: a key not listed here is never asked for AND is
+  // discarded if the model volunteers it. One certificate can carry a status
+  // number, a membership number, a good-standing reference and a professional
+  // registration, and they are NOT the same number — the operator's SA Hunters
+  // pack carries three. Each is named separately so none can be read into
+  // another's field and end up as the wrong reference on an application.
+  DEDICATED_DISCIPLINE: [
+    'association',
+    'holder_name',
+    'status_type',
+    'status_number',
+    'membership_number',
+    'good_standing_number',
+    'good_standing',
+    'joined_on',
+    // Professional Hunter registration, which is NOT dedicated status. Kept
+    // readable so the distinction survives on the row instead of being
+    // inferred from which pile the document landed in.
+    'registration_number',
+    'province',
+    'category',
   ],
   DEDICATED_STATUS: [
     'status_number',
@@ -196,13 +243,23 @@ export class LicenceCentreExtractService {
         confidence?: string;
         also_covers?: unknown;
       };
-      const kind = (parsed.kind ?? '').trim() as CredentialKind;
+      const raw = (parsed.kind ?? '').trim() as CredentialKind;
       const known = Object.values(CredentialKind) as string[];
-      if (!known.includes(kind)) return null;
+      if (!known.includes(raw)) return null;
+      const kind = currentKind(raw);
       return {
         kind,
         confident: (parsed.confidence ?? '') === 'high',
-        alsoCovers: cleanAlsoCovers(kind, parsed.also_covers),
+        // Normalised too: a retired value in also_covers would now be the
+        // document's own kind, which cleanAlsoCovers drops.
+        alsoCovers: cleanAlsoCovers(
+          kind,
+          Array.isArray(parsed.also_covers)
+            ? parsed.also_covers.map((k) =>
+                currentKind(String(k ?? '').trim() as CredentialKind),
+              )
+            : parsed.also_covers,
+        ),
       };
     } catch {
       return null;
@@ -392,6 +449,8 @@ function userPrompt(
   const label: Record<CredentialKind, string> = {
     FIREARM_LICENCE: 'a South African firearm licence card or certificate',
     COMPETENCY_CERTIFICATE: 'a SAPS competency certificate',
+    DEDICATED_DISCIPLINE:
+      'a document from a shooting or hunting association about one of its members — a membership certificate, a dedicated sport shooter or dedicated hunter status certificate, a section 16 letter of good standing, or a professional hunter registration. ONE DOCUMENT OFTEN DOES SEVERAL OF THOSE JOBS AT ONCE: read everything on it. Say which discipline it awards in status_type (dedicated sport shooter, dedicated hunter, both, or professional hunter), and set good_standing to yes ONLY where the document itself says the member is in good standing. The numbers are NOT the same number — a status number, a membership number and a good-standing reference can all appear on one page, so read each into its own field and leave any that is absent blank rather than repeating another',
     DEDICATED_STATUS: 'a dedicated sport shooter status certificate',
     DEDICATED_HUNTER: 'a dedicated hunter status certificate',
     PROFESSIONAL_HUNTER:
@@ -481,35 +540,27 @@ export const CLASSIFY_USER = [
   'FIREARM_LICENCE - a South African firearm licence card or certificate,',
   '  naming a firearm and usually a section of the Firearms Control Act',
   'COMPETENCY_CERTIFICATE - a SAPS competency certificate',
-  'DEDICATED_STATUS - a DEDICATED SPORT SHOOTER status certificate, issued by',
-  '  an accredited sport-shooting association',
-  'DEDICATED_HUNTER - a DEDICATED HUNTER status certificate, issued by an',
-  '  accredited hunting association. Says "hunter", not "sport shooter".',
+  'DEDICATED_DISCIPLINE - ANY document from a shooting or hunting association',
+  '  about one of its members. A membership certificate, a dedicated SPORT',
+  '  SHOOTER status certificate, a dedicated HUNTER status certificate, a',
+  '  section 16 letter of good standing, or a professional hunter (PH)',
+  '  registration. All of these are this one category.',
   '',
-  '  ⚠️ READ THE STATUS LINE, NOT THE LETTERHEAD. Several South African bodies',
-  '  are accredited for BOTH and issue both statuses on the same paper: the SA',
-  '  Hunters & Game Conservation Association is named for hunting and its',
-  '  certificates routinely award "Toegewyde Sportskut / Dedicated Sport',
-  '  Shooter". The line naming the status, and the number beside it, decide',
-  '  this - never the association name. A live certificate reading "Dedicated',
-  '  Sport Shooter: SA115153SS" was filed as DEDICATED_HUNTER on the strength',
-  '  of the word "Hunters" in the letterhead, which is the wrong status on a',
-  '  section 16 application.',
-  '  If the document awards BOTH, name one as the kind and the other in',
-  '  also_covers rather than choosing.',
-  'PROFESSIONAL_HUNTER - a professional hunter (PH) registration, issued by a',
-  '  PROVINCIAL NATURE CONSERVATION department rather than an association.',
-  '  Names a province and a hunting category. This is an occupational licence',
-  '  to hunt for a client and is NOT dedicated status - do not confuse them.',
+  '  ⚠️ DO NOT TRY TO TELL THEM APART - that is the whole point. One page',
+  '  routinely does several of these jobs at once: a SA Hunters membership',
+  '  certificate declares the member "in good standing", prints "Toegewyde',
+  '  Sportskut / Dedicated Sport Shooter" with its number, and gives one',
+  '  validity date covering both. Choosing between them used to file that',
+  '  certificate as a HUNTER status on the strength of the word "Hunters" in',
+  '  the letterhead - the wrong status on a section 16 application. Which',
+  '  discipline it awards, and whether the member is in good standing, are',
+  '  read off the document afterwards; they are not your decision here.',
+  '',
+  '  A member may hold several of these from different associations. That is',
+  '  normal - file each one as DEDICATED_DISCIPLINE.',
   'PROFICIENCY - a firearm proficiency or unit-standard training certificate',
-  // ⚠️ ADDED WITH THE KIND ITSELF. A category the enum knows and the
-  // classifier does not is a document that files itself as OTHER every time —
-  // the member sees "something else" for a letter with the association's name
-  // across the top of it, and corrects us by hand on every upload.
-  'GOOD_STANDING - a section 16 LETTER OF GOOD STANDING from a hunting or',
-  '  sport-shooting association. A letter, usually sworn before a commissioner',
-  '  of oaths, declaring the member is registered and in good standing. It',
-  '  normally shows a status issued date and a status valid until date.',
+  // The letter of good standing lives inside DEDICATED_DISCIPLINE now, with
+  // the rest of the association paperwork. It is described there.
   'OTHER - anything else, or you cannot tell',
   '',
   // ⚠️ THE TIE-BREAK BELOW USED TO FORCE A CHOICE, and the operator's own
@@ -527,18 +578,7 @@ export const CLASSIFY_USER = [
   'The single validity date on such a certificate governs every role it',
   'fills; there is not a separate date per role.',
   '',
-  'THE ASSOCIATION ISSUES SEVERAL DOCUMENTS ON THE SAME LETTERHEAD, and',
-  'telling them apart is the hardest call on this list:',
-  '  - a CERTIFICATE awarding dedicated status, with a certificate number and',
-  '    usually a decorative border, is DEDICATED_STATUS or DEDICATED_HUNTER;',
-  '  - a LETTER declaring the member is in good standing, with validity dates',
-  '    and often a commissioner of oaths stamp, is GOOD_STANDING;',
-  '  - a letter ENDORSING ONE SPECIFIC FIREARM as suitable for the discipline,',
-  '    with a table of type, calibre, make, action and serial, is OTHER here.',
-  '    The vault has no category for it, and filing it as a status document',
-  '    would be worse than filing it as unsorted.',
-  '',
-  'A competency certificate permits a person to POSSESS firearms; a licence is',
+'A competency certificate permits a person to POSSESS firearms; a licence is',
   'for ONE specific firearm and names it. If it names a make, calibre or serial',
   'number it is a licence.',
 ].join('\n');

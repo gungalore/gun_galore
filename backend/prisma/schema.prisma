@@ -4240,6 +4240,20 @@ model MotivationUpload {
   motivation   Motivation           @relation(fields: [motivationId], references: [id], onDelete: Cascade)
   kind         MotivationUploadKind
 
+  /// OTHER CHECKLIST ROWS THIS ONE ATTACHMENT SATISFIES.
+  ///
+  /// ⚠️ ONE ROW PER FILE, ALWAYS. An association membership certificate is
+  /// routinely both the association card AND the section 16 letter of good
+  /// standing — one page saying both. The obvious fix, a second upload row
+  /// pointing at the same bytes, is wrong twice over: it collides with
+  /// @@unique([motivationId, sha256]), and annexureImages iterates upload ROWS,
+  /// so the same page would print twice in the pack under two annexure
+  /// letters. A DFO reading that sees padding, not thoroughness.
+  ///
+  /// So the extra roles ride on the single row, and documentStatus counts a
+  /// requirement met by `kind` OR by anything in here.
+  coversKinds MotivationUploadKind[] @default([])
+
   // Opaque key into SecureFileStorageService — `<ns>/<yyyy>/<mm>/<id>.enc`.
   // NEVER a filesystem path and never a URL. Nullable only so a row can outlive
   // its bytes after a retention purge without breaking the audit trail.
@@ -4304,23 +4318,43 @@ model MotivationUpload {
 enum CredentialKind {
   FIREARM_LICENCE
   COMPETENCY_CERTIFICATE
-  /// Dedicated SPORT SHOOTER status, from an accredited association.
+
+  /// WHAT AN ASSOCIATION SAYS ABOUT A MEMBER — one kind for all of it.
+  ///
+  /// Dedicated sport shooter, dedicated hunter, professional hunter
+  /// registration and the section 16 letter of good standing were four kinds.
+  /// They are one, because the paper is usually one: a SA Hunters membership
+  /// certificate declares the member "in good standing", prints "Toegewyde
+  /// Sportskut / Dedicated Sport Shooter" with its number, and gives a single
+  /// validity window governing both.
+  ///
+  /// ⚠️ THE SPLIT FORCED A GUESS AND THE GUESS WAS WRONG. The classifier had
+  /// to choose between hunter and sport on a certificate from a body
+  /// accredited for both, and filed the operator's sport-shooter status as
+  /// DEDICATED_HUNTER on the strength of "Hunters" in the letterhead — the
+  /// wrong status on a section 16 application. Which discipline it is, and
+  /// whether the member is in good standing, are FACTS READ OFF THE DOCUMENT
+  /// (disciplineType, and the details blob), not categories to sort into.
+  ///
+  /// A member may hold several of these, one per association. That is the
+  /// normal case, not an edge case.
+  DEDICATED_DISCIPLINE
+
+  /// ⚠️ RETIRED — kept because Postgres has no ALTER TYPE ... DROP VALUE, and
+  /// existing rows were migrated to DEDICATED_DISCIPLINE. Not offered in any
+  /// picker and refused by the write path. Do not reach for these: filing a
+  /// status document under one of them puts it outside every query that now
+  /// looks for DEDICATED_DISCIPLINE.
   DEDICATED_STATUS
-  /// Dedicated HUNTER status. A separate certificate from a separate
-  /// accreditation, even where the same association issues both.
+  /// ⚠️ RETIRED — see DEDICATED_DISCIPLINE.
   DEDICATED_HUNTER
-  /// Professional Hunter registration. ⚠️ NOT dedicated status: it is a
-  /// provincial nature-conservation qualification to hunt for a client,
-  /// issued by a different authority, and it evidences nothing under
-  /// section 16. Kept in the vault because it expires and members want it
-  /// tracked — never offered as association membership.
+  /// ⚠️ RETIRED — see DEDICATED_DISCIPLINE. Professional Hunter registration
+  /// is still not dedicated status and still evidences nothing under section
+  /// 16; that distinction now lives in disciplineType, where it can be read
+  /// rather than inferred from which pile the document landed in.
   PROFESSIONAL_HUNTER
   PROFICIENCY
-  /// A section 16 letter of good standing. Separate from DEDICATED_STATUS
-  /// because it is a separate piece of paper with its OWN validity window —
-  /// the operator's runs 11 Jun 2024 to 30 Jun 2025 while the status
-  /// certificate behind it carries no expiry at all. Filing them together
-  /// would mean chasing the wrong date.
+  /// ⚠️ RETIRED — see DEDICATED_DISCIPLINE.
   GOOD_STANDING
   // Association membership, anything else the member wants kept with the
   // rest. Never chased, always accepted.
@@ -4351,7 +4385,28 @@ model Credential {
   /// DEDICATED_STATUS precisely because some associations issue two papers
   /// with two different windows. That case is unchanged and still correct —
   /// this is for the associations that issue one.
+  ///
+  /// ⚠️ ITS ORIGINAL JUSTIFICATION IS GONE. This column was added a day
+  /// earlier so a membership certificate filed as DEDICATED_STATUS could also
+  /// count as GOOD_STANDING. Those are now the same kind, so there is nothing
+  /// left to cover between them and the migration scrubbed every such entry —
+  /// a row covering its own kind would double-match one checklist row, which
+  /// cleanAlsoCovers already forbids. It stays for the genuinely different
+  /// case: a document that is, say, a firearm licence AND something else.
   coversKinds CredentialKind[] @default([])
+
+  /// WHICH DISCIPLINE THIS DOCUMENT ATTESTS, in the clear.
+  ///
+  /// 'DEDICATED_SPORT' | 'DEDICATED_HUNTER' | 'PROFESSIONAL_HUNTER' | 'BOTH',
+  /// or one of the four retired kind names for a row the migration moved.
+  ///
+  /// ⚠️ NOT IN detailsEncrypted, deliberately. The extraction already reads
+  /// status_type off the certificate, but that lands inside an AES-GCM blob
+  /// which SQL cannot see — so a migration could not have preserved which of
+  /// the four kinds a row used to be, and no query can group or filter on the
+  /// discipline. This column is the plaintext discriminator that makes both
+  /// possible. It holds a category, never a number and never a name.
+  disciplineType String?
 
   /// The member's own name for it — "My .308". In the clear so the list can
   /// be rendered and the reminder addressed; the UI warns against serials.

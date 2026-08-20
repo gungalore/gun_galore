@@ -859,6 +859,8 @@ export class MotivationsService {
     // client-supplied id: the only thing stopping it naming another member's
     // document is that the query cannot find one.
     let kind: MotivationUploadKind;
+    /** Extra checklist rows this one attachment answers. See coversKinds. */
+    let alsoSatisfies: MotivationUploadKind[] = [];
     let storageKey: string | null;
     let mimeType: string | null;
     let purgedAt: Date | null;
@@ -882,12 +884,17 @@ export class MotivationsService {
       });
       if (!c) throw new NotFoundException('Document not found');
       const mapped = CREDENTIAL_TO_UPLOAD[c.kind];
-      if (!mapped) {
+      if (!mapped?.length) {
         throw new BadRequestException(
           'That document does not answer anything on this application.',
         );
       }
-      kind = mapped as MotivationUploadKind;
+      // ⚠️ FILED AS THE FIRST, COUNTING FOR ALL OF THEM. A membership
+      // certificate is both the association card and the letter of good
+      // standing; a second row for the same bytes would collide with the
+      // sha256 unique index and print the same page twice in the pack.
+      kind = mapped[0] as MotivationUploadKind;
+      alsoSatisfies = mapped.slice(1) as MotivationUploadKind[];
       storageKey = c.storageKey;
       mimeType = c.mimeType;
       purgedAt = c.purgedAt;
@@ -1018,6 +1025,7 @@ export class MotivationsService {
       data: {
         motivationId: row.id,
         kind,
+        coversKinds: alsoSatisfies,
         storageKey: stored.storageKey,
         mimeType: mimeType ?? 'image/jpeg',
         byteSize: stored.byteSize,
@@ -1678,6 +1686,7 @@ export class MotivationsService {
           select: {
             id: true,
             kind: true,
+            coversKinds: true,
             mimeType: true,
             byteSize: true,
             createdAt: true,
@@ -1734,7 +1743,12 @@ export class MotivationsService {
       files,
       documents: documentStatus(
         row.licenceType,
-        row.uploads.map((u) => u.kind),
+        // ⚠️ kind AND coversKinds. One membership certificate is both the
+        // association card and the letter of good standing; counting only
+        // `kind` would leave the second row asking for a paper already in the
+        // pack. buildAnnexures deliberately still sees `kind` ALONE — the
+        // document gets one annexure letter, because it is one page.
+        row.uploads.flatMap((u) => [u.kind, ...u.coversKinds]),
         // Their answers decide one of the requirements: a licence is needed
         // for every firearm they have told us they already own.
         answers,
@@ -1747,7 +1761,9 @@ export class MotivationsService {
       kinds: pickableKinds(
         row.licenceType,
         answers,
-        row.uploads.map((u) => u.kind),
+        // Same union as the checklist: a row already answered by a covering
+        // document must not still be offered as the next thing to photograph.
+        row.uploads.flatMap((u) => [u.kind, ...u.coversKinds]),
       ),
     };
   }

@@ -26,6 +26,8 @@ export class LicenceApiError extends Error {
 export type CredentialKind =
   | 'FIREARM_LICENCE'
   | 'COMPETENCY_CERTIFICATE'
+  /** Everything an association says about a member. See KIND_LABELS. */
+  | 'DEDICATED_DISCIPLINE'
   | 'DEDICATED_STATUS'
   | 'DEDICATED_HUNTER'
   | 'PROFESSIONAL_HUNTER'
@@ -248,24 +250,21 @@ export const licenceCentreApi = {
 export const KIND_LABELS: Record<CredentialKind, string> = {
   FIREARM_LICENCE: 'Firearm licence',
   COMPETENCY_CERTIFICATE: 'Competency certificate',
-  // The two dedicated statuses are separate accreditations with separate
-  // certificates and separate expiry dates, even where one association
-  // issues both.
+  // ⚠️ ONE LINE WHERE THERE WERE FOUR. A membership certificate, a dedicated
+  // sport shooter or hunter status, a section 16 letter of good standing and
+  // a professional hunter registration all arrive from an association about
+  // the same member — and one page routinely does several of those jobs at
+  // once. Four menu entries made the member choose, and made us guess.
+  DEDICATED_DISCIPLINE: 'Association status or membership',
+  PROFICIENCY: 'Proficiency certificate',
+  OTHER: 'Something else',
+  // ── retired, never offered ───────────────────────────────────────────
+  // Kept only so rows filed before the consolidation still render a label
+  // instead of a raw enum name. Postgres cannot drop an enum value.
   DEDICATED_STATUS: 'Dedicated sport shooter',
   DEDICATED_HUNTER: 'Dedicated hunter',
-  // ⚠️ NOT dedicated status. A PH registration is a provincial nature
-  // conservation qualification to hunt for a client. It is kept here because
-  // it expires and members want it tracked — never because it evidences
-  // anything under section 16.
   PROFESSIONAL_HUNTER: 'Professional hunter (PH)',
-  PROFICIENCY: 'Proficiency certificate',
-  // ⚠️ SEPARATE FROM THE STATUS ITSELF, because it is a separate piece of
-  // paper with its OWN validity window — the status certificate carries an
-  // issue date and never expires, while the letter runs out. Filing them
-  // together would mean chasing the wrong date, which is the one job the
-  // vault exists to do.
   GOOD_STANDING: 'Letter of good standing (section 16)',
-  OTHER: 'Something else',
 };
 
 /** Colour and words for each state. `unknown` is a real state, not a blank. */

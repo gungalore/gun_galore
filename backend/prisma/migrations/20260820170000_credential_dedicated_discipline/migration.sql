@@ -1,0 +1,11 @@
+-- One kind for everything an association says about a member.
+--
+-- ⚠️ THIS FILE ADDS THE VALUE AND NOTHING ELSE, ON PURPOSE. Postgres refuses
+-- to USE a new enum value in the same transaction that added it, and Prisma
+-- wraps each migration file in one transaction — so an ADD VALUE followed by
+-- an UPDATE in the same file dies with "unsafe use of new value of enum type".
+-- The backfill is the next migration.
+--
+-- ADD VALUE is one-way: there is no ALTER TYPE ... DROP VALUE. The four kinds
+-- this replaces stay in the type forever and are retired in the schema instead.
+ALTER TYPE "CredentialKind" ADD VALUE IF NOT EXISTS 'DEDICATED_DISCIPLINE';

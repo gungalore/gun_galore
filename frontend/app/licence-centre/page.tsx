@@ -41,13 +41,19 @@ import {
 /** Mirrors UPLOAD_MIME in licence-centre.controller.ts. NO HEIC. */
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 
+/**
+ * What a member can file a document as.
+ *
+ * ⚠️ THE FOUR ASSOCIATION KINDS ARE GONE FROM THIS LIST, deliberately. They
+ * still exist in the enum — Postgres cannot drop a value — but offering them
+ * would put a document outside every query that now looks for
+ * DEDICATED_DISCIPLINE, and it would put the member back in front of the
+ * choice that made us file a sport-shooter status as a hunter's.
+ */
 const KINDS: CredentialKind[] = [
   'FIREARM_LICENCE',
   'COMPETENCY_CERTIFICATE',
-  'DEDICATED_STATUS',
-  'DEDICATED_HUNTER',
-  'GOOD_STANDING',
-  'PROFESSIONAL_HUNTER',
+  'DEDICATED_DISCIPLINE',
   'PROFICIENCY',
   'OTHER',
 ];
@@ -155,7 +161,19 @@ export default function LicenceCentrePage() {
           </p>
         ) : (
           <div className="mt-2 space-y-2">
-            {KINDS.filter((k) => rows.some((r) => r.kind === k)).map((k) => (
+            {/* ⚠️ NOT `KINDS.filter(...)`. KINDS is the ADD menu, and the four
+                association kinds were just removed from it — so grouping by it
+                alone would make any row still holding a retired kind vanish
+                from the member's own list entirely. The migration converts
+                them, but "we think the migration ran" is not a good enough
+                reason to be unable to see your own document. Menu order first,
+                then anything else present. */}
+            {[
+              ...KINDS.filter((k) => rows.some((r) => r.kind === k)),
+              ...[...new Set(rows.map((r) => r.kind))].filter(
+                (k) => !KINDS.includes(k),
+              ),
+            ].map((k) => (
               <KindGroup
                 key={k}
                 kind={k}

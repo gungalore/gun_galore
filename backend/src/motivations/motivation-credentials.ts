@@ -272,7 +272,12 @@ export function credentialOffer(
  * authority, and filing it as association membership would put a wrong claim
  * in somebody's application.
  */
-const DEDICATED_KINDS = new Set(['DEDICATED_STATUS', 'DEDICATED_HUNTER']);
+const DEDICATED_KINDS = new Set([
+  'DEDICATED_DISCIPLINE',
+  // Retired, still held by rows filed before the consolidation.
+  'DEDICATED_STATUS',
+  'DEDICATED_HUNTER',
+]);
 
 /**
  * Which vault documents are worth showing as "you have this already" against
@@ -362,14 +367,34 @@ export function credentialChoices(
   return { competency, dedicated };
 }
 
-export const CREDENTIAL_TO_UPLOAD: Record<string, string> = {
-  FIREARM_LICENCE: 'CURRENT_LICENCE',
-  COMPETENCY_CERTIFICATE: 'COMPETENCY_CERTIFICATE',
-  DEDICATED_STATUS: 'ASSOCIATION_CARD',
-  DEDICATED_HUNTER: 'ASSOCIATION_CARD',
-  GOOD_STANDING: 'GOOD_STANDING_LETTER',
-  PROFICIENCY: 'PROFICIENCY_CERTIFICATE',
+/**
+ * ⚠️ ONE VAULT DOCUMENT CAN SATISFY SEVERAL CHECKLIST ROWS, so this is a list.
+ *
+ * It was one-to-one, which was exactly wrong for the document that prompted
+ * the consolidation: a single membership certificate that is both the
+ * association card and the section 16 letter of good standing could satisfy
+ * one row or the other, never both, and the applicant was asked to upload a
+ * paper they had already given us.
+ *
+ * FIRST ENTRY IS THE PRIMARY — the kind the stored upload row actually gets.
+ * The rest ride along in MotivationUpload.coversKinds, because a second row
+ * for the same bytes would print the same page twice in the pack.
+ */
+export const CREDENTIAL_TO_UPLOAD: Record<string, string[]> = {
+  FIREARM_LICENCE: ['CURRENT_LICENCE'],
+  COMPETENCY_CERTIFICATE: ['COMPETENCY_CERTIFICATE'],
+  DEDICATED_DISCIPLINE: ['ASSOCIATION_CARD', 'GOOD_STANDING_LETTER'],
+  PROFICIENCY: ['PROFICIENCY_CERTIFICATE'],
+  // Retired kinds, kept so rows filed before the consolidation still map.
+  DEDICATED_STATUS: ['ASSOCIATION_CARD'],
+  DEDICATED_HUNTER: ['ASSOCIATION_CARD'],
+  GOOD_STANDING: ['GOOD_STANDING_LETTER'],
 };
+
+/** The checklist row a vault document is filed as. */
+export function primaryUploadKind(credentialKind: string): string | undefined {
+  return CREDENTIAL_TO_UPLOAD[credentialKind]?.[0];
+}
 
 /**
  * The two documents a section 16 pack can be handed automatically.
