@@ -1,5 +1,20 @@
-import { IsBoolean, IsEnum, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { MotivationLicenceType } from '@prisma/client';
+import {
+  COLOURWAY_KEYS,
+  FORMAT_KEYS,
+  type Colourway,
+  type TemplateFormat,
+} from '../motivation-pdf.service';
 
 // DTO classes are declared in dependency order and one concern per file.
 //
@@ -60,4 +75,26 @@ export class AnswerFollowUpDto {
   @IsNotEmpty({ message: 'Please write an answer first.' })
   @MaxLength(4000)
   answer!: string;
+}
+
+/**
+ * The template the applicant picked in the carousel.
+ *
+ * ⚠️ VALIDATED AS A MEMBER OF THE LIST, not as "a string". These values are
+ * written into a plain VARCHAR (no Postgres enum, so adding a template costs
+ * no migration) — which means this DTO is the only place a typo gets caught
+ * before it reaches the column. The renderer still falls back on read, so a
+ * bad value can never fail a download; this just stops it being stored.
+ *
+ * Both fields optional so the picker can change the colour without resending
+ * the format, and vice versa.
+ */
+export class SetTemplateDto {
+  @IsOptional()
+  @IsIn(FORMAT_KEYS, { message: 'That is not one of our formats.' })
+  format?: TemplateFormat;
+
+  @IsOptional()
+  @IsIn(COLOURWAY_KEYS, { message: 'That is not one of our colours.' })
+  colourway?: Colourway;
 }

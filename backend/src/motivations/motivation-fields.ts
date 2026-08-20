@@ -358,7 +358,19 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Competency certificate number',
     kind: 'short',
     section: 'About you',
-    help: 'As printed on your competency certificate. You need the certificate in hand — SAPS will not take a licence application while competency is still being applied for.',
+    // ⚠’️ THE DEAD END NEEDED AN ONWARD PATH, NOT JUST A GATE. This field is
+    // required, so an applicant without a certificate hits an unfillable box
+    // and stops — and the old help text told them why they were stuck without
+    // telling them what to do about it.
+    //
+    // Competency is a SEPARATE, EARLIER application to the same DFO: training
+    // with an accredited provider or the PFTC, its own form, fingerprints
+    // taken by the DFO, its own fee, and a wait measured in months. Section
+    // 6(2) is why no licence can issue before it is granted.
+    //
+    // Do not name a waiting period in months as a fact — it varies by
+    // province and by year, and a number here would be quoted back to us.
+    help: 'As printed on your competency certificate. You need the certificate in hand — SAPS will not take a licence application while competency is still being applied for. If you have not applied for competency yet, that is a separate, earlier application to the same DFO: you complete the prescribed training with an accredited provider or the PFTC, lodge the competency form, have your fingerprints taken at the station and pay its own fee. Section 6(2) of the Act is why the licence cannot be issued until competency has been granted. Come back to this once the certificate is in your hand.',
     required: true,
     sensitive: true,
     maxLength: 60,
@@ -1770,6 +1782,15 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'date',
       section: 'The existing licence',
       required: true,
+      // ⚠️ THE DEADLINE, ON THE FIELD THAT GOVERNS IT. We ask for this date
+      // and then said nothing about the one rule attached to it — and an
+      // applicant who came straight to a renewal without ever opening the
+      // Licence Centre had no other surface that would tell them.
+      //
+      // Says what protection is LOST, never what happens if you are late:
+      // sections 24 and 28 are under a suspended declaration of
+      // unconstitutionality pending confirmation.
+      help: 'SAPS asks for a renewal application at least 90 days before this date, and a licence lodged in time stays valid until the application is decided. If you are already inside 90 days, lodge as soon as your pack is ready — the SAPS 518(a) asks you to give the reason in writing.',
       // A section 24 renewal is by definition lodged within about a year of
       // the expiry it renews, so the current decade page is where it belongs
       // and a decade strip would be noise.

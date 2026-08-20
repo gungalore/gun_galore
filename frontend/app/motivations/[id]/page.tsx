@@ -11,6 +11,7 @@ import DocumentChecklist, {
 import { shapeForKind } from '@/lib/scan/shapes';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
+import MotivationTemplatePicker from '@/components/motivation-template-picker';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,6 +31,9 @@ import {
   UploadRow,
   SAPS271_FILL,
   SAPS271_OPT_KEY,
+  type Colourway,
+  type TemplateCatalogue,
+  type TemplateFormat,
   groupBySection,
   motivationsApi,
   visibleFields,
@@ -169,6 +173,25 @@ export default function MotivationWizardPage() {
   // Values read off uploaded documents, waiting to be confirmed. NOT answers.
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
 
+  // ── The template picker ─────────────────────────────────────
+  //
+  // ⚠️ THE SELECTION IS HELD LOCALLY AND APPLIED OPTIMISTICALLY. Picking a
+  // colour has to recolour the preview in the same frame the finger lifts; a
+  // swatch that waits for a round trip before it moves reads as broken, and
+  // this is the one control on the page a member will press repeatedly just
+  // to look at the result.
+  //
+  // Safe to do here precisely because it is NOT an answer: the worst case of
+  // a failed save is a document set in the previous colour, which is why the
+  // failure line says so rather than silently reverting under their cursor.
+  const [catalogue, setCatalogue] = useState<TemplateCatalogue | null>(null);
+  const [template, setTemplate] = useState<{
+    format: TemplateFormat;
+    colourway: Colourway;
+  }>({ format: 'standard', colourway: 'slate' });
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+
   // A stable getter, so the effects below do not re-run every render just
   // because Clerk handed back a new function identity.
   const token = useCallback(() => getToken(), [getToken]);
@@ -212,6 +235,16 @@ export default function MotivationWizardPage() {
         } catch {
           /* prefill is a courtesy; never block the wizard on it */
         }
+        // The template picker. Its own try, and deliberately last: a
+        // catalogue that will not load must cost the member nothing more than
+        // the picker — the document renders in the default template either
+        // way, so failing the whole page over a colour chart would be absurd.
+        try {
+          setCatalogue(await motivationsApi.templates(token));
+          if (d.template) setTemplate(d.template);
+        } catch {
+          /* no picker; the standard template still renders */
+        }
       } catch (e) {
         if (alive) {
           setError(
@@ -228,6 +261,38 @@ export default function MotivationWizardPage() {
       alive = false;
     };
   }, [id, token]);
+
+  /**
+   * Apply a template choice.
+   *
+   * ⚠️ SENDS ONLY WHAT CHANGED. Spreading the whole selection would mean a
+   * colour tap also rewrites the format, and two quick taps on different
+   * controls would race with one another's stale copy — the second request
+   * carrying the first's pre-click format and undoing it.
+   */
+  const chooseTemplate = useCallback(
+    async (choice: { format?: TemplateFormat; colourway?: Colourway }) => {
+      setTemplate((t) => ({ ...t, ...choice }));
+      setTemplateError(null);
+      setTemplateSaving(true);
+      try {
+        const saved = await motivationsApi.setTemplate(token, id, choice);
+        setTemplate(saved);
+        setDetail((d) => (d ? { ...d, template: saved } : d));
+      } catch (e) {
+        // Left showing what they picked, not reverted under their cursor —
+        // and told plainly which one the document would actually come out in.
+        setTemplateError(
+          e instanceof MotivationApiError
+            ? e.message
+            : 'We could not save that choice. Your document will use the last one that saved.',
+        );
+      } finally {
+        setTemplateSaving(false);
+      }
+    },
+    [id, token],
+  );
 
   // Debounced autosave. The timer is keyed on the answers object, so a burst of
   // typing collapses into one request once they pause.
@@ -1564,6 +1629,29 @@ export default function MotivationWizardPage() {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {/* ── The template ────────────────────────────────────────
+          Placed BEFORE the declaration rather than after the download, so it
+          is a choice made while they are still building rather than a setting
+          discovered afterwards. It stays live once the document exists — the
+          PDF is re-rendered from stored text on every download, so changing
+          the colour of a finished pack costs one query and no rewrite. */}
+      {catalogue && (
+        <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
+          <MotivationTemplatePicker
+            catalogue={catalogue}
+            format={template.format}
+            colourway={template.colourway}
+            // Defaults to marked when the server did not say. Erring the other
+            // way would show a clean preview of a document that arrives
+            // stamped, which is selling something we do not hand over.
+            watermarked={detail.watermarked !== false}
+            onChange={chooseTemplate}
+            saving={templateSaving}
+            error={templateError}
+          />
         </section>
       )}
 

@@ -86,6 +86,10 @@ export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
   SAFE_PHOTO: 'Photographs of your safe (earlier upload)',
   SAFE_INSTALLATION: 'Photograph of the safe bolted to the wall',
   CHARACTER_REFERENCE: 'Character reference(s)',
+  SHOOTING_ACTIVITY_LOG: 'Your record of shooting activities',
+  FIREARM_SOURCE_PROOF: 'Where the firearm is coming from',
+  SELLER_LICENCE: "The current owner's licence",
+  EXECUTOR_APPOINTMENT: 'Letter of appointment as executor',
   INCIDENT_REPORT: 'Incident report / SAPS case number',
   PREVIOUS_MOTIVATION: 'Previous motivation',
   OTHER: 'Supporting document',
@@ -101,16 +105,99 @@ export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
 // The three shots are now three MotivationUploadKind values, which the
 // requirement engine already knows how to count.
 
-/** Annexure lettering order — reading order, not upload order. */
-const ANNEXURE_ORDER: MotivationUploadKind[] = [
+/**
+ * Annexure lettering order — reading order, not upload order.
+ *
+ * ⚠️ THIS SEQUENCE IS COPIED FROM A REAL PACK, NOT INVENTED. The operator
+ * supplied the annexure list a professional motivation writer actually files
+ * (2026-08-20), and it is the order below: identity, then the two
+ * certificates, then address and employment, then the safe, then the
+ * applicant's record, then the association documents, then where the firearm
+ * is coming from.
+ *
+ * Ours previously put the three association documents at F-H, ahead of the
+ * safe photographs. That is not wrong so much as unfamiliar — and on a
+ * document a DFO reads dozens of, unfamiliar costs attention that should be
+ * going to the argument. Matching the sequence they already read is free.
+ */
+/**
+ * Documents WE produce that take a letter in the annexure sequence.
+ *
+ * ⚠️ AN ANNEXURE IS NOT THE SAME THING AS AN UPLOAD, and treating them as
+ * one is what hid a missing document for weeks. The lettering used to walk a
+ * list of upload kinds, so anything the applicant did not upload could not be
+ * lettered — which silently excluded every page we generate ourselves. The
+ * checklist meanwhile listed the prior-notice request under "Your pack" and
+ * ticked it green, so the gap was invisible from both ends.
+ */
+export type GeneratedAnnexureId = 'PRIOR_NOTICE_REQUEST';
+
+export const GENERATED_ANNEXURE_LABELS: Record<GeneratedAnnexureId, string> = {
+  PRIOR_NOTICE_REQUEST: 'Request for prior notice and written reasons',
+};
+
+/** Either an uploaded document or one we generate. */
+export type AnnexureKind = MotivationUploadKind | GeneratedAnnexureId;
+
+/**
+ * KINDS THAT SHARE ONE ANNEXURE LETTER.
+ *
+ * ⚠️ THE SAFE IS ONE ANNEXURE, NOT FOUR, and getting this wrong shifted every
+ * letter in the pack. The four safe photographs are four UPLOAD KINDS on
+ * purpose — the requirement engine has to know which of the three shots is
+ * missing, and a file has to be filed as the bolts shot specifically or it is
+ * unplaceable. But a reviewer holding the paper sees one thing: the safe. The
+ * operator's reference pack letters it once, as "F. PHOTOS OF SAFE".
+ *
+ * Lettering them separately pushed a nineteen-document pack out to S where a
+ * professional one ends at O, which is the kind of difference that makes a
+ * familiar document read as an unfamiliar one.
+ *
+ * The three shots stay individually citable, because several copies under one
+ * letter already print as "(1 of 4)", "(2 of 4)" with their own captions —
+ * the same machinery that handles two copies of an ID. So the letter
+ * collapses and nothing about the evidence does.
+ */
+const LETTER_GROUPS: Partial<
+  Record<MotivationUploadKind, { id: string; label: string }>
+> = {
+  SAFE_PHOTO_CLOSED: { id: 'safe', label: 'Photographs of your safe' },
+  SAFE_PHOTO_AJAR: { id: 'safe', label: 'Photographs of your safe' },
+  SAFE_PHOTO_BOLTS: { id: 'safe', label: 'Photographs of your safe' },
+  SAFE_PHOTO: { id: 'safe', label: 'Photographs of your safe' },
+  SAFE_INSTALLATION: { id: 'safe', label: 'Photographs of your safe' },
+
+  // The reference pack's "K. MEMBERSHIP CERTIFICATES" — plural — covers both
+  // the membership certificate and the chairperson's declaration that the
+  // member is in good standing. They stay two upload kinds because they are
+  // two documents with two expiry dates, and the vault chases them
+  // separately; under one letter they read as what they are, which is one
+  // question about the applicant's association.
+  //
+  // ⚠️ THE ENDORSEMENT IS NOT IN THIS GROUP. It is about the FIREARM, not the
+  // membership — the association certifying that one specific rifle suits the
+  // discipline — and the reference pack letters it separately for that reason.
+  ASSOCIATION_CARD: {
+    id: 'association',
+    label: 'Association membership and good standing',
+  },
+  GOOD_STANDING_LETTER: {
+    id: 'association',
+    label: 'Association membership and good standing',
+  },
+};
+
+const ANNEXURE_ORDER: AnnexureKind[] = [
+  // A-C — who the applicant is and what they are qualified to hold.
   'IDENTITY_DOCUMENT',
   'PROFICIENCY_CERTIFICATE',
   'COMPETENCY_CERTIFICATE',
+  // D-E — where they live and what they do. Address matters twice over: the
+  // application is lodged at the DFO for the area where the applicant
+  // ordinarily resides.
   'ADDRESS_CONFIRMATION',
   'EMPLOYMENT_CONFIRMATION',
-  'ASSOCIATION_CARD',
-  'GOOD_STANDING_LETTER',
-  'ASSOCIATION_ENDORSEMENT',
+  // F — the safe.
   'SAFE_PHOTO_CLOSED',
   'SAFE_PHOTO_AJAR',
   'SAFE_PHOTO_BOLTS',
@@ -118,18 +205,130 @@ const ANNEXURE_ORDER: MotivationUploadKind[] = [
   // fall out of the printed index.
   'SAFE_PHOTO',
   'SAFE_INSTALLATION',
+  // G — ours, not theirs. See motivation-prior-notice.ts for why a pack
+  // carries this and why it is filed WITH the application rather than after a
+  // decision.
+  'PRIOR_NOTICE_REQUEST',
+  // H-J — the applicant's own record.
   'CURRENT_LICENCE',
-  'INCIDENT_REPORT',
   'CHARACTER_REFERENCE',
+  'SHOOTING_ACTIVITY_LOG',
+  // K-L — the association. Membership, then good standing (the sworn
+  // statement s 16(2) names), then the endorsement for this firearm.
+  'ASSOCIATION_CARD',
+  'GOOD_STANDING_LETTER',
+  'ASSOCIATION_ENDORSEMENT',
+  // M-O — where the firearm is coming from, and by what authority.
+  'FIREARM_SOURCE_PROOF',
+  'SELLER_LICENCE',
+  'EXECUTOR_APPOINTMENT',
+  // Last: things only some applications carry.
+  'INCIDENT_REPORT',
   'PREVIOUS_MOTIVATION',
   'OTHER',
 ] as const;
 
+/**
+ * WHICH COPIES A COMMISSIONER OF OATHS HAS TO STAMP.
+ *
+ * ⚠️ ONE OF THESE IS LAW AND THE REST ARE PRACTICE, AND THE DIFFERENCE
+ * MATTERS. Regulation 13(4)(b) of the Firearms Control Regulations, 2004
+ * requires a CERTIFIED copy of the identity document with an application by
+ * an individual — that is the only one the instrument itself demands. Every
+ * other 'expected' row below is what stations actually ask for when a copy
+ * stands in for an original, and practice differs between them.
+ *
+ * We print the distinction rather than flattening it, because telling an
+ * applicant that six documents are legally required to be certified when one
+ * is would be the same kind of confident-sounding wrongness the whole
+ * sa-firearms-law discipline exists to prevent — and because a person who
+ * knows which single copy is non-negotiable can triage the queue at the
+ * police station.
+ *
+ * 'none' is for documents that are ORIGINALS, not copies: a letter of good
+ * standing signed by the association, an endorsement, photographs of a safe.
+ * Nobody certifies a photograph of their own safe against an original
+ * photograph, and a stamp block beside one would just be noise.
+ */
+export type CertificationLevel = 'required' | 'expected' | 'none';
+
+export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
+  // Ours, signed by the applicant in front of nobody in particular. Not a
+  // copy of anything, so there is nothing to certify it against.
+  PRIOR_NOTICE_REQUEST: 'none',
+
+  // reg 13(4)(b) — the only one the Regulations themselves require.
+  IDENTITY_DOCUMENT: 'required',
+
+  // ⚠️ EXACTLY TWO MORE, AND THE FIRST VERSION OF THIS MAP HAD FIVE.
+  //
+  // I marked address confirmation, the association card and existing licences
+  // as needing a stamp because they are copies of originals and it seemed to
+  // follow. The operator's real reference pack settles it: the only annexures
+  // marked "(Certified)" are the ID, the proficiency certificate and the
+  // competency certificate. Address confirmation is filed uncertified.
+  //
+  // The difference is not cosmetic — it is three extra documents an applicant
+  // would have queued at a police station for, on our say-so, because the
+  // reasoning sounded right. Evidence from a pack that is actually filed beats
+  // an inference every time.
+  COMPETENCY_CERTIFICATE: 'expected',
+  PROFICIENCY_CERTIFICATE: 'expected',
+
+  // ⚠️ ADDRESS CONFIRMATION MOVED OUT AND THEN BACK IN, WITHIN THE HOUR.
+  // I first marked it 'expected' by inference, then dropped it to 'none'
+  // because the operator's filed reference pack marks only the ID, the
+  // proficiency certificate and the competency certificate "(Certified)".
+  // Then SAPS's LIVE application page turned out to list "Certified proof of
+  // residence" in terms — the page I had originally read was an orphaned
+  // older copy, which is also why our fee figures were R70/R140 instead of
+  // R88/R175.
+  //
+  // It sits at 'expected' because the asymmetry is one-sided: certification
+  // is free, at the same station they are already going to, and being
+  // certified when it was not needed costs nothing.
+  ADDRESS_CONFIRMATION: 'expected',
+
+  // Filed as they are. Copies, but not ones anybody certifies in practice.
+  CURRENT_LICENCE: 'none',
+  ASSOCIATION_CARD: 'none',
+
+  // Originals, signed by their author. Not copies of anything.
+  GOOD_STANDING_LETTER: 'none',
+  ASSOCIATION_ENDORSEMENT: 'none',
+  EMPLOYMENT_CONFIRMATION: 'none',
+  CHARACTER_REFERENCE: 'none',
+  SHOOTING_ACTIVITY_LOG: 'none',
+  INCIDENT_REPORT: 'none',
+  PREVIOUS_MOTIVATION: 'none',
+
+  // Where the firearm comes from. The dealer's invoice and the seller's
+  // permission letter are originals; the seller's licence is their copy to
+  // supply, and certifying somebody else's licence is not the applicant's to
+  // arrange. The executor's letter of appointment is issued by the Master.
+  FIREARM_SOURCE_PROOF: 'none',
+  SELLER_LICENCE: 'none',
+  EXECUTOR_APPOINTMENT: 'none',
+
+  // Photographs.
+  SAFE_PHOTO_CLOSED: 'none',
+  SAFE_PHOTO_AJAR: 'none',
+  SAFE_PHOTO_BOLTS: 'none',
+  SAFE_PHOTO: 'none',
+  SAFE_INSTALLATION: 'none',
+
+  OTHER: 'none',
+};
+
 export interface AnnexureEntry {
   letter: string;
-  kind: MotivationUploadKind;
+  kind: AnnexureKind;
   label: string;
   count: number;
+  /** Whether this annexure needs a commissioner's stamp, and how firmly. */
+  certification: CertificationLevel;
+  /** True for documents we produce rather than ones the applicant uploaded. */
+  generated?: true;
 }
 
 /**
@@ -142,20 +341,75 @@ export interface AnnexureEntry {
  * looking for the roll bolts can now be sent to a letter instead of to "one of
  * the photographs in Annexure G".
  */
-export function buildAnnexures(kinds: MotivationUploadKind[]): AnnexureEntry[] {
+export function buildAnnexures(
+  kinds: MotivationUploadKind[],
+  /**
+   * Documents we generate that are ready to go into this pack.
+   *
+   * Passed in rather than assumed, because a pack whose motivation has not
+   * been written yet has no prior-notice request either — and lettering a
+   * document that does not exist would put a gap in the index a reviewer
+   * would go looking for.
+   */
+  generated: GeneratedAnnexureId[] = [],
+): AnnexureEntry[] {
   const counts = new Map<MotivationUploadKind, number>();
   for (const k of kinds) counts.set(k, (counts.get(k) ?? 0) + 1);
+  const made = new Set(generated);
 
   const out: AnnexureEntry[] = [];
   let i = 0;
+  /** Letters already spent, so a grouped kind reuses its group's letter. */
+  const groupLetter = new Map<string, string>();
+
   for (const kind of ANNEXURE_ORDER) {
-    const count = counts.get(kind);
+    const isGenerated = kind in GENERATED_ANNEXURE_LABELS;
+    if (isGenerated) {
+      if (!made.has(kind as GeneratedAnnexureId)) continue;
+      out.push({
+        letter: String.fromCharCode(65 + i),
+        kind,
+        label: GENERATED_ANNEXURE_LABELS[kind as GeneratedAnnexureId],
+        count: 1,
+        certification: CERTIFICATION[kind] ?? 'none',
+        generated: true,
+      });
+      i++;
+      continue;
+    }
+    const uploadKind = kind as MotivationUploadKind;
+    const count = counts.get(uploadKind);
     if (!count) continue;
+
+    const group = LETTER_GROUPS[uploadKind];
+    if (group) {
+      const existing = groupLetter.get(group.id);
+      if (existing) {
+        // Same letter, one more document under it. The entry's count is what
+        // drives "(2 of 4)" on the printed copy, so it has to accumulate.
+        const row = out.find((e) => e.letter === existing);
+        if (row) row.count += count;
+        continue;
+      }
+      const letter = String.fromCharCode(65 + i);
+      groupLetter.set(group.id, letter);
+      out.push({
+        letter,
+        kind: uploadKind,
+        label: group.label,
+        count,
+        certification: CERTIFICATION[uploadKind] ?? 'none',
+      });
+      i++;
+      continue;
+    }
+
     out.push({
       letter: String.fromCharCode(65 + i),
-      kind,
-      label: UPLOAD_KIND_LABELS[kind],
+      kind: uploadKind,
+      label: UPLOAD_KIND_LABELS[uploadKind],
       count,
+      certification: CERTIFICATION[uploadKind] ?? 'none',
     });
     i++;
   }
@@ -173,6 +427,12 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'SAFE_PHOTO_BOLTS',
     'SAFE_INSTALLATION',
     'INCIDENT_REPORT',
+    // \u26a0\ufe0f WHERE THE FIREARM IS COMING FROM, ON EVERY LICENCE TYPE. This was
+    // missing entirely and it is annexure M in the operator's reference pack.
+    // A DFO cannot process an application for a firearm whose provenance is
+    // unstated \u2014 either it is coming out of a dealer's stock, or a named
+    // licence holder has agreed to transfer it. Nothing else is possible.
+    'FIREARM_SOURCE_PROOF',
   ],
   S15_OCCASIONAL_HUNTER: [
     'IDENTITY_DOCUMENT',
@@ -184,6 +444,9 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'SAFE_PHOTO_BOLTS',
     'SAFE_INSTALLATION',
     'CURRENT_LICENCE',
+    'FIREARM_SOURCE_PROOF',
+    // The evidence that they hunt, rather than the assertion that they do.
+    'SHOOTING_ACTIVITY_LOG',
   ],
   S16_DEDICATED_HUNTER: [
     'IDENTITY_DOCUMENT',
@@ -191,11 +454,15 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'PROFICIENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
     'ASSOCIATION_CARD',
+    'GOOD_STANDING_LETTER',
+    'ASSOCIATION_ENDORSEMENT',
     'SAFE_PHOTO_CLOSED',
     'SAFE_PHOTO_AJAR',
     'SAFE_PHOTO_BOLTS',
     'SAFE_INSTALLATION',
     'CURRENT_LICENCE',
+    'FIREARM_SOURCE_PROOF',
+    'SHOOTING_ACTIVITY_LOG',
   ],
   S16_DEDICATED_SPORT: [
     'IDENTITY_DOCUMENT',
@@ -203,12 +470,26 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'PROFICIENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
     'ASSOCIATION_CARD',
+    // \u26a0\ufe0f THE ONE SECTION 16(2) ACTUALLY NAMES, and it was not on this list
+    // for either section 16 type. The Act requires "a sworn statement or
+    // solemn declaration from the chairperson of an accredited hunting
+    // association or sports-shooting organisation ... stating that the
+    // applicant is a registered member" \u2014 so a section 16 pack without it is
+    // missing the document the section is built on, and the checklist was
+    // quietly not asking for it.
+    'GOOD_STANDING_LETTER',
+    'ASSOCIATION_ENDORSEMENT',
     'SAFE_PHOTO_CLOSED',
     'SAFE_PHOTO_AJAR',
     'SAFE_PHOTO_BOLTS',
     'SAFE_INSTALLATION',
     'CURRENT_LICENCE',
+    'FIREARM_SOURCE_PROOF',
+    'SHOOTING_ACTIVITY_LOG',
   ],
+  // \u26a0\ufe0f A RENEWAL HAS NO SOURCE DOCUMENT. The applicant already holds the
+  // firearm \u2014 asking where it is coming from would be asking them to prove a
+  // transfer that is not happening.
   S24_RENEWAL: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
@@ -246,19 +527,66 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
     note: 'This is the one copy the regulations require to be certified. Any police station or Commissioner of Oaths does it free. Bring the original as well — most DFOs certify the rest of your copies against the originals at the counter.',
   },
   {
+    // ⚠️ TWO SOURCES DISAGREE HERE, AND THE ASYMMETRY DECIDES IT. SAPS's
+    // live application page lists "Certified proof of residence"; the
+    // operator's actually-filed reference pack files this one uncertified.
+    // Certification is free and happens at the same police station the
+    // applicant is already travelling to, so being certified when it was not
+    // needed costs nothing, and being uncertified when the list says
+    // certified costs a second trip. Flagged for the DFO to settle.
     key: 'proof_of_residence',
     label: 'Proof of your residential address, not older than 3 months',
-    note: 'A municipal bill, bank statement or lease. The three-month rule is about how RECENT it is, not about certification — bring the original and the DFO will copy or certify it there. Practice varies by station, so ask yours what they want.',
+    note: 'A municipal bill, bank statement or lease from the last three months. SAPS’s own list asks for CERTIFIED proof of residence, so bring the original and have a copy certified — any police station does it free, and most DFOs do it at the counter. It also settles which DFO your application goes to: the one for the area where you ordinarily live. Practice varies by station, so ask yours.',
+    verifyBeforeUse: true,
   },
   {
+    // ⚠️ "TWO" WAS OURS, NOT SAPS'S, AND SO WAS THE TWO-YEAR RULE. Neither
+    // SAPS list for a NEW licence mentions references at all. Two testimonials
+    // appear only on the SAPS 517(g) competency RENEWAL, which is a different
+    // application, and regulation 23(3)(c)'s "two written testimonials" is for
+    // a non-resident seeking a temporary authorisation. No two-year threshold
+    // exists in the Act, in the Regulations, or on any SAPS page.
+    //
+    // What the Regulations DO prescribe is the CONTENT: regulation 13(7)
+    // requires a person recommending an applicant's character to state that
+    // they are a fit and proper person, of stable mental condition and not
+    // inclined to violence, and not dependent on any intoxicating or narcotic
+    // substance. That is worth far more to an applicant than an invented
+    // number, because it is what their referee has to actually write.
     key: 'character_references',
-    label: 'Two character references',
-    note: 'People who have known you for two years or more. Most DFOs prefer non-family: a colleague, neighbour, or community leader.',
+    label: 'Character references, if you have them',
+    note: 'Not on SAPS’s list for a new licence, but a strong pack usually carries one or two. Regulation 13(7) says anyone who recommends your character must also state that you are a fit and proper person, of stable mental condition and not inclined to violence, and not dependent on any intoxicating or narcotic substance — so give whoever writes yours those three points.',
   },
   {
-    key: 'saps_541',
-    label: 'SAPS 541 safe-storage undertaking, or a DFO safe inspection',
-    note: 'Ask your DFO which they use — stations differ.',
+    // ⚠️ THERE IS NO SAPS 541. This row named one for months and told the
+    // applicant to ask their DFO which form they use. The SAPS forms index
+    // runs 517 to 540 with no 541 in it, and forms/english/e541.pdf returns
+    // 404 while e539.pdf returns 200. We were sending people to a counter to
+    // ask for a form that does not exist.
+    //
+    // What actually happens, per SAPS's own application page, is not
+    // paperwork at all: the DFO asks you to install a safe within 14 days of
+    // applying, then INSPECTS YOUR PREMISES, and no licence issues until that
+    // report is in.
+    //
+    // ⚠️ THE NOTE SAYS "NO LICENCE IS ISSUED UNTIL", NOT "THE LICENCE
+    // FOLLOWS". The first draft used SAPS's own phrase, "the licence follows
+    // the successful inspection report", and the outcome-language test caught
+    // it on the word "successful" — correctly. Read by an applicant it says
+    // pass the inspection and the licence comes, which is a promise about an
+    // outcome we do not control. Stating the gate is true; stating what
+    // follows it is not ours to say.
+    //
+    // Careful drafting note: do NOT write that the Regulations contain no
+    // safe-storage declaration. Regulations 20(1)(b), 23(1)(b) and 33(1)(b)
+    // do prescribe written safe-custody declarations — for section 21
+    // temporary authorisations and dealer temporary trading, not for a
+    // section 13/15/16/24 licence. Hence "there is no form for this", scoped
+    // to this application.
+    key: 'safe_inspection',
+    label:
+      'A safe that meets the SABS standard, and a premises inspection by your DFO',
+    note: 'There is no form for this. Regulation 86 requires a safe built to SABS 953-1 or 953-2, and regulation 13(12) lets the Registrar issue your licence only once you comply. SAPS says the DFO asks you to install the safe within 14 days of applying and then inspects your premises, and no licence is issued until that inspection report is in. Some stations use a local undertaking of their own — ask yours which they do.',
     verifyBeforeUse: true,
   },
   {
@@ -271,28 +599,64 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
     note: 'Proof of purchase. If you bought it on All Outdoor, your invoice is in your orders.',
   },
   {
+    // ⚠️ SAPS ASKS FOR THE ORIGINAL, AND WE SAID "A COPY". Their licence-stage
+    // list reads "Your original competency certificate" — an applicant who
+    // brings only a photocopy is sent home.
+    //
+    // This is also where the TWO-STAGE structure belongs. Competency is a
+    // separate, EARLIER application to the same DFO with its own training,
+    // its own form, its own fingerprints, its own fee and a wait measured in
+    // months, and section 6(2) means no licence can be issued until it has
+    // been granted. The row had no note at all, so a first-time applicant had
+    // nowhere to learn that.
     key: 'competency_copy',
-    label: 'A copy of your SAPS competency certificate',
+    label: 'Your SAPS competency certificate — the original, plus a copy',
+    note: 'SAPS’s own list asks for your original competency certificate, so take it. The copy in your pack is what gets certified against it at the counter. If you have not applied for competency yet, that is a separate, earlier application with its own training, fingerprints, fee and waiting period — section 6(2) means no licence can be issued until it has been granted.',
   },
   {
     key: 'passport_photos',
     label: 'Two passport photographs',
-    // The SAPS 271 says PLAIN, not white — a detail that costs a second trip
-    // to the photographer if you take the wrong ones.
-    note: 'Colour, against a plain background. The form says "plain", not white.',
+    // ⚠️ FOUR QUALIFIERS, AND WE WERE STATING TWO. SAPS's own application
+    // guidance asks for "two unobscured passport-size colour photographs (with
+    // a neutral background) that are not older than three months" — at the
+    // competency stage and again at the licence stage.
+    //
+    // The one that catches people is the AGE. Nobody expects a photograph to
+    // expire, so the drawer photos from the last application come along, and
+    // the applicant finds out at the counter. "Unobscured" is the other:
+    // glasses, a hat, a fringe over an eyebrow.
+    //
+    // PLAIN vs NEUTRAL: the SAPS 271 form says plain, the website says
+    // neutral. Both rule out a patterned or busy background and neither says
+    // white, so the note says what they agree on rather than picking one.
+    note: 'Two, in colour, taken in the last three months, against a plain, neutral background, with your face unobscured — no hat, no sunglasses, nothing across your face. The age is the one that catches people: photographs from your last application will be sent back.',
   },
   {
     key: 'fee',
     label: 'The application fee, per firearm',
     // The AMOUNT changes and is marked for checking; the SEQUENCE does not,
     // and knowing it stops a wasted queue.
-    note: 'Per firearm, not per application. The DFO gives you a remittance advice, you pay at the station\u2019s own finance office, and the receipt goes back to the DFO to be attached. Confirm the current amount and what the station accepts \u2014 not every one takes cards.',
+    // The AMOUNTS are SAPS's own published figures and stay marked for
+    // checking; the SEQUENCE does not change, and knowing it stops a wasted
+    // queue. Reg 13(6) requires documentary proof of payment to be attached
+    // where the fee was paid at a police station under reg 96.
+    //
+    // ⚠️ "PER FIREARM, NOT PER APPLICATION" HAS NO SOURCE. It is not in the
+    // Act, not in the Regulations and not on any SAPS page — it comes from
+    // the operator. Kept because it came from someone who has lodged these,
+    // but it is the first question for the DFO.
+    note: 'Per firearm, not per application. SAPS currently publishes R175 for a firearm licence and R88 for a competency certificate. The DFO gives you a remittance advice (SAPS 523a), you pay at the station’s own finance office — cash or a bank-guaranteed cheque, not every station takes cards — and the Z263 receipt goes back to the DFO to be attached. Confirm the amount before you go.',
     verifyBeforeUse: true,
   },
   {
     key: 'originals',
     label: 'All your original documents',
-    note: 'ID, competency, existing licences, certificates — in case the DFO wants to see them. Keep the originals; hand over copies.',
+    // "Keep the originals; hand over copies" read as a universal rule and
+    // contradicted the row above it, where SAPS asks for the original
+    // competency certificate by name. Do NOT assert that SAPS retains it:
+    // sections 6(2), 10(2), 11(1) and 145(2)(h) all point the other way and
+    // nothing in either instrument provides for surrendering it.
+    note: 'ID, competency, existing licences, certificates — the DFO checks your copies against them. SAPS’s list singles out your original competency certificate, so that is the one not to leave at home. Ask the DFO what they keep and what you take back.',
   },
   {
     key: 'own_copy',
@@ -302,8 +666,17 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
   {
     key: 'acknowledgement',
     // Not a document they bring — the one they must not leave without.
-    label: 'Before you leave: the acknowledgement of receipt',
-    note: 'The DFO issues this once the application is accepted. It is your proof of the date you lodged, and your reference for any follow-up. Do not leave the station without it.',
+    label: 'Before you leave: the acknowledgement of receipt (SAPS 523)',
+    // Named, because asking for the right sheet by name is the difference
+    // between walking out with proof and walking out with a payment slip: the
+    // SAPS 523(a) is the REMITTANCE ADVICE telling you what to pay, and the
+    // two are one character apart.
+    //
+    // Annexure "A" item 32 prescribes the 523 via reg 13(2). That annexure is
+    // 2004 and states on its face that form numbers have changed since, which
+    // is why the number is given as a hint plus a confirm-with-your-DFO
+    // rather than as flat fact.
+    note: 'The DFO issues this once the application is accepted. It is your proof of the date you lodged and your reference for any follow-up, so do not leave the station without it. Ask for the acknowledgement of receipt by name — the SAPS 523(a) is the remittance advice telling you what to pay, which is a different sheet. Confirm the current number with your DFO.',
     verifyBeforeUse: true,
   },
   {
@@ -343,6 +716,41 @@ const S16_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
     // which, because a member who is told the law demands something will
     // repeat that to the DFO.
     note: 'It names the exact firearm — type, calibre, make, action and serial. The Act does not list it, but a DFO will ask for it, so do not travel without it.',
+  },
+];
+
+/**
+ * WHAT ONLY A RENEWAL NEEDS.
+ *
+ * ⚠️ THE 90-DAY DEADLINE REACHED THE APPLICANT NOWHERE. The Licence Centre
+ * knows the number — licence-dates.ts sets EXPIRING_WITHIN_DAYS = 90 and
+ * cites section 24(1) for it — but a person who came straight to a renewal
+ * motivation without ever opening the vault was never told, and buildChecklist
+ * had no S24 branch at all. We collect the expiry date and then said nothing
+ * about the one date that governs it.
+ *
+ * ⚠️ NEVER STATE A CONSEQUENCE FOR LATENESS. Say what protection is lost,
+ * not what happens: sections 24 and 28 are amendment-sensitive and are the
+ * subject of a suspended declaration of unconstitutionality pending
+ * confirmation. "Lodged in time and the licence stays valid while SAPS
+ * decides" is a statement about section 24(4). Anything about what befalls a
+ * lapsed licence is not ours to make.
+ *
+ * ⚠️ DO NOT IMPORT THE CONSTANT FROM licence-centre.
+ * licence-centre.module.spec.ts asserts the dependency runs one way only.
+ */
+const S24_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
+  {
+    key: 's24_ninety_days',
+    label: 'Lodge at least 90 days before the expiry date',
+    note: 'SAPS asks for the renewal application at least 90 days before your licence expires, and a licence lodged in time stays valid until the application is decided. If you are already inside 90 days, lodge as soon as your pack is ready — the SAPS 518(a) asks you to give the reason in writing. Confirm the timing with your DFO.',
+    verifyBeforeUse: true,
+  },
+  {
+    key: 's24_keep_acknowledgement',
+    label: 'Keep the acknowledgement of receipt somewhere safe',
+    note: 'On a renewal it is worth more than a filing note: regulation 13(13) makes it, on production in court, sufficient proof that you complied with section 24.',
+    verifyBeforeUse: true,
   },
 ];
 
@@ -410,6 +818,7 @@ export function buildChecklist(
     licenceType === 'S16_DEDICATED_SPORT'
       ? S16_MUST_BRING
       : []),
+    ...(licenceType === 'S24_RENEWAL' ? S24_MUST_BRING : []),
   ];
   const theirs: ChecklistItem[] = bring.map((i) => ({
     ...i,
@@ -430,14 +839,28 @@ export function buildChecklist(
       },
       {
         key: 'theirs',
-        title: 'Take these to the police station',
+        title: 'Take these to your Designated Firearms Officer',
         // ⚠️ WHY THIS LIST EXISTS, in one sentence the applicant can act on.
         // Regulation 13(10): the DFO does not have to accept an incomplete
         // application, and the acknowledgement is withheld until the pack IS
         // complete. A pack checked before you travel is the difference between
         // walking out with a receipt and walking out with nothing.
+        // ⚠️ WHICH DFO, AND WHO HANDS IT IN. Neither was stated anywhere.
+        // Reg 13(4)(a): "An application must, unless otherwise specifically
+        // stated, be submitted by the applicant in person to the relevant
+        // Designated Firearms Officer", and reg 1(xix) defines "relevant" as
+        // the officer for the area where the applicant ordinarily resides.
+        // Reg 13(9)(a) and 13(10) independently need the applicant in the
+        // flesh — the DFO takes their fingerprints at the counter and checks
+        // them against their identity before any acknowledgement issues,
+        // which is the sharp answer to "can my wife drop it off".
+        //
+        // Two drafting cautions kept in the wording: reg 1(xix) has a
+        // business limb, and reg 13(4)(a) opens "unless otherwise
+        // specifically stated" — so this must not be phrased as admitting no
+        // exception ever.
         intro:
-          'We do not hold these — you bring them yourself. A DFO does not have to accept an incomplete application, and will not issue the acknowledgement until it is complete, so it is worth checking every line before you travel. Requirements differ between stations and this list is not exhaustive: confirm it with your own DFO.',
+          'The application goes to the Designated Firearms Officer for the area where you ordinarily live — not to whichever station is nearest or quietest — and you normally have to hand it in yourself. Your spouse, your dealer or a friend cannot lodge it for you: the DFO takes your fingerprints at the counter and checks them against your identity before anything is accepted. A DFO does not have to accept an incomplete application and will not issue the acknowledgement until it is complete, so it is worth checking every line before you travel. Requirements differ between stations and this list is not exhaustive: confirm it with your own DFO.',
         items: theirs,
       },
     ],

@@ -81,21 +81,36 @@ export interface DocumentNeed {
  * about a requirement sends someone to a counter to be turned away.
  */
 const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
+  // ⚠️ THE SAFE PHOTOGRAPHS CAME OUT OF THIS LIST ON 2026-08-20, and the
+  // reason is a sequencing fact rather than a nicety.
+  //
+  // This tier renders under the heading "SAPS will not process the
+  // application without these". No SAPS document list, at either stage,
+  // mentions a photograph of a safe. Regulation 13 does not list a safe
+  // document among what accompanies an application; regulation 13(12)
+  // conditions the ISSUE of the licence, not the lodging of the application.
+  // The only photograph either instrument prescribes is the applicant's own
+  // portrait, reg 13(16)(a)-(c), 32 x 40 mm.
+  //
+  // SAPS's published sequence is in fact the REVERSE of ours: you lodge, the
+  // DFO then asks you to install a safe within 14 days, and then inspects
+  // your premises. Telling an applicant they cannot apply until they have
+  // photographed a safe they have not bought is telling them to delay lodging
+  // — which on a renewal is the one thing that costs them a protection.
+  //
+  // They move to EXPECTED, where the wording is "not demanded by the Act, and
+  // the DFO will want it anyway". Most stations do want the photographs up
+  // front, so nothing about the advice changes; only the claim that SAPS will
+  // refuse the pack without them.
   S13_SELF_DEFENCE: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
   ],
   S15_OCCASIONAL_HUNTER: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
   ],
   // Dedicated status IS the basis of a section 16 application, so proof of
   // membership stops being a nicety and becomes part of the case.
@@ -103,9 +118,6 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
     // THREE SEPARATE PIECES OF PAPER, and the association issues them
     // separately: the status certificate, the sworn letter of good standing,
     // and an endorsement naming the firearm. One slot for all three meant an
@@ -118,9 +130,6 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
     // THREE SEPARATE PIECES OF PAPER, and the association issues them
     // separately: the status certificate, the sworn letter of good standing,
     // and an endorsement naming the firearm. One slot for all three meant an
@@ -131,13 +140,17 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   ],
   // A renewal is a different form (SAPS 518a) and a different pack; the one
   // thing it always needs is the licence being renewed.
+  // ⚠️ COMPETENCY WAS MISSING FROM THE RENEWAL PACK ENTIRELY, and the two
+  // surfaces disagreed about it: motivation-checklist.ts already listed it
+  // under RECOMMENDED.S24_RENEWAL. Absent from all three tiers here,
+  // documentStatus() omitted the row and pickableKinds() filed the competency
+  // certificate at tier 'extra', next to "Something else you would like to
+  // attach" — for an application that cannot be granted without it.
   S24_RENEWAL: [
     'IDENTITY_DOCUMENT',
+    'COMPETENCY_CERTIFICATE',
     'CURRENT_LICENCE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
   ],
 };
 
@@ -148,21 +161,64 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
  * something the Act demands, and apart from STRENGTHENS so nothing here is
  * described as optional. See DocumentTier.
  */
+/** The three shots, in one place, because five lists want the same three. */
+const SAFE_SHOTS: MotivationUploadKind[] = [
+  'SAFE_PHOTO_CLOSED',
+  'SAFE_PHOTO_AJAR',
+  'SAFE_PHOTO_BOLTS',
+];
+
 const EXPECTED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
-  S13_SELF_DEFENCE: [],
-  S15_OCCASIONAL_HUNTER: [],
-  S16_DEDICATED_HUNTER: ['ASSOCIATION_ENDORSEMENT'],
-  S16_DEDICATED_SPORT: ['ASSOCIATION_ENDORSEMENT'],
-  S24_RENEWAL: [],
+  // ⚠️ WHERE THE FIREARM IS COMING FROM, ON EVERY APPLICATION BUT A RENEWAL.
+  // Annexure M in a professional pack, and it was reaching the picker only as
+  // an "extra" — buried under everything else, when it answers a question a
+  // DFO has to have an answer to. Either the firearm is coming out of a
+  // dealer's stock, or a named licence holder has agreed to transfer it;
+  // there is no third possibility, and an application that cannot say which
+  // stalls.
+  //
+  // EXPECTED and not REQUIRED, deliberately: this list is the one that must
+  // never be described to a member as something the Act demands. The Act does
+  // not name this document. Stations do.
+  S13_SELF_DEFENCE: [...SAFE_SHOTS, 'FIREARM_SOURCE_PROOF'],
+  S15_OCCASIONAL_HUNTER: [...SAFE_SHOTS, 'FIREARM_SOURCE_PROOF'],
+  S16_DEDICATED_HUNTER: [
+    ...SAFE_SHOTS,
+    'ASSOCIATION_ENDORSEMENT',
+    'FIREARM_SOURCE_PROOF',
+  ],
+  S16_DEDICATED_SPORT: [
+    ...SAFE_SHOTS,
+    'ASSOCIATION_ENDORSEMENT',
+    'FIREARM_SOURCE_PROOF',
+  ],
+  // A renewal transfers nothing — the applicant already holds the firearm —
+  // but the safe is still inspected.
+  S24_RENEWAL: [...SAFE_SHOTS],
 };
 
 /** Not demanded, but this is what makes a motivation land. */
 const STRENGTHENS: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   S13_SELF_DEFENCE: ['INCIDENT_REPORT', 'CHARACTER_REFERENCE'],
-  S15_OCCASIONAL_HUNTER: ['PROFICIENCY_CERTIFICATE', 'CHARACTER_REFERENCE'],
-  S16_DEDICATED_HUNTER: ['PROFICIENCY_CERTIFICATE', 'CHARACTER_REFERENCE'],
-  S16_DEDICATED_SPORT: ['PROFICIENCY_CERTIFICATE', 'CHARACTER_REFERENCE'],
-  S24_RENEWAL: ['PROFICIENCY_CERTIFICATE'],
+  // The shooting log is the difference between saying you hunt and showing
+  // it. Nothing in the Act asks for one; the packs that get taken seriously
+  // all carry one.
+  S15_OCCASIONAL_HUNTER: [
+    'PROFICIENCY_CERTIFICATE',
+    'SHOOTING_ACTIVITY_LOG',
+    'CHARACTER_REFERENCE',
+  ],
+  S16_DEDICATED_HUNTER: [
+    'PROFICIENCY_CERTIFICATE',
+    'SHOOTING_ACTIVITY_LOG',
+    'CHARACTER_REFERENCE',
+  ],
+  S16_DEDICATED_SPORT: [
+    'PROFICIENCY_CERTIFICATE',
+    'SHOOTING_ACTIVITY_LOG',
+    'CHARACTER_REFERENCE',
+  ],
+  S24_RENEWAL: ['PROFICIENCY_CERTIFICATE', 'SHOOTING_ACTIVITY_LOG'],
 };
 
 const LABELS: Record<MotivationUploadKind, string> = {
@@ -182,6 +238,10 @@ const LABELS: Record<MotivationUploadKind, string> = {
   SAFE_PHOTO: 'Photographs of your safe (added before the split)',
   SAFE_INSTALLATION: 'The safe bolted to the wall or floor',
   CHARACTER_REFERENCE: 'A character reference',
+  SHOOTING_ACTIVITY_LOG: 'Your record of hunts or competitions',
+  FIREARM_SOURCE_PROOF: 'Where this firearm is coming from',
+  SELLER_LICENCE: "The current owner's licence",
+  EXECUTOR_APPOINTMENT: 'Your letter of appointment as executor',
   INCIDENT_REPORT: 'An incident report or SAPS case number',
   PREVIOUS_MOTIVATION: 'A previous motivation',
   OTHER: 'Something else you would like to attach',
@@ -197,9 +257,17 @@ const LABELS: Record<MotivationUploadKind, string> = {
  * not.
  */
 const SAFE_WHY =
-  'Three photographs, and a DFO looks for all three: the safe closed with the key out of it, half open with the key in the door, and fully open so the roll bolts are visible. The closed shot shows the unit, the half-open shot shows the lock belongs to it, and the bolts are what make it a safe rather than a cupboard.';
+  'Three photographs, and a DFO looks for all three: the safe closed with the key out of it, half open with the key in the door, and fully open so the roll bolts are visible. The closed shot shows the unit, the half-open shot shows the lock belongs to it, and the bolts are what make it a safe rather than a cupboard. The safe is a condition of your licence being ISSUED, not of your application being accepted — regulation 13(12) — and SAPS gives you 14 days after you apply to install one before the DFO inspects your premises. Most stations still want the photographs up front, so take them; but do not delay lodging over a safe you have not bought yet.';
 
 const WHY: Partial<Record<MotivationUploadKind, string>> = {
+  SHOOTING_ACTIVITY_LOG:
+    'Your log of hunts or competitions \u2014 dates, where, what discipline or species. This is the annexure that shows you actually do the thing you are applying to do, rather than saying you intend to. Nothing in the Act asks for it; the packs that get taken seriously all carry one.',
+  FIREARM_SOURCE_PROOF:
+    'Either the dealer\u2019s invoice or quote, or a letter from the person who currently owns the firearm saying they agree to you applying for a licence over it. A DFO reads this to answer one question \u2014 whose firearm is this \u2014 and an application that cannot answer it stalls.',
+  SELLER_LICENCE:
+    'Only for a private transfer, and it goes with the permission letter: the letter says the owner agrees, and this shows they are the person entitled to agree. Ask them for a copy \u2014 it is theirs to give.',
+  EXECUTOR_APPOINTMENT:
+    'Only where the firearm is inherited. SAPS asks for the letter of appointment as executor by name, and an estate firearm cannot be licensed without it.',
   IDENTITY_DOCUMENT:
     'A photograph or scan of the page with your photo on it is fine here — what you upload to us does not need certifying. We read your name and ID number off it so you do not have to type them. (The copy you hand the DFO is the one that must be certified.)',
   COMPETENCY_CERTIFICATE:
@@ -241,8 +309,17 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
     'Something that actually happened to you carries far more weight than general crime figures.',
   PROFICIENCY_CERTIFICATE:
     'Shows you shoot or hunt in practice, not only on paper.',
+  // ⚠️ "SAPS ASKS FOR TWO" WAS FALSE, AND THIS SURFACE MADE IT WORSE THAN
+  // THE CHECKLIST'S VERSION. The frontend renders this group under the
+  // heading "Not asked for — but they make the case", so an applicant read
+  // "Not asked for" and then, directly beneath it, "SAPS asks for two".
+  //
+  // Neither SAPS list for a NEW licence mentions references. Two testimonials
+  // appear only on the SAPS 517(g) competency RENEWAL. The two-year rule
+  // appears nowhere at all. What the Regulations DO prescribe is the content
+  // — reg 13(7)(a)-(c) — which is far more use to a referee than a number.
   CHARACTER_REFERENCE:
-    'SAPS asks for two, from people who have known you two years or more. Most DFOs prefer someone who is not family.',
+    'Not on SAPS’s list for a new licence, but a strong pack usually carries one or two. Regulation 13(7) says anyone recommending your character must also state that you are a fit and proper person, of stable mental condition and not inclined to violence, and not dependent on any intoxicating or narcotic substance — so give your referee those three points.',
 };
 
 export interface DocumentStatus {

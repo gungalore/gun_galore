@@ -276,3 +276,131 @@ describe('who the sameness engine is actually guarding against', () => {
     // applicant would be regenerated away from their own account of their life.
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE PURPOSE SECTION.
+//
+// Operator, 2026-08-20: "We need to talk about the discipline they will be
+// shooting or the animals they will hunt or varmint or why the self defence is
+// applicable." Before this the plan went from the applicant's circumstances
+// straight to the firearm, so a document could assert a need without ever
+// setting out what the firearm was FOR.
+//
+// What is proven here is that the RIGHT purpose section reaches the right
+// applicant, in every permutation the seed can produce — a self-defence
+// applicant handed "The quarry and the ground I hunt" is worse than no section
+// at all.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the purpose section', () => {
+  const idsFor = (type: MotivationLicenceType, seed: number) =>
+    planFor(type, seed).sections.map((s) => s.id);
+
+  // Enough seeds to walk the shuffle rather than sample one arrangement.
+  const SEEDS = Array.from({ length: 200 }, (_, i) => i * 7919 + 13);
+
+  it('gives a hunter the quarry and never the discipline or the threat', () => {
+    for (const type of [
+      MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+    ]) {
+      for (const seed of SEEDS) {
+        const ids = idsFor(type, seed);
+        expect(ids).toContain('the_quarry');
+        expect(ids).not.toContain('the_discipline');
+        expect(ids).not.toContain('the_threat');
+      }
+    }
+  });
+
+  it('gives a sport shooter the discipline and never the quarry', () => {
+    for (const seed of SEEDS) {
+      const ids = idsFor(MotivationLicenceType.S16_DEDICATED_SPORT, seed);
+      expect(ids).toContain('the_discipline');
+      expect(ids).not.toContain('the_quarry');
+      expect(ids).not.toContain('the_threat');
+    }
+  });
+
+  it('gives a self-defence applicant the threat and never a hunting section', () => {
+    for (const seed of SEEDS) {
+      const ids = idsFor(MotivationLicenceType.S13_SELF_DEFENCE, seed);
+      expect(ids).toContain('the_threat');
+      expect(ids).not.toContain('the_quarry');
+      expect(ids).not.toContain('the_discipline');
+    }
+  });
+
+  it('gives a renewal no purpose section at all', () => {
+    // ⚠️ DELIBERATE. Section 24 renews an EXISTING licence: the purpose was
+    // accepted when it was granted, and re-arguing it invites a reviewer to
+    // reopen a question nobody asked.
+    for (const seed of SEEDS) {
+      const ids = idsFor(MotivationLicenceType.S24_RENEWAL, seed);
+      expect(ids).not.toContain('the_quarry');
+      expect(ids).not.toContain('the_discipline');
+      expect(ids).not.toContain('the_threat');
+    }
+  });
+
+  it('always states the purpose before justifying the firearm', () => {
+    // ⚠️ THE PAIR IS DIRECTIONAL. The purpose section defines the requirement;
+    // the firearm section answers it. Run the other way round, every "which is
+    // why this rifle suits it" points at a section the reader has not reached.
+    // The shuffle produced exactly that inversion on the first seed it was
+    // tried against, which is why the constraint exists.
+    for (const type of Object.values(MotivationLicenceType)) {
+      for (const seed of SEEDS) {
+        const ids = idsFor(type, seed);
+        const purpose = ids.findIndex(
+          (id) =>
+            id === 'the_quarry' ||
+            id === 'the_discipline' ||
+            id === 'the_threat',
+        );
+        if (purpose === -1) continue; // renewals have none, by design
+        expect(purpose).toBeLessThan(ids.indexOf('the_firearm'));
+      }
+    }
+  });
+
+  it('still varies the order of everything else', () => {
+    // The constraint above must not have collapsed the shuffle into one
+    // arrangement — that would defeat the whole point of this file.
+    const seen = new Set(
+      SEEDS.map((seed) =>
+        idsFor(MotivationLicenceType.S16_DEDICATED_HUNTER, seed).join('>'),
+      ),
+    );
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it('still opens on the introduction and closes on the conclusion', () => {
+    // The purpose section joined the MOVABLE set, so this is the guard that it
+    // cannot have displaced the two sections whose position is load-bearing.
+    for (const type of Object.values(MotivationLicenceType)) {
+      for (const seed of SEEDS.slice(0, 60)) {
+        const ids = idsFor(type, seed);
+        expect(ids[0]).toBe('introduction');
+        expect(ids[ids.length - 1]).toBe('conclusion');
+      }
+    }
+  });
+
+  it('gives the purpose section room to make an argument', () => {
+    // A single paragraph can assert a purpose; it cannot demonstrate one.
+    for (const type of Object.values(MotivationLicenceType)) {
+      for (const seed of SEEDS.slice(0, 60)) {
+        for (const sec of planFor(type, seed).sections) {
+          if (
+            sec.id === 'the_quarry' ||
+            sec.id === 'the_discipline' ||
+            sec.id === 'the_threat'
+          ) {
+            expect(sec.paragraphs).toBeGreaterThanOrEqual(2);
+          }
+        }
+      }
+    }
+  });
+});

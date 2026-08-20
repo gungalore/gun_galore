@@ -1,7 +1,7 @@
 import { MotivationLicenceType } from '@prisma/client';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 import { factPackFields, LICENCE_TYPE_LABELS } from './motivation-fields';
-import type { StructurePlan } from './motivation-structure';
+import type { SectionId, StructurePlan } from './motivation-structure';
 
 // ────────────────────────────────────────────────────────────────────
 // The prompts. Three of them: write the document, grade it, ask a follow-up.
@@ -377,6 +377,51 @@ function renderOverlap(note: string | undefined): string {
   ].join('\n');
 }
 
+/**
+ * WHAT EACH SECTION IS FOR.
+ *
+ * ⚠️ THE WRITER USED TO GET HEADINGS AND NOTHING ELSE, and inferred the rest.
+ * That is how a section called "The firearm and why it suits the purpose"
+ * came back as a paragraph saying the firearm suits the purpose. A heading is
+ * a label; a brief is an instruction, and the difference shows up in every
+ * paragraph.
+ *
+ * Operator, 2026-08-20, on what a paid writer actually delivers: "if I pay
+ * someone else for a motivation, they dream up stuff for me, no one ever has
+ * to answer a bunch of technical shit questions — the motivation writer
+ * writes what would be relevant in the use case." So the briefs say what
+ * belongs in each section and, just as importantly, where it comes from: the
+ * researched context for the cartridge, the terrain and the discipline; the
+ * applicant's own answers for anything about the applicant.
+ *
+ * ⚠️ A BRIEF IS NOT A LICENCE TO INVENT. Every rule in the system prompt
+ * still binds — nothing about the applicant that they did not supply, no
+ * outcome language, no filler. Where the facts do not support a brief, the
+ * section is written shorter rather than padded, and the gap is the gate's
+ * problem to report, not the writer's to paper over.
+ */
+const SECTION_BRIEFS: Record<SectionId, string> = {
+  introduction: 'State what is applied for, under which section of the Act, and for what purpose. One short paragraph. No throat-clearing.',
+  personal_circumstances:
+    'The applicant\u2019s situation in their own detail \u2014 where they live, who else is in the household, what their work and routine involve, so far as they told you. Facts, not adjectives.',
+  the_quarry:
+    'What they hunt and where. Name the species, the terrain and the province or region, the typical range a shot is taken at, the conditions. Where the research gives you the animals\u2019 weight range or the ground\u2019s character, use it \u2014 this is the section that shows the applicant understands their quarry rather than merely wanting a rifle. Do not invent species or places they did not mention.',
+  the_discipline:
+    'The discipline they shoot and what it demands: the course of fire, the distances, the positions, the time limits, the class or division, and what the association requires to keep dedicated status. Where the research describes the discipline, use it. This is the section that shows the firearm was chosen against a defined standard rather than a preference.',
+  the_threat:
+    'Why a firearm is applicable to this applicant\u2019s circumstances. Ground it in what they actually told you and in the researched context for their area \u2014 the pattern of crime there, their commute, their work, their responsibilities. \u26a0\ufe0f SOBER AND SPECIFIC. No fear-mongering, no national crime statistics used as atmosphere, and never a claim about an incident they did not report.',
+  experience:
+    'Training, competency, proficiency, hours and years, and what they have actually done with a firearm. Concrete: dates, certificates, counts. This is the section a reviewer reads to decide whether the applicant is competent, which is what the Central Firearms Register actually cares about.',
+  the_firearm:
+    'Why THIS firearm for THAT purpose \u2014 the section above defines the requirement and this one answers it. Use the researched specification: the cartridge, the ballistics at the ranges named, the action, the barrel, the capacity, the mass. Draw the line from the requirement to the choice. If a specification looks over- or under-matched to the stated purpose, address it plainly rather than ignoring it.',
+  storage_safety:
+    'The safe, its standard, where it is installed and how it is fixed, who has access, and how the firearm is handled and transported. Specific to what they described.',
+  compliance_history:
+    'Licences held, applications made, anything on record, and the applicant\u2019s clean standing where they have stated it. Never assert an absence of a criminal record unless they supplied it \u2014 SAPS verifies this themselves.',
+  conclusion:
+    'A short undertaking in the applicant\u2019s own voice. No summary of everything above, no request for a favourable outcome, no thanks.',
+};
+
 export function generationUserPrompt(
   pack: FactPack,
   plan: StructurePlan,
@@ -384,7 +429,7 @@ export function generationUserPrompt(
   const structure = plan.sections
     .map(
       (s, i) =>
-        `${i + 1}. ${s.heading}  (about ${s.paragraphs} paragraph${s.paragraphs === 1 ? '' : 's'})`,
+        `${i + 1}. ${s.heading}  (about ${s.paragraphs} paragraph${s.paragraphs === 1 ? '' : 's'})\n   \u2192 ${SECTION_BRIEFS[s.id]}`,
     )
     .join('\n');
 

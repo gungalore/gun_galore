@@ -29,6 +29,8 @@ import { MotivationClaudeService } from './motivation-claude.service';
 import {
   AnnexureImagePage,
   MotivationPdfService,
+  asColourway,
+  asFormat,
 } from './motivation-pdf.service';
 import {
   imageSize,
@@ -49,6 +51,7 @@ import {
   buildChecklist,
   UPLOAD_KIND_LABELS,
 } from './motivation-checklist';
+import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { packConsistency } from './motivation-verify';
 import {
   FIELD_REGISTRY_VERSION,
@@ -180,6 +183,84 @@ export function estimateCostUsd(
     (completionTokens / 1_000_000) * rate.out;
   // Six decimals, matching the Decimal(10,6) column.
   return Math.round(usd * 1_000_000) / 1_000_000;
+}
+
+/**
+ * The firearms the applicant already holds, read out of the numbered answer
+ * fields and into a table the PDF can print.
+ *
+ * ⚠️ MAKE AND CALIBRE ARE THE IDENTITY, SERIALS ARE NOT PRINTED HERE. The
+ * interview collects barrel and frame serials and the licence number for each
+ * existing firearm, because the SAPS 271 asks for them — but a serial in a
+ * table on a motivation is a line a reviewer has to check against a licence
+ * that is already annexed, and getting it wrong is worse than omitting it.
+ * The annexed licence copy is the evidence; this table is the summary.
+ *
+ * A row with no make AND no calibre is skipped rather than printed as a row
+ * of dashes: the interview lets an applicant start firearm 2 and abandon it,
+ * and half a row on a submission reads as carelessness.
+ */
+function existingFirearms(
+  answers: Record<string, string>,
+): { make: string; calibre: string; type: string; section: string }[] {
+  const out: { make: string; calibre: string; type: string; section: string }[] =
+    [];
+  for (let i = 1; i <= 3; i++) {
+    const make = (answers[`existing_firearm_${i}_make`] ?? '').trim();
+    const calibre = (answers[`existing_firearm_${i}_calibre`] ?? '').trim();
+    const type = (answers[`existing_firearm_${i}_type`] ?? '').trim();
+    const licence = (answers[`existing_firearm_${i}_licence_no`] ?? '').trim();
+    if (!make && !calibre) continue;
+    out.push({
+      make: make || '—',
+      calibre: calibre || '—',
+      type: type || '—',
+      // The licence NUMBER, not the section, when we have it — that is what a
+      // DFO looks up. "Licensed" alone when we do not, rather than a guess at
+      // which section it was issued under.
+      section: licence ? `Licence ${licence}` : 'Licensed',
+    });
+  }
+  return out;
+}
+
+/**
+ * "Howa 1500 bolt-action rifle, serial B742119" — the firearm, named once.
+ *
+ * Extracted because three surfaces need the identical string and were about
+ * to hold three copies of it: the running footer of every page, the cover's
+ * identification block, and the opening sentence of the prior-notice request.
+ * A footer and a request that name the firearm differently is the kind of
+ * inconsistency a reviewer notices and nobody testing would.
+ */
+function firearmLine(answers: Record<string, string>): string | undefined {
+  const base = [answers.firearm_make, answers.firearm_type]
+    .map((v) => (v ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+  if (!base) return undefined;
+  const serial = answers.firearm_serial?.trim();
+  return serial ? `${base}, serial ${serial}` : base;
+}
+
+/**
+ * Has this pack been paid for, or does it hold a free-beta seat?
+ *
+ * ⚠️ TWO WAYS TO BE SETTLED, AND THE SECOND IS NOT A LOOPHOLE. A beta seat
+ * is allocated from an atomic counter with a hard cap; holding one is how the
+ * operator chose to give the first members the product for nothing. Both mean
+ * "this person is entitled to a clean document", so both clear the watermark.
+ *
+ * Payments are not live yet, so today this is almost always false and almost
+ * every pack carries the mark. That is the correct default: the failure mode
+ * of getting it wrong the other way is handing out the finished product for
+ * nothing.
+ */
+export function isSettled(row: {
+  billedCents: number;
+  betaSeatNo: number | null;
+}): boolean {
+  return row.billedCents > 0 || row.betaSeatNo !== null;
 }
 
 /** Statuses where the applicant may still edit their answers. */
@@ -421,6 +502,17 @@ export class MotivationsService {
       declarationAcceptedAt: row.declarationAcceptedAt,
       hasDocument: !!row.documentTextEncrypted,
       documentVersion: row.documentVersion,
+      // Which of the fifteen templates this pack is set in. Validated on read
+      // because the columns are plain VARCHARs — see asFormat/asColourway.
+      template: {
+        format: asFormat(row.templateFormat),
+        colourway: asColourway(row.templateColourway),
+      },
+      // ⚠️ WATERMARK UNTIL IT IS PAID FOR — OR EARNED. Operator, 2026-08-19:
+      // "Be sure to watermark any item that has not been paid for or have the
+      // merit as a free motivation." A free-beta seat is earned, so it is not
+      // watermarked; an unpaid, unseated pack is.
+      watermarked: !isSettled(row),
       editable: EDITABLE.includes(row.status),
       createdAt: row.createdAt,
       completedAt: row.completedAt,
@@ -2562,6 +2654,9 @@ export class MotivationsService {
     const letters = buildAnnexures(uploads.map((u) => u.kind));
     const letterFor = new Map(letters.map((a) => [a.kind, a.letter]));
     const labelFor = new Map(letters.map((a) => [a.kind, a.label]));
+    // Whether a commissioner has to stamp this copy. Drives the reserved
+    // stamp block the renderer prints beneath it — see CERTIFICATION.
+    const certFor = new Map(letters.map((a) => [a.kind, a.certification]));
     // How many copies share each letter, so a caption can say "1 of 2".
     const totals = new Map<string, number>();
     for (const u of uploads) {
@@ -2617,7 +2712,15 @@ export class MotivationsService {
         notPrinted.push({ letter, label, why: 'we could not measure it' });
         continue;
       }
-      images.push({ letter, label, index, total, bytes, ...size });
+      images.push({
+        letter,
+        label,
+        index,
+        total,
+        bytes,
+        certification: certFor.get(u.kind) ?? 'none',
+        ...size,
+      });
     }
 
     return { images, notPrinted, pdfs };
@@ -2667,6 +2770,51 @@ export class MotivationsService {
     };
   }
 
+  /**
+   * Record which template the applicant picked.
+   *
+   * ⚠️ ALLOWED IN EVERY STATUS, including COMPLETED. This is not an answer and
+   * it changes nothing the document argues — the body is stored text and the
+   * PDF is re-rendered from it on every download, so re-skinning a finished
+   * motivation costs one query and no Claude call. Locking it to the editable
+   * statuses would mean somebody who dislikes the colour has to regenerate a
+   * document they already paid for.
+   */
+  async setTemplate(
+    clerkId: string,
+    id: string,
+    choice: { format?: string; colourway?: string },
+  ) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const updated = await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: {
+        // Only what was sent: the picker changes colour and format
+        // independently, and spreading undefined would blank the other one.
+        ...(choice.format !== undefined
+          ? { templateFormat: asFormat(choice.format) }
+          : {}),
+        ...(choice.colourway !== undefined
+          ? { templateColourway: asColourway(choice.colourway) }
+          : {}),
+      },
+      select: { templateFormat: true, templateColourway: true },
+    });
+
+    return {
+      format: asFormat(updated.templateFormat),
+      colourway: asColourway(updated.templateColourway),
+    };
+  }
+
   async renderPdf(clerkId: string, id: string) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
@@ -2681,6 +2829,10 @@ export class MotivationsService {
         templateVersion: true,
         answersEncrypted: true,
         completedAt: true,
+        templateFormat: true,
+        templateColourway: true,
+        billedCents: true,
+        betaSeatNo: true,
         // ⚠️ ORDERED BY CREATION, and the bytes come with it now. The copies
         // are reprinted into the pack, so a stable order matters: "1 of 2"
         // and "2 of 2" have to mean the same two pages every download.
@@ -2727,6 +2879,24 @@ export class MotivationsService {
     const kinds = (row.uploads ?? []).map((u) => u.kind);
     const printable = await this.annexureImages(row.uploads ?? []);
 
+    // ⚠️ THE CHECKLIST HAS PROMISED THIS SINCE THE MODULE SHIPPED AND NOTHING
+    // PRODUCED IT. "Request for prior notice before refusal (PAJA)" sits under
+    // "Your pack", owned by us, ticking itself green the moment the motivation
+    // was written — and no code anywhere built the document. Found 2026-08-20.
+    //
+    // Built here rather than at generation time because it is derived purely
+    // from the applicant's own identifying details: no Claude call, no stored
+    // text, and it re-renders identically every download. See
+    // motivation-prior-notice.ts for why the pack carries it at all.
+    const priorNotice = buildPriorNoticeRequest({
+      applicantName: answers.full_name || 'The applicant',
+      idNumber: answers.id_number?.trim() || undefined,
+      referenceNumber: row.referenceNumber,
+      licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
+      firearmLine: firearmLine(answers),
+    });
+    const annexures = buildAnnexures(kinds, ['PRIOR_NOTICE_REQUEST']);
+
     return this.pdf.render({
       referenceNumber: row.referenceNumber,
       // The applicant's REAL name — the documented exception to the site-wide
@@ -2737,18 +2907,32 @@ export class MotivationsService {
       body,
       disclaimer: DISCLAIMER_TEXT,
       templateVersion: row.templateVersion ?? TEMPLATE_VERSION,
+      // Validated on read: the columns are plain VARCHARs so adding a template
+      // costs no migration, which also means they can hold anything. An
+      // unrecognised value falls back rather than failing the download.
+      format: asFormat(row.templateFormat),
+      colourway: asColourway(row.templateColourway),
+      // See isSettled. Payments are not live, so today this stamps almost
+      // every download — which is the right way round.
+      watermark: !isSettled(row),
       // Named in the running footer of every page, the way a professional
       // pack does it — a loose sheet has to identify its own application.
-      firearmLine:
-        [answers.firearm_make, answers.firearm_type]
-          .map((v) => (v ?? '').trim())
-          .filter(Boolean)
-          .join(' ') +
-        (answers.firearm_serial?.trim()
-          ? `, serial ${answers.firearm_serial.trim()}`
-          : '') || undefined,
+      firearmLine: firearmLine(answers),
       generatedAt: row.completedAt ?? new Date(),
-      annexures: buildAnnexures(kinds),
+      // ⚠️ ON THE COVER BECAUSE THE DFO FILES ON IT. Every professional pack
+      // identifies the applicant by ID number on its first page: it is the
+      // key the Central Firearms Register runs on, and a folder that carries
+      // it cannot be confused with another Gerhard Fourie.
+      idNumber: answers.id_number?.trim() || undefined,
+      // What they already hold. Section 13(3) caps a self-defence applicant
+      // at one firearm and section 15(3) an occasional sport shooter at four,
+      // so this is a statutory precondition the DFO checks — set out as a
+      // table a reviewer can read at a glance instead of mining it out of a
+      // paragraph. Empty is meaningful too: the renderer prints "this is a
+      // first application" rather than dropping the section.
+      ownedFirearms: existingFirearms(answers),
+      annexures,
+      priorNotice,
       annexureImages: printable.images,
       annexuresNotPrinted: printable.notPrinted,
       // Merged into the finished pack by pdf-lib after pdfkit has drawn the

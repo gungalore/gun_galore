@@ -31,6 +31,17 @@ export interface AnnexureImage {
   total: number;
   width: number;
   height: number;
+  /**
+   * Reserve a certification block under this copy.
+   *
+   * ⚠️ SPACE THE STAMP CAN LAND ON, RESERVED BEFORE THE IMAGE IS PLACED. A
+   * commissioner's stamp is about 40 mm across and it goes on the copy — so
+   * on a page packed edge to edge there is nowhere for it to go that is not
+   * on top of somebody's ID number. Reserving the strip here, in the pure
+   * planner, means the image is sized to leave room rather than the block
+   * being drawn over it afterwards and hoping.
+   */
+  stamp?: boolean;
 }
 
 export interface PlacedImage extends AnnexureImage {
@@ -41,6 +52,8 @@ export interface PlacedImage extends AnnexureImage {
   h: number;
   /** Baseline box for the caption, directly above the image. */
   captionY: number;
+  /** Top of the reserved certification block, when one was asked for. */
+  stampY?: number;
 }
 
 export interface LayoutBox {
@@ -55,6 +68,15 @@ export interface LayoutBox {
 export const CAPTION_H = 16;
 /** Gap between one image and the next caption on the same page. */
 export const GAP = 18;
+/**
+ * Height reserved under a copy for the certification block, in points.
+ *
+ * 92pt ≈ 32 mm — enough for a 40 mm round stamp to sit in and still leave the
+ * signature and date rules readable beside it. Bigger and a full-page A4
+ * certificate stops fitting on one page; smaller and the stamp overhangs onto
+ * the copy, which is exactly what the reservation exists to prevent.
+ */
+export const STAMP_H = 92;
 
 /**
  * Pack images onto pages.
@@ -72,15 +94,16 @@ export function planAnnexurePages(
   for (const img of images) {
     // Full content width, unless that makes it taller than a whole page.
     const ratio = img.width > 0 && img.height > 0 ? img.height / img.width : 1;
+    const stampH = img.stamp ? STAMP_H : 0;
     let w = box.width;
     let h = w * ratio;
-    const maxH = box.height - CAPTION_H;
+    const maxH = box.height - CAPTION_H - stampH;
     if (h > maxH) {
       h = maxH;
       w = ratio > 0 ? h / ratio : box.width;
     }
 
-    const need = CAPTION_H + h;
+    const need = CAPTION_H + h + stampH;
     const used = cursor - box.y;
     // ⚠️ THE FIRST IMAGE NEVER BREAKS. Without this a single image taller
     // than the box would loop forever pushing itself to a fresh page.
@@ -100,6 +123,7 @@ export function planAnnexurePages(
       y: cursor + CAPTION_H,
       w,
       h,
+      ...(img.stamp ? { stampY: cursor + CAPTION_H + h + 8 } : {}),
     });
     cursor += need;
   }

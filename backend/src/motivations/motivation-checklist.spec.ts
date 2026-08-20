@@ -37,22 +37,61 @@ describe('annexure lettering', () => {
     ).toBe(3);
   });
 
-  it('gives the three safe shots three consecutive letters', () => {
-    // Deliberate, and a change from the old single SAFE_PHOTO annexure: a
-    // reviewer looking for the roll bolts can be sent to a letter instead of
-    // to "one of the photographs in Annexure B".
+  it('gives the safe ONE letter, however many shots are under it', () => {
+    // ⚠️ REVERSED ON 2026-08-20, AND THE EARLIER REASONING WAS NOT WRONG SO
+    // MUCH AS OUTVOTED. The three shots were given three consecutive letters
+    // on 2026-08-19 so that a reviewer looking for the roll bolts could be
+    // sent to a letter rather than to "one of the photographs in Annexure B".
+    //
+    // Then the operator supplied the annexure list a professional writer
+    // actually files, and it letters the safe once: "F. PHOTOS OF SAFE". Four
+    // letters for the safe pushed a nineteen-document pack out to S where a
+    // professional one ends at O — every letter after the safe was shifted,
+    // on a document whose whole job is to look like one a DFO has read
+    // before.
+    //
+    // Nothing about the evidence changed: they are still three upload kinds,
+    // the requirement engine still knows which shot is missing, and the
+    // printed copies still caption themselves "(1 of 3)", "(2 of 3)" — so the
+    // roll bolts are still individually citable.
     const a = buildAnnexures([
       MotivationUploadKind.IDENTITY_DOCUMENT,
       MotivationUploadKind.SAFE_PHOTO_BOLTS,
       MotivationUploadKind.SAFE_PHOTO_CLOSED,
       MotivationUploadKind.SAFE_PHOTO_AJAR,
     ]);
-    expect(a.map((x) => [x.letter, x.kind])).toEqual([
-      ['A', MotivationUploadKind.IDENTITY_DOCUMENT],
-      ['B', MotivationUploadKind.SAFE_PHOTO_CLOSED],
-      ['C', MotivationUploadKind.SAFE_PHOTO_AJAR],
-      ['D', MotivationUploadKind.SAFE_PHOTO_BOLTS],
+    expect(a.map((x) => x.letter)).toEqual(['A', 'B']);
+    expect(a[1].label).toBe('Photographs of your safe');
+    // The count is what drives "(n of 3)" on each printed copy, so all three
+    // have to be accumulated under the one letter rather than the first
+    // winning and the rest being dropped.
+    expect(a[1].count).toBe(3);
+  });
+
+  it('counts the installation shot under the same safe letter', () => {
+    const a = buildAnnexures([
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.SAFE_PHOTO_AJAR,
+      MotivationUploadKind.SAFE_PHOTO_BOLTS,
+      MotivationUploadKind.SAFE_INSTALLATION,
     ]);
+    expect(a).toHaveLength(1);
+    expect(a[0].letter).toBe('A');
+    expect(a[0].count).toBe(4);
+  });
+
+  it('letters the association membership and good standing together', () => {
+    // The reference pack's "K. MEMBERSHIP CERTIFICATES" is plural and covers
+    // both. The ENDORSEMENT stays separate because it is about the firearm,
+    // not the membership.
+    const a = buildAnnexures([
+      MotivationUploadKind.ASSOCIATION_CARD,
+      MotivationUploadKind.GOOD_STANDING_LETTER,
+      MotivationUploadKind.ASSOCIATION_ENDORSEMENT,
+    ]);
+    expect(a.map((x) => x.letter)).toEqual(['A', 'B']);
+    expect(a[0].count).toBe(2);
+    expect(a[1].kind).toBe(MotivationUploadKind.ASSOCIATION_ENDORSEMENT);
   });
 
   it('still letters a photograph uploaded before the split', () => {
@@ -155,8 +194,13 @@ describe('the live checklist', () => {
       MotivationLicenceType.S24_RENEWAL,
       [],
     ).sections.find((s) => s.key === 'theirs')!;
+    // "Keep the originals; hand over copies" was withdrawn on 2026-08-20: it
+    // read as a universal rule and contradicted the row above it, where SAPS
+    // asks for the ORIGINAL competency certificate by name. What the note has
+    // to do now is send the originals along without asserting that SAPS keeps
+    // any of them.
     expect(theirs.items.find((i) => i.key === 'originals')!.note).toMatch(
-      /keep the originals/i,
+      /original competency certificate/i,
     );
     expect(theirs.items.some((i) => i.key === 'own_copy')).toBe(true);
   });
@@ -182,28 +226,68 @@ describe('the live checklist', () => {
       [],
     ).sections.find((s) => s.key === 'theirs')!;
     const flagged = theirs.items.filter((i) => i.verifyBeforeUse);
-    // saps_541 joined the list with the SAPS-checklist audit: whether a
-    // station wants the 541 undertaking or its own safe inspection differs,
-    // so it must be confirmed rather than asserted.
+    // safe_inspection REPLACED saps_541 on 2026-08-20: there is no SAPS 541.
+    // The forms index runs 517 to 540 and forms/english/e541.pdf returns 404.
+    // What replaced it — install a safe within 14 days, then a premises
+    // inspection — still differs between stations, so it stays flagged.
     //
-    // acknowledgement joined it with the regulation research: the applicant
-    // must not leave without proof of the date they lodged, but the form
-    // number and exactly what the counter hands over are the kind of detail
-    // that changes — so it is flagged rather than stated.
+    // acknowledgement: the applicant must not leave without proof of the date
+    // they lodged, but the form number and exactly what the counter hands
+    // over are the kind of detail that changes.
+    //
+    // proof_of_residence joined on 2026-08-20 because two sources disagree:
+    // SAPS's live page lists "Certified proof of residence" and the
+    // operator's actually-filed pack files it uncertified. Our copy follows
+    // SAPS (certifying is free) but the disagreement is real, so it is
+    // flagged rather than settled in code.
     expect(flagged.map((i) => i.key).sort()).toEqual([
       'acknowledgement',
       'fee',
-      'saps_541',
+      'proof_of_residence',
+      'safe_inspection',
       'saps_form',
     ]);
   });
 
   it('never promises an outcome', () => {
+    // ⚠️ "GUARANTEE" IS SCANNED IN CONTEXT, NOT AS A BARE SUBSTRING, and the
+    // reason is a real false positive rather than a hypothetical one. SAPS's
+    // own application page says the fee is paid in "cash or a bank-guaranteed
+    // cheque", so quoting them verbatim in the fee note tripped a rule that
+    // exists to stop us claiming a licence is guaranteed.
+    //
+    // The narrowing is deliberately minimal: only the payment instrument is
+    // excused, by requiring that "guarantee" not be preceded by "bank-".
+    // "guaranteed approval" and "we guarantee" still fail, which is the point
+    // of the rule.
+    const OUTCOME_WORDS = [
+      /approv/,
+      /chance/,
+      /(?<!bank-)guarantee/,
+      /success/,
+      /likely/,
+    ];
     for (const t of ALL) {
       const text = JSON.stringify(buildChecklist(t, [])).toLowerCase();
-      for (const banned of ['approv', 'chance', 'guarantee', 'success', 'likely']) {
-        expect(text).not.toContain(banned);
+      for (const banned of OUTCOME_WORDS) {
+        expect(text).not.toMatch(banned);
       }
+    }
+  });
+
+  it('still catches a real outcome promise', () => {
+    // Proves the narrowing above did not simply switch the rule off.
+    const bad = 'we guarantee approval and success is likely';
+    for (const banned of [
+      /approv/,
+      /chance/,
+      /(?<!bank-)guarantee/,
+      /success/,
+      /likely/,
+    ]) {
+      // eslint-disable-next-line jest/no-conditional-expect
+      if (banned.source.includes('chance')) continue;
+      expect(bad).toMatch(banned);
     }
   });
 
@@ -220,5 +304,84 @@ describe('the live checklist', () => {
       (i) => i.key === 'upload_incident_report',
     )!;
     expect(incident.note).toMatch(/stronger than general crime figures/i);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE RENEWAL DEADLINE.
+//
+// We ask a renewal applicant for their expiry date and, until 2026-08-20,
+// said nothing whatever about the one rule attached to it. buildChecklist had
+// no S24 branch, so a person who came straight to a renewal motivation
+// without ever opening the Licence Centre had no surface that would tell
+// them.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the renewal deadline', () => {
+  const theirsFor = (t: MotivationLicenceType) =>
+    buildChecklist(t, []).sections.find((s) => s.key === 'theirs')!;
+
+  it('tells a renewal applicant about the 90 days', () => {
+    const items = theirsFor(MotivationLicenceType.S24_RENEWAL).items;
+    const row = items.find((i) => i.key === 's24_ninety_days');
+    expect(row).toBeDefined();
+    expect(row!.note).toMatch(/at least 90 days/i);
+    // ⚠️ FLAGGED, NOT ASSERTED. licence-dates.ts carries a standing gate
+    // against printing a day count as the statutory figure until an attorney
+    // signs it off, so this row is marked for pre-launch verification like
+    // the fee and the form numbers.
+    expect(row!.verifyBeforeUse).toBe(true);
+  });
+
+  it('says what protection is lost, never what happens if you are late', () => {
+    // ⚠️ SECTIONS 24 AND 28 ARE UNDER A SUSPENDED DECLARATION OF
+    // UNCONSTITUTIONALITY pending confirmation. Describing the consequence of
+    // a lapsed licence would be stating as settled a question that is in
+    // front of a court.
+    const text = JSON.stringify(theirsFor(MotivationLicenceType.S24_RENEWAL))
+      .toLowerCase();
+    expect(text).toContain('stays valid until the application is decided');
+
+    // ⚠️ THE BAN IS ON CONSEQUENCE CLAIMS, NOT ON THE WORD "EXPIRES".
+    // The first version of this test banned "expires" outright and failed
+    // against its own copy, which says "at least 90 days before your licence
+    // expires" — a statement of WHEN the deadline is, which is exactly what
+    // an applicant needs. What must never appear is an assertion about what
+    // befalls a licence that lapsed.
+    for (const banned of [
+      'becomes illegal',
+      'unlawful',
+      'criminal',
+      'commit an offence',
+      'confiscat',
+      'must surrender',
+      'hand it in to the police',
+      'no longer entitled',
+      'you will lose',
+    ]) {
+      expect(text).not.toContain(banned);
+    }
+  });
+
+  it('does not show the renewal rows to a first-time applicant', () => {
+    // "Lodge 90 days before the expiry date" on a first application is not
+    // merely irrelevant, it is confusing: there is no expiry date yet.
+    for (const t of Object.values(MotivationLicenceType)) {
+      if (t === MotivationLicenceType.S24_RENEWAL) continue;
+      const keys = theirsFor(t).items.map((i) => i.key);
+      expect(keys).not.toContain('s24_ninety_days');
+      expect(keys).not.toContain('s24_keep_acknowledgement');
+    }
+  });
+
+  it('still gives a renewal everything on the common list', () => {
+    // The S24 rows are an ADDITION, not a replacement — a renewal applicant
+    // still needs the photographs, the fee and the acknowledgement.
+    const keys = theirsFor(MotivationLicenceType.S24_RENEWAL).items.map(
+      (i) => i.key,
+    );
+    for (const common of ['passport_photos', 'fee', 'acknowledgement', 'originals']) {
+      expect(keys).toContain(common);
+    }
   });
 });

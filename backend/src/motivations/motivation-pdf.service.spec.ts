@@ -1,5 +1,10 @@
 import * as zlib from 'node:zlib';
-import { MotivationPdfService } from './motivation-pdf.service';
+import {
+  FORMAT_FEATURES,
+  MotivationPdfService,
+  asColourway,
+  asFormat,
+} from './motivation-pdf.service';
 import { buildAnnexures } from './motivation-checklist';
 import { MotivationUploadKind } from '@prisma/client';
 
@@ -47,8 +52,36 @@ function readPdf(pdf: Buffer): { text: string } {
       /* not a deflated content stream — ignore */
     }
   }
-  return { text };
+  return { text: decodeWinAnsi(text) };
 }
+
+/**
+ * WinAnsi bytes 0x80-0x9F, decoded back to the characters they mean.
+ *
+ * ⚠️ WITHOUT THIS, AN ASSERTION ON AN EM-DASH FAILS AGAINST A DOCUMENT THAT
+ * IS CORRECT, and the failure is unreadable. pdfkit writes the standard-14
+ * fonts in WinAnsiEncoding, where an em-dash is the single byte 0x97. The
+ * loop above reassembles runs as latin1, and in latin1 0x97 is a C1 control
+ * character: invisible in a terminal, not whitespace, so squash leaves it
+ * sitting between the words. Jest then reports "expected CERTIFY — REQUIRED,
+ * received ..." against a string that looks character-for-character identical
+ * when printed, and the real difference only shows up in charCodeAt.
+ *
+ * That cost a real debugging session. Only the punctuation our own copy
+ * actually emits is mapped; anything else in the range is left alone, so a
+ * future surprise stays visible rather than being silently rewritten.
+ */
+const WIN_ANSI: Record<number, string> = {
+  0x85: '\u2026',
+  0x91: '\u2018',
+  0x92: '\u2019',
+  0x93: '\u201C',
+  0x94: '\u201D',
+  0x96: '\u2013',
+  0x97: '\u2014',
+};
+const decodeWinAnsi = (s: string) =>
+  s.replace(/[\u0080-\u009F]/g, (c) => WIN_ANSI[c.charCodeAt(0)] ?? c);
 
 // Collapse whitespace before asserting on phrases.
 const flat = (s: string) => s.replace(/\s+/g, ' ');
@@ -124,11 +157,20 @@ describe('MotivationPdfService', () => {
     // being truncated with an ellipsis the way the pdf-lib generators do.
     expect(squash(text)).toContain(squash('Paragraph 40:'));
 
-    // Pagination is proven from the footers we stamp: every page must carry
-    // one, they must all agree on the total, and the page numbers must be a
-    // complete 1..N run with no gaps or repeats. That is a stronger check than
-    // counting page objects in the bytes, and it also proves bufferPages
-    // resolved the total before any footer was written.
+    // Pagination is proven from the footers we stamp: they must all agree on
+    // the total, and the page numbers must be a complete run with no gaps or
+    // repeats. That is a stronger check than counting page objects in the
+    // bytes, and it also proves bufferPages resolved the total before any
+    // footer was written.
+    //
+    // ⚠️ THE RUN STARTS AT 2, NOT 1, AND THAT IS THE POINT OF THE COVER. The
+    // cover IS page 1 of the pack — it is a sheet, it counts toward the total
+    // a DFO checks against — but it carries no footer, because "Page 1 of 8"
+    // printed under a title is what a word processor does and not what a
+    // bound submission does. So the assertion is: N-1 footers, numbered 2..N,
+    // all claiming a total of N. A footer appearing on the cover, or the run
+    // starting anywhere but 2, is a regression.
+    //
     // Case-insensitive: the footer reads "Page N of M" since the layout was
     // measured off Safari Outdoor, whose footer capitalises it.
     const footers = [...flat(text).matchAll(/page (\d+) of (\d+)/gi)];
@@ -136,9 +178,9 @@ describe('MotivationPdfService', () => {
     const totals = new Set(footers.map((f) => f[2]));
     expect(totals.size).toBe(1);
     const total = Number([...totals][0]);
-    expect(footers.length).toBe(total);
+    expect(footers.length).toBe(total - 1);
     expect(footers.map((f) => Number(f[1]))).toEqual(
-      Array.from({ length: total }, (_, i) => i + 1),
+      Array.from({ length: total - 1 }, (_, i) => i + 2),
     );
   });
 
@@ -205,12 +247,14 @@ describe('the annexure index', () => {
     expect(t).toContain('Annexure A');
     // Several files of one kind still fold under one letter with a count.
     expect(t).toMatch(/Copy of your ID \(2 items\)/i);
-    // The three safe shots do NOT fold: each takes its own letter, so a
-    // reviewer looking for the roll bolts can be sent to a letter rather than
-    // to "one of the photographs in Annexure B".
-    expect(t).toMatch(/Annexure B\s*Safe closed/i);
-    expect(t).toMatch(/Annexure C\s*Safe half open/i);
-    expect(t).toMatch(/Annexure D\s*Safe fully open/i);
+    // The safe folds too, as of 2026-08-20: one letter, a count, and the
+    // individual shots captioned "(1 of 3)" on the printed copies. It used to
+    // spend a letter per shot, which pushed every later annexure down and put
+    // our index out of step with the one a DFO reads every day.
+    expect(t).toMatch(/Annexure B\s*Photographs of your safe \(3 items\)/i);
+    // The index stops at B: nothing after the safe, because the safe no
+    // longer eats C and D.
+    expect(t).not.toMatch(/Annexure C/i);
     // And no checklist page.
     expect(t).not.toContain('SUBMISSION CHECKLIST');
   });
@@ -218,5 +262,188 @@ describe('the annexure index', () => {
   it('renders a bare document when there are no annexures', async () => {
     const { pdf } = await svc.render(makeInput());
     expect(flat(readPdf(pdf).text)).not.toContain('ANNEXURES');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE TEMPLATE THE APPLICANT PICKED.
+//
+// Five colourways x three formats. The formats are not skins — they are
+// different SECTION SETS over the same argument, so what is proven here is
+// which sections appear, not which colours were used. Colour is proven only at
+// the boundary (an unknown value must never fail a download), because
+// asserting on a fill operator inside a compressed content stream would be a
+// test of pdfkit rather than of us.
+// ────────────────────────────────────────────────────────────────────
+
+describe('template choice', () => {
+  const svc = new MotivationPdfService();
+
+  const withTables = (extra: Record<string, unknown>) => ({
+    ...makeInput(),
+    idNumber: '8203155041083',
+    ownedFirearms: [
+      {
+        make: 'CZ 452',
+        calibre: '.22 LR',
+        type: 'Bolt-action rifle',
+        section: 'Licence 4000112233',
+      },
+    ],
+    firearmSpec: [
+      { label: 'Calibre', value: '6.5 Creedmoor' },
+      { label: 'Barrel length', value: '609 mm' },
+    ],
+    ...extra,
+  });
+
+  it('falls back rather than failing on a value the column should not hold', () => {
+    // ⚠️ THE COLUMNS ARE PLAIN VARCHARs so that adding a template costs no
+    // migration — which means they can hold a typo, or a colourway we later
+    // withdrew. Neither may take a download down: somebody clicking "get my
+    // PDF" gets a PDF.
+    expect(asFormat('burgundy')).toBe('standard');
+    expect(asFormat(null)).toBe('standard');
+    expect(asFormat(undefined)).toBe('standard');
+    expect(asFormat('comprehensive')).toBe('comprehensive');
+
+    expect(asColourway('chartreuse')).toBe('slate');
+    expect(asColourway(null)).toBe('slate');
+    expect(asColourway('oxblood')).toBe('oxblood');
+  });
+
+  it('gives the three formats three different section sets', () => {
+    // The contract the renderer reads. Stated here so a future edit that makes
+    // all three identical fails loudly rather than shipping one document under
+    // three names.
+    expect(FORMAT_FEATURES.concise).toEqual({
+      contents: false,
+      ownedTable: false,
+      specBlock: false,
+    });
+    expect(FORMAT_FEATURES.comprehensive).toEqual({
+      contents: true,
+      ownedTable: true,
+      specBlock: true,
+    });
+    expect(FORMAT_FEATURES.standard.ownedTable).toBe(true);
+    expect(FORMAT_FEATURES.standard.specBlock).toBe(false);
+  });
+
+  it('concise omits the contents, the owned table and the spec block', async () => {
+    const { pdf } = await svc.render(
+      withTables({ format: 'concise', colourway: 'ochre' }) as never,
+    );
+    const t = squash(readPdf(pdf).text);
+    expect(t).not.toContain(squash('CONTENTS'));
+    expect(t).not.toContain(squash('FIREARMS ALREADY LICENSED'));
+    expect(t).not.toContain(squash('SPECIFICATION OF THE FIREARM'));
+    // The argument itself is untouched — a shorter pack is not a weaker one.
+    expect(t).toContain(squash('INTRODUCTION'));
+  });
+
+  it('standard adds the contents and the owned table but not the spec sheet', async () => {
+    const { pdf } = await svc.render(
+      withTables({ format: 'standard', colourway: 'navy' }) as never,
+    );
+    const t = squash(readPdf(pdf).text);
+    expect(t).toContain(squash('CONTENTS'));
+    expect(t).toContain(squash('FIREARMS ALREADY LICENSED'));
+    expect(t).toContain(squash('CZ 452'));
+    expect(t).not.toContain(squash('SPECIFICATION OF THE FIREARM'));
+  });
+
+  it('comprehensive adds the researched specification sheet', async () => {
+    const { pdf } = await svc.render(
+      withTables({ format: 'comprehensive', colourway: 'forest' }) as never,
+    );
+    const t = squash(readPdf(pdf).text);
+    expect(t).toContain(squash('SPECIFICATION OF THE FIREARM APPLIED FOR'));
+    expect(t).toContain(squash('6.5 Creedmoor'));
+    expect(t).toContain(squash('609 mm'));
+  });
+
+  it('prints the first-application line rather than dropping the section', async () => {
+    // ⚠️ AN EMPTY TABLE IS EVIDENCE. Section 13(3) caps a self-defence
+    // applicant at one firearm; "this applicant holds none" is a material fact
+    // on a first application, and omitting the section because there is
+    // nothing to list would read to a DFO as an omission rather than a nil
+    // return.
+    const { pdf } = await svc.render(
+      withTables({ format: 'standard', ownedFirearms: [] }) as never,
+    );
+    const t = squash(readPdf(pdf).text);
+    expect(t).toContain(squash('FIREARMS ALREADY LICENSED TO THE APPLICANT'));
+    expect(t).toContain(squash('This is a first application'));
+  });
+
+  it('puts the identification block on the cover', async () => {
+    const { pdf } = await svc.render(
+      withTables({ format: 'comprehensive' }) as never,
+    );
+    const t = squash(readPdf(pdf).text);
+    expect(t).toContain(squash('8203155041083'));
+    expect(t).toContain(squash('MOTIVATION'));
+  });
+
+  it('lists the back matter in the contents, not only the body sections', async () => {
+    // A reviewer looking for the annexure index should find it from the
+    // contents page rather than thumbing to the end.
+    const { pdf } = await svc.render(
+      withTables({
+        format: 'comprehensive',
+        annexures: buildAnnexures([MotivationUploadKind.IDENTITY_DOCUMENT]),
+        takeWithYou: [{ label: 'Two passport photographs' }],
+      }) as never,
+    );
+    const t = squash(readPdf(pdf).text);
+    expect(t).toContain(squash('Annexures'));
+    expect(t).toContain(squash('Take these with you'));
+  });
+});
+
+describe('the certification column on the annexure index', () => {
+  const svc = new MotivationPdfService();
+
+  it('separates what the Regulations require from what stations ask for', async () => {
+    // ⚠️ THIS DISTINCTION IS THE WHOLE POINT. Regulation 13(4)(b) requires a
+    // certified copy of the IDENTITY DOCUMENT. Telling an applicant that six
+    // documents are legally required to be certified would be the same
+    // confident-sounding wrongness the firearms-law discipline exists to
+    // prevent — and it sends people to a commissioner of oaths to get
+    // photographs of their own safe stamped.
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      annexures: buildAnnexures([
+        MotivationUploadKind.IDENTITY_DOCUMENT,
+        MotivationUploadKind.COMPETENCY_CERTIFICATE,
+        MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      ]),
+    } as never);
+    const t = squash(readPdf(pdf).text);
+
+    expect(t).toContain(squash('CERTIFY — REQUIRED'));
+    expect(t).toContain(squash('Certify — usually asked'));
+    expect(t).toContain(squash('Regulation 13(4)(b)'));
+  });
+
+  it('marks the ID as required and the safe photographs as neither', () => {
+    const entries = buildAnnexures([
+      MotivationUploadKind.IDENTITY_DOCUMENT,
+      MotivationUploadKind.COMPETENCY_CERTIFICATE,
+      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.GOOD_STANDING_LETTER,
+    ]);
+    const by = (k: MotivationUploadKind) =>
+      entries.find((e) => e.kind === k)?.certification;
+
+    // The one the Regulations name.
+    expect(by(MotivationUploadKind.IDENTITY_DOCUMENT)).toBe('required');
+    // A copy of an original: practice, not law.
+    expect(by(MotivationUploadKind.COMPETENCY_CERTIFICATE)).toBe('expected');
+    // Nobody certifies a photograph of their own safe against an original
+    // photograph, and a letter of good standing IS the original.
+    expect(by(MotivationUploadKind.SAFE_PHOTO_CLOSED)).toBe('none');
+    expect(by(MotivationUploadKind.GOOD_STANDING_LETTER)).toBe('none');
   });
 });

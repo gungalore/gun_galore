@@ -56,6 +56,26 @@ function shuffle<T>(rng: () => number, xs: readonly T[]): T[] {
 export type SectionId =
   | 'introduction'
   | 'personal_circumstances'
+  // ── The purpose sections ───────────────────────────────────────────
+  //
+  // ⚠️ THREE IDS FOR ONE JOB, ON PURPOSE. Operator, 2026-08-20: "We need
+  // to talk about the discipline they will be shooting or the animals they
+  // will hunt or varmint or why the self defence is applicable."
+  //
+  // Before this the document went straight from the applicant's circumstances
+  // to the firearm, which meant it could assert a need without ever setting
+  // out what the firearm is FOR. That is the section a paid writer spends
+  // their effort on, and it is the one a reviewer reads to decide whether the
+  // applicant has thought about this at all.
+  //
+  // They are separate ids rather than one 'purpose' id with per-type headings
+  // because the HEADINGS have to differ in kind, not just in wording — "The
+  // quarry and the ground I hunt" and "The discipline and its course of fire"
+  // are not alternates of each other, and a self-defence applicant must never
+  // be handed either.
+  | 'the_quarry'
+  | 'the_discipline'
+  | 'the_threat'
   | 'experience'
   | 'the_firearm'
   | 'storage_safety'
@@ -104,6 +124,24 @@ const HEADING_ALTERNATES: Record<SectionId, readonly string[]> = {
     'Training and track record:',
     'Relevant experience:',
   ],
+  the_quarry: [
+    'The quarry and the ground I hunt:',
+    'What I hunt, and where:',
+    'The species and the terrain:',
+    'The game I hunt and the conditions:',
+  ],
+  the_discipline: [
+    'The discipline and its requirements:',
+    'The discipline I shoot:',
+    'My discipline and its course of fire:',
+    'What the discipline demands:',
+  ],
+  the_threat: [
+    'Why a firearm, and why now:',
+    'The risk I am seeking to meet:',
+    'My exposure to risk:',
+    'The circumstances that give rise to this application:',
+  ],
   the_firearm: [
     'The firearm applied for:',
     'The firearm and why it suits the purpose:',
@@ -148,24 +186,34 @@ const SECTION_SETS: Record<
 > = {
   S13_SELF_DEFENCE: {
     fixedFirst: ['introduction'],
-    movable: ['personal_circumstances', 'experience', 'the_firearm'],
+    movable: [
+      'personal_circumstances',
+      'the_threat',
+      'experience',
+      'the_firearm',
+    ],
     fixedLast: ['storage_safety', 'compliance_history', 'conclusion'],
   },
   S15_OCCASIONAL_HUNTER: {
     fixedFirst: ['introduction'],
-    movable: ['experience', 'the_firearm', 'personal_circumstances'],
+    movable: ['the_quarry', 'experience', 'the_firearm', 'personal_circumstances'],
     fixedLast: ['storage_safety', 'compliance_history', 'conclusion'],
   },
   S16_DEDICATED_HUNTER: {
     fixedFirst: ['introduction'],
-    movable: ['experience', 'the_firearm'],
+    movable: ['the_quarry', 'experience', 'the_firearm'],
     fixedLast: ['storage_safety', 'compliance_history', 'conclusion'],
   },
   S16_DEDICATED_SPORT: {
     fixedFirst: ['introduction'],
-    movable: ['experience', 'the_firearm'],
+    movable: ['the_discipline', 'experience', 'the_firearm'],
     fixedLast: ['storage_safety', 'compliance_history', 'conclusion'],
   },
+  // ⚠️ A RENEWAL GETS NO PURPOSE SECTION, and that is not an oversight.
+  // Section 24 renews an EXISTING licence: the purpose was accepted when it
+  // was granted, and re-arguing it invites a reviewer to reopen a question
+  // nobody asked. A renewal's job is to show continued compliance and
+  // continued use, which is what the sections it does have are for.
   S24_RENEWAL: {
     fixedFirst: ['introduction'],
     movable: ['experience', 'the_firearm'],
@@ -203,6 +251,32 @@ export function planFor(
     ...shuffle(rng, set.movable),
     ...set.fixedLast,
   ];
+
+  // ⚠️ THE PURPOSE SECTION MUST COME BEFORE THE FIREARM SECTION.
+  //
+  // The two are a pair: the purpose section defines the requirement (this
+  // quarry at these ranges, this course of fire, this exposure) and the
+  // firearm section answers it (therefore this calibre, this barrel, this
+  // action). Run the other way round the document justifies a choice before
+  // stating the problem, and every "which is why this rifle suits it" in the
+  // firearm section points at a section the reader has not reached yet.
+  //
+  // The shuffle produced exactly that on the first seed it was tried against:
+  // "Suitability of the firearm" at 2, "What I hunt, and where" at 3.
+  //
+  // A SWAP, NOT A PIN. Both sections keep their freedom to move around
+  // everything else — only their order relative to each other is fixed — so
+  // this costs almost none of the variation the shuffle exists to create.
+  const purposeIdx = order.findIndex(
+    (id) => id === 'the_quarry' || id === 'the_discipline' || id === 'the_threat',
+  );
+  const firearmIdx = order.indexOf('the_firearm');
+  if (purposeIdx !== -1 && firearmIdx !== -1 && purposeIdx > firearmIdx) {
+    [order[purposeIdx], order[firearmIdx]] = [
+      order[firearmIdx],
+      order[purposeIdx],
+    ];
+  }
 
   const sections = order.map((id) => ({
     id,

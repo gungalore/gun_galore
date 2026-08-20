@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import {
   GAP,
+  STAMP_H,
   captionFor,
   planAnnexurePages,
 } from './motivation-annexure-layout';
@@ -11,7 +12,7 @@ import {
   loadPdfAnnexures,
   type PdfAnnexure,
 } from './motivation-pdf-merge';
-import type { AnnexureEntry } from './motivation-checklist';
+import type { AnnexureEntry, CertificationLevel } from './motivation-checklist';
 
 // ────────────────────────────────────────────────────────────────────
 // The formal motivation document. This is the thing the applicant signs and
@@ -133,6 +134,83 @@ const HEADING_BELOW = 25;
 /** Quoted statute runs italic with a 28pt hanging indent. */
 const QUOTE_INDENT = 28;
 
+/**
+ * THE FIVE COLOURWAYS.
+ *
+ * One family, not five picks: same lightness and chroma, only the hue moves.
+ * So none of them shouts louder than another in print and a reviewing officer
+ * cannot read one applicant as flashier than the next — which matters on a
+ * document handed across a counter beside a hundred others.
+ *
+ * `ink` is the accent (heading bands, rules, cover band), `tint` the wash
+ * behind a heading, `rule` the hairline in tables.
+ */
+export type Colourway = 'ochre' | 'navy' | 'forest' | 'oxblood' | 'slate';
+
+export const COLOURWAYS: Record<
+  Colourway,
+  { ink: string; tint: string; rule: string }
+> = {
+  ochre:   { ink: '#7A5A18', tint: '#FAF4E8', rule: '#C9A961' },
+  navy:    { ink: '#1E3A5F', tint: '#EDF1F7', rule: '#8FA6C4' },
+  forest:  { ink: '#2A4A32', tint: '#EDF3EE', rule: '#8FB39A' },
+  oxblood: { ink: '#5E1F26', tint: '#F9EDEE', rule: '#C08F94' },
+  slate:   { ink: '#37474F', tint: '#EFF1F2', rule: '#9AA7AD' },
+};
+
+/**
+ * HOW MUCH DOCUMENT.
+ *
+ * Not three skins — three SECTION SETS. Every format makes the same argument
+ * from the same answers; they differ in how much is set out.
+ *
+ * ⚠️ DEPTH IS NOT LICENCE TO SAY MORE ABOUT THE APPLICANT. A comprehensive
+ * pack adds sections and researched context — the cartridge, the platform,
+ * the statutory request — never more claims about the person. What they told
+ * us bounds what can be written about them whichever format they pick.
+ */
+export type TemplateFormat = 'concise' | 'standard' | 'comprehensive';
+
+export const COLOURWAY_KEYS: Colourway[] = [
+  'ochre',
+  'navy',
+  'forest',
+  'oxblood',
+  'slate',
+];
+export const FORMAT_KEYS: TemplateFormat[] = [
+  'concise',
+  'standard',
+  'comprehensive',
+];
+
+/**
+ * ⚠️ VALIDATE ON READ, NEVER TRUST THE COLUMN. templateFormat and
+ * templateColourway are plain VARCHARs so that adding a template costs no
+ * migration — which means the database will happily hold 'burgundy' from a
+ * typo in an API call, or a value from a colourway we later removed. Neither
+ * may fail a download: somebody clicking "get my PDF" gets a PDF.
+ */
+export function asFormat(v: string | null | undefined): TemplateFormat {
+  return FORMAT_KEYS.includes(v as TemplateFormat)
+    ? (v as TemplateFormat)
+    : 'standard';
+}
+
+export function asColourway(v: string | null | undefined): Colourway {
+  return COLOURWAY_KEYS.includes(v as Colourway) ? (v as Colourway) : 'slate';
+}
+
+/** Which optional furniture each format carries. */
+export const FORMAT_FEATURES: Record<
+  TemplateFormat,
+  { contents: boolean; ownedTable: boolean; specBlock: boolean }
+> = {
+  concise:       { contents: false, ownedTable: false, specBlock: false },
+  standard:      { contents: true,  ownedTable: true,  specBlock: false },
+  comprehensive: { contents: true,  ownedTable: true,  specBlock: true },
+};
+
 export interface MotivationPdfInput {
   /** MO000123 — printed so the applicant can quote it to support. */
   referenceNumber: string;
@@ -151,6 +229,16 @@ export interface MotivationPdfInput {
   disclaimer: string;
   /** Stamped in the footer so reviewed versions are traceable. */
   templateVersion: string;
+  /** Which of the three section sets to render. Defaults to standard. */
+  format?: TemplateFormat;
+  /** Which accent. Defaults to slate — the one that reads as least branded. */
+  colourway?: Colourway;
+  /** The applicant's ID number, printed on the cover as the DFO expects. */
+  idNumber?: string;
+  /** Firearms already held, for the comparison table. */
+  ownedFirearms?: { make: string; calibre: string; type: string; section: string }[];
+  /** Manufacturer specifications for the firearm applied for. */
+  firearmSpec?: { label: string; value: string }[];
   /**
    * "Barrett self-loading rifle, serial BR009252" — the firearm named in the
    * running footer, so a loose sheet can be filed against the right
@@ -184,6 +272,30 @@ export interface MotivationPdfInput {
    * rather than silently missing from the print.
    */
   annexureImages?: AnnexureImagePage[];
+  /**
+   * The request for prior notice and written reasons, if one was built.
+   *
+   * Rendered as its own page and lettered in the annexure index. See
+   * motivation-prior-notice.ts — in short, regulation 91(4) makes the
+   * regulation 89(c) written notification a precondition for a competent
+   * appeal, and regulation 91(1)(a) runs the 90-day clock from the DECISION
+   * rather than from the day the applicant heard about it.
+   */
+  priorNotice?: { title: string; body: string; version: string };
+  /**
+   * Stamp every page as a preview.
+   *
+   * ⚠️ THE MARK IS THE ONLY THING STANDING BETWEEN AN UNPAID PACK AND A
+   * FILEABLE ONE. Payments are not live, so this endpoint hands back a
+   * complete, correct motivation to anyone who finishes the interview. Without
+   * the stamp the product is free.
+   *
+   * It must therefore be a nuisance to remove and impossible to miss, while
+   * still leaving the document READABLE — the whole point of letting somebody
+   * see it is that they can decide whether it is worth paying for. Diagonal,
+   * large, very light, and UNDER the text rather than over it.
+   */
+  watermark?: boolean;
   /** Uploads that could not be reprinted, named so the gap is visible. */
   annexuresNotPrinted?: { letter: string; label: string; why: string }[];
   /**
@@ -204,6 +316,12 @@ export interface MotivationPdfInput {
   takeWithYou?: { label: string; note?: string }[];
 }
 
+/** "THE FIREARM APPLIED FOR" -> "The firearm applied for", for the contents. */
+function titleCase(heading: string): string {
+  const t = heading.toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 /** A short line ending in a colon reads as a section heading. */
 function isHeading(line: string): boolean {
   const t = line.trim();
@@ -219,6 +337,8 @@ export interface AnnexureImagePage {
   bytes: Buffer;
   width: number;
   height: number;
+  /** Whether this copy carries a certification block. See CERTIFICATION. */
+  certification?: CertificationLevel;
 }
 
 @Injectable()
@@ -263,50 +383,142 @@ export class MotivationPdfService {
 
     const contentWidth = PAGE_WIDTH - MARGIN - MARGIN_RIGHT;
 
-    // ── Header ────────────────────────────────────────────────────────
+    const fmt = input.format ?? 'standard';
+    const feat = FORMAT_FEATURES[fmt];
+    const C = COLOURWAYS[input.colourway ?? 'slate'];
+
+    // ── Cover ─────────────────────────────────────────────────────────
+    //
+    // ⚠️ A COVER, NOT A TITLE BLOCK. What we had was a heading and three
+    // lines at the top of page one, with the argument starting underneath —
+    // which is how a letter opens. Every professional pack opens on a page
+    // that does nothing but identify the application: who, what firearm,
+    // under which section. A DFO picking one folder off a pile of forty
+    // decides what it is without opening it.
+    const bandH = 16;
+    doc.rect(0, 0, PAGE_WIDTH, bandH).fill(C.ink);
+    doc.y = MARGIN + 34;
+
     doc
       .font(FONT_BOLD)
-      .fontSize(15)
-      .fillColor(BLACK)
-      .text('MOTIVATION IN SUPPORT OF AN APPLICATION', {
+      .fontSize(8)
+      .fillColor(C.ink)
+      .text('MOTIVATION', MARGIN, doc.y, {
         width: contentWidth,
-        align: 'center',
+        characterSpacing: 2.4,
       });
+    doc.moveDown(0.7);
+    doc
+      .font(FONT_BOLD)
+      .fontSize(34)
+      .fillColor(BLACK)
+      .text('Application\nfor a firearm\nlicence', MARGIN, doc.y, {
+        width: contentWidth,
+        lineGap: -4,
+      });
+    doc.moveDown(0.5);
     doc
       .font(FONT)
-      .fontSize(11)
-      .fillColor(GREY)
-      .text(input.licenceTypeLabel, {
-        width: contentWidth,
-        align: 'center',
-      });
-    doc.moveDown(0.8);
+      .fontSize(12)
+      .fillColor('#333333')
+      .text(input.licenceTypeLabel, MARGIN, doc.y, { width: contentWidth });
 
-    // Thin rule under the header.
-    const ruleY = doc.y;
+    const cvRuleY = doc.y + 18;
     doc
-      .moveTo(MARGIN, ruleY)
-      .lineTo(PAGE_WIDTH - MARGIN, ruleY)
-      .lineWidth(0.5)
-      .strokeColor(RULE)
+      .moveTo(MARGIN, cvRuleY)
+      .lineTo(MARGIN + 92, cvRuleY)
+      .lineWidth(2.4)
+      .strokeColor(C.ink)
       .stroke();
-    doc.moveDown(0.9);
+    doc.y = cvRuleY + 26;
 
-    // ── Applicant + reference block ───────────────────────────────────
-    doc.font(FONT).fontSize(BODY_SIZE).fillColor(BLACK);
-    doc.text(`Applicant: ${input.applicantName}`, { width: contentWidth });
-    doc.text(`Document reference: ${input.referenceNumber}`, {
-      width: contentWidth,
-    });
-    doc.text(
-      `Date: ${input.generatedAt.toLocaleDateString('en-ZA', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      })}`,
-      { width: contentWidth },
-    );
-    doc.moveDown(1.1);
+    // The identification block. Every line a DFO needs to file the folder.
+    const rows: [string, string][] = [
+      ['Applicant', input.applicantName],
+      ...(input.idNumber ? ([['Identity number', input.idNumber]] as [string, string][]) : []),
+      ['Reference', input.referenceNumber],
+      ...(input.firearmLine ? ([['Firearm', input.firearmLine]] as [string, string][]) : []),
+      [
+        'Prepared',
+        input.generatedAt.toLocaleDateString('en-ZA', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        }),
+      ],
+      ...(input.annexures?.length
+        ? ([['Annexures', `${input.annexures.length} attached`]] as [string, string][])
+        : []),
+    ];
+    for (const [k, v] of rows) {
+      const y = doc.y;
+      doc.font(FONT).fontSize(10).fillColor('#666666').text(k, MARGIN, y, { width: 118 });
+      doc
+        .font(FONT_BOLD)
+        .fontSize(10)
+        .fillColor(BLACK)
+        .text(v, MARGIN + 118, y, { width: contentWidth - 118 });
+      doc.y = Math.max(doc.y, y) + 7;
+    }
+
+    // ── Contents ──────────────────────────────────────────────────────
+    //
+    // ⚠️ RESERVED NOW, WRITTEN LAST. The page numbers are not known until the
+    // body has been laid out, so this page is claimed here and filled in
+    // after — bufferPages lets us switch back to it. Rendering the document
+    // twice to learn its own pagination would double every Claude-written
+    // word's cost in wall clock for a page of dot leaders.
+    let tocPageIndex: number | null = null;
+    if (feat.contents) {
+      doc.addPage();
+      tocPageIndex = doc.bufferedPageRange().count - 1;
+    }
+
+    const toc: { heading: string; page: number }[] = [];
+
+    /**
+     * A section heading, recorded for the contents and drawn as a band.
+     *
+     * ⚠️ A BAND, NOT JUST BOLD TYPE. Every H1 in the professional packs sits
+     * on a full-column tinted bar with a rule above it. It is the single
+     * cheapest thing that makes a document read as typeset rather than typed,
+     * and it gives a reviewer working through forty pages somewhere for the
+     * eye to land.
+     */
+    const renderHeading = (heading: string) => {
+      if (doc.y > MARGIN + 1) doc.y += HEADING_ABOVE - PARA_GAP;
+      toc.push({ heading, page: doc.bufferedPageRange().count });
+
+      const top = doc.y - 5;
+      const h = BODY_SIZE + 11;
+      doc.rect(MARGIN, top, contentWidth, h).fill(C.tint);
+      doc
+        .moveTo(MARGIN, top)
+        .lineTo(MARGIN + contentWidth, top)
+        .lineWidth(1.2)
+        .strokeColor(C.ink)
+        .stroke();
+      doc
+        .font(FONT_BOLD)
+        .fontSize(BODY_SIZE)
+        .fillColor(C.ink)
+        .text(heading, MARGIN, top + 6, {
+          width: contentWidth,
+          align: 'center',
+          lineGap: BODY_LEADING,
+          characterSpacing: 0.6,
+        });
+      // ⚠️ PUT THE CURSOR BACK. pdfkit's text(str, x, y) leaves doc.x AT x, and
+      // every later text() that does not name an x inherits it. A heading
+      // drawn at MARGIN is harmless; the tables below are not, and the bug
+      // this caused was invisible in the section that caused it — the
+      // SIGNATURE BLOCK three sections later rendered at x=617 and the
+      // disclaimer ran off the right edge of the page.
+      doc.x = MARGIN;
+      doc.y = top + h + 10;
+    };
+
+    doc.addPage();
 
     // ── Body ──────────────────────────────────────────────────────────
     // Blank-line-separated blocks. pdfkit handles wrapping and page breaks;
@@ -326,18 +538,7 @@ export class MotivationPdfService {
         // above it. Ours were left-aligned sentence case with a trailing
         // colon ("The firearm and why it suits the purpose:"), which is how a
         // letter signposts itself, not how a submission does.
-        const heading = block.replace(/:\s*$/, '').toUpperCase();
-        if (doc.y > MARGIN + 1) doc.y += HEADING_ABOVE - PARA_GAP;
-        doc
-          .font(FONT_BOLD)
-          .fontSize(BODY_SIZE)
-          .fillColor(BLACK)
-          .text(heading, {
-            width: contentWidth,
-            align: 'center',
-            lineGap: BODY_LEADING,
-          });
-        doc.y += HEADING_BELOW - BODY_SIZE;
+        renderHeading(block.replace(/:\s*$/, '').toUpperCase());
       } else {
         // A parenthetical annexure reference is its own line in their
         // documents — "(Refer to Annexure B: Proficiency Certificates)" —
@@ -356,11 +557,136 @@ export class MotivationPdfService {
       }
     }
 
+    // ── Specification of the firearm (comprehensive only) ─────────────
+    //
+    // Researched manufacturer data, set as a spec sheet rather than buried in
+    // a sentence. This is the part of the professional packs that makes an
+    // applicant read as somebody who chose a firearm rather than picked one:
+    // barrel length, action, capacity, overall length, in the manufacturer's
+    // own terms. It goes in as data, never as an argument — the prose does
+    // the arguing, and a reviewer can check every line of this against a
+    // catalogue.
+    if (feat.specBlock && input.firearmSpec?.length) {
+      if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 170) doc.addPage();
+      renderHeading('SPECIFICATION OF THE FIREARM APPLIED FOR');
+
+      const labelW = 190;
+      for (const spec of input.firearmSpec) {
+        if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 24) doc.addPage();
+        const y = doc.y;
+        doc
+          .font(FONT_BOLD)
+          .fontSize(10)
+          .fillColor(BLACK)
+          .text(spec.label, MARGIN + 6, y, { width: labelW - 12 });
+        const afterLabel = doc.y;
+        doc
+          .font(FONT)
+          .fontSize(10)
+          .fillColor(BLACK)
+          .text(spec.value, MARGIN + labelW, y, {
+            width: contentWidth - labelW - 6,
+          });
+        const rowBottom = Math.max(afterLabel, doc.y) + 5;
+        doc
+          .moveTo(MARGIN, rowBottom)
+          .lineTo(MARGIN + contentWidth, rowBottom)
+          .lineWidth(0.5)
+          .strokeColor(C.rule)
+          .stroke();
+        doc.y = rowBottom + 5;
+      }
+      doc.x = MARGIN;
+      doc.y += PARA_GAP;
+    }
+
+    // ── Firearms already licensed (standard and comprehensive) ────────
+    //
+    // ⚠️ THIS TABLE IS EVIDENCE, NOT DECORATION. Section 13 caps a
+    // self-defence applicant at one firearm and section 15(3) caps an
+    // occasional sport shooter at four, so what a person already holds is a
+    // statutory precondition the DFO checks — and a reviewer should be able
+    // to check it at a glance instead of mining it out of a paragraph.
+    //
+    // AN EMPTY TABLE STILL PRINTS. "No firearm is currently licensed to the
+    // applicant" is a material fact on a first application; leaving the
+    // section out because there is nothing to list would read as an omission.
+    if (feat.ownedTable) {
+      if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 140) doc.addPage();
+      renderHeading('FIREARMS ALREADY LICENSED TO THE APPLICANT');
+
+      const owned = input.ownedFirearms ?? [];
+      if (!owned.length) {
+        doc
+          .font(FONT_ITALIC)
+          .fontSize(BODY_SIZE)
+          .fillColor(BLACK)
+          .text(
+            'No firearm is currently licensed to the applicant. This is a first application.',
+            { width: contentWidth, lineGap: BODY_LEADING },
+          );
+        doc.y += PARA_GAP;
+      } else {
+        // Widths sum to contentWidth (451.28) by construction; a column that
+        // overflows would silently overprint its neighbour rather than wrap.
+        const cols: { head: string; w: number; key: keyof (typeof owned)[0] }[] = [
+          { head: 'Make and model', w: 168, key: 'make' },
+          { head: 'Calibre', w: 92, key: 'calibre' },
+          { head: 'Type', w: 106, key: 'type' },
+          { head: 'Held under', w: contentWidth - 366, key: 'section' },
+        ];
+
+        const headTop = doc.y;
+        doc.rect(MARGIN, headTop, contentWidth, 20).fill(C.tint);
+        let x = MARGIN + 6;
+        for (const col of cols) {
+          doc
+            .font(FONT_BOLD)
+            .fontSize(9)
+            .fillColor(C.ink)
+            .text(col.head.toUpperCase(), x, headTop + 6, {
+              width: col.w - 10,
+              characterSpacing: 0.4,
+              lineBreak: false,
+            });
+          x += col.w;
+        }
+        doc.y = headTop + 20;
+
+        for (const f of owned) {
+          if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 30) doc.addPage();
+          const rowTop = doc.y + 5;
+          let bottom = rowTop;
+          let cx = MARGIN + 6;
+          for (const col of cols) {
+            doc
+              .font(FONT)
+              .fontSize(10)
+              .fillColor(BLACK)
+              .text(String(f[col.key] ?? '—'), cx, rowTop, { width: col.w - 10 });
+            bottom = Math.max(bottom, doc.y);
+            cx += col.w;
+          }
+          const ruleY = bottom + 5;
+          doc
+            .moveTo(MARGIN, ruleY)
+            .lineTo(MARGIN + contentWidth, ruleY)
+            .lineWidth(0.5)
+            .strokeColor(C.rule)
+            .stroke();
+          doc.y = ruleY;
+        }
+        doc.x = MARGIN;
+        doc.y += PARA_GAP;
+      }
+    }
+
     // ── Signature block ───────────────────────────────────────────────
     // The applicant signs this as their own motivation — that is what the
     // declaration in the app commits them to, and the document has to carry a
     // place to do it.
     if (doc.y > PAGE_HEIGHT - MARGIN - 140) doc.addPage();
+    doc.x = MARGIN;
     doc.moveDown(1.5);
     doc.font(FONT).fontSize(BODY_SIZE).fillColor(BLACK);
     const sigY = doc.y + 26;
@@ -399,18 +725,38 @@ export class MotivationPdfService {
     // applicant reads on the morning they go.
     if (input.takeWithYou?.length) {
       doc.addPage();
+      // Back matter goes in the contents too. A reviewer who wants the
+      // annexure index should not have to thumb to the end to find out where
+      // it starts, and an applicant checking their own pack is complete uses
+      // this page as the manifest.
+      toc.push({ heading: 'TAKE THESE WITH YOU', page: doc.bufferedPageRange().count });
+      doc.x = MARGIN;
       doc
         .font(FONT_BOLD)
         .fontSize(13)
-        .fillColor(BLACK)
-        .text('TAKE THESE WITH YOU', { width: contentWidth });
+        .fillColor(C.ink)
+        .text('TAKE THESE WITH YOU', MARGIN, doc.y, { width: contentWidth });
       doc.moveDown(0.4);
       doc
         .font(FONT)
         .fontSize(9.5)
         .fillColor(GREY)
         .text(
+          // ⚠️ WHICH DFO, AND WHO HANDS IT IN — neither was on this page, and
+          // this is the page the applicant reads on the morning they go.
+          // Reg 13(4)(a) requires the application to be submitted BY THE
+          // APPLICANT IN PERSON to the relevant DFO, and reg 1(xix) defines
+          // "relevant" as the officer for the area where they ordinarily
+          // reside. Reg 13(9)(a) and 13(10) need them in the flesh anyway:
+          // the DFO takes their fingerprints at the counter.
+          //
+          // Hedged as "normally", because reg 13(4)(a) opens "unless
+          // otherwise specifically stated".
           'This motivation and its annexures are only part of the application. ' +
+            'It goes to the Designated Firearms Officer for the area where you ' +
+            'ordinarily live, and you normally have to hand it in yourself — the ' +
+            'DFO takes your fingerprints at the counter and checks them against ' +
+            'your identity, so somebody else cannot lodge it for you. ' +
             'A Designated Firearms Officer does not have to accept an incomplete ' +
             'application and will not issue the acknowledgement of receipt until it ' +
             'is complete, so it is worth checking every line before you travel. ' +
@@ -445,14 +791,124 @@ export class MotivationPdfService {
       }
     }
 
-    // ── Annexure index ────────────────────────────────────────────────
-    if (input.annexures?.length) {
+    // ── Request for prior notice ─────────────────────────────────
+    if (input.priorNotice) {
+      // Its own page and its own signature block. This is a separate request
+      // to the Registrar, not a paragraph of the motivation, and it is signed
+      // separately because that is what makes it a request from the applicant
+      // rather than a note from us.
       doc.addPage();
+      doc.x = MARGIN;
+      const pnLetter = input.annexures?.find(
+        (a2) => a2.kind === 'PRIOR_NOTICE_REQUEST',
+      )?.letter;
+      toc.push({
+        heading: pnLetter
+          ? `ANNEXURE ${pnLetter} — ${input.priorNotice.title}`
+          : input.priorNotice.title,
+        page: doc.bufferedPageRange().count,
+      });
+
+      if (pnLetter) {
+        doc
+          .font(FONT_BOLD)
+          .fontSize(8)
+          .fillColor(C.ink)
+          .text(`ANNEXURE ${pnLetter}`, MARGIN, doc.y, {
+            width: contentWidth,
+            characterSpacing: 2.2,
+          });
+        doc.moveDown(0.5);
+      }
       doc
         .font(FONT_BOLD)
         .fontSize(13)
         .fillColor(BLACK)
-        .text('ANNEXURES', { width: contentWidth });
+        .text(input.priorNotice.title, MARGIN, doc.y, { width: contentWidth });
+
+      const pnRule = doc.y + 8;
+      doc
+        .moveTo(MARGIN, pnRule)
+        .lineTo(MARGIN + 74, pnRule)
+        .lineWidth(2)
+        .strokeColor(C.ink)
+        .stroke();
+      doc.y = pnRule + 20;
+
+      doc
+        .font(FONT)
+        .fontSize(10)
+        .fillColor(GREY)
+        .text(
+          'To the Designated Firearms Officer, for the attention of the Registrar of Firearms',
+          MARGIN,
+          doc.y,
+          { width: contentWidth },
+        );
+      doc.moveDown(1);
+
+      for (const block of input.priorNotice.body
+        .split(/\n\s*\n/)
+        .map((b) => b.trim())
+        .filter(Boolean)) {
+        if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 40) doc.addPage();
+        // A numbered ask is a hanging indent, not a justified paragraph — the
+        // three of them have to be countable at a glance.
+        const numbered = /^\d\.\s/.test(block);
+        const isLabel = /:$/.test(block) && block.length < 40;
+        doc
+          .font(isLabel ? FONT_BOLD : FONT)
+          .fontSize(BODY_SIZE)
+          .fillColor(BLACK)
+          .text(block, MARGIN + (numbered ? QUOTE_INDENT : 0), doc.y, {
+            width: contentWidth - (numbered ? QUOTE_INDENT : 0),
+            align: numbered || isLabel ? 'left' : 'justify',
+            lineGap: BODY_LEADING,
+          });
+        doc.x = MARGIN;
+        doc.y += numbered ? 8 : PARA_GAP;
+      }
+
+      // ⚠️ RESERVE WHAT THE BLOCK ACTUALLY NEEDS, NOT A ROUND NUMBER. A guess
+      // of 90 threw the signature onto a page of its own with seventy points
+      // of clear space above it — a one-line page seven that reads as a
+      // printing accident on a document somebody is handing to an official.
+      //
+      // The block is: one blank line (12.65 at 11pt Helvetica), 26 to the
+      // rule, 5 below it, then two lines. 69 total, so 70 is the threshold
+      // with a point of slack.
+      if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 70) doc.addPage();
+      doc.x = MARGIN;
+      doc.moveDown(1);
+      const pnSigY = doc.y + 26;
+      doc
+        .moveTo(MARGIN, pnSigY)
+        .lineTo(MARGIN + 230, pnSigY)
+        .lineWidth(0.5)
+        .strokeColor(BLACK)
+        .stroke();
+      doc.y = pnSigY + 5;
+      doc
+        .font(FONT)
+        .fontSize(BODY_SIZE)
+        .fillColor(BLACK)
+        .text(input.applicantName, MARGIN, doc.y, { width: 230 });
+      doc
+        .font(FONT_ITALIC)
+        .fillColor(GREY)
+        .text('Signature and date', MARGIN, doc.y, { width: 230 });
+    }
+
+    // ── Annexure index ────────────────────────────────────────────────
+    if (input.annexures?.length) {
+      doc.addPage();
+      toc.push({ heading: 'ANNEXURES', page: doc.bufferedPageRange().count });
+      doc.x = MARGIN;
+      doc
+        .font(FONT_BOLD)
+        .fontSize(13)
+        .fillColor(C.ink)
+        .text('ANNEXURES', MARGIN, doc.y, { width: contentWidth });
       doc.moveDown(0.4);
       doc
         .font(FONT)
@@ -464,6 +920,13 @@ export class MotivationPdfService {
         );
       doc.moveDown(0.8);
 
+      // ⚠️ THE CERTIFICATION COLUMN IS THE POINT OF THIS PAGE. An applicant
+      // assembling a folder at a kitchen table needs to know which copies to
+      // take to a commissioner BEFORE they drive to the police station, and
+      // "certified copies required" as a blanket sentence sends people to get
+      // photographs of their own safe certified. So it is per row, and it
+      // says which ones are the Regulations and which ones are practice.
+      const certW = 118;
       for (const a of input.annexures) {
         const y = doc.y;
         doc
@@ -479,9 +942,61 @@ export class MotivationPdfService {
             a.count > 1 ? `${a.label} (${a.count} items)` : a.label,
             MARGIN + 95,
             y,
-            { width: contentWidth - 95 },
+            { width: contentWidth - 95 - certW },
           );
+        const rowBottom = doc.y;
+
+        if (a.certification !== 'none') {
+          const required = a.certification === 'required';
+          const cx = MARGIN + contentWidth - certW;
+          // 12pt, not 15: at 15 the dashed borders of consecutive rows all but
+          // touched and the column read as one block rather than as a mark
+          // against each annexure.
+          doc
+            .rect(cx, y - 1, certW, 12)
+            .lineWidth(0.6)
+            .dash(2, { space: 2 })
+            .strokeColor(required ? C.ink : '#BBBBBB')
+            .stroke()
+            .undash();
+          doc
+            .font(required ? FONT_BOLD : FONT)
+            .fontSize(7)
+            .fillColor(required ? C.ink : GREY)
+            .text(required ? 'CERTIFY — REQUIRED' : 'Certify — usually asked', cx, y + 2.5, {
+              width: certW,
+              align: 'center',
+              lineBreak: false,
+            });
+        }
+
+        doc.x = MARGIN;
+        doc.y = rowBottom;
         doc.moveDown(0.45);
+      }
+
+      // The distinction, stated once, so the column above is not read as a
+      // claim that six documents are legally required to be certified.
+      if (input.annexures.some((a) => a.certification !== 'none')) {
+        doc.moveDown(0.4);
+        doc
+          .font(FONT_ITALIC)
+          .fontSize(8.5)
+          .fillColor(GREY)
+          .text(
+            // ⚠️ NOT "WHEN A COPY STANDS IN FOR AN ORIGINAL". That was false of
+            // the competency certificate, where SAPS asks for the original
+            // ITSELF and the copy travels alongside it — so the sentence
+            // told an applicant they could leave the original at home.
+            'Regulation 13(4)(b) of the Firearms Control Regulations, 2004 requires a ' +
+              'certified copy of your identity document. The rows marked "usually asked" ' +
+              'are not required by the Regulations — they are what most stations want ' +
+              'on file alongside the originals you bring, and many DFOs will certify ' +
+              'them at the counter. Bring every original. Ask your own station.',
+            MARGIN,
+            doc.y,
+            { width: contentWidth, lineGap: 1.5 },
+          );
       }
 
       // ⚠️ NAME WHAT IS NOT IN THE PACK. A member whose upload could not be
@@ -531,6 +1046,7 @@ export class MotivationPdfService {
           total: a2.total,
           width: a2.width,
           height: a2.height,
+          stamp: (a2.certification ?? 'none') !== 'none',
         })),
         {
           x: MARGIN,
@@ -582,6 +1098,98 @@ export class MotivationPdfService {
           // draw by starting a new page. That produced a silent blank page
           // after every full-page annexure: ten pages for five pages of
           // content, and nothing in the code that looked like it added one.
+          // ── The certification block ──────────────────────────────
+          //
+          // ⚠️ THIS IS THE PART NOBODY ELSE DOES, and it is worth doing for a
+          // dull reason: a commissioner of oaths certifying eight copies at a
+          // counter has to write the same four things eight times, and the
+          // applicant has to make sure none of them was missed. Printing the
+          // frame means the commissioner fills it in rather than composing it,
+          // and an applicant checking their own pack can see an empty block
+          // from across a table.
+          //
+          // The wording is the commissioner's to supply — we print the
+          // FRAME, never the words "I certify", because a pre-printed
+          // certification on an uncertified copy is exactly the document
+          // nobody should be able to produce.
+          if (place.stampY !== undefined) {
+            const bx = MARGIN;
+            const bw = contentWidth;
+            const bh = STAMP_H - 12;
+            doc
+              .rect(bx, place.stampY, bw, bh)
+              .lineWidth(0.7)
+              .dash(3, { space: 2.5 })
+              .strokeColor(C.rule)
+              .stroke()
+              .undash();
+
+            const required = src.certification === 'required';
+            doc
+              .font(FONT_BOLD)
+              .fontSize(7.5)
+              .fillColor(C.ink)
+              .text(
+                required
+                  ? 'CERTIFICATION REQUIRED — REGULATION 13(4)(b)'
+                  : 'CERTIFICATION',
+                bx + 8,
+                place.stampY + 7,
+                { width: bw - 16, characterSpacing: 1.1, lineBreak: false },
+              );
+
+            // The stamp's own landing zone, on the right, sized for a 40 mm
+            // round stamp. Named, so nobody stamps the signature rules.
+            const zoneW = 128;
+            const zoneX = bx + bw - zoneW - 8;
+            doc
+              .rect(zoneX, place.stampY + 20, zoneW, bh - 28)
+              .lineWidth(0.5)
+              .dash(2, { space: 2 })
+              .strokeColor('#BBBBBB')
+              .stroke()
+              .undash();
+            doc
+              .font(FONT_ITALIC)
+              .fontSize(7)
+              .fillColor('#999999')
+              .text('Stamp', zoneX, place.stampY + bh / 2, {
+                width: zoneW,
+                align: 'center',
+                lineBreak: false,
+              });
+
+            // Rules for the things a commissioner writes by hand.
+            // ⚠️ THE LAST LABEL FITS, AND IT DID NOT AT FIRST. Three rows at
+            // a 17pt step from +32 put "Date and designation" on the box's
+            // own bottom border — legible on screen, a smudge in print.
+            // 24 + 3×16 + the 6.5pt label lands at 74.5 inside an 80pt box.
+            const fieldW = bw - zoneW - 30;
+            let fy = place.stampY + 24;
+            for (const label of [
+              'Commissioner of Oaths — full name',
+              'Signature',
+              'Date and designation',
+            ]) {
+              doc
+                .moveTo(bx + 8, fy + 8)
+                .lineTo(bx + 8 + fieldW, fy + 8)
+                .lineWidth(0.4)
+                .strokeColor('#BBBBBB')
+                .stroke();
+              doc
+                .font(FONT)
+                .fontSize(6.5)
+                .fillColor('#999999')
+                .text(label, bx + 8, fy + 10, {
+                  width: fieldW,
+                  lineBreak: false,
+                });
+              fy += 16;
+            }
+            doc.x = MARGIN;
+          }
+
           const isLast = place === page[page.length - 1];
           if (!isLast) {
             const ruleY = place.y + place.h + GAP / 2;
@@ -593,6 +1201,50 @@ export class MotivationPdfService {
               .stroke();
           }
         }
+      }
+    }
+
+    // ── Contents, written now that the pages are known ────────────────
+    if (tocPageIndex !== null && toc.length) {
+      doc.switchToPage(tocPageIndex);
+      doc.y = MARGIN;
+      doc
+        .font(FONT_BOLD)
+        .fontSize(18)
+        .fillColor(C.ink)
+        .text('CONTENTS', MARGIN, doc.y, { width: contentWidth, characterSpacing: 0.8 });
+      const tRule = doc.y + 8;
+      doc
+        .moveTo(MARGIN, tRule)
+        .lineTo(MARGIN + 74, tRule)
+        .lineWidth(2)
+        .strokeColor(C.ink)
+        .stroke();
+      doc.y = tRule + 22;
+
+      for (const entry of toc) {
+        const y = doc.y;
+        const num = String(entry.page);
+        const numW = doc.font(FONT).fontSize(BODY_SIZE).widthOfString(num);
+        const title = titleCase(entry.heading);
+        const titleW = doc.widthOfString(title);
+        doc.fillColor(BLACK).text(title, MARGIN, y, { lineBreak: false });
+        doc.text(num, MARGIN + contentWidth - numW, y, { lineBreak: false });
+        // Dot leaders, drawn rather than typed so they land on one baseline
+        // whatever the entry length.
+        const from = MARGIN + titleW + 5;
+        const to = MARGIN + contentWidth - numW - 5;
+        if (to > from) {
+          doc
+            .moveTo(from, y + BODY_SIZE - 2.5)
+            .lineTo(to, y + BODY_SIZE - 2.5)
+            .lineWidth(0.6)
+            .dash(1, { space: 2.4 })
+            .strokeColor('#999999')
+            .stroke()
+            .undash();
+        }
+        doc.y = y + BODY_SIZE + 6.5;
       }
     }
 
@@ -628,6 +1280,77 @@ export class MotivationPdfService {
     const range = doc.bufferedPageRange();
     const totalPages = range.count + extraPageCount(merged.loaded);
     for (let i = 0; i < range.count; i++) {
+      // ── Preview watermark ──────────────────────────────────
+      //
+      // Stamped in the footer pass because that is the one place we already
+      // walk every page with bufferPages, and because it has to land on the
+      // COVER too — the page the footer loop deliberately skips. Drawn before
+      // the `continue` for that reason.
+      //
+      // ⚠️ SAVE AND RESTORE THE GRAPHICS STATE. rotate() and the fill colour
+      // are document-wide in pdfkit, and leaving either set bleeds into the
+      // footer drawn immediately below — which is how a first attempt put the
+      // running title on a 55-degree angle in pale grey.
+      if (input.watermark) {
+        doc.switchToPage(range.start + i);
+        // ⚠️ ZERO THE BOTTOM MARGIN FIRST, for the same reason the footer pass
+        // does it twenty lines below. Text placed outside the printable box
+        // makes pdfkit start a FRESH PAGE and write there instead — a
+        // 90pt diagonal through the middle of an A4 overhangs the bottom
+        // margin easily, and the cover line below sits under it on purpose.
+        // The first version of this added a silent extra page to every
+        // watermarked pack and numbered a six-page document "of 5".
+        const keepBottom = doc.page.margins.bottom;
+        const keepTop = doc.page.margins.top;
+        doc.page.margins.bottom = 0;
+        doc.page.margins.top = 0;
+
+        doc.save();
+        doc.rotate(-55, { origin: [PAGE_WIDTH / 2, PAGE_HEIGHT / 2] });
+        // 90pt spans roughly half the page diagonal. Smaller reads as a
+        // blemish rather than a mark, and a mark somebody can crop or ignore
+        // is not doing the one job it has.
+        doc
+          .font(FONT_BOLD)
+          .fontSize(90)
+          .fillColor('#000000')
+          .fillOpacity(0.07)
+          .text('PREVIEW', 0, PAGE_HEIGHT / 2 - 52, {
+            width: PAGE_WIDTH,
+            align: 'center',
+            characterSpacing: 10,
+            lineBreak: false,
+          });
+        doc.fillOpacity(1);
+        doc.restore();
+
+        // A second line, small and legible, at the foot of the cover: a
+        // 7%-opacity diagonal reads as a print artefact on a photocopy, and
+        // somebody has to be able to tell what they are holding and that a
+        // clean copy exists.
+        if (i === 0) {
+          doc
+            .font(FONT_ITALIC)
+            .fontSize(9)
+            .fillColor(GREY)
+            .text(
+              'Preview copy — not for filing. The final document is issued without this mark.',
+              MARGIN,
+              PAGE_HEIGHT - MARGIN_BOTTOM + 26,
+              { width: contentWidth, align: 'center', lineBreak: false },
+            );
+        }
+
+        doc.page.margins.bottom = keepBottom;
+        doc.page.margins.top = keepTop;
+      }
+      // ⚠️ NOT ON THE COVER. "Page 1 of 6" under a title page is what a
+      // word-processed document does; a bound submission starts numbering at
+      // the first page of content. The cover already carries the reference
+      // number in its identification block, so nothing is lost by leaving it
+      // clean — and a cover that reads as a cover is most of why the pack
+      // looks like it came from somebody who does this for a living.
+      if (i === 0) continue;
       doc.switchToPage(range.start + i);
       const keep = doc.page.margins.bottom;
       doc.page.margins.bottom = 0;

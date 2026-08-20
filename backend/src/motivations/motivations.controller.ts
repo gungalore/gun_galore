@@ -38,7 +38,9 @@ import {
   AnswerFollowUpDto,
   CreateMotivationDto,
   SaveAnswersDto,
+  SetTemplateDto,
 } from './dto/motivation.dto';
+import { templateCatalogue } from './motivation-templates';
 
 /**
  * Upload limits, in one place.
@@ -122,6 +124,21 @@ export class MotivationsController {
     };
   }
 
+  /**
+   * The fifteen templates the picker offers.
+   *
+   * ⚠️ DECLARED BEFORE @Get(':id') for the same reason as `fields` above —
+   * Nest matches in declaration order, and ':id' would otherwise swallow
+   * "templates" and hand it to findOne as a motivation id.
+   *
+   * No id and no applicant data: colour names and section lists, from a pure
+   * function, so it costs nothing and can be cached hard.
+   */
+  @Get('templates')
+  templates() {
+    return templateCatalogue();
+  }
+
   @Get()
   list(@CurrentUser() clerkId: string) {
     return this.motivations.listMine(clerkId);
@@ -155,6 +172,24 @@ export class MotivationsController {
     @Body() dto: SaveAnswersDto,
   ) {
     return this.motivations.saveAnswers(clerkId, id, dto.answers ?? {});
+  }
+
+  /**
+   * Which template the applicant picked.
+   *
+   * Separate from saveAnswers because it is NOT an answer: it changes nothing
+   * about what the document argues, only how it is set. It stays editable
+   * after the document is written, so somebody who dislikes the colour can
+   * change it and download again without regenerating — the body is stored
+   * text and the PDF is re-rendered on every download anyway.
+   */
+  @Patch(':id/template')
+  setTemplate(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body() dto: SetTemplateDto,
+  ) {
+    return this.motivations.setTemplate(clerkId, id, dto);
   }
 
   /**

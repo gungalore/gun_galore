@@ -4081,6 +4081,29 @@ enum MotivationUploadKind {
   // NOT retired: how the safe is anchored, which no door shot shows.
   SAFE_INSTALLATION
   CHARACTER_REFERENCE
+  /// A log of hunts or competitive shoots — dates, venues, disciplines,
+  /// species. Annexure "J. SHOOTING ACTIVITIES" in the packs professional
+  /// writers produce, and the single best evidence that a section 15 or 16
+  /// applicant actually does the thing they are applying to do. Nothing in the
+  /// Act names it; associations keep these logs and DFOs read them.
+  SHOOTING_ACTIVITY_LOG
+  /// WHERE THE FIREARM IS COMING FROM — one annexure, two forms.
+  ///
+  /// Either the dealer's invoice, quote or proof that the firearm is being
+  /// received from their stock, OR a letter from the CURRENT LICENCE HOLDER
+  /// giving the applicant permission to apply for a licence over that firearm.
+  /// One kind rather than two because a given application has exactly one
+  /// answer to "whose firearm is this", and splitting it would produce an
+  /// index with a permanently empty letter on it.
+  FIREARM_SOURCE_PROOF
+  /// The current owner's licence, for a private transfer. Pairs with a
+  /// permission letter: the letter says they agree, this shows they are the
+  /// person entitled to agree.
+  SELLER_LICENCE
+  /// Letter of appointment as executor, where the firearm is inherited —
+  /// named by SAPS's own application guidance and governed by s 147/148 and
+  /// reg 103.
+  EXECUTOR_APPOINTMENT
   INCIDENT_REPORT
   PREVIOUS_MOTIVATION
   OTHER
@@ -4132,6 +4155,22 @@ model Motivation {
   // generation so documents produced under a reviewed version can be told
   // apart from ones produced after a template change.
   templateVersion       String? @db.VarChar(40)
+
+  // ── Which template the applicant picked ────────────────────────────
+  //
+  // ⚠️ STORED AS PLAIN STRINGS, NOT ENUMS, and that is the deliberate choice.
+  // Adding a colourway or a format is then a code deploy and a picker row,
+  // never a Postgres migration — and ALTER TYPE ... ADD VALUE is one-way and
+  // cannot be used in the same transaction that adds it, which has already
+  // cost this codebase two-file migrations more than once. The renderer
+  // validates and falls back, so an unknown value degrades to the default
+  // rather than failing a download.
+  //
+  // NOT encrypted: a colour preference is not personal information, and
+  // keeping it in the clear means the template picker can read it back
+  // without decrypting the answers blob.
+  templateFormat    String? @db.VarChar(20)
+  templateColourway String? @db.VarChar(20)
   disclaimerVersion     String? @db.VarChar(40)
 
   // ── Anti-template variation ──

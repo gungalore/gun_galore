@@ -177,6 +177,55 @@ export interface MotivationDetail extends MotivationSummary {
    * firearms-owned rows.
    */
   overlap?: { needsJustification: boolean; prompt: string | null };
+  /** Which of the fifteen templates this pack is set in. */
+  template?: { format: TemplateFormat; colourway: Colourway };
+  /**
+   * The document still carries the PREVIEW mark.
+   *
+   * True until the pack is paid for or holds a free-beta seat. Payments are
+   * not live, so today this is on for almost everyone — which is the right
+   * way round: the mark is the only thing between an unpaid pack and a
+   * fileable one.
+   */
+  watermarked?: boolean;
+}
+
+export type TemplateFormat = 'concise' | 'standard' | 'comprehensive';
+export type Colourway = 'ochre' | 'navy' | 'forest' | 'oxblood' | 'slate';
+
+export interface TemplateFormatOption {
+  key: TemplateFormat;
+  name: string;
+  blurb: string;
+  includes: string[];
+  lengthHint: string;
+  /** Which blocks the mock page draws. Mirrors the renderer's FORMAT_FEATURES. */
+  features: { contents: boolean; ownedTable: boolean; specBlock: boolean };
+}
+
+export interface TemplateColourOption {
+  key: Colourway;
+  name: string;
+  /** Heading bands, rules, the cover band. */
+  ink: string;
+  /** The wash behind a heading. */
+  tint: string;
+  /** Hairlines in tables. */
+  rule: string;
+}
+
+/**
+ * The fifteen templates, served rather than hard-coded.
+ *
+ * ⚠️ THE HEX VALUES COME FROM THE RENDERER. Keeping a copy of "#2A4A32"
+ * in the frontend would be right on the day it was written and wrong the
+ * first time somebody adjusted the ink — and the failure is the worst kind:
+ * a member picks a colour, pays, and the PDF arrives a different one.
+ */
+export interface TemplateCatalogue {
+  formats: TemplateFormatOption[];
+  colours: TemplateColourOption[];
+  defaults: { format: TemplateFormat; colourway: Colourway };
 }
 
 /** What the member's own Licence Centre could fill in here. */
@@ -470,6 +519,40 @@ export const motivationsApi = {
       { method: 'POST', body: form },
     );
   },
+
+  /**
+   * The template catalogue. No id — it is product information, the same for
+   * everyone, so it is fetched once and reused.
+   *
+   * The fallback is an EMPTY catalogue rather than a guessed one: a picker
+   * showing three colours we invented client-side, one of which the renderer
+   * does not have, is worse than a picker that says it could not load.
+   */
+  templates: (t: TokenGetter) =>
+    request<TemplateCatalogue>(t, '/templates', {}, {
+      formats: [],
+      colours: [],
+      defaults: { format: 'standard', colourway: 'slate' },
+    }),
+
+  /**
+   * Record the template the applicant picked.
+   *
+   * Both fields optional and sent independently — changing the colour must
+   * not resend the format, or two rapid clicks on different controls would
+   * have one overwrite the other's choice.
+   */
+  setTemplate: (
+    t: TokenGetter,
+    id: string,
+    choice: { format?: TemplateFormat; colourway?: Colourway },
+  ) =>
+    request<{ format: TemplateFormat; colourway: Colourway }>(
+      t,
+      `/${id}/template`,
+      { method: 'PATCH', body: JSON.stringify(choice) },
+      { format: 'standard', colourway: 'slate' },
+    ),
 
   /** Write the suggestions the applicant accepted. */
   applyExtraction: (

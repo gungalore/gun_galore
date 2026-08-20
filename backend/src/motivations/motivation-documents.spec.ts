@@ -12,20 +12,21 @@ const K = MotivationUploadKind;
 
 describe('what SAPS will not process without', () => {
   it('names the specific documents still missing', () => {
+    // ⚠️ THE SAFE PHOTOGRAPHS LEFT THIS TIER ON 2026-08-20. This list renders
+    // under "SAPS will not process the application without these", and no
+    // SAPS document list at either stage mentions a photograph of a safe:
+    // regulation 13(12) conditions the ISSUE of the licence, not the lodging
+    // of the application, and SAPS's published sequence is lodge first, then
+    // install a safe within 14 days, then a premises inspection. They are
+    // 'expected' now — see the safe tests below, which still enforce all
+    // three shots.
     const s = documentStatus(S13, [K.IDENTITY_DOCUMENT]);
     expect(s.missingRequired).toEqual([
       K.COMPETENCY_CERTIFICATE,
       K.ADDRESS_CONFIRMATION,
-      K.SAFE_PHOTO_CLOSED,
-      K.SAFE_PHOTO_AJAR,
-      K.SAFE_PHOTO_BOLTS,
     ]);
     expect(s.requiredHave).toBe(1);
-    // ⚠️ FOUR, NOT SIX — the three safe shots are ONE row on screen now, and
-    // the counter has to match the rows the member can see or "1 of 6" reads
-    // as a miscount beside four lines. missingRequired above still names all
-    // three shots, because that is what is actually missing.
-    expect(s.requiredTotal).toBe(4);
+    expect(s.requiredTotal).toBe(3);
   });
 
   it('is satisfied once they are all there', () => {
@@ -33,22 +34,43 @@ describe('what SAPS will not process without', () => {
       K.IDENTITY_DOCUMENT,
       K.COMPETENCY_CERTIFICATE,
       K.ADDRESS_CONFIRMATION,
-      K.SAFE_PHOTO_CLOSED,
-      K.SAFE_PHOTO_AJAR,
-      K.SAFE_PHOTO_BOLTS,
     ]);
     expect(s.missingRequired).toEqual([]);
     expect(s.requiredHave).toBe(s.requiredTotal);
   });
 
-  it('demands all THREE safe photographs on every licence type', () => {
+  it('still chases all THREE safe photographs on every licence type', () => {
     // Operator, 2026-08-19: "enforce three photos. closed safe, half open with
-    // key in door, full open showing roll bolts."
+    // key in door, full open showing roll bolts." That still holds — what
+    // changed is only the TIER: 'expected' means "no statute behind it, and
+    // the DFO will want it anyway", which is the honest description of a
+    // photograph that appears on no SAPS list but that most stations ask for.
+    // The row is still chased, still named, still three separate parts.
+    for (const t of Object.values(MotivationLicenceType)) {
+      const safe = documentStatus(t, []).needs.find(
+        (n) => n.kind === K.SAFE_PHOTO_CLOSED,
+      );
+      expect(safe).toBeDefined();
+      expect(safe!.tier).toBe('expected');
+      expect(safe!.parts!.map((p) => p.kind)).toEqual([
+        K.SAFE_PHOTO_CLOSED,
+        K.SAFE_PHOTO_AJAR,
+        K.SAFE_PHOTO_BOLTS,
+      ]);
+      expect(safe!.have).toBe(false);
+    }
+  });
+
+  it('does not let a missing safe photograph read as a lodgement blocker', () => {
+    // The failure this guards against is a person who has not bought a safe
+    // yet reading "SAPS will not process the application without these" and
+    // waiting — when SAPS's own sequence has them lodge first and install the
+    // safe in the 14 days after.
     for (const t of Object.values(MotivationLicenceType)) {
       const missing = documentStatus(t, []).missingRequired;
-      expect(missing).toContain(K.SAFE_PHOTO_CLOSED);
-      expect(missing).toContain(K.SAFE_PHOTO_AJAR);
-      expect(missing).toContain(K.SAFE_PHOTO_BOLTS);
+      expect(missing).not.toContain(K.SAFE_PHOTO_CLOSED);
+      expect(missing).not.toContain(K.SAFE_PHOTO_AJAR);
+      expect(missing).not.toContain(K.SAFE_PHOTO_BOLTS);
     }
   });
 
@@ -68,8 +90,6 @@ describe('what SAPS will not process without', () => {
     const safe = s.needs.find((n) => n.kind === K.SAFE_PHOTO_CLOSED)!;
     expect(safe.have).toBe(false);
     expect(safe.parts!.map((p) => p.have)).toEqual([true, false, false]);
-    expect(s.missingRequired).toContain(K.SAFE_PHOTO_AJAR);
-    expect(s.missingRequired).toContain(K.SAFE_PHOTO_BOLTS);
   });
 
   it('⚠️ STILL NAMES ALL THREE SHOTS, on the one collapsed row', () => {
@@ -96,7 +116,10 @@ describe('what SAPS will not process without', () => {
     // so claiming it satisfies one of them would assert what we do not know.
     const s = documentStatus(S13, [K.SAFE_PHOTO]);
     expect(s.extras).toEqual([K.SAFE_PHOTO]);
-    expect(s.missingRequired).toContain(K.SAFE_PHOTO_CLOSED);
+    // The three shots are still all outstanding — a retired photograph
+    // satisfies none of them, because nothing records which shot it was.
+    const safe = s.needs.find((n) => n.kind === K.SAFE_PHOTO_CLOSED)!;
+    expect(safe.parts!.every((p) => !p.have)).toBe(true);
   });
 
   it('requires association proof for a dedicated application, not for s13', () => {
@@ -258,15 +281,18 @@ describe('the upload picker', () => {
     // The tag means STILL OUTSTANDING. Computed against an empty upload list
     // it would never clear, and the applicant would photograph all three shots
     // and watch the menu go on asking for them.
+    // Tier is 'expected' since 2026-08-20: the safe is chased, but it is not
+    // something SAPS refuses to accept a pack without. What this test is
+    // about is the `have` flag clearing, which is unchanged.
     const before = pickableKinds(S13, {}, []);
     expect(before.find((p) => p.kind === K.SAFE_PHOTO_AJAR)).toMatchObject({
-      tier: 'required',
+      tier: 'expected',
       have: false,
     });
 
     const after = pickableKinds(S13, {}, [K.SAFE_PHOTO_AJAR]);
     expect(after.find((p) => p.kind === K.SAFE_PHOTO_AJAR)).toMatchObject({
-      tier: 'required',
+      tier: 'expected',
       have: true,
     });
     // …and only that one. The other two shots are untouched.
