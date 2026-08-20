@@ -58,18 +58,54 @@ import type { AnnexureEntry } from './motivation-checklist';
 /** Page geometry, in points. A4 with ~25 mm margins. */
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
-const MARGIN = 71; // ≈25 mm
+
+// ────────────────────────────────────────────────────────────────────
+// MEASURED OFF A SAFARI OUTDOOR MOTIVATION, not chosen.
+//
+// The operator's verdict on the first version was "it looks like dog shit"
+// beside the packs a professional writer charges for, and he is right. Every
+// number below was measured from
+// "Gerstner G - (Barrett 5.56 x 45 MM NATO Rec 7 FDE 11.5 INCH) Sect 16 DS
+// Motivation.pdf" with PyMuPDF span geometry, so this is their layout rather
+// than an impression of it.
+//
+// ⚠️ THE BIGGEST SINGLE CHANGE IS THE TYPEFACE. We set the body in Times, a
+// book serif, and they set it in Arial. That one difference is most of why
+// ours reads as a letter and theirs reads as a submission — before a word is
+// read. Helvetica is the standard-14 metric equivalent of Arial, so it needs
+// no embedded font file (see the note above about pdfkit and .afm metrics).
+// ────────────────────────────────────────────────────────────────────
+
+/** L72 R66 T72 B61, measured from their text bbox. */
+const MARGIN = 72;
+const MARGIN_RIGHT = 66;
+/** Room for a THREE-LINE footer: page number plus the running title. */
+const MARGIN_BOTTOM = 61;
 
 const BLACK = '#111111';
 const GREY = '#555555';
 const RULE = '#999999';
 
-const FONT = 'Times-Roman';
-const FONT_BOLD = 'Times-Bold';
-const FONT_ITALIC = 'Times-Italic';
+const FONT = 'Helvetica';
+const FONT_BOLD = 'Helvetica-Bold';
+const FONT_ITALIC = 'Helvetica-Oblique';
+const FONT_BOLD_ITALIC = 'Helvetica-BoldOblique';
 
-const BODY_SIZE = 11.5;
-const BODY_LEADING = 5; // extra line gap; pdfkit calls this `lineGap`
+const BODY_SIZE = 11;
+/**
+ * Their baseline-to-baseline is 12.65pt at 11pt Arial. pdfkit's lineGap is
+ * ADDITIONAL to the font's own line height, and Helvetica at 11pt renders
+ * ~12.65 unaided — so the gap is zero and the paragraph spacing carries the
+ * rhythm instead.
+ */
+const BODY_LEADING = 0;
+/** Their paragraph-to-paragraph step is 24.6pt — one clear blank line. */
+const PARA_GAP = 12;
+/** Section headings: 49pt of air above, 24.8 below. */
+const HEADING_ABOVE = 49;
+const HEADING_BELOW = 25;
+/** Quoted statute runs italic with a 28pt hanging indent. */
+const QUOTE_INDENT = 28;
 
 export interface MotivationPdfInput {
   /** MO000123 — printed so the applicant can quote it to support. */
@@ -89,6 +125,13 @@ export interface MotivationPdfInput {
   disclaimer: string;
   /** Stamped in the footer so reviewed versions are traceable. */
   templateVersion: string;
+  /**
+   * "Barrett self-loading rifle, serial BR009252" — the firearm named in the
+   * running footer, so a loose sheet can be filed against the right
+   * application. Optional: a renewal or a pack with no firearm chosen yet
+   * simply omits it rather than printing an empty clause.
+   */
+  firearmLine?: string;
   /** Generation timestamp. Passed in, never read from the clock here, so the
    *  same input always renders the same bytes (testable, reproducible). */
   generatedAt: Date;
@@ -170,9 +213,9 @@ export class MotivationPdfService {
       size: [PAGE_WIDTH, PAGE_HEIGHT],
       margins: {
         top: MARGIN,
-        bottom: MARGIN,
+        bottom: MARGIN_BOTTOM,
         left: MARGIN,
-        right: MARGIN,
+        right: MARGIN_RIGHT,
       },
       // Embedded so a reader shows something sensible in its title bar; the
       // document number rather than the applicant's name, so a filename in a
@@ -192,7 +235,7 @@ export class MotivationPdfService {
       doc.on('error', reject);
     });
 
-    const contentWidth = PAGE_WIDTH - MARGIN * 2;
+    const contentWidth = PAGE_WIDTH - MARGIN - MARGIN_RIGHT;
 
     // ── Header ────────────────────────────────────────────────────────
     doc
@@ -251,25 +294,39 @@ export class MotivationPdfService {
       if (isHeading(block)) {
         // Keep a heading with at least a couple of lines of its paragraph:
         // if we are near the bottom, start the page now rather than orphan it.
-        if (doc.y > PAGE_HEIGHT - MARGIN - 90) doc.addPage();
-        doc.moveDown(0.5);
+        if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 110) doc.addPage();
+        // ⚠️ CENTRED, BOLD, ALL CAPS — measured off Safari Outdoor, where
+        // "CURRENT COMPETENCY STATUS" sits centred in Arial-Bold 11 with 49pt
+        // above it. Ours were left-aligned sentence case with a trailing
+        // colon ("The firearm and why it suits the purpose:"), which is how a
+        // letter signposts itself, not how a submission does.
+        const heading = block.replace(/:\s*$/, '').toUpperCase();
+        if (doc.y > MARGIN + 1) doc.y += HEADING_ABOVE - PARA_GAP;
         doc
           .font(FONT_BOLD)
-          .fontSize(BODY_SIZE + 0.5)
+          .fontSize(BODY_SIZE)
           .fillColor(BLACK)
-          .text(block, { width: contentWidth, lineGap: BODY_LEADING });
-        doc.moveDown(0.25);
+          .text(heading, {
+            width: contentWidth,
+            align: 'center',
+            lineGap: BODY_LEADING,
+          });
+        doc.y += HEADING_BELOW - BODY_SIZE;
       } else {
+        // A parenthetical annexure reference is its own line in their
+        // documents — "(Refer to Annexure B: Proficiency Certificates)" —
+        // never justified into the paragraph above it.
+        const isRef = /^\(Refer to Annexure/i.test(block);
         doc
           .font(FONT)
           .fontSize(BODY_SIZE)
           .fillColor(BLACK)
           .text(block, {
             width: contentWidth,
-            align: 'justify',
+            align: isRef ? 'left' : 'justify',
             lineGap: BODY_LEADING,
           });
-        doc.moveDown(0.6);
+        doc.y += PARA_GAP;
       }
     }
 
@@ -534,23 +591,42 @@ export class MotivationPdfService {
     // pack "page 5 of 12", and a DFO counting sheets would think three were
     // missing.
     const merged = await loadPdfAnnexures(input.annexurePdfs ?? []);
+    // The running title, as theirs reads: who, what firearm, which section.
+    const runningTitle = [
+      `Motivation for ${input.applicantName}`,
+      input.firearmLine ? `for a ${input.firearmLine}` : '',
+      `— ${input.licenceTypeLabel}`,
+    ]
+      .filter(Boolean)
+      .join(' ');
     const range = doc.bufferedPageRange();
     const totalPages = range.count + extraPageCount(merged.loaded);
     for (let i = 0; i < range.count; i++) {
       doc.switchToPage(range.start + i);
       const keep = doc.page.margins.bottom;
       doc.page.margins.bottom = 0;
-      const footerY = PAGE_HEIGHT - MARGIN + 26;
+      // ⚠️ THEIR FOOTER IS THREE LINES, AND IT IS NOT DECORATION. Every page
+      // of a Safari Outdoor motivation carries "Page N of M" on the left and
+      // the running title beneath it — applicant, firearm, serial, section —
+      // in italic 8pt. A DFO works through a pile of loose sheets; a page
+      // that names its own application cannot be filed against the wrong one.
+      // Ours carried a single centred line with our own name in it, which
+      // told the reviewer nothing they needed.
+      const footerY = PAGE_HEIGHT - MARGIN_BOTTOM + 8;
       doc
-        .font(FONT)
-        .fontSize(7.5)
+        .font(FONT_ITALIC)
+        .fontSize(8)
         .fillColor(GREY)
-        .text(
-          `${input.referenceNumber} · page ${i + 1} of ${totalPages} · prepared with All Outdoor (${input.templateVersion})`,
-          MARGIN,
-          footerY,
-          { width: contentWidth, align: 'center', lineBreak: false },
-        );
+        .text(`Page ${i + 1} of ${totalPages}`, MARGIN, footerY, {
+          width: contentWidth,
+          align: 'left',
+          lineBreak: false,
+        });
+      doc.text(runningTitle, MARGIN, footerY + 11, {
+        width: contentWidth,
+        align: 'center',
+        lineGap: 0,
+      });
       doc.page.margins.bottom = keep;
     }
 

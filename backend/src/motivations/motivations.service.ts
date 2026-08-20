@@ -2737,6 +2737,16 @@ export class MotivationsService {
       body,
       disclaimer: DISCLAIMER_TEXT,
       templateVersion: row.templateVersion ?? TEMPLATE_VERSION,
+      // Named in the running footer of every page, the way a professional
+      // pack does it — a loose sheet has to identify its own application.
+      firearmLine:
+        [answers.firearm_make, answers.firearm_type]
+          .map((v) => (v ?? '').trim())
+          .filter(Boolean)
+          .join(' ') +
+        (answers.firearm_serial?.trim()
+          ? `, serial ${answers.firearm_serial.trim()}`
+          : '') || undefined,
       generatedAt: row.completedAt ?? new Date(),
       annexures: buildAnnexures(kinds),
       annexureImages: printable.images,

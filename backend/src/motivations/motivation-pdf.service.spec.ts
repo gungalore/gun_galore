@@ -129,7 +129,9 @@ describe('MotivationPdfService', () => {
     // complete 1..N run with no gaps or repeats. That is a stronger check than
     // counting page objects in the bytes, and it also proves bufferPages
     // resolved the total before any footer was written.
-    const footers = [...flat(text).matchAll(/page (\d+) of (\d+)/g)];
+    // Case-insensitive: the footer reads "Page N of M" since the layout was
+    // measured off Safari Outdoor, whose footer capitalises it.
+    const footers = [...flat(text).matchAll(/page (\d+) of (\d+)/gi)];
     expect(footers.length).toBeGreaterThan(2);
     const totals = new Set(footers.map((f) => f[2]));
     expect(totals.size).toBe(1);
