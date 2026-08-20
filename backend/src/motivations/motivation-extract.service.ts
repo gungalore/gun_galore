@@ -75,6 +75,26 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
     'association_number',
     'dedicated_since',
   ],
+  // The sworn letter carries the same association and dedicated number as the
+  // certificate, plus the two dates that make it expire — which is the whole
+  // reason it is a separate document rather than another photograph of the
+  // status.
+  GOOD_STANDING_LETTER: [
+    'association_name',
+    'association_number',
+    'dedicated_since',
+  ],
+  // ⚠️ IT DESCRIBES THE FIREARM BEING APPLIED FOR, so it fills the firearm
+  // fields, not the association ones. That is what makes it worth reading: an
+  // endorsement already names the type, calibre, make, action and serial, and
+  // the applicant would otherwise type all five again.
+  ASSOCIATION_ENDORSEMENT: [
+    'firearm_type',
+    'firearm_calibre',
+    'firearm_make',
+    'firearm_action',
+    'firearm_serial',
+  ],
   EMPLOYMENT_CONFIRMATION: ['employer_name', 'employer_address'],
   // Written against ROW 1 and remapped to whichever row is free — see
   // nextOwnedSlot(). The barrel serial is on the licence where the firearm has
@@ -414,12 +434,21 @@ const UPLOAD_LABEL: Partial<Record<MotivationUploadKind, string>> = {
   COMPETENCY_CERTIFICATE: 'your competency certificate',
   PROFICIENCY_CERTIFICATE: 'your proficiency certificate',
   ADDRESS_CONFIRMATION: 'your proof of address',
-  ASSOCIATION_CARD: 'your association card',
+  ASSOCIATION_CARD: 'your dedicated status certificate',
+  GOOD_STANDING_LETTER: 'your letter of good standing',
+  ASSOCIATION_ENDORSEMENT: "your association's endorsement",
   CURRENT_LICENCE: 'your existing licence',
 };
 
 /** The kinds a photograph can actually be sorted into. */
 const CLASSIFIABLE: MotivationUploadKind[] = [
+  // ⚠️ ALL THREE ASSOCIATION DOCUMENTS ARE SEPARATELY CLASSIFIABLE, and they
+  // must be: they come from the same association on the same letterhead, and
+  // a classifier that only knew ASSOCIATION_CARD would file the sworn letter
+  // and the endorsement as the status certificate. The pack would then look
+  // complete while missing the declaration section 16(2) asks for.
+  'GOOD_STANDING_LETTER',
+  'ASSOCIATION_ENDORSEMENT',
   'IDENTITY_DOCUMENT',
   'COMPETENCY_CERTIFICATE',
   'PROFICIENCY_CERTIFICATE',

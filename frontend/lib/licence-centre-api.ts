@@ -30,6 +30,7 @@ export type CredentialKind =
   | 'DEDICATED_HUNTER'
   | 'PROFESSIONAL_HUNTER'
   | 'PROFICIENCY'
+  | 'GOOD_STANDING'
   | 'OTHER';
 
 export type ExpiryState = 'valid' | 'expiring' | 'expired' | 'unknown';
@@ -219,6 +220,12 @@ export const KIND_LABELS: Record<CredentialKind, string> = {
   // anything under section 16.
   PROFESSIONAL_HUNTER: 'Professional hunter (PH)',
   PROFICIENCY: 'Proficiency certificate',
+  // ⚠️ SEPARATE FROM THE STATUS ITSELF, because it is a separate piece of
+  // paper with its OWN validity window — the status certificate carries an
+  // issue date and never expires, while the letter runs out. Filing them
+  // together would mean chasing the wrong date, which is the one job the
+  // vault exists to do.
+  GOOD_STANDING: 'Letter of good standing (section 16)',
   OTHER: 'Something else',
 };
 

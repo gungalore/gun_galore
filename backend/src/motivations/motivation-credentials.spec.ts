@@ -1,8 +1,10 @@
 import {
   CredentialSource,
+  credentialChoices,
   credentialOffer,
   toIsoDay,
-  credentialChoices,} from './motivation-credentials';
+  validLongEnough,
+} from './motivation-credentials';
 import { normaliseFirearmType } from './saps-vocabulary';
 
 // What the vault fills into a licence application. Getting a serial into the
@@ -345,5 +347,36 @@ describe('credentialChoices', () => {
       cert('a', 'Rifle licence', { licence_no: 'L-1' }, 'FIREARM_LICENCE'),
     ]);
     expect(only).toEqual({ competency: [], dedicated: [] });
+  });
+});
+
+describe('validLongEnough', () => {
+  const today = new Date('2026-08-20T00:00:00Z');
+
+  it('⚠️ REFUSES A LETTER THAT EXPIRES BEFORE A DECISION COMES BACK', () => {
+    // SAPS takes months over a section 16. A letter of good standing with
+    // three weeks left is one the DFO rejects or the Registrar queries long
+    // before anyone decides — and attaching it silently hands somebody a pack
+    // that looks complete and is already stale.
+    expect(validLongEnough('2026-09-10', today)).toBe(false);
+    expect(validLongEnough('2026-11-17', today)).toBe(false);
+  });
+
+  it('takes one with three months or more left', () => {
+    expect(validLongEnough('2026-11-18', today)).toBe(true);
+    expect(validLongEnough('2027-06-30', today)).toBe(true);
+  });
+
+  it('⚠️ TAKES A DOCUMENT WITH NO EXPIRY AT ALL', () => {
+    // The dedicated status certificate carries an issue date and nothing
+    // else — the operator's says 11 Jun 2024 and never runs out. Treating a
+    // missing expiry as "expired" would refuse to reuse the one document that
+    // genuinely cannot go stale.
+    expect(validLongEnough(null, today)).toBe(true);
+  });
+
+  it('refuses one that has already run out, and one it cannot read', () => {
+    expect(validLongEnough('2025-06-30', today)).toBe(false);
+    expect(validLongEnough('not a date', today)).toBe(false);
   });
 });

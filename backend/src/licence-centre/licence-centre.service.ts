@@ -600,5 +600,6 @@ const DEFAULT_TITLE: Record<CredentialKind, string> = {
   PROFESSIONAL_HUNTER: 'Professional hunter registration',
   DEDICATED_STATUS: 'Dedicated status',
   PROFICIENCY: 'Proficiency certificate',
+  GOOD_STANDING: 'Letter of good standing',
   OTHER: 'Supporting document',
 };

@@ -163,6 +163,11 @@ export function shapeForKind(kind: string): DocShape {
     // photograph badly; the chooser is right there, and detection never
     // depended on the answer.
     k.includes('COMPETENCY') ||
+    // Both are A4 letters on association letterhead — the operator's SA
+    // Hunters set are full pages, one of them sworn before a commissioner of
+    // oaths with two signature blocks on it.
+    k.includes('GOOD_STANDING') ||
+    k.includes('ENDORSEMENT') ||
     k.includes('PROFICIENCY') ||
     k.includes('ADDRESS') ||
     k.includes('MOTIVATION') ||

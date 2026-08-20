@@ -353,7 +353,12 @@ export const motivationsApi = {
    * their vault plus every document on their other motivations.
    */
   library: (t: TokenGetter, id: string) =>
-    request<{ items: LibraryItem[] }>(t, `/${id}/library`, {}, { items: [] }),
+    request<{ items: LibraryItem[]; suggested: LibraryItem[] }>(
+      t,
+      `/${id}/library`,
+      {},
+      { items: [], suggested: [] },
+    ),
 
   /** Attach one, without asking for the file again. */
   addFromLibrary: (

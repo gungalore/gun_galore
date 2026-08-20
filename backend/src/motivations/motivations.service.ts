@@ -84,7 +84,9 @@ import {
 } from './motivation-profile';
 import {
   CREDENTIAL_TO_UPLOAD,
+  S16_AUTO_ATTACH,
   credentialChoices,
+  validLongEnough,
   CredentialSource,
   credentialOffer,
   toIsoDay,
@@ -691,7 +693,7 @@ export class MotivationsService {
     const user = await this.requireUser(clerkId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true },
+      select: { id: true, licenceType: true, status: true },
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
@@ -706,6 +708,7 @@ export class MotivationsService {
           storageKey: true,
           purgedAt: true,
           sha256: true,
+          expiresOn: true,
         },
       }),
       this.prisma.motivationUpload.findMany({
@@ -722,9 +725,47 @@ export class MotivationsService {
       }),
     ]);
 
-    return {
-      items: buildLibrary(credentials, uploads, row.id, documentLabel),
-    };
+    const items = buildLibrary(credentials, uploads, row.id, documentLabel);
+
+    // ── what a section 16 pack could be handed automatically ─────────
+    //
+    // ⚠️ OFFERED, NOT DONE. Attaching documents to somebody's licence
+    // application without being asked is a decision made on their behalf
+    // about what a DFO will see — and the one time it is wrong, they find out
+    // at the counter. The list is returned and the wizard offers it in one
+    // press; the press is theirs.
+    //
+    // ⚠️ NEVER THE ENDORSEMENT. It names ONE firearm, so a previous
+    // application's endorsement describes the wrong gun. Status and good
+    // standing describe the PERSON, and the person has not changed.
+    const isS16 =
+      row.licenceType === 'S16_DEDICATED_HUNTER' ||
+      row.licenceType === 'S16_DEDICATED_SPORT';
+    const expiryByCredential = new Map(
+      credentials.map((c) => [
+        c.id,
+        c.expiresOn ? toIsoDay(c.expiresOn) : null,
+      ]),
+    );
+    const now = new Date();
+    const suggested = !isS16
+      ? []
+      : items.filter(
+          (i) =>
+            S16_AUTO_ATTACH.includes(i.kind) &&
+            !i.alreadyHere &&
+            // Only vault documents carry an expiry we can judge. A previous
+            // motivation's upload has no date on the row, so it is offered in
+            // the library like anything else and simply not suggested.
+            (i.source === 'credential'
+              ? validLongEnough(
+                  expiryByCredential.get(i.sourceId) ?? null,
+                  now,
+                )
+              : false),
+        );
+
+    return { items, suggested };
   }
 
   /**

@@ -4052,7 +4052,22 @@ enum MotivationUploadKind {
   COMPETENCY_CERTIFICATE
   PROFICIENCY_CERTIFICATE
   CURRENT_LICENCE
+  /// The dedicated status certificate itself.
   ASSOCIATION_CARD
+  /// ⚠️ THE ONE SECTION 16(2) ACTUALLY NAMES: "a sworn statement or solemn
+  /// declaration from the chairperson of an accredited hunting association or
+  /// sports-shooting organisation, or someone delegated in writing by him or
+  /// her, stating that the applicant is a registered member". Carries an issue
+  /// date and an expiry date, so it also lives in the vault as a GOOD_STANDING
+  /// credential and gets chased like anything else that runs out.
+  GOOD_STANDING_LETTER
+  /// The association's endorsement that ONE SPECIFIC firearm — type, calibre,
+  /// make, action, serial — is suitable for the discipline. ⚠️ NOT a
+  /// requirement of the Act: it comes from the Hunters Forum guidelines of
+  /// 2 September 2005. Associations issue it and DFOs expect it; that is why
+  /// it is collected, and it is not a reason to tell a member the Act demands
+  /// it.
+  ASSOCIATION_ENDORSEMENT
   ADDRESS_CONFIRMATION
   EMPLOYMENT_CONFIRMATION
   // The safe, closed.
@@ -4248,15 +4263,14 @@ model MotivationUpload {
   // row is kept. storageKey is nulled at the same time.
   purgedAt  DateTime?
 
-  @@index([motivationId])
   // Scoped to the motivation, not global: the same ID document legitimately
   // appears in two different people's applications, and in the same person's
   // second one. A bare index could only ever support a read-then-write dedupe,
   // which is a race — two uploads of one file both miss the read and both
   // insert, and the applicant sees the same certificate twice in the annexures.
   @@unique([motivationId, sha256])
+  @@index([motivationId])
 }
-
 
 // ────────────────────────────────────────────────────────────────────
 // THE LICENCE & COMPETENCY CENTRE.
@@ -4302,8 +4316,14 @@ enum CredentialKind {
   /// tracked — never offered as association membership.
   PROFESSIONAL_HUNTER
   PROFICIENCY
-  // Association membership, a letter of good standing, anything else the
-  // member wants kept with the rest. Never chased, always accepted.
+  /// A section 16 letter of good standing. Separate from DEDICATED_STATUS
+  /// because it is a separate piece of paper with its OWN validity window —
+  /// the operator's runs 11 Jun 2024 to 30 Jun 2025 while the status
+  /// certificate behind it carries no expiry at all. Filing them together
+  /// would mean chasing the wrong date.
+  GOOD_STANDING
+  // Association membership, anything else the member wants kept with the
+  // rest. Never chased, always accepted.
   OTHER
 }
 
@@ -4321,8 +4341,8 @@ model Credential {
   detailsEncrypted String?
 
   /// IN THE CLEAR — the reminder cron queries on it. See the header.
-  issuedOn  DateTime?
-  expiresOn DateTime?
+  issuedOn    DateTime?
+  expiresOn   DateTime?
   /// THE SAFETY RAIL. Null until the member has looked at the expiry date and
   /// said it is right. The reminder sweep will not see a row without it.
   confirmedAt DateTime?

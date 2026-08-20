@@ -314,10 +314,21 @@ export default function MotivationWizardPage() {
 
   /** Documents this member already has, for the "use one I have" pickers. */
   const [library, setLibrary] = useState<LibraryItem[]>([]);
+  /**
+   * Documents a section 16 pack could be handed straight away.
+   *
+   * ⚠️ OFFERED, NOT DONE. Attaching things to somebody's licence application
+   * without asking is a decision made on their behalf about what a DFO will
+   * see, and the one time it is wrong they find out at the counter. One press
+   * takes all of them; the press is theirs.
+   */
+  const [suggested, setSuggested] = useState<LibraryItem[]>([]);
+  const [suggestDone, setSuggestDone] = useState(false);
   const loadLibrary = useCallback(async () => {
     try {
       const r = await motivationsApi.library(token, id);
       setLibrary(r.items);
+      setSuggested(r.suggested ?? []);
     } catch {
       // A library we cannot read costs a shortcut, not the ability to upload.
     }
@@ -664,6 +675,49 @@ export default function MotivationWizardPage() {
           on the form. They are stored encrypted on our own server, are never
           public, and each becomes a lettered annexure.
         </p>
+        {/* ⚠️ A SECTION 16 PACK REPEATS ITSELF. The dedicated status and the
+            letter of good standing describe the PERSON, not the firearm, so
+            the ones from the last application are still the right documents —
+            provided the letter has not gone stale, which the server checks
+            before it offers them. The endorsement is deliberately never here:
+            it names one firearm, so a previous one describes the wrong gun. */}
+        {suggested.length > 0 && !suggestDone && (
+          <div className="mt-3 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3">
+            <p className="text-sm font-medium">
+              You already have {suggested.length === 1 ? 'one' : suggested.length}{' '}
+              of these
+            </p>
+            <ul className="mt-1 text-xs text-[var(--text-secondary)]">
+              {suggested.map((sg) => (
+                <li key={`${sg.source}:${sg.sourceId}`}>
+                  {sg.title} — added {sg.addedOn}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)]"
+                onClick={async () => {
+                  setSuggestDone(true);
+                  for (const sg of suggested) {
+                    await attachFromLibrary(sg).catch(() => undefined);
+                  }
+                }}
+              >
+                Attach {suggested.length === 1 ? 'it' : 'them'}
+              </button>
+              <button
+                type="button"
+                className="rounded border border-[var(--border)] px-3 py-1.5 text-sm"
+                onClick={() => setSuggestDone(true)}
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
+
         {documents && documents.needs.length > 0 && (
           <div className="mt-3 rounded border border-[var(--border)]">
             <div className="flex items-center justify-between gap-3 border-b border-[var(--border-divider)] bg-[var(--bg-inset)] px-3 py-2">

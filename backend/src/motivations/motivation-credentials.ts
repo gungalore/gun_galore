@@ -319,5 +319,46 @@ export const CREDENTIAL_TO_UPLOAD: Record<string, string> = {
   COMPETENCY_CERTIFICATE: 'COMPETENCY_CERTIFICATE',
   DEDICATED_STATUS: 'ASSOCIATION_CARD',
   DEDICATED_HUNTER: 'ASSOCIATION_CARD',
+  GOOD_STANDING: 'GOOD_STANDING_LETTER',
   PROFICIENCY: 'PROFICIENCY_CERTIFICATE',
 };
+
+/**
+ * The two documents a section 16 pack can be handed automatically.
+ *
+ * ⚠️ THESE AND NOTHING ELSE. An endorsement names ONE firearm, so an old one
+ * describes the wrong gun and attaching it unasked would put a wrong document
+ * in front of a DFO. Status and good standing describe the PERSON, and the
+ * person has not changed since last time.
+ */
+export const S16_AUTO_ATTACH: string[] = [
+  'ASSOCIATION_CARD',
+  'GOOD_STANDING_LETTER',
+];
+
+/**
+ * How much validity a document must have left before we attach it unasked.
+ *
+ * ⚠️ THREE MONTHS, THE OPERATOR'S NUMBER, and it is the right shape: SAPS
+ * takes months over a section 16 application, so a letter of good standing
+ * that expires in three weeks is one the DFO will reject or the Registrar
+ * will query long before a decision. Attaching it silently would hand
+ * somebody a pack that looks complete and is already stale. Below the
+ * threshold the document still appears in the library — the member can attach
+ * it deliberately, having seen the date.
+ */
+export const AUTO_ATTACH_MIN_DAYS = 90;
+
+/** Does this document have enough life left to be attached unasked? */
+export function validLongEnough(
+  expiresOn: string | null,
+  today: Date,
+): boolean {
+  // No expiry at all is the dedicated status certificate, which does not
+  // carry one. Nothing to be stale about.
+  if (!expiresOn) return true;
+  const end = Date.parse(`${expiresOn}T00:00:00Z`);
+  if (Number.isNaN(end)) return false;
+  const days = (end - today.getTime()) / 86_400_000;
+  return days >= AUTO_ATTACH_MIN_DAYS;
+}

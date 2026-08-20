@@ -88,6 +88,19 @@ const WANTED: Record<CredentialKind, string[]> = {
     'province',
     'category',
   ],
+  // ⚠️ THE NUMBERS ARE NOT THE SAME NUMBER. The operator's SA Hunters letter
+  // carries THREE: a good-standing reference (GS00124584), a membership
+  // number (108828) and the dedicated status number (SA115153SS). Reading any
+  // of them into one field would put the wrong reference on an application,
+  // so each is named separately and the model is told which is which.
+  GOOD_STANDING: [
+    'good_standing_number',
+    'holder_name',
+    'association',
+    'membership_number',
+    'status_number',
+    'status_type',
+  ],
   PROFICIENCY: ['certificate_number', 'holder_name', 'unit_standard'],
   OTHER: ['reference_number', 'holder_name', 'issuer'],
 };
@@ -305,6 +318,8 @@ function userPrompt(kind: CredentialKind): string {
     PROFESSIONAL_HUNTER:
       'a professional hunter (PH) registration certificate, issued by a provincial nature conservation authority',
     PROFICIENCY: 'a firearm proficiency or training certificate',
+    GOOD_STANDING:
+      'a section 16 letter of good standing from a hunting association or sports-shooting organisation. It is a sworn declaration that the member is registered and in good standing, and it usually shows a good-standing reference, the member number, the dedicated status number, the date the status was issued and the date it is valid until',
     OTHER: 'a supporting document',
   };
   const keys = [...WANTED[kind], 'issued_on', 'expires_on'];

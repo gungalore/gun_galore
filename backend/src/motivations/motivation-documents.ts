@@ -84,7 +84,14 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'SAFE_PHOTO_CLOSED',
     'SAFE_PHOTO_AJAR',
     'SAFE_PHOTO_BOLTS',
+    // THREE SEPARATE PIECES OF PAPER, and the association issues them
+    // separately: the status certificate, the sworn letter of good standing,
+    // and an endorsement naming the firearm. One slot for all three meant an
+    // applicant who attached the certificate looked complete while missing
+    // the declaration section 16(2) actually asks for.
     'ASSOCIATION_CARD',
+    'GOOD_STANDING_LETTER',
+    'ASSOCIATION_ENDORSEMENT',
   ],
   S16_DEDICATED_SPORT: [
     'IDENTITY_DOCUMENT',
@@ -93,7 +100,14 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'SAFE_PHOTO_CLOSED',
     'SAFE_PHOTO_AJAR',
     'SAFE_PHOTO_BOLTS',
+    // THREE SEPARATE PIECES OF PAPER, and the association issues them
+    // separately: the status certificate, the sworn letter of good standing,
+    // and an endorsement naming the firearm. One slot for all three meant an
+    // applicant who attached the certificate looked complete while missing
+    // the declaration section 16(2) actually asks for.
     'ASSOCIATION_CARD',
+    'GOOD_STANDING_LETTER',
+    'ASSOCIATION_ENDORSEMENT',
   ],
   // A renewal is a different form (SAPS 518a) and a different pack; the one
   // thing it always needs is the licence being renewed.
@@ -121,7 +135,9 @@ const LABELS: Record<MotivationUploadKind, string> = {
   COMPETENCY_CERTIFICATE: 'Your SAPS competency certificate',
   PROFICIENCY_CERTIFICATE: 'Your proficiency or training certificate',
   CURRENT_LICENCE: 'A firearm licence you already hold',
-  ASSOCIATION_CARD: 'Proof of your association membership',
+  ASSOCIATION_CARD: 'Your dedicated status certificate',
+  GOOD_STANDING_LETTER: 'Your letter of good standing',
+  ASSOCIATION_ENDORSEMENT: "The association's endorsement for this firearm",
   ADDRESS_CONFIRMATION: 'Proof of your address',
   EMPLOYMENT_CONFIRMATION: 'Confirmation of employment',
   SAFE_PHOTO_CLOSED: 'Your safe, closed',
@@ -144,7 +160,20 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
   ADDRESS_CONFIRMATION:
     'A photograph or scan is fine — no certification needed for our copy. Use something recent: the DFO will want proof of address from the last three months. We read the address off it.',
   ASSOCIATION_CARD:
-    'Dedicated status is the basis of a section 16 application, so this is part of the case rather than an extra.',
+    'Dedicated status is the basis of a section 16 application, so this is part of the case rather than an extra. The certificate itself — the one with your dedicated number on it.',
+  // ⚠️ THE ONE THE ACT ACTUALLY NAMES. Section 16(2) requires "a sworn
+  // statement or solemn declaration from the chairperson of an accredited
+  // hunting association or sports-shooting organisation, or someone delegated
+  // in writing by him or her, stating that the applicant is a registered
+  // member". That is this letter, and without it the application is missing a
+  // statutory element rather than a nice-to-have.
+  GOOD_STANDING_LETTER:
+    'Section 16 asks for a sworn declaration from your association that you are a registered member in good standing. This is that letter — it has its own issue date and expiry, so check it has not run out.',
+  // ⚠️ NOT A REQUIREMENT OF THE ACT, and the copy must not imply it is. The
+  // endorsement comes from the Hunters Forum guidelines of 2 September 2005;
+  // associations issue it and DFOs expect it, which is why we collect it.
+  ASSOCIATION_ENDORSEMENT:
+    'Your association confirms that this particular firearm — its type, calibre, make, action and serial — suits the discipline you are dedicated in. Ask them for it once you know which firearm you are applying for. It is what your association and the DFO will expect, though the endorsement does not replace your own motivation.',
   CURRENT_LICENCE:
     'A licence for every firearm you already own. We read the make, calibre and serial off it — which is also what tells us whether this application overlaps something you already hold.',
   // THREE SEPARATE SHOTS, each its own line, because each shows something the
