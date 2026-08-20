@@ -373,7 +373,7 @@ Return STRICT JSON and nothing else:
 {"kind":"<one category>","confidence":"high"|"low"}
 `.trim();
 
-const CLASSIFY_USER = [
+export const CLASSIFY_USER = [
   'Which of these is this document? Answer with the exact string.',
   '',
   'FIREARM_LICENCE - a South African firearm licence card or certificate,',
@@ -388,7 +388,26 @@ const CLASSIFY_USER = [
   '  Names a province and a hunting category. This is an occupational licence',
   '  to hunt for a client and is NOT dedicated status - do not confuse them.',
   'PROFICIENCY - a firearm proficiency or unit-standard training certificate',
+  // ⚠️ ADDED WITH THE KIND ITSELF. A category the enum knows and the
+  // classifier does not is a document that files itself as OTHER every time —
+  // the member sees "something else" for a letter with the association's name
+  // across the top of it, and corrects us by hand on every upload.
+  'GOOD_STANDING - a section 16 LETTER OF GOOD STANDING from a hunting or',
+  '  sport-shooting association. A letter, usually sworn before a commissioner',
+  '  of oaths, declaring the member is registered and in good standing. It',
+  '  normally shows a status issued date and a status valid until date.',
   'OTHER - anything else, or you cannot tell',
+  '',
+  'THE ASSOCIATION ISSUES SEVERAL DOCUMENTS ON THE SAME LETTERHEAD, and',
+  'telling them apart is the hardest call on this list:',
+  '  - a CERTIFICATE awarding dedicated status, with a certificate number and',
+  '    usually a decorative border, is DEDICATED_STATUS or DEDICATED_HUNTER;',
+  '  - a LETTER declaring the member is in good standing, with validity dates',
+  '    and often a commissioner of oaths stamp, is GOOD_STANDING;',
+  '  - a letter ENDORSING ONE SPECIFIC FIREARM as suitable for the discipline,',
+  '    with a table of type, calibre, make, action and serial, is OTHER here.',
+  '    The vault has no category for it, and filing it as a status document',
+  '    would be worse than filing it as unsorted.',
   '',
   'A competency certificate permits a person to POSSESS firearms; a licence is',
   'for ONE specific firearm and names it. If it names a make, calibre or serial',

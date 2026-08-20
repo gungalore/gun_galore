@@ -187,7 +187,18 @@ function AddPanel({
   token: () => Promise<string | null>;
   onAdded: () => Promise<void>;
 }) {
-  const [kind, setKind] = useState<CredentialKind>('FIREARM_LICENCE');
+  /**
+   * What the member says this is — or AUTO, which is the default.
+   *
+   * ⚠️ EMPTY MEANS "WORK IT OUT". The classifier and the date reader have
+   * both been here since the vault was built, and neither ever ran for a
+   * single upload: the picker defaulted to FIREARM_LICENCE, the type went up
+   * with the file, and the server skips classification whenever it is told
+   * what something is. So the member picked the type by hand, every time,
+   * while a model that could have read it off the page sat unused two lines
+   * away. Now nothing is sent unless they deliberately override.
+   */
+  const [kind, setKind] = useState<CredentialKind | ''>('');
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -260,6 +271,10 @@ function AddPanel({
         // ONE file keeps the type the member picked. SEVERAL is a
         // folder, so each is named from its contents and checked in
         // the queue.
+        // ⚠️ THE TYPE IS SENT ONLY AS AN OVERRIDE. Blank means the server
+        // classifies with Haiku and reads the dates off the page, and the
+        // confirm step then shows what it made of it. A folder was always
+        // handled this way; there was never a reason one file should not be.
         added.push(
           await licenceCentreApi.create(
             token,
@@ -335,19 +350,23 @@ function AddPanel({
           uploads — and a full-resolution photo can exceed the limit. Both
           were previously an opaque "that upload did not work". */}
       <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
-        JPG, PNG, WebP or PDF, up to 10 MB each. Have them together? Pick
-        them all at once — we will work out what each one is and ask you to
-        check. On an iPhone, choose the photos from your library rather than a
-        file — iOS converts them for you.
+        Photograph it or pick a file and we read the document itself — what
+        kind it is, and the dates on it — then show you what we made of it to
+        check. Set the type yourself only if you want to overrule us. JPG,
+        PNG, WebP or PDF, up to 10 MB each; pick a whole folder at once if you
+        have them together. On an iPhone, choose the photos from your library
+        rather than a file — iOS converts them for you.
       </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <select
           className={control}
           value={kind}
-          onChange={(e) => setKind(e.target.value as CredentialKind)}
+          onChange={(e) => setKind(e.target.value as CredentialKind | '')}
           aria-label="Document type"
+          title="Leave this alone and we read the document to work out what it is."
         >
+          <option value="">Work it out for me</option>
           {KINDS.map((k) => (
             <option key={k} value={k}>
               {KIND_LABELS[k]}
@@ -372,7 +391,10 @@ function AddPanel({
         <ScanButton
           // Follows the picker above: choose "competency certificate" and the
           // guide is a card, choose "proof of address" and it is an A4 sheet.
-          shape={shapeForKind(kind)}
+          // ⚠️ A4 WHILE NOTHING IS CHOSEN. The aim box is a guide, never a
+          // filter — and "work it out for me" is now the default, so most
+          // uploads arrive with no declared type at all.
+          shape={kind ? shapeForKind(kind) : 'a4'}
           title="Photograph the document"
           onFiles={uploadFiles}
           disabled={busy}
@@ -380,7 +402,7 @@ function AddPanel({
           // metre and cannot resolve a licence serial, so the phone already in
           // their pocket is offered first and the webcam is demoted.
           handoff={{ dest: 'licence-centre' }}
-          kind={kind}
+          kind={kind || undefined}
           onHandoffArrived={() => void onAdded()}
           fallback={
             <FilePickerButton
