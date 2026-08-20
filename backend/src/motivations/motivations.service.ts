@@ -2112,6 +2112,19 @@ export class MotivationsService {
         variantSeed: seed,
         structurePlan: plan as unknown as object,
         structureFingerprint: fingerprint(attempt.text),
+        // ⚠️ KEEP THE DRAFT EVEN WHEN THE GATE SENDS IT BACK. It used to be
+        // written only on a pass, so an applicant whose document was held for
+        // more detail could never SEE the document — they paid for it, it was
+        // written, and all they got was a score and a list of questions. That
+        // makes the gate impossible to argue with and impossible to learn
+        // from: neither the applicant nor the operator can tell a fair
+        // knock-back from an over-strict one without reading the text.
+        //
+        // Only the PASSED branch sets documentVersion, completedAt and
+        // qualityPassedAt, so "finished" still means finished — the PDF stays
+        // gated on COMPLETED (see renderPdf) and this is a draft to read, not
+        // a document to file.
+        documentTextEncrypted: encryptText(attempt.text),
         qualityScore: graded.verdict.overall,
         qualityFindings: graded.verdict as unknown as object,
         thinFields: graded.verdict.thinFields,
@@ -2136,7 +2149,7 @@ export class MotivationsService {
           data: {
             ...common,
             status: MotivationStatus.COMPLETED,
-            documentTextEncrypted: encryptText(attempt.text),
+            // (the text itself comes from `common` now — see the note there)
             documentVersion: { increment: 1 },
             templateVersion: TEMPLATE_VERSION,
             disclaimerVersion: DISCLAIMER_VERSION,
@@ -2380,6 +2393,50 @@ export class MotivationsService {
     }
 
     return { images, notPrinted };
+  }
+
+  /**
+   * The draft text, whether or not it passed review.
+   *
+   * Separate from the detail payload because the wizard polls that every few
+   * seconds and this is fifteen hundred words — and separate from renderPdf
+   * because the PDF is the thing you FILE and stays gated on COMPLETED. This
+   * is the thing you READ, so that a document held back for more detail can
+   * be argued with instead of only scored.
+   */
+  async draftText(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        status: true,
+        documentTextEncrypted: true,
+        qualityScore: true,
+        qualityFindings: true,
+        generatedAt: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!row.documentTextEncrypted) {
+      throw new ConflictException('Nothing has been written yet.');
+    }
+    const text = tryDecryptText(row.documentTextEncrypted);
+    if (!text) {
+      throw new ConflictException(
+        'We could not open this draft. Please contact support.',
+      );
+    }
+    return {
+      text,
+      status: row.status,
+      // So the reader can see the draft and the reasons side by side rather
+      // than taking a number on faith.
+      qualityScore: row.qualityScore,
+      findings: row.qualityFindings,
+      generatedAt: row.generatedAt,
+      final: row.status === MotivationStatus.COMPLETED,
+    };
   }
 
   async renderPdf(clerkId: string, id: string) {

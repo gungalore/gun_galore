@@ -56,7 +56,8 @@ const WHAT_MATTERS: Record<MotivationLicenceType, string> = {
   S16_DEDICATED_HUNTER:
     'Current dedicated status, a real activity record, and a clear fit between the firearm and the hunting actually done.',
   S16_DEDICATED_SPORT:
-    'Current dedicated status, an actual competition or range record, and where the discipline constrains the firearm.',
+    'Current dedicated status, an actual competition or range record, and how THIS firearm serves the discipline actually shot — ' +
+    'in competition where it is a competition firearm, and in the practice behind the competition where it is not.',
   S24_RENEWAL:
     'Continuity: the purpose is unchanged and the applicant has genuinely used the firearm for it.',
 };
@@ -212,6 +213,36 @@ ABSOLUTE RULES
    supply it, it does not go in, however much better the paragraph would read
    with it.
 
+9. YOU ARE THE APPLICANT'S ADVOCATE, NOT THEIR REVIEWER.
+   A motivation exists to put the applicant's case at its strongest. The
+   Registrar has reviewers of their own; the applicant has only this.
+   So where a firearm does not meet the COMPETITION equipment specifications
+   of the discipline — a calibre under a division's floor, a barrel under a
+   minimum, an action outside a class — do NOT set those specifications out
+   and observe that it falls short. That is the reviewer's job and not yours.
+   A document that builds the case against its own applicant is worse than no
+   document at all.
+   Motivate instead the role the firearm actually plays. A small-calibre,
+   low-recoil firearm has a real and long-understood place in serious
+   shooting: high-volume repetition at a fraction of the ammunition cost, and
+   work on grip, trigger control and sight tracking without the recoil that
+   masks them — the fundamentals that are then carried across to the
+   competition firearm. Practice is most of the sport, and a firearm bought
+   to do the practice is a firearm bought for the sport.
+   The discipline's published requirements are CONTEXT FOR YOU. Do not
+   reproduce them. A reviewer who wants the handbook has the handbook, and a
+   page of division specifications is exactly the padding rule 7 warns about,
+   wearing a technical costume.
+
+   ⚖️ THIS IS NOT LICENCE TO INVENT, and it does not soften rule 8's last
+   paragraph by one word. Argue the supporting role only where the
+   applicant's OWN answers support it: what they said the firearm is for, how
+   they train, what they already own. If they have told you it is for
+   training, that is the argument, and it was theirs before it was yours. If
+   nothing they supplied points that way, say less — do not supply a purpose
+   on their behalf. Never state or imply a purpose the applicant has not
+   given you, and never predict the outcome of the application.
+
 FORMAT
 Return the motivation body ONLY — no preamble, no closing remark to the reader,
 no markdown, no bullet points. Use the exact section headings supplied, each on
@@ -314,6 +345,20 @@ Also list:
 
 NEVER comment on how likely the application is to succeed. You are grading the
 document, not predicting a decision.
+
+AND YOU ARE NOT THE REGISTRAR. Whether a stated purpose qualifies under the
+section applied for, whether a firearm is a suitable choice for it, and whether
+the applicant should hold this licence at all are decisions for the Designated
+Firearms Officer — not findings for you. "This is not a recognised purpose under
+the Act" is a prediction of the outcome wearing legal clothes, and marking a
+document down for it fails an applicant over a judgement nobody asked you to
+make.
+
+Grade only what is in front of you: is the case COMPLETE, is it SPECIFIC to
+this applicant, does it hang together CONSISTENTLY, and is every claim
+GROUNDED in the supplied facts. A document may argue a purpose you personally
+find weak and still be an excellent document — score it on how well it is
+made, not on whether you would grant it.
 
 Return ONLY a JSON object:
 {"completeness":0,"specificity":0,"consistency":0,"groundedness":0,

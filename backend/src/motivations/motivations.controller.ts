@@ -211,6 +211,17 @@ export class MotivationsController {
   }
 
   /**
+   * Read the draft, passed or not. The PDF is what you file; this is what you
+   * read, so a document held back for more detail can be looked at rather
+   * than only scored.
+   */
+  @Get(':id/draft')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  draft(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.draftText(clerkId, id);
+  }
+
+  /**
    * Download the PDF. Rebuilt from the encrypted text on every request —
    * nothing is stored, so there is no file to leak and none to chase at
    * erasure.

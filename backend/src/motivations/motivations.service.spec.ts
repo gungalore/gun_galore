@@ -565,6 +565,58 @@ describe('MotivationsService.generate', () => {
     expect(prisma.adminAlert.create).toHaveBeenCalled();
   });
 
+  // ────────────────────────────────────────────────────────────────
+  // A DOCUMENT HELD BACK IS STILL A DOCUMENT THE APPLICANT PAID FOR.
+  //
+  // The text used to be written only on a pass, so somebody whose draft was
+  // sent back for more detail got a score and a list of questions and could
+  // never read the thing itself — which makes the gate impossible to argue
+  // with, and impossible for the operator to tell a fair knock-back from an
+  // over-strict one.
+  // ────────────────────────────────────────────────────────────────
+  it('KEEPS the draft when the gate sends it back', async () => {
+    const { svc, prisma, claude } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+    claude.grade.mockResolvedValueOnce({
+      verdict: {
+        completeness: 40, specificity: 40, consistency: 40, groundedness: 40,
+        overall: 45, thinFields: ['competition_record'], issues: ['Thin'],
+        passed: false,
+      },
+      usage: { model: 'g', promptTokens: 1, completionTokens: 1 },
+      parsed: true,
+    });
+    const res = await svc.generate('c1', 'mo-1');
+    expect(res.status).toBe(MotivationStatus.NEEDS_MORE_INFO);
+
+    const data = prisma.motivation.update.mock.calls.at(-1)![0].data;
+    expect(data.documentTextEncrypted).toBeTruthy();
+    // Encrypted, not stashed in the clear because it is only a draft.
+    expect(data.documentTextEncrypted).not.toContain('Introduction');
+    // ...but NOT finished: the PDF stays gated on COMPLETED.
+    expect(data.status).toBe(MotivationStatus.NEEDS_MORE_INFO);
+    expect(data.completedAt).toBeUndefined();
+    expect(data.qualityPassedAt).toBeUndefined();
+    expect(data.documentVersion).toBeUndefined();
+  });
+
+  it('keeps the draft even when the retry ceiling is hit', async () => {
+    const { svc, prisma, claude } = build({ settings: { motivation_max_gate_cycles: 1 } });
+    prisma.motivation.findFirst.mockResolvedValueOnce(readyRow({ gateCycles: 1 }));
+    claude.grade.mockResolvedValueOnce({
+      verdict: {
+        completeness: 10, specificity: 10, consistency: 10, groundedness: 10,
+        overall: 10, thinFields: [], issues: ['Still thin'], passed: false,
+      },
+      usage: { model: 'g', promptTokens: 1, completionTokens: 1 },
+      parsed: true,
+    });
+    await svc.generate('c1', 'mo-1');
+    const data = prisma.motivation.update.mock.calls.at(-1)![0].data;
+    expect(data.status).toBe(MotivationStatus.FAILED);
+    expect(data.documentTextEncrypted).toBeTruthy();
+  });
+
   it('regenerates with a fresh seed when the model ignored the plan', async () => {
     const { svc, prisma, claude } = build();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());

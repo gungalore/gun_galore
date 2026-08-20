@@ -632,3 +632,30 @@ describe('firearms the applicant already owns', () => {
     }
   });
 });
+
+describe('what never reaches a model', () => {
+  // ⚠️ THE OWNED-FIREARMS TABLE STOPPED BEING formOnly so it could be asked on
+  // the dealer path — and formOnly was ALSO the only thing keeping it out of
+  // the prompt. Serial numbers and licence numbers are registry identifiers
+  // with no narrative use; they must not travel to Anthropic because a field
+  // changed visibility.
+  it('sends no serial or licence number from the owned-firearms table', () => {
+    for (const t of ALL) {
+      const keys = factPackFields(t).map((f) => f.key);
+      for (const k of keys) {
+        expect(k).not.toMatch(
+          /^existing_firearm_\d+_(frame_serial|barrel_serial|licence_no)$/,
+        );
+      }
+    }
+  });
+
+  it('DOES send type, calibre and make — the overlap argument needs them', () => {
+    const keys = factPackFields(
+      MotivationLicenceType.S16_DEDICATED_SPORT,
+    ).map((f) => f.key);
+    expect(keys).toContain('existing_firearm_1_calibre');
+    expect(keys).toContain('existing_firearm_1_make');
+    expect(keys).toContain('existing_firearm_1_type');
+  });
+});

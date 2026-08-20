@@ -165,6 +165,12 @@ export interface MotivationDetail extends MotivationSummary {
   declarationAcceptedAt: string | null;
   qualityScore: number | null;
   /**
+   * Something has been written. TRUE FOR A DRAFT THAT DID NOT PASS, so it is
+   * not a synonym for "finished" — pair it with `status === 'COMPLETED'` for
+   * that. It gates the reading copy; the PDF stays behind COMPLETED.
+   */
+  hasDocument: boolean;
+  /**
    * Whether the applicant already holds a firearm in the same class as the one
    * applied for — the ".308 and .270 are both medium game" question the
    * Registrar asks whether or not we do. Computed server-side from the
@@ -532,6 +538,19 @@ export const motivationsApi = {
 
   messages: (t: TokenGetter, id: string) =>
     request<FollowUp[]>(t, `/${id}/messages`, {}, []),
+
+  /**
+   * The draft as written, passed review or not. NOT fetched with the detail —
+   * that is polled every few seconds and this is fifteen hundred words.
+   */
+  draft: (t: TokenGetter, id: string) =>
+    request<{
+      text: string;
+      status: string;
+      qualityScore: number | null;
+      findings: unknown;
+      final: boolean;
+    }>(t, `/${id}/draft`),
 
   answerFollowUp: (
     t: TokenGetter,

@@ -154,6 +154,11 @@ export default function MotivationWizardPage() {
   const [error, setError] = useState<string | null>(null);
   /** Registered fields the server would not store. See the autosave effect. */
   const [refused, setRefused] = useState<string[]>([]);
+  /** The draft, once asked for. Never fetched with the detail — it is long. */
+  const [draft, setDraft] = useState<{
+    text: string;
+    qualityScore: number | null;
+  } | null>(null);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>(
     'idle',
   );
@@ -1581,6 +1586,46 @@ export default function MotivationWizardPage() {
                 : 'Prepare my motivation'}
             </button>
           </>
+        )}
+
+        {/* ⚠️ READABLE EVEN WHEN IT DID NOT PASS. A draft held back for more
+            detail used to be invisible — the applicant paid for it, it was
+            written, and all they saw was a score and a list of questions.
+            Nobody can tell a fair knock-back from an over-strict one without
+            reading the text. The PDF stays behind COMPLETED; this is the
+            reading copy. */}
+        {detail.hasDocument && detail.status !== 'COMPLETED' && (
+          <div className="mt-4">
+            <button
+              type="button"
+              className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
+              onClick={async () => {
+                if (draft) return setDraft(null);
+                try {
+                  setDraft(await motivationsApi.draft(token, id));
+                } catch {
+                  setError('We could not open the draft just now.');
+                }
+              }}
+            >
+              {draft ? 'Hide the draft' : 'Read the draft as written'}
+            </button>
+            {draft && (
+              <div
+                className="mt-3 rounded border border-[var(--border)] bg-[var(--bg-inset)] p-4"
+                style={{ maxHeight: '28rem', overflowY: 'auto' }}
+              >
+                <p className="mb-3 text-xs text-[var(--text-tertiary-on-card)]">
+                  This is a draft, not a document to file. It scored{' '}
+                  {draft.qualityScore ?? '—'} and was held back for more
+                  detail — the questions above are what it was marked down on.
+                </p>
+                <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                  {draft.text}
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {detail.status === 'COMPLETED' && (

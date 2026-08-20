@@ -1720,10 +1720,26 @@ export function requiredKeys(
  * are PII with no argumentative value, and a clean history is six "No" answers
  * that would only invite padding. See `formOnly` on MotivationField.
  */
+/**
+ * Columns that are pure form transcription and must NEVER reach a model.
+ *
+ * ⚠️ `formOnly` USED TO DO TWO JOBS AT ONCE — hide a field in the wizard, and
+ * withhold it from the prompt — and the owned-firearms table needed those two
+ * answers to differ. It has to be ASKED on the dealer path, because
+ * motivation-overlap reads it and the writer argues from it; but a frame
+ * serial, a barrel serial and a licence number are registry identifiers with
+ * no narrative use whatever. Type, calibre and make stay, because "you already
+ * own a .223 bolt rifle" is the whole overlap argument. The numbers do not.
+ */
+const NEVER_PROMPTED =
+  /^existing_firearm_\d+_(frame_serial|barrel_serial|licence_no)$/;
+
 export function factPackFields(
   type: MotivationLicenceType,
 ): readonly MotivationField[] {
-  return fieldsFor(type).filter((f) => !f.formOnly);
+  return fieldsFor(type).filter(
+    (f) => !f.formOnly && !NEVER_PROMPTED.test(f.key),
+  );
 }
 
 /**
