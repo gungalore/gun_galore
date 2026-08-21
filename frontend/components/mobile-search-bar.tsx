@@ -27,6 +27,7 @@ import { useStandalone } from '@/lib/use-standalone';
 import { LiveSearch } from '@/components/live-search';
 import { TopWishlistButton } from '@/components/top-wishlist-button';
 import { TopCartButton } from '@/components/top-cart-button';
+import { isChromelessRoute } from '@/lib/chromeless-routes';
 
 // Pathname prefixes where the sticky search bar should NOT render. All
 // of these are either focus flows (checkout / sell / KYC) where search
@@ -43,6 +44,11 @@ const HIDDEN_PREFIXES = [
 ];
 
 function shouldHide(pathname: string): boolean {
+  // ⚠️ AND NOT ON A PAGE THAT IS NOT THE SHOP. This bar is `md:hidden`, so
+  // it only ever appeared on phones — which is how a search box, a wishlist
+  // heart and a cart ended up across the top of a witness's statutory
+  // statement without anybody testing on a desktop ever seeing it.
+  if (isChromelessRoute(pathname)) return true;
   if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return true;
   // Dealer-verification upload pages live at /transactions/:id/dealer-verification
   if (pathname.endsWith('/dealer-verification')) return true;

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useStandalone } from '@/lib/use-standalone';
 import { useAskGgWidget } from '@/lib/use-ask-gg-widget';
 import { AskGgLauncher } from './ask-gg-launcher';
+import { isChromelessRoute } from '@/lib/chromeless-routes';
 
 // Ask Boet Everywhere — the always-mounted site-wide host.
 //
@@ -45,17 +46,14 @@ const SUPPRESS_PREFIXES = [
   '/sso-callback',
   '/a/', // token-gated single-action pages
   '/kyc',
-  // ⚠️ A CARTOON RANGER MUST NOT FLOAT BESIDE A STATUTORY STATEMENT. /witness
-  // is opened by a member of the public who received an SMS and is being asked,
-  // under a criminal-offence warning, whether somebody is fit to hold a
-  // firearm. Boet is right for a storefront and wrong for this — and to a
-  // stranger deciding whether an unfamiliar link is legitimate, a mascot
-  // waving at them is evidence for the wrong answer.
-  '/witness',
 ];
 
 export function isSuppressed(pathname: string | null): boolean {
   if (!pathname) return false;
+  // ⚠️ A CARTOON RANGER MUST NOT FLOAT BESIDE A STATUTORY STATEMENT — to a
+  // stranger deciding whether an unfamiliar link is legitimate, a mascot
+  // waving at them is evidence for the wrong answer.
+  if (isChromelessRoute(pathname)) return true;
   return SUPPRESS_PREFIXES.some((p) =>
     p.endsWith('/')
       ? pathname.startsWith(p)

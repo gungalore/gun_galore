@@ -11,6 +11,7 @@
 
 import type { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
+import { isChromelessRoute } from '@/lib/chromeless-routes';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Nav } from '@/components/nav';
@@ -46,16 +47,8 @@ function CheckoutHeader() {
 export function PublicNav() {
   const pathname = usePathname();
   if (pathname.startsWith('/admin')) return null;
-  // ⚠️ NO SHOP CHROME AROUND A STATUTORY FORM. /witness/* is opened by a
-  // member of the public who received an SMS — not a customer, not a member,
-  // and not somebody who came here to browse. Wrapping their character
-  // statement in a marketplace nav, a Sell button and a cart puts a firearms
-  // storefront around a document going to the police, and invites a stranger
-  // to shop while they are being asked whether somebody is fit to hold a
-  // firearm. It also reads as the wrong site entirely, which for a link from
-  // an unfamiliar sender is the difference between completing it and closing
-  // it.
-  if (pathname.startsWith('/witness')) return null;
+  // lib/chromeless-routes: the witness form is not a page of the shop.
+  if (isChromelessRoute(pathname)) return null;
   // UX-8 — minimal secure chrome on the checkout flow (single-item, offer,
   // and the post-payment complete page all live under /checkout/*).
   if (pathname.startsWith('/checkout')) return <CheckoutHeader />;
@@ -82,7 +75,6 @@ export function PublicFooter({ children }: { children: ReactNode }) {
   if (pathname === '/offline') return null;
   // UX-8 — no marketplace footer during the secure checkout flow.
   if (pathname.startsWith('/checkout')) return null;
-  // See PublicNav: the witness form is not a page of the shop.
-  if (pathname.startsWith('/witness')) return null;
+  if (isChromelessRoute(pathname)) return null;
   return <div data-public-footer>{children}</div>;
 }

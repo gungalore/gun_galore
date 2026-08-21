@@ -6,6 +6,7 @@ import { InstallAnimation } from './install-animation';
 import { useInstallPrompt } from '@/lib/use-install-prompt';
 import { useWishlist } from '@/lib/use-wishlist';
 import { BRAND_NAME } from '@/lib/brand';
+import { isChromelessRoute } from '@/lib/chromeless-routes';
 
 // "Get the All Outdoor app" install popup + the shared install-help modal.
 //
@@ -91,6 +92,9 @@ const SUPPRESS_PREFIXES = [
   '/a/',
 ];
 function isSuppressedRoute(pathname: string | null): boolean {
+  // Never pitch the app to somebody who came here once, from an SMS, to
+  // sign a document and leave.
+  if (isChromelessRoute(pathname)) return true;
   if (!pathname) return false;
   return SUPPRESS_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`) || pathname.startsWith(p),
