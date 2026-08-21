@@ -48,7 +48,7 @@ export default function AcceptableUsePage() {
       <ul>
         <li>You own the item (or have express authority from the owner to sell it on their behalf).</li>
         <li>The item is lawful to sell, possess and transfer in South Africa.</li>
-        <li>The item fits one of All Outdoor's category trees (optics, hunting, outdoor, camping, fishing, ranges, accessories, regulated categories, etc.).</li>
+        <li>The item fits one of All Outdoor's category trees (camping, fishing, overlanding, outdoor clothing, accessories, regulated categories, etc.).</li>
         <li>The item is accurately described, with the correct condition (New, Like New, Good, Fair or Poor) and clear, recent photographs showing the actual item.</li>
         <li>For items that require a licence or permit, both you and the buyer hold every authorisation the relevant authority requires for that category, and the item is transferred through a licensed dealer rather than directly between the two of you.</li>
       </ul>

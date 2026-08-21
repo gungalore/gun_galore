@@ -148,7 +148,7 @@ export default function FeesPage() {
       </p>
       <p>
         <strong>A worked example.</strong> A seller wants R450.00 for a
-        pair of binoculars:
+        camp stove:
       </p>
       <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse', marginBottom: 16 }}>
         <tbody>

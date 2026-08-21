@@ -4,7 +4,7 @@ import Link from 'next/link';
 export const metadata: Metadata = {
   title: 'Condition guide — All Outdoor',
   description:
-    'What NEW, LIKE NEW, GOOD, FAIR and POOR actually mean on All Outdoor, plus what to check before you grade optics, electronics, tents, packs, clothing and boots. Grade honestly and your listing sells faster with fewer disputes.',
+    'What NEW, LIKE NEW, GOOD, FAIR and POOR actually mean on All Outdoor, plus what to check before you grade electronics, tents, packs, clothing and boots. Grade honestly and your listing sells faster with fewer disputes.',
   alternates: { canonical: '/condition-guide' },
 };
 
@@ -95,15 +95,12 @@ const GRADES: {
 // fridge need different questions; these are the ones that actually decide the
 // grade (and the ones buyers complain about when nobody checked them).
 const CHECKLISTS: { title: string; points: string[] }[] = [
-  {
-    title: 'Optics — scopes, binoculars, rangefinders',
-    points: [
-      'Hold the glass to a light: any scratch, fungus, haze or internal dust?',
-      'Turrets click positively and return to zero; zoom and parallax move smoothly',
-      'Ring marks on the tube, and whether caps, sunshade and tools are included',
-      'Rangefinders and red dots: does it power on, and is the battery door clean of corrosion?',
-    ],
-  },
+  // ⚠️ NO OPTICS CHECKLIST HERE. This page is public and crawlable, and the
+  // heading alone carried three of Meta's weapon-accessory words. Optics is
+  // members-only as of 20260821140000, so the grading rubric for it belongs
+  // with the other members-only rules in /members/regulated-items — not on a
+  // public page describing a camping-and-fishing store. Restore it THERE, not
+  // here, when the category comes back.
   {
     title: 'Camping electronics — fridges, power stations, lights',
     points: [

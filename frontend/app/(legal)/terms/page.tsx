@@ -63,9 +63,9 @@ export default function TermsPage() {
       <p>
         All Outdoor is an online store for <strong>new and
         secondhand outdoor goods</strong>. It allows registered users
-        ("<strong>Sellers</strong>") to list items — including optics,
-        camping, hiking and fishing gear, knives and multi-tools,
-        outdoor clothing, and hunting and sport accessories — for sale
+        ("<strong>Sellers</strong>") to list items — including camping,
+        hiking and fishing gear, overlanding equipment and outdoor
+        clothing — for sale
         or auction, and allows other registered users
         ("<strong>Buyers</strong>") to purchase those goods.
       </p>

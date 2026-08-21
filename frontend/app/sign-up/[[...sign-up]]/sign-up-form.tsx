@@ -406,7 +406,7 @@ export default function SignUpForm() {
           Create your account
         </h1>
         <p className="text-sm mb-6" style={{ color: 'var(--text-tertiary)' }}>
-          South Africa&apos;s outdoor, hunting and sport marketplace — sign up
+          South Africa&apos;s outdoor gear marketplace — sign up
           to buy or sell.
         </p>
 

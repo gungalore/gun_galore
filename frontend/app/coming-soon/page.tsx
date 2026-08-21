@@ -23,7 +23,7 @@ export const metadata = {
   // gate is on) ever sees, so a "marketplace for firearms" line here quietly
   // repositioned the whole site back to guns.
   description:
-    "South Africa's outdoor, hunting and sport marketplace is launching soon.",
+    "South Africa's outdoor gear marketplace is launching soon.",
 };
 
 export default function ComingSoonPage() {
