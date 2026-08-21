@@ -15,6 +15,7 @@ import {
 } from './motivation-pdf-merge';
 import type { AnnexureEntry, CertificationLevel } from './motivation-checklist';
 import { COVER_FRAME_MM } from './motivation-cover-photo';
+import { closingRule, drawMark, type MarkName } from './motivation-pdf-marks';
 import * as K from './motivation-pdf-chrome';
 import { renderStatementForm } from './motivation-pdf-form';
 import type { CharacterStatementForm } from './motivation-character-statement';
@@ -365,6 +366,16 @@ export interface MotivationPdfInput {
    * we had attached a reference nobody has written yet.
    */
   characterStatements?: CharacterStatementForm[];
+  /**
+   * Subject marks, keyed by the heading exactly as it is printed.
+   *
+   * ⚠️ BUILT FROM THE STORED STRUCTURE PLAN, not inferred from the words. The
+   * headings are drawn from per-section alternates — "The quarry and the
+   * ground I hunt" one time, "What I hunt, and where" the next — so keying on
+   * the text would work until a seed picked a phrasing nobody had thought of,
+   * and then a section would quietly lose its mark. The plan carries the id.
+   */
+  sectionMarks?: Record<string, MarkName>;
   /**
    * Stamp every page as a preview.
    *
@@ -871,7 +882,16 @@ export class MotivationPdfService {
       toc.push({ heading, page: doc.bufferedPageRange().count });
 
       const num = String(sectionNo).padStart(2, '0');
-      doc.y = K.sectionHeader(chrome, num, heading, doc.y);
+      const mark = input.sectionMarks?.[heading];
+      doc.y = K.sectionHeader(
+        chrome,
+        num,
+        heading,
+        doc.y,
+        mark
+          ? (mx, my, ms) => drawMark(chrome, mark, mx, my, ms, C.deep, 0.55)
+          : undefined,
+      );
 
       // ⚠️ PUT THE CURSOR BACK. pdfkit's text(str, x, y) leaves doc.x AT x, and
       // every later text() that does not name an x inherits it. The tables
@@ -985,15 +1005,24 @@ export class MotivationPdfService {
 
       const owned = input.ownedFirearms ?? [];
       if (!owned.length) {
+        // Set like the body it stands in for — this sentence IS the section's
+        // content on a first application, and it was the one line of prose in
+        // the document still in the old italic sans.
         doc
-          .font(FONT_ITALIC)
-          .fontSize(BODY_SIZE)
-          .fillColor(BLACK)
+          .font(F.serifItalic)
+          .fontSize(K.BODY_SIZE)
+          .fillColor(C.ink)
           .text(
             'No firearm is currently licensed to me. This is a first application.',
-            { width: contentWidth, lineGap: BODY_LEADING },
+            MARGIN + K.SECTION_INDENT,
+            doc.y,
+            {
+              width: contentWidth - K.SECTION_INDENT,
+              lineGap: K.BODY_LEADING,
+            },
           );
-        doc.y += PARA_GAP;
+        doc.x = MARGIN;
+        doc.y += K.PARA_GAP;
       } else {
         // Widths sum to contentWidth (451.28) by construction; a column that
         // overflows would silently overprint its neighbour rather than wrap.
@@ -1053,39 +1082,68 @@ export class MotivationPdfService {
     // The applicant signs this as their own motivation — that is what the
     // declaration in the app commits them to, and the document has to carry a
     // place to do it.
-    if (doc.y > PAGE_HEIGHT - MARGIN - 140) doc.addPage();
+    //
+    // ⚠️ IN THE HANDOFF'S FACES, like everything above it. This block and the
+    // disclaimer below were the last two pieces of the body still set in the
+    // old sans at the old greys — and they sit at the FOOT of the argument,
+    // directly under the serif they were meant to close. On the page they
+    // read as a different document's footer glued to the bottom.
+    if (doc.y > K.BODY_BOTTOM - K.mm(46)) doc.addPage();
     doc.x = MARGIN;
-    doc.moveDown(1.5);
-    doc.font(FONT).fontSize(BODY_SIZE).fillColor(BLACK);
-    const sigY = doc.y + 26;
+    doc.y += K.mm(10);
+    const sigW = K.mm(78);
+    const sigY = doc.y + K.mm(9);
     doc
       .moveTo(MARGIN, sigY)
-      .lineTo(MARGIN + 230, sigY)
-      .lineWidth(0.5)
-      .strokeColor(BLACK)
+      .lineTo(MARGIN + sigW, sigY)
+      .lineWidth(0.7)
+      .strokeColor(C.hair)
       .stroke();
-    doc.y = sigY + 5;
-    doc.text(input.applicantName, { width: 230 });
-    doc.font(FONT_ITALIC).fillColor(GREY).text('Signature and date', {
-      width: 230,
-    });
+    doc.y = sigY + K.mm(2);
+    doc
+      .font(F.serif)
+      .fontSize(K.px(13))
+      .fillColor(C.ink)
+      .text(input.applicantName, MARGIN, doc.y, { width: sigW });
+    K.label(chrome, 'Signature and date', MARGIN, doc.y + 1, sigW);
+    doc.x = MARGIN;
 
     // ── Disclaimer ────────────────────────────────────────────────────
-    if (doc.y > PAGE_HEIGHT - MARGIN - 120) doc.addPage();
-    doc.moveDown(1.2);
+    if (doc.y > K.BODY_BOTTOM - K.mm(30)) doc.addPage();
+    doc.y += K.mm(8);
     const discY = doc.y;
     doc
       .moveTo(MARGIN, discY)
-      .lineTo(PAGE_WIDTH - MARGIN, discY)
-      .lineWidth(0.5)
-      .strokeColor(RULE)
+      .lineTo(MARGIN + contentWidth, discY)
+      .lineWidth(0.7)
+      .strokeColor(C.hair)
       .stroke();
-    doc.moveDown(0.5);
+    doc.y = discY + K.mm(3);
     doc
-      .font(FONT_ITALIC)
-      .fontSize(8.5)
-      .fillColor(GREY)
-      .text(input.disclaimer, { width: contentWidth, lineGap: 1.5 });
+      .font(F.sans)
+      .fontSize(K.px(9.5))
+      .fillColor(C.mut)
+      .text(input.disclaimer, MARGIN, doc.y, {
+        width: contentWidth,
+        lineGap: K.px(2),
+      });
+    doc.x = MARGIN;
+
+    // ── The closing vignette ──────────────────────────────────────────
+    //
+    // A hairline, a mark, a hairline. The one piece of pure character in the
+    // document: it says "the argument ends here" where the page would
+    // otherwise just run out, which is what a professional submission does and
+    // a word-processed one does not.
+    //
+    // Skipped rather than pushed to a page of its own — an ornament that costs
+    // a sheet of paper has stopped being an ornament.
+    if (doc.y + K.mm(14) < K.BODY_BOTTOM) {
+      doc.x = MARGIN;
+      doc.y += K.mm(7);
+      closingRule(chrome, doc.y, 'ammo', contentWidth, MARGIN);
+      doc.y += K.mm(7);
+    }
 
     // ── What to take to the station ───────────────────────────────────
     //

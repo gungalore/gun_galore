@@ -44,6 +44,7 @@ import {
   fingerprint,
   maxSimilarity,
   SIMILARITY_REGENERATE_THRESHOLD,
+  type SectionId,
 } from './motivation-structure';
 import type { FactPack } from './motivation-prompts';
 import {
@@ -57,6 +58,7 @@ import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { buildCharacterStatements } from './motivation-character-statement';
 import { readFile } from 'node:fs/promises';
 import { FirearmImageService } from './motivation-firearm-image';
+import { markForSection, type MarkName } from './motivation-pdf-marks';
 import {
   asCoverChoice,
   checkCoverPhoto,
@@ -269,6 +271,34 @@ function firearmLine(answers: Record<string, string>): string | undefined {
   if (!base) return undefined;
   const serial = answers.firearm_serial?.trim();
   return serial ? `${base}, serial ${serial}` : base;
+}
+
+/**
+ * Heading -> subject mark, read off the stored structure plan.
+ *
+ * ⚠️ NOTHING IS INVENTED WHEN THE PLAN IS MISSING. Motivations written before
+ * plans were stored, and any row whose JSON does not parse, simply get no
+ * marks — the document renders exactly as it does today. Guessing a mark from
+ * the heading text would put a trophy beside a self-defence section the first
+ * time somebody's wording happened to contain the word "hunt".
+ */
+function sectionMarksFor(
+  plan: unknown,
+  firearmType?: string,
+): Record<string, MarkName> | undefined {
+  const sections = (plan as { sections?: { id?: string; heading?: string }[] })
+    ?.sections;
+  if (!Array.isArray(sections)) return undefined;
+
+  const out: Record<string, MarkName> = {};
+  for (const s of sections) {
+    if (!s?.id || !s?.heading) continue;
+    const mark = markForSection(s.id as SectionId, firearmType);
+    if (!mark) continue;
+    // The renderer uppercases and strips a trailing colon before it draws.
+    out[s.heading.replace(/:\s*$/, '').toUpperCase()] = mark;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /**
@@ -2896,6 +2926,7 @@ export class MotivationsService {
         completedAt: true,
         templateFormat: true,
         templateColourway: true,
+        structurePlan: true,
         coverPhotoChoice: true,
         coverPhotoKey: true,
         coverPhotoMime: true,
@@ -3018,6 +3049,11 @@ export class MotivationsService {
       ownedFirearms: existingFirearms(answers),
       annexures,
       priorNotice,
+      // ⚠️ KEYED ON THE HEADING AS IT IS PRINTED — uppercased, colon stripped —
+      // because that is the only string the renderer has when it draws one.
+      // See sectionMarks on MotivationPdfInput for why this is built from the
+      // stored plan rather than inferred from the words.
+      sectionMarks: sectionMarksFor(row.structurePlan, answers.firearm_type),
       firearmPhoto: await this.coverPhotoForRender(row, answers),
       characterStatements,
       annexureImages: printable.images,

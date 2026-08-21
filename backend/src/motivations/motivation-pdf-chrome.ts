@@ -344,6 +344,15 @@ export function sectionHeader(
   number: string,
   title: string,
   y: number,
+  /**
+   * Draws a subject mark to the right of the band, if the section has one.
+   *
+   * ⚠️ A CALLBACK RATHER THAN AN IMPORT. motivation-pdf-marks imports THIS
+   * module for its units; importing it back would be a cycle, and the symptom
+   * of a cycle in a module that runs at import time is an undefined constant
+   * a long way from the file that caused it.
+   */
+  drawMark?: (x: number, y: number, size: number) => void,
 ): number {
   const label = `${number} · ${title.toUpperCase()}`;
   const size = px(11);
@@ -364,13 +373,30 @@ export function sectionHeader(
   doc.font(f.sansBold).fontSize(size);
   const textW =
     doc.widthOfString(label, { characterSpacing: size * 0.22 }) + padX * 2;
-  doc.rect(bandX, y, Math.min(textW, CONTENT_W - (bandX - PAD_X)), bandH).fill(c.band);
+  const bandW = Math.min(textW, CONTENT_W - (bandX - PAD_X));
+  doc.rect(bandX, y, bandW, bandH).fill(c.band);
   doc
     .fillColor(c.deep2)
     .text(label, bandX + padX, y + padY, {
       characterSpacing: size * 0.22,
       lineBreak: false,
     });
+
+  // The subject mark, in the clear space the band leaves. Skipped when the
+  // band already runs the full column — a mark crushed against the margin
+  // reads as a stray glyph rather than as part of the header.
+  if (drawMark) {
+    // ⚠️ SIZED FOR THE ICONS, NOT FOR THE GAP. The pack is drawn on a 24-unit
+    // grid at a 1.5 stroke — at 13 pt the rifle's barrel, receiver and stock
+    // merged into one grey smudge, because the drawing was being asked to
+    // work well below the size it was designed at. 16 pt still clears the
+    // band's 20 pt with room either side.
+    const markSize = mm(5.8);
+    const markX = bandX + bandW + px(12);
+    if (markX + markSize <= PAD_X + CONTENT_W) {
+      drawMark(markX, y + (bandH - markSize) / 2, markSize);
+    }
+  }
 
   return y + bandH + mm(5);
 }
