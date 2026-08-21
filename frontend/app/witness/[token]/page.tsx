@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useState } from 'react';
 import WitnessStepper from '@/components/witness-stepper';
 import WitnessSignaturePad from '@/components/witness-signature-pad';
+import { reverseGeocodeArea } from '@/lib/reverse-geocode-area';
 
 // ────────────────────────────────────────────────────────────────────
 // THE WITNESS'S FIVE SCREENS.
@@ -162,17 +163,16 @@ export default function WitnessPage({
           maximumAge: 60_000,
         }),
       );
-      const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-      if (!key) {
-        setError('Please type where you are signing.');
-        return;
-      }
-      const r = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${pos.coords.latitude},${pos.coords.longitude}&result_type=locality|administrative_area_level_1&key=${key}`,
+      // ⚠️ THE SDK GEOCODER, NOT THE REST ENDPOINT. Our public Maps key is
+      // HTTP-referrer restricted and Google's REST Geocoding API refuses
+      // referrer-restricted keys outright — which is why this always said "we
+      // could not name that place", whatever the phone reported. See
+      // lib/reverse-geocode-area.
+      const area = await reverseGeocodeArea(
+        pos.coords.latitude,
+        pos.coords.longitude,
       );
-      const j = await r.json();
-      const best = j?.results?.[0]?.formatted_address as string | undefined;
-      if (best) setPlace(best.replace(/, South Africa$/, ''));
+      if (area) setPlace(area);
       else setError('We could not name that place — please type it in.');
     } catch {
       setError('We could not read your location — please type it in.');
@@ -370,7 +370,7 @@ export default function WitnessPage({
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   placeholder="4 digits"
-                  className="mt-1 w-40 rounded border border-[var(--border)] px-3 py-2 text-lg tracking-widest"
+                  className="mt-1 w-40 rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-lg tracking-widest"
                 />
                 <div className="mt-3 flex gap-2">
                   <button
@@ -502,7 +502,7 @@ export default function WitnessPage({
                     rows={4}
                     value={answers.explain ?? ''}
                     onChange={(e) => set('explain', e.target.value)}
-                    className="mt-1 w-full rounded border border-[var(--border)] px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
                   />
                   {problems.explain && (
                     <p className="mt-1 text-xs text-[var(--danger,#b3261e)]">
@@ -524,7 +524,7 @@ export default function WitnessPage({
                   rows={5}
                   value={answers.comment ?? ''}
                   onChange={(e) => set('comment', e.target.value)}
-                  className="mt-1 w-full rounded border border-[var(--border)] px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
                 />
               </div>
             </div>
@@ -551,7 +551,7 @@ export default function WitnessPage({
                   value={place}
                   onChange={(e) => setPlace(e.target.value)}
                   placeholder="Town or city"
-                  className="min-w-0 flex-1 rounded border border-[var(--border)] px-3 py-2 text-sm"
+                  className="min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
                 />
                 <button
                   type="button"
@@ -717,7 +717,7 @@ function FieldRow({
           id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="mt-1 w-full rounded border border-[var(--border)] px-3 py-2 text-sm"
+          className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
         >
           <option value="">Choose…</option>
           {(field.choices ?? []).map((c) => (
@@ -744,7 +744,7 @@ function FieldRow({
                   : 'off'
           }
           onChange={(e) => onChange(e.target.value)}
-          className="mt-1 w-full rounded border border-[var(--border)] px-3 py-2 text-sm"
+          className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
         />
       )}
       {problem && (

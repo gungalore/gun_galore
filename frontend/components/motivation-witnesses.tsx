@@ -49,6 +49,35 @@ export default function MotivationWitnesses({
     void load();
   }, [load]);
 
+  // ── Watch for the witness finishing ───────────────────────────────
+  //
+  // ⚠️ THE APPLICANT HAS NO OTHER WAY TO FIND OUT. A witness completes on
+  // their own phone, minutes or hours later, and nothing on this page would
+  // change until it was reloaded — so the operator watched somebody sign and
+  // saw nothing happen here. There is no push channel to a browser tab, so it
+  // polls.
+  //
+  // Only while something is still outstanding: two signed statements poll
+  // nothing, forever. And only while the tab is visible, because a page left
+  // open overnight in a background tab should not spend the night asking.
+  const pending = (rows ?? []).some(
+    (r) => r.status !== 'COMPLETED' && r.status !== 'DECLINED',
+  );
+  useEffect(() => {
+    if (!pending) return;
+    const tick = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    const id = window.setInterval(tick, 20_000);
+    // Catch up the moment they come back to the tab, rather than making them
+    // wait out the rest of an interval that ran while it was hidden.
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [pending, load]);
+
   // Object URLs pin their blob until revoked.
   useEffect(
     () => () => {
@@ -109,14 +138,10 @@ export default function MotivationWitnesses({
 
   return (
     <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-base font-semibold">Character witnesses</h3>
-        <p className="text-xs text-[var(--text-secondary)]">Two statements</p>
-      </div>
-      <p className="mt-1 text-sm text-[var(--text-secondary)]">
+      <p className="text-sm text-[var(--text-secondary)]">
         Two people who know you complete a statement about your character. We
         SMS each of them a link; they fill it in and sign it on their own
-        phone, and it prints into your pack.
+        phone, and it prints into your pack signed.
       </p>
 
       {error && (
@@ -146,7 +171,7 @@ export default function MotivationWitnesses({
                       }))
                     }
                     placeholder="Their full name"
-                    className="rounded border border-[var(--border)] px-3 py-2 text-sm"
+                    className="rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
                   />
                   <input
                     value={draft[slot]?.phone ?? ''}
@@ -158,7 +183,7 @@ export default function MotivationWitnesses({
                     }
                     inputMode="tel"
                     placeholder="Their cell number"
-                    className="rounded border border-[var(--border)] px-3 py-2 text-sm"
+                    className="rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
                   />
                 </div>
                 {/* ⚠️ THE WARNING GOES HERE, NEXT TO THE BUTTON. */}

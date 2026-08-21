@@ -1228,6 +1228,23 @@ export default function MotivationWizardPage() {
               onReread={rereadOneUpload}
               renderControls={(r) => {
                 const k = uploadKindFor(r);
+
+                // ⚠️ THE CHARACTER REFERENCE ROW HAS NO UPLOAD AT ALL, and
+                // that is the point of it now. Witnesses complete and sign
+                // from a link — there is no paper to photograph, nothing in a
+                // library to reuse and no file to attach, so a camera button
+                // and a paperclip on this row are three ways to start a task
+                // that does not exist. Operator, 2026-08-21: "Move the two
+                // invites to [this row] and remove the upload function from it
+                // completely."
+                if (k === 'CHARACTER_REFERENCE') {
+                  return (
+                    <span className="block w-full">
+                      <MotivationWitnesses motivationId={id} />
+                    </span>
+                  );
+                }
+
                 const take = async (files: File[]) => {
                   const file = files[0];
                   if (!file) return;
@@ -1714,14 +1731,6 @@ export default function MotivationWizardPage() {
         </section>
       )}
 
-      {/* ── Character witnesses ──────────────────────────────────
-          Its own section rather than a row in the document checklist: this is
-          the one part of the pack that depends on somebody ELSE doing
-          something, so it needs room to show who has been asked, whether they
-          have opened the link, and what they said. */}
-      <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
-        <MotivationWitnesses motivationId={id} />
-      </section>
 
       {/* 5 — declaration and generate */}
       <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
