@@ -68,8 +68,8 @@ export default function ComingSoonPage() {
           marginBottom: '2.5rem',
         }}
       >
-        South Africa&apos;s marketplace for buying and selling outdoor,
-        hunting and sport gear is almost ready.
+        South Africa&apos;s marketplace for buying and selling outdoor
+        gear is almost ready.
       </p>
       <div
         style={{
