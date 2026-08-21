@@ -6,553 +6,480 @@ import type {
 } from './motivation-character-statement';
 
 // ────────────────────────────────────────────────────────────────────
-// LAYING OUT A FORM, WHICH IS NOT LAYING OUT PROSE.
+// THE SIGNED STATEMENT, ON ONE SHEET.
 //
-// The motivation renderer sets justified paragraphs under numbered section
-// headers. A form is ruled lines, tick boxes and captions, and almost nothing
-// carries over: the thing that matters is not the text, it is the EMPTY SPACE
-// AFTER the text and whether a human being can write in it with a pen.
+// Operator, 2026-08-21: "the generated page needs to be just one A4 page with
+// everything on it."
 //
-// So the measurements here are ergonomic rather than typographic:
+// ⚠️ A REQUIREMENT, NOT A PREFERENCE, and the layout is built around it rather
+// than hoping. A character statement is handed across a counter and read in
+// one go; a Designated Firearms Officer working through a folder should not
+// have to turn a page to find out whether the answer to question three was
+// yes. One sheet also means one signature governing everything above it, with
+// nothing overleaf that the signature does not obviously cover.
 //
-//   8.5 mm  the pitch of a ruled writing line. Adult handwriting runs 4–7 mm
-//           tall; anything under 8 mm forces people to write small and cramped
-//           on a page they are signing under a criminal-offence warning.
-//   mm(3.4) a tick box. Big enough for a pen tick, small enough to sit on a
-//           text line without looking like a checkbox on a website.
-//   10.5 mm a whole labelled field: caption, writing space, rule.
+// Three things make it fit where the first version needed two:
 //
-// ⚠️ AND THE PAGE-BREAK RULE IS DIFFERENT TOO. Prose can break anywhere. A
-// form cannot break between a question and its tick boxes, or between a
-// caption and its rule, because the half on the next page is unanswerable —
-// so every block measures itself first and moves whole.
+//   · THE WITNESS'S DETAILS ARE A TWO-COLUMN GRID. Seven full-width rows was
+//     seven lines of white space to the right of a phone number.
+//   · THE ANSWER SITS ON THE QUESTION'S LINE. A pill on its own row below each
+//     question cost a centimetre three times over, to say "Yes".
+//   · AND IF IT STILL DOES NOT FIT, THE WHOLE SHEET SCALES. A witness who
+//     writes six paragraphs gets slightly tighter setting — never a second
+//     page, and never their words truncated. What they wrote is what they
+//     signed.
+//
+// ⚠️ THIS FILE NO LONGER RENDERS BLANK FORMS. It used to lay out two printable
+// sheets of ruled lines and tick boxes; operator: "Only use the link." Those
+// block kinds went with them, which is most of why the arithmetic below is
+// legible.
 // ────────────────────────────────────────────────────────────────────
 
-// ⚠️ THESE WERE TUNED DOWN AFTER LOOKING AT THE FIRST RENDER, which ran to
-// three sheets per form and left the third one 60% empty — a page carrying
-// nothing but a signature line and a commissioner box. Two sheets is also
-// simply a better object: it is what fits in an envelope, what a referee will
-// actually print, and what does not get separated on somebody's desk.
-//
-// The writing space was NOT sacrificed to get there. 8.5 mm still clears adult
-// handwriting (4–7 mm) with room above the rule; the space came out of the
-// gaps between blocks, the commissioner box, and one line of Part D.
-/** Pitch of a ruled writing line. */
-const LINE_PITCH = K.mm(8.5);
-/** A whole labelled field: caption, writing space, rule. */
-const FIELD_H = K.mm(10.5);
-/** A tick box. */
-const BOX = K.mm(3.4);
-/** Row pitch for wrapped tick boxes. */
-const TICK_ROW = K.mm(6.6);
-/** Lead-in above the signature rule, plus room for the caption below it. */
-const SIGN_H = K.mm(8) + K.mm(6);
-/** Fewest lines a 'fill' section may collapse to. */
-const FILL_MIN = 3;
-/** Most it may grow to — beyond this it stops being a section and becomes a page. */
-const FILL_MAX = 12;
-/**
- * The version stamp at the foot.
- *
- * ⚠️ COUNTED IN THE FILL, because it is drawn after the last block and the
- * fill measures the blocks only. Left out, it was six points too tall for the
- * page and took a whole third sheet for itself — a sheet containing the string
- * "cs-2026-08-a-draft" and nothing else. Anything drawn after the loop has to
- * be in this number.
- */
-const STAMP_H = K.mm(7);
-/**
- * Taken off the bottom of every part header.
- *
- * The shared sectionHeader leaves mm(5) below its band, which is right in the
- * motivation body where a paragraph follows it. On a form the next thing is a
- * caption in 6 pt small caps, and mm(5) under that reads as a hole.
- */
-const PART_TRIM = K.mm(1.5);
+/** Vertical metrics, scaled together so the whole sheet shrinks as one. */
+interface Metrics {
+  scale: number;
+  mm: (n: number) => number;
+  px: (n: number) => number;
+}
 
-/** Draw one ruled writing rule at `y`, `w` wide. */
+function metrics(scale: number): Metrics {
+  return {
+    scale,
+    mm: (n) => K.mm(n) * scale,
+    px: (n) => K.px(n) * scale,
+  };
+}
+
+/**
+ * How far the sheet may be squeezed before a second page is the lesser evil.
+ *
+ * ⚠️ NOT ZERO. Below about 0.78 the serif stops being comfortable at arm's
+ * length, and this is read by somebody deciding whether a person may hold a
+ * firearm. A statement needing more compression than this is one where the
+ * witness wrote a great deal — and a second page is then the honest answer,
+ * better than an unreadable one.
+ */
+const MIN_SCALE = 0.78;
+
+/** Draw a hairline. */
 function rule({ doc, c }: Chrome, x: number, y: number, w: number): void {
   doc
     .moveTo(x, y)
     .lineTo(x + w, y)
-    .lineWidth(0.7)
+    .lineWidth(0.5)
     .strokeColor(c.hair)
     .stroke();
 }
 
-/** An empty tick box with its option label, returning the x it ended at. */
-function tickBox(
-  chrome: Chrome,
-  text: string,
-  x: number,
-  y: number,
+/** The pill an answer sits in — measured, because the question wraps to it. */
+function answerPillWidth(
+  { doc, f }: Chrome,
+  M: Metrics,
+  answer: string,
 ): number {
-  const { doc, c, f } = chrome;
-  const size = K.px(11);
-  doc
-    .rect(x, y + K.px(1.5), BOX, BOX)
-    .lineWidth(0.8)
-    .strokeColor(c.mut)
-    .stroke();
-  doc
-    .font(f.sans)
-    .fontSize(size)
-    .fillColor(c.ink)
-    .text(text, x + BOX + K.px(6), y, { lineBreak: false });
-  return x + BOX + K.px(6) + doc.widthOfString(text) + K.px(18);
+  return (
+    doc.font(f.sansBold).fontSize(M.px(9.5)).widthOfString(answer) + M.px(20)
+  );
 }
 
-/**
- * How tall a block will be, measured before anything is drawn.
- *
- * ⚠️ MEASURED, NOT GUESSED. The prior-notice signature block was reserved with
- * a round 90 and landed alone on a page with seventy points of clear space
- * above it. On a form the same mistake is worse than ugly: a question stranded
- * from its tick boxes cannot be answered at all.
- */
-function heightOf(chrome: Chrome, b: StatementBlock, w: number): number {
+/** How tall a block is at this scale. */
+function heightOf(
+  chrome: Chrome,
+  M: Metrics,
+  b: StatementBlock,
+  w: number,
+): number {
   const { doc, f } = chrome;
   switch (b.kind) {
     case 'note':
       return (
         doc
           .font(f.sans)
-          .fontSize(K.px(10.5))
-          .heightOfString(b.text, { width: w - K.mm(6), lineGap: K.px(3) }) +
-        K.mm(4)
+          .fontSize(M.px(9.5))
+          .heightOfString(b.text, {
+            width: w - M.mm(6),
+            lineGap: M.px(2.5),
+          }) + M.mm(3.5)
       );
+
     case 'part':
-      return K.px(11) * 1.2 + K.px(14) + K.mm(5) - PART_TRIM;
+      return M.px(10) * 1.2 + M.px(11) + M.mm(3);
+
     case 'text':
       return (
         doc
           .font(f.serif)
-          .fontSize(K.BODY_SIZE)
-          .heightOfString(b.text, { width: w, lineGap: K.BODY_LEADING }) +
-        K.mm(3)
+          .fontSize(M.px(12))
+          .heightOfString(b.text, { width: w, lineGap: M.px(2) }) + M.mm(2.5)
       );
-    case 'field':
-      return FIELD_H;
-    case 'choice':
-      // One caption line, then however many rows the boxes wrap onto.
-      return K.px(8.5) * 1.2 + K.mm(2) + rowsFor(chrome, b.options, w) * TICK_ROW;
-    case 'declare':
+
+    // Two per row — the pair costs one row. See the pairing in the loop.
+    case 'value':
+      return M.mm(8.4);
+
+    case 'answered': {
+      const pillW = answerPillWidth(chrome, M, b.answer);
+      const textH = doc
+        .font(f.serif)
+        .fontSize(M.px(11.5))
+        .heightOfString(`${b.number}.  ${b.text}`, {
+          width: w - M.mm(6) - pillW - M.mm(4),
+          lineGap: M.px(2),
+        });
+      // ⚠️ THE PILL COUNTS TOO, and it was not counted. A one-line question is
+      // about 10 pt of text beside a 15 pt pill, so the row is the PILL's
+      // height — the draw takes max(text, pill) and the measure took only the
+      // text. Five points undercounted three times over is most of a
+      // centimetre, which is exactly enough to push a sheet measured as
+      // fitting onto a second page.
+      const pillH = M.px(9.5) * 1.2 + M.px(9);
+      return Math.max(textH, pillH) + M.mm(3.2);
+    }
+
+    case 'quote':
       return (
+        (b.label ? M.px(8) * 1.2 + M.mm(1.5) : 0) +
         doc
-          .font(f.serif)
-          .fontSize(K.BODY_SIZE)
-          .heightOfString(`${b.number}.  ${b.text}`, {
-            width: w - K.mm(8),
-            lineGap: K.BODY_LEADING,
-          }) +
-        K.mm(3) +
-        rowsFor(chrome, b.options, w - K.mm(8)) * K.mm(7) +
-        K.mm(4)
+          .font(f.serifItalic)
+          .fontSize(M.px(11.5))
+          .heightOfString(b.text, {
+            width: w - M.mm(5),
+            lineGap: M.px(2.5),
+          }) + M.mm(3)
       );
-    case 'lines':
-      return (
-        (b.label
-          ? doc
-              .font(f.sans)
-              .fontSize(K.px(10.5))
-              .heightOfString(b.label, { width: w, lineGap: K.px(3) }) + K.mm(3)
-          : 0) +
-        (b.count === 'fill' ? FILL_MIN : b.count) * LINE_PITCH +
-        K.mm(3)
-      );
-    // ⚠️ THESE TWO MUST AGREE WITH WHAT THE DRAWING ACTUALLY ADVANCES. The
-    // signature block reserved mm(15) and advanced mm(18), so three
-    // millimetres of every form were unaccounted for — which is how a block
-    // ends up half a centimetre past the bottom of a page that measured fine.
-    case 'sign':
-      return SIGN_H;
-    case 'commissioner':
-      return K.mm(29) + K.mm(4);
+
+    case 'signed':
+      return M.mm(30);
   }
 }
 
-/** How many rows a run of tick boxes wraps onto at width `w`. */
-function rowsFor(
+/** The masthead's height at this scale. */
+function mastheadHeight(
   { doc, f }: Chrome,
-  options: string[],
+  M: Metrics,
+  form: CharacterStatementForm,
   w: number,
 ): number {
-  doc.font(f.sans).fontSize(K.px(11));
-  let rows = 1;
-  let x = 0;
-  for (const o of options) {
-    const need = BOX + K.px(6) + doc.widthOfString(o) + K.px(18);
-    if (x + need > w && x > 0) {
-      rows += 1;
-      x = 0;
-    }
-    x += need;
-  }
-  return rows;
-}
-
-/** Draw a run of tick boxes, wrapping. Returns the y below them. */
-function tickRow(
-  chrome: Chrome,
-  options: string[],
-  x0: number,
-  y: number,
-  w: number,
-): number {
-  const { doc, f } = chrome;
-  doc.font(f.sans).fontSize(K.px(11));
-  let x = x0;
-  let cy = y;
-  for (const o of options) {
-    const need = BOX + K.px(6) + doc.widthOfString(o) + K.px(18);
-    if (x + need > x0 + w && x > x0) {
-      x = x0;
-      cy += TICK_ROW;
-    }
-    x = tickBox(chrome, o, x, cy);
-  }
-  return cy + TICK_ROW;
+  return (
+    M.px(8) * 1.2 +
+    M.mm(2) +
+    doc.font(f.sans).fontSize(M.px(19)).heightOfString(form.title, { width: w }) +
+    M.mm(1) +
+    doc
+      .font(f.serifItalic)
+      .fontSize(M.px(11))
+      .heightOfString(form.subtitle, { width: w }) +
+    M.mm(3.5)
+  );
 }
 
 /**
- * Render one character reference form, starting on a fresh page.
+ * Everything, measured before anything is drawn.
+ *
+ * ⚠️ THE ESTIMATE IS DELIBERATELY CONSERVATIVE. Scaling type down puts MORE
+ * characters on a line, so a block's real height shrinks faster than the scale
+ * factor does — measuring at 1.0 and dividing therefore over-estimates, which
+ * is the direction that keeps the sheet to one page.
+ */
+export function totalHeight(
+  chrome: Chrome,
+  M: Metrics,
+  form: CharacterStatementForm,
+  w: number,
+): number {
+  let h = mastheadHeight(chrome, M, form, w);
+  let half = false;
+  for (const b of form.blocks) {
+    if (b.kind === 'value') {
+      // The first of a pair reserves the row; the second rides along free.
+      if (half) {
+        half = false;
+        continue;
+      }
+      half = true;
+      h += M.mm(8.4);
+      continue;
+    }
+    half = false;
+    h += heightOf(chrome, M, b, w);
+  }
+  return h + M.mm(6);
+}
+
+/**
+ * Render one signed statement, starting on a fresh page.
  *
  * Returns the page number it started on, for the contents.
  */
 export function renderStatementForm(
   chrome: Chrome,
   form: CharacterStatementForm,
-  /** Stamped small at the foot of the last block, so a returned form is traceable. */
-  stampVersion = true,
 ): number {
   const { doc, c, f } = chrome;
   const X = K.PAD_X;
   const W = K.CONTENT_W;
+  const available = K.BODY_BOTTOM - K.BODY_TOP;
+
+  // ── Fit the sheet ─────────────────────────────────────────────────
+  // ⚠️ A MARGIN ON THE ESTIMATE, because measuring and drawing never agree to
+  // the point. Every block is measured from heightOfString and drawn by
+  // advancing doc.y, and the two differ by fractions that accumulate down a
+  // page — 3% costs a millimetre of white space and buys never spilling.
+  const at1 = totalHeight(chrome, metrics(1), form, W) * 1.03;
+  const M = metrics(
+    at1 <= available ? 1 : Math.max(MIN_SCALE, available / at1),
+  );
 
   doc.addPage();
   const startedOn = doc.bufferedPageRange().count;
   doc.x = X;
   doc.y = K.BODY_TOP;
 
-  // ── The masthead ──────────────────────────────────────────────────
-  //
-  // A form that arrives in somebody's inbox has to say what it is in the
-  // first line, because unlike the rest of the pack it is read by a stranger
-  // who did not ask for it.
-  K.label(chrome, `FORM ${form.index} OF 2`, X, doc.y, W);
-  doc.y += K.px(8.5) * 1.2 + K.mm(3);
-
+  // ── Masthead ──────────────────────────────────────────────────────
+  K.label(chrome, form.eyebrow, X, doc.y, W);
+  doc.y += M.px(8) * 1.2 + M.mm(2);
   doc
     .font(f.sans)
-    .fontSize(K.px(22))
+    .fontSize(M.px(19))
     .fillColor(c.deep)
     .text(form.title, X, doc.y, {
       width: W,
-      characterSpacing: K.px(22) * 0.06,
+      characterSpacing: M.px(19) * 0.04,
     });
-  doc.y += K.mm(2);
+  doc.y += M.mm(1);
   doc
     .font(f.serifItalic)
-    .fontSize(K.px(12.5))
+    .fontSize(M.px(11))
     .fillColor(c.sub)
     .text(form.subtitle, X, doc.y, { width: W });
-
-  doc.y += K.mm(3);
+  doc.y += M.mm(2);
   doc
     .moveTo(X, doc.y)
     .lineTo(X + W, doc.y)
-    .lineWidth(2)
+    .lineWidth(1.6)
     .strokeColor(c.deep)
     .stroke();
-  doc.y += K.mm(5);
+  doc.y += M.mm(3.5);
 
-  // ── The blocks ────────────────────────────────────────────────────
-  //
-  // `half` fields pair up: the first of a pair sets `pending`, the second
-  // draws alongside it. Anything that is not a half field flushes the pair,
-  // so a lone half at the end of a group still gets its own row.
-  let pending: { label: string; value?: string } | null = null;
-  const halfW = (W - K.mm(8)) / 2;
+  // ── Blocks ────────────────────────────────────────────────────────
+  const colW = (W - M.mm(6)) / 2;
+  let pending: { label: string; value: string } | null = null;
+
+  const drawValue = (
+    b: { label: string; value: string },
+    x: number,
+    y: number,
+    w: number,
+  ) => {
+    K.label(chrome, b.label, x, y, w);
+    doc
+      .font(f.serif)
+      .fontSize(M.px(11.5))
+      .fillColor(b.value ? c.ink : c.mut)
+      .text(b.value || '—', x, y + M.mm(3.4), { width: w, lineBreak: false });
+    rule(chrome, x, y + M.mm(7.4), w);
+  };
 
   const flush = () => {
     if (!pending) return;
-    const y0 = doc.y;
-    drawField(chrome, pending, X, y0, halfW);
-    doc.y = y0 + FIELD_H;
+    drawValue(pending, X, doc.y, colW);
+    doc.y += M.mm(8.4);
     pending = null;
   };
 
   for (const b of form.blocks) {
-    if (b.kind === 'field' && b.span === 'half') {
+    if (b.kind === 'value') {
       if (pending) {
-        // Second of the pair — but only if BOTH fit on this page, else the
-        // pair splits across the fold and the reader loses the pairing.
-        if (doc.y + FIELD_H > K.BODY_BOTTOM) {
-          flush();
-          doc.addPage();
-          doc.y = K.BODY_TOP;
-        }
-        // ⚠️ CAPTURE y FIRST. K.label() writes with doc.text(), which ADVANCES
-        // doc.y — so passing doc.y to the second call put the right-hand field
-        // of every pair ten points below its partner. Visible on the first
-        // render: "Identity or passport number" and "Contact number" sat on
-        // two different rules, on a page whose whole job is to look like a form.
-        const y0 = doc.y;
-        drawField(chrome, pending, X, y0, halfW);
-        drawField(chrome, b, X + halfW + K.mm(8), y0, halfW);
-        doc.y = y0 + FIELD_H;
+        // ⚠️ CAPTURE y FIRST. K.label writes with doc.text(), which advances
+        // doc.y — passing doc.y to the second call put the right-hand detail
+        // of every pair below its partner.
+        const y = doc.y;
+        drawValue(pending, X, y, colW);
+        drawValue(b, X + colW + M.mm(6), y, colW);
+        doc.y = y + M.mm(8.4);
         pending = null;
       } else {
         pending = b;
       }
       continue;
     }
-
     flush();
-
-    const h = heightOf(chrome, b, W);
-    if (doc.y + h > K.BODY_BOTTOM) {
-      doc.addPage();
-      doc.y = K.BODY_TOP;
-    }
 
     switch (b.kind) {
       case 'note': {
-        // A quiet bar in the margin rather than a tinted box: the preamble is
-        // three notes long, and three stacked boxes would read as three
-        // warnings when it is one piece of context.
         const top = doc.y;
         doc
           .font(f.sans)
-          .fontSize(K.px(10.5))
+          .fontSize(M.px(9.5))
           .fillColor(c.sub)
-          .text(b.text, X + K.mm(6), doc.y, {
-            width: W - K.mm(6),
-            lineGap: K.px(3),
-            align: 'left',
+          .text(b.text, X + M.mm(6), doc.y, {
+            width: W - M.mm(6),
+            lineGap: M.px(2.5),
           });
-        doc
-          .rect(X, top, K.px(2), doc.y - top)
-          .fill(c.band);
+        doc.rect(X, top, M.px(2), doc.y - top).fill(c.band);
         doc.x = X;
-        doc.y += K.mm(4);
+        doc.y += M.mm(3.5);
         break;
       }
 
-      case 'part':
-        doc.y = K.sectionHeader(chrome, b.label, b.title, doc.y) - PART_TRIM;
+      case 'part': {
+        const size = M.px(10);
+        const padX = M.px(12);
+        const padY = M.px(5.5);
+        const bandH = size * 1.2 + padY * 2;
+        doc.font(f.sansBold).fontSize(size);
+        const label = `${b.label} · ${b.title}`;
+        const tw =
+          doc.widthOfString(label, { characterSpacing: size * 0.18 }) +
+          padX * 2;
+        doc.rect(X, doc.y, Math.min(tw, W), bandH).fill(c.band);
+        doc
+          .fillColor(c.deep2)
+          .text(label, X + padX, doc.y + padY, {
+            characterSpacing: size * 0.18,
+            lineBreak: false,
+          });
         doc.x = X;
+        doc.y += bandH + M.mm(3);
         break;
+      }
 
       case 'text':
         doc
           .font(f.serif)
-          .fontSize(K.BODY_SIZE)
+          .fontSize(M.px(12))
           .fillColor(c.ink)
-          .text(b.text, X, doc.y, { width: W, lineGap: K.BODY_LEADING });
+          .text(b.text, X, doc.y, { width: W, lineGap: M.px(2) });
         doc.x = X;
-        doc.y += K.mm(3);
+        doc.y += M.mm(2.5);
         break;
 
-      case 'field': {
-        const y0 = doc.y;
-        drawField(chrome, b, X, y0, W);
-        doc.y = y0 + FIELD_H;
-        break;
-      }
-
-      case 'choice': {
-        K.label(chrome, b.label, X, doc.y, W);
-        doc.y += K.px(8.5) * 1.2 + K.mm(2);
-        doc.y = tickRow(chrome, b.options, X, doc.y, W);
-        doc.x = X;
-        break;
-      }
-
-      case 'declare': {
+      case 'answered': {
+        // ⚠️ THE ANSWER ON THE QUESTION'S OWN LINE, right-aligned. A pill on a
+        // row of its own read as a button and cost a centimetre three times
+        // over to say "Yes".
+        //
+        // ⚠️ AND A "NO" IS NOT DRESSED UP. Same pill, same ink: the witness's
+        // answer is the witness's answer, and a document that styles a
+        // negative one as an alarm has editorialised on a page they signed.
         const top = doc.y;
+        const pillW = answerPillWidth(chrome, M, b.answer);
+        const textW = W - M.mm(6) - pillW - M.mm(4);
         doc
           .font(f.serif)
-          .fontSize(K.BODY_SIZE)
+          .fontSize(M.px(11.5))
           .fillColor(c.ink)
-          .text(`${b.number}.  ${b.text}`, X + K.mm(8), doc.y, {
-            width: W - K.mm(8),
-            lineGap: K.BODY_LEADING,
+          .text(`${b.number}.  ${b.text}`, X + M.mm(6), top, {
+            width: textW,
+            lineGap: M.px(2),
           });
-        doc.y += K.mm(3);
-        doc.y = tickRow(chrome, b.options, X + K.mm(8), doc.y, W - K.mm(8));
-        // A hairline down the left of the question, tying it to its boxes.
+        const textBottom = doc.y;
+
+        const ph = M.px(9.5) * 1.2 + M.px(9);
         doc
-          .moveTo(X + K.mm(2), top)
-          .lineTo(X + K.mm(2), doc.y - K.mm(2))
+          .roundedRect(X + W - pillW, top, pillW, ph, ph / 2)
+          .lineWidth(0.8)
+          .fillAndStroke(c.band, c.deep);
+        doc
+          .font(f.sansBold)
+          .fontSize(M.px(9.5))
+          .fillColor(c.deep2)
+          .text(b.answer, X + W - pillW, top + M.px(4.5), {
+            width: pillW,
+            align: 'center',
+            lineBreak: false,
+          });
+
+        doc.y = Math.max(textBottom, top + ph);
+        doc
+          .moveTo(X + M.mm(1.5), top)
+          .lineTo(X + M.mm(1.5), doc.y)
           .lineWidth(0.7)
           .strokeColor(c.hair)
           .stroke();
         doc.x = X;
-        doc.y += K.mm(3);
+        doc.y += M.mm(3.2);
         break;
       }
 
-      case 'lines': {
-        // ⚠️ HOW MANY LINES FIT BEFORE THE BLOCKS THAT FOLLOW. Measured against
-        // the REST of the form, not against the bottom of the page: the point
-        // is to end the sheet exactly where the declaration ends, so nothing
-        // spills onto a third page carrying a signature line and nothing else.
-        let count = b.count === 'fill' ? FILL_MIN : b.count;
-        if (b.count === 'fill') {
-          const tail = form.blocks
-            .slice(form.blocks.indexOf(b) + 1)
-            .reduce((n, rest) => n + heightOf(chrome, rest, W), 0);
-          const labelH = b.label
-            ? doc
-                .font(f.sans)
-                .fontSize(K.px(10.5))
-                .heightOfString(b.label, { width: W, lineGap: K.px(3) }) +
-              K.mm(3)
-            : 0;
-          const room =
-            K.BODY_BOTTOM - doc.y - labelH - tail - STAMP_H - K.mm(3);
-          count = Math.max(
-            FILL_MIN,
-            Math.min(FILL_MAX, Math.floor(room / LINE_PITCH)),
-          );
-        }
+      case 'quote': {
         if (b.label) {
-          doc
-            .font(f.sans)
-            .fontSize(K.px(10.5))
-            .fillColor(c.sub)
-            .text(b.label, X, doc.y, { width: W, lineGap: K.px(3) });
-          doc.x = X;
-          doc.y += K.mm(3);
+          K.label(chrome, b.label, X, doc.y, W);
+          doc.y += M.px(8) * 1.2 + M.mm(1.5);
         }
-        for (let i = 0; i < count; i += 1) {
-          // Break mid-run rather than shrinking the pitch: a ruled line you
-          // cannot write on is worse than one on the next page.
-          if (doc.y + LINE_PITCH > K.BODY_BOTTOM) {
-            doc.addPage();
-            doc.y = K.BODY_TOP;
-          }
-          doc.y += LINE_PITCH;
-          rule(chrome, X, doc.y, W);
-        }
-        doc.y += K.mm(3);
-        break;
-      }
-
-      case 'sign': {
-        const sigW = W * 0.5 - K.mm(4);
-        const dateW = W * 0.22 - K.mm(4);
-        const placeW = W * 0.28;
-        const y = doc.y + K.mm(8);
-        rule(chrome, X, y, sigW);
-        rule(chrome, X + sigW + K.mm(8), y, dateW);
-        rule(chrome, X + sigW + dateW + K.mm(16), y, placeW);
-        K.label(chrome, 'Signature', X, y + K.mm(2), sigW);
-        K.label(chrome, 'Date', X + sigW + K.mm(8), y + K.mm(2), dateW);
-        K.label(
-          chrome,
-          'Signed at',
-          X + sigW + dateW + K.mm(16),
-          y + K.mm(2),
-          placeW,
-        );
-        doc.x = X;
-        doc.y = y + K.mm(6);
-        break;
-      }
-
-      case 'commissioner': {
-        const boxH = K.mm(29);
         const top = doc.y;
         doc
-          .rect(X, top, W, boxH)
-          .lineWidth(0.8)
+          .font(f.serifItalic)
+          .fontSize(M.px(11.5))
+          .fillColor(c.ink)
+          .text(b.text, X + M.mm(5), doc.y, {
+            width: W - M.mm(5),
+            lineGap: M.px(2.5),
+          });
+        doc.rect(X, top, M.px(2), doc.y - top).fill(c.band);
+        doc.x = X;
+        doc.y += M.mm(3);
+        break;
+      }
+
+      case 'signed': {
+        const y = doc.y;
+        const sigW = M.mm(64);
+        const sigH = M.mm(15);
+        if (b.signature) {
+          try {
+            doc.image(b.signature, X, y, {
+              fit: [sigW, sigH],
+              valign: 'bottom',
+            });
+          } catch {
+            // A signature pdfkit will not embed must not take the statement
+            // down — the rule and the name below still identify who signed.
+          }
+        }
+        const ruleY = y + sigH + M.mm(1);
+        doc
+          .moveTo(X, ruleY)
+          .lineTo(X + sigW, ruleY)
+          .lineWidth(0.7)
           .strokeColor(c.hair)
           .stroke();
         doc
-          .font(f.sansSemi)
-          .fontSize(K.px(9))
-          .fillColor(c.mut)
-          .text(
-            'FOR COMMISSIONER OF OATHS — ONLY IF YOU HAVE BEEN ASKED FOR ONE',
-            X + K.mm(5),
-            top + K.mm(4),
-            { width: W - K.mm(10), characterSpacing: K.px(9) * 0.12 },
-          );
-
-        const cW = (W - K.mm(10) - K.mm(8)) / 2;
-        const r1 = top + K.mm(13);
-        rule(chrome, X + K.mm(5), r1, cW);
-        rule(chrome, X + K.mm(5) + cW + K.mm(8), r1, cW);
-        K.label(chrome, 'Full names', X + K.mm(5), r1 + K.mm(2), cW);
-        K.label(
-          chrome,
-          'Designation and area',
-          X + K.mm(5) + cW + K.mm(8),
-          r1 + K.mm(2),
-          cW,
-        );
-
-        const r2 = top + K.mm(22);
-        rule(chrome, X + K.mm(5), r2, cW);
-        rule(chrome, X + K.mm(5) + cW + K.mm(8), r2, cW);
-        K.label(chrome, 'Signature', X + K.mm(5), r2 + K.mm(2), cW);
-        K.label(
-          chrome,
-          'Date and stamp',
-          X + K.mm(5) + cW + K.mm(8),
-          r2 + K.mm(2),
-          cW,
-        );
-
+          .font(f.serif)
+          .fontSize(M.px(11.5))
+          .fillColor(c.ink)
+          .text(b.name || '', X, ruleY + M.mm(1.6), { width: sigW });
+        const detail = [
+          b.place ? `Signed at ${b.place}` : '',
+          b.date
+            ? b.date.toLocaleDateString('en-ZA', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+              })
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        K.label(chrome, detail || 'Signed electronically', X, doc.y + 1, W);
         doc.x = X;
-        doc.y = top + boxH + K.mm(4);
+        doc.y = ruleY + M.mm(10);
         break;
       }
     }
   }
-
   flush();
 
-  if (stampVersion) {
-    // Small, at the foot: which wording this copy carries. A form that comes
-    // back six months from now can be matched to what it actually said.
-    //
-    // ⚠️ CLAMPED, NEVER BROKEN ONTO A NEW PAGE. The fill above already reserves
-    // room for it; this is the backstop for the case where it does not fit
-    // anyway — and the right answer there is a stamp a few points higher than
-    // planned, not an extra sheet of paper carrying a version string.
-    const y = Math.min(doc.y + K.mm(2), K.BODY_BOTTOM - K.mm(4));
-    doc
-      .font(f.sans)
-      .fontSize(K.px(8))
-      .fillColor(c.mut)
-      .text(form.version, X, y, { width: W, lineBreak: false });
-    doc.x = X;
-  }
+  // Which wording this copy carries, small, at the foot.
+  doc
+    .font(f.sans)
+    .fontSize(M.px(7.5))
+    .fillColor(c.mut)
+    .text(form.version, X, Math.min(doc.y + M.mm(2), K.BODY_BOTTOM - K.mm(4)), {
+      width: W,
+      lineBreak: false,
+    });
+  doc.x = X;
 
   return startedOn;
-}
-
-/** One labelled field: caption in small caps, writing space, rule. */
-function drawField(
-  chrome: Chrome,
-  b: { label: string; value?: string },
-  x: number,
-  y: number,
-  w: number,
-): void {
-  const { doc, c, f } = chrome;
-  if (b.label) K.label(chrome, b.label, x, y, w);
-  if (b.value) {
-    // Prefilled values are TYPED, in the body face — visibly ours rather than
-    // something the referee is expected to write over.
-    doc
-      .font(f.serif)
-      .fontSize(K.px(12))
-      .fillColor(c.ink)
-      .text(b.value, x, y + K.mm(3.6), { width: w, lineBreak: false });
-  }
-  rule(chrome, x, y + K.mm(8.5), w);
 }

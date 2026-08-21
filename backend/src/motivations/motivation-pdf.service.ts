@@ -356,14 +356,16 @@ export interface MotivationPdfInput {
   firearmPhoto?: string | Buffer;
   priorNotice?: { title: string; body: string; version: string };
   /**
-   * The blank character reference forms, to print and hand to two people.
+   * The SIGNED character witness statements, one page-set per witness.
    *
-   * ⚠️ NOT ANNEXURES, and deliberately not lettered as any. An annexure is a
-   * document that gets FILED with the application; these are blank forms that
-   * get SENT OUT, and the thing that eventually gets filed is the completed
-   * one the applicant uploads under CHARACTER_REFERENCE. Lettering a blank
-   * form would put an empty page in the annexure index and tell the Registrar
-   * we had attached a reference nobody has written yet.
+   * ⚠️ ONLY THE ONES ACTUALLY SIGNED. A witness who was invited and has not
+   * completed does not appear at all — not as a blank, not as a placeholder,
+   * not as "awaiting". A pack going to the police must contain what exists.
+   *
+   * ⚠️ NOT LETTERED AS ANNEXURES, still. An annexure in this pack is a
+   * REPRINT of a document the applicant gathered; this is a document generated
+   * from evidence the witness gave us directly. Mixing the two would put a
+   * page in the annexure index that has no original anywhere.
    */
   characterStatements?: CharacterStatementForm[];
   /**
@@ -1290,23 +1292,25 @@ export class MotivationPdfService {
       doc.x = MARGIN;
     }
 
-    // ── The character reference forms ─────────────────────────────────
+    // ── The character witness statements ──────────────────────────────
     //
-    // Placed HERE, after the applicant's own documents and before the copies
-    // of what has already been gathered, because that is where they are in the
-    // applicant's timeline: everything above is done, everything below is
-    // collected, and these two are the thing still outstanding on the day the
-    // pack is downloaded.
+    // ⚠️ SIGNED STATEMENTS, NOT BLANK FORMS. The pack used to carry two ruled
+    // sheets for the applicant to print and hand out; operator, 2026-08-21:
+    // "Only use the link." A witness now completes and signs on their own
+    // phone and what prints here is what they actually said — which is a
+    // document a Designated Firearms Officer can read, rather than two pages
+    // of hope.
     //
-    // They ARE in the contents, unlike the take-with-you pages at the very
-    // back. Somebody who set the pack down a week ago and now wants to know
-    // where those forms were has to be able to find them.
+    // Placed here, before the copies of what has already been gathered,
+    // because a statement is evidence in its own right rather than a reprint
+    // of somebody's card. They ARE in the contents.
     for (const form of input.characterStatements ?? []) {
       const startedOn = renderStatementForm(chrome, form);
       toc.push({
-        heading: `CHARACTER REFERENCE — FORM ${form.index} OF ${
-          input.characterStatements?.length ?? 2
-        }`,
+        heading:
+          (input.characterStatements?.length ?? 1) > 1
+            ? `CHARACTER WITNESS STATEMENT ${form.index} OF ${input.characterStatements?.length}`
+            : 'CHARACTER WITNESS STATEMENT',
         page: startedOn,
       });
     }
@@ -1907,19 +1911,16 @@ export class MotivationPdfService {
       }
 
       // ⚠️ THE BACK MATTER IS NAMED HERE, NOT LISTED. The take-with-you sheets
-      // and the reference forms are deliberately outside the index — but an
-      // applicant who never learns the pack contains blank reference forms
-      // will not send them to anybody, and a contents page that simply stops
-      // implies there is nothing after the last line.
+      // are deliberately outside the index, and a contents page that simply
+      // stops implies there is nothing after the last line.
       doc.y += K.mm(4);
       doc
         .font(F.serifItalic)
         .fontSize(K.px(11.5))
         .fillColor(C.sub)
         .text(
-          'The last sheets are yours rather than the Registrar’s: two blank ' +
-            'character reference forms to give to people who know you, and a ' +
-            'checklist of what to take to the police station.',
+          'The last sheets are yours rather than the Registrar’s: a checklist ' +
+            'of what to take with you to the police station.',
           MARGIN,
           doc.y,
           { width: contentWidth, lineGap: K.px(2) },

@@ -4261,8 +4261,9 @@ model Motivation {
   // the row and its stored files past this date.
   retentionPurgeAt DateTime?
 
-  messages MotivationMessage[]
-  uploads  MotivationUpload[]
+  messages  MotivationMessage[]
+  uploads   MotivationUpload[]
+  witnesses MotivationWitness[]
 
   // The throttle. See applicationRef for why it is NOT NULL.
   @@unique([userId, licenceType, applicationRef])
@@ -4303,6 +4304,87 @@ model MotivationMessage {
 // control, and these are photographs of ID books and firearm licences. The
 // bytes live at SecureFileStorageService's storageKey, AES-256-GCM at rest,
 // reachable only through an authenticated endpoint that checks ownership.
+/// A CHARACTER WITNESS STATEMENT, completed by the witness themselves.
+///
+/// ⚠️ THE ONLY ROW IN THIS SYSTEM WRITTEN BY SOMEBODY WHO IS NOT A MEMBER.
+/// Everything else on a motivation is the applicant's own answer about
+/// themselves. This is a third party putting their name, their identity number
+/// and their signature on a document that goes to the police, from a phone
+/// they opened a link on. That shapes every decision below.
+///
+/// ⚠️ THE APPLICANT MAY DELETE IT, AND THAT IS DELIBERATE (operator, 2026-08-21:
+/// "They have full right to delete it. if they delete it the spot to enter a new
+/// witness name and number opens"). It is their application and nobody is
+/// obliged to file an unfavourable statement — the paper flow works the same
+/// way. The witness is told so on the form, in as many words, so nobody signs
+/// under a false impression about what happens next.
+model MotivationWitness {
+  id           String     @id @default(cuid())
+  motivationId String
+  motivation   Motivation @relation(fields: [motivationId], references: [id], onDelete: Cascade)
+
+  /// 1 or 2 — which of the two slots this fills. Unique per motivation, so a
+  /// deleted witness genuinely frees its slot rather than accumulating rows.
+  slot Int
+
+  // ── What the applicant supplies when inviting ────────────────────
+  /// As the applicant typed it. Shown to the witness so they can tell us we
+  /// have the wrong person before they fill anything in.
+  invitedName  String
+  /// The number the link and the code are sent to.
+  invitedPhone String
+
+  /// INVITED · VERIFIED · COMPLETED. No enum: a new state costs no migration.
+  status String @default("INVITED")
+
+  // ── Proving the number belongs to the person holding the phone ───
+  //
+  // ⚠️ THE LINK ALONE IS NOT ENOUGH. An SMS can be forwarded, and a token in a
+  // URL is a bearer credential — whoever holds it is the witness as far as the
+  // server knows. The code is what ties the statement to the number the
+  // applicant nominated. Mirrors the phone-change OTP on User.
+  otpHash      String?
+  otpExpiresAt DateTime?
+  otpAttempts  Int       @default(0)
+  verifiedAt   DateTime?
+
+  // ── What the witness fills in ────────────────────────────────────
+  //
+  // ⚠️ ENCRYPTED, ALL OF IT. A third party's full name, identity number and
+  // daytime contact number is exactly the material the rest of this module
+  // encrypts, and it was given to us by somebody who is not our member and
+  // cannot log in to manage it. answersEncrypted holds the lot as JSON.
+  answersEncrypted String? @db.Text
+
+  /// Their drawn signature, in the encrypted upload tree. A storage key, never
+  /// a path and never bytes on this row.
+  signatureKey  String? @db.VarChar(120)
+  signatureMime String? @db.VarChar(40)
+
+  /// "Bloemfontein, Free State" — the place of signature, from the phone's GPS
+  /// and reverse-geocoded to a town.
+  ///
+  /// ⚠️ THE PLACE, NEVER THE COORDINATES. A statement needs a "signed at" line;
+  /// it does not need a stranger's position to five decimal places, and storing
+  /// one would be keeping something we have no use for.
+  signedPlace String?   @db.VarChar(160)
+  signedAt    DateTime?
+
+  // ── The audit trail ──────────────────────────────────────────────
+  /// Stamped when the link is first opened, so an applicant can see whether
+  /// their witness has looked at it before chasing them.
+  openedAt        DateTime?
+  /// Kept because the DFO may ask how a statement was taken (reg 13(8)).
+  submitIp        String?   @db.VarChar(64)
+  submitUserAgent String?   @db.VarChar(300)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([motivationId, slot])
+  @@index([motivationId])
+}
+
 model MotivationUpload {
   id           String               @id @default(cuid())
   motivationId String

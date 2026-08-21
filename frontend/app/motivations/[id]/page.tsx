@@ -13,6 +13,7 @@ import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
 import MotivationTemplatePicker from '@/components/motivation-template-picker';
 import MotivationCoverPhoto from '@/components/motivation-cover-photo';
+import MotivationWitnesses from '@/components/motivation-witnesses';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1712,6 +1713,15 @@ export default function MotivationWizardPage() {
           </div>
         </section>
       )}
+
+      {/* ── Character witnesses ──────────────────────────────────
+          Its own section rather than a row in the document checklist: this is
+          the one part of the pack that depends on somebody ELSE doing
+          something, so it needs room to show who has been asked, whether they
+          have opened the link, and what they said. */}
+      <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
+        <MotivationWitnesses motivationId={id} />
+      </section>
 
       {/* 5 — declaration and generate */}
       <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">

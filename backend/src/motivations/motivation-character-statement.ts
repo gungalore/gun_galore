@@ -103,27 +103,37 @@ export type StatementBlock =
   | { kind: 'part'; label: string; title: string }
   /** A normal sentence at body weight. */
   | { kind: 'text'; text: string }
-  /** A ruled write-on line. `value` prefills it (typed, not written). */
-  | { kind: 'field'; label: string; span: 'full' | 'half'; value?: string }
-  /** Tick boxes on one line. */
-  | { kind: 'choice'; label: string; options: string[] }
-  /** One of the regulation 13(7) questions, with its boxes. */
-  | { kind: 'declare'; number: string; text: string; options: string[] }
-  /**
-   * Blank ruled lines to write on.
-   *
-   * `'fill'` means "as many as fit before the blocks after you" — see the
-   * renderer. Used for the one free-text section, so that whatever room is
-   * left on the sheet becomes writing space instead of white space.
-   */
-  | { kind: 'lines'; label?: string; count: number | 'fill' }
-  /** The signature row: signature, date, place. */
-  | { kind: 'sign' }
-  /** The commissioner-of-oaths box, used only if a DFO asks for one. */
-  | { kind: 'commissioner' };
+  // ── What a COMPLETED statement is made of ────────────────────────
+  /** A label and the value the witness gave — a filled-in field. */
+  | { kind: 'value'; label: string; value: string }
+  /** One statutory question with the answer they chose. */
+  | {
+      kind: 'answered';
+      number: string;
+      text: string;
+      answer: string;
+    }
+  /** Something the witness wrote, set apart so it reads as their words. */
+  | { kind: 'quote'; label: string; text: string }
+  /** Their signature image, the place, and the date the server recorded. */
+  | {
+      kind: 'signed';
+      name: string;
+      signature?: Buffer;
+      place: string;
+      date: Date | null;
+    };
 
 export interface CharacterStatementForm {
   title: string;
+  /**
+   * The small line above the title.
+   *
+   * ⚠️ IT USED TO BE HARD-CODED "FORM n OF 2" IN THE RENDERER, which was true
+   * of the blank forms and false of everything that replaced them: a signed
+   * statement is not a form, and there are not always two.
+   */
+  eyebrow: string;
   /** "Statement by the first of two people", for the page. */
   subtitle: string;
   /** 1 or 2 — the forms are identical apart from this. */
@@ -148,105 +158,100 @@ export interface CharacterStatementInput {
  */
 const NB = ' ';
 
+/**
+ * The three statutory questions, as the completed statement prints them.
+ *
+ * Mirrors WITNESS_DECLARATIONS in motivation-witness-form.ts — that file is
+ * what the witness is asked, this is how the answer is set. A spec locks the
+ * two together.
+ */
+export const WITNESS_QUESTIONS = [
+  {
+    key: 'fit_and_proper',
+    number: '1',
+    text: 'Is the applicant a fit and proper person to be issued with the firearm licence applied for?',
+    cite: '13(7)(a)',
+  },
+  {
+    key: 'stable_and_not_violent',
+    number: '2',
+    text: 'Is the applicant of a stable mental condition, and not inclined to violence?',
+    cite: '13(7)(b)',
+  },
+  {
+    key: 'not_dependent',
+    number: '3',
+    text: 'Is the applicant free of dependence on any substance which has an intoxicating or narcotic effect?',
+    cite: '13(7)(c)',
+  },
+] as const;
+
 /** The three answers. Order matters: the positive one first, then the outs. */
 const ANSWERS = ['Yes', 'No', 'I am not able to say'];
 
 /**
- * Build one form.
+ * A COMPLETED statement, built from what the witness actually typed.
  *
- * Pure and deterministic, like the prior-notice builder — the pack is
- * re-rendered from stored answers on every download, so anything that varied
- * per call would produce a different document each time somebody opened it.
+ * Operator, 2026-08-21: "generate a form that be filled by the system from the
+ * information provided by the witness. It needs to have the signature as well.
+ * we can generate the date and if possible ask the witness to use their
+ * location to fill the place of signature." And on the blank forms: "Only use
+ * the link."
+ *
+ * ⚠️ SO THE BLANK FORMS ARE GONE, and this is what the pack carries instead —
+ * a statement somebody has actually signed, rather than two sheets of ruled
+ * lines hoping they will. The block vocabulary is reused unchanged: what the
+ * witness answered prints exactly where the blank version left room for it,
+ * which is the cheapest possible guarantee that a question they answered
+ * cannot be missing from the page they signed.
+ *
+ * ⚠️ NOTHING HERE IS OURS TO REWORD. Every value comes off the witness's own
+ * submission; the only strings this function contributes are the labels that
+ * were already on the form. A statement whose prose we improved is a statement
+ * the witness did not make.
  */
-export function buildCharacterStatement(
-  input: CharacterStatementInput,
-  index: number,
-): CharacterStatementForm {
-  const who = input.applicantName;
-  const ordinal = index === 1 ? 'first' : 'second';
+export function buildCompletedStatement(input: {
+  index: number;
+  total: number;
+  applicantName: string;
+  referenceNumber: string;
+  licenceTypeLabel: string;
+  /** Field key -> what the witness typed. */
+  answers: Record<string, string | undefined>;
+  /** Their drawn signature, decrypted for this render. */
+  signature?: Buffer;
+  signedPlace?: string | null;
+  signedAt?: Date | null;
+  version: string;
+}): CharacterStatementForm {
+  const a = (k: string) => (input.answers[k] ?? '').trim();
+  const fullName = [a('first_names'), a('surname')].filter(Boolean).join(' ');
+  const relationship =
+    a('relationship') === 'Other' && a('relationship_other')
+      ? a('relationship_other')
+      : a('relationship');
 
   const blocks: StatementBlock[] = [
     {
       kind: 'note',
       text:
-        `${who} has asked you to give a character reference in support of an ` +
-        `application to the South African Police Service for a firearm ` +
-        `licence (${input.licenceTypeLabel}). This page is that reference. ` +
-        `Please read it, answer every question yourself, and sign at the end. ` +
-        `${who} should not complete any part of it for you.`,
-    },
-    {
-      kind: 'note',
-      text:
-        'Four things you are entitled to know before you begin. Giving this ' +
-        'reference is voluntary. The Designated Firearms Officer may contact ' +
-        'you afterwards about it; you are not compelled to say more, though a ' +
-        'reference may be treated as ineffective if you do not (reg 13(8)). ' +
-        'Your name, identity number and contact details go to the police with ' +
-        'the application so they can reach you. And this forms part of an ' +
-        'application under the Firearms Control Act 60 of 2000, where section ' +
-        '120(9)(f) makes it an offence to supply information knowing it to be ' +
-        'false, incorrect or misleading, or not believing it to be correct.',
-    },
-    {
-      // ⚠️ THE MOST IMPORTANT SENTENCE ON THE PAGE. It comes directly after
-      // the offence warning on purpose: a person told they may be prosecuted
-      // for a wrong answer, and not told that "No" is an answer, is a person
-      // being pressured to sign. Both halves or neither.
-      kind: 'note',
-      text:
-        'If you cannot answer a question with a yes, say so. "No" and "I am ' +
-        'not able to say" are proper answers, and a reference that is not true ' +
-        'is of no use to anybody.',
+        `This statement was completed and signed by the witness named below, ` +
+        `on their own device, in support of ${input.applicantName}'s ` +
+        `application (${input.licenceTypeLabel}), reference ` +
+        `${input.referenceNumber}. Their identity was checked by a code sent ` +
+        `to the mobile number recorded here.`,
     },
 
-    { kind: 'part', label: 'PART A', title: 'WHO YOU ARE' },
-    {
-      kind: 'field',
-      label: 'Full name, as it appears on your identity document',
-      span: 'full',
-    },
-    { kind: 'field', label: 'Identity or passport number', span: 'half' },
-    { kind: 'field', label: 'Contact number', span: 'half' },
-    { kind: 'field', label: 'Email address', span: 'half' },
-    { kind: 'field', label: 'Occupation', span: 'half' },
-    { kind: 'field', label: 'Residential address', span: 'full' },
-    { kind: 'field', label: '', span: 'full' },
+    { kind: 'part', label: 'PART A', title: 'WHO GAVE THIS STATEMENT' },
+    { kind: 'value', label: 'Full name(s)', value: a('first_names') },
+    { kind: 'value', label: 'Surname', value: a('surname') },
+    { kind: 'value', label: 'Identity number', value: a('id_number') },
+    { kind: 'value', label: 'Daytime contact number', value: a('daytime_phone') },
 
-    { kind: 'part', label: 'PART B', title: 'HOW YOU KNOW THE APPLICANT' },
-    {
-      // Prefilled, so the page can never be attached to the wrong file and the
-      // referee is never in doubt about whom they are writing about.
-      kind: 'field',
-      label: 'The applicant',
-      span: 'half',
-      value: who,
-    },
-    {
-      kind: 'field',
-      label: 'Application reference',
-      span: 'half',
-      value: input.referenceNumber,
-    },
-    {
-      kind: 'choice',
-      label: 'In what capacity do you know the applicant?',
-      options: [
-        'Employer or colleague',
-        'Neighbour',
-        'Friend',
-        'Fellow club or association member',
-        'Family member',
-        'Other',
-      ],
-    },
-    { kind: 'field', label: 'If other, please say', span: 'half' },
-    { kind: 'field', label: 'How long have you known them?', span: 'half' },
-    {
-      kind: 'choice',
-      label: 'How often are you in contact?',
-      options: ['Daily', 'Weekly', 'Monthly', 'A few times a year'],
-    },
+    { kind: 'part', label: 'PART B', title: 'HOW THEY KNOW THE APPLICANT' },
+    { kind: 'value', label: 'The applicant', value: input.applicantName },
+    { kind: 'value', label: 'Relationship', value: relationship },
+    { kind: 'value', label: 'Known each other', value: a('known_for') },
 
     {
       kind: 'part',
@@ -259,109 +264,65 @@ export function buildCharacterStatement(
         'Regulation 13(7) of the Firearms Control Regulations, 2004 requires ' +
         'anyone giving a recommendation about an applicant’s character to ' +
         'state whether, to the best of their knowledge and belief, the ' +
-        'applicant is the three things below. Answer each from your own ' +
-        'knowledge of them, and tick one box for each.',
+        'applicant is the three things below.',
     },
-    {
-      kind: 'declare',
-      number: '1',
-      text:
-        'Is the applicant a fit and proper person to be issued with the ' +
-        `firearm licence applied for? ·${NB}reg${NB}13(7)(a)`,
-      options: ANSWERS,
-    },
-    {
-      kind: 'declare',
-      number: '2',
-      text:
-        'Is the applicant of a stable mental condition, and not inclined to ' +
-        `violence? ·${NB}reg${NB}13(7)(b)`,
-      options: ANSWERS,
-    },
-    {
-      kind: 'declare',
-      number: '3',
-      text:
-        'Is the applicant free of dependence on any substance which has an ' +
-        `intoxicating or narcotic effect? ·${NB}reg${NB}13(7)(c)`,
-      options: ANSWERS,
-    },
-    {
-      kind: 'lines',
-      label:
-        'If you answered “No” or “I am not able to say” to any of the three, ' +
-        'please explain here',
-      count: 2,
-    },
+    ...WITNESS_QUESTIONS.map(
+      (q): StatementBlock => ({
+        kind: 'answered',
+        number: q.number,
+        text: `${q.text} ${NB}·${NB}reg${NB}${q.cite}`,
+        answer: a(q.key) || 'Not answered',
+      }),
+    ),
+    ...(a('explain')
+      ? ([
+          {
+            kind: 'quote',
+            label: 'Their explanation',
+            text: a('explain'),
+          },
+        ] as StatementBlock[])
+      : []),
 
-    {
-      kind: 'part',
-      label: 'PART D',
-      title: 'ANYTHING ELSE YOU WOULD LIKE TO ADD',
-    },
-    {
-      kind: 'note',
-      text:
-        'Optional, and in your own words. How you know the applicant, and ' +
-        'anything about their character you think the Registrar should know. ' +
-        'There is no right answer and no need to fill the space.',
-    },
-    // ⚠️ 'fill', NOT A NUMBER. This is the only open section on the form, and
-    // it is the last thing before the declaration — so it is exactly where a
-    // fixed count either strands the signature on a third sheet or leaves a
-    // hand's width of nothing above it. Filling makes the form two sheets and
-    // hands the leftover to the referee to write in.
-    { kind: 'lines', count: 'fill' },
+    { kind: 'part', label: 'PART D', title: 'IN THEIR OWN WORDS' },
+    ...(a('comment')
+      ? ([{ kind: 'quote', label: '', text: a('comment') }] as StatementBlock[])
+      : ([
+          {
+            kind: 'note',
+            text: 'The witness did not add anything further.',
+          },
+        ] as StatementBlock[])),
 
-    { kind: 'part', label: 'PART E', title: 'YOUR DECLARATION' },
+    { kind: 'part', label: 'PART E', title: 'DECLARATION AND SIGNATURE' },
     {
       kind: 'text',
       text:
-        'I confirm that I have read this page, that the answers above are my ' +
-        'own, and that they are true to the best of my knowledge and belief.',
+        `I, ${fullName || 'the witness named above'}, confirm that I read this ` +
+        `form, that the answers in it are my own, and that they are true to ` +
+        `the best of my knowledge and belief.`,
     },
-    { kind: 'sign' },
     {
-      kind: 'note',
-      text:
-        'Only if you have been asked to have this commissioned: take it and ' +
-        'your identity document to a commissioner of oaths — any police ' +
-        'station, or a practising attorney — and do not sign above until you ' +
-        'are in front of them. Otherwise leave the block below blank.',
+      kind: 'signed',
+      name: fullName,
+      signature: input.signature,
+      place: input.signedPlace ?? '',
+      // ⚠️ THE DATE IS OURS, THE REST IS THEIRS. It is the moment the server
+      // recorded the submission, not something anybody typed — which is the
+      // only version of a date on this page that cannot be wrong.
+      date: input.signedAt ?? null,
     },
-    { kind: 'commissioner' },
   ];
 
   return {
-    title: 'CHARACTER REFERENCE',
-    subtitle: `Statement by the ${ordinal} of two people who know the applicant`,
-    index,
+    title: 'CHARACTER WITNESS STATEMENT',
+    eyebrow:
+      input.total > 1
+        ? `STATEMENT ${input.index} OF ${input.total}`
+        : 'SIGNED STATEMENT',
+    subtitle: `Completed and signed by ${fullName || 'the witness'}`,
+    index: input.index,
     blocks,
-    version: CHARACTER_STATEMENT_VERSION,
+    version: input.version,
   };
 }
-
-/** Both forms, in order. */
-export function buildCharacterStatements(
-  input: CharacterStatementInput,
-): CharacterStatementForm[] {
-  return Array.from({ length: CHARACTER_STATEMENT_COUNT }, (_, i) =>
-    buildCharacterStatement(input, i + 1),
-  );
-}
-
-/**
- * The applicant-facing instruction, for the checklist row.
- *
- * Kept here beside the form so the two cannot drift apart — the checklist
- * telling somebody to "get two character references" while the pack contains
- * forms with different instructions on them is exactly the kind of quiet
- * contradiction that made the prior-notice tick box wrong for months.
- */
-export const CHARACTER_STATEMENT_GUIDANCE =
-  'Your pack contains two blank character reference forms, near the back. ' +
-  'Print them and give one each to two people who know you — ideally in ' +
-  'different parts of your life, such as an employer and a neighbour, rather ' +
-  'than two people who know you the same way. They fill them in themselves ' +
-  'and sign them; you must not complete any part of them. Upload the signed ' +
-  'forms here when you get them back.';

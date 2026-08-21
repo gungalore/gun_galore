@@ -8,6 +8,11 @@ import { MotivationPdfService } from './motivation-pdf.service';
 import { MotivationRetentionService } from './motivation-retention.service';
 import { MotivationExtractService } from './motivation-extract.service';
 import { FirearmImageService } from './motivation-firearm-image';
+import { MotivationWitnessService } from './motivation-witness.service';
+import {
+  MotivationsWitnessController,
+  WitnessPublicController,
+} from './motivations-witness.controller';
 import { Saps271Service } from './saps271.service';
 import { MotivationClaudeService } from './motivation-claude.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
@@ -35,7 +40,10 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
  * writing user files into the encrypted store without a deliberate decision.
  */
 @Module({
-  controllers: [MotivationsController, MotivationsScanController],
+  controllers: [MotivationsController, MotivationsScanController,
+    MotivationsWitnessController,
+    WitnessPublicController,
+  ],
   providers: [
     // ⚠️ THE GUARD IS PROVIDED, NOT JUST IMPORTED. A controller decorated
     // with a guard whose dependencies this module cannot resolve crash-loops
@@ -50,6 +58,7 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
     MotivationExtractService,
     Saps271Service,
     FirearmImageService,
+    MotivationWitnessService,
     SecureFileStorageService,
   ],
   // MotivationRetentionService is exported so the account-deletion path can

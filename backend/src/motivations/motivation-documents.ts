@@ -314,14 +314,13 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
   // appears nowhere at all. What the Regulations DO prescribe is the content
   // — reg 13(7)(a)-(c) — which is far more use to a referee than a number.
   //
-  // ⚠️ AND SINCE 2026-08-21 THE PACK CONTAINS THE FORM ITSELF, so this row no
-  // longer tells the applicant to brief the referee on the three points. It
-  // tells them where the two blank forms are. A checklist that asks you to
-  // explain regulation 13(7) to a friend, in a pack that already asks the
-  // three questions on a printed page, sends people off to do work we have
-  // already done for them.
+  // ⚠️ AND SINCE 2026-08-21 THERE IS NOTHING TO UPLOAD HERE AT ALL. Witnesses
+  // complete and sign on their own phones from a link the applicant sends —
+  // operator: "Only use the link" — so the statement arrives signed and prints
+  // itself into the pack. Telling somebody to chase a paper form they will
+  // never be handed is worse than saying nothing.
   CHARACTER_REFERENCE:
-    'Not on SAPS’s list for a new licence, but a strong pack usually carries one or two. Your pack has two blank reference forms near the back — they already ask the three things regulation 13(7) requires a referee to state. Print them and give one each to two people who know you, ideally in different parts of your life, such as an employer and a neighbour. They fill them in and sign them themselves; you must not complete any part of them. Upload the signed forms here when you get them back.',
+    'You do not need to upload these. Two people who know you complete a statement from a link we SMS them, and it prints into your pack signed. Set that up in the Character witnesses section above.',
 };
 
 export interface DocumentStatus {

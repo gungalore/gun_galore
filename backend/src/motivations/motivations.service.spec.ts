@@ -49,6 +49,12 @@ function build(
       // simply not asked to cite.
       findMany: jest.fn(async (_a?: any): Promise<any[]> => []),
     },
+    motivationWitness: {
+      // No completed statements by default, which is the correct default: a
+      // pack contains what a witness actually signed, never a placeholder.
+      findMany: jest.fn(async (_a?: any): Promise<any[]> => []),
+      findFirst: jest.fn(async (_a?: any): Promise<any> => null),
+    },
     motivationMessage: {
       create: jest.fn(async (_a?: any): Promise<any> => ({})),
       // Empty history: no question is open, so every gap may be asked. The
@@ -150,6 +156,15 @@ function build(
       {
         find: jest.fn(() => null),
         fetchAndStore: jest.fn(async () => null),
+      } as never,
+      // Character witnesses. Stubbed to an empty list so no test in this file
+      // reaches the SMS rail — an invite spends a real message, and a unit
+      // suite that sends one is a unit suite with a bill.
+      {
+        list: jest.fn(async () => []),
+        invite: jest.fn(async () => ({})),
+        remove: jest.fn(async () => undefined),
+        signature: jest.fn(async () => null),
       } as never,
   );
   return { svc, prisma, quota, refs, files, claude, pdf, settings };

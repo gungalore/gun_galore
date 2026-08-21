@@ -55,10 +55,12 @@ import {
   type AnnexureEntry,
 } from './motivation-checklist';
 import { buildPriorNoticeRequest } from './motivation-prior-notice';
-import { buildCharacterStatements } from './motivation-character-statement';
+import { buildCompletedStatement } from './motivation-character-statement';
+import { WITNESS_FORM_VERSION } from './motivation-witness-form';
 import { readFile } from 'node:fs/promises';
 import { FirearmImageService } from './motivation-firearm-image';
 import { markForSection, type MarkName } from './motivation-pdf-marks';
+import { MotivationWitnessService } from './motivation-witness.service';
 import {
   asCoverChoice,
   checkCoverPhoto,
@@ -343,6 +345,7 @@ export class MotivationsService {
     private readonly extract: MotivationExtractService,
     private readonly saps271: Saps271Service,
     private readonly firearmImages: FirearmImageService,
+    private readonly witnesses: MotivationWitnessService,
   ) {}
 
   /**
@@ -2917,6 +2920,7 @@ export class MotivationsService {
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {
+        id: true,
         referenceNumber: true,
         licenceType: true,
         status: true,
@@ -2993,21 +2997,20 @@ export class MotivationsService {
       licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
       firearmLine: firearmLine(answers),
     });
-    // The two blank character reference forms.
+    // The SIGNED character witness statements.
     //
-    // ⚠️ ALWAYS BOTH, AND ALWAYS BLANK, EVEN IF THE APPLICANT HAS ALREADY
-    // UPLOADED SIGNED ONES. They cost two sheets, and the alternative — hiding
-    // them once a CHARACTER_REFERENCE upload exists — silently removes them
-    // from the pack of the applicant whose first referee changed their mind,
-    // which is precisely when a spare blank form is worth having.
-    //
-    // Derived purely from identifying details, like the prior notice: no
-    // Claude call, no stored text, identical on every re-render.
-    const characterStatements = buildCharacterStatements({
-      applicantName: answers.full_name || 'The applicant',
-      referenceNumber: row.referenceNumber,
-      licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
-    });
+    // ⚠️ WHAT EXISTS, AND NOTHING ELSE. This used to build two BLANK forms
+    // unconditionally — ruled sheets for the applicant to print and hand out.
+    // Operator, 2026-08-21: "Only use the link." A witness completes and signs
+    // on their own phone now, so a slot nobody has completed contributes no
+    // page at all. A pack that goes to the police contains what was actually
+    // said, never a placeholder for what somebody hoped would be.
+    const characterStatements = await this.buildWitnessStatements(
+      row.id,
+      answers.full_name || 'The applicant',
+      row.referenceNumber,
+      LICENCE_TYPE_LABELS[row.licenceType],
+    );
     // ONE lettering, built once, used by the index AND by the captions on the
     // reprinted copies. See annexureImages.
     const annexures = buildAnnexures(kinds, ['PRIOR_NOTICE_REQUEST']);
@@ -3067,6 +3070,130 @@ export class MotivationsService {
         .sections.find((sec) => sec.key === 'theirs')
         ?.items.map((i) => ({ label: i.label, note: i.note })),
     });
+  }
+
+  /**
+   * The signed statements, ready to print.
+   *
+   * ⚠️ THE SIGNATURE IS DECRYPTED FOR THIS RENDER AND NOT KEPT. It lives in
+   * the encrypted tree like the applicant's own documents — it is a third
+   * party's handwriting, given to us on a favour — and it exists in the clear
+   * only inside the buffer that becomes the PDF.
+   */
+  private async buildWitnessStatements(
+    motivationId: string,
+    applicantName: string,
+    referenceNumber: string,
+    licenceTypeLabel: string,
+  ) {
+    const rows = await this.prisma.motivationWitness.findMany({
+      where: { motivationId, status: 'COMPLETED' },
+      orderBy: { slot: 'asc' },
+      select: {
+        id: true,
+        answersEncrypted: true,
+        signedPlace: true,
+        signedAt: true,
+      },
+    });
+    if (!rows.length) return undefined;
+
+    const out = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      const r = rows[i];
+      const plain = tryDecryptText(r.answersEncrypted);
+      let parsed: Record<string, string> = {};
+      try {
+        parsed = plain ? (JSON.parse(plain) as Record<string, string>) : {};
+      } catch {
+        // A statement we cannot read must not take the whole pack down, and
+        // must not print half-empty either — skip it and let the applicant
+        // see it is missing from their own preview.
+        this.logger.error(
+          `Motivation ${motivationId}: witness ${r.id} answers would not decrypt`,
+        );
+        continue;
+      }
+      const signature = await this.witnesses.signature(r.id).catch(() => null);
+      out.push(
+        buildCompletedStatement({
+          index: i + 1,
+          total: rows.length,
+          applicantName,
+          referenceNumber,
+          licenceTypeLabel,
+          answers: parsed,
+          signature: signature ?? undefined,
+          signedPlace: r.signedPlace,
+          signedAt: r.signedAt,
+          version: parsed._version ?? WITNESS_FORM_VERSION,
+        }),
+      );
+    }
+    return out.length ? out : undefined;
+  }
+
+  // ── Character witnesses ─────────────────────────────────────────
+  //
+  // ⚠️ OWNERSHIP IS CHECKED HERE AND ONLY HERE. MotivationWitnessService knows
+  // nothing about who is calling — it works from ids — because its other half
+  // is reached by a stranger holding a link. Every applicant-side entry point
+  // has to prove the motivation belongs to the caller before it delegates.
+
+  private async requireOwnMotivation(clerkId: string, id: string) {
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, answersEncrypted: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    return { user, row };
+  }
+
+  async listWitnesses(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const { row } = await this.requireOwnMotivation(clerkId, id);
+    return { witnesses: await this.witnesses.list(row.id) };
+  }
+
+  async inviteWitness(
+    clerkId: string,
+    id: string,
+    args: { slot: number; name: string; phone: string },
+  ) {
+    await this.quota.assertEnabled();
+    const { user, row } = await this.requireOwnMotivation(clerkId, id);
+    const answers = this.readAnswers(row.answersEncrypted);
+    return this.witnesses.invite({
+      motivationId: row.id,
+      applicantUserId: user.id,
+      applicantName: (answers.full_name ?? '').trim() || 'An All Outdoor member',
+      slot: args.slot,
+      name: args.name,
+      phone: args.phone,
+      // ⚠️ FROM THE ENVIRONMENT, NEVER FROM THE REQUEST. A base URL taken off a
+      // Host header is a base URL an attacker can set, and this one is posted
+      // to a third party by SMS.
+      baseUrl: process.env.FRONTEND_URL ?? 'https://alloutdoor.co.za',
+    });
+  }
+
+  async removeWitness(clerkId: string, id: string, witnessId: string) {
+    await this.quota.assertEnabled();
+    const { row } = await this.requireOwnMotivation(clerkId, id);
+    await this.witnesses.remove(row.id, witnessId);
+    return { removed: true as const };
+  }
+
+  async witnessSignature(clerkId: string, id: string, witnessId: string) {
+    await this.quota.assertEnabled();
+    const { row } = await this.requireOwnMotivation(clerkId, id);
+    const owned = await this.prisma.motivationWitness.findFirst({
+      where: { id: witnessId, motivationId: row.id },
+      select: { id: true },
+    });
+    if (!owned) throw new NotFoundException('Witness not found');
+    return this.witnesses.signature(owned.id);
   }
 
   // ── The cover photograph ────────────────────────────────────────

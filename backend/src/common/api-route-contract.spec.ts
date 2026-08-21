@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { MotivationsController } from '../motivations/motivations.controller';
+import { MotivationsWitnessController } from '../motivations/motivations-witness.controller';
 import { LicenceCentreController } from '../licence-centre/licence-centre.controller';
 
 // ────────────────────────────────────────────────────────────────────
@@ -65,7 +66,13 @@ const PAIRS = [
   {
     name: 'motivation wizard',
     client: 'motivations-api.ts',
-    controller: MotivationsController,
+    // ⚠️ TWO CONTROLLERS, ONE CLIENT. The witness routes live in their own
+    // file because half of that file is PUBLIC — a stranger with a link — and
+    // mixing guarded and unguarded handlers in one class is how a guard gets
+    // dropped by accident. The contract still has to see both, or this test
+    // reports every witness route as one the frontend calls and the server
+    // does not have.
+    controller: [MotivationsController, MotivationsWitnessController],
   },
   {
     name: 'licence centre',
@@ -75,7 +82,12 @@ const PAIRS = [
 ];
 
 describe.each(PAIRS)('the wire for the $name', ({ client, controller }) => {
-  const routes = controllerRoutes(controller);
+  const routes = (Array.isArray(controller) ? controller : [controller])
+    .map((c) => controllerRoutes(c))
+    .reduce((all, r) => {
+      r.forEach((x) => all.add(x));
+      return all;
+    }, new Set<string>());
   const calls = clientCalls(client);
 
   it('reads real routes and real calls, so this is not vacuous', () => {

@@ -6,6 +6,16 @@ const isPublicRoute = createRouteMatcher([
   // whole point is that the phone is NOT signed in, and the ?t= token is what
   // authorises it. See app/scan/handoff/page.tsx.
   '/scan/handoff(.*)',
+  // A CHARACTER WITNESS completing a statement. ⚠️ IT MUST BE PUBLIC, and for
+  // a stronger reason than the handoff above: this person is not our member
+  // and never will be. They received an SMS from somebody applying for a
+  // firearm licence. A 307 to sign-in here does not read as "please log in",
+  // it reads as a suspicious link — and they simply close it.
+  //
+  // The token in the path is the credential, and a code sent to the number the
+  // applicant nominated is the second half of it. See
+  // backend/src/motivations/motivation-witness.service.ts.
+  '/witness(.*)',
   '/',
   '/sign-in(.*)',
   '/sign-up(.*)',

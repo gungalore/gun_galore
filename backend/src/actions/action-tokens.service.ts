@@ -83,7 +83,17 @@ export type ActionTokenPurpose =
   //
   // targetType = 'user', targetId = authorisedUserId = the member. Metadata
   // carries where the files are going.
-  | 'SCAN_HANDOFF';
+  | 'SCAN_HANDOFF'
+  // WITNESS_STATEMENT — the link a CHARACTER WITNESS opens to complete and
+  // sign a statement about the applicant.
+  //
+  // ⚠️ THE HOLDER OF THIS TOKEN IS NOT A MEMBER AND MUST NEVER BE TREATED AS
+  // ONE. Unlike SCAN_HANDOFF, where the phone belongs to the authorising user,
+  // this link goes to a third party. `authorisedUserId` records WHO ASKED for
+  // the statement and is never used to authenticate the caller — see the note
+  // at the top of motivation-witness.service.ts. One hour, because the
+  // applicant is expected to phone their witness first.
+  | 'WITNESS_STATEMENT';
 
 export type ActionTokenTargetType =
   | 'offer'
@@ -92,7 +102,9 @@ export type ActionTokenTargetType =
   // KYC_VERIFY tokens target the user themselves (no offer/listing/tx).
   | 'user'
   // Swop/Trade negotiation tokens target a SwapProposal.
-  | 'swapProposal';
+  | 'swapProposal'
+  // WITNESS_STATEMENT tokens target one MotivationWitness row and nothing else.
+  | 'motivationwitness';
 
 /** Max wrong / invalid resolution attempts before the token locks. */
 const MAX_INVALID_ATTEMPTS = 5;

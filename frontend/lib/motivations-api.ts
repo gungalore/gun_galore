@@ -591,6 +591,52 @@ export const motivationsApi = {
     );
   },
 
+  // ── Character witnesses ─────────────────────────────────────────
+
+  witnesses: (t: TokenGetter, id: string) =>
+    request<{ witnesses: WitnessSummary[] }>(t, `/${id}/witnesses`, {}, {
+      witnesses: [],
+    }),
+
+  inviteWitness: (
+    t: TokenGetter,
+    id: string,
+    body: { slot: number; name: string; phone: string },
+  ) =>
+    request<WitnessSummary>(t, `/${id}/witnesses`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  removeWitness: (t: TokenGetter, id: string, witnessId: string) =>
+    request<{ removed: true }>(t, `/${id}/witnesses/${witnessId}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * The signature, as an object URL.
+   *
+   * ⚠️ NOT AN <img src> POINTING AT THE ENDPOINT — it needs a bearer token and
+   * a browser will not attach one to an image request. Same reason as the
+   * cover photograph; the caller revokes the URL.
+   */
+  witnessSignatureUrl: async (
+    t: TokenGetter,
+    id: string,
+    witnessId: string,
+  ): Promise<string | null> => {
+    const token = await t();
+    const res = await fetch(
+      `${API_URL}/motivations/${id}/witnesses/${witnessId}/signature`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: 'no-store',
+      },
+    );
+    if (!res.ok) return null;
+    return URL.createObjectURL(await res.blob());
+  },
+
   // ── The cover photograph ────────────────────────────────────────
 
   /** What we hold, what they chose, and where a stock photograph came from. */
@@ -906,6 +952,23 @@ export interface CoverPhotoState {
   /** What that frame measures on paper, for the readout. */
   frameMm: { w: number; h: number };
   maxPx: { w: number; h: number };
+}
+
+// ── character witnesses ─────────────────────────────────────────────
+
+export interface WitnessSummary {
+  id: string;
+  slot: number;
+  invitedName: string;
+  invitedPhone: string;
+  /** INVITED · VERIFIED · COMPLETED. */
+  status: string;
+  openedAt: string | null;
+  signedAt: string | null;
+  /** Present only once signed — never for a half-finished statement. */
+  answers?: Record<string, string>;
+  signedPlace?: string | null;
+  hasSignature?: boolean;
 }
 
 export const SAPS271_OPT_KEY = 'fill_saps271';
