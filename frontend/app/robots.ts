@@ -42,6 +42,17 @@ export default function robots(): MetadataRoute.Robots {
           // so it must not be crawlable. The token in the path makes each URL
           // unguessable; this stops the route itself being indexed.
           '/witness/',
+          // ⚠️ MUST STAY REACHABLE, MUST NOT BE CRAWLED. This page names the
+          // Firearms Control Act because POPIA s18(1)(f) requires the data
+          // subject to be told the particular law, and PAIA s51 requires the
+          // manual to be complete and free to ANY requester — a regulator, a
+          // journalist or a bank doing TPPP vetting cannot be sent to a
+          // members-only annex. So it cannot be auth-walled or deleted.
+          // It already carries noindex/nofollow and is absent from the
+          // sitemap; this stops a crawler that followed the link from /paia
+          // or /privacy fetching it at all. Humans with the URL are unaffected,
+          // which is exactly what the two statutes require.
+          '/regulated-categories',
           '/offline',
           '/preview/',
           // Members area — regulated-item terms and anything else that only
