@@ -143,6 +143,14 @@ function build(
       { extract: jest.fn(async () => []) } as never,
       // The 271 renderer — nothing in these tests opts into the form.
       { build: jest.fn(async () => ({ pdf: Buffer.from('%PDF-'), leftBlank: [] })) } as never,
+      // Cover photographs. `find` returns null so no test depends on a file
+      // being on disk, and `fetchAndStore` is stubbed so no test reaches
+      // Wikimedia — a unit suite that makes an outbound request is a unit
+      // suite that fails on an aeroplane.
+      {
+        find: jest.fn(() => null),
+        fetchAndStore: jest.fn(async () => null),
+      } as never,
   );
   return { svc, prisma, quota, refs, files, claude, pdf, settings };
 }

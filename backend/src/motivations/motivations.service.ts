@@ -55,6 +55,7 @@ import {
 } from './motivation-checklist';
 import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { buildCharacterStatements } from './motivation-character-statement';
+import { FirearmImageService } from './motivation-firearm-image';
 import { packConsistency } from './motivation-verify';
 import {
   FIELD_REGISTRY_VERSION,
@@ -303,6 +304,7 @@ export class MotivationsService {
     private readonly settings: SettingsService,
     private readonly extract: MotivationExtractService,
     private readonly saps271: Saps271Service,
+    private readonly firearmImages: FirearmImageService,
   ) {}
 
   /**
@@ -2303,6 +2305,27 @@ export class MotivationsService {
         }
       }
 
+      // ── the cover photograph ──────────────────────────────────────
+      //
+      // Fetched HERE and nowhere else. It belongs beside the research pass for
+      // the same three reasons: it is background work, it is cached on disk so
+      // the second applicant with a CZ 75 pays nothing, and it is fail-soft —
+      // a miss costs the cover a picture, never the document.
+      //
+      // ⚠️ NOT IN THE DOWNLOAD PATH. The pack is re-rendered on every
+      // download, and an outbound call to somebody else's server there would
+      // sit inside our 60-second nginx ceiling on a request the applicant is
+      // waiting on. renderPdf only ever reads what is already on disk.
+      if (answers.firearm_make) {
+        await this.firearmImages
+          .fetchAndStore(
+            answers.firearm_make,
+            answers.firearm_model ?? '',
+            answers.firearm_type,
+          )
+          .catch(() => null);
+      }
+
       // The lettered annexure list — from the SAME function that letters the
       // printed pack, so a citation the writer makes can never point at a tab
       // that will not exist.
@@ -2984,6 +3007,15 @@ export class MotivationsService {
       ownedFirearms: existingFirearms(answers),
       annexures,
       priorNotice,
+      // Pure disk — see the note at the fetch site. Absent until the
+      // background pass has run, and absent for good if Commons has nothing:
+      // the cover simply renders without a frame.
+      firearmPhoto: answers.firearm_make
+        ? this.firearmImages.find(
+            answers.firearm_make,
+            answers.firearm_model ?? '',
+          )?.file
+        : undefined,
       characterStatements,
       annexureImages: printable.images,
       annexuresNotPrinted: printable.notPrinted,
