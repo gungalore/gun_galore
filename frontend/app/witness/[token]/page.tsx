@@ -537,9 +537,31 @@ export default function WitnessPage({
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="mx-auto w-full max-w-2xl px-4 py-6 sm:py-10">
-      {children}
-    </main>
+    // ⚠️ ITS OWN MASTHEAD, because the site's is deliberately absent here — see
+    // PublicNav. Without something, a statutory form arrives as a card
+    // floating on a blank page, and a stranger who followed an SMS link has no
+    // way to tell whose site they are on. A wordmark and one line of
+    // explanation is the whole of what they need: who we are, and why they are
+    // looking at this.
+    <div className="min-h-screen bg-[var(--bg)]">
+      <header className="border-b border-[var(--border)]">
+        <div className="mx-auto w-full max-w-2xl px-4 py-4">
+          <p className="text-sm font-semibold tracking-wide">ALL OUTDOOR</p>
+          <p className="text-xs text-[var(--text-secondary)]">
+            Character statement for a firearm licence application
+          </p>
+        </div>
+      </header>
+      <main className="mx-auto w-full max-w-2xl px-4 py-6 sm:py-10">
+        {children}
+      </main>
+      <footer className="mx-auto w-full max-w-2xl px-4 pb-10 text-xs text-[var(--text-secondary)]">
+        <p>
+          Sent to you by an All Outdoor member. If you were not expecting this,
+          you can close this page — nothing is submitted until you sign.
+        </p>
+      </footer>
+    </div>
   );
 }
 
