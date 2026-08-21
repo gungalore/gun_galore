@@ -11,6 +11,10 @@
 //     restricted categories lives in the members-only Regulated Items
 //     Annex (/members/regulated-items), which these Terms incorporate
 //     by reference. Keep the obligations here; keep the detail there.
+//   - ⚠️ This page is crawlable, so it never NAMES a restricted product
+//     category or an excluded good. Those names live in the Annex only and
+//     are referred to generically here. Relocating them does not weaken
+//     them: the Annex is incorporated by reference in section 2.
 //   - Per the operator's policy this document NEVER uses the word
 //     "escrow" (regulated SA financial term that All Outdoor is not
 //     registered to operate), and — while the TPPP application is
@@ -78,13 +82,14 @@ export default function TermsPage() {
         , available to registered members. That Annex forms part of
         these Terms and is incorporated by reference.
       </p>
+      {/* The excluded goods used to be named here. They are named in the
+          Annex instead — see the ⚠️ convention note at the top of this file.
+          The exclusion itself is unchanged and still binds, via the Annex
+          incorporated by reference in the paragraph above. */}
       <p>
-        <strong>All Outdoor does not sell ammunition. Live ammunition
-        may not be listed, sold or traded in this store under any
-        circumstances. The same absolute prohibition applies to primers
-        and propellant powder.</strong>{' '}
-        Reloading components are limited to projectiles and brass cases,
-        which registered members may list in the appropriate category.
+        Some goods are excluded from the Store entirely. Which goods
+        those are, which categories may be listed and by whom, and the
+        conditions attached to each, are set out in that Annex.
       </p>
       <p>
         Most items in the Store are listed and sold by their owners.

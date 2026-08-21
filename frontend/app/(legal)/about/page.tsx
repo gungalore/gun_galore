@@ -10,6 +10,10 @@
 // duty that binds every buyer and seller, stated in general terms —
 // nothing is softened and nothing is denied: we do trade in regulated
 // categories, for registered members.
+//
+// ⚠️ That covers the NAMES of the goods we exclude too. This page is
+// crawlable, so it says only that some goods are excluded and leaves the
+// list to the Annex. Do not put the product wording back here.
 
 import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
@@ -39,12 +43,8 @@ export default function AboutPage() {
         open to registered members only. We do not hide that we trade
         in them — they are simply not browsable while you are signed
         out, and the additional rules that govern them are published to
-        members.
-      </p>
-      <p>
-        All Outdoor does not sell ammunition. Live ammunition may not
-        be listed, sold or traded on this platform under any
-        circumstances.
+        members. Some goods are excluded from the store entirely, and
+        those exclusions form part of the same rules.
       </p>
 
       <h2>How it works</h2>

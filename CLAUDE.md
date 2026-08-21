@@ -34,6 +34,28 @@ Meta's crawlers and moderators were blocking the site, killing WhatsApp
 Business comms. Regulated stock is now behind the login. Signed in, nothing
 changed.
 
+**Meta restricted the site a SECOND time (2026-08-21).** The first gate was
+keyed on OUR vocabulary — it hid everything called "firearm" and every slug
+carrying a weapon word. Meta's commerce policy itemises product families by
+name, and four of ours were still public, sitemapped, and serving an og:title
+reading "<X> for sale": knives, archery, paintball, and weapon accessories
+(scope mounts). Gated by `20260821120000_gate_meta_prohibited_categories`.
+`cleaning-equipment` went with them — not on Meta's list, but a gun-cleaning
+tree wearing a neutral name.
+
+**Do not restate a regulated-goods rule on a public page.** The site-wide
+footer used to carry "does not sell ammunition", which put the word on all 135
+pages including the homepage and the tents page. The prohibitions live in the
+members-only Regulated Items Annex (`/members/regulated-items`) and are
+enforced in code; a public page gets a neutral pointer, never the vocabulary.
+Applies to worked examples too — `/fees` priced "a rifle scope" for years.
+
+**`gungalore.co.za` is retired and answers 410 on every host** (apex, www,
+ballistics, ballistic-hunter). It used to 301 into alloutdoor.co.za, which is a
+live machine-readable edge from the flagged predecessor to the successor. DNS
+stays up because the MX records carry the operator's mailbox — kill the zone
+and you kill their email.
+
 **This is an auth wall, NOT cloaking.** Every signed-out visitor gets identical
 content regardless of user-agent. Never branch on user-agent, never special-case
 a crawler. Serving a crawler something different from a logged-out human is what

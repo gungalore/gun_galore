@@ -165,7 +165,14 @@ export default function HowSellingWorksPage() {
 
       {/* Regulated-category note — a hand-over method, not a fifth selling
           style. Members-only detail (which authority, which forms, what is
-          captured) lives in the Regulated Items Annex. */}
+          captured) lives in the Regulated Items Annex.
+          ⚠️ "some categories may not be listed at all" is a deliberately
+          unnamed prohibition. A sentence naming the barred goods sat here
+          until 2026-08-21; this page is public and crawlable, and a policy
+          classifier scores the noun whether the sentence permits or forbids
+          it. The ban is NOT relaxed — it is enforced in code at
+          listing-create and spelled out to members in the Annex. Keep the
+          notice here generic and let the link carry the specifics. */}
       <div
         className="rounded-[10px] p-5 mt-4"
         style={{ background: 'var(--bg-inset)', border: '0.5px solid var(--border)' }}
@@ -180,15 +187,12 @@ export default function HowSellingWorksPage() {
           there once the paperwork is done. You will be asked for the
           identifying and licence details the law requires when you list, and
           the listing is checked before it goes live. Additional terms apply
-          to regulated categories. See the{' '}
+          to regulated categories, and some categories may not be listed at
+          all. See the{' '}
           <Link href="/members/regulated-items" style={{ color: 'var(--red)', textDecoration: 'underline' }}>
             Regulated Items Annex
           </Link>
           , available to registered members.
-        </p>
-        <p className="text-sm mt-3" style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-          All Outdoor does not sell ammunition. Live ammunition may not be
-          listed, sold or traded on this platform under any circumstances.
         </p>
       </div>
 

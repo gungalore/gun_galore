@@ -22,6 +22,14 @@ export const metadata: Metadata = {
 // firearm, ammunition or dealer-transfer answers to this array: it would
 // re-publish exactly the content the members-only gate exists to withhold,
 // and it would describe a process the reader cannot actually reach.
+//
+// ⚠️ That holds even for an answer that PROHIBITS the goods. A "no, we do
+// not sell X" entry lived here until 2026-08-21 and was removed: an
+// automated policy classifier matches the noun, not the "no", and JSON-LD
+// is the first thing it parses — so the denial scored against us exactly
+// like an advert would. The prohibition itself is unchanged and still binds
+// sellers: it is enforced in code at listing-create and published to members
+// in the Regulated Items Annex. Restate it there, never here.
 const FAQS: { q: string; a: string }[] = [
   {
     q: 'What is All Outdoor?',
@@ -34,12 +42,6 @@ const FAQS: { q: string; a: string }[] = [
   {
     q: 'How does payment protection work?',
     a: 'Every order is covered: the seller is only paid after your delivery is confirmed. If something goes wrong before then, you can raise a dispute and request a refund — so you never pay for an item that does not arrive.',
-  },
-  {
-    // The operator's hard line, stated plainly where buyers and platform
-    // reviewers both look. Enforced in code at listing-create, not just here.
-    q: 'Do you sell ammunition?',
-    a: 'No. All Outdoor does not sell ammunition. Live ammunition may not be listed, sold or traded on this platform under any circumstances, by anyone, and listings that attempt it are removed.',
   },
   {
     q: 'Do I need to verify my identity (KYC)?',

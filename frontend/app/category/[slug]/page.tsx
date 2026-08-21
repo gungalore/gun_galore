@@ -30,7 +30,20 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const tree = await getTree(slug);
-  if (!tree) return { title: 'Category not found — All Outdoor' };
+  // ⚠️ notFound() HERE, NOT ONLY IN THE PAGE BODY, AND THE STATUS CODE IS WHY.
+  //
+  // app/loading.tsx puts a Suspense boundary above every route, so Next flushes
+  // the shell as soon as rendering starts and the response status is committed
+  // before the page component's own `notFound()` ever throws. Measured: an
+  // unknown slug returned HTTP 200 with a "Category not found" body — a soft
+  // 404. generateMetadata resolves BEFORE the shell streams, so throwing from
+  // here is what actually produces a 404.
+  //
+  // This matters beyond tidiness. Gated categories (see the migration
+  // 20260821120000_gate_meta_prohibited_categories) are invisible to anonymous
+  // callers, so every one of them lands on this branch for a crawler — and a
+  // gate that answers 200 has not told the crawler the page is gone.
+  if (!tree) notFound();
   const { category } = tree;
   const title = `${category.name} for sale — All Outdoor`;
   // Shared blurb (lib/seo.ts) — this description is stamped onto EVERY

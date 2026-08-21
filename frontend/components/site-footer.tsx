@@ -11,16 +11,11 @@
 //      place to find Terms, Privacy, AUP, Refund, Cookies, PAIA and
 //      the AML policy.
 //
-//   3. Standing platform policy — the small-print band above the s43
-//      disclosure carries the prohibitions that apply everywhere on
-//      the site, so they are stated on every page rather than buried
-//      one document deep.
-//
 // Skipped on the admin panel (admin layout sits under a separate
 // route group with its own chrome) but rendered on every public
 // page. Server-rendered to keep zero JS cost.
 
-import { BRAND_NAME, PRO_NAME } from '@/lib/brand';
+import { PRO_NAME } from '@/lib/brand';
 import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import Link from 'next/link';
@@ -205,26 +200,18 @@ export function SiteFooter() {
         <GetTheAppCta />
       </div>
 
-      {/* Standing platform policy. Same small-print treatment as the
-          disclosure band below it — this is a rule of the site, not an
-          announcement, so it should read like the fine print it is. */}
-      <div
-        style={{
-          maxWidth: 'var(--page-max)',
-          margin: '0 auto',
-          paddingTop: 16,
-          borderTop: '0.5px solid var(--border)',
-          marginBottom: 16,
-          color: 'var(--text-tertiary-on-card)',
-          fontSize: 11,
-          lineHeight: 1.7,
-        }}
-      >
-        <p style={{ margin: 0 }}>
-          {BRAND_NAME} does not sell ammunition. Live ammunition may not be
-          listed, sold or traded in this store under any circumstances.
-        </p>
-      </div>
+      {/* ⚠️ There is deliberately NO standing-policy band here. Rules for
+          categories that need a licence or permit are published to members
+          in the Regulated Items Annex (/members/regulated-items) — sign-in
+          walled and kept out of the sitemap, so they stay enforceable
+          against sellers without being readable by a crawler. The footer is
+          global chrome on a general outdoor store, so anything stated here
+          lands on all ~135 public pages including the homepage and the
+          camping and fishing pages. Restating category-specific
+          prohibitions in this band is what put that vocabulary sitewide and
+          cost us a platform restriction. Do not reinstate it — put the rule
+          in the members annex instead. Enforcement itself is in the backend
+          and is unaffected by what this footer does or does not say. */}
 
       {/* ECT § 43 disclosures — mandatory on every commercial SA page.
           Compact form here; full version with VAT, director, etc. on

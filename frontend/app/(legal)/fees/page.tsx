@@ -202,7 +202,12 @@ export default function FeesPage() {
         before they confirm payment.
       </p>
       <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 16 }}>
-        <strong>A worked example.</strong> A rifle scope sells at a
+        {/* ⚠️ KEEP THIS EXAMPLE PRODUCT NEUTRAL. /fees is public and in the
+            sitemap, so whatever is named here is rendered text a crawler
+            reads. It used to say "a rifle scope" — the only firearm word on
+            an otherwise clean pricing page. Any everyday outdoor item in the
+            same price band works just as well for the arithmetic. */}
+        <strong>A worked example.</strong> A fishing reel sells at a
         winning bid of R450.00. Commission is R40.50, so the seller
         receives <strong>R409.50</strong>. The buyer pays the R450.00
         bid, delivery, and the transaction fee on the two together —

@@ -2,6 +2,15 @@
 // platform. Referenced from the Terms of Service. Drafted to be
 // readable AND enforceable: each "banned" item has a clear test so
 // admins can apply it consistently.
+//
+// ⚠️ PUBLIC, CRAWLABLE PAGE. Do not name a restricted product category
+// here. The named prohibitions — and which components members may list —
+// live ONLY in the members-only Regulated Items Annex
+// (/members/regulated-items), which is sign-in gated, absent from the
+// sitemap, states the same prohibition absolutely, and refers breaches back
+// to the enforcement ladder in paragraph 7 below. Publishing that
+// vocabulary on a public page is what got the business restricted twice;
+// removing it from here relocates the rule, it does not weaken it.
 
 import { SUPPORT_EMAIL } from '@/lib/brand';
 import { LegalDocHeader } from '../legal-frame';
@@ -59,43 +68,34 @@ export default function AcceptableUsePage() {
         <li><strong>Stolen goods</strong> — including goods you cannot prove ownership of, or goods whose serial numbers have been removed or altered.</li>
         <li><strong>Counterfeit or replica regulated items / accessories</strong> sold as genuine.</li>
         <li><strong>Items prohibited for civilian possession</strong> under South African law, and any component of such an item.</li>
-        <li><strong>Live ammunition, primers and propellant powder</strong> — see paragraph 3a below.</li>
-        <li><strong>Explosives, pyrotechnics</strong> and any other component or accessory whose possession or sale is explicitly restricted under South African law.</li>
+        <li><strong>Restricted components and accessories</strong> — any component or accessory whose possession or sale is explicitly restricted under South African law.</li>
         <li><strong>Goods that infringe</strong> any third-party intellectual property right (trademark, copyright, design).</li>
         <li><strong>Hate symbols, extremist memorabilia</strong> or any item primarily associated with promoting violence against a protected group.</li>
         <li><strong>Personal data of others</strong> — including ID copies, licences belonging to other people, or contact lists.</li>
         <li><strong>Hazardous materials</strong> that cannot be safely couriered or that contravene IATA / SARS import-export rules.</li>
-        <li><strong>Animals, pets, ivory, rhino horn, lion bones</strong> or any item subject to CITES restrictions.</li>
+        <li><strong>Animals and pets</strong>, or any item subject to CITES restrictions.</li>
       </ul>
 
-      <h2>3a. Ammunition, primers and propellant powder are banned outright</h2>
+      {/* Heading number kept at 3a so the Annex's cross-references to this
+          policy's numbering still line up. What was spelled out here now
+          lives in the Annex only — read the ⚠️ note at the top of this file
+          before putting any product wording back. */}
+      <h2>3a. Categories that require a licence or permit</h2>
       <p>
-        <strong>
-          All Outdoor does not sell ammunition. Live ammunition may not be
-          listed, sold or traded on this platform under any circumstances.
-          The same absolute prohibition applies to primers and propellant
-          powder.
-        </strong>
+        Some categories on All Outdoor may only be listed, bought or
+        transferred by people who hold every authorisation the law
+        requires for that category. Those categories are shown only to
+        registered members who are signed in.
       </p>
       <p>
-        This prohibition is absolute. It applies to every seller — private
-        or business — to every category, and to every selling mode on the
-        Platform, including auctions, offers, swaps and any storefront. A
-        listing that offers live ammunition, primers or propellant powder is
-        removed on sight and the account that placed it is subject to the
-        enforcement ladder in paragraph 7. There is no category on the
-        Platform in which any of those three items can be listed.
-      </p>
-      <p>
-        Reloading components are limited to <strong>projectiles and brass
-        cases</strong>. Those two component types are not ammunition, are
-        not covered by the prohibition above, and may be listed in the
-        appropriate category by registered members who comply with the law
-        that applies to them. They appear only in the members-only part of
-        the Platform. Additional terms apply to regulated categories. See
-        the{' '}
+        Additional rules apply to those categories — including further
+        goods that may never be listed at all, which components members
+        may list, and the procedure each transfer must follow. They are
+        published to members in the{' '}
         <a href="/members/regulated-items" style={{ color: 'var(--red)' }}>Regulated Items Annex</a>
-        , available to registered members.
+        . A listing that breaches those rules is removed on sight and the
+        account that placed it is subject to the enforcement ladder in
+        paragraph 7.
       </p>
 
       <h2>4. What your listing photographs must show</h2>
