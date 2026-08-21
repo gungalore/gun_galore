@@ -1305,9 +1305,17 @@ export class MotivationPdfService {
         })),
         {
           x: MARGIN,
-          y: MARGIN,
+          // ⚠️ BODY_TOP AND BODY_BOTTOM, NOT MARGIN. MARGIN is mm(14); the
+          // running banner is mm(16) tall and the footer strip mm(10). Laid
+          // out from MARGIN, every annexure caption was drawn UNDER the banner
+          // and painted over by it — "Annexure B — SAPS competency
+          // certificate" sliced in half on eight pages of a real 26-page pack,
+          // on precisely the line that tells the reader which annexure they
+          // are looking at. The banner is stamped last, in the bufferPages
+          // pass, so nothing here could see the collision coming.
+          y: K.BODY_TOP,
           width: contentWidth,
-          height: PAGE_HEIGHT - MARGIN * 2,
+          height: K.BODY_BOTTOM - K.BODY_TOP,
         },
       );
       let n = 0;
