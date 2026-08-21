@@ -412,14 +412,26 @@ export interface MotivationPdfInput {
  * So it only folds a heading that is SHOUTING. Anything already in sentence
  * case is left alone, because it was written the way it should read.
  */
-function titleCase(heading: string): string {
+export function titleCase(heading: string): string {
   const trimmed = heading.trim();
   const isShouting = trimmed === trimmed.toUpperCase();
   if (!isShouting) return trimmed;
   const lower = trimmed.toLowerCase();
   // Restore a standalone "i" — the one word that must never be lowercase.
-  const restored = lower.replace(/i/g, 'I');
-  return restored.charAt(0).toUpperCase() + restored.slice(1);
+  // ⚠️ THIS REGEX CONTAINED A LITERAL BACKSPACE (0x08) INSTEAD OF \\b, so it
+  // matched nothing and the fix it documents had silently not been running.
+  // A stray control character is invisible in an editor and in a diff; it
+  // was found by extracting the text of a rendered page and reading it.
+  const restored = lower.replace(/\bi\b/g, 'I');
+  const sentence = restored.charAt(0).toUpperCase() + restored.slice(1);
+  // ⚠️ AND THE ANNEXURE LETTER IS A LETTER, NOT A WORD. Sentence-casing
+  // "ANNEXURE E — REQUEST FOR PRIOR NOTICE" produced "Annexure e" in the
+  // contents of every pack that carries one. Restored by name rather than by
+  // a general single-letter rule, because "a" is usually an article.
+  return sentence.replace(
+    /\b(annexure|tab)\s+([a-z])\b/gi,
+    (_m, word: string, letter: string) => `${word} ${letter.toUpperCase()}`,
+  );
 }
 
 /** Millimetres, for the section spacing. Same unit the handoff is written in. */

@@ -4,8 +4,7 @@ import {
   FORMAT_FEATURES,
   MotivationPdfService,
   asFormat,
-  asScheme,
-} from './motivation-pdf.service';
+  asScheme, titleCase } from './motivation-pdf.service';
 import { buildAnnexures } from './motivation-checklist';
 import { MotivationUploadKind } from '@prisma/client';
 
@@ -89,6 +88,42 @@ function makeInput(bodyOverride?: string) {
     generatedAt: new Date('2026-08-18T08:00:00Z'),
   };
 }
+
+describe('titleCase, which sets the contents and the running head', () => {
+  // ⚠️ BOTH OF THESE SHIPPED, AND BOTH WERE FOUND BY EXTRACTING THE TEXT OF A
+  // RENDERED PAGE AND READING IT — not by a test, not by a typecheck, and not
+  // by looking at the code, where one of them was invisible.
+
+  it('restores a standalone "I"', () => {
+    // The regex that does this contained a literal BACKSPACE character (0x08)
+    // where it needed a word boundary, so it matched nothing and had silently
+    // not been running. A stray control byte looks exactly like `` in an
+    // editor, in a diff, and in a code review.
+    expect(titleCase('THE FIREARM I AM APPLYING FOR')).toBe(
+      'The firearm I am applying for',
+    );
+    // ...and only where it is a word on its own.
+    expect(titleCase('INTRODUCTION')).toBe('Introduction');
+    expect(titleCase('MY RECORD')).toBe('My record');
+  });
+
+  it('keeps an annexure letter a capital', () => {
+    // "ANNEXURE E — REQUEST FOR PRIOR NOTICE AND WRITTEN REASONS" came out as
+    // "Annexure e" in the contents of every pack that carries one.
+    expect(titleCase('ANNEXURE E — REQUEST FOR PRIOR NOTICE')).toBe(
+      'Annexure E — request for prior notice',
+    );
+    expect(titleCase('ANNEXURE A')).toBe('Annexure A');
+  });
+
+  it('leaves a heading that is already mixed case alone', () => {
+    // Only ALL-CAPS headings are folded. Anything already cased was written
+    // that way on purpose.
+    expect(titleCase('Character reference — form 1 of 2')).toBe(
+      'Character reference — form 1 of 2',
+    );
+  });
+});
 
 describe('MotivationPdfService', () => {
   const svc = new MotivationPdfService();
