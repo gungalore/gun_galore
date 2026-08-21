@@ -14,6 +14,8 @@ import {
 } from './motivation-pdf-merge';
 import type { AnnexureEntry, CertificationLevel } from './motivation-checklist';
 import * as K from './motivation-pdf-chrome';
+import { renderStatementForm } from './motivation-pdf-form';
+import type { CharacterStatementForm } from './motivation-character-statement';
 
 // ────────────────────────────────────────────────────────────────────
 // The formal motivation document. This is the thing the applicant signs and
@@ -345,6 +347,17 @@ export interface MotivationPdfInput {
    */
   firearmPhoto?: string;
   priorNotice?: { title: string; body: string; version: string };
+  /**
+   * The blank character reference forms, to print and hand to two people.
+   *
+   * ⚠️ NOT ANNEXURES, and deliberately not lettered as any. An annexure is a
+   * document that gets FILED with the application; these are blank forms that
+   * get SENT OUT, and the thing that eventually gets filed is the completed
+   * one the applicant uploads under CHARACTER_REFERENCE. Lettering a blank
+   * form would put an empty page in the annexure index and tell the Registrar
+   * we had attached a reference nobody has written yet.
+   */
+  characterStatements?: CharacterStatementForm[];
   /**
    * Stamp every page as a preview.
    *
@@ -1120,6 +1133,27 @@ export class MotivationPdfService {
         .text('Signature and date', MARGIN, doc.y, { width: 230 });
     }
 
+    // ── The character reference forms ─────────────────────────────────
+    //
+    // Placed HERE, after the applicant's own documents and before the copies
+    // of what has already been gathered, because that is where they are in the
+    // applicant's timeline: everything above is done, everything below is
+    // collected, and these two are the thing still outstanding on the day the
+    // pack is downloaded.
+    //
+    // They ARE in the contents, unlike the take-with-you pages at the very
+    // back. Somebody who set the pack down a week ago and now wants to know
+    // where those forms were has to be able to find them.
+    for (const form of input.characterStatements ?? []) {
+      const startedOn = renderStatementForm(chrome, form);
+      toc.push({
+        heading: `CHARACTER REFERENCE — FORM ${form.index} OF ${
+          input.characterStatements?.length ?? 2
+        }`,
+        page: startedOn,
+      });
+    }
+
     // ── Annexure index ────────────────────────────────────────────────
     if (input.annexures?.length) {
       doc.addPage();
@@ -1508,7 +1542,12 @@ export class MotivationPdfService {
     // ── Contents, written now that the pages are known ────────────────
     if (tocPageIndex !== null && toc.length) {
       doc.switchToPage(tocPageIndex);
-      doc.y = MARGIN;
+      // ⚠️ BODY_TOP, NOT MARGIN. MARGIN is mm(14) and the running banner is
+      // mm(16) tall, so the CONTENTS heading was drawn six points UNDER the
+      // banner and had its ascenders shaved off — on page two of every pack.
+      // It survived because this page is written last, in the bufferPages
+      // pass, long after the code that established where a page begins.
+      doc.y = K.BODY_TOP;
       doc
         .font(FONT_BOLD)
         .fontSize(18)

@@ -54,6 +54,7 @@ import {
   type AnnexureEntry,
 } from './motivation-checklist';
 import { buildPriorNoticeRequest } from './motivation-prior-notice';
+import { buildCharacterStatements } from './motivation-character-statement';
 import { packConsistency } from './motivation-verify';
 import {
   FIELD_REGISTRY_VERSION,
@@ -2927,6 +2928,21 @@ export class MotivationsService {
       licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
       firearmLine: firearmLine(answers),
     });
+    // The two blank character reference forms.
+    //
+    // ⚠️ ALWAYS BOTH, AND ALWAYS BLANK, EVEN IF THE APPLICANT HAS ALREADY
+    // UPLOADED SIGNED ONES. They cost two sheets, and the alternative — hiding
+    // them once a CHARACTER_REFERENCE upload exists — silently removes them
+    // from the pack of the applicant whose first referee changed their mind,
+    // which is precisely when a spare blank form is worth having.
+    //
+    // Derived purely from identifying details, like the prior notice: no
+    // Claude call, no stored text, identical on every re-render.
+    const characterStatements = buildCharacterStatements({
+      applicantName: answers.full_name || 'The applicant',
+      referenceNumber: row.referenceNumber,
+      licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
+    });
     // ONE lettering, built once, used by the index AND by the captions on the
     // reprinted copies. See annexureImages.
     const annexures = buildAnnexures(kinds, ['PRIOR_NOTICE_REQUEST']);
@@ -2968,6 +2984,7 @@ export class MotivationsService {
       ownedFirearms: existingFirearms(answers),
       annexures,
       priorNotice,
+      characterStatements,
       annexureImages: printable.images,
       annexuresNotPrinted: printable.notPrinted,
       // Merged into the finished pack by pdf-lib after pdfkit has drawn the

@@ -313,8 +313,15 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
   // appear only on the SAPS 517(g) competency RENEWAL. The two-year rule
   // appears nowhere at all. What the Regulations DO prescribe is the content
   // — reg 13(7)(a)-(c) — which is far more use to a referee than a number.
+  //
+  // ⚠️ AND SINCE 2026-08-21 THE PACK CONTAINS THE FORM ITSELF, so this row no
+  // longer tells the applicant to brief the referee on the three points. It
+  // tells them where the two blank forms are. A checklist that asks you to
+  // explain regulation 13(7) to a friend, in a pack that already asks the
+  // three questions on a printed page, sends people off to do work we have
+  // already done for them.
   CHARACTER_REFERENCE:
-    'Not on SAPS’s list for a new licence, but a strong pack usually carries one or two. Regulation 13(7) says anyone recommending your character must also state that you are a fit and proper person, of stable mental condition and not inclined to violence, and not dependent on any intoxicating or narcotic substance — so give your referee those three points.',
+    'Not on SAPS’s list for a new licence, but a strong pack usually carries one or two. Your pack has two blank reference forms near the back — they already ask the three things regulation 13(7) requires a referee to state. Print them and give one each to two people who know you, ideally in different parts of your life, such as an employer and a neighbour. They fill them in and sign them themselves; you must not complete any part of them. Upload the signed forms here when you get them back.',
 };
 
 export interface DocumentStatus {
