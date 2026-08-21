@@ -553,7 +553,11 @@ export class NotificationsService {
     // Bump this whenever the file is replaced. Mirrors frontend/lib/asset-version.ts.
     const logoUrl =
       process.env.EMAIL_LOGO_URL ??
-      'https://gungalore.co.za/email-logo.png?v=20260812';
+      // ⚠️ alloutdoor.co.za, NOT gungalore.co.za. This still pointed at the
+      // pre-rebrand domain, so every transactional email was fetching its
+      // header logo from the retired host — which is a redirect at best and a
+      // broken image the day that host stops answering.
+      'https://alloutdoor.co.za/email-logo.png?v=20260821';
     return renderEmail(content, logoUrl);
   }
 

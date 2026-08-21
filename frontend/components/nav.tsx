@@ -121,27 +121,40 @@ export function Nav() {
         }}
       >
         <div className="max-w-[var(--page-max)] mx-auto px-4 h-14 flex items-center gap-3 sm:gap-6">
-          {/* Logo — /logo-nav.svg, NOT /logo.svg. The full scene is 1.5:1, so
-              at these bar heights it rendered ~66px wide with the wordmark at
-              7px: unreadable. The nav cut drops the scene and keeps the
-              wordmark, which is 2.66:1 — same height, ~117px wide, type 2.5x
-              bigger. /logo.svg still owns the hero, share cards and print.
-              Smaller on mobile, and still allowed to shrink (min-w-0 +
-              max-w-full object-contain) as a backstop so it gives up space to
-              the fixed-size Sell/bell/cart/hamburger cluster on ≤375px phones
-              rather than pushing the row into horizontal overflow. */}
+          {/* Logo — the composed nav lockup, and the MARK ALONE on phones.
+
+              The nav constrains by HEIGHT, so shape decides width. The new
+              lockup is 7.8:1: at sm's h-11 that is ~340px, comfortable beside
+              a flex-1 search box on a desktop row. At h-9 on a 375px phone it
+              would be ~280px, which leaves nothing for the fixed-size
+              Sell/bell/cart/hamburger cluster and pushes the row into
+              horizontal overflow — the exact failure the old comment here was
+              guarding against from the other direction.
+
+              So phones get the monogram (square, ~36px) and everything from sm
+              up gets the wordmark too. Both are the same artwork.
+
+              /logo.svg still owns the hero, share cards and print. */}
           <Link
             href="/"
             className="shrink min-w-0 flex items-center"
             aria-label="All Outdoor"
           >
             <Image
+              src={av('/logo-mark.svg')}
+              alt="All Outdoor"
+              width={36}
+              height={36}
+              priority
+              className="h-9 w-auto object-contain sm:hidden"
+            />
+            <Image
               src={av('/logo-nav.svg')}
               alt="All Outdoor"
-              width={117}
+              width={342}
               height={44}
               priority
-              className="h-9 w-auto sm:h-11 max-w-full object-contain"
+              className="hidden h-11 w-auto max-w-full object-contain sm:block"
             />
           </Link>
 
