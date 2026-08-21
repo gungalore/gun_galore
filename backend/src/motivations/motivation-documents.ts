@@ -320,7 +320,7 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
   // itself into the pack. Telling somebody to chase a paper form they will
   // never be handed is worse than saying nothing.
   CHARACTER_REFERENCE:
-    'You do not need to upload these. Two people who know you complete a statement from a link we SMS them, and it prints into your pack signed. Set that up in the Character witnesses section above.',
+    'You do not need to upload these. Two people who know you complete a statement from a link we SMS them, and it prints into your pack signed — set that up here.',
 };
 
 export interface DocumentStatus {

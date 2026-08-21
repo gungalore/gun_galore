@@ -138,12 +138,6 @@ export default function MotivationWitnesses({
 
   return (
     <div>
-      <p className="text-sm text-[var(--text-secondary)]">
-        Two people who know you complete a statement about your character. We
-        SMS each of them a link; they fill it in and sign it on their own
-        phone, and it prints into your pack signed.
-      </p>
-
       {error && (
         <p role="alert" className="mt-2 text-sm text-[var(--danger,#b3261e)]">
           {error}
