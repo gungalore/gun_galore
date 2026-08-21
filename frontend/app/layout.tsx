@@ -154,6 +154,16 @@ export const metadata: Metadata = {
       // Cloudflare caches /public for 30 days, so these carry a version —
       // see lib/asset-version.ts. `shortcut` pins favicon.ico too, which
       // Next's file convention would otherwise emit unversioned.
+      // ⚠️ THE SVG FIRST, AND DECLARED BY HAND. app/icon.svg is served by the
+      // file convention but Next did not emit a <link> for it once
+      // app/favicon.ico existed alongside — so the theme-aware favicon was
+      // sitting there reachable and never used. Chrome and Firefox prefer an
+      // SVG icon when offered one; everything else falls through to the .ico.
+      //
+      // That SVG is the only icon that flips its ink with the browser's colour
+      // scheme, which a transparent favicon needs: white vanishes on a light
+      // tab strip and near-black vanishes on a dark one.
+      { url: av('/icon.svg'), type: 'image/svg+xml' },
       { url: av('/icon-192.png'), sizes: '192x192', type: 'image/png' },
       { url: av('/icon-512.png'), sizes: '512x512', type: 'image/png' },
     ],
