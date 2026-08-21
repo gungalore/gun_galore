@@ -4149,7 +4149,7 @@ model Motivation {
   /// crime context, the firearm and cartridge background. Encrypted because it
   /// names the applicant's suburb. Written once and reused across gate cycles:
   /// the area and the firearm do not change between attempts.
-  researchEncrypted String? @db.Text
+  researchEncrypted     String? @db.Text
   documentVersion       Int     @default(0)
   // Versions of the attorney-reviewed PDF skeleton and disclaimer, stamped at
   // generation so documents produced under a reviewed version can be told
@@ -4171,7 +4171,32 @@ model Motivation {
   // without decrypting the answers blob.
   templateFormat    String? @db.VarChar(20)
   templateColourway String? @db.VarChar(20)
-  disclaimerVersion     String? @db.VarChar(40)
+
+  /// WHICH PHOTOGRAPH GOES ON THE COVER, and whether the applicant has looked
+  /// at it.
+  ///
+  /// null   nobody has chosen — the found stock photograph is used if we hold
+  ///        one, because plausiblyShows() already guarantees it is the right
+  ///        make and model. See motivation-firearm-image.
+  /// STOCK  they saw the stock photograph and kept it.
+  /// OWN    they uploaded their own; coverPhotoKey points at it.
+  /// NONE   they looked and wanted no photograph at all. ⚠️ DISTINCT FROM
+  ///        null: "I do not want one" and "nobody has been asked" have to be
+  ///        told apart, or a deliberate refusal is silently overridden the
+  ///        next time we find an image.
+  ///
+  /// A VarChar rather than an enum, like templateFormat and templateColourway
+  /// above: adding a value costs no migration, and every read validates.
+  coverPhotoChoice  String? @db.VarChar(12)
+  /// Encrypted storage key for the applicant's OWN cover photograph.
+  ///
+  /// ⚠️ THE ENCRYPTED TREE, NOT assets/firearms. A stock photograph of a CZ 75
+  /// is a shared asset with no retention obligation; a photograph the
+  /// applicant took of their own firearm is their data, may show their serial
+  /// number, and belongs where the rest of their documents live.
+  coverPhotoKey     String? @db.VarChar(120)
+  coverPhotoMime    String? @db.VarChar(40)
+  disclaimerVersion String? @db.VarChar(40)
 
   // ── Anti-template variation ──
   // The single biggest product risk is CFR seeing a flood of identically-shaped

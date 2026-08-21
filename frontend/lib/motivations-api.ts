@@ -591,6 +591,62 @@ export const motivationsApi = {
     );
   },
 
+  // ── The cover photograph ────────────────────────────────────────
+
+  /** What we hold, what they chose, and where a stock photograph came from. */
+  coverPhoto: (t: TokenGetter, id: string) =>
+    request<CoverPhotoState>(t, `/${id}/cover-photo`, {}, {
+      // ⚠️ A FALLBACK THAT SHOWS NOTHING, never one that invents a photograph.
+      // The card is about approving an image before it prints on a police
+      // document; a failed fetch must not leave it saying "we found one".
+      choice: null,
+      hasOwn: false,
+      firearmLine: null,
+      stock: null,
+      aspect: 86 / 44,
+      frameMm: { w: 86, h: 44 },
+      maxPx: { w: 1200, h: 614 },
+    }),
+
+  /**
+   * The image itself, as an object URL.
+   *
+   * ⚠️ NOT AN <img src> POINTING AT THE ENDPOINT. It needs a bearer token, and
+   * a browser will not attach one to an image request — the tag would render a
+   * broken-image icon on a card whose entire job is showing somebody a
+   * picture. Fetched as a blob, and the caller revokes the URL.
+   */
+  coverPhotoUrl: async (t: TokenGetter, id: string): Promise<string | null> => {
+    const token = await t();
+    const res = await fetch(`${API_URL}/motivations/${id}/cover-photo/image`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return URL.createObjectURL(await res.blob());
+  },
+
+  setCoverChoice: (t: TokenGetter, id: string, choice: CoverChoice) =>
+    request<{ choice: CoverChoice }>(t, `/${id}/cover-photo/choice`, {
+      method: 'POST',
+      body: JSON.stringify({ choice }),
+    }),
+
+  uploadCoverPhoto: async (t: TokenGetter, id: string, file: Blob) => {
+    const form = new FormData();
+    form.append('file', file, 'cover.jpg');
+    return request<{ choice: CoverChoice; hasOwn: boolean }>(
+      t,
+      `/${id}/cover-photo`,
+      { method: 'POST', body: form },
+    );
+  },
+
+  removeCoverPhoto: (t: TokenGetter, id: string) =>
+    request<{ choice: null; hasOwn: false }>(t, `/${id}/cover-photo`, {
+      method: 'DELETE',
+    }),
+
   /**
    * The template catalogue. No id — it is product information, the same for
    * everyone, so it is fetched once and reused.
@@ -822,6 +878,36 @@ export const motivationsApi = {
  * or hides one it insists on.
  */
 /** The SAPS 271 opt-in. Mirrors SAPS271_OPT_KEY / SAPS271_FILL on the server. */
+
+// ── the cover photograph ────────────────────────────────────────────
+
+/**
+ * `null` means nobody has been asked yet — which is NOT the same as 'NONE'.
+ * See the schema comment on coverPhotoChoice: a deliberate refusal has to
+ * survive the next time our search finds an image.
+ */
+export type CoverChoice = 'STOCK' | 'OWN' | 'NONE';
+
+export interface CoverPhotoState {
+  choice: CoverChoice | null;
+  hasOwn: boolean;
+  /** "Tikka T3", from their own answers — what the caption will say. */
+  firearmLine: string | null;
+  /** Present only when we hold a stock photograph of this model. */
+  stock: { source: string } | null;
+  /**
+   * Width / height of the fixed frame on the cover. The trim box locks to it.
+   *
+   * ⚠️ SENT BY THE SERVER, NOT HARD-CODED HERE. A copy in this bundle would go
+   * stale the first time the cover layout moved, and the symptom would be a
+   * red box promising a crop the cover does not print.
+   */
+  aspect: number;
+  /** What that frame measures on paper, for the readout. */
+  frameMm: { w: number; h: number };
+  maxPx: { w: number; h: number };
+}
+
 export const SAPS271_OPT_KEY = 'fill_saps271';
 export const SAPS271_FILL = 'Fill it in for me';
 

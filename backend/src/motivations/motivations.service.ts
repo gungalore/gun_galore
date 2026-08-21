@@ -55,7 +55,15 @@ import {
 } from './motivation-checklist';
 import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { buildCharacterStatements } from './motivation-character-statement';
+import { readFile } from 'node:fs/promises';
 import { FirearmImageService } from './motivation-firearm-image';
+import {
+  asCoverChoice,
+  checkCoverPhoto,
+  COVER_ASPECT,
+  COVER_FRAME_MM,
+  COVER_MAX_PX,
+} from './motivation-cover-photo';
 import { packConsistency } from './motivation-verify';
 import {
   FIELD_REGISTRY_VERSION,
@@ -2888,6 +2896,9 @@ export class MotivationsService {
         completedAt: true,
         templateFormat: true,
         templateColourway: true,
+        coverPhotoChoice: true,
+        coverPhotoKey: true,
+        coverPhotoMime: true,
         billedCents: true,
         betaSeatNo: true,
         // ⚠️ ORDERED BY CREATION, and the bytes come with it now. The copies
@@ -3007,15 +3018,7 @@ export class MotivationsService {
       ownedFirearms: existingFirearms(answers),
       annexures,
       priorNotice,
-      // Pure disk — see the note at the fetch site. Absent until the
-      // background pass has run, and absent for good if Commons has nothing:
-      // the cover simply renders without a frame.
-      firearmPhoto: answers.firearm_make
-        ? this.firearmImages.find(
-            answers.firearm_make,
-            answers.firearm_model ?? '',
-          )?.file
-        : undefined,
+      firearmPhoto: await this.coverPhotoForRender(row, answers),
       characterStatements,
       annexureImages: printable.images,
       annexuresNotPrinted: printable.notPrinted,
@@ -3028,6 +3031,229 @@ export class MotivationsService {
         .sections.find((sec) => sec.key === 'theirs')
         ?.items.map((i) => ({ label: i.label, note: i.note })),
     });
+  }
+
+  // ── The cover photograph ────────────────────────────────────────
+  //
+  // Three sources, in the order that puts the applicant's own decision ahead
+  // of ours. See motivation-cover-photo.ts for why "none" has to be stored
+  // rather than inferred.
+
+  /**
+   * Which bytes go on the cover of THIS render.
+   *
+   * ⚠️ RESOLVED AT RENDER TIME, NOT STORED. The pack is rebuilt on every
+   * download, so a decision the applicant changed five minutes ago only takes
+   * effect if the choice is read here rather than baked in anywhere earlier.
+   */
+  private async coverPhotoForRender(
+    row: { coverPhotoChoice: string | null; coverPhotoKey: string | null },
+    answers: Record<string, string>,
+  ): Promise<string | Buffer | undefined> {
+    const choice = asCoverChoice(row.coverPhotoChoice);
+    if (choice === 'NONE') return undefined;
+
+    if (row.coverPhotoKey && choice !== 'STOCK') {
+      // ⚠️ FAIL SOFT. A cover photograph that will not decrypt must not take
+      // the whole motivation down — the applicant would lose the document
+      // over its decoration.
+      const own = await this.files.read(row.coverPhotoKey).catch(() => null);
+      if (own) return own;
+    }
+
+    // Pure disk — see the note at the fetch site in the background pass.
+    // Absent until that has run, and absent for good where Commons holds
+    // nothing: the cover simply renders without a frame.
+    if (!answers.firearm_make) return undefined;
+    return this.firearmImages.find(
+      answers.firearm_make,
+      answers.firearm_model ?? '',
+    )?.file;
+  }
+
+  /**
+   * What to show the applicant when they open the cover-photograph card.
+   *
+   * Names the source of a stock photograph deliberately. Somebody being asked
+   * "keep this or replace it?" is entitled to know the picture came off
+   * Wikimedia Commons and shows the MODEL rather than their own firearm.
+   */
+  async coverPhoto(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        answersEncrypted: true,
+        coverPhotoChoice: true,
+        coverPhotoKey: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const answers = this.readAnswers(row.answersEncrypted);
+    const make = (answers.firearm_make ?? '').trim();
+    const model = (answers.firearm_model ?? '').trim();
+    const stock = make ? this.firearmImages.find(make, model) : null;
+
+    return {
+      choice: asCoverChoice(row.coverPhotoChoice),
+      hasOwn: Boolean(row.coverPhotoKey),
+      firearmLine: [make, model].filter(Boolean).join(' ') || null,
+      stock: stock
+        ? {
+            // The Commons file title, e.g. "File:Tikka-T3-Sporter.jpg", so the
+            // applicant can go and look at it themselves if they want to.
+            source: stock.source.split(/\s+/)[0] ?? '',
+          }
+        : null,
+      // ⚠️ SENT, NOT HARD-CODED IN THE BUNDLE. The trim box locks to this
+      // ratio and the frame prints at this size; a copy in the frontend would
+      // go stale the first time the cover layout moved, and the symptom would
+      // be a red box that promises a crop the cover does not print.
+      aspect: COVER_ASPECT,
+      frameMm: COVER_FRAME_MM,
+      maxPx: COVER_MAX_PX,
+    };
+  }
+
+  /** The bytes currently destined for the cover, for the on-screen preview. */
+  async coverPhotoBytes(
+    clerkId: string,
+    id: string,
+  ): Promise<{ bytes: Buffer; mimeType: string } | null> {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        answersEncrypted: true,
+        coverPhotoChoice: true,
+        coverPhotoKey: true,
+        coverPhotoMime: true,
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    if (row.coverPhotoKey && asCoverChoice(row.coverPhotoChoice) !== 'STOCK') {
+      const own = await this.files.read(row.coverPhotoKey).catch(() => null);
+      if (own) {
+        return { bytes: own, mimeType: row.coverPhotoMime ?? 'image/jpeg' };
+      }
+    }
+
+    const answers = this.readAnswers(row.answersEncrypted);
+    if (!answers.firearm_make) return null;
+    const stock = this.firearmImages.find(
+      answers.firearm_make,
+      answers.firearm_model ?? '',
+    );
+    if (!stock) return null;
+    const bytes = await readFile(stock.file).catch(() => null);
+    if (!bytes) return null;
+    return {
+      bytes,
+      mimeType: stock.file.endsWith('.png') ? 'image/png' : 'image/jpeg',
+    };
+  }
+
+  /** Record the applicant's decision. */
+  async setCoverPhotoChoice(clerkId: string, id: string, choice: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const wanted = asCoverChoice(choice);
+    if (!wanted) throw new BadRequestException('Unknown cover choice.');
+
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, coverPhotoKey: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    // ⚠️ "USE MY OWN" WITH NOTHING UPLOADED WOULD FALL THROUGH TO THE STOCK
+    // PHOTOGRAPH, which is the opposite of what was asked for.
+    if (wanted === 'OWN' && !row.coverPhotoKey) {
+      throw new BadRequestException(
+        'Upload a photograph first, then choose to use it.',
+      );
+    }
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: { coverPhotoChoice: wanted },
+    });
+    return { choice: wanted };
+  }
+
+  /** Store the applicant's own cover photograph and select it. */
+  async uploadCoverPhoto(
+    clerkId: string,
+    id: string,
+    file: { buffer: Buffer; mimetype: string },
+  ) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, coverPhotoKey: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const check = checkCoverPhoto(file.buffer, file.mimetype);
+    if (!check.ok) throw new BadRequestException(check.problem);
+
+    // ⚠️ THE ENCRYPTED TREE, like every other document they give us. A
+    // photograph the applicant took of their own firearm can show its serial
+    // number; it is not the shared, git-tracked stock asset in assets/firearms
+    // and must not be stored beside one.
+    const stored = await this.files.write(
+      'motivations',
+      file.buffer,
+      new Date(),
+    );
+    const previous = row.coverPhotoKey;
+
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: {
+        coverPhotoKey: stored.storageKey,
+        coverPhotoMime: file.mimetype,
+        coverPhotoChoice: 'OWN',
+      },
+    });
+
+    // Replace rather than accumulate — and only AFTER the row points at the
+    // new file, so a crash between the two leaves an orphan on disk rather
+    // than a cover referencing bytes we already deleted.
+    if (previous) {
+      await this.files.remove(previous).catch(() => undefined);
+    }
+    return { choice: 'OWN' as const, hasOwn: true };
+  }
+
+  /** Discard their own photograph and fall back to whatever we found. */
+  async removeCoverPhoto(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, coverPhotoKey: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      // Back to null rather than to STOCK: they have discarded a decision,
+      // not made a new one, and the card should offer the stock photograph
+      // afresh.
+      data: {
+        coverPhotoKey: null,
+        coverPhotoMime: null,
+        coverPhotoChoice: null,
+      },
+    });
+    if (row.coverPhotoKey) {
+      await this.files.remove(row.coverPhotoKey).catch(() => undefined);
+    }
+    return { choice: null, hasOwn: false };
   }
 
   /**

@@ -14,7 +14,7 @@ import {
   type PdfAnnexure,
 } from './motivation-pdf-merge';
 import type { AnnexureEntry, CertificationLevel } from './motivation-checklist';
-import { readFileSync } from 'node:fs';
+import { COVER_FRAME_MM } from './motivation-cover-photo';
 import * as K from './motivation-pdf-chrome';
 import { renderStatementForm } from './motivation-pdf-form';
 import type { CharacterStatementForm } from './motivation-character-statement';
@@ -624,49 +624,19 @@ export class MotivationPdfService {
     // be a false statement on a document they sign.
     let coverY = K.COVER_BANNER_H + K.mm(12);
     if (input.firearmPhoto) {
-      // ── The frame takes the photograph's shape ────────────────────
+      // ── The frame is fixed ────────────────────────────────────────
       //
-      // ⚠️ NOT A FIXED 62 x 46 BOX, AND THIS WAS FOUND BY LOOKING AT IT. A
-      // rifle is long and thin: the stock photograph of a Tikka T3 is
-      // 960 x 247, a 3.9:1 panorama. Cropped to a fixed 1.35:1 frame it lost
-      // the muzzle and most of the butt and showed the receiver filling the
-      // cover; letterboxed into the same frame it showed the whole rifle
-      // inside two centimetres of dead wash. Neither is a photograph of a
-      // firearm anybody would choose to print.
+      // ⚠️ AND EVERYTHING SENT HERE ALREADY FITS IT. The browser's trim tool
+      // locks its red box to COVER_ASPECT and pans and zooms the photograph
+      // behind it, so what arrives is already this shape: `cover` below trims
+      // nothing but sub-pixel rounding.
       //
-      // So the frame fits the picture, inside limits — which is what the
-      // operator's "crop it to fit into the predefined set limits" means when
-      // the subjects are shaped this differently. A panorama gets a long low
-      // frame, an upright gets a tall narrow one, and the 4:3 a phone
-      // produces gets very nearly the original box. Nothing is cropped and
-      // nothing floats.
-      const dims = (() => {
-        try {
-          return Buffer.isBuffer(input.firearmPhoto)
-            ? imageSize(input.firearmPhoto)
-            : imageSize(readFileSync(input.firearmPhoto));
-        } catch {
-          return null;
-        }
-      })();
-      const ratio =
-        dims && dims.height > 0 ? dims.width / dims.height : K.mm(62) / K.mm(46);
-
-      // The limits: never wider than the frame column, never taller than the
-      // original box, and never so small it stops being a photograph.
-      const MAX_W = K.mm(86);
-      const MAX_H = K.mm(46);
-      const MIN_H = K.mm(20);
-      let frameW = MAX_W;
-      let frameH = frameW / ratio;
-      if (frameH > MAX_H) {
-        frameH = MAX_H;
-        frameW = frameH * ratio;
-      }
-      if (frameH < MIN_H) {
-        frameH = MIN_H;
-        frameW = Math.min(MAX_W, frameH * ratio);
-      }
+      // It stays a `cover` rather than a `fit` for the one case that does not
+      // come through the trim tool — a stock photograph off Commons, which can
+      // be any shape at all. Filling the frame and clipping beats a rifle
+      // floating in two centimetres of dead wash.
+      const frameW = K.mm(COVER_FRAME_MM.w);
+      const frameH = K.mm(COVER_FRAME_MM.h);
 
       doc
         .rect(MARGIN, coverY, frameW, frameH)
@@ -678,8 +648,6 @@ export class MotivationPdfService {
         doc
           .rect(MARGIN + pad, coverY + pad, frameW - pad * 2, frameH - pad * 2)
           .clip();
-        // `cover` now, always: the frame already IS the picture's shape, so
-        // this fills it exactly and only trims the sub-millimetre rounding.
         doc.image(input.firearmPhoto, MARGIN + pad, coverY + pad, {
           cover: [frameW - pad * 2, frameH - pad * 2],
           align: 'center',
@@ -695,17 +663,12 @@ export class MotivationPdfService {
         }
       }
       if (input.firearmLine) {
-        // ⚠️ NOT CONSTRAINED TO THE FRAME. The frame now takes the
-        // photograph's shape, so an upright picture makes it 28 mm wide — and
-        // the caption naming the applicant's firearm wrapped onto two lines
-        // under it, mid-calibre. The caption belongs to the page, not to the
-        // box: it gets the wider of the two.
         K.label(
           chrome,
           input.firearmLine,
           MARGIN,
           coverY + frameH + K.mm(2.5),
-          Math.max(frameW, K.mm(80)),
+          frameW,
         );
       }
       coverY += frameH + K.mm(12);

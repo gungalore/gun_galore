@@ -12,6 +12,7 @@ import { shapeForKind } from '@/lib/scan/shapes';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
 import MotivationTemplatePicker from '@/components/motivation-template-picker';
+import MotivationCoverPhoto from '@/components/motivation-cover-photo';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1700,6 +1701,15 @@ export default function MotivationWizardPage() {
             saving={templateSaving}
             error={templateError}
           />
+
+          {/* ── The cover photograph ──────────────────────────────
+              Inside the template card rather than beside it: both are choices
+              about how the pack LOOKS, neither changes a word the document
+              argues, and both stay live after it is written because the PDF is
+              re-rendered from stored text on every download. */}
+          <div className="mt-5 border-t border-[var(--border)] pt-4">
+            <MotivationCoverPhoto motivationId={id} />
+          </div>
         </section>
       )}
 

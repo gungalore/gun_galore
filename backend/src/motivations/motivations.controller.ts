@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  NotFoundException,
   Body,
   Controller,
   Delete,
@@ -18,6 +19,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { COVER_MAX_BYTES } from './motivation-cover-photo';
 import { memoryStorage } from 'multer';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import type { Response } from 'express';
@@ -279,6 +281,98 @@ export class MotivationsController {
       'Cache-Control': 'private, no-store',
     });
     return new StreamableFile(Buffer.from(pdf));
+  }
+
+  // ── The cover photograph ────────────────────────────────────────
+  //
+  // Operator, 2026-08-21: "if the system cant find one, the user has the
+  // option to upload one... We can prescreen the image that we found to the
+  // user and ask if they want to keep or replace it with their own."
+  //
+  // Which is the honest answer to a search that can only accept a photograph
+  // it can prove is the right make and model: the applicants most likely to
+  // get a blank cover are the ones who own the less-photographed firearms, and
+  // they are also the ones holding the firearm.
+
+  /** What we hold, what they chose, and where a stock photograph came from. */
+  @Get(':id/cover-photo')
+  coverPhoto(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.coverPhoto(clerkId, id);
+  }
+
+  /**
+   * The image itself, for the on-screen prescreen.
+   *
+   * ⚠️ `private, no-store`, like the PDF. Whichever branch answers, this is
+   * either a photograph the applicant took of their own firearm or a picture
+   * naming the model they are applying for — neither belongs in a shared proxy
+   * cache, and the second is as good as telling anyone downstream what the
+   * application is for.
+   */
+  @Get(':id/cover-photo/image')
+  async coverPhotoImage(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const found = await this.motivations.coverPhotoBytes(clerkId, id);
+    if (!found) throw new NotFoundException('No cover photograph');
+    res.set({
+      'Content-Type': found.mimeType,
+      'Content-Length': String(found.bytes.length),
+      'Cache-Control': 'private, no-store',
+    });
+    return new StreamableFile(found.bytes);
+  }
+
+  /** Keep the stock photograph, use their own, or print none. */
+  @Post(':id/cover-photo/choice')
+  setCoverChoice(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body('choice') choice: string,
+  ) {
+    return this.motivations.setCoverPhotoChoice(clerkId, id, choice ?? '');
+  }
+
+  /**
+   * Upload their own.
+   *
+   * ⚠️ A TIGHTER CEILING THAN THE DOCUMENT UPLOADS, and a narrower mime set.
+   * A supporting document may be a 10 MB scan or a PDF because it is reprinted
+   * whole; this is decoration for a 62 mm frame, pdfkit embeds JPEG bytes
+   * VERBATIM rather than re-encoding them, and the client has already cropped
+   * and resized before sending. Anything near this ceiling is a client that
+   * did not run — accepted, but not encouraged.
+   */
+  @Post(':id/cover-photo')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: COVER_MAX_BYTES + 256 * 1024 },
+    }),
+  )
+  uploadCoverPhoto(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: COVER_MAX_BYTES }),
+          new FileTypeValidator({ fileType: /^image\/(jpeg|png)$/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.motivations.uploadCoverPhoto(clerkId, id, file);
+  }
+
+  /** Discard their own and fall back to whatever we found. */
+  @Delete(':id/cover-photo')
+  removeCoverPhoto(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.removeCoverPhoto(clerkId, id);
   }
 
   /**
