@@ -152,6 +152,26 @@ export class WitnessPublicController {
     };
   }
 
+  /**
+   * Decline, without verifying anything.
+   *
+   * See the service: demanding a code from somebody whose answer is "I do not
+   * want to be involved" is asking them to do work in order to refuse.
+   */
+  @Post(':token/decline')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async decline(@Param('token') token: string, @Req() req: Request) {
+    const row = await this.witnesses.resolve(token);
+    return this.witnesses.decline(
+      token,
+      row.id,
+      (req.headers['cf-connecting-ip'] as string) ??
+        (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
+        req.ip,
+      req.headers['user-agent'],
+    );
+  }
+
   /** Send the code to the number the applicant nominated. */
   @Post(':token/code')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })

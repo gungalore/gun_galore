@@ -193,12 +193,26 @@ export default function MotivationWitnesses({
                 {w.invitedPhone}
                 {w.status === 'COMPLETED' && w.signedAt
                   ? ` · signed ${new Date(w.signedAt).toLocaleDateString('en-ZA')}`
-                  : w.openedAt
-                    ? ' · they have opened the link'
-                    : ' · link sent, not opened yet'}
+                  : w.status === 'DECLINED' && w.declinedAt
+                    ? ` · declined ${new Date(w.declinedAt).toLocaleDateString('en-ZA')}`
+                    : w.openedAt
+                      ? ' · they have opened the link'
+                      : ' · link sent, not opened yet'}
               </p>
 
-              {w.status !== 'COMPLETED' && (
+              {/* ⚠️ A DECLINE IS NOT A FAULT, and the wording has to carry
+                  that. Nobody is obliged to give a character statement about
+                  anybody. The applicant needs to know so they can ask somebody
+                  else — not to be told their witness let them down. */}
+              {w.status === 'DECLINED' && (
+                <p className="mt-2 text-xs text-[var(--text-secondary)]">
+                  They chose not to take this up. Nothing was recorded about
+                  them. Remove them below to free the slot and ask somebody
+                  else.
+                </p>
+              )}
+
+              {w.status !== 'COMPLETED' && w.status !== 'DECLINED' && (
                 <p className="mt-2 text-xs text-[var(--text-secondary)]">
                   Links last one hour. If theirs has expired, send another.
                 </p>
@@ -217,7 +231,7 @@ export default function MotivationWitnesses({
                     {open === w.id ? 'Hide statement' : 'View statement'}
                   </button>
                 )}
-                {w.status !== 'COMPLETED' && (
+                {w.status !== 'COMPLETED' && w.status !== 'DECLINED' && (
                   <button
                     type="button"
                     disabled={busy === slot}
@@ -234,13 +248,15 @@ export default function MotivationWitnesses({
                     const ok = window.confirm(
                       w.status === 'COMPLETED'
                         ? `Delete ${w.invitedName}'s signed statement? It will not be filed with your application, and it cannot be recovered — they would have to complete a new one.`
-                        : `Remove ${w.invitedName}? Their link will stop working.`,
+                        : w.status === 'DECLINED'
+                          ? `Remove ${w.invitedName} and free this slot for somebody else?`
+                          : `Remove ${w.invitedName}? Their link will stop working.`,
                     );
                     if (ok) void remove(w);
                   }}
                   className="rounded px-3 py-1.5 text-sm text-[var(--danger,#b3261e)] underline disabled:opacity-50"
                 >
-                  Delete
+                  {w.status === 'DECLINED' ? 'Remove' : 'Delete'}
                 </button>
               </div>
 
@@ -264,9 +280,11 @@ function StatusPill({ status }: { status: string }) {
   const label =
     status === 'COMPLETED'
       ? 'Signed'
-      : status === 'VERIFIED'
-        ? 'In progress'
-        : 'Link sent';
+      : status === 'DECLINED'
+        ? 'Declined'
+        : status === 'VERIFIED'
+          ? 'In progress'
+          : 'Link sent';
   return (
     <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">
       {label}

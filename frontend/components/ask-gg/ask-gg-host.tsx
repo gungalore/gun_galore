@@ -45,6 +45,13 @@ const SUPPRESS_PREFIXES = [
   '/sso-callback',
   '/a/', // token-gated single-action pages
   '/kyc',
+  // ⚠️ A CARTOON RANGER MUST NOT FLOAT BESIDE A STATUTORY STATEMENT. /witness
+  // is opened by a member of the public who received an SMS and is being asked,
+  // under a criminal-offence warning, whether somebody is fit to hold a
+  // firearm. Boet is right for a storefront and wrong for this — and to a
+  // stranger deciding whether an unfamiliar link is legitimate, a mascot
+  // waving at them is evidence for the wrong answer.
+  '/witness',
 ];
 
 export function isSuppressed(pathname: string | null): boolean {

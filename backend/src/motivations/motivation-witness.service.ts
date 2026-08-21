@@ -78,6 +78,7 @@ export interface WitnessSummary {
   status: string;
   openedAt: Date | null;
   signedAt: Date | null;
+  declinedAt: Date | null;
   /** Only once completed — what they actually said. */
   answers?: WitnessAnswers;
   signedPlace?: string | null;
@@ -114,6 +115,7 @@ export class MotivationWitnessService {
     status: string;
     openedAt: Date | null;
     signedAt: Date | null;
+    declinedAt: Date | null;
     answersEncrypted: string | null;
     signedPlace: string | null;
     signatureKey: string | null;
@@ -126,6 +128,7 @@ export class MotivationWitnessService {
       status: r.status,
       openedAt: r.openedAt,
       signedAt: r.signedAt,
+      declinedAt: r.declinedAt,
     };
     // ⚠️ THE CONTENTS ONLY ONCE IT IS SIGNED. A half-finished statement is not
     // the witness's word on anything, and showing the applicant a draft would
@@ -193,8 +196,14 @@ export class MotivationWitnessService {
         'That slot already holds a completed statement. Delete it first if you want to ask somebody else.',
       );
     }
+    // ⚠️ A DECLINE SKIPS THE COOLDOWN. The cooldown exists to stop a mistyped
+    // number becoming a loop of paid messages to the same wrong phone; after a
+    // refusal the applicant is inviting a DIFFERENT person, and making them
+    // wait out a minute for somebody else's "no" is a penalty for a thing they
+    // did not do.
     if (
       existing &&
+      existing.status !== 'DECLINED' &&
       Date.now() - existing.updatedAt.getTime() < RESEND_COOLDOWN_MS
     ) {
       throw new BadRequestException(
@@ -216,6 +225,7 @@ export class MotivationWitnessService {
             otpAttempts: 0,
             verifiedAt: null,
             openedAt: null,
+            declinedAt: null,
             answersEncrypted: null,
           },
         })
@@ -340,6 +350,63 @@ export class MotivationWitnessService {
       (LICENCE_TYPE_LABELS as Record<string, string>)[row.motivation.licenceType] ??
       'a firearm licence'
     );
+  }
+
+  /**
+   * "No, thank you."
+   *
+   * Operator, 2026-08-21: "the possible witness can also decline straight off
+   * when they open the link... Decline expires the 1 hour token immediately so
+   * the applicant can send it to a new witness."
+   *
+   * ⚠️ NO CODE REQUIRED, AND THAT IS DELIBERATE. Making somebody prove they own
+   * a phone number before letting them say no is perverse: it demands work of
+   * a person whose answer is that they do not want to be involved. The link is
+   * enough. The worst a forwarded link can do here is decline on the real
+   * witness's behalf, and the cost of that is the applicant inviting somebody
+   * again — which is precisely what a decline is for.
+   *
+   * ⚠️ THE TOKEN IS CONSUMED, not left to expire. `resolve` refuses a consumed
+   * token, so the link is dead the instant they tap the button — no window in
+   * which somebody could reopen it and be walked through a form they have
+   * already refused.
+   */
+  async decline(
+    token: string,
+    witnessId: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{ declined: true }> {
+    const row = await this.prisma.motivationWitness.findUnique({
+      where: { id: witnessId },
+      select: { id: true, status: true, signatureKey: true },
+    });
+    if (!row) throw new NotFoundException('This link is not valid.');
+    if (row.status === 'COMPLETED') {
+      throw new BadRequestException(
+        'This statement has already been signed and cannot be withdrawn here.',
+      );
+    }
+
+    await this.prisma.motivationWitness.update({
+      where: { id: row.id },
+      data: {
+        status: 'DECLINED',
+        declinedAt: new Date(),
+        // Nothing half-entered survives a refusal. Somebody who declines has
+        // not given us answers, and anything typed on the way to the button is
+        // not theirs to have kept.
+        answersEncrypted: null,
+        otpHash: null,
+        otpExpiresAt: null,
+        otpAttempts: 0,
+        verifiedAt: null,
+      },
+    });
+
+    await this.tokens.consume(token, ip, userAgent).catch(() => undefined);
+    this.logger.log(`Witness ${row.id} declined`);
+    return { declined: true };
   }
 
   /** Send the verification code to the number the applicant nominated. */

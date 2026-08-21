@@ -961,10 +961,11 @@ export interface WitnessSummary {
   slot: number;
   invitedName: string;
   invitedPhone: string;
-  /** INVITED · VERIFIED · COMPLETED. */
+  /** INVITED · VERIFIED · DECLINED · COMPLETED. */
   status: string;
   openedAt: string | null;
   signedAt: string | null;
+  declinedAt: string | null;
   /** Present only once signed — never for a half-finished statement. */
   answers?: Record<string, string>;
   signedPlace?: string | null;

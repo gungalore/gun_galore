@@ -4374,6 +4374,14 @@ model MotivationWitness {
   /// Stamped when the link is first opened, so an applicant can see whether
   /// their witness has looked at it before chasing them.
   openedAt        DateTime?
+  /// When they said no.
+  ///
+  /// ⚠️ RECORDED RATHER THAN DELETED, so the applicant learns they have been
+  /// turned down instead of watching an invitation that never moves. Nobody is
+  /// obliged to give a character statement, and somebody who declines has done
+  /// nothing wrong — the row exists to stop the applicant waiting, not to mark
+  /// anybody.
+  declinedAt      DateTime?
   /// Kept because the DFO may ask how a statement was taken (reg 13(8)).
   submitIp        String?   @db.VarChar(64)
   submitUserAgent String?   @db.VarChar(300)

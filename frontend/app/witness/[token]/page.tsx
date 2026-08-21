@@ -27,9 +27,15 @@ import WitnessSignaturePad from '@/components/witness-signature-pad';
 const API =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
+// ⚠️ "ABOUT THIS" COMES FIRST, and it did not used to. The witness was being
+// asked to verify their phone number before being told what for — which is
+// the order that makes a link from an unfamiliar sender look like a phishing
+// page, and it put the decision to take part AFTER the first thing we demanded
+// of them. Now they read who is asking and why, and answer that question
+// before anything else is required.
 const STEPS = [
-  { key: 'otp', label: 'Verify' },
   { key: 'welcome', label: 'About this' },
+  { key: 'otp', label: 'Verify' },
   { key: 'about', label: 'About you' },
   { key: 'questions', label: 'Questions' },
   { key: 'sign', label: 'Sign' },
@@ -83,6 +89,8 @@ export default function WitnessPage({
   const [place, setPlace] = useState('');
   const [locating, setLocating] = useState(false);
   const [done, setDone] = useState(false);
+  const [declined, setDeclined] = useState(false);
+  const [confirmDecline, setConfirmDecline] = useState(false);
 
   const post = useCallback(
     async (path: string, body?: unknown) => {
@@ -118,7 +126,9 @@ export default function WitnessPage({
       }
       setState(data);
       if (data.status === 'COMPLETED') setDone(true);
-      else if (data.status === 'VERIFIED') setStep(1);
+      else if (data.status === 'DECLINED') setDeclined(true);
+      // Already verified — skip past the code, but never past the explanation.
+      else if (data.status === 'VERIFIED') setStep(2);
     })().catch(() => setFatal('We could not open this link.'));
   }, [token]);
 
@@ -191,6 +201,21 @@ export default function WitnessPage({
     );
   }
 
+  if (declined) {
+    return (
+      <Shell>
+        <div className="py-6 text-center">
+          <h1 className="text-lg font-semibold">That is completely fine</h1>
+          <p className="mx-auto mt-2 max-w-md text-sm text-[var(--text-secondary)]">
+            You have declined, and nothing has been recorded about you. We have
+            let {state.applicantName} know the request was not taken up so they
+            can ask somebody else. This link no longer works.
+          </p>
+        </div>
+      </Shell>
+    );
+  }
+
   if (done) {
     return (
       <Shell>
@@ -219,8 +244,91 @@ export default function WitnessPage({
           </p>
         )}
 
-        {/* ── 1 · Verify the number ──────────────────────────────── */}
+        {/* ── 1 · What this is, and the choice ───────────────────── */}
         {step === 0 && (
+          <section>
+            <h1 className="text-lg font-semibold">
+              A character statement for {state.applicantName}
+            </h1>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              {state.licenceTypeLabel}
+            </p>
+            <div className="mt-4 space-y-3">
+              {state.notices.map((n, i) => (
+                <p
+                  key={i}
+                  className="border-l-2 border-[var(--border)] pl-3 text-sm text-[var(--text-secondary)]"
+                >
+                  {n}
+                </p>
+              ))}
+            </div>
+
+            {/* ⚠️ THE CHOICE IS ON THE FIRST SCREEN, before anything is asked
+                of them. Operator: "the possible witness can also decline
+                straight off when they open the link." Somebody who does not
+                want to do this should not have to verify a phone number, read
+                a form and find an exit — the exit is the second button. */}
+            {!confirmDecline ? (
+              <div className="mt-6 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="rounded bg-[var(--brand,#1b3a2f)] px-4 py-2 text-sm text-white"
+                >
+                  I am happy to do this
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDecline(true)}
+                  className="rounded border border-[var(--border)] px-4 py-2 text-sm"
+                >
+                  No, thank you
+                </button>
+              </div>
+            ) : (
+              <div className="mt-6 rounded border border-[var(--border)] p-3">
+                <p className="text-sm">
+                  Decline this request? {state.applicantName} will be told you
+                  did not take it up, so they can ask somebody else. Nothing
+                  about you is recorded, and this link will stop working.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      setError(null);
+                      try {
+                        await post('/decline');
+                        setDeclined(true);
+                      } catch (e) {
+                        setError((e as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                    className="rounded border border-[var(--danger,#b3261e)] px-4 py-2 text-sm text-[var(--danger,#b3261e)] disabled:opacity-50"
+                  >
+                    {busy ? 'Declining…' : 'Yes, decline'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setConfirmDecline(false)}
+                    className="rounded px-4 py-2 text-sm underline"
+                  >
+                    Go back
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ── 2 · Verify the number ──────────────────────────────── */}
+        {step === 1 && (
           <section>
             <h1 className="text-lg font-semibold">Verify your number</h1>
             <p className="mt-2 text-sm text-[var(--text-secondary)]">
@@ -273,7 +381,7 @@ export default function WitnessPage({
                       setError(null);
                       try {
                         await post('/verify', { code });
-                        setStep(1);
+                        setStep(2);
                       } catch (e) {
                         setError((e as Error).message);
                       } finally {
@@ -305,29 +413,6 @@ export default function WitnessPage({
                 </div>
               </div>
             )}
-          </section>
-        )}
-
-        {/* ── 2 · What this is ───────────────────────────────────── */}
-        {step === 1 && (
-          <section>
-            <h1 className="text-lg font-semibold">
-              A character statement for {state.applicantName}
-            </h1>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              {state.licenceTypeLabel}
-            </p>
-            <div className="mt-4 space-y-3">
-              {state.notices.map((n, i) => (
-                <p
-                  key={i}
-                  className="border-l-2 border-[var(--border)] pl-3 text-sm text-[var(--text-secondary)]"
-                >
-                  {n}
-                </p>
-              ))}
-            </div>
-            <Nav onNext={() => setStep(2)} nextLabel="I understand — continue" />
           </section>
         )}
 
