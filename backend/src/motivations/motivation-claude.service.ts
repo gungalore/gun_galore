@@ -675,10 +675,21 @@ export class MotivationClaudeService {
         //
         // The variation does not depend on it. It is engineered structurally —
         // Motivation.variantSeed, the structure plans in motivation-structure.ts,
-        // the 3,120 visual combinations in motivation-style.ts, and the sameness
-        // check against the recent corpus. Sampling temperature was the least of
-        // it. If documents ever do start reading alike, the lever is another
-        // structure plan, not a parameter that no longer exists.
+        // and the sameness check against the recent corpus. Sampling temperature
+        // was the least of it. If documents ever do start reading alike, the
+        // lever is another structure plan, not a parameter that no longer
+        // exists.
+        //
+        // ⚠️ THE VISUAL HALF OF THAT VARIATION IS GONE, deliberately. A
+        // motivation-style.ts used to mix 13 fonts, 10 palettes, 4 leadings and
+        // 6 formats into some 3,120 looks, on the reasoning that a reviewer
+        // with a stack of paper notices a repeated TYPEFACE before they notice
+        // a repeated argument. The design handoff of 2026-08-21 replaced it
+        // with one typeset document in ten colourways, and that is the right
+        // trade: a pack that looks like it came from somebody who does this
+        // for a living beats a pack that is merely hard to pair with another.
+        // The variation that survives is the variation that matters — what the
+        // document says, and in what order.
         system: followUpBatchSystemPrompt(),
         messages: [
           {
