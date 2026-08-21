@@ -5,6 +5,7 @@ import {
   STAMP_H,
   captionFor,
   planAnnexurePages,
+  imageSize,
 } from './motivation-annexure-layout';
 import {
   appendPdfAnnexures,
@@ -13,6 +14,7 @@ import {
   type PdfAnnexure,
 } from './motivation-pdf-merge';
 import type { AnnexureEntry, CertificationLevel } from './motivation-checklist';
+import { readFileSync } from 'node:fs';
 import * as K from './motivation-pdf-chrome';
 import { renderStatementForm } from './motivation-pdf-form';
 import type { CharacterStatementForm } from './motivation-character-statement';
@@ -339,13 +341,18 @@ export interface MotivationPdfInput {
    * rather than from the day the applicant heard about it.
    */
   /**
-   * Absolute path to a stored photograph of the firearm, for the cover.
+   * The photograph of the firearm, for the cover.
    *
-   * A PATH, NOT A URL. See motivation-firearm-image: the pack is re-rendered
-   * on every download, so a hotlink would silently drop the photograph from
-   * every future copy the day somebody else renames a file.
+   * A PATH OR BYTES, NEVER A URL. See motivation-firearm-image: the pack is
+   * re-rendered on every download, so a hotlink would silently drop the
+   * photograph from every future copy the day somebody else renames a file.
+   *
+   * A string is a path to a shared stock photograph on disk. A Buffer is the
+   * APPLICANT'S OWN photograph, decrypted for this render only — it never
+   * touches the filesystem in the clear, which is the whole point of holding
+   * their documents encrypted.
    */
-  firearmPhoto?: string;
+  firearmPhoto?: string | Buffer;
   priorNotice?: { title: string; body: string; version: string };
   /**
    * The blank character reference forms, to print and hand to two people.
@@ -617,28 +624,88 @@ export class MotivationPdfService {
     // be a false statement on a document they sign.
     let coverY = K.COVER_BANNER_H + K.mm(12);
     if (input.firearmPhoto) {
-      const frameW = K.mm(62);
-      const frameH = K.mm(46);
+      // ── The frame takes the photograph's shape ────────────────────
+      //
+      // ⚠️ NOT A FIXED 62 x 46 BOX, AND THIS WAS FOUND BY LOOKING AT IT. A
+      // rifle is long and thin: the stock photograph of a Tikka T3 is
+      // 960 x 247, a 3.9:1 panorama. Cropped to a fixed 1.35:1 frame it lost
+      // the muzzle and most of the butt and showed the receiver filling the
+      // cover; letterboxed into the same frame it showed the whole rifle
+      // inside two centimetres of dead wash. Neither is a photograph of a
+      // firearm anybody would choose to print.
+      //
+      // So the frame fits the picture, inside limits — which is what the
+      // operator's "crop it to fit into the predefined set limits" means when
+      // the subjects are shaped this differently. A panorama gets a long low
+      // frame, an upright gets a tall narrow one, and the 4:3 a phone
+      // produces gets very nearly the original box. Nothing is cropped and
+      // nothing floats.
+      const dims = (() => {
+        try {
+          return Buffer.isBuffer(input.firearmPhoto)
+            ? imageSize(input.firearmPhoto)
+            : imageSize(readFileSync(input.firearmPhoto));
+        } catch {
+          return null;
+        }
+      })();
+      const ratio =
+        dims && dims.height > 0 ? dims.width / dims.height : K.mm(62) / K.mm(46);
+
+      // The limits: never wider than the frame column, never taller than the
+      // original box, and never so small it stops being a photograph.
+      const MAX_W = K.mm(86);
+      const MAX_H = K.mm(46);
+      const MIN_H = K.mm(20);
+      let frameW = MAX_W;
+      let frameH = frameW / ratio;
+      if (frameH > MAX_H) {
+        frameH = MAX_H;
+        frameW = frameH * ratio;
+      }
+      if (frameH < MIN_H) {
+        frameH = MIN_H;
+        frameW = Math.min(MAX_W, frameH * ratio);
+      }
+
       doc
         .rect(MARGIN, coverY, frameW, frameH)
         .lineWidth(0.7)
         .fillAndStroke(C.wash, C.hair);
       try {
-        doc.image(input.firearmPhoto, MARGIN + K.mm(4), coverY + K.mm(4), {
-          fit: [frameW - K.mm(8), frameH - K.mm(8)],
+        const pad = K.mm(2.5);
+        doc.save();
+        doc
+          .rect(MARGIN + pad, coverY + pad, frameW - pad * 2, frameH - pad * 2)
+          .clip();
+        // `cover` now, always: the frame already IS the picture's shape, so
+        // this fills it exactly and only trims the sub-millimetre rounding.
+        doc.image(input.firearmPhoto, MARGIN + pad, coverY + pad, {
+          cover: [frameW - pad * 2, frameH - pad * 2],
           align: 'center',
           valign: 'center',
         });
+        doc.restore();
       } catch {
         // A stored file pdfkit will not embed must not take the cover down.
+        try {
+          doc.restore();
+        } catch {
+          /* the save may not have happened */
+        }
       }
       if (input.firearmLine) {
+        // ⚠️ NOT CONSTRAINED TO THE FRAME. The frame now takes the
+        // photograph's shape, so an upright picture makes it 28 mm wide — and
+        // the caption naming the applicant's firearm wrapped onto two lines
+        // under it, mid-calibre. The caption belongs to the page, not to the
+        // box: it gets the wider of the two.
         K.label(
           chrome,
           input.firearmLine,
           MARGIN,
           coverY + frameH + K.mm(2.5),
-          frameW,
+          Math.max(frameW, K.mm(80)),
         );
       }
       coverY += frameH + K.mm(12);
