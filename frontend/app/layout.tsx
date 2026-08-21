@@ -80,7 +80,7 @@ const INSTALL_CAPTURE_SCRIPT = `(function(){try{window.__ggInstallEvent=window._
 // actually browse. Regulated categories are members-only and are deliberately
 // not advertised here.
 const PUBLIC_DESCRIPTION =
-  `${BRAND_BLURB} — camping, overlanding, fishing, optics, knives and outdoor clothing. New and secondhand, couriered to your door.`;
+  `${BRAND_BLURB} — camping, overlanding, fishing and outdoor clothing. New and secondhand, couriered to your door.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

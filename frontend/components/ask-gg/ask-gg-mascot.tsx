@@ -21,7 +21,7 @@ import { useEffect, useRef } from 'react';
 export type BoetScene =
   | 'idle'
   | 'wave'
-  | 'binoculars'
+  | 'lookout'
   | 'campfire'
   | 'tent'
   // NO 'shooting' SCENE. It drew Boet firing a scoped long gun — wooden barrel,
@@ -30,7 +30,7 @@ export type BoetScene =
   // included. The file already carried the house rule "never firearm jokes";
   // the artwork was simply never brought in line with it. Do not add it back.
   | 'fishing'
-  | 'knife'
+  | 'camp-tool'
   | 'map'
   | 'drive';
 
@@ -43,7 +43,7 @@ export type SparkieMood = 'idle' | 'think' | 'happy';
 // Per-scene rig (body/head/hat) motion. Everything else stays on the
 // default breathing bob. Values are the design's, verbatim.
 const RIGS: Partial<Record<BoetScene, string>> = {
-  binoculars:
+  lookout:
     'animation:boet-pan 4.2s ease-in-out infinite alternate;transform-origin:130px 292px',
   drive: 'animation:boet-drive .45s ease-in-out infinite',
 };
@@ -88,7 +88,7 @@ const SVG_INNER = `<defs>
           <ellipse cx="62" cy="283" rx="10" ry="2.5" fill="none" stroke="#3d5d6d" stroke-width="1.5" opacity="0.5"></ellipse>
         </g>
       </g>
-      <g class="sc sc-knife" style="display:none">
+      <g class="sc sc-camp-tool" style="display:none">
         <g>
           <rect x="44" y="232" width="36" height="42" rx="5" fill="#6b4a2e"></rect>
           <ellipse cx="62" cy="232" rx="18" ry="7" fill="#8a6a44"></ellipse>
@@ -157,7 +157,7 @@ const SVG_INNER = `<defs>
             <circle cx="163" cy="212" r="7" fill="#e0ab7c"></circle>
           </g>
         </g>
-        <g class="sc sc-binoculars" style="display:none">
+        <g class="sc sc-lookout" style="display:none">
           <g>
             <rect x="88" y="160" width="18" height="20" rx="9" fill="#b39c6f"></rect>
             <rect x="154" y="160" width="18" height="20" rx="9" fill="#b39c6f"></rect>
@@ -219,7 +219,7 @@ const SVG_INNER = `<defs>
             </g>
           </g>
         </g>
-        <g class="sc sc-knife" style="display:none">
+        <g class="sc sc-camp-tool" style="display:none">
           <g style="animation:boet-sway 2.6s ease-in-out infinite alternate;transform-origin:163px 166px">
             <rect x="154" y="160" width="18" height="24" rx="9" fill="#b39c6f"></rect>
             <rect x="156" y="176" width="14" height="34" rx="7" fill="#d9a271"></rect>

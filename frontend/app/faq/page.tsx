@@ -37,7 +37,7 @@ const FAQS: { q: string; a: string }[] = [
     // FAQPage JSON-LD Google lifts into the SERP, so it describes the PUBLIC
     // store: the outdoor catalogue a signed-out visitor can actually browse.
     // Regulated stock is members-only and is not advertised here.
-    a: 'All Outdoor is a South African new and secondhand outdoor store — camping and overlanding kit, fishing tackle, optics, knives, clothing and outdoor gear. You can buy at a set price, bid in auctions, make an offer ("Take a Shot"), or swop item for item. Some regulated categories are available to registered members only.',
+    a: 'All Outdoor is a South African new and secondhand outdoor store — camping and overlanding kit, fishing tackle, clothing and outdoor gear. You can buy at a set price, bid in auctions, make an offer ("Take a Shot"), or swop item for item. Some regulated categories are available to registered members only.',
   },
   {
     q: 'How does payment protection work?',

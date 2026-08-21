@@ -94,13 +94,18 @@ const HELLO_JOKE_CHANCE = 0.25;
 
 // Activity scenes Boet wanders through (everything but idle). The launcher
 // alternates idle → one of these → idle.
+//
+// ⚠️ NO 'lookout' (binoculars) OR 'camp-tool' (knife) SCENE, and the reason is
+// the MARKUP, not the drawing. The mascot ships inline in every public page and
+// each prop group carries a `sc-<scene>` class, so the scene NAME is literal
+// text a crawler reads on all 106 public URLs — 'knife' is on Meta's itemised
+// prohibited-commerce list. Renamed and dropped from the rotation together.
+// Same reason the 'shooting' scene went (see ask-gg-mascot.tsx).
 const ACTIVITIES: BoetScene[] = [
   'wave',
-  'binoculars',
   'campfire',
   'tent',
   'fishing',
-  'knife',
   'map',
   'drive',
 ];

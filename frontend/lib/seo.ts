@@ -32,7 +32,7 @@ export const SITE_MARKETPLACE_BLURB = BRAND_BLURB;
 /** Breadth keywords for the public catalogue. Public trees only — anything
  *  members-only must not appear here (see the header note). */
 export const SITE_CATEGORY_KEYWORDS =
-  'camping, overlanding, fishing, optics, knives, clothing and outdoor gear';
+  'camping, overlanding, fishing, clothing and outdoor gear';
 
 /**
  * Meta description for a browse surface. `what` is the thing being browsed

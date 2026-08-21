@@ -33,7 +33,7 @@ export default function AboutPage() {
       <h2>What All Outdoor is</h2>
       <p>
         All Outdoor is a South African new and secondhand outdoor store
-        — camping and overlanding gear, fishing tackle, optics, knives,
+        — camping and overlanding gear, fishing tackle,
         clothing, outdoor equipment and accessories. You can buy at a
         set price, bid in auctions, make an offer, or swop item for
         item, from both private sellers and licensed dealers.

@@ -23,7 +23,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'All Outdoor',
     short_name: 'All Outdoor',
     description:
-      'South Africa’s new and secondhand outdoor store — camping, overlanding, fishing, optics, knives and clothing.',
+      'South Africa’s new and secondhand outdoor store — camping, overlanding, fishing and outdoor clothing.',
     start_url: '/',
     scope: '/',
     display: 'standalone',
