@@ -123,8 +123,8 @@ export function Nav() {
         <div className="max-w-[var(--page-max)] mx-auto px-4 h-14 flex items-center gap-3 sm:gap-6">
           {/* Logo — the composed nav lockup, and the MARK ALONE on phones.
 
-              The nav constrains by HEIGHT, so shape decides width. The new
-              lockup is 7.8:1: at sm's h-11 that is ~340px, comfortable beside
+              The nav constrains by HEIGHT, so shape decides width. The
+              lockup is 6:1: at sm's h-11 that is ~340px, comfortable beside
               a flex-1 search box on a desktop row. At h-9 on a 375px phone it
               would be ~280px, which leaves nothing for the fixed-size
               Sell/bell/cart/hamburger cluster and pushes the row into
@@ -151,7 +151,7 @@ export function Nav() {
             <Image
               src={av('/logo-nav.svg')}
               alt="All Outdoor"
-              width={342}
+              width={264}
               height={44}
               priority
               className="hidden h-11 w-auto max-w-full object-contain sm:block"
