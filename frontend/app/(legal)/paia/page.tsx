@@ -65,8 +65,8 @@ export default function PaiaPage() {
         </a>
         <br />
         <strong>Website:</strong>{' '}
-        <a href="https://gungalore.co.za" style={{ color: 'var(--red)' }}>
-          gungalore.co.za
+        <a href="https://alloutdoor.co.za" style={{ color: 'var(--red)' }}>
+          alloutdoor.co.za
         </a>
       </p>
 

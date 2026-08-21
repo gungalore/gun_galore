@@ -35,8 +35,8 @@ export default function PrivacyPage() {
         ("<strong>All Outdoor</strong>", "<strong>we</strong>",
         "<strong>us</strong>") collects, uses, shares and protects your
         personal information when you use the All Outdoor online store at{' '}
-        <a href="https://gungalore.co.za" style={{ color: 'var(--red)' }}>
-          gungalore.co.za
+        <a href="https://alloutdoor.co.za" style={{ color: 'var(--red)' }}>
+          alloutdoor.co.za
         </a>{' '}
         (the "Store").
       </p>

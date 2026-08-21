@@ -1,4 +1,5 @@
 import { av } from '@/lib/asset-version';
+import { SUPPORT_EMAIL } from '@/lib/brand';
 /**
  * Coming-soon gate page.
  *
@@ -8,7 +9,7 @@ import { av } from '@/lib/asset-version';
  * with ?t=<token>).
  *
  * To grant bypass to a tester: send them
- *   https://gungalore.co.za/preview?key=<COMING_SOON_BYPASS_SECRET>
+ *   https://alloutdoor.co.za/preview?key=<COMING_SOON_BYPASS_SECRET>
  * That route sets a 30-day cookie and redirects them to / where the
  * real site loads from then on.
  *
@@ -86,7 +87,7 @@ export default function ComingSoonPage() {
         >
           All Outdoor (Pty) Ltd
           <br />
-          info@gungalore.co.za
+          {SUPPORT_EMAIL}
         </p>
       </div>
     </main>
