@@ -165,7 +165,7 @@ export default function MotivationCoverPhoto({
       </p>
 
       {error && (
-        <p role="alert" className="mt-2 text-sm text-[var(--danger,#b3261e)]">
+        <p role="alert" className="mt-2 text-sm text-[var(--red)]">
           {error}
         </p>
       )}
@@ -187,7 +187,7 @@ export default function MotivationCoverPhoto({
             // is already exactly this shape; a stock photograph off Commons
             // may not be, and object-cover previews the same trim the renderer
             // will apply to it.
-            className="w-full max-w-[320px] rounded border border-[var(--border)] bg-[var(--bg-subtle,#f6f6f6)] object-cover"
+            className="w-full max-w-[320px] rounded border border-[var(--border)] bg-[var(--bg-inset)] object-cover"
             style={{ aspectRatio: String(state.aspect) }}
           />
           {state.stock && printing === 'stock' && state.stock.source && (

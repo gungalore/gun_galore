@@ -332,7 +332,7 @@ export default function MotivationCoverCropper({
       </div>
 
       {error && (
-        <p role="alert" className="mt-2 text-sm text-[var(--danger,#b3261e)]">
+        <p role="alert" className="mt-2 text-sm text-[var(--red)]">
           {error}
         </p>
       )}
@@ -452,7 +452,7 @@ export default function MotivationCoverCropper({
           role={tooSmall ? 'alert' : undefined}
           className={
             tooSmall
-              ? 'mt-2 text-sm text-[var(--danger,#b3261e)]'
+              ? 'mt-2 text-sm text-[var(--red)]'
               : 'mt-2 text-xs text-[var(--text-secondary)]'
           }
         >

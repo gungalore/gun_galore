@@ -139,7 +139,7 @@ export default function MotivationWitnesses({
   return (
     <div>
       {error && (
-        <p role="alert" className="mt-2 text-sm text-[var(--danger,#b3261e)]">
+        <p role="alert" className="mt-2 text-sm text-[var(--red)]">
           {error}
         </p>
       )}
@@ -273,7 +273,7 @@ export default function MotivationWitnesses({
                     );
                     if (ok) void remove(w);
                   }}
-                  className="rounded px-3 py-1.5 text-sm text-[var(--danger,#b3261e)] underline disabled:opacity-50"
+                  className="rounded px-3 py-1.5 text-sm text-[var(--red)] underline disabled:opacity-50"
                 >
                   {w.status === 'DECLINED' ? 'Remove' : 'Delete'}
                 </button>
@@ -337,7 +337,7 @@ function Statement({
     ) : null;
 
   return (
-    <div className="mt-3 rounded bg-[var(--bg-subtle,#f6f6f6)] p-3 text-sm">
+    <div className="mt-3 rounded bg-[var(--bg-inset)] p-3 text-sm">
       {row('Name', [answers.first_names, answers.surname].filter(Boolean).join(' '))}
       {row('Identity number', answers.id_number)}
       {row('Daytime number', answers.daytime_phone)}
@@ -357,7 +357,7 @@ function Statement({
             </span>
             <span
               className={
-                answers[k] === 'Yes' ? '' : 'font-medium text-[var(--danger,#b3261e)]'
+                answers[k] === 'Yes' ? '' : 'font-medium text-[var(--red)]'
               }
             >
               {answers[k]}

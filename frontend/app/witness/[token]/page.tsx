@@ -238,7 +238,7 @@ export default function WitnessPage({
         {error && (
           <p
             role="alert"
-            className="mb-3 rounded border border-[var(--danger,#b3261e)] px-3 py-2 text-sm text-[var(--danger,#b3261e)]"
+            className="mb-3 rounded border border-[var(--red)] px-3 py-2 text-sm text-[var(--red)]"
           >
             {error}
           </p>
@@ -309,7 +309,7 @@ export default function WitnessPage({
                         setBusy(false);
                       }
                     }}
-                    className="rounded border border-[var(--danger,#b3261e)] px-4 py-2 text-sm text-[var(--danger,#b3261e)] disabled:opacity-50"
+                    className="rounded border border-[var(--red)] px-4 py-2 text-sm text-[var(--red)] disabled:opacity-50"
                   >
                     {busy ? 'Declining…' : 'Yes, decline'}
                   </button>
@@ -479,7 +479,7 @@ export default function WitnessPage({
                     ))}
                   </div>
                   {problems[d.key] && (
-                    <p className="mt-1 text-xs text-[var(--danger,#b3261e)]">
+                    <p className="mt-1 text-xs text-[var(--red)]">
                       {problems[d.key]}
                     </p>
                   )}
@@ -505,7 +505,7 @@ export default function WitnessPage({
                     className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
                   />
                   {problems.explain && (
-                    <p className="mt-1 text-xs text-[var(--danger,#b3261e)]">
+                    <p className="mt-1 text-xs text-[var(--red)]">
                       {problems.explain}
                     </p>
                   )}
@@ -748,7 +748,7 @@ function FieldRow({
         />
       )}
       {problem && (
-        <p className="mt-1 text-xs text-[var(--danger,#b3261e)]">{problem}</p>
+        <p className="mt-1 text-xs text-[var(--red)]">{problem}</p>
       )}
     </div>
   );
