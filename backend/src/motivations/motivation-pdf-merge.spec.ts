@@ -30,6 +30,13 @@ async function makePdf(pages: number): Promise<Buffer> {
   return Buffer.from(await doc.save());
 }
 
+/** Same as makePdf, at a distinctive size — so a page's origin is provable. */
+async function makeSizedPdf(pages: number, w: number, h: number): Promise<Buffer> {
+  const doc = await PDFDocument.create();
+  for (let i = 0; i < pages; i++) doc.addPage([w, h]);
+  return Buffer.from(await doc.save());
+}
+
 const annexure = (bytes: Buffer, over: Record<string, unknown> = {}) => ({
   letter: 'E',
   label: 'Your letter of good standing',
@@ -99,6 +106,48 @@ describe('appending them to the pack', () => {
     const out = await appendPdfAnnexures(body, loaded, opts);
     const doc = await PDFDocument.load(out);
     expect(doc.getPageCount()).toBe(7); // 4 body + 2 + 1
+  });
+
+  it('inserts them where it is told, not at the end', async () => {
+    // ⚠️ THE OPERATOR'S INSTRUCTION DEPENDS ON THIS. The take-with-you sheets
+    // are rendered last by pdfkit and are meant to BE the last pages; before
+    // this, the applicant's PDF annexures were appended after them and the
+    // checklist ended up in the middle of the pack with annexures on both
+    // sides of it.
+    //
+    // Proved by PAGE SIZE rather than by text: the merged pages are a
+    // different size from the body's, so where each page came from is visible
+    // in the output document itself. (Searching the bytes for the caption
+    // cannot work — pdf-lib deflates the content streams.)
+    const body = await makePdf(6); // 595 x 842
+    const { loaded } = await loadPdfAnnexures([
+      annexure(await makeSizedPdf(2, 400, 400), { letter: 'C' }),
+      annexure(await makeSizedPdf(1, 400, 400), { letter: 'E' }),
+    ]);
+    const out = await appendPdfAnnexures(body, loaded, {
+      ...opts,
+      bodyPageCount: 6,
+      insertAt: 4,
+    });
+    const doc = await PDFDocument.load(out);
+    expect(doc.getPageCount()).toBe(9);
+
+    const widths = Array.from({ length: 9 }, (_, i) =>
+      Math.round(doc.getPage(i).getSize().width),
+    );
+    // Four body pages, then the three merged ones, then the two the body
+    // ended with — the checklist, still at the back.
+    expect(widths).toEqual([595, 595, 595, 595, 400, 400, 400, 595, 595]);
+  });
+
+  it('still appends when no insertion point is given', async () => {
+    const body = await makePdf(4);
+    const { loaded } = await loadPdfAnnexures([
+      annexure(await makePdf(1), { letter: 'C' }),
+    ]);
+    const out = await appendPdfAnnexures(body, loaded, opts);
+    const doc = await PDFDocument.load(out);
+    expect(doc.getPageCount()).toBe(5);
   });
 
   it('returns the body untouched when there is nothing to merge', async () => {

@@ -104,6 +104,17 @@ export async function appendPdfAnnexures(
     referenceNumber: string;
     templateVersion: string;
     bodyPageCount: number;
+    /**
+     * Where these pages go, 0-based. Defaults to the end.
+     *
+     * ⚠️ NOT THE END, IN PRACTICE. The take-with-you sheets are rendered last
+     * by pdfkit and the operator's instruction is that they ARE the last two
+     * pages — but appending here put three merged annexures after them, so
+     * the applicant's checklist sat in the middle of the pack with annexures
+     * on both sides of it. These belong with the reprinted annexure copies,
+     * which is exactly where this index points.
+     */
+    insertAt?: number;
   },
 ): Promise<Buffer> {
   if (!loaded.length) return body;
@@ -120,7 +131,13 @@ export async function appendPdfAnnexures(
   const font = await out.embedFont(StandardFonts.Helvetica);
   const grey = rgb(0.42, 0.42, 0.42);
   const total = opts.bodyPageCount + extraPageCount(loaded);
-  let pageNo = opts.bodyPageCount;
+  // Where the first merged page lands, and therefore what it is numbered.
+  const at =
+    opts.insertAt === undefined
+      ? out.getPageCount()
+      : Math.max(0, Math.min(opts.insertAt, out.getPageCount()));
+  let cursor = at;
+  let pageNo = at;
 
   for (const a of loaded) {
     let src: PDFDocument;
@@ -143,7 +160,13 @@ export async function appendPdfAnnexures(
 
     for (let i = 0; i < copied.length; i++) {
       const page = copied[i];
-      out.addPage(page);
+      // ⚠️ insertPage, NOT addPage. The pages that follow the insertion point
+      // were already stamped by pdfkit with their FINAL numbers — the footer
+      // pass adds the merged count to everything at or past this index — so
+      // anything appended after them would renumber the pack out from under
+      // its own footers.
+      out.insertPage(cursor, page);
+      cursor += 1;
       pageNo += 1;
 
       const { width, height } = page.getSize();

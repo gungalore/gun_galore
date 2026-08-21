@@ -816,6 +816,18 @@ export class MotivationPdfService {
     const runningOnly: { heading: string; page: number }[] = [];
 
     /**
+     * 1-based number of the first take-with-you sheet, once it exists.
+     *
+     * ⚠️ THE MERGED PDF ANNEXURES ARE INSERTED HERE, not appended. Operator:
+     * the take-with-you sheets are the last two pages. pdfkit renders them
+     * last, but pdf-lib then added the applicant's PDF annexures after them —
+     * so the checklist ended up in the middle of the pack with annexures on
+     * both sides. Everything at or past this point is numbered as though the
+     * merged pages were already in front of it.
+     */
+    let takeWithYouAt: number | null = null;
+
+    /**
      * A section heading, recorded for the contents and drawn as a band.
      *
      * ⚠️ A BAND, NOT JUST BOLD TYPE. Every H1 in the professional packs sits
@@ -1621,9 +1633,10 @@ export class MotivationPdfService {
       // `toc`, so a page kept out of the contents inherits the label of the
       // last page that was in it — and these sheets announced themselves as
       // "ANNEXURES" while telling the applicant what to carry to the station.
+      takeWithYouAt = doc.bufferedPageRange().count;
       runningOnly.push({
         heading: 'Take these with you',
-        page: doc.bufferedPageRange().count,
+        page: takeWithYouAt,
       });
 
       // ── The worksheet masthead ────────────────────────────────────
@@ -1993,9 +2006,17 @@ export class MotivationPdfService {
       // Dedicated sport shooter" is simply longer than a page is wide at 8 pt.
       // The reference and the page number are what make a loose sheet filable,
       // so they stay; the rest sheds from the tail.
+      // ⚠️ THE NUMBER A PAGE ENDS UP WITH, not the one it is drawn at. The
+      // merged annexures are inserted BEFORE the take-with-you sheets, so
+      // those two shift by however many pages come in — and they are stamped
+      // here, minutes before that happens.
+      const shifted =
+        takeWithYouAt !== null && i + 1 >= takeWithYouAt
+          ? i + 1 + extraPageCount(merged.loaded)
+          : i + 1;
       K.footerStrip(
         chrome,
-        [input.referenceNumber, `Page ${i + 1} of ${totalPages}`],
+        [input.referenceNumber, `Page ${shifted} of ${totalPages}`],
         [shortName, input.firearmLine ?? '', input.licenceTypeLabel],
       );
 
@@ -2011,6 +2032,8 @@ export class MotivationPdfService {
       referenceNumber: input.referenceNumber,
       templateVersion: input.templateVersion,
       bodyPageCount: range.count,
+      // 0-based: the take-with-you sheets step aside for these.
+      insertAt: takeWithYouAt === null ? undefined : takeWithYouAt - 1,
     });
     return { pdf, filename: `motivation-${input.referenceNumber}.pdf` };
   }
