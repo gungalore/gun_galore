@@ -420,8 +420,13 @@ describe('the certification column on the annexure index', () => {
     } as never);
     const t = squash((await readPdfAsync(pdf)).text);
 
-    expect(t).toContain(squash('CERTIFY — REQUIRED'));
-    expect(t).toContain(squash('Certify — usually asked'));
+    // The verb moved into the column heading — "CERTIFICATION" over a column
+    // of "REQUIRED" / "USUALLY ASKED" says what "CERTIFY — REQUIRED" said in
+    // every single row, and stops the column reading as an instruction
+    // repeated eight times.
+    expect(t).toContain(squash('CERTIFICATION'));
+    expect(t).toContain(squash('REQUIRED'));
+    expect(t).toContain(squash('USUALLY ASKED'));
     expect(t).toContain(squash('Regulation 13(4)(b)'));
   });
 

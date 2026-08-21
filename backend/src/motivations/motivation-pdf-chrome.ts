@@ -212,17 +212,87 @@ export function banner(
       .fillColor('#ffffff')
       .text(tail, cx + gap, y, { characterSpacing: tracking, lineBreak: false });
   }
-  // The right label is set right-aligned in its own half.
+  // The right label is set right-aligned in its own half, SHORTENED TO FIT.
+  // See ellipsise: a two-line running head hangs below the gradient.
+  const rTracking = px(9) * 0.28;
+  const rHalf = CONTENT_W / 2;
+  doc.font(f.sans).fontSize(size);
   doc
     .fillColor('#ffffff')
     .fillOpacity(0.8)
-    .text(rightLabel.toUpperCase(), PAD_X + CONTENT_W / 2, y, {
-      width: CONTENT_W / 2,
-      align: 'right',
-      characterSpacing: px(9) * 0.28,
-      lineBreak: false,
-    })
+    .text(
+      ellipsise(doc, rightLabel.toUpperCase(), rHalf, rTracking),
+      PAD_X + rHalf,
+      y,
+      {
+        width: rHalf,
+        align: 'right',
+        characterSpacing: rTracking,
+        lineBreak: false,
+      },
+    )
     .fillOpacity(1);
+}
+
+/**
+ * Trim `text` until it fits `width` at the current font and size.
+ *
+ * ⚠️ pdfkit's `lineBreak: false` DOES NOT GUARANTEE ONE LINE when a width and
+ * an alignment are also given — it wrapped anyway, and both the banner and the
+ * footer strip proved it on a real pack. The running head read
+ * "ANNEXURE E — REQUEST FOR PRIOR NOTICE AND / WRITTEN REASONS" with the
+ * second line hanging below the gradient, and the footer's second line fell
+ * halfway out of its wash band on every page of a 26-page document.
+ *
+ * Measuring is the only reliable answer: a running head that does not fit is
+ * shortened, never wrapped.
+ */
+export function ellipsise(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  width: number,
+  characterSpacing: number,
+): string {
+  const fits = (v: string) => doc.widthOfString(v, { characterSpacing }) <= width;
+  if (fits(text)) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(`${text.slice(0, mid).trimEnd()}…`)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo > 0 ? `${text.slice(0, lo).trimEnd()}…` : '';
+}
+
+/**
+ * Fit a footer line by DROPPING SEGMENTS, least important first.
+ *
+ * ⚠️ NOT BY ELLIPSISING. The footer exists so that a loose sheet can be filed
+ * against the right application — truncating it mid-word would leave
+ * "MO000017 · GERHARD J P FOURIE · CEZKA ZBROJ…" and quietly lose the page
+ * number, which is the one part that has to survive. Dropping whole segments
+ * from the tail keeps every segment that remains readable and complete.
+ *
+ * `keep` are never dropped: the reference and the page number.
+ */
+export function fitSegments(
+  doc: PDFKit.PDFDocument,
+  keep: string[],
+  optional: string[],
+  width: number,
+  characterSpacing: number,
+): string {
+  const join = (parts: string[]) => parts.filter(Boolean).join(' · ');
+  const width_ = (v: string) =>
+    doc.widthOfString(v.toUpperCase(), { characterSpacing });
+  // Longest first: try every segment, then shed from the end of `optional`.
+  for (let n = optional.length; n >= 0; n -= 1) {
+    const line = join([keep[0], ...optional.slice(0, n), ...keep.slice(1)]);
+    if (width_(line) <= width) return line;
+  }
+  // Even the mandatory pair is too wide — ellipsise it rather than wrap.
+  return ellipsise(doc, join(keep).toUpperCase(), width, characterSpacing);
 }
 
 /**
@@ -242,16 +312,24 @@ function splitOnDiamond(text: string): [string, string | null] {
  * there instead — which silently appended a blank page after every footer in
  * an earlier version of this document, and numbered a six-page pack "of 4".
  */
-export function footerStrip({ doc, c, f }: Chrome, line: string): void {
+export function footerStrip(
+  { doc, c, f }: Chrome,
+  /** Never dropped: [reference, "Page 3 of 26"]. */
+  keep: string[],
+  /** Shed from the tail until the line fits: name, firearm, licence type. */
+  optional: string[] = [],
+): void {
   doc.rect(0, PAGE_H - FOOTER_H, PAGE_W, FOOTER_H).fill(c.wash);
+  const size = px(8);
+  const tracking = size * 0.28;
+  doc.font(f.sansSemi).fontSize(size);
+  const line = fitSegments(doc, keep, optional, CONTENT_W, tracking);
   doc
-    .font(f.sansSemi)
-    .fontSize(px(8))
     .fillColor(c.mut)
-    .text(line.toUpperCase(), PAD_X, PAGE_H - FOOTER_H + FOOTER_H / 2 - px(8) * 0.7, {
+    .text(line.toUpperCase(), PAD_X, PAGE_H - FOOTER_H + FOOTER_H / 2 - size * 0.7, {
       width: CONTENT_W,
       align: 'center',
-      characterSpacing: px(8) * 0.28,
+      characterSpacing: tracking,
       lineBreak: false,
     });
 }
