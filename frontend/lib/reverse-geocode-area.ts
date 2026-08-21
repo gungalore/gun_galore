@@ -103,14 +103,21 @@ export async function reverseGeocodeArea(
   }
   if (!results.length) return null;
 
-  // ⚠️ SEARCH EVERY RESULT, NOT JUST THE FIRST. Google returns a ladder from
-  // the most specific match to the least — a street address, then a suburb,
-  // then a city, then a province. The first entry is usually the street, whose
-  // components carry the suburb anyway; but where it does not, the answer is
-  // one rung down rather than absent.
+  // ⚠️ TYPES OUTSIDE, RESULTS INSIDE — and the order is the whole thing.
+  //
+  // Looping results-first asks "what is the best label on result 1?", and
+  // result 1 is the street address. Against a real fix in Kraaifontein that
+  // returned "Peerless Park West": the street result carries the bare
+  // `sublocality` type for its sub-suburb, so the loop matched that and
+  // stopped — while `sublocality_level_1` on a LATER result said
+  // "Kraaifontein", which is the name a person would actually write on a
+  // statement. Nobody signs "at Peerless Park West".
+  //
+  // Types-first asks the right question: find the most useful KIND of place
+  // anywhere in the ladder, then take it.
   const pick = (types: string[]): string => {
-    for (const r of results) {
-      for (const t of types) {
+    for (const t of types) {
+      for (const r of results) {
         const hit = r.address_components.find((c) => c.types.includes(t));
         if (hit?.long_name) return hit.long_name;
       }
