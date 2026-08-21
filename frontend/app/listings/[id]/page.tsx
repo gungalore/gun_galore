@@ -1091,8 +1091,8 @@ export default async function ListingDetailPage({
                   {TIER_LABELS[listing.seller.sellerTier]}
                 </span>
                 <HelpTip title="Seller tier" side="left">
-                  Tiers reflect the seller&apos;s track record on Gun
-                  Galore: how many sales they&apos;ve completed, how
+                  Tiers reflect the seller&apos;s track record on All
+                  Outdoor: how many sales they&apos;ve completed, how
                   long they&apos;ve been active, and whether they&apos;re
                   a verified dealer. Higher tiers earn buyer-protection
                   perks like faster payout disputes.

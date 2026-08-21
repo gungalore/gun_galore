@@ -34,6 +34,14 @@ export default function robots(): MetadataRoute.Robots {
           '/sign-up/',
           '/sso-callback/',
           '/a/', // token-gated single-action pages
+          // ⚠️ PUBLIC BY DESIGN, AND IT NAMES A FIREARM LICENCE APPLICATION.
+          // /witness/* cannot be auth-walled — the person opening it is a
+          // stranger who followed an SMS link, and a 307 to sign-in reads as a
+          // suspicious link rather than a login prompt (middleware.ts). But the
+          // page says "Character statement for a firearm licence application",
+          // so it must not be crawlable. The token in the path makes each URL
+          // unguessable; this stops the route itself being indexed.
+          '/witness/',
           '/offline',
           '/preview/',
           // Members area — regulated-item terms and anything else that only

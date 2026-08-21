@@ -112,9 +112,15 @@ function GgPlusPill({
   const label = isPro ? PRO_NAME : 'GG+';
   return (
     <span
+      // ⚠️ A title ATTRIBUTE IS SERVER-RENDERED MARKUP, and this badge sits on
+      // every public listing card. It used to read "full ballistic + reloading
+      // assistant", which put that vocabulary into the HTML of every browse and
+      // listing page — invisible to a body-text sweep, perfectly visible to a
+      // crawler. Keep the public register here; the Pro feature list itself is
+      // unchanged and still described to members.
       title={
         isPro
-          ? 'Ask Boet Pro — full ballistic + reloading assistant + Pro perks'
+          ? 'Ask Boet Pro — full assistant + Pro perks'
           : 'Ask Boet Plus — fuller assistant + member perks'
       }
       style={{
