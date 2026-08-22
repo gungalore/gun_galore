@@ -96,7 +96,22 @@ export function daysUntil(when: Date, now: Date): number {
   return Math.floor((when.getTime() - now.getTime()) / MS_PER_DAY);
 }
 
-export type ExpiryState = 'valid' | 'expiring' | 'expired' | 'unknown';
+/**
+ * ⚠️ 'no-expiry' IS A REAL STATE, NOT A MISSING DATE. A copy of an ID or a
+ * photograph of a gun safe has nothing to run out, and showing that as
+ * 'unknown' — "date not confirmed" — sends the member looking for a date that
+ * does not exist. It must also never fall through to 'valid', which would
+ * print "In date" over a folder of photographs.
+ *
+ * It comes from the member's own tick, never from the kind: a passport is an
+ * identity document and it expires.
+ */
+export type ExpiryState =
+  | 'valid'
+  | 'expiring'
+  | 'expired'
+  | 'unknown'
+  | 'no-expiry';
 
 /**
  * How a document should read on the list.
@@ -133,7 +148,18 @@ export function expiryState(
   expiresOn: Date | null | undefined,
   confirmedAt: Date | null | undefined,
   now: Date,
+  /**
+   * The member ticked "Never expires".
+   *
+   * ⚠️ CHECKED BEFORE confirmedAt, and that ordering is the point. Ticking the
+   * box IS the answer to the expiry question, so a row carrying the tick is
+   * settled whether or not anything else about it has been confirmed — and
+   * leaving it amber would ask somebody to confirm a date they have just told
+   * us there is none of.
+   */
+  neverExpires = false,
 ): ExpiryState {
+  if (neverExpires) return 'no-expiry';
   if (!expiresOn || !confirmedAt) return 'unknown';
   const left = daysUntil(expiresOn, now);
   if (left < 0) return 'expired';

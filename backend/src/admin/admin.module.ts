@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
+import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { AdminAuditService } from './admin-audit.service';
 import { AdminAnalyticsService } from './admin-analytics.service';
 import { InsightsDigestService } from './insights-digest.service';
@@ -63,6 +64,10 @@ import { SwapsModule } from '../swaps/swaps.module';
   providers: [
     AdminAuthService,
     AdminService,
+    // The KYC dossier reads the identity document and selfie out of the
+    // encrypted store — they came off a public CDN and an authenticated read
+    // is now the only way to see one.
+    SecureFileStorageService,
     AdminAuditService,
     AdminAnalyticsService,
     InsightsDigestService,

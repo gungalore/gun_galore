@@ -20,6 +20,7 @@ import { PeachService } from '../payments/peach.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { MotivationRetentionService } from '../motivations/motivation-retention.service';
 import { LicenceCentreRetentionService } from '../licence-centre/licence-centre-retention.service';
+import { KycService } from '../kyc/kyc.service';
 
 // Address-book create/update payload (Phase 2).
 export interface AddressInput {
@@ -147,6 +148,12 @@ export class UsersService {
     // Centre documents are encrypted files on our own disk, and a Prisma
     // cascade cannot reach the filesystem.
     private readonly licenceCentreRetention: LicenceCentreRetentionService,
+    // Same reasoning again, for the pair of files that matter most: the
+    // identity document and the selfie. They used to be Cloudinary assets
+    // whose deletion was a written-down "tracked follow-up" and never
+    // happened, so an erasure nulled our record of them and left the files
+    // themselves readable to anybody with the link.
+    private readonly kyc: KycService,
   ) {}
 
   // ── Peach bank-account verification (AVS) ─────────────────────────
@@ -683,6 +690,24 @@ export class UsersService {
           `Erasure for clerk user ${clerkId}: licence-centre purge threw, continuing with account deletion: ${(err as Error).message}`,
         );
       }
+
+      // ⚠️ BEFORE THE COLUMNS ARE CLEARED, or the keys that point at the files
+      // are gone and the files are unreachable rather than deleted.
+      try {
+        const k = await this.kyc.purgeKycFiles(target.id);
+        if (k.removed > 0 || k.failed > 0) {
+          this.logger.log(
+            `Erasure for clerk user ${clerkId}: removed ${k.removed} KYC file(s)` +
+              (k.failed > 0
+                ? `; ${k.failed} FAILED to delete and need removing by hand`
+                : ''),
+          );
+        }
+      } catch (err) {
+        this.logger.error(
+          `Erasure for clerk user ${clerkId}: KYC file purge threw, continuing with account deletion: ${(err as Error).message}`,
+        );
+      }
     }
 
     try {
@@ -704,14 +729,25 @@ export class UsersService {
             avatarUrl: null,
             idNumberEncrypted: null,
             // KYC identity artifacts — the most sensitive PII we hold. Scrub
-            // the document/selfie image URLs, DOB, SA-ID cross-check hash and
+            // the document/selfie references, DOB, SA-ID cross-check hash and
             // Home-Affairs/vision JSON on erasure, keeping only what the SAP
             // 534 / FICA record legally requires (which lives on the
-            // Transaction, not here). (Cloudinary asset deletion is a tracked
-            // follow-up — the URLs are unguessable but should also be purged.)
+            // Transaction, not here).
+            //
+            // ⚠️ THE BYTES GO TOO, and that used to be a note rather than
+            // code: "Cloudinary asset deletion is a tracked follow-up — the
+            // URLs are unguessable but should also be purged." Unguessable is
+            // not private; those assets were readable by anybody holding the
+            // link, so nulling the column erased OUR record of the file and
+            // left the file itself online. Identity documents live in the
+            // encrypted store now, and purgeKycFiles removes them before these
+            // columns are cleared.
             dateOfBirth: null,
             kycIdDocumentUrl: null,
+            kycIdStorageKey: null,
+            kycIdMimeType: null,
             kycSelfieUrl: null,
+            kycSelfieStorageKey: null,
             kycHaCheckJson: Prisma.DbNull,
             kycClaudeFindings: Prisma.DbNull,
             addrBuilding: null,
@@ -1496,6 +1532,7 @@ export class UsersService {
         kycConsentGivenAt: true,
         kycIdVerifiedAt: true,
         kycIdDocumentUrl: true,
+        kycIdStorageKey: true,
         kycSelfieUrl: true,
       },
     });
@@ -1557,7 +1594,10 @@ export class UsersService {
     } else if (
       !kycSettled &&
       listingsCount >= 1 &&
-      (user.kycConsentGivenAt || user.kycIdVerifiedAt || user.kycIdDocumentUrl)
+      (user.kycConsentGivenAt ||
+        user.kycIdVerifiedAt ||
+        user.kycIdStorageKey ||
+        user.kycIdDocumentUrl)
     ) {
       // 1b. Started-but-unfinished verification (no forcing sale yet).
       // Softer nudge so a seller who bailed mid-wizard picks it back up

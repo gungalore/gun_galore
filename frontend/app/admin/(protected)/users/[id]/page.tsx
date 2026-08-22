@@ -42,8 +42,16 @@ interface Dossier {
     kycMethod: string | null;
     kycTier: string | null;
     dateOfBirth: string | null;
+    // ⚠️ LEGACY, AND USUALLY NULL NOW. These were public Cloudinary links —
+    // world-readable copies of a South African ID and the matching selfie —
+    // which is why the dossier could open one with a plain anchor. The bytes
+    // live encrypted on our own disk now and are fetched through an
+    // authenticated admin route; only rows the backfill has not reached still
+    // carry a URL.
     kycIdDocumentUrl: string | null;
     kycSelfieUrl: string | null;
+    kycIdStorageKey: string | null;
+    kycSelfieStorageKey: string | null;
     kycClaudeFindings: Record<string, unknown> | null;
     kycReviewedAt: string | null;
     kycReviewNote: string | null;
@@ -200,6 +208,39 @@ export default function UserDossierPage() {
   // Bumped by the KYC review panel after a decision so the dossier
   // re-fetches and renders the new status.
   const [refreshKey, setRefreshKey] = useState(0);
+
+  /**
+   * Open an identity document or selfie in a new tab.
+   *
+   * ⚠️ FETCHED, NOT LINKED. The old anchors worked only because the files sat
+   * on a public CDN with no access control at all — the exact thing that got
+   * fixed. The admin API needs an Authorization header, which an <a href>
+   * cannot carry, so the bytes come back as a blob and the blob gets the tab.
+   *
+   * `legacy` is the pre-migration Cloudinary URL. It is still opened directly
+   * for rows the backfill has not reached, and that branch dies with them.
+   */
+  async function openKycFile(which: 'id' | 'selfie', legacy: string | null) {
+    try {
+      const res = await adminFetch(`/admin/users/${id}/kyc-file/${which}`);
+      if (res.ok) {
+        const url = URL.createObjectURL(await res.blob());
+        window.open(url, '_blank', 'noopener,noreferrer');
+        // Freed on the next tick — revoking immediately races the new tab's
+        // own load, and holding it forever pins the file in memory.
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        return;
+      }
+      if (legacy) {
+        window.open(legacy, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      alert('That file could not be opened.');
+    } catch {
+      if (legacy) window.open(legacy, '_blank', 'noopener,noreferrer');
+      else alert('That file could not be opened.');
+    }
+  }
 
   useEffect(() => {
     if (!requireAdminToken()) return;
@@ -474,40 +515,47 @@ export default function UserDossierPage() {
             ]}
           />
 
-          {/* Claude-flow evidence — open in a new tab for full-size review. */}
-          {(u.kycIdDocumentUrl || u.kycSelfieUrl) && (
+          {/* Claude-flow evidence — opened for full-size review.
+
+              ⚠️ A FETCH, NOT AN ANCHOR, for anything in the encrypted store.
+              The old links worked because the files sat on a public CDN with
+              no access control; the admin API needs an Authorization header,
+              which an <a href> cannot carry. Same shape as the Licence
+              Centre's own file opener. */}
+          {(u.kycIdStorageKey ||
+            u.kycSelfieStorageKey ||
+            u.kycIdDocumentUrl ||
+            u.kycSelfieUrl) && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-              {u.kycIdDocumentUrl && (
-                <a
-                  href={u.kycIdDocumentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+              {(u.kycIdStorageKey || u.kycIdDocumentUrl) && (
+                <button
+                  type="button"
+                  onClick={() => openKycFile('id', u.kycIdDocumentUrl)}
                   className="text-xs rounded-[6px] px-3 py-2"
                   style={{
                     background: 'var(--bg-inset)',
                     border: '0.5px solid var(--border)',
                     color: 'var(--text-primary)',
-                    textDecoration: 'none',
+                    cursor: 'pointer',
                   }}
                 >
                   📄 Open ID document ↗
-                </a>
+                </button>
               )}
-              {u.kycSelfieUrl && (
-                <a
-                  href={u.kycSelfieUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+              {(u.kycSelfieStorageKey || u.kycSelfieUrl) && (
+                <button
+                  type="button"
+                  onClick={() => openKycFile('selfie', u.kycSelfieUrl)}
                   className="text-xs rounded-[6px] px-3 py-2"
                   style={{
                     background: 'var(--bg-inset)',
                     border: '0.5px solid var(--border)',
                     color: 'var(--text-primary)',
-                    textDecoration: 'none',
+                    cursor: 'pointer',
                   }}
                 >
                   🤳 Open selfie ↗
-                </a>
+                </button>
               )}
             </div>
           )}

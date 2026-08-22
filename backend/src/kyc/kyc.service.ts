@@ -20,6 +20,8 @@ import { SmsService } from '../sms/sms.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { SecureFileStorageService } from '../common/secure-file-storage.service';
+import { sniffMime } from '../common/sniff-mime';
 import { ClaudeKycService, type KycClaudeFindings } from './claude-kyc.service';
 import {
   ageFromSaIdNumber,
@@ -89,9 +91,89 @@ export class KycService {
     // Claude-flow additions (all @Global except ClaudeKycService, which
     // kyc.module.ts provides locally).
     private settings: SettingsService,
+    // ⚠️ STILL HERE ONLY FOR THE BACKFILL'S SAKE. Nothing in this service
+    // uploads to Cloudinary any more — identity documents and selfies go into
+    // the encrypted store below. The dependency stays until the last legacy
+    // URL has been moved and the columns dropped.
     private cloudinary: CloudinaryService,
     private claudeKyc: ClaudeKycService,
+    // Where identity documents actually live now. See the `kyc` namespace.
+    private files: SecureFileStorageService,
   ) {}
+
+  /**
+   * Remove a member's stored identity document and selfie from disk.
+   *
+   * ⚠️ A PRISMA CASCADE CANNOT REACH THE FILESYSTEM, which is the same reason
+   * the motivation and Licence Centre retention services are exported for the
+   * deletion path. Deleting the row without this leaves two encrypted files
+   * nobody has a pointer to — undeletable except by hand, and the most
+   * sensitive pair we hold.
+   *
+   * ⚠️ FAILS SOFT AND SAYS SO. An erasure must never be blocked by a file that
+   * will not unlink; the count of failures is returned so the caller can log
+   * what still needs removing by hand.
+   */
+  async purgeKycFiles(
+    userId: string,
+  ): Promise<{ removed: number; failed: number }> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { kycIdStorageKey: true, kycSelfieStorageKey: true },
+    });
+    let removed = 0;
+    let failed = 0;
+    for (const key of [u?.kycIdStorageKey, u?.kycSelfieStorageKey]) {
+      if (!key) continue;
+      try {
+        await this.files.remove(key);
+        removed += 1;
+      } catch (err) {
+        failed += 1;
+        this.log.error(
+          `Erasure: could not remove KYC file ${key}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return { removed, failed };
+  }
+
+  /**
+   * The identity document, as bytes, wherever it happens to live.
+   *
+   * ⚠️ STORAGE KEY FIRST, URL SECOND, and the fallback is temporary. Rows
+   * verified before the move still carry only a Cloudinary URL; once the
+   * backfill has moved them the second branch is dead and the columns go.
+   */
+  private async readIdDocument(u: {
+    kycIdStorageKey: string | null;
+    kycIdMimeType: string | null;
+    kycIdDocumentUrl: string | null;
+  }): Promise<{ bytes: Buffer; mimeType: string } | null> {
+    if (u.kycIdStorageKey) {
+      try {
+        const bytes = await this.files.read(u.kycIdStorageKey);
+        return { bytes, mimeType: u.kycIdMimeType || sniffMime(bytes) };
+      } catch (err) {
+        this.log.error(
+          `KYC document unreadable at ${u.kycIdStorageKey}: ${(err as Error).message}`,
+        );
+        return null;
+      }
+    }
+    if (!u.kycIdDocumentUrl) return null;
+    try {
+      const res = await fetch(u.kycIdDocumentUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      return { bytes, mimeType: sniffMime(bytes) };
+    } catch (err) {
+      this.log.error(
+        `Legacy KYC document fetch failed: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
 
   // ─────────────────── POPIA consent ────────────────────────────────
   // Stored as a timestamp so we know when it was given (audit). Must be
@@ -389,7 +471,9 @@ export class KycService {
         kycAttempts: true,
         dateOfBirth: true,
         kycIdDocumentUrl: true,
+        kycIdStorageKey: true,
         kycSelfieUrl: true,
+        kycSelfieStorageKey: true,
         phone: true,
       },
     });
@@ -403,8 +487,11 @@ export class KycService {
       // Claude flow re-runs Details for them (cheap: dup-hash short-circuits
       // apply and the Basic credit re-burn is a one-off).
       details: !!user.kycIdVerifiedAt && !!user.dateOfBirth,
-      document: !!user.kycIdDocumentUrl,
-      selfie: !!user.kycSelfieUrl,
+      // Either store counts. A member part-way through when identity
+      // documents moved off the CDN must not be sent back to re-upload
+      // something we already hold.
+      document: !!(user.kycIdStorageKey || user.kycIdDocumentUrl),
+      selfie: !!(user.kycSelfieStorageKey || user.kycSelfieUrl),
     };
 
     let nextStep:
@@ -581,13 +668,28 @@ export class KycService {
       file.mimetype === 'application/pdf' ||
       file.buffer.subarray(0, 5).toString('latin1') === '%PDF-';
 
-    const uploaded = isPdf
-      ? await this.cloudinary.uploadRaw(file.buffer, `kyc/${user.id}`)
-      : await this.cloudinary.uploadImage(file.buffer, `kyc/${user.id}`);
+    // ⚠️ THE ENCRYPTED STORE, NOT CLOUDINARY. These went up with Cloudinary's
+    // defaults — no `type: 'private'`, no access_mode — so the resulting
+    // secure_url was world-readable, and the operator's own decision to RETAIN
+    // the document after verification turned a momentary exposure into a
+    // permanent one. Operator, 2026-08-22: "remove the ID from cloudinary and
+    // save it in the document centre."
+    //
+    // Same store, same key and same posture as every other document a member
+    // gives us, reachable only through an authenticated route.
+    const stored = await this.files.write('kyc', file.buffer, new Date());
 
     await this.prisma.user.update({
       where: { clerkId },
-      data: { kycIdDocumentUrl: uploaded.url },
+      data: {
+        kycIdStorageKey: stored.storageKey,
+        // Read from the bytes, not from the declared type: the upload path
+        // above already distrusts file.mimetype enough to sniff for %PDF-.
+        kycIdMimeType: isPdf ? 'application/pdf' : sniffMime(file.buffer),
+        // A re-upload replaces a legacy CDN copy. Leaving the URL behind would
+        // keep serving the old document from a public link forever.
+        kycIdDocumentUrl: null,
+      },
     });
 
     return { success: true };
@@ -604,6 +706,8 @@ export class KycService {
         kycIdVerifiedAt: true,
         dateOfBirth: true,
         kycIdDocumentUrl: true,
+        kycIdStorageKey: true,
+        kycIdMimeType: true,
         kycStatus: true,
         kycAttempts: true,
         idNumberEncrypted: true,
@@ -614,7 +718,11 @@ export class KycService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
-    if (!user.kycIdVerifiedAt || !user.dateOfBirth || !user.kycIdDocumentUrl) {
+    if (
+      !user.kycIdVerifiedAt ||
+      !user.dateOfBirth ||
+      !(user.kycIdStorageKey || user.kycIdDocumentUrl)
+    ) {
       throw new ForbiddenException(
         'Complete your details and ID document upload first.',
       );
@@ -625,9 +733,14 @@ export class KycService {
 
     // Persist the selfie first (audit trail + admin review + the silent
     // anchored upgrade later reuses it).
-    const selfieUpload = await this.cloudinary.uploadImage(
+    // ⚠️ AND THE SELFIE TOO, for the same reason and by the same route. A
+    // world-readable photograph of somebody's face, paired with a
+    // world-readable copy of their ID, is the pair — fixing one and leaving
+    // the other would be most of the exposure with none of the reassurance.
+    const selfieStored = await this.files.write(
+      'kyc',
       Buffer.from(selfieBase64, 'base64'),
-      `kyc/${user.id}`,
+      new Date(),
     );
 
     // Decrypt the entered ID for the server-side cross-check.
@@ -663,21 +776,13 @@ export class KycService {
       }
     }
 
-    // Fetch PDF bytes when the stored document is a raw upload (Claude
-    // reads the PDF natively; the URL block only works for images).
-    const isPdfDoc = user.kycIdDocumentUrl.includes('/raw/upload/');
-    let documentPdf: Buffer | undefined;
-    if (isPdfDoc) {
-      try {
-        const res = await fetch(user.kycIdDocumentUrl);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        documentPdf = Buffer.from(await res.arrayBuffer());
-      } catch (err) {
-        this.log.error(
-          `Verdict: failed to fetch ID document PDF for ${clerkId}: ${(err as Error).message}`,
-        );
-      }
-    }
+    // THE DOCUMENT, AS BYTES. It used to be handed to Claude as a URL for
+    // images and fetched only for PDFs — which worked because the URL was
+    // public, and stops working the moment it is not. Both paths now read the
+    // bytes and send them inline.
+    const doc = await this.readIdDocument(user);
+    const isPdfDoc = doc?.mimeType === 'application/pdf';
+    const documentPdf = isPdfDoc ? doc?.bytes : undefined;
 
     const mode: 'standard' | 'anchored' =
       tier === 'ANCHORED' && haPhotoBase64 ? 'anchored' : 'standard';
@@ -690,16 +795,20 @@ export class KycService {
     // whether the consensus pass is actually earning its cost.
     let consensusSamples = 0;
     try {
-      if (isPdfDoc && !documentPdf) {
-        throw new Error('PDF document bytes unavailable');
-      }
+      // ⚠️ NO BYTES MEANS NO SCAN, EVER. A missing document must reach the
+      // catch below and park the member for a human — never fall through to a
+      // scan with nothing to look at, which Claude would answer.
+      if (!doc) throw new Error('ID document bytes unavailable');
       // Best-of-3 on borderline scores only: a clear-cut scan costs one
       // call as before, and only a knife-edge one pays for three readings
       // (skeptical + charitable lenses, per-gate median). See
       // ClaudeKycService.scanWithConsensus.
       const consensus = await this.claudeKyc.scanWithConsensus({
         selfieBase64,
-        documentUrl: isPdfDoc ? undefined : user.kycIdDocumentUrl,
+        documentImage:
+          isPdfDoc || !doc
+            ? undefined
+            : { bytes: doc.bytes, mediaType: doc.mimeType },
         documentPdf,
         mode,
         haPhotoBase64,
@@ -828,7 +937,8 @@ export class KycService {
         kycAttempts: { increment: 1 },
         kycStatus: status,
         kycVerifiedAt: status === 'VERIFIED' ? new Date() : undefined,
-        kycSelfieUrl: selfieUpload.url,
+        kycSelfieStorageKey: selfieStored.storageKey,
+        kycSelfieUrl: null,
         kycClaudeFindings: persistedFindings,
         kycTier: tier,
       },
@@ -1028,7 +1138,10 @@ export class KycService {
           kycTier: true,
           kycMethod: true,
           kycSelfieUrl: true,
+          kycSelfieStorageKey: true,
           kycIdDocumentUrl: true,
+          kycIdStorageKey: true,
+          kycIdMimeType: true,
           idNumberEncrypted: true,
           firstName: true,
         },
@@ -1038,7 +1151,7 @@ export class KycService {
         seller.kycStatus !== 'VERIFIED' ||
         seller.kycMethod !== 'CLAUDE' ||
         seller.kycTier !== 'STANDARD' ||
-        !seller.kycSelfieUrl ||
+        !(seller.kycSelfieStorageKey || seller.kycSelfieUrl) ||
         !seller.idNumberEncrypted
       ) {
         return;
@@ -1050,15 +1163,27 @@ export class KycService {
       // Pull the official photo + refetch the stored selfie.
       const anchored = await this.verifyNow.verifyIdNumber(idNumber);
       if (!anchored.idPhotoBase64) throw new Error('No HA photo returned');
-      const selfieRes = await fetch(seller.kycSelfieUrl);
-      if (!selfieRes.ok) throw new Error(`selfie fetch HTTP ${selfieRes.status}`);
-      const selfieBase64 = Buffer.from(await selfieRes.arrayBuffer()).toString(
-        'base64',
-      );
+      // Storage key first, legacy URL second — the same order as everywhere
+      // else, and the second branch dies with the backfill.
+      let selfieBytes: Buffer;
+      if (seller.kycSelfieStorageKey) {
+        selfieBytes = await this.files.read(seller.kycSelfieStorageKey);
+      } else {
+        const selfieRes = await fetch(seller.kycSelfieUrl!);
+        if (!selfieRes.ok) {
+          throw new Error(`selfie fetch HTTP ${selfieRes.status}`);
+        }
+        selfieBytes = Buffer.from(await selfieRes.arrayBuffer());
+      }
+
+      const doc = await this.readIdDocument(seller);
+      if (!doc) throw new Error('ID document bytes unavailable');
 
       const findings = await this.claudeKyc.scan({
-        selfieBase64,
-        documentUrl: seller.kycIdDocumentUrl ?? undefined,
+        selfieBase64: selfieBytes.toString('base64'),
+        ...(doc.mimeType === 'application/pdf'
+          ? { documentPdf: doc.bytes }
+          : { documentImage: { bytes: doc.bytes, mediaType: doc.mimeType } }),
         mode: 'anchored',
         haPhotoBase64: anchored.idPhotoBase64,
       });

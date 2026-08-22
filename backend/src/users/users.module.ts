@@ -10,6 +10,7 @@ import { WebhooksController } from './webhooks.controller';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 import { MotivationsModule } from '../motivations/motivations.module';
 import { LicenceCentreModule } from '../licence-centre/licence-centre.module';
+import { KycModule } from '../kyc/kyc.module';
 
 // Global because the ClerkGuard depends on UsersService — and the guard is
 // instantiated per-controller-module by Nest. Making this global means any
@@ -24,7 +25,15 @@ import { LicenceCentreModule } from '../licence-centre/licence-centre.module';
   // user.deleted handler has to remove a member's encrypted licence
   // documents itself, because the cascade that removes their rows cannot
   // reach the filesystem. No cycle — nothing in motivations/ imports users.
-  imports: [CloudinaryModule, MotivationsModule, LicenceCentreModule],
+  // KycModule for purgeKycFiles: the identity document and selfie are
+  // encrypted files on our own disk, and a Prisma cascade cannot reach the
+  // filesystem. No cycle — nothing in kyc/ imports users.
+  imports: [
+    CloudinaryModule,
+    MotivationsModule,
+    LicenceCentreModule,
+    KycModule,
+  ],
   // Public controller listed BEFORE the auth-guarded one so its routes
   // are matched first (Nest resolves by registration order).
   controllers: [

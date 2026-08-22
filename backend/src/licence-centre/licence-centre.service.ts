@@ -15,6 +15,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { decryptJson, encryptJson } from '../common/blob-crypto';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 import { LicenceCentreExtractService } from './licence-centre-extract.service';
+import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
 import { MotivationsService } from '../motivations/motivations.service';
 import { REFUSAL_COPY, renewalPlan, renewalRefusal } from './licence-renewal';
 import {
@@ -97,6 +98,8 @@ export class LicenceCentreService {
         issuedOn: true,
         expiresOn: true,
         confirmedAt: true,
+        neverExpires: true,
+        issuedOnUnknown: true,
         remindersMuted: true,
         extractionOk: true,
         extractedFields: true,
@@ -144,8 +147,13 @@ export class LicenceCentreService {
       issuedOn: r.issuedOn ? toIsoDate(r.issuedOn) : null,
       expiresOn: r.expiresOn ? toIsoDate(r.expiresOn) : null,
       confirmed: r.confirmedAt !== null,
+      // ⚠️ WHAT THE MEMBER SAID ABOUT THE DATES, not what the kind implies.
+      // The card needs both: a ticked box is a settled answer and renders
+      // neutral, while a blank one that was never ticked is still outstanding.
+      neverExpires: r.neverExpires,
+      issuedOnUnknown: r.issuedOnUnknown,
       remindersMuted: r.remindersMuted,
-      state: expiryState(r.expiresOn, r.confirmedAt, now),
+      state: expiryState(r.expiresOn, r.confirmedAt, now, r.neverExpires),
       // ⚠️ DELIBERATELY NOT `state === 'expiring'`. The card turns amber at 90
       // days, which is the section 24(1) deadline itself; the renewal is
       // offered at six months so there is still time to act on it. Tying the
@@ -254,6 +262,15 @@ export class LicenceCentreService {
           mimeType: file.mimetype,
           byteSize: stored.byteSize,
           sha256: stored.sha256,
+          // ⚠️ PRE-TICKED ONLY WHERE WE NEVER LOOKED. A photograph of a safe
+          // has no date on it in any sense, and no vision call is spent on
+          // one — so starting the box ticked saves a tap that could only ever
+          // have one answer. Every other kind starts UNTICKED with whatever
+          // vision read in the box, because a green barcoded ID does not
+          // expire and a passport does, and only the member can see which
+          // they are holding.
+          neverExpires: defaultsToNeverExpires(resolved),
+          addedVia: kind ? 'member' : 'scan',
         },
         select: { id: true },
       });
@@ -275,14 +292,21 @@ export class LicenceCentreService {
     // Reading the document runs AFTER the row is committed and outside the
     // compensating delete, so a vision outage costs a convenience rather than
     // the upload itself.
-    const reading = await this.extract
-      .read({
-        kind: resolved,
-        bytes: file.buffer,
-        mimeType: file.mimetype,
-        alsoCovers,
-      })
-      .catch(() => null);
+    //
+    // ⚠️ EXCEPT ON A PHOTOGRAPH OF A THING, where there is nothing printed to
+    // read. The call would come back empty, and an empty reading sets
+    // extractionOk false — which surfaces as "we could not read anything off
+    // that one" against a photograph that is perfectly fine.
+    const reading = isPhotograph(resolved)
+      ? null
+      : await this.extract
+          .read({
+            kind: resolved,
+            bytes: file.buffer,
+            mimeType: file.mimetype,
+            alsoCovers,
+          })
+          .catch(() => null);
 
     // Named from what we just read, unless the member named it themselves.
     // `clean` is their words; only OUR placeholder gets replaced.
@@ -302,6 +326,11 @@ export class LicenceCentreService {
             // the reminder sweep cannot see this row until they say it is
             // right.
             expiresOn: parseIsoDate(reading.expiresOn),
+            // ⚠️ FOUND A DATE, SO IT IS NOT A NEVER-EXPIRES DOCUMENT. Only
+            // reachable if a kind is ever both pre-ticked and read; leaving
+            // the tick standing beside a date would break the CHECK
+            // constraint and store two contradictory answers.
+            ...(parseIsoDate(reading.expiresOn) ? { neverExpires: false } : {}),
             extractionOk:
               Boolean(reading.expiresOn) ||
               Object.keys(reading.details).length > 0,
@@ -363,24 +392,53 @@ export class LicenceCentreService {
   async confirmExpiry(
     clerkId: string,
     id: string,
-    expiresOn: string,
-    issuedOn?: string,
+    // ⚠️ AN OBJECT, NOT SEVEN POSITIONAL ARGUMENTS. It reached six the day the
+    // two date ticks arrived, and the very first wiring of them transposed
+    // `kind` into `neverExpires` — a mistake tsc happened to catch and would
+    // not have if both had been strings.
+    args: {
+      expiresOn: string;
+      issuedOn?: string;
     /**
-     * The confirm screen is where a member checks EVERYTHING we made of a
-     * document, not only its date — the kind decides whether a renewal is
-     * offered at all, and the title is what they will recognise it by in a
-     * reminder. Both optional: an untouched field is left alone.
+     * The member ticked "Never expires" / "Not sure".
+     *
+     * ⚠️ A TICK IS AN ANSWER, AND IT IS OFTEN THE ONLY TRUE ONE. This method
+     * used to hard-refuse a confirm without an expiry date, which was right
+     * while everything here was a licence or a certificate and wrong the
+     * moment the Centre started holding ID copies and photographs of safes.
+     * Operator, 2026-08-22: "put a tick box next to the expiry date called
+     * Never Expires. Also a tickbox next to Issue date called Not Sure."
+     *
+     * The tick and the date are contradictory answers to one question, so a
+     * tick CLEARS its date rather than sitting beside it — and a database
+     * CHECK enforces that, because a row carrying both would leave every
+     * reader to pick a winner.
      */
-    kind?: CredentialKind,
-    title?: string,
+      neverExpires?: boolean;
+      issuedOnUnknown?: boolean;
+      /**
+       * The confirm screen is where a member checks EVERYTHING we made of a
+       * document, not only its dates — the kind decides whether a renewal is
+       * offered at all, and the title is what they will recognise it by in a
+       * reminder. Both optional: an untouched field is left alone.
+       */
+      kind?: CredentialKind;
+      title?: string;
+    },
   ) {
+    const { expiresOn, issuedOn, neverExpires, issuedOnUnknown, kind, title } =
+      args;
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
 
-    const expiry = parseIsoDate(expiresOn);
-    if (!expiry) {
+    // ⚠️ THE TICK WINS OVER ANYTHING IN THE DATE BOX. A member who types a
+    // date, thinks better of it and ticks the box has answered twice; the tick
+    // is the later and more deliberate answer, and honouring the leftover text
+    // would file a document as expiring on a date they just told us is wrong.
+    const expiry = neverExpires ? null : parseIsoDate(expiresOn);
+    if (!neverExpires && !expiry) {
       throw new BadRequestException(
-        'That is not a date we can read. Enter it as yyyy-mm-dd, exactly as it is printed on the document.',
+        'That is not a date we can read. Enter it as yyyy-mm-dd, exactly as it is printed on the document — or tick "Never expires" if there is no date on it.',
       );
     }
 
@@ -393,9 +451,15 @@ export class LicenceCentreService {
     });
     if (!before) throw new NotFoundException('Document not found');
 
+    // ⚠️ NULL COUNTS AS A CHANGE when the row previously had a date. Somebody
+    // correcting a misread expiry to "never expires" must not leave five
+    // stamped reminder stages behind, or the row can never be reminded about
+    // again if they change it back.
     const dateChanged =
-      before.expiresOn === null ||
-      before.expiresOn.getTime() !== expiry.getTime();
+      (before.expiresOn === null) !== (expiry === null) ||
+      (before.expiresOn !== null &&
+        expiry !== null &&
+        before.expiresOn.getTime() !== expiry.getTime());
 
     await this.prisma.credential.update({
       where: { id: before.id },
@@ -411,7 +475,19 @@ export class LicenceCentreService {
         // It matters more now that the vault holds documents whose ISSUE date
         // is the load-bearing one: an address confirmation is judged on how
         // recent it is, and nothing else about it expires.
-        ...(issuedOn === undefined ? {} : { issuedOn: parseIsoDate(issuedOn ?? null) }),
+        // ⚠️ "NOT SURE" CLEARS IT; OMITTED LEAVES IT. Two different things, and
+        // the second used to be the first: this wrote parseIsoDate(issuedOn ??
+        // null) unconditionally, so any caller sending an expiry without an
+        // issue date silently wiped a stored one — and the frontend worked
+        // around it by refusing to offer a Clear button, which is a workaround
+        // holding a bug in place rather than a fix.
+        ...(issuedOnUnknown
+          ? { issuedOn: null }
+          : issuedOn === undefined
+            ? {}
+            : { issuedOn: parseIsoDate(issuedOn ?? null) }),
+        ...(neverExpires === undefined ? {} : { neverExpires }),
+        ...(issuedOnUnknown === undefined ? {} : { issuedOnUnknown }),
         confirmedAt: new Date(),
         ...(kind ? { kind } : {}),
         ...((title ?? '').trim()
@@ -438,7 +514,7 @@ export class LicenceCentreService {
       })
       .catch(() => undefined);
 
-    return { confirmed: true, expiresOn: toIsoDate(expiry) };
+    return { confirmed: true, expiresOn: expiry ? toIsoDate(expiry) : null };
   }
 
   /**

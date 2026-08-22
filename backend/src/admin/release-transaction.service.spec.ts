@@ -39,6 +39,8 @@ function makeService(overrides: {
   };
   const service = new AdminService(
     prisma as never,
+    // The KYC dossier reads the identity document out of the encrypted store.
+    { read: jest.fn(async () => Buffer.from([0xff, 0xd8])) } as never,
     {} as never, // notifications — unused by release
     {} as never, // listings — unused
     {} as never, // audit — unused

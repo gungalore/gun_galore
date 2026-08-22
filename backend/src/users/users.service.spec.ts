@@ -57,6 +57,10 @@ describe('UsersService — address book & notification prefs', () => {
       // Account deletion removes a member's encrypted licence documents before
       // the cascade takes the rows that point at them.
       { purgeForUser: jest.fn(async () => ({ filesRemoved: 0, filesFailed: 0, motivations: 0 })) } as never,
+      // And the pair that matters most: the identity document and the selfie
+      // are encrypted files on disk, and a Prisma cascade cannot reach the
+      // filesystem.
+      { purgeKycFiles: jest.fn(async () => ({ removed: 0, failed: 0 })) } as never,
     );
   });
 
@@ -276,6 +280,10 @@ describe('UsersService.deleteByClerkId', () => {
       { resolveByEntity: jest.fn() } as never,
       retention as never,
       licenceCentre as never,
+      // And the pair that matters most: the identity document and the selfie
+      // are encrypted files on disk, and a Prisma cascade cannot reach the
+      // filesystem.
+      { purgeKycFiles: jest.fn(async () => ({ removed: 0, failed: 0 })) } as never,
     );
     return { svc, prisma, retention, licenceCentre, order };
   }

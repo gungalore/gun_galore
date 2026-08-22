@@ -49,11 +49,20 @@ import { encryptBuffer, decryptBuffer } from './blob-crypto';
  * ⚠️ KEY_PATTERN's first segment is [a-z]+ — lowercase letters only. A
  * namespace with a hyphen, underscore or digit can never be read back.
  */
-export type SecureFileNamespace = 'motivations' | 'credentials';
+export type SecureFileNamespace = 'motivations' | 'credentials' | 'kyc';
 
 const NAMESPACES: readonly SecureFileNamespace[] = [
   'motivations',
   'credentials',
+  // ⚠️ IDENTITY DOCUMENTS AND SELFIES, WHICH USED TO SIT ON A PUBLIC CDN.
+  // Operator, 2026-08-22: "remove the ID from cloudinary and save it in the
+  // document centre." They were uploaded with Cloudinary's defaults — no
+  // `type: 'private'`, no access_mode — so `kycIdDocumentUrl` was a plain
+  // secure_url and anyone holding the link could fetch a South African ID
+  // document with no login at all. Here they are AES-GCM encrypted on our own
+  // disk behind an authenticated route, like every other document a member
+  // gives us.
+  'kyc',
 ];
 
 /** A stored file's key is `<namespace>/<yyyy>/<mm>/<id>.enc`, nothing else. */

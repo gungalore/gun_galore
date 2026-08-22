@@ -11,6 +11,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
 import { AdminAuditService } from './admin-audit.service';
+import { SecureFileStorageService } from '../common/secure-file-storage.service';
+import { sniffMime } from '../common/sniff-mime';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { PeachService } from '../payments/peach.service';
 import { decryptSaIdNumber } from '../common/id-crypto';
@@ -25,6 +27,10 @@ import { toCsv } from '../common/csv.util';
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
+    // ⚠️ Provided LOCALLY in AdminModule, like everywhere else that touches
+    // the encrypted store — it is not @Global on purpose, so nothing starts
+    // reading member files without a deliberate module change.
+    private readonly files: SecureFileStorageService,
     private readonly notifications: NotificationsService,
     private readonly listings: ListingsService,
     private readonly audit: AdminAuditService,
@@ -770,6 +776,43 @@ export class AdminService {
   // tables so the dossier renders in one round-trip from the
   // frontend's perspective.
   // ---------------------------------------------------------------
+  /**
+   * Decrypt one of a member's stored KYC files for the dossier.
+   *
+   * Only the two. There is no path here that takes an arbitrary storage key —
+   * the key is looked up from the user row, so an admin cannot read another
+   * namespace by guessing.
+   */
+  async readKycFile(
+    userId: string,
+    which: 'id' | 'selfie',
+  ): Promise<{ bytes: Buffer; mimeType: string }> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        kycIdStorageKey: true,
+        kycIdMimeType: true,
+        kycSelfieStorageKey: true,
+      },
+    });
+    if (!u) throw new NotFoundException('User not found');
+    const key =
+      which === 'id' ? u.kycIdStorageKey : u.kycSelfieStorageKey;
+    if (!key) {
+      throw new NotFoundException(
+        'No stored file for this user. It may still be on the old CDN — see the legacy link.',
+      );
+    }
+    const bytes = await this.files.read(key);
+    return {
+      bytes,
+      // A selfie is always a JPEG (it is captured from a canvas); a document
+      // can be any of the four the uploader accepts, so its type is stored.
+      mimeType:
+        which === 'id' ? u.kycIdMimeType || sniffMime(bytes) : 'image/jpeg',
+    };
+  }
+
   async getUserDossier(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

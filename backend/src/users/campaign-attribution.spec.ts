@@ -34,6 +34,10 @@ describe('UsersService — campaign attribution (first-touch)', () => {
       { resolveByEntity: jest.fn() } as never,
       { purgeForUser: jest.fn() } as never,
       { purgeForUser: jest.fn() } as never,
+      // And the pair that matters most: the identity document and the selfie
+      // are encrypted files on disk, and a Prisma cascade cannot reach the
+      // filesystem.
+      { purgeKycFiles: jest.fn(async () => ({ removed: 0, failed: 0 })) } as never,
     );
     return { service, prisma };
   }

@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
+import { sniffMime } from '../common/sniff-mime';
 
 // ────────────────────────────────────────────────────────────────────
 // THE ID THEY HAVE ALREADY GIVEN US.
@@ -44,11 +45,15 @@ import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 // under its own basis and its own retention. Deleting the Centre's copy must
 // never reach back and remove the evidence that a verification happened.
 //
-// ⚠️ THE SOURCE IS CLOUDINARY, NOT THE ENCRYPTED STORE. Every other document
-// in the Centre arrives as bytes on a request; this one has to be fetched back
-// off the CDN it was put on at verification time, and lands in the encrypted
-// store on the way in. That is the only reason this is a service rather than
-// three lines inside create().
+// ⚠️ THE SOURCE IS A STORAGE KEY, OR A CDN URL FOR THE OLD ROWS. Every other
+// document in the Centre arrives as bytes on a request; this one is already
+// held, and has to be read back before it can be copied. That is the only
+// reason this is a service rather than three lines inside create().
+//
+// New verifications write the ID into the encrypted `kyc` namespace. Rows
+// verified before that still carry a public Cloudinary URL and are read from
+// it until the backfill has moved them — so this reads STORAGE KEY FIRST and
+// falls back, and the fallback dies with the last legacy URL.
 // ────────────────────────────────────────────────────────────────────
 
 /** The KYC original was capped at 10 MB, so the copy cannot be larger. */
@@ -80,6 +85,8 @@ export class KycIdAdoptionService {
       select: {
         id: true,
         kycStatus: true,
+        kycIdStorageKey: true,
+        kycIdMimeType: true,
         kycIdDocumentUrl: true,
         kycDocumentUrl: true,
       },
@@ -88,8 +95,17 @@ export class KycIdAdoptionService {
     return user;
   }
 
-  /** Which stored copy to take, if there is one. */
-  private sourceUrl(u: {
+  /** Is there a copy of their ID anywhere for us to take? */
+  private hasSource(u: {
+    kycIdStorageKey: string | null;
+    kycIdDocumentUrl: string | null;
+    kycDocumentUrl: string | null;
+  }): boolean {
+    return !!(u.kycIdStorageKey || u.kycIdDocumentUrl || u.kycDocumentUrl);
+  }
+
+  /** The legacy public URL, for a row the backfill has not moved yet. */
+  private legacyUrl(u: {
     kycIdDocumentUrl: string | null;
     kycDocumentUrl: string | null;
   }): string | null {
@@ -126,7 +142,7 @@ export class KycIdAdoptionService {
     if (!on) return { available: false, alreadyThere: false };
 
     const user = await this.load(clerkId);
-    if (user.kycStatus !== 'VERIFIED' || !this.sourceUrl(user)) {
+    if (user.kycStatus !== 'VERIFIED' || !this.hasSource(user)) {
       return { available: false, alreadyThere: false };
     }
     const held = await this.holdsId(user.id);
@@ -151,8 +167,7 @@ export class KycIdAdoptionService {
         'This becomes available once your identity has been verified.',
       );
     }
-    const url = this.sourceUrl(user);
-    if (!url) {
+    if (!this.hasSource(user)) {
       throw new BadRequestException(
         'We do not have a copy of your ID document to add.',
       );
@@ -171,8 +186,28 @@ export class KycIdAdoptionService {
       );
     }
 
-    const bytes = await this.fetchOriginal(url, user.id);
-    const mimeType = this.mimeFor(url, bytes);
+    // ⚠️ ENCRYPTED STORE FIRST. Reading from our own disk is the ordinary
+    // path now; the CDN fetch below is only for rows verified before identity
+    // documents came off it, and goes away with the last of them.
+    let bytes: Buffer;
+    let mimeType: string;
+    if (user.kycIdStorageKey) {
+      try {
+        bytes = await this.files.read(user.kycIdStorageKey);
+      } catch (err) {
+        this.logger.error(
+          `KYC ID unreadable at ${user.kycIdStorageKey}: ${(err as Error).message}`,
+        );
+        throw new ServiceUnavailableException(
+          'We could not read your ID document just now. Please try again.',
+        );
+      }
+      mimeType = user.kycIdMimeType || sniffMime(bytes);
+    } else {
+      const url = this.legacyUrl(user)!;
+      bytes = await this.fetchOriginal(url, user.id);
+      mimeType = this.mimeFor(url, bytes);
+    }
 
     let stored: { storageKey: string; sha256: string; byteSize: number };
     try {
@@ -274,26 +309,11 @@ export class KycIdAdoptionService {
    * says, so a wrong content type is a document that will not open.
    */
   private mimeFor(url: string, b: Buffer): string {
-    if (b.subarray(0, 5).toString('latin1') === '%PDF-') {
-      return 'application/pdf';
-    }
-    if (b[0] === 0xff && b[1] === 0xd8) return 'image/jpeg';
-    if (
-      b[0] === 0x89 &&
-      b[1] === 0x50 &&
-      b[2] === 0x4e &&
-      b[3] === 0x47
-    ) {
-      return 'image/png';
-    }
-    if (
-      b.subarray(0, 4).toString('latin1') === 'RIFF' &&
-      b.subarray(8, 12).toString('latin1') === 'WEBP'
-    ) {
-      return 'image/webp';
-    }
-    // Nothing recognised. Fall back to what the path claims rather than
+    // Nothing recognised falls back to what the path claims, rather than
     // refusing a document that is probably fine.
-    return url.includes('/raw/upload/') ? 'application/pdf' : 'image/jpeg';
+    return sniffMime(
+      b,
+      url.includes('/raw/upload/') ? 'application/pdf' : 'image/jpeg',
+    );
   }
 }

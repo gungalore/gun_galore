@@ -306,10 +306,35 @@ model User {
   // NOT validated against the ID number at capture — the silent mismatch is
   // the faker catch-out, applied only at verdict time.
   dateOfBirth       String?
-  // Cloudinary URLs — RETAINED post-verification (operator decision
-  // 2026-07-17: FICA-style audit trail, same posture as stamped SAP 534s).
+  // ⚠️ LEGACY CLOUDINARY URLS — WORLD-READABLE, AND BEING MIGRATED OFF.
+  //
+  // Retained post-verification by operator decision 2026-07-17 (FICA-style
+  // audit trail, same posture as stamped SAP 534s) — which made a momentary
+  // exposure a permanent one. They were uploaded with Cloudinary's defaults:
+  // no `type: 'private'`, no access_mode. So anybody holding the link could
+  // fetch a South African identity document, and the matching selfie, with no
+  // login and no audit trail.
+  //
+  // Operator, 2026-08-22: "remove the ID from cloudinary and save it in the
+  // document centre." New verifications write the encrypted keys below and
+  // leave these null; the backfill moves the old ones and nulls them as it
+  // goes. A row is read storageKey-first and falls back to the URL, so both
+  // states work while the move runs.
+  //
+  // ⚠️ DO NOT WRITE TO THESE. They exist to be emptied.
   kycIdDocumentUrl  String?
   kycSelfieUrl      String?
+
+  /// AES-GCM in the `kyc` namespace of SecureFileStorageService — the same
+  /// store, key and posture as every other document a member gives us, behind
+  /// an authenticated route rather than a CDN link.
+  kycIdStorageKey     String?
+  /// What the stored bytes ARE, read from their magic bytes and not from a
+  /// file extension. The download route serves whatever this says and the
+  /// Claude verdict sends it as the media_type, so a wrong value is a document
+  /// that will not open and a scan that will not run.
+  kycIdMimeType       String?  @db.VarChar(64)
+  kycSelfieStorageKey String?
   // Full Claude findings JSON (+ merged crossCheck hard/soft fails) so the
   // admin dossier can re-render the reasoning without another vision call.
   kycClaudeFindings Json?
@@ -4596,11 +4621,12 @@ enum CredentialKind {
   /// CREDENTIAL_TO_UPLOAD is an identity map for all eight and there is no
   /// translation table for anyone to get wrong.
   ///
-  /// ⚠️ NONE OF THEM MAY CARRY AN expiresOn. Enforced in the database by
-  /// CHECK constraint Credential_person_kinds_have_no_expiry — which Prisma
-  /// cannot model, so it is invisible here and must be re-added by hand if
-  /// the migration baseline is ever reset. See
-  /// migrations/20260823090100_credential_provenance_guard.
+  /// ⚠️ WHETHER ONE OF THESE EXPIRES IS THE MEMBER'S ANSWER, NOT THE ENUM'S.
+  /// An earlier draft forbade an expiresOn on all eight in the database, on
+  /// the reasoning that none of them run out. A PASSPORT IS AN IDENTITY
+  /// DOCUMENT AND IT EXPIRES — the classifier prompt says so in as many words
+  /// — so that rule would have stopped a member filing one at all. See
+  /// `neverExpires` / `issuedOnUnknown` on the model below.
   IDENTITY_DOCUMENT
   ADDRESS_CONFIRMATION
   EMPLOYMENT_CONFIRMATION
@@ -4675,9 +4701,32 @@ model Credential {
   /// IN THE CLEAR — the reminder cron queries on it. See the header.
   issuedOn    DateTime?
   expiresOn   DateTime?
-  /// THE SAFETY RAIL. Null until the member has looked at the expiry date and
-  /// said it is right. The reminder sweep will not see a row without it.
+  /// THE SAFETY RAIL. Null until the member has looked at the dates and said
+  /// they are right. The reminder sweep will not see a row without it.
   confirmedAt DateTime?
+
+  /// ── WHAT THE MEMBER SAID ABOUT THE DATES ──────────────────────────
+  ///
+  /// Operator, 2026-08-22: "put a tick box next to the expiry date called
+  /// Never Expires. Also a tickbox next to Issue date called Not Sure, if its
+  /// unsure when the document was issued."
+  ///
+  /// ⚠️ THESE EXIST BECAUSE DECIDING IT FROM THE KIND WAS WRONG. A copy of an
+  /// ID does not expire; a passport is an identity document and does. Vision
+  /// reads what is printed and proposes; the member is holding the paper and
+  /// can see whether there is a date on it at all, so the member settles it.
+  ///
+  /// A tick means the corresponding date column is NULL, and a database CHECK
+  /// enforces that — storing both a tick and a date is two contradictory
+  /// answers to one question, and every reader would have to pick a winner.
+  ///
+  /// ⚠️ `neverExpires` IS NOT THE SAME AS AN UNANSWERED EXPIRY. Null-and-not-
+  /// ticked means nobody has looked yet, which is the amber "needs checking"
+  /// state; ticked means somebody looked and there is nothing to chase, which
+  /// is neutral. Collapsing them tells a member to go and find a date that
+  /// does not exist.
+  neverExpires    Boolean @default(false)
+  issuedOnUnknown Boolean @default(false)
 
   /// Opaque key into SecureFileStorageService, namespace `credentials`.
   /// Nullable so a row can outlive its bytes after an erasure.

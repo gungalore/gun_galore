@@ -189,6 +189,11 @@ export class LicenceCentreController {
     @Body('issuedOn') issuedOn?: string,
     @Body('kind') kind?: string,
     @Body('title') title?: string,
+    // The two ticks. ⚠️ Coerced rather than trusted: a bare @Body() is not a
+    // DTO and the global ValidationPipe has no forbidNonWhitelisted, so the
+    // string "false" would otherwise arrive here and read as true.
+    @Body('neverExpires') neverExpires?: unknown,
+    @Body('issuedOnUnknown') issuedOnUnknown?: unknown,
   ) {
     // The kind is optional, but if one is sent it must be real — it decides
     // whether this document is ever offered a renewal.
@@ -196,14 +201,15 @@ export class LicenceCentreController {
     if (wanted && !Object.values(CredentialKind).includes(wanted as CredentialKind)) {
       throw new BadRequestException('Unknown document type.');
     }
-    return this.svc.confirmExpiry(
-      clerkId,
-      id,
+    return this.svc.confirmExpiry(clerkId, id, {
       expiresOn,
       issuedOn,
-      wanted ? (wanted as CredentialKind) : undefined,
+      kind: wanted ? (wanted as CredentialKind) : undefined,
       title,
-    );
+      neverExpires: neverExpires === undefined ? undefined : neverExpires === true,
+      issuedOnUnknown:
+        issuedOnUnknown === undefined ? undefined : issuedOnUnknown === true,
+    });
   }
 
   @Patch(':id/title')

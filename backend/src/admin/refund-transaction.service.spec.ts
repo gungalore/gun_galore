@@ -68,6 +68,8 @@ function makeService(overrides: {
   const transactions = { cancelBookedShipment: jest.fn().mockResolvedValue(undefined) };
   const service = new AdminService(
     prisma as never,
+    // The KYC dossier reads the identity document out of the encrypted store.
+    { read: jest.fn(async () => Buffer.from([0xff, 0xd8])) } as never,
     notifications as never,
     {} as never, // listings — unused by refund
     audit as never,

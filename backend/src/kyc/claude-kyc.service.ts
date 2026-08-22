@@ -89,6 +89,19 @@ export interface KycScanInput {
   selfieBase64: string;
   /** Cloudinary image URL of the ID document (non-PDF path). */
   documentUrl?: string;
+  /**
+   * The identity document as BYTES, which is now the ordinary case.
+   *
+   * ⚠️ THE URL BLOCK ONLY EVER WORKED BECAUSE THE FILE WAS PUBLIC. Anthropic
+   * fetches a `{type:'url'}` source itself, so passing one required the ID
+   * document to be reachable by anybody on the internet — which is exactly
+   * what it was, and exactly what has now been fixed. Bytes from our own
+   * encrypted store cannot be linked to, so they are sent inline.
+   *
+   * documentUrl stays for rows the backfill has not moved yet, and for the
+   * official Home Affairs photo, which is not ours to store.
+   */
+  documentImage?: { bytes: Buffer; mediaType: string };
   /** Raw PDF bytes when the seller uploaded a PDF (Claude reads natively). */
   documentPdf?: Buffer;
   /** standard = selfie vs document photo. anchored adds the DHA photo gate. */
@@ -264,7 +277,10 @@ const ID_ISSUE_AGE = 16;
 
 type ContentBlock =
   | { type: 'text'; text: string }
-  | { type: 'image'; source: { type: 'base64'; media_type: 'image/jpeg'; data: string } }
+  | {
+      type: 'image';
+      source: { type: 'base64'; media_type: string; data: string };
+    }
   | { type: 'image'; source: { type: 'url'; url: string } }
   | {
       type: 'document';
@@ -300,7 +316,7 @@ export class ClaudeKycService {
     lens: Lens = 'BASELINE',
   ): Promise<KycClaudeFindings> {
     if (!this.client) throw new Error('Claude KYC unavailable — no API key');
-    if (!input.documentUrl && !input.documentPdf) {
+    if (!input.documentUrl && !input.documentPdf && !input.documentImage) {
       throw new Error('Claude KYC scan called without a document');
     }
 
@@ -313,7 +329,25 @@ export class ClaudeKycService {
             data: input.documentPdf.toString('base64'),
           },
         }
-      : { type: 'image', source: { type: 'url', url: this.jpegUrl(input.documentUrl!) } };
+      : input.documentImage
+        ? {
+            type: 'image',
+            source: {
+              type: 'base64',
+              // ⚠️ THE REAL TYPE, NOT A FORCED JPEG. The URL path rewrote
+              // Cloudinary's path to /f_jpg/ because a transform was free;
+              // there is no transform on our own store, and Claude reads
+              // jpeg, png and webp natively — which is the whole set the
+              // upload validator allows. Re-encoding would cost quality on
+              // the one image where detail decides the outcome.
+              media_type: input.documentImage.mediaType,
+              data: input.documentImage.bytes.toString('base64'),
+            },
+          }
+        : {
+            type: 'image',
+            source: { type: 'url', url: this.jpegUrl(input.documentUrl!) },
+          };
 
     const userContent: ContentBlock[] = [
       ...(typeof input.subjectAgeYears === 'number'

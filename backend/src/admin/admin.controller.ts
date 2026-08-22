@@ -1,4 +1,5 @@
 import {
+  StreamableFile,
   Controller,
   Post,
   Get,
@@ -321,6 +322,38 @@ export class AdminUsersController {
   @Get(':id/dossier')
   getDossier(@Param('id') id: string) {
     return this.adminService.getUserDossier(id);
+  }
+
+  /**
+   * The identity document or selfie, decrypted, for the KYC dossier.
+   *
+   * ⚠️ THIS ROUTE EXISTS BECAUSE THE FILES CAME OFF A PUBLIC CDN. They were
+   * Cloudinary uploads with the service's defaults — no `type: 'private'`, no
+   * access_mode — so the dossier could link straight to them with a plain
+   * anchor, and so could anybody else who had the link. They are AES-GCM on
+   * our own disk now, which means an authenticated read is the only way to
+   * see one.
+   *
+   * ⚠️ NEVER CACHED. It is a South African identity document; a copy sitting
+   * in a proxy or a browser cache is the exposure again in miniature.
+   */
+  @Get(':id/kyc-file/:which')
+  async kycFile(
+    @Param('id') id: string,
+    @Param('which') which: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    if (which !== 'id' && which !== 'selfie') {
+      throw new BadRequestException('Unknown document.');
+    }
+    const f = await this.adminService.readKycFile(id, which);
+    res.set({
+      'Content-Type': f.mimeType,
+      'Content-Length': String(f.bytes.length),
+      'Content-Disposition': `inline; filename="${which}"`,
+      'Cache-Control': 'private, no-store',
+    });
+    return new StreamableFile(f.bytes);
   }
 
   @Patch(':id')

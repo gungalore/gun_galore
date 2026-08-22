@@ -10,6 +10,8 @@ function makeService(rows: Record<string, unknown>[]) {
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const service = new AdminService(
     prisma as never,
+    // The KYC dossier reads the identity document out of the encrypted store.
+    { read: jest.fn(async () => Buffer.from([0xff, 0xd8])) } as never,
     {} as never, // notifications
     {} as never, // listings
     audit as never,

@@ -51,8 +51,13 @@ function makeService(o: Overrides = {}) {
     kycConsentGivenAt: new Date(),
     kycIdVerifiedAt: new Date(),
     dateOfBirth: DOB,
-    kycIdDocumentUrl:
-      'https://res.cloudinary.com/demo/image/upload/v1/kyc/u1/doc.jpg',
+    // ⚠️ A STORAGE KEY, NOT A CDN URL. Identity documents live in the
+    // encrypted `kyc` namespace now; a row carrying only a public Cloudinary
+    // link is a pre-migration one, and the readers treat it as a fallback.
+    kycIdStorageKey: 'kyc/2026/08/deadbeefcafe.enc',
+    kycIdMimeType: 'image/jpeg',
+    kycIdDocumentUrl: null,
+    kycSelfieStorageKey: null,
     kycSelfieUrl: null,
     kycStatus: 'PENDING',
     kycAttempts: 0,
@@ -144,6 +149,21 @@ function makeService(o: Overrides = {}) {
   if (o.scan instanceof Error) scanMock.mockRejectedValue(o.scan);
   else scanMock.mockResolvedValue(o.scan ?? goodFindings());
 
+  // ⚠️ IDENTITY DOCUMENTS LIVE HERE NOW, NOT ON A CDN. They went up with
+  // Cloudinary's defaults — no `type: 'private'`, no access_mode — so the
+  // secure_url was world-readable, and the decision to RETAIN the document
+  // after verification made that permanent. `read` returns a JPEG's magic
+  // bytes so the mime sniffer has something real to work from.
+  const files = {
+    write: jest.fn(async () => ({
+      storageKey: 'kyc/2026/08/deadbeefcafe.enc',
+      sha256: 'sha',
+      byteSize: 4,
+    })),
+    read: jest.fn(async () => Buffer.from([0xff, 0xd8, 0xff, 0xe0])),
+    remove: jest.fn(async () => undefined),
+  };
+
   const service = new KycService(
     prisma as never,
     verifyNow as never,
@@ -153,9 +173,21 @@ function makeService(o: Overrides = {}) {
     settings as never,
     cloudinary as never,
     claudeKyc,
+    files as never,
   );
 
-  return { service, prisma, verifyNow, sms, notifications, actionTokens, cloudinary, scanMock, user };
+  return {
+    service,
+    prisma,
+    verifyNow,
+    sms,
+    notifications,
+    actionTokens,
+    cloudinary,
+    files,
+    scanMock,
+    user,
+  };
 }
 
 describe('submitDetails', () => {
@@ -337,10 +369,10 @@ describe('getStatus nextStep matrix', () => {
     phone: '+27743039999',
   };
   const cases: [string, Record<string, unknown>, string][] = [
-    ['fresh user', { ...base, kycConsentGivenAt: null, kycIdVerifiedAt: null, dateOfBirth: null, kycIdDocumentUrl: null }, 'consent'],
-    ['consent only', { ...base, kycIdVerifiedAt: null, dateOfBirth: null, kycIdDocumentUrl: null }, 'details'],
-    ['legacy user without dob resumes at details', { ...base, dateOfBirth: null, kycIdDocumentUrl: null }, 'details'],
-    ['details done', { ...base, kycIdDocumentUrl: null }, 'document'],
+    ['fresh user', { ...base, kycConsentGivenAt: null, kycIdVerifiedAt: null, dateOfBirth: null, kycIdDocumentUrl: null, kycIdStorageKey: null }, 'consent'],
+    ['consent only', { ...base, kycIdVerifiedAt: null, dateOfBirth: null, kycIdDocumentUrl: null, kycIdStorageKey: null }, 'details'],
+    ['legacy user without dob resumes at details', { ...base, dateOfBirth: null, kycIdDocumentUrl: null, kycIdStorageKey: null }, 'details'],
+    ['details done', { ...base, kycIdDocumentUrl: null, kycIdStorageKey: null }, 'document'],
     ['document done', base, 'selfie'],
     ['under review', { ...base, kycStatus: 'UNDER_REVIEW' }, 'review'],
     ['verified', { ...base, kycStatus: 'VERIFIED' }, 'done'],
