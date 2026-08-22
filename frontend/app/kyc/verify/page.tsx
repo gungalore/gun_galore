@@ -12,6 +12,7 @@ import { HelpTip } from '@/components/help-tip';
 import { processImage } from '@/lib/process-image';
 import DateField from '@/components/date-field';
 import { shiftYears, toIso, todayYmd } from '@/lib/date-picker-model';
+import { licenceCentreApi } from '@/lib/licence-centre-api';
 
 // TWO FLOWS live on this page, branched by GET /kyc/status → `flow`:
 //
@@ -161,9 +162,59 @@ function VerifyKycPageInner() {
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraUnavailable, setCameraUnavailable] = useState(false);
   const [attempts, setAttempts] = useState(0);
+  // ── THE ID THEY HAVE ALREADY GIVEN US ──────────────────────────────
+  //
+  // Operator, 2026-08-22: "When they are approved, we can ask them if we can
+  // add their ID to their Document Centre... it will create awareness of the
+  // Document and Motivation Centres."
+  //
+  // 'idle' until the offer comes back, then 'offer' | 'saving' | 'kept' |
+  // 'declined'. Anything that fails collapses to 'idle', because a missing
+  // optional offer must never become an error on the page somebody sees the
+  // moment they are told they passed.
+  const [idOffer, setIdOffer] = useState<
+    'idle' | 'offer' | 'saving' | 'kept' | 'declined'
+  >('idle');
+  // ⚠️ HOLDS THE 3-SECOND REDIRECT. Without this the card renders, the offer
+  // is readable for about a second, and the page navigates away underneath
+  // somebody halfway through reading it.
+  const [holdRedirect, setHoldRedirect] = useState(false);
+  // ⚠️ A REF ALONGSIDE THE STATE, and it is load-bearing. The redirect timer
+  // is scheduled the moment the success screen appears and the offer arrives
+  // a beat later — so a timer that closed over the state variable would read
+  // `false` forever and navigate away regardless. The state drives the render;
+  // the ref is what the timer reads.
+  const holdRedirectRef = useRef(false);
+  useEffect(() => {
+    holdRedirectRef.current = holdRedirect;
+  }, [holdRedirect]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── IS THERE AN ID TO KEEP FOR THEM? ────────────────────────────────
+  //
+  // Runs once, when the success screen appears. ⚠️ FAILS TO SILENCE: the
+  // client falls back to { available: false } rather than throwing, so a
+  // Centre that is switched off, a slow call or a network blip costs the
+  // offer and never puts an error in front of somebody who has just been
+  // verified.
+  useEffect(() => {
+    if (step !== 'success') return;
+    let cancelled = false;
+    void (async () => {
+      const r = await licenceCentreApi
+        .kycIdOffer(getToken)
+        .catch(() => ({ available: false, alreadyThere: false }));
+      if (cancelled || !r.available) return;
+      setHoldRedirect(true);
+      setIdOffer('offer');
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   // DOB input ceiling: sellers must be 18+. This is the only DOB
   // validation on the client — see the flow note at the top of the file.
@@ -235,7 +286,10 @@ function VerifyKycPageInner() {
         switch (s.nextStep) {
           case 'done':
             setStep('success');
-            setTimeout(() => router.push(returnTo), 3000);
+            setTimeout(() => {
+              if (holdRedirectRef.current) return;
+              router.push(returnTo);
+            }, 3000);
             break;
           case 'review':
             setStep('review');
@@ -499,7 +553,10 @@ function VerifyKycPageInner() {
         setAttempts(nextAttempts);
         if (status === 'VERIFIED') {
           setStep('success');
-          setTimeout(() => router.push(returnTo), 3000);
+          setTimeout(() => {
+              if (holdRedirectRef.current) return;
+              router.push(returnTo);
+            }, 3000);
         } else if (status === 'UNDER_REVIEW') {
           setStep('review');
         } else {
@@ -517,7 +574,10 @@ function VerifyKycPageInner() {
       setAttempts(nextAttempts);
       if (data.success) {
         setStep('success');
-        setTimeout(() => router.push(returnTo), 3000);
+        setTimeout(() => {
+              if (holdRedirectRef.current) return;
+              router.push(returnTo);
+            }, 3000);
       } else {
         const msg =
           nextAttempts >= 3
@@ -1323,11 +1383,190 @@ function VerifyKycPageInner() {
             >
               Your pending sale can now proceed.
             </div>
-            <div
-              style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 12 }}
-            >
-              Redirecting…
-            </div>
+            {idOffer === 'idle' && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: 'var(--text-tertiary)',
+                  marginTop: 12,
+                }}
+              >
+                Redirecting…
+              </div>
+            )}
+
+            {/* ── MAY WE KEEP THE ID YOU JUST GAVE US? ────────────────
+                Operator, 2026-08-22: "When they are approved, we can ask
+                them if we can add their ID to their Document Centre... it
+                will create awareness of the Document and Motivation
+                Centres."
+
+                ⚠️ ASKED, NOT DONE, AND THE ASK IS NARROW. The document was
+                collected to verify an identity; keeping a copy in a library
+                the member manages, to reuse in licence applications, is a
+                different purpose and takes its own yes. Pressing this does
+                NOT switch on the blanket "keep everything from my
+                applications" permission — that is a separate question with
+                its own window. */}
+            {(idOffer === 'offer' || idOffer === 'saving') && (
+              <div
+                style={{
+                  marginTop: 20,
+                  padding: 16,
+                  textAlign: 'left',
+                  borderRadius: 'var(--radius)',
+                  border: '0.5px solid var(--gold-line)',
+                  background: 'var(--gold-wash)',
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
+                  Keep your ID for next time?
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  A copy of your ID is the first thing every firearm licence
+                  application asks for. We can put the one you have just
+                  uploaded into your Document Centre, so you never photograph
+                  it again, and so it is already there when you write a
+                  motivation.
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    lineHeight: 1.55,
+                    color: 'var(--text-tertiary)',
+                    marginTop: 8,
+                  }}
+                >
+                  It stays encrypted on our own server. You can rename or
+                  delete it in your Document Centre whenever you like, and
+                  deleting it removes the file. This covers your ID and
+                  nothing else.
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    marginTop: 14,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <button
+                    type="button"
+                    disabled={idOffer === 'saving'}
+                    onClick={() => {
+                      setIdOffer('saving');
+                      void licenceCentreApi
+                        .adoptKycId(getToken)
+                        .then(() => setIdOffer('kept'))
+                        .catch(() => setIdOffer('declined'));
+                    }}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 'var(--radius)',
+                      border: 'none',
+                      background: 'var(--red)',
+                      color: '#fff',
+                      fontSize: 13,
+                      cursor: idOffer === 'saving' ? 'default' : 'pointer',
+                      opacity: idOffer === 'saving' ? 0.6 : 1,
+                    }}
+                  >
+                    {idOffer === 'saving' ? 'Saving…' : 'Yes, keep it'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={idOffer === 'saving'}
+                    onClick={() => setIdOffer('declined')}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 'var(--radius)',
+                      border: '0.5px solid var(--border)',
+                      background: 'transparent',
+                      color: 'var(--text-secondary)',
+                      fontSize: 13,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    No thanks
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {idOffer === 'kept' && (
+              <div
+                style={{
+                  marginTop: 20,
+                  padding: 16,
+                  textAlign: 'left',
+                  borderRadius: 'var(--radius)',
+                  border: '0.5px solid var(--border)',
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
+                  Saved to your Document Centre
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  Your Document Centre keeps your licences, competency
+                  certificates and paperwork in one place, and tells you before
+                  anything runs out. The Motivation Centre writes the
+                  motivation for a licence application, and takes what it needs
+                  from there.
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 14,
+                    marginTop: 12,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <Link
+                    href="/licence-centre"
+                    style={{ fontSize: 13, color: 'var(--red)' }}
+                  >
+                    Open the Document Centre
+                  </Link>
+                  <Link
+                    href="/motivations"
+                    style={{ fontSize: 13, color: 'var(--red)' }}
+                  >
+                    See the Motivation Centre
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {(idOffer === 'declined' || idOffer === 'kept') && (
+              <button
+                type="button"
+                onClick={() => router.push(returnTo)}
+                style={{
+                  marginTop: 16,
+                  padding: '10px 18px',
+                  borderRadius: 'var(--radius)',
+                  border: '0.5px solid var(--border)',
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                Continue
+              </button>
+            )}
           </div>
         )}
 

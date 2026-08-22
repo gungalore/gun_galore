@@ -33,9 +33,36 @@ export type CredentialKind =
   | 'PROFESSIONAL_HUNTER'
   | 'PROFICIENCY'
   | 'GOOD_STANDING'
-  | 'OTHER';
+  | 'OTHER'
+  // ── the documents the Centre keeps rather than chases ──────────────
+  //
+  // ⚠️ THIS UNION IS HAND-WRITTEN AND NOTHING LINKS IT TO PRISMA. Omit a kind
+  // here and the build still passes, the server still returns it, and
+  // KIND_LABELS[kind] renders `undefined` on the card with no error and no
+  // failing test. So every value added to CredentialKind in schema.prisma has
+  // to be added here by hand, in the same commit.
+  | 'IDENTITY_DOCUMENT'
+  | 'ADDRESS_CONFIRMATION'
+  | 'EMPLOYMENT_CONFIRMATION'
+  | 'SAFE_PHOTO_CLOSED'
+  | 'SAFE_PHOTO_AJAR'
+  | 'SAFE_PHOTO_BOLTS'
+  | 'SAFE_INSTALLATION'
+  | 'SHOOTING_ACTIVITY_LOG';
 
-export type ExpiryState = 'valid' | 'expiring' | 'expired' | 'unknown';
+/**
+ * ⚠️ 'no-expiry' IS A REAL STATE, NOT A MISSING DATE. A photograph of a gun
+ * safe has nothing to expire, and showing it as `unknown` — "date not
+ * confirmed" — tells the member to go and find a date that does not exist.
+ * It must also never fall through to `valid`, which would print "In date"
+ * over a folder of photographs.
+ */
+export type ExpiryState =
+  | 'valid'
+  | 'expiring'
+  | 'expired'
+  | 'unknown'
+  | 'no-expiry';
 
 export interface CredentialRow {
   id: string;
@@ -148,6 +175,27 @@ export const licenceCentreApi = {
     ),
 
   list: (t: TokenGetter) => request<CredentialRow[]>(t, '', {}, []),
+
+  /**
+   * Is there an ID copy from verification we could keep for them?
+   *
+   * ⚠️ FALLS BACK TO "NO OFFER" RATHER THAN THROWING. This renders a card at
+   * the end of being verified; a failed call must cost the offer, never put
+   * an error on the page somebody sees the moment they are told they passed.
+   */
+  kycIdOffer: (t: TokenGetter) =>
+    request<{ available: boolean; alreadyThere: boolean }>(
+      t,
+      '/kyc-id',
+      {},
+      { available: false, alreadyThere: false },
+    ),
+
+  /** Yes, keep it. Covers this one document — not the blanket permission. */
+  adoptKycId: (t: TokenGetter) =>
+    request<{ added: boolean; credentialId?: string }>(t, '/kyc-id', {
+      method: 'POST',
+    }),
 
   /**
    * Add one document.
@@ -265,6 +313,15 @@ export const KIND_LABELS: Record<CredentialKind, string> = {
   DEDICATED_HUNTER: 'Dedicated hunter',
   PROFESSIONAL_HUNTER: 'Professional hunter (PH)',
   GOOD_STANDING: 'Letter of good standing (section 16)',
+  // ── kept, never chased ───────────────────────────────────────────────
+  IDENTITY_DOCUMENT: 'ID document',
+  ADDRESS_CONFIRMATION: 'Proof of address',
+  EMPLOYMENT_CONFIRMATION: 'Confirmation of employment',
+  SAFE_PHOTO_CLOSED: 'Safe, closed',
+  SAFE_PHOTO_AJAR: 'Safe, half open',
+  SAFE_PHOTO_BOLTS: 'Safe, open with bolts showing',
+  SAFE_INSTALLATION: 'How the safe is installed',
+  SHOOTING_ACTIVITY_LOG: 'Record of hunts and shoots',
 };
 
 /** Colour and words for each state. `unknown` is a real state, not a blank. */
@@ -293,6 +350,16 @@ export const STATE_TONE: Record<
   unknown: {
     label: 'Date not confirmed',
     colour: 'var(--text-tertiary-on-card)',
+    wash: 'transparent',
+    line: 'var(--border)',
+  },
+  // ⚠️ "KEPT ON FILE", NOT "DATE NOT CONFIRMED". Nothing is outstanding on a
+  // photograph of a safe or a copy of an ID — there is no date to confirm and
+  // no reminder to schedule. Neutral rather than amber, because amber reads as
+  // something the member still has to go and do.
+  'no-expiry': {
+    label: 'Kept on file',
+    colour: 'var(--text-secondary)',
     wash: 'transparent',
     line: 'var(--border)',
   },

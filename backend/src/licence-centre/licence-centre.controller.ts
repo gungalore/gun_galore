@@ -26,6 +26,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { LicenceCentreService } from './licence-centre.service';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 import { VaultConsentService } from '../users/vault-consent.service';
+import { KycIdAdoptionService } from './kyc-id-adoption.service';
 
 // Behind the login, like everything in this area. middleware.ts's isPublicRoute
 // is an allow-list with default deny, so the frontend route is authenticated by
@@ -46,7 +47,34 @@ export class LicenceCentreController {
     // From the @Global UsersModule rather than this one — see the header of
     // vault-consent.service.ts for why the graph forces that.
     private readonly consent: VaultConsentService,
+    private readonly kycId: KycIdAdoptionService,
   ) {}
+
+  // ── THE ID THEY HAVE ALREADY GIVEN US ──────────────────────────────
+  //
+  // Offered once, at the end of being verified. ⚠️ Not flag-gated for the
+  // same reason as `consent` below: the KYC success screen asks whether there
+  // is an offer to render, and a 404 there would put an error on the page
+  // somebody sees at the moment they are told they passed.
+
+  @Get('kyc-id')
+  kycIdOffer(@CurrentUser() clerkId: string) {
+    return this.kycId.offer(clerkId);
+  }
+
+  /**
+   * Yes, keep it.
+   *
+   * ⚠️ THE POST IS THE CONSENT, and it covers this document only. The KYC
+   * copy was collected to verify an identity; reusing it in licence
+   * applications is a different purpose and takes its own yes. It does NOT
+   * touch the blanket keep-my-documents record — somebody may want this one
+   * document kept and nothing else.
+   */
+  @Post('kyc-id')
+  adoptKycId(@CurrentUser() clerkId: string) {
+    return this.kycId.adopt(clerkId);
+  }
 
   // ── MAY WE KEEP YOUR DOCUMENTS? ────────────────────────────────────
   //
