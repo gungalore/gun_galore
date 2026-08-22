@@ -1,0 +1,295 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { CredentialKind, MotivationUploadKind, Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { SecureFileStorageService } from '../common/secure-file-storage.service';
+import { FLAGS, SettingsService } from '../settings/settings.service';
+import { VaultConsentService } from '../users/vault-consent.service';
+import { documentLabel } from './motivation-documents';
+
+// ────────────────────────────────────────────────────────────────────
+// KEEPING THE PAPERWORK FROM AN APPLICATION.
+//
+// Operator, 2026-08-22: "When a person does their first application, WE need to
+// store all the attachments they save. So if a new application is started we
+// can prompt them if we may use previously loaded documents."
+//
+// A document attached to a motivation dies with it: motivation uploads are
+// purged on a two-year retention clock, and there is no way to add or remove
+// one except from inside the application it belongs to. So the most reusable
+// documents a person owns — their ID copy, proof of address, the photographs
+// of their safe — were the ones they could not manage, while a competency
+// certificate sat safely in a vault with no clock at all. This copies the
+// reusable ones across.
+//
+// ⚠️ ONLY ON A YES. mayKeepFor() fails CLOSED: no row, no answer, an answer to
+// older wording — all mean no. Keeping is NEW processing and needs a consent we
+// can point at, which is the whole reason the window exists.
+//
+// ⚠️ IT COPIES BYTES; IT NEVER SHARES A KEY. Motivation uploads are purged on
+// the writer's clock and vault documents are not, so a shared storageKey would
+// mean the writer's retention silently blanking a document out of somebody's
+// Centre. Three write sites existed before this; this is the fourth, and every
+// one of them mints a fresh key. A fifth is a review failure.
+//
+// ⚠️ IT LIVES IN MotivationsModule, NOT IN THE CENTRE'S. LicenceCentreModule
+// imports MotivationsModule for the renewal one-tap and a spec asserts that
+// edge stays one-way — so a service the motivations side calls cannot live on
+// the other end of it. It talks to Prisma and the file store directly and must
+// NOT call LicenceCentreService: every method there begins with
+// quota.assertEnabled(), and a flag-gated copy would silently copy nothing
+// while reporting success.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * What is worth keeping past the application it arrived on.
+ *
+ * ⚠️ THE INVERSE OF NEVER_REUSABLE IS NOT THE ANSWER. A document can be safe to
+ * offer on another application and still not belong in a permanent library —
+ * an executor's letter of appointment is reusable within one estate and means
+ * nothing after it, and an incident report belongs to the incident. This list
+ * is only the paperwork that describes the PERSON and stays true.
+ *
+ * Each of these has a CredentialKind of the same name, so the mapping is an
+ * identity and there is no translation table to get wrong.
+ */
+export const VAULTABLE: ReadonlySet<MotivationUploadKind> = new Set([
+  MotivationUploadKind.IDENTITY_DOCUMENT,
+  MotivationUploadKind.ADDRESS_CONFIRMATION,
+  MotivationUploadKind.EMPLOYMENT_CONFIRMATION,
+  MotivationUploadKind.SAFE_PHOTO_CLOSED,
+  MotivationUploadKind.SAFE_PHOTO_AJAR,
+  MotivationUploadKind.SAFE_PHOTO_BOLTS,
+  MotivationUploadKind.SAFE_INSTALLATION,
+  MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
+]);
+
+/**
+ * How many older documents one backfill request copies.
+ *
+ * ⚠️ FIFTEEN, BECAUSE THE REQUEST HAS A CEILING. Each adoption is a decrypt, a
+ * re-encrypt and a disk write, and a member with three applications can hold
+ * forty rows. nginx caps a request at 60s and Cloudflare at 100s, and this
+ * project has already lost a paid-for motivation to a 504 that hid work which
+ * had actually completed. The client loops; a closed tab simply resumes.
+ */
+export const BACKFILL_BATCH = 15;
+
+export interface BackfillStep {
+  adopted: number;
+  /** Bytes already deleted by the motivation retention clock. Unrecoverable. */
+  skippedPurged: number;
+  /** The Centre is full. Not an error — they can delete something and resume. */
+  cappedOut: number;
+  done: boolean;
+}
+
+@Injectable()
+export class VaultAdoptionService {
+  private readonly logger = new Logger(VaultAdoptionService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly files: SecureFileStorageService,
+    private readonly settings: SettingsService,
+    private readonly consent: VaultConsentService,
+  ) {}
+
+  /**
+   * Copy ONE upload into the member's Centre.
+   *
+   * Called as a fail-soft tail on addUpload, and by the backfill below.
+   * Returns false for every ordinary reason not to — no consent, wrong kind,
+   * already held, Centre full — and throws only on something genuinely wrong.
+   */
+  async adoptUpload(userId: string, uploadId: string): Promise<boolean> {
+    if (!(await this.consent.mayKeepFor(userId))) return false;
+
+    const u = await this.prisma.motivationUpload.findFirst({
+      where: { id: uploadId, motivation: { userId } },
+      select: {
+        kind: true,
+        storageKey: true,
+        purgedAt: true,
+        mimeType: true,
+        sha256: true,
+        extractionEncrypted: true,
+        extractionOk: true,
+        extractedFields: true,
+        motivation: { select: { referenceNumber: true } },
+      },
+    });
+    if (!u || !u.storageKey || u.purgedAt) return false;
+    if (!VAULTABLE.has(u.kind)) return false;
+
+    // Already held, by content. @@unique([userId, sha256]) is the real
+    // guarantee; this only saves the work.
+    const dup = await this.prisma.credential.count({
+      where: { userId, sha256: u.sha256 },
+    });
+    if (dup > 0) return false;
+
+    const cap = await this.settings.get(FLAGS.licenceCentreMaxCredentials);
+    const held = await this.prisma.credential.count({ where: { userId } });
+    if (held >= cap) return false;
+
+    const bytes = await this.files.read(u.storageKey);
+    // ⚠️ A FRESH BLOB IN THE VAULT'S OWN NAMESPACE. Pointing at the upload's
+    // key would let the motivation retention sweep — which nulls storageKey
+    // and stamps purgedAt — blank a document out of the member's Centre two
+    // years later, with nothing in the Centre's own code to explain it.
+    const stored = await this.files.write('credentials', bytes, new Date());
+
+    try {
+      await this.prisma.credential.create({
+        data: {
+          userId,
+          kind: u.kind as unknown as CredentialKind,
+          title: documentLabel(u.kind),
+          storageKey: stored.storageKey,
+          mimeType: u.mimeType,
+          byteSize: stored.byteSize,
+          sha256: stored.sha256,
+          addedVia: 'application',
+          addedForRef: u.motivation?.referenceNumber ?? null,
+          // ⚠️ THE READING GOES IN detailsEncrypted, NOT extractionEncrypted.
+          // MotivationUpload keeps vision output in the latter; Credential's
+          // copy of that column is documented NEVER WRITTEN, and a reader that
+          // trusted the mirror once decrypted null on every row for months —
+          // which is how the vault silently failed to fill anything on a
+          // motivation.
+          detailsEncrypted: u.extractionEncrypted,
+          extractionOk: u.extractionOk,
+          extractedFields: u.extractedFields,
+          // No dates, and no vision call. The document has been read once
+          // already; re-reading it spends money to arrive back here. The
+          // member confirms the dates in the Centre when they want to.
+        },
+      });
+      return true;
+    } catch (err) {
+      // The bytes must not outlive a failed row.
+      await this.files.remove(stored.storageKey).catch(() => undefined);
+      // A concurrent adoption won the race. Nothing to do and nothing wrong.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return false;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * One bounded pass over what they attached BEFORE they agreed.
+   *
+   * ⚠️ THE CURSOR IS WHY NOTHING RESURRECTS. It walks strictly older than the
+   * watermark and advances it every batch, so a document the member deletes
+   * from their Centre afterwards is never re-copied by a later step. Without
+   * that, "delete" would mean "delete until the next batch".
+   */
+  async backfillStep(clerkId: string): Promise<BackfillStep> {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: {
+        id: true,
+        documentVaultBackfillCursor: true,
+        documentVaultBackfilledAt: true,
+      },
+    });
+    if (!user) return { adopted: 0, skippedPurged: 0, cappedOut: 0, done: true };
+
+    // ⚠️ RE-CHECKED EVERY BATCH, not once at the start. Somebody who withdraws
+    // half way through a long backfill must stop half way through it.
+    if (!(await this.consent.mayKeepFor(user.id))) {
+      return { adopted: 0, skippedPurged: 0, cappedOut: 0, done: true };
+    }
+    if (user.documentVaultBackfilledAt) {
+      return { adopted: 0, skippedPurged: 0, cappedOut: 0, done: true };
+    }
+
+    const cursor = user.documentVaultBackfillCursor ?? new Date();
+    const rows = await this.prisma.motivationUpload.findMany({
+      where: {
+        motivation: { userId: user.id },
+        kind: { in: [...VAULTABLE] },
+        createdAt: { lt: cursor },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: BACKFILL_BATCH,
+      select: { id: true, createdAt: true, storageKey: true, purgedAt: true },
+    });
+
+    if (rows.length === 0) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { documentVaultBackfilledAt: new Date() },
+      });
+      return { adopted: 0, skippedPurged: 0, cappedOut: 0, done: true };
+    }
+
+    let adopted = 0;
+    let skippedPurged = 0;
+    let cappedOut = 0;
+    const cap = await this.settings.get(FLAGS.licenceCentreMaxCredentials);
+
+    for (const r of rows) {
+      // ⚠️ A PURGED ROW IS COUNTED, NEVER READ. The row survives its bytes so
+      // the application's annexure list still says what was attached; offering
+      // to copy one would fail at the moment of copying, after the member had
+      // been told a number.
+      if (!r.storageKey || r.purgedAt) {
+        skippedPurged += 1;
+        continue;
+      }
+      const held = await this.prisma.credential.count({
+        where: { userId: user.id },
+      });
+      if (held >= cap) {
+        cappedOut += 1;
+        continue;
+      }
+      try {
+        if (await this.adoptUpload(user.id, r.id)) adopted += 1;
+      } catch (err) {
+        // One bad document must not stop the pass. It stays where it is and
+        // the cursor moves past it; nothing is lost.
+        this.logger.error(
+          `Backfill: could not adopt upload ${r.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    // Oldest in the batch — the next step starts strictly before it.
+    const oldest = rows[rows.length - 1].createdAt;
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { documentVaultBackfillCursor: oldest },
+    });
+
+    return {
+      adopted,
+      skippedPurged,
+      cappedOut,
+      done: rows.length < BACKFILL_BATCH,
+    };
+  }
+
+  /** How many older documents are still waiting to be copied. */
+  async backfillRemaining(clerkId: string): Promise<number> {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true, documentVaultBackfillCursor: true },
+    });
+    if (!user) return 0;
+    return this.prisma.motivationUpload.count({
+      where: {
+        motivation: { userId: user.id },
+        kind: { in: [...VAULTABLE] },
+        storageKey: { not: null },
+        purgedAt: null,
+        createdAt: { lt: user.documentVaultBackfillCursor ?? new Date() },
+      },
+    });
+  }
+}

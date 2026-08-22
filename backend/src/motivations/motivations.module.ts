@@ -16,6 +16,7 @@ import {
 import { Saps271Service } from './saps271.service';
 import { MotivationClaudeService } from './motivation-claude.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
+import { VaultAdoptionService } from './vault-adoption.service';
 
 /**
  * Firearm-licence motivation writer (Phase 1 — LICENCE-SERVICES-AND-FEED.md).
@@ -60,6 +61,12 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
     FirearmImageService,
     MotivationWitnessService,
     SecureFileStorageService,
+    // ⚠️ HERE AND NOT IN LicenceCentreModule, WHERE IT BELONGS BY SUBJECT.
+    // That module imports this one for the renewal one-tap and a spec
+    // asserts the edge stays one-way, so a service addUpload calls cannot
+    // live on the other end of it. It talks to Prisma and the file store
+    // directly for the same reason.
+    VaultAdoptionService,
   ],
   // MotivationRetentionService is exported so the account-deletion path can
   // remove a user's encrypted documents BEFORE the cascade takes the rows that
@@ -68,6 +75,7 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
   // into the encrypted store without a deliberate decision.
   exports: [
     MotivationsService,
+    VaultAdoptionService,
     MotivationQuotaService,
     MotivationRetentionService,
   ],

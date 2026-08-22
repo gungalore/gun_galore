@@ -27,6 +27,7 @@ import { LicenceCentreService } from './licence-centre.service';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 import { VaultConsentService } from '../users/vault-consent.service';
 import { KycIdAdoptionService } from './kyc-id-adoption.service';
+import { VaultAdoptionService } from '../motivations/vault-adoption.service';
 
 // Behind the login, like everything in this area. middleware.ts's isPublicRoute
 // is an allow-list with default deny, so the frontend route is authenticated by
@@ -48,6 +49,9 @@ export class LicenceCentreController {
     // vault-consent.service.ts for why the graph forces that.
     private readonly consent: VaultConsentService,
     private readonly kycId: KycIdAdoptionService,
+    // From MotivationsModule, which this module already imports. It cannot
+    // live here: the edge is one-way and a spec asserts it.
+    private readonly adoption: VaultAdoptionService,
   ) {}
 
   // ── THE ID THEY HAVE ALREADY GIVEN US ──────────────────────────────
@@ -117,6 +121,28 @@ export class LicenceCentreController {
   @Delete('consent')
   withdrawConsent(@CurrentUser() clerkId: string) {
     return this.consent.withdraw(clerkId);
+  }
+
+  /**
+   * Copy ONE batch of what they attached before they agreed.
+   *
+   * ⚠️ CLIENT-DRIVEN AND BOUNDED, not a cron and not one long request. Each
+   * adoption is a decrypt, a re-encrypt and a disk write; a member with three
+   * applications can hold forty documents, and nginx caps a request at 60s
+   * while Cloudflare caps it at 100s. This project has already lost a paid-for
+   * motivation to a 504 that hid work which had completed.
+   *
+   * A cron was the obvious alternative and is the wrong one: it would walk the
+   * whole table every night and re-copy documents the member had since
+   * deleted, because the row it copied from is still sitting in the
+   * application. The cursor inside backfillStep is what makes deletion mean
+   * deletion.
+   */
+  @Post('consent/backfill-step')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async backfillStep(@CurrentUser() clerkId: string) {
+    const step = await this.adoption.backfillStep(clerkId);
+    return { ...step, remaining: await this.adoption.backfillRemaining(clerkId) };
   }
 
   /**

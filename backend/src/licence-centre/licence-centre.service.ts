@@ -757,6 +757,41 @@ export class LicenceCentreService {
   async adminHealth() {
     const now = new Date();
     const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    /**
+     * Every kind the enum can hold, so the breakdown carries a kind at ZERO
+     * rather than leaving it out.
+     *
+     * ⚠️ groupBy ONLY RETURNS KINDS THAT HAVE ROWS, which is exactly wrong for
+     * the question this metric is here to answer. The eight kinds the Centre
+     * gained when it absorbed the application paperwork — ID copy, proof of
+     * address, employment confirmation, the three safe photographs, the
+     * installation shot, the activity log — would each be silently absent
+     * until the first member filed one, and "no line at all" is
+     * indistinguishable from "the enum change never reached this box".
+     *
+     * The retired kinds (DEDICATED_STATUS and friends) are printed too, and at
+     * zero that is what correct looks like: a NON-zero count on one of them
+     * means rows escaped the migration to DEDICATED_DISCIPLINE and are sitting
+     * outside every query that now looks for it.
+     */
+    const allKinds = Object.values(CredentialKind);
+
+    /**
+     * ⚠️ NOT EVERY DOCUMENT HAS A DATE TO CONFIRM ANY MORE, and counting the
+     * ones that do not would bury the signal. A photograph of a gun safe is
+     * created with `neverExpires` already ticked and no vision call is spent
+     * on it, so its confirmedAt is null for ever and correctly so. Left in,
+     * this metric would climb with every safe photograph in the system and an
+     * operator watching it would be watching noise.
+     *
+     * `neverExpires` is the member's own answer and is therefore the real
+     * test; the kind clause only catches a photograph row inserted by some
+     * path that forgot the tick, which would be a bug producing exactly the
+     * noise described above.
+     */
+    const dateless = allKinds.filter(isPhotograph);
+
     const [byKind, total, unconfirmed, expiring30, expired, muted] =
       await Promise.all([
         this.prisma.credential.groupBy({
@@ -764,7 +799,13 @@ export class LicenceCentreService {
           _count: { _all: true },
         }),
         this.prisma.credential.count(),
-        this.prisma.credential.count({ where: { confirmedAt: null } }),
+        this.prisma.credential.count({
+          where: {
+            confirmedAt: null,
+            neverExpires: false,
+            kind: { notIn: dateless },
+          },
+        }),
         this.prisma.credential.count({
           where: {
             confirmedAt: { not: null },
@@ -776,11 +817,17 @@ export class LicenceCentreService {
         }),
         this.prisma.credential.count({ where: { remindersMuted: true } }),
       ]);
+
+    const counted = new Map(byKind.map((r) => [r.kind, r._count._all]));
     return {
       total,
-      byKind: byKind.map((r) => ({ kind: r.kind, count: r._count._all })),
-      // The number worth watching: documents nobody has confirmed are
-      // documents no reminder will ever fire for.
+      byKind: allKinds.map((kind) => ({
+        kind,
+        count: counted.get(kind) ?? 0,
+      })),
+      // The number worth watching: a document that tracks an expiry and that
+      // nobody has confirmed is a document no reminder will ever fire for.
+      // Documents with nothing to run out are excluded — see `dateless`.
       unconfirmed,
       expiring30,
       expired,

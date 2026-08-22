@@ -67,11 +67,22 @@ describe('the flags this module ships behind', () => {
   it('clamps the document cap rather than trusting the field', () => {
     const p = FLAGS.licenceCentreMaxCredentials.parse;
     expect(p('50')).toBe(50);
-    expect(p('0')).toBe(25);
-    expect(p('-3')).toBe(25);
-    expect(p('banana')).toBe(25);
-    // Each document is an encrypted file plus a vision call.
+    expect(p('0')).toBe(60);
+    expect(p('-3')).toBe(60);
+    expect(p('banana')).toBe(60);
+    // Each document is an encrypted file, and most are a vision call too.
     expect(p('99999')).toBe(500);
+  });
+
+  it('leaves room for the whole application folder, not only the licences', () => {
+    // ⚠️ THE OLD CEILING OF 25 WAS SET AGAINST A NARROWER CENTRE. It now also
+    // holds an ID copy, proof of address, confirmation of employment, three
+    // safe photographs, the installation shot and an activity log — eight
+    // before a single licence — so a section 16 member with eight licensed
+    // firearms sits near 19 and would have been within a few documents of
+    // "Remove one before adding another".
+    expect(FLAGS.licenceCentreMaxCredentials.default).toBe(60);
+    expect(FLAGS.licenceCentreMaxCredentials.parse('')).toBe(60);
   });
 });
 

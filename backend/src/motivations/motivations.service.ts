@@ -37,6 +37,8 @@ import {
   isEmbeddable,
 } from './motivation-annexure-layout';
 import { buildLibrary, NEVER_REUSABLE } from './motivation-library';
+import { VaultAdoptionService } from './vault-adoption.service';
+import { VaultConsentService } from '../users/vault-consent.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -105,6 +107,7 @@ import {
   profileOffer,
 } from './motivation-profile';
 import {
+  asksPlace,
   uploadKindsFor,
   CredentialChoices,
   S16_AUTO_ATTACH,
@@ -375,6 +378,13 @@ export class MotivationsService {
     // @Global — see the note in motivations.module.ts. Importing
     // NotificationsModule here would be the wrong instinct and risks a cycle.
     private readonly notifications: NotificationsService,
+    // Keeping a copy of what they attach, where they have agreed to it.
+    // ⚠️ Injected here rather than the Centre's own module — see the note
+    // on the provider in motivations.module.ts.
+    private readonly vaultAdoption: VaultAdoptionService,
+    // Whether this member's documents may be offered across applications.
+    // @Global UsersModule, so no module edge — see vault-consent.service.ts.
+    private readonly vaultConsent: VaultConsentService,
   ) {}
 
   /**
@@ -929,6 +939,8 @@ export class MotivationsService {
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
+    const offerAcross = await this.vaultConsent.mayOfferAcross(user.id);
+
     const [credentials, uploads] = await Promise.all([
       this.prisma.credential.findMany({
         where: { userId: user.id },
@@ -941,10 +953,26 @@ export class MotivationsService {
           purgedAt: true,
           sha256: true,
           expiresOn: true,
+          // The date PRINTED on the document, which is what a proof of address
+          // is judged on — not when it was photographed.
+          issuedOn: true,
         },
       }),
       this.prisma.motivationUpload.findMany({
-        where: { motivation: { userId: user.id } },
+        // ⚠️ THE SCOPE NARROWS TO THIS APPLICATION WHERE SOMEBODY HAS SAID NO.
+        //
+        // Offering documents across applications is what the product already
+        // does, so it is NOT switched off for people who have simply never
+        // been asked — that would take a working feature away to punish them
+        // for our omission. It stops for `declined` and `withdrawn`, the two
+        // states where a person actually answered no.
+        //
+        // ⚠️ HERE, AND NOT INSIDE buildLibrary. That module's header promises
+        // "rows in, list out, no Prisma, no clock", and the honest place to
+        // narrow a result set is the query that produces it.
+        where: {
+          motivation: offerAcross ? { userId: user.id } : { id: row.id },
+        },
         select: {
           id: true,
           motivationId: true,
@@ -957,7 +985,17 @@ export class MotivationsService {
       }),
     ]);
 
-    const items = buildLibrary(credentials, uploads, row.id, documentLabel);
+    const now = new Date();
+    const items = buildLibrary(
+      credentials.map((c) => ({
+        ...c,
+        issuedOn: c.issuedOn ? toIsoDay(c.issuedOn) : null,
+      })),
+      uploads,
+      row.id,
+      documentLabel,
+      now,
+    );
 
     // ── what a section 16 pack could be handed automatically ─────────
     //
@@ -979,7 +1017,6 @@ export class MotivationsService {
         c.expiresOn ? toIsoDay(c.expiresOn) : null,
       ]),
     );
-    const now = new Date();
     const suggested = !isS16
       ? []
       : items.filter(
@@ -1018,6 +1055,21 @@ export class MotivationsService {
     id: string,
     source: 'credential' | 'upload',
     sourceId: string,
+    /**
+     * "These are the safe at the address on this application."
+     *
+     * ⚠️ REQUIRED FOR THE FOUR SAFE SHOTS, AND CHECKED HERE RATHER THAN IN THE
+     * PICKER. A photograph of a safe is a photograph of one safe at one
+     * dwelling; a member who has moved house and reuses last year's shots has
+     * submitted pictures of somebody else's wall, and nothing on the file says
+     * so. There is no structured address stored against the photograph to
+     * compare with, and inferring one wrongly is the exact failure this whole
+     * feature exists to avoid — so it is asked.
+     *
+     * The route is directly callable, so a tick the frontend renders is a
+     * convenience and this is the check.
+     */
+    placeConfirmed = false,
   ) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
@@ -1130,8 +1182,14 @@ export class MotivationsService {
         }
       }
     } else {
+      // ⚠️ THE SAME NARROWING, ON THE ROUTE THAT CAN BE CALLED DIRECTLY. A
+      // list the frontend never renders is not a boundary.
+      const offerAcross = await this.vaultConsent.mayOfferAcross(user.id);
       const u = await this.prisma.motivationUpload.findFirst({
-        where: { id: sourceId, motivation: { userId: user.id } },
+        where: {
+          id: sourceId,
+          motivation: offerAcross ? { userId: user.id } : { id: row.id },
+        },
         select: {
           kind: true,
           // Which application it was filed with — the whole question the
@@ -1165,6 +1223,12 @@ export class MotivationsService {
         fields: u.extractedFields,
         blob: u.extractionEncrypted,
       };
+    }
+
+    if (asksPlace(kind) && !placeConfirmed) {
+      throw new BadRequestException(
+        'Please confirm this is the safe at the address on this application.',
+      );
     }
 
     if (!storageKey || purgedAt) {
@@ -1794,6 +1858,30 @@ export class MotivationsService {
           );
         }
       }
+
+      // KEEP A COPY, WHERE THEY HAVE AGREED TO IT.
+      //
+      // "When a person does their first application, WE need to store all the
+      // attachments they save" — operator, 2026-08-22. A motivation upload
+      // dies with its application on a two-year clock; this is what lets the
+      // reusable half outlive it.
+      //
+      // ⚠️ AFTER THE ROW, OUTSIDE ITS TRY, AND SWALLOWED. An application must
+      // never fail because the Centre was full, or the disk hiccuped, or a
+      // consent lookup timed out. The upload is the thing the member came to
+      // do; the copy is a convenience on top of it.
+      //
+      // adoptUpload itself decides whether there is consent and whether this
+      // kind is worth keeping — nothing here needs to know.
+      void this.vaultAdoption
+        .adoptUpload(user.id, created.id)
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `Motivation ${row.id}: could not copy upload ${created.id} to the Document Centre: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          ),
+        );
 
       // The wizard shows what each document was filed as, and `autoFiled` is
       // what tells it which rows to put a correction control on.

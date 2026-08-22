@@ -58,7 +58,14 @@ export interface VaultConsentView {
   ask: boolean;
   /** May we copy documents out of applications right now? */
   keeping: boolean;
-  /** Is there still a one-off copy of their older documents to run? */
+  /**
+   * Is the one-off copy of their older documents finished?
+   *
+   * ⚠️ FALSE ALSO MEANS "NEVER STARTED", which is the normal state for anybody
+   * who has not said yes. The Centre only shows a progress line once the
+   * remaining count is non-zero, so the two cases do not need telling apart
+   * here.
+   */
   backfillDone: boolean;
 }
 

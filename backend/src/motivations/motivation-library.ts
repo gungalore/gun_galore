@@ -1,5 +1,9 @@
 import { MotivationUploadKind } from '@prisma/client';
-import { primaryUploadKind } from './motivation-credentials';
+import {
+  asksPlace,
+  primaryUploadKind,
+  reuseCaution,
+} from './motivation-credentials';
 
 // ────────────────────────────────────────────────────────────────────
 // THE MEMBER'S DOCUMENT LIBRARY.
@@ -31,6 +35,13 @@ export interface LibraryCredentialRow {
   kind: string;
   title: string;
   createdAt: Date;
+  /**
+   * The date printed on the document, yyyy-mm-dd, where the vault holds one.
+   *
+   * ⚠️ NOT createdAt. A proof of address is judged on the date printed on it,
+   * and somebody can upload a six-month-old bill today.
+   */
+  issuedOn?: string | null;
   storageKey: string | null;
   purgedAt: Date | null;
   sha256: string | null;
@@ -96,6 +107,25 @@ export interface LibraryItem {
   addedOn: string;
   /** Already attached to the motivation being filled in. */
   alreadyHere: boolean;
+  /**
+   * A note to show beside it, or null.
+   *
+   * ⚠️ IT IS A WARNING, NOT A BLOCK. A proof of address four months old is
+   * still the applicant's proof of address and they may have a good reason to
+   * send it; what must never happen is it going in silently and a DFO being
+   * the one to notice. 'stale' means we can see the problem from the date;
+   * 'ask' means only the applicant can know.
+   */
+  caution: { tone: 'ask' | 'stale'; text: string } | null;
+  /**
+   * Needs "this is the safe at the address on this application" ticked before
+   * it can be attached.
+   *
+   * ⚠️ ASKED, NEVER INFERRED. There is no structured address on a stored
+   * photograph to compare against, and guessing wrong means somebody submits
+   * pictures of the wall at their old house.
+   */
+  askPlace: boolean;
 }
 
 /** A Date to yyyy-mm-dd, in UTC — the same day boundary the vault uses. */
@@ -118,6 +148,15 @@ export function buildLibrary(
   uploads: LibraryUploadRow[],
   currentId: string,
   labelFor: (kind: MotivationUploadKind) => string,
+  /**
+   * ⚠️ A PARAMETER, NOT `new Date()`. This module's header promises "no
+   * clock", and the staleness notes below are the first thing in it that
+   * depends on today's date. Passing it in keeps the function pure and keeps
+   * the tests honest at a frozen date.
+   *
+   * Defaulted so the many existing callers that do not care keep working.
+   */
+  today: Date = new Date(0),
 ): LibraryItem[] {
   // What is already on this motivation, by content — so a document the member
   // has attached here shows as attached even though its row is a different id
@@ -144,13 +183,25 @@ export function buildLibrary(
     if (!u.storageKey || u.purgedAt) return;
     if (seen.has(u.sha256)) return;
     seen.add(u.sha256);
+    const addedOn = isoDay(u.createdAt);
     items.push({
       source: 'upload',
       sourceId: u.id,
       kind: u.kind,
       title: labelFor(u.kind),
-      addedOn: isoDay(u.createdAt),
+      addedOn,
       alreadyHere: here.has(u.sha256),
+      // ⚠️ NOTHING TO SAY ABOUT ONE THAT IS ALREADY ON THIS APPLICATION. The
+      // caution is about carrying a document ACROSS; warning somebody that
+      // the proof of address they attached this morning might be stale is
+      // noise that teaches them to ignore the notes that matter.
+      caution:
+        u.motivationId === currentId
+          ? null
+          : // A motivation upload has no issue date of its own — only the
+            // vault records one — so freshness falls back to when it arrived.
+            reuseCaution(u.kind, null, addedOn, today),
+      askPlace: u.motivationId !== currentId && asksPlace(u.kind),
     });
   };
 
@@ -165,6 +216,7 @@ export function buildLibrary(
     if (!kind) return;
     if (c.sha256 && seen.has(c.sha256)) return;
     if (c.sha256) seen.add(c.sha256);
+    const addedOn = isoDay(c.createdAt);
     items.push({
       source: 'credential',
       sourceId: c.id,
@@ -173,8 +225,19 @@ export function buildLibrary(
       // more use than the generic slot name when they hold four competency
       // certificates.
       title: c.title,
-      addedOn: isoDay(c.createdAt),
+      addedOn,
       alreadyHere: c.sha256 ? here.has(c.sha256) : false,
+      // ⚠️ THE ISSUE DATE, WHERE THE VAULT HAS ONE. A member can photograph a
+      // six-month-old municipal bill today, so judging it by when it reached
+      // us would call a stale document fresh — which is the one direction this
+      // check must never fail in.
+      caution: reuseCaution(
+        kind as MotivationUploadKind,
+        c.issuedOn ?? null,
+        addedOn,
+        today,
+      ),
+      askPlace: asksPlace(kind as MotivationUploadKind),
     });
   };
 

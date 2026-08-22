@@ -90,6 +90,32 @@ describe('settings flag registries', () => {
     ]);
   });
 
+  it('quotes the SAME document cap in both registries', () => {
+    // ⚠️ THE TWO DEFAULTS ARE READ BY DIFFERENT PEOPLE FOR THE SAME NUMBER.
+    // With no Setting row written, the runtime default is what actually caps
+    // uploads and the admin default is what /admin/settings PRINTS as the
+    // current value. Raising one and not the other shows the operator a
+    // ceiling that is not the ceiling — and the number moved from 25 to 60
+    // when the Centre started holding the whole application folder.
+    const runtimeSrc = fs.readFileSync(
+      path.join(BACKEND_SRC, 'settings/settings.service.ts'),
+      'utf8',
+    );
+    const adminSrc = fs.readFileSync(
+      path.join(BACKEND_SRC, 'admin/admin-settings.service.ts'),
+      'utf8',
+    );
+    const entry = (src: string) => {
+      const from = src.indexOf("key: 'licence_centre_max_credentials'");
+      expect(from).toBeGreaterThan(-1);
+      return src.slice(from, src.indexOf('},', from));
+    };
+    expect(entry(runtimeSrc)).toContain('default: 60');
+    expect(entry(adminSrc)).toContain("default: '60'");
+    // And nothing left over from the old ceiling in the hint the operator reads.
+    expect(entry(adminSrc)).not.toContain('25');
+  });
+
   it('marks the motivation master switch as a danger flag', () => {
     // danger:true forces the typed-key gate and a 15-char audit reason.
     // Flipping this ships a legal-adjacent document to the public and starts

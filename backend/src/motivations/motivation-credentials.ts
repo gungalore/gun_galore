@@ -514,6 +514,126 @@ export function uploadKindsFor(credentialKind: string): MotivationUploadKind[] {
 }
 
 /**
+ * How fresh a proof of address has to be.
+ *
+ * ⚠️ NINETY DAYS IS THE OPERATOR'S RULE, and it is already written down in
+ * motivation-checklist.ts: name, address, and a date inside the last three
+ * months. It is what a DFO looks for and it is not negotiable by us.
+ */
+export const ADDRESS_FRESH_DAYS = 90;
+
+/**
+ * When a record of hunts or shoots starts reading badly.
+ *
+ * Six months. ⚠️ NOT A HARD LIMIT — a stale log is still worth attaching, and
+ * saying so is the point. What it must not do is go in silently: a log that
+ * stops eighteen months ago reads WORSE to a reviewer than a short one that is
+ * current, because it looks like somebody who used to do this.
+ */
+export const ACTIVITY_STALE_DAYS = 180;
+
+/** Days between two yyyy-mm-dd days, or null if either is unreadable. */
+function daysBetween(from: string, to: Date): number | null {
+  const t = Date.parse(`${from}T00:00:00Z`);
+  if (Number.isNaN(t)) return null;
+  return Math.floor((to.getTime() - t) / 86_400_000);
+}
+
+/**
+ * What to say beside a document being offered for reuse — or nothing.
+ *
+ * ⚠️ THREE KINDS OF DOCUMENT, THREE DIFFERENT PROBLEMS, and lumping them into
+ * one "check this is still current" would be useless on all three:
+ *
+ *   A PROOF OF ADDRESS AGES. It is judged on the date printed on it, so the
+ *   test is arithmetic and the warning can be specific.
+ *
+ *   AN EMPLOYMENT LETTER GOES OUT OF DATE WITHOUT AGEING. Nothing on the paper
+ *   says it is wrong; the applicant changed jobs. Only they know, so it is a
+ *   question, not a verdict.
+ *
+ *   A SAFE PHOTOGRAPH IS NOT ABOUT TIME AT ALL. It is a photograph of THIS
+ *   safe at THIS dwelling, and the whole thing turns on the address on the
+ *   application rather than on how old the picture is. A member who moved
+ *   house and reuses last year's shots has submitted photographs of somebody
+ *   else's wall. There is no structured address on the stored document to
+ *   compare against, and inferring one wrongly is exactly the failure this
+ *   whole exercise exists to prevent — so it is ASKED, never computed. See
+ *   `askPlace` on LibraryItem.
+ *
+ * PURE, and `today` is a PARAMETER — same rule as validLongEnough above, so
+ * the behaviour is testable at a frozen date instead of drifting with the
+ * clock.
+ *
+ * @param issuedOn  the date PRINTED on the document, yyyy-mm-dd, or null.
+ *                  ⚠️ NOT createdAt: somebody can upload a six-month-old
+ *                  municipal bill today, and judging it by when they
+ *                  photographed it would call a stale document fresh.
+ * @param addedOn   when it reached us, yyyy-mm-dd. Only used where the
+ *                  document carries no date of its own.
+ */
+export function reuseCaution(
+  kind: MotivationUploadKind,
+  issuedOn: string | null,
+  addedOn: string,
+  today: Date,
+): { tone: 'ask' | 'stale'; text: string } | null {
+  if (kind === MotivationUploadKind.ADDRESS_CONFIRMATION) {
+    const age = issuedOn ? daysBetween(issuedOn, today) : null;
+    if (age === null) {
+      return {
+        tone: 'ask',
+        text: 'Check the date printed on this is inside the last three months. A DFO wants a recent one, in your name.',
+      };
+    }
+    if (age > ADDRESS_FRESH_DAYS) {
+      return {
+        tone: 'stale',
+        text: `Dated ${issuedOn} — older than three months. A DFO wants one from the last three months, in your name.`,
+      };
+    }
+    return null;
+  }
+
+  if (kind === MotivationUploadKind.EMPLOYMENT_CONFIRMATION) {
+    return {
+      tone: 'ask',
+      text: `Added ${addedOn}. If your work has changed since, this letter says the wrong thing.`,
+    };
+  }
+
+  if (kind === MotivationUploadKind.SHOOTING_ACTIVITY_LOG) {
+    const age = daysBetween(issuedOn ?? addedOn, today);
+    if (age !== null && age > ACTIVITY_STALE_DAYS) {
+      return {
+        tone: 'stale',
+        text: `Last updated ${issuedOn ?? addedOn}. A log that stops well short of today reads worse than a short one that is current — add the recent entries and photograph it again.`,
+      };
+    }
+    return null;
+  }
+
+  return null;
+}
+
+/**
+ * Documents that are of a PLACE, not of a person or a date.
+ *
+ * The four safe shots. Their freshness question is not "when was this taken"
+ * but "is this the safe at the address on THIS application", and only the
+ * applicant can answer it. The picker asks with a tick, and the server refuses
+ * the attachment without it.
+ */
+export function asksPlace(kind: MotivationUploadKind): boolean {
+  return (
+    kind === MotivationUploadKind.SAFE_PHOTO_CLOSED ||
+    kind === MotivationUploadKind.SAFE_PHOTO_AJAR ||
+    kind === MotivationUploadKind.SAFE_PHOTO_BOLTS ||
+    kind === MotivationUploadKind.SAFE_INSTALLATION
+  );
+}
+
+/**
  * The two documents a section 16 pack can be handed automatically.
  *
  * ⚠️ THESE AND NOTHING ELSE. An endorsement names ONE firearm, so an old one

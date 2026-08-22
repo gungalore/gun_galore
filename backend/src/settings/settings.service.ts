@@ -413,14 +413,26 @@ export const FLAGS = {
   } as FlagDefinition<boolean>,
 
   // A ceiling on stored documents per member: each is an encrypted file on our
-  // own disk plus one vision call at upload, so this is a spend and storage
-  // guard as much as a UX one.
+  // own disk, and most also cost one vision call at upload — so this is a
+  // spend and storage guard as much as a UX one.
+  //
+  // ⚠️ 25 WAS SET WHEN THE CENTRE HELD ONLY THINGS THAT EXPIRE. It now holds
+  // the whole application folder as well: an ID copy, proof of address,
+  // confirmation of employment, three photographs of the safe, the
+  // installation shot and an activity log — eight documents before a single
+  // licence. A section 16 member with four licensed firearms lands around 15
+  // and one with eight lands around 19, so the old ceiling sat close enough to
+  // the ORDINARY case that a member doing exactly what we ask would have met
+  // "You can keep 25 documents here. Remove one before adding another." — and
+  // the document they would have removed is one we then ask them for again on
+  // the next application. 60 leaves that member room for renewals, re-scans
+  // and the copies they keep for their own reasons.
   licenceCentreMaxCredentials: {
     key: 'licence_centre_max_credentials',
-    default: 25,
+    default: 60,
     parse: (s) => {
       const n = parseInt(s, 10);
-      if (!Number.isFinite(n) || n < 1) return 25;
+      if (!Number.isFinite(n) || n < 1) return 60;
       return Math.min(500, n);
     },
   } as FlagDefinition<number>,

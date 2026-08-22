@@ -184,6 +184,15 @@ function build(
       // real one reaches Resend and SMSPortal, and it fires on BOTH terminal
       // gate branches, so every generation test in this file goes through it.
       notifications as never,
+      // Keeping a copy of an attachment in the member's Document Centre.
+      // ⚠️ Returns false, so no test in this file depends on a consent record
+      // existing — adoption is a fail-soft tail on addUpload and must never
+      // change what the upload itself returns.
+      { adoptUpload: jest.fn(async () => false) } as never,
+      // Whether their documents may be offered across applications. TRUE is
+      // the pre-consent default: reuse is what the product already does, and
+      // it only stops for somebody who has actually said no.
+      { mayOfferAcross: jest.fn(async () => true) } as never,
   );
   return { svc, prisma, quota, refs, files, claude, pdf, settings, notifications };
 }

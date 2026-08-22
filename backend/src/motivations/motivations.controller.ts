@@ -590,6 +590,12 @@ export class MotivationsController {
     @Param('id') id: string,
     @Body('source') source: string,
     @Body('sourceId') sourceId: string,
+    // "These are the safe at the address on this application." Required for
+    // the four safe photographs; see addFromLibrary.
+    // ⚠️ Coerced, not trusted: a bare @Body() is not a DTO and the global
+    // ValidationPipe has no forbidNonWhitelisted, so the string "false" would
+    // otherwise arrive here and read as a confirmation.
+    @Body('placeConfirmed') placeConfirmed?: unknown,
   ) {
     if (source !== 'credential' && source !== 'upload') {
       throw new BadRequestException('Unknown document source.');
@@ -597,7 +603,13 @@ export class MotivationsController {
     if (!sourceId?.trim()) {
       throw new BadRequestException('Which document?');
     }
-    return this.motivations.addFromLibrary(clerkId, id, source, sourceId.trim());
+    return this.motivations.addFromLibrary(
+      clerkId,
+      id,
+      source,
+      sourceId.trim(),
+      placeConfirmed === true,
+    );
   }
 
   @Get(':id/uploads')

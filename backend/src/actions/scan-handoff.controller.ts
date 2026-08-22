@@ -9,9 +9,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { CredentialKind, MotivationUploadKind } from '@prisma/client';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { NO_VISION_KINDS } from '../licence-centre/credential-kinds';
 import { ActionTokensService } from './action-tokens.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -49,6 +51,24 @@ const TTL_MS = 15 * 60 * 1000;
 
 /** Per-member, per-hour. The throttler is keyed on IP, which is not the same. */
 const MAX_PER_HOUR = 10;
+
+/**
+ * The same no-vision kinds, as the motivation wizard names them.
+ *
+ * Derived rather than typed out again: the schema guarantees the names match
+ * ("⚠️ NAMED IDENTICALLY TO THEIR MotivationUploadKind COUNTERPARTS"), so a
+ * fifth photograph kind added to NO_VISION_KINDS is picked up here for free
+ * instead of quietly missing from one of the two branches below.
+ */
+const NO_VISION_UPLOAD_KINDS = NO_VISION_KINDS.filter(
+  (k): k is CredentialKind & MotivationUploadKind => k in MotivationUploadKind,
+);
+// ⚠️ THE SAFE PHOTOGRAPHS ONLY, NOT EVERY UNREADABLE MOTIVATION UPLOAD. The
+// wizard skips its vision read on anything absent from motivation-extract's
+// EXTRACTABLE map — a character reference and a shooting activity log among
+// them — and each of those still waits out the 45 seconds below. The authority
+// on that is MotivationExtractService.canExtract, which lives in motivations/;
+// deciding it from here would be this file's second, disagreeing copy of it.
 
 @Controller('scan-handoff')
 @UseGuards(ClerkGuard)
@@ -183,27 +203,38 @@ export class ScanHandoffController {
     // enough that it clearly finished another way, because extractionOk stays
     // false FOREVER for a legitimately unreadable photograph and a document
     // must never be invisible to its owner over that.
+    //
+    // ⚠️ AND SOME KINDS NEVER GET A VISION CALL AT ALL, which turned that
+    // 45-second backstop into the ordinary path. There is nothing printed on a
+    // photograph of a gun safe, so the upload service skips the read outright
+    // and extractionOk stays false from the moment the row is written — the
+    // desktop dialog then sat on "waiting" for the full three-quarters of a
+    // minute after a photograph that had, in fact, already arrived. Nothing is
+    // pending on these, so they are settled the instant they exist.
     const settledBefore = new Date(Date.now() - 45_000);
-    const settled = {
-      OR: [
-        { extractionOk: true },
-        { createdAt: { lte: settledBefore } },
-      ],
-    };
+    const aged = { createdAt: { lte: settledBefore } };
     const added =
       meta.dest === 'motivation' && typeof meta.motivationId === 'string'
         ? await this.prisma.motivationUpload.count({
             where: {
               motivationId: meta.motivationId,
               createdAt: { gte: row.createdAt },
-              ...settled,
+              OR: [
+                { extractionOk: true },
+                { kind: { in: [...NO_VISION_UPLOAD_KINDS] } },
+                aged,
+              ],
             },
           })
         : await this.prisma.credential.count({
             where: {
               userId: user.id,
               createdAt: { gte: row.createdAt },
-              ...settled,
+              OR: [
+                { extractionOk: true },
+                { kind: { in: [...NO_VISION_KINDS] } },
+                aged,
+              ],
             },
           });
 
