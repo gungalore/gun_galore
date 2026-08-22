@@ -13,9 +13,9 @@
 // Same count semantics as the nav's CartButton: UNITS, not lines, because the
 // badge answers "how much is waiting", not "how many rows does the store have".
 //
-// Standalone-only, gated at the MobileSearchBar call site: in a browser tab the
-// nav's own CartButton is right there, and two carts in one viewport is just
-// noise.
+// Standalone-only. The gate lives at the top of MobileSearchBar, which returns
+// null outside the installed PWA: in a browser tab the nav's own CartButton is
+// right there, and two carts in one viewport is just noise.
 
 import { usePathname } from 'next/navigation';
 import { useCart } from '@/lib/cart-store';

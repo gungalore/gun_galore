@@ -14,6 +14,10 @@ import { useInstallPrompt } from '@/lib/use-install-prompt';
 import { AccountMenuList, LogoutIcon } from '@/lib/account-menu';
 import { CategoryMenu } from '@/components/category-menu';
 
+// The nav is a singleton, so a fixed id is safe and keeps aria-controls on
+// the search button pointing at the panel without threading a useId through.
+const MOBILE_SEARCH_PANEL_ID = 'nav-mobile-search-panel';
+
 export function Nav() {
   const { isSignedIn, isLoaded, user } = useUser();
   const { signOut } = useClerk();
@@ -21,6 +25,11 @@ export function Nav() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Mobile-web search: no permanent search chrome on phones any more. The
+  // icon beside Sell opens a panel under the top row, and a closed panel
+  // renders NOTHING — no reserved height, nothing pinned to the viewport.
+  // (The installed PWA hides this whole nav, so it keeps its own header bar.)
+  const [searchOpen, setSearchOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { canInstall, isInstalled, isStandalone, promptInstall } =
     useInstallPrompt();
@@ -70,7 +79,12 @@ export function Nav() {
     // Escape closes the dropdown too (basic keyboard affordance — the
     // outside-click listener alone stranded keyboard users).
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setMenuOpen(false);
+      if (e.key === 'Escape') {
+        setMenuOpen(false);
+        // Same affordance for the mobile search panel — it has no visible
+        // close button, so Escape is the keyboard way back out.
+        setSearchOpen(false);
+      }
     }
     document.addEventListener('mousedown', close);
     document.addEventListener('keydown', onKey);
@@ -83,6 +97,11 @@ export function Nav() {
   // Close the mobile drawer on route change.
   useEffect(() => {
     setMobileOpen(false);
+    // Belt-and-braces for the search panel. Its own close path is
+    // LiveSearch's onNavigate (search pushes "/?q=…", a query-only change
+    // this effect can't see), so this only catches a real path change while
+    // the panel happens to be open.
+    setSearchOpen(false);
   }, [pathname]);
 
   // Lock body scroll when the mobile drawer is open.
@@ -183,6 +202,56 @@ export function Nav() {
           {/* Right side */}
           {isLoaded && (
             <div className="flex items-center gap-2 sm:gap-3 ml-auto md:ml-0 shrink-0">
+              {/* Mobile-web search trigger. md:hidden because from md up the
+                  row already carries the Categories+search unit, and nothing
+                  about the desktop nav changes.
+
+                  Visual language is TopBarIconButton's (radius 6, inset
+                  background, hairline border, secondary ink) but the SIZE is
+                  this row's: 44 tall to line up with Sell / cart / hamburger,
+                  and 36 wide — the same width as the bell it sits two slots
+                  from. Width, not height, is the scarce resource here; see
+                  the 320px arithmetic below. */}
+              <button
+                type="button"
+                onClick={() => setSearchOpen((o) => !o)}
+                className="md:hidden inline-flex items-center justify-center"
+                style={{
+                  width: 36,
+                  height: 44,
+                  flexShrink: 0,
+                  borderRadius: 6,
+                  background: 'var(--bg-inset)',
+                  border: '0.5px solid var(--border)',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  lineHeight: 0,
+                }}
+                aria-label={searchOpen ? 'Close search' : 'Search'}
+                aria-expanded={searchOpen}
+                // Only advertised while the panel is mounted — an
+                // aria-controls pointing at a missing id is an audit failure
+                // (same rule LiveSearch's combobox follows).
+                aria-controls={searchOpen ? MOBILE_SEARCH_PANEL_ID : undefined}
+              >
+                {/* Magnifying glass, inline SVG like every other glyph in
+                    this file — no icon-library dependency for one shape. */}
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="16.2" y1="16.2" x2="21" y2="21" />
+                </svg>
+              </button>
+
               <Link
                 href="/listings/new"
                 className="text-sm px-3 rounded-[6px] transition-colors inline-flex items-center justify-center"
@@ -483,6 +552,31 @@ export function Nav() {
             </div>
           )}
         </div>
+
+        {/* Mobile search panel — opened by the icon above, rendered INSIDE
+            the sticky nav so it drops directly beneath the top menu.
+
+            Closed, this branch renders nothing at all: no wrapper, no
+            reserved height, no permanent bar riding the top of the viewport.
+            That is the whole point of the change.
+
+            No body-scroll lock — this is a small panel, not the drawer, and
+            locking scroll for it would be worse than the bar it replaces. */}
+        {searchOpen && (
+          <div
+            id={MOBILE_SEARCH_PANEL_ID}
+            className="md:hidden px-4 py-2"
+            style={{ borderTop: '0.5px solid var(--border)' }}
+          >
+            <LiveSearch
+              placeholder="Search listings…"
+              autoFocus
+              // Search pushes "/?q=…" — a query-only change usePathname()
+              // never sees — so the panel has to be told to close.
+              onNavigate={() => setSearchOpen(false)}
+            />
+          </div>
+        )}
 
         {/* Second tier — selling-mode links + Ask Boet. Desktop only; keeps
             the selling modes fully visible on their own slim strip instead

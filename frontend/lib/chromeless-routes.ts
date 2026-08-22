@@ -7,8 +7,10 @@
 // that also needed it never got one. The result was a complaint from a
 // witness on Android: a marketplace SEARCH BAR, a wishlist heart and a
 // SHOPPING CART sitting across the top of a statutory statement, because
-// MobileSearchBar renders on phones (`md:hidden`) and nobody testing on a
-// desktop ever saw it. Adding a chromeless route must be one edit, not five.
+// MobileSearchBar rendered on every phone and nobody testing on a desktop ever
+// saw it. (It is installed-PWA-only now, which makes it LESS visible to
+// ordinary testing, not more — the denylist matters just as much.) Adding a
+// chromeless route must be one edit, not five.
 //
 // WHY THESE PAGES GET NO CHROME: /witness/* is opened by a member of the
 // public who received an SMS. They are not a customer, not a member, and did

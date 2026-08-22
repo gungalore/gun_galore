@@ -8,11 +8,11 @@
 // Signed-out taps route through /sign-in?redirect_url=/wishlist so the user
 // lands where they were headed (matches the old bottom-tab behaviour).
 //
-// Standalone-only by design, gated at the MobileSearchBar call site.
-// MobileSearchBar also renders for mobile-web visitors (they had no visible
-// search bar at all), so the gate is explicit there rather than implied by the
-// parent. Browser-mobile and desktop keep their existing wishlist entry points
-// (the hamburger drawer's Account section + the desktop nav dropdown).
+// Standalone-only by design. MobileSearchBar returns null outside the
+// installed PWA (it self-gates on useStandalone), so this button can only ever
+// appear there and needs no gate of its own. Browser-mobile and desktop keep
+// their existing wishlist entry points (the hamburger drawer's Account section
+// + the desktop nav dropdown).
 //
 // Presentation lives in TopBarIconButton, shared with TopCartButton — see the
 // note there on why these two can't be allowed to drift apart.

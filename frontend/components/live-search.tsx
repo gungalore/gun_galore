@@ -106,6 +106,7 @@ export function LiveSearch({
   onNavigate,
   defaultValue,
   preserveParams,
+  autoFocus,
 }: {
   placeholder?: string;
   className?: string;
@@ -129,6 +130,10 @@ export function LiveSearch({
   // drawer) pass nothing and search site-wide. `page` is intentionally
   // never preserved (a new search restarts at page 1).
   preserveParams?: Record<string, string>;
+  // Focus the input as soon as it mounts. Only for boxes that appear because
+  // the user just asked for search (the nav's mobile search panel) — a box
+  // that is always on screen must never steal focus on page load.
+  autoFocus?: boolean;
 }) {
   const router = useRouter();
   const { viewerFetch } = useViewerFetch();
@@ -366,6 +371,9 @@ export function LiveSearch({
           style={finalInputStyle}
           aria-label="Search listings"
           autoComplete="off"
+          // Undefined for every existing caller, so nothing that renders this
+          // box today changes behaviour.
+          autoFocus={autoFocus}
           // ARIA 1.2 combobox: the input owns the popup, and the highlighted
           // row is pointed at by id rather than by moving DOM focus.
           role="combobox"
