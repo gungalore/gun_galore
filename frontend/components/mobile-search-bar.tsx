@@ -89,6 +89,7 @@ export function MobileSearchBar() {
 
   return (
     <div
+      data-chrome-slide
       // In standalone the bar is the header at every width; in browser mode
       // the nav owns search from `md` up, so we only fill the phone gap. A CSS
       // breakpoint (not a JS viewport check) so it's right on the first paint.

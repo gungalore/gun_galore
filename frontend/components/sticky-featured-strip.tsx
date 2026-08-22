@@ -169,6 +169,7 @@ export function StickyFeaturedStrip() {
 
   return (
     <aside
+      data-chrome-slide
       className="app-chrome"
       aria-label="Featured listings"
       style={{

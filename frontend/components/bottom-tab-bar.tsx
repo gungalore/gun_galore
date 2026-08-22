@@ -609,6 +609,7 @@ export function BottomTabBar() {
   return (
     <>
       <nav
+        data-chrome-slide
         className="app-chrome"
         aria-label="Primary"
         style={{

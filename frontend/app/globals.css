@@ -281,6 +281,24 @@ footer li > a {
 .gg-disclose-body p:last-child { margin-bottom: 0; }
 @media (prefers-reduced-motion: reduce) {
   .gg-disclose-mark { transition: none; }
+
+  /* Scroll-driven chrome — the mobile search bar, the bottom tab bar and the
+     sticky featured strip — slides itself out of the way on scroll-down and
+     back on scroll-up. All three animate with an INLINE `transition`, and an
+     inline style cannot be overridden from a stylesheet without !important.
+     That is what it is for here: an accessibility escape hatch, not laziness.
+
+     ⚠️ ONLY THE MOTION GOES. The chrome still hides and returns — it just
+     snaps instead of sliding, so nothing becomes unreachable for anyone who
+     asked for reduced motion.
+
+     Tag any future scroll-driven chrome with data-chrome-slide and it is
+     covered automatically. Deliberately NOT applied to the Ask Boet
+     launcher: that one is an opacity cross-fade, which is not the
+     vestibular-triggering motion this query exists to suppress. */
+  [data-chrome-slide] {
+    transition: none !important;
+  }
 }
 
 /* When installed as a PWA we hide the top public nav + the legal
