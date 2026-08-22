@@ -330,10 +330,14 @@ export const licenceCentreApi = {
       title?: string;
     },
   ) =>
-    request<{ confirmed: boolean; expiresOn: string }>(t, `/${id}/confirm`, {
-      method: 'POST',
-      body: JSON.stringify(args),
-    }),
+    // ⚠️ `expiresOn` COMES BACK NULL ON A TICKED ROW. confirmExpiry returns
+    // `expiry ? toIsoDate(expiry) : null`, and typing it as a bare string
+    // invites the next caller to read `.slice(0, 4)` off it for a year.
+    request<{ confirmed: boolean; expiresOn: string | null }>(
+      t,
+      `/${id}/confirm`,
+      { method: 'POST', body: JSON.stringify(args) },
+    ),
 
   mute: (t: TokenGetter, id: string, muted: boolean) =>
     request<{ muted: boolean }>(

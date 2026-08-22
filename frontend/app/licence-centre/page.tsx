@@ -482,6 +482,19 @@ function AddPanel({
           </p>
         )}
         <ConfirmPanel
+          /* ⚠️ KEYED ON THE DOCUMENT, OR THE PANEL NEVER FORGETS THE LAST ONE.
+             Advancing the queue only swaps the props — React keeps the one
+             instance sitting at this position — so everything the panel holds
+             in state walked forward into the next document: the expiry, the
+             issue date, the type, the name, and now the two ticks. It was
+             already wrong with a date; the ticks made it destructive. Confirm a
+             photograph of a safe and the firearm licence behind it in the queue
+             opened with “Never expires” ticked, the expiry we had just read off
+             it cleared and its box disabled, and one enabled button reading
+             “That is right” — which filed the licence as a safe photograph,
+             wiped the date and stamped confirmedAt. That is a licence no
+             reminder can ever fire for again. */
+          key={current.id}
           token={token}
           id={current.id}
           proposed={current.proposed}
@@ -1439,25 +1452,36 @@ function CredentialCard({
             View
           </button>
         )}
-        <button
-          type="button"
-          disabled={busy}
-          className="underline disabled:opacity-50"
-          onClick={async () => {
-            setBusy(true);
-            onError(null);
-            try {
-              await licenceCentreApi.mute(token, row.id, !row.remindersMuted);
-              await onChanged();
-            } catch {
-              onError('We could not change that just now.');
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          {row.remindersMuted ? 'Turn reminders on' : 'Turn reminders off'}
-        </button>
+        {/* ⚠️ NO REMINDER SWITCH ON A DOCUMENT NOTHING CAN BE SCHEDULED
+            AGAINST. A ticked "Never expires" row carries a null expiresOn — a
+            database CHECK sees to that — and the reminder sweep selects on
+            `expiresOn: { not: null }`, so no stage has ever fired for one and
+            none ever will. The "reminders off" marker was taken off the line
+            above for precisely that reason; leaving the switch that sets it
+            offers "Turn reminders on" over a reminder that cannot exist, which
+            is the one promise this page may never make. It returns the moment
+            the tick comes off and a date goes in. */}
+        {row.state !== 'no-expiry' && (
+          <button
+            type="button"
+            disabled={busy}
+            className="underline disabled:opacity-50"
+            onClick={async () => {
+              setBusy(true);
+              onError(null);
+              try {
+                await licenceCentreApi.mute(token, row.id, !row.remindersMuted);
+                await onChanged();
+              } catch {
+                onError('We could not change that just now.');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {row.remindersMuted ? 'Turn reminders on' : 'Turn reminders off'}
+          </button>
+        )}
         <button
           type="button"
           disabled={busy}

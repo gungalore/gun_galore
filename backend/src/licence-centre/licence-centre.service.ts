@@ -779,16 +779,26 @@ export class LicenceCentreService {
 
     /**
      * ⚠️ NOT EVERY DOCUMENT HAS A DATE TO CONFIRM ANY MORE, and counting the
-     * ones that do not would bury the signal. A photograph of a gun safe is
-     * created with `neverExpires` already ticked and no vision call is spent
-     * on it, so its confirmedAt is null for ever and correctly so. Left in,
-     * this metric would climb with every safe photograph in the system and an
-     * operator watching it would be watching noise.
+     * ones that do not would bury the signal. A photograph of a gun safe
+     * filed here by hand is created with `neverExpires` already ticked and no
+     * vision call is spent on it, so its confirmedAt is null for ever and
+     * correctly so. Left in, this metric would climb with every safe
+     * photograph in the system and an operator watching it would be watching
+     * noise.
      *
-     * `neverExpires` is the member's own answer and is therefore the real
-     * test; the kind clause only catches a photograph row inserted by some
-     * path that forgot the tick, which would be a bug producing exactly the
-     * noise described above.
+     * `neverExpires` is the member's own answer, so it is the first test.
+     *
+     * ⚠️ THE KIND CLAUSE IS NOT BELT-AND-BRACES — IT IS CARRYING THE
+     * PHOTOGRAPHS ADOPTED OUT OF AN APPLICATION. There are three write sites
+     * for a Credential and only ONE of them pre-ticks the box: create() here,
+     * at defaultsToNeverExpires. VaultAdoptionService.adoptUpload copies the
+     * three safe shots and the installation shot across from a motivation
+     * without it, and kyc-id-adoption writes an IDENTITY_DOCUMENT without it
+     * — deliberately, because a passport is one and does expire. So an
+     * adopted safe photograph really does sit at neverExpires:false today,
+     * and dropping this clause would put every one of them back in the count.
+     * (It has a member-facing twin: those same rows read "Date not confirmed"
+     * in the member's own Centre. That belongs to vault-adoption, not here.)
      */
     const dateless = allKinds.filter(isPhotograph);
 
