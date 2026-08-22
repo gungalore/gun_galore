@@ -199,58 +199,69 @@ export function Nav() {
             />
           </div>
 
+          {/* ⚠️ OUTSIDE THE isLoaded GATE, ON PURPOSE.
+              Everything in the cluster below waits on Clerk, so on a cold
+              load the whole right side is empty until auth resolves. Search
+              needs no auth state, and the sticky bar it replaced WAS
+              server-rendered — leaving it in the gate would have made search
+              appear later than it used to. Its own ml-auto pins it right; the
+              cluster's ml-auto then has no free space left to take, so the two
+              sit flush and the row still reads [search][Sell][bell][cart][menu]. */}
+          <div className="md:hidden ml-auto shrink-0">
+            {/* Mobile-web search trigger. md:hidden because from md up the
+                row already carries the Categories+search unit, and nothing
+                about the desktop nav changes.
+
+                Visual language is TopBarIconButton's (radius 6, inset
+                background, hairline border, secondary ink) but the SIZE is
+                this row's: 44 tall to line up with Sell / cart / hamburger,
+                and 36 wide — the same width as the bell it sits two slots
+                from. Width, not height, is the scarce resource here; see
+                the 320px arithmetic below. */}
+            <button
+              type="button"
+              onClick={() => setSearchOpen((o) => !o)}
+              className="md:hidden inline-flex items-center justify-center"
+              style={{
+                width: 36,
+                height: 44,
+                flexShrink: 0,
+                borderRadius: 6,
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                lineHeight: 0,
+              }}
+              aria-label={searchOpen ? 'Close search' : 'Search'}
+              aria-expanded={searchOpen}
+              // Only advertised while the panel is mounted — an
+              // aria-controls pointing at a missing id is an audit failure
+              // (same rule LiveSearch's combobox follows).
+              aria-controls={searchOpen ? MOBILE_SEARCH_PANEL_ID : undefined}
+            >
+              {/* Magnifying glass, inline SVG like every other glyph in
+                  this file — no icon-library dependency for one shape. */}
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <line x1="16.2" y1="16.2" x2="21" y2="21" />
+              </svg>
+            </button>
+          </div>
+
           {/* Right side */}
           {isLoaded && (
             <div className="flex items-center gap-2 sm:gap-3 ml-auto md:ml-0 shrink-0">
-              {/* Mobile-web search trigger. md:hidden because from md up the
-                  row already carries the Categories+search unit, and nothing
-                  about the desktop nav changes.
-
-                  Visual language is TopBarIconButton's (radius 6, inset
-                  background, hairline border, secondary ink) but the SIZE is
-                  this row's: 44 tall to line up with Sell / cart / hamburger,
-                  and 36 wide — the same width as the bell it sits two slots
-                  from. Width, not height, is the scarce resource here; see
-                  the 320px arithmetic below. */}
-              <button
-                type="button"
-                onClick={() => setSearchOpen((o) => !o)}
-                className="md:hidden inline-flex items-center justify-center"
-                style={{
-                  width: 36,
-                  height: 44,
-                  flexShrink: 0,
-                  borderRadius: 6,
-                  background: 'var(--bg-inset)',
-                  border: '0.5px solid var(--border)',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  lineHeight: 0,
-                }}
-                aria-label={searchOpen ? 'Close search' : 'Search'}
-                aria-expanded={searchOpen}
-                // Only advertised while the panel is mounted — an
-                // aria-controls pointing at a missing id is an audit failure
-                // (same rule LiveSearch's combobox follows).
-                aria-controls={searchOpen ? MOBILE_SEARCH_PANEL_ID : undefined}
-              >
-                {/* Magnifying glass, inline SVG like every other glyph in
-                    this file — no icon-library dependency for one shape. */}
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <circle cx="11" cy="11" r="7" />
-                  <line x1="16.2" y1="16.2" x2="21" y2="21" />
-                </svg>
-              </button>
 
               <Link
                 href="/listings/new"
