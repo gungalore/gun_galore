@@ -342,6 +342,36 @@ model User {
   // Distinct from transactional notifications; null = not opted in.
   marketingConsentAt   DateTime?
 
+  /// ── DOCUMENT CENTRE: may we keep the paperwork from your applications? ──
+  ///
+  /// Operator, 2026-08-22: "we also need to launch a window asking the user
+  /// for us to keep the documents and explain why."
+  ///
+  /// ⚠️ NOBODY HAD EVER BEEN ASKED. Documents attached to an application were
+  /// already retained past it and already offered back on the next one, and
+  /// no record anywhere said a member had agreed to any of it. This is that
+  /// record.
+  ///
+  /// WHICH WORDING THEY LAST ANSWERED. Server-stamped from
+  /// VAULT_CONSENT_VERSION, never client-supplied — consentPolicyVersion
+  /// above is client-supplied and froze while the policies it named moved
+  /// underneath it. Stamped on YES AND ON NO alike: it records that they
+  /// answered, which is what stops us asking again.
+  documentVaultConsentVersion     String?   @db.VarChar(40)
+  /// Non-null only where the answer to that wording was yes.
+  documentVaultConsentAt          DateTime?
+  /// Agreed once and withdrew since — NOT the same fact as never having
+  /// agreed, and not recoverable from a nulled timestamp.
+  documentVaultConsentWithdrawnAt DateTime?
+
+  /// A createdAt watermark for the one-off copy of what they had already
+  /// attached before agreeing. The backfill walks their uploads newest-first
+  /// and only ever looks at rows OLDER than this, so deleting a document from
+  /// the Centre can never bring it back on a later batch.
+  documentVaultBackfillCursor     DateTime?
+  /// The backfill reached the end. It never runs again.
+  documentVaultBackfilledAt       DateTime?
+
   totalSales Int       @default(0)
   isBanned   Boolean   @default(false)
   bannedAt   DateTime?
@@ -4548,6 +4578,44 @@ enum CredentialKind {
   // Association membership, anything else the member wants kept with the
   // rest. Never chased, always accepted.
   OTHER
+
+  /// ── THE DOCUMENTS THAT DO NOT EXPIRE ──────────────────────────────
+  ///
+  /// Operator, 2026-08-22: "maybe combine the licence centre and the document
+  /// vault into one module where they can keep everything."
+  ///
+  /// The two stores split on EXPIRY, which is not a distinction any member
+  /// recognises. A competency certificate lived here, safe from any clock and
+  /// manageable by hand; the same member's ID copy and the photographs of
+  /// their safe lived only as uploads against ONE application, on a two-year
+  /// deletion clock, with no way to add or remove one from outside that
+  /// application. The most reusable documents a person owns were the ones
+  /// they could not manage.
+  ///
+  /// ⚠️ NAMED IDENTICALLY TO THEIR MotivationUploadKind COUNTERPARTS, so
+  /// CREDENTIAL_TO_UPLOAD is an identity map for all eight and there is no
+  /// translation table for anyone to get wrong.
+  ///
+  /// ⚠️ NONE OF THEM MAY CARRY AN expiresOn. Enforced in the database by
+  /// CHECK constraint Credential_person_kinds_have_no_expiry — which Prisma
+  /// cannot model, so it is invisible here and must be re-added by hand if
+  /// the migration baseline is ever reset. See
+  /// migrations/20260823090100_credential_provenance_guard.
+  IDENTITY_DOCUMENT
+  ADDRESS_CONFIRMATION
+  EMPLOYMENT_CONFIRMATION
+  /// The safe, closed.
+  SAFE_PHOTO_CLOSED
+  /// The safe, half open with the key in the door.
+  SAFE_PHOTO_AJAR
+  /// The safe, fully open with the roll bolts visible.
+  SAFE_PHOTO_BOLTS
+  /// How the safe is anchored, which no door shot shows.
+  SAFE_INSTALLATION
+  /// A log of hunts or competitive shoots. ⚠️ Reusable but it GOES STALE —
+  /// a log that stops eighteen months ago reads worse than a short current
+  /// one. The picker says so; see reuseCaution.
+  SHOOTING_ACTIVITY_LOG
 }
 
 model Credential {
@@ -4642,6 +4710,21 @@ model Credential {
   /// The member asked us to stop reminding about this one. Their call.
   remindersMuted  Boolean   @default(false)
 
+  /// HOW THIS DOCUMENT GOT HERE. 'member' | 'scan' | 'application'.
+  ///
+  /// Drives the removal copy, which is not the same sentence for a document
+  /// somebody filed here by hand as for one we copied out of an application
+  /// on their say-so — and it is the one number that says whether the consent
+  /// window is doing anything at all.
+  addedVia    String? @db.VarChar(16)
+  /// MO000123, where addedVia = 'application'. What the member is shown when
+  /// they ask why a document they never filed here is in their list.
+  ///
+  /// ⚠️ NOT A RELATION. A motivation is deleted by its own retention; a
+  /// foreign key would either block that or null this. It is a reference
+  /// number printed on a PDF, not a pointer.
+  addedForRef String? @db.VarChar(16)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   /// Set when the bytes have been removed. The row survives so a future sweep
@@ -4653,4 +4736,6 @@ model Credential {
   @@index([expiresOn])
   // The reminder sweep's exact predicate.
   @@index([confirmedAt, remindersMuted, expiresOn])
+  // Grouping the Centre by kind, and adoption's per-kind counts.
+  @@index([userId, kind])
 }

@@ -788,5 +788,15 @@ const DEFAULT_TITLE: Record<CredentialKind, string> = {
   DEDICATED_STATUS: 'Dedicated status',
   PROFICIENCY: 'Proficiency certificate',
   GOOD_STANDING: 'Letter of good standing',
+  // The documents the Centre gained when it absorbed the application
+  // paperwork. Named as a member would say them out loud, not as the enum.
+  IDENTITY_DOCUMENT: 'ID document',
+  ADDRESS_CONFIRMATION: 'Proof of address',
+  EMPLOYMENT_CONFIRMATION: 'Confirmation of employment',
+  SAFE_PHOTO_CLOSED: 'Safe, closed',
+  SAFE_PHOTO_AJAR: 'Safe, half open',
+  SAFE_PHOTO_BOLTS: 'Safe, open with bolts showing',
+  SAFE_INSTALLATION: 'How the safe is installed',
+  SHOOTING_ACTIVITY_LOG: 'Record of hunts and shoots',
   OTHER: 'Supporting document',
 };

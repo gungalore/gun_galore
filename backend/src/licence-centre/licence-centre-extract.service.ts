@@ -178,6 +178,32 @@ const WANTED: Record<CredentialKind, string[]> = {
   ],
   PROFICIENCY: ['certificate_number', 'holder_name', 'unit_standard'],
   OTHER: ['reference_number', 'holder_name', 'issuer'],
+
+  // ── THE DOCUMENTS WE KEEP RATHER THAN CHASE ────────────────────────
+  //
+  // ⚠️ EMPTY IS THE ANSWER, AND IT IS LOAD-BEARING. WANTED is both the
+  // question and the filter: an empty list means nothing is asked for and
+  // anything the model volunteers is discarded. There is nothing printed on a
+  // photograph of a gun safe to transcribe, and a vision call would spend
+  // money to come back with nothing — then flag the document amber for having
+  // found nothing, which is how a member gets told something is wrong with a
+  // photograph that is perfectly fine.
+  //
+  // create() skips read() entirely for these (NO_VISION_KINDS). The entries
+  // exist so the map stays exhaustive over the enum, which is what makes the
+  // compiler name every site the next time a kind is added.
+  IDENTITY_DOCUMENT: [],
+  // ⚠️ IT DOES CARRY A DATE, and the date decides whether a DFO accepts it.
+  // But that date must never become an expiresOn — the CHECK constraint
+  // forbids it, because a confirmed one would start SMSing AO Pro members
+  // about a municipal bill. Freshness is judged at pick time; see reuseCaution.
+  ADDRESS_CONFIRMATION: [],
+  EMPLOYMENT_CONFIRMATION: [],
+  SAFE_PHOTO_CLOSED: [],
+  SAFE_PHOTO_AJAR: [],
+  SAFE_PHOTO_BOLTS: [],
+  SAFE_INSTALLATION: [],
+  SHOOTING_ACTIVITY_LOG: [],
 };
 
 @Injectable()
@@ -249,7 +275,15 @@ export class LicenceCentreExtractService {
       const kind = currentKind(raw);
       return {
         kind,
-        confident: (parsed.confidence ?? '') === 'high',
+        // ⚠️ THE SAFE PHOTOGRAPHS ARE NEVER RETURNED AS CONFIDENT, whatever
+        // the model says. They are told apart by how far one door is open —
+        // a fine judgement from a single frame — and getting it wrong files
+        // the bolts shot under the closed-door annexure, so a DFO looking for
+        // proof the bolts engage is shown a photograph of a shut door.
+        // Low confidence makes the confirm step show the type picker, and the
+        // member settles it in one tap while looking at their own photograph.
+        confident:
+          (parsed.confidence ?? '') === 'high' && !UNSURE_BY_DEFAULT.has(kind),
         // Normalised too: a retired value in also_covers would now be the
         // document's own kind, which cleanAlsoCovers drops.
         alsoCovers: cleanAlsoCovers(
@@ -459,6 +493,21 @@ function userPrompt(
     GOOD_STANDING:
       'a section 16 letter of good standing from a hunting association or sports-shooting organisation. It is a sworn declaration that the member is registered and in good standing, and it usually shows a good-standing reference, the member number, the dedicated status number, the date the status was issued and the date it is valid until',
     OTHER: 'a supporting document',
+    // Never reached in practice — create() spends no vision call on these
+    // (NO_VISION_KINDS) — but the map is exhaustive so the compiler keeps
+    // naming this file whenever a kind is added.
+    IDENTITY_DOCUMENT: 'a South African identity document, card or passport',
+    ADDRESS_CONFIRMATION:
+      'a document proving where somebody lives — a municipal bill, a bank statement or a signed confirmation of residence',
+    EMPLOYMENT_CONFIRMATION: 'a letter confirming somebody’s employment',
+    SAFE_PHOTO_CLOSED: 'a photograph of a closed gun safe',
+    SAFE_PHOTO_AJAR: 'a photograph of a gun safe standing half open',
+    SAFE_PHOTO_BOLTS:
+      'a photograph of an open gun safe showing its locking bolts',
+    SAFE_INSTALLATION:
+      'a photograph showing how a gun safe is anchored to a wall or floor',
+    SHOOTING_ACTIVITY_LOG:
+      'a log of hunts or competitive shoots, listing dates, venues and disciplines',
   };
   const keys = [...wantedFor(kind, alsoCovers), 'issued_on', 'expires_on'];
   return [
@@ -534,6 +583,20 @@ Return STRICT JSON and nothing else:
 {"kind":"<one category>","also_covers":["<category>"],"confidence":"high"|"low"}
 `.trim();
 
+/**
+ * Kinds we never claim to be sure about, however sure the model sounds.
+ *
+ * Four photographs of one safe, distinguished only by how far the door is
+ * open. The cost of a wrong call is a photograph filed under the wrong
+ * annexure letter, which a member cannot see and a DFO can.
+ */
+const UNSURE_BY_DEFAULT: ReadonlySet<CredentialKind> = new Set<CredentialKind>([
+  CredentialKind.SAFE_PHOTO_CLOSED,
+  CredentialKind.SAFE_PHOTO_AJAR,
+  CredentialKind.SAFE_PHOTO_BOLTS,
+  CredentialKind.SAFE_INSTALLATION,
+]);
+
 export const CLASSIFY_USER = [
   'Which of these is this document? Answer with the exact string.',
   '',
@@ -559,6 +622,37 @@ export const CLASSIFY_USER = [
   '  A member may hold several of these from different associations. That is',
   '  normal - file each one as DEDICATED_DISCIPLINE.',
   'PROFICIENCY - a firearm proficiency or unit-standard training certificate',
+  '',
+  // ── THE SUPPORTING PAPERWORK, which the Centre now keeps alongside the
+  // credentials it chases. Named here because a category the enum knows and
+  // the prompt does not is a document that files itself as OTHER on every
+  // upload, silently — which is what licence-centre-classify.spec.ts exists
+  // to prevent, and why it went red the moment these values were added.
+  //
+  // ⚠️ NAMING THEM IS NOT THE SAME AS TRUSTING THE ANSWER. The four safe
+  // photographs are told apart by how far a door is open, which is a fine
+  // judgement to make from one frame, and filing the bolts shot as the closed
+  // shot puts the wrong photograph under the wrong annexure letter. So these
+  // are returned with low confidence unconditionally and the member picks —
+  // see classify(). The prompt's job here is to get the document into the
+  // right FAMILY, not to make the final call.
+  'IDENTITY_DOCUMENT - a South African identity document: the green barcoded',
+  '  book, the smart ID card, or the photo page of a passport',
+  'ADDRESS_CONFIRMATION - proof of where somebody lives: a municipal or',
+  '  utility bill, a bank statement, or a signed confirmation of residence',
+  'EMPLOYMENT_CONFIRMATION - a letter from an employer confirming that',
+  '  somebody works there',
+  'SAFE_PHOTO_CLOSED - a photograph of a gun safe with its door SHUT',
+  'SAFE_PHOTO_AJAR - a photograph of a gun safe standing part open, often',
+  '  with the key still in the door',
+  'SAFE_PHOTO_BOLTS - a photograph of a gun safe wide open, taken to show the',
+  '  locking bolts standing proud of the door edge',
+  'SAFE_INSTALLATION - a photograph showing how a safe is FIXED to the',
+  '  building: bolts through the back or floor, brackets, the wall behind it.',
+  '  Not a picture of the door.',
+  'SHOOTING_ACTIVITY_LOG - a log or register of hunts or competitive shoots,',
+  '  usually a table of dates, venues, disciplines or species',
+  '',
   // The letter of good standing lives inside DEDICATED_DISCIPLINE now, with
   // the rest of the association paperwork. It is described there.
   'OTHER - anything else, or you cannot tell',

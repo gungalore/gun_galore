@@ -25,6 +25,7 @@ import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { LicenceCentreService } from './licence-centre.service';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
+import { VaultConsentService } from '../users/vault-consent.service';
 
 // Behind the login, like everything in this area. middleware.ts's isPublicRoute
 // is an allow-list with default deny, so the frontend route is authenticated by
@@ -42,7 +43,53 @@ export class LicenceCentreController {
   constructor(
     private readonly svc: LicenceCentreService,
     private readonly quota: LicenceCentreQuotaService,
+    // From the @Global UsersModule rather than this one — see the header of
+    // vault-consent.service.ts for why the graph forces that.
+    private readonly consent: VaultConsentService,
   ) {}
+
+  // ── MAY WE KEEP YOUR DOCUMENTS? ────────────────────────────────────
+  //
+  // ⚠️ NONE OF THESE THREE ARE FLAG-GATED, and that is deliberate. Every
+  // other route here begins with quota.assertEnabled() and 404s when the
+  // Document Centre is switched off — but the Motivation Centre has to know
+  // the consent state whether or not the Centre is open. A page that cannot
+  // ask the question renders as though nobody has ever consented, and would
+  // put the window in front of somebody who already said yes. The `status`
+  // route above is not gated for the same reason.
+
+  @Get('consent')
+  consentState(@CurrentUser() clerkId: string) {
+    return this.consent.get(clerkId);
+  }
+
+  /**
+   * Record either answer.
+   *
+   * ⚠️ A DECLINE IS A RECORD, NOT AN ABSENCE. The version is stamped on both
+   * answers, because a no that stamps nothing is indistinguishable from never
+   * having been asked — and the window would come back on every visit, which
+   * is how a consent prompt becomes something people click through.
+   */
+  @Post('consent')
+  answerConsent(
+    @CurrentUser() clerkId: string,
+    @Body('agreed') agreed: unknown,
+  ) {
+    // Validated by hand: a bare @Body() is not a DTO and the global
+    // ValidationPipe has no forbidNonWhitelisted, so anything at all arrives
+    // here as `unknown`. An ambiguous value must never be read as a yes.
+    if (typeof agreed !== 'boolean') {
+      throw new BadRequestException('Answer must be yes or no.');
+    }
+    return this.consent.answer(clerkId, agreed);
+  }
+
+  /** Turn it off. ⚠️ Deletes nothing — see VaultConsentService.withdraw. */
+  @Delete('consent')
+  withdrawConsent(@CurrentUser() clerkId: string) {
+    return this.consent.withdraw(clerkId);
+  }
 
   /**
    * Deliberately NOT gated on the flag: with the module off every other

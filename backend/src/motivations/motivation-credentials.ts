@@ -476,6 +476,21 @@ export const CREDENTIAL_TO_UPLOAD: Record<
   // nothing under section 16, and OTHER is unclassified by definition.
   PROFESSIONAL_HUNTER: [],
   OTHER: [],
+
+  // ── AN IDENTITY MAP, WHICH IS WHY THE NAMES MATCH ──────────────────
+  //
+  // The eight person-level kinds were deliberately given the same names as
+  // their MotivationUploadKind counterparts so this half of the module has no
+  // translation table for anyone to get wrong. Same name, same document, same
+  // checklist row.
+  IDENTITY_DOCUMENT: [MotivationUploadKind.IDENTITY_DOCUMENT],
+  ADDRESS_CONFIRMATION: [MotivationUploadKind.ADDRESS_CONFIRMATION],
+  EMPLOYMENT_CONFIRMATION: [MotivationUploadKind.EMPLOYMENT_CONFIRMATION],
+  SAFE_PHOTO_CLOSED: [MotivationUploadKind.SAFE_PHOTO_CLOSED],
+  SAFE_PHOTO_AJAR: [MotivationUploadKind.SAFE_PHOTO_AJAR],
+  SAFE_PHOTO_BOLTS: [MotivationUploadKind.SAFE_PHOTO_BOLTS],
+  SAFE_INSTALLATION: [MotivationUploadKind.SAFE_INSTALLATION],
+  SHOOTING_ACTIVITY_LOG: [MotivationUploadKind.SHOOTING_ACTIVITY_LOG],
 };
 
 /**
