@@ -2396,8 +2396,16 @@ export class MotivationsService {
       // everything else we have produced. ONE retry with a fresh seed covers
       // both failures — a second identical result means the variation engine
       // is broken, which is an admin problem rather than a user one.
+      //
+      // ⚠️ THE PLAN NEEDS THE OVERLAP, not just the seed. The comparison
+      // section is only in the plan when the applicant actually holds a
+      // same-class firearm — the same condition that puts `overlapNote` in the
+      // pack. Both are read off THIS check so the writer can never be handed a
+      // section with no instruction behind it, or an instruction with no
+      // section to put it in.
+      const planOpts = { hasOverlap: !!overlap.writerNote };
       let seed = row.variantSeed;
-      let plan = planFor(row.licenceType, seed);
+      let plan = planFor(row.licenceType, seed, planOpts);
       let attempt = await this.claude.generate(pack, plan);
       let tokensIn = attempt.usage.promptTokens + researchIn;
       let tokensOut = attempt.usage.completionTokens + researchOut;
@@ -2423,7 +2431,7 @@ export class MotivationsService {
           `Motivation ${row.id}: regenerating (structureOk=${structureOk}, sameness=${sameness.toFixed(2)}, mechanics=${mechanics.length})`,
         );
         seed = crypto.randomInt(0, 2 ** 31 - 1);
-        plan = planFor(row.licenceType, seed);
+        plan = planFor(row.licenceType, seed, planOpts);
         attempt = await this.claude.generate(pack, plan);
         tokensIn += attempt.usage.promptTokens;
         tokensOut += attempt.usage.completionTokens;
