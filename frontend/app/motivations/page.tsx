@@ -128,7 +128,7 @@ export default function MotivationsPage() {
   if (enabled === false) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-10">
-        <h1 className="text-2xl font-semibold">Licence motivations</h1>
+        <h1 className="text-2xl font-semibold">Motivation Centre</h1>
         <p className="mt-3 text-[var(--text-secondary)]">
           We are still putting this together. It will appear here when it opens.
         </p>
@@ -146,7 +146,7 @@ export default function MotivationsPage() {
           onDone={() => setAskConsent(false)}
         />
       )}
-      <h1 className="text-2xl font-semibold">Firearm licence motivation</h1>
+      <h1 className="text-2xl font-semibold">Motivation Centre</h1>
       <p className="mt-2 text-[var(--text-secondary)]">
         We ask you about your circumstances, then prepare a formal motivation
         you sign and hand in with your application — along with a checklist of

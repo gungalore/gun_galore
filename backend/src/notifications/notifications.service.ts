@@ -5095,7 +5095,7 @@ export class NotificationsService {
    * the member's in law. Every channel says the document as printed governs.
    *
    * ⚠️ THE SMS NEVER SAYS "FIREARM". An SMS preview lands on a lock screen in
-   * front of whoever is standing nearby; "a document in your Licence Centre"
+   * front of whoever is standing nearby; "a document in your Document Centre"
    * carries the same urgency and tells a stranger nothing about what is in
    * somebody's house.
    *
@@ -5116,7 +5116,9 @@ export class NotificationsService {
     smsEnabled: boolean;
     emailEnabled: boolean;
   }) {
-    const url = `${this.appUrl}/licence-centre`;
+    // ⚠️ THE MEMBER-FACING PATH, WHICH IS NOW /documents. The backend
+    // prefix is unchanged; only what a person clicks moved.
+    const url = `${this.appUrl}/documents`;
     const on = d.expiresOn.toISOString().slice(0, 10);
     const gone = d.stage === 'D0';
     // The last two stages and the expiry itself are the ones worth a push and
@@ -5124,8 +5126,8 @@ export class NotificationsService {
     const actionable = d.stage === 'T100' || d.stage === 'T30' || gone;
 
     const headline = gone
-      ? 'A document in your Licence Centre has expired'
-      : 'A document in your Licence Centre is expiring';
+      ? 'A document in your Document Centre has expired'
+      : 'A document in your Document Centre is expiring';
 
     await this.persist({
       userId: d.userId,
@@ -5135,7 +5137,7 @@ export class NotificationsService {
       body: gone
         ? `${d.title} expired on ${on}. The document as printed always governs.`
         : `${d.title} expires on ${on} — ${d.daysLeft} days away. Start the renewal well before then.`,
-      url: '/licence-centre',
+      url: '/documents',
       iconKey: 'kyc',
       // linkedType + linkedId give the push a stable tag, so a later stage
       // REPLACES the earlier notification instead of stacking on it.
@@ -5148,8 +5150,8 @@ export class NotificationsService {
       await this.sendSms(
         d.phone,
         gone
-          ? `All Outdoor: a document in your Licence Centre has expired. Check it: ${url}`
-          : `All Outdoor: a document in your Licence Centre expires in ${d.daysLeft} days. Check it: ${url}`,
+          ? `All Outdoor: a document in your Document Centre has expired. Check it: ${url}`
+          : `All Outdoor: a document in your Document Centre expires in ${d.daysLeft} days. Check it: ${url}`,
         `lc-expiry-${d.credentialId}-${d.stage}`,
       );
     }
@@ -5162,8 +5164,8 @@ export class NotificationsService {
           label: gone ? 'Expired' : 'Renewal due',
         },
         headline,
-        body: `Hi ${b(d.name)}, ${b(d.title)} ${gone ? 'expired on' : 'expires on'} ${b(on)}. We remind you; we cannot renew it for you, and the document as printed always governs. If this date is wrong, correct it in your Licence Centre.`,
-        cta: { label: 'Open Licence Centre', url },
+        body: `Hi ${b(d.name)}, ${b(d.title)} ${gone ? 'expired on' : 'expires on'} ${b(on)}. We remind you; we cannot renew it for you, and the document as printed always governs. If this date is wrong, correct it in your Document Centre.`,
+        cta: { label: 'Open Document Centre', url },
         preheader: `${d.title}: ${gone ? 'expired' : 'expiring soon'}`,
       });
       await this.send(d.email, headline, html);

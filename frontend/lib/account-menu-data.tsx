@@ -211,10 +211,23 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     // Neither buying nor selling: the member's own compliance paperwork.
     // The motivation writer lived only at a direct URL until now — it belongs
     // beside the vault that feeds it.
+    // ⚠️ TWO CENTRES, AND THE OPERATOR NAMED BOTH (2026-08-22): "so we will
+    // have Document Centre and Motivation Centre".
+    //
+    // The rename is real work, not decoration. A module whose first section is
+    // firearm licences and whose second is a photograph of somebody's gun safe
+    // stopped being a licence tracker the day it absorbed the application
+    // paperwork — and nobody looking for their ID copy would think to open
+    // something called the Licence Centre.
+    //
+    // ⚠️ MEMBER-FACING ONLY. The backend prefix, the module directory and the
+    // scan hand-off's `dest` string all stay `licence-centre`: a phone
+    // mid-hand-off is holding a token minted against that path, and renaming
+    // it would strand whoever is standing at their desk right now.
     title: 'Licences',
     items: [
-      { href: '/licence-centre', label: 'Licence Centre', Icon: ShieldDocIcon },
-      { href: '/motivations', label: 'Licence motivations', Icon: DocIcon },
+      { href: '/documents', label: 'Document Centre', Icon: ShieldDocIcon },
+      { href: '/motivations', label: 'Motivation Centre', Icon: DocIcon },
     ],
   },
   {

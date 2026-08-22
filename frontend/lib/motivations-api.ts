@@ -305,6 +305,22 @@ export interface LibraryItem {
   addedOn: string;
   /** Already attached to the motivation being filled in. */
   alreadyHere: boolean;
+  /**
+   * A note to show beside it, or null.
+   *
+   * ⚠️ A WARNING, NOT A BLOCK. A proof of address four months old is still
+   * theirs to send and they may have a reason; what must never happen is it
+   * going in silently and a DFO being the one to notice. 'stale' means we can
+   * see the problem from the date, 'ask' means only they can know.
+   */
+  caution: { tone: 'ask' | 'stale'; text: string } | null;
+  /**
+   * Needs "this is the safe at the address on this application" ticked first.
+   *
+   * A safe photograph does not go stale with time — it goes wrong when the
+   * applicant moves house, and nothing on the file says so.
+   */
+  askPlace: boolean;
 }
 
 export interface LicenceCentreOffer {
@@ -526,11 +542,16 @@ export const motivationsApi = {
     id: string,
     source: 'credential' | 'upload',
     sourceId: string,
+    /** "These are the safe at the address on this application." */
+    placeConfirmed = false,
   ) =>
     request<AddedUpload & { alreadyHad: boolean }>(
       t,
       `/${id}/uploads/from-library`,
-      { method: 'POST', body: JSON.stringify({ source, sourceId }) },
+      {
+        method: 'POST',
+        body: JSON.stringify({ source, sourceId, placeConfirmed }),
+      },
     ),
 
   /** They agree, and we copy. Never overwrites an answer they typed. */

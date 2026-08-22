@@ -5,6 +5,8 @@ import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
 import ScanButton from '@/components/scan/scan-button';
 import LibraryPicker from '@/components/library-picker';
+import VaultConsentModal from '@/components/vault-consent';
+import { licenceCentreApi } from '@/lib/licence-centre-api';
 import DocumentChecklist, {
   ChecklistRow,
 } from '@/components/document-checklist';
@@ -142,7 +144,7 @@ function uploadKindFor(row: ChecklistRow | null): string {
 }
 
 export default function MotivationWizardPage() {
-  const { getToken } = useAuth();
+  const { getToken, userId: clerkUserId } = useAuth();
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -521,6 +523,22 @@ export default function MotivationWizardPage() {
    */
   const [suggested, setSuggested] = useState<LibraryItem[]>([]);
   const [suggestDone, setSuggestDone] = useState(false);
+  /**
+   * Are we keeping this member's documents?
+   *
+   * ⚠️ IT DRIVES A CONTROL, NOT A GATE. The picker says "nothing saved to
+   * reuse yet" when the library is empty, and that sentence is untrue for
+   * somebody holding twelve documents who told us not to offer them. This is
+   * what lets it say the other thing.
+   *
+   * Undefined until the call lands — the picker only takes the third branch on
+   * an explicit false, so a slow call shows the ordinary control rather than
+   * flashing "turn it on" at somebody who already has.
+   */
+  const [keeping, setKeeping] = useState<boolean | undefined>(undefined);
+  const [askConsent, setAskConsent] = useState(false);
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
+
   const loadLibrary = useCallback(async () => {
     try {
       const r = await motivationsApi.library(token, id);
@@ -528,6 +546,13 @@ export default function MotivationWizardPage() {
       setSuggested(r.suggested ?? []);
     } catch {
       // A library we cannot read costs a shortcut, not the ability to upload.
+    }
+    try {
+      const c = await licenceCentreApi.consent(token);
+      setKeeping(c.keeping);
+      setRetentionDays(c.retentionDays ?? null);
+    } catch {
+      // Same rule: a failed lookup costs the extra control, not the page.
     }
   }, [token, id]);
   useEffect(() => {
@@ -663,12 +688,13 @@ export default function MotivationWizardPage() {
    * and are applied, exactly as if it had just been photographed.
    */
   const attachFromLibrary = useCallback(
-    async (item: LibraryItem) => {
+    async (item: LibraryItem, placeConfirmed = false) => {
       const row = await motivationsApi.addFromLibrary(
         token,
         id,
         item.source,
         item.sourceId,
+        placeConfirmed,
       );
       setUploads((u) => [...u, row]);
       // ⚠️ NEVER OVER AN ANSWER THEY TYPED. Unlike the per-field camera —
@@ -1105,8 +1131,30 @@ export default function MotivationWizardPage() {
     );
   }
 
+  // ⚠️ RENDERED, BUT NEVER WHILE THE DOCUMENT IS BEING WRITTEN. This page
+  // skips a poll tick whenever a blocking overlay is up, so a consent window
+  // over a running generation would stop the wizard noticing its own
+  // generation finish — somebody would sit watching "Writing it…" behind a
+  // notice. The window is opened deliberately from a document slot, which is
+  // never a moment when a generation is running; the guard is for the case
+  // where it somehow is.
+  const consentOverlay =
+    askConsent && !generating && clerkUserId ? (
+      <VaultConsentModal
+        token={token}
+        userId={clerkUserId}
+        retentionDays={retentionDays}
+        onDone={(agreed) => {
+          setAskConsent(false);
+          if (agreed) void loadLibrary();
+        }}
+      />
+    ) : null;
+
   return (
-    <main className="mx-auto max-w-3xl px-4 py-6">
+    <>
+      {consentOverlay}
+      <main className="mx-auto max-w-3xl px-4 py-6">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">Your firearm licence motivation</h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
@@ -1262,6 +1310,8 @@ export default function MotivationWizardPage() {
                     <LibraryPicker
                       items={library.filter((l) => l.kind === k)}
                       onPick={attachFromLibrary}
+                      keeping={keeping}
+                      onTurnOn={() => setAskConsent(true)}
                     />
                     <ScanButton
                       compact
@@ -1968,6 +2018,7 @@ export default function MotivationWizardPage() {
         </p>
       </section>
     </main>
+    </>
   );
 }
 
