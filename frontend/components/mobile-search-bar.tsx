@@ -23,6 +23,7 @@
 // in the root layout and the component decides.
 
 import { usePathname } from 'next/navigation';
+import { useScrollDirection } from '@/lib/use-scroll-direction';
 import { useStandalone } from '@/lib/use-standalone';
 import { LiveSearch } from '@/components/live-search';
 import { TopWishlistButton } from '@/components/top-wishlist-button';
@@ -65,8 +66,26 @@ const NAV_HEIGHT_PX = 56;
 export function MobileSearchBar() {
   const isStandalone = useStandalone();
   const pathname = usePathname();
+  // ⚠️ BEFORE the early return — hooks cannot sit behind a conditional.
+  const scrollDir = useScrollDirection();
 
   if (shouldHide(pathname)) return null;
+
+  // ── Get out of the way while the user is reading ──────────────────
+  //
+  // Reported from Chrome on Android: the bar is sticky and "in the way".
+  // It was: on a phone the nav pins 56px at the top and this bar pins ~60px
+  // directly under it, so ~116px of the screen is permanently chrome — on top
+  // of Chrome's own URL bar. Scrolling a category list, most of what you had
+  // was header.
+  //
+  // Same behaviour the bottom tab bar already has (useScrollDirection, hide on
+  // down, return on up), so the two pieces of chrome now move as a pair.
+  //
+  // BROWSER MODE ONLY. In standalone this bar IS the header — the public nav is
+  // hidden by CSS — and it also carries the wishlist and cart buttons, so
+  // hiding it would leave no top chrome and no way to reach the cart.
+  const hideOnScroll = !isStandalone && scrollDir === 'down';
 
   return (
     <div
@@ -77,6 +96,19 @@ export function MobileSearchBar() {
       style={{
         position: 'sticky',
         top: isStandalone ? 0 : NAV_HEIGHT_PX,
+        // ⚠️ THE OFFSET IS OWN-HEIGHT *PLUS* THE NAV, not just -100%.
+        // Pinned at 56px, translating up by its own height alone lands it
+        // roughly on top of the nav — and since we share z-index 50 but come
+        // later in the DOM, it would paint OVER the nav on the way past.
+        // Clearing NAV_HEIGHT_PX as well parks its bottom edge exactly on the
+        // viewport top, so it never overlaps and the z-index can stay put.
+        transform: hideOnScroll
+          ? `translateY(calc(-100% - ${NAV_HEIGHT_PX}px))`
+          : 'translateY(0)',
+        // Matches bottom-tab-bar.tsx so the top and bottom chrome move
+        // together rather than at two different speeds.
+        transition: 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)',
+        willChange: 'transform',
         // Above page content so the LiveSearch dropdown — which renders
         // absolute-positioned inside this container — stacks over the
         // page below it. Deliberately NOT >= 60: the nav's mobile drawer
