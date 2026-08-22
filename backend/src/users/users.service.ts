@@ -1309,21 +1309,89 @@ export class UsersService {
 
   // ─────────────────── Notification preferences (Phase 2) ────────────
   // Per-channel mute. The in-app inbox is always on; web-push is managed
-  // per-device. Only email + SMS are user-mutable here.
+  // per-device. Email, SMS and WhatsApp are settable here — though the
+  // WhatsApp toggle is greyed out in the UI until the channel opens.
   async updateNotificationPrefs(
     clerkId: string,
-    prefs: { emailEnabled?: boolean; smsEnabled?: boolean },
+    prefs: {
+      emailEnabled?: boolean;
+      smsEnabled?: boolean;
+      whatsappEnabled?: boolean;
+    },
   ) {
-    const data: { notifyEmailEnabled?: boolean; notifySmsEnabled?: boolean } = {};
+    const data: {
+      notifyEmailEnabled?: boolean;
+      notifySmsEnabled?: boolean;
+      notifyWhatsappEnabled?: boolean;
+    } = {};
     if (typeof prefs.emailEnabled === 'boolean')
       data.notifyEmailEnabled = prefs.emailEnabled;
     if (typeof prefs.smsEnabled === 'boolean')
       data.notifySmsEnabled = prefs.smsEnabled;
-    return this.prisma.user.update({
+    if (typeof prefs.whatsappEnabled === 'boolean')
+      data.notifyWhatsappEnabled = prefs.whatsappEnabled;
+    // ⚠️ At least one of EMAIL or SMS has to survive the patch, or the
+    // member has silenced every way we have of telling them their order
+    // shipped. WhatsApp deliberately does not count towards that floor: it is
+    // operator-gated (whatsapp_enabled) and its toggle ships greyed out, so a
+    // member left on WhatsApp alone would be sitting on a channel they cannot
+    // re-enable and we may not even be sending over yet.
+    //
+    // ⚠️ AND THE FLOOR IS ENFORCED IN THE `where`, NOT AFTER A READ. Reading
+    // the row, deciding, then writing leaves a window: two tabs flipping email
+    // off and SMS off at the same moment each read a legal state, both writes
+    // land, and the member ends up with no channel at all — precisely the
+    // outcome this guard exists to prevent. Pushing the condition into the
+    // UPDATE lets Postgres settle it; the second write stops matching and
+    // updateMany reports count 0.
+    const FLOOR =
+      'Keep either email or SMS switched on — we need one way to reach you about your orders.';
+
+    if (Object.keys(data).length > 0) {
+      // Both halves off in one body is decidable without touching the row.
+      if (data.notifyEmailEnabled === false && data.notifySmsEnabled === false)
+        throw new BadRequestException(FLOOR);
+
+      // Turning ONE half off is legal only while the other half is on. As a
+      // `where` that reads: match this member, but only if the channel I am
+      // not touching is still enabled. A patch that sets one half true can
+      // never trip the floor, so it needs no guard.
+      const guard: {
+        notifyEmailEnabled?: boolean;
+        notifySmsEnabled?: boolean;
+      } = {};
+      if (data.notifyEmailEnabled === false && data.notifySmsEnabled === undefined)
+        guard.notifySmsEnabled = true;
+      if (data.notifySmsEnabled === false && data.notifyEmailEnabled === undefined)
+        guard.notifyEmailEnabled = true;
+
+      const { count } = await this.prisma.user.updateMany({
+        where: { clerkId, ...guard },
+        data,
+      });
+      // count 0 is ambiguous — no such member, or the guard refused. Only the
+      // follow-up read can tell them apart, and it runs on the failure path
+      // only, so the happy path stays at two statements.
+      if (count === 0) {
+        const exists = await this.prisma.user.findUnique({
+          where: { clerkId },
+          select: { id: true },
+        });
+        if (!exists) throw new NotFoundException('User not found');
+        throw new BadRequestException(FLOOR);
+      }
+    }
+
+    const row = await this.prisma.user.findUnique({
       where: { clerkId },
-      data,
-      select: { notifyEmailEnabled: true, notifySmsEnabled: true },
+      select: {
+        notifyEmailEnabled: true,
+        notifySmsEnabled: true,
+        notifyWhatsappEnabled: true,
+      },
     });
+    if (!row) throw new NotFoundException('User not found');
+    return row;
   }
 
   // Seller default parcel size (Phase 6 P6.3). Each field is independently

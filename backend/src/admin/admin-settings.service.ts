@@ -313,6 +313,20 @@ const FLAGS: SettingFlag[] = [
     type: 'number',
     default: '25',
   },
+
+  // ─── Comms ────────────────────────────────────────────────────
+  // Mirrors of settings.service.ts FLAGS. Both registries, or neither.
+  {
+    key: 'whatsapp_enabled',
+    label: 'WhatsApp notifications enabled',
+    hint: 'Master switch for the WhatsApp channel. OFF = nothing is ever sent over WhatsApp, whatever a member has chosen — which is why the member toggle can sit ON while it is greyed out as "coming soon". There is no WhatsApp sender wired up yet, so leave this OFF until one is live and Meta has approved the templates. The plan is shipping updates only at first, to build sender reputation before anything else is sent.',
+    group: 'Comms',
+    type: 'boolean',
+    default: 'false',
+    // Opens an outbound channel to real phone numbers through a third party
+    // whose trust in us is the entire reason for starting small.
+    danger: true,
+  },
 ];
 
 @Injectable()

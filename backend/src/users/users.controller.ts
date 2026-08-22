@@ -95,6 +95,10 @@ export class UsersController {
         },
         notifyEmailEnabled: true,
         notifySmsEnabled: true,
+        // ⚠️ This select is an allowlist: a field left out arrives at the
+        // frontend as undefined, and the `x !== false` idiom the toggles use
+        // then renders it as ON. Every notify* column must be listed here.
+        notifyWhatsappEnabled: true,
         // Seller default parcel size (Phase 6 P6.3) — pre-fills the sell form.
         defaultWeightGrams: true,
         defaultLengthCm: true,
@@ -242,7 +246,12 @@ export class UsersController {
   @UseGuards(ClerkGuard)
   updateNotificationPrefs(
     @CurrentUser() clerkId: string,
-    @Body() body: { emailEnabled?: boolean; smsEnabled?: boolean },
+    @Body()
+    body: {
+      emailEnabled?: boolean;
+      smsEnabled?: boolean;
+      whatsappEnabled?: boolean;
+    },
   ) {
     return this.users.updateNotificationPrefs(clerkId, body);
   }

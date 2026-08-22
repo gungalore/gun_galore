@@ -1,11 +1,15 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
 
 // Address-book CRUD + notification-preference logic (Phase 2). Light Prisma
 // mock; $transaction runs the callback against the same mock.
 describe('UsersService — address book & notification prefs', () => {
   let prisma: {
-    user: { findUnique: jest.Mock; update: jest.Mock };
+    user: {
+      findUnique: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
     address: {
       findMany: jest.Mock;
       findFirst: jest.Mock;
@@ -31,6 +35,7 @@ describe('UsersService — address book & notification prefs', () => {
       user: {
         findUnique: jest.fn().mockResolvedValue({ id: 'u1' }),
         update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       address: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -97,14 +102,79 @@ describe('UsersService — address book & notification prefs', () => {
     });
   });
 
+  // ⚠️ THE FLOOR LIVES IN THE `where`, so these assert on updateMany, not
+  // update. Turning SMS off is only allowed while email is still on, and that
+  // condition rides along in the WHERE rather than being decided by an earlier
+  // read — two tabs racing can no longer land on both-off.
   it('writes only the provided notification-preference booleans', async () => {
+    prisma.user.updateMany.mockResolvedValue({ count: 1 });
+    prisma.user.findUnique.mockResolvedValue({
+      notifyEmailEnabled: true,
+      notifySmsEnabled: false,
+      notifyWhatsappEnabled: true,
+    });
     await service.updateNotificationPrefs('clerk1', { smsEnabled: false });
-    expect(prisma.user.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { clerkId: 'clerk1' },
-        data: { notifySmsEnabled: false },
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { clerkId: 'clerk1', notifyEmailEnabled: true },
+      data: { notifySmsEnabled: false },
+    });
+  });
+
+  // ⚠️ The frontend PATCHes ONLY the toggle being flipped, so a body of
+  // { smsEnabled: false } is all the server sees — the fact that email is
+  // already off lives in the row. The guarded WHERE simply fails to match it.
+  it('refuses to leave a member with neither email nor SMS', async () => {
+    prisma.user.updateMany.mockResolvedValue({ count: 0 });
+    prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
+    await expect(
+      service.updateNotificationPrefs('clerk1', { smsEnabled: false }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  // Both halves in one body is decidable from the body alone, so it must not
+  // cost a round trip.
+  it('rejects both channels off in one body without touching the row', async () => {
+    await expect(
+      service.updateNotificationPrefs('clerk1', {
+        emailEnabled: false,
+        smsEnabled: false,
       }),
-    );
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  // WhatsApp is operator-gated and its toggle ships greyed out, so it cannot
+  // stand in as the one channel a member is guaranteed to keep.
+  it('does not let WhatsApp satisfy the at-least-one-channel floor', async () => {
+    prisma.user.updateMany.mockResolvedValue({ count: 0 });
+    prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
+    await expect(
+      service.updateNotificationPrefs('clerk1', {
+        emailEnabled: false,
+        whatsappEnabled: true,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { clerkId: 'clerk1', notifySmsEnabled: true },
+      data: { notifyEmailEnabled: false, notifyWhatsappEnabled: true },
+    });
+  });
+
+  // …and the mirror image: WhatsApp is outside the floor, so setting it must
+  // work whatever the other two are — and it takes no guard at all, because
+  // the patch never touches the email/SMS pair.
+  it('lets WhatsApp be set even when email and SMS are both already off', async () => {
+    prisma.user.updateMany.mockResolvedValue({ count: 1 });
+    prisma.user.findUnique.mockResolvedValue({
+      notifyEmailEnabled: false,
+      notifySmsEnabled: false,
+      notifyWhatsappEnabled: false,
+    });
+    await service.updateNotificationPrefs('clerk1', { whatsappEnabled: false });
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { clerkId: 'clerk1' },
+      data: { notifyWhatsappEnabled: false },
+    });
   });
 });
 

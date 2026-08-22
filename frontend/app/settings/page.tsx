@@ -60,6 +60,10 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [emailOn, setEmailOn] = useState(true);
   const [smsOn, setSmsOn] = useState(true);
+  // WhatsApp is stored per user but not user-settable yet — the switch below
+  // is greyed until the operator turns the channel on globally, so this is
+  // display-only for now.
+  const [whatsappOn, setWhatsappOn] = useState(true);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [form, setForm] = useState<AddrForm | null>(null);
   const [busy, setBusy] = useState(false);
@@ -106,6 +110,7 @@ export default function SettingsPage() {
       ]);
       setEmailOn(me?.notifyEmailEnabled !== false);
       setSmsOn(me?.notifySmsEnabled !== false);
+      setWhatsappOn(me?.notifyWhatsappEnabled !== false);
       setShip({
         weightKg: me?.defaultWeightGrams ? String(me.defaultWeightGrams / 1000) : '',
         lengthCm: me?.defaultLengthCm ? String(me.defaultLengthCm) : '',
@@ -125,6 +130,19 @@ export default function SettingsPage() {
   }, [load]);
 
   async function savePrefs(next: { emailEnabled?: boolean; smsEnabled?: boolean }) {
+    // ⚠️ At least one of Email or SMS has to stay on, or we lose every way to
+    // reach the user off-site. The server enforces this and answers 400, but
+    // we mirror it here so the switch never flicks off and back. WhatsApp is
+    // deliberately not counted: it's operator-gated, so allowing it to satisfy
+    // the floor would let someone strand themselves on a channel they can't
+    // switch back on. Merge onto current state — `next` is a partial.
+    if (!(next.emailEnabled ?? emailOn) && !(next.smsEnabled ?? smsOn)) {
+      setError(
+        'Keep at least one of Email or SMS on so we can reach you about orders and payments.',
+      );
+      return;
+    }
+    setError(null);
     // Optimistic; revert on failure.
     const prevEmail = emailOn;
     const prevSms = smsOn;
@@ -247,27 +265,39 @@ export default function SettingsPage() {
   // `label` is the accessible name — the visible wording sits in a separate
   // <p> beside the switch, so without it a screen reader announces a bare
   // "switch, on".
+  // `disabled` is for a channel that exists but the user can't set yet
+  // (WhatsApp, below). It stays a full-size switch with its knob and colour and
+  // only dims — a half-drawn or hidden control reads as a rendering bug rather
+  // than as "not yet". `onClick` is optional so such a row needn't pass a no-op.
   const Toggle = ({
     on,
     onClick,
     label,
+    disabled = false,
   }: {
     on: boolean;
-    onClick: () => void;
+    onClick?: () => void;
     label: string;
+    disabled?: boolean;
   }) => (
     <button
       type="button"
       role="switch"
       aria-checked={on}
       aria-label={label}
-      onClick={onClick}
+      // aria-disabled rather than the `disabled` attribute: a truly disabled
+      // button is skipped by some screen readers, so the user would never hear
+      // that the channel exists. tabIndex -1 still takes it out of the tab order.
+      aria-disabled={disabled || undefined}
+      tabIndex={disabled ? -1 : undefined}
+      onClick={disabled ? undefined : onClick}
       style={{
         width: 44,
         height: 26,
         borderRadius: 13,
         border: 'none',
-        cursor: 'pointer',
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
         background: on ? '#00a03c' : 'var(--border-hover)',
         position: 'relative',
         transition: 'background 0.15s',
@@ -328,19 +358,26 @@ export default function SettingsPage() {
               Important account and order alerts always appear in your in-app
               inbox. Choose which extra channels you want.
             </p>
+            {/* ⚠️ WhatsApp is shown greyed on purpose, not hidden: the channel
+                is plumbed but nothing sends over it until the operator turns on
+                the global `whatsapp_enabled` flag, and when it does it carries
+                shipping updates only. Leaving the switch visible tells the user
+                the channel is coming without letting them set a preference we
+                can't honour yet. Don't wire this to savePrefs until the flag is
+                live — the stored flag is already on by default. */}
             <div className="flex items-center justify-between py-2">
               <div>
                 <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                  Email
+                  WhatsApp
                 </p>
                 <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  Order updates, offers and account emails.
+                  Shipping updates. Coming soon.
                 </p>
               </div>
               <Toggle
-                on={emailOn}
-                onClick={() => savePrefs({ emailEnabled: !emailOn })}
-                label="Email notifications"
+                on={whatsappOn}
+                label="WhatsApp notifications (coming soon)"
+                disabled
               />
             </div>
             <div
@@ -359,6 +396,24 @@ export default function SettingsPage() {
                 on={smsOn}
                 onClick={() => savePrefs({ smsEnabled: !smsOn })}
                 label="SMS notifications"
+              />
+            </div>
+            <div
+              className="flex items-center justify-between py-2"
+              style={{ borderTop: '0.5px solid var(--border)' }}
+            >
+              <div>
+                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                  Email
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Order updates, offers and account emails.
+                </p>
+              </div>
+              <Toggle
+                on={emailOn}
+                onClick={() => savePrefs({ emailEnabled: !emailOn })}
+                label="Email notifications"
               />
             </div>
 

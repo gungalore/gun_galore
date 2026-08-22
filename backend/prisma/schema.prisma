@@ -428,12 +428,19 @@ model User {
   notifications Notification[]
 
   // ── Notification channel preferences ─────────────────────────────
-  // Per-channel mute for email + SMS (default ON = the historical
-  // behaviour). Enforced centrally in NotificationsService.send /
-  // sendSms. The in-app inbox is always written; web-push opt-out is
-  // per-device via PushSubscription.category.
-  notifyEmailEnabled Boolean @default(true)
-  notifySmsEnabled   Boolean @default(true)
+  // Per-channel mute (default ON = the historical behaviour). Email and
+  // SMS are enforced centrally in NotificationsService.send / sendSms.
+  // The in-app inbox is always written; web-push opt-out is per-device
+  // via PushSubscription.category.
+  notifyEmailEnabled    Boolean @default(true)
+  notifySmsEnabled      Boolean @default(true)
+  // ⚠️ Default TRUE on purpose — and the default is NOT what keeps this
+  // channel quiet. The toggle ships greyed out ("coming soon") while we
+  // build sender trust with Meta on shipping messages alone, so a member
+  // who defaulted to false could never switch themselves back on. The
+  // global `whatsapp_enabled` Setting (default false) is the kill switch;
+  // flip this default and everyone is silently muted the day it is thrown.
+  notifyWhatsappEnabled Boolean @default(true)
 
   // ── Seller default parcel size (Phase 6 P6.3) ────────────────────
   // Pre-fills the parcel dimensions on the sell form so a seller who
