@@ -35,7 +35,26 @@ import type { StructurePlan } from './motivation-structure';
 // Long-form output needs a longer timeout than the 60s the vision verifiers
 // use. Still well inside nginx's 90s and Cloudflare's ~100s — a call that
 // outlives those returns a gateway error the user cannot act on.
-const GENERATE_TIMEOUT_MS = 85_000;
+// ⚠️ 85_000 UNTIL 2026-08-22, AND IT WAS STALE. That number was sized when
+// generation was SYNCHRONOUS — the comment above still reasons about nginx's
+// 90s and Cloudflare's ~100s. Generation moved to 202 + polling; the HTTP
+// request returns before the writer starts, so no proxy is waiting on this
+// call and those ceilings stopped applying. RESEARCH_TIMEOUT_MS below already
+// says exactly that about itself; this constant simply never followed.
+//
+// It went from theoretical to live the day the corpus sections landed. An S16
+// with an overlap now writes the_discipline, the_firearm, the_calibre,
+// comparison AND statutory_application, and three consecutive real attempts
+// on MO000017 died with "Request timed out" at 85s — the applicant getting
+// "we could not draft the document just now" for work that was progressing
+// fine.
+//
+// 180s matches research, on the same reasoning: off the request, so the cap is
+// only "do not hang forever". The real ceiling is sweepStuckGenerations(),
+// which releases a row after 15 minutes — the worst realistic path (research
+// 180 + write 180 + one local retry 180 + verify 60 + grade 60 = 11 min) still
+// lands inside it. Raise this and check that sum again.
+const GENERATE_TIMEOUT_MS = 180_000;
 const GRADE_TIMEOUT_MS = 60_000;
 // Research runs a handful of web searches before writing. It only ever runs
 // OFF the request (generation is async now), so the proxy ceilings that cap
