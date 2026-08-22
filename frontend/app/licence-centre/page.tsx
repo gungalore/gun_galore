@@ -136,6 +136,26 @@ export default function LicenceCentrePage() {
   const [rows, setRows] = useState<CredentialRow[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ── THE ID FROM VERIFICATION, OFFERED AGAIN ────────────────────────
+  //
+  // ⚠️ THE OFFER USED TO EXIST IN EXACTLY ONE PLACE, ON ONE SCREEN, ONCE. It
+  // rendered on the KYC success page and nowhere else — so anybody who missed
+  // that moment lost it for good, with no way back. Three ordinary ways to
+  // miss it: the screen redirects after three seconds, an admin approving an
+  // UNDER_REVIEW verification means the member is never on that page at all,
+  // and anyone verified before the feature shipped never saw it.
+  //
+  // Operator, 2026-08-23: "it also did not pull through my ID after KYC into
+  // the Document centre." They were verified at 23:33 and the card deployed
+  // at 00:49 — so it was working exactly as built, and being built that way
+  // was the bug.
+  //
+  // The offer endpoint is idempotent and already answers "already there", so
+  // the honest fix is to ask wherever the answer is useful rather than to
+  // pick a better single moment.
+  const [idOffer, setIdOffer] = useState<
+    'none' | 'offer' | 'saving' | 'kept'
+  >('none');
 
   const refresh = useCallback(async () => {
     try {
@@ -154,7 +174,15 @@ export default function LicenceCentrePage() {
         if (!alive) return;
         setEnabled(s.enabled);
         // With the flag off every other endpoint 404s, so do not call them.
-        if (s.enabled) await refresh();
+        if (s.enabled) {
+          await refresh();
+          // Fails to silence — a missing optional offer must never become an
+          // error on the page.
+          const o = await licenceCentreApi
+            .kycIdOffer(token)
+            .catch(() => ({ available: false, alreadyThere: false }));
+          if (alive && o.available) setIdOffer('offer');
+        }
       } catch {
         if (alive) setEnabled(false);
       }
@@ -196,6 +224,64 @@ export default function LicenceCentrePage() {
         simply keep it. It is all encrypted on our own server and nobody at All
         Outdoor can read it.
       </p>
+
+      {/* ── THE ID FROM VERIFICATION ─────────────────────────────────
+          Offered here as well as on the KYC success screen, because that
+          screen redirects after three seconds and an admin-approved
+          verification never shows it at all. See the note on idOffer. */}
+      {idOffer !== 'none' && (
+        <div className="mt-4 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm">
+          {idOffer === 'kept' ? (
+            <p>
+              Your ID document is in your Document Centre. It will be offered
+              on your next licence application.
+            </p>
+          ) : (
+            <>
+              <p className="font-medium">Keep the ID you uploaded to verify?</p>
+              <p className="mt-1 text-[var(--text-secondary)]">
+                A copy of your ID is the first thing every firearm licence
+                application asks for. We already hold the one you uploaded when
+                you verified your identity — we can keep a copy here so you do
+                not photograph it again.
+              </p>
+              <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                It stays encrypted on our own server, and you can delete it
+                here whenever you like. This covers your ID and nothing else.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={idOffer === 'saving'}
+                  onClick={() => {
+                    setIdOffer('saving');
+                    void licenceCentreApi
+                      .adoptKycId(token)
+                      .then(async () => {
+                        setIdOffer('kept');
+                        await refresh();
+                      })
+                      // A failure costs the shortcut, not the page — they can
+                      // still add it by hand.
+                      .catch(() => setIdOffer('none'));
+                  }}
+                  className="rounded-[var(--radius)] bg-[var(--red)] px-3 py-2 text-sm text-white disabled:opacity-60"
+                >
+                  {idOffer === 'saving' ? 'Saving…' : 'Yes, keep it'}
+                </button>
+                <button
+                  type="button"
+                  disabled={idOffer === 'saving'}
+                  onClick={() => setIdOffer('none')}
+                  className="rounded-[var(--radius)] border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+                >
+                  No thanks
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {(needDate.length > 0 || needFiling.length > 0) && (
         <div className="mt-4 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm">
