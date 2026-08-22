@@ -44,6 +44,8 @@ function build(
     motivation: {
       findMany: jest.fn(async (_a?: any): Promise<any> => []),
       findFirst: jest.fn(async (_a?: any): Promise<any> => null),
+      // Read after a lost CAS, to say WHICH state blocked the claim.
+      findUnique: jest.fn(async (_a?: any): Promise<any> => null),
       create: jest.fn(async ({ data }: any) => ({
         id: 'mo-1',
         referenceNumber: data.referenceNumber,
@@ -530,6 +532,12 @@ describe('MotivationsService.generate', () => {
     const { svc, prisma, claude } = build();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     prisma.motivation.updateMany.mockResolvedValueOnce({ count: 0 }); // lost the race
+    // A lost race means the OTHER click is mid-generation, so the applicant
+    // must get the "give it a moment" wording — not the dead-end message a
+    // COMPLETED row now gets.
+    prisma.motivation.findUnique.mockResolvedValueOnce({
+      status: MotivationStatus.GENERATING,
+    });
     await expect(svc.generate('c1', 'mo-1')).rejects.toBeInstanceOf(
       ConflictException,
     );

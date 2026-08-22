@@ -332,6 +332,30 @@ const EDITABLE: MotivationStatus[] = [
   MotivationStatus.NEEDS_MORE_INFO,
 ];
 
+/**
+ * Statuses a generation may be STARTED from.
+ *
+ * EDITABLE plus COMPLETED, and the addition is the point: a finished document
+ * had no way back. Answering a follow-up, fixing a wrong make, or simply
+ * wanting another attempt all left the applicant on a dead end — the button
+ * refused with "This document is already being prepared", which was not even
+ * true. The only route to a second draft was an admin editing the row by hand.
+ *
+ * ⚠️ GENERATING IS STILL EXCLUDED, and that is the whole reason this is a CAS.
+ * Two clicks must not both call Claude. QUALITY_REVIEW is excluded for the same
+ * reason — a pass is still in flight. FAILED and ABANDONED stay out: an admin
+ * owns those.
+ *
+ * ⚠️ REGENERATING SPENDS REAL MONEY — a measured S16 run cost $1.64 — but it
+ * does NOT take a second seat: the seat is claimed once per motivation, not
+ * once per attempt (see the claim below). The ceiling is the controller's
+ * 10-per-hour throttle.
+ */
+const REGENERABLE: MotivationStatus[] = [
+  ...EDITABLE,
+  MotivationStatus.COMPLETED,
+];
+
 @Injectable()
 export class MotivationsService {
   private readonly logger = new Logger(MotivationsService.name);
@@ -2244,12 +2268,24 @@ export class MotivationsService {
     // that is duplicated spend and a race on the row. Only the request that
     // moves the status out of an editable state proceeds.
     const claimed = await this.prisma.motivation.updateMany({
-      where: { id: row.id, status: { in: EDITABLE } },
+      where: { id: row.id, status: { in: REGENERABLE } },
       data: { status: MotivationStatus.GENERATING },
     });
     if (claimed.count === 0) {
+      // ⚠️ SAY WHICH STATE IT IS ACTUALLY IN. This branch fires for EVERY
+      // status outside REGENERABLE, but the message only ever described one of
+      // them — a finished document was told it was "already being prepared",
+      // which sent the operator looking for a generation that had ended
+      // minutes earlier. Re-read rather than guess.
+      const now = await this.prisma.motivation.findUnique({
+        where: { id: row.id },
+        select: { status: true },
+      });
       throw new ConflictException(
-        'This document is already being prepared. Give it a moment.',
+        now?.status === MotivationStatus.GENERATING ||
+        now?.status === MotivationStatus.QUALITY_REVIEW
+          ? 'This document is already being prepared. Give it a moment.'
+          : 'This document cannot be prepared again from here. Contact support.',
       );
     }
 
