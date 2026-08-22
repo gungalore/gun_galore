@@ -236,9 +236,16 @@ export class KycIdAdoptionService {
           // owed an answer, and "you added this when your identity was
           // verified" is that answer.
           addedVia: 'kyc',
-          // No dates, and none inferred. An ID does not expire in any sense
-          // this module chases, and the CHECK constraint forbids an expiresOn
-          // on this kind outright.
+          // ⚠️ NO DATES, AND THE TICK IS LEFT OFF DELIBERATELY. An earlier
+          // version of this comment said "the CHECK constraint forbids an
+          // expiresOn on this kind outright" — that constraint is gone, and it
+          // was wrong: a PASSPORT is an identity document and it expires. So
+          // the member answers it, in the Centre, in one tap: a green barcoded
+          // book gets "Never expires" ticked and a passport gets its date.
+          //
+          // It therefore arrives as one outstanding item rather than silently
+          // settled, which is the honest state — we genuinely do not know
+          // which of the two they photographed.
         },
         select: { id: true },
       });

@@ -353,6 +353,14 @@ export class LicenceCentreService {
       kind: resolved,
       coversKinds: alsoCovers,
       title: clean || derived || DEFAULT_TITLE[resolved],
+      // ⚠️ THE TICKS COME BACK, and leaving them out cost a round trip. This
+      // method has already written `neverExpires: defaultsToNeverExpires(...)`
+      // above, so a safe photograph arrives pre-ticked — and the confirm step
+      // could not see it. The page worked around that by re-reading the whole
+      // list after every upload, which is a request per document to learn
+      // something we had just decided.
+      neverExpires: defaultsToNeverExpires(resolved),
+      issuedOnUnknown: false,
       // Tells the confirm step which documents WE named, so it can ask.
       autoFiled,
       confident,
@@ -431,12 +439,25 @@ export class LicenceCentreService {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
 
+    // ⚠️ OMITTED MEANS "WHATEVER IT ALREADY SAYS", NOT "FALSE". A caller
+    // confirming an already-never-expires row — to fix its title, say — and
+    // not re-sending the flag would otherwise be told "that is not a date we
+    // can read" about a document that has no date and never had one. Today's
+    // only caller sends both booleans; this route is directly callable and the
+    // next one will not.
+    const stored = await this.prisma.credential.findFirst({
+      where: { id, userId: user.id },
+      select: { neverExpires: true },
+    });
+    if (!stored) throw new NotFoundException('Document not found');
+    const noExpiry = neverExpires ?? stored.neverExpires;
+
     // ⚠️ THE TICK WINS OVER ANYTHING IN THE DATE BOX. A member who types a
     // date, thinks better of it and ticks the box has answered twice; the tick
     // is the later and more deliberate answer, and honouring the leftover text
     // would file a document as expiring on a date they just told us is wrong.
-    const expiry = neverExpires ? null : parseIsoDate(expiresOn);
-    if (!neverExpires && !expiry) {
+    const expiry = noExpiry ? null : parseIsoDate(expiresOn);
+    if (!noExpiry && !expiry) {
       throw new BadRequestException(
         'That is not a date we can read. Enter it as yyyy-mm-dd, exactly as it is printed on the document — or tick "Never expires" if there is no date on it.',
       );
@@ -486,7 +507,7 @@ export class LicenceCentreService {
           : issuedOn === undefined
             ? {}
             : { issuedOn: parseIsoDate(issuedOn ?? null) }),
-        ...(neverExpires === undefined ? {} : { neverExpires }),
+        neverExpires: noExpiry,
         ...(issuedOnUnknown === undefined ? {} : { issuedOnUnknown }),
         confirmedAt: new Date(),
         ...(kind ? { kind } : {}),
@@ -835,9 +856,13 @@ export class LicenceCentreService {
         kind,
         count: counted.get(kind) ?? 0,
       })),
-      // The number worth watching: a document that tracks an expiry and that
-      // nobody has confirmed is a document no reminder will ever fire for.
-      // Documents with nothing to run out are excluded — see `dateless`.
+      // The number worth watching: a document whose expiry question nobody
+      // has answered is a document no reminder can ever fire for.
+      //
+      // ⚠️ NOT "documents with nothing to run out are excluded" — only the
+      // four photograph kinds are. An employment letter has nothing to run
+      // out either, but until the member ticks "Never expires" we do not know
+      // that, and it is exactly the row an operator should see waiting.
       unconfirmed,
       expiring30,
       expired,

@@ -70,7 +70,60 @@ const KINDS: CredentialKind[] = [
   'COMPETENCY_CERTIFICATE',
   'DEDICATED_DISCIPLINE',
   'PROFICIENCY',
+  // ── the paperwork the Centre keeps rather than chases ──────────────
+  //
+  // ⚠️ ON THE MENU, BECAUSE "ADD AND REMOVE" HAS TO MEAN BOTH HALVES.
+  // Operator, 2026-08-22: "give them access to it so they can add/remove
+  // documents from it." Without these the classifier is the only way a safe
+  // photograph is ever filed as SAFE_PHOTO_AJAR — and the classifier is
+  // deliberately never confident about which of the four safe shots it is
+  // looking at, so a wrong guess would be uncorrectable.
+  //
+  // They sit BELOW the credentials and above OTHER because the ordering is
+  // the menu the member reads, and a licence is what most people are here to
+  // file.
+  'IDENTITY_DOCUMENT',
+  'ADDRESS_CONFIRMATION',
+  'EMPLOYMENT_CONFIRMATION',
+  'SAFE_PHOTO_CLOSED',
+  'SAFE_PHOTO_AJAR',
+  'SAFE_PHOTO_BOLTS',
+  'SAFE_INSTALLATION',
+  'SHOOTING_ACTIVITY_LOG',
   'OTHER',
+];
+
+/**
+ * Where the menu splits.
+ *
+ * The two halves answer different questions — "what runs out" and "what do I
+ * have to hand in" — and a flat list of thirteen makes somebody read all of
+ * them to find the one they came for.
+ */
+const KIND_GROUPS: { label: string; kinds: CredentialKind[] }[] = [
+  {
+    label: 'Licences and certificates',
+    kinds: [
+      'FIREARM_LICENCE',
+      'COMPETENCY_CERTIFICATE',
+      'DEDICATED_DISCIPLINE',
+      'PROFICIENCY',
+    ],
+  },
+  {
+    label: 'Supporting paperwork',
+    kinds: [
+      'IDENTITY_DOCUMENT',
+      'ADDRESS_CONFIRMATION',
+      'EMPLOYMENT_CONFIRMATION',
+      'SAFE_PHOTO_CLOSED',
+      'SAFE_PHOTO_AJAR',
+      'SAFE_PHOTO_BOLTS',
+      'SAFE_INSTALLATION',
+      'SHOOTING_ACTIVITY_LOG',
+    ],
+  },
+  { label: 'Anything else', kinds: ['OTHER'] },
 ];
 
 export default function LicenceCentrePage() {
@@ -355,42 +408,6 @@ function AddPanel({
     }
   }
 
-  /**
-   * Fill in the two ticks the upload response does not carry.
-   *
-   * ⚠️ POST /licence-centre RETURNS THE PROPOSAL AND NOT THE TICKS. It sends
-   * id, kind, title, autoFiled, confident and `proposed`, and stops there —
-   * while the same call has already stamped `neverExpires: true` on a
-   * photograph of a safe, because nothing is printed on one and no vision call
-   * is spent on it. Taking the response at face value would put an unticked
-   * box in front of the member, disable the button until they supplied a date
-   * that does not exist, and — if they ticked their way out of it — post
-   * `neverExpires: false` back over the server's own answer.
-   *
-   * The list endpoint does return both, so one extra read after the uploads
-   * settles it. A failure here costs the prefill and nothing else: the boxes
-   * start unticked and the member ticks them, which is where we were before.
-   */
-  async function withTicks(added: AddedCredential[]) {
-    if (!added.length) return added;
-    try {
-      const rows = await licenceCentreApi.list(token);
-      const byId = new Map(rows.map((r) => [r.id, r]));
-      return added.map((a) => {
-        const row = byId.get(a.id);
-        return row
-          ? {
-              ...a,
-              neverExpires: row.neverExpires,
-              issuedOnUnknown: row.issuedOnUnknown,
-            }
-          : a;
-      });
-    } catch {
-      return added;
-    }
-  }
-
   async function uploadFiles(picked: File[]) {
     if (!picked.length) return;
 
@@ -463,7 +480,13 @@ function AddPanel({
     setBusy(false);
     setProgress(null);
     setErr(failed.length ? failed.join(' · ') : null);
-    setQueue(await withTicks(added));
+    // ⚠️ THE UPLOAD RESPONSE CARRIES THE TICKS ITSELF NOW. It used to
+    // return the proposal and stop, while the same call had already
+    // stamped `neverExpires: true` on a photograph of a safe — so this
+    // line re-read the entire list after every upload to learn something
+    // the server had just decided. Taking the response at face value was
+    // the fix; the round trip was the workaround.
+    setQueue(added);
     // Always, not only on failure: a row may have been committed and
     // its response lost — the vision read runs after the insert and
     // can outlast the proxy's patience. Without this the document is
@@ -546,10 +569,14 @@ function AddPanel({
           title="Leave this alone and we read the document to work out what it is."
         >
           <option value="">Work it out for me</option>
-          {KINDS.map((k) => (
-            <option key={k} value={k}>
-              {KIND_LABELS[k]}
-            </option>
+          {KIND_GROUPS.map((g) => (
+            <optgroup key={g.label} label={g.label}>
+              {g.kinds.map((k) => (
+                <option key={k} value={k}>
+                  {KIND_LABELS[k]}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <input

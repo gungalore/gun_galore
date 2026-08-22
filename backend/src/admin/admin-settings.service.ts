@@ -308,7 +308,7 @@ const FLAGS: SettingFlag[] = [
   {
     key: 'licence_centre_max_credentials',
     label: 'Max documents per member',
-    hint: "How many documents one member may keep. Each is an encrypted file on our own disk, and most also cost one Claude vision read at upload — the safe photographs do not, as there is nothing printed on them to read. 60 because the Centre now holds the whole application folder, not only the documents that expire: an ID copy, proof of address, confirmation of employment, three safe photographs, the installation shot and an activity log come to eight before a single licence, so a section 16 member with eight licensed firearms is already near 19. Capped at 500 in code.",
+    hint: 'How many documents one member may keep. Each is an encrypted file on our own disk. Most also cost a Claude read at upload: the safe photographs are never read for dates, as there is nothing printed on them to read, but any document filed without a type still pays one cheap call to sort it into a pile. 60 because the Centre now holds the whole application folder, not only the documents that expire: an ID copy, proof of address, confirmation of employment, three safe photographs, the installation shot and an activity log come to eight before a single licence, so a section 16 member with eight licensed firearms is already near 19. Capped at 500 in code.',
     group: 'Licence Centre',
     type: 'number',
     default: '60',

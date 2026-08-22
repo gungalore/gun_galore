@@ -210,6 +210,21 @@ renders rather than redirecting — reminder emails sent before today carry it.
 
 ---
 
+## Findings from the adversarial pass, and what was done
+
+| Finding | Outcome |
+|---|---|
+| `ConfirmPanel` was not keyed, so queue state walked forward — confirming a safe photo could file the licence behind it as a safe photo, wipe its date and stamp it confirmed | **Fixed.** `key={current.id}` |
+| The reminder switch appeared on never-expires rows, offering to turn on a reminder that physically cannot be scheduled | **Fixed.** Hidden on `no-expiry` |
+| `POST /licence-centre` did not return the ticks, so the page re-read the whole list after every upload | **Fixed at source.** The response carries them; the workaround is gone |
+| `confirmExpiry` did not consult the stored tick, so confirming an already-ticked row without re-sending the flag 400'd | **Fixed.** Omitted now means "whatever it already says" |
+| The eight kept-on-file kinds were not on the add menu, so a misfiled safe photo was uncorrectable | **Fixed.** On the menu, in two `optgroup`s |
+| The KYC-adopted ID arrives unconfirmed, as one outstanding item | **Left as is, comment corrected.** We genuinely do not know whether it is a green book or a passport; the card now offers the tick |
+| `kindOptions` showed the first menu entry while state held the real kind — displaying one type and posting another | **Fixed** |
+| `queueHandoffArrivals` was dead code at HEAD — the whole "recognition shows its work" fix had never been in effect | **Wired up** |
+
+---
+
 ## Still open
 
 - **Flag `licence_centre_enabled` is off.** Phases 1–4 are inert until it flips.
