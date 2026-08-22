@@ -401,7 +401,17 @@ export class LicenceCentreService {
       where: { id: before.id },
       data: {
         expiresOn: expiry,
-        issuedOn: parseIsoDate(issuedOn ?? null),
+        // ⚠️ OMITTED MEANS "LEAVE IT", NOT "CLEAR IT". This wrote
+        // parseIsoDate(issuedOn ?? null) unconditionally, so any caller that
+        // sent an expiry without an issue date silently wiped a stored one —
+        // and the frontend had already worked around it by refusing to offer a
+        // Clear button (licence-centre page, the issuedOn field), which is a
+        // workaround holding a bug in place rather than a fix.
+        //
+        // It matters more now that the vault holds documents whose ISSUE date
+        // is the load-bearing one: an address confirmation is judged on how
+        // recent it is, and nothing else about it expires.
+        ...(issuedOn === undefined ? {} : { issuedOn: parseIsoDate(issuedOn ?? null) }),
         confirmedAt: new Date(),
         ...(kind ? { kind } : {}),
         ...((title ?? '').trim()

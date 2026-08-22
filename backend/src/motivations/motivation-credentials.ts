@@ -1,4 +1,8 @@
-import { MotivationLicenceType } from '@prisma/client';
+import {
+  CredentialKind,
+  MotivationLicenceType,
+  MotivationUploadKind,
+} from '@prisma/client';
 import { fieldsFor } from './motivation-fields';
 import { normaliseFirearmType } from './saps-vocabulary';
 
@@ -437,20 +441,61 @@ export function credentialChoices(
  * The rest ride along in MotivationUpload.coversKinds, because a second row
  * for the same bytes would print the same page twice in the pack.
  */
-export const CREDENTIAL_TO_UPLOAD: Record<string, string[]> = {
-  FIREARM_LICENCE: ['CURRENT_LICENCE'],
-  COMPETENCY_CERTIFICATE: ['COMPETENCY_CERTIFICATE'],
-  DEDICATED_DISCIPLINE: ['ASSOCIATION_CARD', 'GOOD_STANDING_LETTER'],
-  PROFICIENCY: ['PROFICIENCY_CERTIFICATE'],
+/**
+ * ⚠️ EXHAUSTIVE OVER CredentialKind, AND THAT IS THE POINT. This was
+ * `Record<string, string[]>`, which compiles cleanly whatever is missing —
+ * so adding a vault kind without a mapping here produces no error anywhere.
+ * The failure it hides is silent and total: primaryUploadKind() returns
+ * undefined, buildLibrary drops the row from the picker, and addFromLibrary
+ * refuses it with "That document does not answer anything on this
+ * application" — a document that is stored, invisible, and still counting
+ * against the member's cap.
+ *
+ * Typed to the enum, the compiler names every site the day a kind is added.
+ * An empty array is a legitimate answer — a vault document with no slot on a
+ * motivation is kept and tracked and simply has nothing to fill; see
+ * motivation-library.ts, which already handles it.
+ */
+export const CREDENTIAL_TO_UPLOAD: Record<
+  CredentialKind,
+  MotivationUploadKind[]
+> = {
+  FIREARM_LICENCE: [MotivationUploadKind.CURRENT_LICENCE],
+  COMPETENCY_CERTIFICATE: [MotivationUploadKind.COMPETENCY_CERTIFICATE],
+  DEDICATED_DISCIPLINE: [
+    MotivationUploadKind.ASSOCIATION_CARD,
+    MotivationUploadKind.GOOD_STANDING_LETTER,
+  ],
+  PROFICIENCY: [MotivationUploadKind.PROFICIENCY_CERTIFICATE],
   // Retired kinds, kept so rows filed before the consolidation still map.
-  DEDICATED_STATUS: ['ASSOCIATION_CARD'],
-  DEDICATED_HUNTER: ['ASSOCIATION_CARD'],
-  GOOD_STANDING: ['GOOD_STANDING_LETTER'],
+  DEDICATED_STATUS: [MotivationUploadKind.ASSOCIATION_CARD],
+  DEDICATED_HUNTER: [MotivationUploadKind.ASSOCIATION_CARD],
+  GOOD_STANDING: [MotivationUploadKind.GOOD_STANDING_LETTER],
+  // No slot on any motivation. Kept in the vault, chased for expiry, and not
+  // offered as an attachment — a Professional Hunter registration evidences
+  // nothing under section 16, and OTHER is unclassified by definition.
+  PROFESSIONAL_HUNTER: [],
+  OTHER: [],
 };
 
-/** The checklist row a vault document is filed as. */
-export function primaryUploadKind(credentialKind: string): string | undefined {
-  return CREDENTIAL_TO_UPLOAD[credentialKind]?.[0];
+/**
+ * The checklist row a vault document is filed as, or undefined for one that
+ * fills nothing.
+ *
+ * Takes a plain string on purpose: the pure library types a vault row's kind
+ * as `string` so it can stay free of Prisma. The cast is safe because an
+ * unknown key simply misses — and the EXHAUSTIVENESS that matters is on the
+ * map literal above, where the compiler enforces it.
+ */
+export function primaryUploadKind(
+  credentialKind: string,
+): MotivationUploadKind | undefined {
+  return CREDENTIAL_TO_UPLOAD[credentialKind as CredentialKind]?.[0];
+}
+
+/** Every checklist row a vault document answers. Empty for one that fills none. */
+export function uploadKindsFor(credentialKind: string): MotivationUploadKind[] {
+  return CREDENTIAL_TO_UPLOAD[credentialKind as CredentialKind] ?? [];
 }
 
 /**

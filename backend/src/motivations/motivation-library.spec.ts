@@ -1,3 +1,4 @@
+import { MotivationUploadKind } from '@prisma/client';
 import {
   LibraryCredentialRow,
   LibraryUploadRow,
@@ -173,6 +174,72 @@ describe('buildLibrary', () => {
 
   it('handles an empty library', () => {
     expect(buildLibrary([], [], 'current', label)).toEqual([]);
+  });
+});
+
+describe('documents that belong to ONE application', () => {
+  // ⚠️ THE LIVE BUG THIS FIXES. library() scopes its upload query to
+  // `motivation: { userId }` — EVERY application the member has ever filed —
+  // and takeUpload applied no kind filter, so a second section 16 was offered
+  // last year's ASSOCIATION_ENDORSEMENT under the label "The association's
+  // endorsement for this firearm". That endorsement names one firearm by
+  // serial. The guard existed and was in the wrong place: it kept the
+  // endorsement out of `suggested` and left it in `items`, which is the list
+  // the member actually picks from.
+
+  it.each([
+    ['ASSOCIATION_ENDORSEMENT', 'names one firearm by serial'],
+    ['FIREARM_SOURCE_PROOF', 'answers "whose firearm is this" for one application'],
+    ['SELLER_LICENCE', "is another living person's licence"],
+    ['PREVIOUS_MOTIVATION', 'is a past application for a past firearm'],
+    ['OTHER', 'is unclassified, so we cannot say it is safe'],
+    ['SAFE_PHOTO', 'is the retired single-shot kind'],
+  ] as [MotivationUploadKind, string][])(
+    'never carries %s across from another application (%s)',
+    (kind) => {
+    const items = buildLibrary(
+      [],
+      [upload({ id: 'u1', sha256: 'a', motivationId: 'last-year', kind })],
+      'current',
+      label,
+    );
+    expect(items).toEqual([]);
+    },
+  );
+
+  it('STILL shows one already attached to THIS application', () => {
+    // Or the slot it fills renders empty and the member is asked to photograph
+    // a paper that is sitting right there. What must never happen is carrying
+    // one across — not showing what is already here.
+    const items = buildLibrary(
+      [],
+      [
+        upload({
+          id: 'u1',
+          sha256: 'a',
+          motivationId: 'current',
+          kind: 'ASSOCIATION_ENDORSEMENT',
+        }),
+      ],
+      'current',
+      label,
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].alreadyHere).toBe(true);
+  });
+
+  it('leaves the ordinary reusable documents alone', () => {
+    const items = buildLibrary(
+      [],
+      [
+        upload({ id: 'u1', sha256: 'a', motivationId: 'last-year', kind: 'IDENTITY_DOCUMENT' }),
+        upload({ id: 'u2', sha256: 'b', motivationId: 'last-year', kind: 'ASSOCIATION_ENDORSEMENT' }),
+        upload({ id: 'u3', sha256: 'c', motivationId: 'last-year', kind: 'SAFE_PHOTO_CLOSED' }),
+      ],
+      'current',
+      label,
+    );
+    expect(items.map((i) => i.sourceId).sort()).toEqual(['u1', 'u3']);
   });
 });
 

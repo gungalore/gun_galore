@@ -36,7 +36,7 @@ import {
   imageSize,
   isEmbeddable,
 } from './motivation-annexure-layout';
-import { buildLibrary } from './motivation-library';
+import { buildLibrary, NEVER_REUSABLE } from './motivation-library';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -105,7 +105,7 @@ import {
   profileOffer,
 } from './motivation-profile';
 import {
-  CREDENTIAL_TO_UPLOAD,
+  uploadKindsFor,
   CredentialChoices,
   S16_AUTO_ATTACH,
   credentialChoices,
@@ -1067,8 +1067,8 @@ export class MotivationsService {
         },
       });
       if (!c) throw new NotFoundException('Document not found');
-      const mapped = CREDENTIAL_TO_UPLOAD[c.kind];
-      if (!mapped?.length) {
+      const mapped = uploadKindsFor(c.kind);
+      if (!mapped.length) {
         throw new BadRequestException(
           'That document does not answer anything on this application.',
         );
@@ -1077,8 +1077,8 @@ export class MotivationsService {
       // certificate is both the association card and the letter of good
       // standing; a second row for the same bytes would collide with the
       // sha256 unique index and print the same page twice in the pack.
-      kind = mapped[0] as MotivationUploadKind;
-      alsoSatisfies = mapped.slice(1) as MotivationUploadKind[];
+      kind = mapped[0];
+      alsoSatisfies = mapped.slice(1);
       storageKey = c.storageKey;
       mimeType = c.mimeType;
       purgedAt = c.purgedAt;
@@ -1134,6 +1134,9 @@ export class MotivationsService {
         where: { id: sourceId, motivation: { userId: user.id } },
         select: {
           kind: true,
+          // Which application it was filed with — the whole question the
+          // NEVER_REUSABLE check below is asking.
+          motivationId: true,
           storageKey: true,
           mimeType: true,
           purgedAt: true,
@@ -1143,6 +1146,16 @@ export class MotivationsService {
         },
       });
       if (!u) throw new NotFoundException('Document not found');
+      // ⚠️ THE BOUNDARY IS HERE, NOT IN THE PICKER. buildLibrary already keeps
+      // these out of the list, but this route is directly callable — and the
+      // document it is protecting against is one that names a DIFFERENT
+      // firearm by serial. A filter the client applies is a convenience; this
+      // is the check.
+      if (u.motivationId !== row.id && NEVER_REUSABLE.has(u.kind)) {
+        throw new BadRequestException(
+          'That document belongs to the application it was filed with and cannot be reused here.',
+        );
+      }
       kind = u.kind;
       storageKey = u.storageKey;
       mimeType = u.mimeType;
@@ -1375,13 +1388,19 @@ export class MotivationsService {
         ),
       ),
       /** Vault documents that also satisfy a required upload on this pack. */
+      // ⚠️ `.length`, NOT TRUTHINESS. This filtered on the map lookup itself,
+      // which worked only while a kind that fills nothing was ABSENT from the
+      // map. Now that it is present as an empty array — so the compiler can
+      // enforce exhaustiveness — an empty array is truthy, and the bare lookup
+      // would report a Professional Hunter registration as a document
+      // satisfying zero checklist rows.
       documents: credentials
-        .filter((c) => CREDENTIAL_TO_UPLOAD[c.kind])
+        .filter((c) => uploadKindsFor(c.kind).length > 0)
         .map((c) => ({
           credentialId: c.id,
           title: c.title,
           kind: c.kind,
-          satisfies: CREDENTIAL_TO_UPLOAD[c.kind],
+          satisfies: uploadKindsFor(c.kind),
           expiresOn: c.expiresOn,
         })),
     };

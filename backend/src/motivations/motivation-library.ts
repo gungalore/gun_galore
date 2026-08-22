@@ -46,6 +46,46 @@ export interface LibraryUploadRow {
   sha256: string;
 }
 
+/**
+ * DOCUMENTS THAT BELONG TO ONE APPLICATION AND MUST NEVER BE OFFERED ON ANOTHER.
+ *
+ * ⚠️ THIS FIXES A LIVE BUG, not a theoretical one. `library()` scopes its
+ * upload query to `motivation: { userId }` — every application the member has
+ * ever filed — and takeUpload below applied NO kind filter, so a second
+ * section 16 was offered LAST YEAR'S ASSOCIATION ENDORSEMENT under the label
+ * "The association's endorsement for this firearm". That endorsement names one
+ * firearm by serial. Attaching it would have put a document describing a
+ * different rifle in front of a Designated Firearms Officer, over the
+ * applicant's signature.
+ *
+ * The guard existed and was in the wrong place: motivations.service.ts kept
+ * the endorsement out of `suggested` (the auto-attach offer) and left it in
+ * `items` (the picker), which is the list a member actually chooses from.
+ *
+ * Each entry is here for a reason written in the schema's own enum comments:
+ *  - ASSOCIATION_ENDORSEMENT — names ONE firearm.
+ *  - FIREARM_SOURCE_PROOF   — "a given application has exactly one answer to
+ *                              'whose firearm is this'".
+ *  - SELLER_LICENCE         — another living person's licence. Not the
+ *                              member's document to carry forward.
+ *  - PREVIOUS_MOTIVATION    — a past application, filed against a past firearm.
+ *  - OTHER                  — unclassified by definition; we cannot say what it
+ *                              is, so we cannot say it is safe to reuse.
+ *  - SAFE_PHOTO             — retired in favour of the three-shot set.
+ *
+ * ⚠️ NOT A DISPLAY FILTER. It is applied here AND again in addFromLibrary,
+ * because POST /motivations/:id/uploads/from-library is directly callable and
+ * a frontend that never shows the option is not a boundary.
+ */
+export const NEVER_REUSABLE: ReadonlySet<MotivationUploadKind> = new Set([
+  MotivationUploadKind.ASSOCIATION_ENDORSEMENT,
+  MotivationUploadKind.FIREARM_SOURCE_PROOF,
+  MotivationUploadKind.SELLER_LICENCE,
+  MotivationUploadKind.PREVIOUS_MOTIVATION,
+  MotivationUploadKind.OTHER,
+  MotivationUploadKind.SAFE_PHOTO,
+]);
+
 export interface LibraryItem {
   source: 'credential' | 'upload';
   sourceId: string;
@@ -92,6 +132,11 @@ export function buildLibrary(
   const seen = new Set<string>();
 
   const takeUpload = (u: LibraryUploadRow) => {
+    // ⚠️ ONLY FROM ANOTHER APPLICATION. A document that is ALREADY on this one
+    // still has to appear, or the slot it fills would render as empty and the
+    // member would be asked to photograph a paper sitting right there. What
+    // must never happen is CARRYING one across.
+    if (u.motivationId !== currentId && NEVER_REUSABLE.has(u.kind)) return;
     // ⚠️ NOT PURGED, AND STILL ON DISK. A row whose bytes retention has
     // deleted is a record that the document once existed — offering it as
     // something to reuse would fail at the moment of copying, after the

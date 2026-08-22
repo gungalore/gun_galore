@@ -1,8 +1,12 @@
+import { CredentialKind } from '@prisma/client';
 import {
+  CREDENTIAL_TO_UPLOAD,
   CredentialSource,
   credentialChoices,
   credentialOffer,
+  primaryUploadKind,
   toIsoDay,
+  uploadKindsFor,
   validLongEnough,
 } from './motivation-credentials';
 import { normaliseFirearmType } from './saps-vocabulary';
@@ -586,5 +590,40 @@ describe('several associations', () => {
       Object.keys(o.values).filter((k) => k.startsWith('association')),
     ).toEqual([]);
     expect(o.skipped.some((s) => /which association/.test(s.why))).toBe(true);
+  });
+});
+
+
+describe('CREDENTIAL_TO_UPLOAD is exhaustive over the enum', () => {
+  // ⚠️ THE COMPILER ENFORCES THIS NOW — the map is typed
+  // Record<CredentialKind, MotivationUploadKind[]> rather than
+  // Record<string, string[]>. This spec exists to say WHY, because the next
+  // person to widen it will hit the type error and want to relax it.
+  //
+  // Untyped, a missing entry compiled clean and failed silently and totally:
+  // primaryUploadKind() returned undefined, buildLibrary dropped the row from
+  // the picker, and addFromLibrary refused it with "That document does not
+  // answer anything on this application" — a document stored, invisible, and
+  // still counting against the member's cap.
+  it('names every CredentialKind, including the ones that fill nothing', () => {
+    for (const kind of Object.values(CredentialKind)) {
+      expect(CREDENTIAL_TO_UPLOAD).toHaveProperty(kind);
+    }
+  });
+
+  it('treats "fills nothing" as an empty array, never a missing key', () => {
+    // An empty array is a legitimate answer: a Professional Hunter
+    // registration is kept and chased for expiry and simply has no slot on a
+    // motivation. ⚠️ AND IT IS TRUTHY — the callers must test `.length`, which
+    // is what uploadKindsFor exists for.
+    expect(CREDENTIAL_TO_UPLOAD.PROFESSIONAL_HUNTER).toEqual([]);
+    expect(CREDENTIAL_TO_UPLOAD.OTHER).toEqual([]);
+    expect(uploadKindsFor('PROFESSIONAL_HUNTER')).toHaveLength(0);
+    expect(primaryUploadKind('PROFESSIONAL_HUNTER')).toBeUndefined();
+  });
+
+  it('returns nothing for a kind it has never heard of', () => {
+    expect(uploadKindsFor('NOT_A_KIND')).toEqual([]);
+    expect(primaryUploadKind('NOT_A_KIND')).toBeUndefined();
   });
 });
