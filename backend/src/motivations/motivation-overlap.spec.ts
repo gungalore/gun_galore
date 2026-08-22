@@ -1,6 +1,10 @@
+import { MotivationLicenceType } from '@prisma/client';
 import {
   checkOverlap,
   classifyCalibre,
+  classifyFirearmType,
+  FIREARM_TYPE_LABELS,
+  FirearmType,
   QUARRY_LABELS,
   QuarryClass,
 } from './motivation-overlap';
@@ -118,6 +122,182 @@ describe('classifying a calibre', () => {
   });
 });
 
+describe('classifying a firearm type', () => {
+  it("reads the registry's own four, whatever the casing", () => {
+    for (const s of ['Rifle', 'rifle', ' RIFLE ']) {
+      expect(classifyFirearmType(s)).toBe('rifle');
+    }
+    expect(classifyFirearmType('Shotgun')).toBe('shotgun');
+    expect(classifyFirearmType('Handgun')).toBe('handgun');
+    expect(classifyFirearmType('Combination')).toBe('combination');
+  });
+
+  it('refuses to guess at anything the registry cannot produce', () => {
+    // firearm_type and existing_firearm_N_type are both kind: 'choice' over
+    // those four, and the extractor drops anything that is not one of them
+    // verbatim. Accepting "Pistol" would be this file guessing again.
+    for (const s of ['Pistol', 'Revolver', 'Carbine', 'gun', '', '  ', null, undefined]) {
+      expect(classifyFirearmType(s)).toBeNull();
+    }
+  });
+
+  it('has a label for every type it can return', () => {
+    const types: FirearmType[] = ['rifle', 'shotgun', 'handgun', 'combination'];
+    for (const t of types) expect(FIREARM_TYPE_LABELS[t]).toBeTruthy();
+  });
+});
+
+// ── the overlap the calibre test cannot see ─────────────────────────
+//
+// MO000017, live: a Glock in 9mm Parabellum already held, a 6.35mm Browning
+// pistol applied for under section 16 dedicated sport. The calibres differ, so
+// the calibre test found nothing, so the plan carried no comparison section —
+// and the gate marked the document down for its absence. What duplicates on a
+// sport or self-defence application is the FIREARM, not the cartridge.
+
+const S13 = MotivationLicenceType.S13_SELF_DEFENCE;
+const S16DS = MotivationLicenceType.S16_DEDICATED_SPORT;
+const S24 = MotivationLicenceType.S24_RENEWAL;
+
+describe('overlap by firearm type', () => {
+  it('catches a second handgun for a dedicated sport shooter', () => {
+    const r = checkOverlap('6.35mm Browning', [{ calibre: '9mm Para', type: 'Handgun' }], {
+      appliedForType: 'Handgun',
+      licenceType: S16DS,
+      dedicatedStatus: true,
+    });
+    expect(r.verdict.kind).toBe('overlap');
+    expect(r.needsJustification).toBe(true);
+    if (r.verdict.kind === 'overlap') {
+      // Nothing matched on calibre — 6.35mm Browning is not in the table at
+      // all — so the quarry class stays null rather than being invented.
+      expect(r.verdict.quarry).toBeNull();
+      expect(r.verdict.withCalibres).toEqual([]);
+      expect(r.verdict.firearmType).toBe('handgun');
+      expect(r.verdict.withTypes).toEqual(['9mm Para']);
+    }
+    expect(r.writerNote).toMatch(/two handguns are two handguns/i);
+    expect(r.writerNote).toMatch(/course of fire/);
+    expect(r.writerNote).toMatch(/do not invent a distinction/i);
+  });
+
+  it('runs even when the applied-for cartridge is unreadable', () => {
+    // THE ACTUAL MO000017 FAILURE. An unknown calibre used to return early,
+    // and everything after it — including the type — went uncompared.
+    expect(classifyCalibre('6.35mm Browning')).toBeNull();
+    const r = checkOverlap('6.35mm Browning', [{ calibre: '9mm', type: 'Handgun' }], {
+      appliedForType: 'Handgun',
+      licenceType: S16DS,
+    });
+    expect(r.verdict.kind).not.toBe('unknown');
+    expect(r.needsJustification).toBe(true);
+  });
+
+  it('asks a section 13 applicant where each one is kept', () => {
+    // Same test, different question: a self-defence applicant is not choosing
+    // between divisions, they are explaining carry against home.
+    const r = checkOverlap('.38 Special', [{ calibre: '9mm', type: 'Handgun' }], {
+      appliedForType: 'Handgun',
+      licenceType: S13,
+    });
+    expect(r.writerNote).toMatch(/kept or carried/);
+    expect(r.writerNote).not.toMatch(/course of fire/);
+  });
+
+  it('does not let the calibre table swallow the question that leads', () => {
+    // ⚠️ THE ORDER IS LOAD-BEARING. .38 Special and 9mm are both "handgun" to
+    // the cartridge table, so a firearm caught by both tests is one firearm —
+    // and whichever paragraph runs second is the one that gets deduped away.
+    // Calibre-first silently deleted the role question on exactly the two
+    // licence types that turn on it.
+    const r = checkOverlap(
+      '.38 Special',
+      [{ calibre: '9mm', type: 'Handgun', describedAs: 'your 9mm Glock' }],
+      { appliedForType: 'Handgun', licenceType: S16DS, dedicatedStatus: true },
+    );
+    expect(r.writerNote).toMatch(/^The applicant already holds your 9mm Glock — the same TYPE/);
+    expect(r.writerNote).toMatch(/course of fire/);
+    // Named once, not once per test.
+    expect(r.writerNote).not.toMatch(/ALSO already holds/);
+    expect(r.writerNote).not.toMatch(/in the same class/);
+    if (r.verdict.kind === 'overlap') {
+      // The verdict still records BOTH findings — only the prose is deduped.
+      expect(r.verdict.quarry).toBe('handgun');
+      expect(r.verdict.withCalibres).toEqual(['your 9mm Glock']);
+      expect(r.verdict.withTypes).toEqual(['your 9mm Glock']);
+    }
+  });
+
+  it('does not fire when the types genuinely differ', () => {
+    const r = checkOverlap('12 gauge', [{ calibre: '9mm', type: 'Handgun' }], {
+      appliedForType: 'Shotgun',
+      licenceType: S16DS,
+    });
+    expect(r.verdict.kind).toBe('clear');
+    expect(r.needsJustification).toBe(false);
+    expect(r.writerNote).toBeNull();
+  });
+
+  it('keeps a combination gun to itself', () => {
+    // A combination gun carries a rifled and a smooth barrel. Whether that
+    // duplicates a rifle is an argument, not a lookup.
+    const r = checkOverlap('.308 Win', [{ calibre: '.22 LR', type: 'Rifle' }], {
+      appliedForType: 'Combination',
+      licenceType: S16DS,
+    });
+    expect(r.verdict.kind).toBe('clear');
+  });
+
+  it('says nothing about type when no type was supplied', () => {
+    // Callers that predate the type test pass none, and this must compare only
+    // what it was given.
+    const r = checkOverlap('6.35mm Browning', [{ calibre: '9mm', type: 'Handgun' }], {
+      licenceType: S16DS,
+    });
+    expect(r.verdict.kind).toBe('unknown');
+    expect(r.writerNote).toBeNull();
+  });
+});
+
+describe('when the quarry leads and the type follows', () => {
+  it('still raises a second rifle for a hunter, more softly', () => {
+    // The instruction is not to suppress it: an applicant who owns two rifles
+    // and applies for a third is asked about it, and the quarry difference is
+    // usually the whole answer.
+    const r = checkOverlap('.375 H&H', [{ calibre: '.22 LR', type: 'Rifle' }], {
+      appliedForType: 'Rifle',
+      licenceType: S16,
+      dedicatedStatus: true,
+    });
+    expect(r.needsJustification).toBe(true);
+    expect(r.writerNote).toMatch(/A second rifle is still a question worth answering/);
+    expect(r.writerNote).toMatch(/the quarry difference IS the answer/);
+    // The softer framing is the whole point — it must not read like the sport
+    // shooter's "two handguns are two handguns".
+    expect(r.writerNote).not.toMatch(/duplicate the ROLE/);
+  });
+
+  it('leads with the calibre and adds the type behind it', () => {
+    const r = checkOverlap(
+      '.270 Win',
+      [
+        { calibre: '.308 Win', type: 'Rifle', describedAs: 'your .308 Tikka' },
+        { calibre: '.22 LR', type: 'Rifle', describedAs: 'your .22 CZ' },
+      ],
+      { appliedForType: 'Rifle', licenceType: S15 },
+    );
+    if (r.verdict.kind === 'overlap') {
+      expect(r.verdict.quarry).toBe('medium_game');
+      expect(r.verdict.withCalibres).toEqual(['your .308 Tikka']);
+      expect(r.verdict.withTypes).toEqual(['your .308 Tikka', 'your .22 CZ']);
+    }
+    // The calibre paragraph comes first, and the .308 is named once, not twice.
+    expect(r.writerNote).toMatch(/^The applicant already holds your \.308 Tikka, in the same class/);
+    expect(r.writerNote).toMatch(/ALSO already holds your \.22 CZ/);
+    expect(r.writerNote).not.toMatch(/ALSO already holds your \.308 Tikka/);
+  });
+});
+
 describe('when there is nothing to answer for', () => {
   it('is clear when the classes genuinely differ', () => {
     const r = checkOverlap('.375 H&H', [
@@ -170,17 +350,34 @@ describe('when we cannot tell', () => {
 describe('how it speaks', () => {
   it('never promises or threatens an outcome', () => {
     // Standing rule across this module: we sell structure and completeness,
-    // never odds — and we must not frighten someone into buying either.
-    const r = checkOverlap('.270 Win', [{ calibre: '.308 Win' }]);
-    const text = `${r.prompt} ${r.writerNote}`.toLowerCase();
-    for (const banned of [
-      'will be refused',
-      'guarantee',
-      'chances',
-      'approval',
-      'rejected',
-    ]) {
-      expect(text).not.toContain(banned);
+    // never odds — and we must not frighten someone into buying either. Every
+    // path that can produce words is checked, not only the calibre one.
+    const spoken = [
+      checkOverlap('.270 Win', [{ calibre: '.308 Win' }]),
+      checkOverlap('6.35mm Browning', [{ calibre: '9mm', type: 'Handgun' }], {
+        appliedForType: 'Handgun',
+        licenceType: S16DS,
+      }),
+      checkOverlap('.38 Special', [{ calibre: '9mm', type: 'Handgun' }], {
+        appliedForType: 'Handgun',
+        licenceType: S13,
+      }),
+      checkOverlap('.375 H&H', [{ calibre: '.22 LR', type: 'Rifle' }], {
+        appliedForType: 'Rifle',
+        licenceType: S16,
+      }),
+    ];
+    for (const r of spoken) {
+      const text = `${r.prompt} ${r.writerNote}`.toLowerCase();
+      for (const banned of [
+        'will be refused',
+        'guarantee',
+        'chances',
+        'approval',
+        'rejected',
+      ]) {
+        expect(text).not.toContain(banned);
+      }
     }
   });
 
@@ -200,7 +397,6 @@ describe('how it speaks', () => {
 // tests were live, and NOTHING CALLED THEM. The engine sat there being correct
 // while every applicant's document went out without it.
 
-import { MotivationLicenceType } from '@prisma/client';
 import { overlapFromAnswers } from './motivation-overlap';
 
 const S15 = MotivationLicenceType.S15_OCCASIONAL_HUNTER;
@@ -268,5 +464,170 @@ describe('overlapFromAnswers', () => {
       existing_firearm_1_make: 'Tikka',
     });
     expect(r.verdict.kind).toBe('clear');
+  });
+
+  it('reads MO000017 the way it was actually answered', () => {
+    // The live shape: a Glock 9mm held, a 6.35mm Browning pistol applied for
+    // under section 16 dedicated sport. This came back clear, so the plan had
+    // no comparison section, so the gate scored completeness 40.
+    const r = overlapFromAnswers(S16DS, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '6.35mm Browning',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '9mm Parabellum',
+      existing_firearm_1_make: 'Glock',
+    });
+    expect(r.needsJustification).toBe(true);
+    expect(r.prompt).toContain('9mm Parabellum Glock handgun');
+    expect(r.writerNote).toMatch(/two handguns are two handguns/i);
+  });
+
+  it('keeps a row that has a type but no readable calibre', () => {
+    // A licence upload that yields "Handgun" and nothing legible in the
+    // calibre box is ordinary, and used to be dropped on the floor.
+    const r = overlapFromAnswers(S13, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm',
+      existing_firearm_1_type: 'Handgun',
+    });
+    expect(r.needsJustification).toBe(true);
+    // Nothing to name it by, so it is given an article rather than read out
+    // as "you already hold handgun".
+    expect(r.prompt).toContain('a handgun');
+  });
+});
+
+// ── the renewal that overlaps with itself ───────────────────────────
+//
+// ⚠️ A RENEWAL APPLICANT GENUINELY HOLDS THE FIREARM BEING RENEWED, and the
+// section they type it into is headed "Firearms you already own". Worse, those
+// rows are docSourced from CURRENT_LICENCE — and on a renewal the current
+// licence IS the one being renewed, so the extractor fills the row in for them.
+// Naively checked, the document argues why a firearm does not duplicate itself.
+
+describe('a section 24 renewal', () => {
+  const renewing = {
+    firearm_type: 'Handgun',
+    firearm_calibre: '9mm',
+    firearm_make: 'Glock',
+    firearm_serial: 'ABC12345',
+    existing_licence_number: 'LIC-99887766',
+  };
+
+  it('does not argue that the firearm duplicates itself, matched on licence number', () => {
+    const r = overlapFromAnswers(S24, {
+      ...renewing,
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '9mm',
+      existing_firearm_1_make: 'Glock',
+      existing_firearm_1_licence_no: 'LIC 99887766',
+    });
+    expect(r.needsJustification).toBe(false);
+    expect(r.writerNote).toBeNull();
+  });
+
+  it('identifies it by serial when the licence number is not on the row', () => {
+    const r = overlapFromAnswers(S24, {
+      ...renewing,
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '9mm',
+      existing_firearm_1_frame_serial: 'abc 12345',
+    });
+    expect(r.needsJustification).toBe(false);
+  });
+
+  it('identifies it by type, calibre and make when there is no number at all', () => {
+    const r = overlapFromAnswers(S24, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm',
+      firearm_make: 'Glock',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '9mm',
+      existing_firearm_1_make: 'Glock',
+    });
+    expect(r.needsJustification).toBe(false);
+  });
+
+  it('removes ONE row, so an identical twin is still asked about', () => {
+    // Two Glock 9mms, one being renewed. The other is a real second firearm
+    // and the calibre test should still see it.
+    const r = overlapFromAnswers(S24, {
+      ...renewing,
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '9mm',
+      existing_firearm_1_make: 'Glock',
+      existing_firearm_1_licence_no: 'LIC-99887766',
+      existing_firearm_2_type: 'Handgun',
+      existing_firearm_2_calibre: '9mm',
+      existing_firearm_2_make: 'Glock',
+      existing_firearm_2_licence_no: 'LIC-11223344',
+    });
+    expect(r.needsJustification).toBe(true);
+    if (r.verdict.kind === 'overlap') {
+      expect(r.verdict.withCalibres).toEqual(['9mm Glock handgun']);
+    }
+    // A renewal acquires nothing, so the note asks about continued need rather
+    // than about justifying a further firearm.
+    expect(r.writerNote).toMatch(/This is a renewal/);
+    expect(r.writerNote).toMatch(/continues to need this firearm alongside/);
+    expect(r.writerNote).not.toMatch(/dedicated status/);
+  });
+
+  it('still raises a genuinely different calibre once the renewed one is set aside', () => {
+    const r = overlapFromAnswers(S24, {
+      firearm_type: 'Rifle',
+      firearm_calibre: '.270 Win',
+      firearm_make: 'Tikka',
+      existing_licence_number: 'LIC-1',
+      existing_firearm_1_type: 'Rifle',
+      existing_firearm_1_calibre: '.270 Win',
+      existing_firearm_1_make: 'Tikka',
+      existing_firearm_1_licence_no: 'LIC-1',
+      existing_firearm_2_type: 'Rifle',
+      existing_firearm_2_calibre: '.308 Win',
+      existing_firearm_2_make: 'CZ',
+      existing_firearm_2_licence_no: 'LIC-2',
+    });
+    expect(r.needsJustification).toBe(true);
+    expect(r.writerNote).toMatch(/medium plains game/);
+  });
+
+  it('never runs the TYPE test on a renewal', () => {
+    // Two rifles, different calibre classes, and the renewed one identified and
+    // removed. On any other licence type the leftover rifle would be raised as
+    // a secondary type match; on a renewal it would only ever restate the
+    // application — the applicant is not acquiring a rifle, they have one.
+    const r = overlapFromAnswers(S24, {
+      firearm_type: 'Rifle',
+      firearm_calibre: '.375 H&H',
+      firearm_make: 'CZ',
+      existing_licence_number: 'LIC-1',
+      existing_firearm_1_type: 'Rifle',
+      existing_firearm_1_calibre: '.375 H&H',
+      existing_firearm_1_make: 'CZ',
+      existing_firearm_1_licence_no: 'LIC-1',
+      existing_firearm_2_type: 'Rifle',
+      existing_firearm_2_calibre: '.22 LR',
+      existing_firearm_2_make: 'Anschutz',
+      existing_firearm_2_licence_no: 'LIC-2',
+    });
+    expect(r.verdict.kind).toBe('clear');
+    expect(r.writerNote).toBeNull();
+  });
+
+  it('stays silent when it cannot tell which row is the renewal', () => {
+    // No licence number, no serial, and a make that does not line up. A handgun
+    // sitting beside a handgun renewal is far more likely to BE the renewal
+    // than to be a second one, and a false overlap puts a paragraph into a SAPS
+    // submission arguing against a problem the applicant does not have.
+    const r = overlapFromAnswers(S24, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '9mm',
+    });
+    expect(r.verdict.kind).toBe('clear');
+    expect(r.needsJustification).toBe(false);
+    expect(r.writerNote).toBeNull();
   });
 });

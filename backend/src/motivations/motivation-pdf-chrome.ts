@@ -334,6 +334,171 @@ export function footerStrip(
     });
 }
 
+// ── the unpaid mark ─────────────────────────────────────────────────
+//
+// Operator, 2026-08-22: "remember to add a watermark as this is not been paid
+// yet. Add NOT FOR USE around the All Outdoor logo as the watermark."
+//
+// ⚠️ THIS IS THE ONE PLACE THE BRAND APPEARS ON THE DOCUMENT, and it is a
+// deliberate exception to the "no branding beyond one discreet footer line"
+// rule at the top of motivation-pdf.service. It is only ever drawn on a pack
+// nobody has paid for — a sheet that must never reach a DFO's desk — so the
+// mark being unmistakably ours is the point rather than a lapse.
+
+/**
+ * The brand mark, as a raster.
+ *
+ * ⚠️ PNG, NOT ONE OF THE SVGs. frontend/public carries logo-mark.svg and
+ * logo-mark-dark.svg, and they are the better artwork — real traced paths that
+ * scale. doc.image() reads JPEG and PNG only and throws "Unknown image format"
+ * on anything else, and that throw would land in the buffered-page pass, AFTER
+ * every page of the document has been emitted: the download fails outright
+ * rather than degrading. So the raster lockup it is.
+ *
+ * ⚠️ A COPY IN backend/assets, NOT A PATH INTO frontend/public. Same reasoning
+ * motivation-firearm-image sets out for the stock photographs: this process
+ * runs from dist/ under pm2, nest-cli.json copies no non-TS assets, and the
+ * frontend tree is not reliably anywhere relative to it. Source file is
+ * frontend/public/email-logo.png (600 x 392, RGBA).
+ */
+const LOGO_FILE = 'all-outdoor-logo.png';
+
+/** Its intrinsic proportions, so laying it out costs no image decode. */
+const LOGO_ASPECT = 600 / 392;
+
+/** What the mark says, in one place so the renderer and its spec agree. */
+export const WATERMARK_TEXT = 'NOT FOR USE';
+
+/**
+ * ⚠️ LIGHT ENOUGH TO READ THROUGH, HEAVY ENOUGH TO SEE. The whole reason an
+ * unpaid pack is shown at all is so somebody can decide whether it is worth
+ * paying for, which it cannot do if the body text is unreadable. 0.07 is what
+ * the "PREVIEW" mark this replaced used, and the logo is a far larger solid
+ * mass than seven letterforms, so it reads harder at the same value.
+ */
+const WATERMARK_OPACITY = 0.07;
+
+/** Pure black, like the body — the mark is a shadow of the page, not a colour. */
+const WATERMARK_INK = '#000000';
+
+let resolvedLogo: string | null = null;
+
+/**
+ * Find the brand mark on disk once per process.
+ *
+ * Returns null rather than throwing, exactly as fontDir() does: a missing
+ * asset degrades the mark to its words alone. An unpaid pack that loses its
+ * logo is still stamped; an unpaid pack that 500s is a support ticket.
+ */
+export function logoPath(): string | null {
+  if (resolvedLogo !== null) return resolvedLogo || null;
+  const candidates = [
+    // Running from dist/ under pm2 — assets sit beside the app root.
+    path.join(process.cwd(), 'assets', LOGO_FILE),
+    // Running from the repo root.
+    path.join(process.cwd(), 'backend', 'assets', LOGO_FILE),
+    // Relative to this file, source or compiled.
+    path.join(__dirname, '..', '..', 'assets', LOGO_FILE),
+    path.join(__dirname, '..', '..', '..', 'assets', LOGO_FILE),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        resolvedLogo = candidate;
+        return candidate;
+      }
+    } catch {
+      /* unreadable candidate — try the next */
+    }
+  }
+  resolvedLogo = '';
+  return null;
+}
+
+/**
+ * Stamp the current page as unpaid: the logo on the page's own diagonal, with
+ * NOT FOR USE set above and below it.
+ *
+ * ⚠️ NOTHING HERE MAY MOVE THE TEXT OR ADD A PAGE. It is drawn in the
+ * buffered-page pass, onto pages whose prose is already laid out, so the two
+ * ways pdfkit could ruin that are both closed off deliberately:
+ *
+ *  - the words are set WITHOUT a `width`. Given one, pdfkit routes the run
+ *    through LineWrapper, and LineWrapper's first act is to compare `doc.y`
+ *    against the bottom margin and call addPage() if it is past it. No width,
+ *    no wrapper, no page.
+ *  - the logo is placed at an EXPLICIT NUMERIC y. Handed anything else,
+ *    doc.image() decides it is in the document flow and advances doc.y by the
+ *    height of the image.
+ *
+ * The caller still zeroes the margins around this, as it does around
+ * footerStrip — see the note there.
+ */
+export function watermark({ doc, f }: Chrome): void {
+  const cx = PAGE_W / 2;
+  const cy = PAGE_H / 2;
+
+  const size = px(46);
+  const tracking = size * 0.26;
+  const logoW = mm(74);
+  const logoH = logoW / LOGO_ASPECT;
+  const gap = mm(8);
+  const logo = logoPath();
+
+  doc.save();
+  // ⚠️ -55° IS A4's OWN DIAGONAL, not a taste. atan(297/210) is 54.7°, so the
+  // mark lies along the sheet and is the same distance from both corners it
+  // points at; any other angle crowds one corner and leaves the other empty.
+  doc.rotate(-55, { origin: [cx, cy] });
+
+  doc.font(f.sansBold).fontSize(size);
+  const lineH = doc.currentLineHeight();
+  const stackH = logo ? lineH * 2 + gap * 2 + logoH : lineH;
+
+  // ⚠️ PLACED BY MEASUREMENT, NOT BY align: 'center'. A centred run is centred
+  // on a box that includes the trailing character-spacing of its last glyph,
+  // so at this tracking the words sit several points left of the logo they are
+  // meant to sit over — visible the moment the two are stacked. widthOfString
+  // already excludes that trailing gap (it multiplies by length - 1), so
+  // measuring is what puts both halves of the mark on one axis.
+  const textW = doc.widthOfString(WATERMARK_TEXT, {
+    characterSpacing: tracking,
+  });
+  const words = (atY: number) => {
+    doc
+      .fillColor(WATERMARK_INK)
+      .fillOpacity(WATERMARK_OPACITY)
+      .text(WATERMARK_TEXT, cx - textW / 2, atY, {
+        characterSpacing: tracking,
+        lineBreak: false,
+      })
+      .fillOpacity(1);
+  };
+
+  let y = cy - stackH / 2;
+  words(y);
+
+  if (logo) {
+    y += lineH + gap;
+    // ⚠️ THE PATH, NOT THE BYTES. doc.image() keys _imageRegistry on a string
+    // src, so passing the path embeds ONE image XObject that every page then
+    // references. Reading the file ourselves and passing a Buffer defeats that
+    // cache and re-embeds 55 kB per page — a megabyte and a half onto a
+    // twenty-six page pack, for one mark.
+    doc.fillOpacity(WATERMARK_OPACITY);
+    doc.image(logo, cx - logoW / 2, y, { width: logoW });
+    doc.fillOpacity(1);
+    y += logoH + gap;
+    words(y);
+  }
+
+  // ⚠️ RESTORE THE GRAPHICS STATE. rotate() and the fill opacity are
+  // document-wide in pdfkit, and leaving either set bleeds into the banner and
+  // the footer strip drawn immediately after — which is how a first attempt
+  // put the running title on a 55-degree angle in pale grey.
+  doc.restore();
+}
+
 /**
  * A numbered section header: a ring node, then a label on a highlight band.
  *

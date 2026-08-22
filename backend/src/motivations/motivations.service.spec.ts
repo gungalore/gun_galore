@@ -31,7 +31,16 @@ function build(
   } = {},
 ) {
   const prisma = {
-    user: { findUnique: jest.fn(async (_a?: any): Promise<any> => ({ id: 'user-1' })) },
+    // Two different reads land here: requireUser (id only) and the outcome
+    // notification (email / phone / name). One row satisfies both.
+    user: {
+      findUnique: jest.fn(async (_a?: any): Promise<any> => ({
+        id: 'user-1',
+        email: 'applicant@example.co.za',
+        phone: '0820000000',
+        firstName: 'Gerhard',
+      })),
+    },
     motivation: {
       findMany: jest.fn(async (_a?: any): Promise<any> => []),
       findFirst: jest.fn(async (_a?: any): Promise<any> => null),
@@ -80,6 +89,9 @@ function build(
   };
   const refs = { allocate: jest.fn(async () => 'MO000123') };
   const files = { remove: jest.fn(async (_a?: any): Promise<any> => undefined) };
+  const notifications = {
+    motivationFinished: jest.fn(async (_a?: any): Promise<any> => undefined),
+  };
 
   const claude = {
     // Research is fail-soft and OFF by default in tests: null means "no brief",
@@ -166,8 +178,12 @@ function build(
         remove: jest.fn(async () => undefined),
         signature: jest.fn(async () => null),
       } as never,
+      // The applicant's "it's done" message. Stubbed rather than omitted: the
+      // real one reaches Resend and SMSPortal, and it fires on BOTH terminal
+      // gate branches, so every generation test in this file goes through it.
+      notifications as never,
   );
-  return { svc, prisma, quota, refs, files, claude, pdf, settings };
+  return { svc, prisma, quota, refs, files, claude, pdf, settings, notifications };
 }
 
 describe('MotivationsService', () => {
@@ -463,6 +479,10 @@ describe('motivation field registry', () => {
 describe('MotivationsService.generate', () => {
   const READY = {
     id: 'mo-1',
+    // Both selected by prepareGeneration: userId scopes the sameness corpus,
+    // referenceNumber is what the outcome notification names.
+    userId: 'user-1',
+    referenceNumber: 'MO000123',
     licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
     status: MotivationStatus.DRAFT,
     answersEncrypted: null as string | null,
@@ -549,6 +569,111 @@ describe('MotivationsService.generate', () => {
     expect(data.retentionPurgeAt).toBeInstanceOf(Date);
     // Token spend is accumulated across every pass, not just the last one.
     expect(data.promptTokens).toBe(900 + 400);
+  });
+
+  describe('telling the applicant it finished', () => {
+    // The run is DETACHED — startGeneration returns at once and the wizard
+    // settles on "Writing it — about a minute…". Nothing else ever tells them
+    // the outcome, so a branch that returns without notifying is a branch that
+    // strands somebody on a spinner.
+
+    /** A gate verdict that sends the document back for more detail. */
+    function heldBack() {
+      return {
+        verdict: {
+          completeness: 40, specificity: 35, consistency: 70, groundedness: 70,
+          overall: 68, thinFields: ['hunting_history'],
+          issues: ['No statutory section is quoted anywhere'],
+          passed: false,
+        },
+        usage: { model: 'g', promptTokens: 1, completionTokens: 1 },
+        parsed: true,
+      };
+    }
+
+    it('notifies when the gate passes, naming only the MO reference', async () => {
+      const { svc, prisma, notifications } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+      await svc.generate('c1', 'mo-1');
+      expect(notifications.motivationFinished).toHaveBeenCalledTimes(1);
+      expect(notifications.motivationFinished.mock.calls[0][0]).toMatchObject({
+        outcome: 'ready',
+        referenceNumber: 'MO000123',
+        motivationId: 'mo-1',
+        email: 'applicant@example.co.za',
+        phone: '0820000000',
+      });
+    });
+
+    it('ALSO notifies when the gate holds it back', async () => {
+      // Silence here is the worst outcome of the lot: the applicant is waiting
+      // on a page that says it is being written, and it never will be until
+      // they come back and answer.
+      const { svc, prisma, claude, notifications } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+      claude.grade.mockResolvedValueOnce(heldBack());
+      const res = await svc.generate('c1', 'mo-1');
+      expect(res.status).toBe(MotivationStatus.NEEDS_MORE_INFO);
+      expect(notifications.motivationFinished).toHaveBeenCalledTimes(1);
+      expect(notifications.motivationFinished.mock.calls[0][0]).toMatchObject({
+        outcome: 'held',
+        referenceNumber: 'MO000123',
+      });
+    });
+
+    it('sends only once the row has left GENERATING, and last of all', async () => {
+      // Ordering is the whole safety of this: the message tells the applicant
+      // to go and look at something, so the state it describes has to be
+      // written first, and the follow-up questions (when there are any) have
+      // to be queued before they arrive to answer them.
+      const order: string[] = [];
+      const { svc, prisma, claude, notifications } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+      claude.grade.mockResolvedValueOnce(heldBack());
+      prisma.motivation.update.mockImplementation(async ({ data }: any) => {
+        // Seat-number writes carry no status — only transitions count.
+        if (data?.status) order.push(`status:${data.status}`);
+        return {};
+      });
+      prisma.motivationMessage.create.mockImplementation(async () => {
+        order.push('question');
+        return {};
+      });
+      notifications.motivationFinished.mockImplementation(async () => {
+        order.push('notified');
+        return undefined;
+      });
+      await svc.generate('c1', 'mo-1');
+      expect(order[0]).toBe(`status:${MotivationStatus.NEEDS_MORE_INFO}`);
+      expect(order.at(-1)).toBe('notified');
+    });
+
+    it('does not lose the document when the message cannot be sent', async () => {
+      // Resend down, SMSPortal down, a hard-bouncing address — the row is
+      // already terminal and the document is already written and paid for.
+      const { svc, prisma, notifications } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+      notifications.motivationFinished.mockRejectedValueOnce(
+        new Error('Resend 503'),
+      );
+      const res = await svc.generate('c1', 'mo-1');
+      expect(res.status).toBe(MotivationStatus.COMPLETED);
+    });
+
+    it('sends nothing, and still completes, when there is no address on file', async () => {
+      // Stale dev-era rows have made this lookup come back thin before.
+      const { svc, prisma, notifications } = build();
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: null,
+        phone: null,
+        firstName: null,
+      });
+      prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
+      const res = await svc.generate('c1', 'mo-1');
+      expect(res.status).toBe(MotivationStatus.COMPLETED);
+      expect(notifications.motivationFinished).not.toHaveBeenCalled();
+    });
   });
 
   it('⚠️ NEVER RE-ASKS A QUESTION ALREADY OPEN ON SCREEN', async () => {
@@ -951,11 +1076,57 @@ describe('MotivationsService.renderPdf', () => {
     expect(args.applicantName).toBe('Jan Pietersen');
     expect(args.templateVersion).toBe('tpl-x');
   });
+
+  // The mark is decided here, not in the renderer, so this is where the rule
+  // is pinned. See isPaidFor.
+  //
+  // ⚠️ A FUNCTION, NOT A CONST. encryptText reads ID_HASH_SECRET, and a const
+  // in the describe body is evaluated while jest is collecting tests — before
+  // the beforeAll at the top of this file has set it. The whole suite fails to
+  // load, and the message points at blob-crypto rather than at here.
+  const readyToRender = () => ({
+    referenceNumber: 'MO000123',
+    licenceType: MotivationLicenceType.S24_RENEWAL,
+    status: MotivationStatus.COMPLETED,
+    documentTextEncrypted: encryptText('Introduction:\n\nBody.'),
+    templateVersion: 'tpl-x',
+    answersEncrypted: encryptJson({ full_name: 'Jan Pietersen' }),
+    completedAt: new Date('2026-08-18T00:00:00Z'),
+    uploads: [{ kind: 'IDENTITY_DOCUMENT' }],
+  });
+
+  it('watermarks a free-beta pack: a seat is not a payment', async () => {
+    // ⚠️ THIS USED TO GO THE OTHER WAY. isSettled() treated a beta seat as
+    // settling the pack and handed the holder a clean, fileable document.
+    // Operator, 2026-08-22: "remember to add a watermark as this is not been
+    // paid for yet." billedCents is the only column that records money.
+    const { svc, prisma, pdf } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce({
+      ...readyToRender(),
+      billedCents: 0,
+      betaSeatNo: 7,
+    });
+    await svc.renderPdf('c1', 'mo-1');
+    expect(pdf.render.mock.calls[0][0].watermark).toBe(true);
+  });
+
+  it('clears the mark once the pack has actually been billed', async () => {
+    const { svc, prisma, pdf } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce({
+      ...readyToRender(),
+      billedCents: 29900,
+      betaSeatNo: null,
+    });
+    await svc.renderPdf('c1', 'mo-1');
+    expect(pdf.render.mock.calls[0][0].watermark).toBe(false);
+  });
 });
 
 describe('MotivationsService — beta seat accounting and cost', () => {
   const READY2 = {
     id: 'mo-1',
+    userId: 'user-1',
+    referenceNumber: 'MO000123',
     licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
     status: MotivationStatus.DRAFT,
     answersEncrypted: null as string | null,

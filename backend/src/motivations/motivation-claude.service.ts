@@ -229,6 +229,30 @@ export class MotivationClaudeService {
 
       const block = msg.content.find((b) => b.type === 'text');
       const text = ((block as { text?: string } | undefined)?.text ?? '').trim();
+
+      // WATCH FOR A DOCUMENT THAT RAN OUT OF ROOM.
+      //
+      // The gate call has checked this since the day a truncated verdict failed
+      // every document; the WRITER never did, and it cost us a live one. The
+      // MO000017 regeneration on 2026-08-22 came back scored and COMPLETED with
+      // the gate's own finding reading "Document cuts off mid-sentence at the
+      // end (paragraph 6)" — the applicant would have downloaded a pack whose
+      // argument stops halfway.
+      //
+      // ⚠️ IT IS ONLY A LOG, DELIBERATELY. A short document is a failed attempt
+      // (below), but a truncated one is a nearly-complete document, and throwing
+      // it away costs the applicant a full regeneration for something the gate
+      // is about to score honestly anyway. What was missing was VISIBILITY: the
+      // symptom looked like a writing fault rather than a token ceiling. If this
+      // starts firing regularly, max_tokens is the fix — and note that output
+      // tokens are wall-clock, so raise GENERATE_TIMEOUT_MS with it.
+      if (msg.stop_reason === 'max_tokens') {
+        this.logger.error(
+          `Motivation document hit max_tokens (${msg.usage?.output_tokens ?? '?'} out) ` +
+            `— the document is truncated and will read as unfinished. Raise max_tokens.`,
+        );
+      }
+
       if (text.length < 200) {
         // Too short to be a motivation. Treat as a failed attempt rather than
         // storing something the applicant would have to throw away.

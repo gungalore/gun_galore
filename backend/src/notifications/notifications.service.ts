@@ -28,7 +28,11 @@ export type NotificationLinkedType =
   | 'complaint'
   // Licence Centre documents — linkedId is the Credential id. Resolved when
   // the member confirms a renewed date or mutes reminders on that document.
-  | 'credential';
+  | 'credential'
+  // Licence motivations — linkedId is the Motivation id. Nothing resolves
+  // these (the rows are dismissible); the link is carried for the push TAG,
+  // so a later outcome on the same document replaces the earlier one.
+  | 'motivation';
 
 interface PersistOpts {
   userId: string;
@@ -4936,6 +4940,111 @@ export class NotificationsService {
         }
       }
     }
+  }
+
+  /**
+   * A licence motivation has finished generating — either it passed the
+   * quality gate and is ready to read, or the gate held it back for more
+   * detail.
+   *
+   * ⚠️ BOTH OUTCOMES NOTIFY, and that is most of the reason this exists.
+   * Generation runs detached from the request (a measured run took five
+   * minutes; nginx cuts an upstream at sixty seconds), so the applicant is
+   * told it is being written and then hears nothing. A document the gate held
+   * back is every bit as FINISHED from where they are standing; silence on
+   * that branch is the worse failure, not the kinder one.
+   *
+   * ⚠️ NOTHING HERE NAMES THE FIREARM, THE CALIBRE OR THE LICENCE SECTION.
+   * Same rule as credentialExpiring below, and it binds every channel rather
+   * than just the SMS: persist() fans out to a web push whose title and body
+   * ARE the inbox row's, so an in-app row reading "your section 16 9mm
+   * motivation" reaches the lock screen just as surely. The MO reference
+   * identifies the document to the applicant and to support, and tells a
+   * stranger standing nearby nothing at all about what is in somebody's house.
+   *
+   * ⚖️ "READY" MEANS WRITTEN, NEVER APPROVED. No channel may imply an outcome
+   * at SAPS. The applicant checks the facts and submits it as their own — see
+   * DISCLAIMER_TEXT in motivations.service.ts, which is what they signed.
+   */
+  async motivationFinished(d: {
+    userId: string;
+    email: string;
+    phone: string | null;
+    name: string;
+    motivationId: string;
+    referenceNumber: string;
+    /** 'ready' = passed the gate. 'held' = NEEDS_MORE_INFO after the gate. */
+    outcome: 'ready' | 'held';
+  }) {
+    const path = `/motivations/${d.motivationId}`;
+    const url = `${this.appUrl}${path}`;
+    const ready = d.outcome === 'ready';
+
+    const headline = ready
+      ? 'Your document is ready'
+      : 'Your document needs a bit more detail';
+
+    await this.persist({
+      userId: d.userId,
+      category: 'ACCOUNT',
+      type: ready ? 'motivation_ready' : 'motivation_needs_more_info',
+      title: headline,
+      body: ready
+        ? `${d.referenceNumber} is written. Open it to read it through and download the pack.`
+        : `${d.referenceNumber} is written, but we held it back — it needs more detail before it is ready to file. Open it to add what is missing.`,
+      url: path,
+      // The frontend icon set has no document glyph; 'account' is the
+      // supported alias for the neutral account mark (notification-item.tsx).
+      iconKey: 'account',
+      // linkedType + linkedId give the push a stable tag, so the "ready"
+      // message REPLACES the earlier "needs more detail" one on the same
+      // document instead of stacking two contradictory rows on a lock screen.
+      linkedType: 'motivation',
+      linkedId: d.motivationId,
+      // Dismissible because NOTHING calls resolveByEntity for a motivation —
+      // a non-dismissible row here could never be cleared and would sit in the
+      // inbox forever. forcePush buys the buzz back: this is the one event the
+      // applicant is actively sitting and waiting for.
+      dismissible: true,
+      forcePush: true,
+    });
+
+    // ⚠️ ASCII ONLY — an em dash or a curly apostrophe drops the message out
+    // of GSM-7 into UCS-2 and halves the segment to 70 characters. Both of
+    // these clear 160 with a 25-character cuid in the URL.
+    await this.sendSms(
+      d.phone,
+      ready
+        ? `All Outdoor: your document ${d.referenceNumber} is ready. Read it and download the pack: ${url}`
+        : `All Outdoor: your document ${d.referenceNumber} needs more detail before it is ready. Open it: ${url}`,
+      // The outcome is in the reference so a regenerate is a distinct send
+      // rather than something that looks like a duplicate of the first.
+      `motivation-${d.outcome}-${d.motivationId}`,
+    );
+
+    const html = this.email({
+      status: ready
+        ? { tone: 'success', label: 'Ready' }
+        : { tone: 'pending', label: 'More detail needed' },
+      headline,
+      body: ready
+        ? `Hi ${b(d.name)}, ${b(d.referenceNumber)} is written and waiting for you. Read it through against your own papers before you sign it — you submit it as your own, so every fact in it has to be one you can stand behind. The pack is rebuilt each time you download it, so come back for another copy whenever you need one.`
+        : // ⚠️ IT DOES NOT PROMISE QUESTIONS. A held-back document only queues a
+          // follow-up when a field is actually EMPTY, and by then none can be
+          // (prepareGeneration refuses to start with a required answer
+          // missing) — so an applicant told "answer the questions" can arrive
+          // to a page with none on it. Hence the last sentence: there is
+          // always a way forward, even when nothing is being asked.
+          `Hi ${b(d.name)}, ${b(d.referenceNumber)} is written, but our own quality check held it back rather than hand you something thin to file. Nothing is lost — open it, read the draft as it stands, and add detail wherever we have asked for it, then prepare it again. If there is nothing there to answer, reply to this email or write to ${SUPPORT_EMAIL} and a person will look at it.`,
+      cta: {
+        label: ready ? 'Read your document' : 'Open your document',
+        url,
+      },
+      preheader: ready
+        ? `${d.referenceNumber} is ready to read and download`
+        : `${d.referenceNumber} needs a bit more detail`,
+    });
+    await this.send(d.email, `${headline} — ${d.referenceNumber}`, html);
   }
 
   // Wrap SmsService so each shipping-notification call site doesn't

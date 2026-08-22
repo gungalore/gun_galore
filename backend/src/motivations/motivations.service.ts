@@ -38,6 +38,7 @@ import {
 } from './motivation-annexure-layout';
 import { buildLibrary } from './motivation-library';
 import { SettingsService, FLAGS } from '../settings/settings.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   planFor,
   followsPlan,
@@ -304,23 +305,24 @@ function sectionMarksFor(
 }
 
 /**
- * Has this pack been paid for, or does it hold a free-beta seat?
+ * Has this pack been paid for? Nothing else clears the watermark.
  *
- * ⚠️ TWO WAYS TO BE SETTLED, AND THE SECOND IS NOT A LOOPHOLE. A beta seat
- * is allocated from an atomic counter with a hard cap; holding one is how the
- * operator chose to give the first members the product for nothing. Both mean
- * "this person is entitled to a clean document", so both clear the watermark.
+ * ⚠️ THIS USED TO BE isSettled(), AND IT ALSO PASSED A FREE-BETA SEAT. The
+ * reasoning was that a seat is "how the operator chose to give the first
+ * members the product for nothing", so both meant entitled-to-a-clean-copy.
+ * Operator, 2026-08-22: "remember to add a watermark as this is not been paid
+ * for yet." A seat is a free seat, not a payment — `billedCents` is the only
+ * column that records money — so a beta pack is watermarked like any other
+ * unpaid one. `betaSeatNo` still governs the beta CAP; it never governs the
+ * mark, which is why it is not read here at all.
  *
  * Payments are not live yet, so today this is almost always false and almost
  * every pack carries the mark. That is the correct default: the failure mode
  * of getting it wrong the other way is handing out the finished product for
  * nothing.
  */
-export function isSettled(row: {
-  billedCents: number;
-  betaSeatNo: number | null;
-}): boolean {
-  return row.billedCents > 0 || row.betaSeatNo !== null;
+export function isPaidFor(row: { billedCents: number }): boolean {
+  return row.billedCents > 0;
 }
 
 /** Statuses where the applicant may still edit their answers. */
@@ -346,6 +348,9 @@ export class MotivationsService {
     private readonly saps271: Saps271Service,
     private readonly firearmImages: FirearmImageService,
     private readonly witnesses: MotivationWitnessService,
+    // @Global — see the note in motivations.module.ts. Importing
+    // NotificationsModule here would be the wrong instinct and risks a cycle.
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -570,11 +575,11 @@ export class MotivationsService {
         format: asFormat(row.templateFormat),
         colourway: asScheme(row.templateColourway),
       },
-      // ⚠️ WATERMARK UNTIL IT IS PAID FOR — OR EARNED. Operator, 2026-08-19:
-      // "Be sure to watermark any item that has not been paid for or have the
-      // merit as a free motivation." A free-beta seat is earned, so it is not
-      // watermarked; an unpaid, unseated pack is.
-      watermarked: !isSettled(row),
+      // ⚠️ WATERMARK UNTIL IT IS PAID FOR. Operator, 2026-08-19: "Be sure to
+      // watermark any item that has not been paid for"; and again 2026-08-22,
+      // of a beta-seated pack: "remember to add a watermark as this is not
+      // been paid for yet." A free seat is not a payment — see isPaidFor.
+      watermarked: !isPaidFor(row),
       editable: EDITABLE.includes(row.status),
       createdAt: row.createdAt,
       completedAt: row.completedAt,
@@ -2197,6 +2202,9 @@ export class MotivationsService {
       where: { id, userId: user.id },
       select: {
         id: true,
+        // The MO number. Carried through the run because it is the ONLY thing
+        // the outcome notification is allowed to name — see notifyOutcome.
+        referenceNumber: true,
         licenceType: true,
         status: true,
         answersEncrypted: true,
@@ -2551,6 +2559,7 @@ export class MotivationsService {
             ),
           },
         });
+        await this.notifyOutcome(row, 'ready');
         return {
           status: MotivationStatus.COMPLETED,
           score: graded.verdict.overall,
@@ -2605,6 +2614,10 @@ export class MotivationsService {
         answers,
         overlap.needsJustification,
       );
+      // ⚠️ AFTER queueFollowUps, NEVER BEFORE. The message tells the applicant
+      // the questions are waiting for them; sending it first would race an
+      // applicant who taps the SMS straight away onto a page with none on it.
+      await this.notifyOutcome(row, 'held');
       return {
         status: MotivationStatus.NEEDS_MORE_INFO,
         score: graded.verdict.overall,
@@ -2633,6 +2646,62 @@ export class MotivationsService {
         await this.quota.releaseBetaSeat().catch(() => undefined);
       }
       throw err;
+    }
+  }
+
+  /**
+   * Tell the applicant their document is finished — ready, or held back.
+   *
+   * ⚠️ THE RUN IS DETACHED, SO NOTHING ELSE EVER TELLS THEM. startGeneration
+   * returns immediately and the wizard settles on "Writing it — about a
+   * minute…"; a minute and a half later the row changes and the page does not,
+   * because the applicant has long since locked their phone. Both terminal
+   * gate branches call this, because a document held back for more detail is
+   * just as FINISHED from where they are standing — and a knock-back nobody
+   * is told about is the one outcome with no way back into the flow.
+   *
+   * ⚠️ IT NEVER THROWS. The row is already in its terminal state by the time
+   * this runs and the document is written and (in time) paid for; a Resend
+   * outage, a missing phone number or a stale user row must cost a message,
+   * never the document. Every failure is a warning in the log.
+   *
+   * The MO reference is the only identifier passed on. NotificationsService
+   * owns the rule about what may reach a lock screen — see motivationFinished
+   * — but nothing here hands it a firearm, a calibre or a section to leak.
+   */
+  private async notifyOutcome(
+    row: { id: string; userId: string; referenceNumber: string },
+    outcome: 'ready' | 'held',
+  ): Promise<void> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: row.userId },
+        select: { email: true, phone: true, firstName: true },
+      });
+      // No address, no message. Stale dev-era rows have made this exact lookup
+      // come back empty in production before (see requireUser), and a null
+      // deref here would be an unhandled rejection on a detached promise.
+      if (!user?.email) {
+        this.logger.warn(
+          `Motivation ${row.id}: finished (${outcome}) but the applicant has no email on file — not notified`,
+        );
+        return;
+      }
+      await this.notifications.motivationFinished({
+        userId: row.userId,
+        email: user.email,
+        phone: user.phone,
+        name: user.firstName ?? 'there',
+        motivationId: row.id,
+        referenceNumber: row.referenceNumber,
+        outcome,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Motivation ${row.id}: could not tell the applicant it finished (${outcome}) — ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
   }
 
@@ -2942,8 +3011,9 @@ export class MotivationsService {
         coverPhotoChoice: true,
         coverPhotoKey: true,
         coverPhotoMime: true,
+        // The one column that records money, and so the only one the mark
+        // reads. betaSeatNo used to be selected beside it; see isPaidFor.
         billedCents: true,
-        betaSeatNo: true,
         // ⚠️ ORDERED BY CREATION, and the bytes come with it now. The copies
         // are reprinted into the pack, so a stable order matters: "1 of 2"
         // and "2 of 2" have to mean the same two pages every download.
@@ -3039,9 +3109,9 @@ export class MotivationsService {
       // unrecognised value falls back rather than failing the download.
       format: asFormat(row.templateFormat),
       colourway: asScheme(row.templateColourway),
-      // See isSettled. Payments are not live, so today this stamps almost
+      // See isPaidFor. Payments are not live, so today this stamps almost
       // every download — which is the right way round.
-      watermark: !isSettled(row),
+      watermark: !isPaidFor(row),
       // Named in the running footer of every page, the way a professional
       // pack does it — a loose sheet has to identify its own application.
       firearmLine: firearmLine(answers),

@@ -160,11 +160,6 @@ export default function MotivationWizardPage() {
   const [error, setError] = useState<string | null>(null);
   /** Registered fields the server would not store. See the autosave effect. */
   const [refused, setRefused] = useState<string[]>([]);
-  /** The draft, once asked for. Never fetched with the detail — it is long. */
-  const [draft, setDraft] = useState<{
-    text: string;
-    qualityScore: number | null;
-  } | null>(null);
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>(
     'idle',
   );
@@ -1738,9 +1733,21 @@ export default function MotivationWizardPage() {
         {detail.status === 'GENERATING' ? (
           // Offering "Prepare my motivation" here would earn a 409 from the
           // compare-and-swap and read as a broken button.
+          //
+          // ⚠️ "ABOUT A MINUTE" WAS NOT TRUE. A measured run took 15:00:46 to
+          // 15:05:40 — five minutes — and the copy is why the operator sat
+          // watching a button instead of closing the tab. Say the real shape
+          // of the wait and say they are free to go.
+          //
+          // ⚠️ AND IT PROMISES A NOTIFICATION NOTHING SENDS YET. Nothing in
+          // backend/src/motivations calls NotificationsService, on the
+          // transition to COMPLETED or to NEEDS_MORE_INFO. Wiring it is the
+          // next thing to build; until it is, this sentence is the second
+          // untrue thing on this screen.
           <p className="mt-2 text-sm" role="status">
-            We are writing it now — this takes about a minute. You can leave
-            this page; it will be here when you come back.
+            We are writing it now. It takes a few minutes. You can leave this
+            page — we will send you an SMS and an email once it is ready, and
+            it will be here when you come back.
           </p>
         ) : outstanding.length > 0 ? (
           <p className="mt-2 text-sm text-[var(--text-secondary)]">
@@ -1802,7 +1809,7 @@ export default function MotivationWizardPage() {
                   if (d.status === 'COMPLETED') router.refresh();
                   if (d.status === 'GENERATING') {
                     setError(
-                      'This is taking longer than usual. It is still being written — leave this page open, or come back shortly and it will be here.',
+                      'This is taking longer than usual. It is still being written — you can close this page; we will send you an SMS and an email once it is ready.',
                     );
                   }
                 } catch (e) {
@@ -1842,50 +1849,28 @@ export default function MotivationWizardPage() {
               }}
             >
               {generating
-                ? 'Writing it — about a minute…'
+                ? 'Writing it — a few minutes…'
                 : 'Prepare my motivation'}
             </button>
-          </>
-        )}
 
-        {/* ⚠️ READABLE EVEN WHEN IT DID NOT PASS. A draft held back for more
-            detail used to be invisible — the applicant paid for it, it was
-            written, and all they saw was a score and a list of questions.
-            Nobody can tell a fair knock-back from an over-strict one without
-            reading the text. The PDF stays behind COMPLETED; this is the
-            reading copy. */}
-        {detail.hasDocument && detail.status !== 'COMPLETED' && (
-          <div className="mt-4">
-            <button
-              type="button"
-              className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
-              onClick={async () => {
-                if (draft) return setDraft(null);
-                try {
-                  setDraft(await motivationsApi.draft(token, id));
-                } catch {
-                  setError('We could not open the draft just now.');
-                }
-              }}
-            >
-              {draft ? 'Hide the draft' : 'Read the draft as written'}
-            </button>
-            {draft && (
-              <div
-                className="mt-3 rounded border border-[var(--border)] bg-[var(--bg-inset)] p-4"
-                style={{ maxHeight: '28rem', overflowY: 'auto' }}
+            {/* ⚠️ THE STATUS LINE ABOVE IS NEVER REACHED FROM HERE. `detail`
+                is only re-read once the poll loop ends, so for the whole run
+                the page is still on this branch and a disabled button label
+                is the only thing on screen to read — which is exactly how
+                five minutes got spent watching one. The same promise has to
+                be made beside the button, not only to whoever comes back to
+                a GENERATING row later. */}
+            {generating && (
+              <p
+                className="mt-3 text-sm text-[var(--text-secondary)]"
+                role="status"
               >
-                <p className="mb-3 text-xs text-[var(--text-tertiary-on-card)]">
-                  This is a draft, not a document to file. It scored{' '}
-                  {draft.qualityScore ?? '—'} and was held back for more
-                  detail — the questions above are what it was marked down on.
-                </p>
-                <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {draft.text}
-                </div>
-              </div>
+                It takes a few minutes. You do not have to wait here — you can
+                leave this page and we will send you an SMS and an email once
+                it is ready.
+              </p>
             )}
-          </div>
+          </>
         )}
 
         {/* ⚠️ BUTTONS, NOT ANCHORS. These endpoints sit behind the Clerk

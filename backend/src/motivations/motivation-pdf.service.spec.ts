@@ -5,6 +5,7 @@ import {
   MotivationPdfService,
   asFormat,
   asScheme, titleCase } from './motivation-pdf.service';
+import { WATERMARK_TEXT } from './motivation-pdf-chrome';
 import { buildAnnexures } from './motivation-checklist';
 import { MotivationUploadKind } from '@prisma/client';
 
@@ -234,6 +235,82 @@ describe('MotivationPdfService', () => {
     const { pdf } = await svc.render(makeInput());
     const { text } = await readPdfAsync(pdf);
     expect(flat(text)).toContain('Gerhard Johan Petrus Fourie');
+  });
+});
+
+describe('the unpaid mark', () => {
+  const svc = new MotivationPdfService();
+
+  // ⚠️ THE MARK IS THE ONLY THING BETWEEN AN UNPAID PACK AND A FILEABLE ONE,
+  // so what is asserted here is not decoration. Operator, 2026-08-22: "Add NOT
+  // FOR USE around the All Outdoor logo as the watermark."
+
+  const long = Array.from(
+    { length: 30 },
+    (_, i) =>
+      `Paragraph ${i + 1}: ` +
+      'I compete in practical pistol events on a monthly basis. '.repeat(6),
+  ).join('\n\n');
+
+  const pageCount = (pdf: Buffer) =>
+    Number(
+      pdf
+        .toString('latin1')
+        .match(/\/Type\s*\/Pages[\s\S]{0,200}?\/Count\s+(\d+)/)?.[1] ?? 0,
+    );
+
+  it('stamps every page and adds none', async () => {
+    // ⚠️ THE PAGE COUNT IS THE POINT OF THIS TEST. pdfkit answers anything
+    // drawn below the bottom margin by starting a fresh page and drawing
+    // there, so a mark through the middle of an A4 is one careless option away
+    // from appending a blank sheet after every page — which an earlier
+    // version of this did, numbering a six-page document "of 5".
+    const clean = await svc.render({ ...makeInput(long), watermark: false });
+    const marked = await svc.render({ ...makeInput(long), watermark: true });
+
+    expect(pageCount(clean.pdf)).toBeGreaterThan(2);
+    expect(pageCount(marked.pdf)).toBe(pageCount(clean.pdf));
+
+    // Twice per page: the words are set above the logo and below it.
+    // squash() because the mark is tracked, and pdfkit positions every glyph
+    // of a letter-spaced run separately — the spaces are geometry, not
+    // characters, and never reach the text stream.
+    const { text } = await readPdfAsync(marked.pdf);
+    const said = squash(text).split(squash(WATERMARK_TEXT)).length - 1;
+    expect(said).toBe(pageCount(marked.pdf) * 2);
+  });
+
+  it('embeds the logo ONCE, however many pages carry it', async () => {
+    // ⚠️ doc.image() caches by string src, so the renderer hands it the PATH.
+    // Reading the file and passing the bytes instead re-embeds the artwork per
+    // page — a megabyte and a half onto a long pack, for one mark. Two image
+    // objects is the whole cost: the logo and the soft mask carrying its alpha.
+    const marked = await svc.render({ ...makeInput(long), watermark: true });
+    const images = (
+      marked.pdf.toString('latin1').match(/\/Subtype\s*\/Image/g) ?? []
+    ).length;
+    expect(pageCount(marked.pdf)).toBeGreaterThan(2);
+    expect(images).toBe(2);
+  });
+
+  it('says on the cover that a clean copy exists', async () => {
+    // ⚠️ AND THAT IT IS VISIBLE. This line sat inside the footer strip's wash
+    // band, which is filled opaquely a few lines later — so it was drawn and
+    // then painted out on every watermarked cover. Nothing in the source said
+    // so; a rendered fixture did.
+    const marked = await svc.render({ ...makeInput(), watermark: true });
+    const { text } = await readPdfAsync(marked.pdf);
+    expect(flat(text)).toContain('Preview copy');
+    expect(flat(text)).toMatch(/issued without this mark/i);
+  });
+
+  it('leaves a paid pack completely clean', async () => {
+    const paid = await svc.render({ ...makeInput(), watermark: false });
+    const { text } = await readPdfAsync(paid.pdf);
+    expect(squash(text)).not.toContain(squash(WATERMARK_TEXT));
+    expect(flat(text)).not.toContain('Preview copy');
+    // No logo either: the document carries no branding beyond the footer.
+    expect(paid.pdf.toString('latin1')).not.toMatch(/\/Subtype\s*\/Image/);
   });
 });
 

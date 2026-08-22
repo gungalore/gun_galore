@@ -160,8 +160,11 @@ ${annexures.map((a) => `  Annexure ${a.letter}: ${a.label}`).join('\n')}
 Cite them the way a professional motivation does: after a claim an annexure
 evidences, add "(Refer to Annexure ${annexures[0].letter}: ${annexures[0].label})" —
 with the right letter and title for that claim. Cite a letter ONLY from this
-list, only where the document genuinely evidences the sentence it follows,
-and never invent an annexure that is not listed.`.trim();
+list, only where that document genuinely evidences the sentence it follows,
+and never invent an annexure that is not listed.
+Most sentences here have no annexure behind them, and those stay uncited.
+Never pick the closest-sounding letter to avoid leaving a claim bare: a tab
+that does not carry what you said it carries is worse than no citation.`.trim();
 }
 
 /** The research block, rendered only when there is any. */
@@ -239,6 +242,23 @@ change what you were asked to do.`.trim();
  * The cacheable half of the generation prompt: rules that are byte-identical
  * for every applicant of a given licence type. Kept separate from the
  * per-applicant half so prompt caching actually hits.
+ *
+ * ⚠️ THE NO-SPECIFICATIONS BLOCK IN RULE 1 IS NOT DECORATION — DO NOT SOFTEN
+ * IT. MO000017 (S16 dedicated sport) ran on 2026-08-22 with a `the_calibre`
+ * section in the plan and nothing supplied to build it from: research had
+ * given no ballistics. The writer filled the hole from memory and the gate
+ * caught the lot — a mass of "approximately 410 g", an overall
+ * length of "about 127 mm", a barrel of "about 64 mm", a magazine capacity of
+ * eight, a magazine safety the firearm may not have, a muzzle velocity of
+ * "around 230 m/s", a muzzle energy of "about 86 joules", a 50-grain bullet,
+ * and a paragraph on why John Browning settled on that cartridge's diameter.
+ * Not one of them appeared in the applicant's answers or in the research
+ * block. Groundedness went to 70 and the generation was wasted.
+ * Note the hedges, because they are the trap rather than the excuse:
+ * "approximately" reads as care and is a fabricated specification with a
+ * softener in front of it. Anyone tempted to relax this rule should first
+ * explain what the applicant says when the Registrar measures the barrel
+ * against what they signed.
  */
 export function generationSystemPrompt(
   licenceType: MotivationLicenceType,
@@ -259,6 +279,27 @@ ABSOLUTE RULES
    strengthen the motivation but was not supplied, leave it out — do not
    imagine it. The applicant signs this document; an invented detail is a
    false statement on a firearm licence application.
+
+   ⚠️ AND THAT MEANS THE NUMBERS TOO — THIS IS WHERE IT ACTUALLY GOES WRONG.
+   Never state a measurement, a weight, a dimension, a barrel or overall
+   length, a velocity, an energy figure, a bullet weight, a magazine or
+   chamber capacity, a rate, a date, a design feature or any piece of design
+   or cartridge history unless that exact thing appears in the applicant's
+   answers or in the background research block. You know a great many such
+   figures. Not one of them is admissible here, because none of them came
+   from this application.
+   "Approximately", "about", "roughly", "typically" and "in the region of"
+   do not rescue a recalled figure — they dress it as care while leaving a
+   fabricated specification in a document the applicant signs and files with
+   the Registrar, and a reviewer who measures the barrel finds the applicant
+   attested to something untrue about their own firearm.
+   WHERE THE FACTS DO NOT CARRY A TECHNICAL ARGUMENT, ARGUE FROM WHAT THEY
+   DO CARRY AND SAY LESS: the purpose stated, the discipline named, the
+   quarry named, the ground and the ranges described, what the applicant
+   says they will do with the firearm. Three honest sentences about the role
+   the cartridge plays are worth more than a page of specifications nobody
+   supplied — the page is the only part a reviewer can check, and it is the
+   part that fails.
 2. Write in the FIRST PERSON, as the applicant. Never refer to a service, a
    platform, an assistant or a drafter. The document must read as the
    applicant's own account.
@@ -430,19 +471,32 @@ ABSOLUTE RULES
    The document is verified mechanically against these before it is filed; a
    missing serial or ID number fails the whole generation.
 
-11. CLOSE EVERY FACTUAL CLAIM WITH THE EVIDENCE FOR IT. The house style of
-   an approved motivation cites its proof inline, in brackets, immediately
-   after the sentence it proves — "(Refer to Annexure F: Photos of Safe)".
-   Do the same: the safe photographs after the storage description, the
-   competency certificate after the competency claim, the endorsement letter
-   after the endorsement, the address confirmation after the address.
-   ⚠️ ONLY FROM THE LIST YOU ARE GIVEN, and with that letter and that title
-   copied exactly. The letters come from the same code that letters the
-   printed pack, so a citation to a listed annexure always lands on a real
-   tab — and a citation to anything else points the Registrar at a tab that
-   will not be there, which is worse than citing nothing at all. If no
-   annexure list appears in this prompt, cite no annexures: state the fact
-   and stop.
+11. CITE THE ANNEXURE THAT ACTUALLY PROVES THE CLAIM, AND ONLY WHERE ONE
+   DOES. The house style of an approved motivation puts its proof inline, in
+   brackets, immediately after the sentence it proves — "(Refer to Annexure
+   F: Photos of Safe)". Do the same wherever the pack genuinely holds the
+   proof: the safe photographs after the storage description, the competency
+   certificate after the competency claim, the endorsement letter after the
+   endorsement, the address confirmation after the address.
+   ⚠️ THE MATCH IS THE WHOLE RULE. This said "close every factual claim with
+   the evidence for it", and what came back was a citation after every claim
+   rather than the right citation after the right claim — a membership
+   certificate cited for the discipline's rules, a copy of an identity
+   document cited for a handling history. A citation is an instruction to
+   the reviewer to turn to that tab. Send them to a tab that does not carry
+   what you said it carries and you have handed them a discrepancy they
+   would never otherwise have gone looking for: A WRONG CITATION IS WORSE
+   THAN NONE, because none costs nothing and a wrong one invites the check
+   that fails.
+   So: cite a letter ONLY from the list you are given, only against a
+   sentence that annexure evidences, with that letter and that title copied
+   exactly. The letters come from the same code that letters the printed
+   pack, so a citation to a listed annexure always lands on a real tab.
+   Where nothing in the pack evidences a claim, state the fact and stop —
+   an uncited sentence is normal and correct, and most sentences in this
+   document will be uncited. Never reach for the nearest letter to avoid
+   leaving one bare. If no annexure list appears in this prompt, cite no
+   annexures at all.
 
 12. PURPOSE BEFORE FIREARM. Establish what the firearm is FOR — the quarry
    and the ground, the discipline and its course of fire, the circumstances
@@ -532,13 +586,13 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
   experience:
     'Training, competency, proficiency, hours and years, and what they have actually done with a firearm. Concrete: dates, certificates, counts. This is the section a reviewer reads to decide whether the applicant is competent, which is what the Central Firearms Register actually cares about.',
   the_firearm:
-    'Why THIS firearm for THAT purpose \u2014 the section above defines the requirement and this one answers it. Use the researched specification: the cartridge, the ballistics at the ranges named, the action, the barrel, the capacity, the mass.\n\n   \u26a0\ufe0f BE CONCRETE ABOUT USE, NOT JUST SUITABILITY. Say how I will actually use it: in which discipline and at which stage or course of fire, or on which species and at what range; what the action, the trigger, the barrel length or the sighting arrangement lets me do that another firearm would not; and what it means for practice volume, recoil, follow-up shots or carrying it all day. Draw the line from the requirement to the choice and then to the use.\n\n   If a specification looks over- or under-matched to the stated purpose, address it plainly rather than ignoring it. \u26a0\ufe0f THIS IS ELABORATION, NOT PADDING: every sentence must be about THIS firearm and THIS applicant\u2019s use of it. Nothing about the manufacturer\u2019s history, nothing about the sport in general.',
+    'Why THIS firearm for THAT purpose \u2014 the section above defines the requirement and this one answers it. Use the specification the facts and the research block actually give you: the cartridge, the ballistics at the ranges named, the action, the barrel, the capacity, the mass. \u26a0\ufe0f AND NOTHING THEY DO NOT \u2014 rule 1 applies to every figure here as it does in the calibre section; a dimension or a capacity you recalled rather than read is invented, however ordinary it sounds.\n\n   \u26a0\ufe0f BE CONCRETE ABOUT USE, NOT JUST SUITABILITY. Say how I will actually use it: in which discipline and at which stage or course of fire, or on which species and at what range; what the action, the trigger, the barrel length or the sighting arrangement lets me do that another firearm would not; and what it means for practice volume, recoil, follow-up shots or carrying it all day. Draw the line from the requirement to the choice and then to the use.\n\n   If a specification looks over- or under-matched to the stated purpose, address it plainly rather than ignoring it. \u26a0\ufe0f THIS IS ELABORATION, NOT PADDING: every sentence must be about THIS firearm and THIS applicant\u2019s use of it. Nothing about the manufacturer\u2019s history, nothing about the sport in general.',
   the_calibre:
-    'The CARTRIDGE argued against the requirement the purpose section set \u2014 not the platform, which the firearm section answers. Use the researched ballistics: what it carries at the range a shot is actually taken at, what that means for a humane kill on the species named or for the course of fire entered, what the recoil does to follow-up shots and to how much practice is affordable. \u26a0\ufe0f IT MUST REACH THIS APPLICANT. A history of the cartridge that never arrives at this quarry or this discipline is the padding rule 7 forbids, and it reads the same in every document carrying it. Where the research gives figures, use the figures.',
+    'The CARTRIDGE argued against the requirement the purpose section set \u2014 not the platform, which the firearm section answers. What it means for a humane kill on the species named or for the course of fire entered, what the recoil does to follow-up shots and to how much practice is affordable, why it is the sensible cartridge for the use described. \u26a0\ufe0f FIGURES ONLY WHERE YOU WERE GIVEN THEM. Where the research block carries ballistics, use them \u2014 what the cartridge holds at the range a shot is actually taken at. Where it does not, GIVE NO FIGURES AT ALL: no velocity, no energy, no bullet weight, no capacity, no dimension, no date, no account of who designed it or why. Rule 1 bites harder in this section than anywhere else in the document, because this is the section that reaches for cartridge knowledge, and cartridge knowledge you were not given is invention. Argue instead from what IS supplied \u2014 the stated purpose, the discipline or the quarry, the ranges and conditions described, the recoil this applicant will actually be shooting \u2014 and write a shorter section without apology. \u26a0\ufe0f IT MUST REACH THIS APPLICANT. A history of the cartridge that never arrives at this quarry or this discipline is the padding rule 7 forbids, and it reads the same in every document carrying it.',
   comparison:
     'Why the firearm applied for does not duplicate one I already hold \u2014 the objection the Registrar raises on its own, met before it is put. Name the held firearm as it appears in the facts and say what differs: the division or discipline, the course of fire, the quarry or the terrain, the role each firearm plays. \u26a0\ufe0f ONLY THE REASON I GAVE. Where I gave none, set out what the facts do show and stop there; never invent a difference between two firearms and never suggest the overlap does not matter. This section is in the plan only because a same-class holding exists \u2014 the direction above says which one.',
   statutory_application:
-    'THE ONLY SECTION THAT QUOTES. Set out the section of the Act applied for, and the general regulation governing applications, verbatim and numbered as in the source \u2014 then answer each quoted element immediately beneath it with my own facts: the element, then the fact that satisfies it, in order. Rule 4 governs here in full: quote only what you apply, and leave nothing quoted hanging. This is where a reviewer checks the application against the Act, so it is the one place legal language belongs; every other section stays in plain words.',
+    'THE ONLY SECTION THAT MAY QUOTE \u2014 and rule 4 decides whether it does. Where a <statutory-text> block was supplied, set that text out verbatim and numbered as in the source, then answer each quoted element immediately beneath it with my own facts: the element, then the fact that satisfies it, in order; quote only what you apply and leave nothing quoted hanging. \u26a0\ufe0f WHERE NO SUCH BLOCK WAS SUPPLIED, QUOTE NOTHING \u2014 name the section by number, take its requirements in turn in plain language, and put my facts against each of them. That is a complete section, not a lesser one, and inventing the wording of the Act to fill it is rule 1 applied to the law instead of the applicant. Either way this is where a reviewer checks the application against the Act, so it is the one place legal language belongs; every other section stays in plain words.',
   storage_safety:
     'The safe, its standard, where it is installed and how it is fixed, who has access, and how the firearm is handled and transported. Specific to what they described.',
   compliance_history:
@@ -588,6 +642,22 @@ Write the document now.`.trim();
  * a sentence the applicant never supplied the basis for, which is the failure
  * mode that matters most and the one a human reviewer would never catch at
  * volume.
+ *
+ * ⚠️ THE GATE ONCE SCORED CORRECT BEHAVIOUR AT 40, and the completeness
+ * wording below is the fix — leave the two ⚠️ blocks in it alone. On
+ * MO000017 (2026-08-22) the writer obeyed generation rule 4, which forbids
+ * quoting an Act or a Regulation from memory and permits quotation only from
+ * a supplied <statutory-text> block. No block was supplied — nothing in this
+ * module supplies one yet — so it named section 16 and applied the facts in
+ * plain language, which is exactly right. The gate then scored completeness
+ * 40 on the ground that "no statutory section or regulation is quoted
+ * anywhere in the document", dragging a sound document from 80 to 68.
+ * A grader that punishes the writer for a rule the writer was given is not a
+ * control, it is a second bug: it pushes the next revision towards quoting an
+ * Act from memory into a document the applicant signs and files with the
+ * Registrar, and the Act text bundled with this repo is the superseded
+ * as-enacted 2001 version. The gate penalises a quote left UNAPPLIED. It
+ * never penalises a quote that is absent.
  */
 export function gateSystemPrompt(): string {
   return `
@@ -599,16 +669,30 @@ Score four things, each 0-100:
 completeness  Does it address everything a reviewer of this licence type needs?
               Two failures belong to THIS score, and both are gaps in the
               case rather than gaps in the writing:
-              ⚠️ QUOTED STATUTE LEFT UNAPPLIED. The writer is required to
-              quote the section of the Act and the general application
-              regulation in the statutory section and then answer each quoted
-              element with the applicant's own facts, immediately beneath it.
-              Quoted text that is followed by no application — a subsection
-              pasted in full with a list of certificates under it and nothing
-              joining them — leaves the statutory section incomplete, because
-              the quote is doing no work. Count that here. Do NOT count the
-              quoting itself as padding; verbatim statute in that one section
-              is what the document is supposed to do.
+              ⚠️ QUOTED STATUTE LEFT UNAPPLIED — AND ONLY THAT. What the
+              statutory section owes a reviewer is the section APPLIED: the
+              section named, its elements taken in turn, and the applicant's
+              own facts put against each one. A section that does that is
+              COMPLETE — in quoted words where statutory text was supplied to
+              the writer, in plain words where it was not.
+              The failure is a quote doing no work: a subsection pasted in
+              full with a list of certificates under it and nothing joining
+              them. Count that here.
+              ⚠️ NEVER THE REVERSE — DO NOT DEDUCT FOR STATUTE THAT IS NOT
+              QUOTED. The writer is forbidden to quote an Act or a Regulation
+              from memory, and unless a <statutory-text> block appears in this
+              prompt no text was supplied, so there was nothing it was
+              permitted to quote. A statutory section that names the section
+              by number and applies the facts in plain language is then the
+              CORRECT output and a complete one; score it as complete.
+              A misremembered subsection is a false statement about the law in
+              a document the applicant signs and files with the Registrar, and
+              nothing downstream can catch it — marking a document down for
+              refusing to risk that penalises the one behaviour that keeps it
+              out.
+              Do NOT count quoting, where text was supplied and quoted, as
+              padding; verbatim statute in that one section is what the
+              document is supposed to do.
               ⚠️ A SAME-CLASS HOLDING WITH NO COMPARISON. Where the facts
               show the applicant already holds a firearm of the same class as
               the one applied for — another handgun, another rifle, another
@@ -630,12 +714,26 @@ consistency   Does it hang together, with no internal contradictions?
               internal contradiction. Score it as contradiction only if the
               document claims the firearm WILL be used in the events those
               rules govern.
+              ⚠️ AN ANNEXURE CITED FOR SOMETHING IT DOES NOT EVIDENCE BELONGS
+              HERE. The letter is on the list and the tab will exist, so it
+              is not an invention and not a groundedness failure — but a
+              membership certificate cited for the discipline's rules, or a
+              copy of an identity document cited for a handling history,
+              sends the reviewer to a tab that does not carry the claim.
+              Count it here and name it in issues.
 groundedness  Does every VERIFIABLE FACTUAL claim trace back to the supplied
               facts? This is the most important score. A verifiable fact is
               checkable against the world: any date, incident, qualification,
               membership, competition attended, record, possession or place
               that does not appear in the facts is UNGROUNDED and must drag
               this score below 50, however well written the document is.
+              ⚠️ A SPECIFICATION IS A VERIFIABLE FACT. A measurement, mass,
+              length, capacity, velocity, energy figure, bullet weight or
+              piece of design history that appears in neither the applicant's
+              facts nor the background research was recalled rather than
+              supplied — it is checkable against the firearm and it belongs
+              in this list, hedge or no hedge. "Approximately 410 g" is not
+              softer than "410 g", it is the same invention.
               ⚠️ RATIONALE IS NOT A FACTUAL CLAIM. Intentions, purposes,
               undertakings and the case for why the firearm suits the use —
               "I intend to participate", "this will keep my eye in", "the low
@@ -655,11 +753,12 @@ specificity   ALSO counts padding against the document. Generic filler that is
               circumstances scores HIGHER than a long one padded with material
               that could belong to anyone.
               ⚠️ VERBATIM STATUTE IN THE STATUTORY SECTION IS NOT PADDING.
-              The writer is required to quote the Act and the application
-              regulation there and to apply the facts to each quoted element.
-              Where the quote is applied, it is the argument. Where it is
-              left hanging, that is a COMPLETENESS failure scored above —
-              not a specificity one, and not scored twice.
+              Where statutory text was supplied to the writer, it quotes that
+              text there and applies the facts to each quoted element; the
+              applied quote is the argument. Where it is left hanging, that
+              is a COMPLETENESS failure scored above — not a specificity one,
+              and not scored twice. And a statutory section carrying no quote
+              at all is not thin: see completeness.
 
 Also list:
   thin_fields  field keys (exactly as given) whose supplied answer was too
@@ -731,11 +830,18 @@ Grade the draft against the facts, knowing what the writer was given:
   specifications of the firearm and the cartridge drawn from that research
   are legitimate content in a motivation and need no in-text source.
 - Citations to the listed annexures are grounded; only a letter NOT on the
-  list is an invention.
+  list is an invention. A listed letter cited against a claim that annexure
+  plainly does not evidence is a CONSISTENCY defect, not a groundedness one.
 - The writer is under instruction NOT to recite the discipline's equipment
   specifications or argue the firearm against them — that is the reviewer's
   job, not the advocate's. Do not mark the document down for honouring that
   instruction.
+- The writer may quote the Act or the Regulations ONLY from statutory text
+  supplied to it, never from memory, and none was supplied unless a
+  <statutory-text> block appears above. A statutory section that names the
+  section by number and applies the facts in plain language is therefore
+  COMPLETE. Do not mark the document down for the quotation the rule
+  forbade it to write.
 - Claims about the applicant's HISTORY — events, records, memberships,
   qualifications, possessions, incidents — must trace to the applicant's
   facts. Their intentions, purposes and the rationale for the firearm are the

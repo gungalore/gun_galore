@@ -54,7 +54,10 @@ import type { CharacterStatementForm } from './motivation-character-statement';
 // We sell structure and completeness, never odds. (CPA/advertising exposure.)
 //
 // ⚠️ NO MASCOT. Boet runs the interview; Boet appears nowhere on the document.
-// No red, no branding beyond one discreet footer line.
+// No red, no branding beyond one discreet footer line — with ONE exception,
+// added 2026-08-22: the unpaid pack carries the All Outdoor logo as its
+// watermark, because a mark that says whose product this is is exactly what an
+// unpaid pack needs. It never appears on a document somebody has paid for.
 //
 // NOTHING IS STORED. Like ReceiptService, the bytes are built on demand from
 // the encrypted document text and streamed. There is no PDF on disk, in the DB
@@ -390,6 +393,11 @@ export interface MotivationPdfInput {
    * still leaving the document READABLE — the whole point of letting somebody
    * see it is that they can decide whether it is worth paying for. Diagonal,
    * large, very light, and UNDER the text rather than over it.
+   *
+   * The mark itself is the All Outdoor logo with NOT FOR USE above and below
+   * it — see K.watermark. ⚠️ IT MEANS UNPAID, NOT UNSEATED: a free beta seat
+   * is not a payment, so a beta pack carries it too. The caller decides; see
+   * isPaidFor in motivations.service.
    */
   watermark?: boolean;
   /** Uploads that could not be reprinted, named so the gap is visible. */
@@ -1983,24 +1991,24 @@ export class MotivationPdfService {
     }
     const totalPages = range.count + extraPageCount(merged.loaded);
     for (let i = 0; i < range.count; i++) {
-      // ── Preview watermark ──────────────────────────────────
+      // ── The unpaid mark ────────────────────────────────────
       //
       // Stamped in the footer pass because that is the one place we already
       // walk every page with bufferPages, and because it has to land on the
       // COVER too — the page the footer loop deliberately skips. Drawn before
-      // the `continue` for that reason.
+      // the banner for that reason.
       //
-      // ⚠️ SAVE AND RESTORE THE GRAPHICS STATE. rotate() and the fill colour
-      // are document-wide in pdfkit, and leaving either set bleeds into the
-      // footer drawn immediately below — which is how a first attempt put the
-      // running title on a 55-degree angle in pale grey.
+      // ⚠️ IT USED TO SAY "PREVIEW" IN 90 PT HELVETICA. Operator, 2026-08-22:
+      // "Add NOT FOR USE around the All Outdoor logo as the watermark." The
+      // composition — logo, words above and below, the whole thing on the
+      // sheet's own diagonal — is page furniture, so it lives with the banner
+      // and the footer strip in motivation-pdf-chrome rather than here.
       if (input.watermark) {
         doc.switchToPage(range.start + i);
         // ⚠️ ZERO THE BOTTOM MARGIN FIRST, for the same reason the footer pass
         // does it twenty lines below. Text placed outside the printable box
-        // makes pdfkit start a FRESH PAGE and write there instead — a
-        // 90pt diagonal through the middle of an A4 overhangs the bottom
-        // margin easily, and the cover line below sits under it on purpose.
+        // makes pdfkit start a FRESH PAGE and write there instead, and the
+        // cover line below sits under the body's bottom margin on purpose.
         // The first version of this added a silent extra page to every
         // watermarked pack and numbered a six-page document "of 5".
         const keepBottom = doc.page.margins.bottom;
@@ -2008,38 +2016,31 @@ export class MotivationPdfService {
         doc.page.margins.bottom = 0;
         doc.page.margins.top = 0;
 
-        doc.save();
-        doc.rotate(-55, { origin: [PAGE_WIDTH / 2, PAGE_HEIGHT / 2] });
-        // 90pt spans roughly half the page diagonal. Smaller reads as a
-        // blemish rather than a mark, and a mark somebody can crop or ignore
-        // is not doing the one job it has.
-        doc
-          .font(FONT_BOLD)
-          .fontSize(90)
-          .fillColor('#000000')
-          .fillOpacity(0.07)
-          .text('PREVIEW', 0, PAGE_HEIGHT / 2 - 52, {
-            width: PAGE_WIDTH,
-            align: 'center',
-            characterSpacing: 10,
-            lineBreak: false,
-          });
-        doc.fillOpacity(1);
-        doc.restore();
+        K.watermark(chrome);
 
         // A second line, small and legible, at the foot of the cover: a
         // 7%-opacity diagonal reads as a print artefact on a photocopy, and
         // somebody has to be able to tell what they are holding and that a
         // clean copy exists.
+        //
+        // ⚠️ ABOVE THE FOOTER STRIP, NOT INSIDE IT. This line sat at
+        // MARGIN_BOTTOM + 26 — which was clear air under the old two-line
+        // footer, and is inside the 10 mm wash band the 2026-08-21 restyle put
+        // there. footerStrip() fills that band opaquely a few lines below, so
+        // the line was drawn and then painted out: INVISIBLE on every
+        // watermarked cover since the restyle, and invisible in the source
+        // too, because nothing about `PAGE_HEIGHT - MARGIN_BOTTOM + 26` says
+        // "under the footer". Found by rendering a fixture and looking at it.
         if (i === 0) {
           doc
             .font(FONT_ITALIC)
             .fontSize(9)
             .fillColor(GREY)
             .text(
-              'Preview copy — not for filing. The final document is issued without this mark.',
+              'Preview copy — not for use and not for filing. ' +
+                'The final document is issued without this mark.',
               MARGIN,
-              PAGE_HEIGHT - MARGIN_BOTTOM + 26,
+              PAGE_HEIGHT - MARGIN_BOTTOM - mmGap(5),
               { width: contentWidth, align: 'center', lineBreak: false },
             );
         }
