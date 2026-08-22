@@ -143,8 +143,9 @@ describe('UsersService — address book & notification prefs', () => {
     expect(prisma.user.updateMany).not.toHaveBeenCalled();
   });
 
-  // WhatsApp is operator-gated and its toggle ships greyed out, so it cannot
-  // stand in as the one channel a member is guaranteed to keep.
+  // WhatsApp is settable now, but it carries SHIPPING UPDATES ONLY and stays
+  // operator-gated (whatsapp_enabled), so it still cannot stand in as the one
+  // channel a member is guaranteed to keep.
   it('does not let WhatsApp satisfy the at-least-one-channel floor', async () => {
     prisma.user.updateMany.mockResolvedValue({ count: 0 });
     prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
@@ -174,6 +175,56 @@ describe('UsersService — address book & notification prefs', () => {
     expect(prisma.user.updateMany).toHaveBeenCalledWith({
       where: { clerkId: 'clerk1' },
       data: { notifyWhatsappEnabled: false },
+    });
+  });
+
+  it('writes the fallback channel', async () => {
+    prisma.user.updateMany.mockResolvedValue({ count: 1 });
+    prisma.user.findUnique.mockResolvedValue({
+      notifyEmailEnabled: true,
+      notifySmsEnabled: true,
+      notifyWhatsappEnabled: true,
+      notifyFallbackChannel: 'SMS',
+    });
+    await service.updateNotificationPrefs('clerk1', { fallbackChannel: 'SMS' });
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { clerkId: 'clerk1' },
+      data: { notifyFallbackChannel: 'SMS' },
+    });
+  });
+
+  // ⚠️ The endpoint takes an inline body type, which is erased at runtime, so
+  // the global ValidationPipe never sees this field — the service is the only
+  // thing standing between an arbitrary string and a Prisma enum cast. The
+  // rejection must land BEFORE the write, not as a 500 out of Postgres.
+  it('rejects an unknown fallback channel without writing', async () => {
+    await expect(
+      service.updateNotificationPrefs('clerk1', {
+        fallbackChannel: 'CARRIER_PIGEON',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+  });
+
+  // The fallback only fires when a send on an enabled channel FAILS, so it is
+  // outside the floor for the same practical reason WhatsApp is — and setting
+  // it takes no guard, because it never touches the email/SMS pair. A member
+  // already sitting on both-off must still be able to choose where a failed
+  // send retries.
+  it('lets the fallback be set even when email and SMS are both already off', async () => {
+    prisma.user.updateMany.mockResolvedValue({ count: 1 });
+    prisma.user.findUnique.mockResolvedValue({
+      notifyEmailEnabled: false,
+      notifySmsEnabled: false,
+      notifyWhatsappEnabled: true,
+      notifyFallbackChannel: 'NONE',
+    });
+    await service.updateNotificationPrefs('clerk1', {
+      fallbackChannel: 'NONE',
+    });
+    expect(prisma.user.updateMany).toHaveBeenCalledWith({
+      where: { clerkId: 'clerk1' },
+      data: { notifyFallbackChannel: 'NONE' },
     });
   });
 });

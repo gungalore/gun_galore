@@ -97,8 +97,11 @@ export class UsersController {
         notifySmsEnabled: true,
         // ⚠️ This select is an allowlist: a field left out arrives at the
         // frontend as undefined, and the `x !== false` idiom the toggles use
-        // then renders it as ON. Every notify* column must be listed here.
+        // then renders it as ON. Every notify* column must be listed here —
+        // the fallback picker has the same failure mode, with an undefined
+        // value silently showing the first option instead of the saved one.
         notifyWhatsappEnabled: true,
+        notifyFallbackChannel: true,
         // Seller default parcel size (Phase 6 P6.3) — pre-fills the sell form.
         defaultWeightGrams: true,
         defaultLengthCm: true,
@@ -251,6 +254,12 @@ export class UsersController {
       emailEnabled?: boolean;
       smsEnabled?: boolean;
       whatsappEnabled?: boolean;
+      // ⚠️ Typed as a plain string on purpose, and validated in the service.
+      // An inline body type is erased at runtime, so the global
+      // ValidationPipe has nothing to check against here — narrowing it to
+      // the union in this signature would only look safe. The service treats
+      // whatever arrives as hostile and rejects anything outside the enum.
+      fallbackChannel?: string;
     },
   ) {
     return this.users.updateNotificationPrefs(clerkId, body);

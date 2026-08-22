@@ -6,7 +6,13 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SmsService } from '../sms/sms.service';
-import { User, Province, NotificationCategory, Prisma } from '@prisma/client';
+import {
+  User,
+  Province,
+  NotificationCategory,
+  NotifyFallbackChannel,
+  Prisma,
+} from '@prisma/client';
 import { createHash, randomInt } from 'crypto';
 import { createClerkClient } from '@clerk/backend';
 import { encryptSaIdNumber, hashSaIdNumber, decryptSaIdNumber } from '../common/id-crypto';
@@ -100,6 +106,18 @@ function hashOtp(code: string): string {
 
 /** Wrong guesses allowed against one phone OTP before it is burned. */
 const MAX_OTP_ATTEMPTS = 5;
+
+// The accepted values for the fallback channel, spelled out rather than
+// derived, because updateNotificationPrefs has to check an untrusted string
+// against them at runtime and a TS union type is gone by then. Listed
+// explicitly so adding an enum member to the schema does not silently widen
+// what the endpoint accepts before anyone has decided it should.
+const FALLBACK_CHANNELS: NotifyFallbackChannel[] = [
+  'NONE',
+  'WHATSAPP',
+  'SMS',
+  'EMAIL',
+];
 
 @Injectable()
 export class UsersService {
@@ -1309,20 +1327,22 @@ export class UsersService {
 
   // ─────────────────── Notification preferences (Phase 2) ────────────
   // Per-channel mute. The in-app inbox is always on; web-push is managed
-  // per-device. Email, SMS and WhatsApp are settable here — though the
-  // WhatsApp toggle is greyed out in the UI until the channel opens.
+  // per-device. Email, SMS and WhatsApp are settable here, plus the
+  // fallback channel — WhatsApp now carries shipping updates only.
   async updateNotificationPrefs(
     clerkId: string,
     prefs: {
       emailEnabled?: boolean;
       smsEnabled?: boolean;
       whatsappEnabled?: boolean;
+      fallbackChannel?: string;
     },
   ) {
     const data: {
       notifyEmailEnabled?: boolean;
       notifySmsEnabled?: boolean;
       notifyWhatsappEnabled?: boolean;
+      notifyFallbackChannel?: NotifyFallbackChannel;
     } = {};
     if (typeof prefs.emailEnabled === 'boolean')
       data.notifyEmailEnabled = prefs.emailEnabled;
@@ -1330,12 +1350,35 @@ export class UsersService {
       data.notifySmsEnabled = prefs.smsEnabled;
     if (typeof prefs.whatsappEnabled === 'boolean')
       data.notifyWhatsappEnabled = prefs.whatsappEnabled;
+    // ⚠️ Validated BY HAND, and it has to be. This endpoint takes an inline
+    // body type rather than a DTO class, so the global ValidationPipe has no
+    // metadata to work from and waves the value straight through — an
+    // unchecked string reaches Prisma and dies as a 500 on an enum cast, or
+    // worse, a future `as` silences it. Treat the value as hostile: only the
+    // four names of the enum are accepted, anything else is a 400.
+    if (prefs.fallbackChannel !== undefined) {
+      const channel = prefs.fallbackChannel as NotifyFallbackChannel;
+      if (
+        typeof prefs.fallbackChannel !== 'string' ||
+        !FALLBACK_CHANNELS.includes(channel)
+      )
+        throw new BadRequestException(
+          `fallbackChannel must be one of: ${FALLBACK_CHANNELS.join(', ')}`,
+        );
+      data.notifyFallbackChannel = channel;
+    }
     // ⚠️ At least one of EMAIL or SMS has to survive the patch, or the
     // member has silenced every way we have of telling them their order
-    // shipped. WhatsApp deliberately does not count towards that floor: it is
-    // operator-gated (whatsapp_enabled) and its toggle ships greyed out, so a
-    // member left on WhatsApp alone would be sitting on a channel they cannot
-    // re-enable and we may not even be sending over yet.
+    // shipped. NEITHER of the other two counts towards that floor:
+    //   * WhatsApp carries SHIPPING UPDATES ONLY, so a member sitting on
+    //     WhatsApp alone would never hear about an offer, a payment, a KYC
+    //     step or a dealer hand-off — and it stays operator-gated
+    //     (whatsapp_enabled) on top of that.
+    //   * the fallback channel only fires when a send on an enabled channel
+    //     FAILS, so it is not a channel anyone is reachable on in the normal
+    //     case. It is a retry, not a subscription.
+    // Setting fallbackChannel on its own therefore cannot trip the floor
+    // either — it never touches the email/SMS pair, so it takes no guard.
     //
     // ⚠️ AND THE FLOOR IS ENFORCED IN THE `where`, NOT AFTER A READ. Reading
     // the row, deciding, then writing leaves a window: two tabs flipping email
@@ -1388,6 +1431,7 @@ export class UsersService {
         notifyEmailEnabled: true,
         notifySmsEnabled: true,
         notifyWhatsappEnabled: true,
+        notifyFallbackChannel: true,
       },
     });
     if (!row) throw new NotFoundException('User not found');

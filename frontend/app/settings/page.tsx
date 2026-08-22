@@ -52,6 +52,20 @@ const input: React.CSSProperties = {
   width: '100%',
 };
 
+// ⚠️ The fallback channel is NOT a primary/secondary ordering. Every channel
+// switched on below still receives every message it is eligible for; this one
+// is tried ONLY when a send on an enabled channel FAILS — and it is tried even
+// if its own switch is off. Default EMAIL: it costs us nothing to send and is
+// the likeliest to arrive. The values must match the backend enum
+// NotifyFallbackChannel exactly; the endpoint 400s on anything else.
+const FALLBACK_OPTIONS = [
+  ['NONE', 'None'],
+  ['WHATSAPP', 'WhatsApp'],
+  ['SMS', 'SMS'],
+  ['EMAIL', 'Email'],
+] as const;
+type FallbackChannel = (typeof FALLBACK_OPTIONS)[number][0];
+
 export default function SettingsPage() {
   const { getToken } = useAuth();
   const { user, isLoaded: userLoaded } = useUser();
@@ -60,10 +74,12 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [emailOn, setEmailOn] = useState(true);
   const [smsOn, setSmsOn] = useState(true);
-  // WhatsApp is stored per user but not user-settable yet — the switch below
-  // is greyed until the operator turns the channel on globally, so this is
-  // display-only for now.
+  // WhatsApp is settable now. It stays gated globally by the operator's
+  // `whatsapp_enabled` flag, so this records what the member wants and the
+  // flag decides whether anything actually goes out — and it carries shipping
+  // updates only, which is why savePrefs never lets it satisfy the floor.
   const [whatsappOn, setWhatsappOn] = useState(true);
+  const [fallback, setFallback] = useState<FallbackChannel>('EMAIL');
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [form, setForm] = useState<AddrForm | null>(null);
   const [busy, setBusy] = useState(false);
@@ -111,6 +127,14 @@ export default function SettingsPage() {
       setEmailOn(me?.notifyEmailEnabled !== false);
       setSmsOn(me?.notifySmsEnabled !== false);
       setWhatsappOn(me?.notifyWhatsappEnabled !== false);
+      // Anything we don't recognise falls back to EMAIL, the column's own
+      // default. A <select> whose value matches none of its options renders
+      // blank, so never hand it a value straight off the wire.
+      setFallback(
+        FALLBACK_OPTIONS.some(([v]) => v === me?.notifyFallbackChannel)
+          ? me.notifyFallbackChannel
+          : 'EMAIL',
+      );
       setShip({
         weightKg: me?.defaultWeightGrams ? String(me.defaultWeightGrams / 1000) : '',
         lengthCm: me?.defaultLengthCm ? String(me.defaultLengthCm) : '',
@@ -129,14 +153,31 @@ export default function SettingsPage() {
     void load();
   }, [load]);
 
-  async function savePrefs(next: { emailEnabled?: boolean; smsEnabled?: boolean }) {
+  async function savePrefs(next: {
+    emailEnabled?: boolean;
+    smsEnabled?: boolean;
+    whatsappEnabled?: boolean;
+    fallbackChannel?: FallbackChannel;
+  }) {
     // ⚠️ At least one of Email or SMS has to stay on, or we lose every way to
     // reach the user off-site. The server enforces this and answers 400, but
-    // we mirror it here so the switch never flicks off and back. WhatsApp is
-    // deliberately not counted: it's operator-gated, so allowing it to satisfy
-    // the floor would let someone strand themselves on a channel they can't
-    // switch back on. Merge onto current state — `next` is a partial.
-    if (!(next.emailEnabled ?? emailOn) && !(next.smsEnabled ?? smsOn)) {
+    // we mirror it here so the switch never flicks off and back. NEITHER of
+    // the other two is counted: WhatsApp carries shipping updates only, so a
+    // member left on it alone would never hear about an offer, a payment, a
+    // KYC step or a dealer hand-off, and the fallback only fires once a send
+    // has already failed — a retry, not a channel you're reachable on. That
+    // also means only a patch that TOUCHES the pair is checked, matching the
+    // server: a WhatsApp- or fallback-only change can't put the member out of
+    // reach, so it must not be refused by a floor it never moved — otherwise a
+    // row that somehow has both halves off is frozen out of every other
+    // setting on this card. Merge onto current state — `next` is a partial.
+    const touchesEmailOrSms =
+      next.emailEnabled !== undefined || next.smsEnabled !== undefined;
+    if (
+      touchesEmailOrSms &&
+      !(next.emailEnabled ?? emailOn) &&
+      !(next.smsEnabled ?? smsOn)
+    ) {
       setError(
         'Keep at least one of Email or SMS on so we can reach you about orders and payments.',
       );
@@ -146,8 +187,12 @@ export default function SettingsPage() {
     // Optimistic; revert on failure.
     const prevEmail = emailOn;
     const prevSms = smsOn;
+    const prevWhatsapp = whatsappOn;
+    const prevFallback = fallback;
     if (next.emailEnabled !== undefined) setEmailOn(next.emailEnabled);
     if (next.smsEnabled !== undefined) setSmsOn(next.smsEnabled);
+    if (next.whatsappEnabled !== undefined) setWhatsappOn(next.whatsappEnabled);
+    if (next.fallbackChannel !== undefined) setFallback(next.fallbackChannel);
     try {
       await authed('/users/me/notification-prefs', {
         method: 'PATCH',
@@ -156,6 +201,8 @@ export default function SettingsPage() {
     } catch (e) {
       setEmailOn(prevEmail);
       setSmsOn(prevSms);
+      setWhatsappOn(prevWhatsapp);
+      setFallback(prevFallback);
       setError(e instanceof Error ? e.message : 'Could not save preference');
     }
   }
@@ -265,10 +312,11 @@ export default function SettingsPage() {
   // `label` is the accessible name — the visible wording sits in a separate
   // <p> beside the switch, so without it a screen reader announces a bare
   // "switch, on".
-  // `disabled` is for a channel that exists but the user can't set yet
-  // (WhatsApp, below). It stays a full-size switch with its knob and colour and
-  // only dims — a half-drawn or hidden control reads as a rendering bug rather
-  // than as "not yet". `onClick` is optional so such a row needn't pass a no-op.
+  // `disabled` is for a channel that exists but the user can't set yet — no
+  // row passes it now that WhatsApp is settable, but the next gated channel
+  // will. It stays a full-size switch with its knob and colour and only dims —
+  // a half-drawn or hidden control reads as a rendering bug rather than as
+  // "not yet". `onClick` is optional so such a row needn't pass a no-op.
   const Toggle = ({
     on,
     onClick,
@@ -358,26 +406,27 @@ export default function SettingsPage() {
               Important account and order alerts always appear in your in-app
               inbox. Choose which extra channels you want.
             </p>
-            {/* ⚠️ WhatsApp is shown greyed on purpose, not hidden: the channel
-                is plumbed but nothing sends over it until the operator turns on
-                the global `whatsapp_enabled` flag, and when it does it carries
-                shipping updates only. Leaving the switch visible tells the user
-                the channel is coming without letting them set a preference we
-                can't honour yet. Don't wire this to savePrefs until the flag is
-                live — the stored flag is already on by default. */}
+            {/* ⚠️ The sub-label has to say "only". WhatsApp carries SHIPPING
+                UPDATES and nothing else, so a member who reads the row as
+                "everything, on WhatsApp" and switches Email and SMS off would
+                silently miss every offer, payment, KYC and dealer message —
+                which is why the floor below ignores this switch. Whether
+                anything is actually sent still depends on the operator's
+                global `whatsapp_enabled` flag; this only records the
+                preference. */}
             <div className="flex items-center justify-between py-2">
               <div>
                 <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
                   WhatsApp
                 </p>
                 <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                  Shipping updates. Coming soon.
+                  Shipping updates only.
                 </p>
               </div>
               <Toggle
                 on={whatsappOn}
-                label="WhatsApp notifications (coming soon)"
-                disabled
+                onClick={() => savePrefs({ whatsappEnabled: !whatsappOn })}
+                label="WhatsApp notifications"
               />
             </div>
             <div
@@ -415,6 +464,51 @@ export default function SettingsPage() {
                 onClick={() => savePrefs({ emailEnabled: !emailOn })}
                 label="Email notifications"
               />
+            </div>
+
+            {/* Fallback channel. A <select> and not a fourth switch, because it
+                isn't a fourth channel: everything switched on above still gets
+                every message it's eligible for, and this one is only tried
+                after a send there has already failed. It sits with the three
+                account channels rather than under Push because push lives on
+                the device — it can't stand in for a message the server
+                couldn't deliver. */}
+            <div
+              className="flex items-center justify-between gap-3 py-2"
+              style={{ borderTop: '0.5px solid var(--border)' }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                  If a message can&apos;t be delivered, try:
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Only used when a message fails to reach you on a channel
+                  above — we&apos;ll try the one you pick here even if
+                  it&apos;s switched off.
+                </p>
+              </div>
+              <select
+                aria-label="Channel to try if a message can't be delivered"
+                value={fallback}
+                onChange={(e) =>
+                  savePrefs({ fallbackChannel: e.target.value as FallbackChannel })
+                }
+                // `input` so it matches every other control on the page; width
+                // auto because that style is full-width for stacked fields and
+                // this one sits at the end of a flex row. ⚠️ colorScheme is
+                // load-bearing, not polish: the site paints dark but declares
+                // no `color-scheme`, so the browser draws the OPEN dropdown in
+                // its light default and the options come out unreadable — the
+                // same light-on-light complaint that cost us the native date
+                // input (see components/date-field.tsx).
+                style={{ ...input, width: 'auto', colorScheme: 'dark', flexShrink: 0 }}
+              >
+                {FALLBACK_OPTIONS.map(([value, optionLabel]) => (
+                  <option key={value} value={value}>
+                    {optionLabel}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Push — the channel that matters most in the installed app,

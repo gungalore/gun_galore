@@ -193,6 +193,20 @@ enum FeaturedTier {
   T5
 }
 
+// The channel we fall back to when a send FAILS.
+//
+// ⚠️ This is NOT a primary/secondary ordering, and reading it that way is the
+// easy mistake. Every ENABLED channel already receives every message it is
+// eligible for — the fallback is tried ONLY when a send on an enabled channel
+// fails, and it fires even if the fallback channel is itself switched off.
+// NONE means "don't bother"; a member who wants no second attempt.
+enum NotifyFallbackChannel {
+  NONE
+  WHATSAPP
+  SMS
+  EMAIL
+}
+
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
@@ -441,6 +455,15 @@ model User {
   // global `whatsapp_enabled` Setting (default false) is the kill switch;
   // flip this default and everyone is silently muted the day it is thrown.
   notifyWhatsappEnabled Boolean @default(true)
+  // The channel to retry on when a send on an ENABLED channel fails —
+  // and only then. It is not a second-choice channel for normal traffic
+  // (every enabled channel already gets everything it is eligible for),
+  // and it fires even when the channel it names is switched off above.
+  // ⚠️ It therefore CANNOT satisfy the at-least-one-of-email-or-SMS
+  // floor the API enforces: nobody is reachable on a channel that only
+  // wakes up on a delivery failure. EMAIL by default — it costs us
+  // nothing to send and is the likeliest of the three to arrive.
+  notifyFallbackChannel NotifyFallbackChannel @default(EMAIL)
 
   // ── Seller default parcel size (Phase 6 P6.3) ────────────────────
   // Pre-fills the parcel dimensions on the sell form so a seller who
