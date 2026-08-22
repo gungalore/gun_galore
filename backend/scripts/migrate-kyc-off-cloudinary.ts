@@ -36,6 +36,7 @@
  *          a first pass if you want the originals recoverable for a day.
  */
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { v2 as cloudinary } from 'cloudinary';
 import { SecureFileStorageService } from '../src/common/secure-file-storage.service';
 import { sniffMime } from '../src/common/sniff-mime';
@@ -43,7 +44,12 @@ import { sniffMime } from '../src/common/sniff-mime';
 const APPLY = process.argv.includes('--apply');
 const KEEP_CDN = process.argv.includes('--keep-cdn');
 
-const prisma = new PrismaClient();
+// ⚠️ THE ADAPTER IS NOT OPTIONAL ON PRISMA 7. A bare `new PrismaClient()`
+// throws at construction — PrismaService passes PrismaPg and so must every
+// script, or it dies before it prints a single line of its dry run.
+const prisma = new PrismaClient({
+  adapter: new PrismaPg(process.env.DATABASE_URL!),
+});
 const files = new SecureFileStorageService();
 
 /** Cloudinary's public_id is the URL path after the version segment. */
