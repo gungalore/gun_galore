@@ -57,6 +57,14 @@ export type CredentialKind =
  * It must also never fall through to `valid`, which would print "In date"
  * over a folder of photographs.
  */
+/** See components/vault-consent.tsx and the server's vault-consent.ts. */
+export type ConsentState =
+  | 'never-asked'
+  | 'declined'
+  | 'given'
+  | 'stale'
+  | 'withdrawn';
+
 export type ExpiryState =
   | 'valid'
   | 'expiring'
@@ -72,6 +80,21 @@ export interface CredentialRow {
   expiresOn: string | null;
   /** The member has checked the date. Nothing is reminded on until they have. */
   confirmed: boolean;
+  /**
+   * The two ticks, as the MEMBER answered them — never inferred from the kind.
+   *
+   * ⚠️ `neverExpires` IS AN ANSWER, `expiresOn: null` IS A GAP. They look the
+   * same on the wire and they are opposites on the screen: the first is a
+   * settled document that is simply kept on file, the second is a date nobody
+   * has supplied yet. Reading only `expiresOn` is what made the page tell a
+   * member holding nine photographs of a gun safe that nine documents still
+   * needed their dates checked.
+   *
+   * `issuedOnUnknown` is the same shape of answer for the issue date: null
+   * because nobody knows, rather than null because nobody has looked.
+   */
+  neverExpires: boolean;
+  issuedOnUnknown: boolean;
   /**
    * Other roles this ONE document also fills — a membership certificate that
    * is also the letter of good standing and the dedicated status proof.
@@ -107,6 +130,20 @@ export interface AddedCredential {
   autoFiled?: boolean;
   /** Only meaningful when autoFiled: whether we were sure. */
   confident?: boolean;
+  /**
+   * The two ticks as the row was created with them.
+   *
+   * ⚠️ OPTIONAL BECAUSE POST /licence-centre DOES NOT SEND THEM TODAY — the
+   * create response carries id, kind, title, autoFiled, confident and the
+   * proposal, and nothing else. The server nonetheless pre-ticks
+   * "Never expires" on a photograph of a safe (defaultsToNeverExpires), so a
+   * confirm step that assumed `false` would show that box unticked, demand a
+   * date off a photograph, and post the tick back off again. AddPanel fills
+   * these in from the list endpoint, which does return both; see the merge in
+   * uploadFiles.
+   */
+  neverExpires?: boolean;
+  issuedOnUnknown?: boolean;
   proposed: CredentialProposal;
 }
 
@@ -197,6 +234,58 @@ export const licenceCentreApi = {
       method: 'POST',
     }),
 
+  // ── may we keep the paperwork from your applications? ──────────────
+  //
+  // ⚠️ NONE OF THESE ARE FLAG-GATED SERVER-SIDE. The Motivation Centre has to
+  // know the answer whether or not the Document Centre is open, or a page that
+  // cannot ask renders as though nobody ever consented — and puts the window
+  // in front of somebody who already said yes.
+
+  /** Falls back to "already answered" so a failed call never re-asks. */
+  consent: (t: TokenGetter) =>
+    request<{
+      state: ConsentState;
+      version: string;
+      ask: boolean;
+      keeping: boolean;
+      backfillDone: boolean;
+      /** From the setting, so the window never hard-codes "two years". */
+      retentionDays: number;
+    }>(
+      t,
+      '/consent',
+      {},
+      {
+        state: 'given',
+        version: '',
+        ask: false,
+        keeping: false,
+        backfillDone: true,
+        retentionDays: 730,
+      },
+    ),
+
+  answerConsent: (t: TokenGetter, agreed: boolean) =>
+    request<{ state: ConsentState }>(t, '/consent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agreed }),
+    }),
+
+  /** ⚠️ Deletes nothing — it stops us keeping anything NEW. */
+  withdrawConsent: (t: TokenGetter) =>
+    request<{ state: ConsentState }>(t, '/consent', { method: 'DELETE' }),
+
+  /** One bounded batch of the older documents. The caller loops until done. */
+  backfillStep: (t: TokenGetter) =>
+    request<{
+      adopted: number;
+      skippedPurged: number;
+      cappedOut: number;
+      done: boolean;
+      remaining: number;
+    }>(t, '/consent/backfill-step', { method: 'POST' }),
+
   /**
    * Add one document.
    *
@@ -213,23 +302,37 @@ export const licenceCentreApi = {
   },
 
   /**
-   * Confirm what we made of a document: its date, and — when we did the
+   * Confirm what we made of a document: its dates, and — when we did the
    * naming — its type and title too.
    *
    * ⚠️ The type is not cosmetic. A licence filed as something else is never
    * offered a renewal, and reminder copy is written per type.
+   *
+   * ⚠️ AN OBJECT, NOT SIX POSITIONAL ARGUMENTS, and for the same reason
+   * confirmExpiry on the server took one: the two ticks pushed this to six
+   * arguments of which four are optional, and `(t, id, expiresOn, issuedOn,
+   * kind, title)` is a line nobody can read at the call site. Transposing two
+   * of them compiles when both are strings.
+   *
+   * ⚠️ `expiresOn` MAY BE EMPTY when `neverExpires` is true. The server checks
+   * the tick first and only then parses the date, so the empty string is the
+   * honest thing to send — there is no date.
    */
   confirm: (
     t: TokenGetter,
     id: string,
-    expiresOn: string,
-    issuedOn?: string,
-    kind?: string,
-    title?: string,
+    args: {
+      expiresOn: string;
+      issuedOn?: string;
+      neverExpires?: boolean;
+      issuedOnUnknown?: boolean;
+      kind?: string;
+      title?: string;
+    },
   ) =>
     request<{ confirmed: boolean; expiresOn: string }>(t, `/${id}/confirm`, {
       method: 'POST',
-      body: JSON.stringify({ expiresOn, issuedOn, kind, title }),
+      body: JSON.stringify(args),
     }),
 
   mute: (t: TokenGetter, id: string, muted: boolean) =>

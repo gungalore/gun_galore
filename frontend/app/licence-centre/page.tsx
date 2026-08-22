@@ -7,7 +7,7 @@ import ScanButton from '@/components/scan/scan-button';
 import { shapeForKind } from '@/lib/scan/shapes';
 import { todayYmd, toIso } from '@/lib/date-picker-model';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import LicenceCentreMotivations from '@/components/licence-centre-motivations';
 import {
   AddedCredential,
@@ -27,6 +27,20 @@ import {
 // A member's own licences and certificates, kept encrypted on our own server,
 // with the expiry date tracked so a renewal is never missed for want of a
 // reminder.
+//
+// ⚠️ AND, SINCE 2026-08-22, PAPERWORK THAT HAS NO EXPIRY DATE AT ALL. An ID
+// copy, a proof of address, a confirmation of employment, four photographs of
+// a gun safe, a record of hunts. Every surface on this page was written on the
+// assumption that a document is a thing with a date on it, and every one of
+// them lied about a photograph: the banner counted it as a date still to be
+// checked, the group header called a folder of photographs "All in date", the
+// card offered "add the expiry date printed on it" over a picture of a safe,
+// and the confirm button would not enable without a date that does not exist.
+//
+// The member holds the paper and can see whether a date is printed on it, so
+// the member answers: two tick boxes, "Never expires" beside the expiry and
+// "Not sure" beside the issue date. NOTHING here infers either from the kind —
+// a passport is an identity document and it expires.
 //
 // ⚖️ WE REMIND, WE NEVER ENSURE. No copy on this page may promise that
 // somebody will not miss a renewal — the responsibility is theirs in law, and
@@ -108,28 +122,56 @@ export default function LicenceCentrePage() {
     );
   }
 
-  const unconfirmed = (rows ?? []).filter((r) => !r.confirmed);
+  // ⚠️ TWO COUNTS, NOT ONE. This was a single `!r.confirmed` filter under a
+  // heading that said "still need their dates checked", so a member who had
+  // just uploaded nine photographs of a gun safe was told nine documents
+  // needed a date — nine errands that do not exist. A row the member has
+  // ticked "Never expires" on has no date outstanding; what is still worth a
+  // look on it is whether we filed it as the right type.
+  const needDate = (rows ?? []).filter((r) => !r.confirmed && !r.neverExpires);
+  const needFiling = (rows ?? []).filter(
+    (r) => !r.confirmed && r.neverExpires,
+  );
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="text-2xl font-semibold">Licence Centre</h1>
       <p className="mt-2 text-[var(--text-secondary)]">
-        Keep your licences and certificates in one place, and we will tell you
-        when a renewal is coming up. They are encrypted on our own server and
-        nobody at All Outdoor can read them.
+        Keep your licences, certificates and supporting paperwork in one place,
+        and we will tell you when a renewal is coming up. Some of it — an ID
+        copy, photographs of your safe — carries no expiry date at all, and we
+        simply keep it. It is all encrypted on our own server and nobody at All
+        Outdoor can read it.
       </p>
 
-      {unconfirmed.length > 0 && (
+      {(needDate.length > 0 || needFiling.length > 0) && (
         <div className="mt-4 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm">
-          <p className="font-medium">
-            {unconfirmed.length === 1
-              ? 'One document still needs its date checked'
-              : `${unconfirmed.length} documents still need their dates checked`}
-          </p>
-          <p className="mt-1 text-[var(--text-secondary)]">
-            We read the date off the photograph, but nothing is scheduled until
-            you have confirmed it is right.
-          </p>
+          {needDate.length > 0 && (
+            <>
+              <p className="font-medium">
+                {needDate.length === 1
+                  ? 'One document still needs its date checked'
+                  : `${needDate.length} documents still need their dates checked`}
+              </p>
+              <p className="mt-1 text-[var(--text-secondary)]">
+                We read the date off the photograph, but nothing is scheduled
+                until you have confirmed it is right.
+              </p>
+            </>
+          )}
+          {needFiling.length > 0 && (
+            <p
+              className={
+                needDate.length > 0
+                  ? 'mt-2 text-[var(--text-secondary)]'
+                  : 'font-medium'
+              }
+            >
+              {needFiling.length === 1
+                ? 'One document is kept on file with no expiry date. Check that we have filed it as the right type.'
+                : `${needFiling.length} documents are kept on file with no expiry date. Check that we have filed them as the right type.`}
+            </p>
+          )}
         </div>
       )}
 
@@ -274,6 +316,12 @@ function AddPanel({
     await onAdded().catch(() => undefined);
     try {
       const rows = await licenceCentreApi.list(token);
+      // ⚠️ EVERY UNCONFIRMED ROW, THE DATELESS ONES INCLUDED — and the count
+      // this queue prints is deliberately "to check", never "dates to check".
+      // A safe photograph has no date to confirm, but it does have a type we
+      // guessed at from the picture, and dropping it here would leave that
+      // guess standing with nothing on the page ever asking about it. The
+      // banner counts differently, because the banner says "dates".
       const need = rows.filter((r) => !r.confirmed);
       if (!need.length) return;
       setQueue(
@@ -285,6 +333,13 @@ function AddPanel({
           // must — same as a batch-sorted desktop upload.
           autoFiled: true,
           confident: false,
+          // ⚠️ CARRIED THROUGH, NOT DEFAULTED. A safe photograph arrives with
+          // "Never expires" already ticked by the server, and a confirm step
+          // that started it unticked would show a disabled-looking form
+          // demanding a date off a photograph — and would post the tick back
+          // off again if the member pressed the button.
+          neverExpires: r.neverExpires,
+          issuedOnUnknown: r.issuedOnUnknown,
           proposed: {
             expiresOn: r.expiresOn,
             issuedOn: r.issuedOn,
@@ -297,6 +352,42 @@ function AddPanel({
     } catch {
       // The refresh above already ran; worst case the member is where they
       // were before this existed — row in the list, button on the row.
+    }
+  }
+
+  /**
+   * Fill in the two ticks the upload response does not carry.
+   *
+   * ⚠️ POST /licence-centre RETURNS THE PROPOSAL AND NOT THE TICKS. It sends
+   * id, kind, title, autoFiled, confident and `proposed`, and stops there —
+   * while the same call has already stamped `neverExpires: true` on a
+   * photograph of a safe, because nothing is printed on one and no vision call
+   * is spent on it. Taking the response at face value would put an unticked
+   * box in front of the member, disable the button until they supplied a date
+   * that does not exist, and — if they ticked their way out of it — post
+   * `neverExpires: false` back over the server's own answer.
+   *
+   * The list endpoint does return both, so one extra read after the uploads
+   * settles it. A failure here costs the prefill and nothing else: the boxes
+   * start unticked and the member ticks them, which is where we were before.
+   */
+  async function withTicks(added: AddedCredential[]) {
+    if (!added.length) return added;
+    try {
+      const rows = await licenceCentreApi.list(token);
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      return added.map((a) => {
+        const row = byId.get(a.id);
+        return row
+          ? {
+              ...a,
+              neverExpires: row.neverExpires,
+              issuedOnUnknown: row.issuedOnUnknown,
+            }
+          : a;
+      });
+    } catch {
+      return added;
     }
   }
 
@@ -372,7 +463,7 @@ function AddPanel({
     setBusy(false);
     setProgress(null);
     setErr(failed.length ? failed.join(' · ') : null);
-    setQueue(added);
+    setQueue(await withTicks(added));
     // Always, not only on failure: a row may have been committed and
     // its response lost — the vision read runs after the insert and
     // can outlast the proxy's patience. Without this the document is
@@ -400,6 +491,8 @@ function AddPanel({
           currentKind={current.kind}
           uncertain={current.autoFiled === true && current.confident !== true}
           defaultTitle={current.title}
+          neverExpires={current.neverExpires}
+          issuedOnUnknown={current.issuedOnUnknown}
           onDone={async () => {
             setQueue(rest);
             if (!rest.length) setTitle('');
@@ -476,7 +569,13 @@ function AddPanel({
           // their pocket is offered first and the webcam is demoted.
           handoff={{ dest: 'licence-centre' }}
           kind={kind || undefined}
-          onHandoffArrived={() => void onAdded()}
+          // ⚠️ THIS WAS STILL CALLING onAdded, AND queueHandoffArrivals WAS
+          // DEAD CODE — eslint's no-unused-vars is what surfaced it. The whole
+          // of the "recognition is broken" fix documented on that function was
+          // written and never wired in: a phone hand-off refreshed the list
+          // and showed the member nothing it had read, which is the exact
+          // behaviour it was written to end.
+          onHandoffArrived={() => void queueHandoffArrivals()}
           fallback={
             <FilePickerButton
               accept="image/jpeg,image/png,image/webp,application/pdf"
@@ -519,6 +618,8 @@ function ConfirmPanel({
   currentKind,
   uncertain,
   defaultTitle,
+  neverExpires: neverExpiresInitial,
+  issuedOnUnknown: issuedOnUnknownInitial,
 }: {
   token: () => Promise<string | null>;
   id: string;
@@ -536,6 +637,12 @@ function ConfirmPanel({
   /** We guessed, and were not sure. A marker, not a blocker. */
   uncertain?: boolean;
   defaultTitle?: string;
+  /**
+   * How the two ticks stand on the stored row, so re-opening the panel shows
+   * the answer the member already gave rather than a blank form.
+   */
+  neverExpires?: boolean;
+  issuedOnUnknown?: boolean;
 }) {
   // ⚠️ THE DERIVED DATE PREFILLS THE BOX, and the panel says where it came
   // from. It is still unconfirmed like everything else here, so nothing drives
@@ -544,9 +651,52 @@ function ConfirmPanel({
     proposed.expiresOn ?? proposed.derivedExpiry?.on ?? '',
   );
   const [issuedOn, setIssuedOn] = useState(proposed.issuedOn ?? '');
+  /**
+   * THE TWO TICKS. Operator, 2026-08-22: "put a tick box next to the expiry
+   * date called Never Expires. Also a tickbox next to Issue date called Not
+   * Sure, if its unsure when the document was issued."
+   *
+   * ⚠️ THE MEMBER ANSWERS, NOT THE KIND. An earlier design decided this from
+   * the document type and a database CHECK enforced it — which meant a
+   * passport, an identity document that plainly expires, could not be filed at
+   * all. The member is holding the thing and can see whether a date is printed
+   * on it.
+   *
+   * ⚠️ AND A TICK CLEARS ITS DATE RATHER THAN SITTING BESIDE IT. They are
+   * contradictory answers to one question; the server refuses to store both
+   * and would otherwise leave every reader to pick a winner.
+   */
+  const [neverExpires, setNeverExpires] = useState(
+    neverExpiresInitial === true,
+  );
+  const [issuedOnUnknown, setIssuedOnUnknown] = useState(
+    issuedOnUnknownInitial === true,
+  );
+  /**
+   * What the tick cleared out of each box.
+   *
+   * ⚠️ TICKING IS NOT MEANT TO BE EXPENSIVE TO UNDO. Somebody who reads a date
+   * off the card, types it, then ticks the box to see what it does should not
+   * have to go and find the card again. Restored only into an empty box, so it
+   * can never overwrite something typed since.
+   */
+  const clearedExpiry = useRef('');
+  const clearedIssued = useRef('');
   const [kind, setKind] = useState<CredentialKind | ''>(currentKind ?? '');
   const [title, setTitle] = useState(defaultTitle ?? '');
   const showKind = Boolean(kinds && currentKind);
+  /**
+   * ⚠️ THE CURRENT TYPE HAS TO BE ON THE MENU. `kinds` is the ADD menu, and
+   * the eight kept-on-file kinds are deliberately not on it — so a safe
+   * photograph filed as SAFE_PHOTO_CLOSED rendered a select showing "Firearm
+   * licence", the first option, while the state underneath still held
+   * SAFE_PHOTO_CLOSED. It displayed one type and would have posted another,
+   * and a member who never touched the control would never have known.
+   */
+  const kindOptions =
+    kinds && currentKind && !kinds.includes(currentKind)
+      ? [currentKind, ...kinds]
+      : kinds;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -555,28 +705,48 @@ function ConfirmPanel({
 
   return (
     <section className="mt-6 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-4">
+      {/* ⚠️ "CHECK THE EXPIRY DATE" OVER A PHOTOGRAPH OF A GUN SAFE. That is
+          what this said, every word of it wrong, because the heading only ever
+          considered whether WE had named the document. A row with the tick on
+          it has no date to check; what is worth checking is the type we filed
+          it as and the name it will appear under. */}
       <p className="text-sm font-medium">
-        {showKind ? 'Check this document' : 'Check the expiry date'}
+        {neverExpires
+          ? showKind
+            ? 'Check what this is'
+            : 'Check this document'
+          : showKind
+            ? 'Check this document'
+            : 'Check the expiry date'}
       </p>
       {/* ⚠️ SAY WHAT WE ACTUALLY READ. This used to talk only about the
           expiry, so a competency certificate whose issue date, number, holder
           and coverage all read perfectly — and which simply does not print an
           expiry — was greeted with "we could not read a date off that one".
-          True about the one field it meant, and wrong about the document. */}
+          True about the one field it meant, and wrong about the document.
+
+          ⚠️ AND THE TICK COMES FIRST IN THE CHAIN. Once the member has said
+          there is no expiry date, every one of the sentences below is either
+          an instruction to find a date that does not exist or a complaint
+          about not having read one. */}
       <p className="mt-1 text-xs text-[var(--text-secondary)]">
-        {proposed.expiresOn
-          ? 'We read this off your document. Check it against the document itself — a photograph can be misread, and every reminder is worked out from this date.'
-          : proposed.derivedExpiry
-            ? proposed.derivedExpiry.why
-            : proposed.issuedOn || Object.keys(proposed.details).length > 0
-              ? 'We read what is below off your document, but it does not print an expiry date we could find. Type it if it has one — every reminder is worked out from it.'
-              : 'We could not read anything off that one. Fill it in as it is printed on the document.'}
+        {neverExpires
+          ? showKind
+            ? 'Nothing on this one runs out, so there is no date to check. Make sure it is filed as the right type and named so you will know it again.'
+            : 'Nothing on this one runs out. We keep it on file and schedule nothing against it.'
+          : proposed.expiresOn
+            ? 'We read this off your document. Check it against the document itself — a photograph can be misread, and every reminder is worked out from this date.'
+            : proposed.derivedExpiry
+              ? proposed.derivedExpiry.why
+              : proposed.issuedOn || Object.keys(proposed.details).length > 0
+                ? 'We read what is below off your document, but it does not print an expiry date we could find. Type it if it has one, or tick “Never expires” if it has none — every reminder is worked out from it.'
+                : 'We could not read anything off that one. Fill it in as it is printed on the document, or tick “Never expires” if there is no date on it.'}
       </p>
 
       {/* WHAT WE MADE OF IT. The type is not cosmetic: a licence filed as
           something else is never offered a renewal, and reminder copy is
           written per type. */}
-      {showKind && kinds && (
+      {showKind && kindOptions && (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="text-[var(--text-secondary)]">
@@ -592,7 +762,7 @@ function ConfirmPanel({
               value={kind}
               onChange={(e) => setKind(e.target.value as CredentialKind)}
             >
-              {kinds.map((k) => (
+              {kindOptions.map((k) => (
                 <option key={k} value={k}>
                   {KIND_LABELS[k]}
                 </option>
@@ -616,7 +786,34 @@ function ConfirmPanel({
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <div className="block text-sm">
-          <span className="text-[var(--text-secondary)]">Expires on</span>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <span className="text-[var(--text-secondary)]">Expires on</span>
+            {/* ⚠️ BESIDE THE FIELD, NOT UNDER IT. The tick is the answer to
+                the same question the box asks, and a member looking at a
+                document with no expiry printed on it has to be able to see the
+                way out without scrolling past a form they cannot complete. */}
+            <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-[var(--red)]"
+                checked={neverExpires}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setNeverExpires(on);
+                  // The tick and a date are contradictory answers, and the
+                  // server stores only one of them. Clearing here means the
+                  // member can see which answer is standing.
+                  if (on) {
+                    clearedExpiry.current = expiresOn;
+                    setExpiresOn('');
+                  } else if (!expiresOn) {
+                    setExpiresOn(clearedExpiry.current);
+                  }
+                }}
+              />
+              Never expires
+            </label>
+          </div>
           <div>
             {/* NO max={today}. An already-expired licence is a document
                 members legitimately load — the Centre's job is to tell them
@@ -627,20 +824,41 @@ function ConfirmPanel({
               onChange={setExpiresOn}
               className={control}
               focusYear={todayYmd().y + 3}
-              required
+              disabled={neverExpires}
+              required={!neverExpires}
             />
           </div>
         </div>
         <div className="block text-sm">
-          <span className="text-[var(--text-secondary)]">
-            Issued on (optional)
-          </span>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <span className="text-[var(--text-secondary)]">
+              Issued on (optional)
+            </span>
+            <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-[var(--red)]"
+                checked={issuedOnUnknown}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setIssuedOnUnknown(on);
+                  if (on) {
+                    clearedIssued.current = issuedOn;
+                    setIssuedOn('');
+                  } else if (!issuedOn) {
+                    setIssuedOn(clearedIssued.current);
+                  }
+                }}
+              />
+              Not sure
+            </label>
+          </div>
           <div>
-            {/* No Clear button here on purpose: confirmExpiry writes
-                issuedOn: parseIsoDate(issuedOn ?? null) unconditionally, so a
-                cleared field silently wipes a date we read off the document.
-                Until that is guarded server-side, do not make the wipe a
-                one-tap action. */}
+            {/* Still no Clear button, and the reason has changed shape rather
+                than gone away. confirmExpiry no longer wipes an issue date
+                that is merely absent from the request — it leaves it alone —
+                so "Not sure" is now the deliberate way to clear one, and it
+                says WHY the field is empty instead of leaving a silent blank. */}
             <DateField
               label="Issued on"
               value={issuedOn}
@@ -648,6 +866,7 @@ function ConfirmPanel({
               className={control}
               focusYear={todayYmd().y - 2}
               max={toIso(todayYmd())}
+              disabled={issuedOnUnknown}
             />
           </div>
         </div>
@@ -674,20 +893,28 @@ function ConfirmPanel({
       <div className="mt-4 flex items-center gap-2">
         <button
           type="button"
-          disabled={busy || !expiresOn}
+          /* ⚠️ A DATE IS NOT THE ONLY WAY TO ANSWER. This read
+             `disabled={busy || !expiresOn}`, which locked the only button on
+             the panel for every document that has no expiry printed on it —
+             an ID copy, a proof of address, four photographs of a safe — and
+             left the member with nothing to press but "I will do this later".
+             The tick is the other complete answer. */
+          disabled={busy || (!neverExpires && !expiresOn)}
           className="rounded bg-[var(--red)] px-4 py-2 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
           onClick={async () => {
             setBusy(true);
             setErr(null);
             try {
-              await licenceCentreApi.confirm(
-                token,
-                id,
-                expiresOn,
-                issuedOn || undefined,
-                showKind ? kind || undefined : undefined,
-                showKind ? title || undefined : undefined,
-              );
+              await licenceCentreApi.confirm(token, id, {
+                // Empty, deliberately: the tick is the answer and the server
+                // checks it before it parses anything.
+                expiresOn: neverExpires ? '' : expiresOn,
+                issuedOn: issuedOnUnknown ? undefined : issuedOn || undefined,
+                neverExpires,
+                issuedOnUnknown,
+                kind: showKind ? kind || undefined : undefined,
+                title: showKind ? title || undefined : undefined,
+              });
               await onDone();
             } catch (ex) {
               setErr(
@@ -699,7 +926,15 @@ function ConfirmPanel({
             }
           }}
         >
-          {busy ? 'Saving…' : 'That date is right'}
+          {/* ⚠️ "THAT DATE IS RIGHT" ABOUT A DOCUMENT WITH NO DATE. The label
+              was as wrong as the disabled state it sat next to; what the
+              member is agreeing to on a kept-on-file document is that there is
+              nothing to expire and that we have filed it correctly. */}
+          {busy
+            ? 'Saving…'
+            : neverExpires
+              ? 'That is right'
+              : 'That date is right'}
         </button>
         <button
           type="button"
@@ -710,7 +945,9 @@ function ConfirmPanel({
         </button>
       </div>
       <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
-        Until a date is confirmed we do not schedule anything against it.
+        {neverExpires
+          ? 'We keep this on file. There is no date to remind you about.'
+          : 'Until a date is confirmed we do not schedule anything against it.'}
       </p>
       {err && <p className="mt-2 text-sm text-[var(--red)]">{err}</p>}
     </section>
@@ -752,13 +989,23 @@ function KindGroup({
     ? 'expired'
     : rows.some((r) => r.state === 'expiring')
       ? 'expiring'
-      : // ⚠️ 'unknown' COVERS TWO DIFFERENT THINGS and both belong here: a
-        // date nobody has checked, and a document that carries no expiry at
-        // all — a dedicated status certificate prints an issue date and
-        // nothing else. Either way the group cannot claim to be in date.
+      : // ⚠️ 'unknown' USED TO COVER TWO DIFFERENT THINGS — a date nobody had
+        // checked, and a document carrying no expiry at all — and the comment
+        // here said so, because there was no third state to put the second one
+        // in. There is now. 'unknown' means outstanding; 'no-expiry' means
+        // answered, and answered "there is no date".
         rows.some((r) => r.state === 'unknown')
         ? 'unknown'
-        : 'valid';
+        : // ⚠️ ABOVE 'valid', NEVER FALLING THROUGH TO IT. A folder of
+          // photographs of a gun safe has nothing in it that could be in date,
+          // and a header reading "All in date" over one is exactly the quiet
+          // reassurance the comment below refuses to give. It sits below
+          // 'unknown' because nothing about it is outstanding — a mixed folder
+          // reads "Kept on file", which understates the dated rows and
+          // over-promises about none of them.
+          rows.some((r) => r.state === 'no-expiry')
+          ? 'no-expiry'
+          : 'valid';
   const tone = STATE_TONE[worst];
 
   const toCheck = rows.filter((r) => !r.confirmed).length;
@@ -773,8 +1020,10 @@ function KindGroup({
             // documents is in date when none of them carries an expiry is the
             // kind of quiet reassurance this module must never give.
             worst === 'unknown'
-            ? 'No expiry date'
-            : 'All in date';
+            ? 'Date not confirmed'
+            : worst === 'no-expiry'
+              ? 'Kept on file'
+              : 'All in date';
 
   return (
     <div
@@ -869,18 +1118,28 @@ function CredentialCard({
    * nothing is missing there, the news is simply bad, and "to turn this green,
    * renew it" would be glib.
    */
-  const missingForGreen = (() => {
-    if (row.state !== 'unknown') return [];
+  const nextStep: string | null = (() => {
+    // ⚠️ A KEPT-ON-FILE DOCUMENT NEVER GOES GREEN, so there is nothing to
+    // promise about turning it green. This branch used to be unreachable only
+    // because there was no 'no-expiry' state: a photograph of a safe read as
+    // 'unknown' and was told, in as many words, to "add the expiry date
+    // printed on it". There is no date printed on a gun safe.
+    if (row.state === 'no-expiry') {
+      return row.confirmed
+        ? null
+        : 'Nothing on this one expires. Check that we have filed it as the right type.';
+    }
+    if (row.state !== 'unknown') return null;
     const wants: string[] = [];
     if (!row.expiresOn) {
       wants.push(
         row.derivedExpiry
           ? 'check the expiry date we worked out'
-          : 'add the expiry date printed on it',
+          : 'add the expiry date printed on it, or tick “Never expires”',
       );
     }
     if (!row.confirmed) wants.push('confirm it is right');
-    return wants;
+    return wants.length ? `To turn this green: ${wants.join(', then ')}.` : null;
   })();
 
   const [renaming, setRenaming] = useState(false);
@@ -975,11 +1234,11 @@ function CredentialCard({
               </>
             )}
           </p>
-          {missingForGreen.length > 0 && (
-            // What is actually standing between this row and green, named.
+          {nextStep && (
+            // What is actually standing between this row and settled, named.
             // "Needs checking" tells somebody nothing about what to do next.
-            <p className="mt-1 text-xs" style={{ color: STATE_TONE.unknown.colour }}>
-              To turn this green: {missingForGreen.join(', then ')}.
+            <p className="mt-1 text-xs" style={{ color: tone.colour }}>
+              {nextStep}
             </p>
           )}
         </div>
@@ -988,15 +1247,30 @@ function CredentialCard({
         </span>
       </div>
 
-      <p className="mt-2 text-sm">
-        <span className="text-[var(--text-secondary)]">Expires </span>
-        <span className="font-medium">{formatDate(row.expiresOn)}</span>
-        {row.remindersMuted && (
-          <span className="ml-2 text-xs text-[var(--text-tertiary-on-card)]">
-            reminders off
-          </span>
-        )}
-      </p>
+      {/* ⚠️ "Expires —" IS NOT A FACT, IT IS A BLANK. On a document the member
+          has told us never expires it read as a date we had failed to find,
+          over the em dash formatDate returns for null — and the "reminders
+          off" marker beside it describes a reminder that could never have
+          fired. Say what is true instead, and show the issue date where we
+          have one: a proof of address is judged on how recent it is, and that
+          is the only date it carries. */}
+      {row.state === 'no-expiry' ? (
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">
+          {row.issuedOn
+            ? `No expiry date · issued ${formatDate(row.issuedOn)}`
+            : 'No expiry date — kept on file'}
+        </p>
+      ) : (
+        <p className="mt-2 text-sm">
+          <span className="text-[var(--text-secondary)]">Expires </span>
+          <span className="font-medium">{formatDate(row.expiresOn)}</span>
+          {row.remindersMuted && (
+            <span className="ml-2 text-xs text-[var(--text-tertiary-on-card)]">
+              reminders off
+            </span>
+          )}
+        </p>
+      )}
 
       {/* THE LOOP. A firearm licence whose date is confirmed and whose expiry
           is close enough to act on.
@@ -1087,6 +1361,10 @@ function CredentialCard({
             kinds={KINDS}
             currentKind={row.kind}
             defaultTitle={row.title}
+            // The stored answers, so re-opening shows what the member already
+            // said rather than an empty box beside a cleared date.
+            neverExpires={row.neverExpires}
+            issuedOnUnknown={row.issuedOnUnknown}
             onDone={async () => {
               setEditing(false);
               await onChanged();
@@ -1097,16 +1375,28 @@ function CredentialCard({
 
       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
         {!editing && (
+          /* ⚠️ A RED "Check the date" BUTTON ON A PHOTOGRAPH OF A SAFE. Red is
+             this page's "you must do something" colour, and STATE_TONE keeps
+             the kept-on-file rows neutral rather than amber precisely because
+             amber reads as an outstanding errand. A red button undid that in
+             one stroke, and named the wrong errand as well: what is worth
+             looking at on a dateless document is the type we filed it as. */
           <button
             type="button"
             className={
-              row.confirmed
+              row.confirmed || row.state === 'no-expiry'
                 ? 'underline'
                 : 'rounded bg-[var(--red)] px-3 py-1.5 text-white hover:bg-[var(--red-hover)]'
             }
             onClick={() => setEditing(true)}
           >
-            {row.confirmed ? 'Change the date' : 'Check the date'}
+            {row.state === 'no-expiry'
+              ? row.confirmed
+                ? 'Change the type or name'
+                : 'Check what this is'
+              : row.confirmed
+                ? 'Change the date'
+                : 'Check the date'}
           </button>
         )}
         {row.available && (

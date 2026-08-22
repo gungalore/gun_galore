@@ -27,9 +27,9 @@ function makeService(groups: { kind: CredentialKind; count: number }[]) {
         .mockResolvedValue(
           groups.map((g) => ({ kind: g.kind, _count: { _all: g.count } })),
         ),
-      count: jest.fn(async (args: CountArgs) => {
+      count: jest.fn((args: CountArgs) => {
         calls.push(args);
-        return 0;
+        return Promise.resolve(0);
       }),
     },
   };

@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { FLAGS, SettingsService } from '../settings/settings.service';
 import {
   VaultConsentState,
   mayKeep,
@@ -67,13 +68,26 @@ export interface VaultConsentView {
    * here.
    */
   backfillDone: boolean;
+  /**
+   * How long a document from an application lives without this consent.
+   *
+   * ⚠️ FROM THE SETTING, NEVER HARD-CODED IN THE COPY. It is
+   * motivation_retention_days and an operator can change it.
+   */
+  retentionDays: number;
 }
 
 @Injectable()
 export class VaultConsentService {
   private readonly logger = new Logger(VaultConsentService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // @Global. The window quotes how long a document survives WITHOUT this,
+    // and that number is operator-settable — a notice that says "two years"
+    // while the setting says otherwise is a false statement in a consent.
+    private readonly settings: SettingsService,
+  ) {}
 
   private async requireUser(clerkId: string) {
     const user = await this.prisma.user.findUnique({
@@ -84,12 +98,15 @@ export class VaultConsentService {
     return user;
   }
 
-  private view(u: {
-    documentVaultConsentAt: Date | null;
-    documentVaultConsentVersion: string | null;
-    documentVaultConsentWithdrawnAt: Date | null;
-    documentVaultBackfilledAt: Date | null;
-  }): VaultConsentView {
+  private view(
+    retentionDays: number,
+    u: {
+      documentVaultConsentAt: Date | null;
+      documentVaultConsentVersion: string | null;
+      documentVaultConsentWithdrawnAt: Date | null;
+      documentVaultBackfilledAt: Date | null;
+    },
+  ): VaultConsentView {
     const state = vaultConsentState(u);
     return {
       state,
@@ -97,11 +114,17 @@ export class VaultConsentService {
       ask: mustAsk(state),
       keeping: mayKeep(state),
       backfillDone: !!u.documentVaultBackfilledAt,
+      retentionDays,
     };
   }
 
+  /** The motivation retention window, in days. */
+  private async retention(): Promise<number> {
+    return this.settings.get(FLAGS.motivationRetentionDays);
+  }
+
   async get(clerkId: string): Promise<VaultConsentView> {
-    return this.view(await this.requireUser(clerkId));
+    return this.view(await this.retention(), await this.requireUser(clerkId));
   }
 
   /**
@@ -132,7 +155,7 @@ export class VaultConsentService {
     this.logger.log(
       `Document Centre consent ${agreed ? 'given' : 'declined'} (${VAULT_CONSENT_VERSION}) by user ${user.id}`,
     );
-    return this.view(updated);
+    return this.view(await this.retention(), updated);
   }
 
   /**
@@ -156,7 +179,7 @@ export class VaultConsentService {
       select: SELECT,
     });
     this.logger.log(`Document Centre consent withdrawn by user ${user.id}`);
-    return this.view(updated);
+    return this.view(await this.retention(), updated);
   }
 
   /**

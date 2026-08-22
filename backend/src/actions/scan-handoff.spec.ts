@@ -26,7 +26,8 @@ function matches(where: Record<string, unknown>, row: Row): boolean {
   const or = where.OR as Record<string, unknown>[] | undefined;
   if (!or) return true;
   return or.some((clause) => {
-    if ('extractionOk' in clause) return row.extractionOk === clause.extractionOk;
+    if ('extractionOk' in clause)
+      return row.extractionOk === clause.extractionOk;
     if ('kind' in clause) {
       const list = (clause.kind as { in: string[] }).in;
       return list.includes(row.kind);
@@ -42,8 +43,8 @@ function matches(where: Record<string, unknown>, row: Row): boolean {
 const MINTED = new Date('2026-08-22T10:00:00Z');
 
 function makeController(dest: 'licence-centre' | 'motivation', rows: Row[]) {
-  const count = jest.fn(async (args: { where: Record<string, unknown> }) =>
-    rows.filter((r) => matches(args.where, r)).length,
+  const count = jest.fn((args: { where: Record<string, unknown> }) =>
+    Promise.resolve(rows.filter((r) => matches(args.where, r)).length),
   );
   const prisma = {
     user: { findUnique: jest.fn().mockResolvedValue({ id: 'u1' }) },

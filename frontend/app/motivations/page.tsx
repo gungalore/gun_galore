@@ -8,6 +8,8 @@ import {
   MotivationSummary,
   motivationsApi,
 } from '@/lib/motivations-api';
+import { licenceCentreApi } from '@/lib/licence-centre-api';
+import VaultConsentModal, { snoozed } from '@/components/vault-consent';
 
 // The way in. Lists what someone has started and lets them begin another.
 //
@@ -62,7 +64,7 @@ const STATUS_COPY: Record<string, string> = {
 };
 
 export default function MotivationsPage() {
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
   const router = useRouter();
   const token = useCallback(() => getToken(), [getToken]);
 
@@ -77,6 +79,18 @@ export default function MotivationsPage() {
   const [canStart, setCanStart] = useState(true);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ── MAY WE KEEP YOUR DOCUMENTS? ─────────────────────────────────────
+  //
+  // Operator, 2026-08-22: "we also need to launch a window asking the user for
+  // us to keep the documents and explain why. Maybe when they first launch the
+  // Motivation Centre." This is that first launch.
+  //
+  // ⚠️ HERE AND NOT IN THE WIZARD. The wizard skips a poll tick while any
+  // blocking overlay is up, so a window over it would stop it noticing its own
+  // generation finishing — somebody would sit watching "Writing it…" behind a
+  // consent notice.
+  const [askConsent, setAskConsent] = useState(false);
+  const [retentionDays, setRetentionDays] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -88,6 +102,20 @@ export default function MotivationsPage() {
         setCanStart(s.canStart);
         // With the flag off every other call 404s, so do not make them.
         if (s.enabled) setRows(await motivationsApi.list(token));
+
+        // ⚠️ A SECOND CALL, DELIBERATELY. The status route above takes no
+        // @CurrentUser — it reads settings only — so the consent state cannot
+        // ride on it however convenient that would be.
+        //
+        // Fails to silence: the client falls back to "already answered", so a
+        // slow or failed call costs the prompt rather than showing it to
+        // somebody who has already said yes.
+        if (s.enabled) {
+          const c = await licenceCentreApi.consent(token);
+          if (!alive) return;
+          setRetentionDays(c.retentionDays ?? null);
+          if (c.ask && !snoozed(userId ?? '')) setAskConsent(true);
+        }
       } catch {
         if (alive) setEnabled(false);
       }
@@ -95,7 +123,7 @@ export default function MotivationsPage() {
     return () => {
       alive = false;
     };
-  }, [token]);
+  }, [token, userId]);
 
   if (enabled === false) {
     return (
@@ -110,6 +138,14 @@ export default function MotivationsPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
+      {askConsent && userId && (
+        <VaultConsentModal
+          token={token}
+          userId={userId}
+          retentionDays={retentionDays}
+          onDone={() => setAskConsent(false)}
+        />
+      )}
       <h1 className="text-2xl font-semibold">Firearm licence motivation</h1>
       <p className="mt-2 text-[var(--text-secondary)]">
         We ask you about your circumstances, then prepare a formal motivation
