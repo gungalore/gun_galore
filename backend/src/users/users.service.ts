@@ -710,68 +710,143 @@ export class UsersService {
       }
     }
 
+    // ── FROM HERE ON THE ROW ALWAYS SURVIVES ──────────────────────────
+    //
+    // ⚠️ THIS USED TO ATTEMPT A HARD DELETE FIRST, and the scrub below was only
+    // the `catch`. So the member with the CLEANEST record got the most
+    // thorough wipe: a foreign key had to BLOCK the delete for anything to be
+    // preserved at all, which meant anyone who had never traded was removed
+    // outright — and with them, by cascade, their Complaint rows and every
+    // ComplaintPhoto, their SupportTicket history, their LoginEvent trail and
+    // their Ask Boet conversations.
+    //
+    // Operator, 2026-08-22: "if a user commited a crime or something they cant
+    // just vanish by deleting and wiping evidence." The delete was exactly
+    // that, and it was the DEFAULT path.
+    //
+    // The row is now always kept and always scrubbed. Every financial relation
+    // (Transaction, Order, Rating, Offer, Bid, Swap) is ON DELETE RESTRICT and
+    // stays pointed at it.
     try {
-      await this.prisma.user.deleteMany({ where: { clerkId } });
-    } catch (err) {
-      this.logger.warn(
-        `Hard delete of clerk user ${clerkId} blocked by FK constraints — falling back to PII scrub: ${(err as Error).message}`,
+      // ⚠️ WHAT WE MAY NOT ERASE, AND WHY — READ BEFORE ADDING A COLUMN HERE.
+      //
+      // assembleSaps534Data (payments/transactions.service.ts) builds Section C
+      // of the SAP 534 firearm-transfer form LIVE off this row: firstName,
+      // lastName, idNumberEncrypted, phone, email and the address block.
+      // Transaction carries NO identity snapshot of its own.
+      //
+      // So nulling those six on a member who has transferred a firearm makes
+      // the statutory form unregenerable — a re-download comes back with the
+      // whole of Section C blank. The comment that used to sit here, claiming
+      // this data "lives on the Transaction, not here", was simply false.
+      //
+      // A firearm transfer is a legal obligation that outlives an erasure
+      // request, so where one exists the identity is HELD and the rest is
+      // still scrubbed. Where none exists, everything goes.
+      const firearmHold = await this.prisma.transaction.count({
+        where: {
+          OR: [{ sellerId: target?.id ?? '' }, { buyerId: target?.id ?? '' }],
+          listing: { isFirearm: true },
+        },
+      });
+
+      // ⚠️ AND MONEY WE STILL OWE THEM. hasBank() is the readiness predicate
+      // for every payout run; clearing the quartet while a payout is due makes
+      // that money permanently unpayable, with no alert and no way to
+      // re-collect the details from somebody whose account is gone. The
+      // published privacy policy already promises this carve-out.
+      const payoutDue = await this.prisma.transaction.count({
+        where: {
+          sellerId: target?.id ?? '',
+          paymentStatus: 'RELEASED',
+          sellerPayout: { gt: 0 },
+          paidOutAt: null,
+          payoutHeldAt: null,
+          refundOfId: null,
+        },
+      });
+
+      await this.prisma.user.updateMany({
+        where: { clerkId },
+        data: {
+          // ⚠️ @accounts.invalid, NOT @gungalore.local. RFC 6761 reserves
+          // .invalid precisely so it can never resolve; a made-up subdomain of
+          // a domain we own can be created by accident and start accepting
+          // mail addressed to erased members.
+          ...(firearmHold === 0
+            ? {
+                email: `deleted+${Date.now()}@accounts.invalid`,
+                firstName: null,
+                lastName: null,
+                phone: null,
+                idNumberEncrypted: null,
+                addrBuilding: null,
+                addrStreet: null,
+                addrAddress2: null,
+                addrSuburb: null,
+                addrCity: null,
+                addrPostalCode: null,
+                addrProvince: null,
+                addrLat: null,
+                addrLng: null,
+              }
+            : {}),
+          // ⚠️ THE PHONE'S VERIFICATION STATE GOES WITH THE PHONE. Nulling the
+          // number and leaving phoneVerified true left a row claiming a
+          // verified phone it does not have.
+          ...(firearmHold === 0
+            ? { phoneVerified: false, phoneOtpHash: null, phoneOtpExpiresAt: null }
+            : {}),
+
+          // Erased in every case — none of it is needed by any statutory form.
+          avatarUrl: null,
+          dateOfBirth: null,
+          kycIdDocumentUrl: null,
+          kycIdStorageKey: null,
+          kycIdMimeType: null,
+          kycSelfieUrl: null,
+          kycSelfieStorageKey: null,
+          kycHaCheckJson: Prisma.DbNull,
+          kycClaudeFindings: Prisma.DbNull,
+
+          // ⚠️ SILENCE EVERY CHANNEL. The row survives now, so without this a
+          // cron could still address an erased member — and the address it
+          // would use is the sentinel above.
+          notifyEmailEnabled: false,
+          notifySmsEnabled: false,
+          notifyWhatsappEnabled: false,
+
+          ...(payoutDue === 0
+            ? {
+                bankAccountHolder: null,
+                bankAccountNumber: null,
+                bankBranchCode: null,
+                bankName: null,
+                bankAccountType: null,
+              }
+            : {}),
+
+          // ⚠️ isBanned IS NO LONGER SET. Deleting an account is not
+          // misconduct, and stamping it made every admin view and every
+          // isBanned filter read a departure as an enforcement action —
+          // including the ones that decide what an admin sees when they go
+          // looking for people we have actually banned.
+        },
+      });
+
+      this.logger.log(
+        `Erasure for clerk user ${clerkId}: row preserved and scrubbed` +
+          (firearmHold > 0
+            ? `; identity HELD — ${firearmHold} firearm transaction(s) need Section C of the SAP 534`
+            : '') +
+          (payoutDue > 0
+            ? `; bank details HELD — ${payoutDue} payout(s) still owed`
+            : ''),
       );
-      try {
-        await this.prisma.user.updateMany({
-          where: { clerkId },
-          data: {
-            // Strip the directly-identifying PII while keeping the row
-            // for FK targets (transactions, offers, ratings).
-            email: `deleted+${Date.now()}@gungalore.local`,
-            firstName: null,
-            lastName: null,
-            phone: null,
-            avatarUrl: null,
-            idNumberEncrypted: null,
-            // KYC identity artifacts — the most sensitive PII we hold. Scrub
-            // the document/selfie references, DOB, SA-ID cross-check hash and
-            // Home-Affairs/vision JSON on erasure, keeping only what the SAP
-            // 534 / FICA record legally requires (which lives on the
-            // Transaction, not here).
-            //
-            // ⚠️ THE BYTES GO TOO, and that used to be a note rather than
-            // code: "Cloudinary asset deletion is a tracked follow-up — the
-            // URLs are unguessable but should also be purged." Unguessable is
-            // not private; those assets were readable by anybody holding the
-            // link, so nulling the column erased OUR record of the file and
-            // left the file itself online. Identity documents live in the
-            // encrypted store now, and purgeKycFiles removes them before these
-            // columns are cleared.
-            dateOfBirth: null,
-            kycIdDocumentUrl: null,
-            kycIdStorageKey: null,
-            kycIdMimeType: null,
-            kycSelfieUrl: null,
-            kycSelfieStorageKey: null,
-            kycHaCheckJson: Prisma.DbNull,
-            kycClaudeFindings: Prisma.DbNull,
-            addrBuilding: null,
-            addrStreet: null,
-            addrAddress2: null,
-            addrSuburb: null,
-            addrCity: null,
-            addrPostalCode: null,
-            addrProvince: null,
-            addrLat: null,
-            addrLng: null,
-            bankAccountHolder: null,
-            bankAccountNumber: null,
-            bankBranchCode: null,
-            bankName: null,
-            bankAccountType: null,
-            isBanned: true,
-          },
-        });
-      } catch (scrubErr) {
-        this.logger.error(
-          `PII scrub of clerk user ${clerkId} also failed: ${(scrubErr as Error).message}`,
-        );
-      }
+    } catch (scrubErr) {
+      this.logger.error(
+        `PII scrub of clerk user ${clerkId} failed: ${(scrubErr as Error).message}`,
+      );
     }
   }
 

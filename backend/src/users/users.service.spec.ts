@@ -241,7 +241,9 @@ describe('UsersService — address book & notification prefs', () => {
 // the motivations survived an erasure request entirely.
 
 describe('UsersService.deleteByClerkId', () => {
-  function build(opts: { hardDeleteFails?: boolean } = {}) {
+  function build(
+    opts: { firearmTxns?: number; payoutsDue?: number } = {},
+  ) {
     const retention = {
       purgeForUser: jest.fn(async () => ({
         filesRemoved: 2,
@@ -250,17 +252,26 @@ describe('UsersService.deleteByClerkId', () => {
       })),
     };
     const order: string[] = [];
+    let scrubbed: Record<string, unknown> = {};
+    let counts = 0;
     const prisma: any = {
       user: {
         findFirst: jest.fn(async () => ({ id: 'u-1' })),
         deleteMany: jest.fn(async () => {
           order.push('user.delete');
-          if (opts.hardDeleteFails) throw new Error('FK RESTRICT');
           return { count: 1 };
         }),
-        updateMany: jest.fn(async () => {
+        updateMany: jest.fn(async (a: any) => {
           order.push('user.scrub');
+          scrubbed = a.data;
           return { count: 1 };
+        }),
+      },
+      // First count is the firearm-transfer hold, second is payouts owed.
+      transaction: {
+        count: jest.fn(async () => {
+          counts += 1;
+          return counts === 1 ? (opts.firearmTxns ?? 0) : (opts.payoutsDue ?? 0);
         }),
       },
     };
@@ -285,7 +296,7 @@ describe('UsersService.deleteByClerkId', () => {
       // filesystem.
       { purgeKycFiles: jest.fn(async () => ({ removed: 0, failed: 0 })) } as never,
     );
-    return { svc, prisma, retention, licenceCentre, order };
+    return { svc, prisma, retention, licenceCentre, order, s: () => scrubbed };
   }
 
   it('erases the Licence Centre even when the hard delete falls back to a scrub', async () => {
@@ -293,45 +304,118 @@ describe('UsersService.deleteByClerkId', () => {
     // the User row SURVIVES and is scrubbed instead — so no cascade ever runs,
     // and a vault document would outlive the erasure request that was supposed
     // to remove it. purgeForUser deletes the rows explicitly for this reason.
-    const { svc, licenceCentre } = build({ hardDeleteFails: true });
+    const { svc, licenceCentre } = build();
     await svc.deleteByClerkId('clerk_1');
     expect(licenceCentre.purgeForUser).toHaveBeenCalledTimes(1);
   });
 
-  it('still deletes the account when the licence purge throws', async () => {
+  it('still scrubs the account when the licence purge throws', async () => {
     // The caller is a Clerk webhook: an exception makes Clerk retry forever
-    // and the account is never deleted at all.
-    const { svc, licenceCentre, prisma, order } = build();
+    // and the account is never dealt with at all.
+    const { svc, licenceCentre, order } = build();
     licenceCentre.purgeForUser.mockRejectedValueOnce(new Error('disk gone'));
     await expect(svc.deleteByClerkId('clerk_1')).resolves.not.toThrow();
-    expect(prisma.user.deleteMany).toHaveBeenCalled();
-    expect(order).toContain('user.delete');
+    expect(order).toContain('user.scrub');
   });
 
-  it('removes the licence documents BEFORE the row that points at them', async () => {
-    // A cascade cannot reach the filesystem, so the other order strands the
-    // encrypted files with nothing left referencing them.
+  it('NEVER hard-deletes the row', async () => {
+    // ⚠️ THE WHOLE POINT. This used to attempt a hard delete FIRST and treat
+    // the scrub as the catch — so the member with the cleanest record got the
+    // most thorough wipe, and with them went their Complaint rows, every
+    // ComplaintPhoto, their SupportTicket history and their LoginEvent trail,
+    // all by cascade. Operator, 2026-08-22: "if a user commited a crime or
+    // something they cant just vanish by deleting and wiping evidence."
+    const { svc, prisma, order } = build();
+    await svc.deleteByClerkId('clerk_1');
+    expect(prisma.user.deleteMany).not.toHaveBeenCalled();
+    expect(order).not.toContain('user.delete');
+  });
+
+  it('does not stamp isBanned — leaving is not misconduct', async () => {
+    // It used to. Every admin view and every isBanned filter then read a
+    // departure as an enforcement action, including the ones an admin uses to
+    // find people we have actually banned.
+    const { svc, s } = build();
+    await svc.deleteByClerkId('clerk_1');
+    expect(s()).not.toHaveProperty('isBanned');
+  });
+
+  it('HOLDS the identity when a firearm transfer needs Section C', async () => {
+    // ⚠️ assembleSaps534Data builds Section C of the SAP 534 LIVE off this
+    // row — firstName, lastName, idNumberEncrypted, phone, email and the
+    // address block — and Transaction carries no identity snapshot. Nulling
+    // them made a statutory firearm-transfer form unregenerable, with the
+    // whole of Section C blank on re-download.
+    const { svc, s } = build({ firearmTxns: 1 });
+    await svc.deleteByClerkId('clerk_1');
+    for (const k of [
+      'firstName',
+      'lastName',
+      'idNumberEncrypted',
+      'phone',
+      'email',
+      'addrStreet',
+    ]) {
+      expect(s()).not.toHaveProperty(k);
+    }
+    // The rest still goes.
+    expect(s()).toMatchObject({ avatarUrl: null, kycIdStorageKey: null });
+  });
+
+  it('erases the identity when no firearm transfer is involved', async () => {
+    const { svc, s } = build({ firearmTxns: 0 });
+    await svc.deleteByClerkId('clerk_1');
+    expect(s()).toMatchObject({
+      firstName: null,
+      lastName: null,
+      idNumberEncrypted: null,
+      phone: null,
+      // ⚠️ .invalid is reserved by RFC 6761 so it can never resolve. A
+      // made-up subdomain of a domain we own can be created by accident and
+      // start accepting mail addressed to erased members.
+      email: expect.stringContaining('@accounts.invalid'),
+      phoneVerified: false,
+    });
+  });
+
+  it('HOLDS the bank details while a payout is still owed', async () => {
+    // hasBank() is the readiness predicate for every payout run. Clearing the
+    // quartet while money is due makes it permanently unpayable, with no alert
+    // and nobody left to re-collect the details from.
+    const { svc, s } = build({ payoutsDue: 1 });
+    await svc.deleteByClerkId('clerk_1');
+    expect(s()).not.toHaveProperty('bankAccountNumber');
+  });
+
+  it('clears the bank details when nothing is owed', async () => {
+    const { svc, s } = build({ payoutsDue: 0 });
+    await svc.deleteByClerkId('clerk_1');
+    expect(s()).toMatchObject({ bankAccountNumber: null, bankName: null });
+  });
+
+  it('silences every channel, because the row now survives', async () => {
+    // Without this a cron could still address an erased member — at the
+    // sentinel address.
+    const { svc, s } = build();
+    await svc.deleteByClerkId('clerk_1');
+    expect(s()).toMatchObject({
+      notifyEmailEnabled: false,
+      notifySmsEnabled: false,
+      notifyWhatsappEnabled: false,
+    });
+  });
+
+  it('removes the documents BEFORE scrubbing the row that points at them', async () => {
+    // A cascade cannot reach the filesystem, and the scrub nulls the keys —
+    // so the other order strands the encrypted files with nothing left
+    // referencing them, invisible to the nightly sweep, which finds files
+    // THROUGH rows.
     const { svc, retention, order } = build();
     await svc.deleteByClerkId('clerk_1');
     expect(retention.purgeForUser).toHaveBeenCalledWith('u-1');
     expect(order).toEqual([
       'motivations.purge',
       'licence.purge',
-      'user.delete',
-    ]);
-  });
-
-  it('still purges them when the hard delete is blocked and it falls back to scrubbing', async () => {
-    // This is the worse leak: the scrub keeps the User row, so without this the
-    // motivations — ID number, home address, security circumstances — survived
-    // the erasure request untouched.
-    const { svc, retention, order } = build({ hardDeleteFails: true });
-    await svc.deleteByClerkId('clerk_1');
-    expect(retention.purgeForUser).toHaveBeenCalledTimes(1);
-    expect(order).toEqual([
-      'motivations.purge',
-      'licence.purge',
-      'user.delete',
       'user.scrub',
     ]);
   });
