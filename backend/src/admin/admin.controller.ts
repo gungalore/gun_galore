@@ -373,6 +373,24 @@ export class AdminUsersController {
     return this.adminService.rerunBankVerification(id, admin.sub);
   }
 
+  // Close a member's account on their behalf — DISTINCT FROM BAN, and not a
+  // delete. Ban keeps the profile and the listings up; this takes them off the
+  // public side and releases the handle, while every transaction, rating and
+  // complaint stays attached to the row.
+  //
+  // ⚠️ This is also the ONLY route by which a banned member's account can be
+  // closed: the self-service button refuses a restricted account so closing
+  // can never launder a ban.
+  @Post(':id/close-account')
+  @HttpCode(200)
+  closeAccount(
+    @Param('id') id: string,
+    @CurrentAdmin() admin: { sub: string },
+    @Body() body: { reason?: string },
+  ) {
+    return this.adminService.closeAccount(id, admin.sub, body?.reason ?? '');
+  }
+
   // Clear seller reject-strikes + lift the offers suspension (after
   // reviewing a SELLER_REJECT_STRIKE alert). Also resolves those alerts.
   @Post(':id/clear-reject-strikes')

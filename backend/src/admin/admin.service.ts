@@ -1,12 +1,15 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { AdminRole, Prisma } from '@prisma/client';
+import { createClerkClient } from '@clerk/backend';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ListingsService } from '../listings/listings.service';
@@ -21,10 +24,26 @@ import { TransactionsService, PAYMENT_MODE } from '../payments/transactions.serv
 import { reversalListingData } from '../payments/inventory';
 import { ListingReviewDto, ReviewAction } from './dto/listing-review.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+// UsersModule is @Global, so this needs no AdminModule import — only the
+// class for the injection token.
+import {
+  AccountClosureService,
+  type ClosureBlocker,
+} from '../users/account-closure.service';
 import { toCsv } from '../common/csv.util';
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
+  // closeAccount() has to delete the Clerk user, the same way the member's own
+  // close does — a row closed in our database while the login still works lets
+  // them sign in to a dead account. One instance per service is the existing
+  // pattern (see users.service.ts:131); the SDK is cheap to construct.
+  private readonly clerk = createClerkClient({
+    secretKey: process.env.CLERK_SECRET_KEY,
+  });
+
   constructor(
     private readonly prisma: PrismaService,
     // ⚠️ Provided LOCALLY in AdminModule, like everywhere else that touches
@@ -49,6 +68,12 @@ export class AdminService {
     // @Global — reviewKyc() sends the seller the same SMS the automated
     // KYC verdict would have.
     private readonly sms: SmsService,
+    // @Global (UsersModule). closeAccount() delegates the whole closure
+    // transaction here rather than hand-rolling an admin-side copy — the
+    // ordering in that service is load-bearing (the Clerk delete must run
+    // AFTER our DB write, and the clerkId tombstone AFTER the webhook lands),
+    // and a second implementation would drift out of step with it.
+    private readonly closures: AccountClosureService,
   ) {}
 
   // ---------------------------------------------------------------
@@ -372,6 +397,11 @@ export class AdminService {
     //   'kyc-stalled' — kycRequired > 24h ago but still not verified
     //                  (command-center attention card deep-links here)
     //   'banned'      — isBanned = true
+    //   'closed'      — accountClosedAt != null. ⚠️ NOT a subset of 'banned'
+    //                  and never rendered as one: closing an account is a
+    //                  member's choice, not misconduct. Kept findable because
+    //                  the whole point of the closure record is that an admin
+    //                  answering a police request can still reach it.
     //   'dealers'     — sellerTier = DEALER
     // Anything else (or undefined) returns all users.
     const day = 24 * 3600 * 1000;
@@ -394,6 +424,7 @@ export class AdminService {
         };
       }
       if (filter === 'banned') return { isBanned: true };
+      if (filter === 'closed') return { accountClosedAt: { not: null } };
       if (filter === 'dealers') return { sellerTier: 'DEALER' };
       return {};
     })();
@@ -426,6 +457,7 @@ export class AdminService {
           kycStatus: true,
           subscriptionTier: true,
           isBanned: true,
+          accountClosedAt: true,
           totalSales: true,
           trustScore: true,
           averageRating: true,
@@ -495,10 +527,24 @@ export class AdminService {
 
     // Profile support edits — each field audited separately so history
     // reads "username: old → new", never a blob. Empty string clears a
-    // name/phone (→ null); username can only be replaced, never cleared
-    // (public identity — listings/ratings render it).
+    // name/phone (→ null).
+    //
+    // ⚠️ USERNAME IS CLEARABLE ONLY ON A CLOSED ACCOUNT, and that carve-out is
+    // deliberate. It used to be flatly non-clearable, documented as "public
+    // identity — listings/ratings render it", and that is still true of a live
+    // member: null it and their listings and ratings render as an anonymous
+    // seller while they are still trading. But closure RELEASES the handle
+    // back into the signup namespace, so if a closure half-completes — the DB
+    // write lands and the follow-up does not — an admin has to be able to
+    // finish it by hand. Without this the only remedy is a manual DB edit.
+    const clearableUsername = user.accountClosedAt !== null;
+    if (dto.username?.trim() === '' && !clearableUsername) {
+      throw new BadRequestException(
+        'A username can only be cleared on a closed account. Replace it instead, or close the account first.',
+      );
+    }
     const profileFields = [
-      ['username', dto.username?.trim(), user.username, false],
+      ['username', dto.username?.trim(), user.username, clearableUsername],
       ['firstName', dto.firstName?.trim(), user.firstName, true],
       ['lastName', dto.lastName?.trim(), user.lastName, true],
       ['phone', dto.phone?.trim(), user.phone, true],
@@ -554,6 +600,184 @@ export class AdminService {
     }
 
     return updated;
+  }
+
+  // ---------------------------------------------------------------
+  // Close an account, on the member's behalf.
+  //
+  // ⚠️ THIS IS NOT A BAN AND IT IS NOT A DELETE. Ban is an enforcement flag
+  // that leaves the profile, the listings and the handle exactly where they
+  // are. This takes the member off the public side of the site and releases
+  // their username, email and phone back into the signup namespace, while
+  // every transaction, offer, bid, rating and complaint stays attached to the
+  // same User row — operator, 2026-08-22: "if a user commited a crime or
+  // something they cant just vanish by deleting and wiping evidence."
+  //
+  // ⚠️ AND IT IS THE ONLY ROUTE BY WHICH A BANNED MEMBER'S ACCOUNT CAN BE
+  // CLOSED. The self-service button refuses a restricted account outright, so
+  // that closing can never be used to launder a ban; a banned member who
+  // genuinely wants out comes through support and lands here, where the
+  // closure carries closedByAdminId and the ban is snapshotted onto the
+  // AccountClosure row so it survives re-registration.
+  //
+  // On an UNRESTRICTED account the §6 blockers (money in flight, undelivered
+  // goods, an unfinished firearm transfer, an open complaint) refuse an admin
+  // exactly as hard as they refuse the member. On a restricted one they are
+  // forced past — see assertNoMoneyInFlight below for the one that is not,
+  // and why.
+  // ---------------------------------------------------------------
+  async closeAccount(userId: string, adminId: string, reason: string) {
+    const trimmed = (reason ?? '').trim();
+    if (trimmed.length < 5) {
+      throw new BadRequestException(
+        'A reason is required — it is written onto the closure record, which is what an admin answering a later query reads.',
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        clerkId: true,
+        username: true,
+        email: true,
+        accountClosedAt: true,
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    // Refuse rather than no-op: a second close would snapshot an
+    // already-scrubbed row, overwriting the real identity in the
+    // accountability record with the tombstone that replaced it.
+    if (user.accountClosedAt) {
+      throw new BadRequestException('This account is already closed.');
+    }
+
+    // ⚠️ AN ADMIN MAY WAVE THROUGH THE RESTRICTION, AND NOTHING ELSE.
+    // `restricted` (banned / selling-banned) is precisely the case this route
+    // exists for — the self-service button refuses it so that closing can
+    // never launder a ban, and support closes it here instead. Every other
+    // blocker refuses an admin too, because the money and the paperwork do
+    // not care who clicked.
+    const eligibility = await this.closures.canClose(userId);
+    if (!eligibility.canClose && !eligibility.restricted) {
+      throw new ConflictException(
+        eligibility.blockers.map((b: ClosureBlocker) => b.message).join(' '),
+      );
+    }
+    if (eligibility.restricted) {
+      // ⚠️ canClose() RETURNS ON THE RESTRICTION BEFORE IT COUNTS ANYTHING
+      // ELSE (account-closure.service.ts:109), so for a banned member the
+      // money, goods, firearm and complaint blockers were never evaluated —
+      // and `force` below skips the re-check too. That leaves the restricted
+      // path, which is the ONLY path this route exists for, with no money
+      // guard at all unless one is run here.
+      await this.assertNoMoneyInFlight(userId);
+      // The rest were still not evaluated. None of them is destructive the
+      // way the bank quartet is — the shipment, the SAP 534 inputs and the
+      // complaint row all survive a closure — but the member loses the phone
+      // and email those follow-ups would have reached them on, so it goes in
+      // the log rather than passing silently.
+      this.logger.warn(
+        `Admin ${adminId} is closing restricted account ${userId} — undelivered goods / firearm transfer / open complaint were not evaluated for it`,
+      );
+    }
+
+    const { clerkId, cancelledListingIds } = await this.closures.close(
+      userId,
+      {
+        closedBy: 'ADMIN',
+        closedByAdminId: adminId,
+        reason: trimmed,
+        force: eligibility.restricted,
+      },
+    );
+
+    // ⚠️ AFTER THE COMMIT, AND FAIL-SOFT — the same order the member's own
+    // close uses (users.service.ts closeMyAccount). A Clerk outage must not
+    // roll back a closure, and closed-in-our-DB-with-a-live-login is strictly
+    // safer than the reverse: every write gate already refuses the row.
+    try {
+      await this.clerk.users.deleteUser(clerkId);
+    } catch (err) {
+      this.logger.error(
+        `Account ${userId} closed by admin ${adminId}, but the Clerk user could not be deleted — they can still sign in to a dead account: ${(err as Error).message}`,
+      );
+    }
+
+    // ⚠️ THE SEARCH INDEX STILL LAGS. close() cancelled the listings, so
+    // browseViaPrisma and every PDP already exclude them, but a stale
+    // Meilisearch document can surface in ?q= until something re-indexes it.
+    // The ids are on AccountClosure.cancelledListingIds for the sweep that
+    // Phase 2 of ACCOUNT-CLOSURE.md adds; until then this is the only trace.
+    if (cancelledListingIds.length) {
+      this.logger.log(
+        `Account ${userId}: ${cancelledListingIds.length} listing(s) cancelled and awaiting reindex`,
+      );
+    }
+
+    // Audited as well as recorded on AccountClosure. The closure row is the
+    // member-side record; this is the admin-side one, and /admin/audit is
+    // where "which admin did what, and why" is actually read. Snapshot the
+    // handle in oldValue — by the time anyone reads this row the User has
+    // none.
+    await this.audit.record({
+      adminUserId: adminId,
+      action: 'USER_ACCOUNT_CLOSE',
+      resourceType: 'User',
+      resourceId: userId,
+      oldValue: { username: user.username, email: user.email },
+      newValue: {
+        closedBy: 'ADMIN',
+        cancelledListings: cancelledListingIds.length,
+      },
+      reason: trimmed,
+    });
+
+    return { closed: true, cancelledListings: cancelledListingIds.length };
+  }
+
+  // ⚠️ THE ONE BLOCKER A FORCED CLOSURE STILL MAY NOT SKIP.
+  //
+  // Closure nulls the bank quartet (account holder, number, branch, type).
+  // hasBank() is the readiness predicate for every payout run, and once the
+  // account is closed there is nobody left to re-collect an account number
+  // from — so a payout that was owed at closure becomes permanently unpayable,
+  // silently, with no alert (ACCOUNT-CLOSURE.md H7). "The member was banned"
+  // is not a reason to keep their money; a ban and a debt are separate
+  // questions and only one of them is settled by closing the account.
+  //
+  // ⚠️ THESE TWO PREDICATES ARE COPIES of FUNDS_IN_FLIGHT and PAYOUT_DUE in
+  // AccountClosureService.canClose, and a copy is a drift hazard. It is here
+  // only because canClose returns on the restriction before it counts
+  // anything — DELETE THIS METHOD the day canClose evaluates its blockers
+  // first and returns { canClose: false, restricted: true, blockers }, which
+  // is the real fix.
+  private async assertNoMoneyInFlight(userId: string) {
+    const [held, payoutDue] = await Promise.all([
+      this.prisma.transaction.count({
+        where: {
+          OR: [{ buyerId: userId }, { sellerId: userId }],
+          paymentStatus: {
+            in: ['HELD', 'PENDING_ADMIN_VERIFICATION', 'DISPUTED'] as never,
+          },
+        },
+      }),
+      this.prisma.transaction.count({
+        where: {
+          sellerId: userId,
+          paymentStatus: 'RELEASED' as never,
+          sellerPayout: { gt: 0 },
+          paidOutAt: null,
+          payoutHeldAt: null,
+          refundOfId: null,
+        },
+      }),
+    ]);
+    if (held || payoutDue) {
+      throw new ConflictException(
+        `Money is still moving on this account — ${held} order(s) with funds held or disputed, ${payoutDue} payout(s) owed. Settle or refund those first: closing clears the banking details and there is no way to collect them again afterwards.`,
+      );
+    }
   }
 
   // ---------------------------------------------------------------
@@ -850,6 +1074,7 @@ export class AdminService {
       systemAlerts,
       complaintsLodged,
       complaintsAgainst,
+      closure,
     ] = await Promise.all([
       this.prisma.listing.findMany({
         where: { sellerId: userId },
@@ -1010,6 +1235,17 @@ export class AdminService {
           user: { select: { username: true } },
         },
       }),
+      // ⚠️ THE WHOLE POINT OF THE CLOSURE RECORD. Once an account is closed
+      // the User row no longer carries a username, an email or a phone
+      // number — they were released so the same person can register again —
+      // so "who was this" is answerable only from here. An admin fielding a
+      // police request or a dispute about an old sale has nowhere else to
+      // look. Fetched as its own query rather than through the relation so
+      // this does not depend on the relation field name on User.
+      //
+      // ⚠️ ADMIN-ONLY, AND IT STAYS THAT WAY. This must never be added to a
+      // public select (PUBLIC_LISTING_SELECT, SellersPublicController).
+      this.prisma.accountClosure.findUnique({ where: { userId } }),
     ]);
 
     return {
@@ -1025,6 +1261,7 @@ export class AdminService {
       systemAlerts,
       complaintsLodged,
       complaintsAgainst,
+      closure,
     };
   }
 
@@ -1051,6 +1288,22 @@ export class AdminService {
             { firstName: insensitive },
             { lastName: insensitive },
             { phone: insensitive },
+            // ⚠️ AND THE PEOPLE WHO HAVE LEFT. A closure releases username,
+            // email and phone back into the uniqueness namespaces so the
+            // member can register again — which means the five predicates
+            // above stop matching them the moment they close.
+            //
+            // That is precisely backwards for the one case this whole feature
+            // exists to serve. Operator, 2026-08-22: "if a user commited a
+            // crime or something they cant just vanish by deleting and wiping
+            // evidence." A police or dispute request arrives as a NAME or a
+            // PHONE NUMBER, never as a cuid — so without this the record is
+            // preserved and unfindable, which is the same as not having it.
+            { closure: { closedUsername: insensitive } },
+            { closure: { closedEmail: insensitive } },
+            { closure: { closedPhone: insensitive } },
+            { closure: { closedFirstName: insensitive } },
+            { closure: { closedLastName: insensitive } },
           ],
         },
         take: 8,
@@ -1060,6 +1313,18 @@ export class AdminService {
           email: true,
           sellerTier: true,
           isBanned: true,
+          accountClosedAt: true,
+          // So the result can say WHO this was, rather than showing an admin a
+          // row called closed+cmsq…@accounts.invalid and leaving them to guess.
+          closure: {
+            select: {
+              closedUsername: true,
+              closedEmail: true,
+              closedFirstName: true,
+              closedLastName: true,
+              closedAt: true,
+            },
+          },
         },
       }),
       this.prisma.listing.findMany({
@@ -1202,8 +1467,34 @@ export class AdminService {
       );
     }
 
+    // ⚠️ CLOSED ACCOUNTS ARE SKIPPED SERVER-SIDE, not just greyed out in the
+    // table. The checkbox in bulk-users.tsx disables them, but the ids come
+    // off the wire and the table is one page of a paginated list — a stale tab
+    // or a hand-rolled call would sweep a member who simply left into a bulk
+    // ban and stamp a USER_BAN row on them. Every gate already refuses a
+    // closed account, so the ban buys nothing and the audit row is the only
+    // thing it leaves behind: a later reader reads it as misconduct.
+    // Individually banning a closed account is still allowed — that is a
+    // deliberate act on one person, not a sweep.
+    const closedIds = new Set(
+      (
+        await this.prisma.user.findMany({
+          where: { id: { in: userIds }, accountClosedAt: { not: null } },
+          select: { id: true },
+        })
+      ).map((u) => u.id),
+    );
+
     const results: { userId: string; outcome: 'ok' | 'skipped'; message?: string }[] = [];
     for (const id of userIds) {
+      if (closedIds.has(id)) {
+        results.push({
+          userId: id,
+          outcome: 'skipped',
+          message: 'Account is closed — not banned. Closing is not misconduct.',
+        });
+        continue;
+      }
       try {
         await this.updateUser(id, adminId, {
           isBanned: true,

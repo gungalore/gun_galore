@@ -222,14 +222,32 @@ export default function CartPage() {
 
   // Group lines by seller (Phase 8d — a cart can mix sellers). One payment
   // covers all; each seller ships + is paid independently.
+  //
+  // `sellerId` (the seller's clerkId) is carried on the group because it, not
+  // the handle, is the identity here: a seller can hold no username at all
+  // (see cart-store.ts) and every nameless one is written into the cart under
+  // the same literal, so handles do not tell two sellers apart. `name` is
+  // display text and nothing more.
   const groups = Array.from(
     items
       .reduce((m, i) => {
-        const g = m.get(i.sellerId) ?? { username: i.sellerUsername, items: [] as typeof items };
+        const g = m.get(i.sellerId) ?? {
+          sellerId: i.sellerId,
+          // The wording the rest of the buy flow uses for a missing handle
+          // (listings/[id]/page.tsx:1066, checkout/[listingId]/page.tsx:138),
+          // and no tombstone label inviting a click through to a profile that
+          // 404s. ⚠️ It fires only for a line with no sellerUsername key at
+          // all: both add-to-cart writers coerce a null handle before it gets
+          // here — the PDP to 'Seller', /deals to 'All Outdoor' — so a
+          // nameless seller's block still reads 'Seller'. Aligning that is a
+          // change at the writer; never by rewriting a stored value.
+          name: i.sellerUsername ?? 'Anonymous seller',
+          items: [] as typeof items,
+        };
         g.items.push(i);
         m.set(i.sellerId, g);
         return m;
-      }, new Map<string, { username: string; items: typeof items }>())
+      }, new Map<string, { sellerId: string; name: string; items: typeof items }>())
       .values(),
   );
 
@@ -421,7 +439,7 @@ export default function CartPage() {
       </h1>
       <p className="text-xs mb-5" style={{ color: 'var(--text-tertiary)' }}>
         {groups.length === 1 ? (
-          <>All from <strong>{groups[0].username}</strong>. </>
+          <>All from <strong>{groups[0].name}</strong>. </>
         ) : (
           <>From <strong>{groups.length} sellers</strong> — each ships and is paid
           separately. </>
@@ -444,7 +462,13 @@ export default function CartPage() {
         const shippableInGroup = g.items.filter((i) => !i.isFirearm).length;
         return (
         <div
-          key={g.username}
+          // ⚠️ sellerId, never the handle. This was `key={g.username}`, and a
+          // handle is not unique: a seller can hold none, and the add-to-cart
+          // writer stores the same literal for every one of them, so two such
+          // lines gave two siblings the SAME key. React warns, reconciliation
+          // between them is undefined, and a re-render (a quantity tick) can
+          // drop a block while checkout still charges for every line.
+          key={g.sellerId}
           className="rounded-[8px] mb-4 overflow-hidden"
           style={{ border: '0.5px solid var(--border)' }}
         >
@@ -453,7 +477,7 @@ export default function CartPage() {
               className="px-3 py-2 text-xs"
               style={{ background: 'var(--bg-inset)', color: 'var(--text-tertiary)', fontWeight: 500 }}
             >
-              {g.username}
+              {g.name}
             </div>
           )}
           {g.items.map((i) => {

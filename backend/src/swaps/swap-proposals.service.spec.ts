@@ -119,6 +119,27 @@ const activeSwop = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('SwapProposalsService.propose — guards', () => {
+  it('refuses a closed account, and never with the ban wording', async () => {
+    const { service, prisma } = makeService();
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'P',
+      isBanned: false,
+      accountClosedAt: new Date('2026-08-22'),
+    });
+    await expect(
+      service.propose('clerkP', {
+        listingId: 'X',
+        offeredListingId: 'Y',
+      } as never),
+    ).rejects.toThrow(/has been closed/);
+    await expect(
+      service.propose('clerkP', {
+        listingId: 'X',
+        offeredListingId: 'Y',
+      } as never),
+    ).rejects.not.toThrow(/suspended|banned/i);
+  });
+
   it('rejects swapping a listing for itself', async () => {
     const { service, prisma } = makeService();
     prisma.user.findUnique.mockResolvedValue({ id: 'P', isBanned: false });

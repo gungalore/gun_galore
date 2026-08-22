@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { PRO_NAME } from '../common/brand';
 import { ReferenceNumberService } from '../common/reference-number.service';
+import { assertAccountNotClosed } from '../common/account-standing';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { assertPaymentsLive } from '../payments/transactions.service';
@@ -139,9 +140,20 @@ export class SubscriptionsService {
     }
     const user = await this.prisma.user.findUnique({
       where: { clerkId },
-      select: { id: true, isBanned: true, subscriptionTier: true },
+      select: {
+        id: true,
+        isBanned: true,
+        // ⚠️ Narrowed select — the closed gate below cannot read a column
+        // that was not pulled.
+        accountClosedAt: true,
+        subscriptionTier: true,
+      },
     });
     if (!user) throw new ForbiddenException('User not synced');
+    // ⚠️ Closed is checked BEFORE banned: a member who closed their own
+    // account and came back to a stale tab must not be told they were
+    // suspended. See common/account-standing.ts.
+    assertAccountNotClosed(user);
     if (user.isBanned) throw new ForbiddenException('Account is suspended');
 
     const amountCents = await this.priceFor(tier);

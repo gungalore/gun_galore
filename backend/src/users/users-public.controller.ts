@@ -1,6 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
+import { isReservedUsername } from './username-policy';
 
 // Public endpoints under /api/users that don't require authentication.
 // Used by the sign-up form to check username availability before the user
@@ -49,7 +50,7 @@ export class UsersPublicController {
     if (/^[0-9]+$/.test(u)) {
       return { available: false, reason: 'Needs at least one letter' };
     }
-    if (RESERVED.has(u)) {
+    if (isReservedUsername(u)) {
       return { available: false, reason: 'Reserved — pick another' };
     }
 
@@ -63,37 +64,3 @@ export class UsersPublicController {
     return { available: true };
   }
 }
-
-// Reserved handles we don't want users grabbing — keeps routes clean and
-// blocks impersonation of platform accounts.
-const RESERVED = new Set([
-  'admin',
-  'administrator',
-  'support',
-  'help',
-  'staff',
-  'system',
-  // Old trading name kept reserved so nobody can squat it post-rebrand.
-  'gungalore',
-  'gun_galore',
-  'alloutdoor',
-  'all_outdoor',
-  'official',
-  'moderator',
-  'sales',
-  'billing',
-  'security',
-  'api',
-  'root',
-  'webmaster',
-  'noreply',
-  'mail',
-  'me',
-  'you',
-  'anonymous',
-  'null',
-  'undefined',
-  'competitions',
-  'auctions',
-  'marketplace',
-]);

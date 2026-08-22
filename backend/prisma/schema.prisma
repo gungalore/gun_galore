@@ -401,6 +401,25 @@ model User {
   isBanned   Boolean   @default(false)
   bannedAt   DateTime?
 
+  /// ── THE MEMBER CLOSED THEIR ACCOUNT ────────────────────────────────
+  ///
+  /// Operator, 2026-08-22: "It must delete the profile from the public [side],
+  /// but still keep transaction links etc, reason for that is if a user
+  /// commited a crime or something they cant just vanish by deleting and
+  /// wiping evidence."
+  ///
+  /// ⚠️ THIS IS NOT isBanned, AND THE TWO MUST NEVER BE CONFLATED. isBanned is
+  /// an enforcement flag we set; this is a member exercising a choice.
+  /// Reusing isBanned would mean the admin Unban button silently reopens a
+  /// closed account with one click, and every admin view would read a
+  /// departure as misconduct.
+  ///
+  /// Set-once. Non-null means: public surfaces 404, every write gate refuses,
+  /// the uniqueness claims have been released, and an AccountClosure row
+  /// explains who this was.
+  accountClosedAt DateTime?
+  closure         AccountClosure?
+
   // Seller "Complete profile" gate — set when the seller submits the
   // post-first-publish profile modal (name/surname/username/phone/
   // address/ID/banking). Read on payout to ensure we have everything
@@ -4529,6 +4548,89 @@ model MotivationUpload {
   @@unique([motivationId, sha256])
   @@index([motivationId])
 }
+
+// ────────────────────────────────────────────────────────────────────
+// WHO THIS WAS, AFTER THEY ARE GONE FROM THE PUBLIC SIDE.
+//
+// One row per closure, written once in the closure transaction and never
+// updated except by the re-registration relink.
+//
+// ⚠️ WHY A TABLE AND NOT MORE COLUMNS ON User — three reasons, all load-bearing:
+//
+//  1. AdminAuditEvent CANNOT HOLD THIS. Its adminUserId is a REQUIRED foreign
+//     key to AdminUser, and a member-initiated closure has no admin actor. So
+//     before this table there was no record anywhere that a closure happened.
+//
+//  2. THE IDENTITY HAS TO OUTLIVE THE COLUMNS BEING CLEARED. Keeping the
+//     foreign keys is not the same as being able to say who they point at.
+//     Re-registration demands that username, email and phone go back into the
+//     uniqueness namespaces, so once they do, this is the only place left that
+//     answers "who was this".
+//
+//  3. ENFORCEMENT STATE HAS TO SURVIVE RE-REGISTRATION. Every ban and strike
+//     is a plain defaulted column on User, so a new row is a clean row. The
+//     was* fields below are what the relink carries forward — and they are the
+//     entire answer to closing-and-reopening as a way to launder a ban.
+//
+// ⚠️ NEVER ADD THIS RELATION TO A PUBLIC SELECT. Not PUBLIC_LISTING_SELECT,
+// not the sellers controller. It is admin-only by construction.
+// ────────────────────────────────────────────────────────────────────
+
+model AccountClosure {
+  id     String @id @default(cuid())
+  userId String @unique
+  /// ⚠️ RESTRICT, NOT CASCADE, AND THAT IS THE POINT. The record must outlive
+  /// any attempt to delete the row it explains — otherwise the one thing
+  /// standing between "closed their account" and "vanished without trace"
+  /// disappears with a single DELETE.
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  closedAt        DateTime @default(now())
+  /// 'MEMBER' | 'ADMIN' | 'CLERK_WEBHOOK'
+  closedBy        String   @db.VarChar(16)
+  /// AdminUser.id where closedBy = 'ADMIN'. Null for a self-service close.
+  closedByAdminId String?
+  /// From a ticklist. Free text is deliberately not accepted.
+  reason          String
+
+  /// ── the identity snapshot ─────────────────────────────────────────
+  /// ⚠️ IN THE CLEAR, DELIBERATELY. A law-enforcement or dispute request
+  /// arrives as a name or a phone number, never as a cuid, and adminSearch
+  /// keys on exactly these fields. They sit in the clear on User today, so
+  /// moving them to an admin-only table is a net improvement rather than a new
+  /// exposure. The protection is access control, not encryption.
+  closedUsername  String?
+  closedEmail     String
+  closedPhone     String?
+  closedFirstName String?
+  closedLastName  String?
+  /// A NON-UNIQUE copy of User.kycIdHash. The live hash stays on the User row
+  /// and moves onto the new account at re-registration; this copy is what
+  /// keeps "this identity has been here before" true afterwards.
+  kycIdHashArchived String?
+
+  /// ── enforcement carried forward ───────────────────────────────────
+  wasBanned              Boolean   @default(false)
+  wasBannedAt            DateTime?
+  wasSellingBannedAt     DateTime?
+  wasSellerRejectStrikes Int       @default(0)
+  wasAuctionStrikes      Int       @default(0)
+  wasDispatchStrikes     Int       @default(0)
+  wasTrustScore          Int       @default(0)
+
+  /// Stamped by the relink when the same SA ID verifies on a new account.
+  reRegisteredAsUserId String?
+  reRegisteredAt       DateTime?
+
+  /// So a failed re-index can be retried without re-deriving the ids from a
+  /// row whose seller is now anonymous.
+  cancelledListingIds String[] @default([])
+
+  @@index([closedAt])
+  @@index([kycIdHashArchived])
+  @@index([closedUsername])
+}
+
 
 // ────────────────────────────────────────────────────────────────────
 // THE LICENCE & COMPETENCY CENTRE.

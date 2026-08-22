@@ -209,7 +209,16 @@ export class RatingsService {
   }
 
   async findForSeller(sellerClerkId: string, clerkId?: string) {
-    const user = await this.prisma.user.findUnique({ where: { clerkId: sellerClerkId } });
+    const user = await this.prisma.user.findUnique({
+      // Closed accounts have no public review page. GET /ratings/seller/:clerkId
+      // is a public route in its own right, so it is NOT covered by the seller
+      // profile 404 (sellers-public.controller.ts) — /sellers/[clerkId] calls
+      // both and notFound()s on either, but anyone holding the old link can
+      // still hit this one directly. Each row here carries the reviewer's
+      // handle and the LISTING TITLE, so serving it after closure republishes
+      // exactly what the closure was meant to take down.
+      where: { clerkId: sellerClerkId, accountClosedAt: null },
+    });
     if (!user) throw new NotFoundException('User not found');
 
     return this.prisma.rating.findMany({

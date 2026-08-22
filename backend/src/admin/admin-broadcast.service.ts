@@ -164,14 +164,28 @@ export class AdminBroadcastService {
   ): Promise<{ email: string; phone: string | null; id: string }[]> {
     // We always exclude banned users — sending to them is wasteful +
     // gives a banned account a comms surface they shouldn't have.
-    const baseWhere = { isBanned: false };
+    //
+    // ⚠️ AND CLOSED ONES, FOR A DIFFERENT REASON. Their email has been
+    // rewritten to closed+<id>@accounts.invalid, which is unroutable by
+    // design (RFC 6761), and their phone has been released. Every message to
+    // one is a hard bounce against our sending reputation, in exchange for
+    // reaching nobody.
+    const baseWhere = { isBanned: false, accountClosedAt: null };
 
     if (audience.kind === 'individual') {
       const u = await this.prisma.user.findUnique({
         where: { id: audience.userId },
-        select: { id: true, email: true, phone: true, isBanned: true },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          isBanned: true,
+          accountClosedAt: true,
+        },
       });
-      if (!u || u.isBanned) return [];
+      // The individual path does not use baseWhere, so it needs the same two
+      // checks by hand.
+      if (!u || u.isBanned || u.accountClosedAt) return [];
       return [{ id: u.id, email: u.email, phone: u.phone }];
     }
 

@@ -38,6 +38,12 @@ describe('UsersService — campaign attribution (first-touch)', () => {
       // are encrypted files on disk, and a Prisma cascade cannot reach the
       // filesystem.
       { purgeKycFiles: jest.fn(async () => ({ removed: 0, failed: 0 })) } as never,
+      // Closing an account without erasing the evidence.
+      {
+        close: jest.fn(async () => ({ clerkId: 'c', cancelledListingIds: [] })),
+        canClose: jest.fn(async () => ({ canClose: true, restricted: false, blockers: [] })),
+        assertReason: jest.fn((r: string) => r),
+      } as never,
     );
     return { service, prisma };
   }

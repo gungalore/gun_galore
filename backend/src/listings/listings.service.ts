@@ -22,6 +22,7 @@ import {
 import { PreviewListingDto } from './dto/preview-listing.dto';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
+import { assertAccountNotClosed } from '../common/account-standing';
 import { FirearmLicenceService } from './firearm-licence.service';
 import { inventoryEligible } from '../payments/inventory';
 import { CategoriesService } from '../categories/categories.service';
@@ -810,6 +811,10 @@ export class ListingsService {
   ): Promise<{ serialPhotoUrl: string; licencePhotoUrl: string }> {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced — try again in a moment');
+    // ⚠️ Closed is checked BEFORE banned: a member who closed their own
+    // account and came back to a stale tab must not be told they were
+    // suspended. See common/account-standing.ts.
+    assertAccountNotClosed(user);
     if (user.isBanned) throw new ForbiddenException('Account is suspended');
     if (!serial || !licence) {
       throw new BadRequestException(
@@ -835,6 +840,7 @@ export class ListingsService {
   ): Promise<{ insuranceUrl: string; registrationDocUrl: string }> {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced — try again in a moment');
+    assertAccountNotClosed(user);
     if (user.isBanned) throw new ForbiddenException('Account is suspended');
     if (!insurance || !registration) {
       throw new BadRequestException(
@@ -912,6 +918,7 @@ export class ListingsService {
   async previewDraft(clerkId: string, dto: PreviewListingDto): Promise<PreviewResult> {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced — try again in a moment');
+    assertAccountNotClosed(user);
     if (user.isBanned) throw new ForbiddenException('Account is suspended');
 
     const category = await this.prisma.category.findUnique({
@@ -1171,6 +1178,7 @@ export class ListingsService {
   async create(clerkId: string, dto: CreateListingDto): Promise<Listing> {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced — try again in a moment');
+    assertAccountNotClosed(user);
     if (user.isBanned) throw new ForbiddenException('Account is suspended');
     // Firm seller-standing policy: 3 reject strikes = banned from LISTING
     // (buying is unaffected). Lifted only by admin clear-reject-strikes.

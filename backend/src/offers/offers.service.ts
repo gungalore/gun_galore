@@ -16,6 +16,7 @@ import {
   consequencesForOfferReject,
   applySellerRejectPenalty,
 } from '../common/seller-reject-policy';
+import { assertAccountNotClosed } from '../common/account-standing';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { CreateOfferDto } from './dto/create-offer.dto';
 import { CounterOfferDto } from './dto/counter-offer.dto';
@@ -60,6 +61,10 @@ export class OffersService {
   async submit(buyerClerkId: string, dto: CreateOfferDto) {
     const buyer = await this.prisma.user.findUnique({ where: { clerkId: buyerClerkId } });
     if (!buyer) throw new ForbiddenException('User not found');
+    // ⚠️ Closed is checked BEFORE banned: a member who closed their own
+    // account and came back to a stale tab must not be told they were
+    // suspended. See common/account-standing.ts.
+    assertAccountNotClosed(buyer);
     if (buyer.isBanned) throw new ForbiddenException('Account is suspended');
     // An accepted offer is a commitment to pay — the same 3-strike
     // non-payment gate the auction engine enforces applies here.

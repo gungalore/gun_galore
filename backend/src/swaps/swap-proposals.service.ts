@@ -15,6 +15,7 @@ import {
 } from '@prisma/client';
 import { randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertAccountNotClosed } from '../common/account-standing';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
@@ -123,6 +124,10 @@ export class SwapProposalsService {
       where: { clerkId: proposerClerkId },
     });
     if (!proposer) throw new ForbiddenException('User not found');
+    // ⚠️ Closed is checked BEFORE banned: a member who closed their own
+    // account and came back to a stale tab must not be told they were
+    // suspended. See common/account-standing.ts.
+    assertAccountNotClosed(proposer);
     if (proposer.isBanned) throw new ForbiddenException('Account is suspended');
     // Agreeing a swap is a commitment to prove, address, fund and ship —
     // the same 3-strike non-payment gate the auction + offer engines use.

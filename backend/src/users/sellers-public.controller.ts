@@ -18,6 +18,10 @@ import { PrismaService } from '../prisma/prisma.service';
  * firstName / lastName / email / phone / address / bank fields are
  * deliberately NOT selected — All Outdoor platform policy forbids
  * leaking real names on public surfaces.
+ *
+ * ⚠️ NEVER select the `closure` relation (AccountClosure) here. It holds
+ * the released email / phone / real name of a departed member in the clear
+ * for admin and law-enforcement use only.
  */
 @Controller('sellers')
 export class SellersPublicController {
@@ -34,7 +38,26 @@ export class SellersPublicController {
   @Get(':clerkId')
   async getSellerProfile(@Param('clerkId') clerkId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { clerkId },
+      where: {
+        clerkId,
+        // A closed account has no public profile. This is belt-and-braces on
+        // top of the `clerkId` tombstone the closure writes (closed_<userId>),
+        // and it is the half that holds when the tombstone has not landed:
+        // the Clerk delete and its webhook are steps 3 and 4 of the closure,
+        // both outside the DB transaction, so between the member clicking
+        // Close and the webhook arriving the row still carries its real
+        // clerkId. Without this line every /sellers/<clerkId> link the member
+        // ever shared keeps serving their storefront header — sellerTier,
+        // totalSales, averageRating and the idVerified tick — through that
+        // window, and forever if the webhook is lost.
+        //
+        // The profile 404 is also what retires the verification badge: every
+        // KYC column survives closure by design (SAP 534 Section C is
+        // assembled live off this row), so `idVerified` below would otherwise
+        // keep asserting a checked identity for an account that no longer
+        // exists.
+        accountClosedAt: null,
+      },
       select: {
         id: true,
         clerkId: true,

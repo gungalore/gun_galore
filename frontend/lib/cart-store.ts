@@ -18,7 +18,31 @@ export interface CartItem {
   price: number; // ZAR cents (unit price snapshot)
   imageUrl?: string;
   sellerId: string; // clerkId of the seller — the single-seller key
-  sellerUsername: string;
+  // Display text only — NOTHING may key off it, and it can be absent.
+  //
+  // ⚠️ A HANDLE IS NOT AN IDENTITY, AND THIS BREAKS TODAY — no closure
+  // needed. A live seller can hold no username at all: they can clear it
+  // themselves from /profile/edit (backend updateProfile turns '' into null),
+  // and resolveUsernameConflict provisions a member WITHOUT one when a stale
+  // row is squatting the handle Clerk re-issued. The add-to-cart writer
+  // coerces that null to the literal 'Seller' (app/listings/[id]/page.tsx),
+  // so every nameless seller wrote the SAME value — and /cart grouped its
+  // seller blocks with `key={g.username}`. Two siblings, one key: React
+  // warns, reconciliation between them is undefined, and a re-render (a
+  // quantity tick) can drop a block while checkout still charges for every
+  // line. The group key is sellerId, which is a clerkId and always present.
+  // A legacy row written before this field existed lands here as undefined
+  // for the same reason — read() casts localStorage to CartItem[] unvalidated.
+  //
+  // ⚠️ CLOSURE DOES NOT REACH AN EXISTING CART, so do not read the null here
+  // as "the seller closed". This is a localStorage SNAPSHOT taken while the
+  // seller was live, sitting on somebody else's device; a line added before a
+  // closure keeps the real handle until the buyer removes it, and nothing we
+  // run rewrites it. What stops the sale is the backend rejecting the
+  // CANCELLED listing at checkout — /cart cannot flag it first, because its
+  // stock probe is unauthenticated and a 404 there already means
+  // "members-only" far more often than "gone".
+  sellerUsername: string | null;
   // Firearm lines branch to dealer/in-person routing in the cart instead of
   // courier. Defaults false for legacy cart rows written before this field.
   isFirearm: boolean;

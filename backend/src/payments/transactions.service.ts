@@ -53,6 +53,7 @@ import {
 import { PAYMENT_MODE, PAYMENTS_LIVE, assertPaymentsLive } from './payment-mode';
 import { REFUND_TERMS_VERSION } from './refund-terms-version';
 import { vicinityLabel } from '../common/province-labels';
+import { assertAccountNotClosed } from '../common/account-standing';
 import {
   applySellerRejectPenalty,
   consequencesForSaleReject,
@@ -157,6 +158,10 @@ export class TransactionsService {
   ) {
     const buyer = await this.prisma.user.findUnique({ where: { clerkId: buyerClerkId } });
     if (!buyer) throw new NotFoundException('Buyer not found');
+    // ⚠️ Closed is checked BEFORE banned: a member who closed their own
+    // account and came back to a stale tab must not be told they were
+    // suspended. See common/account-standing.ts.
+    assertAccountNotClosed(buyer);
     if (buyer.isBanned) throw new ForbiddenException('Account is banned');
 
     const listing = await this.prisma.listing.findUnique({

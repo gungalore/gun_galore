@@ -27,6 +27,7 @@ export default function UserActions({
   lastName,
   phone,
   isBanned,
+  accountClosedAt = null,
   sellerTier,
   kycStatus,
   subscriptionTier,
@@ -39,6 +40,10 @@ export default function UserActions({
   lastName: string | null;
   phone: string | null;
   isBanned: boolean;
+  // ⚠️ NOT a ban. Non-null = the account is closed: off the public side, handle
+  // released, every record still attached. Ban and Close are separate actions
+  // with separate meanings and this component must never blur them.
+  accountClosedAt?: string | null;
   sellerTier: string;
   kycStatus: string;
   subscriptionTier: string;
@@ -58,6 +63,7 @@ export default function UserActions({
     | { kind: 'kyc'; value: string }
     | { kind: 'subscription'; value: string }
     | { kind: 'clearStrikes' }
+    | { kind: 'closeAccount' }
   >(null);
 
   function askConfirm(c: NonNullable<typeof confirm>) {
@@ -183,6 +189,33 @@ export default function UserActions({
               Clear reject strikes ({sellerRejectStrikes})
               {sellingBanned ? ' + lift selling ban' : ''}
             </button>
+          )}
+          {/* ⚠️ SEPARATE FROM BAN, AND BELOW IT ON PURPOSE. Ban is enforcement
+              and leaves the profile, the listings and the handle in place.
+              Close takes the member off the public side and releases the
+              handle, and it is the only route by which a BANNED member's
+              account can be closed — the self-service button refuses a
+              restricted account so that closing can never launder a ban.
+              Hidden once closed: closure is set-once. */}
+          {!accountClosedAt && (
+            <button
+              onClick={() => askConfirm({ kind: 'closeAccount' })}
+              className="w-full px-2 py-1.5 rounded text-xs text-left"
+              style={{
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+              }}
+            >
+              Close account…
+            </button>
+          )}
+          {accountClosedAt && (
+            <p className="text-xs m-0" style={{ color: 'var(--text-tertiary)' }}>
+              Account closed{' '}
+              {new Date(accountClosedAt).toLocaleDateString('en-ZA')}
+            </p>
           )}
           <div className="flex gap-1">
             <button
@@ -395,7 +428,8 @@ function ConfirmModal({
     | { kind: 'tier'; value: string }
     | { kind: 'kyc'; value: string }
     | { kind: 'subscription'; value: string }
-    | { kind: 'clearStrikes' };
+    | { kind: 'clearStrikes' }
+    | { kind: 'closeAccount' };
   userId: string;
   username: string | null;
   onClose: () => void;
@@ -410,11 +444,27 @@ function ConfirmModal({
   // actions (KYC / tier change) don't require typed-confirm — the
   // reason field alone is enough friction.
   const isBan = confirm.kind === 'ban';
-  const typedOk = !isBan || typedUsername.trim() === (username ?? '');
+  // Closing is not reversible from any admin screen, and the handle it
+  // releases can be taken by someone else within the minute — so it gets the
+  // same typed-username gate as a ban, even though it is not enforcement.
+  const isClose = confirm.kind === 'closeAccount';
+  // ⚠️ A MEMBER MAY HAVE NO HANDLE. username is nullable — a row lazily
+  // provisioned from Clerk before the profile was finished has none — and
+  // comparing against '' then means an empty box satisfies the gate and the
+  // label names nothing to type. On a set-once, irreversible action that is
+  // no gate at all, so fall back to the literal the member's own confirmation
+  // screen uses.
+  const closeTarget = username ?? 'CLOSE';
+  const typedOk = isClose
+    ? typedUsername.trim() === closeTarget
+    : !isBan || typedUsername.trim() === (username ?? '');
   // clearStrikes posts to a dedicated endpoint that writes its own audited
   // reason — no typed reason needed (the confirm itself is the friction).
+  // Closing needs ≥5: the reason is written onto the AccountClosure record
+  // itself, not just the audit log (backend enforces the same floor).
   const reasonOk =
-    confirm.kind === 'clearStrikes' || reason.trim().length >= 3;
+    confirm.kind === 'clearStrikes' ||
+    (isClose ? reason.trim().length >= 5 : reason.trim().length >= 3);
   const canSubmit = typedOk && reasonOk && !busy;
 
   const title = (() => {
@@ -431,6 +481,8 @@ function ConfirmModal({
         return `Set ${PRO_NAME} subscription to ${confirm.value}?`;
       case 'clearStrikes':
         return `Clear reject strikes for @${username ?? 'this user'}?`;
+      case 'closeAccount':
+        return `Close @${username ?? 'this user'}'s account?`;
     }
   })();
 
@@ -448,6 +500,8 @@ function ConfirmModal({
         return `Manually sets the ${PRO_NAME} subscription tier without going through paid checkout — a comp / support grant. PRO unlocks Ask Boet Pro features, Load Lab, and the ballistics calculator. Reversible; recorded in the audit log.`;
       case 'clearStrikes':
         return 'Resets seller reject-strikes to 0, lifts the selling ban if one is in force, and resolves the open strike alerts. Use after reviewing the SELLER_REJECT_STRIKE alerts. Audited.';
+      case 'closeAccount':
+        return 'This is not a ban and not a delete. Their profile comes off the public side, their open listings are cancelled, and their username, email address and phone number are released so they can register again. Every transaction, offer, bid, rating and complaint stays attached to the same record, and the identity is snapshotted onto a closure record only staff can read. Set-once — there is no reopen. Closing is always refused while money is held or a payout is owed. Undelivered goods, an unfinished firearm transfer and an open complaint also refuse it — but not on an account that is banned or selling-banned, which is the case this action exists for, so check those yourself before you close one.';
     }
   })();
 
@@ -462,6 +516,15 @@ function ConfirmModal({
         confirm.kind === 'clearStrikes'
           ? await adminFetch(`/admin/users/${userId}/clear-reject-strikes`, {
               method: 'POST',
+            })
+          : confirm.kind === 'closeAccount'
+          ? // Its own endpoint, NOT a PATCH with a flag. Closure is a
+            // transaction (snapshot, scrub, cancel listings, revoke SMS
+            // tokens, delete the Clerk user) — not a column an admin sets.
+            await adminFetch(`/admin/users/${userId}/close-account`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reason: reason.trim() }),
             })
           : await (async () => {
               const body: Record<string, unknown> = { reason: reason.trim() };
@@ -512,6 +575,8 @@ function ConfirmModal({
           borderRadius: 10,
           background: 'var(--bg-card)',
           border: `0.5px solid ${isBan ? 'var(--red)' : 'var(--border)'}`,
+          // Closing gets the neutral border on purpose — it is irreversible,
+          // but it is not an accusation.
         }}
       >
         <p
@@ -527,13 +592,14 @@ function ConfirmModal({
           {subtitle}
         </p>
 
-        {isBan && (
+        {(isBan || isClose) && (
           <div className="mb-3">
             <label
               className="text-xs mb-1 block"
               style={{ color: 'var(--text-tertiary)' }}
             >
-              Type the username to confirm: <strong>{username}</strong>
+              Type {isClose && !username ? 'the word' : 'the username'} to
+              confirm: <strong>{isClose ? closeTarget : username}</strong>
             </label>
             <input
               type="text"
@@ -559,13 +625,19 @@ function ConfirmModal({
               className="text-xs mb-1 block"
               style={{ color: 'var(--text-tertiary)' }}
             >
-              Reason (recorded in audit log)
+              {isClose
+                ? 'Reason (written onto the closure record, not just the audit log)'
+                : 'Reason (recorded in audit log)'}
             </label>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
-              placeholder="Briefly explain why — what triggered this action?"
+              placeholder={
+                isClose
+                  ? 'e.g. member asked support to close — restricted account, cannot use the self-service button'
+                  : 'Briefly explain why — what triggered this action?'
+              }
               className="w-full px-3 py-2 rounded text-sm outline-none"
               style={{
                 background: 'var(--bg-inset)',
@@ -573,7 +645,7 @@ function ConfirmModal({
                 color: 'var(--text-primary)',
                 resize: 'vertical',
               }}
-              autoFocus={!isBan}
+              autoFocus={!isBan && !isClose}
             />
           </div>
         )}

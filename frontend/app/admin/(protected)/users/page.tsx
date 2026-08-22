@@ -17,6 +17,11 @@ interface User {
   kycStatus: string;
   subscriptionTier: string;
   isBanned: boolean;
+  // ⚠️ NOT a ban. Non-null means the member (or an admin on their behalf)
+  // closed the account: the profile is off the public side and the handle has
+  // been released, but every transaction, rating and complaint is still
+  // attached. Never render it in the red BANNED treatment.
+  accountClosedAt: string | null;
   totalSales: number;
   trustScore: number;
   averageRating: number | null;
@@ -66,9 +71,11 @@ export default function AdminUsersPage() {
       ? { key: 'kyc-stalled', label: 'KYC stalled (>24h)' }
       : filter === 'banned'
         ? { key: 'banned', label: 'Banned users' }
-        : filter === 'dealers'
-          ? { key: 'dealers', label: 'Dealers' }
-          : null;
+        : filter === 'closed'
+          ? { key: 'closed', label: 'Closed accounts' }
+          : filter === 'dealers'
+            ? { key: 'dealers', label: 'Dealers' }
+            : null;
 
   return (
     <div>
@@ -83,8 +90,18 @@ export default function AdminUsersPage() {
             className="text-xs px-2 py-1 rounded-full"
             style={{
               background: 'var(--bg-card)',
-              border: '0.5px solid var(--red)',
-              color: 'var(--red)',
+              // 'closed' is neutral on purpose. Everything else this strip
+              // shows is an attention state; a closed account is a member who
+              // left, and painting it red reads as an accusation.
+              border: `0.5px solid ${
+                activeFilter.key === 'closed'
+                  ? 'var(--border)'
+                  : 'var(--red)'
+              }`,
+              color:
+                activeFilter.key === 'closed'
+                  ? 'var(--text-secondary)'
+                  : 'var(--red)',
               fontWeight: 500,
             }}
           >
@@ -126,6 +143,37 @@ export default function AdminUsersPage() {
           </a>
         )}
       </form>
+
+      {/* Quick filters. These already existed as ?filter= deep-links from the
+          command centre but had no way in from the page itself, so 'closed'
+          would have been reachable only by typing a URL. */}
+      <div className="mb-5 flex gap-3 text-xs">
+        {[
+          { key: undefined, label: 'All' },
+          { key: 'banned', label: 'Banned' },
+          { key: 'closed', label: 'Closed' },
+          { key: 'dealers', label: 'Dealers' },
+        ].map((f) => {
+          const params = new URLSearchParams();
+          if (search) params.set('search', search);
+          if (f.key) params.set('filter', f.key);
+          const qs = params.toString();
+          const current = (filter ?? (kyc ? 'kyc-stalled' : undefined)) === f.key;
+          return (
+            <a
+              key={f.label}
+              href={qs ? `/admin/users?${qs}` : '/admin/users'}
+              style={{
+                color: current ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                textDecoration: 'none',
+                fontWeight: current ? 500 : 400,
+              }}
+            >
+              {f.label}
+            </a>
+          );
+        })}
+      </div>
 
       {!loaded ? (
         <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Loading...</p>

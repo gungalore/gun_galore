@@ -58,6 +58,10 @@ interface Dossier {
     totalSales: number;
     isBanned: boolean;
     bannedAt: string | null;
+    // ⚠️ NOT a ban. Non-null = the account is closed — off the public side,
+    // handle/email/phone released, every record still attached. The detail
+    // ("who was this") is on `closure` below.
+    accountClosedAt: string | null;
     // Reject-strike policy (offers/sales declined): 3 strikes = selling ban.
     sellerRejectStrikes: number;
     sellingBannedAt: string | null;
@@ -154,6 +158,36 @@ interface Dossier {
   // complaints against their sales — and it required a manual cross-reference.
   complaintsLodged: ComplaintRow[];
   complaintsAgainst: (ComplaintRow & { user?: { username: string | null } })[];
+  // ⚠️ THE ONLY PLACE THE IDENTITY STILL LIVES. Closure releases username,
+  // email and phone off the User row so the same person can register again,
+  // so after it lands this record is the whole answer to "who was this" —
+  // which is exactly what an admin fielding a police request or a dispute
+  // about an old sale needs. Null for every account that is still open.
+  closure: AccountClosureRecord | null;
+}
+
+interface AccountClosureRecord {
+  id: string;
+  closedAt: string;
+  closedBy: string;
+  closedByAdminId: string | null;
+  reason: string;
+  closedUsername: string | null;
+  closedEmail: string;
+  closedPhone: string | null;
+  closedFirstName: string | null;
+  closedLastName: string | null;
+  kycIdHashArchived: string | null;
+  wasBanned: boolean;
+  wasBannedAt: string | null;
+  wasSellingBannedAt: string | null;
+  wasSellerRejectStrikes: number;
+  wasAuctionStrikes: number;
+  wasDispatchStrikes: number;
+  wasTrustScore: number;
+  reRegisteredAsUserId: string | null;
+  reRegisteredAt: string | null;
+  cancelledListingIds: string[];
 }
 
 interface ComplaintRow {
@@ -337,6 +371,24 @@ export default function UserDossierPage() {
                 BANNED · {formatDate(u.bannedAt)}
               </span>
             )}
+            {/* ⚠️ Deliberately NOT the red BANNED treatment above. A closure
+                is a member leaving — an admin scanning this header has to be
+                able to tell "closed their account" from "we banned them" in
+                one glance, because the two carry opposite implications for
+                everything else on this page. */}
+            {u.accountClosedAt && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full"
+                style={{
+                  background: 'var(--bg-inset)',
+                  color: 'var(--text-secondary)',
+                  border: '0.5px solid var(--border)',
+                  fontWeight: 500,
+                }}
+              >
+                CLOSED · {formatDate(u.accountClosedAt)}
+              </span>
+            )}
             {/* Selling ban (3 reject-strikes) — distinct from the full ban:
                 buying still works, listing/offers are blocked. Cleared via
                 the Clear-reject-strikes action. */}
@@ -379,6 +431,7 @@ export default function UserDossierPage() {
             lastName={u.lastName ?? null}
             phone={u.phone ?? null}
             isBanned={u.isBanned}
+            accountClosedAt={u.accountClosedAt}
             sellerTier={u.sellerTier}
             kycStatus={u.kycStatus}
             subscriptionTier={u.subscriptionTier}
@@ -408,6 +461,11 @@ export default function UserDossierPage() {
           sub={`${u._count.offersPlaced.toLocaleString('en-ZA')} offers made`}
         />
       </div>
+
+      {/* ─── Account closure record ─────────────────────────────
+          Above the alerts and the complaints on purpose: on a closed account
+          this is the frame everything else on the page has to be read in. */}
+      {d.closure && <ClosureSection c={d.closure} />}
 
       {/* ─── System alerts (red surface for this specific user) ─── */}
       {d.systemAlerts.length > 0 && (
@@ -827,6 +885,101 @@ function Section({
       </div>
       {children}
     </div>
+  );
+}
+
+// The accountability record, rendered.
+//
+// ⚠️ THIS IS WHY THE TABLE EXISTS. After closure the User row has no username,
+// no email and no phone — they were released so the same person can register
+// again — so everything a police request or a dispute about an old sale needs
+// is here and nowhere else. An admin who cannot see it cannot answer.
+//
+// Sober on purpose: no red, no alarm styling. Closing an account is a member
+// exercising a choice, and this panel is a record, not a flag.
+function ClosureSection({ c }: { c: AccountClosureRecord }) {
+  const closedByLabel =
+    c.closedBy === 'MEMBER'
+      ? 'The member, from Settings'
+      : c.closedBy === 'ADMIN'
+        ? `An admin${c.closedByAdminId ? ` (${c.closedByAdminId})` : ''}`
+        : c.closedBy === 'CLERK_WEBHOOK'
+          ? 'Clerk — the login was deleted, and we closed rather than deleted'
+          : c.closedBy;
+
+  const enforcement = [
+    c.wasBanned
+      ? `banned${c.wasBannedAt ? ` on ${formatDate(c.wasBannedAt)}` : ''}`
+      : null,
+    c.wasSellingBannedAt
+      ? `selling banned on ${formatDate(c.wasSellingBannedAt)}`
+      : null,
+    c.wasSellerRejectStrikes
+      ? `${c.wasSellerRejectStrikes} reject strike${c.wasSellerRejectStrikes === 1 ? '' : 's'}`
+      : null,
+    c.wasAuctionStrikes
+      ? `${c.wasAuctionStrikes} auction strike${c.wasAuctionStrikes === 1 ? '' : 's'}`
+      : null,
+    c.wasDispatchStrikes
+      ? `${c.wasDispatchStrikes} dispatch strike${c.wasDispatchStrikes === 1 ? '' : 's'}`
+      : null,
+  ].filter(Boolean) as string[];
+
+  const name =
+    [c.closedFirstName, c.closedLastName].filter(Boolean).join(' ') || '—';
+
+  return (
+    <Section
+      title="Account closure"
+      subtitle="Who this was, when they closed, and what was outstanding — the record the released username, email and phone were snapshotted into"
+    >
+      <DataList
+        rows={[
+          ['Closed', formatDateTime(c.closedAt)],
+          ['Closed by', closedByLabel],
+          ['Reason given', c.reason || '—'],
+          ['Username then', c.closedUsername ? `@${c.closedUsername}` : '—'],
+          ['Email then', c.closedEmail],
+          ['Phone then', c.closedPhone ?? '—'],
+          ['Name then', name],
+          [
+            'ID hash held',
+            c.kycIdHashArchived
+              ? 'Yes — salted SHA-256, the key that reattaches this record if they verify again'
+              : 'No — they never completed identity verification',
+          ],
+          [
+            'Standing at closure',
+            // ⚠️ Enforcement only. "Nothing outstanding" would read as "owes
+            // nothing", which this row does not know and an admin closing a
+            // restricted account can override.
+            enforcement.length
+              ? enforcement.join(', ')
+              : 'No bans or strikes recorded',
+          ],
+          ['Trust score then', String(c.wasTrustScore)],
+          [
+            'Listings cancelled',
+            c.cancelledListingIds.length
+              ? String(c.cancelledListingIds.length)
+              : 'None',
+          ],
+        ]}
+      />
+      {c.reRegisteredAsUserId && (
+        <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
+          Registered again{' '}
+          {c.reRegisteredAt ? `on ${formatDate(c.reRegisteredAt)}` : ''} as{' '}
+          <Link
+            href={`/admin/users/${c.reRegisteredAsUserId}`}
+            style={{ color: 'var(--text-primary)' }}
+          >
+            {c.reRegisteredAsUserId}
+          </Link>
+          . Anything outstanding above was carried onto that account.
+        </p>
+      )}
+    </Section>
   );
 }
 

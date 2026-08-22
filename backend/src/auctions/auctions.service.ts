@@ -11,6 +11,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { ActivityService } from '../activity/activity.service';
 import { PlaceBidDto } from './dto/place-bid.dto';
+import {
+  assertAccountNotClosed,
+  isAccountClosed,
+} from '../common/account-standing';
 import { Prisma } from '@prisma/client';
 
 // Lazy getter — must NOT be a module-level constant. ES module imports
@@ -300,6 +304,10 @@ export class AuctionsService {
   async placeBid(clerkId: string, listingId: string, dto: PlaceBidDto) {
     const buyer = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!buyer) throw new ForbiddenException('User not synced');
+    // ⚠️ Closed is checked BEFORE banned: a member who closed their own
+    // account and came back to a stale tab must not be told they were
+    // suspended. See common/account-standing.ts.
+    assertAccountNotClosed(buyer);
     if (buyer.isBanned) throw new ForbiddenException('Account suspended');
     if (buyer.auctionStrikes >= 3) {
       throw new ForbiddenException('Bidding suspended — three strikes for non-payment');
@@ -1057,7 +1065,14 @@ export class AuctionsService {
       select: {
         bidderId: true,
         amount: true,
-        bidder: { select: { username: true, isBanned: true, auctionStrikes: true } },
+        bidder: {
+          select: {
+            username: true,
+            isBanned: true,
+            accountClosedAt: true,
+            auctionStrikes: true,
+          },
+        },
       },
       take: 25,
     });
@@ -1065,7 +1080,12 @@ export class AuctionsService {
       // Never hand a second chance to a banned account, or to a bidder the
       // strike system has already suspended — the place-bid gate refuses them
       // at 3 strikes, so promoting them would create an unpayable sale.
-      if (b.bidder?.isBanned) continue;
+      // ⚠️ A CLOSED account is skipped for a different reason: closure
+      // releases their phone and email back into the namespace and deletes
+      // their ActionTokens, so the win SMS has nowhere to go and the checkout
+      // link cannot be opened. Promoting one strands the seller's auction in
+      // PAYMENT_PENDING for 24h waiting on someone who no longer exists.
+      if (b.bidder?.isBanned || isAccountClosed(b.bidder)) continue;
       if ((b.bidder?.auctionStrikes ?? 0) >= 3) continue;
       return {
         bidderId: b.bidderId,
@@ -1106,12 +1126,23 @@ export class AuctionsService {
       };
     }
     // Re-check the bidder is still eligible at accept time, not just when the
-    // SMS was sent (they could have been banned or struck out since).
+    // SMS was sent (they could have been banned, closed their account, or
+    // struck out since).
     const bidder = await this.prisma.user.findUnique({
       where: { id: runnerUpBidderId },
-      select: { id: true, isBanned: true, auctionStrikes: true },
+      select: {
+        id: true,
+        isBanned: true,
+        accountClosedAt: true,
+        auctionStrikes: true,
+      },
     });
-    if (!bidder || bidder.isBanned || bidder.auctionStrikes >= 3) {
+    if (
+      !bidder ||
+      bidder.isBanned ||
+      isAccountClosed(bidder) ||
+      bidder.auctionStrikes >= 3
+    ) {
       return {
         offered: false,
         reason: 'That bidder can no longer be offered the item',

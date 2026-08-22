@@ -21,6 +21,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { MotivationRetentionService } from '../motivations/motivation-retention.service';
 import { LicenceCentreRetentionService } from '../licence-centre/licence-centre-retention.service';
 import { KycService } from '../kyc/kyc.service';
+import { AccountClosureService } from './account-closure.service';
 
 // Address-book create/update payload (Phase 2).
 export interface AddressInput {
@@ -154,6 +155,10 @@ export class UsersService {
     // happened, so an erasure nulled our record of them and left the files
     // themselves readable to anybody with the link.
     private readonly kyc: KycService,
+    // Closing an account without erasing the evidence. Same module, so no
+    // new edge; kept out of this file because the predicate set that
+    // decides whether a closure may go ahead is a page on its own.
+    private readonly closure: AccountClosureService,
   ) {}
 
   // ── Peach bank-account verification (AVS) ─────────────────────────
@@ -438,6 +443,27 @@ export class UsersService {
 
     const campaignKey = data.campaignKey?.trim().slice(0, 40) || undefined;
 
+    // ⚠️ NEVER WRITE OVER A CLOSED ACCOUNT.
+    //
+    // The closure releases the username, rewrites the email to an unroutable
+    // sentinel and clears the avatar — and this upsert writes all three
+    // unconditionally on the update branch. One late or reordered
+    // `user.updated` from Clerk, arriving after the close, would put the real
+    // handle and the real address straight back onto a row that is supposed to
+    // be gone from the public side. The clerkId is tombstoned by the webhook
+    // for the same reason, but the events can race, so this is checked here
+    // too rather than relied on.
+    const closed = await this.prisma.user.findFirst({
+      where: { clerkId: data.clerkId, accountClosedAt: { not: null } },
+      select: { id: true },
+    });
+    if (closed) {
+      this.logger.warn(
+        `Ignoring Clerk upsert for ${data.clerkId} — that account is closed`,
+      );
+      return this.prisma.user.findUniqueOrThrow({ where: { id: closed.id } });
+    }
+
     const user = await this.prisma.user.upsert({
       where: { clerkId: data.clerkId },
       create: {
@@ -618,6 +644,66 @@ export class UsersService {
     return true;
   }
 
+  /**
+   * Close the signed-in member's own account.
+   *
+   * ⚠️ THE ORDER IS THE WHOLE SAFETY ARGUMENT, and it is the opposite of the
+   * obvious guess.
+   *
+   *   1. OUR DATABASE FIRST, in one transaction. Until accountClosedAt is
+   *      committed, the Clerk webhook has no way to know this was a closure —
+   *      and its old default was to hard-delete the row, taking the complaints
+   *      register with it. Deleting the Clerk user first would race exactly
+   *      that.
+   *   2. CLERK SECOND. The webhook fires, sees accountClosedAt, does nothing
+   *      but tombstone the clerkId.
+   *
+   * If step 2 fails the member is closed in our database and can still sign in
+   * to a dead account — every write gate refuses them and the resurrection
+   * guard in upsertFromClerk stops a stray `user.updated` undoing anything.
+   * That is a recoverable state; the reverse is not.
+   */
+  async closeMyAccount(
+    clerkId: string,
+    reason: string,
+  ): Promise<{ closed: true; cancelledListings: number }> {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const { cancelledListingIds } = await this.closure.close(user.id, {
+      closedBy: 'MEMBER',
+      reason: this.closure.assertReason(reason),
+    });
+
+    // ⚠️ AFTER THE COMMIT, AND FAIL-SOFT. A Clerk outage must not roll back a
+    // closure the member has already been told about — and a row that is
+    // closed in our database with a live Clerk login is strictly safer than
+    // the reverse.
+    try {
+      await this.clerk.users.deleteUser(clerkId);
+    } catch (err) {
+      this.logger.error(
+        `Account ${user.id} closed, but the Clerk user could not be deleted — they can still sign in to a dead account: ${(err as Error).message}`,
+      );
+    }
+
+    // ⚠️ THE DB IS ALREADY CORRECT; ONLY THE SEARCH INDEX LAGS. The listings
+    // are CANCELLED, so browseViaPrisma and every PDP already exclude them.
+    // A stale Meilisearch document can still surface in ?q= until the next
+    // reindex, which is why the ids are on the closure record — see
+    // AccountClosure.cancelledListingIds.
+    if (cancelledListingIds.length) {
+      this.logger.log(
+        `Account ${user.id}: ${cancelledListingIds.length} listing(s) cancelled and awaiting reindex`,
+      );
+    }
+
+    return { closed: true, cancelledListings: cancelledListingIds.length };
+  }
+
   async deleteByClerkId(clerkId: string): Promise<void> {
     // H3 — Clerk user.deleted webhook handler. Hard delete fails for
     // any user with transactions/ratings/offers (FK RESTRICT in the
@@ -647,7 +733,7 @@ export class UsersService {
     // forever while the account stays undeleted.
     const target = await this.prisma.user.findFirst({
       where: { clerkId },
-      select: { id: true },
+      select: { id: true, accountClosedAt: true },
     });
     if (target) {
       // Guarded HERE as well as inside purgeForUser. That method swallows its
@@ -708,6 +794,27 @@ export class UsersService {
           `Erasure for clerk user ${clerkId}: KYC file purge threw, continuing with account deletion: ${(err as Error).message}`,
         );
       }
+    }
+
+    // ⚠️ AN ALREADY-CLOSED ACCOUNT IS DONE. Its identity has been snapshotted
+    // onto an AccountClosure row, its uniqueness claims released and its
+    // documents purged — and the closure flow deletes the Clerk user itself,
+    // so this webhook is the ECHO of that deletion, not a new instruction.
+    // Running the scrub again would null columns the closure deliberately held
+    // (the SAP 534 identity) and log a second erasure that never happened.
+    if (target?.accountClosedAt) {
+      this.logger.log(
+        `Clerk user ${clerkId} deleted — account already closed at ${target.accountClosedAt.toISOString()}, nothing to do`,
+      );
+      // Tombstone the clerkId so /sellers/:clerkId 404s for free and a future
+      // sign-up cannot collide with it.
+      await this.prisma.user
+        .updateMany({
+          where: { clerkId },
+          data: { clerkId: `closed_${target.id}` },
+        })
+        .catch(() => undefined);
+      return;
     }
 
     // ── FROM HERE ON THE ROW ALWAYS SURVIVES ──────────────────────────

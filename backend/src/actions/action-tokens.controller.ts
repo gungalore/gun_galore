@@ -692,17 +692,29 @@ export class ActionTokensController {
     const bidder = runnerUpBidderId
       ? await this.prisma.user.findUnique({
           where: { id: runnerUpBidderId },
-          select: { username: true, isBanned: true, auctionStrikes: true },
+          select: {
+          username: true,
+          isBanned: true,
+          accountClosedAt: true,
+          auctionStrikes: true,
+        },
         })
       : null;
 
     // The window may have closed under the seller (they relisted, or the
     // bidder has since been banned/struck out). Tell the page so it renders
     // an explanation instead of a button that will just fail.
+    // ⚠️ A CLOSED ACCOUNT CANNOT BE PROMOTED EITHER, and this path is the one
+    // that reaches them without a login. Closure deletes their ActionTokens,
+    // releases their phone and rewrites their email to an address that cannot
+    // receive anything — so promoting one leaves the seller's auction sitting
+    // in PAYMENT_PENDING for 24 hours waiting on somebody who was never told
+    // and could not answer if they had been.
     const stillAvailable =
       listing.status === 'EXPIRED' &&
       !!bidder &&
       !bidder.isBanned &&
+      !bidder.accountClosedAt &&
       bidder.auctionStrikes < 3 &&
       !!amount;
 

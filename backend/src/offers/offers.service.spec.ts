@@ -115,6 +115,25 @@ function tasListing(overrides: Record<string, unknown> = {}) {
 }
 
 describe('submit — gates', () => {
+  // ⚠️ CLOSED IS NOT BANNED. A member who closed their own account and came
+  // back to a stale tab used to fall through the ban gate and be told they
+  // were suspended — an accusation we never made, in a screenshot they keep.
+  it('refuses a closed account, and never with the ban wording', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'B1',
+      isBanned: false,
+      accountClosedAt: new Date('2026-08-22'),
+      auctionStrikes: 0,
+    });
+    await expect(
+      service.submit('clerk-b', { listingId: 'L1', offerAmount: 10_000 }),
+    ).rejects.toThrow(/has been closed/);
+    await expect(
+      service.submit('clerk-b', { listingId: 'L1', offerAmount: 10_000 }),
+    ).rejects.not.toThrow(/suspended|banned/i);
+  });
+
   it('blocks buyers with 3 unpaid-commitment strikes', async () => {
     const { service, prisma } = makeMocks();
     prisma.user.findUnique.mockResolvedValue({

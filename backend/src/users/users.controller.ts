@@ -1,4 +1,5 @@
 import {
+  NotFoundException,
   Controller,
   Get,
   Post,
@@ -24,6 +25,7 @@ import { ClerkOrTokenGuard } from '../auth/clerk-or-token.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { AccountClosureService } from './account-closure.service';
 import {
   UsersService,
   ProfileUpdate,
@@ -42,6 +44,7 @@ export class UsersController {
     private readonly prisma: PrismaService,
     private readonly cloudinary: CloudinaryService,
     private readonly users: UsersService,
+    private readonly closure: AccountClosureService,
   ) {}
 
   // ─────────────────── Read /users/me ────────────────────────────────
@@ -178,6 +181,51 @@ export class UsersController {
   // Patch any of: firstName, lastName, username, address fields.
   // Email + avatar + password live on Clerk; phone goes through its own
   // OTP-gated endpoints below.
+  // ── CLOSING AN ACCOUNT ──────────────────────────────────────────
+  //
+  // Operator, 2026-08-22: "It must delete the profile from the public [side],
+  // but still keep transaction links etc... if a user commited a crime or
+  // something they cant just vanish by deleting and wiping evidence."
+
+  /**
+   * What is still open, before they type anything.
+   *
+   * ⚠️ COURTESY, NOT THE GUARD. close() re-runs every predicate inside its own
+   * transaction; somebody who leaves this screen open while an offer lands on
+   * their listing must not close over the top of it.
+   */
+  @Get('me/closure-eligibility')
+  @UseGuards(ClerkGuard)
+  async closureEligibility(@CurrentUser() clerkId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return this.closure.canClose(user.id);
+  }
+
+  /**
+   * Close it.
+   *
+   * ⚠️ THE TYPED CONFIRMATION IS CHECKED SERVER-SIDE. This is irreversible and
+   * the route is directly callable; a word typed into a box the frontend
+   * renders is not a control.
+   */
+  @Post('me/close')
+  @UseGuards(ClerkGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async closeMe(
+    @CurrentUser() clerkId: string,
+    @Body('reason') reason: string,
+    @Body('confirm') confirm: string,
+  ) {
+    if ((confirm ?? '').trim().toUpperCase() !== 'CLOSE') {
+      throw new BadRequestException('Type CLOSE to confirm.');
+    }
+    return this.users.closeMyAccount(clerkId, reason);
+  }
+
   @Patch('me')
   @UseGuards(ClerkOrTokenGuard) // accept Clerk OR ?t=<checkout-token>
   async updateMe(

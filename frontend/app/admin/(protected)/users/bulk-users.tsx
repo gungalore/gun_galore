@@ -27,6 +27,8 @@ interface User {
   kycStatus: string;
   subscriptionTier: string;
   isBanned: boolean;
+  // See the note on the same field in ./page.tsx — a closure is not a ban.
+  accountClosedAt: string | null;
   totalSales: number;
   trustScore: number;
   averageRating: number | null;
@@ -47,7 +49,14 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
   // Only users that aren't already banned can be selected — selecting
   // an already-banned user and re-banning is a no-op the backend
   // skips, but visually filtering them keeps the count accurate.
-  const eligibleIds = users.filter((u) => !u.isBanned).map((u) => u.id);
+  //
+  // Closed accounts are excluded for a different reason: every gate they
+  // could hit already refuses them, so a ban changes nothing, and sweeping
+  // one into a bulk ban writes a USER_BAN audit row against a member who
+  // simply left. That row is what a later reader would take as misconduct.
+  const eligibleIds = users
+    .filter((u) => !u.isBanned && !u.accountClosedAt)
+    .map((u) => u.id);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -146,7 +155,7 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
                     <input
                       type="checkbox"
                       checked={isSelected}
-                      disabled={u.isBanned}
+                      disabled={u.isBanned || !!u.accountClosedAt}
                       onChange={() => toggle(u.id)}
                       aria-label={`Select @${u.username ?? u.email} for bulk ban`}
                       style={{ accentColor: 'var(--red)' }}
@@ -165,6 +174,22 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
                             style={{ background: 'var(--red)20', color: 'var(--red)' }}
                           >
                             banned
+                          </span>
+                        )}
+                        {/* ⚠️ Deliberately NOT the red banned chip. A closure
+                            is a member leaving, not misconduct, and an admin
+                            scanning this column must be able to tell the two
+                            apart at a glance. */}
+                        {u.accountClosedAt && (
+                          <span
+                            className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full"
+                            style={{
+                              background: 'var(--bg-inset)',
+                              color: 'var(--text-tertiary)',
+                              border: '0.5px solid var(--border)',
+                            }}
+                          >
+                            closed
                           </span>
                         )}
                       </div>
@@ -202,6 +227,7 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
                       lastName={u.lastName}
                       phone={u.phone}
                       isBanned={u.isBanned}
+                      accountClosedAt={u.accountClosedAt}
                       sellerTier={u.sellerTier}
                       kycStatus={u.kycStatus}
                       subscriptionTier={u.subscriptionTier}
@@ -301,7 +327,7 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
               className="text-sm mb-4"
               style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
             >
-              Each user loses platform access immediately — can't bid,
+              Each user loses platform access immediately — can&apos;t bid,
               buy, sell, or contact other users. The reason below is
               recorded against each user&apos;s audit log. Reversible by
               an admin one-by-one (no bulk unban).

@@ -1,6 +1,7 @@
 import { Module, Global } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { VaultConsentService } from './vault-consent.service';
+import { AccountClosureService } from './account-closure.service';
 import { UsersController } from './users.controller';
 import { UsersPublicController } from './users-public.controller';
 import { SellersPublicController } from './sellers-public.controller';
@@ -48,9 +49,22 @@ import { KycModule } from '../kyc/kyc.module';
   // and LicenceCentreModule already imports MotivationsModule — so the Centre
   // cannot own it without a cycle. This module is @Global and the columns it
   // reads are on User, so from here it reaches both with no new edge.
-  providers: [UsersService, SellerToolsService, VaultConsentService],
+  providers: [
+    UsersService,
+    SellerToolsService,
+    VaultConsentService,
+    // Closing an account without erasing the evidence. @Global, so the
+    // admin module and the KYC duplicate-ID check can both reach it —
+    // the second is where a returning member is relinked to their record.
+    AccountClosureService,
+  ],
   // SellerToolsService exported for the Ask GG account tools (W5) —
   // UsersModule is @Global, so both are injectable app-wide.
-  exports: [UsersService, SellerToolsService, VaultConsentService],
+  exports: [
+    UsersService,
+    SellerToolsService,
+    VaultConsentService,
+    AccountClosureService,
+  ],
 })
 export class UsersModule {}

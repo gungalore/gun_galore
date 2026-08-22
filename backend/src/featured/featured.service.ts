@@ -50,6 +50,7 @@ import { PeachService } from '../payments/peach.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
+import { assertAccountNotClosed } from '../common/account-standing';
 import { PAYMENT_MODE, assertPaymentsLive } from '../payments/payment-mode';
 
 // P1.2 — how long the winner has to pay the slot fee by EFT once they
@@ -487,6 +488,10 @@ export class FeaturedService {
   async placeBid(clerkId: string, slotId: string, amountCents: number) {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced');
+    // ⚠️ Closed is checked BEFORE banned: a member who closed their own
+    // account and came back to a stale tab must not be told they were
+    // suspended. See common/account-standing.ts.
+    assertAccountNotClosed(user);
     if (user.isBanned) throw new ForbiddenException('Account suspended');
 
     // Featured-slot specific ban check — separate from listing-side ban.
@@ -645,6 +650,7 @@ export class FeaturedService {
   ) {
     const user = await this.prisma.user.findUnique({ where: { clerkId } });
     if (!user) throw new ForbiddenException('User not synced');
+    assertAccountNotClosed(user);
     if (user.isBanned) throw new ForbiddenException('Account suspended');
 
     const ban = await this.prisma.featuredSlotBidderBan.findUnique({

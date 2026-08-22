@@ -149,6 +149,22 @@ describe('buyNow — inert until payments live', () => {
     expect(tx.featuredSlotBid.create).not.toHaveBeenCalled();
   });
 
+  it('refuses a closed account, and never with the ban wording', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'U1',
+      isBanned: false,
+      accountClosedAt: new Date('2026-08-22'),
+      subscriptionTier: 'FREE',
+    });
+    await expect(
+      service.buyNow('clerk1', 'SLOT1', 'T3', 'L1'),
+    ).rejects.toThrow(/has been closed/);
+    await expect(
+      service.buyNow('clerk1', 'SLOT1', 'T3', 'L1'),
+    ).rejects.not.toThrow(/suspended|banned/i);
+  });
+
   it('rejects a banned account', async () => {
     const { service, prisma } = makeMocks();
     prisma.user.findUnique.mockResolvedValue({ id: 'U1', isBanned: true, subscriptionTier: 'FREE' });

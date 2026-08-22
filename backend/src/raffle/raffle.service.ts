@@ -126,6 +126,12 @@ export class RaffleService {
       where: {
         subscriptionTier: 'PRO',
         isBanned: false,
+        // ⚠️ AND NOT SOMEBODY WHO HAS LEFT. Drawing a closed account picks a
+        // winner with no contactable address — the closure rewrites the email
+        // to an unroutable sentinel and releases the phone — so the prize goes
+        // to nobody and the draw has to be re-run, having already been
+        // announced.
+        accountClosedAt: null,
         subscription: {
           status: 'ACTIVE',
           currentPeriodEnd: { gt: new Date() },

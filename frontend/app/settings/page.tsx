@@ -7,6 +7,7 @@ import type { Address } from '@/lib/types';
 import { PROVINCE_LABELS } from '@/lib/utils';
 import { safeJson } from '@/lib/safe-json';
 import { usePush } from '@/lib/use-push';
+import CloseAccountSection from '@/components/close-account';
 
 const API_URL =
   process.env.INTERNAL_API_URL ??
@@ -873,6 +874,14 @@ export default function SettingsPage() {
               </div>
             )}
           </section>
+
+          {/* ─── Close your account ───
+              Last on the page, below the address book, and deliberately not
+              in the account menu (lib/account-menu-data.tsx) — it is a
+              setting, not a destination. The eligibility check and every
+              screen live in the component; this page only decides where it
+              sits and hands over the token getter it already has. */}
+          <CloseAccountSection getToken={getToken} />
         </>
       )}
     </main>

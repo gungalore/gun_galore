@@ -122,6 +122,24 @@ describe('placeBid — validation gates', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  // A closure and a ban are different states with different messages; the
+  // bidder who closed their own account must not read "suspended".
+  it('refuses a closed bidder, and never with the ban wording', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'B1',
+      isBanned: false,
+      accountClosedAt: new Date('2026-08-22'),
+      auctionStrikes: 0,
+    });
+    await expect(
+      service.placeBid('clerk1', 'L1', { maxAmount: 50_000 }),
+    ).rejects.toThrow(/has been closed/);
+    await expect(
+      service.placeBid('clerk1', 'L1', { maxAmount: 50_000 }),
+    ).rejects.not.toThrow(/suspended|banned/i);
+  });
+
   it('blocks banned bidders and 3-strike bidders', async () => {
     const { service, prisma } = makeMocks();
     prisma.user.findUnique.mockResolvedValue({

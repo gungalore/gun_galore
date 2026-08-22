@@ -19,6 +19,7 @@ function makeService(rows: Record<string, unknown>[]) {
     {} as never, // peach
     {} as never, // transactions (P5.2) — unused by export
     {} as never, // sms — unused by export
+    {} as never, // account closures — unused by export
   );
   return { service, prisma, audit };
 }
