@@ -2,6 +2,7 @@ import { MotivationLicenceType } from '@prisma/client';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 import { factPackFields, LICENCE_TYPE_LABELS } from './motivation-fields';
 import type { SectionId, StructurePlan } from './motivation-structure';
+import { AS_AT, renderStatute, statutoryTextFor } from './motivation-statute';
 
 // ────────────────────────────────────────────────────────────────────
 // The prompts. Three of them: write the document, grade it, ask a follow-up.
@@ -581,7 +582,8 @@ function renderOverlap(note: string | undefined): string {
  * problem to report, not the writer's to paper over.
  */
 const SECTION_BRIEFS: Record<SectionId, string> = {
-  introduction: 'State what is applied for, under which section of the Act, and for what purpose. One short paragraph. No throat-clearing.',
+  introduction:
+    'State what is applied for, under which section of the Act, and for what purpose. One short paragraph. No throat-clearing. \u26a0\ufe0f WHERE THE DIRECTION ABOVE SAYS I ALREADY HOLD SOMETHING IN THE SAME CLASS, this paragraph must also say, in one sentence and in my own terms, that nothing I hold serves this purpose. It is the first thing a reviewer skimming the page sees, and the detailed answer further down is worth less if the opening does not signal that the question has been met. Word it freshly \u2014 not as a formula repeated from document to document.',
   personal_circumstances:
     'The applicant\u2019s situation in their own detail \u2014 where they live, who else is in the household, what their work and routine involve, so far as they told you. Facts, not adjectives.',
   the_quarry:
@@ -597,7 +599,7 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
   the_calibre:
     'The CARTRIDGE argued against the requirement the purpose section set \u2014 not the platform, which the firearm section answers. What it means for a humane kill on the species named or for the course of fire entered, what the recoil does to follow-up shots and to how much practice is affordable, why it is the sensible cartridge for the use described. \u26a0\ufe0f FIGURES ONLY WHERE YOU WERE GIVEN THEM. Where the research block carries ballistics, use them \u2014 what the cartridge holds at the range a shot is actually taken at. Where it does not, GIVE NO FIGURES AT ALL: no velocity, no energy, no bullet weight, no capacity, no dimension, no date, no account of who designed it or why. Rule 1 bites harder in this section than anywhere else in the document, because this is the section that reaches for cartridge knowledge, and cartridge knowledge you were not given is invention. Argue instead from what IS supplied \u2014 the stated purpose, the discipline or the quarry, the ranges and conditions described, the recoil this applicant will actually be shooting \u2014 and write a shorter section without apology. \u26a0\ufe0f IT MUST REACH THIS APPLICANT. A history of the cartridge that never arrives at this quarry or this discipline is the padding rule 7 forbids, and it reads the same in every document carrying it.',
   comparison:
-    'Why the firearm applied for does not duplicate one I already hold \u2014 the objection the Registrar raises on its own, met before it is put. Name the held firearm as it appears in the facts and say what differs: the division or discipline, the course of fire, the quarry or the terrain, the role each firearm plays. \u26a0\ufe0f THIS ARGUMENT IS MINE TO MAKE, NOT MINE TO WAIT FOR. Where I gave a reason of my own, lead with it. Where I did not, reason it out from the licence type, the purpose, the discipline or the quarry, the ranges and the ground, my experience and record, and what each firearm is chambered for and is therefore suited to. That reasoning is RATIONALE under rule 8 and it is your craft to supply, exactly as a paid motivation writer supplies it. What you may never do is assert a NEW FACT to make it work: a firearm I do not own, a discipline I did not name, an event that did not happen. Never write that I gave no reason, never leave the objection standing, and never suggest the overlap does not matter. This section is in the plan only because a same-class holding exists \u2014 the direction above says which one.',
+    'Why the firearm applied for does not duplicate one I already hold \u2014 the objection the Registrar raises on its own, met before it is put. Name the held firearm as it appears in the facts and say what differs: the division or discipline, the course of fire, the quarry or the terrain, the role each firearm plays. \u26a0\ufe0f ONE SHORT PARAGRAPH PER FIREARM, NOT ONE PASSAGE COVERING THEM ALL. The direction above lists what I hold, one at a time. Take them one at a time: name it, say what I use it for where I have said, and close on why it cannot do the job this application is about. A reviewer pulls my licence record and counts before they read a word of this, so a document that enumerates and disposes of each holding has answered them in the order they asked. \u26a0\ufe0f AND VARY THE CLOSE. Four paragraphs ending in the same sentence is a template showing through, and it is the one thing that makes a real argument read as a form letter. \u26a0\ufe0f THIS ARGUMENT IS MINE TO MAKE, NOT MINE TO WAIT FOR. Where I gave a reason of my own, lead with it. Where I did not, reason it out from the licence type, the purpose, the discipline or the quarry, the ranges and the ground, my experience and record, and what each firearm is chambered for and is therefore suited to. That reasoning is RATIONALE under rule 8 and it is your craft to supply, exactly as a paid motivation writer supplies it. What you may never do is assert a NEW FACT to make it work: a firearm I do not own, a discipline I did not name, an event that did not happen. Never write that I gave no reason, never leave the objection standing, and never suggest the overlap does not matter. This section is in the plan only because a same-class holding exists \u2014 the direction above says which one.',
   statutory_application:
     'THE ONLY SECTION THAT MAY QUOTE \u2014 and rule 4 decides whether it does. Where a <statutory-text> block was supplied, set that text out verbatim and numbered as in the source, then answer each quoted element immediately beneath it with my own facts: the element, then the fact that satisfies it, in order; quote only what you apply and leave nothing quoted hanging. \u26a0\ufe0f WHERE NO SUCH BLOCK WAS SUPPLIED, QUOTE NOTHING \u2014 name the section by number, take its requirements in turn in plain language, and put my facts against each of them. That is a complete section, not a lesser one, and inventing the wording of the Act to fill it is rule 1 applied to the law instead of the applicant. Either way this is where a reviewer checks the application against the Act, so it is the one place legal language belongs; every other section stays in plain words.',
   storage_safety:
@@ -605,7 +607,7 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
   compliance_history:
     'Licences held, applications made, anything on record, and the applicant\u2019s clean standing where they have stated it. Never assert an absence of a criminal record unless they supplied it \u2014 SAPS verifies this themselves.',
   conclusion:
-    'A short undertaking in the applicant\u2019s own voice. No summary of everything above, no request for a favourable outcome, no thanks.',
+    'A short undertaking in my own voice, and then the ask. \u26a0\ufe0f END BY REQUESTING THE LICENCE. Name the section, the make, the calibre and the serial, and state the purpose \u2014 "I respectfully request the Registrar to issue me with a licence under section 16 for the [make] [calibre], serial [no], for dedicated sport shooting." That request is what the document is FOR, and a motivation that never asks reads as an essay somebody attached to a form. \u26a0\ufe0f ASKING IS NOT PREDICTING. Rule 3 forbids saying the application should succeed, is likely to be approved, or meets the threshold. It does not forbid the request itself, and an earlier version of this brief confused the two and struck out the ask along with the prediction. No summary of everything above, and no thanks.',
 };
 
 export function generationUserPrompt(
@@ -629,6 +631,7 @@ ${OPENING_GUIDE[plan.opening]}
 ${CLOSING_GUIDE[plan.closing]}
 ${CADENCE_GUIDE[plan.cadence]}
 
+${renderStatute(pack.licenceType)}
 ${renderOverlap(pack.overlapNote)}
 ${renderResearch(pack.research)}
 ${renderAnnexures(pack.annexures)}
@@ -824,6 +827,29 @@ ${
   pack.research?.trim()
     ? `<background-research>\n${pack.research.trim()}\n</background-research>\n`
     : ''
+}
+${
+  // ⚠️ AND THE STATUTE, FOR THE SAME REASON AND MORE SHARPLY. The writer is
+  // now handed the verbatim section and told to quote it; a gate that cannot
+  // see those words scores the one part of the document that is quoted EXACTLY
+  // RIGHT as the most fabricated thing in it. Groundedness is scored against
+  // supplied material, and this is supplied material.
+  //
+  // It is also the check that catches the real failure: text inside the
+  // statutory section that is NOT in this block is something the model
+  // remembered, and a remembered Act in a signed application is a false
+  // statement about the law.
+  `The writer was supplied this statutory text, verbatim, and told to quote
+only from it. Anything quoted as law that is NOT below was recalled rather
+than supplied — score that as ungrounded, however plausible it reads.
+Firearms Control Act 60 of 2000, ${AS_AT}:
+
+<statutory-text>
+${statutoryTextFor(
+    pack.licenceType,
+  )}
+</statutory-text>
+`
 }
 ${
   // The gate must know what the writer was told, or it grades the design as

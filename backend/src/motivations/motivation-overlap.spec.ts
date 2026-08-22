@@ -649,3 +649,52 @@ describe('a section 24 renewal', () => {
     expect(r.writerNote).toBeNull();
   });
 });
+
+describe('one argument per firearm, not one passage covering them all', () => {
+  // ⚠️ THE CORPUS'S DEFINING HABIT. The worked motivations NATSHOOT supplied
+  // give a short paragraph to EACH firearm held — one hunting example runs
+  // seven, including two shotguns inside a rifle application. A joined list
+  // reliably produces a single lumped passage instead, which does not answer
+  // the check a DFO actually does: pull the licence record, count what is
+  // already there, one at a time.
+
+  it('names each matched firearm on its own line', () => {
+    const r = checkOverlap('.308 Win', [
+      { calibre: '.308 Win', describedAs: '.308 Win Tikka', usedFor: 'plains game to 250m' },
+      { calibre: '.30-06', describedAs: '.30-06 Mauser', usedFor: 'kudu in thick bush' },
+    ]);
+    expect(r.writerNote).toContain('TAKE THESE ONE AT A TIME');
+    expect(r.writerNote).toContain('.308 Win Tikka — the applicant uses it for: plains game to 250m.');
+    expect(r.writerNote).toContain('.30-06 Mauser — the applicant uses it for: kudu in thick bush.');
+  });
+
+  it('forbids reusing the same closing sentence', () => {
+    // In the corpus the same disqualifying clause is pasted four times almost
+    // word for word. Take the paragraph; refuse the sentence — maxSimilarity
+    // and fingerprint() exist to catch exactly that, and copying it would be
+    // manufacturing the signal ourselves.
+    const r = checkOverlap('.308 Win', [{ calibre: '.308 Win' }]);
+    expect(r.writerNote).toMatch(/do not reuse the same closing sentence/i);
+  });
+
+  it('⚠️ REFUSES TO STATE A USE THE APPLICANT NEVER GAVE', () => {
+    // What somebody uses a firearm for is HISTORY under rule 8 — verifiable,
+    // theirs, and barred unless supplied. The distinction between two
+    // firearms is rationale and stays the writer's job. Handing the writer a
+    // per-firearm brief without the use would have aimed pure invention
+    // pressure at rule 1, which is the trap the field closes.
+    const r = checkOverlap('.308 Win', [
+      { calibre: '.308 Win', describedAs: '.308 Win Tikka' },
+    ]);
+    expect(r.writerNote).toContain('no stated use');
+    expect(r.writerNote).toMatch(/do NOT state what they use it for/);
+  });
+
+  it('does not repeat a firearm that matches on BOTH calibre and type', () => {
+    const r = checkOverlap('9mm', [{ calibre: '9mm', type: 'Handgun', describedAs: '9mm Glock' }], {
+      appliedForType: 'Handgun',
+    });
+    const hits = (r.writerNote!.match(/• 9mm Glock/g) ?? []).length;
+    expect(hits).toBe(1);
+  });
+});

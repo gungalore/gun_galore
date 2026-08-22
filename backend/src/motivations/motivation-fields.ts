@@ -386,7 +386,10 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // refusal waiting to happen, and it is visible on the form.
     choices: ['Handgun', 'Rifle', 'Shotgun'],
     help: 'Tick everything your certificate covers.',
-    formOnly: true,
+    // ⚠️ formOnly REMOVED. It meant the writer never saw what the competency
+    // covers — so it could not write "I was declared competent to possess
+    // handguns, rifles and shotguns", which is the sentence every example
+    // motivation in the corpus carries. We held the fact and hid it.
   },
   {
     key: 'competency_issued',
@@ -394,7 +397,8 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Competency issued on',
     kind: 'date',
     section: 'About you',
-    formOnly: true,
+    // ⚠️ formOnly REMOVED — see competency_for. The date belongs in the
+    // sentence, not only in a box on the 271.
     focusOffsetYears: -2,
   },
   {
@@ -403,7 +407,9 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Competency expires on',
     kind: 'date',
     section: 'About you',
-    formOnly: true,
+    // ⚠️ formOnly REMOVED — see competency_for. A competency with years left
+    // on it is worth saying; one close to expiry is worth the writer knowing
+    // about rather than walking into.
     focusOffsetYears: 2,
   },
   // THE FIREARM, IN ITS OWN BOXES. This was one free-text line until the SAPS
@@ -995,6 +1001,35 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     maxLength: 60,
   },
   {
+    key: 'existing_firearm_1_use',
+    // ⚠️ NOT docSourced, AND IT NEVER CAN BE. A licence copy carries make,
+    // calibre and serial; nothing on it says what the firearm is used for.
+    // This is the one fact in the block that has to come from the person.
+    //
+    // ⚠️ AND IT IS THE FACT THE WHOLE COMPARISON RESTS ON. The writer is told
+    // to argue, per firearm, why the one already held cannot do this job —
+    // and until now it saw only type, calibre and make. "A .308 bolt-action"
+    // cannot be argued against a purpose; "bushveld plains game to 250 m" can.
+    // Demanding the paragraph without supplying this would have aimed pure
+    // invention pressure at rule 1, which is the trap this field exists to
+    // close.
+    //
+    // ⚠️ RULE 8 PUTS IT HERE RATHER THAN IN THE WRITER'S HANDS. What somebody
+    // USES a firearm for is history — verifiable, checkable, theirs. The
+    // DISTINCTION between two firearms is rationale and stays the writer's
+    // job (see ARGUE_IT). Those are different things and only the second may
+    // be inferred.
+    //
+    // Optional, and never a follow-up question. It sits in the form beside a
+    // row we have usually already read off an uploaded licence, so somebody
+    // who has uploaded nothing never sees it. Two words are enough.
+    label: 'What you use it for',
+    kind: 'short',
+    section: 'Firearms you already own',
+    help: 'A few words is plenty — "bushveld plains game", "clay targets", "carried for self-defence".',
+    maxLength: 120,
+  },
+  {
     key: 'existing_firearm_1_barrel_serial',
     docSourced: 'CURRENT_LICENCE',
     label: 'Barrel serial no',
@@ -1047,6 +1082,13 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Firearms you already own',
     sensitive: true,
     maxLength: 60,
+  },
+  {
+    key: 'existing_firearm_2_use',
+    label: 'What you use it for',
+    kind: 'short',
+    section: 'Firearms you already own',
+    maxLength: 120,
   },
   {
     key: 'existing_firearm_2_barrel_serial',
@@ -1103,6 +1145,13 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     maxLength: 60,
   },
   {
+    key: 'existing_firearm_3_use',
+    label: 'What you use it for',
+    kind: 'short',
+    section: 'Firearms you already own',
+    maxLength: 120,
+  },
+  {
     key: 'existing_firearm_3_barrel_serial',
     docSourced: 'CURRENT_LICENCE',
     label: 'Barrel serial no',
@@ -1155,6 +1204,13 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Firearms you already own',
     sensitive: true,
     maxLength: 60,
+  },
+  {
+    key: 'existing_firearm_4_use',
+    label: 'What you use it for',
+    kind: 'short',
+    section: 'Firearms you already own',
+    maxLength: 120,
   },
   {
     key: 'existing_firearm_4_barrel_serial',
@@ -1211,6 +1267,13 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     maxLength: 60,
   },
   {
+    key: 'existing_firearm_5_use',
+    label: 'What you use it for',
+    kind: 'short',
+    section: 'Firearms you already own',
+    maxLength: 120,
+  },
+  {
     key: 'existing_firearm_5_barrel_serial',
     docSourced: 'CURRENT_LICENCE',
     label: 'Barrel serial no',
@@ -1263,6 +1326,13 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'Firearms you already own',
     sensitive: true,
     maxLength: 60,
+  },
+  {
+    key: 'existing_firearm_6_use',
+    label: 'What you use it for',
+    kind: 'short',
+    section: 'Firearms you already own',
+    maxLength: 120,
   },
   {
     key: 'existing_firearm_6_barrel_serial',

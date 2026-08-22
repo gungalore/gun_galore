@@ -334,6 +334,15 @@ export interface HeldFirearm {
   type?: string;
   /** For the message — "your .308 Tikka". Optional. */
   describedAs?: string;
+  /**
+   * What the applicant says they use it for, in their words.
+   *
+   * ⚠️ THE ONE FACT THE PER-FIREARM ARGUMENT CANNOT BE WRITTEN WITHOUT, and
+   * the only one here that a licence copy can never supply. Without it the
+   * writer knows a .308 bolt-action exists and nothing about what it does, so
+   * "it cannot serve this purpose" has nothing to stand on but invention.
+   */
+  usedFor?: string;
 }
 
 export type OverlapVerdict =
@@ -450,6 +459,38 @@ const ARGUE_IT = [
   'suggest the overlap does not matter.',
 ].join(' ');
 
+/**
+ * One firearm, one argument — the shape the corpus actually uses.
+ *
+ * ⚠️ A JOINED LIST IS NOT AN ARGUMENT. The notes used to name every match in
+ * one comma-separated string, which asks the writer for a single passage
+ * covering all of them and reliably gets one. The worked motivations supplied
+ * by NATSHOOT do the opposite and it is their defining habit: a short
+ * paragraph per firearm, each naming it, saying what it is used for, and
+ * closing on why it cannot do the job this application is about — a hunting
+ * example runs seven of them, including two shotguns inside a rifle
+ * application and a .22 disqualified in a single sentence.
+ *
+ * That matters because it pre-empts the check a Designated Firearms Officer
+ * does before opening the motivation at all: pull the licence record, count
+ * what is already held. A document that enumerates and disposes of each one
+ * has answered the question in the order the reviewer asks it.
+ *
+ * ⚠️ WHAT IT MUST NOT BECOME. In the corpus the same disqualifying clause is
+ * pasted four times almost word for word. Take the paragraph; refuse the
+ * sentence — maxSimilarity and fingerprint() exist to catch exactly that, and
+ * we would be manufacturing the signal ourselves.
+ */
+function perFirearm(h: HeldFirearm): string {
+  const name = describeHeld(h);
+  return h.usedFor
+    ? `• ${name} — the applicant uses it for: ${h.usedFor}.`
+    : // ⚠️ NO USE SUPPLIED MEANS ARGUE FROM THE CHAMBERING AND STOP. Saying
+      // what somebody uses a firearm for when they have not said is history,
+      // not rationale, and rule 8 bars it however plausible it reads.
+      `• ${name} — no stated use. Argue only from what it is chambered for and what that suits; do NOT state what they use it for.`;
+}
+
 /** How the applicant would recognise a held firearm in a sentence. */
 function describeHeld(h: HeldFirearm): string {
   return h.describedAs?.trim() || h.calibre?.trim() || (h.type ?? '').trim();
@@ -478,15 +519,21 @@ export function checkOverlap(
   // compared — which is precisely how MO000017, a 6.35mm Browning the table
   // does not carry, got no comparison section against a 9mm already held.
   const typeMatches: string[] = [];
+  /** The same matches as objects, so each can be argued in its own right. */
+  const typeMatched: HeldFirearm[] = [];
   if (myType) {
     for (const h of held) {
       if (classifyFirearmType(h.type) !== myType) continue;
       const named = describeHeld(h);
-      if (named) typeMatches.push(named);
+      if (named) {
+        typeMatches.push(named);
+        typeMatched.push(h);
+      }
     }
   }
 
   const calibreMatches: string[] = [];
+  const calibreMatched: HeldFirearm[] = [];
   const unrecognised: string[] = [];
   if (mine) {
     for (const h of held) {
@@ -495,7 +542,10 @@ export function checkOverlap(
         if (h.calibre?.trim()) unrecognised.push(h.calibre.trim());
         continue;
       }
-      if (c === mine) calibreMatches.push(describeHeld(h));
+      if (c === mine) {
+        calibreMatches.push(describeHeld(h));
+        calibreMatched.push(h);
+      }
     }
   }
 
@@ -626,7 +676,14 @@ export function checkOverlap(
     },
     needsJustification: true,
     prompt: `${prompts.join(' ')} ${OFFER_TAIL}`,
-    writerNote: notes.join(' '),
+    // ⚠️ THE ROLL-CALL GOES LAST, AFTER THE DIRECTION. The note above says
+    // HOW to argue; this says WHAT there is to argue about, one firearm at a
+    // time, so the writer produces a paragraph each rather than a single
+    // passage covering all of them — which is what a joined list reliably
+    // produced and what the corpus never does.
+    writerNote: `${notes.join(' ')}\n\nTAKE THESE ONE AT A TIME. Write a short paragraph for EACH firearm below — name it, say what it is used for where that is stated, and close on why it cannot do the job this application is about. Do not merge them into one passage, and do not reuse the same closing sentence twice.\n${[
+      ...new Set([...calibreMatched, ...typeMatched].map(perFirearm)),
+    ].join('\n')}`,
   };
 }
 
@@ -681,7 +738,12 @@ function ownedRows(answers: Record<string, string>): OwnedRow[] {
     // being read out as "you already hold rifle".
     const named = [calibre, make, type.toLowerCase()].filter(Boolean).join(' ');
     rows.push({
-      held: { calibre, type, describedAs: calibre ? named : `a ${named}` },
+      held: {
+        calibre,
+        type,
+        describedAs: calibre ? named : `a ${named}`,
+        usedFor: at('use') || undefined,
+      },
       make,
       licenceNo: at('licence_no'),
       barrelSerial: at('barrel_serial'),
