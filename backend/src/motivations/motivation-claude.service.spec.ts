@@ -36,21 +36,41 @@ const PACK: FactPack = {
   derived: { age: '43' },
 };
 
-function build(reply?: string, throws?: Error) {
-  const create = jest.fn(async (_args?: any, _opts?: any): Promise<any> => {
+/**
+ * @param reply  text for a single text block, OR the whole content array.
+ * @param opts   stop_reason, so a truncated response can be simulated.
+ */
+function build(
+  reply?: string | any[],
+  throws?: Error,
+  opts: { stopReason?: string } = {},
+) {
+  const body = () => {
     if (throws) throw throws;
     return {
-      content: [{ type: 'text', text: reply ?? '' }],
+      content: Array.isArray(reply)
+        ? reply
+        : [{ type: 'text', text: reply ?? '' }],
+      stop_reason: opts.stopReason ?? 'end_turn',
       usage: { input_tokens: 100, output_tokens: 50 },
     };
-  });
+  };
+  const create = jest.fn(async (_args?: any, _opts?: any): Promise<any> => body());
+  // ⚠️ THE WRITER STREAMS; EVERYTHING ELSE DOES NOT. It was moved onto
+  // messages.stream() when an adaptive thinking budget ate an 8 000-token
+  // ceiling alive and the applicant got nothing — see generate(). This mock
+  // had only `create`, so the generation tests would have gone on passing
+  // against a method the writer no longer calls.
+  const stream = jest.fn((_args?: any, _opts?: any) => ({
+    finalMessage: async (): Promise<any> => body(),
+  }));
   const prisma = { adminAlert: { create: jest.fn(async (): Promise<any> => ({})) } };
   const svc = new MotivationClaudeService(prisma as never);
   // Inject a fake client — the real one needs a key we do not have in tests.
   (svc as unknown as { client: unknown }).client = {
-    messages: { create },
+    messages: { create, stream },
   };
-  return { svc, create, prisma };
+  return { svc, create, stream, prisma };
 }
 
 describe('MotivationClaudeService — the quality gate fails CLOSED', () => {
@@ -200,13 +220,57 @@ describe('generation', () => {
   });
 
   it('splits the system prompt so the cacheable half can be cached', async () => {
-    const { svc, create } = build('A'.repeat(600));
+    const { svc, stream } = build('A'.repeat(600));
     await svc.generate(PACK, planFor(PACK.licenceType, 1));
-    const args = create.mock.calls[0][0] as any;
+    const args = stream.mock.calls[0][0] as any;
     expect(args.system[0].cache_control).toEqual({ type: 'ephemeral' });
     // The applicant's facts must NOT be in the cached block.
     expect(args.system[0].text).not.toContain('Jan Pietersen');
     expect(args.messages[0].content).toContain('Jan Pietersen');
+  });
+
+  it('leaves the writer room to think AND to write', async () => {
+    // ⚠️ THE 2026-08-22 LIVE FAILURE, IN ONE ASSERTION. The call logged both
+    // "hit max_tokens (8000 out)" and "too short to be usable" in the same
+    // second: an adaptive thinking budget spent the whole allowance and the
+    // document was never written. The ceiling and the thinking mode must both
+    // be explicit, because leaving either to a default is what caused it.
+    const { svc, stream } = build('A'.repeat(600));
+    await svc.generate(PACK, planFor(PACK.licenceType, 1));
+    const args = stream.mock.calls[0][0] as any;
+    // 2500-4500 words of prose is 3500-6500 tokens BEFORE any thinking.
+    expect(args.max_tokens).toBeGreaterThanOrEqual(16_000);
+    expect(args.thinking).toEqual({ type: 'adaptive' });
+    // ⚠️ NEVER budget_tokens — Opus 5 rejects it with a 400.
+    expect(args.thinking).not.toHaveProperty('budget_tokens');
+  });
+
+  it('keeps EVERY text block, not just the first', async () => {
+    // With thinking on, content interleaves thinking and text. Taking the
+    // first text block truncated the document at the model's first pause —
+    // which would have looked like a writing fault forever.
+    const { svc } = build([
+      { type: 'thinking', thinking: 'planning the sections' },
+      { type: 'text', text: 'A'.repeat(300) },
+      { type: 'thinking', thinking: 'now the statutory part' },
+      { type: 'text', text: 'B'.repeat(300) },
+    ]);
+    const res = await svc.generate(PACK, planFor(PACK.licenceType, 1));
+    expect(res.text.length).toBe(600);
+    expect(res.text).toContain('B');
+  });
+
+  it('rejects a response that is ALL thinking and no document', async () => {
+    // Exactly what came back at 20:20 SAST: the ceiling reached, no text
+    // block at all. It must fail soft and retryably, never store nothing.
+    const { svc } = build(
+      [{ type: 'thinking', thinking: 'x'.repeat(400) }],
+      undefined,
+      { stopReason: 'max_tokens' },
+    );
+    await expect(
+      svc.generate(PACK, planFor(PACK.licenceType, 1)),
+    ).rejects.toThrow(/try again/i);
   });
 });
 

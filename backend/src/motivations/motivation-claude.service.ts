@@ -50,12 +50,22 @@ import type { StructurePlan } from './motivation-structure';
 // "we could not draft the document just now" for work that was progressing
 // fine.
 //
-// 180s matches research, on the same reasoning: off the request, so the cap is
-// only "do not hang forever". The real ceiling is sweepStuckGenerations(),
-// which releases a row after 15 minutes — the worst realistic path (research
-// 180 + write 180 + one local retry 180 + verify 60 + grade 60 = 11 min) still
-// lands inside it. Raise this and check that sum again.
-const GENERATE_TIMEOUT_MS = 180_000;
+// 180s matched research, on the same reasoning: off the request, so the cap is
+// only "do not hang forever".
+//
+// ⚠️ RAISED AGAIN 2026-08-22 WITH THE TOKEN CEILING, AND THE TWO MUST MOVE
+// TOGETHER. Output tokens are wall clock. The writer's max_tokens went from
+// 8 000 to 32 000 because an adaptive thinking budget was eating the document
+// alive at the old figure; a real S16 with thinking now runs well past what
+// 8 000 tokens took, and leaving the clock at 180s would simply have swapped
+// "too short to be usable" for "Request timed out" — the same dead end with a
+// different message.
+//
+// The real ceiling is still sweepStuckGenerations(). The worst realistic path
+// is research 180 + write 300 + one local retry 300 + verify 60 + grade 60 =
+// 15 minutes, so the sweep moved to 25 to keep its headroom. Raise either of
+// these and redo that sum.
+const GENERATE_TIMEOUT_MS = 300_000;
 const GRADE_TIMEOUT_MS = 60_000;
 // Research runs a handful of web searches before writing. It only ever runs
 // OFF the request (generation is async now), so the proxy ceilings that cap
@@ -203,33 +213,66 @@ export class MotivationClaudeService {
       throw new Error('Document generation is not available right now.');
     }
     try {
-      const msg = await this.client.messages.create({
-        model: MODEL_WRITE,
-        // 4000 was sized for the 2-4 page document the plan originally assumed.
-        // The operator's real samples run 11-40 pages of compiled submission
-        // (MOTIVATION-DOCUMENT-STRUCTURE.md), so 4000 would truncate mid-
-        // argument — and a motivation that stops halfway is worse than none.
-        //
-        // NOT raised further without measurement: output tokens are the wall
-        // clock, and this route is synchronous under an 85s client timeout,
-        // nginx 90s and Cloudflare ~100s. If beta timings show generations
-        // running close to that, the answer is async generation with polling,
-        // not a bigger number here.
-        max_tokens: 8000,
-        system: [
-          {
-            type: 'text',
-            text: generationSystemPrompt(pack.licenceType),
-            cache_control: { type: 'ephemeral' },
-          },
-        ],
-        messages: [
-          { role: 'user', content: generationUserPrompt(pack, plan) },
-        ],
-      });
+      // ⚠️ STREAMED, AND max_tokens IS NOT A BUDGET — IT IS A CEILING.
+      //
+      // THE LIVE FAILURE, 2026-08-22 20:20 SAST. A run logged BOTH "hit
+      // max_tokens (8000 out)" AND "Generated document was too short to be
+      // usable", in the same second. Those read as contradictory and are not:
+      // the model spent the entire 8 000-token allowance THINKING and was cut
+      // off before it wrote a word of the document. The applicant pressed
+      // Prepare, the button greyed out, came back, and nothing else happened.
+      //
+      // Two mistakes, both mine, both in this call:
+      //
+      // 1. 8 000 WAS NEVER ENOUGH. The target is 2 500-4 500 words of prose,
+      //    which is 3 500-6 500 tokens BEFORE any thinking. The old note
+      //    reasoned the ceiling down from an 85s synchronous request — but
+      //    generation moved to a detached background run (startGeneration) and
+      //    the ceiling never moved with it. Nothing is billed for headroom:
+      //    output tokens are charged as generated, so a ceiling the model does
+      //    not reach costs exactly nothing.
+      // 2. THINKING WAS LEFT TO THE DEFAULT. The gate and the verifier both
+      //    set it explicitly; this one did not, so an adaptive budget shared
+      //    the same 8 000 with the document and won.
+      //
+      // Streaming because a long generation on a non-streamed request risks
+      // the SDK's own long-request guard, and because the token ceiling below
+      // is high enough to make that a real possibility rather than a theory.
+      const stream = this.client.messages.stream(
+        {
+          model: MODEL_WRITE,
+          max_tokens: 32_000,
+          // Explicit, so it is never again the API default's decision. Rule 4
+          // of this document's own prompt asks for element-by-element
+          // statutory application; that is reasoning, and it earns its tokens.
+          // ⚠️ NEVER budget_tokens — Opus 5 rejects it with a 400.
+          thinking: { type: 'adaptive' } as never,
+          system: [
+            {
+              type: 'text',
+              text: generationSystemPrompt(pack.licenceType),
+              cache_control: { type: 'ephemeral' },
+            },
+          ],
+          messages: [
+            { role: 'user', content: generationUserPrompt(pack, plan) },
+          ],
+        },
+        { timeout: GENERATE_TIMEOUT_MS },
+      );
+      const msg = await stream.finalMessage();
 
-      const block = msg.content.find((b) => b.type === 'text');
-      const text = ((block as { text?: string } | undefined)?.text ?? '').trim();
+      // ⚠️ EVERY TEXT BLOCK, NOT THE FIRST. This was `.find(b => b.type ===
+      // 'text')`, which was correct only while a response was one text block.
+      // With thinking enabled the content array interleaves thinking and text,
+      // and taking the first text block silently truncates the document at the
+      // first pause in the model's writing — a defect that would have looked
+      // exactly like a writing fault and never like a bug.
+      const text = msg.content
+        .filter((b) => b.type === 'text')
+        .map((b) => (b as { text?: string }).text ?? '')
+        .join('')
+        .trim();
 
       // WATCH FOR A DOCUMENT THAT RAN OUT OF ROOM.
       //
@@ -257,6 +300,18 @@ export class MotivationClaudeService {
       if (text.length < 200) {
         // Too short to be a motivation. Treat as a failed attempt rather than
         // storing something the applicant would have to throw away.
+        //
+        // ⚠️ SAY WHAT CAME BACK, NOT JUST THAT IT WAS SHORT. The bare message
+        // sent us looking for a writing fault when the response contained no
+        // text block at all — the whole allowance had gone to thinking. The
+        // block types and the stop reason separate those two worlds in one
+        // line of log.
+        const shape = msg.content.map((b) => b.type).join('+') || 'empty';
+        this.logger.error(
+          `Motivation document unusable: ${text.length} chars of text, ` +
+            `stop_reason=${msg.stop_reason}, content=[${shape}], ` +
+            `out=${msg.usage?.output_tokens ?? '?'} tokens.`,
+        );
         throw new Error('Generated document was too short to be usable');
       }
       return { text, usage: this.usageOf(msg, MODEL_WRITE) };

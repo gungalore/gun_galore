@@ -2522,6 +2522,7 @@ export class MotivationsService {
             },
           })
           .catch(() => undefined);
+        await this.notifyOutcome(row, 'failed');
         return { status: MotivationStatus.FAILED, score: 0 };
       }
 
@@ -2647,6 +2648,7 @@ export class MotivationsService {
             },
           })
           .catch(() => undefined);
+        await this.notifyOutcome(row, 'failed');
         return { status: MotivationStatus.FAILED, score: graded.verdict.overall };
       }
 
@@ -2696,6 +2698,18 @@ export class MotivationsService {
       if (claimedSeatHere) {
         await this.quota.releaseBetaSeat().catch(() => undefined);
       }
+
+      // ⚠️ AND TELL THEM. THIS is the branch that fired on 2026-08-22 and said
+      // nothing: an Anthropic timeout, or a document that came back unusable,
+      // put the row back to NEEDS_MORE_INFO and returned the seat — correctly
+      // — and then simply rethrew into startGeneration's catch, which logs.
+      // The applicant, who is holding a phone waiting for the message we
+      // promised them, got a button that went grey and came back.
+      //
+      // Ordered AFTER the row is restored so the link in the message opens a
+      // page they can actually press Prepare on, and awaited so a process that
+      // dies immediately after has still sent it.
+      await this.notifyOutcome(row, 'failed');
       throw err;
     }
   }
@@ -2711,6 +2725,14 @@ export class MotivationsService {
    * just as FINISHED from where they are standing — and a knock-back nobody
    * is told about is the one outcome with no way back into the flow.
    *
+   * ⚠️ AND SO DOES EVERY FAILURE BRANCH, WHICH IS NEW. Only the two success
+   * paths called this, so the outcome where somebody is MOST certainly still
+   * waiting — the one where nothing was written at all — was the one that said
+   * nothing. Operator, 2026-08-22: "Pressed the Prepare my motivation and it
+   * greyed out. It is back to prepare my motivation again and did not receive
+   * any notifications." The button returning is the only signal there was, and
+   * only if you happened to be looking at the page.
+   *
    * ⚠️ IT NEVER THROWS. The row is already in its terminal state by the time
    * this runs and the document is written and (in time) paid for; a Resend
    * outage, a missing phone number or a stale user row must cost a message,
@@ -2722,7 +2744,7 @@ export class MotivationsService {
    */
   private async notifyOutcome(
     row: { id: string; userId: string; referenceNumber: string },
-    outcome: 'ready' | 'held',
+    outcome: 'ready' | 'held' | 'failed',
   ): Promise<void> {
     try {
       const user = await this.prisma.user.findUnique({
@@ -2803,14 +2825,21 @@ export class MotivationsService {
    * and not re-generable, so the applicant is stranded on a document that
    * looks permanently busy with nothing to click.
    *
-   * Fifteen minutes is well past the ~90 seconds a real run takes, so this
-   * cannot cut off work that is still going; and it moves the row to
-   * NEEDS_MORE_INFO rather than an editable draft, because tokens may well
-   * have been spent and the applicant should see the state as it is.
+   * ⚠️ TWENTY-FIVE MINUTES, AND THE FIGURE IS DERIVED, NOT CHOSEN. It must
+   * stay clear of the worst realistic run, which GENERATE_TIMEOUT_MS's comment
+   * computes: research 180s + write 300s + one local retry 300s + verify 60s +
+   * grade 60s = 15 minutes. It was 15 when the writer's clock was 180s and the
+   * sum was 11; raising the writer's token ceiling raised both, and a sweep
+   * that fires at the same moment a legitimate run is still writing would take
+   * the row out from under it. Change either timeout and redo the sum here.
+   *
+   * It moves the row to NEEDS_MORE_INFO rather than an editable draft, because
+   * tokens may well have been spent and the applicant should see the state as
+   * it is.
    */
   @Cron('*/5 * * * *')
   async sweepStuckGenerations() {
-    const cutoff = new Date(Date.now() - 15 * 60 * 1000);
+    const cutoff = new Date(Date.now() - 25 * 60 * 1000);
     const stuck = await this.prisma.motivation.updateMany({
       where: { status: MotivationStatus.GENERATING, updatedAt: { lt: cutoff } },
       data: { status: MotivationStatus.NEEDS_MORE_INFO },

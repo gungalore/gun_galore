@@ -4973,25 +4973,48 @@ export class NotificationsService {
     name: string;
     motivationId: string;
     referenceNumber: string;
-    /** 'ready' = passed the gate. 'held' = NEEDS_MORE_INFO after the gate. */
-    outcome: 'ready' | 'held';
+    /**
+     * 'ready' = passed the gate. 'held' = NEEDS_MORE_INFO after the gate.
+     *
+     * ⚠️ 'failed' = IT DID NOT WRITE AT ALL, and it exists because of a live
+     * silence. 2026-08-22: the operator pressed Prepare, the button greyed
+     * out, came back — and nothing else ever happened. Only the two SUCCESS
+     * paths called this; every failure branch returned quietly, so the one
+     * outcome where somebody is definitely still waiting was the one outcome
+     * nobody was told about. A detached run has no other way to reach them.
+     */
+    outcome: 'ready' | 'held' | 'failed';
   }) {
     const path = `/motivations/${d.motivationId}`;
     const url = `${this.appUrl}${path}`;
     const ready = d.outcome === 'ready';
+    const failed = d.outcome === 'failed';
 
-    const headline = ready
-      ? 'Your document is ready'
-      : 'Your document needs a bit more detail';
+    const headline = failed
+      ? 'We could not finish your document'
+      : ready
+        ? 'Your document is ready'
+        : 'Your document needs a bit more detail';
 
     await this.persist({
       userId: d.userId,
       category: 'ACCOUNT',
-      type: ready ? 'motivation_ready' : 'motivation_needs_more_info',
+      type: failed
+        ? 'motivation_failed'
+        : ready
+          ? 'motivation_ready'
+          : 'motivation_needs_more_info',
       title: headline,
-      body: ready
-        ? `${d.referenceNumber} is written. Open it to read it through and download the pack.`
-        : `${d.referenceNumber} is written, but we held it back — it needs more detail before it is ready to file. Open it to add what is missing.`,
+      body: failed
+        ? // ⚖️ OURS, NOT THEIRS. A failure here is our machinery, and telling
+          // somebody their own answers were at fault would be both untrue and
+          // the thing that stops them trying again. Nothing was charged and
+          // nothing was lost — say so, because that is the first thing anyone
+          // wonders.
+          `Something went wrong on our side while writing ${d.referenceNumber}. Nothing you entered is lost and nothing has been charged. Open it and prepare it again.`
+        : ready
+          ? `${d.referenceNumber} is written. Open it to read it through and download the pack.`
+          : `${d.referenceNumber} is written, but we held it back — it needs more detail before it is ready to file. Open it to add what is missing.`,
       url: path,
       // The frontend icon set has no document glyph; 'account' is the
       // supported alias for the neutral account mark (notification-item.tsx).
@@ -5014,20 +5037,26 @@ export class NotificationsService {
     // these clear 160 with a 25-character cuid in the URL.
     await this.sendSms(
       d.phone,
-      ready
-        ? `All Outdoor: your document ${d.referenceNumber} is ready. Read it and download the pack: ${url}`
-        : `All Outdoor: your document ${d.referenceNumber} needs more detail before it is ready. Open it: ${url}`,
+      failed
+        ? `All Outdoor: we could not finish document ${d.referenceNumber}. Nothing is lost and nothing was charged. Open it and try again: ${url}`
+        : ready
+          ? `All Outdoor: your document ${d.referenceNumber} is ready. Read it and download the pack: ${url}`
+          : `All Outdoor: your document ${d.referenceNumber} needs more detail before it is ready. Open it: ${url}`,
       // The outcome is in the reference so a regenerate is a distinct send
       // rather than something that looks like a duplicate of the first.
       `motivation-${d.outcome}-${d.motivationId}`,
     );
 
     const html = this.email({
-      status: ready
-        ? { tone: 'success', label: 'Ready' }
-        : { tone: 'pending', label: 'More detail needed' },
+      status: failed
+        ? { tone: 'error', label: 'Not finished' }
+        : ready
+          ? { tone: 'success', label: 'Ready' }
+          : { tone: 'pending', label: 'More detail needed' },
       headline,
-      body: ready
+      body: failed
+        ? `Hi ${b(d.name)}, we could not finish writing ${b(d.referenceNumber)}. This is a fault on our side, not anything you did, and it is being looked at. Everything you entered is saved exactly as you left it and nothing has been charged for this attempt — open the document and press prepare again. If it happens twice, write to ${SUPPORT_EMAIL} with the reference number and a person will pick it up.`
+        : ready
         ? `Hi ${b(d.name)}, ${b(d.referenceNumber)} is written and waiting for you. Read it through against your own papers before you sign it — you submit it as your own, so every fact in it has to be one you can stand behind. The pack is rebuilt each time you download it, so come back for another copy whenever you need one.`
         : // ⚠️ IT DOES NOT PROMISE QUESTIONS. A held-back document only queues a
           // follow-up when a field is actually EMPTY, and by then none can be
@@ -5037,12 +5066,18 @@ export class NotificationsService {
           // always a way forward, even when nothing is being asked.
           `Hi ${b(d.name)}, ${b(d.referenceNumber)} is written, but our own quality check held it back rather than hand you something thin to file. Nothing is lost — open it, read the draft as it stands, and add detail wherever we have asked for it, then prepare it again. If there is nothing there to answer, reply to this email or write to ${SUPPORT_EMAIL} and a person will look at it.`,
       cta: {
-        label: ready ? 'Read your document' : 'Open your document',
+        label: failed
+          ? 'Open your document'
+          : ready
+            ? 'Read your document'
+            : 'Open your document',
         url,
       },
-      preheader: ready
-        ? `${d.referenceNumber} is ready to read and download`
-        : `${d.referenceNumber} needs a bit more detail`,
+      preheader: failed
+        ? `${d.referenceNumber} did not finish — nothing lost, nothing charged`
+        : ready
+          ? `${d.referenceNumber} is ready to read and download`
+          : `${d.referenceNumber} needs a bit more detail`,
     });
     await this.send(d.email, `${headline} — ${d.referenceNumber}`, html);
   }
