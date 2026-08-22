@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { MotivationLicenceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { sanitizePromptValue } from '../common/prompt-sanitize';
 import {
   FactPack,
   gateSystemPrompt,
@@ -296,6 +297,21 @@ export class MotivationClaudeService {
   async research(args: {
     licenceType: MotivationLicenceType;
     answers: Record<string, string>;
+    /**
+     * Held firearms the overlap check matched against the one applied for,
+     * as the applicant described them (".308 Win Tikka").
+     *
+     * ⚠️ WITHOUT THIS THE COMPARISON SECTION HAS NOTHING TO ARGUE WITH. The
+     * writer must now build the distinction itself rather than wait for the
+     * applicant to supply it (operator, 2026-08-22), and rule 1 forbids it
+     * every figure it was not given — so a comparison with no researched
+     * material on the OTHER cartridge can only be written in generalities.
+     * Researching both is what makes the distinction concrete and checkable.
+     *
+     * Cartridge and make only, never a serial or a licence number; the same
+     * privacy rule that governs the rest of this brief.
+     */
+    heldForComparison?: string[];
   }): Promise<{ text: string; usage: ClaudeUsage } | null> {
     if (!this.client) return null;
     const a = args.answers;
@@ -305,6 +321,15 @@ export class MotivationClaudeService {
       .join(' ');
     const area = redactToArea(a.residential_address ?? '');
     const discipline = (a.discipline_other || a.discipline || '').trim();
+    // Deduped and capped: three named cartridges is already a wide brief, and
+    // an owned-firearms table with six rows in the same class would otherwise
+    // spend the search budget on the sixth.
+    const held = [
+      ...new Set((args.heldForComparison ?? []).map((h) => h.trim()).filter(Boolean)),
+    ]
+      .slice(0, 3)
+      .map((h) => sanitizePromptValue(h, 60))
+      .join('; ');
     if (!firearm && !area) return null;
 
     const wantArea = args.licenceType === 'S13_SELF_DEFENCE';
@@ -326,6 +351,16 @@ export class MotivationClaudeService {
           ' Africa.'
         : '',
       discipline ? `THE DISCIPLINE: ${discipline}. Find what it involves and what it asks of the firearm.` : '',
+      held
+        ? `ALREADY HELD, AND IT COVERS SIMILAR GROUND: ${held}. The applicant` +
+          ' already holds this, so the motivation has to say what the firearm' +
+          ' applied for does that this one does not. Find the same kind of' +
+          ' detail for THIS cartridge — its character, effective use and what' +
+          ' it is commonly used for here — and then set the two against each' +
+          ' other: where each one is at its best, where each is over- or' +
+          ' under-matched, what one does that the other does not. Report the' +
+          ' comparison as published fact, and take no view on the application.'
+        : '',
       wantArea && area
         ? `THE AREA: ${area}. Find the recent crime picture for this area and` +
           ' its policing precinct — categories like house robbery, home' +

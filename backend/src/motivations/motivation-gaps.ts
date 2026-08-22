@@ -19,6 +19,10 @@ import { fieldsFor, isVisible, MotivationField } from './motivation-fields';
 // actually better at — turning a list of field names into questions a person
 // wants to answer.
 //
+// ⚠️ AND THE LIST IS DELIBERATELY TINY: a required field that is EMPTY, and
+// nothing else. See reasonFor. Every question that is not strictly blocking
+// has been taken out of this file, one operator complaint at a time.
+//
 // ⚠️ THE COST BUG THIS EXISTS TO FIX. queueFollowUps used to call Claude ONCE
 // PER FIELD, up to three times per failed gate. Every one of those carried the
 // whole system prompt. Batching is not a micro-optimisation here: it is the
@@ -32,8 +36,7 @@ import { fieldsFor, isVisible, MotivationField } from './motivation-fields';
 export type GapReason =
   | 'missing_required'
   | 'thin'
-  | 'missing_optional'
-  | 'overlap';
+  | 'missing_optional';
 
 export interface Gap {
   key: string;
@@ -62,10 +65,8 @@ const REASON_RANK: Record<GapReason, number> = {
   missing_required: 0,
   // Will fail the gate, or already has.
   thin: 1,
-  // The document is refusable without it even though the field is optional.
-  overlap: 2,
   // Would strengthen it. Asked last, and only if there is room.
-  missing_optional: 3,
+  missing_optional: 2,
 };
 
 /**
@@ -79,7 +80,7 @@ const REASON_RANK: Record<GapReason, number> = {
 export function findGaps(
   licenceType: MotivationLicenceType,
   answers: Record<string, string>,
-  opts: { thinFields?: string[]; overlapNeedsJustification?: boolean } = {},
+  opts: { thinFields?: string[] } = {},
 ): Gap[] {
   const thin = new Set(opts.thinFields ?? []);
   const gaps: Gap[] = [];
@@ -115,21 +116,6 @@ export function findGaps(
     });
   }
 
-  // The overlap justification is optional in the registry because most
-  // applicants never need it. When the overlap check has found a firearm in the
-  // same class, it stops being optional in practice — the application is
-  // refusable without it — so it is promoted rather than left at the bottom.
-  if (opts.overlapNeedsJustification) {
-    const g = gaps.find((x) => x.key === 'overlap_justification');
-    if (g) {
-      g.reason = 'overlap';
-      g.rank = REASON_RANK.overlap;
-    }
-  } else {
-    const i = gaps.findIndex((x) => x.key === 'overlap_justification');
-    if (i >= 0) gaps.splice(i, 1);
-  }
-
   // Stable within a rank: registry order, which is the order the wizard shows
   // them, so the questions follow the form rather than jumping about.
   return gaps.sort((a, b) => a.rank - b.rank);
@@ -153,13 +139,29 @@ function reasonFor(
   // cannot be written at all. A thin answer is the writer's craft to carry,
   // not the applicant's homework.
   if (!current && f.required) return 'missing_required';
-  // The ONE exception: the overlap justification. It is optional in the
-  // registry because most applicants never need it, but when the overlap
-  // check fires the application is refusable without it — and why somebody
-  // wants a second firearm in the same class is knowledge only they hold, not
-  // something a writer can supply. The caller promotes it when the overlap is
-  // real and deletes it when it is not.
-  if (!current && f.key === 'overlap_justification') return 'missing_optional';
+  //
+  // ⚠️ AND THAT NOW INCLUDES THE OVERLAP JUSTIFICATION, which used to be the
+  // one exception here. The reasoning was that why somebody wants a second
+  // firearm in the same class is knowledge only they hold. It is not.
+  //
+  // Operator, 2026-08-22, on being asked it: "Questions like this should not
+  // be asked unless there is critical information needed that would
+  // compromise the motivation. It is the job of the AI to do research as to
+  // why the applicant would need this firearm and justify it for them
+  // according to the type of application, other weapons owned that is
+  // similar, the shooting discipline the weapons are good for, the experience
+  // of the applicant and all of those kind of factors."
+  //
+  // He is right, and rule 8 of the writer's own prompt already said so: the
+  // line runs between FACTS and RATIONALE. What the applicant holds is a
+  // fact and must be supplied. What DISTINGUISHES two firearms — division,
+  // course of fire, quarry, terrain, role — is rationale, and rationale is
+  // the writer's craft. Asking the applicant to supply it was asking them to
+  // do the job they are paying for.
+  //
+  // The field survives on the FORM, offered next to the firearms they have
+  // just typed, and the writer leads with it when they use it. It simply
+  // never becomes a question again.
   return null;
 }
 

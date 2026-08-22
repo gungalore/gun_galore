@@ -1293,13 +1293,22 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'overlap_justification',
-    label: 'Why you need this one as well',
+    label: 'Anything you want us to lead with (optional)',
     kind: 'long',
     section: 'Firearms you already own',
-    // Becomes REQUIRED only when the overlap check finds a firearm in the same
-    // class. Not a showIf, because the condition is computed rather than
-    // answered — the service adds it to the outstanding list.
-    help: 'What does this firearm do that the one you already own cannot? Be specific and practical — ranges, terrain, quarry, discipline, or what the other one is committed to.',
+    // ⚠️ OFFERED, NEVER DEMANDED — and it used to be demanded. It was shown
+    // only when the overlap check fired, and if it was left empty the gate
+    // queued it as a follow-up question. Operator, 2026-08-22: "Questions like
+    // this should not be asked unless there is critical information needed
+    // that would compromise the motivation. It is the job of the AI to do
+    // research as to why the applicant would need this firearm and justify it
+    // for them."
+    //
+    // So the writer now argues the comparison itself, out of facts already in
+    // the pack (see ARGUE_IT in motivation-overlap.ts), and this box exists
+    // only for an applicant who has a reason of their own that beats any
+    // inference. Never required, never a question.
+    help: 'We argue this for you from the rest of your application. If there is a reason of your own — what this one does that the other cannot, in ranges, terrain, quarry or discipline — put it here and your motivation will lead with it.',
     maxLength: 2000,
   },
 

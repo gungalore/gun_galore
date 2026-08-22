@@ -24,7 +24,13 @@ describe("the operator's example", () => {
     expect(r.verdict.kind).toBe('overlap');
     expect(r.needsJustification).toBe(true);
     expect(r.prompt).toMatch(/medium plains game/);
-    expect(r.prompt).toMatch(/why you need both/i);
+    // ⚠️ WHAT WE SAY TO THE APPLICANT IS AN OFFER, NOT A TASK. It used to end
+    // "the application should say plainly why you need both... What does this
+    // one do that the other cannot?" — homework, on the page of someone who
+    // is paying us to write the argument.
+    expect(r.prompt).toMatch(/we write that argument for you/i);
+    expect(r.prompt).toMatch(/if there is a particular reason of your own/i);
+    expect(r.prompt).not.toMatch(/why you need both/i);
     if (r.verdict.kind === 'overlap') {
       expect(r.verdict.quarry).toBe('medium_game');
       expect(r.verdict.withCalibres).toEqual(['.308 Win']);
@@ -46,12 +52,24 @@ describe("the operator's example", () => {
     expect(dedicated.writerNote).toMatch(/still state the reason/);
   });
 
-  it('tells the writer to address it without inventing a distinction', () => {
-    // The standing rule: the model arranges the applicant's facts, it never
-    // manufactures circumstances for a firearm application.
+  it('tells the writer to ARGUE the distinction, not to wait for one', () => {
+    // ⚠️ THIS TEST USED TO ASSERT THE OPPOSITE — "do not invent a
+    // distinction", "only the reason the applicant gave" — which left the
+    // writer with nothing whenever the applicant wrote nothing, so the
+    // pipeline went and asked them. Operator, 2026-08-22: "It is the job of
+    // the AI to do research as to why the applicant would need this firearm
+    // and justify it for them."
+    //
+    // The line that survives is rule 8's: the DISTINCTION is rationale and is
+    // the writer's to build; a new FACT is still an invention.
     const r = checkOverlap('.30-06 Springfield', [{ calibre: '.308 Winchester' }]);
-    expect(r.writerNote).toMatch(/do not invent a distinction/i);
-    expect(r.writerNote).toMatch(/only the reason the applicant gave/i);
+    expect(r.writerNote).toMatch(/RATIONALE, not a fact about the applicant/);
+    expect(r.writerNote).toMatch(/argue it anyway/i);
+    expect(r.writerNote).toMatch(/never write that no\s+reason was given/i);
+    expect(r.writerNote).toMatch(/MAY NOT DO IS ASSERT A NEW FACT/);
+    expect(r.writerNote).toMatch(/never\s+suggest the overlap does not matter/i);
+    // And where the applicant DID write something, it leads.
+    expect(r.writerNote).toMatch(/LEAD WITH IT/);
   });
 });
 
@@ -178,7 +196,7 @@ describe('overlap by firearm type', () => {
     }
     expect(r.writerNote).toMatch(/two handguns are two handguns/i);
     expect(r.writerNote).toMatch(/course of fire/);
-    expect(r.writerNote).toMatch(/do not invent a distinction/i);
+    expect(r.writerNote).toMatch(/MAY NOT DO IS ASSERT A NEW FACT/);
   });
 
   it('runs even when the applied-for cartridge is unreadable', () => {

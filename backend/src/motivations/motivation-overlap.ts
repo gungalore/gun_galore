@@ -394,6 +394,62 @@ export interface OverlapOptions {
   licenceType?: MotivationLicenceType;
 }
 
+/**
+ * What we say to the APPLICANT about an overlap. An offer, never a demand.
+ *
+ * They are paying us to make this argument; telling them to go and make it
+ * instead is the thing the operator objected to. So we say we have seen it,
+ * that the document will meet it, and that a reason of their own would be used
+ * first if they happen to have one.
+ *
+ * ⚠️ APPENDED ONCE by the caller, not built into each paragraph — when both
+ * the calibre and the type test fire, the applicant used to be told twice in
+ * consecutive sentences that a reviewer would see both firearms.
+ */
+const OFFER_TAIL = [
+  'A reviewer will see both on your licence record, so your motivation deals with it head-on — we write',
+  'that argument for you from the rest of your application. If there is a particular reason of your own —',
+  'what this one does that the other cannot — add it below and we will lead with it.',
+].join(' ');
+
+/**
+ * THE STANDING DIRECTION ON EVERY OVERLAP NOTE — write the distinction, do not
+ * wait to be handed it.
+ *
+ * ⚠️ THIS USED TO SAY THE OPPOSITE. Every note ended "using only the reason
+ * the applicant gave — do not invent a distinction", so where the applicant
+ * gave nothing the writer had nothing, and the pipeline went and asked them for
+ * it. That question is what the operator objected to on 2026-08-22: "It is the
+ * job of the AI to do research as to why the applicant would need this firearm
+ * and justify it for them according to the type of application, other weapons
+ * owned that is similar, the shooting discipline the weapons are good for, the
+ * experience of the applicant and all of those kind of factors."
+ *
+ * The old wording confused two things rule 8 of the writer's prompt already
+ * keeps apart. WHAT THE APPLICANT HOLDS is a verifiable fact and must be
+ * supplied. WHAT DISTINGUISHES TWO FIREARMS — division, course of fire, quarry,
+ * terrain, range, the role each one plays — is rationale built out of facts
+ * already in the pack, and rationale is the writer's craft in every
+ * professionally written motivation.
+ *
+ * So the ban that remains is the one that always mattered: no NEW FACT may be
+ * asserted to make the argument work. A firearm the applicant does not own, a
+ * discipline they did not name, a hunt they did not describe are still
+ * inventions, and rule 9's warning about comparative framing still binds.
+ */
+const ARGUE_IT = [
+  'The distinction between two firearms is RATIONALE, not a fact about the applicant, so it is yours to',
+  'build — from the licence type applied for, the purpose stated, the disciplines or quarry named, the',
+  'ranges, ground and conditions described, the experience and record supplied, and what each firearm is',
+  'chambered for and therefore suited to. Reason it out and state it plainly.',
+  'Where the applicant gave a reason of their own, LEAD WITH IT and build around it — their reason is',
+  'better evidence than any inference of yours. Where they gave none, argue it anyway: never write that no',
+  'reason was given, and never leave the objection standing.',
+  '⚠️ WHAT YOU MAY NOT DO IS ASSERT A NEW FACT to make the argument work — a firearm they do not own, a',
+  'discipline they did not name, an event that did not happen. Argue from what is in the pack, and never',
+  'suggest the overlap does not matter.',
+].join(' ');
+
 /** How the applicant would recognise a held firearm in a sentence. */
 function describeHeld(h: HeldFirearm): string {
   return h.describedAs?.trim() || h.calibre?.trim() || (h.type ?? '').trim();
@@ -501,9 +557,7 @@ export function checkOverlap(
     const label = QUARRY_LABELS[mine as QuarryClass];
     const list = calibreNamed.join(', ');
     prompts.push(
-      `You already hold ${list}, which covers ${label} — the same ground as the firearm you are applying for. ` +
-        'A reviewer will see both on your licence record, so the application should say plainly why you need both ' +
-        'rather than leave it to be asked. What does this one do that the other cannot?',
+      `You already hold ${list}, which covers ${label} — the same ground as the firearm you are applying for.`,
     );
     // "also" only when a paragraph already stands above it.
     const opener = notes.length
@@ -511,8 +565,8 @@ export function checkOverlap(
       : 'The applicant already holds';
     notes.push(
       `${opener} ${list}, in the same class (${label}) as the firearm applied for. ` +
-        'Address this DIRECTLY and early, using only the reason the applicant gave — do not invent a distinction. ' +
-        'If the reason given is thin, say what it is plainly rather than dressing it up.' +
+        'Address this DIRECTLY and early, and MAKE THE ARGUMENT YOURSELF. ' +
+        ARGUE_IT +
         // A renewal is not an acquisition, so the dedicated-status framing does
         // not fit it: the Registrar is deciding whether the applicant may keep
         // a firearm, not whether they may add one.
@@ -528,9 +582,7 @@ export function checkOverlap(
     const typeLabel = FIREARM_TYPE_LABELS[myType as FirearmType];
     const list = typeNamed.join(', ');
     prompts.push(
-      `You already hold ${list}, which is the same type of firearm you are applying for. ` +
-        'A reviewer will see both on your licence record, so the application should say plainly why you need both ' +
-        'rather than leave it to be asked. What does this one do that the other cannot?',
+      `You already hold ${list}, which is the same type of firearm you are applying for.`,
     );
     // "also" only when a paragraph already stands above it.
     const opener = notes.length
@@ -544,13 +596,15 @@ export function checkOverlap(
             (opts.licenceType === MotivationLicenceType.S13_SELF_DEFENCE
               ? 'where and how each one is kept or carried, and what this one does that the other cannot'
               : 'a different division, a different course of fire, a different role') +
-            ' — using only the reason the applicant gave; do not invent a distinction.'
+            '. ' +
+            ARGUE_IT
         : // NOT "in a different calibre class". It may be, or the cartridge may
           // simply be one the table does not carry, and the writer must not be
           // handed a distinction we cannot stand behind.
           `${opener} ${list} — the same type of firearm (${typeLabel}) as the one applied for, which the cartridge comparison did not catch. ` +
-            `A second ${typeLabel} is still a question worth answering, so say what this one is for that the other is not, using only the reason the applicant gave. ` +
-            'Where the quarry genuinely differs, the quarry difference IS the answer and a sentence or two will do.',
+            `A second ${typeLabel} is still a question worth answering, so say what this one is for that the other is not. ` +
+            'Where the quarry genuinely differs, the quarry difference IS the answer and a sentence or two will do. ' +
+            ARGUE_IT,
     );
   };
 
@@ -571,7 +625,7 @@ export function checkOverlap(
       withTypes: typeMatches,
     },
     needsJustification: true,
-    prompt: prompts.join(' '),
+    prompt: `${prompts.join(' ')} ${OFFER_TAIL}`,
     writerNote: notes.join(' '),
   };
 }

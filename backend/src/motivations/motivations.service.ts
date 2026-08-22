@@ -2375,7 +2375,23 @@ export class MotivationsService {
         : undefined;
       if (!research) {
         const r = await this.claude
-          .research({ licenceType: row.licenceType, answers })
+          .research({
+            licenceType: row.licenceType,
+            answers,
+            // ⚠️ THE OTHER FIREARM IS PART OF THE BRIEF NOW. The writer has to
+            // argue the comparison itself rather than wait for the applicant
+            // to hand it over, and rule 1 forbids it any figure it was not
+            // given — so without published material on the held cartridge the
+            // strongest section in a same-class application could only be
+            // written in generalities.
+            heldForComparison:
+              overlap.verdict.kind === 'overlap'
+                ? [
+                    ...overlap.verdict.withCalibres,
+                    ...overlap.verdict.withTypes,
+                  ]
+                : [],
+          })
           .catch(() => null);
         if (r) {
           research = r.text;
@@ -2648,7 +2664,6 @@ export class MotivationsService {
         row.licenceType,
         graded.verdict.thinFields,
         answers,
-        overlap.needsJustification,
       );
       // ⚠️ AFTER queueFollowUps, NEVER BEFORE. The message tells the applicant
       // the questions are waiting for them; sending it first would race an
@@ -3690,7 +3705,6 @@ export class MotivationsService {
     licenceType: MotivationLicenceType,
     thinFields: string[],
     answers: Record<string, string>,
-    overlapNeedsJustification = false,
   ): Promise<void> {
     // WHAT to ask is worked out in code, for nothing — it is arithmetic over
     // the field registry. Claude is asked only to WORD the questions, which is
@@ -3714,10 +3728,7 @@ export class MotivationsService {
       else open.delete(m.fieldKey);
     }
 
-    const gaps = findGaps(licenceType, answers, {
-      thinFields,
-      overlapNeedsJustification,
-    })
+    const gaps = findGaps(licenceType, answers, { thinFields })
       .filter((g) => !open.has(g.key))
       .slice(0, FOLLOW_UP_BATCH);
     if (!gaps.length) return;

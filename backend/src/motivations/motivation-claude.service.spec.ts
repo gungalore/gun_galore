@@ -361,12 +361,47 @@ describe('the overlap direction in the generation prompt', () => {
     );
   });
 
-  it('tells the model not to invent a difference between the firearms', () => {
+  it('does not countermand the note it is wrapping', () => {
+    // ⚠️ THE WRAPPER USED TO END "Do NOT invent a difference between the
+    // firearms — if the applicant has not given a reason, say what they did
+    // give and leave it there", which is the opposite of what the note now
+    // says. The note builds the distinction out of the pack's own facts; a
+    // trailing instruction to stop would have won on proximity.
     const p = generationUserPrompt(
       withNote('already holds .308 Win'),
       planFor(PACK.licenceType, 7),
     );
-    expect(p).toMatch(/Do NOT invent a difference/i);
+    expect(p).not.toMatch(/Do NOT invent a difference/i);
+    expect(p).not.toMatch(/say what they did give and leave it there/i);
+    expect(p).toContain('Deal with it plainly and early');
+  });
+
+  it('carries the ARGUE-IT direction through, verbatim', () => {
+    // The note is built in motivation-overlap.ts and must reach the model
+    // intact — this is the assertion that the two halves are actually wired.
+    const { checkOverlap } = jest.requireActual<
+      typeof import('./motivation-overlap')
+    >('./motivation-overlap');
+    const note = checkOverlap('.270 Win', [{ calibre: '.308 Win' }]).writerNote!;
+    const p = generationUserPrompt(withNote(note), planFor(PACK.licenceType, 7));
+    expect(p).toMatch(/RATIONALE, not a fact about the applicant/);
+    expect(p).toMatch(/MAY NOT DO IS ASSERT A NEW FACT/);
+  });
+
+  it('briefs the comparison SECTION to argue, not to wait', () => {
+    // The section brief and the overlap note are two different levers and
+    // both used to point the wrong way. This is the section one: it reaches
+    // the model only when the plan carries `comparison`, which happens only
+    // when a same-class holding exists.
+    const p = generationUserPrompt(
+      withNote('already holds .308 Win'),
+      planFor(PACK.licenceType, 7, { hasOverlap: true }),
+    );
+    expect(p).toMatch(/THIS ARGUMENT IS MINE TO MAKE, NOT MINE TO WAIT FOR/);
+    expect(p).toMatch(/Never write that I gave no reason/);
+    // The invention ban survives, aimed at FACTS rather than at the argument.
+    expect(p).toMatch(/assert a NEW FACT/);
+    expect(p).not.toMatch(/ONLY THE REASON I GAVE/);
   });
 
   it('says NOTHING when there is no overlap', () => {
@@ -386,6 +421,59 @@ describe('the overlap direction in the generation prompt', () => {
 // component is the house; it never survives, and digits are removed from the
 // rest against unit numbers and postal codes riding along.
 // ────────────────────────────────────────────────────────────────────
+describe('what the research brief asks about', () => {
+  // The brief is built inside research() and only reaches the wire, so these
+  // assert on the request the SDK was handed.
+  let seen: { messages: { content: string }[] } | null = null;
+  const briefFor = async (extra: Record<string, unknown>) => {
+    seen = null;
+    const create = jest.fn(async (body: { messages: { content: string }[] }) => {
+      seen = body;
+      return {
+        content: [{ type: 'text', text: 'x'.repeat(200) }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      };
+    });
+    const svc = new MotivationClaudeService({} as never);
+    (svc as unknown as { client: unknown }).client = {
+      messages: { create },
+    };
+    await svc.research({
+      licenceType: PACK.licenceType,
+      answers: { firearm_make: 'Tikka', firearm_calibre: '.270 Win' },
+      ...extra,
+    } as never);
+    return String(seen!.messages[0].content);
+  };
+
+  it('asks about the HELD cartridge too, and for the comparison', async () => {
+    // ⚠️ WITHOUT THIS THE COMPARISON CAN ONLY BE WRITTEN IN GENERALITIES.
+    // The writer now builds the distinction itself instead of waiting for the
+    // applicant to supply it, and rule 1 forbids it any figure it was not
+    // given — so the other cartridge has to be researched, not recalled.
+    const brief = await briefFor({ heldForComparison: ['.308 Win'] });
+    expect(brief).toContain('ALREADY HELD');
+    expect(brief).toContain('.308 Win');
+    expect(brief).toMatch(/set the two against each other/);
+  });
+
+  it('says nothing about a held firearm when there is no overlap', async () => {
+    const brief = await briefFor({ heldForComparison: [] });
+    expect(brief).not.toContain('ALREADY HELD');
+  });
+
+  it('caps the list, so six rows in one class cannot eat the search budget', async () => {
+    const brief = await briefFor({
+      heldForComparison: ['.308 Win', '.308 Win', '.30-06', '6.5 CM', '7x57'],
+    });
+    // Deduped to four, capped at three.
+    expect(brief).toContain('.308 Win');
+    expect(brief).toContain('.30-06');
+    expect(brief).toContain('6.5 CM');
+    expect(brief).not.toContain('7x57');
+  });
+});
+
 describe('redactToArea', () => {
   it('drops the street and keeps the area', () => {
     expect(

@@ -1502,12 +1502,14 @@ export default function MotivationWizardPage() {
 
               {isOwned && detail.overlap?.needsJustification && (
                 <div className="rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm">
-                  {/* Shown while they are still filling the form. Someone who
-                      has just typed their existing firearms is in the best
-                      position to explain why they need both — and asked here it
-                      reads as help, where asked after a rejection it reads as a
-                      hurdle. */}
-                  <p className="font-medium">Worth explaining</p>
+                  {/* Shown while they are still filling the form, next to the
+                      firearms they have just typed. ⚠️ IT IS A HEADS-UP, NOT A
+                      TASK: the writer argues the comparison itself now, and the
+                      box below it is optional. Operator, 2026-08-22, on being
+                      asked to supply the reason — "it is the job of the AI to
+                      do research as to why the applicant would need this
+                      firearm and justify it for them". */}
+                  <p className="font-medium">We noticed, and we cover it</p>
                   <p className="mt-1 text-[var(--text-secondary)]">
                     {detail.overlap.prompt}
                   </p>

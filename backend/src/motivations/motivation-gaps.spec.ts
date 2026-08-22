@@ -90,21 +90,37 @@ describe('the order questions are asked in', () => {
     for (const g of gaps) expect(g.reason).toBe('missing_required');
   });
 
-  it('promotes the overlap justification only when there is an overlap', () => {
-    // Optional in the registry because most applicants never need it. When the
-    // overlap check finds a firearm in the same class it is not optional in
-    // practice — the application is refusable without it.
-    const without = findGaps(T, {}).map((g) => g.key);
-    expect(without).not.toContain('overlap_justification');
-
-    const withOverlap = findGaps(T, {}, { overlapNeedsJustification: true });
-    const g = withOverlap.find((x) => x.key === 'overlap_justification')!;
-    expect(g.reason).toBe('overlap');
-    // And it is the ONLY optional field that can ever become a question:
-    // why somebody wants a second firearm in the same class is knowledge
-    // only they hold — a writer cannot supply it.
+  it('never asks the overlap justification, overlap or no overlap', () => {
+    // ⚠️ THIS USED TO BE THE ONE EXCEPTION, on the theory that why somebody
+    // wants a second firearm in the same class is knowledge only they hold.
+    // Operator, 2026-08-22, on being asked it: "It is the job of the AI to do
+    // research as to why the applicant would need this firearm and justify it
+    // for them according to the type of application, other weapons owned that
+    // is similar, the shooting discipline the weapons are good for, the
+    // experience of the applicant."
+    //
+    // Rule 8 of the writer's prompt already drew the line: what the applicant
+    // HOLDS is a fact and must be supplied; what DISTINGUISHES two firearms is
+    // rationale, and rationale is the writer's craft. The field stays on the
+    // form, offered; it is never a question again.
+    expect(findGaps(T, {}).map((g) => g.key)).not.toContain(
+      'overlap_justification',
+    );
+    // Not even with the whole owned-firearms table filled in with a duplicate
+    // of what is being applied for — the condition that used to promote it.
+    const withOverlap = findGaps(T, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '9mm',
+      existing_firearm_1_make: 'Glock',
+    });
+    expect(withOverlap.map((g) => g.key)).not.toContain(
+      'overlap_justification',
+    );
+    // And nothing else optional crept back in behind it.
     expect(
-      withOverlap.filter((x) => x.reason === 'missing_optional'),
+      withOverlap.filter((x) => x.reason !== 'missing_required'),
     ).toHaveLength(0);
   });
 

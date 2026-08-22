@@ -543,9 +543,16 @@ function renderOverlap(note: string | undefined): string {
     '',
     'SOMETHING THIS DOCUMENT MUST ADDRESS:',
     note,
-    'Deal with it plainly and early. Do NOT invent a difference between the',
-    'firearms — if the applicant has not given a reason, say what they did give',
-    'and leave it there. Never suggest the overlap is unimportant.',
+    // ⚠️ THE STANDING BAN THAT USED TO LIVE HERE — "do not invent a
+    // difference... if the applicant has not given a reason, say what they
+    // did give and leave it there" — CONTRADICTED THE NOTE IT WAS WRAPPING.
+    // The note now tells the writer to build the distinction out of the
+    // pack's own facts (ARGUE_IT in motivation-overlap.ts), and this line
+    // told it to stop. Operator, 2026-08-22: "It is the job of the AI to do
+    // research as to why the applicant would need this firearm and justify
+    // it for them." The invention ban survives inside the note, aimed where
+    // it belongs: at new FACTS, not at the argument.
+    'Deal with it plainly and early. The note above says how.',
     '',
   ].join('\n');
 }
@@ -590,7 +597,7 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
   the_calibre:
     'The CARTRIDGE argued against the requirement the purpose section set \u2014 not the platform, which the firearm section answers. What it means for a humane kill on the species named or for the course of fire entered, what the recoil does to follow-up shots and to how much practice is affordable, why it is the sensible cartridge for the use described. \u26a0\ufe0f FIGURES ONLY WHERE YOU WERE GIVEN THEM. Where the research block carries ballistics, use them \u2014 what the cartridge holds at the range a shot is actually taken at. Where it does not, GIVE NO FIGURES AT ALL: no velocity, no energy, no bullet weight, no capacity, no dimension, no date, no account of who designed it or why. Rule 1 bites harder in this section than anywhere else in the document, because this is the section that reaches for cartridge knowledge, and cartridge knowledge you were not given is invention. Argue instead from what IS supplied \u2014 the stated purpose, the discipline or the quarry, the ranges and conditions described, the recoil this applicant will actually be shooting \u2014 and write a shorter section without apology. \u26a0\ufe0f IT MUST REACH THIS APPLICANT. A history of the cartridge that never arrives at this quarry or this discipline is the padding rule 7 forbids, and it reads the same in every document carrying it.',
   comparison:
-    'Why the firearm applied for does not duplicate one I already hold \u2014 the objection the Registrar raises on its own, met before it is put. Name the held firearm as it appears in the facts and say what differs: the division or discipline, the course of fire, the quarry or the terrain, the role each firearm plays. \u26a0\ufe0f ONLY THE REASON I GAVE. Where I gave none, set out what the facts do show and stop there; never invent a difference between two firearms and never suggest the overlap does not matter. This section is in the plan only because a same-class holding exists \u2014 the direction above says which one.',
+    'Why the firearm applied for does not duplicate one I already hold \u2014 the objection the Registrar raises on its own, met before it is put. Name the held firearm as it appears in the facts and say what differs: the division or discipline, the course of fire, the quarry or the terrain, the role each firearm plays. \u26a0\ufe0f THIS ARGUMENT IS MINE TO MAKE, NOT MINE TO WAIT FOR. Where I gave a reason of my own, lead with it. Where I did not, reason it out from the licence type, the purpose, the discipline or the quarry, the ranges and the ground, my experience and record, and what each firearm is chambered for and is therefore suited to. That reasoning is RATIONALE under rule 8 and it is your craft to supply, exactly as a paid motivation writer supplies it. What you may never do is assert a NEW FACT to make it work: a firearm I do not own, a discipline I did not name, an event that did not happen. Never write that I gave no reason, never leave the objection standing, and never suggest the overlap does not matter. This section is in the plan only because a same-class holding exists \u2014 the direction above says which one.',
   statutory_application:
     'THE ONLY SECTION THAT MAY QUOTE \u2014 and rule 4 decides whether it does. Where a <statutory-text> block was supplied, set that text out verbatim and numbered as in the source, then answer each quoted element immediately beneath it with my own facts: the element, then the fact that satisfies it, in order; quote only what you apply and leave nothing quoted hanging. \u26a0\ufe0f WHERE NO SUCH BLOCK WAS SUPPLIED, QUOTE NOTHING \u2014 name the section by number, take its requirements in turn in plain language, and put my facts against each of them. That is a complete section, not a lesser one, and inventing the wording of the Act to fill it is rule 1 applied to the law instead of the applicant. Either way this is where a reviewer checks the application against the Act, so it is the one place legal language belongs; every other section stays in plain words.',
   storage_safety:
@@ -698,9 +705,17 @@ completeness  Does it address everything a reviewer of this licence type needs?
               the one applied for — another handgun, another rifle, another
               shotgun — and the document never explains why the new firearm
               does not duplicate it, the first objection a reviewer raises
-              has gone unanswered. Count that here too. A comparison that is
-              present but rests on the applicant's own stated reason is
-              complete, however brief; only its absence is the failure.
+              has gone unanswered. Count that here too.
+              ⚠️ AND A COMPARISON MUST ARGUE, NOT MERELY APPEAR. A section
+              that names the held firearm and then reports that the applicant
+              gave no reason, or restates a two-word answer and stops, has not
+              met the objection — score it incomplete. Drawing the distinction
+              is the writer's job under the rationale rule below, so a reasoned
+              comparison built from the licence type, the purpose, the
+              discipline or quarry, the ranges and the chamberings is COMPLETE
+              and is NOT ungrounded, even where that box was left empty. What
+              fails is an invented FACT inside it — a firearm the applicant
+              does not own, a discipline they did not name.
 specificity   Is it concrete — real circumstances, real practice — or generic
               filler that could belong to anyone? See the padding note below.
 consistency   Does it hang together, with no internal contradictions?
