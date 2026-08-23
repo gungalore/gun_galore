@@ -238,7 +238,7 @@ const STRENGTHENS: Record<MotivationLicenceType, MotivationUploadKind[]> = {
 
 const LABELS: Record<MotivationUploadKind, string> = {
   IDENTITY_DOCUMENT: 'A copy of your ID',
-  COMPETENCY_CERTIFICATE: 'Your SAPS competency certificate',
+  COMPETENCY_CERTIFICATE: 'Your SAPS competency certificate or printout',
   PROFICIENCY_CERTIFICATE: 'Your proficiency or training certificate',
   CURRENT_LICENCE: 'A firearm licence you already hold',
   ASSOCIATION_CARD: 'Your dedicated status certificate',
@@ -297,7 +297,13 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
   IDENTITY_DOCUMENT:
     'A photograph or scan of the page with your photo on it is fine here — what you upload to us does not need certifying. We read your name and ID number off it so you do not have to type them. (The copy you hand the DFO is the one that must be certified.)',
   COMPETENCY_CERTIFICATE:
-    'Without competency for this type of firearm, SAPS cannot process the application at all.',
+    // ⚠️ THE PRINTOUT COUNTS, AND SAYING "certificate" ALONE TURNS PEOPLE AWAY.
+    // The club checklist bound into a real submitted pack reads "Original
+    // competency card or printout" — because the plastic card is issued slowly
+    // and unevenly, and for long stretches the CFR printout is the only thing
+    // a competent applicant physically holds. An applicant reading
+    // "certificate" and owning a printout concludes they cannot apply yet.
+    'Without competency for this type of firearm, SAPS cannot process the application at all. The card or the CFR printout both count — whichever you were issued.',
   ADDRESS_CONFIRMATION:
     'A photograph or scan is fine — no certification needed for our copy. Use something recent: the DFO will want proof of address from the last three months. We read the address off it.',
   ASSOCIATION_CARD:

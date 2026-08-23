@@ -78,7 +78,7 @@ export interface ChecklistProgress {
 
 export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
   IDENTITY_DOCUMENT: 'Copy of your ID',
-  COMPETENCY_CERTIFICATE: 'SAPS competency certificate',
+  COMPETENCY_CERTIFICATE: 'SAPS competency certificate or printout',
   PROFICIENCY_CERTIFICATE: 'Proficiency / training certificate',
   CURRENT_LICENCE: 'Existing firearm licence(s)',
   ASSOCIATION_CARD: 'Association membership proof',
@@ -657,8 +657,9 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
     // been granted. The row had no note at all, so a first-time applicant had
     // nowhere to learn that.
     key: 'competency_copy',
-    label: 'Your SAPS competency certificate — the original, plus a copy',
-    note: 'SAPS’s own list asks for your original competency certificate, so take it. The copy in your pack is what gets certified against it at the counter. If you have not applied for competency yet, that is a separate, earlier application with its own training, fingerprints, fee and waiting period — section 6(2) means no licence can be issued until it has been granted.',
+    label:
+      'Your SAPS competency card or printout — the original, plus a copy',
+    note: 'SAPS’s own list asks for your original competency certificate, so take it — the plastic card or the CFR printout, whichever you were issued; a club checklist from a real submitted pack names both. The copy in your pack is what gets certified against it at the counter. If you have not applied for competency yet, that is a separate, earlier application with its own training, fingerprints, fee and waiting period — section 6(2) means no licence can be issued until it has been granted.',
   },
   {
     key: 'passport_photos',
