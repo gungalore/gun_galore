@@ -14,16 +14,26 @@
 // desktop, so a right-aligned pill in the footer is sitting under the mascot
 // from the moment the footer scrolls into view. See ask-gg-launcher.tsx.
 
-import { useInstallPrompt } from '@/lib/use-install-prompt';
+import { installPlatform, useInstallPrompt } from '@/lib/use-install-prompt';
+import { trackInstall } from '@/lib/activity-beacon';
 
 export function GetTheAppCta() {
-  const { canInstall, isStandalone, promptInstall } = useInstallPrompt();
+  const {
+    canInstall,
+    isStandalone,
+    isIosSafari,
+    isIosNonSafari,
+    promptInstall,
+  } = useInstallPrompt();
 
   if (isStandalone) return null;
 
   async function handleClick() {
+    const platform = installPlatform({ isIosSafari, isIosNonSafari });
+    trackInstall('clicked', platform, 'footer');
     if (canInstall) {
       const outcome = await promptInstall();
+      if (outcome === 'accepted') trackInstall('completed', platform, 'footer');
       if (outcome === 'unavailable') {
         window.dispatchEvent(new Event('gg:show-install-help'));
       }

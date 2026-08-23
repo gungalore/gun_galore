@@ -21,7 +21,18 @@ export interface RecordInput {
     | 'wishlist_add'
     | 'cart_add'
     | 'checkout_started'
-    | 'page_view';
+    | 'page_view'
+    // Install funnel. The PWA is the only "app" we have, and until these
+    // landed nothing anywhere recorded whether the install popup was ever
+    // seen — an operator reporting "it works on Android but not iPhone" could
+    // not be confirmed or refuted from any table we hold. Four events, one per
+    // step: shown -> clicked -> (dismissed | completed). `metadata.platform`
+    // carries which install path the browser actually had, which is the whole
+    // question on iOS (no beforeinstallprompt exists there, ever).
+    | 'install_shown'
+    | 'install_clicked'
+    | 'install_dismissed'
+    | 'install_completed';
   actor?: ActorRef;
   listingId?: string | null;
   query?: string | null;

@@ -10,7 +10,8 @@ import { AvatarCompletionRing } from '@/components/avatar-completion-ring';
 import { LiveSearch } from '@/components/live-search';
 import { UrgentBell } from '@/components/urgent-bell';
 import { CartButton } from '@/components/cart-button';
-import { useInstallPrompt } from '@/lib/use-install-prompt';
+import { installPlatform, useInstallPrompt } from '@/lib/use-install-prompt';
+import { trackInstall } from '@/lib/activity-beacon';
 import { AccountMenuList, LogoutIcon } from '@/lib/account-menu';
 import { CategoryMenu } from '@/components/category-menu';
 
@@ -31,8 +32,14 @@ export function Nav() {
   // (The installed PWA hides this whole nav, so it keeps its own header bar.)
   const [searchOpen, setSearchOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const { canInstall, isInstalled, isStandalone, promptInstall } =
-    useInstallPrompt();
+  const {
+    canInstall,
+    isInstalled,
+    isStandalone,
+    isIosSafari,
+    isIosNonSafari,
+    promptInstall,
+  } = useInstallPrompt();
 
   // Only worth offering in browser-mobile mode when not already installed.
   // (The drawer is md:hidden + the nav itself is hidden in standalone, so this
@@ -40,12 +47,15 @@ export function Nav() {
   const showInstall = !isInstalled && !isStandalone;
 
   async function handleInstall() {
+    const platform = installPlatform({ isIosSafari, isIosNonSafari });
+    trackInstall('clicked', platform, 'nav');
     setMobileOpen(false);
     // Fire the native dialog if Chrome captured the event; otherwise pop our
     // instruction modal (the only install path then is the browser's ⋮ menu,
     // which we can explain but not trigger).
     if (canInstall) {
       const outcome = await promptInstall();
+      if (outcome === 'accepted') trackInstall('completed', platform, 'nav');
       if (outcome === 'unavailable') {
         window.dispatchEvent(new Event('gg:show-install-help'));
       }

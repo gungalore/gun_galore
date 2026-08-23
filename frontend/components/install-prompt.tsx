@@ -3,10 +3,15 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { InstallAnimation } from './install-animation';
-import { useInstallPrompt } from '@/lib/use-install-prompt';
+import { installPlatform, useInstallPrompt } from '@/lib/use-install-prompt';
 import { useWishlist } from '@/lib/use-wishlist';
 import { BRAND_NAME } from '@/lib/brand';
 import { isChromelessRoute } from '@/lib/chromeless-routes';
+import {
+  trackInstall,
+  type InstallPlatform,
+  type InstallSurface,
+} from '@/lib/activity-beacon';
 
 // "Get the All Outdoor app" install popup + the shared install-help modal.
 //
@@ -59,6 +64,15 @@ const SESSIONS_KEY = 'gg-install-prompt-sessions';
 const LAST_SEEN_KEY = 'gg-install-prompt-last-seen';
 const SESSION_COUNTED_KEY = 'gg-install-prompt-session-counted';
 const DISMISS_DAYS = 14;
+// Snooze after somebody OPENS the instruction modal and closes it without
+// installing. Deliberately shorter than a refusal: they went looking for the
+// steps, so they are interested — they just did not finish. Fourteen days is
+// the right answer to "no"; it is the wrong answer to "not right this second".
+const HELP_SNOOZE_DAYS = 3;
+// Delay before the passive bottom bar appears. Much shorter than the popup's,
+// because the bar does not cover anything — it is a strip above the bottom
+// edge, so it costs the reader nothing to have it slide in early.
+const BAR_DELAY_MS = 1200;
 // Delay before the popup appears so it never slams in on first paint.
 const SHOW_DELAY_MS = 3500;
 // Gap after which a fresh page load counts as a NEW visit rather than a
@@ -144,6 +158,8 @@ function InstallPromptBody() {
   const [desktopArmed, setDesktopArmed] = useState(false);
   // Delay-gate so the popup never appears on first paint.
   const [readyToShow, setReadyToShow] = useState(false);
+  // Same, for the passive bottom bar — see BAR_DELAY_MS.
+  const [barReady, setBarReady] = useState(false);
   // Engagement gate (see the header comment). `returning` is decided once at
   // mount; `engaged` flips when an intent signal's grace period elapses.
   const [returning, setReturning] = useState(false);
@@ -176,6 +192,7 @@ function InstallPromptBody() {
     const chromiumDesktop = !mobile && /Chrome\//.test(ua);
     setIsChromiumDesktop(chromiumDesktop);
     const showTimer = setTimeout(() => setReadyToShow(true), SHOW_DELAY_MS);
+    const barTimer = setTimeout(() => setBarReady(true), BAR_DELAY_MS);
     let fbTimer: ReturnType<typeof setTimeout> | undefined;
     if (mobile) fbTimer = setTimeout(() => setFallbackArmed(true), 5000);
     let dtTimer: ReturnType<typeof setTimeout> | undefined;
@@ -192,6 +209,7 @@ function InstallPromptBody() {
     return () => {
       window.removeEventListener('gg:show-install-help', onShowHelp);
       clearTimeout(showTimer);
+      clearTimeout(barTimer);
       if (fbTimer) clearTimeout(fbTimer);
       if (dtTimer) clearTimeout(dtTimer);
     };
@@ -230,8 +248,25 @@ function InstallPromptBody() {
     }
     const openedListing = isListingDetail(pathname) && path !== landing.current.path;
     const ranSearch = q !== '' && q !== landing.current.q;
-    if (openedListing || ranSearch) armIntent(INTENT_DELAY_MS);
-  }, [pathname, searchParams, armIntent]);
+    // ⚠️ ON iOS, ANY NAVIGATION COUNTS — not just a listing or a search.
+    //
+    // The engagement gate above was written for Android, where a visitor who
+    // never earns the popup still has a way in: Chrome's own ⋮ → "Install
+    // app". iOS has NOTHING. Apple ships no install affordance of any kind,
+    // `beforeinstallprompt` never fires, and this popup is the only channel
+    // that will ever tell an iPhone visitor the app exists. Holding it behind
+    // "open a listing or run a search" on a catalogue that is thin for
+    // signed-out visitors means most iPhone users are simply never told.
+    //
+    // The landing-view protection is untouched and is the part that matters:
+    // `landing.current` is set on the first view and we return above, so a
+    // listing link shared on WhatsApp still cannot be covered. This only says
+    // that on iPhone the SECOND page view is enough, and it still goes through
+    // armIntent's grace period rather than appearing the instant they arrive.
+    const iosNavigated =
+      (isIosSafari || isIosNonSafari) && path !== landing.current.path;
+    if (openedListing || ranSearch || iosNavigated) armIntent(INTENT_DELAY_MS);
+  }, [pathname, searchParams, armIntent, isIosSafari, isIosNonSafari]);
 
   // Add to cart — the strongest signal there is, and the only one with its own
   // window event (dispatched by AddToCartButton on a genuine add).
@@ -265,12 +300,29 @@ function InstallPromptBody() {
     if (previous !== null && wishlistCount > previous) armIntent(INTENT_DELAY_MS);
   }, [wishlistReady, wishlistCount, wishlistSignedIn, armIntent]);
 
-  async function install() {
+  // Shared with the nav and footer buttons — see installPlatform().
+  const platform: InstallPlatform = installPlatform({
+    isIosSafari,
+    isIosNonSafari,
+  });
+
+  async function install(surface: InstallSurface = 'popup') {
+    trackInstall('clicked', platform, surface);
     setBusy(true);
     try {
       const outcome = await promptInstall();
-      // 'accepted' → installed (isInstalled flips, popup won't show again).
-      if (outcome === 'dismissed') dismissFor(DISMISS_DAYS);
+      if (outcome === 'accepted') trackInstall('completed', platform, surface);
+      if (outcome === 'dismissed') {
+        trackInstall('dismissed', platform, surface);
+        // ⚠️ BOTH HALVES. dismissFor() only writes localStorage, which is read
+        // at mount — so without setDismissed the popup or bar stays on screen
+        // for the rest of the page view, now relabelled "Get it" and offering
+        // the instruction modal for the install the user has just refused in
+        // Chrome's own dialog. dismissLater() below always did the pair; this
+        // branch did not, and the bar made it reachable from a second surface.
+        setDismissed(true);
+        dismissFor(DISMISS_DAYS);
+      }
       // If the native event wasn't ready, fall back to the steps modal.
       if (outcome === 'unavailable') setHelpOpen(true);
     } finally {
@@ -279,20 +331,42 @@ function InstallPromptBody() {
   }
 
   // ✕ / "Maybe later" / backdrop — hide for 14 days (gentle re-remind).
-  function dismissLater() {
+  // Also the bar's ✕: one refusal silences both surfaces, so nobody is asked
+  // twice by two different pieces of chrome.
+  function dismissLater(surface: InstallSurface = 'popup') {
+    trackInstall('dismissed', platform, surface);
     setDismissed(true);
     dismissFor(DISMISS_DAYS);
   }
   // "Don't show this again" — permanent opt-out.
   function dismissForever() {
+    trackInstall('dismissed', platform, 'popup');
     setNeverState(true);
     setNever();
   }
-  // Non-native paths (iOS / generic) open the instruction modal; treat that
-  // as engagement and stop nagging the popup for 14 days.
-  function openHelp() {
+  // ⚠️ OPENING THE STEPS IS NOT A REFUSAL — DO NOT DISMISS HERE.
+  //
+  // This used to call dismissLater(), and on iPhone that was close to fatal:
+  // `canInstall` can never be true on iOS (its only source is
+  // beforeinstallprompt, which no iOS browser fires), so the popup's primary
+  // button is ALWAYS this function there. One tap on "Show me how" — the
+  // button we want them to press — silenced the popup for fourteen days, and
+  // since iOS never fires `appinstalled` either, nothing could ever tell us
+  // whether they went on to install or just closed the sheet.
+  //
+  // The snooze now lives on the modal's own close handler instead, at three
+  // days rather than fourteen, so it is spent by giving up rather than by
+  // showing interest.
+  function openHelp(surface: InstallSurface = 'popup') {
+    trackInstall('clicked', platform, surface);
     setHelpOpen(true);
-    dismissLater();
+  }
+  // Closing the steps without installing. Short snooze, so somebody who read
+  // them and wandered off is reminded again this month rather than next.
+  function closeHelp() {
+    setHelpOpen(false);
+    dismissFor(HELP_SNOOZE_DAYS);
+    setDismissed(true);
   }
 
   // Once armed, if the one-tap install still isn't available and it's neither
@@ -331,6 +405,40 @@ function InstallPromptBody() {
       showFallbackHint ||
       showDesktopHint);
 
+  // ── THE PASSIVE BAR ─────────────────────────────────────────────
+  //
+  // A slim strip above the bottom edge, on mobile web only. It exists because
+  // the popup — correctly — makes people earn it, and on iPhone that left a
+  // real hole: no engagement, no popup, and Apple provides no install
+  // affordance of its own, so the app may as well not exist. The site's only
+  // other mentions are the footer (below the fold) and the nav drawer (behind
+  // a closed hamburger, itself behind Clerk's isLoaded gate).
+  //
+  // It is deliberately NOT an interstitial: it covers no content, takes no
+  // focus, and has no backdrop, so it is not the pattern Google demotes and
+  // not the ambush the popup's header comment warns about. That is what lets
+  // it skip the engagement gate the popup keeps.
+  //
+  // ⚠️ ONE REFUSAL SILENCES BOTH. The ✕ writes the same 14-day DISMISSED_KEY
+  // the popup reads, and the bar reads it back — otherwise a visitor who
+  // waved away the bar would be asked again by a modal ten seconds later.
+  //
+  // ⚠️ NOT ON LISTING DETAIL. That page has its own bottom buy bar at
+  // bottom:0 in browser mode (app/listings/[id]/page.tsx), and covering a Buy
+  // button to advertise an app is indefensible. This is a render gate rather
+  // than a CSS one on purpose: the Boet lift below keys on `:has(
+  // [data-install-bar])`, and `:has()` still matches a display:none element.
+  const showBar =
+    barReady &&
+    isMobile &&
+    !isInstalled &&
+    !dismissed &&
+    !never &&
+    !helpOpen &&
+    !showPopup &&
+    !isSuppressedRoute(pathname) &&
+    !isListingDetail(pathname);
+
   // Ask Boet Everywhere — keep the body attribute stamped while our popup is up
   // so the Sparkie daily-hello suppresses (it checks data-install-prompt) and
   // the launcher lift rules stay coherent. Harmless behind our backdrop.
@@ -342,6 +450,23 @@ function InstallPromptBody() {
     }
     return () => document.body.removeAttribute('data-install-prompt');
   }, [showPopup]);
+
+  // One `install_shown` per appearance, not per render. The ref rather than a
+  // state flag because this must not itself cause a re-render, and it must not
+  // reset when the popup is replaced by the help modal and comes back.
+  const shownLogged = useRef(false);
+  useEffect(() => {
+    if (!showPopup || shownLogged.current) return;
+    shownLogged.current = true;
+    trackInstall('shown', platform, 'popup');
+  }, [showPopup, platform]);
+
+  const barShownLogged = useRef(false);
+  useEffect(() => {
+    if (!showBar || barShownLogged.current) return;
+    barShownLogged.current = true;
+    trackInstall('shown', platform, 'bar');
+  }, [showBar, platform]);
 
   // Primary-button copy adapts to the path.
   const primaryLabel = canInstall
@@ -361,13 +486,21 @@ function InstallPromptBody() {
       ? 'Install it as an app — faster, fullscreen, one click from your desktop. Free, no store needed.'
       : 'Add it to your home screen for the full experience — free, no store needed.';
 
-  if (!showPopup && !helpOpen) return null;
+  // Shorter than the popup's subtitle — one line, and it must survive being
+  // truncated on a 320px phone, so the important word comes first.
+  const barSubtitle = isIosNonSafari
+    ? 'Installs from Safari \u2014 tap to see how'
+    : isIosSafari
+      ? 'Two taps to your home screen \u2014 free'
+      : 'Free \u2014 no app store needed';
+
+  if (!showPopup && !helpOpen && !showBar) return null;
 
   return (
     <>
       {showPopup && (
         <div
-          onClick={dismissLater}
+          onClick={() => dismissLater('popup')}
           style={{
             position: 'fixed',
             inset: 0,
@@ -408,7 +541,7 @@ function InstallPromptBody() {
           >
             <button
               type="button"
-              onClick={dismissLater}
+              onClick={() => dismissLater('popup')}
               aria-label="Close"
               style={{
                 position: 'absolute',
@@ -519,7 +652,7 @@ function InstallPromptBody() {
 
             <button
               type="button"
-              onClick={canInstall ? install : openHelp}
+              onClick={() => (canInstall ? install('popup') : openHelp('popup'))}
               disabled={busy}
               style={{
                 width: '100%',
@@ -547,7 +680,7 @@ function InstallPromptBody() {
             >
               <button
                 type="button"
-                onClick={dismissLater}
+                onClick={() => dismissLater('popup')}
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -590,6 +723,133 @@ function InstallPromptBody() {
         </div>
       )}
 
+      {showBar && (
+        <div
+          data-install-bar="true"
+          role="region"
+          aria-label={`Get the ${BRAND_NAME} app`}
+          style={{
+            position: 'fixed',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            // Under Boet (z-60) and under the standalone tab bar (z-55), both
+            // of which outrank it by the house rule. Neither can actually
+            // collide with it: the tab bar renders only in standalone and this
+            // bar renders only in mobile web, and Boet is lifted clear of it
+            // by a rule in globals.css keyed on [data-install-bar].
+            zIndex: 54,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '9px 12px',
+            paddingBottom: 'calc(9px + env(safe-area-inset-bottom))',
+            background: 'var(--bg-deep)',
+            // The hairline is the whole separation. A box-shadow here would be
+            // dead code: globals.css opens with `* { box-shadow: none
+            // !important }` ("no gradients, no drop shadows, no glow", per
+            // CLAUDE.md), which has already turned several shadows elsewhere
+            // in this app into decoration nobody has ever seen.
+            borderTop: '0.5px solid var(--border)',
+            animation: 'gg-install-bar-up 0.28s cubic-bezier(0.2,0.8,0.3,1)',
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/icon-192.png"
+            alt=""
+            width={34}
+            height={34}
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 8,
+              flex: '0 0 auto',
+            }}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* ⚠️ ONE LINE, ALWAYS. The Boet lift (74px) and the body
+                reservation (62px) in globals.css are both hard-coded against
+                this bar's height, so a title that wraps on a narrow phone
+                would push the bar taller than the space reserved for it and
+                put the footer back under it. Truncating is the lesser
+                failure, and the subtitle below already does the same. */}
+            <p
+              style={{
+                margin: 0,
+                fontSize: 13,
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                letterSpacing: '-0.1px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              Get the {BRAND_NAME} app
+            </p>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 11,
+                color: 'var(--text-secondary)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {barSubtitle}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => (canInstall ? install('bar') : openHelp('bar'))}
+            disabled={busy}
+            style={{
+              flex: '0 0 auto',
+              background: 'var(--red)',
+              color: '#fff',
+              border: 'none',
+              padding: '9px 14px',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: busy ? 'wait' : 'pointer',
+            }}
+          >
+            {canInstall ? 'Install' : 'Get it'}
+          </button>
+          <button
+            type="button"
+            onClick={() => dismissLater('bar')}
+            aria-label="Not now"
+            style={{
+              flex: '0 0 auto',
+              width: 30,
+              height: 30,
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--text-tertiary)',
+              fontSize: 19,
+              lineHeight: 1,
+              cursor: 'pointer',
+              borderRadius: 8,
+            }}
+          >
+            ×
+          </button>
+          <style>{`
+            @keyframes gg-install-bar-up {
+              from { transform: translateY(100%); }
+              to   { transform: translateY(0); }
+            }
+            @media (prefers-reduced-motion: reduce) {
+              [data-install-bar] { animation: none !important; }
+            }
+          `}</style>
+        </div>
+      )}
+
       {helpOpen && (
         <InstallHelpModal
           isIos={isIosSafari}
@@ -597,10 +857,13 @@ function InstallPromptBody() {
           isDesktop={isChromiumDesktop && !isMobile}
           canInstall={canInstall}
           onInstall={async () => {
+            trackInstall('clicked', platform, 'help');
             const outcome = await promptInstall();
+            if (outcome === 'accepted')
+              trackInstall('completed', platform, 'help');
             if (outcome !== 'unavailable') setHelpOpen(false);
           }}
-          onClose={() => setHelpOpen(false)}
+          onClose={closeHelp}
         />
       )}
     </>
@@ -625,16 +888,59 @@ function InstallHelpModal({
   onInstall: () => void;
   onClose: () => void;
 }) {
+  // Reset is unnecessary: the modal unmounts on close, so a reopened sheet
+  // starts on "Copy link" again rather than lying about a stale copy.
+  const [copied, setCopied] = useState(false);
   // Best-effort jump to Safari from a non-Safari iOS browser / in-app webview.
   // The undocumented `x-safari-` URL scheme force-opens Safari on most iOS
   // versions; if the OS ignores it nothing happens, so we ALWAYS show the manual
   // "⋯ → Open in Safari" fallback below the button as the guaranteed path.
+  // `x-safari-https://...` is Chrome-for-iOS's own escape hatch. It is not a
+  // standard, and Firefox iOS, Edge iOS and every in-app webview (Instagram,
+  // Facebook, WhatsApp — where a good share of a marketplace's traffic
+  // actually arrives) ignore it. Nothing throws when they do; the page simply
+  // does not move, which is why the manual instruction and the copy button
+  // below are not decoration.
+  //
+  // ⚠️ CARRY THE QUERY STRING. This used to send origin + pathname only, so
+  // somebody handed off from a filtered search or a campaign link landed in
+  // Safari on a different page than the one they were reading.
   function openInSafari() {
     try {
       window.location.href =
-        'x-safari-' + window.location.origin + window.location.pathname;
+        'x-safari-' +
+        window.location.origin +
+        window.location.pathname +
+        window.location.search;
     } catch {
-      /* scheme unsupported — manual instruction below is the fallback */
+      /* scheme unsupported — the manual steps below are the fallback */
+    }
+  }
+
+  // The realistic fallback when the scheme is ignored: nobody retypes a URL.
+  async function copyLink() {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+    } catch {
+      // Clipboard API needs a secure context and can be refused outright.
+      // A selected-and-copied textarea is the old way and still works in the
+      // webviews most likely to refuse.
+      try {
+        const el = document.createElement('textarea');
+        el.value = url;
+        el.setAttribute('readonly', '');
+        el.style.position = 'fixed';
+        el.style.opacity = '0';
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        setCopied(true);
+      } catch {
+        /* nothing left to try — the URL is on screen in the address bar */
+      }
     }
   }
   return (
@@ -646,7 +952,14 @@ function InstallHelpModal({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 61,
+        // ⚠️ ABOVE THE CART DRAWER (z-70/71), NOT AT 61 WHERE THIS STARTED.
+        // On Android this modal is a fallback nobody usually reaches. On
+        // iPhone it is the ONLY install path there is — `canInstall` cannot
+        // be true on iOS — so it losing a stacking contest to the
+        // added-to-cart drawer meant the install flow silently rendering
+        // underneath it. Sits alongside the popup's own 1000, one above, so
+        // it wins the handoff if both are ever mounted at once.
+        zIndex: 1001,
         background: 'rgba(0,0,0,0.78)',
         display: 'flex',
         alignItems: 'center',
@@ -692,23 +1005,43 @@ function InstallHelpModal({
                 All Outdoor in Safari, then add it to your home screen.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={openInSafari}
-              style={{
-                width: '100%',
-                background: 'var(--red)',
-                color: '#fff',
-                border: 'none',
-                padding: '11px 14px',
-                borderRadius: 8,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Open in Safari
-            </button>
+            <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+              <button
+                type="button"
+                onClick={openInSafari}
+                style={{
+                  flex: 1,
+                  background: 'var(--red)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '11px 14px',
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Open in Safari
+              </button>
+              <button
+                type="button"
+                onClick={copyLink}
+                aria-live="polite"
+                style={{
+                  flex: '0 0 auto',
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: '0.5px solid var(--border)',
+                  padding: '11px 14px',
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {copied ? 'Copied' : 'Copy link'}
+              </button>
+            </div>
             <p
               style={{
                 fontSize: 11.5,

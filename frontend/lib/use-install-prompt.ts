@@ -1,5 +1,7 @@
 'use client';
 
+import type { InstallPlatform } from './activity-beacon';
+
 import { useCallback, useEffect, useState } from 'react';
 
 // Shared PWA-install state for the whole app.
@@ -60,6 +62,32 @@ function detectStandalone(): boolean {
     window.matchMedia?.('(display-mode: standalone)').matches === true ||
     (window.navigator as { standalone?: boolean }).standalone === true
   );
+}
+
+/**
+ * Label this browser's install path for the analytics beacon. Shared by every
+ * surface that can start an install (the popup, the passive bar, the nav
+ * drawer, the footer) so a funnel query does not have to reconcile four
+ * slightly different guesses about what an iPhone is.
+ *
+ * iOS is tested first because an iPhone also matches the generic mobile UA
+ * test, and the iOS/non-iOS split is the whole point of the label: it is the
+ * difference between a browser that can be handed a one-tap install and one
+ * that can only ever be shown instructions.
+ */
+export function installPlatform(state: {
+  isIosSafari: boolean;
+  isIosNonSafari: boolean;
+}): InstallPlatform {
+  if (state.isIosSafari) return 'ios-safari';
+  if (state.isIosNonSafari) return 'ios-other';
+  if (typeof navigator === 'undefined') return 'unknown';
+  const ua = navigator.userAgent;
+  if (/Android|Mobile|Opera Mini|IEMobile/i.test(ua)) return 'android';
+  if (/Chrome\//.test(ua)) return 'desktop';
+  // Firefox and Safari on the desktop cannot install a PWA at all. They are
+  // not "desktop" for this purpose — there is no funnel to be in.
+  return 'unknown';
 }
 
 export function useInstallPrompt(): InstallState {

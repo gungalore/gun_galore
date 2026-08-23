@@ -512,6 +512,20 @@ handoff; mirror into `/docs/design/`):
   4px; tiny tags / verified pill 3px; sell CTA banner 8px).
 - **Mobile-first**, ~390px base; content max-width 1280px.
 
+**CSS gotchas that fail SILENTLY — both have already produced dead code:**
+
+- `* { box-shadow: none !important }` sits at the top of `globals.css`
+  (it enforces "no drop shadows" above). It is unscoped, so **every**
+  `box-shadow` anywhere in the app — inline styles and keyframes
+  included — is dead. Do not write one expecting it to render; use a
+  0.5px border instead.
+- A `body:has(...)` rule scores only **(0,1,1)** and therefore loses to
+  `html:not([data-standalone='true']) body` in `globals.css`, which is
+  (0,1,2) and matches on every browser-mode page. Source order does not
+  help. Prefix with `html:not([data-standalone='true'])` to reach
+  (0,2,2). Symptom when you get this wrong: a page that will not scroll
+  its last inch, with nothing logged anywhere.
+
 **Listing card:** 4:3 photo, category badge top-left, condition
 badge top-right, price in red, seller tier badge + rating.
 
