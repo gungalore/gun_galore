@@ -42,6 +42,9 @@ export default function robots(): MetadataRoute.Robots {
           // so it must not be crawlable. The token in the path makes each URL
           // unguessable; this stops the route itself being indexed.
           '/witness/',
+          // Same for a seller-consent link: it cannot be auth-walled, it
+          // carries firearm particulars, and it must not be indexed.
+          '/consent/',
           // ⚠️ MUST STAY REACHABLE, MUST NOT BE CRAWLED. This page names the
           // Firearms Control Act because POPIA s18(1)(f) requires the data
           // subject to be told the particular law, and PAIA s51 requires the

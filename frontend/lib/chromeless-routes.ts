@@ -21,7 +21,7 @@
 // the difference between completing it and closing it.
 // ────────────────────────────────────────────────────────────────────
 
-export const CHROMELESS_PREFIXES = ['/witness'];
+export const CHROMELESS_PREFIXES = ['/witness', '/consent'];
 
 /** True when the page must render without any marketplace chrome. */
 export function isChromelessRoute(pathname: string | null): boolean {

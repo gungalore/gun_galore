@@ -4388,6 +4388,8 @@ model Motivation {
   messages  MotivationMessage[]
   uploads   MotivationUpload[]
   witnesses MotivationWitness[]
+  /// At most one — see the model. A private transfer has one current owner.
+  sellerConsent MotivationSellerConsent?
 
   // The throttle. See applicationRef for why it is NOT NULL.
   @@unique([userId, licenceType, applicationRef])
@@ -4514,6 +4516,117 @@ model MotivationWitness {
   updatedAt DateTime @updatedAt
 
   @@unique([motivationId, slot])
+  @@index([motivationId])
+}
+
+
+/// THE PREVIOUS OWNER'S CONSENT, for a private transfer.
+///
+/// Operator, 2026-08-23: "we only need the previous owners Valid license.
+/// think we can create a consent form to be sent to the previous owner (same
+/// as the witness statement) we make it valid for 48 hours."
+///
+/// A private sale needs the current licence holder to agree, in writing, that
+/// this applicant may apply for a licence over a NAMED firearm. Until now the
+/// applicant had to obtain that letter themselves and upload a photograph of
+/// it; this takes the statement directly from the seller, on their own phone,
+/// tied to their own number.
+///
+/// ⚠️ DELIBERATELY A SEPARATE MODEL FROM MotivationWitness, which it otherwise
+/// mirrors closely. Three reasons, and the first is decisive: a witness row
+/// carries `slot 1|2` with a unique constraint per motivation, and a consent is
+/// one-per-application — reusing the model would mean either a meaningless slot
+/// or relaxing a constraint that is doing real work. Second, a consent captures
+/// two licence photographs a witness never has. Third, every existing witness
+/// query would need a type filter it does not have today, which is the kind of
+/// change that silently includes the wrong rows somewhere nobody looked.
+model MotivationSellerConsent {
+  id           String     @id @default(cuid())
+  /// ⚠️ UNIQUE. One firearm, one current owner, one consent. A second row
+  /// would mean two people had each consented to the same transfer, which is
+  /// not a state that exists.
+  motivationId String     @unique
+  motivation   Motivation @relation(fields: [motivationId], references: [id], onDelete: Cascade)
+
+  // ── What the applicant supplies when inviting ────────────────────
+  /// As the applicant typed it. Shown to the seller so they can tell us we
+  /// have the wrong person before filling anything in.
+  invitedName  String
+  /// The number the link and the code are sent to.
+  invitedPhone String
+
+  /// INVITED · COMPLETED · DECLINED. No enum: a new state costs no migration.
+  status String @default("INVITED")
+
+  // ── NO OTP HERE, AND IT IS A CONSIDERED DIFFERENCE FROM THE WITNESS ──
+  //
+  // Operator, 2026-08-23: "drop the OTP, just send it straight to the seller
+  // for consent."
+  //
+  // MotivationWitness carries otpHash/otpAttempts/verifiedAt because a
+  // character statement needs nothing but the link, and a link can be
+  // forwarded — the code is the only thing tying the statement to the number
+  // the applicant nominated.
+  //
+  // A consent cannot be given from a link alone: the seller has to photograph
+  // their own licence card, both sides, and those photographs are part of what
+  // is submitted. That is a possession factor the witness flow does not have,
+  // and a stronger one than an SMS code — a code proves somebody controls a
+  // phone, the card proves they are holding the licence.
+  //
+  // ⚠️ WHAT NEITHER CONTROL EVER FIXED: the applicant supplies the number, so
+  // a dishonest buyer can put in their own. The OTP never protected against
+  // that either — it verifies a number is reachable, not whose it is. The card
+  // photograph does more against it than the code did.
+
+  /// The seller's own particulars — full name and identity number — as JSON.
+  ///
+  /// ⚠️ ENCRYPTED. A third party's identity number, given to us by somebody who
+  /// is not our member and cannot log in to manage it.
+  answersEncrypted String? @db.Text
+
+  /// The firearm EXACTLY as it was shown to the seller when they signed.
+  ///
+  /// ⚠️ A SNAPSHOT, AND IT IS NOT REDUNDANT. The make, model and serial live on
+  /// the application, where the applicant can edit them afterwards. Consent is
+  /// to a NAMED firearm; if the serial later changes, the signed statement must
+  /// not silently follow it, because then it records agreement to something the
+  /// seller never saw. Rendering the pack from this snapshot means the document
+  /// says what they actually consented to, and a mismatch against the live
+  /// answers is detectable rather than invisible.
+  firearmSnapshotEncrypted String? @db.Text
+
+  /// Their drawn signature, in the encrypted upload tree. A storage key, never
+  /// a path and never bytes on this row.
+  signatureKey  String? @db.VarChar(120)
+  signatureMime String? @db.VarChar(40)
+
+  /// The two photographs of the seller's own firearm licence, front and back.
+  /// Storage keys into the same encrypted tree.
+  licenceFrontKey String? @db.VarChar(120)
+  licenceBackKey  String? @db.VarChar(120)
+  licenceMime     String? @db.VarChar(40)
+
+  /// "Bloemfontein, Free State" — the place of signature, from the phone's GPS
+  /// and reverse-geocoded to a town.
+  ///
+  /// ⚠️ THE PLACE, NEVER THE COORDINATES. Same rule as the witness statement.
+  signedPlace String?   @db.VarChar(160)
+  signedAt    DateTime?
+
+  // ── The audit trail ──────────────────────────────────────────────
+  /// Stamped when the link is first opened, so an applicant can see whether
+  /// the seller has looked at it before chasing them.
+  openedAt        DateTime?
+  /// When they said no. Recorded rather than deleted, so the applicant learns
+  /// they have been turned down instead of watching a link that never moves.
+  declinedAt      DateTime?
+  submitIp        String?   @db.VarChar(64)
+  submitUserAgent String?   @db.VarChar(300)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([motivationId])
 }
 

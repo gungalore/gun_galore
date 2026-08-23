@@ -9,6 +9,12 @@ import { MotivationRetentionService } from './motivation-retention.service';
 import { MotivationExtractService } from './motivation-extract.service';
 import { FirearmImageService } from './motivation-firearm-image';
 import { MotivationWitnessService } from './motivation-witness.service';
+import { MotivationSellerConsentService } from './motivation-seller-consent.service';
+import { LicenceCardOcrService } from './licence-card-ocr.service';
+import {
+  MotivationsConsentController,
+  SellerConsentPublicController,
+} from './motivations-consent.controller';
 import {
   MotivationsWitnessController,
   WitnessPublicController,
@@ -44,6 +50,10 @@ import { VaultAdoptionService } from './vault-adoption.service';
   controllers: [MotivationsController, MotivationsScanController,
     MotivationsWitnessController,
     WitnessPublicController,
+    MotivationsConsentController,
+    // ⚠️ UNGUARDED BY DESIGN — the seller is a stranger with no account. Every
+    // route on it resolves a token to one consent row; see the controller.
+    SellerConsentPublicController,
   ],
   providers: [
     // ⚠️ THE GUARD IS PROVIDED, NOT JUST IMPORTED. A controller decorated
@@ -60,6 +70,8 @@ import { VaultAdoptionService } from './vault-adoption.service';
     Saps271Service,
     FirearmImageService,
     MotivationWitnessService,
+    MotivationSellerConsentService,
+    LicenceCardOcrService,
     SecureFileStorageService,
     // ⚠️ HERE AND NOT IN LicenceCentreModule, WHERE IT BELONGS BY SUBJECT.
     // That module imports this one for the renewal one-tap and a spec

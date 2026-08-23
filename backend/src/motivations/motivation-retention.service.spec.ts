@@ -206,3 +206,106 @@ describe('how it behaves as a job', () => {
     expect(code).toContain('SecureFileStorageService');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// SIGNATURES, WHICH THIS SERVICE USED TO WALK STRAIGHT PAST.
+//
+// ⚠️ A REAL LEAK, NOT A HYPOTHETICAL. purgeForUser selected `uploads` and
+// nothing else, so a witness's drawn signature — and now a seller's consent
+// signature — outlived the row that pointed at it. The cascade takes the
+// record; the encrypted bytes stay in the tree with nothing referencing them,
+// which means nobody could ever find them to remove by hand either. They are
+// third parties' signatures, and this path is an ERASURE REQUEST.
+describe('erasing an account', () => {
+  function buildForUser(row: Record<string, unknown>) {
+    const removed: string[] = [];
+    const prisma = {
+      motivation: {
+        findMany: jest.fn(async (): Promise<any> => [row]),
+        deleteMany: jest.fn(async (): Promise<any> => ({ count: 1 })),
+      },
+      motivationUpload: { findMany: jest.fn(async (): Promise<any> => []) },
+      setting: { upsert: jest.fn(async (): Promise<any> => ({})) },
+    };
+    const files = {
+      remove: jest.fn(async (k: string) => {
+        removed.push(k);
+      }),
+    };
+    const svc = new MotivationRetentionService(prisma as never, files as never);
+    return { svc, removed, prisma };
+  }
+
+  const ROW = {
+    id: 'mo-1',
+    uploads: [{ id: 'up-1', storageKey: 'motivations/a.enc' }],
+    witnesses: [
+      { id: 'w-1', signatureKey: 'motivations/w1.enc' },
+      { id: 'w-2', signatureKey: 'motivations/w2.enc' },
+    ],
+    sellerConsent: { id: 'c-1', signatureKey: 'motivations/c1.enc' },
+  };
+
+  it('removes witness and seller-consent signatures, not just uploads', async () => {
+    const { svc, removed } = buildForUser(ROW);
+    const out = await svc.purgeForUser('u1');
+    expect(removed.sort()).toEqual([
+      'motivations/a.enc',
+      'motivations/c1.enc',
+      'motivations/w1.enc',
+      'motivations/w2.enc',
+    ]);
+    expect(out.filesRemoved).toBe(4);
+  });
+
+  it('copes with an application that has neither', async () => {
+    const { svc, removed } = buildForUser({
+      id: 'mo-2',
+      uploads: [],
+      witnesses: [],
+      sellerConsent: null,
+    });
+    await expect(svc.purgeForUser('u1')).resolves.toMatchObject({
+      filesRemoved: 0,
+    });
+    expect(removed).toEqual([]);
+  });
+
+  it('skips a signature that was never drawn', async () => {
+    // An invited witness who never signed has a row and no key.
+    const { svc, removed } = buildForUser({
+      id: 'mo-3',
+      uploads: [],
+      witnesses: [{ id: 'w-9', signatureKey: null }],
+      sellerConsent: { id: 'c-9', signatureKey: null },
+    });
+    await svc.purgeForUser('u1');
+    expect(removed).toEqual([]);
+  });
+
+  it('still deletes the rows when a signature file will not go', async () => {
+    // Same rule the uploads already follow: an erasure must not be stranded by
+    // one unreadable key, and leaving the row would preserve a pointer to a
+    // file we already failed to delete.
+    const removed: string[] = [];
+    const prisma = {
+      motivation: {
+        findMany: jest.fn(async (): Promise<any> => [ROW]),
+        deleteMany: jest.fn(async (): Promise<any> => ({ count: 1 })),
+      },
+      motivationUpload: { findMany: jest.fn(async (): Promise<any> => []) },
+      setting: { upsert: jest.fn(async (): Promise<any> => ({})) },
+    };
+    const files = {
+      remove: jest.fn(async (k: string) => {
+        if (k === 'motivations/w1.enc') throw new Error('EACCES');
+        removed.push(k);
+      }),
+    };
+    const svc = new MotivationRetentionService(prisma as never, files as never);
+    const out = await svc.purgeForUser('u1');
+    expect(out.filesFailed).toBe(1);
+    expect(out.filesRemoved).toBe(3);
+    expect(prisma.motivation.deleteMany).toHaveBeenCalled();
+  });
+});

@@ -75,6 +75,24 @@ export interface DocumentScannerProps {
    * -document flow is the unusual case, not the default.
    */
   multiDefault?: boolean;
+  /**
+   * Skip the "what are you holding?" step and open the camera on this shape.
+   *
+   * ⚠️ FOR FLOWS WHERE WE ALREADY KNOW. A seller who tapped a link that says
+   * "photograph your firearm licence" does not need to be asked what they are
+   * holding, and asking a stranger an extra question before the camera opens
+   * is how a two-minute task starts feeling like an application form. The
+   * shape is still changeable on screen — see the note on `shape`.
+   */
+  skipChoose?: boolean;
+  /**
+   * Keep the aim box green throughout instead of red-until-detected.
+   *
+   * Operator, 2026-08-23: "keep it static green. User must just point, fit in
+   * the box and shoot." See AimFrame's own note for why a verdict-coloured box
+   * is wrong for a flow whose user is a stranger with nobody to ask.
+   */
+  staticAim?: boolean;
   title: string;
   onDone: (files: File[]) => void | Promise<void>;
   onClose: () => void;
@@ -109,6 +127,8 @@ type Phase =
 export default function DocumentScanner({
   shape: initialShape = 'any',
   multiDefault = false,
+  skipChoose = false,
+  staticAim = false,
   title,
   onDone,
   onClose,
@@ -117,7 +137,12 @@ export default function DocumentScanner({
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const [phase, setPhase] = useState<Phase>('choose');
+  // ⚠️ skipChoose STARTS AT 'starting', NOT 'live'. The camera still has to be
+  // asked for and the permission prompt still has to be answered; jumping
+  // straight to 'live' would render a viewfinder over a stream that does not
+  // exist yet. All skipChoose does is answer the "what are you holding"
+  // question on the caller's behalf.
+  const [phase, setPhase] = useState<Phase>(skipChoose ? 'starting' : 'choose');
   const [shape, setShape] = useState<DocShape>(initialShape);
   /**
    * Is the member scanning more than one page or side?
@@ -222,7 +247,10 @@ export default function DocumentScanner({
   // would tear the stream down and rebuild it on every trip through review,
   // and rebuilding a stream costs a second of black screen and a fresh
   // autofocus hunt. This runs once, when the member leaves the chooser.
-  const [started, setStarted] = useState(false);
+  // ⚠️ skipChoose MUST SET THIS TOO. The camera effect below gates on
+  // `started`, which the Chooser normally flips — so skipping the chooser
+  // without it opens a viewfinder over a stream nobody ever asked for.
+  const [started, setStarted] = useState(skipChoose);
   useEffect(() => {
     if (!started) return;
     let cancelled = false;
@@ -844,7 +872,11 @@ export default function DocumentScanner({
                 pointerEvents: 'none',
               }}
             />
-            <AimFrame shape={shape} locked={aimed} />
+            <AimFrame
+              shape={shape}
+              locked={aimed}
+              alwaysGreen={staticAim}
+            />
             <ExposureAlert glare={glare} luma={luma} torchOn={torchOn} />
         {phase === 'live' && (
           <p

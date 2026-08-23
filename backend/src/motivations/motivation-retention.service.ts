@@ -144,13 +144,40 @@ export class MotivationRetentionService {
         select: {
           id: true,
           uploads: { select: { id: true, storageKey: true } },
+          // ⚠️ SIGNATURES WERE BEING LEFT ON DISK FOREVER, INCLUDING THROUGH AN
+          // ERASURE REQUEST. This service walked `uploads` and nothing else,
+          // so a witness's drawn signature — and now a seller's — survived the
+          // row that pointed at it: the cascade takes the record, and the
+          // encrypted bytes stay in the tree with nothing left referencing
+          // them. Nobody would ever find them to remove by hand.
+          //
+          // They are third parties' signatures. They are exactly the material
+          // an erasure is supposed to reach.
+          witnesses: { select: { id: true, signatureKey: true } },
+          sellerConsent: { select: { id: true, signatureKey: true } },
         },
       });
       motivations = rows.length;
       if (!rows.length) return { filesRemoved, filesFailed, motivations };
 
       for (const row of rows) {
-        for (const up of row.uploads) {
+        // Uploads, plus the signatures that hang off the same application.
+        const keyed: { id: string; storageKey: string | null }[] = [
+          ...row.uploads,
+          ...row.witnesses.map((w) => ({
+            id: w.id,
+            storageKey: w.signatureKey,
+          })),
+          ...(row.sellerConsent
+            ? [
+                {
+                  id: row.sellerConsent.id,
+                  storageKey: row.sellerConsent.signatureKey,
+                },
+              ]
+            : []),
+        ];
+        for (const up of keyed) {
           if (!up.storageKey) continue;
           try {
             await this.files.remove(up.storageKey);

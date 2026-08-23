@@ -93,7 +93,16 @@ export type ActionTokenPurpose =
   // the statement and is never used to authenticate the caller — see the note
   // at the top of motivation-witness.service.ts. One hour, because the
   // applicant is expected to phone their witness first.
-  | 'WITNESS_STATEMENT';
+  | 'WITNESS_STATEMENT'
+  // SELLER_CONSENT — the link the CURRENT LICENCE HOLDER opens to consent, in
+  // writing, to a named applicant applying for a licence over a named firearm.
+  //
+  // ⚠️ SAME RULE AS WITNESS_STATEMENT AND IT MATTERS MORE HERE. The holder is
+  // a third party; authorisedUserId records who asked, never who is calling.
+  // Forty-eight hours rather than one: a seller is not standing next to the
+  // buyer the way a witness has been phoned in advance, and a transfer is
+  // arranged over days. The OTP is what keeps the longer window safe.
+  | 'SELLER_CONSENT';
 
 export type ActionTokenTargetType =
   | 'offer'
@@ -104,7 +113,9 @@ export type ActionTokenTargetType =
   // Swop/Trade negotiation tokens target a SwapProposal.
   | 'swapProposal'
   // WITNESS_STATEMENT tokens target one MotivationWitness row and nothing else.
-  | 'motivationwitness';
+  | 'motivationwitness'
+  // SELLER_CONSENT tokens target one MotivationSellerConsent row, nothing else.
+  | 'motivationsellerconsent';
 
 /** Max wrong / invalid resolution attempts before the token locks. */
 const MAX_INVALID_ATTEMPTS = 5;

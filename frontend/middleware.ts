@@ -16,6 +16,9 @@ const isPublicRoute = createRouteMatcher([
   // applicant nominated is the second half of it. See
   // backend/src/motivations/motivation-witness.service.ts.
   '/witness(.*)',
+  // The previous owner opening a consent link. Same reasoning as /witness:
+  // they are not a member and cannot be sent to a sign-in page.
+  '/consent(.*)',
   '/',
   '/sign-in(.*)',
   '/sign-up(.*)',

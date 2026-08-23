@@ -21,15 +21,34 @@ import { DocShape, holdHint } from '@/lib/scan/shapes';
 // ────────────────────────────────────────────────────────────────────
 
 const RED = '#E03131';
+const GREEN = '#2F9E44';
 const STROKE = 5;
 
 export default function AimFrame({
   shape,
   /** Green once the detector agrees with the box — the only "good" signal. */
   locked = false,
+  /**
+   * Always green, whatever the detector thinks.
+   *
+   * ⚠️ FOR FLOWS WHERE THE BOX IS AN INSTRUCTION, NOT A VERDICT. Operator,
+   * 2026-08-23, on the seller-consent capture: "the aim box that the license
+   * needs to fit in, keep it static green. User must just point, fit in the
+   * box and shoot."
+   *
+   * The red/green signal is worth a lot when a detector is genuinely tracking
+   * a document and auto-capture depends on it. It is worth less than nothing
+   * when the person holding the phone is a stranger who received an SMS: a box
+   * that stays red while they are doing everything right reads as "this is not
+   * working", and there is nobody to ask. A steady green box says "put it
+   * here" and the corner editor afterwards is what actually guarantees the
+   * crop.
+   */
+  alwaysGreen = false,
 }: {
   shape: DocShape;
   locked?: boolean;
+  alwaysGreen?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ width: 0, height: 0 });
@@ -51,7 +70,7 @@ export default function AimFrame({
   // Arms long enough to read as a corner, short enough not to become a
   // rectangle. A sixth of the shorter side, with a floor for tiny screens.
   const arm = box ? Math.max(22, Math.min(box.width, box.height) / 6) : 0;
-  const colour = locked ? '#2F9E44' : RED;
+  const colour = alwaysGreen || locked ? GREEN : RED;
   const hold = holdHint(shape);
 
   return (
