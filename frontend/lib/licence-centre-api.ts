@@ -1,6 +1,8 @@
 import { safeJson } from './safe-json';
 
-// The Licence Centre's API client. Sibling of motivations-api.ts and
+// The Document Centre's API client. ⚠️ The FILE and the ROUTE keep the old
+// name deliberately — only what a member reads was renamed, because a phone
+// mid-hand-off holds a token minted against /licence-centre/scan. Sibling of motivations-api.ts and
 // deliberately the same shape — four properties have to survive the copy:
 //   1. the token is fetched INSIDE request(), never hoisted, or a long session
 //      sends an expired one

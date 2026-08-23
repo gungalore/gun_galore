@@ -167,7 +167,7 @@ export default function LicenceCentrePage() {
   if (enabled === false) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-10">
-        <h1 className="text-2xl font-semibold">Licence Centre</h1>
+        <h1 className="text-2xl font-semibold">Document Centre</h1>
         <p className="mt-3 text-[var(--text-secondary)]">
           We are still putting this together. It will appear here when it opens.
         </p>
@@ -188,7 +188,7 @@ export default function LicenceCentrePage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-2xl font-semibold">Licence Centre</h1>
+      <h1 className="text-2xl font-semibold">Document Centre</h1>
       <p className="mt-2 text-[var(--text-secondary)]">
         Keep your licences, certificates and supporting paperwork in one place,
         and we will tell you when a renewal is coming up. Some of it — an ID
@@ -1154,7 +1154,7 @@ function CredentialCard({
   // confirmed again. An unconfirmed date is invisible to the reminder sweep,
   // so the document silently got no reminders at all, while the banner, the
   // page footer and the reminder email all told the member to correct it
-  // "in your Licence Centre". The endpoint accepted a late confirm the whole
+  // "in your Document Centre". The endpoint accepted a late confirm the whole
   // time; only the way in was missing.
   const [editing, setEditing] = useState(false);
   // The renewal's own failure, shown AT the button. onError renders at the

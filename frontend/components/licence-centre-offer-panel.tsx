@@ -13,7 +13,7 @@ import {
 // "YOU HAVE ALREADY TOLD US THIS."
 //
 // A member who has loaded their competency certificate and their firearm
-// licences into the Licence Centre has already given us the competency number
+// licences into the Document Centre has already given us the competency number
 // and every make, calibre and serial they own. Typing all of it again into a
 // motivation is transcribing their own documents twice — and transcription is
 // where a wrong serial on a SAPS form comes from.
@@ -76,8 +76,8 @@ export default function LicenceCentreOfferPanel({
     return (
       <p className="mb-3 text-xs text-[var(--text-tertiary-on-card)]">
         Documents you keep in your{' '}
-        <Link href="/licence-centre" className="underline">
-          Licence Centre
+        <Link href="/documents" className="underline">
+          Document Centre
         </Link>{' '}
         fill this in for you.
       </p>
@@ -89,7 +89,7 @@ export default function LicenceCentreOfferPanel({
   return (
     <div className="mb-3 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3">
       <p className="text-sm font-medium">
-        Your Licence Centre can fill in{' '}
+        Your Document Centre can fill in{' '}
         {mine.length === 1 ? 'this' : `${mine.length} of these`}
       </p>
       <p className="mt-1 text-xs text-[var(--text-secondary)]">

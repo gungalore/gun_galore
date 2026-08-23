@@ -279,7 +279,7 @@ export interface TemplateCatalogue {
   defaults: { format: TemplateFormat; colourway: Colourway };
 }
 
-/** What the member's own Licence Centre could fill in here. */
+/** What the member's own Document Centre could fill in here. */
 /** One vault document offered as a source for a group of fields. */
 export interface CredentialChoice {
   credentialId: string;
