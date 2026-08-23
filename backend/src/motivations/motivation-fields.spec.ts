@@ -6,8 +6,13 @@ import {
   missingRequired,
   requiredKeys,
   sanitiseAnswers,
+  SAPS271_DEALER,
   SAPS271_FILL,
   SAPS271_OPT_KEY,
+  FIREARM_SOURCE_KEY,
+  SOURCE_DEALER,
+  SOURCE_PRIVATE,
+  SOURCE_UNDECIDED,
   YES_NO,
 } from './motivation-fields';
 import { expandFields } from './motivation-field-options';
@@ -741,5 +746,51 @@ describe('what the writer must see despite formOnly', () => {
     ).map((f) => f.key);
     expect(keys).not.toContain('spouse_id_number');
     expect(keys).not.toContain('residential_postal_code');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE ACQUISITION ROUTE IS ASKED OF EVERYONE, AND TOLD TO NOBODY.
+//
+// ⚠️ TWO OPPOSITE MISTAKES ARE BOTH EASY HERE, and formOnly makes exactly one
+// of them. It hides a field from anyone whose dealer fills the SAPS 271 — who
+// are precisely the people buying from a dealer — so marking this field
+// formOnly would silence the question for the group it most concerns. But it
+// still must not reach the writer: "the applicant is buying from a dealer" is
+// padding fuel, not an argument for needing a firearm.
+describe('where the firearm is coming from', () => {
+  it('is asked on BOTH SAPS 271 paths', () => {
+    for (const t of ALL) {
+      for (const fill of [SAPS271_FILL, SAPS271_DEALER]) {
+        const keys = fieldsFor(t)
+          .filter((f) => isVisible(f, { [SAPS271_OPT_KEY]: fill }))
+          .map((f) => f.key);
+        expect(keys).toContain(FIREARM_SOURCE_KEY);
+      }
+    }
+  });
+
+  it('never reaches the model', () => {
+    for (const t of ALL) {
+      expect(factPackFields(t).map((f) => f.key)).not.toContain(
+        FIREARM_SOURCE_KEY,
+      );
+    }
+  });
+
+  it('offers exactly the three routes, and does not force one', () => {
+    const f = fieldsFor(MotivationLicenceType.S13_SELF_DEFENCE).find(
+      (x) => x.key === FIREARM_SOURCE_KEY,
+    )!;
+    expect(f.choices).toEqual([
+      SOURCE_DEALER,
+      SOURCE_PRIVATE,
+      SOURCE_UNDECIDED,
+    ]);
+    // ⚠️ NOT REQUIRED. Plenty of applications are written before the firearm
+    // is found — the motivation is what the dealer or seller gets shown.
+    // Forcing a choice makes somebody guess, and a guess here silently
+    // changes their document list.
+    expect(f.required).toBeUndefined();
   });
 });

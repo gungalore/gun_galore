@@ -1,4 +1,5 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
+import { FIREARM_SOURCE_KEY, SOURCE_PRIVATE } from './motivation-fields';
 
 // ────────────────────────────────────────────────────────────────────
 // WHICH DOCUMENTS AN APPLICATION ACTUALLY NEEDS.
@@ -415,6 +416,31 @@ export function documentStatus(
   );
   if (ownsFirearms && !required.includes('CURRENT_LICENCE')) {
     required.push('CURRENT_LICENCE');
+  }
+
+  // ── WHERE THE FIREARM IS COMING FROM ──────────────────────────────
+  //
+  // A private transfer needs paperwork a dealer sale does not, and the two
+  // club checklists bound into real submitted packs differ in exactly this
+  // one limb: the private-transfer version adds the current owner's licence
+  // and a signed consent letter to everything the dealer version asks for.
+  //
+  // ⚠️ ONLY EVER ADDS, NEVER REMOVES. FIREARM_SOURCE_PROOF stays EXPECTED on
+  // both routes because it is the document that answers the question either
+  // way — a dealer invoice or the owner's letter. Demoting it for a dealer
+  // buyer would be reading more into one tap than it can carry, and somebody
+  // who taps "dealer" and then buys privately must not silently lose a row.
+  //
+  // ⚠️ AND NOTHING IS DEMANDED OF SOMEBODY WHO HAS NOT DECIDED. An
+  // application written before the firearm is found is normal — the motivation
+  // is what the dealer or the seller gets shown.
+  const source = (answers[FIREARM_SOURCE_KEY] ?? '').trim();
+  if (source === SOURCE_PRIVATE && licenceType !== 'S24_RENEWAL') {
+    // The seller's licence proves the person consenting is entitled to
+    // consent. It sat at the bottom of the picker as an "extra" — reachable
+    // only by scrolling past everything — on the one route where a DFO
+    // expects it.
+    if (!expected.includes('SELLER_LICENCE')) expected.push('SELLER_LICENCE');
   }
 
   // ── the safe: one line, several photographs ───────────────────────

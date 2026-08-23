@@ -403,3 +403,80 @@ describe('the posture', () => {
     }
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// WHERE THE FIREARM IS COMING FROM.
+//
+// The two club checklists bound into real submitted Section 16 packs are
+// identical except in this one limb: the private-transfer version adds the
+// current owner's licence and a signed consent letter. Until firearm_source
+// existed nothing could branch, so every applicant saw one list and the
+// private-transfer half were quietly short documents on the day.
+describe('the acquisition route', () => {
+  const NEW_APPLICATIONS = Object.values(MotivationLicenceType).filter(
+    (t) => t !== MotivationLicenceType.S24_RENEWAL,
+  );
+
+  const tiersFor = (t: MotivationLicenceType, source?: string) => {
+    const s = documentStatus(t, [], source ? { firearm_source: source } : {});
+    return new Map(s.needs.map((n) => [n.kind, n.tier]));
+  };
+
+  it('asks a private buyer for the seller’s licence, on every new application', () => {
+    for (const t of NEW_APPLICATIONS) {
+      expect(tiersFor(t, 'From a private owner').get(K.SELLER_LICENCE)).toBe(
+        'expected',
+      );
+    }
+  });
+
+  it('does NOT demand it of a dealer buyer, or of somebody still deciding', () => {
+    // It stays reachable in the picker either way — this is about what the
+    // pack is told it is missing, and a dealer sale is not missing it.
+    for (const t of NEW_APPLICATIONS) {
+      for (const source of ['From a dealer', 'Not decided yet', undefined]) {
+        expect(tiersFor(t, source).get(K.SELLER_LICENCE)).not.toBe('expected');
+      }
+    }
+  });
+
+  it('never demands it on a renewal, whatever was answered', () => {
+    // A renewal transfers nothing — the applicant already holds the firearm.
+    expect(
+      tiersFor(MotivationLicenceType.S24_RENEWAL, 'From a private owner').get(
+        K.SELLER_LICENCE,
+      ),
+    ).not.toBe('expected');
+  });
+
+  it('⚠️ NEVER REMOVES A ROW — the source proof survives every answer', () => {
+    // One tap must not be able to take a document OFF somebody's list.
+    // Whoever they buy from, a DFO wants to know where the firearm came from,
+    // and a member who taps "dealer" and then buys privately must not have
+    // silently lost the row that would have told them.
+    for (const t of NEW_APPLICATIONS) {
+      for (const source of [
+        'From a dealer',
+        'From a private owner',
+        'Not decided yet',
+        undefined,
+      ]) {
+        expect(tiersFor(t, source).get(K.FIREARM_SOURCE_PROOF)).toBe(
+          'expected',
+        );
+      }
+    }
+  });
+
+  it('ignores a value that is not one of the three choices', () => {
+    // answers is a free-text blob on the way in; a stale or hand-edited value
+    // must fall through to "not decided" rather than matching loosely.
+    for (const junk of ['private', 'PRIVATE OWNER', 'from a private owner']) {
+      expect(
+        tiersFor(MotivationLicenceType.S13_SELF_DEFENCE, junk).get(
+          K.SELLER_LICENCE,
+        ),
+      ).not.toBe('expected');
+    }
+  });
+});

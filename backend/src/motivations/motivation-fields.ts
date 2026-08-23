@@ -48,6 +48,29 @@ export const FIELD_REGISTRY_VERSION = '2026-08-19';
 // The values survive a change of heart: switching to the dealer path hides
 // the fields but never deletes what was typed, and switching back restores
 // them filled.
+/**
+ * Where the firearm is coming from.
+ *
+ * ⚠️ THE ANSWER CHANGES WHICH DOCUMENTS THE PACK NEEDS, which is the whole
+ * reason it is asked. A club checklist bound into a real submitted Section 16
+ * pack comes in two versions, identical except here: the dealer route wants
+ * the dealer's paperwork, and the private route wants three more documents —
+ * the current owner's ID copy, a copy of their firearm licence, and a signed
+ * consent letter. Until this field existed nothing could branch, so every
+ * applicant was shown one list and the private-transfer half of them were
+ * quietly short two documents on the day.
+ *
+ * The writer must never see it: "the applicant is buying from a dealer" is
+ * not an argument for needing a firearm, and a model handed it will find a way
+ * to pad with it. That is NEVER_PROMPTED's job, not formOnly's — formOnly
+ * would also hide the question from everyone whose dealer fills the SAPS 271,
+ * who are exactly the people buying from a dealer.
+ */
+export const FIREARM_SOURCE_KEY = 'firearm_source';
+export const SOURCE_DEALER = 'From a dealer';
+export const SOURCE_PRIVATE = 'From a private owner';
+export const SOURCE_UNDECIDED = 'Not decided yet';
+
 export const SAPS271_OPT_KEY = 'fill_saps271';
 export const SAPS271_FILL = 'Fill it in for me';
 export const SAPS271_DEALER = 'My dealer will fill it in';
@@ -472,6 +495,25 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'The firearm',
     required: true,
     maxLength: 60,
+  },
+  {
+    // ⚠️ NOT REQUIRED, AND "Not decided yet" IS A REAL ANSWER. Plenty of
+    // applications are written before the firearm is found — the motivation is
+    // what a dealer or a seller is shown. Forcing a choice would make somebody
+    // guess, and a guess here silently changes their document list. Undecided
+    // gets both routes described and neither demanded.
+    key: FIREARM_SOURCE_KEY,
+    label: 'Where is this firearm coming from?',
+    kind: 'choice',
+    section: 'The firearm',
+    choices: [SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_UNDECIDED],
+    help: 'A dealer sale and a private transfer need different paperwork at the counter. Telling us which lets us ask for the right documents instead of all of them.',
+    // ⚠️ NOT formOnly, DELIBERATELY, AND IT IS THE WHOLE POINT. formOnly hangs
+    // a field off the SAPS 271 opt-in, so a member whose dealer fills the form
+    // would never be asked — and they are the ones most likely to be buying
+    // from that dealer. The document checklist is needed on BOTH paths.
+    // Withholding it from the writer is NEVER_PROMPTED's job instead; see the
+    // note there about the two jobs formOnly used to do at once.
   },
   {
     key: 'firearm_calibre',
@@ -1985,7 +2027,7 @@ export function requiredKeys(
  * own a .223 bolt rifle" is the whole overlap argument. The numbers do not.
  */
 const NEVER_PROMPTED =
-  /^existing_firearm_\d+_(frame_serial|barrel_serial|licence_no)$/;
+  /^(existing_firearm_\d+_(frame_serial|barrel_serial|licence_no)|firearm_source)$/;
 
 /**
  * formOnly fields the writer MUST see anyway.
