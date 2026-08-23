@@ -280,10 +280,10 @@ const LABELS: Record<MotivationUploadKind, string> = {
  * a safe rather than a cupboard, and it is what a DFO goes looking for.
  */
 const SAFE_SHOTS_NOTE =
-  'Closed, half open with the key in the door, and open showing the roll bolts.';
+  'Closed with the key out, half open with the key in the door, and the roll bolts holding the safe to the wall.';
 
 const SAFE_WHY =
-  'Take three, and add them all on this line: the safe closed with the key out of it, half open with the key in the door, and fully open so the roll bolts are visible. The closed shot shows the unit, the half-open shot shows the lock belongs to it, and the bolts are what make it a safe rather than a cupboard — a DFO looks for all three. A fourth is worth adding if you can: how the safe is bolted to the wall or floor, which no photograph of the door shows. The safe is checked twice over — the photographs go in the pack, and regulation 13(12) makes compliant storage a condition of the licence being ISSUED, so the DFO also inspects your premises before it comes through.';
+  'Take three, and add them all on this line: the safe closed with the key out of it, half open with the key in the door, and the roll bolts that hold the safe to the wall. The closed shot shows the unit, the half-open shot shows the lock belongs to it, and the wall bolts are what stop the whole safe being carried out of the house — a DFO looks for all three. The safe is checked twice over — the photographs go in the pack, and regulation 13(12) makes compliant storage a condition of the licence being ISSUED, so the DFO also inspects your premises before it comes through.';
 
 const WHY: Partial<Record<MotivationUploadKind, string>> = {
   SHOOTING_ACTIVITY_LOG:

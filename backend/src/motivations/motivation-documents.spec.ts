@@ -121,10 +121,15 @@ describe('what SAPS will not process without', () => {
     expect(why).toMatch(/closed/);
     expect(why).toMatch(/half open/);
     expect(why).toMatch(/key in the door/);
-    expect(why).toMatch(/roll bolts/);
     expect(why).toMatch(/three/);
-    // The anchoring shot, which no photograph of the door shows.
-    expect(why).toMatch(/bolted to the wall or floor/);
+    // ⚠️ THE ROLL BOLTS ARE THE WALL ONES. Operator, 2026-08-23: "no bolts
+    // needs be in the door. They need to be roll bolts in the wall. Get rid of
+    // the bolts in the door." The anchoring shot was an optional fourth until
+    // then; it is now one of the three, and the door shot is gone. A
+    // photograph of the locking bolts proves the lock works on a box somebody
+    // can carry out of the house.
+    expect(why).toMatch(/roll bolts that hold the safe to the wall/);
+    expect(why).not.toMatch(/fully open/);
   });
 
   it('⚠️ NAMES THE SHOTS WITHOUT THE ROW HAVING TO BE SELECTED', () => {
@@ -304,15 +309,16 @@ describe('the upload picker', () => {
     }
   });
 
-  it('keeps the anchoring shot alive in the words, now the kind is gone', () => {
-    // SAFE_INSTALLATION was its own kind precisely because all three door shots
-    // miss the one thing a DFO inspects in person — how the safe is fixed to
-    // the building. Retiring the kind must not retire the ask.
+  it('makes the anchoring shot one of the three, on every licence type', () => {
+    // SAFE_INSTALLATION was its own kind precisely because no photograph of
+    // the door shows the one thing a DFO inspects in person — how the safe is
+    // fixed to the building. Retiring the kind must not retire the ask, and
+    // since 2026-08-23 it is not merely kept: it REPLACED the door shot.
     for (const t of Object.values(MotivationLicenceType)) {
       const safe = documentStatus(t, []).needs.find(
         (n) => n.kind === K.SAFE_PHOTOGRAPHS,
       )!;
-      expect(safe.why).toMatch(/bolted to the wall or floor/i);
+      expect(safe.why).toMatch(/hold the safe to the wall/i);
     }
   });
 

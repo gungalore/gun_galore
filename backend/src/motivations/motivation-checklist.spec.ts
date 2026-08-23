@@ -165,10 +165,15 @@ describe('the live checklist', () => {
     const note = (rows[0].note ?? '').toLowerCase();
     expect(note).toMatch(/closed/);
     expect(note).toMatch(/half open.*key in the door/);
-    expect(note).toMatch(/roll bolts/);
-    // The anchoring shot, which no photograph of the door shows. It was its
-    // own kind until 2026-08-23 and lives on here.
-    expect(note).toMatch(/bolted to the wall or floor/);
+    // ⚠️ THE ROLL BOLTS ARE THE ONES IN THE WALL. This asserted the
+    // opposite until 2026-08-23 — "fully open so the roll bolts show", meaning
+    // the locking bolts in the door, with the anchoring demoted to an optional
+    // fourth shot. Operator: "no bolts needs be in the door. They need to be
+    // roll bolts in the wall." A door photograph proves the lock works on a
+    // box somebody can carry out of the house; the wall bolts are the point.
+    expect(note).toMatch(/roll bolts that hold the safe to the wall/);
+    // And the door shot must be GONE, not merely deprioritised.
+    expect(note).not.toMatch(/fully open/);
   });
 
   it('does not tick the safe row on the first photograph', () => {

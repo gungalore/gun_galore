@@ -862,11 +862,21 @@ export function buildChecklist(
     };
     // ⚠️ THE ROW COLLAPSED; THE INSTRUCTION MUST NOT. One line now takes every
     // photograph of the safe, so this note is the only place a member is told
-    // which pictures to take — and losing "the roll bolts" would be a real
-    // regression dressed up as tidying.
+    // which pictures to take.
+    //
+    // ⚠️ THE THIRD SHOT IS THE WALL, NOT THE DOOR. Operator, 2026-08-23:
+    // "no bolts needs be in the door. They need to be roll bolts in the wall.
+    // Get rid of the bolts in the door." We used to ask for the safe fully
+    // open so the locking bolts in the door were visible, and to treat the
+    // anchoring as an optional fourth. That is backwards: a photograph of the
+    // door proves the lock works on a box that can be carried out of the
+    // house, and it is the bolts into the WALL that a DFO is actually looking
+    // for. The club checklist a real S16 pack was submitted with asks for
+    // exactly three, and its third is "bolts that hold the safe against the
+    // wall".
     if (kind === 'SAFE_PHOTOGRAPHS') {
       item.note =
-        'Add them all on this one line: the safe closed, half open with the key in the door, and fully open so the roll bolts show. A DFO looks for all three. Add a fourth if you can — how the safe is bolted to the wall or floor.';
+        'Add them all on this one line: the safe closed with the key out, half open with the key in the door, and the roll bolts that hold the safe to the wall. A DFO looks for all three.';
     }
     if (kind === 'INCIDENT_REPORT') {
       item.note =
