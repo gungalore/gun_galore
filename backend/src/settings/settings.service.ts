@@ -327,6 +327,21 @@ export const FLAGS = {
   // hard: this number is the ONLY thing standing between a fat-fingered entry
   // and uncapped AI spend, since org-level spend alerting is not functional on
   // prod (ANTHROPIC_ADMIN_API_KEY is a regular key there).
+  /**
+   * Whether the C.I.P. cartridge datasheet is printed into a motivation.
+   *
+   * ⚠️ A LICENSING SWITCH, NOT A FEATURE TOGGLE. The page is C.I.P.'s own
+   * typeset work reproduced inside a document we sell, which is a different
+   * thing from using the numbers it contains. The question was open when this
+   * shipped. Turning this off drops the page and keeps everything else — the
+   * pressure and twist data stay, because facts are not the drawing.
+   */
+  cipSheetEnabled: {
+    key: 'cip_sheet_enabled',
+    default: true,
+    parse: (s: string) => s !== 'false' && s !== '0',
+  },
+
   motivationBetaFreeCap: {
     key: 'motivation_beta_free_cap',
     default: 100,

@@ -193,6 +193,10 @@ function build(
       // WHETHER it was called — that call is a Claude vision request, and
       // making one per pick when the answer is already in hand is a bill.
       extract as never,
+      // The C.I.P. datasheet. Returns nothing, so no test in this file depends
+      // on 40MB of sheets being on the disk running it — the pack renders one
+      // page shorter and every assertion here is about the body.
+      { sheetFor: jest.fn(async () => null) } as never,
       // The 271 renderer — nothing in these tests opts into the form.
       { build: jest.fn(async () => ({ pdf: Buffer.from('%PDF-'), leftBlank: [] })) } as never,
       // Cover photographs. `find` returns null so no test depends on a file

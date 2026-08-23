@@ -410,6 +410,15 @@ export interface MotivationPdfInput {
    */
   annexurePdfs?: PdfAnnexure[];
   /**
+   * The C.I.P. datasheet for the cartridge applied for.
+   *
+   * ⚠️ BODY CONTENT, NOT AN ANNEXURE. Operator, 2026-08-23: "it not an
+   * annexure. Its part of the motivation itself just giving information about
+   * the cartridge." It lands immediately after the firearm section, carries no
+   * annexure letter, and appears in the contents as a section.
+   */
+  cipSheet?: { bytes: Buffer; label: string };
+  /**
    * What the applicant physically carries to the DFO.
    *
    * ⚠️ THE TICK BOXES STAY DIGITAL — that decision holds (operator,
@@ -834,7 +843,14 @@ export class MotivationPdfService {
       tocPageIndex = doc.bufferedPageRange().count - 1;
     }
 
-    const toc: { heading: string; page: number }[] = [];
+    /**
+     * ⚠️ `final` MARKS A PAGE THAT IS ITSELF SPLICED IN. Ordinary entries are
+     * recorded with the number pdfkit drew them at and shifted below by
+     * whatever lands in front of them. A merged page has no pdfkit number at
+     * all — its entry is written with the number it will end up with — so
+     * shifting it again would count its own block twice.
+     */
+    const toc: { heading: string; page: number; final?: true }[] = [];
 
     /**
      * Pages that need a running head but must NOT appear in the contents.
@@ -859,6 +875,31 @@ export class MotivationPdfService {
      * merged pages were already in front of it.
      */
     let takeWithYouAt: number | null = null;
+    /** Where the C.I.P. datasheet is spliced in, once the body knows. */
+    let cipInsertAt: number | null = null;
+
+    /**
+     * Every run of merged pages, and where it goes.
+     *
+     * ⚠️ THE CONTENTS AND THE FOOTERS ARE BOTH WRITTEN BEFORE THESE PAGES
+     * EXIST. pdfkit lays the body out and stamps it; pd-lib splices the PDF
+     * pages in afterwards. So every page number this file writes has to be the
+     * number the page will END UP with, which means knowing about every
+     * insertion in advance. One hard-coded point was enough while the only
+     * merged pages were reprinted annexures; it is not now.
+     */
+    const insertions: { at: number; count: number }[] = [];
+
+    /**
+     * How far a page moves, given everything spliced in ahead of it.
+     *
+     * `strict` is for a page that IS one of the insertions: it must count the
+     * blocks in front of it and NOT itself.
+     */
+    const shiftFor = (zeroBased: number, strict = false): number =>
+      insertions
+        .filter((ins) => (strict ? zeroBased > ins.at : zeroBased >= ins.at))
+        .reduce((n, ins) => n + ins.count, 0);
 
     /**
      * A section heading, recorded for the contents and drawn as a band.
@@ -996,6 +1037,27 @@ export class MotivationPdfService {
       }
       doc.x = MARGIN;
       doc.y += PARA_GAP;
+
+      // ── The cartridge's own datasheet ───────────────────────────
+      //
+      // ⚠️ A DELIBERATE PAGE BREAK, AND ONLY WHEN THERE IS A SHEET. The page
+      // is spliced in whole, so it can only land BETWEEN pages — and the
+      // firearm spec block usually ends mid-page with the owned-firearms
+      // table starting underneath it. Without the break the datasheet would
+      // be inserted into the middle of that table. Packs with no sheet gain
+      // nothing.
+      if (input.cipSheet) {
+        const at = doc.bufferedPageRange().count;
+        doc.addPage();
+        insertions.push({ at, count: 1 });
+        cipInsertAt = at;
+        // Its final number counts the blocks IN FRONT of it, never itself.
+        toc.push({
+          heading: input.cipSheet.label,
+          page: at + 1 + shiftFor(at, true),
+          final: true,
+        });
+      }
     }
 
     // ── Firearms already licensed (standard and comprehensive) ────────
@@ -1873,7 +1935,13 @@ export class MotivationPdfService {
       const numColW = K.mm(12);
       for (const entry of toc) {
         const y = doc.y;
-        const num = String(entry.page);
+        // ⚠️ THE NUMBER THE PAGE ENDS UP WITH. Same rule as the footers: this
+        // is written before the merged pages exist, so an entry pointing at a
+        // page behind an insertion has to account for it. A `final` entry is
+        // a merged page and already carries its answer.
+        const num = String(
+          entry.final ? entry.page : entry.page + shiftFor(entry.page - 1),
+        );
         const title = titleCase(entry.heading);
 
         doc.font(F.serif).fontSize(K.px(13.5)).fillColor(C.ink);
@@ -1989,7 +2057,19 @@ export class MotivationPdfService {
         pageLabels[i] = current;
       }
     }
-    const totalPages = range.count + extraPageCount(merged.loaded);
+    // ⚠️ REGISTERED HERE, AFTER THE BODY IS LAID OUT, because takeWithYouAt is
+    // only known once those sheets have been rendered. Everything else pushed
+    // to `insertions` during the render; this one joins them at the end so the
+    // footer and contents passes below see a single complete list.
+    const annexurePages = extraPageCount(merged.loaded);
+    if (annexurePages > 0) {
+      insertions.push({
+        at: takeWithYouAt === null ? range.count : takeWithYouAt - 1,
+        count: annexurePages,
+      });
+    }
+    const totalPages =
+      range.count + insertions.reduce((n, ins) => n + ins.count, 0);
     for (let i = 0; i < range.count; i++) {
       // ── The unpaid mark ────────────────────────────────────
       //
@@ -2078,14 +2158,13 @@ export class MotivationPdfService {
       // Dedicated sport shooter" is simply longer than a page is wide at 8 pt.
       // The reference and the page number are what make a loose sheet filable,
       // so they stay; the rest sheds from the tail.
-      // ⚠️ THE NUMBER A PAGE ENDS UP WITH, not the one it is drawn at. The
-      // merged annexures are inserted BEFORE the take-with-you sheets, so
-      // those two shift by however many pages come in — and they are stamped
-      // here, minutes before that happens.
-      const shifted =
-        takeWithYouAt !== null && i + 1 >= takeWithYouAt
-          ? i + 1 + extraPageCount(merged.loaded)
-          : i + 1;
+      // ⚠️ THE NUMBER A PAGE ENDS UP WITH, not the one it is drawn at. Pages
+      // are spliced in after this pass runs, so every page at or past an
+      // insertion moves — and they are stamped here, minutes before that
+      // happens. This was one hard-coded point until 2026-08-23; it is now
+      // whatever the render recorded, so adding a block anywhere numbers
+      // correctly without touching this line.
+      const shifted = i + 1 + shiftFor(i);
       K.footerStrip(
         chrome,
         [input.referenceNumber, `Page ${shifted} of ${totalPages}`],
@@ -2100,12 +2179,38 @@ export class MotivationPdfService {
     const body = await done;
 
     // The PDF annexures, printed into the pack rather than listed as missing.
-    const pdf = await appendPdfAnnexures(body, merged.loaded, {
+    // ⚠️ BLOCKS, NOT ONE POSITION. Reprinted annexures go in front of the
+    // take-with-you sheets; anything else — the C.I.P. datasheet belongs
+    // beside the firearm section — goes at its own index. The merge inserts
+    // back-to-front so the indices stay valid, and the footer pass below
+    // already accounts for every block.
+    // The datasheet is its own block at its own index — see PdfBlock. It has
+    // no annexure letter, which is what makes it read as body content.
+    const cipLoaded = input.cipSheet
+      ? await loadPdfAnnexures([
+          {
+            letter: '',
+            label: input.cipSheet.label,
+            index: 1,
+            total: 1,
+            bytes: input.cipSheet.bytes,
+          },
+        ])
+      : null;
+    const pdfBlocks = [
+      {
+        items: merged.loaded,
+        insertAt: takeWithYouAt === null ? undefined : takeWithYouAt - 1,
+      },
+      ...(cipLoaded?.loaded.length
+        ? [{ items: cipLoaded.loaded, insertAt: cipInsertAt ?? undefined }]
+        : []),
+    ];
+    const pdf = await appendPdfAnnexures(body, pdfBlocks, {
       referenceNumber: input.referenceNumber,
       templateVersion: input.templateVersion,
       bodyPageCount: range.count,
       // 0-based: the take-with-you sheets step aside for these.
-      insertAt: takeWithYouAt === null ? undefined : takeWithYouAt - 1,
     });
     return { pdf, filename: `motivation-${input.referenceNumber}.pdf` };
   }

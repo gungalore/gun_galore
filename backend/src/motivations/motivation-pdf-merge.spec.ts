@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 import {
   MAX_PAGES_PER_ANNEXURE,
   appendPdfAnnexures,
+  captionFor,
   extraPageCount,
   loadPdfAnnexures,
 } from './motivation-pdf-merge';
@@ -103,7 +104,7 @@ describe('appending them to the pack', () => {
       annexure(await makePdf(2), { letter: 'C' }),
       annexure(await makePdf(1), { letter: 'E' }),
     ]);
-    const out = await appendPdfAnnexures(body, loaded, opts);
+    const out = await appendPdfAnnexures(body, [{ items: loaded }], opts);
     const doc = await PDFDocument.load(out);
     expect(doc.getPageCount()).toBe(7); // 4 body + 2 + 1
   });
@@ -124,10 +125,9 @@ describe('appending them to the pack', () => {
       annexure(await makeSizedPdf(2, 400, 400), { letter: 'C' }),
       annexure(await makeSizedPdf(1, 400, 400), { letter: 'E' }),
     ]);
-    const out = await appendPdfAnnexures(body, loaded, {
+    const out = await appendPdfAnnexures(body, [{ items: loaded, insertAt: 4 }], {
       ...opts,
       bodyPageCount: 6,
-      insertAt: 4,
     });
     const doc = await PDFDocument.load(out);
     expect(doc.getPageCount()).toBe(9);
@@ -145,7 +145,7 @@ describe('appending them to the pack', () => {
     const { loaded } = await loadPdfAnnexures([
       annexure(await makePdf(1), { letter: 'C' }),
     ]);
-    const out = await appendPdfAnnexures(body, loaded, opts);
+    const out = await appendPdfAnnexures(body, [{ items: loaded }], opts);
     const doc = await PDFDocument.load(out);
     expect(doc.getPageCount()).toBe(5);
   });
@@ -161,7 +161,7 @@ describe('appending them to the pack', () => {
     const body = await makePdf(4);
     const out = await appendPdfAnnexures(
       body,
-      [{ ...annexure(Buffer.from('junk')), pageCount: 1 }],
+      [{ items: [{ ...annexure(Buffer.from('junk')), pageCount: 1 }] }],
       opts,
     );
     const doc = await PDFDocument.load(out);
@@ -176,10 +176,134 @@ describe('appending them to the pack', () => {
     const { loaded } = await loadPdfAnnexures([
       annexure(Buffer.from(await odd.save())),
     ]);
-    const out = await appendPdfAnnexures(await makePdf(1), loaded, opts);
+    const out = await appendPdfAnnexures(await makePdf(1), [{ items: loaded }], opts);
     const doc = await PDFDocument.load(out);
     const last = doc.getPage(doc.getPageCount() - 1);
     expect(Math.round(last.getSize().width)).toBe(300);
     expect(Math.round(last.getSize().height)).toBe(500);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// SEVERAL BLOCKS, AT SEVERAL PLACES.
+//
+// Operator, 2026-08-23: "The PDF also needs to be dynamic so we can add and
+// remove things without breaking anything or ruining the structure of the
+// document."
+//
+// ⚠️ THE FAILURE THIS GUARDS IS SILENT. Inserting at index 2 shifts everything
+// from 2 onward, so a second block aimed at index 6 — computed against the
+// ORIGINAL numbering, as every caller naturally does — lands at 8 unless the
+// merge goes back to front. Nothing throws. The pages are simply in the wrong
+// order, in a document somebody files with SAPS.
+describe('more than one insertion point', () => {
+  const opts = {
+    referenceNumber: 'MO000017',
+    templateVersion: 'tpl-test',
+    bodyPageCount: 4,
+  };
+
+  it('puts every block where the CALLER meant, not where the previous one left it', async () => {
+    const body = await makePdf(10);
+    const early = await loadPdfAnnexures([annexure(await makePdf(2))]);
+    const late = await loadPdfAnnexures([annexure(await makePdf(3))]);
+
+    const out = await appendPdfAnnexures(
+      body,
+      [
+        { items: early.loaded, insertAt: 2 },
+        { items: late.loaded, insertAt: 6 },
+      ],
+      { ...opts, bodyPageCount: 10 },
+    );
+    const doc = await PDFDocument.load(out);
+    expect(doc.getPageCount()).toBe(15); // 10 + 2 + 3
+  });
+
+  it('is order-independent — the caller may list blocks any way round', async () => {
+    const sizes = async () => {
+      const body = await makePdf(8);
+      const a = await loadPdfAnnexures([annexure(await makePdf(1))]);
+      const b = await loadPdfAnnexures([annexure(await makePdf(2))]);
+      return { body, a: a.loaded, b: b.loaded };
+    };
+    const one = await sizes();
+    const two = await sizes();
+
+    const forwards = await appendPdfAnnexures(
+      one.body,
+      [{ items: one.a, insertAt: 1 }, { items: one.b, insertAt: 5 }],
+      { ...opts, bodyPageCount: 8 },
+    );
+    const backwards = await appendPdfAnnexures(
+      two.body,
+      [{ items: two.b, insertAt: 5 }, { items: two.a, insertAt: 1 }],
+      { ...opts, bodyPageCount: 8 },
+    );
+    const f = await PDFDocument.load(forwards);
+    const b = await PDFDocument.load(backwards);
+    expect(f.getPageCount()).toBe(11);
+    expect(b.getPageCount()).toBe(f.getPageCount());
+  });
+
+  it('still handles the single-block case the annexures use', async () => {
+    const body = await makePdf(6);
+    const { loaded } = await loadPdfAnnexures([annexure(await makePdf(2))]);
+    const out = await appendPdfAnnexures(body, [{ items: loaded, insertAt: 4 }], {
+      ...opts,
+      bodyPageCount: 6,
+    });
+    expect((await PDFDocument.load(out)).getPageCount()).toBe(8);
+  });
+
+  it('ignores an empty block rather than counting it', async () => {
+    const body = await makePdf(3);
+    const { loaded } = await loadPdfAnnexures([annexure(await makePdf(1))]);
+    const out = await appendPdfAnnexures(
+      body,
+      [{ items: [], insertAt: 1 }, { items: loaded, insertAt: 2 }],
+      { ...opts, bodyPageCount: 3 },
+    );
+    expect((await PDFDocument.load(out)).getPageCount()).toBe(4);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// WHAT THE STAMP IN THE TOP MARGIN SAYS.
+//
+// ⚠️ THIS SHIPPED WRONG AND NO TEST COULD HAVE CAUGHT IT. The caption was
+// built inline inside the draw call, and pdf-lib deflates content streams —
+// so the string is not findable in the output bytes. It was found by
+// extracting the text of a real rendered pack and reading it, the same way
+// the two titleCase bugs were found. Hence the exported function.
+describe('the caption on a merged page', () => {
+  const base = { letter: 'C', label: 'Your letter of good standing', index: 1, total: 1 };
+
+  it('names an annexure by its letter', () => {
+    expect(captionFor(base)).toBe('Annexure C — Your letter of good standing');
+  });
+
+  it('counts the parts when a letter spans several documents', () => {
+    expect(captionFor({ ...base, index: 2, total: 3 })).toBe(
+      'Annexure C — Your letter of good standing (2 of 3)',
+    );
+  });
+
+  it('⚠️ says NOTHING about annexures for body content', () => {
+    // Operator, 2026-08-23, on the C.I.P. cartridge sheet: "it not an
+    // annexure. Its part of the motivation itself just giving information
+    // about the cartridge." The old template produced "Annexure  — The
+    // cartridge — 308 Win." — wrong word, and a double space where the
+    // letter should have been.
+    const cip = { letter: '', label: 'The cartridge — 308 Win.', index: 1, total: 1 };
+    expect(captionFor(cip)).toBe('The cartridge — 308 Win.');
+    expect(captionFor(cip)).not.toMatch(/annexure/i);
+    expect(captionFor(cip)).not.toMatch(/ {2}/);
+  });
+
+  it('still counts parts for a letterless block spanning pages', () => {
+    expect(captionFor({ letter: '', label: 'The cartridge', index: 1, total: 2 })).toBe(
+      'The cartridge (1 of 2)',
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import type { PDFFont, RGB } from 'pdf-lib';
 
 // ────────────────────────────────────────────────────────────────────
 // PDF ANNEXURES, PRINTED INTO THE PACK.
@@ -18,8 +19,18 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 // afterwards appends the PDF ones — captioned and footed to match.
 // ────────────────────────────────────────────────────────────────────
 
-/** An annexure that arrived as a PDF rather than a photograph. */
+/**
+ * A PDF page to splice into the pack.
+ *
+ * ⚠️ NOT ALWAYS AN ANNEXURE, DESPITE THE NAME. Operator, 2026-08-23, on the
+ * C.I.P. cartridge datasheet: "it not an annexure. Its part of the motivation
+ * itself just giving information about the cartridge." A block with no
+ * `letter` is body content: it is captioned by its label alone, carries no
+ * annexure letter, and belongs in the contents as a section rather than in the
+ * exhibits list.
+ */
 export interface PdfAnnexure {
+  /** Empty for body content — see the note above. */
   letter: string;
   label: string;
   /** "2 of 3" when several documents share a letter. */
@@ -97,26 +108,58 @@ export function extraPageCount(loaded: LoadedPdfAnnexure[]): number {
  * `bodyPageCount` is where the body ended, so the appended pages carry on the
  * numbering rather than restarting.
  */
+/**
+ * What gets stamped in the top margin of a merged page.
+ *
+ * ⚠️ NO LETTER MEANS NO "ANNEXURE". A block with an empty letter is body
+ * content — the C.I.P. cartridge sheet is the first of them. Operator,
+ * 2026-08-23: "it not an annexure. Its part of the motivation itself."
+ * Interpolating an empty letter into the old single template stamped
+ * "Annexure  — The cartridge" across the top of the datasheet: the wrong word,
+ * and a visible double space.
+ *
+ * ⚠️ EXPORTED SO IT CAN BE TESTED AT ALL. This lived inline in the draw call,
+ * where no test could reach it — pdf-lib deflates the content streams, so the
+ * caption is not findable in the output bytes. It shipped wrong and was caught
+ * by extracting the text of a real rendered pack by hand.
+ */
+export function captionFor(a: {
+  letter: string;
+  label: string;
+  index: number;
+  total: number;
+}): string {
+  const named = a.letter ? `Annexure ${a.letter} — ${a.label}` : a.label;
+  return a.total > 1 ? `${named} (${a.index} of ${a.total})` : named;
+}
+
+/**
+ * One run of pages going in at one place.
+ *
+ * ⚠️ SEVERAL BLOCKS, NOT ONE. This took a single `insertAt` until 2026-08-23,
+ * which was enough while the only merged pages were reprinted annexures that
+ * all went to the same spot. Operator: "The PDF also needs to be dynamic so we
+ * can add and remove things without breaking anything or ruining the structure
+ * of the document." A datasheet that belongs beside the firearm section and an
+ * annexure that belongs at the back are two positions, and the next thing
+ * somebody adds will be a third.
+ */
+export interface PdfBlock {
+  /** 0-based index these pages are inserted at. Undefined means the end. */
+  insertAt?: number;
+  items: LoadedPdfAnnexure[];
+}
+
 export async function appendPdfAnnexures(
   body: Buffer,
-  loaded: LoadedPdfAnnexure[],
+  blocks: PdfBlock[],
   opts: {
     referenceNumber: string;
     templateVersion: string;
     bodyPageCount: number;
-    /**
-     * Where these pages go, 0-based. Defaults to the end.
-     *
-     * ⚠️ NOT THE END, IN PRACTICE. The take-with-you sheets are rendered last
-     * by pdfkit and the operator's instruction is that they ARE the last two
-     * pages — but appending here put three merged annexures after them, so
-     * the applicant's checklist sat in the middle of the pack with annexures
-     * on both sides of it. These belong with the reprinted annexure copies,
-     * which is exactly where this index points.
-     */
-    insertAt?: number;
   },
 ): Promise<Buffer> {
+  const loaded = blocks.flatMap((b) => b.items);
   if (!loaded.length) return body;
 
   let out: PDFDocument;
@@ -131,13 +174,60 @@ export async function appendPdfAnnexures(
   const font = await out.embedFont(StandardFonts.Helvetica);
   const grey = rgb(0.42, 0.42, 0.42);
   const total = opts.bodyPageCount + extraPageCount(loaded);
-  // Where the first merged page lands, and therefore what it is numbered.
-  const at =
-    opts.insertAt === undefined
-      ? out.getPageCount()
-      : Math.max(0, Math.min(opts.insertAt, out.getPageCount()));
+
+  // ⚠️ DESCENDING BY POSITION, AND THAT IS THE WHOLE TRICK. Inserting at index
+  // 12 shifts everything at 12 and beyond, so a later insertion at index 30
+  // computed against the ORIGINAL page numbering would land in the wrong
+  // place. Going back-to-front means every index is still valid when it is
+  // used, and no block has to know about any other.
+  const bodyPages = out.getPageCount();
+  const ordered = blocks
+    .filter((b) => b.items.length)
+    .map((b) => ({
+      ...b,
+      at:
+        b.insertAt === undefined
+          ? bodyPages
+          : Math.max(0, Math.min(b.insertAt, bodyPages)),
+    }))
+    .sort((a, b) => b.at - a.at);
+
+  for (const block of ordered) {
+    await insertBlock(out, block.items, block.at, {
+      ...opts,
+      total,
+      font,
+      grey,
+      // The page number a merged page ends up with is its insertion index plus
+      // however many pages earlier blocks put in front of it. Earlier blocks
+      // are the ones with a LOWER index, which — going descending — are the
+      // ones not yet inserted, so they are counted here rather than observed.
+      before: ordered
+        .filter((o) => o.at < block.at)
+        .reduce((n, o) => n + extraPageCount(o.items), 0),
+    });
+  }
+
+  return Buffer.from(await out.save());
+}
+
+async function insertBlock(
+  out: PDFDocument,
+  loaded: LoadedPdfAnnexure[],
+  at: number,
+  opts: {
+    referenceNumber: string;
+    templateVersion: string;
+    total: number;
+    before: number;
+    font: PDFFont;
+    grey: RGB;
+  },
+): Promise<void> {
+  const { font, grey } = opts;
+  const total = opts.total;
   let cursor = at;
-  let pageNo = at;
+  let pageNo = at + opts.before;
 
   for (const a of loaded) {
     let src: PDFDocument;
@@ -176,10 +266,7 @@ export async function appendPdfAnnexures(
       // block of every ordinary document, and if a page really is printed
       // edge to edge the caption sits on it rather than the pack being
       // unlabelled.
-      const caption =
-        a.total > 1
-          ? `Annexure ${a.letter} — ${a.label} (${a.index} of ${a.total})`
-          : `Annexure ${a.letter} — ${a.label}`;
+      const caption = captionFor(a);
       const suffix = take > 1 ? `  ·  page ${i + 1} of ${take}` : '';
 
       try {
@@ -206,6 +293,4 @@ export async function appendPdfAnnexures(
       void width;
     }
   }
-
-  return Buffer.from(await out.save());
 }

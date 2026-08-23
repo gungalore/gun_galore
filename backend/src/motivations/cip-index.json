@@ -1,0 +1,3374 @@
+{
+ "22": {
+  "name": "22 (5,6/16)",
+  "pmaxBar": 4300,
+  "twistMm": null,
+  "file": "22.pdf"
+ },
+ "215": {
+  "name": "215",
+  "pmaxBar": 3800,
+  "twistMm": 214,
+  "file": "215.pdf"
+ },
+ "1173": {
+  "name": "11 mm 73",
+  "pmaxBar": 1150,
+  "twistMm": 350,
+  "file": "1173.pdf"
+ },
+ "5714": {
+  "name": "5,7/14",
+  "pmaxBar": 4100,
+  "twistMm": null,
+  "file": "5714.pdf"
+ },
+ "5716": {
+  "name": "5,7/16",
+  "pmaxBar": 3200,
+  "twistMm": null,
+  "file": "5716.pdf"
+ },
+ "5725": {
+  "name": "5,7/25",
+  "pmaxBar": 2500,
+  "twistMm": null,
+  "file": "5725.pdf"
+ },
+ "6310": {
+  "name": "6,3/10",
+  "pmaxBar": 3200,
+  "twistMm": null,
+  "file": "6310.pdf"
+ },
+ "6312": {
+  "name": "6,3/12",
+  "pmaxBar": 3000,
+  "twistMm": null,
+  "file": "6312.pdf"
+ },
+ "6314": {
+  "name": "6,3/14",
+  "pmaxBar": 2650,
+  "twistMm": null,
+  "file": "6314.pdf"
+ },
+ "6316": {
+  "name": "6,3/16",
+  "pmaxBar": 4500,
+  "twistMm": null,
+  "file": "6316.pdf"
+ },
+ "6811": {
+  "name": "6,8/11",
+  "pmaxBar": 3000,
+  "twistMm": null,
+  "file": "6811.pdf"
+ },
+ "6815": {
+  "name": "6,8/15",
+  "pmaxBar": 4000,
+  "twistMm": null,
+  "file": "6815.pdf"
+ },
+ "6818": {
+  "name": "6,8/18",
+  "pmaxBar": 4500,
+  "twistMm": null,
+  "file": "6818.pdf"
+ },
+ "46x30": {
+  "name": "4,6 x 30",
+  "pmaxBar": 4000,
+  "twistMm": 160,
+  "file": "46x30.pdf"
+ },
+ "545x39": {
+  "name": "5,45 x 39",
+  "pmaxBar": 3550,
+  "twistMm": null,
+  "file": "545x39.pdf"
+ },
+ "56x39": {
+  "name": "5,6 x 39",
+  "pmaxBar": 3500,
+  "twistMm": 420,
+  "file": "56x39.pdf"
+ },
+ "56x50magnum": {
+  "name": "5,6 x 50 Mag.",
+  "pmaxBar": 3800,
+  "twistMm": 350,
+  "file": "56x50magnum.pdf"
+ },
+ "56x57": {
+  "name": "5,6 x 57",
+  "pmaxBar": 4400,
+  "twistMm": 250,
+  "file": "56x57.pdf"
+ },
+ "56x61sevh": {
+  "name": "5,6 x 61 SE.v.H.",
+  "pmaxBar": 4400,
+  "twistMm": 220,
+  "file": "56x61sevh.pdf"
+ },
+ "57x28": {
+  "name": "5,7 x 28",
+  "pmaxBar": 3450,
+  "twistMm": 228.6,
+  "file": "57x28.pdf"
+ },
+ "6x47atzl": {
+  "name": "6 x 47 ATZL",
+  "pmaxBar": 4050,
+  "twistMm": 356,
+  "file": "6x47atzl.pdf"
+ },
+ "6x47sm": {
+  "name": "6 x 47 SM",
+  "pmaxBar": 3900,
+  "twistMm": 205,
+  "file": "6x47sm.pdf"
+ },
+ "6x51atzl": {
+  "name": "6 x 51 ATZL",
+  "pmaxBar": 4050,
+  "twistMm": 356,
+  "file": "6x51atzl.pdf"
+ },
+ "6x62freres": {
+  "name": "6 x 62 Freres",
+  "pmaxBar": 4300,
+  "twistMm": 260,
+  "file": "6x62freres.pdf"
+ },
+ "6advancedriflecartridge": {
+  "name": "6 mm Advanced Rifle Cartridge",
+  "pmaxBar": 3800,
+  "twistMm": 191,
+  "file": "6advancedriflecartridge.pdf"
+ },
+ "6brfar": {
+  "name": "6 mm BR Farè",
+  "pmaxBar": 4400,
+  "twistMm": null,
+  "file": "6brfar.pdf"
+ },
+ "6brnorma": {
+  "name": "6mm BR Norma",
+  "pmaxBar": 4050,
+  "twistMm": 203.2,
+  "file": "6brnorma.pdf"
+ },
+ "6brremington": {
+  "name": "6 mm BR Rem.",
+  "pmaxBar": 4050,
+  "twistMm": 228.6,
+  "file": "6brremington.pdf"
+ },
+ "6creedmoor": {
+  "name": "6 mm Creedmoor",
+  "pmaxBar": 4350,
+  "twistMm": 191,
+  "file": "6creedmoor.pdf"
+ },
+ "6dasher": {
+  "name": "6 mm Dasher",
+  "pmaxBar": 4400,
+  "twistMm": 196.85,
+  "file": "6dasher.pdf"
+ },
+ "6dbg": {
+  "name": "6 mm D.B.G.",
+  "pmaxBar": 4150,
+  "twistMm": 254,
+  "file": "6dbg.pdf"
+ },
+ "6ppc": {
+  "name": "6 mm PPC",
+  "pmaxBar": 4050,
+  "twistMm": 551,
+  "file": "6ppc.pdf"
+ },
+ "6ppcita": {
+  "name": "6 mm PPC ITA",
+  "pmaxBar": 4050,
+  "twistMm": null,
+  "file": "6ppcita.pdf"
+ },
+ "6ppcusa": {
+  "name": "6 mm PPC-USA",
+  "pmaxBar": 4050,
+  "twistMm": 305,
+  "file": "6ppcusa.pdf"
+ },
+ "6remington": {
+  "name": "6 mm Rem.",
+  "pmaxBar": 4300,
+  "twistMm": 228.6,
+  "file": "6remington.pdf"
+ },
+ "6xc": {
+  "name": "6 XC",
+  "pmaxBar": 4400,
+  "twistMm": 203.2,
+  "file": "6xc.pdf"
+ },
+ "63x57far": {
+  "name": "6,3 x 57 Farè",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "63x57far.pdf"
+ },
+ "65284norma": {
+  "name": "6,5 - 284 Norma",
+  "pmaxBar": 4100,
+  "twistMm": 228.6,
+  "file": "65284norma.pdf"
+ },
+ "65x39": {
+  "name": "6,5 x 39",
+  "pmaxBar": 4100,
+  "twistMm": 250,
+  "file": "65x39.pdf"
+ },
+ "65x47lapua": {
+  "name": "6,5 x 47 Lapua",
+  "pmaxBar": 4350,
+  "twistMm": 200,
+  "file": "65x47lapua.pdf"
+ },
+ "65x52carcano": {
+  "name": "6,5 x 52 Carcano",
+  "pmaxBar": 2850,
+  "twistMm": 201.5,
+  "file": "65x52carcano.pdf"
+ },
+ "65x54mauser": {
+  "name": "6,5 x 54 Mauser",
+  "pmaxBar": 3050,
+  "twistMm": 200,
+  "file": "65x54mauser.pdf"
+ },
+ "65x54mannlsch": {
+  "name": "6,5 x 54 Mannl. Sch.",
+  "pmaxBar": 3650,
+  "twistMm": 200,
+  "file": "65x54mannlsch.pdf"
+ },
+ "65x55se": {
+  "name": "6,5 x 55 SE",
+  "pmaxBar": 3800,
+  "twistMm": 220,
+  "file": "65x55se.pdf"
+ },
+ "65x55tri": {
+  "name": "6,5 x 55 T.R.I.",
+  "pmaxBar": 3800,
+  "twistMm": null,
+  "file": "65x55tri.pdf"
+ },
+ "65x57": {
+  "name": "6,5 x 57",
+  "pmaxBar": 3900,
+  "twistMm": 200,
+  "file": "65x57.pdf"
+ },
+ "65x58mauser": {
+  "name": "6,5 x 58 Mauser",
+  "pmaxBar": 3550,
+  "twistMm": 200,
+  "file": "65x58mauser.pdf"
+ },
+ "65x63messnermagnum": {
+  "name": "6,5 x 63 Messner Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 200,
+  "file": "65x63messnermagnum.pdf"
+ },
+ "65x64": {
+  "name": "6,5 x 64",
+  "pmaxBar": 4300,
+  "twistMm": 228,
+  "file": "65x64.pdf"
+ },
+ "65x64brenneke": {
+  "name": "6,5 x 64 Brenneke",
+  "pmaxBar": 4300,
+  "twistMm": 255,
+  "file": "65x64brenneke.pdf"
+ },
+ "65x65rws": {
+  "name": "6,5 x 65 RWS",
+  "pmaxBar": 4150,
+  "twistMm": 200,
+  "file": "65x65rws.pdf"
+ },
+ "65x68": {
+  "name": "6,5 x 68",
+  "pmaxBar": 4400,
+  "twistMm": 250,
+  "file": "65x68.pdf"
+ },
+ "65creedmoor": {
+  "name": "6,5 Creedmoor",
+  "pmaxBar": 4350,
+  "twistMm": 203,
+  "file": "65creedmoor.pdf"
+ },
+ "65gap4s": {
+  "name": "6,5 G.A.P. 4S",
+  "pmaxBar": 4400,
+  "twistMm": 203.2,
+  "file": "65gap4s.pdf"
+ },
+ "65dbg": {
+  "name": "6,5 mm D.B.G.",
+  "pmaxBar": 4400,
+  "twistMm": null,
+  "file": "65dbg.pdf"
+ },
+ "65lahoz": {
+  "name": "6,5 mm Lahoz",
+  "pmaxBar": 3450,
+  "twistMm": 228.6,
+  "file": "65lahoz.pdf"
+ },
+ "65prc": {
+  "name": "6,5 PRC",
+  "pmaxBar": 4400,
+  "twistMm": 203,
+  "file": "65prc.pdf"
+ },
+ "68remingtonspc": {
+  "name": "6,8 mm Rem. SPC",
+  "pmaxBar": 4050,
+  "twistMm": 254,
+  "file": "68remingtonspc.pdf"
+ },
+ "68western": {
+  "name": "6,8 Western",
+  "pmaxBar": 4400,
+  "twistMm": 203.2,
+  "file": "68western.pdf"
+ },
+ "7x33sako": {
+  "name": "7 x 33 Sako",
+  "pmaxBar": 2800,
+  "twistMm": 401,
+  "file": "7x33sako.pdf"
+ },
+ "7x44penna": {
+  "name": "7 x 44 Penna",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "7x44penna.pdf"
+ },
+ "7x57": {
+  "name": "7 x 57",
+  "pmaxBar": 3900,
+  "twistMm": 220,
+  "file": "7x57.pdf"
+ },
+ "7x64": {
+  "name": "7 x 64",
+  "pmaxBar": 4150,
+  "twistMm": 220,
+  "file": "7x64.pdf"
+ },
+ "747gs": {
+  "name": "7-47 GS",
+  "pmaxBar": 4350,
+  "twistMm": 280,
+  "file": "747gs.pdf"
+ },
+ "708remington": {
+  "name": "7 mm - 08 Rem.",
+  "pmaxBar": 4150,
+  "twistMm": 241,
+  "file": "708remington.pdf"
+ },
+ "7blasermagnum": {
+  "name": "7 mm Blaser Mag.",
+  "pmaxBar": 4200,
+  "twistMm": 254,
+  "file": "7blasermagnum.pdf"
+ },
+ "7brremington": {
+  "name": "7 mm BR Rem.",
+  "pmaxBar": 4050,
+  "twistMm": 241.3,
+  "file": "7brremington.pdf"
+ },
+ "7expremington": {
+  "name": "7 mm Exp. Rem.",
+  "pmaxBar": 4050,
+  "twistMm": 241,
+  "file": "7expremington.pdf"
+ },
+ "7km": {
+  "name": "7 mm KM",
+  "pmaxBar": 4400,
+  "twistMm": 216,
+  "file": "7km.pdf"
+ },
+ "7precisionriflecartridge": {
+  "name": "7 mm Precision Rifle Cartridge",
+  "pmaxBar": 4400,
+  "twistMm": 203.2,
+  "file": "7precisionriflecartridge.pdf"
+ },
+ "7remingtonsaultramagnum": {
+  "name": "7 mm Rem. SA Ultra Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "7remingtonsaultramagnum.pdf"
+ },
+ "7remingtonultramagnum": {
+  "name": "7 mm Rem. Ultra Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 241.3,
+  "file": "7remingtonultramagnum.pdf"
+ },
+ "7sevh": {
+  "name": "7 mm SE v. H.",
+  "pmaxBar": 4400,
+  "twistMm": 260,
+  "file": "7sevh.pdf"
+ },
+ "7winchestershortmagnum": {
+  "name": "7 mm Win. Short Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 241,
+  "file": "7winchestershortmagnum.pdf"
+ },
+ "7zentile": {
+  "name": "7 mm Zentile",
+  "pmaxBar": 4400,
+  "twistMm": 241,
+  "file": "7zentile.pdf"
+ },
+ "7270winchestershortmagnum": {
+  "name": "7-270 Win. Short Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 215.9,
+  "file": "7270winchestershortmagnum.pdf"
+ },
+ "721firebird": {
+  "name": "7,21 Firebird",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "721firebird.pdf"
+ },
+ "75x54mas": {
+  "name": "7,5 x 54 MAS",
+  "pmaxBar": 3800,
+  "twistMm": 270,
+  "file": "75x54mas.pdf"
+ },
+ "75x55suisse": {
+  "name": "7,5 x 55 Suisse",
+  "pmaxBar": 3800,
+  "twistMm": 270,
+  "file": "75x55suisse.pdf"
+ },
+ "762x39": {
+  "name": "7,62 x 39",
+  "pmaxBar": 3550,
+  "twistMm": 240,
+  "file": "762x39.pdf"
+ },
+ "762x45": {
+  "name": "7,62 x 45",
+  "pmaxBar": 4300,
+  "twistMm": 280,
+  "file": "762x45.pdf"
+ },
+ "762ukm": {
+  "name": "7,62 UKM",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "762ukm.pdf"
+ },
+ "765x53arg": {
+  "name": "7,65 x 53 Arg.",
+  "pmaxBar": 3900,
+  "twistMm": 280,
+  "file": "765x53arg.pdf"
+ },
+ "782warbird": {
+  "name": "7,82 Warbird",
+  "pmaxBar": 4400,
+  "twistMm": 305,
+  "file": "782warbird.pdf"
+ },
+ "792x24vbr": {
+  "name": "7,92 x 24 VBR",
+  "pmaxBar": 3310,
+  "twistMm": 250,
+  "file": "792x24vbr.pdf"
+ },
+ "792x33kurz": {
+  "name": "7,92 x 33 kurz",
+  "pmaxBar": 3400,
+  "twistMm": 240,
+  "file": "792x33kurz.pdf"
+ },
+ "8x51": {
+  "name": "8 x 51 (Mauser K)",
+  "pmaxBar": 3400,
+  "twistMm": 240,
+  "file": "8x51.pdf"
+ },
+ "8x56msch": {
+  "name": "8 x 56 M.-Sch.",
+  "pmaxBar": 3200,
+  "twistMm": 250,
+  "file": "8x56msch.pdf"
+ },
+ "8x57i": {
+  "name": "8 x 57 I",
+  "pmaxBar": 3800,
+  "twistMm": 240,
+  "file": "8x57i.pdf"
+ },
+ "8x57is": {
+  "name": "8 x 57 IS",
+  "pmaxBar": 3900,
+  "twistMm": 240,
+  "file": "8x57is.pdf"
+ },
+ "8x57pcc": {
+  "name": "8 x 57 PCC",
+  "pmaxBar": 4400,
+  "twistMm": 240,
+  "file": "8x57pcc.pdf"
+ },
+ "8x60": {
+  "name": "8 x 60",
+  "pmaxBar": 4050,
+  "twistMm": 240,
+  "file": "8x60.pdf"
+ },
+ "8x60s": {
+  "name": "8 x 60 S",
+  "pmaxBar": 4050,
+  "twistMm": 240,
+  "file": "8x60s.pdf"
+ },
+ "8x64": {
+  "name": "8 x 64",
+  "pmaxBar": 4050,
+  "twistMm": 240,
+  "file": "8x64.pdf"
+ },
+ "8x64s": {
+  "name": "8 x 64 S",
+  "pmaxBar": 4050,
+  "twistMm": 240,
+  "file": "8x64s.pdf"
+ },
+ "8x68s": {
+  "name": "8 x 68 S",
+  "pmaxBar": 4400,
+  "twistMm": 280,
+  "file": "8x68s.pdf"
+ },
+ "8x75s": {
+  "name": "8 x 75 S",
+  "pmaxBar": 4400,
+  "twistMm": 240,
+  "file": "8x75s.pdf"
+ },
+ "85x55blaser": {
+  "name": "8,5 x 55 Blaser",
+  "pmaxBar": 4300,
+  "twistMm": 304.8,
+  "file": "85x55blaser.pdf"
+ },
+ "85x63": {
+  "name": "8,5 x 63",
+  "pmaxBar": 4300,
+  "twistMm": 254,
+  "file": "85x63.pdf"
+ },
+ "85x68fanzoj": {
+  "name": "8,5 x 68 Fanzoj",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "85x68fanzoj.pdf"
+ },
+ "85messnermagnum": {
+  "name": "8,5 mm Messner Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "85messnermagnum.pdf"
+ },
+ "9x39": {
+  "name": "9 x 39",
+  "pmaxBar": 3550,
+  "twistMm": 240,
+  "file": "9x39.pdf"
+ },
+ "9x56mannlsch": {
+  "name": "9 x 56 Mannl. Sch.",
+  "pmaxBar": 2080,
+  "twistMm": 280,
+  "file": "9x56mannlsch.pdf"
+ },
+ "9x57": {
+  "name": "9 x 57",
+  "pmaxBar": 2800,
+  "twistMm": 360,
+  "file": "9x57.pdf"
+ },
+ "93x57": {
+  "name": "9,3 x 57",
+  "pmaxBar": 3000,
+  "twistMm": 360,
+  "file": "93x57.pdf"
+ },
+ "93x62": {
+  "name": "9,3 x 62",
+  "pmaxBar": 3900,
+  "twistMm": 360,
+  "file": "93x62.pdf"
+ },
+ "93x64brenneke": {
+  "name": "9,3 x 64 Brenneke",
+  "pmaxBar": 4400,
+  "twistMm": 360,
+  "file": "93x64brenneke.pdf"
+ },
+ "93x66sako": {
+  "name": "9,3 x 66 Sako",
+  "pmaxBar": 4150,
+  "twistMm": 360,
+  "file": "93x66sako.pdf"
+ },
+ "93rsm": {
+  "name": "9,3 RSM",
+  "pmaxBar": 4400,
+  "twistMm": 406.4,
+  "file": "93rsm.pdf"
+ },
+ "95x57mannlsch": {
+  "name": "9,5 x 57 Mannl. Sch.",
+  "pmaxBar": 3050,
+  "twistMm": 300,
+  "file": "95x57mannlsch.pdf"
+ },
+ "95x66sevh": {
+  "name": "9,5 x 66 SE v. H.",
+  "pmaxBar": 4400,
+  "twistMm": 305,
+  "file": "95x66sevh.pdf"
+ },
+ "103capra": {
+  "name": "10,3 Capra",
+  "pmaxBar": 4100,
+  "twistMm": 450,
+  "file": "103capra.pdf"
+ },
+ "103csp": {
+  "name": "10,3 CSP",
+  "pmaxBar": 4400,
+  "twistMm": 450,
+  "file": "103csp.pdf"
+ },
+ "10x100bwa": {
+  "name": "10x100 BWA",
+  "pmaxBar": 3700,
+  "twistMm": 330.2,
+  "file": "10x100bwa.pdf"
+ },
+ "1075x68": {
+  "name": "10,75 x 68",
+  "pmaxBar": 3300,
+  "twistMm": 420,
+  "file": "1075x68.pdf"
+ },
+ "127x42": {
+  "name": "12,7 X 42",
+  "pmaxBar": 2400,
+  "twistMm": 16,
+  "file": "127x42.pdf"
+ },
+ "127x70": {
+  "name": "12,7 x 70 (500 Schüler)",
+  "pmaxBar": 3300,
+  "twistMm": 450,
+  "file": "127x70.pdf"
+ },
+ "127x108": {
+  "name": "12,7 x 108",
+  "pmaxBar": 3050,
+  "twistMm": 380,
+  "file": "127x108.pdf"
+ },
+ "17libra": {
+  "name": "17 Libra",
+  "pmaxBar": 4300,
+  "twistMm": 229,
+  "file": "17libra.pdf"
+ },
+ "17remington": {
+  "name": "17 Rem.",
+  "pmaxBar": 4250,
+  "twistMm": 229,
+  "file": "17remington.pdf"
+ },
+ "17remingtonfireball": {
+  "name": "17 Rem. Fireball",
+  "pmaxBar": 3800,
+  "twistMm": 228.6,
+  "file": "17remingtonfireball.pdf"
+ },
+ "204ruger": {
+  "name": "204 Ruger",
+  "pmaxBar": 4050,
+  "twistMm": 305,
+  "file": "204ruger.pdf"
+ },
+ "22advancedriflecartridge": {
+  "name": "22 Advanced Rifle Cartridge",
+  "pmaxBar": 4050,
+  "twistMm": 177.8,
+  "file": "22advancedriflecartridge.pdf"
+ },
+ "22ppcusa": {
+  "name": "22 PPC-USA",
+  "pmaxBar": 4050,
+  "twistMm": 355,
+  "file": "22ppcusa.pdf"
+ },
+ "22250remington": {
+  "name": "22-250 Rem",
+  "pmaxBar": 4050,
+  "twistMm": 356,
+  "file": "22250remington.pdf"
+ },
+ "220swift": {
+  "name": "220 Swift",
+  "pmaxBar": 4300,
+  "twistMm": 356,
+  "file": "220swift.pdf"
+ },
+ "222remington": {
+  "name": "222 Rem.",
+  "pmaxBar": 3700,
+  "twistMm": 356,
+  "file": "222remington.pdf"
+ },
+ "222remingtonmagnum": {
+  "name": "222 Rem. Mag.",
+  "pmaxBar": 4050,
+  "twistMm": 356,
+  "file": "222remingtonmagnum.pdf"
+ },
+ "223remington": {
+  "name": "223 Rem.",
+  "pmaxBar": 4300,
+  "twistMm": 305,
+  "file": "223remington.pdf"
+ },
+ "223winchestersupershortmagnum": {
+  "name": "223 Win. Super Short Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "223winchestersupershortmagnum.pdf"
+ },
+ "224valkyrie": {
+  "name": "224 Valkyrie",
+  "pmaxBar": 3890,
+  "twistMm": 177.8,
+  "file": "224valkyrie.pdf"
+ },
+ "243winchester": {
+  "name": "243 Win.",
+  "pmaxBar": 4150,
+  "twistMm": 254,
+  "file": "243winchester.pdf"
+ },
+ "243winchestersupershortmagnum": {
+  "name": "243 Win. Super Short Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "243winchestersupershortmagnum.pdf"
+ },
+ "25remington": {
+  "name": "25 Rem.",
+  "pmaxBar": 2450,
+  "twistMm": 254,
+  "file": "25remington.pdf"
+ },
+ "25winchestersupershortmagnum": {
+  "name": "25 Win. Super Short Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "25winchestersupershortmagnum.pdf"
+ },
+ "2506remington": {
+  "name": "25-06 Rem.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "2506remington.pdf"
+ },
+ "250savage": {
+  "name": "250 Savage",
+  "pmaxBar": 3650,
+  "twistMm": 356,
+  "file": "250savage.pdf"
+ },
+ "255gs": {
+  "name": "255 GS",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "255gs.pdf"
+ },
+ "256magnumgibbs": {
+  "name": "256 Mag. Gibbs",
+  "pmaxBar": 3400,
+  "twistMm": null,
+  "file": "256magnumgibbs.pdf"
+ },
+ "257roberts": {
+  "name": "257 Roberts",
+  "pmaxBar": 3550,
+  "twistMm": 254,
+  "file": "257roberts.pdf"
+ },
+ "26nosler": {
+  "name": "26 Nosler",
+  "pmaxBar": 4400,
+  "twistMm": 203.2,
+  "file": "26nosler.pdf"
+ },
+ "28nosler": {
+  "name": "28 Nosler",
+  "pmaxBar": 4400,
+  "twistMm": 228.6,
+  "file": "28nosler.pdf"
+ },
+ "260remington": {
+  "name": "260 Rem.",
+  "pmaxBar": 4150,
+  "twistMm": 229,
+  "file": "260remington.pdf"
+ },
+ "264leroyne": {
+  "name": "264 Leroy N.E.",
+  "pmaxBar": 4400,
+  "twistMm": 200,
+  "file": "264leroyne.pdf"
+ },
+ "270winchester": {
+  "name": "270 Win.",
+  "pmaxBar": 4300,
+  "twistMm": 254,
+  "file": "270winchester.pdf"
+ },
+ "270winchestershortmagnum": {
+  "name": "270 Win. Short Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "270winchestershortmagnum.pdf"
+ },
+ "275hvrigby": {
+  "name": "275 H. V. Rigby",
+  "pmaxBar": 3200,
+  "twistMm": 203,
+  "file": "275hvrigby.pdf"
+ },
+ "277gs": {
+  "name": "277 GS",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "277gs.pdf"
+ },
+ "280remington": {
+  "name": "280 Rem.",
+  "pmaxBar": 4050,
+  "twistMm": 254,
+  "file": "280remington.pdf"
+ },
+ "280rimlneross": {
+  "name": "280 Riml. N. E. Ross",
+  "pmaxBar": 3250,
+  "twistMm": 220,
+  "file": "280rimlneross.pdf"
+ },
+ "284shehane": {
+  "name": "284 Shehane",
+  "pmaxBar": 4400,
+  "twistMm": 228,
+  "file": "284shehane.pdf"
+ },
+ "284tony": {
+  "name": "284 Tony",
+  "pmaxBar": 4400,
+  "twistMm": 228,
+  "file": "284tony.pdf"
+ },
+ "284winchester": {
+  "name": "284 Win.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "284winchester.pdf"
+ },
+ "30br": {
+  "name": "30 BR",
+  "pmaxBar": 4050,
+  "twistMm": 431.8,
+  "file": "30br.pdf"
+ },
+ "30carbine": {
+  "name": "30 Carbine",
+  "pmaxBar": 3200,
+  "twistMm": 508,
+  "file": "30carbine.pdf"
+ },
+ "30court": {
+  "name": "30 Court",
+  "pmaxBar": 3650,
+  "twistMm": 508,
+  "file": "30court.pdf"
+ },
+ "30remington": {
+  "name": "30 Rem.",
+  "pmaxBar": 2800,
+  "twistMm": 305,
+  "file": "30remington.pdf"
+ },
+ "30tc": {
+  "name": "30 TC",
+  "pmaxBar": 4250,
+  "twistMm": 305,
+  "file": "30tc.pdf"
+ },
+ "3006ackleyimproved": {
+  "name": "30-06 Ackley Improved",
+  "pmaxBar": 4300,
+  "twistMm": 254,
+  "file": "3006ackleyimproved.pdf"
+ },
+ "3006courtcartry": {
+  "name": "30-06 Court Cartry",
+  "pmaxBar": 3500,
+  "twistMm": 254,
+  "file": "3006courtcartry.pdf"
+ },
+ "3006springfield": {
+  "name": "30-06 Spring.",
+  "pmaxBar": 4050,
+  "twistMm": 254,
+  "file": "3006springfield.pdf"
+ },
+ "30284nolasco": {
+  "name": "30-284 NOLASCO",
+  "pmaxBar": 3800,
+  "twistMm": 305,
+  "file": "30284nolasco.pdf"
+ },
+ "30284winchester": {
+  "name": "30 - 284 Win.",
+  "pmaxBar": 3800,
+  "twistMm": 305,
+  "file": "30284winchester.pdf"
+ },
+ "30338prechtlmagnum": {
+  "name": "30-338 Prechtl Mag.",
+  "pmaxBar": 4200,
+  "twistMm": 254,
+  "file": "30338prechtlmagnum.pdf"
+ },
+ "3047gs": {
+  "name": "30-47 GS",
+  "pmaxBar": 4350,
+  "twistMm": 355.6,
+  "file": "3047gs.pdf"
+ },
+ "300aacblackout": {
+  "name": "300 AAC Blackout",
+  "pmaxBar": 3900,
+  "twistMm": 203.2,
+  "file": "300aacblackout.pdf"
+ },
+ "300blacktornado": {
+  "name": "300 Blacktornado",
+  "pmaxBar": 4400,
+  "twistMm": 229,
+  "file": "300blacktornado.pdf"
+ },
+ "300blasermagnum": {
+  "name": "300 Blaser Mag.",
+  "pmaxBar": 4200,
+  "twistMm": 279.4,
+  "file": "300blasermagnum.pdf"
+ },
+ "300cr": {
+  "name": "300 CR",
+  "pmaxBar": 4300,
+  "twistMm": 305,
+  "file": "300cr.pdf"
+ },
+ "300lapuamagnum": {
+  "name": "300 Lapua Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 240,
+  "file": "300lapuamagnum.pdf"
+ },
+ "300normamagnum": {
+  "name": "300 Norma Mag",
+  "pmaxBar": 4400,
+  "twistMm": 229,
+  "file": "300normamagnum.pdf"
+ },
+ "300pegasus": {
+  "name": "300 Pegasus",
+  "pmaxBar": 4300,
+  "twistMm": 254,
+  "file": "300pegasus.pdf"
+ },
+ "300precisionriflecartridge": {
+  "name": "300 Precision Rifle Cartridge",
+  "pmaxBar": 4400,
+  "twistMm": 216,
+  "file": "300precisionriflecartridge.pdf"
+ },
+ "300rcm": {
+  "name": "300 RCM",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "300rcm.pdf"
+ },
+ "300remingtonsaultramagnum": {
+  "name": "300 Rem. SA Ultra Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "300remingtonsaultramagnum.pdf"
+ },
+ "300remingtonultramagnum": {
+  "name": "300 Rem. Ultra Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "300remingtonultramagnum.pdf"
+ },
+ "300savage": {
+  "name": "300 Savage",
+  "pmaxBar": 3650,
+  "twistMm": 305,
+  "file": "300savage.pdf"
+ },
+ "300winchestershortmagnum": {
+  "name": "300 Win. Short Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "300winchestershortmagnum.pdf"
+ },
+ "308eh": {
+  "name": "308 EH",
+  "pmaxBar": 3800,
+  "twistMm": 305,
+  "file": "308eh.pdf"
+ },
+ "308match": {
+  "name": "308 Match",
+  "pmaxBar": 4150,
+  "twistMm": 305,
+  "file": "308match.pdf"
+ },
+ "308winchester": {
+  "name": "308 Win.",
+  "pmaxBar": 4150,
+  "twistMm": 305,
+  "file": "308winchester.pdf"
+ },
+ "318rimlne": {
+  "name": "318 Riml. N.E.",
+  "pmaxBar": 3300,
+  "twistMm": 304.8,
+  "file": "318rimlne.pdf"
+ },
+ "32remington": {
+  "name": "32 Rem.",
+  "pmaxBar": 2950,
+  "twistMm": 356,
+  "file": "32remington.pdf"
+ },
+ "325wsm": {
+  "name": "325 WSM",
+  "pmaxBar": 4350,
+  "twistMm": 254,
+  "file": "325wsm.pdf"
+ },
+ "333rimlne": {
+  "name": "333 Riml. N.E.",
+  "pmaxBar": 3300,
+  "twistMm": null,
+  "file": "333rimlne.pdf"
+ },
+ "338advancedriflecartdridge": {
+  "name": "338 Advanced Rifle Cartdridge",
+  "pmaxBar": 4050,
+  "twistMm": 203.2,
+  "file": "338advancedriflecartdridge.pdf"
+ },
+ "338blasermagnum": {
+  "name": "338 Blaser Mag.",
+  "pmaxBar": 4200,
+  "twistMm": 304.8,
+  "file": "338blasermagnum.pdf"
+ },
+ "338federal": {
+  "name": "338 Federal",
+  "pmaxBar": 4150,
+  "twistMm": 254,
+  "file": "338federal.pdf"
+ },
+ "338lapuamagnum": {
+  "name": "338 Lapua Mag.",
+  "pmaxBar": 4200,
+  "twistMm": 254,
+  "file": "338lapuamagnum.pdf"
+ },
+ "338normamagnum": {
+  "name": "338 Norma Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 235,
+  "file": "338normamagnum.pdf"
+ },
+ "338rcm": {
+  "name": "338 RCM",
+  "pmaxBar": 4300,
+  "twistMm": 254,
+  "file": "338rcm.pdf"
+ },
+ "338remingtonultramagnum": {
+  "name": "338 Rem. Ultra Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "338remingtonultramagnum.pdf"
+ },
+ "338winchestershortmagnum": {
+  "name": "338 Win. Short Mag.",
+  "pmaxBar": 4150,
+  "twistMm": 254,
+  "file": "338winchestershortmagnum.pdf"
+ },
+ "35remington": {
+  "name": "35 Rem.",
+  "pmaxBar": 2750,
+  "twistMm": 406,
+  "file": "35remington.pdf"
+ },
+ "35whelen": {
+  "name": "35 Whelen",
+  "pmaxBar": 4000,
+  "twistMm": 406.4,
+  "file": "35whelen.pdf"
+ },
+ "350legend": {
+  "name": "350 Legend",
+  "pmaxBar": 4300,
+  "twistMm": 406.4,
+  "file": "350legend.pdf"
+ },
+ "350rigbymagnum": {
+  "name": "350 Rigby Mag.",
+  "pmaxBar": 3100,
+  "twistMm": 305,
+  "file": "350rigbymagnum.pdf"
+ },
+ "358winchester": {
+  "name": "358 Win.",
+  "pmaxBar": 4050,
+  "twistMm": 305,
+  "file": "358winchester.pdf"
+ },
+ "375blasermagnum": {
+  "name": "375 Blaser Mag.",
+  "pmaxBar": 4200,
+  "twistMm": 355.6,
+  "file": "375blasermagnum.pdf"
+ },
+ "375cheytac": {
+  "name": "375 Chey Tac",
+  "pmaxBar": 4400,
+  "twistMm": 330.2,
+  "file": "375cheytac.pdf"
+ },
+ "375hlderlin": {
+  "name": "375 Hölderlin",
+  "pmaxBar": 3800,
+  "twistMm": 305,
+  "file": "375hlderlin.pdf"
+ },
+ "375remingtonultramagnum": {
+  "name": "375 Rem. Ultra Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 304.8,
+  "file": "375remingtonultramagnum.pdf"
+ },
+ "375ruger": {
+  "name": "375 Ruger",
+  "pmaxBar": 4275,
+  "twistMm": 305,
+  "file": "375ruger.pdf"
+ },
+ "375swissp": {
+  "name": "375 SWISS P",
+  "pmaxBar": 4200,
+  "twistMm": 304.8,
+  "file": "375swissp.pdf"
+ },
+ "375xlr": {
+  "name": "375 XLR",
+  "pmaxBar": 4400,
+  "twistMm": 305,
+  "file": "375xlr.pdf"
+ },
+ "376steyr": {
+  "name": "376 Steyr",
+  "pmaxBar": 4300,
+  "twistMm": 305,
+  "file": "376steyr.pdf"
+ },
+ "400legend": {
+  "name": "400 Legend",
+  "pmaxBar": 3180,
+  "twistMm": 406.4,
+  "file": "400legend.pdf"
+ },
+ "404rimlne": {
+  "name": "404 Riml. N.E.",
+  "pmaxBar": 3650,
+  "twistMm": 420,
+  "file": "404rimlne.pdf"
+ },
+ "408cheytac": {
+  "name": "408 Chey Tac",
+  "pmaxBar": 4400,
+  "twistMm": 330.2,
+  "file": "408cheytac.pdf"
+ },
+ "416atec": {
+  "name": "416 A-TEC",
+  "pmaxBar": 4150,
+  "twistMm": 356,
+  "file": "416atec.pdf"
+ },
+ "416barrett": {
+  "name": "416 Barrett",
+  "pmaxBar": 4400,
+  "twistMm": 304.8,
+  "file": "416barrett.pdf"
+ },
+ "416rigby": {
+  "name": "416 Rigby",
+  "pmaxBar": 3250,
+  "twistMm": 420,
+  "file": "416rigby.pdf"
+ },
+ "416ruger": {
+  "name": "416 Ruger",
+  "pmaxBar": 4300,
+  "twistMm": 356,
+  "file": "416ruger.pdf"
+ },
+ "416tyr": {
+  "name": "416 TYR",
+  "pmaxBar": 4400,
+  "twistMm": 330.2,
+  "file": "416tyr.pdf"
+ },
+ "45blaser": {
+  "name": "45 Blaser",
+  "pmaxBar": 3700,
+  "twistMm": 356,
+  "file": "45blaser.pdf"
+ },
+ "450bushmaster": {
+  "name": "450 Bushmaster",
+  "pmaxBar": 2700,
+  "twistMm": 609.6,
+  "file": "450bushmaster.pdf"
+ },
+ "450rigby": {
+  "name": "450 Rigby",
+  "pmaxBar": 4000,
+  "twistMm": 420,
+  "file": "450rigby.pdf"
+ },
+ "458socom": {
+  "name": "458 SOCOM",
+  "pmaxBar": 2400,
+  "twistMm": 355.6,
+  "file": "458socom.pdf"
+ },
+ "460steyr": {
+  "name": "460 Steyr",
+  "pmaxBar": 3700,
+  "twistMm": 356,
+  "file": "460steyr.pdf"
+ },
+ "50browning": {
+  "name": "50 Browning",
+  "pmaxBar": 3700,
+  "twistMm": 381,
+  "file": "50browning.pdf"
+ },
+ "500jeffery": {
+  "name": "500 Jeffery",
+  "pmaxBar": 3300,
+  "twistMm": 508,
+  "file": "500jeffery.pdf"
+ },
+ "500tld": {
+  "name": "500 TLD",
+  "pmaxBar": 3700,
+  "twistMm": 381,
+  "file": "500tld.pdf"
+ },
+ "505magnumgibbs": {
+  "name": "505 Mag. Gibbs",
+  "pmaxBar": 2700,
+  "twistMm": 406,
+  "file": "505magnumgibbs.pdf"
+ },
+ "510dtc": {
+  "name": "510 DTC",
+  "pmaxBar": 3600,
+  "twistMm": 381,
+  "file": "510dtc.pdf"
+ },
+ "666t": {
+  "name": "666T",
+  "pmaxBar": 4350,
+  "twistMm": null,
+  "file": "666t.pdf"
+ },
+ "4borerifle": {
+  "name": "4 Bore Rifle",
+  "pmaxBar": 2500,
+  "twistMm": null,
+  "file": "4borerifle.pdf"
+ },
+ "56x35r": {
+  "name": "5,6 x 35 R",
+  "pmaxBar": 2700,
+  "twistMm": 360,
+  "file": "56x35r.pdf"
+ },
+ "56x50rmagnum": {
+  "name": "5,6 x 50 R Mag.",
+  "pmaxBar": 3400,
+  "twistMm": 350,
+  "file": "56x50rmagnum.pdf"
+ },
+ "56x52r": {
+  "name": "5,6 x 52 R",
+  "pmaxBar": 3300,
+  "twistMm": 270,
+  "file": "56x52r.pdf"
+ },
+ "56x57r": {
+  "name": "5,6 x 57 R",
+  "pmaxBar": 4400,
+  "twistMm": 250,
+  "file": "56x57r.pdf"
+ },
+ "56x61rsevh": {
+  "name": "5,6 x 61 R SE v. H.",
+  "pmaxBar": 3800,
+  "twistMm": 220,
+  "file": "56x61rsevh.pdf"
+ },
+ "56x70r": {
+  "name": "5,6 x 70 R",
+  "pmaxBar": 2600,
+  "twistMm": 290,
+  "file": "56x70r.pdf"
+ },
+ "6x50rscheiring": {
+  "name": "6 x 50 R Scheiring",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "6x50rscheiring.pdf"
+ },
+ "6x52rbb2": {
+  "name": "6 x 52 R BB2",
+  "pmaxBar": 3300,
+  "twistMm": 254,
+  "file": "6x52rbb2.pdf"
+ },
+ "6x52rbretschneider": {
+  "name": "6 x 52 R Bretschneider",
+  "pmaxBar": 3300,
+  "twistMm": 254,
+  "file": "6x52rbretschneider.pdf"
+ },
+ "6x62rfreres": {
+  "name": "6 x 62 R Freres",
+  "pmaxBar": 4300,
+  "twistMm": 260,
+  "file": "6x62rfreres.pdf"
+ },
+ "6x70r": {
+  "name": "6 x 70 R",
+  "pmaxBar": 2600,
+  "twistMm": 254,
+  "file": "6x70r.pdf"
+ },
+ "65x50r": {
+  "name": "6,5 x 50 R",
+  "pmaxBar": 3650,
+  "twistMm": 228,
+  "file": "65x50r.pdf"
+ },
+ "65x51r": {
+  "name": "6,5 x 51 R (Arisaka)",
+  "pmaxBar": 2950,
+  "twistMm": 200,
+  "file": "65x51r.pdf"
+ },
+ "65x52r": {
+  "name": "6,5 x 52 R",
+  "pmaxBar": 2450,
+  "twistMm": 260,
+  "file": "65x52r.pdf"
+ },
+ "65x52rks": {
+  "name": "6,5 x 52 R K&S",
+  "pmaxBar": 3250,
+  "twistMm": 200,
+  "file": "65x52rks.pdf"
+ },
+ "65x57r": {
+  "name": "6,5 x 57 R",
+  "pmaxBar": 3300,
+  "twistMm": 200,
+  "file": "65x57r.pdf"
+ },
+ "65x58r": {
+  "name": "6,5 x 58 R",
+  "pmaxBar": 2800,
+  "twistMm": 200,
+  "file": "65x58r.pdf"
+ },
+ "65x65rrws": {
+  "name": "6,5 x 65 R RWS",
+  "pmaxBar": 3800,
+  "twistMm": 200,
+  "file": "65x65rrws.pdf"
+ },
+ "65x68r": {
+  "name": "6,5 x 68 R",
+  "pmaxBar": 3900,
+  "twistMm": 250,
+  "file": "65x68r.pdf"
+ },
+ "65x70r": {
+  "name": "6,5 x 70 R",
+  "pmaxBar": 2800,
+  "twistMm": 200,
+  "file": "65x70r.pdf"
+ },
+ "730waters": {
+  "name": "7-30 Waters",
+  "pmaxBar": 3400,
+  "twistMm": 241.3,
+  "file": "730waters.pdf"
+ },
+ "7x50r": {
+  "name": "7 x 50 R",
+  "pmaxBar": 3650,
+  "twistMm": 228,
+  "file": "7x50r.pdf"
+ },
+ "7x57r": {
+  "name": "7 x 57 R",
+  "pmaxBar": 3400,
+  "twistMm": null,
+  "file": "7x57r.pdf"
+ },
+ "7magnumflhh": {
+  "name": "7mm Mag. Fl. H&H",
+  "pmaxBar": 3300,
+  "twistMm": 220,
+  "file": "7magnumflhh.pdf"
+ },
+ "7x65r": {
+  "name": "7 x 65 R",
+  "pmaxBar": 3800,
+  "twistMm": 220,
+  "file": "7x65r.pdf"
+ },
+ "7x67rluyven": {
+  "name": "7 x 67 R Luyven",
+  "pmaxBar": 3800,
+  "twistMm": 228,
+  "file": "7x67rluyven.pdf"
+ },
+ "7x72r": {
+  "name": "7 x 72 R",
+  "pmaxBar": 2800,
+  "twistMm": 220,
+  "file": "7x72r.pdf"
+ },
+ "7x75rsevh": {
+  "name": "7 x 75 R SE.v.H.",
+  "pmaxBar": 4150,
+  "twistMm": 240,
+  "file": "7x75rsevh.pdf"
+ },
+ "762x53r": {
+  "name": "7,62 x 53 R",
+  "pmaxBar": 3900,
+  "twistMm": 300,
+  "file": "762x53r.pdf"
+ },
+ "762x54r": {
+  "name": "7,62 x 54 R",
+  "pmaxBar": 3900,
+  "twistMm": 240,
+  "file": "762x54r.pdf"
+ },
+ "8x50r": {
+  "name": "8 x 50 R",
+  "pmaxBar": 3550,
+  "twistMm": 250,
+  "file": "8x50r.pdf"
+ },
+ "8x56rm30s": {
+  "name": "8 x 56 R M30S",
+  "pmaxBar": 3550,
+  "twistMm": 250,
+  "file": "8x56rm30s.pdf"
+ },
+ "8x56rm89portkrop": {
+  "name": "8 x 56 R M89 Port.Krop.",
+  "pmaxBar": 3400,
+  "twistMm": 250,
+  "file": "8x56rm89portkrop.pdf"
+ },
+ "8x57r360": {
+  "name": "8 x 57 R 360",
+  "pmaxBar": 2450,
+  "twistMm": 240,
+  "file": "8x57r360.pdf"
+ },
+ "8x57ir": {
+  "name": "8 x 57 IR",
+  "pmaxBar": 3200,
+  "twistMm": 240,
+  "file": "8x57ir.pdf"
+ },
+ "8x57irs": {
+  "name": "8 x 57 IRS",
+  "pmaxBar": 3300,
+  "twistMm": 240,
+  "file": "8x57irs.pdf"
+ },
+ "8x58r": {
+  "name": "8 x 58 R",
+  "pmaxBar": 2200,
+  "twistMm": 240,
+  "file": "8x58r.pdf"
+ },
+ "8x60r": {
+  "name": "8 x 60 R",
+  "pmaxBar": 3400,
+  "twistMm": 240,
+  "file": "8x60r.pdf"
+ },
+ "8x60rs": {
+  "name": "8 x 60 RS",
+  "pmaxBar": 3400,
+  "twistMm": 240,
+  "file": "8x60rs.pdf"
+ },
+ "8x65r": {
+  "name": "8 x 65 R",
+  "pmaxBar": 3900,
+  "twistMm": 240,
+  "file": "8x65r.pdf"
+ },
+ "8x65rs": {
+  "name": "8 x 65 RS",
+  "pmaxBar": 4050,
+  "twistMm": 240,
+  "file": "8x65rs.pdf"
+ },
+ "8x72r": {
+  "name": "8 x 72 R",
+  "pmaxBar": 2800,
+  "twistMm": 240,
+  "file": "8x72r.pdf"
+ },
+ "8x75rs": {
+  "name": "8 x 75 RS",
+  "pmaxBar": 3800,
+  "twistMm": 240,
+  "file": "8x75rs.pdf"
+ },
+ "8348winchester": {
+  "name": "8 mm - 348 Win.",
+  "pmaxBar": 3000,
+  "twistMm": 240,
+  "file": "8348winchester.pdf"
+ },
+ "815x46r": {
+  "name": "8,15 x 46 R",
+  "pmaxBar": 1650,
+  "twistMm": 360,
+  "file": "815x46r.pdf"
+ },
+ "82x53r": {
+  "name": "8,2 x 53 R",
+  "pmaxBar": 3400,
+  "twistMm": 254,
+  "file": "82x53r.pdf"
+ },
+ "85x63r": {
+  "name": "8,5 x 63 R",
+  "pmaxBar": 3800,
+  "twistMm": 254,
+  "file": "85x63r.pdf"
+ },
+ "85x75rscheiring": {
+  "name": "8,5 x 75 R Scheiring",
+  "pmaxBar": 3800,
+  "twistMm": 254,
+  "file": "85x75rscheiring.pdf"
+ },
+ "9x53r": {
+  "name": "9 x 53 R",
+  "pmaxBar": 3400,
+  "twistMm": 240,
+  "file": "9x53r.pdf"
+ },
+ "9x57r": {
+  "name": "9 x 57 R",
+  "pmaxBar": 2800,
+  "twistMm": 360,
+  "file": "9x57r.pdf"
+ },
+ "93x53rfinnish": {
+  "name": "9,3 x 53 R Finnish",
+  "pmaxBar": 3400,
+  "twistMm": 380,
+  "file": "93x53rfinnish.pdf"
+ },
+ "93x72r": {
+  "name": "9,3 x 72 R",
+  "pmaxBar": 2000,
+  "twistMm": 420,
+  "file": "93x72r.pdf"
+ },
+ "93x74r": {
+  "name": "9,3 x 74 R",
+  "pmaxBar": 3400,
+  "twistMm": 360,
+  "file": "93x74r.pdf"
+ },
+ "103x60r": {
+  "name": "10,3 x 60 R",
+  "pmaxBar": 2700,
+  "twistMm": 450,
+  "file": "103x60r.pdf"
+ },
+ "1115x60r": {
+  "name": "11,15 x 60 R",
+  "pmaxBar": 2800,
+  "twistMm": 550,
+  "file": "1115x60r.pdf"
+ },
+ "17hornet": {
+  "name": "17 Hornet",
+  "pmaxBar": 3700,
+  "twistMm": 228,
+  "file": "17hornet.pdf"
+ },
+ "218bee": {
+  "name": "218 Bee",
+  "pmaxBar": 3200,
+  "twistMm": 406,
+  "file": "218bee.pdf"
+ },
+ "219zipper": {
+  "name": "219 Zipper",
+  "pmaxBar": 2850,
+  "twistMm": 406,
+  "file": "219zipper.pdf"
+ },
+ "22hornet": {
+  "name": "22 Hornet",
+  "pmaxBar": 3000,
+  "twistMm": 406,
+  "file": "22hornet.pdf"
+ },
+ "22savage": {
+  "name": "22 Savage",
+  "pmaxBar": 3300,
+  "twistMm": 305,
+  "file": "22savage.pdf"
+ },
+ "222rstief": {
+  "name": "222 R Stief",
+  "pmaxBar": 3700,
+  "twistMm": 356,
+  "file": "222rstief.pdf"
+ },
+ "225winchester": {
+  "name": "225 Win.",
+  "pmaxBar": 3900,
+  "twistMm": 356,
+  "file": "225winchester.pdf"
+ },
+ "240flne": {
+  "name": "240 Fl. N.E.",
+  "pmaxBar": 3200,
+  "twistMm": 203,
+  "file": "240flne.pdf"
+ },
+ "2520winchester": {
+  "name": "25-20 Win.",
+  "pmaxBar": 2700,
+  "twistMm": 356,
+  "file": "2520winchester.pdf"
+ },
+ "2535winchester": {
+  "name": "25-35 Win.",
+  "pmaxBar": 3050,
+  "twistMm": 203,
+  "file": "2535winchester.pdf"
+ },
+ "256winchestermagnum": {
+  "name": "256 Win. Mag.",
+  "pmaxBar": 3500,
+  "twistMm": 356,
+  "file": "256winchestermagnum.pdf"
+ },
+ "280flne": {
+  "name": "280 Fl. N. E.",
+  "pmaxBar": 2950,
+  "twistMm": 255,
+  "file": "280flne.pdf"
+ },
+ "30rblaser": {
+  "name": "30 R Blaser",
+  "pmaxBar": 4050,
+  "twistMm": 305,
+  "file": "30rblaser.pdf"
+ },
+ "30flnepurdey": {
+  "name": "30 Fl. N.E. Purdey",
+  "pmaxBar": 3200,
+  "twistMm": 254,
+  "file": "30flnepurdey.pdf"
+ },
+ "30superflhh": {
+  "name": "30 Super Fl. H&H",
+  "pmaxBar": 3200,
+  "twistMm": 254,
+  "file": "30superflhh.pdf"
+ },
+ "3006rstief": {
+  "name": "30-06 R Stief",
+  "pmaxBar": 4050,
+  "twistMm": 254,
+  "file": "3006rstief.pdf"
+ },
+ "3030winchester": {
+  "name": "30-30 Win.",
+  "pmaxBar": 3200,
+  "twistMm": 305,
+  "file": "3030winchester.pdf"
+ },
+ "3040krag": {
+  "name": "30-40 Krag",
+  "pmaxBar": 3250,
+  "twistMm": 254,
+  "file": "3040krag.pdf"
+ },
+ "300295rookrifle": {
+  "name": "300/295 Rook Rifle",
+  "pmaxBar": 1200,
+  "twistMm": 508,
+  "file": "300295rookrifle.pdf"
+ },
+ "300sherwood": {
+  "name": "300 Sherwood",
+  "pmaxBar": 1400,
+  "twistMm": 508,
+  "file": "300sherwood.pdf"
+ },
+ "303british": {
+  "name": "303 British",
+  "pmaxBar": 3650,
+  "twistMm": 254,
+  "file": "303british.pdf"
+ },
+ "303savage": {
+  "name": "303 Savage",
+  "pmaxBar": 2700,
+  "twistMm": 254,
+  "file": "303savage.pdf"
+ },
+ "303sporting": {
+  "name": "303 Sporting",
+  "pmaxBar": 3300,
+  "twistMm": 254,
+  "file": "303sporting.pdf"
+ },
+ "307winchester": {
+  "name": "307 Win.",
+  "pmaxBar": 4150,
+  "twistMm": 305,
+  "file": "307winchester.pdf"
+ },
+ "308marlinexpress": {
+  "name": "308 Marlin Express",
+  "pmaxBar": 3300,
+  "twistMm": 305,
+  "file": "308marlinexpress.pdf"
+ },
+ "310cadetrifle": {
+  "name": "310 Cadet Rifle",
+  "pmaxBar": 1100,
+  "twistMm": 508,
+  "file": "310cadetrifle.pdf"
+ },
+ "32winchestersl": {
+  "name": "32 Win. SL",
+  "pmaxBar": 1550,
+  "twistMm": 406,
+  "file": "32winchestersl.pdf"
+ },
+ "32winchesterspec": {
+  "name": "32 Win. Spec.",
+  "pmaxBar": 3050,
+  "twistMm": 406,
+  "file": "32winchesterspec.pdf"
+ },
+ "3220winchester": {
+  "name": "32-20 Win.",
+  "pmaxBar": 2100,
+  "twistMm": 508,
+  "file": "3220winchester.pdf"
+ },
+ "3240winchester": {
+  "name": "32-40 Win.",
+  "pmaxBar": 2350,
+  "twistMm": 406,
+  "file": "3240winchester.pdf"
+ },
+ "33winchester": {
+  "name": "33 Win.",
+  "pmaxBar": 3050,
+  "twistMm": 305,
+  "file": "33winchester.pdf"
+ },
+ "338marlinexpress": {
+  "name": "338 Marlin Express",
+  "pmaxBar": 3200,
+  "twistMm": 305,
+  "file": "338marlinexpress.pdf"
+ },
+ "348winchester": {
+  "name": "348 Win.",
+  "pmaxBar": 3200,
+  "twistMm": 305,
+  "file": "348winchester.pdf"
+ },
+ "35winchester": {
+  "name": "35 Win.",
+  "pmaxBar": 3050,
+  "twistMm": 355,
+  "file": "35winchester.pdf"
+ },
+ "35winchestersl": {
+  "name": "35 Win. SL",
+  "pmaxBar": 2400,
+  "twistMm": 406,
+  "file": "35winchestersl.pdf"
+ },
+ "350rigbyno2": {
+  "name": "350 Rigby No. 2",
+  "pmaxBar": 3300,
+  "twistMm": 304,
+  "file": "350rigbyno2.pdf"
+ },
+ "351winchestersl": {
+  "name": "351 Win. SL",
+  "pmaxBar": 3650,
+  "twistMm": 406,
+  "file": "351winchestersl.pdf"
+ },
+ "356winchester": {
+  "name": "356 Win.",
+  "pmaxBar": 4150,
+  "twistMm": 305,
+  "file": "356winchester.pdf"
+ },
+ "360buckhammer": {
+  "name": "360 Buckhammer",
+  "pmaxBar": 3535,
+  "twistMm": 304.8,
+  "file": "360buckhammer.pdf"
+ },
+ "360ne214": {
+  "name": "360 N.E. 2 ''1/4",
+  "pmaxBar": 2450,
+  "twistMm": 508,
+  "file": "360ne214.pdf"
+ },
+ "369nepurdey": {
+  "name": "369 N.E. Purdey",
+  "pmaxBar": 3050,
+  "twistMm": 406,
+  "file": "369nepurdey.pdf"
+ },
+ "375flne212": {
+  "name": "375 Fl. N.E. 2\"1/2",
+  "pmaxBar": 2200,
+  "twistMm": 475,
+  "file": "375flne212.pdf"
+ },
+ "375flmagnumne": {
+  "name": "375 Fl. Mag. N.E.",
+  "pmaxBar": 3250,
+  "twistMm": 406,
+  "file": "375flmagnumne.pdf"
+ },
+ "375rhlderlin": {
+  "name": "375 R Hölderlin",
+  "pmaxBar": 3600,
+  "twistMm": 305,
+  "file": "375rhlderlin.pdf"
+ },
+ "375rverneycarron": {
+  "name": "375 R Verney-Carron",
+  "pmaxBar": 4100,
+  "twistMm": 305,
+  "file": "375rverneycarron.pdf"
+ },
+ "375winchester": {
+  "name": "375 Win.",
+  "pmaxBar": 3800,
+  "twistMm": 305,
+  "file": "375winchester.pdf"
+ },
+ "3840winchester": {
+  "name": "38-40 Win.",
+  "pmaxBar": 1150,
+  "twistMm": 914,
+  "file": "3840winchester.pdf"
+ },
+ "3855winchester": {
+  "name": "38-55 Win.",
+  "pmaxBar": 2400,
+  "twistMm": 457,
+  "file": "3855winchester.pdf"
+ },
+ "380longrifle": {
+  "name": "380 Long Rifle",
+  "pmaxBar": 950,
+  "twistMm": 508,
+  "file": "380longrifle.pdf"
+ },
+ "4060winchester": {
+  "name": "40-60 Win.",
+  "pmaxBar": 1920,
+  "twistMm": 1016,
+  "file": "4060winchester.pdf"
+ },
+ "4065winchester": {
+  "name": "40-65 Win.",
+  "pmaxBar": 2100,
+  "twistMm": 457,
+  "file": "4065winchester.pdf"
+ },
+ "4082winchester": {
+  "name": "40-82 Win.",
+  "pmaxBar": 1650,
+  "twistMm": 406,
+  "file": "4082winchester.pdf"
+ },
+ "400purdey3": {
+  "name": "400 Purdey 3\"",
+  "pmaxBar": 2400,
+  "twistMm": 381,
+  "file": "400purdey3.pdf"
+ },
+ "400350ne": {
+  "name": "400/350 N.E.",
+  "pmaxBar": 2800,
+  "twistMm": 406,
+  "file": "400350ne.pdf"
+ },
+ "401winchestersl": {
+  "name": "401 Win. SL",
+  "pmaxBar": 2450,
+  "twistMm": 406,
+  "file": "401winchestersl.pdf"
+ },
+ "405winchester": {
+  "name": "405 Win.",
+  "pmaxBar": 2450,
+  "twistMm": 356,
+  "file": "405winchester.pdf"
+ },
+ "408winchester": {
+  "name": "408 Win.",
+  "pmaxBar": 4100,
+  "twistMm": 356,
+  "file": "408winchester.pdf"
+ },
+ "416rigbyn2": {
+  "name": "416 Rigby N°2",
+  "pmaxBar": 3250,
+  "twistMm": 420,
+  "file": "416rigbyn2.pdf"
+ },
+ "4440winchester": {
+  "name": "44-40 Win.",
+  "pmaxBar": 1100,
+  "twistMm": 914,
+  "file": "4440winchester.pdf"
+ },
+ "444marlin": {
+  "name": "444 Marlin",
+  "pmaxBar": 3550,
+  "twistMm": 965,
+  "file": "444marlin.pdf"
+ },
+ "4560winchester": {
+  "name": "45-60 Win.",
+  "pmaxBar": 1920,
+  "twistMm": 508,
+  "file": "4560winchester.pdf"
+ },
+ "4570elkomagnum": {
+  "name": "45-70 Elko Mag.",
+  "pmaxBar": 2950,
+  "twistMm": 508,
+  "file": "4570elkomagnum.pdf"
+ },
+ "4570govt": {
+  "name": "45-70 Govt.",
+  "pmaxBar": 2200,
+  "twistMm": 508,
+  "file": "4570govt.pdf"
+ },
+ "4570government": {
+  "name": "45-70 Govt.",
+  "pmaxBar": 2200,
+  "twistMm": 508,
+  "file": "4570govt.pdf"
+ },
+ "4575winchester": {
+  "name": "45-75 Win.",
+  "pmaxBar": 2050,
+  "twistMm": 508,
+  "file": "4575winchester.pdf"
+ },
+ "4590wm": {
+  "name": "45-90 WM",
+  "pmaxBar": 2200,
+  "twistMm": 508,
+  "file": "4590wm.pdf"
+ },
+ "45110sharps278": {
+  "name": "45-110 Sharps 2\"7/8",
+  "pmaxBar": 2550,
+  "twistMm": 508,
+  "file": "45110sharps278.pdf"
+ },
+ "45120sharps314": {
+  "name": "45-120 Sharps 3\"1/4",
+  "pmaxBar": 2550,
+  "twistMm": 508,
+  "file": "45120sharps314.pdf"
+ },
+ "450ne314": {
+  "name": "450 N.E. 3'' 1/4",
+  "pmaxBar": 3050,
+  "twistMm": 381,
+  "file": "450ne314.pdf"
+ },
+ "450no2ne312eley": {
+  "name": "450 No.2 N.E. 3''1/2 Eley",
+  "pmaxBar": 2800,
+  "twistMm": 381,
+  "file": "450no2ne312eley.pdf"
+ },
+ "450400ne3": {
+  "name": "450/400 N.E. 3''",
+  "pmaxBar": 2800,
+  "twistMm": 381,
+  "file": "450400ne3.pdf"
+ },
+ "450400magnumne314": {
+  "name": "450/400 Mag. N.E. 3\"1/4",
+  "pmaxBar": 2950,
+  "twistMm": 381,
+  "file": "450400magnumne314.pdf"
+ },
+ "470ne": {
+  "name": "470 N.E.",
+  "pmaxBar": 2700,
+  "twistMm": 533,
+  "file": "470ne.pdf"
+ },
+ "475no2ne312": {
+  "name": "475 No 2 N.E. 3''1/2",
+  "pmaxBar": 2750,
+  "twistMm": 457,
+  "file": "475no2ne312.pdf"
+ },
+ "475n2ne312jeffery": {
+  "name": "475 N°2 N.E. 3\"1/2 Jeffery",
+  "pmaxBar": 2750,
+  "twistMm": 457,
+  "file": "475n2ne312jeffery.pdf"
+ },
+ "5070govt": {
+  "name": "50-70 Govt.",
+  "pmaxBar": 2100,
+  "twistMm": 508,
+  "file": "5070govt.pdf"
+ },
+ "5070government": {
+  "name": "50-70 Govt.",
+  "pmaxBar": 2100,
+  "twistMm": 508,
+  "file": "5070govt.pdf"
+ },
+ "5090sharps212": {
+  "name": "50-90 Sharps 2\" 1/2",
+  "pmaxBar": 2100,
+  "twistMm": 508,
+  "file": "5090sharps212.pdf"
+ },
+ "5095winchester": {
+  "name": "50-95 Win.",
+  "pmaxBar": 2100,
+  "twistMm": 508,
+  "file": "5095winchester.pdf"
+ },
+ "5650spencer": {
+  "name": "56/50 Spencer",
+  "pmaxBar": 2050,
+  "twistMm": 508,
+  "file": "5650spencer.pdf"
+ },
+ "500alsharqi": {
+  "name": "500 Al Sharqi",
+  "pmaxBar": 3000,
+  "twistMm": 381,
+  "file": "500alsharqi.pdf"
+ },
+ "500ne3": {
+  "name": "500 N. E. 3''",
+  "pmaxBar": 2800,
+  "twistMm": 381,
+  "file": "500ne3.pdf"
+ },
+ "500416ne314": {
+  "name": "500/416 N.E. 3\"1/4",
+  "pmaxBar": 3150,
+  "twistMm": 420,
+  "file": "500416ne314.pdf"
+ },
+ "500465ne": {
+  "name": "500/465 N.E.",
+  "pmaxBar": 2450,
+  "twistMm": 711,
+  "file": "500465ne.pdf"
+ },
+ "577450sldmarth": {
+  "name": "577/450 Sld. Mart. H.",
+  "pmaxBar": 1750,
+  "twistMm": 508,
+  "file": "577450sldmarth.pdf"
+ },
+ "577ne3": {
+  "name": "577 N.E. 3''",
+  "pmaxBar": 2450,
+  "twistMm": 762,
+  "file": "577ne3.pdf"
+ },
+ "577sldsnider": {
+  "name": "577 Sld. Snider",
+  "pmaxBar": 1500,
+  "twistMm": 508,
+  "file": "577sldsnider.pdf"
+ },
+ "600ne": {
+  "name": "600 N.E.",
+  "pmaxBar": 2450,
+  "twistMm": 762,
+  "file": "600ne.pdf"
+ },
+ "700hhnitroexp": {
+  "name": "700 H.& H. Nitro Exp.",
+  "pmaxBar": 2750,
+  "twistMm": 737,
+  "file": "700hhnitroexp.pdf"
+ },
+ "65remingtonmagnum": {
+  "name": "6,5 mm Rem. Mag.",
+  "pmaxBar": 4350,
+  "twistMm": 229,
+  "file": "65remingtonmagnum.pdf"
+ },
+ "7x61super": {
+  "name": "7 x 61 Super",
+  "pmaxBar": 4050,
+  "twistMm": 229,
+  "file": "7x61super.pdf"
+ },
+ "7remingtonmagnum": {
+  "name": "7 mm Rem. Mag.",
+  "pmaxBar": 4300,
+  "twistMm": 241,
+  "file": "7remingtonmagnum.pdf"
+ },
+ "7ros": {
+  "name": "7 mm Rosè",
+  "pmaxBar": 4300,
+  "twistMm": 241,
+  "file": "7ros.pdf"
+ },
+ "7stw": {
+  "name": "7 mm STW",
+  "pmaxBar": 4400,
+  "twistMm": 241,
+  "file": "7stw.pdf"
+ },
+ "7weathmagnum": {
+  "name": "7 mm Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "7weathmagnum.pdf"
+ },
+ "8remingtonmagnum": {
+  "name": "8 mm Rem. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "8remingtonmagnum.pdf"
+ },
+ "103x68magnum": {
+  "name": "10,3 x 68 Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 450,
+  "file": "103x68magnum.pdf"
+ },
+ "115x51": {
+  "name": "11,5 x 51",
+  "pmaxBar": 4000,
+  "twistMm": 508,
+  "file": "115x51.pdf"
+ },
+ "224weathmagnum": {
+  "name": "224 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 356,
+  "file": "224weathmagnum.pdf"
+ },
+ "240beltrimlne": {
+  "name": "240 Belt. Riml. N.E.",
+  "pmaxBar": 3300,
+  "twistMm": 203,
+  "file": "240beltrimlne.pdf"
+ },
+ "240weathmagnum": {
+  "name": "240 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "240weathmagnum.pdf"
+ },
+ "244hhmagnum": {
+  "name": "244 H&H Mag.",
+  "pmaxBar": 4350,
+  "twistMm": 255,
+  "file": "244hhmagnum.pdf"
+ },
+ "257weathmagnum": {
+  "name": "257 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "257weathmagnum.pdf"
+ },
+ "264winchestermagnum": {
+  "name": "264 Win. Mag.",
+  "pmaxBar": 4300,
+  "twistMm": 229,
+  "file": "264winchestermagnum.pdf"
+ },
+ "270weathmagnum": {
+  "name": "270 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "270weathmagnum.pdf"
+ },
+ "275beltne": {
+  "name": "275 Belt. N. E.",
+  "pmaxBar": 4150,
+  "twistMm": 255,
+  "file": "275beltne.pdf"
+ },
+ "30superbeltrimlhh": {
+  "name": "30 Super Belt Riml. H&H",
+  "pmaxBar": 3650,
+  "twistMm": 254,
+  "file": "30superbeltrimlhh.pdf"
+ },
+ "30378weathmagnum": {
+  "name": "30-378 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "30378weathmagnum.pdf"
+ },
+ "300hhmagnum": {
+  "name": "300 H&H Mag.",
+  "pmaxBar": 4300,
+  "twistMm": 254,
+  "file": "300hhmagnum.pdf"
+ },
+ "300weathmagnum": {
+  "name": "300 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "300weathmagnum.pdf"
+ },
+ "300winchestermagnum": {
+  "name": "300 Win. Mag.",
+  "pmaxBar": 4300,
+  "twistMm": 254,
+  "file": "300winchestermagnum.pdf"
+ },
+ "308normamagnum": {
+  "name": "308 Norma Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "308normamagnum.pdf"
+ },
+ "338winchestermagnum": {
+  "name": "338 Win. Mag.",
+  "pmaxBar": 4300,
+  "twistMm": 254,
+  "file": "338winchestermagnum.pdf"
+ },
+ "338378weathmagnum": {
+  "name": "338-378 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "338378weathmagnum.pdf"
+ },
+ "340weathmagnum": {
+  "name": "340 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "340weathmagnum.pdf"
+ },
+ "350remingtonmagnum": {
+  "name": "350 Rem. Mag.",
+  "pmaxBar": 4300,
+  "twistMm": 406,
+  "file": "350remingtonmagnum.pdf"
+ },
+ "358normamagnum": {
+  "name": "358 Norma Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 305,
+  "file": "358normamagnum.pdf"
+ },
+ "375hhmagnum": {
+  "name": "375 H&H Mag.",
+  "pmaxBar": 4300,
+  "twistMm": 305,
+  "file": "375hhmagnum.pdf"
+ },
+ "375weathmagnum": {
+  "name": "375 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 305,
+  "file": "375weathmagnum.pdf"
+ },
+ "378weathmagnum": {
+  "name": "378 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 305,
+  "file": "378weathmagnum.pdf"
+ },
+ "400hhbeltmagnum": {
+  "name": "400 H&H Belt. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 305,
+  "file": "400hhbeltmagnum.pdf"
+ },
+ "416remingtonmagnum": {
+  "name": "416 Rem. Mag.",
+  "pmaxBar": 4300,
+  "twistMm": 356,
+  "file": "416remingtonmagnum.pdf"
+ },
+ "416taylormagnum": {
+  "name": "416 Taylor Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 254,
+  "file": "416taylormagnum.pdf"
+ },
+ "416weathmagnum": {
+  "name": "416 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 356,
+  "file": "416weathmagnum.pdf"
+ },
+ "450marlin": {
+  "name": "450 Marlin",
+  "pmaxBar": 3300,
+  "twistMm": 508,
+  "file": "450marlin.pdf"
+ },
+ "458lott": {
+  "name": "458 Lott",
+  "pmaxBar": 4300,
+  "twistMm": 254,
+  "file": "458lott.pdf"
+ },
+ "458winchestermagnum": {
+  "name": "458 Win. Mag.",
+  "pmaxBar": 4300,
+  "twistMm": 356,
+  "file": "458winchestermagnum.pdf"
+ },
+ "460weathmagnum": {
+  "name": "460 Weath. Mag.",
+  "pmaxBar": 4400,
+  "twistMm": 406,
+  "file": "460weathmagnum.pdf"
+ },
+ "465hhbeltmagnum": {
+  "name": "465 H&H Belt. Mag.",
+  "pmaxBar": 4300,
+  "twistMm": 356,
+  "file": "465hhbeltmagnum.pdf"
+ },
+ "545x18": {
+  "name": "5,45x18",
+  "pmaxBar": 1750,
+  "twistMm": 270,
+  "file": "545x18.pdf"
+ },
+ "575velodog": {
+  "name": "5,75 Velodog",
+  "pmaxBar": 680,
+  "twistMm": 454,
+  "file": "575velodog.pdf"
+ },
+ "635browning": {
+  "name": "6,35 Browning",
+  "pmaxBar": 1200,
+  "twistMm": 254,
+  "file": "635browning.pdf"
+ },
+ "7x49gjw": {
+  "name": "7x49 GJW",
+  "pmaxBar": 4400,
+  "twistMm": 228,
+  "file": "7x49gjw.pdf"
+ },
+ "7penna": {
+  "name": "7 Penna",
+  "pmaxBar": 2500,
+  "twistMm": 254,
+  "file": "7penna.pdf"
+ },
+ "7pennal": {
+  "name": "7 mm Penna L",
+  "pmaxBar": 2750,
+  "twistMm": 354,
+  "file": "7pennal.pdf"
+ },
+ "75fk": {
+  "name": "7,5 FK",
+  "pmaxBar": 3500,
+  "twistMm": 270,
+  "file": "75fk.pdf"
+ },
+ "75ordsuisse": {
+  "name": "7,5 Ord. Suisse",
+  "pmaxBar": 1850,
+  "twistMm": 350,
+  "file": "75ordsuisse.pdf"
+ },
+ "762x25tokarev": {
+  "name": "7,62 x 25 Tokarev",
+  "pmaxBar": 2500,
+  "twistMm": 240,
+  "file": "762x25tokarev.pdf"
+ },
+ "762nagant": {
+  "name": "7,62 Nagant",
+  "pmaxBar": 770,
+  "twistMm": 240,
+  "file": "762nagant.pdf"
+ },
+ "763mauser": {
+  "name": "7,63 Mauser",
+  "pmaxBar": 2250,
+  "twistMm": 250,
+  "file": "763mauser.pdf"
+ },
+ "765long": {
+  "name": "7,65 Long",
+  "pmaxBar": 1650,
+  "twistMm": 254,
+  "file": "765long.pdf"
+ },
+ "765browning": {
+  "name": "7,65 mm Browning",
+  "pmaxBar": 1600,
+  "twistMm": 250,
+  "file": "765browning.pdf"
+ },
+ "765parabellum": {
+  "name": "7,65 Parabellum",
+  "pmaxBar": 2350,
+  "twistMm": 275,
+  "file": "765parabellum.pdf"
+ },
+ "8gasser": {
+  "name": "8 mm Gasser",
+  "pmaxBar": 1000,
+  "twistMm": 150,
+  "file": "8gasser.pdf"
+ },
+ "8lebel": {
+  "name": "8 mm Lebel",
+  "pmaxBar": 1250,
+  "twistMm": 240,
+  "file": "8lebel.pdf"
+ },
+ "8steyr": {
+  "name": "8 mm Steyr",
+  "pmaxBar": 2100,
+  "twistMm": 250,
+  "file": "8steyr.pdf"
+ },
+ "9x18": {
+  "name": "9 x 18",
+  "pmaxBar": 1800,
+  "twistMm": 250,
+  "file": "9x18.pdf"
+ },
+ "9x20vgw": {
+  "name": "9 x 20 VGW",
+  "pmaxBar": 3000,
+  "twistMm": 250,
+  "file": "9x20vgw.pdf"
+ },
+ "9x21": {
+  "name": "9 x 21",
+  "pmaxBar": 2350,
+  "twistMm": 254,
+  "file": "9x21.pdf"
+ },
+ "9x22mjr": {
+  "name": "9 x 22 MJR",
+  "pmaxBar": 2550,
+  "twistMm": 250,
+  "file": "9x22mjr.pdf"
+ },
+ "9x25superautog": {
+  "name": "9 x 25 Super Auto G",
+  "pmaxBar": 2550,
+  "twistMm": 250,
+  "file": "9x25superautog.pdf"
+ },
+ "9x25superautomaticg": {
+  "name": "9 x 25 Super Auto G",
+  "pmaxBar": 2550,
+  "twistMm": 250,
+  "file": "9x25superautog.pdf"
+ },
+ "945vac": {
+  "name": "9-45 VAC",
+  "pmaxBar": 2350,
+  "twistMm": 250,
+  "file": "945vac.pdf"
+ },
+ "9makarov": {
+  "name": "9 mm Makarov",
+  "pmaxBar": 1600,
+  "twistMm": 240,
+  "file": "9makarov.pdf"
+ },
+ "9browningcourt": {
+  "name": "9 mm Browning court",
+  "pmaxBar": 1350,
+  "twistMm": 250,
+  "file": "9browningcourt.pdf"
+ },
+ "9browninglong": {
+  "name": "9 mm Browning long",
+  "pmaxBar": 1650,
+  "twistMm": 400,
+  "file": "9browninglong.pdf"
+ },
+ "9far": {
+  "name": "9 mm FAR",
+  "pmaxBar": 2600,
+  "twistMm": 250,
+  "file": "9far.pdf"
+ },
+ "9fxcqt": {
+  "name": "9 mm FX & CQT",
+  "pmaxBar": 350,
+  "twistMm": 254,
+  "file": "9fxcqt.pdf"
+ },
+ "9luger": {
+  "name": "9 mm Luger",
+  "pmaxBar": 2350,
+  "twistMm": 250,
+  "file": "9luger.pdf"
+ },
+ "9mauser": {
+  "name": "9 mm Mauser",
+  "pmaxBar": 2600,
+  "twistMm": 250,
+  "file": "9mauser.pdf"
+ },
+ "9steyr": {
+  "name": "9 mm Steyr",
+  "pmaxBar": 1350,
+  "twistMm": 250,
+  "file": "9steyr.pdf"
+ },
+ "10x22t": {
+  "name": "10 x 22 T",
+  "pmaxBar": 450,
+  "twistMm": null,
+  "file": "10x22t.pdf"
+ },
+ "10auto": {
+  "name": "10 mm Auto",
+  "pmaxBar": 2300,
+  "twistMm": 406.4,
+  "file": "10auto.pdf"
+ },
+ "10automatic": {
+  "name": "10 mm Auto",
+  "pmaxBar": 2300,
+  "twistMm": 406.4,
+  "file": "10auto.pdf"
+ },
+ "10far": {
+  "name": "10 mm FAR",
+  "pmaxBar": 2250,
+  "twistMm": 406,
+  "file": "10far.pdf"
+ },
+ "1040ordit": {
+  "name": "10,40 Ord. It.",
+  "pmaxBar": 630,
+  "twistMm": 250,
+  "file": "1040ordit.pdf"
+ },
+ "22picra": {
+  "name": "22 PICRA",
+  "pmaxBar": 3200,
+  "twistMm": 406,
+  "file": "22picra.pdf"
+ },
+ "22remingtonjetmagnum": {
+  "name": "22 Rem. Jet Mag.",
+  "pmaxBar": 2550,
+  "twistMm": 381,
+  "file": "22remingtonjetmagnum.pdf"
+ },
+ "221remingtonfireball": {
+  "name": "221 Rem. Fireball",
+  "pmaxBar": 3200,
+  "twistMm": 305,
+  "file": "221remingtonfireball.pdf"
+ },
+ "260picra": {
+  "name": "260 PICRA",
+  "pmaxBar": 3900,
+  "twistMm": 200,
+  "file": "260picra.pdf"
+ },
+ "30picra": {
+  "name": "30 PICRA",
+  "pmaxBar": 2800,
+  "twistMm": 254,
+  "file": "30picra.pdf"
+ },
+ "30supercarry": {
+  "name": "30 Super Carry",
+  "pmaxBar": 3590,
+  "twistMm": 254,
+  "file": "30supercarry.pdf"
+ },
+ "30357aet": {
+  "name": "30-357 AeT",
+  "pmaxBar": 3000,
+  "twistMm": 304.8,
+  "file": "30357aet.pdf"
+ },
+ "32hrmagnum": {
+  "name": "32 H&R Mag.",
+  "pmaxBar": 1400,
+  "twistMm": 406,
+  "file": "32hrmagnum.pdf"
+ },
+ "32longcolt": {
+  "name": "32 Long Colt",
+  "pmaxBar": 1000,
+  "twistMm": 406,
+  "file": "32longcolt.pdf"
+ },
+ "32shortcolt": {
+  "name": "32 Short Colt",
+  "pmaxBar": 1000,
+  "twistMm": 406,
+  "file": "32shortcolt.pdf"
+ },
+ "32sw": {
+  "name": "32 S&W",
+  "pmaxBar": 900,
+  "twistMm": 476,
+  "file": "32sw.pdf"
+ },
+ "32swlong": {
+  "name": "32 S.&W. Long",
+  "pmaxBar": 1000,
+  "twistMm": 476,
+  "file": "32swlong.pdf"
+ },
+ "32swlongwadcut": {
+  "name": "32 S&W Long Wad Cut.",
+  "pmaxBar": 1550,
+  "twistMm": 476,
+  "file": "32swlongwadcut.pdf"
+ },
+ "320long": {
+  "name": "320 Long",
+  "pmaxBar": 1000,
+  "twistMm": 450,
+  "file": "320long.pdf"
+ },
+ "320short": {
+  "name": "320 Short",
+  "pmaxBar": 1200,
+  "twistMm": 450,
+  "file": "320short.pdf"
+ },
+ "357automagnum": {
+  "name": "357 Auto Mag.",
+  "pmaxBar": 2550,
+  "twistMm": 457,
+  "file": "357automagnum.pdf"
+ },
+ "357automaticmagnum": {
+  "name": "357 Auto Mag.",
+  "pmaxBar": 2550,
+  "twistMm": 457,
+  "file": "357automagnum.pdf"
+ },
+ "357magnum": {
+  "name": "357 Magnum",
+  "pmaxBar": 3000,
+  "twistMm": 476,
+  "file": "357magnum.pdf"
+ },
+ "357maximum": {
+  "name": "357 Maximum",
+  "pmaxBar": 3100,
+  "twistMm": 476,
+  "file": "357maximum.pdf"
+ },
+ "357sig": {
+  "name": "357 SIG",
+  "pmaxBar": 3050,
+  "twistMm": 406.4,
+  "file": "357sig.pdf"
+ },
+ "38longcolt": {
+  "name": "38 Long Colt",
+  "pmaxBar": 900,
+  "twistMm": 406,
+  "file": "38longcolt.pdf"
+ },
+ "38shortcolt": {
+  "name": "38 Short Colt",
+  "pmaxBar": 900,
+  "twistMm": 406,
+  "file": "38shortcolt.pdf"
+ },
+ "38sw": {
+  "name": "38 S&W",
+  "pmaxBar": 1200,
+  "twistMm": 476,
+  "file": "38sw.pdf"
+ },
+ "38special": {
+  "name": "38 Special",
+  "pmaxBar": 1500,
+  "twistMm": 476,
+  "file": "38special.pdf"
+ },
+ "38splamu": {
+  "name": "38 Spl. AMU",
+  "pmaxBar": 1250,
+  "twistMm": 356,
+  "file": "38splamu.pdf"
+ },
+ "38splwadcut": {
+  "name": "38 Spl. Wad Cut.",
+  "pmaxBar": 1200,
+  "twistMm": 476,
+  "file": "38splwadcut.pdf"
+ },
+ "38superauto": {
+  "name": "38 Super Auto",
+  "pmaxBar": 2300,
+  "twistMm": 406,
+  "file": "38superauto.pdf"
+ },
+ "38superautomatic": {
+  "name": "38 Super Auto",
+  "pmaxBar": 2300,
+  "twistMm": 406,
+  "file": "38superauto.pdf"
+ },
+ "38357fx": {
+  "name": "38/357 FX",
+  "pmaxBar": 350,
+  "twistMm": 254,
+  "file": "38357fx.pdf"
+ },
+ "3845acp": {
+  "name": "38-45 ACP",
+  "pmaxBar": 2350,
+  "twistMm": 475,
+  "file": "3845acp.pdf"
+ },
+ "380long": {
+  "name": "380 Long",
+  "pmaxBar": 770,
+  "twistMm": 500,
+  "file": "380long.pdf"
+ },
+ "380short": {
+  "name": "380 Short",
+  "pmaxBar": 680,
+  "twistMm": 400,
+  "file": "380short.pdf"
+ },
+ "40sw": {
+  "name": "40 S.& W.",
+  "pmaxBar": 2250,
+  "twistMm": 406,
+  "file": "40sw.pdf"
+ },
+ "41actexp": {
+  "name": "41 ACT EXP",
+  "pmaxBar": 2250,
+  "twistMm": 360,
+  "file": "41actexp.pdf"
+ },
+ "41longcolt": {
+  "name": "41 Long Colt",
+  "pmaxBar": 900,
+  "twistMm": 406,
+  "file": "41longcolt.pdf"
+ },
+ "41remingtonmagnum": {
+  "name": "41 Rem. Mag.",
+  "pmaxBar": 3000,
+  "twistMm": 476.3,
+  "file": "41remingtonmagnum.pdf"
+ },
+ "44colt": {
+  "name": "44 Colt",
+  "pmaxBar": 1000,
+  "twistMm": 508,
+  "file": "44colt.pdf"
+ },
+ "44remingtonmagnum": {
+  "name": "44 Rem. Mag.",
+  "pmaxBar": 2800,
+  "twistMm": 508,
+  "file": "44remingtonmagnum.pdf"
+ },
+ "44swrussian": {
+  "name": "44 S&W Russian",
+  "pmaxBar": 1000,
+  "twistMm": 508,
+  "file": "44swrussian.pdf"
+ },
+ "44swspecial": {
+  "name": "44 S&W Special",
+  "pmaxBar": 1000,
+  "twistMm": 508,
+  "file": "44swspecial.pdf"
+ },
+ "45auto": {
+  "name": "45 Auto",
+  "pmaxBar": 1300,
+  "twistMm": 406,
+  "file": "45auto.pdf"
+ },
+ "45automatic": {
+  "name": "45 Auto",
+  "pmaxBar": 1300,
+  "twistMm": 406,
+  "file": "45auto.pdf"
+ },
+ "45autorim": {
+  "name": "45 Auto Rim",
+  "pmaxBar": 1200,
+  "twistMm": 406,
+  "file": "45autorim.pdf"
+ },
+ "45automaticrim": {
+  "name": "45 Auto Rim",
+  "pmaxBar": 1200,
+  "twistMm": 406,
+  "file": "45autorim.pdf"
+ },
+ "45colt": {
+  "name": "45 Colt",
+  "pmaxBar": 1100,
+  "twistMm": 406,
+  "file": "45colt.pdf"
+ },
+ "45gap": {
+  "name": "45 GAP",
+  "pmaxBar": 1300,
+  "twistMm": 406,
+  "file": "45gap.pdf"
+ },
+ "45hp": {
+  "name": "45 HP",
+  "pmaxBar": 1300,
+  "twistMm": 406,
+  "file": "45hp.pdf"
+ },
+ "45swschofield": {
+  "name": "45 S&W Schofield",
+  "pmaxBar": 1000,
+  "twistMm": 406,
+  "file": "45swschofield.pdf"
+ },
+ "45winchestermagnum": {
+  "name": "45 Win. Mag.",
+  "pmaxBar": 2750,
+  "twistMm": 406,
+  "file": "45winchestermagnum.pdf"
+ },
+ "450sch": {
+  "name": "450 SCH",
+  "pmaxBar": 2250,
+  "twistMm": 406,
+  "file": "450sch.pdf"
+ },
+ "450short": {
+  "name": "450 Short",
+  "pmaxBar": 720,
+  "twistMm": 500,
+  "file": "450short.pdf"
+ },
+ "454casull": {
+  "name": "454 Casull",
+  "pmaxBar": 3900,
+  "twistMm": null,
+  "file": "454casull.pdf"
+ },
+ "455mkii": {
+  "name": "455 MK II",
+  "pmaxBar": 900,
+  "twistMm": 500,
+  "file": "455mkii.pdf"
+ },
+ "460swmagnum": {
+  "name": "460 S&W Mag",
+  "pmaxBar": 3950,
+  "twistMm": 508,
+  "file": "460swmagnum.pdf"
+ },
+ "475linebaugh": {
+  "name": "475 LINEBAUGH",
+  "pmaxBar": 3450,
+  "twistMm": 457,
+  "file": "475linebaugh.pdf"
+ },
+ "480ruger": {
+  "name": "480 Ruger",
+  "pmaxBar": 3300,
+  "twistMm": 457,
+  "file": "480ruger.pdf"
+ },
+ "50ae": {
+  "name": "50 AE",
+  "pmaxBar": 2300,
+  "twistMm": 482.6,
+  "file": "50ae.pdf"
+ },
+ "500swmagnum": {
+  "name": "500 S&W Mag",
+  "pmaxBar": 3700,
+  "twistMm": 476.3,
+  "file": "500swmagnum.pdf"
+ },
+ "5remingtonmagnum": {
+  "name": "5 mm Rem. Mag.",
+  "pmaxBar": 2550,
+  "twistMm": 305,
+  "file": "5remingtonmagnum.pdf"
+ },
+ "9flobertplombscarton": {
+  "name": "9mm Flobert à plombs Carton",
+  "pmaxBar": 900,
+  "twistMm": null,
+  "file": "9flobertplombscarton.pdf"
+ },
+ "9flobertplombsmetal": {
+  "name": "9mm Flobert à plombs Metal",
+  "pmaxBar": 900,
+  "twistMm": null,
+  "file": "9flobertplombsmetal.pdf"
+ },
+ "22long": {
+  "name": "22 Long",
+  "pmaxBar": 1000,
+  "twistMm": 406,
+  "file": "22long.pdf"
+ },
+ "22extralong": {
+  "name": "22 Extra Long",
+  "pmaxBar": 1400,
+  "twistMm": 406,
+  "file": "22extralong.pdf"
+ },
+ "22extralr": {
+  "name": "22 Extra L.R.",
+  "pmaxBar": 1800,
+  "twistMm": 406,
+  "file": "22extralr.pdf"
+ },
+ "22longshot": {
+  "name": "22 Long Shot",
+  "pmaxBar": 1400,
+  "twistMm": null,
+  "file": "22longshot.pdf"
+ },
+ "22longrifleshotclaybirding": {
+  "name": "22 Long Rifle Shot Claybirding",
+  "pmaxBar": 1500,
+  "twistMm": null,
+  "file": "22longrifleshotclaybirding.pdf"
+ },
+ "22remingtonauto": {
+  "name": "22 Rem. Auto",
+  "pmaxBar": 1600,
+  "twistMm": null,
+  "file": "22remingtonauto.pdf"
+ },
+ "22remingtonautomatic": {
+  "name": "22 Rem. Auto",
+  "pmaxBar": 1600,
+  "twistMm": null,
+  "file": "22remingtonauto.pdf"
+ },
+ "22winchesterauto": {
+  "name": "22 Win. Auto",
+  "pmaxBar": 1000,
+  "twistMm": 356,
+  "file": "22winchesterauto.pdf"
+ },
+ "22winchesterautomatic": {
+  "name": "22 Win. Auto",
+  "pmaxBar": 1000,
+  "twistMm": 356,
+  "file": "22winchesterauto.pdf"
+ },
+ "22winchesterrfet22remingtonspl": {
+  "name": "22 Win. R.F. et 22 Rem. Spl.",
+  "pmaxBar": 1150,
+  "twistMm": 356,
+  "file": "22winchesterrfet22remingtonspl.pdf"
+ },
+ "17hmr": {
+  "name": "17 HMR",
+  "pmaxBar": 1800,
+  "twistMm": 229,
+  "file": "17hmr.pdf"
+ },
+ "17mach2": {
+  "name": "17 Mach 2",
+  "pmaxBar": 1800,
+  "twistMm": 228.6,
+  "file": "17mach2.pdf"
+ },
+ "17wsm": {
+  "name": "17 WSM",
+  "pmaxBar": 2200,
+  "twistMm": 229,
+  "file": "17wsm.pdf"
+ },
+ "21sharp": {
+  "name": "21 Sharp",
+  "pmaxBar": 1700,
+  "twistMm": 304.8,
+  "file": "21sharp.pdf"
+ },
+ "22longrifle": {
+  "name": "22 Long Rifle",
+  "pmaxBar": 1700,
+  "twistMm": 406,
+  "file": "22longrifle.pdf"
+ },
+ "22short": {
+  "name": "22 Short",
+  "pmaxBar": 1050,
+  "twistMm": 406,
+  "file": "22short.pdf"
+ },
+ "22winchestermagnumrf": {
+  "name": "22 Win. Mag. R.F.",
+  "pmaxBar": 1600,
+  "twistMm": 406,
+  "file": "22winchestermagnumrf.pdf"
+ },
+ "22nc": {
+  "name": "22 NC (5,5/16)",
+  "pmaxBar": 2800,
+  "twistMm": null,
+  "file": "22nc.pdf"
+ },
+ "22ex": {
+  "name": "22 EX (5,6/25)",
+  "pmaxBar": 4700,
+  "twistMm": null,
+  "file": "22ex.pdf"
+ },
+ "9x17": {
+  "name": "9 x 17",
+  "pmaxBar": 1450,
+  "twistMm": null,
+  "file": "9x17.pdf"
+ },
+ "12x35": {
+  "name": "12 x 35",
+  "pmaxBar": 1150,
+  "twistMm": null,
+  "file": "12x35.pdf"
+ },
+ "20x67dynergit": {
+  "name": "20 mm x 67 Dynergit",
+  "pmaxBar": 2200,
+  "twistMm": null,
+  "file": "20x67dynergit.pdf"
+ },
+ "38sp": {
+  "name": "38 SP (9 x 29)",
+  "pmaxBar": 3600,
+  "twistMm": null,
+  "file": "38sp.pdf"
+ },
+ "45pdelp": {
+  "name": "45 PD ELP",
+  "pmaxBar": 3500,
+  "twistMm": null,
+  "file": "45pdelp.pdf"
+ },
+ "8gaugeindustriel": {
+  "name": "8 Gauge Industriel",
+  "pmaxBar": 2200,
+  "twistMm": null,
+  "file": "8gaugeindustriel.pdf"
+ },
+ "8blanc": {
+  "name": "8 mm Blanc",
+  "pmaxBar": 450,
+  "twistMm": null,
+  "file": "8blanc.pdf"
+ },
+ "9pablanc": {
+  "name": "9 mm PA Blanc",
+  "pmaxBar": 400,
+  "twistMm": null,
+  "file": "9pablanc.pdf"
+ },
+ "10tk": {
+  "name": "10TK",
+  "pmaxBar": 800,
+  "twistMm": null,
+  "file": "10tk.pdf"
+ },
+ "22longblanc": {
+  "name": "22 Long Blanc",
+  "pmaxBar": 500,
+  "twistMm": null,
+  "file": "22longblanc.pdf"
+ },
+ "315blanc": {
+  "name": "315 Blanc",
+  "pmaxBar": 450,
+  "twistMm": null,
+  "file": "315blanc.pdf"
+ },
+ "320courtblanc": {
+  "name": "320 Court Blanc",
+  "pmaxBar": 250,
+  "twistMm": null,
+  "file": "320courtblanc.pdf"
+ },
+ "35blanc": {
+  "name": "35 Blanc",
+  "pmaxBar": 450,
+  "twistMm": null,
+  "file": "35blanc.pdf"
+ },
+ "35rblanc": {
+  "name": "35 R Blanc",
+  "pmaxBar": 450,
+  "twistMm": null,
+  "file": "35rblanc.pdf"
+ },
+ "380rblanc9rblanc": {
+  "name": "380 R Blanc / 9 mm R Blanc",
+  "pmaxBar": 250,
+  "twistMm": null,
+  "file": "380rblanc9rblanc.pdf"
+ },
+ "45kblanc": {
+  "name": "45 K Blanc",
+  "pmaxBar": 400,
+  "twistMm": null,
+  "file": "45kblanc.pdf"
+ },
+ "8gr": {
+  "name": "8 mm GR",
+  "pmaxBar": 1200,
+  "twistMm": null,
+  "file": "8gr.pdf"
+ },
+ "35gr": {
+  "name": "35 GR",
+  "pmaxBar": 800,
+  "twistMm": null,
+  "file": "35gr.pdf"
+ },
+ "35rgr": {
+  "name": "35 R GR",
+  "pmaxBar": 800,
+  "twistMm": null,
+  "file": "35rgr.pdf"
+ },
+ "44magnumgr": {
+  "name": "44 Mag. GR",
+  "pmaxBar": 400,
+  "twistMm": null,
+  "file": "44magnumgr.pdf"
+ },
+ "556fx": {
+  "name": "5,56 mm FX",
+  "pmaxBar": 350,
+  "twistMm": 305,
+  "file": "556fx.pdf"
+ },
+ "9x20": {
+  "name": "9 x 20",
+  "pmaxBar": 1000,
+  "twistMm": null,
+  "file": "9x20.pdf"
+ },
+ "9x27": {
+  "name": "9 x 27",
+  "pmaxBar": 3100,
+  "twistMm": null,
+  "file": "9x27.pdf"
+ },
+ "10x23t": {
+  "name": "10 x 23 T",
+  "pmaxBar": 550,
+  "twistMm": null,
+  "file": "10x23t.pdf"
+ },
+ "10x31": {
+  "name": "10 x 31",
+  "pmaxBar": 1800,
+  "twistMm": null,
+  "file": "10x31.pdf"
+ },
+ "115fk": {
+  "name": "11,5 FK",
+  "pmaxBar": 2550,
+  "twistMm": null,
+  "file": "115fk.pdf"
+ },
+ "18x81": {
+  "name": "18 x 81",
+  "pmaxBar": 3550,
+  "twistMm": null,
+  "file": "18x81.pdf"
+ },
+ "20x675": {
+  "name": "20 mm x 67,5 (6,3/14)",
+  "pmaxBar": 4300,
+  "twistMm": null,
+  "file": "20x675.pdf"
+ },
+ "345tk": {
+  "name": "345 TK",
+  "pmaxBar": 2800,
+  "twistMm": null,
+  "file": "345tk.pdf"
+ },
+ "357kraken": {
+  "name": "357 Kraken",
+  "pmaxBar": 3000,
+  "twistMm": null,
+  "file": "357kraken.pdf"
+ },
+ "366tkm": {
+  "name": "366 TKM",
+  "pmaxBar": 3300,
+  "twistMm": null,
+  "file": "366tkm.pdf"
+ },
+ "380alfa": {
+  "name": "380 Alfa",
+  "pmaxBar": 300,
+  "twistMm": null,
+  "file": "380alfa.pdf"
+ },
+ "380megum": {
+  "name": "380 ME Gum",
+  "pmaxBar": 300,
+  "twistMm": null,
+  "file": "380megum.pdf"
+ },
+ "57tk": {
+  "name": "57TK",
+  "pmaxBar": 1800,
+  "twistMm": null,
+  "file": "57tk.pdf"
+ },
+ "57uccvoere": {
+  "name": "5,7 mm UCC Voere",
+  "pmaxBar": 4100,
+  "twistMm": 305,
+  "file": "57uccvoere.pdf"
+ }
+}

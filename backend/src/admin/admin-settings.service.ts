@@ -236,6 +236,14 @@ const FLAGS: SettingFlag[] = [
     danger: true,
   },
   {
+    key: 'cip_sheet_enabled',
+    label: 'Print the C.I.P. cartridge datasheet',
+    hint: "Adds one page to a motivation: C.I.P.'s own datasheet for the cartridge applied for, with case and chamber dimensions, maximum and proof pressures, bore and groove diameters and rifling twist. It sits immediately after the firearm section. Turn this OFF if the licensing question about reproducing C.I.P.'s typeset page goes against us — the pack loses that page and nothing else, and the pressure and twist figures we quote elsewhere are unaffected because those are facts rather than C.I.P.'s drawing. A cartridge with no sheet on file simply does not get one either way.",
+    group: 'Motivations',
+    type: 'boolean',
+    default: 'true',
+  },
+  {
     key: 'motivation_beta_free_cap',
     label: 'Free beta motivations',
     hint: 'How many motivations are generated free before the beta closes and the price applies. Seats are allocated atomically, so a seat taken above the cap is burned rather than reissued. Capped at 5000 in code — this number is the main guard against runaway AI spend.',

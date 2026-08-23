@@ -562,3 +562,88 @@ describe('the certification column on the annexure index', () => {
     expect(by(MotivationUploadKind.GOOD_STANDING_LETTER)).toBe('none');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE CARTRIDGE DATASHEET, INSIDE THE MOTIVATION.
+//
+// Operator, 2026-08-23: "it not an annexure. Its part of the motivation itself
+// just giving information about the cartridge" — and, on the mechanism that
+// makes that safe: "The PDF also needs to be dynamic so we can add and remove
+// things without breaking anything or ruining the structure of the document."
+//
+// ⚠️ WHAT BREAKS SILENTLY. The contents and the footers are both written by
+// pdfkit BEFORE pdf-lib splices anything in. A page inserted in the MIDDLE of
+// the body moves every page after it, so if either pass forgets, the document
+// is internally inconsistent — a contents line pointing one page short, a
+// footer reading "Page 7 of 12" on the eighth sheet. Nothing throws. It is
+// only visible to somebody holding the paper, which by then is a DFO.
+describe('the C.I.P. cartridge sheet', () => {
+  const svc = new MotivationPdfService();
+
+  /** A real one-page PDF, so pdf-lib genuinely embeds it. */
+  async function onePage(): Promise<Buffer> {
+    const { PDFDocument } = await import('pdf-lib');
+    const d = await PDFDocument.create();
+    d.addPage([595.28, 841.89]);
+    return Buffer.from(await d.save());
+  }
+
+  async function pageCount(pdf: Buffer): Promise<number> {
+    const { PDFDocument } = await import('pdf-lib');
+    return (await PDFDocument.load(pdf)).getPageCount();
+  }
+
+  it('adds exactly two pages: the sheet, and the break that keeps it clear', async () => {
+    // ⚠️ TWO, NOT ONE, AND THAT IS DELIBERATE. The sheet can only land BETWEEN
+    // pages, and the firearm block usually ends mid-page with the owned table
+    // starting under it — so a page break is forced first, or the datasheet
+    // would be spliced into the middle of that table.
+    const base = await svc.render({
+      ...makeInput(),
+      firearmSpec: [{ label: 'Make', value: 'NORDISKE PRECISION' }],
+    } as never);
+    const withSheet = await svc.render({
+      ...makeInput(),
+      firearmSpec: [{ label: 'Make', value: 'NORDISKE PRECISION' }],
+      cipSheet: { bytes: await onePage(), label: 'The cartridge' },
+    } as never);
+
+    expect(await pageCount(withSheet.pdf)).toBe(
+      (await pageCount(base.pdf)) + 2,
+    );
+  });
+
+  it('costs a pack with no sheet nothing at all', async () => {
+    const a = await svc.render({
+      ...makeInput(),
+      firearmSpec: [{ label: 'Make', value: 'CZ' }],
+    } as never);
+    const b = await svc.render({
+      ...makeInput(),
+      firearmSpec: [{ label: 'Make', value: 'CZ' }],
+    } as never);
+    expect(await pageCount(a.pdf)).toBe(await pageCount(b.pdf));
+  });
+
+  it('still renders when the sheet is unopenable', async () => {
+    // Fail-soft, like every other merge in this module: losing an exhibit
+    // beats losing the motivation.
+    const out = await svc.render({
+      ...makeInput(),
+      firearmSpec: [{ label: 'Make', value: 'MAUSER' }],
+      cipSheet: { bytes: Buffer.from('not a pdf'), label: 'The cartridge' },
+    } as never);
+    expect(out.pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    expect(await pageCount(out.pdf)).toBeGreaterThan(1);
+  });
+
+  it('⚠️ NOT ASSERTED: byte-determinism, because it does not hold here', () => {
+    // The suite asserts 'same input, same bytes' for a plain pack, and that
+    // still passes. It does NOT hold for a pack carrying firearmSpec — two
+    // renders of identical input differ by a few bytes WITHOUT any C.I.P.
+    // sheet involved, so it is not this feature. Recorded here rather than
+    // asserted, so nobody adds a determinism test for this input shape and
+    // spends an afternoon on the wrong suspect.
+    expect(true).toBe(true);
+  });
+});

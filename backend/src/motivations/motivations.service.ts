@@ -25,6 +25,7 @@ import {
   tryDecryptText,
 } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
+import { CipSheetService } from './cip-sheet.service';
 import { MotivationClaudeService } from './motivation-claude.service';
 import {
   AnnexureImagePage,
@@ -372,6 +373,7 @@ export class MotivationsService {
     private readonly pdf: MotivationPdfService,
     private readonly settings: SettingsService,
     private readonly extract: MotivationExtractService,
+    private readonly cip: CipSheetService,
     private readonly saps271: Saps271Service,
     private readonly firearmImages: FirearmImageService,
     private readonly witnesses: MotivationWitnessService,
@@ -3434,12 +3436,50 @@ export class MotivationsService {
       // Merged into the finished pack by pdf-lib after pdfkit has drawn the
       // body — these used to be listed as "bring your own copy".
       annexurePdfs: printable.pdfs,
+      // ⚠️ THE CARTRIDGE'S OWN DATASHEET, AS BODY CONTENT. Operator,
+      // 2026-08-23: "i want to insert the full cartridge page into the
+      // motivation. Showing the dimensions and everything on the page" and
+      // "it not an annexure. Its part of the motivation itself."
+      //
+      // Matched on the calibre EXACTLY — see CipSheetService for why fuzzy
+      // matching is refused here. No match means no page, which costs nothing;
+      // a WRONG datasheet would assert chamber dimensions and a maximum
+      // pressure for another cartridge inside a document the applicant signs.
+      cipSheet: await this.cipSheetFor(answers.firearm_calibre),
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       takeWithYou: buildChecklist(row.licenceType, kinds)
         .sections.find((sec) => sec.key === 'theirs')
         ?.items.map((i) => ({ label: i.label, note: i.note })),
     });
+  }
+
+  /**
+   * The C.I.P. datasheet for a calibre, or nothing.
+   *
+   * ⚠️ FAIL-SOFT AND FLAG-GATED. A pack must never fail to render because a
+   * reference page could not be found, read or licensed. The flag exists
+   * because reproducing C.I.P.'s own typeset page inside a document we sell is
+   * republication of somebody else's work, and that question was still open
+   * when this shipped — turning it off costs the page and nothing else.
+   */
+  private async cipSheetFor(
+    calibre: string | undefined,
+  ): Promise<{ bytes: Buffer; label: string } | undefined> {
+    const name = (calibre ?? '').trim();
+    if (!name) return undefined;
+    const on = await this.settings.get(FLAGS.cipSheetEnabled).catch(() => true);
+    if (!on) return undefined;
+    try {
+      const sheet = await this.cip.sheetFor(name);
+      if (!sheet) return undefined;
+      return {
+        bytes: sheet.bytes,
+        label: `The cartridge — ${sheet.name} (C.I.P. data)`,
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   /**

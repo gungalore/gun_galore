@@ -1,5 +1,8 @@
 {
   "compilerOptions": {
+    // Enables importing cip-index.json — the C.I.P. cartridge lookup. The
+    // sheets themselves live outside the repo; only the index ships here.
+    "resolveJsonModule": true,
     "module": "commonjs",
     "moduleResolution": "node",
     "esModuleInterop": true,
