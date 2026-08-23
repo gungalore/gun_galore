@@ -114,7 +114,11 @@ export function cleanAlsoCovers(
 }
 
 /** What each kind of document plausibly carries. Nothing else is accepted. */
-const WANTED: Record<CredentialKind, string[]> = {
+// Exported so library-readability.spec.ts can assert this registry against the
+// motivation one. The two name the same values differently and the gap between
+// them was read as "unreadable document" for months; the spec pins the gap so
+// nobody derives a readability verdict from it again.
+export const WANTED: Record<CredentialKind, string[]> = {
   FIREARM_LICENCE: [
     'licence_number',
     'holder_name',

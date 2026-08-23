@@ -772,15 +772,36 @@ export class LicenceCentreService {
     // to delete the other's file.
     if (row.storageKey && !row.purgedAt) {
       try {
-        const bytes = await this.files.read(row.storageKey);
-        await this.motivations.addUpload(
+        // ⚠️ addFromLibrary, NOT addUpload — AND THE DIFFERENCE IS VISIBLE TO
+        // THE MEMBER. This used to call addUpload with `skipExtraction: true`,
+        // reasoning that a second vision call would spend money to learn what
+        // the vault had already read. That reasoning is right and this still
+        // spends nothing; what it got wrong is that addUpload has no way to
+        // CARRY a reading across, so the copy landed with extractionOk false.
+        // The checklist flags `canExtract(kind) && !extractionOk` as suspect,
+        // CURRENT_LICENCE is extractable, and so every renewal opened with its
+        // own licence sitting amber under "we could not read anything off it"
+        // — a document the member had confirmed by hand in the Centre.
+        //
+        // ⚠️ AND addFromLibrary ALONE WAS NOT ENOUGH EITHER — an audit caught
+        // this comment claiming a fix it did not deliver. It copies the vault
+        // reading through an EXACT key-name match, and a firearm licence is
+        // read into the vault as {licence_number, make, calibre, frame_serial}
+        // while the motivation registry wants {existing_firearm_1_licence_no,
+        // _make, _calibre, _frame_serial}. Empty intersection, so the copy
+        // still arrived flagged unreadable. What actually fixes it is one line
+        // inside addFromLibrary: readability now comes from the vault's own
+        // extractionOk rather than from whether any key happened to collide.
+        //
+        // It copies the bytes into the motivations bucket exactly as this did,
+        // so the two rows keep the separate retention lives the note below
+        // insists on. FIREARM_LICENCE maps to exactly one upload kind,
+        // CURRENT_LICENCE, so the row lands where it always did.
+        await this.motivations.addFromLibrary(
           clerkId,
           motivation.id,
-          'CURRENT_LICENCE',
-          { buffer: bytes, mimetype: row.mimeType },
-          // Already read once, on the way into the vault. A second vision call
-          // would spend money to learn what we have just seeded.
-          { skipExtraction: true },
+          'credential',
+          row.id,
         );
       } catch (err) {
         // The renewal itself is fine without the attachment — they can upload

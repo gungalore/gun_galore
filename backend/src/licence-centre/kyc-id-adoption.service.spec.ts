@@ -1,9 +1,23 @@
 import { KycIdAdoptionService } from './kyc-id-adoption.service';
+import { decryptJson } from '../common/blob-crypto';
+import { encryptSaIdNumber } from '../common/id-crypto';
 
 // Copying the ID somebody photographed to be verified into the library they
 // manage. It is a NEW purpose for a document collected under another one, so
 // every path here turns on an explicit yes and on never taking more than that
 // yes covers.
+
+// ⚠️ FILE-WIDE, NOT PER-DESCRIBE. The `verified()` builder below encrypts an
+// ID number, so every test in this file needs the key — including the ones
+// that predate the reading and only care about bytes.
+const ORIGINAL_ID_SECRET = process.env.ID_HASH_SECRET;
+beforeAll(() => {
+  process.env.ID_HASH_SECRET = 'test-secret-for-kyc-id-adoption-specs';
+});
+afterAll(() => {
+  if (ORIGINAL_ID_SECRET === undefined) delete process.env.ID_HASH_SECRET;
+  else process.env.ID_HASH_SECRET = ORIGINAL_ID_SECRET;
+});
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2]);
 const JPG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
@@ -75,6 +89,11 @@ const verified = (over: Record<string, unknown> = {}) => ({
   kycStatus: 'VERIFIED',
   kycIdDocumentUrl: 'https://res.cloudinary.com/x/image/upload/v1/id.jpg',
   kycDocumentUrl: null,
+  // What KYC established about this document. The service copies these onto
+  // the credential so the Centre's copy is not presented as unreadable.
+  firstName: 'Gerhard',
+  lastName: 'Fourie',
+  idNumberEncrypted: encryptSaIdNumber('8001015009087'),
   ...over,
 });
 
@@ -247,5 +266,97 @@ describe('taking the copy', () => {
   it('refuses an empty body rather than storing nothing', async () => {
     const { svc } = build(verified(), { body: Buffer.alloc(0) });
     await expect(svc.adopt('c1')).rejects.toThrow(/empty|try again/i);
+  });
+});
+
+
+// ────────────────────────────────────────────────────────────────────
+// THE READING THAT MAKES IT ARRIVE GREEN.
+//
+// Operator, 2026-08-23: "when some documents like my ID for example are pulled
+// [into the] document centre in the motivation it stays amber, why?"
+//
+// Because a Credential with no extraction is flagged `suspect` by the
+// motivation checklist — `canExtract(kind) && !extractionOk` — and
+// IDENTITY_DOCUMENT is extractable. This document is the one we have checked
+// hardest, and it was the one shown as unreadable.
+describe('the reading copied off the verification', () => {
+  it('files the name and ID number we already verified', async () => {
+    const { svc, create } = build(verified());
+    await svc.adopt('c1');
+    const row = create.mock.calls[0][0].data;
+
+    expect(row.extractionOk).toBe(true);
+    // ⚠️ THESE TWO KEYS EXACTLY. addFromLibrary filters a vault reading
+    // through wantedFor(IDENTITY_DOCUMENT), which is ['full_name',
+    // 'id_number'] — a renamed key is dropped silently and the row goes amber
+    // again with nothing logged.
+    expect(row.extractedFields.sort()).toEqual(['full_name', 'id_number']);
+    expect(decryptJson(row.detailsEncrypted)).toEqual({
+      full_name: 'Gerhard Fourie',
+      id_number: '8001015009087',
+    });
+  });
+
+  it('keeps the values ENCRYPTED and the keys in the clear', () => {
+    // The key names are not PII; an ID number very much is. Same split the
+    // Centre's own vision path uses.
+    const { svc, create } = build(verified());
+    return svc.adopt('c1').then(() => {
+      const row = create.mock.calls[0][0].data;
+      expect(row.detailsEncrypted).not.toContain('8001015009087');
+      expect(row.detailsEncrypted).not.toContain('Gerhard');
+    });
+  });
+
+  it('stays HONEST when there is nothing to write', async () => {
+    // No name, no number. Claiming the document is readable when we hold
+    // nothing off it would be a green row with nothing behind it — worse than
+    // the amber this whole change is removing.
+    const { svc, create } = build(
+      verified({ firstName: null, lastName: null, idNumberEncrypted: null }),
+    );
+    await svc.adopt('c1');
+    const row = create.mock.calls[0][0].data;
+    expect(row.extractionOk).toBe(false);
+    expect(row.extractedFields).toEqual([]);
+    expect(row.detailsEncrypted).toBeNull();
+  });
+
+  it('writes the half it has when the ID number will not decrypt', async () => {
+    // A rotated ID_HASH_SECRET makes every stored number unreadable. That
+    // costs the prefill, not the document — and a name alone still clears the
+    // amber and fills a field.
+    const { svc, create } = build(
+      verified({ idNumberEncrypted: 'not-decryptable' }),
+    );
+    await svc.adopt('c1');
+    const row = create.mock.calls[0][0].data;
+    expect(row.extractionOk).toBe(true);
+    expect(row.extractedFields).toEqual(['full_name']);
+    expect(decryptJson(row.detailsEncrypted)).toEqual({
+      full_name: 'Gerhard Fourie',
+    });
+  });
+
+  it('does not invent a name out of one half', async () => {
+    const { svc, create } = build(
+      verified({ firstName: 'Gerhard', lastName: null }),
+    );
+    await svc.adopt('c1');
+    expect(decryptJson(create.mock.calls[0][0].data.detailsEncrypted)).toEqual({
+      full_name: 'Gerhard',
+      id_number: '8001015009087',
+    });
+  });
+
+  it('still leaves the dates alone', async () => {
+    // A reading is not a confirmation. The member has never looked at this
+    // row, so the reminder sweep must not be able to see it.
+    const { svc, create } = build(verified());
+    await svc.adopt('c1');
+    const row = create.mock.calls[0][0].data;
+    expect(row.expiresOn).toBeUndefined();
+    expect(row.confirmedAt).toBeUndefined();
   });
 });

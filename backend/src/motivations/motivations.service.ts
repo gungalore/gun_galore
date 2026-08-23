@@ -1137,14 +1137,34 @@ export class MotivationsService {
       mimeType = c.mimeType;
       purgedAt = c.purgedAt;
 
-      // ⚠️ THE VAULT'S READING COMES ACROSS TOO, and without it the copy
-      // looked BROKEN. A motivation upload with no extraction is flagged
-      // "suspect" — the amber "we could not read anything this document
-      // carries" state — because for a photograph that means the wrong line
-      // was picked. A document copied out of the vault had never been read
-      // as a motivation upload at all, so every single library pick came back
-      // amber, telling the member something was wrong with a certificate they
-      // had chosen by name off a list.
+      // ⚠️ READABILITY FIRST, AND IT IS NOT THE SAME QUESTION AS AUTOFILL.
+      //
+      // `suspect` — the amber "we could not read anything off it" — asks ONE
+      // thing: did anybody ever successfully read this document? The vault
+      // already answered that, in c.extractionOk. Carry it across verbatim.
+      //
+      // This line is the fix for a bug that survived two attempts because the
+      // two questions were conflated. The `kept` filter below answers a
+      // DIFFERENT question — which of the vault's values fit THIS form's boxes
+      // — and it is an exact key-name match between two registries that name
+      // the same things differently. The vault reads a licence as
+      // {licence_number, make, calibre, frame_serial}; the motivation registry
+      // wants {existing_firearm_1_licence_no, _make, _calibre, _frame_serial}.
+      // The intersection is EMPTY, for that kind and for every dedicated-status
+      // and proficiency kind too. Deriving `ok` from that intersection meant a
+      // document the vault had read perfectly was reported as unreadable
+      // whenever its field names happened not to collide — which was nine of
+      // the ten kinds that reach here.
+      //
+      // Nothing is lost by not aliasing. Those values DO reach the member, via
+      // credentialOffer (GET :id/credential-offer), which has the alias table,
+      // the owned-firearm slot logic and the association-slot precedence, and
+      // offers them for confirmation rather than writing them. Duplicating any
+      // of that here would be a second copy of the hardest logic in the module
+      // to serve a badge.
+      extraction = { ok: c.extractionOk, fields: [], blob: null };
+
+      // ⚠️ AND THE AUTOFILL ON TOP, where the names do line up.
       //
       // Nothing needs re-reading: the vault already ran vision over this
       // exact file and kept what it found. Copying it also means picking a
@@ -1173,6 +1193,8 @@ export class MotivationsService {
             Object.entries(details).filter(([k, v]) => wanted.has(k) && v),
           );
           if (Object.keys(kept).length > 0) {
+            // ok is already true whenever the vault read it; restating it here
+            // covers the row that carries values without extractionOk set.
             extraction = {
               ok: true,
               fields: Object.keys(kept),

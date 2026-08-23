@@ -9,6 +9,8 @@ import {
 import { CredentialKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
+import { encryptJson } from '../common/blob-crypto';
+import { decryptSaIdNumber } from '../common/id-crypto';
 import { FLAGS, SettingsService } from '../settings/settings.service';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 import { sniffMime } from '../common/sniff-mime';
@@ -89,6 +91,12 @@ export class KycIdAdoptionService {
         kycIdMimeType: true,
         kycIdDocumentUrl: true,
         kycDocumentUrl: true,
+        // What KYC already established about this exact document. See
+        // readingFor() — this is the difference between the Centre's copy
+        // arriving green and arriving amber.
+        firstName: true,
+        lastName: true,
+        idNumberEncrypted: true,
       },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -112,6 +120,54 @@ export class KycIdAdoptionService {
     // The Claude-flow document first. kycDocumentUrl is the retired manual
     // flow's column and is only reached for members verified before that.
     return u.kycIdDocumentUrl || u.kycDocumentUrl || null;
+  }
+
+  /**
+   * What we already know this document says.
+   *
+   * ⚠️ WITHOUT THIS THE COPY ARRIVES BROKEN, and it took a member asking why
+   * their ID "stays amber" to notice. The motivation checklist flags a row
+   * `suspect` — the amber "we could not read anything off it" — whenever
+   * `canExtract(kind) && !extractionOk`, and IDENTITY_DOCUMENT is extractable
+   * (`full_name`, `id_number`). A credential created with no reading carries
+   * that emptiness into every motivation that picks it, so the one document
+   * in the whole system we have checked HARDEST was the one presented as
+   * unreadable.
+   *
+   * Nothing is re-read here and nothing new is collected. KYC OCR'd this
+   * document, cross-checked the ID number against Home Affairs, and we still
+   * hold both halves — we simply never wrote them down where the Centre looks.
+   *
+   * ⚠️ KEYS MUST MATCH THE MOTIVATION REGISTRY EXACTLY. addFromLibrary filters
+   * a vault reading through `wantedFor(kind)` and keeps only exact matches, so
+   * `full_name` and `id_number` are not arbitrary names — they are the two
+   * keys EXTRACTABLE.IDENTITY_DOCUMENT declares. Renaming either here silently
+   * turns the row amber again with nothing logged.
+   */
+  private readingFor(u: {
+    firstName: string | null;
+    lastName: string | null;
+    idNumberEncrypted: string | null;
+  }): Record<string, string> {
+    const details: Record<string, string> = {};
+    const name = [u.firstName, u.lastName]
+      .map((part) => part?.trim())
+      .filter(Boolean)
+      .join(' ');
+    if (name) details.full_name = name;
+    if (u.idNumberEncrypted) {
+      try {
+        const id = decryptSaIdNumber(u.idNumberEncrypted).trim();
+        if (id) details.id_number = id;
+      } catch (err) {
+        // A rotated ID_HASH_SECRET makes every stored number undecryptable.
+        // That costs the prefill, not the document — the copy still lands.
+        this.logger.warn(
+          `Could not decrypt the stored ID number while seeding a Centre copy: ${(err as Error).message}`,
+        );
+      }
+    }
+    return details;
   }
 
   /** Do they already hold an ID document here? */
@@ -229,6 +285,8 @@ export class KycIdAdoptionService {
       );
     }
 
+    const reading = this.readingFor(user);
+
     try {
       const created = await this.prisma.credential.create({
         data: {
@@ -244,6 +302,18 @@ export class KycIdAdoptionService {
           // owed an answer, and "you added this when your identity was
           // verified" is that answer.
           addedVia: 'kyc',
+          // The reading KYC already did. Keys in the clear (they are not PII),
+          // values encrypted (they very much are) — the same shape the
+          // Centre's own vision path writes at licence-centre.service.ts:356.
+          // `extractionOk` is only true when there is actually something in
+          // it, so a member whose name and ID number we somehow do not hold
+          // gets an honest amber rather than a green row with nothing behind
+          // it.
+          extractionOk: Object.keys(reading).length > 0,
+          extractedFields: Object.keys(reading),
+          detailsEncrypted: Object.keys(reading).length
+            ? encryptJson(reading)
+            : null,
           // ⚠️ NO DATES, AND THE TICK IS LEFT OFF DELIBERATELY. An earlier
           // version of this comment said "the CHECK constraint forbids an
           // expiresOn on this kind outright" — that constraint is gone, and it
