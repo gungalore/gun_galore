@@ -838,8 +838,8 @@ export class LicenceCentreService {
      * PHOTOGRAPHS ADOPTED OUT OF AN APPLICATION. There are three write sites
      * for a Credential and only ONE of them pre-ticks the box: create() here,
      * at defaultsToNeverExpires. VaultAdoptionService.adoptUpload copies the
-     * three safe shots and the installation shot across from a motivation
-     * without it, and kyc-id-adoption writes an IDENTITY_DOCUMENT without it
+     * safe photographs across from a motivation without it, and kyc-id-adoption
+     * writes an IDENTITY_DOCUMENT without it
      * — deliberately, because a passport is one and does expire. So an
      * adopted safe photograph really does sit at neverExpires:false today,
      * and dropping this clause would put every one of them back in the count.

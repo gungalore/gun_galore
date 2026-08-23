@@ -1058,7 +1058,9 @@ export class MotivationsService {
     /**
      * "These are the safe at the address on this application."
      *
-     * ⚠️ REQUIRED FOR THE FOUR SAFE SHOTS, AND CHECKED HERE RATHER THAN IN THE
+     * ⚠️ REQUIRED FOR EVERY PHOTOGRAPH OF THE SAFE — one kind since
+     * 2026-08-23, plus the retired four an older application still carries;
+     * asksPlace() is the authority. CHECKED HERE RATHER THAN IN THE
      * PICKER. A photograph of a safe is a photograph of one safe at one
      * dwelling; a member who has moved house and reuses last year's shots has
      * submitted pictures of somebody else's wall, and nothing on the file says

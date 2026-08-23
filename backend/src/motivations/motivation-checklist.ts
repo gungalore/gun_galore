@@ -50,8 +50,12 @@ export interface ChecklistItem {
   annexure?: string;
   /** Shown smaller under the label. */
   note?: string;
-  /** Sub-points — e.g. the three safe photographs. */
-  subItems?: { key: string; label: string; done?: boolean }[];
+  // subItems lived here: sub-points hanging off one row, and the three safe
+  // photographs were the only thing that ever used them. They went with the
+  // collapse on 2026-08-23 — the safe is one row now and what the member needs
+  // to be told is the `note` above, which names every shot. Nothing wrote the
+  // field afterwards and nothing rendered it, so it was a hook advertising a
+  // feature that no longer existed. It comes back with sub-items, if they do.
   /** Operator/attorney must confirm this is current before go-live. */
   verifyBeforeUse?: true;
 }

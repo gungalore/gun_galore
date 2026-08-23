@@ -125,6 +125,41 @@ describe('what may be kept at all', () => {
 });
 
 describe('adopting one upload', () => {
+  it('files a retired safe kind FORWARD, so the Centre can find it', async () => {
+    // ⚠️ ADMITTING A ROW AND THEN LOSING IT IS WORSE THAN NOT ADMITTING IT.
+    // VAULTABLE keeps the retired four on purpose, so an application filed
+    // before 2026-08-23 still hands its safe photographs to the Centre — and
+    // this wrote `kind: u.kind`, which put them in the Centre under a value the
+    // backfill migration had already emptied. Outside the safe checklist row,
+    // outside the vault picker's safe slot, and nothing anywhere to tell the
+    // member their photograph had landed in a hole.
+    const { svc, credentialCreate } = build({
+      upload: {
+        kind: MotivationUploadKind.SAFE_PHOTO_BOLTS,
+        storageKey: 'motivations/2026/08/a.enc',
+        purgedAt: null,
+        mimeType: 'image/jpeg',
+        sha256: 'sha-a',
+        extractionEncrypted: null,
+        extractionOk: false,
+        extractedFields: [],
+        motivation: { referenceNumber: 'MO000117' },
+      },
+    });
+    await expect(svc.adoptUpload('u1', 'up1')).resolves.toBe(true);
+    expect(credentialCreate.mock.calls[0][0].data.kind).toBe('SAFE_PHOTOGRAPHS');
+    // The member's own words survive the refiling — it is the only record left
+    // of which shot they said this was.
+    expect(credentialCreate.mock.calls[0][0].data.title).toMatch(/bolts/i);
+  });
+
+  it('leaves every other kind exactly where it was', async () => {
+    // The identity naming is the whole reason there is no translation table.
+    const { svc, credentialCreate } = build();
+    await expect(svc.adoptUpload('u1', 'up1')).resolves.toBe(true);
+    expect(credentialCreate.mock.calls[0][0].data.kind).toBe('IDENTITY_DOCUMENT');
+  });
+
   it('copies the bytes into a FRESH key, never the upload own', async () => {
     // ⚠️ THE INVARIANT THE WHOLE FEATURE RESTS ON. Motivation uploads are
     // purged on a two-year clock and vault documents are not, so a shared

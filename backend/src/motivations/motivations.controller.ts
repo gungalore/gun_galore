@@ -596,7 +596,9 @@ export class MotivationsController {
     @Body('source') source: string,
     @Body('sourceId') sourceId: string,
     // "These are the safe at the address on this application." Required for
-    // the four safe photographs; see addFromLibrary.
+    // every photograph of the safe — asksPlace() is the authority, and it
+    // covers the retired kinds an older application still carries. See
+    // addFromLibrary.
     // ⚠️ Coerced, not trusted: a bare @Body() is not a DTO and the global
     // ValidationPipe has no forbidNonWhitelisted, so the string "false" would
     // otherwise arrive here and read as a confirmation.

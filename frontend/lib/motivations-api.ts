@@ -906,7 +906,9 @@ export const motivationsApi = {
           done: boolean;
           annexure?: string;
           note?: string;
-          subItems?: { key: string; label: string }[];
+          // subItems went with the safe collapse on 2026-08-23 — the three
+          // shots were the only thing that ever hung off a row, and the server
+          // stopped sending them. Nothing here rendered them either.
         }[];
       }[];
       oursDone: number;
