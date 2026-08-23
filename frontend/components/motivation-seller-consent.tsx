@@ -10,10 +10,14 @@ import { motivationsApi } from '@/lib/motivations-api';
 // The applicant's side of the flow: a name, a number, and a send. Everything
 // else happens on the seller's phone.
 //
-// ⚠️ SHOWN ONLY ON A PRIVATE TRANSFER. A dealer sale needs no consent letter —
-// the dealer's own paperwork answers where the firearm came from — so putting
-// this in front of every applicant would be asking most of them for a document
-// they must not send. The gate is the acquisition-route field.
+// ⚠️ IT SITS UNDER "Where this firearm is coming from", BESIDE THE UPLOAD
+// CONTROLS, not instead of them. That row takes either a dealer invoice or the
+// current owner's letter, and this is a way of producing the second without
+// anybody printing anything. A dealer buyer ignores it and uploads their
+// invoice on the same row; nothing here is demanded of them.
+//
+// So the copy OFFERS rather than instructs. It cannot assume the reader is
+// buying privately, because the row it lives on serves both routes.
 //
 // ⚠️ AND IT SENDS THE FIREARM WITH THE INVITE. What the seller signs for is
 // snapshotted the moment the link leaves, not read back at signing time: the
@@ -90,12 +94,15 @@ export default function MotivationSellerConsent({
 
   return (
     <div className="rounded-[var(--radius)] border border-[var(--border)] p-4">
-      <p className="text-sm font-semibold">The current owner&rsquo;s consent</p>
+      <p className="text-sm font-semibold">
+        Buying from a private owner?
+      </p>
       <p className="mt-1 text-xs text-[var(--text-secondary)]">
-        You are buying privately, so SAPS needs the person who currently holds
-        the licence to agree in writing. Send them a link and they do it on
-        their own phone — it takes them about two minutes, and their signed
-        consent comes straight into your pack.
+        Then it is their letter you need here, and you do not have to chase a
+        signed page. Send them a link and they consent on their own phone —
+        about two minutes, including photographs of their licence. Their signed
+        consent comes straight into your pack. Buying from a dealer? Ignore
+        this and attach their invoice above.
       </p>
 
       <label className="mt-3 block text-xs text-[var(--text-secondary)]">

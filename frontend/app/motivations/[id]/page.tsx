@@ -1282,30 +1282,6 @@ export default function MotivationWizardPage() {
                   );
                 }
 
-                // ⚠️ THE SELLER'S LICENCE ROW BECOMES A SEND BUTTON, and only
-                // on a private transfer — the acquisition-route field is what
-                // put this row on the list in the first place. A dealer buyer
-                // must never be asked for a consent letter they must not send.
-                if (k === 'SELLER_LICENCE') {
-                  return (
-                    <span className="block w-full">
-                      <MotivationSellerConsent
-                        motivationId={id}
-                        applicantName={(answers.full_name ?? '').trim()}
-                        firearm={{
-                          make: answers.firearm_make,
-                          model: answers.firearm_model,
-                          type: answers.firearm_type,
-                          calibre: answers.firearm_calibre,
-                          serial: answers.firearm_serial,
-                          applicantName: (answers.full_name ?? '').trim(),
-                          applicantIdNumber: answers.id_number,
-                        }}
-                      />
-                    </span>
-                  );
-                }
-
                 // ⚠️ SEVERAL FILES, ONE AFTER ANOTHER. This took files[0] and
                 // dropped the rest, which was harmless while every row wanted
                 // exactly one document and is not any more: the safe is one
@@ -1371,6 +1347,42 @@ export default function MotivationWizardPage() {
                       <span className="text-xs text-[var(--red)]">
                         {uploadErr}
                       </span>
+                    )}
+
+                    {/*
+                      ⚠️ THE CONSENT SITS ON THIS ROW BECAUSE THIS ROW IS THE
+                      CONSENT. Operator, 2026-08-23, pointing at it: "it should
+                      sit here." The row's own description already says so —
+                      "the dealer's invoice or quote, OR a letter from the
+                      person who currently owns the firearm saying they agree
+                      to you applying for a licence over it."
+
+                      It was on SELLER_LICENCE, which is wrong twice over: that
+                      row only appears once the buyer has declared a private
+                      transfer, so the option was invisible to anybody who had
+                      not; and the seller's licence is EVIDENCE the owner is
+                      entitled to consent, not the consent itself.
+
+                      ⚠️ ADDED TO THE CONTROLS, NOT INSTEAD OF THEM. A dealer
+                      buyer uploads an invoice on this same row, and the
+                      character-reference row's pattern — replace everything,
+                      because there is no paper — does not apply here. Both
+                      routes are served from one row.
+                    */}
+                    {k === 'FIREARM_SOURCE_PROOF' && (
+                      <MotivationSellerConsent
+                        motivationId={id}
+                        applicantName={(answers.full_name ?? '').trim()}
+                        firearm={{
+                          make: answers.firearm_make,
+                          model: answers.firearm_model,
+                          type: answers.firearm_type,
+                          calibre: answers.firearm_calibre,
+                          serial: answers.firearm_serial,
+                          applicantName: (answers.full_name ?? '').trim(),
+                          applicantIdNumber: answers.id_number,
+                        }}
+                      />
                     )}
                   </>
                 );
