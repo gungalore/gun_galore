@@ -626,6 +626,27 @@ export const motivationsApi = {
     );
   },
 
+  // ── The previous owner's consent, for a private transfer ────────
+  //
+  // ⚠️ THE FIREARM IS SENT WITH THE INVITE, not read server-side at signing
+  // time. It is snapshotted the moment the link goes out so the seller signs
+  // for the firearm they were shown — see the schema note on
+  // firearmSnapshotEncrypted.
+  inviteSellerConsent: (
+    t: TokenGetter,
+    id: string,
+    body: {
+      name: string;
+      phone: string;
+      applicantName: string;
+      firearm: Record<string, string | undefined>;
+    },
+  ) =>
+    request<{ id: string; status: string }>(t, `/${id}/seller-consent`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   // ── Character witnesses ─────────────────────────────────────────
 
   witnesses: (t: TokenGetter, id: string) =>

@@ -82,6 +82,32 @@ function answerPillWidth(
   );
 }
 
+// ── THE PAIRED-PHOTOGRAPH BLOCK ─────────────────────────────────────
+//
+// Operator, 2026-08-23: "set the two images right next to each other scaling
+// them to almost reach the edge of the A4 leaving a 10mm gap each side for
+// print margins."
+//
+// A4 is 210mm. Ten each side leaves 190mm; a 5mm gutter gives each photograph
+// 92.5mm, which on an ID-1 card (85.6 x 54mm) is about 108% of life size. That
+// is the difference between a DFO reading a serial number off the page and
+// squinting at a thumbnail.
+//
+// ⚠️ IT BREAKS THE BODY MARGIN DELIBERATELY. PAD_X is 14mm, so these sit 4mm
+// outside the text column on each side. Everything else on the sheet stays in
+// the column; only the photographs reach out, which is what makes them read as
+// exhibits rather than as part of the prose.
+const IMG_MARGIN_MM = 10;
+const IMG_GUTTER_MM = 5;
+/** ID-1: 85.6 x 54mm. The box is fixed; pdfkit fits each photo inside it. */
+const IMG_ASPECT = 85.6 / 54;
+
+function imageBox(M: Metrics): { w: number; h: number; x: number } {
+  const full = K.PAGE_W - M.mm(IMG_MARGIN_MM) * 2;
+  const w = (full - M.mm(IMG_GUTTER_MM)) / 2;
+  return { w, h: w / IMG_ASPECT, x: M.mm(IMG_MARGIN_MM) };
+}
+
 /** How tall a block is at this scale. */
 function heightOf(
   chrome: Chrome,
@@ -135,6 +161,17 @@ function heightOf(
       const pillH = M.px(9.5) * 1.2 + M.px(9);
       return Math.max(textH, pillH) + M.mm(3.2);
     }
+
+    case 'images':
+      // ⚠️ A FIXED HEIGHT, WHATEVER THE PHOTOGRAPHS ARE. Measuring the real
+      // aspect would mean decoding both images here and again when drawing,
+      // and a page that lays itself out differently depending on how somebody
+      // held their phone is a page that sometimes spills to two.
+      return (
+        (b.label ? M.px(8) * 1.2 + M.mm(1.5) : 0) +
+        imageBox(M).h +
+        M.mm(4)
+      );
 
     case 'quote':
       return (
@@ -399,6 +436,39 @@ export function renderStatementForm(
           .stroke();
         doc.x = X;
         doc.y += M.mm(3.2);
+        break;
+      }
+
+      case 'images': {
+        if (b.label) {
+          K.label(chrome, b.label, X, doc.y, W);
+          doc.y += M.px(8) * 1.2 + M.mm(1.5);
+        }
+        const box = imageBox(M);
+        const top = doc.y;
+        b.images.slice(0, 2).forEach((img, i) => {
+          const x = box.x + i * (box.w + M.mm(IMG_GUTTER_MM));
+          try {
+            // `fit` preserves each photograph's own aspect inside the fixed
+            // box, so a slightly off-square crop is letterboxed rather than
+            // stretched — a stretched licence card is a card whose serial
+            // reads wrong.
+            doc.image(img, x, top, { fit: [box.w, box.h], align: 'center' });
+          } catch {
+            // ⚠️ A PHOTOGRAPH pdfkit WILL NOT EMBED MUST NOT TAKE THE SHEET
+            // DOWN. The declaration and the particulars above it are the part
+            // that carries legal weight; losing an exhibit is bad, losing the
+            // consent is worse. The frame below still shows something was
+            // meant to be here.
+            doc
+              .rect(x, top, box.w, box.h)
+              .lineWidth(0.7)
+              .strokeColor(c.hair)
+              .stroke();
+          }
+        });
+        doc.x = X;
+        doc.y = top + box.h + M.mm(4);
         break;
       }
 

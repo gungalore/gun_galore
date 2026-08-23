@@ -112,3 +112,56 @@ export const LICENCE_PHOTO_NOTE =
 
 /** Heading printed above the list. */
 export const FIREARM_LIST_HEADING = 'The firearm';
+
+// ────────────────────────────────────────────────────────────────────
+// THE PRINTED SHEET.
+//
+// Assembled into the same block model the character statement uses, so it goes
+// through renderStatementForm and inherits the thing that matters most: that
+// renderer measures the whole sheet and SCALES it to fit one A4 page rather
+// than spilling. Operator, on the consent: "Everything on one page."
+// ────────────────────────────────────────────────────────────────────
+
+import type { CharacterStatementForm } from './motivation-character-statement';
+
+export const CONSENT_FORM_LAYOUT_VERSION = 'consent-1';
+
+export function consentFormFor(
+  s: ConsentStatement,
+  media: { signature: Buffer | null; front: Buffer | null; back: Buffer | null },
+): CharacterStatementForm {
+  const rows = firearmRowsFor(s);
+  return {
+    eyebrow: 'CONSENT OF THE CURRENT OWNER',
+    title: 'Consent to apply for a firearm licence',
+    subtitle: 'Given by the licensed holder of the firearm below',
+    index: 1,
+    version: CONSENT_FORM_LAYOUT_VERSION,
+    blocks: [
+      // The declaration names the people and points at the list. It carries no
+      // firearm particulars itself — see the note at the top of this file.
+      { kind: 'text', text: declarationFor(s) },
+      { kind: 'part', label: '', title: FIREARM_LIST_HEADING },
+      // ⚠️ EVERY ROW THE CARD GAVE US, IN CARD ORDER, INCLUDING ITS NONEs.
+      ...rows.map((r) => ({ kind: 'value' as const, label: r.label, value: r.value })),
+      ...(media.front || media.back
+        ? [
+            {
+              kind: 'images' as const,
+              label: LICENCE_PHOTO_NOTE,
+              images: [media.front, media.back].filter(
+                (b): b is Buffer => !!b,
+              ),
+            },
+          ]
+        : []),
+      {
+        kind: 'signed' as const,
+        name: s.sellerFullName,
+        place: s.signedPlace ?? '',
+        date: s.signedAt,
+        signature: media.signature ?? undefined,
+      },
+    ],
+  };
+}

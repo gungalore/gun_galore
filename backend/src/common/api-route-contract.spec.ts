@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { MotivationsController } from '../motivations/motivations.controller';
 import { MotivationsWitnessController } from '../motivations/motivations-witness.controller';
+import { MotivationsConsentController } from '../motivations/motivations-consent.controller';
 import { LicenceCentreController } from '../licence-centre/licence-centre.controller';
 
 // ────────────────────────────────────────────────────────────────────
@@ -72,7 +73,15 @@ const PAIRS = [
     // dropped by accident. The contract still has to see both, or this test
     // reports every witness route as one the frontend calls and the server
     // does not have.
-    controller: [MotivationsController, MotivationsWitnessController],
+    controller: [
+      MotivationsController,
+      MotivationsWitnessController,
+      // The applicant's half of the seller-consent flow. The seller's half is
+      // a separate, UNGUARDED controller on its own path prefix and is not
+      // called through motivationsApi at all — the person using it has no
+      // account and no token — so it is deliberately not in this pairing.
+      MotivationsConsentController,
+    ],
   },
   {
     name: 'licence centre',

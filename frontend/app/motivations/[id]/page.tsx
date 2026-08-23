@@ -16,6 +16,7 @@ import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
 import MotivationTemplatePicker from '@/components/motivation-template-picker';
 import MotivationCoverPhoto from '@/components/motivation-cover-photo';
 import MotivationWitnesses from '@/components/motivation-witnesses';
+import MotivationSellerConsent from '@/components/motivation-seller-consent';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1277,6 +1278,30 @@ export default function MotivationWizardPage() {
                   return (
                     <span className="block w-full">
                       <MotivationWitnesses motivationId={id} />
+                    </span>
+                  );
+                }
+
+                // ⚠️ THE SELLER'S LICENCE ROW BECOMES A SEND BUTTON, and only
+                // on a private transfer — the acquisition-route field is what
+                // put this row on the list in the first place. A dealer buyer
+                // must never be asked for a consent letter they must not send.
+                if (k === 'SELLER_LICENCE') {
+                  return (
+                    <span className="block w-full">
+                      <MotivationSellerConsent
+                        motivationId={id}
+                        applicantName={(answers.full_name ?? '').trim()}
+                        firearm={{
+                          make: answers.firearm_make,
+                          model: answers.firearm_model,
+                          type: answers.firearm_type,
+                          calibre: answers.firearm_calibre,
+                          serial: answers.firearm_serial,
+                          applicantName: (answers.full_name ?? '').trim(),
+                          applicantIdNumber: answers.id_number,
+                        }}
+                      />
                     </span>
                   );
                 }

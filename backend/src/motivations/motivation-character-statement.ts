@@ -115,6 +115,22 @@ export type StatementBlock =
     }
   /** Something the witness wrote, set apart so it reads as their words. */
   | { kind: 'quote'; label: string; text: string }
+  /**
+   * Two photographs, side by side, wider than the text column.
+   *
+   * ⚠️ IT BREAKS THE MARGIN ON PURPOSE. Operator, 2026-08-23, on the seller's
+   * licence card: "set the two images right next to each other scaling them to
+   * almost reach the edge of the A4 leaving a 10mm gap each side for print
+   * margins." The body column is 14mm in; these go to 10mm, which buys each
+   * card 92.5mm — about 108% of life size, so a DFO reads a serial off the
+   * page rather than squinting at a thumbnail.
+   *
+   * The box is a FIXED size and pdfkit fits each photograph inside it
+   * preserving aspect. That keeps the block's height deterministic, which the
+   * measuring pass needs — reading the dimensions out of the image bytes to
+   * lay the page out would mean decoding both twice.
+   */
+  | { kind: 'images'; label: string; images: Buffer[] }
   /** Their signature image, the place, and the date the server recorded. */
   | {
       kind: 'signed';
