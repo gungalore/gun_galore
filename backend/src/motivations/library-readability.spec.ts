@@ -79,3 +79,43 @@ describe('the two key registries genuinely do not line up', () => {
     expect(wanted.sort()).toEqual(['full_name', 'id_number']);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE GAP THAT PRODUCED THE REPORTED BUG.
+//
+// The operator's own ID was amber for a reason none of the above covers: the
+// vault asked for NOTHING when reading it (WANTED.IDENTITY_DOCUMENT was []),
+// so extractionOk could never become true, while the motivation registry
+// declared the kind readable. Between them the two registries guaranteed a
+// permanent amber on a perfectly legible document.
+//
+// ⚠️ THE SPEC ABOVE COULD NOT CATCH IT — it skips kinds whose vault list is
+// empty, which is exactly the broken state. This one closes that hole.
+describe('no kind can be declared readable and then never read', () => {
+  it('has no credential kind the vault ignores but the checklist judges', () => {
+    const permanentlyAmber: string[] = [];
+
+    for (const [credentialKind, uploadKinds] of Object.entries(
+      CREDENTIAL_TO_UPLOAD,
+    )) {
+      const uploadKind = (uploadKinds as string[])[0];
+      if (!uploadKind) continue;
+      if (!MotivationExtractService.canExtract(uploadKind as never)) continue;
+
+      const vaultKeys: string[] =
+        (WANTED as Record<string, string[]>)[credentialKind] ?? [];
+      if (vaultKeys.length === 0) {
+        permanentlyAmber.push(
+          `${credentialKind} -> ${uploadKind}: the vault asks for nothing, ` +
+            `so extractionOk can never be true, but canExtract says the ` +
+            `checklist will judge it. Either give the vault keys to read ` +
+            `(matching ${JSON.stringify(
+              MotivationExtractService.wantedFor(uploadKind as never),
+            )}) or drop the kind from EXTRACTABLE.`,
+        );
+      }
+    }
+
+    expect(permanentlyAmber).toEqual([]);
+  });
+});

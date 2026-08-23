@@ -193,24 +193,44 @@ export const WANTED: Record<CredentialKind, string[]> = {
 
   // ── THE DOCUMENTS WE KEEP RATHER THAN CHASE ────────────────────────
   //
-  // ⚠️ EMPTY IS THE ANSWER, AND IT IS LOAD-BEARING. WANTED is both the
-  // question and the filter: an empty list means nothing is asked for and
-  // anything the model volunteers is discarded. There is nothing printed on a
-  // photograph of a gun safe to transcribe, and a vision call would spend
-  // money to come back with nothing — then flag the document amber for having
-  // found nothing, which is how a member gets told something is wrong with a
-  // photograph that is perfectly fine.
+  // ⚠️ THESE THREE WERE EMPTY UNTIL 2026-08-23, AND IT MADE THEM PERMANENTLY
+  // AMBER. Operator: "when some documents like my ID for example are pulled
+  // [into the] document centre in the motivation it stays amber, why?"
   //
-  // create() skips read() entirely for these (NO_VISION_KINDS). The entries
-  // exist so the map stays exhaustive over the enum, which is what makes the
-  // compiler name every site the next time a kind is added.
-  IDENTITY_DOCUMENT: [],
+  // Because WANTED is both the question and the filter — an empty list asks
+  // for nothing and discards anything the model volunteers, so extractionOk
+  // could never become true — while the MOTIVATION registry declares all three
+  // readable (EXTRACTABLE in motivation-extract.service.ts wants full_name +
+  // id_number, residential_address + residential_postal_code, employer_name +
+  // employer_address). A checklist row is amber on
+  // `canExtract(kind) && !extractionOk`, so the two registries between them
+  // guaranteed amber forever, on documents that are perfectly legible.
+  //
+  // They were emptied by association with the safe photographs below, and the
+  // reasoning that is sound for a safe does not survive contact with these: an
+  // ID card has a name and a number printed on it, a municipal bill has an
+  // address, and an employment letter names an employer. They are among the
+  // most worth reading in the whole vault, because those six values are the
+  // opening fields of every licence application.
+  //
+  // ⚠️ THE KEY NAMES MUST MATCH THE MOTIVATION REGISTRY EXACTLY. addFromLibrary
+  // carries a vault reading across on an exact key-name match with
+  // wantedFor(uploadKind); a near-miss here is silently dropped and the amber
+  // comes straight back. library-readability.spec.ts pins the agreement.
+  IDENTITY_DOCUMENT: ['full_name', 'id_number'],
   // ⚠️ IT DOES CARRY A DATE, and the date decides whether a DFO accepts it.
   // But that date must never become an expiresOn — the CHECK constraint
   // forbids it, because a confirmed one would start SMSing AO Pro members
   // about a municipal bill. Freshness is judged at pick time; see reuseCaution.
-  ADDRESS_CONFIRMATION: [],
-  EMPLOYMENT_CONFIRMATION: [],
+  ADDRESS_CONFIRMATION: ['residential_address', 'residential_postal_code'],
+  EMPLOYMENT_CONFIRMATION: ['employer_name', 'employer_address'],
+  // ⚠️ EMPTY IS THE ANSWER HERE, AND IT IS LOAD-BEARING. There is nothing
+  // printed on a photograph of a gun safe to transcribe, and a vision call
+  // would spend money to come back with nothing — then flag the document amber
+  // for having found nothing, which is how a member gets told something is
+  // wrong with a photograph that is perfectly fine. These kinds are also in
+  // NO_VISION_KINDS, so create() skips read() for them entirely, and
+  // canExtract is false for what they map to, so they never go amber either.
   SAFE_PHOTOGRAPHS: [],
   // Retired 2026-08-23; entries kept so the map stays exhaustive.
   SAFE_PHOTO_CLOSED: [],
