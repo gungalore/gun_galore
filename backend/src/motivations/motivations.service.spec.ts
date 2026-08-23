@@ -28,6 +28,8 @@ function build(
     enabled?: boolean;
     canStart?: boolean;
     settings?: Record<string, unknown>;
+    /** What the vision extractor returns, for the library-pick tests. */
+    extracted?: Array<{ key: string; value: string; label: string }>;
   } = {},
 ) {
   const prisma = {
@@ -59,6 +61,18 @@ function build(
       // No uploads by default: the annexure list is empty and the writer is
       // simply not asked to cite.
       findMany: jest.fn(async (_a?: any): Promise<any[]> => []),
+      // For the library-pick tests below. Additive — nothing else in this file
+      // reaches them, so the defaults cannot move an existing expectation.
+      count: jest.fn(async (_a?: any): Promise<number> => 0),
+      findFirst: jest.fn(async (_a?: any): Promise<any> => null),
+      create: jest.fn(async ({ data }: any) => ({
+        id: 'up-1',
+        kind: data.kind,
+        byteSize: data.byteSize,
+      })),
+    },
+    credential: {
+      findFirst: jest.fn(async (_a?: any): Promise<any> => null),
     },
     motivationWitness: {
       // No completed statements by default, which is the correct default: a
@@ -90,7 +104,18 @@ function build(
     releaseBetaSeat: jest.fn(async (): Promise<any> => undefined),
   };
   const refs = { allocate: jest.fn(async () => 'MO000123') };
-  const files = { remove: jest.fn(async (_a?: any): Promise<any> => undefined) };
+  const files = {
+    remove: jest.fn(async (_a?: any): Promise<any> => undefined),
+    // For the library-pick tests: a pick reads the source bytes and writes a
+    // copy into the motivations bucket. Additive — nothing else here reaches
+    // them.
+    read: jest.fn(async (_k?: any): Promise<Buffer> => Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1])),
+    write: jest.fn(async (): Promise<any> => ({
+      storageKey: 'motivations/2026/08/copy.enc',
+      sha256: 'sha-copy',
+      byteSize: 5,
+    })),
+  };
   const notifications = {
     motivationFinished: jest.fn(async (_a?: any): Promise<any> => undefined),
   };
@@ -142,6 +167,11 @@ function build(
     })),
   };
   const pdf = { render: jest.fn(async (_a?: any): Promise<any> => ({ pdf: Buffer.from('%PDF-'), filename: 'x.pdf' })) };
+  const extract = {
+    // The arg is declared so mock.calls is typed as a one-element tuple; a
+    // zero-arg mock makes calls[0][0] a type error even though it is there.
+    extract: jest.fn(async (_a: any): Promise<any[]> => opts.extracted ?? []),
+  };
   const settings = {
     get: jest.fn(async (flag: { key: string; default: unknown }) =>
       opts.settings && flag.key in opts.settings
@@ -158,9 +188,11 @@ function build(
     claude as never,
     pdf as never,
     settings as never,
-      // Extraction proposes values off an uploaded document; nothing in
-      // these tests uploads one, so a stub is enough.
-      { extract: jest.fn(async () => []) } as never,
+      // Extraction proposes values off an uploaded document. Hoisted to a
+      // const and returned from build() so the library-pick tests can assert
+      // WHETHER it was called — that call is a Claude vision request, and
+      // making one per pick when the answer is already in hand is a bill.
+      extract as never,
       // The 271 renderer — nothing in these tests opts into the form.
       { build: jest.fn(async () => ({ pdf: Buffer.from('%PDF-'), leftBlank: [] })) } as never,
       // Cover photographs. `find` returns null so no test depends on a file
@@ -194,7 +226,18 @@ function build(
       // it only stops for somebody who has actually said no.
       { mayOfferAcross: jest.fn(async () => true) } as never,
   );
-  return { svc, prisma, quota, refs, files, claude, pdf, settings, notifications };
+  return {
+    svc,
+    prisma,
+    quota,
+    refs,
+    files,
+    claude,
+    pdf,
+    settings,
+    notifications,
+    extract,
+  };
 }
 
 describe('MotivationsService', () => {
@@ -1226,5 +1269,122 @@ describe('estimateCostUsd', () => {
 
   it('is zero for zero tokens', () => {
     expect(estimateCostUsd('claude-opus-5', 0, 0)).toBe(0);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// PICKING A DOCUMENT OUT OF THE DOCUMENT CENTRE.
+//
+// Operator, 2026-08-23: "Just use claude vision to extract the information
+// when preparing the motivation to insert the information into the document."
+//
+// ⚠️ WHY IT READS RATHER THAN TRANSLATES. The vault and the motivation
+// registry name the same values differently — a licence is stored as
+// {licence_number, make, calibre} and the form wants
+// {existing_firearm_1_licence_no, _make, _calibre} — and four separate bugs
+// came out of trying to carry a reading across that gap. Reading the bytes
+// produces registry keys by construction.
+//
+// ⚠️ AND WHY IT DOES NOT ALWAYS READ. Every call here is a Claude vision
+// request. Where the vault reading already lands on registry keys, paying to
+// re-read is a bill for something already in hand.
+describe('a document picked from the Document Centre', () => {
+  function libraryCase(
+    over: { details?: Record<string, string>; extractionOk?: boolean } = {},
+    opts: Parameters<typeof build>[0] = {},
+  ) {
+    const b = build(opts);
+    b.prisma.motivation.findFirst = jest.fn(async (): Promise<any> => ({
+      id: 'mo-1',
+      status: 'DRAFT',
+      licenceType: 'S13',
+      answersEncrypted: null,
+    }));
+    b.prisma.credential.findFirst = jest.fn(async (): Promise<any> => ({
+      kind: 'FIREARM_LICENCE',
+      storageKey: 'credentials/2026/08/a.enc',
+      mimeType: 'image/jpeg',
+      purgedAt: null,
+      detailsEncrypted: null,
+      extractionOk: over.extractionOk ?? true,
+    }));
+    return b;
+  }
+
+  it('READS THE DOCUMENT when the vault reading fills none of the form boxes', async () => {
+    // The firearm-licence case, which is the one that was amber. The vault
+    // holds make and calibre under its own names; none of them is a key this
+    // form has a box for, so the reading has to come off the bytes.
+    const { svc, extract, prisma } = libraryCase(
+      {},
+      {
+        extracted: [
+          { key: 'existing_firearm_1_make', value: 'Tikka', label: 'Make' },
+          { key: 'existing_firearm_1_calibre', value: '.308', label: 'Calibre' },
+        ],
+      },
+    );
+
+    const res = await svc.addFromLibrary('c1', 'mo-1', 'credential', 'cred-1');
+
+    expect(extract.extract).toHaveBeenCalledTimes(1);
+    // It must be given the licence type and the current answers — the second
+    // decides WHICH owned-firearm row a licence fills, and without it every
+    // licence lands on row 1 and the second overwrites the first.
+    const args = extract.extract.mock.calls[0][0];
+    expect(args.kind).toBe('CURRENT_LICENCE');
+    expect(args.licenceType).toBe('S13');
+
+    const row = prisma.motivationUpload.create.mock.calls[0][0].data;
+    expect(row.extractionOk).toBe(true);
+    expect(row.extractedFields.sort()).toEqual([
+      'existing_firearm_1_calibre',
+      'existing_firearm_1_make',
+    ]);
+    // And they come back for the member to confirm rather than being written
+    // into a form they will sign.
+    expect(res.suggestions.map((x: any) => x.key).sort()).toEqual([
+      'existing_firearm_1_calibre',
+      'existing_firearm_1_make',
+    ]);
+  });
+
+  it('does NOT spend a vision call when the vault reading already fits', async () => {
+    const { svc, extract, prisma } = libraryCase();
+    // Pretend the exact-name filter found something — the competency case.
+    prisma.credential.findFirst = jest.fn(async (): Promise<any> => ({
+      kind: 'COMPETENCY_CERTIFICATE',
+      storageKey: 'credentials/2026/08/b.enc',
+      mimeType: 'image/jpeg',
+      purgedAt: null,
+      detailsEncrypted: encryptJson({ competency_number: 'C123' }),
+      extractionOk: true,
+    }));
+
+    await svc.addFromLibrary('c1', 'mo-1', 'credential', 'cred-2');
+
+    expect(extract.extract).not.toHaveBeenCalled();
+    const row = prisma.motivationUpload.create.mock.calls[0][0].data;
+    expect(row.extractedFields).toEqual(['competency_number']);
+  });
+
+  it('keeps the attachment when the vision call fails', async () => {
+    // Fail-soft, like every other read in this module: the bytes are stored
+    // and the row is about to exist, so an outage costs the autofill, not the
+    // document.
+    const { svc, extract, prisma } = libraryCase();
+    extract.extract = jest.fn(async (_a: any): Promise<any[]> => {
+      throw new Error('529 overloaded');
+    });
+
+    await expect(
+      svc.addFromLibrary('c1', 'mo-1', 'credential', 'cred-1'),
+    ).resolves.toMatchObject({ id: 'up-1' });
+
+    const row = prisma.motivationUpload.create.mock.calls[0][0].data;
+    // ⚠️ STILL NOT AMBER. The vault said it had read this document, and a
+    // failure of OUR call does not unsay that.
+    expect(row.extractionOk).toBe(true);
+    expect(row.extractedFields).toEqual([]);
   });
 });

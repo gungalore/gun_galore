@@ -1077,7 +1077,15 @@ export class MotivationsService {
     const user = await this.requireUser(clerkId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true, status: true },
+      // licenceType and answersEncrypted are for the vision read below: the
+      // extractor needs the licence type to know what it is looking at, and
+      // the current answers to decide WHICH owned-firearm row a licence fills.
+      select: {
+        id: true,
+        status: true,
+        licenceType: true,
+        answersEncrypted: true,
+      },
     });
     if (!row) throw new NotFoundException('Motivation not found');
     if (!EDITABLE.includes(row.status)) {
@@ -1304,6 +1312,71 @@ export class MotivationsService {
         suggestions: [],
         alreadyHad: true,
       };
+    }
+
+    // ── READ THE DOCUMENT ITSELF, RATHER THAN TRANSLATING WHAT THE VAULT
+    //    THOUGHT IT SAID ────────────────────────────────────────────────
+    //
+    // Operator, 2026-08-23: "Just use claude vision to extract the information
+    // when preparing the motivation to insert the information into the
+    // document."
+    //
+    // ⚠️ THIS REPLACES A KEY-MAPPING PROBLEM THAT HAD ALREADY PRODUCED FOUR
+    // BUGS. The vault and the motivation registry name the same values
+    // differently — a licence is read into the vault as
+    // {licence_number, make, calibre, frame_serial} and the form wants
+    // {existing_firearm_1_licence_no, _make, _calibre, _frame_serial} — so
+    // carrying a reading across meant either an exact-name intersection that
+    // was empty for nine of ten kinds, or a third copy of an alias table.
+    //
+    // Reading the bytes we have just copied sidesteps all of it: this
+    // extractor emits registry keys BY CONSTRUCTION, and it owns the
+    // owned-firearm slot logic (a licence describes one firearm and somebody
+    // may attach four), which no alias table could have reproduced without
+    // duplicating it.
+    //
+    // ⚠️ IT COSTS A VISION CALL PER PICK, which is what the vault copy was
+    // avoiding. That trade is deliberate: the call is the same one
+    // photographing the document would have cost, and the thing it buys is
+    // the values actually landing in the boxes instead of a badge being the
+    // right colour.
+    //
+    // ⚠️ ONLY WHERE THE VAULT HAS NOT ALREADY ANSWERED. A competency
+    // certificate's number crosses over on an exact name match, for free —
+    // paying to re-read it would spend money to learn what is already in
+    // hand. So this runs when `extraction.fields` is empty, which is exactly
+    // the set of kinds the intersection was failing.
+    //
+    // FAIL-SOFT, like every other read in this module: the bytes are stored
+    // and the row is about to exist, so a timeout or a model outage costs the
+    // autofill, not the attachment. The vault's readability verdict survives
+    // underneath, so the row does not go amber just because the call failed.
+    if (
+      extraction.fields.length === 0 &&
+      MotivationExtractService.canExtract(kind)
+    ) {
+      try {
+        const fresh = await this.extract.extract({
+          kind,
+          licenceType: row.licenceType,
+          bytes,
+          mimeType: mimeType ?? 'image/jpeg',
+          answers: this.readAnswers(row.answersEncrypted),
+        });
+        if (fresh.length > 0) {
+          extraction = {
+            ok: true,
+            fields: fresh.map((f) => f.key),
+            blob: encryptJson(
+              Object.fromEntries(fresh.map((f) => [f.key, f.value])),
+            ),
+          };
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Motivation ${row.id}: could not read library copy ${sourceId}: ${(err as Error).message}`,
+        );
+      }
     }
 
     const created = await this.prisma.motivationUpload.create({
