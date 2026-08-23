@@ -4135,22 +4135,33 @@ enum MotivationStatus {
 // safe is the only thing that shows it. Safe storage is one of the few grounds
 // a DFO inspects in person, so evidence of it is disproportionately valuable.
 //
-// THREE SHOTS, THREE KINDS (operator, 2026-08-19). They are separate enum
-// values rather than three files of one kind because there is nowhere on this
-// model to record WHICH shot a file is — no caption, no ordering column — so
-// three files of one kind cannot be told apart, and a pack holding the closed
-// door three times would report itself complete.
+// ONE SAFE KIND, SEVERAL PHOTOGRAPHS (operator, 2026-08-23: "I dont like the
+// safe picture being seperate four uploads, looks shit. Make it safe pictures.
+// User must be able to upload multiple documents").
 //
-// SAFE_PHOTO is RETIRED, not removed: Postgres has no ALTER TYPE ... DROP
-// VALUE, and rows written before 2026-08-19 carry it. It keeps a label and an
-// annexure letter, it is out of the picker, and the upload endpoint refuses it
-// outright — which is what makes "no new row can carry it" true rather than
-// merely intended.
+// It replaces the four kinds of 2026-08-19 — closed, ajar, bolts, installation
+// — and the argument for collapsing them is not tidiness. THE FOUR COULD NOT BE
+// TOLD APART RELIABLY BY ANYTHING WE HAVE. They differ by how far one door is
+// open, which is a fine judgement from a single frame, so the Centre's
+// classifier was forced to return LOW CONFIDENCE on all four unconditionally
+// (licence-centre-extract.service.ts). Getting it wrong filed the bolts shot
+// under the closed-door annexure, and a DFO looking for proof that the bolts
+// engage was shown a photograph of a shut door. One kind makes that class of
+// error impossible rather than merely flagged.
 //
-// SAFE_INSTALLATION is NOT retired. All three of the operator's shots are of
-// the safe's DOOR; none of them shows it anchored to the wall, which is the
-// one thing about safe storage a DFO inspects in person. Not required, still
-// worth attaching, so it stays on offer.
+// ⚠️ THE THREE SHOTS STILL EXIST AS INSTRUCTIONS. A DFO wants the safe closed,
+// half open with the key in the door, and open with the bolts visible; reg 86
+// and the premises inspection are what they are for. The KIND collapses, the
+// GUIDANCE does not — see SAFE_WHY in motivation-documents.ts, which names all
+// three plus the anchoring shot, and SAFE_PHOTO_MIN, which keeps the checklist
+// row from going green on one photograph.
+//
+// ⚠️ NONE OF THE OLD VALUES COULD BE DELETED. Postgres has no
+// ALTER TYPE ... DROP VALUE, so the five below are RETIRED: out of every
+// picker, refused by the write paths, still carrying a label and an annexure
+// letter so a row written before the collapse stays readable. The migration
+// pair 20260823110000/20260823110100 moved every existing row onto
+// SAFE_PHOTOGRAPHS.
 enum MotivationUploadKind {
   IDENTITY_DOCUMENT
   COMPETENCY_CERTIFICATE
@@ -4174,15 +4185,24 @@ enum MotivationUploadKind {
   ASSOCIATION_ENDORSEMENT
   ADDRESS_CONFIRMATION
   EMPLOYMENT_CONFIRMATION
-  // The safe, closed.
+  /// EVERY PHOTOGRAPH OF THE SAFE, under one kind and one annexure letter.
+  /// Several files are the normal case, not an edge case: closed, half open
+  /// with the key in the door, open showing the roll bolts, and how it is
+  /// anchored to the wall.
+  SAFE_PHOTOGRAPHS
+  /// ⚠️ RETIRED 2026-08-23 — see SAFE_PHOTOGRAPHS and the enum comment above.
+  /// The safe, closed.
   SAFE_PHOTO_CLOSED
-  // The safe, half open with the key in the door.
+  /// ⚠️ RETIRED 2026-08-23. The safe, half open with the key in the door.
   SAFE_PHOTO_AJAR
-  // The safe, fully open with the roll bolts visible.
+  /// ⚠️ RETIRED 2026-08-23. The safe, fully open with the roll bolts visible.
   SAFE_PHOTO_BOLTS
-  // Retired 2026-08-19 — superseded by the three shots above.
+  /// ⚠️ RETIRED 2026-08-19, and again on 2026-08-23 — the single-shot kind
+  /// that the four replaced, now folded into SAFE_PHOTOGRAPHS along with them.
   SAFE_PHOTO
-  // NOT retired: how the safe is anchored, which no door shot shows.
+  /// ⚠️ RETIRED 2026-08-23. How the safe is anchored, which no door shot
+  /// shows. It is still worth photographing and the help text still asks for
+  /// it; it is no longer a separate kind.
   SAFE_INSTALLATION
   CHARACTER_REFERENCE
   /// A log of hunts or competitive shoots — dates, venues, disciplines,
@@ -4720,8 +4740,10 @@ enum CredentialKind {
   /// they could not manage.
   ///
   /// ⚠️ NAMED IDENTICALLY TO THEIR MotivationUploadKind COUNTERPARTS, so
-  /// CREDENTIAL_TO_UPLOAD is an identity map for all eight and there is no
-  /// translation table for anyone to get wrong.
+  /// CREDENTIAL_TO_UPLOAD is an identity map for every one of them and there
+  /// is no translation table for anyone to get wrong. That held when there
+  /// were eight and it still holds now the four safe kinds have become
+  /// SAFE_PHOTOGRAPHS on both sides.
   ///
   /// ⚠️ WHETHER ONE OF THESE EXPIRES IS THE MEMBER'S ANSWER, NOT THE ENUM'S.
   /// An earlier draft forbade an expiresOn on all eight in the database, on
@@ -4732,13 +4754,24 @@ enum CredentialKind {
   IDENTITY_DOCUMENT
   ADDRESS_CONFIRMATION
   EMPLOYMENT_CONFIRMATION
-  /// The safe, closed.
+  /// EVERY PHOTOGRAPH OF THE SAFE, under one kind. A member holds several and
+  /// that is the normal case: closed, half open with the key in the door, open
+  /// showing the roll bolts, and how it is anchored to the wall.
+  ///
+  /// ⚠️ ONE KIND BECAUSE THE FOUR COULD NOT BE TOLD APART. They differed by
+  /// how far one door is open, so classify() was forced to call all four LOW
+  /// CONFIDENCE unconditionally — see the note where UNSURE_BY_DEFAULT used to
+  /// live in licence-centre-extract.service.ts. Operator, 2026-08-23: "I dont
+  /// like the safe picture being seperate four uploads, looks shit."
+  SAFE_PHOTOGRAPHS
+  /// ⚠️ RETIRED 2026-08-23 — see SAFE_PHOTOGRAPHS. The safe, closed.
   SAFE_PHOTO_CLOSED
-  /// The safe, half open with the key in the door.
+  /// ⚠️ RETIRED 2026-08-23. The safe, half open with the key in the door.
   SAFE_PHOTO_AJAR
-  /// The safe, fully open with the roll bolts visible.
+  /// ⚠️ RETIRED 2026-08-23. The safe, fully open with the roll bolts visible.
   SAFE_PHOTO_BOLTS
-  /// How the safe is anchored, which no door shot shows.
+  /// ⚠️ RETIRED 2026-08-23. How the safe is anchored, which no door shot
+  /// shows. Still worth photographing, no longer a separate kind.
   SAFE_INSTALLATION
   /// A log of hunts or competitive shoots. ⚠️ Reusable but it GOES STALE —
   /// a log that stops eighteen months ago reads worse than a short current

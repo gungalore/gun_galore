@@ -1,4 +1,8 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
+// ⚠️ ONE DEFINITION OF "HOW MANY SAFE PHOTOGRAPHS", shared with
+// documentStatus. Two surfaces disagreeing about it is how a member gets a
+// green tick on one screen and an amber row on the next.
+import { SAFE_PHOTO_MIN } from './motivation-documents';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SUBMISSION CHECKLIST — a LIVE, TICKABLE SURFACE, not a PDF page.
@@ -78,11 +82,13 @@ export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
   ASSOCIATION_ENDORSEMENT: "The association's endorsement for this firearm",
   ADDRESS_CONFIRMATION: 'Proof of residential address',
   EMPLOYMENT_CONFIRMATION: 'Confirmation of employment',
+  SAFE_PHOTOGRAPHS: 'Photographs of your safe',
+  // ── retired 2026-08-23 ───────────────────────────────────────────────
+  // Present so a row written before the collapse still labels in the annexure
+  // index and in the file list. Never offered anywhere.
   SAFE_PHOTO_CLOSED: 'Safe closed',
   SAFE_PHOTO_AJAR: 'Safe half open, key in the door',
   SAFE_PHOTO_BOLTS: 'Safe fully open, roll bolts visible',
-  // Retired 2026-08-19. Present so a row written before the split still
-  // labels in the annexure index and in the file list.
   SAFE_PHOTO: 'Photographs of your safe (earlier upload)',
   SAFE_INSTALLATION: 'Photograph of the safe bolted to the wall',
   CHARACTER_REFERENCE: 'Character reference(s)',
@@ -102,8 +108,11 @@ export const UPLOAD_KIND_LABELS: Record<MotivationUploadKind, string> = {
 // unticked while the parent row ticked green on the first photograph, and the
 // only endpoint that served it has no caller in the frontend.
 //
-// The three shots are now three MotivationUploadKind values, which the
-// requirement engine already knows how to count.
+// The three shots then became three MotivationUploadKind values, and on
+// 2026-08-23 they became one — SAFE_PHOTOGRAPHS, several files under a single
+// row. What survives from all three attempts is the INSTRUCTION: the row's
+// note below names every shot, and documentStatus will not tick it until
+// SAFE_PHOTO_MIN photographs are attached.
 
 /**
  * Annexure lettering order — reading order, not upload order.
@@ -142,25 +151,26 @@ export type AnnexureKind = MotivationUploadKind | GeneratedAnnexureId;
 /**
  * KINDS THAT SHARE ONE ANNEXURE LETTER.
  *
- * ⚠️ THE SAFE IS ONE ANNEXURE, NOT FOUR, and getting this wrong shifted every
- * letter in the pack. The four safe photographs are four UPLOAD KINDS on
- * purpose — the requirement engine has to know which of the three shots is
- * missing, and a file has to be filed as the bolts shot specifically or it is
- * unplaceable. But a reviewer holding the paper sees one thing: the safe. The
- * operator's reference pack letters it once, as "F. PHOTOS OF SAFE".
+ * ⚠️ THE SAFE IS ONE ANNEXURE, and getting this wrong shifted every letter in
+ * the pack. Lettering the shots separately pushed a nineteen-document pack out
+ * to S where a professional one ends at O, which is the kind of difference
+ * that makes a familiar document read as an unfamiliar one. The operator's
+ * reference pack letters it once, as "F. PHOTOS OF SAFE".
  *
- * Lettering them separately pushed a nineteen-document pack out to S where a
- * professional one ends at O, which is the kind of difference that makes a
- * familiar document read as an unfamiliar one.
+ * ⚠️ THE SAFE ENTRIES ARE STILL HERE THOUGH THE KINDS COLLAPSED ON 2026-08-23,
+ * and removing them would be a live bug rather than a cleanup: a row written
+ * before the collapse still carries SAFE_PHOTO_AJAR, and without a group it
+ * would take a letter of its own — the exact letter-shifting this map exists to
+ * prevent, on the packs of the members who filed first.
  *
- * The three shots stay individually citable, because several copies under one
- * letter already print as "(1 of 4)", "(2 of 4)" with their own captions —
- * the same machinery that handles two copies of an ID. So the letter
- * collapses and nothing about the evidence does.
+ * Several copies under one letter print as "(1 of 4)", "(2 of 4)" — the same
+ * machinery that handles two copies of an ID — so the letter collapses and
+ * nothing about the evidence does.
  */
 const LETTER_GROUPS: Partial<
   Record<MotivationUploadKind, { id: string; label: string }>
 > = {
+  SAFE_PHOTOGRAPHS: { id: 'safe', label: 'Photographs of your safe' },
   SAFE_PHOTO_CLOSED: { id: 'safe', label: 'Photographs of your safe' },
   SAFE_PHOTO_AJAR: { id: 'safe', label: 'Photographs of your safe' },
   SAFE_PHOTO_BOLTS: { id: 'safe', label: 'Photographs of your safe' },
@@ -197,12 +207,14 @@ const ANNEXURE_ORDER: AnnexureKind[] = [
   // ordinarily resides.
   'ADDRESS_CONFIRMATION',
   'EMPLOYMENT_CONFIRMATION',
-  // F — the safe.
+  // F — the safe. One letter, however many photographs are under it.
+  'SAFE_PHOTOGRAPHS',
+  // Retired, but still lettered, and still IN THE SAFE'S GROUP — a row written
+  // before the collapse must not fall out of the printed index, and must not
+  // take a letter of its own either.
   'SAFE_PHOTO_CLOSED',
   'SAFE_PHOTO_AJAR',
   'SAFE_PHOTO_BOLTS',
-  // Retired, but still lettered — a row written before the split must not
-  // fall out of the printed index.
   'SAFE_PHOTO',
   'SAFE_INSTALLATION',
   // G — ours, not theirs. See motivation-prior-notice.ts for why a pack
@@ -310,6 +322,7 @@ export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
   EXECUTOR_APPOINTMENT: 'none',
 
   // Photographs.
+  SAFE_PHOTOGRAPHS: 'none',
   SAFE_PHOTO_CLOSED: 'none',
   SAFE_PHOTO_AJAR: 'none',
   SAFE_PHOTO_BOLTS: 'none',
@@ -323,11 +336,15 @@ export const CERTIFICATION: Record<AnnexureKind, CertificationLevel> = {
  * Every upload kind, mapped to the annexure entry that letters it.
  *
  * ⚠️ A GROUPED KIND IS NOT ITS OWN ENTRY, AND LOOKING IT UP DIRECTLY RETURNS
- * NOTHING. buildAnnexures collapses the four safe shots onto one letter and
- * the two association documents onto another, so the returned list is keyed
- * by each group's REPRESENTATIVE kind. A caller that does
- * `entries.find(e => e.kind === upload.kind)` therefore finds the closed-safe
- * shot and misses the ajar one.
+ * NOTHING. buildAnnexures collapses the safe kinds onto one letter and the two
+ * association documents onto another, so the returned list is keyed by each
+ * group's REPRESENTATIVE kind. A caller that does
+ * `entries.find(e => e.kind === upload.kind)` therefore finds the group's
+ * representative and misses every other member of it.
+ *
+ * ⚠️ STILL NEEDED AFTER 2026-08-23. The safe is one kind now, but the
+ * association group is not, and neither are the retired safe kinds a member's
+ * older application still carries.
  *
  * That is not hypothetical: it shipped. A live pack printed
  * "Annexure ? — SAFE_PHOTO_AJAR" and "Annexure ? — GOOD_STANDING_LETTER" as
@@ -370,12 +387,10 @@ export interface AnnexureEntry {
 /**
  * Assign annexure letters to what was actually uploaded.
  *
- * Letters go to KINDS, not files, so two copies of one ID share a letter.
- *
- * The safe is the exception, and deliberately so since 2026-08-19: its three
- * shots are three kinds, so they take three consecutive letters. A reviewer
- * looking for the roll bolts can now be sent to a letter instead of to "one of
- * the photographs in Annexure G".
+ * Letters go to KINDS, not files, so two copies of one ID share a letter — and
+ * since 2026-08-23 so do every photograph of the safe, which is one kind. The
+ * copies stay individually citable through the "(2 of 4)" captions
+ * motivation-annexure-layout.ts prints above each one.
  */
 export function buildAnnexures(
   kinds: MotivationUploadKind[],
@@ -458,10 +473,7 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
-    'SAFE_INSTALLATION',
+    'SAFE_PHOTOGRAPHS',
     'INCIDENT_REPORT',
     // \u26a0\ufe0f WHERE THE FIREARM IS COMING FROM, ON EVERY LICENCE TYPE. This was
     // missing entirely and it is annexure M in the operator's reference pack.
@@ -475,10 +487,7 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'COMPETENCY_CERTIFICATE',
     'PROFICIENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
-    'SAFE_INSTALLATION',
+    'SAFE_PHOTOGRAPHS',
     'CURRENT_LICENCE',
     'FIREARM_SOURCE_PROOF',
     // The evidence that they hunt, rather than the assertion that they do.
@@ -492,10 +501,7 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'ASSOCIATION_CARD',
     'GOOD_STANDING_LETTER',
     'ASSOCIATION_ENDORSEMENT',
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
-    'SAFE_INSTALLATION',
+    'SAFE_PHOTOGRAPHS',
     'CURRENT_LICENCE',
     'FIREARM_SOURCE_PROOF',
     'SHOOTING_ACTIVITY_LOG',
@@ -515,10 +521,7 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     // quietly not asking for it.
     'GOOD_STANDING_LETTER',
     'ASSOCIATION_ENDORSEMENT',
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
-    'SAFE_INSTALLATION',
+    'SAFE_PHOTOGRAPHS',
     'CURRENT_LICENCE',
     'FIREARM_SOURCE_PROOF',
     'SHOOTING_ACTIVITY_LOG',
@@ -530,9 +533,7 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
+    'SAFE_PHOTOGRAPHS',
     'CURRENT_LICENCE',
   ],
 };
@@ -808,6 +809,12 @@ const S24_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
  * `haveKinds` is what has actually been uploaded and `documentReady` whether the
  * motivation has passed the quality gate, so the "ours" items reflect real
  * state rather than intent.
+ *
+ * ⚠️ ONE ENTRY PER FILE, NOT A SET. The safe is one row holding several
+ * photographs since 2026-08-23, so it is ticked by COUNT — and both callers
+ * already pass a per-upload list. Deduplicating here would tick the safe row on
+ * the first photograph, which is the failure the three separate kinds existed
+ * to prevent.
  */
 export function buildChecklist(
   licenceType: MotivationLicenceType,
@@ -815,7 +822,10 @@ export function buildChecklist(
   documentReady = false,
 ): ChecklistProgress {
   const annexures = buildAnnexures(haveKinds);
-  const have = new Set(haveKinds);
+  const counts = new Map<MotivationUploadKind, number>();
+  for (const k of haveKinds) counts.set(k, (counts.get(k) ?? 0) + 1);
+  const enough = (kind: MotivationUploadKind) =>
+    (counts.get(kind) ?? 0) >= (kind === 'SAFE_PHOTOGRAPHS' ? SAFE_PHOTO_MIN : 1);
   const byKind = new Map(annexures.map((a) => [a.kind, a]));
 
   const ours: ChecklistItem[] = [
@@ -843,12 +853,16 @@ export function buildChecklist(
       key: `upload_${kind.toLowerCase()}`,
       label: UPLOAD_KIND_LABELS[kind],
       owner: 'us',
-      done: have.has(kind),
+      done: enough(kind),
       annexure: entry?.letter,
     };
-    if (kind === 'SAFE_PHOTO_CLOSED') {
+    // ⚠️ THE ROW COLLAPSED; THE INSTRUCTION MUST NOT. One line now takes every
+    // photograph of the safe, so this note is the only place a member is told
+    // which pictures to take — and losing "the roll bolts" would be a real
+    // regression dressed up as tidying.
+    if (kind === 'SAFE_PHOTOGRAPHS') {
       item.note =
-        'Three photographs of the safe, each its own line below — a DFO looks for all three.';
+        'Add them all on this one line: the safe closed, half open with the key in the door, and fully open so the roll bolts show. A DFO looks for all three. Add a fourth if you can — how the safe is bolted to the wall or floor.';
     }
     if (kind === 'INCIDENT_REPORT') {
       item.note =

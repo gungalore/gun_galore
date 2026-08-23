@@ -62,16 +62,43 @@ export interface DocumentNeed {
   /** True once at least one file of this kind is attached. */
   have: boolean;
   /**
-   * Kinds this one line stands for, when it stands for several.
+   * How many FILES this line wants before it counts as done. Absent means one.
    *
-   * ⚠️ THE SAFE IS ONE THING AND THREE PHOTOGRAPHS. Splitting it into three
-   * checklist lines was right about the evidence and wrong about the list —
-   * three of the seven required rows were the same object, which is most of
-   * why the operator called the list long. One line now, and it does not go
-   * green until all three shots are in.
+   * ⚠️ THE SAFE IS ONE THING AND SEVERAL PHOTOGRAPHS, and this is what stops
+   * one of them ticking the box. It used to be enforced by making each shot
+   * its own KIND — which enforced it exactly, and cost more than it was worth:
+   * nothing could reliably tell the shots apart, so the classifier was pinned
+   * to low confidence on all four and a wrong tap filed the bolts shot under
+   * the closed-door annexure.
+   *
+   * ⚠️ AND BE HONEST ABOUT WHAT COUNTING PROVES: nothing on a stored row says
+   * which shot a photograph is, so three pictures of the same shut door count
+   * as three. It is a prompt, not a proof. The four-kind scheme was not a proof
+   * either — a member could file any photograph under any of the four — so this
+   * gives up an appearance of rigour rather than the thing itself, and it gives
+   * up nothing at all on the guidance, which still names every shot.
    */
-  parts?: { kind: MotivationUploadKind; label: string; have: boolean }[];
+  minFiles?: number;
+  /**
+   * One short line naming what a multi-file row still wants.
+   *
+   * ⚠️ IT EXISTS BECAUSE `why` IS ONLY RENDERED ON THE SELECTED ROW. The shots
+   * the safe wants have to be readable without selecting anything — which is
+   * the one thing the four separate menu entries did for free, and the thing
+   * most easily lost by collapsing them.
+   */
+  minFilesNote?: string;
 }
+
+/**
+ * How many photographs of the safe the row wants before it goes green.
+ *
+ * THREE, because that is what the operator's own list asks for and what a DFO
+ * looks for: closed, half open with the key in the door, open with the roll
+ * bolts visible. The anchoring shot is a fourth and is not counted against
+ * this — it is asked for in the help text and welcomed, never demanded.
+ */
+export const SAFE_PHOTO_MIN = 3;
 
 /**
  * What SAPS will not process the application without.
@@ -80,13 +107,6 @@ export interface DocumentNeed {
  * anything we are unsure of belongs in `strengthens` instead — being wrong
  * about a requirement sends someone to a counter to be turned away.
  */
-/** The three shots, in one place, because five lists want the same three. */
-const SAFE_SHOTS: MotivationUploadKind[] = [
-  'SAFE_PHOTO_CLOSED',
-  'SAFE_PHOTO_AJAR',
-  'SAFE_PHOTO_BOLTS',
-];
-
 const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   // ⚠️ THE SAFE PHOTOGRAPHS LEFT THIS LIST ON 2026-08-20 AND CAME BACK ON
   // 2026-08-21. Worth reading before moving them again.
@@ -112,13 +132,13 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    ...SAFE_SHOTS,
+    'SAFE_PHOTOGRAPHS',
   ],
   S15_OCCASIONAL_HUNTER: [
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    ...SAFE_SHOTS,
+    'SAFE_PHOTOGRAPHS',
   ],
   // Dedicated status IS the basis of a section 16 application, so proof of
   // membership stops being a nicety and becomes part of the case.
@@ -126,7 +146,7 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    ...SAFE_SHOTS,
+    'SAFE_PHOTOGRAPHS',
     // THREE SEPARATE PIECES OF PAPER, and the association issues them
     // separately: the status certificate, the sworn letter of good standing,
     // and an endorsement naming the firearm. One slot for all three meant an
@@ -139,7 +159,7 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'IDENTITY_DOCUMENT',
     'COMPETENCY_CERTIFICATE',
     'ADDRESS_CONFIRMATION',
-    ...SAFE_SHOTS,
+    'SAFE_PHOTOGRAPHS',
     // THREE SEPARATE PIECES OF PAPER, and the association issues them
     // separately: the status certificate, the sworn letter of good standing,
     // and an endorsement naming the firearm. One slot for all three meant an
@@ -161,7 +181,7 @@ const REQUIRED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
     'COMPETENCY_CERTIFICATE',
     'CURRENT_LICENCE',
     'ADDRESS_CONFIRMATION',
-    ...SAFE_SHOTS,
+    'SAFE_PHOTOGRAPHS',
   ],
 };
 
@@ -226,10 +246,13 @@ const LABELS: Record<MotivationUploadKind, string> = {
   ASSOCIATION_ENDORSEMENT: "The association's endorsement for this firearm",
   ADDRESS_CONFIRMATION: 'Proof of your address',
   EMPLOYMENT_CONFIRMATION: 'Confirmation of employment',
+  SAFE_PHOTOGRAPHS: 'Photographs of your safe',
+  // ── retired 2026-08-23, never offered ────────────────────────────────
+  // Kept so a row written before the collapse still has a name in the file
+  // list and the annexure index. Postgres cannot drop an enum value.
   SAFE_PHOTO_CLOSED: 'Your safe, closed',
   SAFE_PHOTO_AJAR: 'Your safe, half open with the key in the door',
   SAFE_PHOTO_BOLTS: 'Your safe, fully open showing the roll bolts',
-  // Retired. Kept so a row written before the split still has a name.
   SAFE_PHOTO: 'Photographs of your safe (added before the split)',
   SAFE_INSTALLATION: 'The safe bolted to the wall or floor',
   CHARACTER_REFERENCE: 'A character reference',
@@ -245,14 +268,22 @@ const LABELS: Record<MotivationUploadKind, string> = {
 /**
  * The safe, as one requirement.
  *
- * ⚠️ IT STILL NAMES ALL THREE SHOTS. The three kinds exist because each shows
- * something the others cannot, and an applicant who reads "photographs of
- * your safe" and sends one has satisfied the phrase while the pack is short
- * two photographs nobody noticed. The line collapses; the instruction does
- * not.
+ * ⚠️ IT STILL NAMES EVERY SHOT, AND THAT IS THE POINT OF IT. The kinds
+ * collapsed on 2026-08-23; the instruction did not. Each shot shows something
+ * the others cannot, and an applicant who reads "photographs of your safe" and
+ * sends one has satisfied the phrase while the pack is short two photographs
+ * nobody noticed — so the text does the work the four menu entries used to
+ * pretend to do, and does it in the one place the member is actually reading.
+ *
+ * ⚠️ DO NOT TRIM THE BOLTS SENTENCE. Losing "photograph the bolts" would be a
+ * real regression dressed up as tidying: it is the shot that shows the thing is
+ * a safe rather than a cupboard, and it is what a DFO goes looking for.
  */
+const SAFE_SHOTS_NOTE =
+  'Closed, half open with the key in the door, and open showing the roll bolts.';
+
 const SAFE_WHY =
-  'Three photographs, and a DFO looks for all three: the safe closed with the key out of it, half open with the key in the door, and fully open so the roll bolts are visible. The closed shot shows the unit, the half-open shot shows the lock belongs to it, and the bolts are what make it a safe rather than a cupboard. Take all three: your DFO wants them with the application. The safe is checked twice over — the photographs go in the pack, and regulation 13(12) makes compliant storage a condition of the licence being ISSUED, so the DFO also inspects your premises before it comes through.';
+  'Take three, and add them all on this line: the safe closed with the key out of it, half open with the key in the door, and fully open so the roll bolts are visible. The closed shot shows the unit, the half-open shot shows the lock belongs to it, and the bolts are what make it a safe rather than a cupboard — a DFO looks for all three. A fourth is worth adding if you can: how the safe is bolted to the wall or floor, which no photograph of the door shows. The safe is checked twice over — the photographs go in the pack, and regulation 13(12) makes compliant storage a condition of the licence being ISSUED, so the DFO also inspects your premises before it comes through.';
 
 const WHY: Partial<Record<MotivationUploadKind, string>> = {
   SHOOTING_ACTIVITY_LOG:
@@ -286,10 +317,11 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
     'Your association confirms that this particular firearm — its type, calibre, make, action and serial — suits the discipline you are dedicated in. The Act does not list it, but a DFO will insist on it, so treat it as part of the pack. Ask your association for it once you know which firearm you are applying for. It does not replace your own motivation.',
   CURRENT_LICENCE:
     'A licence for every firearm you already own. We read the make, calibre and serial off it — which is also what tells us whether this application overlaps something you already hold.',
-  // THREE SEPARATE SHOTS, each its own line, because each shows something the
-  // others cannot. Written as three needs rather than one instruction: an
-  // applicant who reads "three photographs" and sends one has satisfied the
-  // sentence, and the pack is short two photographs nobody noticed.
+  // ⚠️ THE SAFE'S OWN TEXT IS SAFE_WHY, NOT AN ENTRY HERE. needOf() reaches
+  // for it directly, because it is the one line that stands for several
+  // photographs and has to name each of them.
+  //
+  // ── retired 2026-08-23, kept for rows written before the collapse ─────
   SAFE_PHOTO_CLOSED:
     'The safe as it stands in the room, shut, with the key out of it. This is the shot that shows the unit itself.',
   SAFE_PHOTO_AJAR:
@@ -297,9 +329,9 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
   SAFE_PHOTO_BOLTS:
     'Door fully open so the roll bolts are visible. The bolts are what make it a safe rather than a cupboard, and a DFO looks for them.',
   SAFE_PHOTO:
-    'Added before we split this into three separate shots. It stays in your pack as supporting evidence.',
+    'Added before the safe photographs became one line. It stays in your pack as supporting evidence.',
   SAFE_INSTALLATION:
-    'How the safe is anchored to the wall or floor. Not one of the three shots, but worth attaching if you have it.',
+    'How the safe is anchored to the wall or floor. Added before the safe photographs became one line; it stays in your pack.',
   INCIDENT_REPORT:
     'Something that actually happened to you carries far more weight than general crime figures.',
   PROFICIENCY_CERTIFICATE:
@@ -336,19 +368,21 @@ export interface DocumentStatus {
 /**
  * Weigh what has been uploaded against what the application needs.
  *
- * `have` is a set-membership test on the KIND, so one file satisfies one need.
- * That is exactly why the three safe photographs are three separate kinds: as
- * a single SAFE_PHOTO kind, one shot of a closed door ticked the whole
- * requirement, and counting files instead would not have helped — nothing on
- * MotivationUpload records WHICH shot a file is, so three photographs of the
- * same closed door would have counted as three.
+ * ⚠️ `uploaded` IS ONE ENTRY PER FILE, NOT A SET OF KINDS, and since
+ * 2026-08-23 that matters. Most needs are satisfied by set membership — one ID
+ * copy is an ID copy — but the safe is one kind holding several photographs,
+ * and it is satisfied by COUNT. Both callers already pass a per-row list
+ * (`row.uploads.flatMap(u => [u.kind, ...u.coversKinds])`), so nothing had to
+ * change to make the count available; deduplicating it here would silently
+ * break the safe row.
  */
 export function documentStatus(
   licenceType: MotivationLicenceType,
   uploaded: MotivationUploadKind[],
   answers: Record<string, string> = {},
 ): DocumentStatus {
-  const have = new Set(uploaded);
+  const counts = new Map<MotivationUploadKind, number>();
+  for (const k of uploaded) counts.set(k, (counts.get(k) ?? 0) + 1);
   const required = [...(REQUIRED[licenceType] ?? [])];
   const expected = [...(EXPECTED[licenceType] ?? [])];
   const strengthens = [...(STRENGTHENS[licenceType] ?? [])];
@@ -369,67 +403,48 @@ export function documentStatus(
     required.push('CURRENT_LICENCE');
   }
 
-  // ── the safe: one line, three photographs ────────────────────────
-  const SAFE_SHOTS: MotivationUploadKind[] = [
-    'SAFE_PHOTO_CLOSED',
-    'SAFE_PHOTO_AJAR',
-    'SAFE_PHOTO_BOLTS',
-  ];
-  const safeParts = SAFE_SHOTS.map((kind) => ({
-    kind,
-    label: LABELS[kind],
-    have: have.has(kind),
-  }));
-  const collapse = (kinds: MotivationUploadKind[]): MotivationUploadKind[] => {
-    const out: MotivationUploadKind[] = [];
-    let placed = false;
-    for (const k of kinds) {
-      if (SAFE_SHOTS.includes(k)) {
-        if (!placed) {
-          placed = true;
-          out.push('SAFE_PHOTO_CLOSED');
-        }
-        continue;
-      }
-      out.push(k);
-    }
-    return out;
-  };
-  const needOf = (kind: MotivationUploadKind, tier: DocumentTier) => {
-    if (kind === 'SAFE_PHOTO_CLOSED') {
-      return {
-        kind,
-        label: 'Photographs of your safe',
-        tier,
-        why: SAFE_WHY,
-        // ⚠️ ALL THREE, OR IT IS NOT DONE. One photograph of a closed door
-        // shows neither the lock nor the bolts, and a line that went green on
-        // it would be telling somebody their pack is complete when a DFO will
-        // send them back for the other two.
-        have: safeParts.every((p) => p.have),
-        parts: safeParts,
-      };
-    }
+  // ── the safe: one line, several photographs ───────────────────────
+  //
+  // ⚠️ ALL THREE, OR IT IS NOT DONE. One photograph of a closed door shows
+  // neither the lock nor the bolts, and a line that went green on it would be
+  // telling somebody their pack is complete when a DFO will send them back for
+  // the other two. Before 2026-08-23 that was enforced by three separate KINDS;
+  // it is now enforced by counting files, which is weaker in theory and no
+  // weaker in practice — see minFiles on DocumentNeed.
+  const minFilesFor = (kind: MotivationUploadKind): number =>
+    kind === 'SAFE_PHOTOGRAPHS' ? SAFE_PHOTO_MIN : 1;
+  const satisfied = (kind: MotivationUploadKind): boolean =>
+    (counts.get(kind) ?? 0) >= minFilesFor(kind);
+
+  const needOf = (
+    kind: MotivationUploadKind,
+    tier: DocumentTier,
+  ): DocumentNeed => {
+    const min = minFilesFor(kind);
     return {
       kind,
       label: LABELS[kind],
       tier,
-      why: WHY[kind] ?? '',
-      have: have.has(kind),
+      // The safe's text has to name every shot, so it lives apart from WHY.
+      why: kind === 'SAFE_PHOTOGRAPHS' ? SAFE_WHY : (WHY[kind] ?? ''),
+      have: satisfied(kind),
+      ...(min > 1
+        ? { minFiles: min, minFilesNote: SAFE_SHOTS_NOTE }
+        : {}),
     };
   };
 
   const needs: DocumentNeed[] = [
-    ...collapse(required).map((k) => needOf(k, 'required')),
-    ...collapse(expected).map((k) => needOf(k, 'expected')),
-    ...collapse(strengthens).map((k) => needOf(k, 'strengthens')),
+    ...required.map((k) => needOf(k, 'required')),
+    ...expected.map((k) => needOf(k, 'expected')),
+    ...strengthens.map((k) => needOf(k, 'strengthens')),
   ];
 
   // Anything uploaded that we never asked for. Accepted and lettered like the
   // rest — an applicant who wants to attach a range record or a letter from
   // their farm manager should never be told it does not belong.
   const asked = new Set<MotivationUploadKind>([
-    ...SAFE_SHOTS,
+    'SAFE_PHOTOGRAPHS',
     ...required,
     ...expected,
     ...strengthens,
@@ -438,19 +453,18 @@ export function documentStatus(
 
   return {
     needs,
-    missingRequired: required.filter((k) => !have.has(k)),
+    // ⚠️ THE SAME RULE AS THE ROW, not a bare set test. With two of the three
+    // safe photographs in, `have.has` is true while the row is still amber —
+    // and the frontend prints "You have everything SAPS asks for" the moment
+    // this list empties, directly above a counter reading 4 of 5.
+    missingRequired: required.filter((k) => !satisfied(k)),
     extras: [...new Set(extras)],
     // ⚠️ THE COUNTER STAYS ABOUT REQUIRED ONLY. "6 of 7" has to mean the
     // things SAPS will not process without — folding the endorsement in would
     // make a complete pack read as incomplete, and folding it in silently
     // would make the number mean something different from what it says.
-    // ⚠️ COUNTED OFF THE COLLAPSED LIST, so the number matches the rows the
-    // member can see. Counting the three safe shots separately while showing
-    // one line for them would read as "5 of 7" beside five visible rows.
-    requiredTotal: collapse(required).length,
-    requiredHave: collapse(required)
-      .map((k) => needOf(k, 'required'))
-      .filter((n) => n.have).length,
+    requiredTotal: required.length,
+    requiredHave: required.filter((k) => satisfied(k)).length,
   };
 }
 
@@ -460,19 +474,24 @@ export function documentLabel(kind: MotivationUploadKind): string {
 }
 
 /**
- * Kinds RETIRED from the picker: they exist only so rows written before
- * 2026-08-19 keep a label and an annexure letter. Postgres cannot drop an enum
- * value, so "retired" has to mean "never offered" rather than "gone".
+ * Kinds RETIRED from the picker: they exist only so a row written before the
+ * kind was retired keeps a label and an annexure letter. Postgres cannot drop
+ * an enum value, so "retired" has to mean "never offered" rather than "gone".
  *
- * ONLY SAFE_PHOTO. SAFE_INSTALLATION was in this list for an afternoon and it
- * was wrong twice over: the checklist still recommended it, which would have
- * shown a row nobody could ever tick, and the three shots the operator asked
- * for are all of the safe's DOOR — none of them shows the safe anchored to the
- * wall, which is the thing a DFO inspects in person. It is not one of the
- * three and it is not required, but it is worth attaching, so it stays on
- * offer.
+ * ⚠️ ALL FIVE SAFE KINDS, as of 2026-08-23. SAFE_INSTALLATION was on this list
+ * for an afternoon in August and taken off again, correctly at the time: the
+ * three shots the operator asked for were all of the safe's DOOR, so the
+ * anchoring shot had nowhere else to go. It has somewhere now —
+ * SAFE_PHOTOGRAPHS takes every photograph of the safe, and SAFE_WHY asks for
+ * the anchoring one by name. Retiring the kind does not retire the shot.
  */
-export const RETIRED: MotivationUploadKind[] = ['SAFE_PHOTO'];
+export const RETIRED: MotivationUploadKind[] = [
+  'SAFE_PHOTO',
+  'SAFE_PHOTO_CLOSED',
+  'SAFE_PHOTO_AJAR',
+  'SAFE_PHOTO_BOLTS',
+  'SAFE_INSTALLATION',
+];
 
 /**
  * What the upload picker should offer, in the order it should offer it.
@@ -485,6 +504,11 @@ export const RETIRED: MotivationUploadKind[] = ['SAFE_PHOTO'];
  *
  * Required first, in the order they are asked for, so the next thing to
  * photograph is the next thing in the menu.
+ *
+ * ⚠️ ONE ENTRY FOR THE SAFE. It used to expand back out into the three shots
+ * here, because a file had to be filed as one of them specifically; there is
+ * nothing left to expand into. Operator, 2026-08-23: "I dont like the safe
+ * picture being seperate four uploads, looks shit."
  */
 export function pickableKinds(
   licenceType: MotivationLicenceType,
@@ -502,19 +526,8 @@ export function pickableKinds(
   // shots and the menu goes on calling every one of them needed.
   const status = documentStatus(licenceType, uploaded, answers);
 
-  // ⚠️ THE CHECKLIST COLLAPSES THE SAFE; THE PICKER MUST NOT. The checklist
-  // shows one row because the safe is one object — but a file still has to be
-  // filed as the closed shot, the half-open shot or the bolts shot
-  // SPECIFICALLY, because nothing on the stored row records which is which.
-  // Collapsing here would leave two of the three unfileable, and the member
-  // holding a photograph of open roll bolts with nowhere to put it.
-  const expand = status.needs.flatMap((n) =>
-    n.parts
-      ? n.parts.map((p) => ({ kind: p.kind, label: p.label, tier: n.tier, have: p.have }))
-      : [{ kind: n.kind, label: n.label, tier: n.tier, have: n.have }],
-  );
   const ranked = new Map<MotivationUploadKind, DocumentTier>(
-    expand.map((n) => [n.kind, n.tier]),
+    status.needs.map((n) => [n.kind, n.tier]),
   );
 
   const rest = (Object.keys(LABELS) as MotivationUploadKind[]).filter(
@@ -524,7 +537,7 @@ export function pickableKinds(
   const have = new Set(uploaded);
 
   return [
-    ...expand.map((n) => ({
+    ...status.needs.map((n) => ({
       kind: n.kind,
       label: n.label,
       tier: n.tier,

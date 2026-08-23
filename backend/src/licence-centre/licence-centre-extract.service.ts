@@ -64,27 +64,35 @@ const EMPTY: CredentialReading = {
  * Exported so the tests exercise this and not a copy of it.
  */
 /**
- * The four kinds that became DEDICATED_DISCIPLINE.
+ * Retired kinds, and what each one is filed as today.
  *
  * ⚠️ THEY CANNOT BE DELETED FROM THE ENUM — Postgres has no ALTER TYPE ...
  * DROP VALUE — so Object.values(CredentialKind) still offers them and the
  * classifier would still accept one. It has also seen these names in every
  * previous version of the prompt. A document filed under a retired kind is
- * outside every query that now looks for DEDICATED_DISCIPLINE, so the answer
- * is normalised forward here rather than trusted.
+ * outside every query that now looks for the current one, so the answer is
+ * normalised forward here rather than trusted.
+ *
+ * Two consolidations so far: four association kinds into DEDICATED_DISCIPLINE
+ * (2026-08-20), and four safe photographs into SAFE_PHOTOGRAPHS (2026-08-23).
  */
-const RETIRED_KINDS: ReadonlySet<string> = new Set([
-  'DEDICATED_STATUS',
-  'DEDICATED_HUNTER',
-  'PROFESSIONAL_HUNTER',
-  'GOOD_STANDING',
+const RETIRED_KINDS: ReadonlyMap<string, CredentialKind> = new Map<
+  string,
+  CredentialKind
+>([
+  ['DEDICATED_STATUS', CredentialKind.DEDICATED_DISCIPLINE],
+  ['DEDICATED_HUNTER', CredentialKind.DEDICATED_DISCIPLINE],
+  ['PROFESSIONAL_HUNTER', CredentialKind.DEDICATED_DISCIPLINE],
+  ['GOOD_STANDING', CredentialKind.DEDICATED_DISCIPLINE],
+  ['SAFE_PHOTO_CLOSED', CredentialKind.SAFE_PHOTOGRAPHS],
+  ['SAFE_PHOTO_AJAR', CredentialKind.SAFE_PHOTOGRAPHS],
+  ['SAFE_PHOTO_BOLTS', CredentialKind.SAFE_PHOTOGRAPHS],
+  ['SAFE_INSTALLATION', CredentialKind.SAFE_PHOTOGRAPHS],
 ]);
 
 /** A kind as we file it today, whatever name it arrived under. */
 export function currentKind(kind: CredentialKind): CredentialKind {
-  return RETIRED_KINDS.has(kind)
-    ? ('DEDICATED_DISCIPLINE' as CredentialKind)
-    : kind;
+  return RETIRED_KINDS.get(kind) ?? kind;
 }
 
 export function cleanAlsoCovers(
@@ -199,6 +207,8 @@ const WANTED: Record<CredentialKind, string[]> = {
   // about a municipal bill. Freshness is judged at pick time; see reuseCaution.
   ADDRESS_CONFIRMATION: [],
   EMPLOYMENT_CONFIRMATION: [],
+  SAFE_PHOTOGRAPHS: [],
+  // Retired 2026-08-23; entries kept so the map stays exhaustive.
   SAFE_PHOTO_CLOSED: [],
   SAFE_PHOTO_AJAR: [],
   SAFE_PHOTO_BOLTS: [],
@@ -275,15 +285,13 @@ export class LicenceCentreExtractService {
       const kind = currentKind(raw);
       return {
         kind,
-        // ⚠️ THE SAFE PHOTOGRAPHS ARE NEVER RETURNED AS CONFIDENT, whatever
-        // the model says. They are told apart by how far one door is open —
-        // a fine judgement from a single frame — and getting it wrong files
-        // the bolts shot under the closed-door annexure, so a DFO looking for
-        // proof the bolts engage is shown a photograph of a shut door.
-        // Low confidence makes the confirm step show the type picker, and the
-        // member settles it in one tap while looking at their own photograph.
-        confident:
-          (parsed.confidence ?? '') === 'high' && !UNSURE_BY_DEFAULT.has(kind),
+        // ⚠️ THE SAFE PHOTOGRAPHS USED TO BE PINNED TO LOW CONFIDENCE HERE,
+        // unconditionally, because the four kinds were told apart by how far
+        // one door is open and getting it wrong filed the bolts shot under the
+        // closed-door annexure. There is one safe kind now, so the override is
+        // gone with the distinction that needed it — see where
+        // UNSURE_BY_DEFAULT used to be defined, below.
+        confident: (parsed.confidence ?? '') === 'high',
         // Normalised too: a retired value in also_covers would now be the
         // document's own kind, which cleanAlsoCovers drops.
         alsoCovers: cleanAlsoCovers(
@@ -500,6 +508,8 @@ function userPrompt(
     ADDRESS_CONFIRMATION:
       'a document proving where somebody lives — a municipal bill, a bank statement or a signed confirmation of residence',
     EMPLOYMENT_CONFIRMATION: 'a letter confirming somebody’s employment',
+    SAFE_PHOTOGRAPHS: 'a photograph of a gun safe',
+    // Retired 2026-08-23; entries kept so the map stays exhaustive.
     SAFE_PHOTO_CLOSED: 'a photograph of a closed gun safe',
     SAFE_PHOTO_AJAR: 'a photograph of a gun safe standing half open',
     SAFE_PHOTO_BOLTS:
@@ -583,19 +593,21 @@ Return STRICT JSON and nothing else:
 {"kind":"<one category>","also_covers":["<category>"],"confidence":"high"|"low"}
 `.trim();
 
-/**
- * Kinds we never claim to be sure about, however sure the model sounds.
- *
- * Four photographs of one safe, distinguished only by how far the door is
- * open. The cost of a wrong call is a photograph filed under the wrong
- * annexure letter, which a member cannot see and a DFO can.
- */
-const UNSURE_BY_DEFAULT: ReadonlySet<CredentialKind> = new Set<CredentialKind>([
-  CredentialKind.SAFE_PHOTO_CLOSED,
-  CredentialKind.SAFE_PHOTO_AJAR,
-  CredentialKind.SAFE_PHOTO_BOLTS,
-  CredentialKind.SAFE_INSTALLATION,
-]);
+// UNSURE_BY_DEFAULT lived here: a set of kinds classify() forced to low
+// confidence however sure the model sounded. It held exactly the four safe
+// photographs, because they were distinguished only by how far one door is
+// open — and the cost of a wrong call was a photograph filed under the wrong
+// annexure letter, which a member cannot see and a DFO can.
+//
+// It went on 2026-08-23 with the distinction it was compensating for. There is
+// one safe kind now, so the only judgement left is "is this a photograph of a
+// gun safe", which is a coarse call a vision model makes reliably and a member
+// can see is wrong at a glance. A permanent low-confidence flag over that would
+// put the type picker in front of every safe photograph for no reason — the
+// warning that always fires, which people learn to tap past.
+//
+// ⚠️ IF THE SAFE IS EVER SPLIT BY SHOT AGAIN, THIS COMES BACK WITH IT. The
+// classifier could not tell them apart; nothing about that has changed.
 
 export const CLASSIFY_USER = [
   'Which of these is this document? Answer with the exact string.',
@@ -629,27 +641,24 @@ export const CLASSIFY_USER = [
   // upload, silently — which is what licence-centre-classify.spec.ts exists
   // to prevent, and why it went red the moment these values were added.
   //
-  // ⚠️ NAMING THEM IS NOT THE SAME AS TRUSTING THE ANSWER. The four safe
-  // photographs are told apart by how far a door is open, which is a fine
-  // judgement to make from one frame, and filing the bolts shot as the closed
-  // shot puts the wrong photograph under the wrong annexure letter. So these
-  // are returned with low confidence unconditionally and the member picks —
-  // see classify(). The prompt's job here is to get the document into the
-  // right FAMILY, not to make the final call.
+  // ⚠️ THE SAFE IS ONE CATEGORY AND THE PROMPT MUST NOT TRY TO SPLIT IT. It
+  // used to name four — shut, part open, bolts showing, and bolted to the wall
+  // — and telling them apart means judging how far a door is open from a single
+  // frame. Every answer had to be forced to low confidence for that reason, and
+  // a wrong one filed the bolts shot under the closed-door annexure, so a DFO
+  // looking for proof the bolts engage was shown a photograph of a shut door.
+  // Operator, 2026-08-23: "Make it safe pictures."
   'IDENTITY_DOCUMENT - a South African identity document: the green barcoded',
   '  book, the smart ID card, or the photo page of a passport',
   'ADDRESS_CONFIRMATION - proof of where somebody lives: a municipal or',
   '  utility bill, a bank statement, or a signed confirmation of residence',
   'EMPLOYMENT_CONFIRMATION - a letter from an employer confirming that',
   '  somebody works there',
-  'SAFE_PHOTO_CLOSED - a photograph of a gun safe with its door SHUT',
-  'SAFE_PHOTO_AJAR - a photograph of a gun safe standing part open, often',
-  '  with the key still in the door',
-  'SAFE_PHOTO_BOLTS - a photograph of a gun safe wide open, taken to show the',
-  '  locking bolts standing proud of the door edge',
-  'SAFE_INSTALLATION - a photograph showing how a safe is FIXED to the',
-  '  building: bolts through the back or floor, brackets, the wall behind it.',
-  '  Not a picture of the door.',
+  'SAFE_PHOTOGRAPHS - a photograph of a gun safe or strongroom, in ANY state:',
+  '  door shut, part open with the key in it, wide open showing the locking',
+  '  bolts, or showing how the safe is bolted to a wall or floor. All of these',
+  '  are this one category. DO NOT TRY TO TELL THEM APART - a member sends',
+  '  several and each is filed the same way.',
   'SHOOTING_ACTIVITY_LOG - a log or register of hunts or competitive shoots,',
   '  usually a table of dates, venues, disciplines or species',
   '',

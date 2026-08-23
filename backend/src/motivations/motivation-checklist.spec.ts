@@ -16,14 +16,14 @@ const ALL = Object.values(MotivationLicenceType);
 describe('annexure lettering', () => {
   it('letters in reading order, not upload order', () => {
     const a = buildAnnexures([
-      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
       MotivationUploadKind.IDENTITY_DOCUMENT,
       MotivationUploadKind.COMPETENCY_CERTIFICATE,
     ]);
     expect(a.map((x) => x.kind)).toEqual([
       MotivationUploadKind.IDENTITY_DOCUMENT,
       MotivationUploadKind.COMPETENCY_CERTIFICATE,
-      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
     ]);
     expect(a.map((x) => x.letter)).toEqual(['A', 'B', 'C']);
   });
@@ -31,38 +31,34 @@ describe('annexure lettering', () => {
   it('groups several files of one kind under one letter', () => {
     const a = buildAnnexures([
       MotivationUploadKind.IDENTITY_DOCUMENT,
-      MotivationUploadKind.SAFE_PHOTO_CLOSED,
-      MotivationUploadKind.SAFE_PHOTO_CLOSED,
-      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
     ]);
     expect(a).toHaveLength(2);
     expect(
-      a.find((x) => x.kind === MotivationUploadKind.SAFE_PHOTO_CLOSED)!.count,
+      a.find((x) => x.kind === MotivationUploadKind.SAFE_PHOTOGRAPHS)!.count,
     ).toBe(3);
   });
 
   it('gives the safe ONE letter, however many shots are under it', () => {
-    // ⚠️ REVERSED ON 2026-08-20, AND THE EARLIER REASONING WAS NOT WRONG SO
-    // MUCH AS OUTVOTED. The three shots were given three consecutive letters
-    // on 2026-08-19 so that a reviewer looking for the roll bolts could be
-    // sent to a letter rather than to "one of the photographs in Annexure B".
+    // ⚠️ THE SHOTS TOOK THREE CONSECUTIVE LETTERS FOR A DAY, on 2026-08-19,
+    // so a reviewer looking for the roll bolts could be sent to a letter
+    // rather than to "one of the photographs in Annexure B". Then the operator
+    // supplied the annexure list a professional writer actually files, and it
+    // letters the safe once: "F. PHOTOS OF SAFE". Four letters for the safe
+    // pushed a nineteen-document pack out to S where a professional one ends
+    // at O — every letter after the safe shifted, on a document whose whole
+    // job is to look like one a DFO has read before.
     //
-    // Then the operator supplied the annexure list a professional writer
-    // actually files, and it letters the safe once: "F. PHOTOS OF SAFE". Four
-    // letters for the safe pushed a nineteen-document pack out to S where a
-    // professional one ends at O — every letter after the safe was shifted,
-    // on a document whose whole job is to look like one a DFO has read
-    // before.
-    //
-    // Nothing about the evidence changed: they are still three upload kinds,
-    // the requirement engine still knows which shot is missing, and the
-    // printed copies still caption themselves "(1 of 3)", "(2 of 3)" — so the
-    // roll bolts are still individually citable.
+    // Since 2026-08-23 the shots are one KIND as well as one letter, and the
+    // count is what makes them individually citable: the printed copies
+    // caption themselves "(1 of 3)", "(2 of 3)".
     const a = buildAnnexures([
       MotivationUploadKind.IDENTITY_DOCUMENT,
-      MotivationUploadKind.SAFE_PHOTO_BOLTS,
-      MotivationUploadKind.SAFE_PHOTO_CLOSED,
-      MotivationUploadKind.SAFE_PHOTO_AJAR,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
     ]);
     expect(a.map((x) => x.letter)).toEqual(['A', 'B']);
     expect(a[1].label).toBe('Photographs of your safe');
@@ -72,8 +68,14 @@ describe('annexure lettering', () => {
     expect(a[1].count).toBe(3);
   });
 
-  it('counts the installation shot under the same safe letter', () => {
+  it('keeps a pre-collapse row under the same safe letter, not a new one', () => {
+    // ⚠️ THE RETIRED KINDS STAY IN THE LETTER GROUP. A member who filed
+    // before 2026-08-23 has rows carrying SAFE_PHOTO_AJAR and friends, and
+    // dropping them from the group would give each one a letter of its own —
+    // the exact letter-shifting the group exists to prevent, on the packs of
+    // the people who filed first.
     const a = buildAnnexures([
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
       MotivationUploadKind.SAFE_PHOTO_CLOSED,
       MotivationUploadKind.SAFE_PHOTO_AJAR,
       MotivationUploadKind.SAFE_PHOTO_BOLTS,
@@ -81,7 +83,7 @@ describe('annexure lettering', () => {
     ]);
     expect(a).toHaveLength(1);
     expect(a[0].letter).toBe('A');
-    expect(a[0].count).toBe(4);
+    expect(a[0].count).toBe(5);
   });
 
   it('letters the association membership and good standing together', () => {
@@ -99,8 +101,8 @@ describe('annexure lettering', () => {
   });
 
   it('still letters a photograph uploaded before the split', () => {
-    // SAFE_PHOTO is retired, not removed. A row written before 2026-08-19 must
-    // not fall out of the printed index.
+    // SAFE_PHOTO is retired, not removed. A row written before it was retired
+    // must not fall out of the printed index.
     const a = buildAnnexures([MotivationUploadKind.SAFE_PHOTO]);
     expect(a).toHaveLength(1);
     expect(a[0].label).toMatch(/safe/i);
@@ -147,38 +149,43 @@ describe('the live checklist', () => {
     expect(c.theirsTotal).toBeGreaterThan(0);
   });
 
-  it('carries the THREE specific safe photographs as three separate rows', () => {
-    // Straight from the operator's own list, and three ROWS rather than three
-    // sub-items under one row: sub-items had no `done` flag, so they rendered
-    // permanently unticked while the parent went green on the first photo.
+  it('carries the THREE specific safe photographs on ONE row', () => {
+    // ⚠️ THE ROW COLLAPSED; THE INSTRUCTION MUST NOT. Operator, 2026-08-23:
+    // "I dont like the safe picture being seperate four uploads, looks shit."
+    // One row — but its note is now the only place a member is told which
+    // pictures to take, so losing "roll bolts" from it would be a real
+    // regression dressed up as tidying.
     const c = buildChecklist(MotivationLicenceType.S13_SELF_DEFENCE, []);
-    const keys = c.sections[0].items.map((i) => i.key);
-    expect(keys).toEqual(
-      expect.arrayContaining([
-        'upload_safe_photo_closed',
-        'upload_safe_photo_ajar',
-        'upload_safe_photo_bolts',
-      ]),
+    const rows = c.sections[0].items.filter((i) =>
+      i.key.startsWith('upload_safe_photo'),
     );
-    const labels = c.sections[0].items
-      .filter((i) => i.key.startsWith('upload_safe_photo'))
-      .map((i) => i.label.toLowerCase());
-    expect(labels).toHaveLength(3);
-    expect(labels[0]).toMatch(/closed/);
-    expect(labels[1]).toMatch(/half open.*key in the door/);
-    expect(labels[2]).toMatch(/roll bolts/);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].key).toBe('upload_safe_photographs');
+
+    const note = (rows[0].note ?? '').toLowerCase();
+    expect(note).toMatch(/closed/);
+    expect(note).toMatch(/half open.*key in the door/);
+    expect(note).toMatch(/roll bolts/);
+    // The anchoring shot, which no photograph of the door shows. It was its
+    // own kind until 2026-08-23 and lives on here.
+    expect(note).toMatch(/bolted to the wall or floor/);
   });
 
-  it('ticks each safe shot on its own, not all three on the first photo', () => {
-    // The whole point of the split. Under the old single kind, one photograph
-    // of a closed door satisfied the entire safe requirement.
-    const c = buildChecklist(MotivationLicenceType.S13_SELF_DEFENCE, [
-      MotivationUploadKind.SAFE_PHOTO_CLOSED,
-    ]);
-    const byKey = new Map(c.sections[0].items.map((i) => [i.key, i.done]));
-    expect(byKey.get('upload_safe_photo_closed')).toBe(true);
-    expect(byKey.get('upload_safe_photo_ajar')).toBe(false);
-    expect(byKey.get('upload_safe_photo_bolts')).toBe(false);
+  it('does not tick the safe row on the first photograph', () => {
+    // Under the ORIGINAL single kind, one photograph of a closed door
+    // satisfied the entire safe requirement. It is one kind again — so the
+    // count, not the kind, is what stops that happening: buildChecklist is
+    // handed one entry per FILE and will not tick until three are in.
+    const byKeyFor = (n: number) =>
+      new Map(
+        buildChecklist(
+          MotivationLicenceType.S13_SELF_DEFENCE,
+          Array.from({ length: n }, () => MotivationUploadKind.SAFE_PHOTOGRAPHS),
+        ).sections[0].items.map((i) => [i.key, i.done]),
+      );
+    expect(byKeyFor(1).get('upload_safe_photographs')).toBe(false);
+    expect(byKeyFor(2).get('upload_safe_photographs')).toBe(false);
+    expect(byKeyFor(3).get('upload_safe_photographs')).toBe(true);
   });
 
   it('warns not to sign the SAPS form in advance', () => {
@@ -401,6 +408,9 @@ describe('the renewal deadline', () => {
 describe('resolving an upload to its annexure', () => {
   const KINDS = [
     MotivationUploadKind.IDENTITY_DOCUMENT,
+    MotivationUploadKind.SAFE_PHOTOGRAPHS,
+    // The retired kinds are in the group too, and a real member's older
+    // application still carries them.
     MotivationUploadKind.SAFE_PHOTO_CLOSED,
     MotivationUploadKind.SAFE_PHOTO_AJAR,
     MotivationUploadKind.SAFE_PHOTO_BOLTS,
@@ -410,11 +420,13 @@ describe('resolving an upload to its annexure', () => {
   ];
 
   it('resolves EVERY member of a letter group, not just the first', () => {
-    // ⚠️ THE BUG THIS EXISTS FOR. buildAnnexures collapses the safe onto one
-    // letter, so its entry is keyed by SAFE_PHOTO_CLOSED. A map built as
+    // ⚠️ THE BUG THIS EXISTS FOR. buildAnnexures collapses a letter group
+    // onto one entry, keyed by whichever member came first. A map built as
     // `new Map(entries.map(e => [e.kind, e]))` therefore has no key for the
-    // ajar shot — and the pack printed "Annexure ? — SAFE_PHOTO_AJAR" as the
-    // caption on a real applicant's copy, raw enum name and all.
+    // others — and the pack printed "Annexure ? — SAFE_PHOTO_AJAR" as the
+    // caption on a real applicant's copy, raw enum name and all. Still live
+    // for the association pair, and for the retired safe kinds an older
+    // application carries.
     const entries = buildAnnexures(KINDS, ['PRIOR_NOTICE_REQUEST']);
     const byKind = annexureByKind(entries);
 
@@ -433,6 +445,7 @@ describe('resolving an upload to its annexure', () => {
       buildAnnexures(KINDS, ['PRIOR_NOTICE_REQUEST']),
     );
     const safe = [
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
       MotivationUploadKind.SAFE_PHOTO_CLOSED,
       MotivationUploadKind.SAFE_PHOTO_AJAR,
       MotivationUploadKind.SAFE_PHOTO_BOLTS,

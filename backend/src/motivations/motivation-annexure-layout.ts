@@ -132,7 +132,19 @@ export function planAnnexurePages(
   return pages;
 }
 
-/** The caption printed above one copy. */
+/**
+ * The caption printed above one copy.
+ *
+ * ⚠️ "(2 of 4)" IS ALL WE HONESTLY HAVE FOR THE SAFE, and it is deliberate.
+ * Before 2026-08-23 each shot was its own upload kind, so the caption could
+ * have said "the roll bolts" — except that nothing verified the claim: the
+ * kind came from a member's tap or from a classifier that could not tell a
+ * half-open door from a shut one, and a caption asserting "the roll bolts"
+ * over a photograph of a closed safe is worse than a number, because a DFO
+ * reads it as our word for what the picture shows. MotivationUpload has no
+ * caption column and photographs of a safe carry no text to read, so the
+ * numbering says exactly what we know: which copy this is, out of how many.
+ */
 export function captionFor(img: AnnexureImage): string {
   const of = img.total > 1 ? ` (${img.index} of ${img.total})` : '';
   return `Annexure ${img.letter} — ${img.label}${of}`;

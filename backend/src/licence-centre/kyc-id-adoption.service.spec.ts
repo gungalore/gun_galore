@@ -98,12 +98,23 @@ describe('whether there is an offer to make at all', () => {
     });
   });
 
-  it('does not offer before verification has passed', async () => {
-    const { svc } = build(verified({ kycStatus: 'UNDER_REVIEW' }));
-    expect(await svc.offer('c1')).toEqual({
-      available: false,
-      alreadyThere: false,
-    });
+  it('OFFERS EVEN BEFORE THE VERDICT, because that is when it is asked', async () => {
+    // ⚠️ THIS ASSERTED THE OPPOSITE UNTIL 2026-08-23. Operator: "As soon as
+    // the KYC is done a window must pop up asking for permission... Does not
+    // matter if the KYC has passed or not." The question is now put at
+    // SUBMISSION, before a verdict exists — so a VERIFIED gate meant somebody
+    // pressing yes and nothing happening, silently.
+    //
+    // It is also right on its own terms: the document is their own ID copy
+    // going into their own storage, and a face-match result says nothing
+    // about whether the copy is useful on a licence application.
+    for (const st of ['UNDER_REVIEW', 'PENDING', 'REJECTED']) {
+      const { svc } = build(verified({ kycStatus: st }));
+      expect(await svc.offer('c1')).toEqual({
+        available: true,
+        alreadyThere: false,
+      });
+    }
   });
 
   it('does not offer when there is no stored copy', async () => {
@@ -180,9 +191,20 @@ describe('taking the copy', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it('refuses before verification has passed', async () => {
-    const { svc } = build(verified({ kycStatus: 'PENDING' }));
-    await expect(svc.adopt('c1')).rejects.toThrow(/verified/i);
+  it('takes the copy whatever the verdict said', async () => {
+    // Same reasoning as the offer above. A failed verification does not make
+    // it less their ID, and they can delete it from the Centre at any time.
+    const { svc, create } = build(verified({ kycStatus: 'REJECTED' }));
+    await expect(svc.adopt('c1')).resolves.toMatchObject({ added: true });
+    expect(create.mock.calls[0][0].data.kind).toBe('IDENTITY_DOCUMENT');
+  });
+
+  it('still refuses when there is no ID on file at all', () => {
+    // The one gate that remains: we cannot copy what we do not hold.
+    const { svc } = build(
+      verified({ kycIdDocumentUrl: null, kycDocumentUrl: null, kycIdStorageKey: null }),
+    );
+    return expect(svc.adopt('c1')).rejects.toThrow(/do not have a copy/i);
   });
 
   it('refuses when the Centre is full, and says the number', async () => {

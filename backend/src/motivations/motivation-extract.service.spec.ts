@@ -52,6 +52,7 @@ describe('which documents are worth reading', () => {
     // A photograph of a safe carries no transcribable field, and paying a model
     // to look at one is spend for nothing.
     for (const k of [
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
       MotivationUploadKind.SAFE_PHOTO,
       MotivationUploadKind.SAFE_INSTALLATION,
       MotivationUploadKind.CHARACTER_REFERENCE,

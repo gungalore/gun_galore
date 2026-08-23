@@ -486,10 +486,16 @@ export const CREDENTIAL_TO_UPLOAD: Record<
   IDENTITY_DOCUMENT: [MotivationUploadKind.IDENTITY_DOCUMENT],
   ADDRESS_CONFIRMATION: [MotivationUploadKind.ADDRESS_CONFIRMATION],
   EMPLOYMENT_CONFIRMATION: [MotivationUploadKind.EMPLOYMENT_CONFIRMATION],
-  SAFE_PHOTO_CLOSED: [MotivationUploadKind.SAFE_PHOTO_CLOSED],
-  SAFE_PHOTO_AJAR: [MotivationUploadKind.SAFE_PHOTO_AJAR],
-  SAFE_PHOTO_BOLTS: [MotivationUploadKind.SAFE_PHOTO_BOLTS],
-  SAFE_INSTALLATION: [MotivationUploadKind.SAFE_INSTALLATION],
+  SAFE_PHOTOGRAPHS: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+  // ⚠️ THE RETIRED FOUR MAP FORWARD, they do not map to themselves. A vault row
+  // filed before 2026-08-23 still answers the safe row on a new application;
+  // pointing it at its own retired upload kind would file it outside the only
+  // kind the checklist now looks for, and the member would be asked to
+  // photograph a safe we already hold pictures of.
+  SAFE_PHOTO_CLOSED: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+  SAFE_PHOTO_AJAR: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+  SAFE_PHOTO_BOLTS: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+  SAFE_INSTALLATION: [MotivationUploadKind.SAFE_PHOTOGRAPHS],
   SHOOTING_ACTIVITY_LOG: [MotivationUploadKind.SHOOTING_ACTIVITY_LOG],
 };
 
@@ -619,13 +625,19 @@ export function reuseCaution(
 /**
  * Documents that are of a PLACE, not of a person or a date.
  *
- * The four safe shots. Their freshness question is not "when was this taken"
- * but "is this the safe at the address on THIS application", and only the
- * applicant can answer it. The picker asks with a tick, and the server refuses
- * the attachment without it.
+ * Photographs of the safe. Their freshness question is not "when was this
+ * taken" but "is this the safe at the address on THIS application", and only
+ * the applicant can answer it. The picker asks with a tick, and the server
+ * refuses the attachment without it.
+ *
+ * ⚠️ THE RETIRED KINDS ARE STILL ASKED. A photograph filed before the four
+ * became one is no less a photograph of a place, and dropping them here would
+ * let last year's shots of a wall at an old address onto a new application
+ * without the tick.
  */
 export function asksPlace(kind: MotivationUploadKind): boolean {
   return (
+    kind === MotivationUploadKind.SAFE_PHOTOGRAPHS ||
     kind === MotivationUploadKind.SAFE_PHOTO_CLOSED ||
     kind === MotivationUploadKind.SAFE_PHOTO_AJAR ||
     kind === MotivationUploadKind.SAFE_PHOTO_BOLTS ||

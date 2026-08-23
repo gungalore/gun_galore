@@ -89,6 +89,11 @@ describe('what may be kept at all', () => {
       'IDENTITY_DOCUMENT',
       'ADDRESS_CONFIRMATION',
       'EMPLOYMENT_CONFIRMATION',
+      'SAFE_PHOTOGRAPHS',
+      // The four retired safe kinds stay on the list too: the backfill walks
+      // documents attached long before the collapse, and a row written during
+      // the deploy would otherwise be the one photograph the Centre never
+      // learns about.
       'SAFE_PHOTO_CLOSED',
       'SAFE_PHOTO_AJAR',
       'SAFE_PHOTO_BOLTS',

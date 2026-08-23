@@ -42,7 +42,7 @@ describe('what a vault reading may fill on a motivation', () => {
   it('returns nothing for a kind that is never read', () => {
     // A photograph of a safe carries no fields. canExtract agrees, which is
     // what keeps those rows out of the amber state entirely.
-    expect(MotivationExtractService.wantedFor('SAFE_PHOTO_CLOSED')).toHaveLength(0);
-    expect(MotivationExtractService.canExtract('SAFE_PHOTO_CLOSED')).toBe(false);
+    expect(MotivationExtractService.wantedFor('SAFE_PHOTOGRAPHS')).toHaveLength(0);
+    expect(MotivationExtractService.canExtract('SAFE_PHOTOGRAPHS')).toBe(false);
   });
 });

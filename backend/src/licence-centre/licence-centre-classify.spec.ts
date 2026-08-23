@@ -1,12 +1,18 @@
 import { CredentialKind } from '@prisma/client';
 import { CLASSIFY_USER } from './licence-centre-extract.service';
 
-/** Kinds that survive only for rows filed before the consolidation. */
+/** Kinds that survive only for rows filed before a consolidation. */
 const RETIRED = new Set<string>([
+  // → DEDICATED_DISCIPLINE, 2026-08-20.
   'DEDICATED_STATUS',
   'DEDICATED_HUNTER',
   'PROFESSIONAL_HUNTER',
   'GOOD_STANDING',
+  // → SAFE_PHOTOGRAPHS, 2026-08-23.
+  'SAFE_PHOTO_CLOSED',
+  'SAFE_PHOTO_AJAR',
+  'SAFE_PHOTO_BOLTS',
+  'SAFE_INSTALLATION',
 ]);
 
 // ⚠️ A CATEGORY THE ENUM KNOWS AND THE PROMPT DOES NOT is a document that
@@ -17,11 +23,10 @@ const RETIRED = new Set<string>([
 // photograph IS.
 describe('the classifier prompt', () => {
   it('names every kind a document can still be filed as', () => {
-    // ⚠️ THE RETIRED FOUR ARE DELIBERATELY ABSENT. Postgres cannot drop an
-    // enum value, so DEDICATED_STATUS, DEDICATED_HUNTER, PROFESSIONAL_HUNTER
-    // and GOOD_STANDING are still in CredentialKind — but offering them here
-    // would invite the classifier to file a document outside every query that
-    // now looks for DEDICATED_DISCIPLINE.
+    // ⚠️ THE RETIRED KINDS ARE DELIBERATELY ABSENT. Postgres cannot drop an
+    // enum value, so all eight are still in CredentialKind — but offering one
+    // here would invite the classifier to file a document outside every query
+    // that now looks for the kind that replaced it.
     for (const kind of Object.values(CredentialKind)) {
       if (RETIRED.has(kind)) {
         // The option lines all read "<KIND> - description", so the absence of
@@ -56,6 +61,24 @@ describe('the classifier prompt', () => {
 
   it('says a member may hold several, from different associations', () => {
     expect(CLASSIFY_USER).toMatch(/several of these from different/i);
+  });
+
+  it('⚠️ MAKES THE SAFE PHOTOGRAPHS ONE CATEGORY, not four', () => {
+    // SAME MISTAKE, SAME FIX. The four were separated so the requirement
+    // engine could say which shot was missing — and telling them apart means
+    // judging how far a door is open from a single frame, which is why every
+    // answer had to be forced to low confidence. A wrong one filed the bolts
+    // shot under the closed-door annexure, so a DFO looking for proof the
+    // bolts engage was shown a photograph of a shut door.
+    //
+    // ⚠️ AND THE PROMPT STILL DESCRIBES EVERY SHOT. Not so the model sorts
+    // them — so it recognises all four as the same category rather than
+    // dropping the anchoring shot into OTHER.
+    expect(CLASSIFY_USER).toMatch(/SAFE_PHOTOGRAPHS -/);
+    expect(CLASSIFY_USER).toMatch(/door shut/i);
+    expect(CLASSIFY_USER).toMatch(/key in it/i);
+    expect(CLASSIFY_USER).toMatch(/locking\s+bolts/i);
+    expect(CLASSIFY_USER).toMatch(/bolted to a wall or floor/i);
   });
 
   it('keeps OTHER an explicit, respectable answer', () => {

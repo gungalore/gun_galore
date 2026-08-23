@@ -56,12 +56,49 @@ export const VAULTABLE: ReadonlySet<MotivationUploadKind> = new Set([
   MotivationUploadKind.IDENTITY_DOCUMENT,
   MotivationUploadKind.ADDRESS_CONFIRMATION,
   MotivationUploadKind.EMPLOYMENT_CONFIRMATION,
+  MotivationUploadKind.SAFE_PHOTOGRAPHS,
+  // ⚠️ THE RETIRED FOUR STAY. The migration moved every row onto
+  // SAFE_PHOTOGRAPHS, but the backfill walks documents attached long before
+  // that and a row written during the deploy window would otherwise be the one
+  // photograph of a safe the Centre never learns about — silently, with nothing
+  // to explain it.
   MotivationUploadKind.SAFE_PHOTO_CLOSED,
   MotivationUploadKind.SAFE_PHOTO_AJAR,
   MotivationUploadKind.SAFE_PHOTO_BOLTS,
   MotivationUploadKind.SAFE_INSTALLATION,
   MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
 ]);
+
+/**
+ * The CredentialKind an adopted upload is filed as.
+ *
+ * Almost always the same name — that is the point of the identity naming, and
+ * see CREDENTIAL_TO_UPLOAD in motivation-credentials.ts for the other
+ * direction.
+ *
+ * ⚠️ EXCEPT FOR THE RETIRED SAFE KINDS, AND WITHOUT THIS THEY WERE ADOPTED
+ * INTO A HOLE. VAULTABLE keeps admitting them on purpose (see the note above
+ * it) so a photograph attached before 2026-08-23 still reaches the Centre —
+ * and then `kind: u.kind as CredentialKind` filed it in the Centre under a
+ * value the backfill migration had already emptied, which is outside the safe
+ * row, outside the vault picker's safe slot, and outside anything that would
+ * ever tell its owner. Admitting a row and then losing it is worse than not
+ * admitting it.
+ *
+ * ⚠️ THE ANSWER IS A MAP, NOT A CAST, so the compiler names this line the next
+ * time a kind is retired. Deliberately narrow: only kinds VAULTABLE admits can
+ * arrive here.
+ */
+const VAULT_KIND: Partial<Record<MotivationUploadKind, CredentialKind>> = {
+  [MotivationUploadKind.SAFE_PHOTO_CLOSED]: CredentialKind.SAFE_PHOTOGRAPHS,
+  [MotivationUploadKind.SAFE_PHOTO_AJAR]: CredentialKind.SAFE_PHOTOGRAPHS,
+  [MotivationUploadKind.SAFE_PHOTO_BOLTS]: CredentialKind.SAFE_PHOTOGRAPHS,
+  [MotivationUploadKind.SAFE_INSTALLATION]: CredentialKind.SAFE_PHOTOGRAPHS,
+};
+
+export function vaultKindFor(kind: MotivationUploadKind): CredentialKind {
+  return VAULT_KIND[kind] ?? (kind as unknown as CredentialKind);
+}
 
 /**
  * How many older documents one backfill request copies.
@@ -143,7 +180,11 @@ export class VaultAdoptionService {
       await this.prisma.credential.create({
         data: {
           userId,
-          kind: u.kind as unknown as CredentialKind,
+          kind: vaultKindFor(u.kind),
+          // ⚠️ THE TITLE STILL COMES FROM THE ORIGINAL KIND. The row is filed
+          // forward so the Centre can find it; what the member called it is
+          // theirs, and "Your safe, closed" is the one record left of which
+          // shot they said this was.
           title: documentLabel(u.kind),
           storageKey: stored.storageKey,
           mimeType: u.mimeType,

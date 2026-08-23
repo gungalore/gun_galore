@@ -103,10 +103,7 @@ describe('the per-kind breakdown', () => {
       CredentialKind.IDENTITY_DOCUMENT,
       CredentialKind.ADDRESS_CONFIRMATION,
       CredentialKind.EMPLOYMENT_CONFIRMATION,
-      CredentialKind.SAFE_PHOTO_CLOSED,
-      CredentialKind.SAFE_PHOTO_AJAR,
-      CredentialKind.SAFE_PHOTO_BOLTS,
-      CredentialKind.SAFE_INSTALLATION,
+      CredentialKind.SAFE_PHOTOGRAPHS,
       CredentialKind.SHOOTING_ACTIVITY_LOG,
     ]) {
       expect(byKind.get(kind)).toBe(0);

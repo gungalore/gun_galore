@@ -37,8 +37,24 @@ import { ActionTokensService } from './action-tokens.service';
 // a routing bug that surfaces only as a mysterious 404.
 // ────────────────────────────────────────────────────────────────────
 
-/** Where a handed-off scan is going. */
-type Dest = 'licence-centre' | 'motivation';
+/**
+ * Where a handed-off scan is going.
+ *
+ * ⚠️ 'kyc' IS NOT A THIRD VAULT, IT IS THE IDENTITY RECORD. The other two
+ * destinations add a document to a folder; this one REPLACES the single ID
+ * document that the payout gate is decided on. Everything downstream of the
+ * upload — the state guards, the flag, the encrypted store — is the KYC
+ * service's, unchanged; what is different here is that the destination is
+ * checked on the way in as well as the user (see kyc-scan.controller.ts).
+ */
+type Dest = 'licence-centre' | 'motivation' | 'kyc';
+
+/** Narrows the posted string, so the rest of `mint` reasons about a Dest. */
+function isDest(value: string): value is Dest {
+  return (
+    value === 'licence-centre' || value === 'motivation' || value === 'kyc'
+  );
+}
 
 /**
  * ⚠️ FIFTEEN MINUTES. Short because this token is a write credential to the
@@ -89,12 +105,26 @@ export class ScanHandoffController {
   ) {
     const user = await this.prisma.user.findUnique({
       where: { clerkId },
-      select: { id: true },
+      // kycStatus rides along for the 'kyc' check below. One extra column on a
+      // query that has to happen anyway is cheaper than a second round trip.
+      select: { id: true, kycStatus: true },
     });
     if (!user) throw new NotFoundException('User not found');
 
-    if (dest !== 'licence-centre' && dest !== 'motivation') {
+    if (!isDest(dest)) {
       throw new BadRequestException('Unknown destination.');
+    }
+    if (dest === 'kyc') {
+      // ⚠️ A COURTESY CHECK, NOT THE GUARD. KycService.submitIdDocument makes
+      // this same refusal and is the authority on it — this one exists for the
+      // same reason the motivation ownership check does: a token that is going
+      // to be refused should be refused here, at the desk, and not after the
+      // member has walked across the room with their phone.
+      if (user.kycStatus === 'VERIFIED' || user.kycStatus === 'UNDER_REVIEW') {
+        throw new BadRequestException(
+          'Your verification is already in progress.',
+        );
+      }
     }
     if (dest === 'motivation') {
       if (!motivationId) throw new BadRequestException('Which motivation?');
@@ -130,7 +160,7 @@ export class ScanHandoffController {
       authorisedUserId: user.id,
       expiresAt,
       metadata: {
-        dest: dest as Dest,
+        dest,
         ...(motivationId ? { motivationId } : {}),
         ...(kind ? { kind } : {}),
         ...(title ? { title } : {}),
@@ -214,29 +244,45 @@ export class ScanHandoffController {
     const settledBefore = new Date(Date.now() - 45_000);
     const aged = { createdAt: { lte: settledBefore } };
     const added =
-      meta.dest === 'motivation' && typeof meta.motivationId === 'string'
-        ? await this.prisma.motivationUpload.count({
-            where: {
-              motivationId: meta.motivationId,
-              createdAt: { gte: row.createdAt },
-              OR: [
-                { extractionOk: true },
-                { kind: { in: [...NO_VISION_UPLOAD_KINDS] } },
-                aged,
-              ],
-            },
-          })
-        : await this.prisma.credential.count({
-            where: {
-              userId: user.id,
-              createdAt: { gte: row.createdAt },
-              OR: [
-                { extractionOk: true },
-                { kind: { in: [...NO_VISION_KINDS] } },
-                aged,
-              ],
-            },
-          });
+      // ⚠️ KYC HAS NO ROW TO COUNT. Both other destinations file a row and this
+      // poll counts rows created since the link was made; an ID document is a
+      // pair of columns ON THE MEMBER — kycIdStorageKey and kycIdMimeType —
+      // with no timestamp of its own, so "count what landed since" has nothing
+      // to ask. Counting the columns' mere presence would be worse than
+      // useless: a member who already had an ID on file would read as
+      // "uploaded" the instant the QR was drawn, and the desktop would skip
+      // the step before the phone had taken a photograph.
+      //
+      // So the KYC upload stamps the token itself — see kyc-scan.controller.ts
+      // — and the signal is that stamp. It is per-session by construction,
+      // which is exactly the property the row count was buying.
+      meta.dest === 'kyc'
+        ? typeof meta.uploadedAt === 'string'
+          ? 1
+          : 0
+        : meta.dest === 'motivation' && typeof meta.motivationId === 'string'
+          ? await this.prisma.motivationUpload.count({
+              where: {
+                motivationId: meta.motivationId,
+                createdAt: { gte: row.createdAt },
+                OR: [
+                  { extractionOk: true },
+                  { kind: { in: [...NO_VISION_UPLOAD_KINDS] } },
+                  aged,
+                ],
+              },
+            })
+          : await this.prisma.credential.count({
+              where: {
+                userId: user.id,
+                createdAt: { gte: row.createdAt },
+                OR: [
+                  { extractionOk: true },
+                  { kind: { in: [...NO_VISION_KINDS] } },
+                  aged,
+                ],
+              },
+            });
 
     const expired = row.expiresAt <= new Date();
     const connected = typeof meta.openedAt === 'string';

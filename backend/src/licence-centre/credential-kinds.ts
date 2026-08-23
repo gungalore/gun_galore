@@ -44,6 +44,12 @@ import { CredentialKind } from '@prisma/client';
  * on every kind it runs on, so this list is the whole of what is skipped.
  */
 export const PHOTOGRAPH_KINDS: readonly CredentialKind[] = [
+  CredentialKind.SAFE_PHOTOGRAPHS,
+  // ⚠️ THE RETIRED FOUR STAY ON THIS LIST. Nothing new can be filed under them
+  // — the picker does not offer them and the migration moved every row — but a
+  // row that slipped through during the deploy would otherwise get a vision
+  // call spent on a photograph of a gun safe and come back flagged amber for
+  // having read nothing, which is the exact failure this list prevents.
   CredentialKind.SAFE_PHOTO_CLOSED,
   CredentialKind.SAFE_PHOTO_AJAR,
   CredentialKind.SAFE_PHOTO_BOLTS,
@@ -63,7 +69,7 @@ export const NO_VISION_KINDS = PHOTOGRAPH_KINDS;
 /**
  * Kinds where "Never expires" starts already ticked.
  *
- * ⚠️ THE SAME FOUR, AND ONLY BECAUSE WE NEVER LOOKED. A pre-ticked box is us
+ * ⚠️ THE SAME PHOTOGRAPHS, AND ONLY BECAUSE WE NEVER LOOKED. A pre-ticked box is us
  * answering on the member's behalf, which is exactly the mistake this file was
  * rewritten to undo — so it is limited to the case where there is provably
  * nothing to read: a photograph of a safe has no date on it in any sense.

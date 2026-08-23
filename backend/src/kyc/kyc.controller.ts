@@ -22,9 +22,15 @@ import { KycSelfieDto } from './dto/kyc-selfie.dto';
 // ID-document upload constraints (Claude flow). PDF is allowed because
 // many sellers only have a scanned copy of their ID; magic-byte sniffing
 // in the service catches PDFs with lying extensions.
-const ID_DOC_MIME_RE =
+//
+// ⚠️ EXPORTED SO THE PHONE'S DOOR CANNOT DRIFT FROM THE DESK'S. The QR
+// hand-off posts the same document to the same service through
+// kyc-scan.controller.ts; a second copy of these limits is a second thing to
+// remember to change, and the one that gets forgotten is always the one that
+// lets something in.
+export const ID_DOC_MIME_RE =
   /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/;
-const ID_DOC_MAX_BYTES = 10 * 1024 * 1024; // 10 MB — same as dealer uploads
+export const ID_DOC_MAX_BYTES = 10 * 1024 * 1024; // 10 MB — same as dealer uploads
 
 // All endpoints here are seller-self-service. They run under
 // KycOrTokenGuard, which accepts EITHER a Clerk session OR a KYC_VERIFY

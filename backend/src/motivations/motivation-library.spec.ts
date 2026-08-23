@@ -11,7 +11,7 @@ const label = (k: string) =>
   ({
     IDENTITY_DOCUMENT: 'A copy of your ID',
     COMPETENCY_CERTIFICATE: 'Your SAPS competency certificate',
-    SAFE_PHOTO_CLOSED: 'Your safe, closed',
+    SAFE_PHOTOGRAPHS: 'Photographs of your safe',
     CURRENT_LICENCE: 'Your existing licence',
   })[k] ?? k;
 
@@ -48,14 +48,14 @@ describe('buildLibrary', () => {
       [],
       [
         upload({ id: 'u1', sha256: 'a', kind: 'IDENTITY_DOCUMENT' }),
-        upload({ id: 'u2', sha256: 'b', kind: 'SAFE_PHOTO_CLOSED' }),
+        upload({ id: 'u2', sha256: 'b', kind: 'SAFE_PHOTOGRAPHS' }),
       ],
       'current',
       label,
     );
     expect(items.map((i) => i.kind)).toEqual([
       'IDENTITY_DOCUMENT',
-      'SAFE_PHOTO_CLOSED',
+      'SAFE_PHOTOGRAPHS',
     ]);
   });
 
@@ -193,7 +193,7 @@ describe('documents that belong to ONE application', () => {
     ['SELLER_LICENCE', "is another living person's licence"],
     ['PREVIOUS_MOTIVATION', 'is a past application for a past firearm'],
     ['OTHER', 'is unclassified, so we cannot say it is safe'],
-    ['SAFE_PHOTO', 'is the retired single-shot kind'],
+    ['SAFE_PHOTO', 'predates all the guidance, so nobody can say what it shows'],
   ] as [MotivationUploadKind, string][])(
     'never carries %s across from another application (%s)',
     (kind) => {
@@ -234,7 +234,7 @@ describe('documents that belong to ONE application', () => {
       [
         upload({ id: 'u1', sha256: 'a', motivationId: 'last-year', kind: 'IDENTITY_DOCUMENT' }),
         upload({ id: 'u2', sha256: 'b', motivationId: 'last-year', kind: 'ASSOCIATION_ENDORSEMENT' }),
-        upload({ id: 'u3', sha256: 'c', motivationId: 'last-year', kind: 'SAFE_PHOTO_CLOSED' }),
+        upload({ id: 'u3', sha256: 'c', motivationId: 'last-year', kind: 'SAFE_PHOTOGRAPHS' }),
       ],
       'current',
       label,
@@ -249,7 +249,7 @@ describe('libraryFor', () => {
       [],
       [
         upload({ id: 'u1', sha256: 'a', kind: 'IDENTITY_DOCUMENT' }),
-        upload({ id: 'u2', sha256: 'b', kind: 'SAFE_PHOTO_CLOSED' }),
+        upload({ id: 'u2', sha256: 'b', kind: 'SAFE_PHOTOGRAPHS' }),
       ],
       'current',
       label,

@@ -19,9 +19,15 @@ import type { DocumentNeed, LibraryItem, UploadRow } from '@/lib/motivations-api
 //   PLAIN         nothing attached yet
 //
 // ⚠️ THE SAFE IS ONE LINE AND THREE PHOTOGRAPHS. It does not go green until
-// all three are in, and it says which of the three are missing — an applicant
-// who reads "photographs of your safe" and sends one has satisfied the phrase
+// all three are in, and it says how many are still to come — an applicant who
+// reads "photographs of your safe" and sends one has satisfied the phrase
 // while the pack is short two shots nobody noticed.
+//
+// The line no longer says WHICH shot is missing, and cannot: the three used to
+// be three upload kinds, and they were collapsed on 2026-08-23 because nothing
+// could tell them apart — a wrong guess filed the bolts shot under the
+// closed-door annexure. What names them now is the row's `why`, which is shown
+// on the selected row and lists every shot.
 // ────────────────────────────────────────────────────────────────────
 
 export type Tier = 'required' | 'expected' | 'strengthens' | 'extra';
@@ -151,7 +157,8 @@ function Row({
         ? 'var(--gold-line)'
         : 'var(--text-tertiary-on-card)';
 
-  const missingParts = row.parts?.filter((p) => !p.have) ?? [];
+  // How many more files this line wants. Only the safe asks for more than one.
+  const stillWanted = Math.max(0, (row.minFiles ?? 1) - row.files.length);
 
   return (
     <li
@@ -194,12 +201,20 @@ function Row({
                 then the optional ones, under one heading each. */}
           </span>
 
-          {/* THE SAFE, PART BY PART. Only while it is incomplete: once all
-              three are in, naming them again is noise. */}
-          {missingParts.length > 0 && (
+          {/* THE SAFE, WHILE IT IS SHORT. Only on a line that wants several
+              files, and only while it is incomplete — once they are all in,
+              saying so again is noise.
+
+              ⚠️ IT COUNTS FILES, WHICH IS WEAKER THAN IT LOOKS: three
+              photographs of the same shut door count as three. The row's `why`
+              is what tells the member which pictures to take, and it is the
+              reason the count is a prompt rather than a claim. */}
+          {(row.minFiles ?? 1) > 1 && stillWanted > 0 && (
             <span className="mt-1 block text-xs text-[var(--text-secondary)]">
-              Still needed:{' '}
-              {missingParts.map((p) => p.label.toLowerCase()).join('; ')}
+              {row.files.length === 0
+                ? `Add ${row.minFiles} here. `
+                : `${stillWanted} more to add — ${row.files.length} of ${row.minFiles} so far. `}
+              {row.minFilesNote}
             </span>
           )}
 

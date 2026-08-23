@@ -1895,14 +1895,22 @@ export class MotivationsService {
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
-        // The uniqueness constraint is on (motivationId, sha256) — the BYTES,
-        // not the kind. So this also fires when someone tries to file one
-        // photograph under two of the three safe shots, which is a different
-        // mistake and needs saying, or the wizard reads as broken: it goes on
-        // showing the shot as missing right after telling them it is a
-        // duplicate.
+        // ⚠️ THE CONSTRAINT IS ON (motivationId, sha256) — THE BYTES, NOT THE
+        // KIND — which is exactly why several photographs can sit under one
+        // kind. What it refuses is the same picture twice, and that is worth
+        // saying plainly on the safe row: three copies of one photograph
+        // cannot fill a row that wants three, and without this the wizard
+        // reads as broken — it goes on showing the row short right after
+        // accepting nothing.
+        //
+        // ⚠️ ONLY ON THE SAFE ROW. The second sentence went out on every
+        // duplicate, so somebody re-sending their ID copy was answered with a
+        // rule about photographing a safe — advice about a document they were
+        // not uploading, which reads as us having lost track of what they did.
         throw new ConflictException(
-          'That exact file is already attached to this application. If you are adding the safe photographs, each of the three needs to be its own picture.',
+          resolved === 'SAFE_PHOTOGRAPHS'
+            ? 'That exact file is already attached to this application. Each of the safe photographs has to be a different picture.'
+            : 'That exact file is already attached to this application.',
         );
       }
       throw err;

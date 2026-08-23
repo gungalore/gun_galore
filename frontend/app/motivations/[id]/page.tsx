@@ -131,16 +131,15 @@ function PackChecklistGate({
 /**
  * Which KIND a file picked on this row should be filed as.
  *
- * ⚠️ THE SAFE ROW IS THREE KINDS, and a file has to be one of them — nothing
- * on the stored row records which shot a photograph is. So the row hands over
- * the first of its parts that is still missing: press the button three times
- * and you fill closed, then half-open, then bolts, in the order a DFO reads
- * them. Every other row is simply its own kind.
+ * ⚠️ THIS USED TO PICK BETWEEN THE SAFE'S THREE KINDS — it handed over the
+ * first shot still missing, so pressing the button three times filled closed,
+ * then half-open, then bolts. It could only ever be a guess about which
+ * photograph the member was holding, and it is gone with the kinds it chose
+ * between: every row, the safe included, is now simply its own kind. Kept as a
+ * function because the call sites read better for it.
  */
 function uploadKindFor(row: ChecklistRow | null): string {
-  if (!row) return '';
-  if (!row.parts?.length) return row.kind;
-  return (row.parts.find((p) => !p.have) ?? row.parts[0]).kind;
+  return row?.kind ?? '';
 }
 
 export default function MotivationWizardPage() {
@@ -572,16 +571,10 @@ export default function MotivationWizardPage() {
     const needs = documents?.needs ?? [];
     return needs.map((n) => ({
       ...n,
-      // ⚠️ THE SAFE ROW GATHERS ALL THREE SHOTS' FILES, not just its own kind.
-      // One line stands for three kinds, so a photograph filed as the bolts
-      // shot has to appear under it or the member sees an empty row and
-      // uploads it again.
-      files: uploads.filter((u) =>
-        n.parts ? n.parts.some((p) => p.kind === u.kind) : u.kind === n.kind,
-      ),
-      reusable: library.filter((l) =>
-        n.parts ? n.parts.some((p) => p.kind === l.kind) : l.kind === n.kind,
-      ),
+      // One row, one kind — including the safe, since 2026-08-23. Several
+      // photographs land under the same kind and all of them list here.
+      files: uploads.filter((u) => u.kind === n.kind),
+      reusable: library.filter((l) => l.kind === n.kind),
     }));
   }, [documents, uploads, library]);
 
@@ -1288,13 +1281,23 @@ export default function MotivationWizardPage() {
                   );
                 }
 
+                // ⚠️ SEVERAL FILES, ONE AFTER ANOTHER. This took files[0] and
+                // dropped the rest, which was harmless while every row wanted
+                // exactly one document and is not any more: the safe is one
+                // row holding three photographs. Operator, 2026-08-23: "User
+                // must be able to upload multiple documents."
+                //
+                // ⚠️ SEQUENTIAL, NOT Promise.all. Each upload counts the rows
+                // already on the motivation against MAX_UPLOADS and writes a
+                // new one; firing them together would let three reads all see
+                // the same count. It also keeps the first real error visible
+                // instead of whichever rejection happened to land last.
                 const take = async (files: File[]) => {
-                  const file = files[0];
-                  if (!file) return;
+                  if (!files.length) return;
                   setBusyKind(k);
                   setUploadErr(null);
                   try {
-                    await addOneUpload(k, file);
+                    for (const file of files) await addOneUpload(k, file);
                   } catch (ex) {
                     setUploadErr(
                       ex instanceof MotivationApiError
@@ -1327,6 +1330,11 @@ export default function MotivationWizardPage() {
                         <FilePickerButton
                           compact
                           accept="image/jpeg,image/png,image/webp,application/pdf"
+                          // A row that wants three photographs should take
+                          // three in one go. Picking them one at a time is the
+                          // slowest possible way to hand over pictures the
+                          // member already has together on their phone.
+                          multiple={(r.minFiles ?? 1) > 1}
                           disabled={busyKind !== null}
                           aria-label={`Upload ${r.label}`}
                           title="Upload a file"

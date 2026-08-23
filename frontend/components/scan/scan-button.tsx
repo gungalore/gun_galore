@@ -42,8 +42,17 @@ export interface ScanButtonProps {
   /**
    * Where a phone-handed-off scan should send its files. Omit to leave the
    * "Use my phone camera" option out entirely.
+   *
+   * ⚠️ MINTING NEEDS A CLERK SESSION. The link is minted through viewerFetch,
+   * so a page reached by an action token instead of a login (the KYC wizard
+   * opened from an SMS) must omit this — the mint would 401 and the member
+   * would be offered a button that only ever fails. On that phone the camera
+   * is right there anyway.
    */
-  handoff?: { dest: 'licence-centre' | 'motivation'; motivationId?: string };
+  handoff?: {
+    dest: 'licence-centre' | 'motivation' | 'kyc';
+    motivationId?: string;
+  };
   /** The document kind currently selected, carried to the phone. */
   kind?: string;
   /** Re-read the list after the phone has sent something. */

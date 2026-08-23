@@ -21,15 +21,11 @@ describe('what SAPS will not process without', () => {
     expect(s.missingRequired).toEqual([
       K.COMPETENCY_CERTIFICATE,
       K.ADDRESS_CONFIRMATION,
-      K.SAFE_PHOTO_CLOSED,
-      K.SAFE_PHOTO_AJAR,
-      K.SAFE_PHOTO_BOLTS,
+      K.SAFE_PHOTOGRAPHS,
     ]);
     expect(s.requiredHave).toBe(1);
-    // ⚠️ FOUR ROWS, FIVE MISSING KINDS. The three safe shots collapse to ONE
-    // row on screen, and the counter has to match the rows the member can
-    // see or "1 of 6" reads as a miscount beside four lines. missingRequired
-    // above still names all three, because that is what is actually missing.
+    // FOUR ROWS, FOUR KINDS, since the safe became one kind on 2026-08-23. The
+    // counter has to match the rows the member can actually see.
     expect(s.requiredTotal).toBe(4);
   });
 
@@ -38,15 +34,17 @@ describe('what SAPS will not process without', () => {
       K.IDENTITY_DOCUMENT,
       K.COMPETENCY_CERTIFICATE,
       K.ADDRESS_CONFIRMATION,
-      K.SAFE_PHOTO_CLOSED,
-      K.SAFE_PHOTO_AJAR,
-      K.SAFE_PHOTO_BOLTS,
+      // Three photographs, one kind. ⚠️ `uploaded` is one entry per FILE,
+      // which is what makes the safe row countable at all.
+      K.SAFE_PHOTOGRAPHS,
+      K.SAFE_PHOTOGRAPHS,
+      K.SAFE_PHOTOGRAPHS,
     ]);
     expect(s.missingRequired).toEqual([]);
     expect(s.requiredHave).toBe(s.requiredTotal);
   });
 
-  it('demands all THREE safe photographs on every licence type', () => {
+  it('demands THREE safe photographs on every licence type', () => {
     // Operator, 2026-08-19: "enforce three photos. closed safe, half open with
     // key in door, full open showing roll bolts." And again on 2026-08-21,
     // when the documentary reading had moved them down a tier: "We do need
@@ -55,21 +53,19 @@ describe('what SAPS will not process without', () => {
     // ⚠️ DO NOT DEMOTE THESE AGAIN ON THE STRENGTH OF WHAT SAPS's WEBSITE
     // DOES NOT SAY. The absence of a mention is weak evidence; a pack handed
     // back at the counter is not.
+    //
+    // ⚠️ AND DO NOT DROP THE COUNT WITH THE KINDS. The three shots became one
+    // kind on 2026-08-23, so minFiles is the whole of what stops a single
+    // photograph ticking the row.
     for (const t of Object.values(MotivationLicenceType)) {
       const missing = documentStatus(t, []).missingRequired;
-      expect(missing).toContain(K.SAFE_PHOTO_CLOSED);
-      expect(missing).toContain(K.SAFE_PHOTO_AJAR);
-      expect(missing).toContain(K.SAFE_PHOTO_BOLTS);
+      expect(missing).toContain(K.SAFE_PHOTOGRAPHS);
 
       const safe = documentStatus(t, []).needs.find(
-        (n) => n.kind === K.SAFE_PHOTO_CLOSED,
+        (n) => n.kind === K.SAFE_PHOTOGRAPHS,
       );
       expect(safe!.tier).toBe('required');
-      expect(safe!.parts!.map((p) => p.kind)).toEqual([
-        K.SAFE_PHOTO_CLOSED,
-        K.SAFE_PHOTO_AJAR,
-        K.SAFE_PHOTO_BOLTS,
-      ]);
+      expect(safe!.minFiles).toBe(3);
     }
   });
 
@@ -80,58 +76,79 @@ describe('what SAPS will not process without', () => {
     // applicant who thinks the photographs are the end of it is surprised
     // later.
     const safe = documentStatus(S13, []).needs.find(
-      (n) => n.kind === K.SAFE_PHOTO_CLOSED,
+      (n) => n.kind === K.SAFE_PHOTOGRAPHS,
     )!;
     expect(safe.why).toMatch(/inspects your premises/i);
     expect(safe.why).toMatch(/13\(12\)/);
   });
 
-  it('is NOT satisfied by three copies of the same shot', () => {
-    // The reason the three shots are three kinds. Counting files could never
-    // have enforced this: nothing on MotivationUpload records WHICH shot a
-    // file is, so three photographs of one closed door would have counted as
-    // three photographs of a safe.
-    const s = documentStatus(S13, [
-      K.SAFE_PHOTO_CLOSED,
-      K.SAFE_PHOTO_CLOSED,
-      K.SAFE_PHOTO_CLOSED,
+  it('does not go green on one photograph, or on two', () => {
+    // ⚠️ THE ROW STAYS UNTICKED UNTIL THREE ARE IN. Going green on the first
+    // would tell somebody their safe evidence is complete when a DFO will send
+    // them back for the other two — and missingRequired has to agree with the
+    // row, or the page prints "You have everything SAPS asks for" directly
+    // above a counter reading 3 of 4.
+    for (const count of [1, 2]) {
+      const s = documentStatus(
+        S13,
+        Array.from({ length: count }, () => K.SAFE_PHOTOGRAPHS),
+      );
+      expect(s.needs.find((n) => n.kind === K.SAFE_PHOTOGRAPHS)!.have).toBe(
+        false,
+      );
+      expect(s.missingRequired).toContain(K.SAFE_PHOTOGRAPHS);
+    }
+
+    const three = documentStatus(S13, [
+      K.SAFE_PHOTOGRAPHS,
+      K.SAFE_PHOTOGRAPHS,
+      K.SAFE_PHOTOGRAPHS,
     ]);
-    // ⚠️ THE ONE SAFE ROW STAYS UNTICKED. It stands for all three shots, so
-    // going green on the closed one would tell somebody their safe evidence
-    // is complete when a DFO will send them back for the other two.
-    const safe = s.needs.find((n) => n.kind === K.SAFE_PHOTO_CLOSED)!;
-    expect(safe.have).toBe(false);
-    expect(safe.parts!.map((p) => p.have)).toEqual([true, false, false]);
+    expect(three.needs.find((n) => n.kind === K.SAFE_PHOTOGRAPHS)!.have).toBe(
+      true,
+    );
+    expect(three.missingRequired).not.toContain(K.SAFE_PHOTOGRAPHS);
   });
 
-  it('⚠️ STILL NAMES ALL THREE SHOTS, on the one collapsed row', () => {
-    // The row collapses; the instruction must not. An applicant who reads
-    // "photographs of your safe" and sends one has satisfied the phrase while
-    // the pack is short two photographs nobody noticed — so every shot is
-    // named in the why, and each is a separately ticked part.
-    const s = documentStatus(S13, [K.SAFE_PHOTO_CLOSED]);
-    const safe = s.needs.find((n) => n.kind === K.SAFE_PHOTO_CLOSED)!;
+  it('⚠️ STILL NAMES EVERY SHOT, on the one collapsed row', () => {
+    // The row collapsed; the instruction must not. This text is now the ONLY
+    // place a member is told which pictures to take — there is no longer a menu
+    // entry per shot to carry the message — so losing "roll bolts" here would be
+    // a real regression dressed up as tidying.
+    const s = documentStatus(S13, [K.SAFE_PHOTOGRAPHS]);
+    const safe = s.needs.find((n) => n.kind === K.SAFE_PHOTOGRAPHS)!;
     const why = safe.why.toLowerCase();
     expect(why).toMatch(/closed/);
     expect(why).toMatch(/half open/);
+    expect(why).toMatch(/key in the door/);
     expect(why).toMatch(/roll bolts/);
     expect(why).toMatch(/three/);
-
-    const parts = safe.parts!.map((p) => p.label.toLowerCase());
-    expect(parts[0]).toMatch(/closed/);
-    expect(parts[1]).toMatch(/half open.*key in the door/);
-    expect(parts[2]).toMatch(/roll bolts/);
+    // The anchoring shot, which no photograph of the door shows.
+    expect(why).toMatch(/bolted to the wall or floor/);
   });
 
-  it('treats a photograph uploaded before the split as extra evidence', () => {
-    // SAFE_PHOTO is retired, not removed. It could be any of the three shots,
-    // so claiming it satisfies one of them would assert what we do not know.
+  it('⚠️ NAMES THE SHOTS WITHOUT THE ROW HAVING TO BE SELECTED', () => {
+    // `why` renders only on the SELECTED row. The four menu entries used to
+    // name the shots whether or not anything was selected, and that is the
+    // thing most easily lost by collapsing them — so a short line rides on the
+    // need itself, shown while the row is still short.
+    const safe = documentStatus(S13, []).needs.find(
+      (n) => n.kind === K.SAFE_PHOTOGRAPHS,
+    )!;
+    const note = safe.minFilesNote!.toLowerCase();
+    expect(note).toMatch(/closed/);
+    expect(note).toMatch(/key in the door/);
+    expect(note).toMatch(/roll bolts/);
+  });
+
+  it('treats a row still carrying a retired safe kind as extra evidence', () => {
+    // The 2026-08-23 backfill moved every SAFE_PHOTO row onto SAFE_PHOTOGRAPHS,
+    // so a row still carrying the old value can only be one written during the
+    // deploy. It reads as extra evidence rather than as a satisfied
+    // requirement, which is the safe way round.
     const s = documentStatus(S13, [K.SAFE_PHOTO]);
     expect(s.extras).toEqual([K.SAFE_PHOTO]);
-    // The three shots are still all outstanding — a retired photograph
-    // satisfies none of them, because nothing records which shot it was.
-    const safe = s.needs.find((n) => n.kind === K.SAFE_PHOTO_CLOSED)!;
-    expect(safe.parts!.every((p) => !p.have)).toBe(true);
+    expect(s.needs.find((n) => n.kind === K.SAFE_PHOTOGRAPHS)!.have).toBe(false);
   });
 
   it('requires association proof for a dedicated application, not for s13', () => {
@@ -239,7 +256,7 @@ describe('documents nobody asked for', () => {
   });
 
   it('does not report an asked-for document as an extra', () => {
-    const s = documentStatus(S13, [K.IDENTITY_DOCUMENT, K.SAFE_PHOTO_AJAR]);
+    const s = documentStatus(S13, [K.IDENTITY_DOCUMENT, K.SAFE_PHOTOGRAPHS]);
     expect(s.extras).toEqual([]);
   });
 
@@ -255,13 +272,13 @@ describe('documents nobody asked for', () => {
 describe('the upload picker', () => {
   it('leads with what is required, in the order it is asked for', () => {
     const picks = pickableKinds(S13);
-    expect(picks.slice(0, 6).map((p) => p.kind)).toEqual([
+    expect(picks.slice(0, 4).map((p) => p.kind)).toEqual([
       K.IDENTITY_DOCUMENT,
       K.COMPETENCY_CERTIFICATE,
       K.ADDRESS_CONFIRMATION,
-      K.SAFE_PHOTO_CLOSED,
-      K.SAFE_PHOTO_AJAR,
-      K.SAFE_PHOTO_BOLTS,
+      // ONE ENTRY FOR THE SAFE. Operator, 2026-08-23: "I dont like the safe
+      // picture being seperate four uploads, looks shit."
+      K.SAFE_PHOTOGRAPHS,
     ]);
   });
 
@@ -272,46 +289,65 @@ describe('the upload picker', () => {
     }
   });
 
-  it('never offers the retired kind, so no new row can carry one', () => {
+  it('never offers a retired kind, so no new row can carry one', () => {
+    // Postgres cannot drop an enum value, so "retired" has to mean NEVER
+    // OFFERED. All five safe kinds SAFE_PHOTOGRAPHS replaced belong here:
+    // offering one would put a photograph outside the only kind the checklist
+    // now looks for.
     for (const t of Object.values(MotivationLicenceType)) {
-      expect(pickableKinds(t).map((p) => p.kind)).not.toContain(K.SAFE_PHOTO);
+      const kinds = pickableKinds(t).map((p) => p.kind);
+      expect(kinds).not.toContain(K.SAFE_PHOTO);
+      expect(kinds).not.toContain(K.SAFE_PHOTO_CLOSED);
+      expect(kinds).not.toContain(K.SAFE_PHOTO_AJAR);
+      expect(kinds).not.toContain(K.SAFE_PHOTO_BOLTS);
+      expect(kinds).not.toContain(K.SAFE_INSTALLATION);
     }
   });
 
-  it('still offers the anchoring shot, which none of the three covers', () => {
-    // All three of the operator's shots are of the DOOR. How the safe is
-    // fixed to the wall is the one thing about storage a DFO inspects in
-    // person, so it stays on offer even though it is not required — and the
-    // checklist still recommends it, which would be a row nobody could tick
-    // if the picker had dropped it.
+  it('keeps the anchoring shot alive in the words, now the kind is gone', () => {
+    // SAFE_INSTALLATION was its own kind precisely because all three door shots
+    // miss the one thing a DFO inspects in person — how the safe is fixed to
+    // the building. Retiring the kind must not retire the ask.
     for (const t of Object.values(MotivationLicenceType)) {
-      expect(pickableKinds(t).map((p) => p.kind)).toContain(K.SAFE_INSTALLATION);
+      const safe = documentStatus(t, []).needs.find(
+        (n) => n.kind === K.SAFE_PHOTOGRAPHS,
+      )!;
+      expect(safe.why).toMatch(/bolted to the wall or floor/i);
     }
   });
 
-  it('stops calling a document needed once it is attached', () => {
+  it('stops calling a document needed once enough is attached', () => {
     // The tag means STILL OUTSTANDING. Computed against an empty upload list
     // it would never clear, and the applicant would photograph all three shots
     // and watch the menu go on asking for them.
     const before = pickableKinds(S13, {}, []);
-    expect(before.find((p) => p.kind === K.SAFE_PHOTO_AJAR)).toMatchObject({
+    expect(before.find((p) => p.kind === K.SAFE_PHOTOGRAPHS)).toMatchObject({
       tier: 'required',
       have: false,
     });
 
-    const after = pickableKinds(S13, {}, [K.SAFE_PHOTO_AJAR]);
-    expect(after.find((p) => p.kind === K.SAFE_PHOTO_AJAR)).toMatchObject({
+    // ⚠️ ONE PHOTOGRAPH IS NOT ENOUGH, and the picker has to agree with the
+    // checklist about that — otherwise the menu clears the "needed" tag while
+    // the row beside it is still amber.
+    const one = pickableKinds(S13, {}, [K.SAFE_PHOTOGRAPHS]);
+    expect(one.find((p) => p.kind === K.SAFE_PHOTOGRAPHS)!.have).toBe(false);
+
+    const three = pickableKinds(S13, {}, [
+      K.SAFE_PHOTOGRAPHS,
+      K.SAFE_PHOTOGRAPHS,
+      K.SAFE_PHOTOGRAPHS,
+    ]);
+    expect(three.find((p) => p.kind === K.SAFE_PHOTOGRAPHS)).toMatchObject({
       tier: 'required',
       have: true,
     });
-    // …and only that one. The other two shots are untouched.
-    expect(after.find((p) => p.kind === K.SAFE_PHOTO_CLOSED)!.have).toBe(false);
-    expect(after.find((p) => p.kind === K.SAFE_PHOTO_BOLTS)!.have).toBe(false);
   });
 
   it('reports have for the optional kinds too, not only the required ones', () => {
-    const picks = pickableKinds(S13, {}, [K.SAFE_INSTALLATION]);
-    expect(picks.find((p) => p.kind === K.SAFE_INSTALLATION)!.have).toBe(true);
+    const picks = pickableKinds(S13, {}, [K.EMPLOYMENT_CONFIRMATION]);
+    expect(picks.find((p) => p.kind === K.EMPLOYMENT_CONFIRMATION)!.have).toBe(
+      true,
+    );
     expect(picks.find((p) => p.kind === K.OTHER)!.have).toBe(false);
   });
 

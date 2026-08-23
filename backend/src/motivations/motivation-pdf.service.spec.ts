@@ -324,9 +324,9 @@ describe('the annexure index', () => {
     const kinds = [
       MotivationUploadKind.IDENTITY_DOCUMENT,
       MotivationUploadKind.IDENTITY_DOCUMENT,
-      MotivationUploadKind.SAFE_PHOTO_CLOSED,
-      MotivationUploadKind.SAFE_PHOTO_AJAR,
-      MotivationUploadKind.SAFE_PHOTO_BOLTS,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
     ];
     const { pdf } = await svc.render({
       ...makeInput(),
@@ -527,7 +527,7 @@ describe('the certification column on the annexure index', () => {
       annexures: buildAnnexures([
         MotivationUploadKind.IDENTITY_DOCUMENT,
         MotivationUploadKind.COMPETENCY_CERTIFICATE,
-        MotivationUploadKind.SAFE_PHOTO_CLOSED,
+        MotivationUploadKind.SAFE_PHOTOGRAPHS,
       ]),
     } as never);
     const t = squash((await readPdfAsync(pdf)).text);
@@ -546,7 +546,7 @@ describe('the certification column on the annexure index', () => {
     const entries = buildAnnexures([
       MotivationUploadKind.IDENTITY_DOCUMENT,
       MotivationUploadKind.COMPETENCY_CERTIFICATE,
-      MotivationUploadKind.SAFE_PHOTO_CLOSED,
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
       MotivationUploadKind.GOOD_STANDING_LETTER,
     ]);
     const by = (k: MotivationUploadKind) =>
@@ -558,7 +558,7 @@ describe('the certification column on the annexure index', () => {
     expect(by(MotivationUploadKind.COMPETENCY_CERTIFICATE)).toBe('expected');
     // Nobody certifies a photograph of their own safe against an original
     // photograph, and a letter of good standing IS the original.
-    expect(by(MotivationUploadKind.SAFE_PHOTO_CLOSED)).toBe('none');
+    expect(by(MotivationUploadKind.SAFE_PHOTOGRAPHS)).toBe('none');
     expect(by(MotivationUploadKind.GOOD_STANDING_LETTER)).toBe('none');
   });
 });

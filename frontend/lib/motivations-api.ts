@@ -405,8 +405,22 @@ export interface DocumentNeed {
   tier: 'required' | 'expected' | 'strengthens' | 'extra';
   why: string;
   have: boolean;
-  /** The shots this one line stands for — the safe, and only the safe. */
-  parts?: { kind: string; label: string; have: boolean }[];
+  /**
+   * How many FILES this line wants before `have` goes true. Absent means one.
+   *
+   * Only the safe sets it, at three. It used to be three separate kinds with
+   * three menu entries; the server counts files now, and the row's `why` names
+   * every shot.
+   */
+  minFiles?: number;
+  /**
+   * One short line naming what a multi-file row still wants.
+   *
+   * ⚠️ `why` renders only on the SELECTED row, and the shots the safe wants
+   * have to be readable without selecting anything — which is what the four
+   * separate menu entries used to do for free.
+   */
+  minFilesNote?: string;
 }
 
 /**
@@ -416,7 +430,7 @@ export interface DocumentNeed {
  * array and it had already drifted from the backend: it omitted two kinds
  * outright and described the safe photograph in the singular while the server
  * asked for three separate shots. A list maintained in two places is a list
- * maintained in neither.
+ * maintained in neither — and the safe has changed shape twice since.
  */
 export interface PickableKind {
   kind: string;

@@ -64,6 +64,11 @@ describe('which documents are worth a vision call', () => {
     // telling a member something is wrong with a photograph that is fine.
     expect([...NO_VISION_KINDS].sort()).toEqual(
       [
+        'SAFE_PHOTOGRAPHS',
+        // The four retired ones stay on the list. Nothing new can be filed
+        // under them, but a row that slipped through the deploy must not get a
+        // vision call spent on a photograph of a gun safe and come back amber
+        // for having read nothing.
         'SAFE_INSTALLATION',
         'SAFE_PHOTO_AJAR',
         'SAFE_PHOTO_BOLTS',

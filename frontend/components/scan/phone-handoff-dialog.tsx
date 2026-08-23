@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
 
@@ -40,7 +40,7 @@ const QR_PX = 260;
 type State = 'waiting' | 'connected' | 'uploaded' | 'expired';
 
 export interface PhoneHandoffDialogProps {
-  dest: 'licence-centre' | 'motivation';
+  dest: 'licence-centre' | 'motivation' | 'kyc';
   motivationId?: string;
   /** The document kind the desktop had selected, if any. */
   kind?: string;
@@ -165,9 +165,16 @@ export default function PhoneHandoffDialog({
     return () => document.removeEventListener('keydown', onKey, true);
   }, []);
 
+  // ⚠️ THE KYC WORDING IS NOT DECORATION. A count is honest for a vault, where
+  // the member may still be holding three more things; identity verification
+  // takes exactly one ID document and the very next thing that happens is the
+  // desktop moving them on to the selfie. Telling them to "carry on scanning"
+  // there would be telling them to do something with no effect.
   const heading =
     state === 'uploaded'
-      ? `${added} ${added === 1 ? 'document' : 'documents'} arrived`
+      ? dest === 'kyc'
+        ? 'Your ID arrived'
+        : `${added} ${added === 1 ? 'document' : 'documents'} arrived`
       : state === 'connected'
         ? 'Phone connected'
         : state === 'expired'
@@ -176,7 +183,9 @@ export default function PhoneHandoffDialog({
 
   const body =
     state === 'uploaded'
-      ? 'Carry on scanning on your phone, or close this.'
+      ? dest === 'kyc'
+        ? 'Carry on here — you can put the phone down.'
+        : 'Carry on scanning on your phone, or close this.'
       : state === 'connected'
         ? 'Carry on there — what you photograph will appear here.'
         : state === 'expired'

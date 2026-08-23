@@ -500,14 +500,19 @@ export class MotivationsController {
     // has to live here rather than only in the picker, or "no new row can
     // carry it" is an intention rather than a fact.
     //
-    // The realistic sender is a PWA running a bundle from before the safe
-    // photograph was split into three, whose menu still offers the old single
-    // "Photograph of your safe". Accepting it would file the photograph as
-    // extra evidence and go on showing all three shots as missing, which reads
-    // as the upload having failed silently.
+    // The realistic sender is a PWA running a bundle from before 2026-08-23,
+    // whose menu still offers the four separate safe entries. Accepting one
+    // would file the photograph as extra evidence and go on showing the safe
+    // row short, which reads as the upload having failed silently.
+    //
+    // ⚠️ THE MESSAGE HAS TO TRACK THE DIRECTION OF THE LAST CHANGE. It told
+    // members their type "has been replaced by three separate safe
+    // photographs" — true on 2026-08-19 and the exact opposite of what happened
+    // on 2026-08-23, so somebody on the old bundle was being sent to look for
+    // three menu entries that no longer exist.
     if (RETIRED.includes(wanted as MotivationUploadKind)) {
       throw new BadRequestException(
-        'That document type has been replaced by three separate safe photographs. Please refresh the page and choose from the updated list.',
+        'The safe photographs are now one line that takes several pictures. Please refresh the page and add them all there.',
       );
     }
     return this.motivations.addUpload(

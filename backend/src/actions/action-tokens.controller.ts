@@ -912,6 +912,14 @@ export class ActionTokensController {
     // SAME member's destinations — every upload endpoint scopes by the
     // authorising user and would 404 on anybody else's — so this is a
     // convenience, not a trust boundary.
+    //
+    // ⚠️ WHICH HELD ONLY WHILE EVERY DESTINATION WAS ADDITIVE. 'kyc' is not:
+    // it overwrites the one ID document the payout gate is decided on. So
+    // KycScanController re-reads the token and refuses anything whose dest is
+    // not 'kyc', and a mismatch counts toward the token's lock. Any future
+    // destination that REPLACES rather than adds has to do the same — the
+    // sentence above is about vaults, not about this line being safe by
+    // itself.
     const meta = resolved.metadata ?? {};
     const q = new URLSearchParams({ t: resolved.token });
     if (typeof meta.dest === 'string') q.set('dest', meta.dest);

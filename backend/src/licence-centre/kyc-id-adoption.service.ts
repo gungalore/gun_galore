@@ -142,7 +142,20 @@ export class KycIdAdoptionService {
     if (!on) return { available: false, alreadyThere: false };
 
     const user = await this.load(clerkId);
-    if (user.kycStatus !== 'VERIFIED' || !this.hasSource(user)) {
+    // ⚠️ NO LONGER GATED ON VERIFIED, AND THE REASON IS THE TIMING OF THE ASK.
+    // Operator, 2026-08-23: "As soon as the KYC is done a window must pop up
+    // asking for permission... Does not matter if the KYC has passed or not."
+    //
+    // The question is now put at SUBMISSION, which is before there is a
+    // verdict at all — so a VERIFIED gate would have meant somebody pressing
+    // yes and nothing happening, with no error and no second chance.
+    //
+    // It is also the right answer on its own terms. The document is their own
+    // ID copy going into their own storage, and whether a face-match passed
+    // says nothing about whether the copy is useful on a licence application.
+    // A failed verification does not make it less their ID, and they can
+    // delete it from the Centre whenever they like.
+    if (!this.hasSource(user)) {
       return { available: false, alreadyThere: false };
     }
     const held = await this.holdsId(user.id);
@@ -162,11 +175,6 @@ export class KycIdAdoptionService {
     await this.quota.assertEnabled();
     const user = await this.load(clerkId);
 
-    if (user.kycStatus !== 'VERIFIED') {
-      throw new BadRequestException(
-        'This becomes available once your identity has been verified.',
-      );
-    }
     if (!this.hasSource(user)) {
       throw new BadRequestException(
         'We do not have a copy of your ID document to add.',

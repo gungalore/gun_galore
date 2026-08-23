@@ -4325,6 +4325,16 @@ export class NotificationsService {
 
   // Verification succeeded — pending payout can now move forward.
   async sellerKycApproved(sellerEmail: string, sellerName: string) {
+    // ⚠️ THIS DOES NOT ASK ABOUT KEEPING THEIR ID, AND IT DID FOR ABOUT AN
+    // HOUR. Operator, 2026-08-23: "Remove this from all other forms of
+    // communication and just prompt the user straight after KYC submission."
+    //
+    // The reasoning is better than what it replaced. Approval can land days
+    // after the upload, by which time the question is about a document they
+    // have stopped thinking about — and it never lands at all for somebody
+    // whose verification fails, even though we are holding their ID either
+    // way. The ask belongs at the moment they hand it over, on screen, once.
+    // See the consent window on the KYC page.
     const html = this.email({
       status: { tone: 'success', label: 'Verified' },
       headline: 'Identity verified',

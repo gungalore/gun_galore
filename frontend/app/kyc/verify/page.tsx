@@ -9,6 +9,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { QRCodeSVG } from 'qrcode.react';
 import { HelpTip } from '@/components/help-tip';
+import ScanButton from '@/components/scan/scan-button';
+import { shapeForKind } from '@/lib/scan/shapes';
 import { processImage } from '@/lib/process-image';
 import DateField from '@/components/date-field';
 import { shiftYears, toIso, todayYmd } from '@/lib/date-picker-model';
@@ -125,6 +127,7 @@ function ErrorBanner({ children }: { children: React.ReactNode }) {
         lineHeight: 1.4,
       }}
     >
+
       {children}
     </div>
   );
@@ -173,7 +176,7 @@ function VerifyKycPageInner() {
   // optional offer must never become an error on the page somebody sees the
   // moment they are told they passed.
   const [idOffer, setIdOffer] = useState<
-    'idle' | 'offer' | 'saving' | 'kept' | 'declined'
+    'idle' | 'offer' | 'saving' | 'answered'
   >('idle');
   // ⚠️ HOLDS THE 3-SECOND REDIRECT. Without this the card renders, the offer
   // is readable for about a second, and the page navigates away underneath
@@ -191,16 +194,34 @@ function VerifyKycPageInner() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /** The short pause after the phone reports in — see onDocArrivedFromPhone. */
+  const phoneArrivalTimer = useRef<number | null>(null);
 
-  // ── IS THERE AN ID TO KEEP FOR THEM? ────────────────────────────────
+  // ── MAY WE KEEP THE ID YOU JUST HANDED OVER? ────────────────────────
   //
-  // Runs once, when the success screen appears. ⚠️ FAILS TO SILENCE: the
-  // client falls back to { available: false } rather than throwing, so a
-  // Centre that is switched off, a slow call or a network blip costs the
-  // offer and never puts an error in front of somebody who has just been
-  // verified.
+  // Operator, 2026-08-23: "As soon as the KYC is done a window must pop up
+  // asking for permission and a short explanation. Does not matter if the KYC
+  // has passed or not."
+  //
+  // ⚠️ ALL THREE TERMINAL STEPS, AND THE OUTCOME IS BESIDE THE POINT. We are
+  // holding their ID whether the face-match passed, went to a human, or
+  // failed — so the question is the same in all three cases, and asking only
+  // on success meant never asking the two groups who are arguably most likely
+  // to come back and try again.
+  //
+  // ⚠️ AND AT SUBMISSION RATHER THAN AT APPROVAL, which is where this lived
+  // for about an hour. Approval can land days later, by which time the
+  // question is about a document they have stopped thinking about; here they
+  // photographed it thirty seconds ago. This is now the ONLY place it is
+  // asked — the approval email, the in-app notification and the Document
+  // Centre card were all removed on the same instruction.
+  //
+  // ⚠️ FAILS TO SILENCE: the client falls back to { available: false } rather
+  // than throwing, so a Centre that is switched off, a slow call or a network
+  // blip costs the question and never puts an error in front of somebody who
+  // has just finished verifying.
   useEffect(() => {
-    if (step !== 'success') return;
+    if (step !== 'success' && step !== 'review' && step !== 'failed') return;
     let cancelled = false;
     void (async () => {
       const r = await licenceCentreApi
@@ -260,6 +281,11 @@ function VerifyKycPageInner() {
   useEffect(() => {
     return () => {
       stopCamera();
+      // And drop the pending step change, so a seller who navigates away in
+      // that 1.7-second window is not moved on by a timer after they left.
+      if (phoneArrivalTimer.current !== null) {
+        window.clearTimeout(phoneArrivalTimer.current);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -445,6 +471,41 @@ function VerifyKycPageInner() {
       file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
     );
     void handleDocumentUpload(file);
+  }
+
+  /**
+   * The phone has already uploaded the ID; this side only has to catch up.
+   *
+   * ⚠️ NOTHING IS RE-UPLOADED HERE. The document went straight from the phone
+   * into the encrypted store through /kyc/scan, so the desktop's job is the
+   * step change and nothing else — exactly what handleDocumentUpload does
+   * after its own POST returns. Uploading again from here would mean asking
+   * the phone to send the file back to a browser that never had it.
+   *
+   * ⚠️ AND THE STEP CHANGE WAITS A BEAT, which is not decoration. Changing it
+   * here unmounts the whole document step — ScanButton and the QR dialog with
+   * it — in the same render as the dialog setting itself to "Your ID arrived".
+   * That copy was written for this moment and never once painted: the seller
+   * was still holding their phone while the screen they were about to look at
+   * jumped, with nothing having said the photograph landed. The dialog closes
+   * itself at 1.6s; this follows it out.
+   */
+  function onDocArrivedFromPhone() {
+    if (docPreviewUrl) URL.revokeObjectURL(docPreviewUrl);
+    setDocPreviewUrl(null);
+    setDocFileName('Photographed on your phone');
+    setError('');
+    if (phoneArrivalTimer.current !== null) {
+      window.clearTimeout(phoneArrivalTimer.current);
+    }
+    phoneArrivalTimer.current = window.setTimeout(() => {
+      phoneArrivalTimer.current = null;
+      setStep('selfie');
+      // Left until now on purpose: startCamera asks for the webcam, and a
+      // permission prompt firing while the dialog is still up would land on
+      // top of the one thing telling the seller their ID arrived.
+      void detectCameraAndProceed();
+    }, 1700);
   }
 
   // ─── Step 2: SA ID number → Home Affairs lookup ──────────────────
@@ -722,6 +783,81 @@ function VerifyKycPageInner() {
         padding: 24,
       }}
     >
+      {/* ── MAY WE KEEP THE ID YOU JUST HANDED OVER? ──────────────────
+          Operator, 2026-08-23: "As soon as the KYC is done a window must pop
+          up asking for permission and a short explanation. Does not matter if
+          the KYC has passed or not."
+
+          ⚠️ THIS IS THE ONLY PLACE THE QUESTION IS ASKED. The approval email,
+          the in-app notification and the Document Centre card were all removed
+          on the same instruction — so there is no second chance and no quiet
+          dismissal. Escape and a backdrop click do nothing; an answer is
+          required, because the alternative to "make them answer" here is
+          "never ask them again".
+
+          ⚠️ z-[60] AND data-blocking-overlay, both load-bearing. The bottom tab
+          bar is z-55 and Boet's dock is z-60 and wins on DOM order; the
+          attribute stands him down for the overlay's lifetime. */}
+      {(idOffer === 'offer' || idOffer === 'saving') && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
+          data-blocking-overlay="true"
+          role="dialog"
+          aria-modal="true"
+          aria-label="May we keep your ID?"
+        >
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-[var(--radius)] bg-[var(--bg-card)] p-5 sm:rounded-[var(--radius)]">
+            <h2 className="text-lg font-semibold">May we keep your ID?</h2>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
+              A copy of your ID is the first thing every firearm licence
+              application asks for. We are already holding the one you have
+              just uploaded, and we can keep a copy in your Document Centre so
+              you never photograph it again.
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
+              It stays encrypted on our own server. You can rename or delete it
+              in your Document Centre at any time, and deleting it removes the
+              file. This covers your ID and nothing else.
+            </p>
+            {/* ⚠️ SAY THAT THE ANSWER DOES NOT AFFECT THE VERIFICATION. Asked
+                at this moment, on this screen, somebody could reasonably read
+                a "no" as putting their verification at risk — and a consent
+                given under that impression is not a consent. */}
+            <p className="mt-3 text-xs text-[var(--text-tertiary)]">
+              Your answer does not affect your verification either way.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={idOffer === 'saving'}
+                onClick={() => {
+                  setIdOffer('saving');
+                  void licenceCentreApi
+                    .adoptKycId(getToken)
+                    .then(() => setIdOffer('answered'))
+                    // A failure costs the shortcut, not the verification.
+                    .catch(() => setIdOffer('answered'))
+                    .finally(() => setHoldRedirect(false));
+                }}
+                className="rounded-[var(--radius)] bg-[var(--red)] px-4 py-2 text-sm text-white disabled:opacity-60"
+              >
+                {idOffer === 'saving' ? 'Saving…' : 'Yes, keep it'}
+              </button>
+              <button
+                type="button"
+                disabled={idOffer === 'saving'}
+                onClick={() => {
+                  setIdOffer('answered');
+                  setHoldRedirect(false);
+                }}
+                className="rounded-[var(--radius)] border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-60"
+              >
+                No, do not keep it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{ width: '100%', maxWidth: 390 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <Image
@@ -987,9 +1123,12 @@ function VerifyKycPageInner() {
                 lineHeight: 1.5,
               }}
             >
-              Upload a clear photo or PDF scan of your South African ID —
-              smart card (photo side) or green ID book (photo page). Make
-              sure the photo, ID number and date of birth are readable.
+              {/* Reworded when the camera joined the picker: "Upload" was the
+                  only verb, and it named the one method that is now not the
+                  quickest for most people. */}
+              Photograph or upload your South African ID — smart card (photo
+              side) or green ID book (photo page). Make sure the photo, ID
+              number and date of birth are readable.
             </div>
 
             {docPreviewUrl && (
@@ -1032,17 +1171,48 @@ function VerifyKycPageInner() {
               style={{ display: 'none' }}
               onChange={(e) => onDocPicked(e.target.files?.[0] ?? null)}
             />
-            <button
-              onClick={() => fileInputRef.current?.click()}
+            {/* THE SAME TWO PEERS THE DOCUMENT CENTRE OFFERS.
+                Operator, 2026-08-23: "on the KYC of the ID, use the same
+                capture methods as we do with the Document centre. Upload or QR
+                code to take a picture of it."
+
+                ScanButton decides which camera is worth offering: on a phone
+                the scanner opens with an aim guide, and on a desktop it offers
+                the phone in the seller's pocket instead of a webcam that
+                focuses at half a metre and cannot resolve an ID number. The
+                picker is never replaced, only joined — a seller with a PDF scan
+                from the bank still uses it. */}
+            <ScanButton
+              // Green book by default; the smart card is one tap away on the
+              // chooser, and the guide is a suggestion either way.
+              shape={shapeForKind('IDENTITY_DOCUMENT')}
+              kind="IDENTITY_DOCUMENT"
+              title="Photograph your ID"
+              label="Photograph my ID"
               disabled={loading}
-              style={primaryButton(loading)}
-            >
-              {loading
-                ? 'Uploading…'
-                : docFileName
-                  ? 'Choose a different file'
-                  : 'Choose photo or PDF'}
-            </button>
+              onFiles={(files) => onDocPicked(files[0] ?? null)}
+              // ⚠️ ONLY WITH A CLERK SESSION. Minting the hand-off link goes
+              // through viewerFetch; a seller who arrived on the SMS token has
+              // no session, so the mint would 401 — and they are already on the
+              // phone, where the scanner above is the direct answer.
+              handoff={actionToken ? undefined : { dest: 'kyc' }}
+              onHandoffArrived={onDocArrivedFromPhone}
+              fallback={
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={loading}
+                  // Still the primary, still full width. The camera is the new
+                  // peer beside it, not a replacement for it.
+                  style={{ ...primaryButton(loading), flex: '1 1 100%' }}
+                >
+                  {loading
+                    ? 'Uploading…'
+                    : docFileName
+                      ? 'Choose a different file'
+                      : 'Choose photo or PDF'}
+                </button>
+              }
+            />
             <div
               style={{
                 fontSize: 11,
@@ -1055,14 +1225,19 @@ function VerifyKycPageInner() {
               Max 10&nbsp;MB.
             </div>
 
-            {/* PHONE HANDOFF ON THE DOCUMENT STEP.
-                On a desktop "Choose photo or PDF" assumes the seller already
-                HAS a file — but the ID is a physical card, and photographing
-                it with a laptop webcam is miserable. This hands the step to
-                the phone, where the camera app is the natural tool.
-                Deliberately a disclosure: it is an option, not a fallback for
-                a missing camera, so it must not push the primary upload
-                button down the page. */}
+            {/* THE SMS ESCAPE HATCH, AND ONLY THAT.
+                ⚠️ THIS PANEL USED TO DRAW ITS OWN QR CODE HERE. ScanButton
+                above now draws one that is strictly better — it lands the
+                phone straight on the scanner with an aim guide, needs no
+                sign-in there, and moves this page on by itself when the photo
+                arrives — and two QR codes on one step is a choice nobody can
+                make. So the QR is off and what survives is the reason this
+                block was worth keeping: a seller who does not know what a QR
+                code is can have the link texted to them instead.
+
+                Still a disclosure, for the same reason as before: it is an
+                option, not a fallback, and it must not push the upload button
+                down the page. */}
             {flow === 'CLAUDE' && (
               <details className="gg-disclose" style={{ marginTop: 14 }}>
                 <summary
@@ -1074,15 +1249,16 @@ function VerifyKycPageInner() {
                     color: 'var(--red)',
                   }}
                 >
-                  Rather photograph it with your phone →
+                  Rather have the link sent to your phone →
                 </summary>
                 <div style={{ marginTop: 14 }}>
                   <CameraUnavailableHandoff
                     returnTo={returnTo}
                     actionToken={actionToken}
                     phoneMasked={phoneMasked}
+                    showQr={false}
                     eyebrow="Continue on your phone"
-                    lead="Scan this with your phone to open this same step there, then photograph your ID with the camera app. It uploads straight back here — this page keeps your progress."
+                    lead="We can text you a link that opens this same step on your phone, where you photograph your ID with the camera app. This page keeps your progress."
                     onSmsRequest={async () => {
                       const r = await apiPost('handoff-sms');
                       return (r.phoneMasked as string) ?? phoneMasked ?? '';
@@ -1394,162 +1570,7 @@ function VerifyKycPageInner() {
                 Redirecting…
               </div>
             )}
-
-            {/* ── MAY WE KEEP THE ID YOU JUST GAVE US? ────────────────
-                Operator, 2026-08-22: "When they are approved, we can ask
-                them if we can add their ID to their Document Centre... it
-                will create awareness of the Document and Motivation
-                Centres."
-
-                ⚠️ ASKED, NOT DONE, AND THE ASK IS NARROW. The document was
-                collected to verify an identity; keeping a copy in a library
-                the member manages, to reuse in licence applications, is a
-                different purpose and takes its own yes. Pressing this does
-                NOT switch on the blanket "keep everything from my
-                applications" permission — that is a separate question with
-                its own window. */}
-            {(idOffer === 'offer' || idOffer === 'saving') && (
-              <div
-                style={{
-                  marginTop: 20,
-                  padding: 16,
-                  textAlign: 'left',
-                  borderRadius: 'var(--radius)',
-                  border: '0.5px solid var(--gold-line)',
-                  background: 'var(--gold-wash)',
-                }}
-              >
-                <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
-                  Keep your ID for next time?
-                </div>
-                <div
-                  style={{
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  A copy of your ID is the first thing every firearm licence
-                  application asks for. We can put the one you have just
-                  uploaded into your Document Centre, so you never photograph
-                  it again, and so it is already there when you write a
-                  motivation.
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    lineHeight: 1.55,
-                    color: 'var(--text-tertiary)',
-                    marginTop: 8,
-                  }}
-                >
-                  It stays encrypted on our own server. You can rename or
-                  delete it in your Document Centre whenever you like, and
-                  deleting it removes the file. This covers your ID and
-                  nothing else.
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 8,
-                    marginTop: 14,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <button
-                    type="button"
-                    disabled={idOffer === 'saving'}
-                    onClick={() => {
-                      setIdOffer('saving');
-                      void licenceCentreApi
-                        .adoptKycId(getToken)
-                        .then(() => setIdOffer('kept'))
-                        .catch(() => setIdOffer('declined'));
-                    }}
-                    style={{
-                      padding: '8px 14px',
-                      borderRadius: 'var(--radius)',
-                      border: 'none',
-                      background: 'var(--red)',
-                      color: '#fff',
-                      fontSize: 13,
-                      cursor: idOffer === 'saving' ? 'default' : 'pointer',
-                      opacity: idOffer === 'saving' ? 0.6 : 1,
-                    }}
-                  >
-                    {idOffer === 'saving' ? 'Saving…' : 'Yes, keep it'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={idOffer === 'saving'}
-                    onClick={() => setIdOffer('declined')}
-                    style={{
-                      padding: '8px 14px',
-                      borderRadius: 'var(--radius)',
-                      border: '0.5px solid var(--border)',
-                      background: 'transparent',
-                      color: 'var(--text-secondary)',
-                      fontSize: 13,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    No thanks
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {idOffer === 'kept' && (
-              <div
-                style={{
-                  marginTop: 20,
-                  padding: 16,
-                  textAlign: 'left',
-                  borderRadius: 'var(--radius)',
-                  border: '0.5px solid var(--border)',
-                }}
-              >
-                <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
-                  Saved to your Document Centre
-                </div>
-                <div
-                  style={{
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  Your Document Centre keeps your licences, competency
-                  certificates and paperwork in one place, and tells you before
-                  anything runs out. The Motivation Centre writes the
-                  motivation for a licence application, and takes what it needs
-                  from there.
-                </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: 14,
-                    marginTop: 12,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <Link
-                    href="/licence-centre"
-                    style={{ fontSize: 13, color: 'var(--red)' }}
-                  >
-                    Open the Document Centre
-                  </Link>
-                  <Link
-                    href="/motivations"
-                    style={{ fontSize: 13, color: 'var(--red)' }}
-                  >
-                    See the Motivation Centre
-                  </Link>
-                </div>
-              </div>
-            )}
-
-            {(idOffer === 'declined' || idOffer === 'kept') && (
+            {idOffer === 'answered' && (
               <button
                 type="button"
                 onClick={() => router.push(returnTo)}
@@ -1765,6 +1786,7 @@ function CameraUnavailableHandoff({
   onSmsRequest,
   eyebrow,
   lead,
+  showQr = true,
 }: {
   returnTo: string;
   actionToken: string | null;
@@ -1774,6 +1796,13 @@ function CameraUnavailableHandoff({
    *  seller may prefer rather than a fallback for a missing camera. */
   eyebrow?: string;
   lead?: string;
+  /**
+   * Off on the ID-document step, where ScanButton already puts a QR on the
+   * screen — and a better one, pointing at the scanner rather than at the
+   * whole wizard. Two codes side by side is a decision the seller has no way
+   * to make. What is left here is the SMS, which the other one does not do.
+   */
+  showQr?: boolean;
 }) {
   const [smsState, setSmsState] = useState<
     'idle' | 'sending' | 'sent' | 'cooldown'
@@ -1844,19 +1873,21 @@ function CameraUnavailableHandoff({
       </p>
 
       {/* QR code on white background so dark-mode pixels stay scannable. */}
-      <div
-        style={{
-          background: '#fff',
-          padding: 16,
-          borderRadius: 8,
-          width: 'fit-content',
-          margin: '0 auto 14px',
-        }}
-      >
-        {handoffUrl && (
-          <QRCodeSVG value={handoffUrl} size={180} level="M" includeMargin={false} />
-        )}
-      </div>
+      {showQr && (
+        <div
+          style={{
+            background: '#fff',
+            padding: 16,
+            borderRadius: 8,
+            width: 'fit-content',
+            margin: '0 auto 14px',
+          }}
+        >
+          {handoffUrl && (
+            <QRCodeSVG value={handoffUrl} size={180} level="M" includeMargin={false} />
+          )}
+        </div>
+      )}
 
       <p
         style={{

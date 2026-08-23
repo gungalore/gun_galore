@@ -524,8 +524,10 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   // ── THE SAFE, AS ITEMS 68 AND 69 ASK IT ─────────────────────────
   // safe_storage_detail is prose for the motivation. These are the form's own
-  // discrete questions, and the mounting answer is the same fact the third
-  // required photograph shows — the bolts fixing it to the wall.
+  // discrete questions, and the mounting answer is the same fact the anchoring
+  // photograph shows — the bolts fixing it to the wall or floor. That shot goes
+  // in under SAFE_PHOTOGRAPHS with the rest; it stopped being its own upload
+  // kind on 2026-08-23.
   {
     key: 'safe_present',
     label: 'Do you have the prescribed safe?',

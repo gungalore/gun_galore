@@ -8,7 +8,7 @@ import {
 import { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
-import { verifyToken } from '@clerk/backend';
+import { verifyClerkToken } from './clerk-verify';
 
 // ────────────────────────────────────────────────────────────────────
 // LETTING A PHONE UPLOAD ON A DESKTOP MEMBER'S BEHALF.
@@ -48,12 +48,17 @@ export class ScanHandoffGuard implements CanActivate {
     // A signed-in caller is still welcome — the same phone page works for
     // somebody who happens to be logged in, and the desktop uses these
     // routes in tests.
+    //
+    // ⚠️ THROUGH verifyClerkToken, NOT verifyToken. This guard was the only
+    // one in the codebase calling @clerk/backend directly, which skipped the
+    // authorized-parties (azp) check every other guard applies — including
+    // KycOrTokenGuard, which stands in front of the ID-document route this
+    // one now shadows. Two doors onto the same identity record must not
+    // disagree about which origins may mint a session for it.
     const auth = request.headers.authorization;
     if (auth?.startsWith('Bearer ')) {
       try {
-        const payload = await verifyToken(auth.slice(7), {
-          secretKey: process.env.CLERK_SECRET_KEY!,
-        });
+        const payload = await verifyClerkToken(auth.slice(7));
         request.clerkUserId = payload.sub!;
         request.viaActionToken = false;
         return true;

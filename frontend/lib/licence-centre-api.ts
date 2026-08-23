@@ -44,6 +44,10 @@ export type CredentialKind =
   | 'IDENTITY_DOCUMENT'
   | 'ADDRESS_CONFIRMATION'
   | 'EMPLOYMENT_CONFIRMATION'
+  | 'SAFE_PHOTOGRAPHS'
+  // Retired 2026-08-23 with the rest of the safe kinds, and kept for the same
+  // reason as the association four above: a row filed before the collapse must
+  // still render a label rather than `undefined`.
   | 'SAFE_PHOTO_CLOSED'
   | 'SAFE_PHOTO_AJAR'
   | 'SAFE_PHOTO_BOLTS'
@@ -424,6 +428,15 @@ export const KIND_LABELS: Record<CredentialKind, string> = {
   IDENTITY_DOCUMENT: 'ID document',
   ADDRESS_CONFIRMATION: 'Proof of address',
   EMPLOYMENT_CONFIRMATION: 'Confirmation of employment',
+  // ⚠️ ONE LINE WHERE THERE WERE FOUR. Operator, 2026-08-23: "I dont like the
+  // safe picture being seperate four uploads, looks shit. Make it safe
+  // pictures. User must be able to upload multiple documents." Four entries
+  // made the member choose between shots that differ by how far a door is
+  // open, and made the classifier guess — so it was pinned to low confidence
+  // on all four and a wrong guess filed the bolts shot under the closed-door
+  // annexure.
+  SAFE_PHOTOGRAPHS: 'Photographs of my safe',
+  // Retired 2026-08-23, never offered. Labels only, for older rows.
   SAFE_PHOTO_CLOSED: 'Safe, closed',
   SAFE_PHOTO_AJAR: 'Safe, half open',
   SAFE_PHOTO_BOLTS: 'Safe, open with bolts showing',

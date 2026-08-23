@@ -82,7 +82,10 @@ export interface LibraryUploadRow {
  *  - PREVIOUS_MOTIVATION    — a past application, filed against a past firearm.
  *  - OTHER                  — unclassified by definition; we cannot say what it
  *                              is, so we cannot say it is safe to reuse.
- *  - SAFE_PHOTO             — retired in favour of the three-shot set.
+ *  - SAFE_PHOTO             — retired, and unlike the four shots that replaced
+ *                              it, NOT worth carrying forward: it predates any
+ *                              of the guidance about what to photograph, so
+ *                              nobody can say what it shows.
  *
  * ⚠️ NOT A DISPLAY FILTER. It is applied here AND again in addFromLibrary,
  * because POST /motivations/:id/uploads/from-library is directly callable and

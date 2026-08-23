@@ -52,6 +52,11 @@ describe('naming a document from its contents', () => {
   });
 
   it('never files anything as a RETIRED kind', async () => {
+    // ⚠️ RETIRED NOW HOLDS ALL FIVE SAFE KINDS. The model has seen
+    // SAFE_PHOTO_CLOSED and friends in every previous version of this prompt,
+    // and a document filed under one of them sits outside the only kind the
+    // checklist looks for — invisible to the member and to the requirement
+    // engine both.
     for (const retired of RETIRED) {
       const svc = svcWith(`{"kind":"${retired}","confidence":"high"}`);
       await expect(svc.classify(png)).resolves.toBeNull();
@@ -91,17 +96,16 @@ describe('naming a document from its contents', () => {
     }
   });
 
-  it('offers every safe shot separately, so a pack can fill all three', async () => {
-    for (const shot of [
-      'SAFE_PHOTO_CLOSED',
-      'SAFE_PHOTO_AJAR',
-      'SAFE_PHOTO_BOLTS',
-    ] as MotivationUploadKind[]) {
-      const svc = svcWith(`{"kind":"${shot}","confidence":"high"}`);
-      await expect(svc.classify(png)).resolves.toEqual({
-        kind: shot,
-        confident: true,
-      });
-    }
+  it('files every photograph of the safe under the one safe kind', async () => {
+    // ⚠️ IT USED TO OFFER FOUR, and telling them apart means judging how far
+    // a door is open from a single frame. A wrong call filed the bolts shot
+    // under the closed-door annexure, so a DFO looking for proof the bolts
+    // engage was shown a photograph of a shut door. One kind makes that
+    // impossible rather than merely flagged.
+    const svc = svcWith('{"kind":"SAFE_PHOTOGRAPHS","confidence":"high"}');
+    await expect(svc.classify(png)).resolves.toEqual({
+      kind: 'SAFE_PHOTOGRAPHS' as MotivationUploadKind,
+      confident: true,
+    });
   });
 });

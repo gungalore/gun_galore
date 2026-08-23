@@ -14,7 +14,10 @@ import { FLAGS, SettingsService } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { decryptJson, encryptJson } from '../common/blob-crypto';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
-import { LicenceCentreExtractService } from './licence-centre-extract.service';
+import {
+  currentKind,
+  LicenceCentreExtractService,
+} from './licence-centre-extract.service';
 import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
 import { MotivationsService } from '../motivations/motivations.service';
 import { REFUSAL_COPY, renewalPlan, renewalRefusal } from './licence-renewal';
@@ -213,7 +216,25 @@ export class LicenceCentreService {
     // NAME IT, if they did not. Before the row, because kind is a column on
     // it. Fail-soft: an unsortable document becomes OTHER, which the confirm
     // step shows them anyway.
-    let resolved: CredentialKind = kind ?? 'OTHER';
+    //
+    // ⚠️ THE MEMBER'S OWN ANSWER IS NORMALISED TOO, NOT ONLY THE MODEL'S.
+    // classify() already runs its answer through currentKind, on the reasoning
+    // that a retired value is "outside every query that now looks for the
+    // current one" — and the same was true of the value arriving in the request
+    // body, which nothing normalised and nothing refused. The realistic sender
+    // is not an attacker: it is a PWA holding a bundle from before the four
+    // safe photographs became SAFE_PHOTOGRAPHS, whose menu still posts
+    // SAFE_PHOTO_BOLTS. That upload succeeded and then sat outside the Centre's
+    // safe row, the vault picker's safe slot and the migration that had already
+    // run — a document filed into a hole, with nothing to tell its owner.
+    //
+    // NORMALISED RATHER THAN REFUSED, because every retired value maps forward
+    // to exactly one current one: there is nothing to ask the member and no
+    // information to lose. (The motivation wizard refuses instead — see
+    // motivations.controller.ts — because a refusal there costs one refresh and
+    // this file has no equivalent moment to refuse in: the scan hand-off posts
+    // from a phone that never saw the menu.)
+    let resolved: CredentialKind = currentKind(kind ?? 'OTHER');
     let autoFiled = false;
     let confident = false;
     // Other roles this same document fills. An association membership
@@ -510,7 +531,11 @@ export class LicenceCentreService {
         neverExpires: noExpiry,
         ...(issuedOnUnknown === undefined ? {} : { issuedOnUnknown }),
         confirmedAt: new Date(),
-        ...(kind ? { kind } : {}),
+        // ⚠️ NORMALISED, for the same reason as create(). This is the refile
+        // control on the confirm panel, so a stale bundle can put a retired
+        // value here too — and unlike an upload, this one lands on a row the
+        // member has already been told is filed correctly.
+        ...(kind ? { kind: currentKind(kind) } : {}),
         ...((title ?? '').trim()
           ? { title: (title ?? '').trim().slice(0, MAX_TITLE) }
           : {}),
@@ -951,6 +976,14 @@ const DEFAULT_TITLE: Record<CredentialKind, string> = {
   IDENTITY_DOCUMENT: 'ID document',
   ADDRESS_CONFIRMATION: 'Proof of address',
   EMPLOYMENT_CONFIRMATION: 'Confirmation of employment',
+  // ⚠️ ONE NAME FOR EVERY SAFE PHOTOGRAPH, so a member who adds three of them
+  // sees three rows called the same thing until they rename them. That is the
+  // honest position: nothing on our side knows which shot is which, and a
+  // default title asserting "Safe, open with bolts showing" over a picture of a
+  // shut door would be a caption we invented. The add form asks for a name.
+  SAFE_PHOTOGRAPHS: 'Photograph of my safe',
+  // Retired 2026-08-23; kept so a row filed before the collapse still has a
+  // name of its own.
   SAFE_PHOTO_CLOSED: 'Safe, closed',
   SAFE_PHOTO_AJAR: 'Safe, half open',
   SAFE_PHOTO_BOLTS: 'Safe, open with bolts showing',

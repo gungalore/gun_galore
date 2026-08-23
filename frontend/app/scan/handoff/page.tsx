@@ -41,6 +41,15 @@ export default function ScanHandoffPage() {
   const [phase, setPhase] = useState<Phase>('ready');
   const [sent, setSent] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  /** Said out loud when a KYC session photographed more than the one ID. */
+  const [trimmed, setTrimmed] = useState(false);
+
+  // Identity verification takes ONE document — the photo side of the card or
+  // the photograph page of the book — and the upload REPLACES whatever was
+  // there rather than adding to it. A vault session is the opposite: somebody
+  // stands at the desk with a whole pack. So the two branch here, and only
+  // here.
+  const single = dest === 'kyc';
 
   // Tell the desktop its code was scanned. It is watching for exactly this,
   // and it fires while the member is still holding the phone up — so it must
@@ -57,8 +66,15 @@ export default function ScanHandoffPage() {
       if (!token || files.length === 0) return;
       setPhase('sending');
       setErr(null);
+      // ⚠️ THE FIRST ONE, NOT THE LAST. Posting a second ID document would
+      // overwrite the first, so a member who ticked "more than one" and
+      // photographed both sides of their card would silently end up with the
+      // back of it on their identity record. The step asks for the photo side;
+      // that is the one they take first, and the screen says what happened.
+      const toSend = single ? files.slice(0, 1) : files;
+      setTrimmed(single && files.length > 1);
       let ok = 0;
-      for (const file of files) {
+      for (const file of toSend) {
         const body = new FormData();
         body.append('file', file);
         // ⚠️ THE KIND RIDES ON EVERY FILE. It is only meaningful for a single
@@ -66,12 +82,17 @@ export default function ScanHandoffPage() {
         // have them all be the same kind, and the server's own classifier is
         // better than a stale guess. So it is sent only when there is exactly
         // one file, which is the same rule both desktop surfaces use.
-        if (kind && files.length === 1) body.append('kind', kind);
+        if (kind && toSend.length === 1) body.append('kind', kind);
 
         const url =
-          dest === 'motivation' && motivationId
-            ? `${API}/motivations/${encodeURIComponent(motivationId)}/scan-uploads?t=${encodeURIComponent(token)}`
-            : `${API}/licence-centre/scan?t=${encodeURIComponent(token)}`;
+          dest === 'kyc'
+            ? // The identity document. Same service the desk route calls, same
+              // refusals, same encrypted store — only the way the member proved
+              // who they are is different.
+              `${API}/kyc/scan?t=${encodeURIComponent(token)}`
+            : dest === 'motivation' && motivationId
+              ? `${API}/motivations/${encodeURIComponent(motivationId)}/scan-uploads?t=${encodeURIComponent(token)}`
+              : `${API}/licence-centre/scan?t=${encodeURIComponent(token)}`;
         try {
           // ⚠️ RAW fetch, NOT apiFetch. The shared helper forces
           // Content-Type: application/json, which strips the multipart
@@ -100,7 +121,7 @@ export default function ScanHandoffPage() {
       setSent((n) => n + ok);
       setPhase('sent');
     },
-    [token, dest, motivationId, kind],
+    [token, dest, motivationId, kind, single],
   );
 
   const finish = useCallback(async () => {
@@ -131,11 +152,15 @@ export default function ScanHandoffPage() {
       {open && (
         <DocumentScanner
           shape={shape}
-          multiDefault
+          // Not for the ID: the step wants one photograph, and starting with
+          // "more than one" already ticked would be inviting a pack.
+          multiDefault={!single}
           title={
-            dest === 'motivation'
-              ? 'Photograph your documents'
-              : 'Photograph the document'
+            dest === 'kyc'
+              ? 'Photograph your ID'
+              : dest === 'motivation'
+                ? 'Photograph your documents'
+                : 'Photograph the document'
           }
           onDone={(files) => void upload(files)}
           onClose={() => setOpen(false)}
@@ -162,17 +187,36 @@ export default function ScanHandoffPage() {
           {(phase === 'sent' || phase === 'ready') && (
             <>
               <h1 style={h1}>
-                {sent > 0
-                  ? `${sent} ${sent === 1 ? 'document' : 'documents'} sent`
-                  : 'Nothing sent yet'}
+                {sent === 0
+                  ? 'Nothing sent yet'
+                  : // A count is right for a pack and wrong for an ID: only one
+                    // ever lands, and a second attempt replaced the first rather
+                    // than adding to it, so "2 documents sent" would be untrue.
+                    single
+                    ? 'Your ID is sent'
+                    : `${sent} ${sent === 1 ? 'document' : 'documents'} sent`}
               </h1>
               <p style={p}>
-                {sent > 0
-                  ? 'They are on your computer screen now. You can scan more, or say you are done.'
-                  : 'Open the camera to photograph a document.'}
+                {sent === 0
+                  ? single
+                    ? 'Open the camera to photograph your ID.'
+                    : 'Open the camera to photograph a document.'
+                  : single
+                    ? 'Carry on at your computer — it has moved on to the next step. Take it again here if the photo was poor.'
+                    : 'They are on your computer screen now. You can scan more, or say you are done.'}
               </p>
+              {trimmed && (
+                <p style={{ ...p, color: 'var(--red)' }}>
+                  Only the first photo was sent. Identity verification takes one
+                  ID document — the side with your photograph on it.
+                </p>
+              )}
               <button type="button" style={btn} onClick={() => setOpen(true)}>
-                {sent > 0 ? 'Scan another' : 'Open the camera'}
+                {sent > 0
+                  ? single
+                    ? 'Take it again'
+                    : 'Scan another'
+                  : 'Open the camera'}
               </button>
               {sent > 0 && (
                 <button

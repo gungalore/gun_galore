@@ -1,0 +1,30 @@
+-- ONE KIND FOR EVERY PHOTOGRAPH OF THE SAFE.
+--
+-- Operator, 2026-08-23, looking at the Document Centre's add menu: "I dont
+-- like the safe picture being seperate four uploads, looks shit. Make it safe
+-- pictures. User must be able to upload multiple documents."
+--
+-- ⚠️ IT IS NOT ONLY COSMETIC. SAFE_PHOTO_CLOSED, SAFE_PHOTO_AJAR,
+-- SAFE_PHOTO_BOLTS and SAFE_INSTALLATION are told apart by how far one door is
+-- open — a fine judgement from a single frame — so the Centre's classifier was
+-- forced to return LOW CONFIDENCE on all four unconditionally. Getting it wrong
+-- filed the bolts shot under the closed-door annexure, and a DFO looking for
+-- proof that the bolts engage was shown a photograph of a shut door. One kind
+-- makes that class of error impossible rather than merely flagged.
+--
+-- The three shots survive as GUIDANCE, not as kinds: the checklist row names
+-- them, and SAFE_PHOTO_MIN keeps it from going green on one photograph.
+--
+-- ⚠️ THIS FILE ADDS THE VALUES AND NOTHING ELSE, ON PURPOSE. Postgres refuses
+-- to USE a new enum value in the same transaction that added it, and Prisma
+-- wraps each migration file in one transaction — so an ADD VALUE followed by
+-- the UPDATE that moves rows onto it dies with "unsafe use of new value of enum
+-- type". The backfill is the next migration. This has already cost this
+-- codebase two-file migrations more than once; see
+-- 20260820170000_credential_dedicated_discipline.
+--
+-- ADD VALUE is one-way: there is no ALTER TYPE ... DROP VALUE. The five kinds
+-- this replaces stay in both types forever and are retired in the schema
+-- instead.
+ALTER TYPE "MotivationUploadKind" ADD VALUE IF NOT EXISTS 'SAFE_PHOTOGRAPHS';
+ALTER TYPE "CredentialKind" ADD VALUE IF NOT EXISTS 'SAFE_PHOTOGRAPHS';

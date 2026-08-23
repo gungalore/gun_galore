@@ -143,13 +143,13 @@ describe('lettering a document we generate', () => {
     const entries = buildAnnexures(
       [
         MotivationUploadKind.IDENTITY_DOCUMENT,
-        MotivationUploadKind.SAFE_PHOTO_CLOSED,
+        MotivationUploadKind.SAFE_PHOTOGRAPHS,
         MotivationUploadKind.CURRENT_LICENCE,
       ],
       ['PRIOR_NOTICE_REQUEST'],
     );
     const at = (kind: string) => entries.findIndex((e) => e.kind === kind);
-    expect(at('SAFE_PHOTO_CLOSED')).toBeLessThan(at('PRIOR_NOTICE_REQUEST'));
+    expect(at('SAFE_PHOTOGRAPHS')).toBeLessThan(at('PRIOR_NOTICE_REQUEST'));
     expect(at('PRIOR_NOTICE_REQUEST')).toBeLessThan(at('CURRENT_LICENCE'));
     // Letters stay a contiguous A, B, C… run with no gap where an unbuilt
     // document would otherwise have sat.
