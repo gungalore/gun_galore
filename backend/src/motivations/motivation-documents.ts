@@ -332,12 +332,20 @@ const WHY: Partial<Record<MotivationUploadKind, string>> = {
     'The safe as it stands in the room, shut, with the key out of it. This is the shot that shows the unit itself.',
   SAFE_PHOTO_AJAR:
     'Half open with the key in the door. It shows the lock belongs to this safe and that the key turns it — a closed door on its own shows neither.',
+  // ⚠️ THE LABEL STAYS, THE CLAIM GOES. Rows filed under this kind really do
+  // contain a photograph of the open door, so renaming it would misdescribe
+  // what somebody uploaded. But this text is GUIDANCE, and it used to tell
+  // the member the door bolts are what a DFO looks for. Operator,
+  // 2026-08-23: "no bolts needs be in the door. They need to be roll bolts
+  // in the wall." A shot of the locking bolts proves the lock works on a box
+  // somebody can carry out of the house.
   SAFE_PHOTO_BOLTS:
-    'Door fully open so the roll bolts are visible. The bolts are what make it a safe rather than a cupboard, and a DFO looks for them.',
+    'The open door, from before the safe photographs became one line. It stays in your pack, but it is not the shot that counts — add the roll bolts holding the safe to the wall on the safe photographs line.',
   SAFE_PHOTO:
     'Added before the safe photographs became one line. It stays in your pack as supporting evidence.',
+  // The shot that MATTERS, filed under a kind that predates it mattering.
   SAFE_INSTALLATION:
-    'How the safe is anchored to the wall or floor. Added before the safe photographs became one line; it stays in your pack.',
+    'How the safe is anchored to the wall or floor — the shot a DFO is actually looking for. Filed under its own kind before the safe photographs became one line; it stays in your pack and it counts.',
   INCIDENT_REPORT:
     'Something that actually happened to you carries far more weight than general crime figures.',
   PROFICIENCY_CERTIFICATE:
