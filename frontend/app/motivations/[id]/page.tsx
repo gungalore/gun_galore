@@ -23,6 +23,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StepStatus } from '@/components/step-accordion';
 import MotivationStepRail from '@/components/motivation-step-rail';
 import {
+  OWNED_SECTION,
+  isRepeatingSection,
+  nameKeyFor,
+  slotOfKey,
+  summaryKeysFor,
+} from '@/lib/motivation-item-groups';
+import {
   FollowUp,
   MotivationApiError,
   MotivationDetail,
@@ -1310,6 +1317,178 @@ export default function MotivationWizardPage() {
     setExpanded(firstIncomplete ? firstIncomplete.n : 1);
   }, [loading, sections, steps, outstanding]);
 
+  /**
+   * The applicant's own open/shut choices, and the first-sight default.
+   *
+   * Two stores because they answer different questions: the ref remembers what
+   * we decided before anybody touched it (and must never be recomputed — see
+   * the note where it is filled), the state remembers what they clicked.
+   */
+  const groupOpenInit = useRef<Record<string, boolean>>({});
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({});
+
+  /** One registry field, with the "replace what you wrote?" offer above it. */
+  const renderField = (f: MotivationField) => (
+    <div key={`${f.key}-w`}>
+      {/* WE ASK BEFORE REPLACING. The applicant has written their own words in
+          this box, so a new discipline choice offers its rules rather than
+          overwriting them. */}
+      {prefillOffer?.key === f.key && (
+        <div className="mb-2 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm">
+          <p>
+            You have written your own answer here. Replace it with the published
+            rules for {prefillOffer.label}?
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)]"
+              onClick={() => {
+                seeded.current[prefillOffer.key] = prefillOffer.text;
+                setAnswer(prefillOffer.key, prefillOffer.text);
+                setPrefillOffer(null);
+              }}
+            >
+              Replace it
+            </button>
+            <button
+              type="button"
+              className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-card-hover)]"
+              onClick={() => setPrefillOffer(null)}
+            >
+              Keep what I wrote
+            </button>
+          </div>
+        </div>
+      )}
+      <FieldInput
+        field={f}
+        value={answers[f.key] ?? ''}
+        missing={outstanding.includes(f.key)}
+        locked={
+          (prefilled.current?.has(f.key) ?? false) && !unlocked.has(f.key)
+        }
+        onUnlock={() => setUnlocked((u) => new Set(u).add(f.key))}
+        onChange={(v) => setAnswer(f.key, v)}
+        onPick={pickOption}
+        onPickMulti={pickMulti}
+      />
+      {/* ⚠️ THE PICKERS ARE GONE FROM HERE, and the documents fill these boxes
+          instead. A camera, a file picker and a dropdown hanging under two
+          questions duplicated the checklist below — the same three controls,
+          for the same two documents, in a second place — and the operator's
+          word for the result was cluttered. Attach the competency certificate
+          in the documents section and this fills itself; see the note on
+          applying suggestions in addOneUpload. */}
+    </div>
+  );
+
+  /**
+   * A section's fields, with the repeating ones bundled into collapsibles.
+   *
+   * ⚠️ PRESENTATION ONLY — THE SECTION IS NEVER SPLIT. Grouping happens on the
+   * already-filtered field list; groupBySection, the registry and the
+   * required-field counting are all untouched, and every field is rendered
+   * exactly once whether it lands in a group or not.
+   *
+   * ⚠️ ASSOCIATION 1 HAS NO NUMBER IN ITS KEYS. It is `association_name` /
+   * `association_number` / `dedicated_since` while 2 and 3 are
+   * `association_2_*` / `association_3_*`. A single regex over `_(\d)_` finds
+   * only the second and third, which would have left the first association's
+   * boxes loose above two tidy collapsibles.
+   */
+  type FieldGroup =
+    | { kind: 'plain'; id: string; fields: MotivationField[] }
+    | {
+        kind: 'item';
+        id: string;
+        title: string;
+        subtitle: string;
+        missing: number;
+        open: boolean;
+        fields: MotivationField[];
+      };
+
+  const groupFields = (sec: { section: string; fields: MotivationField[] }): FieldGroup[] => {
+    const val = (k: string) => (answers[k] ?? '').trim();
+
+    /** Bundle `fields` into one collapsible per item. */
+    const bundle = (
+      slotOf: (key: string) => string | null,
+      label: (slot: string) => string,
+      summary: (slot: string) => string,
+    ): FieldGroup[] => {
+      const out: FieldGroup[] = [];
+      const bySlot = new Map<string, MotivationField[]>();
+      const order: string[] = [];
+      for (const f of sec.fields) {
+        const slot = slotOf(f.key);
+        if (slot === null) {
+          // Anything that is not part of a repeating item (the overlap
+          // question, for one) stays loose, in place.
+          out.push({ kind: 'plain', id: f.key, fields: [f] });
+          continue;
+        }
+        if (!bySlot.has(slot)) {
+          bySlot.set(slot, []);
+          order.push(slot);
+        }
+        bySlot.get(slot)!.push(f);
+      }
+      for (const slot of order) {
+        const fields = bySlot.get(slot)!;
+        const missing = fields.filter((f) =>
+          outstanding.includes(f.key),
+        ).length;
+        const filled = fields.some((f) => val(f.key));
+        const id = `${sec.section}-${slot}`;
+        // ⚠️ DECIDED ONCE, NEVER FROM THE LIVE VALUE. Open-an-empty-item is a
+        // sensible default and a catastrophic live rule: `filled` and
+        // `missing` both change on every keystroke, so a panel opened because
+        // it was empty would SHUT ITSELF the moment somebody filled its first
+        // box — collapsing the form under the cursor they were typing in.
+        // This is the same trap as the prefilled lock: work the default out
+        // the first time the item is seen, then leave it to the DOM and to
+        // whatever the applicant themselves clicks.
+        if (!(id in groupOpenInit.current)) {
+          groupOpenInit.current[id] = !filled || missing > 0;
+        }
+        out.push({
+          kind: 'item',
+          id,
+          title: label(slot),
+          subtitle: summary(slot),
+          missing,
+          open: groupOpen[id] ?? groupOpenInit.current[id],
+          fields,
+        });
+      }
+      return out;
+    };
+
+    if (isRepeatingSection(sec.section)) {
+      const noun = sec.section === OWNED_SECTION ? 'Firearm' : 'Association';
+      return bundle(
+        (k) => slotOfKey(sec.section, k),
+        (slot) => {
+          const k = nameKeyFor(sec.section, slot);
+          return (k && val(k)) || `${noun} ${slot}`;
+        },
+        (slot) =>
+          summaryKeysFor(sec.section, slot)
+            .map(val)
+            .filter(Boolean)
+            .join(' · ') || 'Nothing filled in yet — tap to add',
+      );
+    }
+
+    return sec.fields.map((f) => ({
+      kind: 'plain' as const,
+      id: f.key,
+      fields: [f],
+    }));
+  };
+
   if (loading) {
     return <main className="mx-auto max-w-3xl p-6">Loading your application…</main>;
   }
@@ -1832,72 +2011,93 @@ export default function MotivationWizardPage() {
                   </p>
                 </div>
               )}
-              {sec.fields.map((f) => (
-                <div key={`${f.key}-w`}>
-                {/* WE ASK BEFORE REPLACING. The applicant has written their
-                    own words in this box, so a new discipline choice offers
-                    its rules rather than overwriting them. */}
-                {prefillOffer?.key === f.key && (
-                  <div className="mb-2 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm">
-                    <p>
-                      You have written your own answer here. Replace it with the
-                      published rules for {prefillOffer.label}?
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
+              {groupFields(sec).map((grp) =>
+                grp.kind === 'plain' ? (
+                  grp.fields.map(renderField)
+                ) : (
+                  /*
+                   * ONE REPEATING ITEM, COLLAPSED.
+                   *
+                   * Operator, 2026-08-24: "for something like the firearm
+                   * details where there is a lot of inputs, hide each
+                   * firearm's detail underneath a theme-matching dropdown. Do
+                   * the same for similar items."
+                   *
+                   * Six firearms × seven boxes is forty-two inputs in a
+                   * column in front of somebody who owns one firearm. Each
+                   * item now shows its NAME and hides its details until
+                   * asked.
+                   *
+                   * ⚠️ NATIVE <details>, NOT A JS ACCORDION. `.gg-disclose`
+                   * is the house disclosure (globals.css) — it costs no
+                   * JavaScript, is keyboard- and screen-reader-accessible
+                   * for free, and its "+" turns 45° and red on open, which
+                   * is what makes this theme-matching rather than merely
+                   * collapsible. The fields inside stay MOUNTED whether open
+                   * or shut (that is how <details> works), so nothing here
+                   * touches the autosave or the required-field counting.
+                   */
+                  <details
+                    key={grp.id}
+                    className="gg-disclose rounded border border-[var(--border)] bg-[var(--bg-inset)]"
+                    open={grp.open}
+                    onToggle={(e) => {
+                      const open = (e.currentTarget as HTMLDetailsElement).open;
+                      setGroupOpen((cur) =>
+                        cur[grp.id] === open ? cur : { ...cur, [grp.id]: open },
+                      );
+                    }}
+                  >
+                    <summary className="flex cursor-pointer items-center justify-between gap-3 p-3">
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {grp.title}
+                        </span>
+                        <span className="block truncate text-xs text-[var(--text-tertiary-on-card)]">
+                          {grp.subtitle}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-3">
+                        {grp.missing > 0 && (
+                          <span
+                            className="gg-nums text-xs"
+                            style={{ color: 'var(--warning)' }}
+                          >
+                            {grp.missing} to answer
+                          </span>
+                        )}
+                        <span className="gg-disclose-mark" aria-hidden="true">
+                          +
+                        </span>
+                      </span>
+                    </summary>
+                    <div className="space-y-4 border-t border-[var(--border-divider)] p-3">
+                      {grp.fields.map(renderField)}
+                      {/* Clearing the boxes, not re-keying the rows. A
+                          middle row that shifted up would move every answer
+                          after it into a different key — and the overlap
+                          check reads any index, so an emptied row simply
+                          prints blank and can be filled again. */}
                       <button
                         type="button"
-                        className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)]"
+                        className="text-xs underline text-[var(--text-tertiary-on-card)]"
                         onClick={() => {
-                          seeded.current[prefillOffer.key] = prefillOffer.text;
-                          setAnswer(prefillOffer.key, prefillOffer.text);
-                          setPrefillOffer(null);
+                          if (
+                            !window.confirm(
+                              `Clear ${grp.title}? The boxes are emptied — nothing else is affected.`,
+                            )
+                          ) {
+                            return;
+                          }
+                          for (const f of grp.fields) setAnswer(f.key, '');
                         }}
                       >
-                        Replace it
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-card-hover)]"
-                        onClick={() => setPrefillOffer(null)}
-                      >
-                        Keep what I wrote
+                        Clear this one
                       </button>
                     </div>
-                  </div>
-                )}
-                <FieldInput
-                  key={f.key}
-                  field={f}
-                  value={answers[f.key] ?? ''}
-                  missing={outstanding.includes(f.key)}
-                  locked={
-                    (prefilled.current?.has(f.key) ?? false) &&
-                    !unlocked.has(f.key)
-                  }
-                  onUnlock={() =>
-                    setUnlocked((u) => new Set(u).add(f.key))
-                  }
-                  onChange={(v) => setAnswer(f.key, v)}
-                  onPick={pickOption}
-                  onPickMulti={pickMulti}
-                />
-                {/* ⚠️ THE PICKER SITS UNDER THE FIELD IT FILLS, not up in the
-                    offer panel. The panel is a single "fill everything"
-                    button; this is the answer to "I have two of those, which
-                    one?" — and the only place that question makes sense is
-                    beside the box it is about. */}
-                {/* ⚠️ THE PICKERS ARE GONE FROM HERE, and the documents fill
-                    these boxes instead. A camera, a file picker and a
-                    dropdown hanging under two questions duplicated the
-                    checklist below — the same three controls, for the same
-                    two documents, in a second place — and the operator's word
-                    for the result was cluttered. Attach the competency
-                    certificate in the documents section and this fills
-                    itself; see the note on applying suggestions in
-                    addOneUpload. */}
-                </div>
-              ))}
-
+                  </details>
+                ),
+              )}
               {/* ADD A LICENCE FROM HERE. The applicant is looking at six
                   empty boxes per firearm; the licence card in their hand
                   answers all six. It goes up as a CURRENT_LICENCE, which the
