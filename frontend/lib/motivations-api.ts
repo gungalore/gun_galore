@@ -624,7 +624,7 @@ export const motivationsApi = {
     request<{
       attached: { kind: string; title: string }[];
       skipped: { kind: string; title: string; why: string }[];
-      reason: 'ok' | 'no-consent' | 'not-editable';
+      reason: 'ok' | 'no-consent' | 'not-editable' | 'already-done';
     }>(
       t,
       `/${id}/autolink`,

@@ -1100,11 +1100,30 @@ export class MotivationsService {
     const user = await this.requireUser(clerkId);
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true, licenceType: true, status: true },
+      select: {
+        id: true,
+        licenceType: true,
+        status: true,
+        autolinkedAt: true,
+      },
     });
     if (!row) throw new NotFoundException('Motivation not found');
     if (!EDITABLE.includes(row.status)) {
       return { attached: [], skipped: [], reason: 'not-editable' as const };
+    }
+
+    // ⚠️ ONCE PER APPLICATION, NOT ONCE PER PAGE LOAD, AND THIS GUARD IS THE
+    // WHOLE DIFFERENCE BETWEEN A FEATURE AND A FIGHT. decideAutolink skips a
+    // kind that is ALREADY ATTACHED — so the moment the member deleted a
+    // document it was no longer attached, and the next load put it straight
+    // back. The operator hit it within hours of the feature shipping: "why
+    // can't I delete the proof of address?"
+    //
+    // A feature that silently undoes somebody's own deletions is worse than no
+    // feature. The routing spec fills vault slots "at generator open", which
+    // is once — so this records that it happened, and a delete stays deleted.
+    if (row.autolinkedAt) {
+      return { attached: [], skipped: [], reason: 'already-done' as const };
     }
 
     if (!(await this.vaultConsent.mayKeepFor(user.id))) {
@@ -1194,6 +1213,14 @@ export class MotivationsService {
         );
       }
     }
+
+    // ⚠️ STAMPED EVEN WHEN NOTHING WAS ATTACHED. "We looked and there was
+    // nothing to add" is a completed run, and re-running it on every load
+    // would re-attach whatever the member deletes between visits.
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: { autolinkedAt: new Date() },
+    });
 
     return {
       attached,

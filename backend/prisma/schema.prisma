@@ -4367,6 +4367,13 @@ model Motivation {
   /// not touch their profile data. Per motivation, not per account: agreeing
   /// once is not agreeing forever.
   profileConsentAt      DateTime?
+  /// When we auto-attached the member's own Document Centre documents here.
+  ///
+  /// ⚠️ ONCE PER APPLICATION, NEVER ONCE PER PAGE LOAD. Auto-link skips a kind
+  /// already attached, so without this marker a DELETED document was simply
+  /// re-attached on the next load — the member could not remove it. A feature
+  /// that undoes somebody's own deletions is worse than no feature.
+  autolinkedAt          DateTime?
   testimonialConsentAt  DateTime?
   // The applicant's own declaration that the facts are true and they submit it
   // as their own motivation. No PDF renders without this.

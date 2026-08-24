@@ -1,0 +1,15 @@
+-- When we auto-attached the member's own documents to this application.
+--
+-- ⚠️ IT RUNS ONCE PER APPLICATION, NOT ONCE PER PAGE LOAD, AND THE DIFFERENCE
+-- IS A BUG SOMEBODY HIT WITHIN HOURS. Auto-link skips a kind that is already
+-- attached — so once the member DELETED a document, it was no longer attached,
+-- and the next page load put it straight back. From their side: "why can't I
+-- delete the proof of address?"
+--
+-- A feature that undoes the member's own deletions is worse than no feature.
+-- The routing spec says vault slots fill "at generator open", which is once —
+-- so this records that it happened, and a delete stays deleted.
+--
+-- NULLABLE, and null means "not yet". Existing applications will auto-link on
+-- their next open, which is the intended behaviour for them.
+ALTER TABLE "Motivation" ADD COLUMN "autolinkedAt" TIMESTAMP(3);
