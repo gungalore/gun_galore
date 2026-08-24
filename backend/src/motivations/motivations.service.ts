@@ -956,6 +956,11 @@ export class MotivationsService {
           purgedAt: true,
           sha256: true,
           expiresOn: true,
+          // WHICH association document this is, where its kind covers several.
+          // Without it a sworn good standing letter is indistinguishable from a
+          // status card in the vault, and the good standing slot's reuse list
+          // is empty however many the member holds — see motivation-library.
+          disciplineType: true,
           // The date PRINTED on the document, which is what a proof of address
           // is judged on — not when it was photographed.
           issuedOn: true,

@@ -259,3 +259,84 @@ describe('libraryFor', () => {
     );
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE GOOD STANDING SLOT'S REUSE LIST WAS PERMANENTLY EMPTY.
+//
+// Operator, item 2 of twelve: "can't pull anything from there". Four
+// association documents were folded into one CredentialKind on 2026-08-20, so
+// a sworn good standing letter and a dedicated status card are both
+// DEDICATED_DISCIPLINE — and the slot a credential was offered in came from
+// primaryUploadKind(), which returns the FIRST covered kind and nothing else.
+//
+// Two consequences, both wrong: the "letter of good standing" slot offered
+// nothing however many the member held, and a sworn letter reused from the
+// vault attached as ASSOCIATION_CARD — so the pack captioned it "Your
+// dedicated status certificate", the wrong document name on evidence in front
+// of a DFO.
+// ────────────────────────────────────────────────────────────────────
+describe('which slot a folded association document is offered in', () => {
+  it('⚠️ offers a sworn letter under GOOD_STANDING_LETTER, not the card slot', () => {
+    const items = buildLibrary(
+      [
+        credential({
+          id: 'c1',
+          kind: 'DEDICATED_DISCIPLINE',
+          disciplineType: 'GOOD_STANDING_LETTER',
+          title: 'Good standing 2026',
+        }),
+      ],
+      [],
+      'current',
+      label,
+    );
+    expect(items.map((i) => i.kind)).toEqual(['GOOD_STANDING_LETTER']);
+  });
+
+  it('still offers a status card under the card slot', () => {
+    const items = buildLibrary(
+      [
+        credential({
+          id: 'c1',
+          kind: 'DEDICATED_DISCIPLINE',
+          disciplineType: 'ASSOCIATION_CARD',
+        }),
+      ],
+      [],
+      'current',
+      label,
+    );
+    expect(items.map((i) => i.kind)).toEqual(['ASSOCIATION_CARD']);
+  });
+
+  it('falls back to the primary kind for rows filed before this existed', () => {
+    // Every credential adopted before 2026-08-24 has a null disciplineType.
+    // They must keep working, just without the finer distinction.
+    const items = buildLibrary(
+      [credential({ id: 'c1', kind: 'DEDICATED_DISCIPLINE', disciplineType: null })],
+      [],
+      'current',
+      label,
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe('ASSOCIATION_CARD');
+  });
+
+  it('⚠️ ignores a disciplineType that is not a real upload kind', () => {
+    // It is a free String column. A stale or hand-edited value must not become
+    // a slot that does not exist.
+    const items = buildLibrary(
+      [
+        credential({
+          id: 'c1',
+          kind: 'DEDICATED_DISCIPLINE',
+          disciplineType: 'NOT_A_REAL_KIND',
+        }),
+      ],
+      [],
+      'current',
+      label,
+    );
+    expect(items[0].kind).toBe('ASSOCIATION_CARD');
+  });
+});

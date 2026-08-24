@@ -42,6 +42,19 @@ export interface LibraryCredentialRow {
    * and somebody can upload a six-month-old bill today.
    */
   issuedOn?: string | null;
+  /**
+   * WHICH document of its kind this is, where the kind covers several.
+   *
+   * ⚠️ THE GOOD STANDING LETTER NEEDS THIS TO BE REACHABLE AT ALL. Four
+   * association documents were folded into one CredentialKind, so a sworn
+   * letter and a status card are both DEDICATED_DISCIPLINE — and the slot a
+   * credential is offered in came from primaryUploadKind(), which returns the
+   * FIRST covered kind and nothing else. Every association document therefore
+   * appeared under "dedicated status certificate" and the "letter of good
+   * standing" slot's reuse list was permanently empty, whatever the member had
+   * in their Centre. Set on adoption; see vault-adoption DISCIPLINE_TYPE.
+   */
+  disciplineType?: string | null;
   storageKey: string | null;
   purgedAt: Date | null;
   sha256: string | null;
@@ -146,6 +159,11 @@ function isoDay(d: Date): string {
  * @param currentId    the motivation being filled in
  * @param labelFor     upload kind → the member-facing name
  */
+/** Is this string a real MotivationUploadKind? Guards the stored disciplineType. */
+function isUploadKind(v: string): boolean {
+  return Object.prototype.hasOwnProperty.call(MotivationUploadKind, v);
+}
+
 export function buildLibrary(
   credentials: LibraryCredentialRow[],
   uploads: LibraryUploadRow[],
@@ -212,7 +230,19 @@ export function buildLibrary(
     if (!c.storageKey || c.purgedAt) return;
     // The row it would be filed as. A document covering several rows is still
     // ONE library entry — the extra roles ride on the stored upload.
-    const kind = primaryUploadKind(c.kind);
+    //
+    // ⚠️ WHAT IT ACTUALLY IS BEATS WHAT ITS KIND DEFAULTS TO. primaryUploadKind
+    // returns the first covered kind, which is right for a credential whose
+    // kind means one thing and wrong for DEDICATED_DISCIPLINE, which covers
+    // both the status card and the sworn good standing letter. Offering a
+    // member's sworn letter as their "dedicated status certificate" attaches
+    // it under the wrong annexure heading in front of a DFO — and leaves the
+    // good standing slot claiming they have nothing.
+    const declared = (c.disciplineType ?? '').trim();
+    const kind =
+      declared && isUploadKind(declared)
+        ? (declared as MotivationUploadKind)
+        : primaryUploadKind(c.kind);
     // A vault document with no motivation slot — a PROFESSIONAL_HUNTER
     // registration, an OTHER — is kept and tracked, and simply has nothing to
     // fill here.

@@ -67,6 +67,18 @@ export const VAULTABLE: ReadonlySet<MotivationUploadKind> = new Set([
   MotivationUploadKind.SAFE_PHOTO_BOLTS,
   MotivationUploadKind.SAFE_INSTALLATION,
   MotivationUploadKind.SHOOTING_ACTIVITY_LOG,
+  // ⚠️ ADDED 2026-08-24. Operator, item 2 of twelve: "Letter of good standing
+  // not in Document Centre so can't pull anything from there or save it once
+  // it's been uploaded in the Motivation Centre." The save half was this set:
+  // a good standing letter photographed on an application had NO route into
+  // the vault at all — adoptUpload returned false before doing anything, and
+  // because the caller is a swallowed `void ... .catch()`, it did so without
+  // even a log line. The same was true of the competency certificate and the
+  // two association documents: all four could be PULLED from the Centre and
+  // none of them could be SAVED to it.
+  MotivationUploadKind.GOOD_STANDING_LETTER,
+  MotivationUploadKind.COMPETENCY_CERTIFICATE,
+  MotivationUploadKind.ASSOCIATION_CARD,
 ]);
 
 /**
@@ -94,6 +106,35 @@ const VAULT_KIND: Partial<Record<MotivationUploadKind, CredentialKind>> = {
   [MotivationUploadKind.SAFE_PHOTO_AJAR]: CredentialKind.SAFE_PHOTOGRAPHS,
   [MotivationUploadKind.SAFE_PHOTO_BOLTS]: CredentialKind.SAFE_PHOTOGRAPHS,
   [MotivationUploadKind.SAFE_INSTALLATION]: CredentialKind.SAFE_PHOTOGRAPHS,
+  // ⚠️ REQUIRED IN THE SAME BREATH AS THE VAULTABLE ENTRIES ABOVE, OR THE
+  // ADOPTION FAILS SILENTLY FOREVER. There is no GOOD_STANDING_LETTER or
+  // ASSOCIATION_CARD member of CredentialKind — the four association kinds
+  // were folded into DEDICATED_DISCIPLINE on 2026-08-20 — so vaultKindFor's
+  // `kind as unknown as CredentialKind` fallback would hand Prisma a value
+  // its enum does not contain, the create would reject, and the swallowed
+  // caller would never say so. Exactly the "adopted into a hole" failure the
+  // note above this map describes.
+  [MotivationUploadKind.GOOD_STANDING_LETTER]: CredentialKind.DEDICATED_DISCIPLINE,
+  [MotivationUploadKind.ASSOCIATION_CARD]: CredentialKind.DEDICATED_DISCIPLINE,
+};
+
+/**
+ * WHICH association document this actually is, preserved on the credential.
+ *
+ * ⚠️ WITHOUT THIS, FILING IS LOSSY IN A WAY A DFO SEES. A sworn good standing
+ * letter and a dedicated status card both file as DEDICATED_DISCIPLINE, so on
+ * the way back out the Centre cannot tell them apart — and the pack would
+ * caption a member's sworn letter "Your dedicated status certificate", which
+ * is the wrong document name on evidence in front of the Registrar.
+ *
+ * The schema already anticipated this: Credential.disciplineType is documented
+ * as where the distinction "now lives, where it can be read rather than
+ * inferred from which pile the document landed in". Nothing had ever written
+ * it. This does.
+ */
+const DISCIPLINE_TYPE: Partial<Record<MotivationUploadKind, string>> = {
+  [MotivationUploadKind.GOOD_STANDING_LETTER]: 'GOOD_STANDING_LETTER',
+  [MotivationUploadKind.ASSOCIATION_CARD]: 'ASSOCIATION_CARD',
 };
 
 export function vaultKindFor(kind: MotivationUploadKind): CredentialKind {
@@ -181,6 +222,8 @@ export class VaultAdoptionService {
         data: {
           userId,
           kind: vaultKindFor(u.kind),
+          // Which association document it really is — see DISCIPLINE_TYPE.
+          disciplineType: DISCIPLINE_TYPE[u.kind] ?? null,
           // ⚠️ THE TITLE STILL COMES FROM THE ORIGINAL KIND. The row is filed
           // forward so the Centre can find it; what the member called it is
           // theirs, and "Your safe, closed" is the one record left of which
