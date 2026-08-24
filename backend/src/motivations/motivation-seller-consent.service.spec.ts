@@ -153,36 +153,96 @@ describe('a failed invite costs nothing', () => {
   });
 });
 
-describe('the firearm has to be named', () => {
-  it('refuses with no serial anywhere', async () => {
-    const { svc } = make();
-    await expect(
-      svc.invite({ ...ARGS, firearm: { make: 'CZ' } } as never),
-    ).rejects.toThrow(/serial/i);
-  });
-
-  it('treats a literal NONE as no serial', async () => {
-    // Real cards read "NONE" in serial rows; it is not an identifier.
-    const { svc } = make();
-    await expect(
-      svc.invite({ ...ARGS, firearm: { make: 'CZ', serial: 'NONE' } } as never),
-    ).rejects.toThrow(/serial/i);
-  });
-
-  it('accepts a barrel serial when the headline one is NONE', async () => {
+// ⚠️ THE INVITE ASKS FOR ENOUGH TO NAME THE FIREARM IN AN SMS, AND NO MORE.
+//
+// It used to demand the make AND one of the four serial rows. That was right
+// about the CONSENT and wrong about the INVITE, and it made the flow
+// unreachable on the ordinary route: firearm_serial is formOnly, so it is
+// hidden unless the applicant opted into the SAPS 271 — and not answering that
+// IS the dealer path, the default. The refusal named a box that was not on
+// screen anywhere.
+//
+// What protects the consent is downstream and stronger: the seller photographs
+// their own card, confirms the details on screen, and submit() writes them over
+// the snapshot. Operator, 2026-08-24: "ask the applicant just to give the Name,
+// Cell number and Firearm (just the name so the seller knows which firearm is
+// referred to)."
+describe('the firearm has to be named — but only well enough to recognise', () => {
+  it('accepts a plain label with no serial and no make', async () => {
     const { svc, sms } = make();
     await svc.invite({
       ...ARGS,
-      firearm: { make: 'CZ', serial: 'NONE', barrelSerial: 'B999' },
+      firearm: { label: 'the Howa 6.5' },
     } as never);
     expect(sms).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses with no make', async () => {
+  it('⚠️ accepts a make alone — the case the old gate refused', async () => {
+    // This is the ordinary dealer-path applicant: they know the make, the
+    // serial box is not on their screen, and before this they could not send
+    // the invite at all.
+    const { svc, sms } = make();
+    await svc.invite({ ...ARGS, firearm: { make: 'CZ' } } as never);
+    expect(sms).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses only when the firearm cannot be named at all', async () => {
     const { svc } = make();
     await expect(
-      svc.invite({ ...ARGS, firearm: { serial: 'A12345' } } as never),
-    ).rejects.toThrow(/make/i);
+      svc.invite({ ...ARGS, firearm: {} } as never),
+    ).rejects.toThrow(/which firearm/i);
+  });
+
+  it('does not count a card‑style "NONE" as a name', async () => {
+    const { svc } = make();
+    await expect(
+      svc.invite({
+        ...ARGS,
+        firearm: { make: 'NONE', model: 'NONE' },
+      } as never),
+    ).rejects.toThrow(/which firearm/i);
+  });
+
+  it('puts the label in the SMS, not a serial', async () => {
+    const { svc, sms } = make();
+    await svc.invite({
+      ...ARGS,
+      firearm: { label: 'the Howa 6.5', serial: 'B477423' },
+    } as never);
+    const body = sms.mock.calls[0][0].message as string;
+    expect(body).toContain('the Howa 6.5');
+    // The serial belongs on the card the seller photographs, not in a text
+    // message sent to a phone number the buyer typed.
+    expect(body).not.toContain('B477423');
+  });
+});
+
+describe('firearmLabel', () => {
+  it('prefers the buyer’s own words', () => {
+    expect(firearmLabel({ label: 'my dad’s old .308', make: 'CZ' })).toBe(
+      'my dad’s old .308',
+    );
+  });
+
+  it('falls back to what the form already knows', () => {
+    // Somebody who HAS filled the firearm section is not asked to describe it
+    // a second time.
+    expect(firearmLabel({ make: 'HOWA', calibre: '6.5 Creedmoor' })).toBe(
+      'HOWA 6.5 Creedmoor',
+    );
+  });
+
+  it('skips card-style NONE values', () => {
+    expect(firearmLabel({ make: 'HOWA', model: 'NONE' })).toBe('HOWA');
+  });
+
+  it('is empty when there is nothing to go on', () => {
+    expect(firearmLabel({})).toBe('');
+    expect(firearmLabel({ label: '   ' })).toBe('');
+  });
+
+  it('caps a label somebody pasted an essay into', () => {
+    expect(firearmLabel({ label: 'x'.repeat(500) })).toHaveLength(80);
   });
 });
 
@@ -200,6 +260,7 @@ import {
   primarySerial,
   cardToApplicationFirearm,
   sanitiseCardFirearm,
+  firearmLabel,
 } from './motivation-seller-consent.service';
 import { encryptText, tryDecryptText } from '../common/blob-crypto';
 

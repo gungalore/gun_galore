@@ -129,9 +129,35 @@ export interface FirearmSnapshot {
   frameMake?: string;
   /** Section the licence was issued under, e.g. "SECTION 16". */
   section?: string;
+  /**
+   * A few words naming the firearm, for the SMS only.
+   *
+   * ⚠️ NEVER PRINTED ON THE CONSENT. The declaration lists the card's own rows
+   * (see CARD_ROWS) — this is the buyer's shorthand, typed before anybody has
+   * seen the card, and exists so the seller can tell WHICH firearm the message
+   * is about. "Howa 6.5" is a fine value; it is not evidence of anything.
+   */
+  label?: string;
   /** The applicant, named in the declaration the seller signs. */
   applicantName: string;
   applicantIdNumber?: string;
+}
+
+/**
+ * What to call the firearm in the SMS.
+ *
+ * The buyer's own words first, then anything already known off the form, so an
+ * applicant who HAS filled the firearm section is not asked to describe it
+ * twice. Empty means we cannot name it at all, which is the one thing the
+ * invite refuses on.
+ */
+export function firearmLabel(f: Partial<FirearmSnapshot>): string {
+  const own = (f.label ?? '').trim();
+  if (own) return own.slice(0, 80);
+  const parts = [f.make, f.model, f.calibre]
+    .map((v) => (v ?? '').trim())
+    .filter((v) => v && v.toUpperCase() !== 'NONE');
+  return parts.join(' ').slice(0, 80);
 }
 
 /**
@@ -355,23 +381,34 @@ export class MotivationSellerConsentService {
       throw new BadRequestException('Enter a valid mobile number.');
     }
 
-// ⚠️ MAKE AND A SERIAL. NOT MODEL — a real card reads `Model NONE`, so
-    // requiring one would refuse a perfectly ordinary firearm.
+    // ⚠️ ENOUGH TO NAME THE FIREARM IN AN SMS. NOT ENOUGH TO DESCRIBE IT — the
+    // card does that.
     //
-    // ⚠️ AND ANY OF THE FOUR SERIAL ROWS COUNTS. The card carries a headline
-    // serial plus barrel, receiver and frame rows, and which of them is filled
-    // varies by firearm — the example that prompted this has the number on the
-    // barrel and receiver with the frame reading NONE. Demanding the headline
-    // one specifically would refuse those.
-    const anySerial = [
-      args.firearm.serial,
-      args.firearm.barrelSerial,
-      args.firearm.receiverSerial,
-      args.firearm.frameSerial,
-    ].some((v) => (v ?? '').trim() && (v ?? '').trim().toUpperCase() !== 'NONE');
-    if (!(args.firearm.make ?? '').trim() || !anySerial) {
+    // This used to demand the make AND one of the four serial rows, on the
+    // reasoning that a consent naming no firearm gives a DFO nothing to match.
+    // The reasoning was right about the CONSENT and wrong about the INVITE, and
+    // the gate made the whole flow unreachable on the ordinary route:
+    // firearm_serial is formOnly, so it is hidden unless the applicant opted
+    // into having the SAPS 271 filled in — and NOT answering that question is
+    // the dealer path, which is the default. The refusal named a box that was
+    // not on screen anywhere.
+    //
+    // What actually protects the consent is downstream, and is stronger than
+    // this ever was: the seller photographs their own licence, the OCR reads
+    // it, THE SELLER CONFIRMS THOSE DETAILS ON SCREEN, and submit() writes them
+    // over the snapshot. The printed consent names the firearm off the
+    // government card, checked by the one person who owns it — not off whatever
+    // the buyer could remember at invite time.
+    //
+    // So the invite needs one thing only: enough for the seller to recognise
+    // WHICH firearm is being asked about when the SMS arrives. Operator,
+    // 2026-08-24: "we can ask the applicant just to give the Name, Cell number
+    // and Firearm (just the name so the seller knows which firearm is
+    // referred to)."
+    const label = firearmLabel(args.firearm);
+    if (!label) {
       throw new BadRequestException(
-        'Fill in the firearm\'s make and at least one serial number before asking the owner to consent — a consent has to name the firearm it is about.',
+        'Say which firearm this is about — a make, or a few words the owner will recognise — so they know what they are being asked to consent to.',
       );
     }
 
@@ -441,17 +478,8 @@ export class MotivationSellerConsentService {
       const sent = await this.sms.sendSms({
         to: phone,
         message:
-          `${args.applicantName} is applying for a licence for the ` +
-          `${args.firearm.make} (serial ${
-            [
-              args.firearm.serial,
-              args.firearm.barrelSerial,
-              args.firearm.receiverSerial,
-              args.firearm.frameSerial,
-            ]
-              .map((v) => (v ?? '').trim())
-              .find((v) => v && v.toUpperCase() !== 'NONE') ?? '—'
-          }) and needs your consent as the current owner.\n\n${link}\n\n` +
+          `${args.applicantName} is applying for a licence for your ` +
+          `${label} and needs your consent as the current owner.\n\n${link}\n\n` +
           `This link works for 48 hours. All Outdoor.`,
         reference: `consent-${row.id}`,
       });
@@ -774,6 +802,8 @@ export class MotivationSellerConsentService {
     status: 'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED';
     invitedName: string | null;
     cardFirearm: Record<string, string> | null;
+    /** The front-of-card photograph, to check the details against. */
+    licenceFrontUploadId: string | null;
   }> {
     const user = await this.prisma.user.findUnique({
       where: { clerkId: applicantClerkId },
@@ -794,10 +824,18 @@ export class MotivationSellerConsentService {
         invitedName: true,
         declinedAt: true,
         firearmSnapshotEncrypted: true,
+        // For the licence photograph the applicant checks the details against.
+        motivationId: true,
+        licenceFrontKey: true,
       },
     });
     if (!row) {
-      return { status: 'NONE', invitedName: null, cardFirearm: null };
+      return {
+        status: 'NONE',
+        invitedName: null,
+        cardFirearm: null,
+        licenceFrontUploadId: null,
+      };
     }
 
     const status = (
@@ -813,7 +851,40 @@ export class MotivationSellerConsentService {
       cardFirearm = Object.keys(mapped).length ? mapped : null;
     }
 
-    return { status, invitedName: row.invitedName, cardFirearm };
+    // ⚠️ THE PHOTOGRAPH, SO THE DETAILS CAN BE CHECKED AGAINST THE CARD ITSELF.
+    //
+    // Operator, 2026-08-24: "the applicant can just double check visually with
+    // the picture of the license that came back from the seller."
+    //
+    // Adopting the card's details is the applicant putting them on an
+    // application they sign, and until now the only thing they could check
+    // against was our own transcription of it — which is exactly the step that
+    // could be wrong. The picture is already in their pack; this hands back the
+    // upload id so the panel can show it beside the text.
+    //
+    // The id only, never the bytes: the file is decrypted per request from the
+    // encrypted store through the existing owner-guarded upload route, and
+    // there is deliberately no public URL for it.
+    let licenceFrontUploadId: string | null = null;
+    if (status === 'COMPLETED' && row.licenceFrontKey) {
+      const up = await this.prisma.motivationUpload
+        .findFirst({
+          where: {
+            motivationId: row.motivationId,
+            storageKey: row.licenceFrontKey,
+          },
+          select: { id: true },
+        })
+        .catch(() => null);
+      licenceFrontUploadId = up?.id ?? null;
+    }
+
+    return {
+      status,
+      invitedName: row.invitedName,
+      cardFirearm,
+      licenceFrontUploadId,
+    };
   }
 
   /** The signature bytes, for the printed consent. */

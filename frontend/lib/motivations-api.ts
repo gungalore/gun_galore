@@ -654,10 +654,13 @@ export const motivationsApi = {
       status: 'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED';
       invitedName: string | null;
       cardFirearm: Record<string, string> | null;
+      /** The front-of-card photograph, to check the details against. */
+      licenceFrontUploadId: string | null;
     }>(t, `/${id}/seller-consent`, {}, {
       status: 'NONE',
       invitedName: null,
       cardFirearm: null,
+      licenceFrontUploadId: null,
     }),
 
   // ── Character witnesses ─────────────────────────────────────────

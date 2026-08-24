@@ -61,7 +61,7 @@ export default function MotivationSellerConsent({
   const { getToken } = useAuth();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [serial, setSerial] = useState('');
+  const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,16 +77,51 @@ export default function MotivationSellerConsent({
     null,
   );
   const [adopted, setAdopted] = useState(false);
+  const [frontId, setFrontId] = useState<string | null>(null);
 
   const refreshStatus = useCallback(async () => {
     try {
       const r = await motivationsApi.sellerConsentStatus(getToken, motivationId);
       setStatus(r.status);
       setCardFirearm(r.cardFirearm);
+      setFrontId(r.licenceFrontUploadId);
     } catch {
       /* fail-soft: the send form still works without a status read */
     }
   }, [getToken, motivationId]);
+
+  // ⚠️ THE PHOTOGRAPH THE DETAILS ARE CHECKED AGAINST.
+  //
+  // Operator, 2026-08-24: "the applicant can just double check visually with
+  // the picture of the license that came back from the seller."
+  //
+  // Adopting is the applicant putting these details on an application they
+  // sign, and our transcription of the card is the step that can be wrong — so
+  // checking the text against our own text proves nothing. This is the card.
+  //
+  // ⚠️ A BLOB, NOT A src=. The route needs an Authorization header and the
+  // bytes are decrypted per request, so <img src> cannot reach it. The URL is
+  // ours to revoke — leaving it would pin the image for the life of the tab.
+  const [frontUrl, setFrontUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!frontId) return;
+    let url: string | null = null;
+    let live = true;
+    void motivationsApi
+      .uploadBlobUrl(getToken, motivationId, frontId)
+      .then((u) => {
+        url = u;
+        if (live) setFrontUrl(u);
+        else URL.revokeObjectURL(u);
+      })
+      .catch(() => {
+        /* fail-soft: the details still adopt without the picture */
+      });
+    return () => {
+      live = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [frontId, getToken, motivationId]);
 
   // On mount, and — while we are still waiting on the seller — every 30s, so
   // the buyer sees "signed" without reloading. Stops polling once resolved.
@@ -100,21 +135,14 @@ export default function MotivationSellerConsent({
     return () => clearInterval(t);
   }, [status, refreshStatus]);
 
-  // ⚠️ THE SERIAL HAS NOWHERE ELSE TO COME FROM ON THE DEFAULT PATH, WHICH
-  // MADE THIS WHOLE PANEL UNREACHABLE. The server refuses an invite without a
-  // serial — correctly, since a consent that does not name the firearm gives a
-  // DFO nothing to match. But the only serial in the registry, firearm_serial,
-  // is formOnly: it is hidden unless the applicant opted into having the SAPS
-  // 271 filled in, and NOT ANSWERING THAT QUESTION IS THE DEALER PATH, which
-  // is the default. So on the ordinary route the refusal named a box that was
-  // not on screen anywhere. Asking for it here is the smallest fix that does
-  // not weaken the gate: the applicant buying privately can see the firearm.
-  const known = (firearm.serial ?? '').trim();
-  const needsSerial = !known || known.toUpperCase() === 'NONE';
-  const serialToSend = needsSerial ? serial.trim() : known;
-  // Make is a normal required field in "The firearm", so it has a home already
-  // — point at it rather than duplicating the question down here.
-  const makeMissing = !(firearm.make ?? '').trim();
+  // What the form already knows, joined the same way the server would. Shown
+  // as the placeholder so an applicant who has filled the firearm section can
+  // just send, and typed over by anyone who would rather say it differently.
+  const knownLabel = [firearm.make, firearm.model, firearm.calibre]
+    .map((v) => (v ?? '').trim())
+    .filter((v) => v && v.toUpperCase() !== 'NONE')
+    .join(' ');
+  const labelToSend = label.trim() || knownLabel;
 
   const send = async () => {
     setBusy(true);
@@ -124,7 +152,7 @@ export default function MotivationSellerConsent({
         name,
         phone,
         applicantName,
-        firearm: { ...firearm, serial: serialToSend },
+        firearm: { ...firearm, label: labelToSend },
       });
       setSent(true);
     } catch (e) {
@@ -167,6 +195,22 @@ export default function MotivationSellerConsent({
                 </div>
               ))}
             </dl>
+            {/* The card itself, under the details read off it. Checking our
+                text against our text proves nothing; this is the document. */}
+            {frontUrl && (
+              <figure className="mt-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={frontUrl}
+                  alt="The front of the owner’s licence card, as they photographed it"
+                  className="w-full rounded-[var(--radius)] border border-[var(--border)]"
+                />
+                <figcaption className="mt-1 text-xs text-[var(--text-tertiary)]">
+                  Their licence, as they photographed it. Check the details
+                  above against it before you use them.
+                </figcaption>
+              </figure>
+            )}
             <p className="mt-2 text-xs text-[var(--text-tertiary)]">
               This is the official SAPS record for the firearm. Using it makes
               sure your application matches the card exactly.
@@ -272,21 +316,37 @@ export default function MotivationSellerConsent({
         />
       </label>
 
-      {needsSerial && (
-        <label className="mt-2 block text-xs text-[var(--text-secondary)]">
-          The firearm&rsquo;s serial number
-          <input
-            value={serial}
-            onChange={(e) => setSerial(e.target.value)}
-            className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
-          />
-          <span className="mt-1 block text-[var(--text-tertiary)]">
-            The consent has to name the firearm it is about, so the owner can
-            check it is theirs before signing. Ask them for it if you do not
-            have it in front of you.
-          </span>
-        </label>
-      )}
+      {/* ⚠️ A NAME FOR THE FIREARM, NOT ITS PARTICULARS.
+        *
+        * This box used to ask for the SERIAL NUMBER, and the whole panel was
+        * unreachable because of it: the server refused an invite without one,
+        * and the only serial in the registry is formOnly — hidden unless the
+        * applicant opted into the SAPS 271, which the default dealer path does
+        * not. It asked for something that was not on screen and could not be.
+        *
+        * Operator, 2026-08-24: "ask the applicant just to give the Name, Cell
+        * number and Firearm (just the name so the seller knows which firearm is
+        * referred to). Then we can autofill the whole card."
+        *
+        * So this is shorthand for the SMS — "the Howa 6.5" — and nothing more.
+        * The particulars come off the seller's own licence card, which they
+        * photograph and confirm, and which then becomes what the consent
+        * declares. It is prefilled from the form when the firearm section is
+        * already filled, so nobody describes the same firearm twice. */}
+      <label className="mt-2 block text-xs text-[var(--text-secondary)]">
+        Which firearm is it?
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder={knownLabel || 'e.g. the Howa 6.5'}
+          className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+        />
+        <span className="mt-1 block text-[var(--text-tertiary)]">
+          Just enough for them to know which one you mean. We read the make,
+          calibre and serial numbers off their licence card — you do not need
+          them here.
+        </span>
+      </label>
 
       {/* ⚠️ TELL THEM TO SPEAK TO THE SELLER FIRST. A stranger receiving an
           unexplained SMS about a firearm licence is a stranger who ignores it,
@@ -294,15 +354,6 @@ export default function MotivationSellerConsent({
       <p className="mt-2 text-xs text-[var(--text-tertiary)]">
         Speak to them first so they know it is coming.
       </p>
-
-      {/* Caught here rather than at the server: the make lives in "The
-          firearm" and the applicant needs telling where to go, not a refusal. */}
-      {makeMissing && (
-        <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-          Fill in the firearm&rsquo;s make under &ldquo;The firearm&rdquo;
-          first &mdash; the owner is consenting to one specific firearm.
-        </p>
-      )}
 
       {error && <p className="mt-2 text-xs text-[var(--red)]">{error}</p>}
 
@@ -313,8 +364,7 @@ export default function MotivationSellerConsent({
           busy ||
           name.trim().length < 2 ||
           phone.trim().length < 9 ||
-          makeMissing ||
-          !serialToSend
+          !labelToSend
         }
         className="mt-3 w-full rounded-[var(--radius)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
       >
