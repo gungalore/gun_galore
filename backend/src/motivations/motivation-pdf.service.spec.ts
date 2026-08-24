@@ -304,13 +304,22 @@ describe('the unpaid mark', () => {
     expect(flat(text)).toMatch(/issued without this mark/i);
   });
 
-  it('leaves a paid pack completely clean', async () => {
+  it('leaves a paid pack clean of the UNPAID mark', async () => {
     const paid = await svc.render({ ...makeInput(), watermark: false });
     const { text } = await readPdfAsync(paid.pdf);
     expect(squash(text)).not.toContain(squash(WATERMARK_TEXT));
     expect(flat(text)).not.toContain('Preview copy');
-    // No logo either: the document carries no branding beyond the footer.
-    expect(paid.pdf.toString('latin1')).not.toMatch(/\/Subtype\s*\/Image/);
+    // ⚠️ THIS USED TO ASSERT THE PACK CONTAINED NO IMAGE AT ALL, as a proxy
+    // for "no watermark" — true only while the watermark was the sole picture
+    // in the document. Operator, 2026-08-24: "add ALLOUTDOORS logo on the
+    // footer of each page and say Prepared by All Outdoor", so a paid pack now
+    // carries the mark on every page BY DESIGN. The proxy is retired; what is
+    // actually meant — no unpaid mark — is asserted above, and the branding
+    // that IS wanted is asserted here.
+    // squash(), not flat() — the footer is set with wide character spacing, so
+    // it extracts as "P R E P A R E D  B Y ...". Same reason the watermark
+    // assertion above squashes.
+    expect(squash(text)).toContain(squash('PREPARED BY ALL OUTDOOR'));
   });
 });
 

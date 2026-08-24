@@ -322,13 +322,63 @@ export function footerStrip(
   doc.rect(0, PAGE_H - FOOTER_H, PAGE_W, FOOTER_H).fill(c.wash);
   const size = px(8);
   const tracking = size * 0.28;
+
+  // ── the brand mark, bottom left ───────────────────────────────────
+  //
+  // Operator, 2026-08-24: "add ALLOUTDOORS logo on the footer of each page and
+  // say Prepared by All Outdoor."
+  //
+  // ⚠️ THE STRIP'S CENTRED LINE IS MEASURED AGAINST WHAT IS LEFT, not against
+  // the full width. fitSegments sheds segments from the tail until the line
+  // fits, so handing it the whole content width while a logo occupies the left
+  // end would let a long firearm name run underneath the mark. The width the
+  // mark and the byline take is subtracted before the line is fitted.
+  //
+  // ⚠️ AND IT DEGRADES TO WORDS. logoPath() returns null rather than throwing
+  // when the asset is missing, and this pass runs AFTER every page has been
+  // emitted — a throw here fails the whole download rather than losing a small
+  // picture. Same reasoning as the unpaid mark that shares this asset.
+  const markH = FOOTER_H * 0.34;
+  const markW = markH * LOGO_ASPECT;
+  const midY = PAGE_H - FOOTER_H + FOOTER_H / 2;
+  const logo = logoPath();
+  let leftEdge = PAD_X;
+  if (logo) {
+    try {
+      doc.image(logo, PAD_X, midY - markH / 2, { height: markH });
+      leftEdge = PAD_X + markW + px(4);
+    } catch {
+      /* unreadable asset — the byline alone still says who prepared it */
+    }
+  }
+  // ⚠️ THE TRACKING HAS TO BE ADDED BY HAND. widthOfString does not include
+  // characterSpacing, so measuring with it and then drawing into exactly that
+  // width wraps the last word — this line rendered as "PREPARED BY ALL" over
+  // "OUTDOOR" on every page of the pack until the per-character allowance was
+  // added. lineBreak:false does not save it: pdfkit still breaks when the
+  // string cannot fit the box at all.
+  const byline = 'PREPARED BY ALL OUTDOOR';
   doc.font(f.sansSemi).fontSize(size);
-  const line = fitSegments(doc, keep, optional, CONTENT_W, tracking);
+  const bylineW =
+    doc.widthOfString(byline) + tracking * byline.length + px(3);
   doc
     .fillColor(c.mut)
-    .text(line.toUpperCase(), PAD_X, PAGE_H - FOOTER_H + FOOTER_H / 2 - size * 0.7, {
-      width: CONTENT_W,
-      align: 'center',
+    .text(byline, leftEdge, midY - size * 0.7, {
+      width: bylineW,
+      align: 'left',
+      characterSpacing: tracking,
+      lineBreak: false,
+    });
+
+  // What is left for the application's own line, centred in the remainder.
+  const used = leftEdge - PAD_X + bylineW + px(6);
+  const room = Math.max(px(40), CONTENT_W - used);
+  const line = fitSegments(doc, keep, optional, room, tracking);
+  doc
+    .fillColor(c.mut)
+    .text(line.toUpperCase(), PAD_X + used, midY - size * 0.7, {
+      width: room,
+      align: 'right',
       characterSpacing: tracking,
       lineBreak: false,
     });
