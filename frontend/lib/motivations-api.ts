@@ -647,6 +647,19 @@ export const motivationsApi = {
       body: JSON.stringify(body),
     }),
 
+  // The buyer checks on the invite and, once signed, collects the firearm the
+  // government card records — to confirm into their own application.
+  sellerConsentStatus: (t: TokenGetter, id: string) =>
+    request<{
+      status: 'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED';
+      invitedName: string | null;
+      cardFirearm: Record<string, string> | null;
+    }>(t, `/${id}/seller-consent`, {}, {
+      status: 'NONE',
+      invitedName: null,
+      cardFirearm: null,
+    }),
+
   // ── Character witnesses ─────────────────────────────────────────
 
   witnesses: (t: TokenGetter, id: string) =>

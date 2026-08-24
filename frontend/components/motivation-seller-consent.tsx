@@ -1,8 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { motivationsApi } from '@/lib/motivations-api';
+
+/** Card firearm keys → how the buyer sees them in the adopt prompt. */
+const ADOPT_LABELS: [string, string][] = [
+  ['firearm_make', 'Make'],
+  ['firearm_model', 'Model'],
+  ['firearm_type', 'Type'],
+  ['firearm_calibre', 'Calibre'],
+  ['firearm_serial', 'Serial number'],
+];
 
 // ────────────────────────────────────────────────────────────────────
 // ASKING THE PREVIOUS OWNER FOR THEIR CONSENT.
@@ -32,12 +41,22 @@ export interface SellerConsentProps {
   applicantName: string;
   /** The firearm, straight off the answers. Sent verbatim. */
   firearm: Record<string, string | undefined>;
+  /**
+   * Adopt the firearm the seller's card records into the application.
+   *
+   * ⚠️ MUST GO THROUGH THE PAGE'S OWN `answers` STATE, not a direct API write.
+   * The motivation page autosaves its in-memory answers; a value written to the
+   * server behind its back is overwritten by the very next autosave. So the
+   * page implements this with setAnswer, and the card details survive.
+   */
+  onAdopt?: (fields: Record<string, string>) => void;
 }
 
 export default function MotivationSellerConsent({
   motivationId,
   applicantName,
   firearm,
+  onAdopt,
 }: SellerConsentProps) {
   const { getToken } = useAuth();
   const [name, setName] = useState('');
@@ -46,6 +65,40 @@ export default function MotivationSellerConsent({
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The live state of the invite, read back from the server — this is what
+  // lets the panel move past "sent" to "signed", and hand over the card
+  // firearm. Nothing read the result back before; the panel could only ever
+  // say it had sent the link.
+  const [status, setStatus] = useState<
+    'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED'
+  >('NONE');
+  const [cardFirearm, setCardFirearm] = useState<Record<string, string> | null>(
+    null,
+  );
+  const [adopted, setAdopted] = useState(false);
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const r = await motivationsApi.sellerConsentStatus(getToken, motivationId);
+      setStatus(r.status);
+      setCardFirearm(r.cardFirearm);
+    } catch {
+      /* fail-soft: the send form still works without a status read */
+    }
+  }, [getToken, motivationId]);
+
+  // On mount, and — while we are still waiting on the seller — every 30s, so
+  // the buyer sees "signed" without reloading. Stops polling once resolved.
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    if (status !== 'INVITED') return;
+    const t = setInterval(() => void refreshStatus(), 30_000);
+    return () => clearInterval(t);
+  }, [status, refreshStatus]);
 
   // ⚠️ THE SERIAL HAS NOWHERE ELSE TO COME FROM ON THE DEFAULT PATH, WHICH
   // MADE THIS WHOLE PANEL UNREACHABLE. The server refuses an invite without a
@@ -89,18 +142,96 @@ export default function MotivationSellerConsent({
     }
   };
 
-  if (sent) {
+  // ── Signed. The government card is now the source of truth for the firearm,
+  //    and the buyer confirms it into their own application. ──────────────
+  if (status === 'COMPLETED') {
     return (
       <div className="rounded-[var(--radius)] border border-[var(--border)] p-4">
-        <p className="text-sm font-semibold">The link is on its way</p>
+        <p className="text-sm font-semibold text-[var(--success)]">
+          The owner has signed
+        </p>
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
-          {name} has been sent a link to give their consent and photograph
-          their licence. It works for 48 hours. You will see their signed
-          consent in your pack once they have completed it.
+          Their signed consent and a copy of their licence are in your pack.
+        </p>
+
+        {cardFirearm && onAdopt && !adopted && (
+          <div className="mt-3 rounded-[var(--radius)] border border-[var(--border)] p-3">
+            <p className="text-xs font-semibold">
+              Their licence card records this firearm as:
+            </p>
+            <dl className="mt-2 text-sm">
+              {ADOPT_LABELS.filter(([k]) => cardFirearm[k]).map(([k, label]) => (
+                <div key={k} className="flex justify-between gap-3 py-0.5">
+                  <dt className="text-[var(--text-secondary)]">{label}</dt>
+                  <dd className="text-right font-medium">{cardFirearm[k]}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+              This is the official SAPS record for the firearm. Using it makes
+              sure your application matches the card exactly.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                onAdopt(cardFirearm);
+                setAdopted(true);
+              }}
+              className="mt-3 w-full rounded-[var(--radius)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Use these details in my application
+            </button>
+          </div>
+        )}
+
+        {adopted && (
+          <p className="mt-3 text-xs text-[var(--success)]">
+            Added to your application. Check the firearm section — you can still
+            edit anything there.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (status === 'DECLINED') {
+    return (
+      <div className="rounded-[var(--radius)] border border-[var(--border)] p-4">
+        <p className="text-sm font-semibold">The owner declined</p>
+        <p className="mt-1 text-xs text-[var(--text-secondary)]">
+          They did not agree to the transfer on the link. If that is a mistake,
+          speak to them and send it again.
         </p>
         <button
           type="button"
-          onClick={() => setSent(false)}
+          onClick={() => {
+            setSent(false);
+            setStatus('NONE');
+          }}
+          className="mt-3 text-xs underline text-[var(--text-secondary)]"
+        >
+          Send a new link
+        </button>
+      </div>
+    );
+  }
+
+  if (sent || status === 'INVITED') {
+    return (
+      <div className="rounded-[var(--radius)] border border-[var(--border)] p-4">
+        <p className="text-sm font-semibold">Waiting on the owner</p>
+        <p className="mt-1 text-xs text-[var(--text-secondary)]">
+          {(name || 'They').trim()} {name ? 'has' : 'have'} been sent a link to
+          give their consent and photograph their licence. It works for 48
+          hours. Their signed consent — and the firearm exactly as their card
+          records it — comes straight into your application once they finish.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setSent(false);
+            setStatus('NONE');
+          }}
           className="mt-3 text-xs underline text-[var(--text-secondary)]"
         >
           Send it again, or to a different number

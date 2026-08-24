@@ -179,6 +179,114 @@ export function cardRowsFor(
 
 export const CONSENT_FORM_VERSION = 1;
 
+// ────────────────────────────────────────────────────────────────────
+// THE CARD IS THE SOURCE OF TRUTH FOR THE FIREARM.
+//
+// Operator, 2026-08-24: "extract all the information from the card and use it
+// because it is a government issued card and should match their information
+// exactly making it the source of truth."
+//
+// Two directions, kept apart on purpose:
+//   - THE SIGNED CONSENT prints the card EXACTLY (cardRowsFor, raw, "NONE"
+//     included — it is a legal declaration about a specific firearm).
+//   - THE BUYER'S APPLICATION adopts a USABLE subset (mapCardType below, "NONE"
+//     dropped, one serial), and only after the buyer confirms it. That is why
+//     these are separate: the declaration wants the card verbatim, the
+//     application wants values a form can hold.
+// ────────────────────────────────────────────────────────────────────
+
+/** Firearm-describing keys on the snapshot — everything except the applicant. */
+const CARD_FIELD_KEYS: (keyof FirearmSnapshot)[] = [
+  'unlabelledNumber',
+  'make',
+  'model',
+  'type',
+  'calibre',
+  'serial',
+  'barrelSerial',
+  'receiverSerial',
+  'frameSerial',
+  'barrelMake',
+  'receiverMake',
+  'frameMake',
+  'section',
+];
+
+/**
+ * A firearm the seller confirmed off their card, trimmed and capped.
+ *
+ * ⚠️ THE APPLICANT FIELDS ARE NOT IN CARD_FIELD_KEYS, so they can never be
+ * overwritten from this input. Who the firearm is going to is the buyer's to
+ * state; what the firearm IS, is the card's.
+ */
+export function sanitiseCardFirearm(
+  input: Partial<Record<keyof FirearmSnapshot, unknown>> | undefined,
+): Partial<FirearmSnapshot> {
+  const out: Partial<FirearmSnapshot> = {};
+  for (const k of CARD_FIELD_KEYS) {
+    const v = String(input?.[k] ?? '').trim();
+    if (v) (out as Record<string, string>)[k] = v.slice(0, 120);
+  }
+  return out;
+}
+
+/**
+ * The card's coarse firearm category → the application's fixed choice.
+ *
+ * ⚠️ THE CARD DOES NOT USE OUR WORDS. It reads "MANUALLY OPERATED RIFLE" or
+ * "S/L: RIFLE CAL - RIFLE/CARBINE"; firearm_type offers only
+ * Rifle/Shotgun/Handgun/Combination. An unmapped type returns undefined and
+ * the buyer picks it — the confirm step is exactly where that is caught, so we
+ * never guess a category onto a signed application.
+ */
+export function mapCardType(cardType?: string): string | undefined {
+  const t = (cardType ?? '').toUpperCase();
+  if (!t) return undefined;
+  if (/COMBINAT/.test(t)) return 'Combination';
+  if (/\b(RIFLE|CARBINE)\b/.test(t)) return 'Rifle';
+  if (/SHOTGUN/.test(t)) return 'Shotgun';
+  if (/PISTOL|REVOLVER|HANDGUN/.test(t)) return 'Handgun';
+  return undefined;
+}
+
+/** The first serial that is present and is not the card's literal "NONE". */
+export function primarySerial(f: Partial<FirearmSnapshot>): string | undefined {
+  for (const v of [f.serial, f.barrelSerial, f.receiverSerial, f.frameSerial]) {
+    const t = (v ?? '').trim();
+    if (t && t.toUpperCase() !== 'NONE') return t;
+  }
+  return undefined;
+}
+
+/**
+ * The card firearm mapped onto the buyer's application answer keys.
+ *
+ * ⚠️ "NONE" IS DROPPED HERE, UNLIKE THE PRINTED CONSENT. A model of NONE is a
+ * true statement about the card and prints on the declaration; writing the
+ * word "NONE" into a free-text application field is not a value, it is noise.
+ * So the declaration keeps it and the application does not.
+ */
+export function cardToApplicationFirearm(
+  f: Partial<FirearmSnapshot>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const keep = (v?: string) => {
+    const t = (v ?? '').trim();
+    return t && t.toUpperCase() !== 'NONE' ? t : undefined;
+  };
+  const make = keep(f.make);
+  if (make) out.firearm_make = make;
+  const model = keep(f.model);
+  if (model) out.firearm_model = model;
+  const type = mapCardType(f.type);
+  if (type) out.firearm_type = type;
+  const calibre = keep(f.calibre);
+  if (calibre) out.firearm_calibre = calibre;
+  const serial = primarySerial(f);
+  if (serial) out.firearm_serial = serial;
+  return out;
+}
+
 @Injectable()
 export class MotivationSellerConsentService {
   private readonly logger = new Logger(MotivationSellerConsentService.name);
@@ -473,6 +581,13 @@ export class MotivationSellerConsentService {
   async submit(args: {
     consentId: string;
     answers: ConsentAnswers;
+    /**
+     * The firearm as the SELLER confirmed it off their own card — the OCR's
+     * proposal, reviewed and corrected on screen. This BECOMES the firearm of
+     * record: the card is the government's document, so it, not the buyer's
+     * invite-time guess, is what the signed consent declares.
+     */
+    firearm?: Partial<Record<keyof FirearmSnapshot, unknown>>;
     signature: Buffer;
     signatureMime: string;
     licenceFront: Buffer;
@@ -484,7 +599,14 @@ export class MotivationSellerConsentService {
   }) {
     const row = await this.prisma.motivationSellerConsent.findUnique({
       where: { id: args.consentId },
-      select: { id: true, motivationId: true, status: true },
+      select: {
+        id: true,
+        motivationId: true,
+        status: true,
+        // Needed to preserve the applicant identity while the firearm fields
+        // are replaced with the card's — see the snapshot rebuild below.
+        firearmSnapshotEncrypted: true,
+      },
     });
     if (!row) throw new NotFoundException('This link is not valid.');
     if (row.status === 'COMPLETED') {
@@ -581,6 +703,29 @@ export class MotivationSellerConsentService {
       throw err;
     }
 
+    // ⚠️ THE CARD REPLACES THE FIREARM FIELDS, THE APPLICANT STAYS. The
+    // snapshot was set at invite from what the BUYER typed; the seller has now
+    // confirmed what the government card actually says, so the card's fields
+    // win. The applicant identity (who it is going to) is the buyer's and is
+    // preserved by spreading the old snapshot first — sanitiseCardFirearm
+    // cannot touch those keys. If the card fields somehow arrive empty (OCR
+    // dead, seller cleared them), the buyer's values remain rather than the
+    // declaration being blanked.
+    const existingSnap = row.firearmSnapshotEncrypted
+      ? (JSON.parse(tryDecryptText(row.firearmSnapshotEncrypted) ?? '{}') as Record<
+          string,
+          unknown
+        >)
+      : {};
+    const cardFirearm = sanitiseCardFirearm(args.firearm);
+    const rebuiltSnapshot = encryptText(
+      JSON.stringify({
+        ...existingSnap,
+        ...cardFirearm,
+        _version: CONSENT_FORM_VERSION,
+      }),
+    );
+
     await this.prisma.motivationSellerConsent.update({
       where: { id: row.id },
       data: {
@@ -592,6 +737,7 @@ export class MotivationSellerConsentService {
             _version: CONSENT_FORM_VERSION,
           }),
         ),
+        firearmSnapshotEncrypted: rebuiltSnapshot,
         signatureKey: signature.storageKey,
         signatureMime: args.signatureMime,
         licenceFrontKey: written[0] ?? null,
@@ -606,6 +752,68 @@ export class MotivationSellerConsentService {
 
     this.logger.log(`Seller consent ${row.id} signed`);
     return { ok: true as const };
+  }
+
+  /**
+   * The consent's state for the BUYER, and — once signed — the firearm the
+   * card records, ready to adopt into their application.
+   *
+   * ⚠️ THE CARD FIREARM IS ONLY OFFERED WHEN COMPLETED. Before the seller
+   * signs, the snapshot still holds the buyer's own invite-time guess; handing
+   * that back as "the card records" would be circular. cardFirearm is null
+   * until the government document has actually been read and confirmed.
+   *
+   * ⚠️ OWNER-GATED. Resolves the Clerk subject to our User row and checks the
+   * motivation is theirs — the same lesson as the invite route; the id in the
+   * path is never trusted on its own. "Not found" rather than "not yours".
+   */
+  async statusFor(
+    applicantClerkId: string,
+    motivationId: string,
+  ): Promise<{
+    status: 'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED';
+    invitedName: string | null;
+    cardFirearm: Record<string, string> | null;
+  }> {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId: applicantClerkId },
+      select: { id: true },
+    });
+    const owns = user
+      ? await this.prisma.motivation.findFirst({
+          where: { id: motivationId, userId: user.id },
+          select: { id: true },
+        })
+      : null;
+    if (!user || !owns) throw new NotFoundException('Motivation not found');
+
+    const row = await this.prisma.motivationSellerConsent.findUnique({
+      where: { motivationId },
+      select: {
+        status: true,
+        invitedName: true,
+        declinedAt: true,
+        firearmSnapshotEncrypted: true,
+      },
+    });
+    if (!row) {
+      return { status: 'NONE', invitedName: null, cardFirearm: null };
+    }
+
+    const status = (
+      row.declinedAt ? 'DECLINED' : row.status
+    ) as 'INVITED' | 'COMPLETED' | 'DECLINED';
+
+    let cardFirearm: Record<string, string> | null = null;
+    if (status === 'COMPLETED' && row.firearmSnapshotEncrypted) {
+      const snap = JSON.parse(
+        tryDecryptText(row.firearmSnapshotEncrypted) ?? '{}',
+      ) as Partial<FirearmSnapshot>;
+      const mapped = cardToApplicationFirearm(snap);
+      cardFirearm = Object.keys(mapped).length ? mapped : null;
+    }
+
+    return { status, invitedName: row.invitedName, cardFirearm };
   }
 
   /** The signature bytes, for the printed consent. */

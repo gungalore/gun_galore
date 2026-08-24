@@ -185,3 +185,257 @@ describe('the firearm has to be named', () => {
     ).rejects.toThrow(/make/i);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+// THE CARD IS THE SOURCE OF TRUTH FOR THE FIREARM.
+//
+// The consent used to declare whatever the BUYER typed at invite. The seller's
+// government card is the real record — proven live: a card OCR'd cleanly as
+// HOWA 6.5mm Creedmoor B477423 while the signed consent said "CZ 557 .308
+// TEST-12345", because the buyer's guess was never replaced. These lock the
+// replacement, the "NONE" asymmetry, and the coarse-type mapping.
+// ════════════════════════════════════════════════════════════════════
+import {
+  mapCardType,
+  primarySerial,
+  cardToApplicationFirearm,
+  sanitiseCardFirearm,
+} from './motivation-seller-consent.service';
+import { encryptText, tryDecryptText } from '../common/blob-crypto';
+
+describe('mapCardType — the card does not use our words', () => {
+  it('maps the real card strings to the fixed choices', () => {
+    expect(mapCardType('MANUALLY OPERATED RIFLE')).toBe('Rifle');
+    expect(mapCardType('S/L: RIFLE CAL - RIFLE/CARBINE')).toBe('Rifle');
+    expect(mapCardType('SEMI-AUTO SHOTGUN')).toBe('Shotgun');
+    expect(mapCardType('SELF-LOADING PISTOL')).toBe('Handgun');
+    expect(mapCardType('REVOLVER')).toBe('Handgun');
+    expect(mapCardType('COMBINATION GUN')).toBe('Combination');
+  });
+
+  it('returns undefined for anything it cannot place — the buyer picks it', () => {
+    expect(mapCardType('')).toBeUndefined();
+    expect(mapCardType(undefined)).toBeUndefined();
+    expect(mapCardType('SOMETHING ELSE')).toBeUndefined();
+  });
+
+  it('checks Combination before Rifle so a combination is not called a rifle', () => {
+    expect(mapCardType('COMBINATION RIFLE/SHOTGUN')).toBe('Combination');
+  });
+});
+
+describe('primarySerial — first present, never "NONE"', () => {
+  it('prefers the headline serial', () => {
+    expect(primarySerial({ serial: 'A1', barrelSerial: 'B2' })).toBe('A1');
+  });
+  it('falls through NONE and blanks to the barrel', () => {
+    expect(
+      primarySerial({ serial: 'NONE', barrelSerial: 'B477423', frameSerial: 'NONE' }),
+    ).toBe('B477423');
+  });
+  it('is undefined when every row is NONE or empty', () => {
+    expect(primarySerial({ serial: 'NONE', barrelSerial: '' })).toBeUndefined();
+  });
+});
+
+describe('cardToApplicationFirearm — a usable subset, NONE dropped', () => {
+  it('maps the HOWA card the way the live flow will', () => {
+    const out = cardToApplicationFirearm({
+      make: 'HOWA',
+      model: 'NONE',
+      type: 'MANUALLY OPERATED RIFLE',
+      calibre: '6.5MM CREEDMOOR',
+      serial: 'B477423',
+      barrelSerial: 'B477423',
+    });
+    expect(out).toEqual({
+      firearm_make: 'HOWA',
+      firearm_type: 'Rifle',
+      firearm_calibre: '6.5MM CREEDMOOR',
+      firearm_serial: 'B477423',
+    });
+    // ⚠️ model NONE is DROPPED for the application even though it PRINTS on the
+    // consent — writing the word "NONE" into a free-text field is not a value.
+    expect('firearm_model' in out).toBe(false);
+  });
+
+  it('omits a field it cannot supply rather than sending an empty string', () => {
+    expect(cardToApplicationFirearm({ make: 'CZ' })).toEqual({ firearm_make: 'CZ' });
+  });
+});
+
+describe('sanitiseCardFirearm — the applicant can never be overwritten', () => {
+  it('keeps only firearm keys, capped, and drops applicant identity', () => {
+    const out = sanitiseCardFirearm({
+      make: '  HOWA  ',
+      calibre: '6.5MM CREEDMOOR',
+      applicantName: 'AN ATTACKER',
+      applicantIdNumber: '9',
+      serial: 'x'.repeat(500),
+    } as never);
+    expect(out.make).toBe('HOWA');
+    expect(out.calibre).toBe('6.5MM CREEDMOOR');
+    expect((out as Record<string, unknown>).applicantName).toBeUndefined();
+    expect((out as Record<string, unknown>).applicantIdNumber).toBeUndefined();
+    expect(out.serial!.length).toBe(120);
+  });
+});
+
+describe('submit replaces the firearm with the card, keeps the applicant', () => {
+  function submitHarness(existingSnapshotObj: Record<string, unknown>) {
+    let updated: Record<string, unknown> | null = null;
+    const prisma = {
+      motivationSellerConsent: {
+        findUnique: jest.fn(async () => ({
+          id: 'consent-1',
+          motivationId: 'mo-1',
+          status: 'INVITED',
+          firearmSnapshotEncrypted: encryptText(JSON.stringify(existingSnapshotObj)),
+        })),
+        update: jest.fn(async (a: { data: Record<string, unknown> }) => {
+          updated = a.data;
+          return { id: 'consent-1' };
+        }),
+      },
+      motivationUpload: { create: jest.fn(async () => ({})) },
+    };
+    const files = {
+      write: jest.fn(async () => ({
+        storageKey: 'k' + Math.random().toString(36).slice(2),
+        byteSize: 10,
+        sha256: 'h' + Math.random().toString(36).slice(2),
+      })),
+      remove: jest.fn(async () => undefined),
+    };
+    const svc = new MotivationSellerConsentService(
+      prisma as never,
+      { sendSms: jest.fn() } as never,
+      files as never,
+      { mint: jest.fn() } as never,
+    );
+    return { svc, get: () => updated };
+  }
+
+  const base = {
+    consentId: 'consent-1',
+    answers: { fullName: 'Piet Seller', idNumber: '8001015009087' },
+    signature: Buffer.from('\x89PNG signature'),
+    signatureMime: 'image/png',
+    licenceFront: Buffer.from('jpegfront'),
+    licenceBack: Buffer.from('jpegback'),
+    licenceMime: 'image/jpeg',
+  };
+
+  it('⚠️ the stored snapshot is the CARD, not the buyer guess', async () => {
+    const { svc, get } = submitHarness({
+      make: 'CZ',
+      model: '557',
+      calibre: '.308 Winchester',
+      serial: 'TEST-12345',
+      applicantName: 'Gerhard Fourie',
+      applicantIdNumber: '8905125220089',
+    });
+    await svc.submit({
+      ...base,
+      firearm: {
+        make: 'HOWA',
+        model: 'NONE',
+        type: 'MANUALLY OPERATED RIFLE',
+        calibre: '6.5MM CREEDMOOR',
+        serial: 'B477423',
+        section: 'SECTION 15',
+      },
+    } as never);
+    const snap = JSON.parse(tryDecryptText(get()!.firearmSnapshotEncrypted as string)!);
+    // The card won.
+    expect(snap.make).toBe('HOWA');
+    expect(snap.calibre).toBe('6.5MM CREEDMOOR');
+    expect(snap.serial).toBe('B477423');
+    expect(snap.section).toBe('SECTION 15');
+    // The buyer's wrong values are gone.
+    expect(snap.make).not.toBe('CZ');
+    // The applicant identity is untouched — it is the buyer's, not the card's.
+    expect(snap.applicantName).toBe('Gerhard Fourie');
+    expect(snap.applicantIdNumber).toBe('8905125220089');
+  });
+
+  it('keeps the buyer values if the card fields arrive empty (OCR dead)', async () => {
+    const { svc, get } = submitHarness({
+      make: 'CZ',
+      serial: 'TEST-12345',
+      applicantName: 'Gerhard Fourie',
+    });
+    await svc.submit({ ...base, firearm: {} } as never);
+    const snap = JSON.parse(tryDecryptText(get()!.firearmSnapshotEncrypted as string)!);
+    expect(snap.make).toBe('CZ'); // not blanked
+    expect(snap.applicantName).toBe('Gerhard Fourie');
+  });
+});
+
+describe('statusFor — the buyer can see the result and collect the card firearm', () => {
+  function statusHarness(over: {
+    user?: unknown;
+    owns?: unknown;
+    consent?: unknown;
+  } = {}) {
+    const prisma = {
+      user: { findUnique: jest.fn(async () => ('user' in over ? over.user : { id: 'U1' })) },
+      motivation: { findFirst: jest.fn(async () => ('owns' in over ? over.owns : { id: 'mo-1' })) },
+      motivationSellerConsent: {
+        findUnique: jest.fn(async () => ('consent' in over ? over.consent : null)),
+      },
+    };
+    const svc = new MotivationSellerConsentService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return { svc, prisma };
+  }
+
+  it('offers the mapped card firearm once COMPLETED', async () => {
+    const { svc } = statusHarness({
+      consent: {
+        status: 'COMPLETED',
+        invitedName: 'Piet',
+        declinedAt: null,
+        firearmSnapshotEncrypted: encryptText(
+          JSON.stringify({ make: 'HOWA', type: 'MANUALLY OPERATED RIFLE', calibre: '6.5MM CREEDMOOR', serial: 'B477423' }),
+        ),
+      },
+    });
+    const res = await svc.statusFor('user_abc', 'mo-1');
+    expect(res.status).toBe('COMPLETED');
+    expect(res.cardFirearm).toEqual({
+      firearm_make: 'HOWA',
+      firearm_type: 'Rifle',
+      firearm_calibre: '6.5MM CREEDMOOR',
+      firearm_serial: 'B477423',
+    });
+  });
+
+  it('does NOT offer a firearm while only INVITED — that is still the buyer guess', async () => {
+    const { svc } = statusHarness({
+      consent: {
+        status: 'INVITED',
+        invitedName: 'Piet',
+        declinedAt: null,
+        firearmSnapshotEncrypted: encryptText(JSON.stringify({ make: 'CZ' })),
+      },
+    });
+    const res = await svc.statusFor('user_abc', 'mo-1');
+    expect(res.status).toBe('INVITED');
+    expect(res.cardFirearm).toBeNull();
+  });
+
+  it('reports NONE when no invite has been sent', async () => {
+    const { svc } = statusHarness({ consent: null });
+    expect((await svc.statusFor('user_abc', 'mo-1')).status).toBe('NONE');
+  });
+
+  it('refuses a motivation the caller does not own', async () => {
+    const { svc } = statusHarness({ owns: null });
+    await expect(svc.statusFor('user_abc', 'mo-1')).rejects.toThrow(/not found/i);
+  });
+});

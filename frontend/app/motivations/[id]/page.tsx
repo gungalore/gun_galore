@@ -1382,6 +1382,16 @@ export default function MotivationWizardPage() {
                           applicantName: (answers.full_name ?? '').trim(),
                           applicantIdNumber: answers.id_number,
                         }}
+                        // ⚠️ THROUGH setAnswer, NOT A DIRECT WRITE — so the
+                        // adopted card details ride the page's own autosave
+                        // instead of being clobbered by the next one. The card
+                        // is the government record, so it OVERWRITES here (no
+                        // onlyIfEmpty): that is the whole point of adopting it.
+                        onAdopt={(fields) => {
+                          for (const [k, v] of Object.entries(fields)) {
+                            setAnswer(k, v);
+                          }
+                        }}
                       />
                     )}
                   </>

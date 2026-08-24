@@ -75,6 +75,20 @@ export class MotivationsConsentController {
       baseUrl: origin,
     });
   }
+
+  /**
+   * Where the buyer checks on the invite, and — once signed — collects the
+   * firearm the card records, to adopt into their own application.
+   *
+   * ⚠️ THIS IS HOW "SEND" STOPS BEING THE END OF THE STORY. The panel could
+   * only ever say "sent" because nothing read the result back. Now it can show
+   * signed/declined, and offer the government card's firearm details for the
+   * buyer to confirm into their application. Owner-gated in the service.
+   */
+  @Get(':id/seller-consent')
+  async status(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.consent.statusFor(clerkId, id);
+  }
 }
 
 @Controller('seller-consent')
@@ -166,6 +180,9 @@ export class SellerConsentPublicController {
     body: {
       fullName?: string;
       idNumber?: string;
+      // The seller's confirmed reading of their own card — becomes the firearm
+      // of record on the signed consent. See MotivationSellerConsentService.
+      firearm?: Record<string, unknown>;
       signature?: string;
       front?: string;
       back?: string;
@@ -179,6 +196,7 @@ export class SellerConsentPublicController {
         fullName: body?.fullName ?? '',
         idNumber: body?.idNumber ?? '',
       },
+      firearm: body?.firearm,
       signature: decodeSignature(body?.signature ?? ''),
       signatureMime: 'image/png',
       licenceFront: decodePhoto(body?.front ?? ''),

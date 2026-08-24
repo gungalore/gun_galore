@@ -63,6 +63,11 @@ export default function SellerConsentPage() {
   const [capturing, setCapturing] = useState(false);
   const [front, setFront] = useState<string | null>(null);
   const [back, setBack] = useState<string | null>(null);
+  // ⚠️ THE FIREARM AS READ OFF THE CARD — THE SOURCE OF TRUTH. The invite
+  // carried whatever the buyer typed; the government card is what SAPS holds,
+  // so the OCR of it becomes what the consent declares. The seller checks it
+  // and corrects any misread before signing.
+  const [cardFields, setCardFields] = useState<Record<string, string>>({});
 
   /** Whether the OCR is still out. Never gates anything — only informs. */
   const [reading, setReading] = useState(false);
@@ -128,7 +133,9 @@ export default function SellerConsentPage() {
           if (!res.ok) return;
           const j = (await res.json()) as {
             ok: boolean;
+            fields: Record<string, string> | null;
             holderIdNumber: string | null;
+            holderNameOnCard: string | null;
           };
           // ⚠️ ONLY FILLS WHAT IS STILL EMPTY. If the seller has already typed
           // something while the call was out, their typing wins — a field that
@@ -137,6 +144,14 @@ export default function SellerConsentPage() {
           if (j.holderIdNumber) {
             setIdNumber((cur) => (cur.trim() ? cur : j.holderIdNumber!));
           }
+          // The firearm read off the card. Set once (read runs once per
+          // session), so a retake never wipes corrections the seller made.
+          if (j.fields && Object.keys(j.fields).length) {
+            setCardFields((cur) => (Object.keys(cur).length ? cur : j.fields!));
+          }
+          // ⚠️ NAME IS DELIBERATELY NOT PREFILLED FROM THE CARD — it carries
+          // initials only (GJP FOURIE), and the full-names field needs the
+          // whole name. Prefilling initials would look filled but be wrong.
         } catch {
           /* fail-soft: they type it */
         } finally {
@@ -186,6 +201,9 @@ export default function SellerConsentPage() {
         body: JSON.stringify({
           fullName,
           idNumber,
+          // What the consent will declare the firearm to be — the card, as the
+          // seller confirmed it.
+          firearm: cardFields,
           signature,
           front,
           back,
@@ -310,6 +328,44 @@ export default function SellerConsentPage() {
         <p className="mt-2 text-xs text-[var(--success)]">
           Both sides captured.
         </p>
+      )}
+
+      {/* ── The firearm, read off the card ─────────────────────────────
+          ⚠️ THIS IS WHAT THE CONSENT WILL SAY, and it comes from the card, not
+          from what the buyer typed. The seller checks it against the card in
+          their hand and fixes any misread — they are the owner, so they are the
+          right person to catch an OCR slip on a document they sign. */}
+      {Object.keys(cardFields).length > 0 && (
+        <div className="mt-4 rounded-[var(--radius)] border border-[var(--border)] p-3">
+          <p className="text-sm font-semibold">Check the firearm details</p>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            We read these from your card. They are what the consent will state,
+            so please correct anything we got wrong.
+          </p>
+          {(
+            [
+              ['make', 'Make'],
+              ['model', 'Model'],
+              ['type', 'Type'],
+              ['calibre', 'Calibre'],
+              ['serial', 'Serial number'],
+            ] as const
+          ).map(([key, label]) => (
+            <label
+              key={key}
+              className="mt-2 block text-xs text-[var(--text-secondary)]"
+            >
+              {label}
+              <input
+                value={cardFields[key] ?? ''}
+                onChange={(e) =>
+                  setCardFields((cur) => ({ ...cur, [key]: e.target.value }))
+                }
+                className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+              />
+            </label>
+          ))}
+        </div>
       )}
 
       {/* ── 2. Their details ───────────────────────────────────────── */}
