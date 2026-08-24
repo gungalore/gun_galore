@@ -27,6 +27,7 @@ import {
 import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
 import { asLayout } from './motivation-pdf-layouts';
+import { applicationBlockers } from './motivation-eligibility';
 import { consentFormFor } from './motivation-consent-statement';
 import { MotivationClaudeService } from './motivation-claude.service';
 import {
@@ -593,6 +594,13 @@ export class MotivationsService {
       fields: fieldsFor(row.licenceType),
       answers,
       missingRequired: missingRequired(row.licenceType, answers),
+      // ⚠️ SURFACED WHILE THEY CAN STILL CHANGE THEIR MIND CHEAPLY. The same
+      // rules block generation, but hearing "a rifle cannot be licensed under
+      // section 13" the moment the firearm is described costs one edit;
+      // hearing it at the Generate button costs a whole form's worth of work
+      // in the wrong application type. Empty for anyone who has not yet said
+      // what the firearm is.
+      blockers: applicationBlockers(row.licenceType, answers),
       // Surfaced while they are still filling the form, not after a failed
       // gate. Someone who has just typed their existing firearms is in the
       // best position to explain why they need both — and being asked at that
@@ -2487,6 +2495,30 @@ export class MotivationsService {
         message: 'Some required answers are still missing.',
         code: 'motivation-incomplete',
         missing,
+      });
+    }
+
+    // ⚠️ THE HARD CONSTRAINTS, ENFORCED BEFORE WE SPEND A CLAUDE CALL ON A
+    // PACK THAT CANNOT BE GRANTED. Operator's routing spec §3: "If the
+    // selected firearm violates the selected application type, block the
+    // generator with a specific message. Do not silently continue."
+    //
+    // A self-loading rifle under section 13 is not a weak application, it is
+    // an impossible one — the Act does not permit a rifle under section 13 at
+    // all. Writing a beautiful motivation for it costs us the generation and
+    // costs the applicant the fee, the fingerprints and the wait before the
+    // Registrar tells them the same thing.
+    //
+    // ⚠️ AFTER missingRequired, DELIBERATELY. These rules read the firearm's
+    // type and action, so an applicant who has not filled them in yet must
+    // hear "you have not finished" rather than a rule about a firearm they
+    // have not described.
+    const blockers = applicationBlockers(row.licenceType, answers);
+    if (blockers.length) {
+      throw new ConflictException({
+        message: blockers.map((b) => b.message).join(' '),
+        code: 'motivation-not-eligible',
+        blockers,
       });
     }
 

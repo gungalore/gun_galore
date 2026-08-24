@@ -1744,6 +1744,46 @@ export default function MotivationWizardPage() {
         </div>
       )}
 
+      {/* ⚠️ NOT A MISSING ANSWER — SOMETHING THAT CANNOT BE GRANTED.
+        *
+        * missingRequired says "you have not finished"; this says "what you
+        * have described is not permitted". A rifle cannot be licensed under
+        * section 13 at all, and a competency that does not cover the firearm
+        * is refused before the application is considered. Telling somebody to
+        * fill in the rest of a form that cannot succeed is worse than telling
+        * them nothing.
+        *
+        * Above the rail, on every step, for the same reason the extraction
+        * confirm sits there: the fix is usually on a different step from the
+        * one they are standing on. Red rather than gold — gold is advice, and
+        * this is not advice. */}
+      {(detail.blockers?.length ?? 0) > 0 && (
+        <div
+          role="alert"
+          className="mb-4 rounded border border-[var(--red)] bg-[rgba(200,16,46,0.08)] p-3"
+        >
+          <p className="text-sm font-medium">
+            This application cannot be granted as it stands
+          </p>
+          <ul className="mt-2 space-y-2">
+            {detail.blockers!.map((b) => (
+              <li key={b.code} className="text-sm text-[var(--text-secondary)]">
+                {b.message}
+                {stepForKey(b.field) ? (
+                  <button
+                    type="button"
+                    className="ml-2 underline underline-offset-2 hover:text-[var(--text-primary)]"
+                    onClick={() => go(stepForKey(b.field) as number)}
+                  >
+                    Take me there
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <MotivationStepRail
         steps={railSteps}
         current={expanded}

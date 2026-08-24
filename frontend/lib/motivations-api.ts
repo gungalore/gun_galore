@@ -185,6 +185,18 @@ export interface MotivationSummary {
 export interface MotivationDetail extends MotivationSummary {
   answers: Record<string, string>;
   missingRequired: string[];
+  /**
+   * Reasons this application cannot be granted as described.
+   *
+   * ⚠️ NOT THE SAME AS missingRequired. That is "you have not finished"; this
+   * is "what you have described is not permitted" — a rifle under section 13,
+   * or a firearm your competency does not cover. Both block Generate, but only
+   * one of them is fixed by filling in more boxes, and telling somebody to
+   * complete a form that cannot succeed is worse than telling them nothing.
+   *
+   * Empty until they have said what the firearm is.
+   */
+  blockers?: { code: string; field: string; message: string }[];
   declarationAcceptedAt: string | null;
   qualityScore: number | null;
   /**
