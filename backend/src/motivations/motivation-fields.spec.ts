@@ -794,3 +794,45 @@ describe('where the firearm is coming from', () => {
     expect(f.required).toBeUndefined();
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// A MULTI CHOICE MAY NOT CONTAIN A COMMA.
+//
+// ⚠️ THIS IS NOT STYLE. A `multi` answer is STORED COMMA-JOINED, and both
+// sanitiseAnswers and the extraction guard split on that comma to validate the
+// parts. A choice carrying its own comma therefore cannot round-trip: it
+// splits into fragments, none of which is an offered choice, and the whole
+// answer is REFUSED on save — silently, from the applicant's side.
+//
+// Found the hard way. The competency endorsement labels were first written as
+// "Rifle or carbine — manually operated (bolt, lever, pump, single shot)" and
+// every one of them was rejected the moment it was read off a certificate.
+// ────────────────────────────────────────────────────────────────────
+describe('multi fields and the comma-joined storage format', () => {
+  const TYPES: MotivationLicenceType[] = [
+    MotivationLicenceType.S13_SELF_DEFENCE,
+    MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+    MotivationLicenceType.S16_DEDICATED_HUNTER,
+    MotivationLicenceType.S16_DEDICATED_SPORT,
+    MotivationLicenceType.S24_RENEWAL,
+  ];
+
+  it('⚠️ no multi choice anywhere contains a comma', () => {
+    const offenders: string[] = [];
+    for (const type of TYPES) {
+      for (const f of expandFields(fieldsFor(type))) {
+        if (f.kind !== 'multi') continue;
+        const options = [
+          ...(f.choices ?? []),
+          ...(f.optionGroups ?? []).flatMap((g) =>
+            g.options.map((o: { value: string }) => o.value),
+          ),
+        ];
+        for (const o of options) {
+          if (o.includes(',')) offenders.push(`${f.key}: ${JSON.stringify(o)}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import { fieldsFor } from './motivation-fields';
 import { readSaId } from './sa-id';
+import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
 
 // ────────────────────────────────────────────────────────────────────
 // READING WHAT THE APPLICANT ALREADY HAS.
@@ -62,10 +63,16 @@ const MODEL_CLASSIFY =
 /** What each document kind can plausibly yield. Nothing else is accepted. */
 const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
   IDENTITY_DOCUMENT: ['full_name', 'id_number'],
+  // ⚠️ NO competency_expiry. A COMPETENCY CERTIFICATE DOES NOT CARRY ONE.
+  // SA Firearm Competency Reference §5.2 and §8: the card shows an issue date
+  // and the endorsed types, and nothing else. Asking a transcriber to find an
+  // expiry on a document that has none is asking it to return SOMETHING — the
+  // issue date, a licence date, a printed reference number — and we would then
+  // show that to a member as the day their competency lapses. The expiry is
+  // DERIVED from the licences held in each category; see common/sa-competency.
   COMPETENCY_CERTIFICATE: [
     'competency_number',
     'competency_issued',
-    'competency_expiry',
     'competency_for',
   ],
   PROFICIENCY_CERTIFICATE: ['competency_for'],
@@ -256,7 +263,13 @@ export class MotivationExtractService {
   /** One read. Returns [] on any failure — the caller decides about retrying. */
   private async attemptRead(
     block: unknown,
-    asked: { key: string; label: string; choices?: readonly string[] }[],
+    asked: {
+      key: string;
+      label: string;
+      /** Registry kind — 'multi' values arrive comma-joined. */
+      kind?: string;
+      choices?: readonly string[];
+    }[],
     kind: MotivationUploadKind,
   ): Promise<ExtractedField[]> {
     if (!this.client) return [];
@@ -390,7 +403,14 @@ than a confident wrong one.`.trim();
   }
 
   private userPrompt(
-    asked: { key: string; label: string; help?: string; choices?: readonly string[] }[],
+    asked: {
+      key: string;
+      label: string;
+      help?: string;
+      /** Registry kind — 'multi' values arrive comma-joined. */
+      kind?: string;
+      choices?: readonly string[];
+    }[],
   ): string {
     const lines = asked.map(
       (f) =>
@@ -409,7 +429,13 @@ than a confident wrong one.`.trim();
   /** Parse, then CHECK. Nothing is trusted just because it parsed. */
   private parse(
     text: string,
-    asked: { key: string; label: string; choices?: readonly string[] }[],
+    asked: {
+      key: string;
+      label: string;
+      /** Registry kind — 'multi' values arrive comma-joined. */
+      kind?: string;
+      choices?: readonly string[];
+    }[],
     kind: MotivationUploadKind,
   ): ExtractedField[] {
     let parsed: { fields?: { key?: unknown; value?: unknown; confidence?: unknown }[] };
@@ -431,11 +457,60 @@ than a confident wrong one.`.trim();
       // propose a value against a field that does not exist.
       if (!field) continue;
 
-      const value = row.value.trim();
+      let value = row.value.trim();
       if (!value) continue;
 
+      // ⚠️ THE COMPETENCY ENDORSEMENTS ARE READ, NOT MATCHED. A certificate
+      // prints "S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN" or "Handgun,
+      // non-self-loading"; no amount of prompting reliably turns that into our
+      // exact labels, and the system prompt FORBIDS the model from trying —
+      // it is told it is a transcriber, not an interpreter. So the model
+      // transcribes the block verbatim and the interpreting happens here, in
+      // code, against the rules in sa-competency. Unreadable yields nothing.
+      if (row.key === 'competency_for') {
+        const labels = parseEndorsements(value)
+          .map((e) => endorsementSpec(e)?.label)
+          .filter((l): l is string => !!l);
+        if (!labels.length) {
+          this.logger.warn(
+            `Extraction for ${kind}: competency_for could not be read from ${JSON.stringify(
+              value.slice(0, 60),
+            )}`,
+          );
+          continue;
+        }
+        value = labels.join(', ');
+      }
+
       // A choice must be one of the offered choices, or it is not a choice.
-      if (field.choices && !field.choices.includes(value)) continue;
+      //
+      // ⚠️ MULTI FIELDS ARE COMMA-JOINED, AND TESTING THE WHOLE STRING AGAINST
+      // SINGLE CHOICES DROPPED EVERY ONE OF THEM. `competency_for` is multi,
+      // so a perfectly good "Handgun, Rifle" failed `choices.includes(value)`
+      // and fell through this bare `continue` — no log, no note, no counter.
+      // That is why "what your competency covers" never populated itself from
+      // a certificate: the reading worked and the result was binned one line
+      // before it was used. Parts are validated individually now, and a reject
+      // says so instead of vanishing.
+      if (field.choices) {
+        const parts =
+          field.kind === 'multi'
+            ? value.split(',').map((p) => p.trim()).filter(Boolean)
+            : [value];
+        const matched = parts.map((p) =>
+          field.choices?.find((c) => c.toLowerCase() === p.toLowerCase()),
+        );
+        if (matched.some((m) => !m)) {
+          this.logger.warn(
+            `Extraction for ${kind}: ${row.key} value ${JSON.stringify(
+              value.slice(0, 60),
+            )} is not an offered choice — dropped`,
+          );
+          continue;
+        }
+        // Canonical spelling and casing, so the save path accepts it.
+        value = (matched as string[]).join(', ');
+      }
 
       let trusted = row.confidence === 'high';
       let note: string | undefined;

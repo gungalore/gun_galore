@@ -3,6 +3,7 @@ import {
   DISCIPLINE_OTHER,
   disciplinesInScope,
 } from './shooting-disciplines';
+import { ENDORSEMENT_LABELS } from '../common/sa-competency';
 
 // ────────────────────────────────────────────────────────────────────
 // What we ask an applicant, per licence type.
@@ -407,8 +408,17 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // Item 1.4 lets you mark more than one, and it must match the firearm you
     // are applying for — a handgun application on a rifle-only competency is a
     // refusal waiting to happen, and it is visible on the form.
-    choices: ['Handgun', 'Rifle', 'Shotgun'],
-    help: 'Tick everything your certificate covers.',
+    //
+    // ⚠️ ACTION AND TYPE, NOT TYPE ALONE. This was ['Handgun','Rifle','Shotgun']
+    // and that is not what SAPS endorses: competency is granted per firearm
+    // type AND action (SA Firearm Competency Reference §2.1), which is why a
+    // certificate reads "S/L-RIFLE/CARB" rather than "Rifle". The distinction
+    // decides what may be licensed under which section — §7.1: a self-loading
+    // rifle cannot go under s13 or s15 at all, while a self-loading SHOTGUN
+    // can go under s13. "Rifle" alone cannot express any of that, so an
+    // applicant ticking it learned nothing and neither did the writer.
+    choices: [...ENDORSEMENT_LABELS],
+    help: 'Tick everything your certificate covers. Photograph the certificate and we will read it for you.',
     // ⚠️ formOnly REMOVED. It meant the writer never saw what the competency
     // covers — so it could not write "I was declared competent to possess
     // handguns, rifles and shotguns", which is the sentence every example
@@ -426,10 +436,22 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'competency_expiry',
-    docSourced: 'COMPETENCY_CERTIFICATE',
+    // ⚠️ docSourced REMOVED, AND THIS IS THE IMPORTANT PART: A COMPETENCY
+    // CERTIFICATE HAS NO EXPIRY DATE PRINTED ON IT. SA Firearm Competency
+    // Reference §5.2 and §8 — the card carries an issue date and the endorsed
+    // types, nothing more, and §9 says any guidance telling somebody to "check
+    // the expiry on your card" is wrong. Marking it doc-sourced put it in the
+    // "from your documents" review card as though we had read it off the
+    // certificate, which we cannot have.
+    //
+    // The real expiry is DERIVED per firearm type as the latest expiry among
+    // the licences held in that type, rolling forward whenever one is granted
+    // or renewed (§5.3), falling back to five years from issue only where the
+    // category holds no licence. See common/sa-competency deriveExpiry.
     label: 'Competency expires on',
     kind: 'date',
     section: 'About you',
+    help: 'Your certificate does not print this. It follows your longest-running licence in the same firearm type — leave it blank if you are not sure.',
     // ⚠️ formOnly REMOVED — see competency_for. A competency with years left
     // on it is worth saying; one close to expiry is worth the writer knowing
     // about rather than walking into.
