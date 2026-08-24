@@ -372,6 +372,21 @@ export interface MotivationPdfInput {
    */
   characterStatements?: CharacterStatementForm[];
   /**
+   * The previous owner's signed consent, when one has been given.
+   *
+   * ⚠️ IT IS THE SAME SHAPE AS A WITNESS STATEMENT ON PURPOSE, and for a while
+   * that was the only thing about it that worked: consentFormFor() built this
+   * form and NOTHING EVER CALLED IT. The module had zero callers while the
+   * applicant's screen said "their signed consent and a copy of their licence
+   * are in your pack". Only the two licence photographs reached the pack, as
+   * SELLER_LICENCE annexures — the signed declaration itself, the thing a DFO
+   * actually needs, was never rendered.
+   *
+   * Rendered next to the character statements because it is the same kind of
+   * thing: evidence somebody signed, not a reprint of a card.
+   */
+  sellerConsent?: CharacterStatementForm;
+  /**
    * Subject marks, keyed by the heading exactly as it is printed.
    *
    * ⚠️ BUILT FROM THE STORED STRUCTURE PLAN, not inferred from the words. The
@@ -1381,6 +1396,17 @@ export class MotivationPdfService {
           (input.characterStatements?.length ?? 1) > 1
             ? `CHARACTER WITNESS STATEMENT ${form.index} OF ${input.characterStatements?.length}`
             : 'CHARACTER WITNESS STATEMENT',
+        page: startedOn,
+      });
+    }
+
+    // The previous owner's consent, on its own sheet and in the contents.
+    // Same renderer as a witness statement, so it inherits the scale-to-one-A4-
+    // page behaviour the operator asked for ("Everything on one page").
+    if (input.sellerConsent) {
+      const startedOn = renderStatementForm(chrome, input.sellerConsent);
+      toc.push({
+        heading: "THE PREVIOUS OWNER'S CONSENT",
         page: startedOn,
       });
     }

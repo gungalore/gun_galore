@@ -26,6 +26,7 @@ import {
 } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
+import { consentFormFor } from './motivation-consent-statement';
 import { MotivationClaudeService } from './motivation-claude.service';
 import {
   AnnexureImagePage,
@@ -3383,6 +3384,11 @@ export class MotivationsService {
       row.referenceNumber,
       LICENCE_TYPE_LABELS[row.licenceType],
     );
+    const sellerConsent = await this.buildSellerConsent(row.id).catch(() => {
+      // Never lose the motivation over the consent sheet.
+      this.logger.error(`Motivation ${row.id}: seller consent sheet failed`);
+      return undefined;
+    });
     // ONE lettering, built once, used by the index AND by the captions on the
     // reprinted copies. See annexureImages.
     const annexures = buildAnnexures(kinds, ['PRIOR_NOTICE_REQUEST']);
@@ -3431,6 +3437,7 @@ export class MotivationsService {
       sectionMarks: sectionMarksFor(row.structurePlan, answers.firearm_type),
       firearmPhoto: await this.coverPhotoForRender(row, answers),
       characterStatements,
+      sellerConsent,
       annexureImages: printable.images,
       annexuresNotPrinted: printable.notPrinted,
       // Merged into the finished pack by pdf-lib after pdfkit has drawn the
@@ -3490,6 +3497,79 @@ export class MotivationsService {
    * party's handwriting, given to us on a favour — and it exists in the clear
    * only inside the buffer that becomes the PDF.
    */
+  /**
+   * The previous owner's signed consent, as a sheet for the pack.
+   *
+   * ⚠️ THIS DID NOT EXIST, AND THE APPLICANT WAS TOLD IT DID. consentFormFor()
+   * has built this sheet since the consent flow shipped and NOTHING EVER
+   * CALLED IT — the module had zero callers. Meanwhile the panel on the
+   * applicant's screen reads "their signed consent and a copy of their licence
+   * are in your pack". Only the licence PHOTOGRAPHS were in the pack, as
+   * SELLER_LICENCE annexures. The signed declaration — the document that
+   * actually says the owner agrees to the transfer, the one a DFO needs — was
+   * never rendered at all.
+   *
+   * Fail-soft like every other pack input: a consent we cannot read costs its
+   * own sheet and nothing else.
+   */
+  private async buildSellerConsent(motivationId: string) {
+    const row = await this.prisma.motivationSellerConsent.findUnique({
+      where: { motivationId },
+      select: {
+        id: true,
+        status: true,
+        invitedPhone: true,
+        answersEncrypted: true,
+        firearmSnapshotEncrypted: true,
+        signatureKey: true,
+        licenceFrontKey: true,
+        licenceBackKey: true,
+        signedPlace: true,
+        signedAt: true,
+      },
+    });
+    if (!row || row.status !== 'COMPLETED') return undefined;
+
+    let answers: Record<string, string> = {};
+    let firearm: Record<string, unknown> = {};
+    try {
+      answers = JSON.parse(tryDecryptText(row.answersEncrypted) ?? '{}') as Record<
+        string,
+        string
+      >;
+      firearm = JSON.parse(
+        tryDecryptText(row.firearmSnapshotEncrypted) ?? '{}',
+      ) as Record<string, unknown>;
+    } catch {
+      this.logger.error(
+        `Motivation ${motivationId}: seller consent ${row.id} would not decrypt`,
+      );
+      return undefined;
+    }
+
+    // The three stored files. Any that will not read is simply left out — the
+    // declaration and the firearm list are the load-bearing part.
+    const read = async (key: string | null) =>
+      key ? await this.files.read(key).catch(() => null) : null;
+    const [signature, front, back] = await Promise.all([
+      read(row.signatureKey),
+      read(row.licenceFrontKey),
+      read(row.licenceBackKey),
+    ]);
+
+    return consentFormFor(
+      {
+        sellerFullName: answers.fullName ?? '',
+        sellerIdNumber: answers.idNumber ?? '',
+        sellerPhone: row.invitedPhone,
+        firearm: firearm as never,
+        signedPlace: row.signedPlace,
+        signedAt: row.signedAt,
+      },
+      { signature, front, back },
+    );
+  }
+
   private async buildWitnessStatements(
     motivationId: string,
     applicantName: string,
