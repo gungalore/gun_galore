@@ -35,12 +35,26 @@ export interface RailStep {
   status: StepStatus;
 }
 
-/** The colour for a status. Paired with a glyph — never load-bearing alone. */
-function tone(status: StepStatus): { ring: string; fill: string; ink: string } {
+/**
+ * The colour for a status. Paired with a glyph — never load-bearing alone.
+ *
+ * ⚠️ EXPORTED, because the vertical navigator beside this rail shows the same
+ * six steps and must not invent a second vocabulary for them. One tone table,
+ * two layouts — the phone gets the rail, the desktop gets the navigator, and a
+ * step that reads "done" in one can never read "started" in the other.
+ *
+ * ⚠️ THE GREEN IS THE TOKEN NOW. This used to hard-code #22c55e while
+ * globals.css defines --success as #2f9e6b — two different greens for the same
+ * idea, on the same page, and the mock-up review is what caught it.
+ */
+export function tone(status: StepStatus): { ring: string; fill: string; ink: string } {
   switch (status) {
     case 'complete':
-      // The same green the StepAccordion badge uses.
-      return { ring: 'rgba(34,197,94,.45)', fill: 'rgba(34,197,94,.14)', ink: '#22c55e' };
+      return {
+        ring: 'rgba(47,158,107,.55)',
+        fill: 'rgba(47,158,107,.16)',
+        ink: 'var(--success)',
+      };
     case 'active':
       return { ring: 'var(--red)', fill: 'var(--red)', ink: '#fff' };
     case 'partial':
@@ -55,14 +69,14 @@ function tone(status: StepStatus): { ring: string; fill: string; ink: string } {
 }
 
 /** Tick, dot, or the step number. See the glyph note in the file header. */
-function glyph(status: StepStatus, n: number): string {
+export function glyph(status: StepStatus, n: number): string {
   if (status === 'complete') return '✓';
   if (status === 'partial') return '•';
   return String(n);
 }
 
 /** What a screen reader hears instead of the colour. */
-function stateWord(status: StepStatus): string {
+export function stateWord(status: StepStatus): string {
   if (status === 'complete') return 'done';
   if (status === 'partial') return 'started';
   if (status === 'active') return 'current';

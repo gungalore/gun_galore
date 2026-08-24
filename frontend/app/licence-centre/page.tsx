@@ -7,7 +7,7 @@ import ScanButton from '@/components/scan/scan-button';
 import { shapeForKind } from '@/lib/scan/shapes';
 import { todayYmd, toIso } from '@/lib/date-picker-model';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LicenceCentreMotivations from '@/components/licence-centre-motivations';
 import {
   AddedCredential,
@@ -137,6 +137,71 @@ export default function LicenceCentrePage() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ── FOLDERS, FILES, DETAIL ─────────────────────────────────────
+  //
+  // Operator, 2026-08-24: "Folder on the left with the files in each on the
+  // right." null = the All documents folder, otherwise an index into FOLDERS.
+  const [openGroup, setOpenGroup] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** The detail column, so a phone can be scrolled to it on selection. */
+  const detailRef = useRef<HTMLElement | null>(null);
+
+  /**
+   * The folders, and every row placed in exactly one of them.
+   *
+   * ⚠️ A ROW WHOSE KIND IS IN NO GROUP STILL HAS TO APPEAR. KIND_GROUPS lists
+   * the kinds the ADD menu offers; the retired ones (the four association
+   * kinds, the three separate safe photographs) are in none of them, and a
+   * member holding one would otherwise be unable to see their own document.
+   * The old flat list had a comment making exactly this point about KINDS —
+   * the folders inherit the same duty. Anything unplaced falls into the last
+   * folder, which is "Anything else".
+   */
+  const folders = useMemo(() => {
+    const all = rows ?? [];
+    const placed = KIND_GROUPS.map((g) => ({
+      label: g.label,
+      rows: all.filter((r) => g.kinds.includes(r.kind)),
+    }));
+    const known = new Set(KIND_GROUPS.flatMap((g) => g.kinds));
+    const orphans = all.filter((r) => !known.has(r.kind));
+    if (orphans.length > 0 && placed.length > 0) {
+      const last = placed[placed.length - 1];
+      last.rows = [...last.rows, ...orphans];
+    }
+    return placed;
+  }, [rows]);
+
+  const visible = useMemo(
+    () => (openGroup === null ? (rows ?? []) : (folders[openGroup]?.rows ?? [])),
+    [openGroup, rows, folders],
+  );
+
+  /**
+   * ⚠️ THE SELECTION IS RESOLVED, NEVER STORED AS A ROW. Holding the row
+   * object would show a stale copy after any edit — the card writes, the list
+   * refetches, and the detail column would still be rendering the version from
+   * before the save.
+   */
+  const selected = useMemo(
+    () => visible.find((r) => r.id === selectedId) ?? null,
+    [visible, selectedId],
+  );
+
+  /**
+   * Land on something rather than on an empty panel.
+   *
+   * ⚠️ ONLY WHEN THE CURRENT SELECTION IS GONE, so this cannot yank the panel
+   * off a document the member is part-way through editing. Changing folder
+   * drops the selection out of `visible`, which is precisely when re-picking
+   * is the helpful thing to do.
+   */
+  useEffect(() => {
+    if (visible.length === 0) return;
+    if (selectedId && visible.some((r) => r.id === selectedId)) return;
+    setSelectedId(visible[0].id);
+  }, [visible, selectedId]);
+
   const refresh = useCallback(async () => {
     try {
       setRows(await licenceCentreApi.list(token));
@@ -187,7 +252,7 @@ export default function LicenceCentrePage() {
   );
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8">
+    <main className="mx-auto max-w-[var(--page-max)] px-4 py-8">
       <h1 className="text-2xl font-semibold">Document Centre</h1>
       <p className="mt-2 text-[var(--text-secondary)]">
         Keep your licences, certificates and supporting paperwork in one place,
@@ -230,59 +295,178 @@ export default function LicenceCentrePage() {
 
       <AddPanel token={token} onAdded={refresh} />
 
-      <section className="mt-8">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--text-tertiary-on-card)]">
-          Your documents
-        </h2>
+      {/*
+        ── THE THREE COLUMNS ──────────────────────────────────────────
 
-        {loadFailed ? (
-          <div className="mt-2 rounded border border-[var(--border)] p-4 text-sm">
-            <p>We could not load your documents just now.</p>
-            <button
-              type="button"
-              className="mt-2 rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-card-hover)]"
-              onClick={() => void refresh()}
-            >
-              Try again
-            </button>
+        Folders, that folder’s files, and the selected file’s detail. Below
+        `lg` they stack in that order, which is also the order somebody works
+        in — pick a folder, pick a document, act on it.
+
+        ⚠️ THE DETAIL COLUMN RENDERS THE EXISTING CredentialCard UNCHANGED. It
+        already owns date confirmation, the renewal hand-off, refiling and
+        delete, and every one of those has a comment above it explaining a bug
+        it fixed. Re-implementing that anatomy to fit a narrower column would
+        have re-opened all of them.
+      */}
+      <div className="mt-8 lg:grid lg:grid-cols-[228px_minmax(0,1fr)_368px] lg:items-start lg:gap-6">
+
+        {/* ── folders ──────────────────────────────────────── */}
+        <nav aria-label="Folders" className="lg:sticky lg:top-4">
+          <FolderRow
+            label="All documents"
+            count={rows?.length ?? 0}
+            selected={openGroup === null}
+            onSelect={() => setOpenGroup(null)}
+          />
+          {folders.map((f, i) => (
+            <div key={f.label}>
+              <FolderRow
+                label={f.label}
+                count={f.rows.length}
+                selected={openGroup === i}
+                onSelect={() => setOpenGroup(i)}
+              />
+              {/* The kinds inside the open folder — a count per type, so the
+                  shape of what you hold is readable without opening anything. */}
+              {openGroup === i && f.rows.length > 0 && (
+                <ul className="mb-1 ml-6 flex flex-col gap-px pb-1">
+                  {[...new Set(f.rows.map((r) => r.kind))].map((k) => (
+                    <li
+                      key={k}
+                      className="flex items-center gap-2 rounded-[6px] px-3 py-1.5"
+                    >
+                      <span
+                        aria-hidden
+                        className="h-1 w-1 shrink-0 rounded-full"
+                        style={{ background: 'var(--border-hover)' }}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-secondary)]">
+                        {KIND_LABELS[k] ?? k}
+                      </span>
+                      <span className="gg-nums text-[11px] text-[var(--text-tertiary)]">
+                        {f.rows.filter((r) => r.kind === k).length}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </nav>
+
+        {/* ── the files in that folder ──────────────────────────── */}
+        <section className="mt-6 min-w-0 lg:mt-0">
+          <div className="flex items-baseline justify-between gap-4">
+            <h2 className="text-sm font-medium">
+              {openGroup === null ? 'All documents' : folders[openGroup].label}
+            </h2>
+            <span className="gg-nums text-xs text-[var(--text-tertiary-on-card)]">
+              {visible.length}{' '}
+              {visible.length === 1 ? 'document' : 'documents'}
+            </span>
           </div>
-        ) : rows === null ? (
-          <p className="mt-2 text-sm text-[var(--text-tertiary-on-card)]">
-            Loading…
-          </p>
-        ) : rows.length === 0 ? (
-          <p className="mt-2 text-sm text-[var(--text-tertiary-on-card)]">
-            Nothing here yet. Add your first licence or competency certificate
-            above.
-          </p>
-        ) : (
-          <div className="mt-2 space-y-2">
-            {/* ⚠️ NOT `KINDS.filter(...)`. KINDS is the ADD menu, and the four
-                association kinds were just removed from it — so grouping by it
-                alone would make any row still holding a retired kind vanish
-                from the member's own list entirely. The migration converts
-                them, but "we think the migration ran" is not a good enough
-                reason to be unable to see your own document. Menu order first,
-                then anything else present. */}
-            {[
-              ...KINDS.filter((k) => rows.some((r) => r.kind === k)),
-              ...[...new Set(rows.map((r) => r.kind))].filter(
-                (k) => !KINDS.includes(k),
-              ),
-            ].map((k) => (
-              <KindGroup
-                key={k}
-                kind={k}
-                rows={rows.filter((r) => r.kind === k)}
+
+          {loadFailed ? (
+            <div className="mt-2 rounded-[10px] border border-[var(--border)] p-4 text-sm">
+              <p>We could not load your documents just now.</p>
+              <button
+                type="button"
+                className="mt-2 rounded-[6px] border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-card-hover)]"
+                onClick={() => void refresh()}
+              >
+                Try again
+              </button>
+            </div>
+          ) : rows === null ? (
+            <p className="mt-2 text-sm text-[var(--text-tertiary-on-card)]">
+              Loading…
+            </p>
+          ) : visible.length === 0 ? (
+            <p className="mt-2 text-sm text-[var(--text-tertiary-on-card)]">
+              {rows.length === 0
+                ? 'Nothing here yet. Add your first licence or competency certificate above.'
+                : 'Nothing filed in this folder yet.'}
+            </p>
+          ) : (
+            <ul className="mt-2 flex flex-col gap-1">
+              {visible.map((r) => (
+                <li key={r.id}>
+                  <DocRow
+                    row={r}
+                    selected={r.id === selectedId}
+                    onSelect={() => {
+                      setSelectedId(r.id);
+                      // ⚠️ THE PAGE-LEVEL ERROR BELONGS TO THE DOCUMENT THAT
+                      // RAISED IT. It is rendered once, under the list, so a
+                      // failed delete on one document otherwise sits there
+                      // accusing the next one the member opens.
+                      setError(null);
+                      // ⚠️ AND ON A PHONE THE DETAIL IS BELOW THE WHOLE LIST.
+                      // The three columns stack under `lg`, so tapping a row
+                      // changes something ~1000px further down the page and
+                      // reads as nothing happening at all. Only on the stacked
+                      // layout — on desktop the panel is already in view and
+                      // scrolling would be a jolt for no reason.
+                      if (
+                        typeof window !== 'undefined' &&
+                        window.matchMedia('(max-width: 1023px)').matches
+                      ) {
+                        detailRef.current?.scrollIntoView({
+                          behavior: 'smooth',
+                          block: 'start',
+                        });
+                      }
+                    }}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+          {error && <p className="mt-3 text-sm text-[var(--red)]">{error}</p>}
+        </section>
+
+        {/* ── the selected document ───────────────────────────── */}
+        <aside
+          ref={detailRef}
+          aria-label="Document details"
+          className="mt-6 min-w-0 lg:mt-0 lg:sticky lg:top-4"
+        >
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
+            Details
+          </h2>
+          {loadFailed ? (
+            /* ⚠️ NOT A STALE CARD. `refresh` sets loadFailed WITHOUT clearing
+               `rows`, so without this the detail column would keep offering
+               Delete and Turn-reminders-off on a copy of a document the page
+               has just failed to re-read — acting on state it knows is
+               untrustworthy. The old grouped list could not do this: its
+               loadFailed branch replaced every card. */
+            <p className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-card)] p-4 text-sm text-[var(--text-tertiary-on-card)]">
+              We could not re-read your documents just now, so this panel is
+              paused. Try again above.
+            </p>
+          ) : selected ? (
+            /* A <ul>, because CredentialCard is an <li> — it was written to sit
+               in the old grouped list and there is no reason to change that. */
+            <ul>
+              <CredentialCard
+                key={selected.id}
+                row={selected}
                 token={token}
                 onChanged={refresh}
                 onError={setError}
               />
-            ))}
-          </div>
-        )}
-        {error && <p className="mt-3 text-sm text-[var(--red)]">{error}</p>}
-      </section>
+            </ul>
+          ) : (
+            <p className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-card)] p-4 text-sm text-[var(--text-tertiary-on-card)]">
+              {visible.length > 0
+                ? 'Pick a document to see its dates, what else it counts as, and what you can do with it.'
+                : 'Nothing to show yet.'}
+            </p>
+          )}
+        </aside>
+
+      </div>
 
       {/* Motivations, retrievable from the same place the member keeps
           everything else. Its own section rather than a CredentialKind — see
@@ -1010,123 +1194,157 @@ function ConfirmPanel({
   );
 }
 
-// ── one kind, collapsed ─────────────────────────────────────────────
 
-/**
- * All the documents of one type, behind a header that can be folded away.
- *
- * ⚠️ IT OPENS ON WHAT NEEDS SOMETHING. A member with eight documents wants
- * the two that are expiring, not a tidy filing cabinet — so a group holding
- * anything unconfirmed, expiring or expired starts open and says so on its
- * header, and the settled ones start closed. Collapsing everything by default
- * would be neater and would hide the only rows that matter.
- */
-function KindGroup({
-  kind,
-  rows,
-  token,
-  onChanged,
-  onError,
+// ── the folder rail ──────────────────────────────────────────────
+
+function FolderRow({
+  label,
+  count,
+  selected,
+  onSelect,
 }: {
-  kind: CredentialKind;
-  rows: CredentialRow[];
-  token: () => Promise<string | null>;
-  onChanged: () => Promise<void>;
-  onError: (m: string | null) => void;
+  label: string;
+  count: number;
+  selected: boolean;
+  onSelect: () => void;
 }) {
-  const needsEye = rows.filter(
-    (r) => !r.confirmed || r.state === 'expiring' || r.state === 'expired',
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={selected ? 'true' : undefined}
+      className="flex w-full items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-left hover:bg-[var(--bg-card-hover)]"
+      style={{
+        background: selected ? 'var(--bg-card)' : 'transparent',
+        border: `1px solid ${selected ? 'var(--border)' : 'transparent'}`,
+        outlineOffset: 2,
+      }}
+    >
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={selected ? 'var(--red)' : 'var(--text-tertiary)'}
+        strokeWidth={selected ? 1.9 : 1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className="shrink-0"
+      >
+        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      </svg>
+      <span
+        className="min-w-0 flex-1 truncate text-[13.5px] font-semibold"
+        style={{
+          color: selected ? 'var(--text-primary)' : 'var(--text-secondary)',
+        }}
+      >
+        {label}
+      </span>
+      <span
+        className="gg-nums shrink-0 text-xs"
+        style={{
+          color: selected ? 'var(--text-primary)' : 'var(--text-tertiary)',
+          fontWeight: selected ? 600 : 400,
+        }}
+      >
+        {count}
+      </span>
+    </button>
   );
-  const [open, setOpen] = useState(needsEye.length > 0);
+}
 
-  // The worst thing in the group decides the header's colour — one glance at
-  // a folded list has to be able to say "something in here is wrong".
-  const worst: CredentialRow['state'] = rows.some((r) => r.state === 'expired')
-    ? 'expired'
-    : rows.some((r) => r.state === 'expiring')
-      ? 'expiring'
-      : // ⚠️ 'unknown' USED TO COVER TWO DIFFERENT THINGS — a date nobody had
-        // checked, and a document carrying no expiry at all — and the comment
-        // here said so, because there was no third state to put the second one
-        // in. There is now. 'unknown' means outstanding; 'no-expiry' means
-        // answered, and answered "there is no date".
-        rows.some((r) => r.state === 'unknown')
-        ? 'unknown'
-        : // ⚠️ ABOVE 'valid', NEVER FALLING THROUGH TO IT. A folder of
-          // photographs of a gun safe has nothing in it that could be in date,
-          // and a header reading "All in date" over one is exactly the quiet
-          // reassurance the comment below refuses to give. It sits below
-          // 'unknown' because nothing about it is outstanding — a mixed folder
-          // reads "Kept on file", which understates the dated rows and
-          // over-promises about none of them.
-          rows.some((r) => r.state === 'no-expiry')
-          ? 'no-expiry'
-          : 'valid';
-  const tone = STATE_TONE[worst];
+// ── one row in the file list ────────────────────────────────────
+//
+// Presentational and deliberately thin: it names the document, says when it
+// runs out and what state that puts it in, and nothing else. Everything you
+// can DO to a document lives in the detail column, which is CredentialCard.
 
-  const toCheck = rows.filter((r) => !r.confirmed).length;
-  const summary =
-    toCheck > 0
-      ? `${toCheck} to check`
-      : worst === 'expired'
-        ? 'One has expired'
-        : worst === 'expiring'
-          ? 'Renewal coming up'
-          : // ⚠️ NOT "all in date" WHEN NOTHING HAS A DATE. Saying a folder of
-            // documents is in date when none of them carries an expiry is the
-            // kind of quiet reassurance this module must never give.
-            worst === 'unknown'
-            ? 'Date not confirmed'
-            : worst === 'no-expiry'
-              ? 'Kept on file'
-              : 'All in date';
+function DocRow({
+  row,
+  selected,
+  onSelect,
+}: {
+  row: CredentialRow;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const tone = STATE_TONE[row.state];
+
+  /**
+   * What goes in the expires column.
+   *
+   * ⚠️ THREE OUTCOMES, NOT TWO. A document the member has ANSWERED "never
+   * expires" for and one nobody has supplied a date for both have a null
+   * expiry and are opposites — the first is settled, the second is
+   * outstanding. That distinction is written up on CredentialRow and it is the
+   * reason a member holding nine photographs of a safe was once told nine
+   * documents needed their dates checked.
+   */
+  const expiry = row.neverExpires
+    ? '\u2014'
+    : row.expiresOn
+      ? formatDate(row.expiresOn)
+      : 'Not set';
 
   return (
-    <div
-      className="rounded border"
-      style={{ borderColor: tone.line, background: tone.wash }}
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={selected ? 'true' : undefined}
+      className="flex w-full items-center gap-3 rounded-[10px] px-3.5 py-3 text-left hover:bg-[var(--bg-card-hover)]"
+      style={{
+        background: selected ? 'var(--bg-card)' : 'transparent',
+        border: `1px solid ${selected ? 'var(--border)' : 'transparent'}`,
+        outlineOffset: 2,
+      }}
     >
-      <button
-        type="button"
-        className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+      <span
+        aria-hidden
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)]"
       >
-        <span
-          aria-hidden
-          className="text-xs"
-          style={{
-            display: 'inline-block',
-            transition: 'transform 120ms',
-            transform: open ? 'rotate(90deg)' : 'none',
-            color: 'var(--text-tertiary-on-card)',
-          }}
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--text-tertiary-on-card)"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         >
-          ▶
-        </span>
-        <span className="flex-1 text-sm font-medium">{KIND_LABELS[kind]}</span>
-        <span className="text-xs" style={{ color: tone.colour }}>
-          {summary}
-        </span>
-        <span className="text-xs text-[var(--text-tertiary-on-card)]">
-          {rows.length}
-        </span>
-      </button>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <path d="M14 2v6h6" />
+        </svg>
+      </span>
 
-      {open && (
-        <ul className="space-y-3 border-t border-[var(--border-divider)] p-3">
-          {rows.map((r) => (
-            <CredentialCard
-              key={r.id}
-              row={r}
-              token={token}
-              onChanged={onChanged}
-              onError={onError}
-            />
-          ))}
-        </ul>
-      )}
-    </div>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13.5px] font-medium">
+          {row.title || KIND_LABELS[row.kind] || row.kind}
+        </span>
+        <span className="mt-0.5 block truncate text-[11.5px] text-[var(--text-tertiary-on-card)]">
+          {KIND_LABELS[row.kind] ?? row.kind}
+        </span>
+      </span>
+
+      <span className="gg-nums hidden w-28 shrink-0 text-xs text-[var(--text-secondary)] sm:block">
+        {expiry}
+      </span>
+
+      {/* State carries a word, never only a colour — same rule the step rail
+          follows, and the reason every one of these has a label. */}
+      <span
+        className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+        style={{
+          color: tone.colour,
+          background: tone.wash,
+          border: `1px solid ${tone.line}`,
+        }}
+      >
+        {tone.label}
+      </span>
+    </button>
   );
 }
 

@@ -29,6 +29,7 @@ import {
 } from 'react';
 import type { StepStatus } from '@/components/step-accordion';
 import MotivationStepRail from '@/components/motivation-step-rail';
+import MotivationStepNav from '@/components/motivation-step-nav';
 import {
   OWNED_SECTION,
   isRepeatingSection,
@@ -296,7 +297,11 @@ export default function MotivationWizardPage() {
     format: TemplateFormat;
     colourway: Colourway;
     layout: TemplateLayoutKey;
-  }>({ format: 'comprehensive', colourway: 'eucalyptus', layout: 'banner' });
+    // ⚠️ MUST MATCH THE RENDERER'S DEFAULT SCHEME. This is the value on screen
+    // between mount and the catalogue arriving, so a stale one shows a colour
+    // the document will not be in — and if the member never touches the picker,
+    // it is the only colour they were ever shown.
+  }>({ format: 'comprehensive', colourway: 'alloutdoor', layout: 'banner' });
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
 
@@ -1391,10 +1396,33 @@ export default function MotivationWizardPage() {
           key: s.def.key,
           label: s.def.label,
           status: stepStatus(s.n, missing, answered),
+          // ⚠️ THE SAME `missing` THE STATUS IS DERIVED FROM. The side
+          // navigator prints this number; deriving it a second way is how a
+          // step ends up amber with "0 to answer" beside it.
+          outstanding: missing,
         };
       }),
     [steps, outstanding, answers, expanded],
   );
+
+  /**
+   * The whole application in one fraction, for the navigator's meter.
+   *
+   * ⚠️ REQUIRED FIELDS ONLY, and counted off the SAME sections the steps are
+   * built from — not off the registry. A licence type that never renders a
+   * section must not have its fields counted as unanswered forever, which is
+   * what made the old flat page tell people they had work left on a step that
+   * did not exist for them.
+   */
+  const progress = useMemo(() => {
+    const required = steps
+      .flatMap((s) => s.sections.flatMap((sec) => sec.fields))
+      .filter((f) => f.required);
+    return {
+      answerable: required.length,
+      answered: required.filter((f) => (answers[f.key] ?? '').trim()).length,
+    };
+  }, [steps, answers]);
 
   /**
    * Which step owns a section.
@@ -1679,7 +1707,7 @@ export default function MotivationWizardPage() {
   return (
     <>
       {consentOverlay}
-      <main className="mx-auto max-w-3xl px-4 py-6">
+      <main className="mx-auto max-w-3xl px-4 py-6 lg:max-w-6xl">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">Your firearm licence motivation</h1>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
@@ -1850,11 +1878,40 @@ export default function MotivationWizardPage() {
         </div>
       )}
 
-      <MotivationStepRail
-        steps={railSteps}
-        current={expanded}
-        onJump={go}
-      />
+      {/*
+        ── THE WIZARD'S TWO SHAPES ──────────────────────────────────────
+
+        Operator, 2026-08-24: "We are going to go for the side view option."
+
+        ⚠️ BOTH RENDER, ONE IS HIDDEN BY BREAKPOINT — they are not swapped by a
+        media query in JS. A `useMediaQuery` here would render the wrong one on
+        the server, flash on hydration, and put a resize listener on a page
+        that already runs two polls and a debounced save.
+
+        ⚠️ AND THE CONTENT COLUMN IS `min-w-0`. Without it a grid item refuses
+        to shrink below its widest child, and this form contains a table of
+        owned firearms and several long single-line values — the column would
+        push the navigator off-screen instead of scrolling inside itself.
+      */}
+      <div className="lg:hidden">
+        <MotivationStepRail
+          steps={railSteps}
+          current={expanded}
+          onJump={go}
+        />
+      </div>
+
+      <div className="lg:grid lg:grid-cols-[264px_minmax(0,1fr)] lg:items-start lg:gap-8">
+        <MotivationStepNav
+          steps={railSteps}
+          current={expanded}
+          onJump={go}
+          answered={progress.answered}
+          answerable={progress.answerable}
+          className="hidden lg:block lg:sticky lg:top-4"
+        />
+
+        <div className="min-w-0">
 
       {/* The step's own heading. One per step, all but the current one hidden
           — see the note on stepOfSection for why nothing is unmounted. */}
@@ -2780,6 +2837,9 @@ export default function MotivationWizardPage() {
           Removes everything, including the documents you uploaded.
         </p>
       </section>
+      </div>
+
+        </div>
       </div>
     </main>
     </>
