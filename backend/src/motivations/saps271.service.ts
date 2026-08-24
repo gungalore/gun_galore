@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import {
   SAPS271_COORDS,
   Saps271Field,
@@ -41,6 +42,47 @@ import { buildSaps271, Saps271Input } from './saps271-map';
 // flattened before anything is measured.
 // ────────────────────────────────────────────────────────────────────
 
+// ────────────────────────────────────────────────────────────────────
+// THE FORM THE COORDINATES WERE MEASURED AGAINST.
+//
+// Every value on this form is placed by ABSOLUTE COORDINATE — page number, x,
+// y — because the distributed SAPS 271 is a 12-page AcroForm whose 1,072 field
+// names are randomised ("ZImnfo8UO" style), carry no meaning, and differ
+// between copies of the form. Mapping by name is not an option, so the map is
+// positional and every position is measured against ONE specific PDF.
+//
+// ⚠️ WHICH MAKES THE PDF ITSELF PART OF THE MAP. Replace it with a newer SAPS
+// revision — a reflowed page, one extra line of preamble, a box moved 4 mm —
+// and every coordinate still resolves, still draws, and lands somewhere
+// slightly or entirely wrong. Nothing throws. The applicant gets a form that
+// looks filled in, signs it, and hands it to a DFO with their ID number in the
+// box beside the one it belongs in.
+//
+// That is the failure this guard exists to make impossible. The bytes are
+// hashed on load and compared with the hash the map was built against; a
+// mismatch REFUSES to fill. Never fill against an unverified map.
+//
+// ── WHEN THE FORM IS LEGITIMATELY REPLACED ─────────────────────────
+//
+// The refusal is the start of the correct procedure, not an obstacle to it:
+//
+//   1. Drop the new PDF in backend/assets/saps271-blank.pdf
+//   2. Run: npm run saps271:checksum
+//   3. RE-MEASURE the coordinate map against the new form — this is the real
+//      work, and the checksum bump alone does NOT do it. Bumping the constant
+//      without re-measuring silences the guard and reinstates exactly the
+//      failure it was added to prevent.
+//   4. Paste the new hash below, with the date and the SAPS revision.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * sha256 of backend/assets/saps271-blank.pdf, as the map was measured.
+ *
+ * Pinned 2026-08-24. Do not change without step 3 above.
+ */
+const TEMPLATE_SHA256 =
+  '0d1a74484ab5831db8ebf4b0d11bf8b18e6c9e26b3e4c38631bfec6959e82bdd';
+
 /** Below this the text is unreadable; the box is left blank instead. */
 const MIN_FONT = 5.5;
 const DEFAULT_FONT = 9;
@@ -67,13 +109,36 @@ export class Saps271Service {
       path.join(__dirname, '..', '..', '..', 'assets', 'saps271-blank.pdf'),
     ];
     for (const c of candidates) {
+      let buf: Buffer;
       try {
-        const buf = fs.readFileSync(c);
-        this.cached = buf;
-        return buf;
+        buf = fs.readFileSync(c);
       } catch {
-        /* try the next candidate */
+        continue; // try the next candidate
       }
+
+      // ⚠️ VERIFIED BEFORE IT IS CACHED, AND BEFORE A SINGLE VALUE IS DRAWN.
+      // See the note on TEMPLATE_SHA256: the coordinates ARE the map, and the
+      // map is only valid for this exact PDF.
+      const sha = createHash('sha256').update(buf).digest('hex');
+      if (sha !== TEMPLATE_SHA256) {
+        this.logger.error(
+          `SAPS 271 template at ${c} does not match the coordinate map ` +
+            `(expected ${TEMPLATE_SHA256.slice(0, 12)}…, found ${sha.slice(0, 12)}…). ` +
+            'Refusing to fill: every value is placed by absolute coordinate, so a ' +
+            'different revision of the form would print into the wrong boxes. ' +
+            're-measure the map, then update TEMPLATE_SHA256.',
+        );
+        throw new Error(
+          'We cannot fill in your SAPS 271 at the moment — our copy of the form ' +
+            'does not match the one we lay it out against, and filling it anyway ' +
+            'could put your answers in the wrong boxes. Your motivation is ' +
+            'unaffected and you can still download it. Please let us know so we ' +
+            'can update the form.',
+        );
+      }
+
+      this.cached = buf;
+      return buf;
     }
     throw new Error(
       `saps271-blank.pdf not found. Tried: ${candidates.join(' | ')}`,
