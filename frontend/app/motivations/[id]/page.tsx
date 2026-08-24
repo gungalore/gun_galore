@@ -478,7 +478,10 @@ export default function MotivationWizardPage() {
       // digit silently overwriting their own answer would be a false
       // statement on a form they sign.
       for (const sg of row.suggestions) {
-        setAnswer(sg.key, sg.value, { onlyIfEmpty: true });
+        setAnswer(sg.key, sg.value, {
+          onlyIfEmpty: true,
+          fromDocument: true,
+        });
       }
       setSuggestions((cur) => [
         ...cur,
@@ -797,7 +800,10 @@ export default function MotivationWizardPage() {
       // may carry half a dozen values with it. Overwriting on that basis
       // would quietly undo work they did by hand.
       for (const sg of row.suggestions ?? []) {
-        setAnswer(sg.key, sg.value, { onlyIfEmpty: true });
+        setAnswer(sg.key, sg.value, {
+          onlyIfEmpty: true,
+          fromDocument: true,
+        });
       }
       await Promise.all([
         refreshUploads().catch(() => undefined),
@@ -853,7 +859,7 @@ export default function MotivationWizardPage() {
   const setAnswer = (
     key: string,
     value: string,
-    opts: { onlyIfEmpty?: boolean } = {},
+    opts: { onlyIfEmpty?: boolean; fromDocument?: boolean } = {},
   ) => {
     dirty.current = true;
     if (key === 'firearm_calibre' || /^existing_firearm_\d+_calibre$/.test(key)) {
@@ -865,6 +871,16 @@ export default function MotivationWizardPage() {
       // here would race a document that fills several boxes at once: each
       // call would see the same stale snapshot.
       if (opts.onlyIfEmpty && (a[key] ?? '').trim()) return a;
+      // ⚠️ MARKED HERE, INSIDE THE UPDATER, FOR THE SAME REASON THE CHECK IS
+      // HERE — this is the only place that knows the write ACTUALLY HAPPENED.
+      //
+      // A document filling an empty box makes that value doc-sourced, so it
+      // should read the way every other doc-sourced value does: greyed, with
+      // the edit pen. Deciding it outside would race the same stale snapshot,
+      // and marking a key whose write was skipped would grey out — and lock —
+      // an answer the applicant typed themselves. That is the failure this
+      // placement rules out rather than guards against.
+      if (opts.fromDocument && prefilled.current) prefilled.current.add(key);
       return { ...a, [key]: value };
     });
   };
@@ -1556,6 +1572,77 @@ export default function MotivationWizardPage() {
         )}
       </header>
 
+      {/* WHAT WE READ OFF A DOCUMENT, ABOVE THE RAIL AND ON EVERY STEP.
+        *
+        * ⚠️ IT USED TO LIVE INSIDE THE DOCUMENTS SECTION, which is now step 1
+        * — so a licence photographed from step 3 ("Firearms you already own",
+        * where the "photograph a licence instead of typing it" button is)
+        * produced a confirmation panel on a screen the applicant was not
+        * looking at. They would have had to guess that accepting it meant
+        * navigating back to step 1. Anything that CONFLICTS with what they
+        * typed has to be answerable wherever they are standing.
+        *
+        * Not an overlay: it must not take a `data-blocking-overlay`, or it
+        * would stand the 20s poll down for as long as it is up. */}
+      {suggestions.length > 0 && (
+        <div className="mt-4 rounded border border-[rgba(47,158,107,0.38)] bg-[rgba(47,158,107,0.10)] p-3">
+          <h3 className="text-sm font-medium">
+            We read {suggestions.length}{' '}
+            {suggestions.length === 1 ? 'thing' : 'things'} off that
+          </h3>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            Check each one against the document before you accept it — you are
+            the one who signs this.
+          </p>
+          <ul className="mt-2 space-y-2">
+            {suggestions.map((sg) => (
+              <li key={sg.key} className="text-sm">
+                <span className="text-[var(--text-secondary)]">{sg.label}: </span>
+                <span className="font-medium">{sg.value}</span>
+                <span className="block text-xs text-[var(--text-tertiary-on-card)]">
+                  from {sg.from}
+                  {sg.note ? ` — ${sg.note}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)]"
+              onClick={async () => {
+                const accept = Object.fromEntries(
+                  suggestions.map((sg) => [sg.key, sg.value]),
+                );
+                await motivationsApi.applyExtraction(token, id, accept);
+                const d = await motivationsApi.get(token, id);
+                setDetail(d);
+                setAnswers((a) => ({ ...d.answers, ...a, ...accept }));
+                // Accepted off a document, so they read as doc-sourced from
+                // here on — greyed, with the pen. Safe to mark outside an
+                // updater unlike the autofill above: every one of these IS
+                // written, because the applicant just said so.
+                if (prefilled.current) {
+                  for (const k of Object.keys(accept)) {
+                    prefilled.current.add(k);
+                  }
+                }
+                setSuggestions([]);
+              }}
+            >
+              These are right — use them
+            </button>
+            <button
+              type="button"
+              className="rounded border border-[var(--border)] px-3 py-1.5 text-sm"
+              onClick={() => setSuggestions([])}
+            >
+              No, I will type them
+            </button>
+          </div>
+        </div>
+      )}
+
       <MotivationStepRail
         steps={railSteps}
         current={expanded}
@@ -1812,55 +1899,6 @@ export default function MotivationWizardPage() {
           onView={viewUpload}
         />
 
-        {suggestions.length > 0 && (
-          <div className="mt-4 rounded border border-[rgba(47,158,107,0.38)] bg-[rgba(47,158,107,0.10)] p-3">
-            <h3 className="text-sm font-medium">
-              We read {suggestions.length}{' '}
-              {suggestions.length === 1 ? 'thing' : 'things'} off that
-            </h3>
-            <p className="mt-1 text-xs text-[var(--text-secondary)]">
-              Check each one against the document before you accept it — you are
-              the one who signs this.
-            </p>
-            <ul className="mt-2 space-y-2">
-              {suggestions.map((sg) => (
-                <li key={sg.key} className="text-sm">
-                  <span className="text-[var(--text-secondary)]">{sg.label}: </span>
-                  <span className="font-medium">{sg.value}</span>
-                  <span className="block text-xs text-[var(--text-tertiary-on-card)]">
-                    from {sg.from}
-                    {sg.note ? ` — ${sg.note}` : ''}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)]"
-                onClick={async () => {
-                  const accept = Object.fromEntries(
-                    suggestions.map((sg) => [sg.key, sg.value]),
-                  );
-                  await motivationsApi.applyExtraction(token, id, accept);
-                  const d = await motivationsApi.get(token, id);
-                  setDetail(d);
-                  setAnswers((a) => ({ ...d.answers, ...a, ...accept }));
-                  setSuggestions([]);
-                }}
-              >
-                These are right — use them
-              </button>
-              <button
-                type="button"
-                className="rounded border border-[var(--border)] px-3 py-1.5 text-sm"
-                onClick={() => setSuggestions([])}
-              >
-                No, I will type them
-              </button>
-            </div>
-          </div>
-        )}
       </section>
 
       {/* The profile offer — a plain card inside step 1.
