@@ -94,6 +94,19 @@ export interface DocumentScannerProps {
    */
   staticAim?: boolean;
   title: string;
+  /**
+   * A second line under the title, in the header itself.
+   *
+   * ⚠️ IT LIVES IN THE HEADER ON PURPOSE. The seller-consent flow used to
+   * render its own guidance as a `position: fixed; bottom` overlay, which sat
+   * directly on top of the shutter row in the capture phase and on the
+   * Cancel/Reset/Apply row in the align phase — reported from a real phone,
+   * 2026-08-24. Anything anchored to the bottom of a full-screen camera
+   * fights the controls for that space. A subtitle in the header is in normal
+   * flow above everything and cannot collide with a control. Optional: the
+   * callers that do not pass it render exactly as before.
+   */
+  subtitle?: string;
   onDone: (files: File[]) => void | Promise<void>;
   onClose: () => void;
 }
@@ -130,6 +143,7 @@ export default function DocumentScanner({
   skipChoose = false,
   staticAim = false,
   title,
+  subtitle,
   onDone,
   onClose,
 }: DocumentScannerProps) {
@@ -815,10 +829,17 @@ export default function DocumentScanner({
         color: '#fff',
         display: 'flex',
         flexDirection: 'column',
+        // ⚠️ STOP iOS INFLATING THE TEXT. Safari auto-enlarges text on a page
+        // with no viewport lock, and on a real phone it rendered the 15px
+        // title at roughly 40px — two lines where one was meant, which is half
+        // of why the old bottom-anchored caption collided with the controls.
+        // Pinning it to 100% makes every size in here the size it says.
+        WebkitTextSizeAdjust: '100%',
       }}
     >
       <Header
         title={title}
+        subtitle={subtitle}
         onClose={onClose}
         // ⚠️ ALWAYS A WAY BACK. Every phase except the chooser itself can
         // return to it, including the two dead ends — a member who lands on
@@ -898,14 +919,18 @@ export default function DocumentScanner({
                 instructions that disagree, and they will follow the picture.
                 Once the corners go green the only thing left to say is hold
                 still — anything else invites them to keep adjusting. */}
+            {/* ⚠️ THE COLOUR WORD FOLLOWS THE BOX. With staticAim the corners
+                are green from the start, so "inside the red corners" described
+                a box that was never red — the same disagree-with-the-picture
+                trap this very comment warns about. */}
             {!auto
               ? aimed
                 ? 'Got it — take the photo.'
-                : `Put the ${SHAPES[shape].label.toLowerCase()} inside the red corners.`
+                : `Put the ${SHAPES[shape].label.toLowerCase()} inside the ${staticAim ? 'green' : 'red'} corners.`
               : blocker === 'searching'
                 ? 'Looking for the edges…'
                 : blocker === 'aim'
-                  ? `Put the ${SHAPES[shape].label.toLowerCase()} inside the red corners.`
+                  ? `Put the ${SHAPES[shape].label.toLowerCase()} inside the ${staticAim ? 'green' : 'red'} corners.`
                   : blocker === 'light'
                     ? 'Fix the lighting above and it will take itself.'
                     : 'Got it — hold still.'}
@@ -1334,11 +1359,13 @@ function ShapeGlyph({ shape }: { shape: DocShape }) {
 
 function Header({
   title,
+  subtitle,
   onClose,
   onBack,
   pages,
 }: {
   title: string;
+  subtitle?: string;
   onClose: () => void;
   onBack?: () => void;
   pages: number;
@@ -1370,14 +1397,29 @@ function Header({
           &#8592;
         </button>
       )}
-      <p style={{ flex: 1, margin: 0, fontSize: 15, fontWeight: 600 }}>
-        {title}
-        {pages > 0 && (
-          <span style={{ marginLeft: 8, opacity: 0.7, fontWeight: 400 }}>
-            {pages} saved
-          </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+          {title}
+          {pages > 0 && (
+            <span style={{ marginLeft: 8, opacity: 0.7, fontWeight: 400 }}>
+              {pages} saved
+            </span>
+          )}
+        </p>
+        {subtitle && (
+          <p
+            style={{
+              margin: '3px 0 0',
+              fontSize: 12.5,
+              lineHeight: 1.35,
+              fontWeight: 400,
+              color: 'rgba(255,255,255,0.72)',
+            }}
+          >
+            {subtitle}
+          </p>
         )}
-      </p>
+      </div>
       <button
         type="button"
         onClick={onClose}

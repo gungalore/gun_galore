@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { advanceCapture, type CardSide } from '@/lib/scan/two-side-capture';
 
 // ────────────────────────────────────────────────────────────────────
 // PHOTOGRAPHING BOTH SIDES OF A FIREARM LICENCE.
@@ -32,7 +33,9 @@ const DocumentScanner = dynamic(
   { ssr: false },
 );
 
-export type CardSide = 'front' | 'back';
+// Re-exported from the pure transition module so there is one definition, not
+// two that can drift.
+export type { CardSide };
 
 export interface LicenceCardCaptureProps {
   /**
@@ -66,6 +69,32 @@ export default function LicenceCardCapture({
   const [side, setSide] = useState<CardSide>('front');
   const [front, setFront] = useState<File | null>(null);
 
+  // ⚠️ THE SCANNER TREATS "FINISHED A SHOT" AND "CLOSE THE CAMERA" AS ONE
+  // EVENT. Its finish() calls onClose() and THEN onDone(), synchronously —
+  // right for its usual single-shot callers, where the file existing and the
+  // camera closing are the same moment. This flow runs it TWICE. Passing the
+  // parent's onClose straight through meant taking the FRONT closed the whole
+  // capture: the parent unmounted this component, and the setSide('back') that
+  // would have remounted the scanner for the back ran on a dying tree and did
+  // nothing. The back was unreachable — reported from a real phone 2026-08-24.
+  //
+  // So the parent close is DEFERRED a microtask and handleDone gets to veto
+  // it. A real cancel (the ×, Escape, backing out) calls onClose with NO
+  // following onDone, nothing vetoes, and the close goes through as before.
+  const advancing = useRef(false);
+  const closeParent = useRef(onClose);
+  closeParent.current = onClose;
+
+  const handleClose = useCallback(() => {
+    advancing.current = false;
+    // Runs after finish()'s synchronous onClose()+onDone() pair has settled,
+    // so handleDone below has already decided whether we are moving to the
+    // back. If it did, the flag is set and this close is skipped.
+    queueMicrotask(() => {
+      if (!advancing.current) closeParent.current();
+    });
+  }, []);
+
   const handleDone = useCallback(
     (files: File[]) => {
       const file = files[0];
@@ -75,79 +104,53 @@ export default function LicenceCardCapture({
       // where they were rather than throwing a dialog at them.
       if (!file) return;
 
-      if (side === 'front') {
-        setFront(file);
-        // Fire and forget: the read runs while they shoot the back.
-        try {
-          onSide('front', file);
-        } catch {
-          /* the caller's problem, never this component's */
-        }
-        setSide('back');
-        return;
-      }
-
+      // Fire and forget: the FRONT's read runs while they shoot the back, so
+      // the form they land on is already filled in. Must not block or throw.
       try {
-        onSide('back', file);
+        onSide(side, file);
       } catch {
-        /* as above */
+        /* the caller's problem, never this component's */
       }
-      // ⚠️ GUARD THE PAIR. `front` cannot normally be null here — the flow
-      // only reaches 'back' after a front exists — but a remount would make
-      // it so, and handing the parent a half-pair is worse than restarting.
-      if (!front) {
-        setSide('front');
+      if (side === 'front') setFront(file);
+
+      const step = advanceCapture(side, front !== null);
+      // keepOpen vetoes the close the scanner's finish() just scheduled — we
+      // are remounting for the next side, not tearing the surface down.
+      advancing.current = step.keepOpen;
+
+      if (step.complete && front) {
+        // Both sides done: the deferred close proceeds and the parent gets the
+        // pair. (onDone and the parent's own onClose both mean "stop
+        // capturing"; calling both is harmless.)
+        onDone({ front, back: file });
         return;
       }
-      onDone({ front, back: file });
+      setSide(step.next);
     },
     [side, front, onSide, onDone],
   );
 
   return (
-    <>
-      <DocumentScanner
-        // Remount between passes: the scanner holds its own phase, pages and
-        // stream, and reusing the instance would carry the front's review
-        // state into the back's capture.
-        key={side}
-        shape="card"
-        // They tapped a link that says "photograph your firearm licence".
-        // Asking what they are holding is a question with one answer.
-        skipChoose
-        // Operator: "keep it static green."
-        staticAim
-        title={COPY[side].title}
-        onDone={handleDone}
-        onClose={onClose}
-      />
-      {/*
-        ⚠️ THE LEAD TEXT LIVES OUTSIDE THE SCANNER because the scanner owns a
-        full-screen surface and takes only a title. Rendering it here keeps the
-        scanner untouched for every other caller — this flow is the unusual
-        one, and it should carry its own weight rather than adding a prop that
-        four other surfaces would have to ignore.
-      */}
-      <p
-        aria-live="polite"
-        style={{
-          position: 'fixed',
-          left: 0,
-          right: 0,
-          bottom: 'calc(env(safe-area-inset-bottom) + 8px)',
-          zIndex: 1002,
-          margin: 0,
-          padding: '0 20px',
-          textAlign: 'center',
-          fontSize: 12.5,
-          lineHeight: 1.45,
-          color: 'rgba(255,255,255,0.82)',
-          pointerEvents: 'none',
-          textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-        }}
-      >
-        {COPY[side].lead}
-      </p>
-    </>
+    <DocumentScanner
+      // Remount between passes: the scanner holds its own phase, pages and
+      // stream, and reusing the instance would carry the front's review
+      // state into the back's capture.
+      key={side}
+      shape="card"
+      // They tapped a link that says "photograph your firearm licence".
+      // Asking what they are holding is a question with one answer.
+      skipChoose
+      // Operator: "keep it static green."
+      staticAim
+      title={COPY[side].title}
+      // ⚠️ THE LEAD IS NOW THE SCANNER'S SUBTITLE, IN ITS HEADER. It used to
+      // be a fixed overlay pinned to the bottom of the screen, which landed
+      // straight on the shutter row and the Cancel/Reset/Apply row — reported
+      // from a real phone. In the header it is in normal flow, above the
+      // camera, and cannot collide with a control.
+      subtitle={COPY[side].lead}
+      onDone={handleDone}
+      onClose={handleClose}
+    />
   );
 }
