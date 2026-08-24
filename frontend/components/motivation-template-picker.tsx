@@ -8,6 +8,8 @@ import type {
   TemplateColourOption,
   TemplateFormat,
   TemplateFormatOption,
+  TemplateLayoutKey,
+  TemplateLayoutOption,
 } from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
@@ -59,6 +61,7 @@ export default function MotivationTemplatePicker({
   catalogue,
   format,
   colourway,
+  layout,
   watermarked,
   onChange,
   saving,
@@ -67,9 +70,14 @@ export default function MotivationTemplatePicker({
   catalogue: TemplateCatalogue;
   format: TemplateFormat;
   colourway: Colourway;
+  layout: TemplateLayoutKey;
   watermarked: boolean;
   /** Sends ONLY what changed — see the api client's setTemplate. */
-  onChange: (choice: { format?: TemplateFormat; colourway?: Colourway }) => void;
+  onChange: (choice: {
+    format?: TemplateFormat;
+    colourway?: Colourway;
+    layout?: TemplateLayoutKey;
+  }) => void;
   saving: boolean;
   error: string | null;
 }) {
@@ -100,6 +108,8 @@ export default function MotivationTemplatePicker({
     catalogue.formats.find((f) => f.key === format) ?? catalogue.formats[0];
   const chosenColour =
     catalogue.colours.find((c) => c.key === colourway) ?? catalogue.colours[0];
+  const chosenLayout =
+    catalogue.layouts.find((l) => l.key === layout) ?? catalogue.layouts[0];
 
   // The catalogue is served, so an empty one means the request failed. Say so
   // rather than rendering an empty rail that looks like "no templates exist".
@@ -175,6 +185,7 @@ export default function MotivationTemplatePicker({
               <PageStack
                 format={f}
                 colour={chosenColour}
+                layout={chosenLayout}
                 watermarked={watermarked}
               />
               <p className="mt-3 flex items-center gap-2 text-sm font-semibold">
@@ -195,6 +206,49 @@ export default function MotivationTemplatePicker({
           );
         })}
       </div>
+
+      {/* ── Style ────────────────────────────────────────────────────── */}
+      {/* ⚠️ ABOVE COLOUR, AND SEPARATE FROM IT. Fifty combinations, two
+          independent questions: this one decides where the ink goes and the
+          row below decides which ink. Presenting them as one list of fifty
+          would be unreadable, and presenting the layout as a sub-choice of a
+          colour would imply a colour restricts it. Neither restricts the
+          other. */}
+      {catalogue.layouts.length > 0 && (
+        <div
+          role="radiogroup"
+          aria-label="Document style"
+          className="mt-4 flex flex-wrap items-center gap-2"
+        >
+          {catalogue.layouts.map((l) => {
+            const active = l.key === chosenLayout?.key;
+            return (
+              <button
+                key={l.key}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                title={l.blurb}
+                onClick={() => onChange({ layout: l.key })}
+                className="rounded-full px-3 py-1 text-xs transition-colors"
+                style={{
+                  background: active ? 'var(--bg-inset)' : 'transparent',
+                  border: `${active ? '1.5px' : '0.5px'} solid ${
+                    active ? chosenColour.mut : 'var(--border)'
+                  }`,
+                }}
+              >
+                {l.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {chosenLayout && (
+        <p className="mt-2 text-xs text-[var(--text-secondary)]">
+          {chosenLayout.blurb}
+        </p>
+      )}
 
       {/* ── Colour ───────────────────────────────────────────────────── */}
       <div
@@ -259,6 +313,7 @@ export default function MotivationTemplatePicker({
         <EnlargedPreview
           format={chosenFormat}
           colour={chosenColour}
+          layout={chosenLayout}
           watermarked={watermarked}
           onClose={() => setEnlarged(false)}
         />
@@ -277,10 +332,12 @@ export default function MotivationTemplatePicker({
 function PageStack({
   format,
   colour,
+  layout,
   watermarked,
 }: {
   format: TemplateFormatOption;
   colour: TemplateColourOption;
+  layout?: TemplateLayoutOption;
   watermarked: boolean;
 }) {
   const pages = pagesFor(format);
@@ -309,6 +366,7 @@ function PageStack({
               page={p}
               colour={colour}
               format={format}
+              layout={layout}
               width={w}
               watermarked={watermarked && i === 0}
             />
@@ -330,11 +388,13 @@ function PageStack({
 function EnlargedPreview({
   format,
   colour,
+  layout,
   watermarked,
   onClose,
 }: {
   format: TemplateFormatOption;
   colour: TemplateColourOption;
+  layout?: TemplateLayoutOption;
   watermarked: boolean;
   onClose: () => void;
 }) {
@@ -416,6 +476,7 @@ function EnlargedPreview({
                 page={p}
                 colour={colour}
                 format={format}
+                layout={layout}
                 width={200}
                 watermarked={watermarked}
               />

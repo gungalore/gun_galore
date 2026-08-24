@@ -1,6 +1,10 @@
 'use client';
 
-import type { TemplateColourOption, TemplateFormatOption } from '@/lib/motivations-api';
+import type {
+  TemplateColourOption,
+  TemplateFormatOption,
+  TemplateLayoutOption,
+} from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
 // A MOCK PAGE, DRAWN IN THE DOM. NOT A PDF, AND THAT IS THE POINT.
@@ -77,7 +81,88 @@ function Bars({
 }
 
 /** A heading band — the single most recognisable thing about the document. */
-function Band({ colour, width = 62 }: { colour: TemplateColourOption; width?: number }) {
+/** The four headings that are not the band — mirrors alternateHeader. */
+function AltHeading({
+  colour,
+  width,
+  heading,
+}: {
+  colour: TemplateColourOption;
+  width: number;
+  heading: string;
+}) {
+  if (heading === 'underline') {
+    return (
+      <div aria-hidden style={{ marginBottom: '1em', textAlign: 'center' }}>
+        <div
+          style={{
+            height: '0.62em',
+            width: `${Math.min(width, 58)}%`,
+            background: colour.ink,
+            margin: '0 auto 0.7em',
+          }}
+        />
+        <div style={{ height: 1, background: colour.hair }} />
+      </div>
+    );
+  }
+  if (heading === 'numeral') {
+    return (
+      <div
+        aria-hidden
+        style={{ marginBottom: '1em', display: 'flex', alignItems: 'flex-end', gap: '0.6em' }}
+      >
+        <div style={{ height: '1.9em', width: '1.5em', background: colour.band }} />
+        <div style={{ height: '0.62em', width: `${width}%`, background: colour.ink }} />
+      </div>
+    );
+  }
+  if (heading === 'bar') {
+    return (
+      <div
+        aria-hidden
+        style={{ marginBottom: '1em', display: 'flex', alignItems: 'center', gap: '0.5em' }}
+      >
+        <div style={{ height: '0.9em', width: '1.1em', background: colour.ink }} />
+        <div style={{ height: '0.62em', width: `${width}%`, background: colour.ink }} />
+      </div>
+    );
+  }
+  // 'caps' — nothing but type, and more air than the others.
+  return (
+    <div aria-hidden style={{ marginBottom: '1.5em', marginTop: '0.4em' }}>
+      <div
+        style={{
+          height: '0.55em',
+          width: `${Math.min(width, 52)}%`,
+          background: colour.mut,
+          opacity: 0.85,
+        }}
+      />
+    </div>
+  );
+}
+
+function Band({
+  colour,
+  width = 62,
+  heading,
+}: {
+  colour: TemplateColourOption;
+  width?: number;
+  /**
+   * How this layout announces a section.
+   *
+   * ⚠️ THE HEADING IS WHAT A MEMBER ACTUALLY COMPARES, because it repeats down
+   * every page while the cover is seen once. A preview whose body page looked
+   * identical across all five would be showing them a difference that is not
+   * where the difference is.
+   */
+  heading?: string;
+}) {
+  if (heading && heading !== 'band') {
+    return <AltHeading colour={colour} width={width} heading={heading} />;
+  }
   return (
     <div aria-hidden style={{ marginBottom: '1em' }}>
       {/* ⚠️ 1px, NOT 0.12em. At tile scale 1em is about 2px, so an em-sized
@@ -113,12 +198,22 @@ export default function TemplatePreview({
   page,
   colour,
   format,
+  layout,
   width,
   watermarked,
 }: {
   page: PreviewPage;
   colour: TemplateColourOption;
   format: TemplateFormatOption;
+  /**
+   * How the document is SET. Optional so every existing caller keeps working
+   * and renders the Banner layout, which is what it drew before this existed.
+   *
+   * ⚠️ THE MOCK HAS TO DIFFER OR THE PICKER IS A LIE. Five cards showing the
+   * same picture would tell a member the layouts are interchangeable, and they
+   * would pick one, pay, and download something else.
+   */
+  layout?: TemplateLayoutOption;
   /** Rendered width in px. Everything else scales off it. */
   width: number;
   /** Draw the PREVIEW mark, as the PDF does until the pack is settled. */
@@ -145,8 +240,37 @@ export default function TemplatePreview({
     >
       {page === 'cover' && (
         <>
-          {/* The colour band across the head of the cover. */}
-          <div style={{ height: '1.6em', background: colour.ink }} />
+          {/* ⚠️ THE HEAD OF THE COVER IS THE LAYOUT'S SIGNATURE, and it is the
+              first thing a member compares. Banner and Ledger carry colour;
+              Plate tints a field behind the title; Report draws one heavy
+              rule; Classic puts nothing there at all. */}
+          {(!layout || layout.cover === 'banner') && (
+            <div style={{ height: '1.6em', background: colour.ink }} />
+          )}
+          {layout?.cover === 'plate' && (
+            <div style={{ height: '4.2em', background: colour.wash }} />
+          )}
+          {layout?.cover === 'ledger' && (
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: '0.9em',
+                background: colour.ink,
+              }}
+            />
+          )}
+          {layout?.cover === 'rule' && (
+            <div
+              style={{
+                height: '0.45em',
+                background: colour.ink,
+                margin: `2.4em ${margin}em 0`,
+              }}
+            />
+          )}
           <div style={{ padding: `${margin - 1.6}em ${margin}em 0` }}>
             <div style={{ height: '2.6em' }} />
             <div
@@ -247,22 +371,22 @@ export default function TemplatePreview({
           to fill the column, because that is what the renderer produces. */}
       {page === 'body' && (
         <div style={{ padding: `${margin}em ${margin}em 0` }}>
-          <Band colour={colour} width={48} />
+          <Band colour={colour} width={48} heading={layout?.heading} />
           <Bars lines={4} />
           <div style={{ height: '1.2em' }} />
           <Bars lines={4} last={54} />
           <div style={{ height: '2.8em' }} />
-          <Band colour={colour} width={66} />
+          <Band colour={colour} width={66} heading={layout?.heading} />
           <Bars lines={5} />
           <div style={{ height: '1.2em' }} />
           <Bars lines={4} last={44} />
           <div style={{ height: '2.8em' }} />
-          <Band colour={colour} width={54} />
+          <Band colour={colour} width={54} heading={layout?.heading} />
           <Bars lines={5} />
           <div style={{ height: '1.2em' }} />
           <Bars lines={4} last={62} />
           <div style={{ height: '2.8em' }} />
-          <Band colour={colour} width={72} />
+          <Band colour={colour} width={72} heading={layout?.heading} />
           <Bars lines={5} />
           <div style={{ height: '1.2em' }} />
           <Bars lines={5} last={38} />

@@ -200,8 +200,12 @@ export interface MotivationDetail extends MotivationSummary {
    * firearms-owned rows.
    */
   overlap?: { needsJustification: boolean; prompt: string | null };
-  /** Which of the fifteen templates this pack is set in. */
-  template?: { format: TemplateFormat; colourway: Colourway };
+  /** Which of the fifty settings this pack is in - five layouts, ten colours. */
+  template?: {
+    format: TemplateFormat;
+    colourway: Colourway;
+    layout: TemplateLayoutKey;
+  };
   /**
    * The document still carries the PREVIEW mark.
    *
@@ -284,10 +288,45 @@ export interface TemplateColourOption {
  * first time somebody adjusted the ink — and the failure is the worst kind:
  * a member picks a colour, pays, and the PDF arrives a different one.
  */
+export type TemplateLayoutKey =
+  | 'banner'
+  | 'plate'
+  | 'rule'
+  | 'ledger'
+  | 'classic';
+
+/**
+ * One way of SETTING the document — cover, headings, furniture, body face.
+ *
+ * ⚠️ A SEPARATE AXIS FROM `colours`, and the picker presents it as one: five
+ * layouts times ten schemes is fifty combinations, and none is special. The
+ * layout says WHERE the ink goes; the scheme says WHICH ink.
+ *
+ * ⚠️ AND IT IS NOT THE RETIRED concise/standard AXIS. That varied the CONTENT
+ * and was settled in favour of one comprehensive pack. Every layout here
+ * carries every section — what changes is only how it looks.
+ */
+export interface TemplateLayoutOption {
+  key: TemplateLayoutKey;
+  name: string;
+  blurb: string;
+  /** Tokens the preview draws from, so the mock differs per layout. */
+  cover: string;
+  heading: string;
+  bodyFace: 'serif' | 'sans';
+  runningBanner: boolean;
+  hangingRule: boolean;
+}
+
 export interface TemplateCatalogue {
   formats: TemplateFormatOption[];
   colours: TemplateColourOption[];
-  defaults: { format: TemplateFormat; colourway: Colourway };
+  layouts: TemplateLayoutOption[];
+  defaults: {
+    format: TemplateFormat;
+    colourway: Colourway;
+    layout: TemplateLayoutKey;
+  };
 }
 
 /** What the member's own Document Centre could fill in here. */
@@ -795,7 +834,14 @@ export const motivationsApi = {
     request<TemplateCatalogue>(t, '/templates', {}, {
       formats: [],
       colours: [],
-      defaults: { format: 'comprehensive', colourway: 'eucalyptus' },
+      // Empty for the same reason as colours: a layout list we invented
+      // client-side could offer a setting the renderer does not have.
+      layouts: [],
+      defaults: {
+        format: 'comprehensive',
+        colourway: 'eucalyptus',
+        layout: 'banner',
+      },
     }),
 
   /**
@@ -808,13 +854,23 @@ export const motivationsApi = {
   setTemplate: (
     t: TokenGetter,
     id: string,
-    choice: { format?: TemplateFormat; colourway?: Colourway },
+    choice: {
+      format?: TemplateFormat;
+      colourway?: Colourway;
+      layout?: TemplateLayoutKey;
+    },
   ) =>
-    request<{ format: TemplateFormat; colourway: Colourway }>(
+    request<{
+      format: TemplateFormat;
+      colourway: Colourway;
+      layout: TemplateLayoutKey;
+    }>(
       t,
       `/${id}/template`,
       { method: 'PATCH', body: JSON.stringify(choice) },
-      { format: 'comprehensive', colourway: 'eucalyptus' },
+      // ⚠️ THE FALLBACK MUST MATCH THE RENDERER'S OWN DEFAULTS, or a failed
+      // PATCH shows the member a selection their document does not have.
+      { format: 'comprehensive', colourway: 'eucalyptus', layout: 'banner' },
     ),
 
   /** Write the suggestions the applicant accepted. */

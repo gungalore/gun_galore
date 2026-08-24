@@ -52,6 +52,7 @@ import {
   SAPS271_FILL,
   SAPS271_OPT_KEY,
   type Colourway,
+  type TemplateLayoutKey,
   type TemplateCatalogue,
   type TemplateFormat,
   groupBySection,
@@ -294,7 +295,8 @@ export default function MotivationWizardPage() {
   const [template, setTemplate] = useState<{
     format: TemplateFormat;
     colourway: Colourway;
-  }>({ format: 'comprehensive', colourway: 'eucalyptus' });
+    layout: TemplateLayoutKey;
+  }>({ format: 'comprehensive', colourway: 'eucalyptus', layout: 'banner' });
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
 
@@ -377,7 +379,11 @@ export default function MotivationWizardPage() {
    * carrying the first's pre-click format and undoing it.
    */
   const chooseTemplate = useCallback(
-    async (choice: { format?: TemplateFormat; colourway?: Colourway }) => {
+    async (choice: {
+      format?: TemplateFormat;
+      colourway?: Colourway;
+      layout?: TemplateLayoutKey;
+    }) => {
       setTemplate((t) => ({ ...t, ...choice }));
       setTemplateError(null);
       setTemplateSaving(true);
@@ -2404,6 +2410,7 @@ export default function MotivationWizardPage() {
             catalogue={catalogue}
             format={template.format}
             colourway={template.colourway}
+            layout={template.layout}
             // Defaults to marked when the server did not say. Erring the other
             // way would show a clean preview of a document that arrives
             // stamped, which is selling something we do not hand over.

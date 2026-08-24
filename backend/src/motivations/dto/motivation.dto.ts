@@ -15,6 +15,10 @@ import {
   type Scheme,
   type TemplateFormat,
 } from '../motivation-pdf.service';
+import {
+  LAYOUT_KEYS,
+  type TemplateLayout,
+} from '../motivation-pdf-layouts';
 
 // DTO classes are declared in dependency order and one concern per file.
 //
@@ -97,4 +101,14 @@ export class SetTemplateDto {
   @IsOptional()
   @IsIn(SCHEME_KEYS, { message: 'That is not one of our schemes.' })
   colourway?: Scheme;
+
+  /**
+   * Which of the five layouts the pack is set in.
+   *
+   * Validated against the same list the renderer falls back to, so the picker
+   * cannot offer something the document cannot be.
+   */
+  @IsOptional()
+  @IsIn(LAYOUT_KEYS, { message: 'That is not one of our layouts.' })
+  layout?: TemplateLayout;
 }
