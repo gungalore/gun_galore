@@ -142,6 +142,17 @@ export interface MotivationField {
    * under the cursor mid-word.
    */
   docSourced?: string;
+  /**
+   * This answer can carry evidence — offer a camera and a file picker on it.
+   *
+   * ⚠️ THE OPPOSITE OF docSourced. That marks a field a document ANSWERS, so
+   * we stop asking it. This marks a field a document SUPPORTS: the applicant
+   * still writes their record, and the targets, register pages and permits are
+   * what make a DFO believe it. Nothing is extracted from these and nothing is
+   * prefilled. Names an existing upload kind, so a file attached here is the
+   * same document as one attached on the documents step.
+   */
+  attachKind?: string;
 }
 
 export interface FieldSet {

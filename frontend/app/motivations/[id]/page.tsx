@@ -851,6 +851,42 @@ export default function MotivationWizardPage() {
     }
   };
 
+  /**
+   * Attach evidence straight onto the question it supports.
+   *
+   * ⚠️ THE SAME UPLOAD KIND THE CHECKLIST USES, deliberately. A file attached
+   * to the hunting record IS the shooting activity log — it satisfies the
+   * step-1 row, gets an annexure letter and prints in the pack, exactly as one
+   * attached four steps away would. Giving these their own private kind would
+   * have produced two lists of the same documents that could disagree, and a
+   * DFO reading a pack that lists an annexure twice.
+   *
+   * ⚠️ AND NO EXTRACTION RUNS ON THEM. A target or a register page answers no
+   * registry field; SHOOTING_ACTIVITY_LOG is not in EXTRACTABLE, so addUpload
+   * stores the bytes and proposes nothing. That is the difference between a
+   * document that ANSWERS a question and one that SUPPORTS an answer.
+   */
+  const attachToField = async (kind: string, files: File[]) => {
+    if (!files.length) return;
+    setBusyKind(kind);
+    setUploadErr(null);
+    try {
+      // ⚠️ SEQUENTIAL, NOT Promise.all — the same reason the checklist does it
+      // sequentially: each upload counts existing rows against the cap and
+      // writes a new one, so firing them together lets several see the same
+      // count and slip past it.
+      for (const file of files) {
+        await addOneUpload(kind, file);
+      }
+    } catch (err) {
+      setUploadErr(
+        err instanceof Error ? err.message : 'That would not upload.',
+      );
+    } finally {
+      setBusyKind(null);
+    }
+  };
+
   const removeOneUpload = async (uploadId: string) => {
     await motivationsApi.removeUpload(token, id, uploadId);
     setUploads((u) => u.filter((x) => x.id !== uploadId));
@@ -1424,7 +1460,27 @@ export default function MotivationWizardPage() {
           for the same two documents, in a second place — and the operator's
           word for the result was cluttered. Attach the competency certificate
           in the documents section and this fills itself; see the note on
-          applying suggestions in addOneUpload. */}
+          applying suggestions in addOneUpload.
+
+          ⚠️ EXCEPT WHERE THE EVIDENCE IS THE ARGUMENT — see attachKind.
+          Operator, items 8 and 10, 2026-08-24: the hunting record and the
+          competition record "should also have a upload/camera option", with
+          "a list of attachments as the applicant gives them". That is not the
+          case the clutter complaint was about: those documents ANSWER a
+          question and belonged on the checklist, while a target or a register
+          page SUPPORTS a claim the applicant is writing in the box directly
+          above it, and asking them to remember it four steps later is how it
+          never gets attached. Three fields carry this, not 199. */}
+      {f.attachKind && (
+        <FieldAttachments
+          field={f}
+          kind={f.attachKind}
+          uploads={uploads}
+          busy={busyKind === f.attachKind}
+          onAdd={(files) => attachToField(f.attachKind as string, files)}
+          onRemove={removeOneUpload}
+        />
+      )}
     </div>
   );
 
@@ -2618,6 +2674,103 @@ export default function MotivationWizardPage() {
 }
 
 /** One question, rendered from its registry definition. */
+/**
+ * Evidence attached to one question, and the running list of it.
+ *
+ * Operator, items 8 and 10, 2026-08-24: "Upload and camera button. Make a list
+ * of attachments as the applicant gives them."
+ *
+ * ⚠️ THE CAMERA IS A SEPARATE CONTROL FROM THE FILE PICKER, and on a phone
+ * that matters: capture="environment" opens the rear camera directly, where a
+ * bare file input opens a chooser the member then has to navigate. Both are
+ * offered because a target photographed today and a register page already
+ * scanned as a PDF are both legitimate here.
+ *
+ * ⚠️ AND IT TAKES ANYTHING. Operator on association activities: "there might
+ * be targets that's uploaded so prepare for different types of formats and
+ * documents." Images and PDFs both — the pack embeds JPEG and PNG directly and
+ * splices PDF pages in whole, so all three print.
+ */
+function FieldAttachments({
+  field,
+  kind,
+  uploads,
+  busy,
+  onAdd,
+  onRemove,
+}: {
+  field: MotivationField;
+  kind: string;
+  uploads: UploadRow[];
+  busy: boolean;
+  onAdd: (files: File[]) => void;
+  onRemove: (id: string) => void;
+}) {
+  const mine = uploads.filter((u) => u.kind === kind);
+  return (
+    <div className="mt-2 rounded border border-[var(--border)] bg-[var(--bg-inset)] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <FilePickerButton
+          compact
+          accept="image/jpeg,image/png,image/webp,application/pdf"
+          multiple
+          disabled={busy}
+          onFiles={(files) => onAdd(files)}
+          aria-label={`Attach a file to ${field.label}`}
+        >
+          Attach a file
+        </FilePickerButton>
+        <FilePickerButton
+          compact
+          accept="image/*"
+          capture="environment"
+          disabled={busy}
+          onFiles={(files) => onAdd(files)}
+          aria-label={`Photograph something for ${field.label}`}
+        >
+          Take a photo
+        </FilePickerButton>
+        {busy && (
+          <span className="text-xs text-[var(--text-secondary)]">
+            Uploading…
+          </span>
+        )}
+      </div>
+
+      {mine.length > 0 ? (
+        <ul className="mt-2 space-y-1">
+          {mine.map((u) => (
+            <li
+              key={u.id}
+              className="flex items-center justify-between gap-2 text-xs"
+            >
+              <span className="min-w-0 truncate text-[var(--text-secondary)]">
+                {/* The annexure letter is what a DFO will look for, so show it
+                    the moment it exists rather than only in the pack. */}
+                {u.annexure ? `Annexure ${u.annexure} · ` : ''}
+                {u.label}
+              </span>
+              <button
+                type="button"
+                className="shrink-0 rounded px-2 py-0.5 text-[var(--text-tertiary-on-card)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
+                onClick={() => onRemove(u.id)}
+                aria-label={`Remove ${u.label}`}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
+          Nothing attached yet. Anything you add here also counts towards your
+          documents.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function FieldInput({
   field,
   value,

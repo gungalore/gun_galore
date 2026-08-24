@@ -1,4 +1,4 @@
-import { MotivationLicenceType } from '@prisma/client';
+import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
   factPackFields,
   fieldsFor,
@@ -834,5 +834,75 @@ describe('multi fields and the comma-joined storage format', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// EVIDENCE ATTACHED TO THE QUESTION IT SUPPORTS.
+//
+// Operator, items 8 and 10 of twelve, 2026-08-24: the hunting record and the
+// competition record "should also have a upload/camera option", with "a list
+// of attachments as the applicant gives them", and for association activities
+// "there might be targets that's uploaded".
+//
+// ⚠️ THE CLUTTER COMPLAINT THAT REMOVED THE LAST PER-FIELD PICKERS WAS FAIR,
+// and this must not undo it. A camera, a file picker and a dropdown under all
+// 199 fields is noise. These belong only where the evidence IS the argument.
+// ────────────────────────────────────────────────────────────────────
+describe('which fields accept attachments', () => {
+  const TYPES: MotivationLicenceType[] = [
+    MotivationLicenceType.S13_SELF_DEFENCE,
+    MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+    MotivationLicenceType.S16_DEDICATED_HUNTER,
+    MotivationLicenceType.S16_DEDICATED_SPORT,
+    MotivationLicenceType.S24_RENEWAL,
+  ];
+
+  const attaching = (t: MotivationLicenceType) =>
+    fieldsFor(t).filter((f) => f.attachKind);
+
+  it('⚠️ STAYS RARE — at most one field per licence type', () => {
+    for (const t of TYPES) {
+      expect(attaching(t).length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('offers it on the record a DFO wants evidence for', () => {
+    expect(attaching(MotivationLicenceType.S15_OCCASIONAL_HUNTER).map((f) => f.key)).toEqual([
+      'hunting_history',
+    ]);
+    expect(attaching(MotivationLicenceType.S16_DEDICATED_HUNTER).map((f) => f.key)).toEqual([
+      'hunting_history',
+    ]);
+    expect(attaching(MotivationLicenceType.S16_DEDICATED_SPORT).map((f) => f.key)).toEqual([
+      'competition_record',
+    ]);
+  });
+
+  it('offers it nowhere on self-defence or a renewal', () => {
+    expect(attaching(MotivationLicenceType.S13_SELF_DEFENCE)).toEqual([]);
+    expect(attaching(MotivationLicenceType.S24_RENEWAL)).toEqual([]);
+  });
+
+  it('⚠️ names a REAL upload kind, so the file joins the one document list', () => {
+    // A private kind would produce two lists of the same documents that could
+    // disagree — and a pack listing an annexure twice.
+    const kinds = new Set<string>(Object.keys(MotivationUploadKind));
+    for (const t of TYPES) {
+      for (const f of attaching(t)) {
+        expect(kinds.has(f.attachKind as string)).toBe(true);
+      }
+    }
+  });
+
+  it('⚠️ never marks a field BOTH doc-sourced and attachable', () => {
+    // They mean opposite things: docSourced is "a document answers this, stop
+    // asking"; attachKind is "a document supports this, keep asking". A field
+    // claiming both would be prefilled and asked for evidence at once.
+    for (const t of TYPES) {
+      for (const f of fieldsFor(t)) {
+        expect(Boolean(f.attachKind && f.docSourced)).toBe(false);
+      }
+    }
   });
 });

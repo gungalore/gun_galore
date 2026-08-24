@@ -193,6 +193,33 @@ export interface MotivationField {
    * still blocks generation, and still gets asked.
    */
   docSourced?: string;
+  /**
+   * THIS ANSWER CAN CARRY EVIDENCE, so offer a camera and a file picker on it.
+   *
+   * Operator, items 8 and 10 of twelve, 2026-08-24: "Your hunting record should
+   * also have a upload/camera option", and for association activities "there
+   * might be targets that's uploaded so prepare for different types of formats
+   * and documents". Asked how, given per-field pickers had been removed once
+   * before as cluttered: "Upload and camera button. Make a list of attachments
+   * as the applicant gives them."
+   *
+   * ⚠️ IT IS THE OPPOSITE OF docSourced, AND THE TWO MUST NOT BE CONFUSED. A
+   * docSourced field is one a document ANSWERS, so we stop asking it. This is a
+   * field a document SUPPORTS: the applicant still writes their record, and the
+   * targets, permits and register pages are what make a DFO believe it. Nothing
+   * here is extracted and nothing is prefilled.
+   *
+   * ⚠️ AND IT IS DELIBERATELY RARE. The clutter complaint that removed the last
+   * per-field pickers was fair — a camera, a file picker and a dropdown hanging
+   * under all 199 fields is noise. This appears on the three fields where the
+   * evidence IS the argument, and nowhere else. Adding it broadly would earn
+   * the same complaint again.
+   *
+   * The value names an existing MotivationUploadKind, so a file attached here
+   * is the SAME document as one attached on the documents step — one list, one
+   * annexure, no second silo to keep in step.
+   */
+  attachKind?: string;
 }
 
 /** Asked for every licence type. */
@@ -1602,9 +1629,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Your hunting experience',
       kind: 'long',
       section: 'Experience',
-      help: 'How long, where, what species, roughly how often.',
+      help: 'How long, where, what species, roughly how often. Attach your register pages, permits or photographs if you have them — a record with evidence behind it carries far more weight.',
       required: true,
       maxLength: 3000,
+      attachKind: 'SHOOTING_ACTIVITY_LOG',
     },
     {
       key: 'intended_quarry',
@@ -1730,9 +1758,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Your hunting record',
       kind: 'long',
       section: 'Experience',
-      help: 'Species, terrain, ranges, roughly how many hunts a year.',
+      help: 'Species, terrain, ranges, roughly how many hunts a year. Attach your register pages, permits or photographs if you have them — a record with evidence behind it carries far more weight.',
       required: true,
       maxLength: 3000,
+      attachKind: 'SHOOTING_ACTIVITY_LOG',
     },
     {
       // OPTIONAL here, unlike the sport shooter's. A dedicated hunter's
@@ -1919,9 +1948,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Competitions and range attendance',
       kind: 'long',
       section: 'Experience',
-      help: 'Matches shot in the last two years, classifications, results if relevant.',
+      help: 'Matches shot in the last two years, classifications, results if relevant. Attach scorecards, targets or your attendance register — this is the annexure that shows you actually shoot.',
       required: true,
       maxLength: 3000,
+      attachKind: 'SHOOTING_ACTIVITY_LOG',
     },
     {
       key: 'discipline_requirement',

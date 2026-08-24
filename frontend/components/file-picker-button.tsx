@@ -34,6 +34,15 @@ export interface FilePickerButtonProps {
   showPicked?: boolean;
   /** Icon only. The surrounding row already says what is being added. */
   compact?: boolean;
+  /**
+   * Open the camera directly instead of a file chooser.
+   *
+   * ⚠️ ON A PHONE THIS IS THE WHOLE DIFFERENCE between "take a photo" and
+   * "find a photo". 'environment' asks for the rear camera, which is the one
+   * pointed at a target or a register page. Ignored by desktop browsers, which
+   * fall back to the ordinary chooser — so it is safe to pass unconditionally.
+   */
+  capture?: 'environment' | 'user';
   /** Accessible name, required when compact leaves no visible words. */
   'aria-label'?: string;
   title?: string;
@@ -50,6 +59,7 @@ export default function FilePickerButton({
   variant = 'secondary',
   showPicked = false,
   compact = false,
+  capture,
   className,
   'aria-label': ariaLabel,
   title,
@@ -78,6 +88,7 @@ export default function FilePickerButton({
         type="file"
         accept={accept}
         multiple={multiple}
+        capture={capture}
         disabled={disabled}
         aria-describedby={describedBy}
         // Off-screen, not display:none — the latter takes it out of the
