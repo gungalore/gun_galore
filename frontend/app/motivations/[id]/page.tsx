@@ -20,7 +20,8 @@ import MotivationSellerConsent from '@/components/motivation-seller-consent';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StepAccordion, StepStatus } from '@/components/step-accordion';
+import type { StepStatus } from '@/components/step-accordion';
+import MotivationStepRail from '@/components/motivation-step-rail';
 import {
   FollowUp,
   MotivationApiError,
@@ -68,6 +69,95 @@ import {
 
 const AUTOSAVE_MS = 1200;
 const DRAFT_KEY = (id: string) => `motivation-draft:${id}`;
+
+// ────────────────────────────────────────────────────────────────────
+// THE SIX STEPS.
+//
+// Operator, 2026-08-24: "a horizontal progress indicator style stepper... group
+// the steps that follow each other", and "the uploads should do all the heavy
+// lifting and the applicant has minimal fill-in work".
+//
+// ⚠️ A STEP IS A UNION OF WHOLE REGISTRY SECTIONS, NEVER PART OF ONE. Every
+// showIf pair in the registry is intra-section, so keeping sections whole keeps
+// all 38 of them inside one step no matter how the steps are ordered — a field
+// can never be gated by an answer on a screen the applicant has not reached.
+// It also means orderByDependency's within-a-section guarantee still holds, and
+// no fieldKey→step map has to be maintained against 144 keys. Merging two
+// sections into one step is free; cutting one across two steps is not.
+//
+// ⚠️ THE SAPS-271 OPT-IN SITS IN STEP 1, and that placement is load-bearing.
+// It is the one gate that crosses sections: answering "fill it in for me"
+// turns on ~48 formOnly fields spread through steps 2, 4 and 5. Asked first,
+// the lean dealer path stays the default and the form only grows when somebody
+// asks it to. Asked later, those fields would appear behind the applicant.
+//
+// Sections are matched BY NAME, which is what groupBySection buckets on. A
+// section that is not named here still renders — see UNPLANNED_STEP — so a new
+// registry section can never silently vanish from the form.
+// ────────────────────────────────────────────────────────────────────
+
+interface StepDef {
+  key: string;
+  /** On the rail. Short enough to sit under a 28px circle. */
+  label: string;
+  /** The heading inside the step body. */
+  title: string;
+  blurb?: string;
+  /** Registry section names, in the order they should appear. */
+  sections: string[];
+}
+
+const STEP_PLAN: StepDef[] = [
+  {
+    key: 'documents',
+    label: 'Documents',
+    title: 'Start with your documents',
+    blurb:
+      'This is the step that saves you the most typing — we read what we can off whatever you upload and fill the rest of the form in for you.',
+    sections: ['The SAPS 271 form'],
+  },
+  {
+    key: 'you',
+    label: 'You & firearm',
+    title: 'You and the firearm',
+    sections: ['About you', 'The firearm'],
+  },
+  {
+    key: 'owned',
+    label: 'What you own',
+    title: 'Firearms you already own',
+    sections: ['Firearms you already own'],
+  },
+  {
+    key: 'record',
+    label: 'Storage & record',
+    title: 'Storage and your record',
+    sections: ['Storage and safety', 'History'],
+  },
+  {
+    key: 'case',
+    label: 'Your case',
+    title: 'Your case',
+    sections: [
+      'Dedicated status',
+      'Your circumstances',
+      'Experience',
+      'The existing licence',
+    ],
+  },
+  { key: 'prepare', label: 'Prepare', title: 'Prepare your pack', sections: [] },
+];
+
+/**
+ * Where an unrecognised section goes.
+ *
+ * ⚠️ NOT A TIDINESS DETAIL. If a section added to the registry tomorrow matched
+ * no step it would render nowhere, and the server would still require its
+ * fields — an applicant staring at "1 still to answer" with no box on screen
+ * anywhere. Falling through to "Your case" is arbitrary but visible, which is
+ * the only property that matters here.
+ */
+const UNPLANNED_STEP = STEP_PLAN.findIndex((s) => s.key === 'case');
 
 // The "document type" menu is SERVED, not hard-coded here — see PickableKind
 // in lib/motivations-api.ts for why. The server orders it so the next thing to
@@ -165,6 +255,9 @@ export default function MotivationWizardPage() {
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>(
     'idle',
   );
+  // 1-based step on screen. Was "which accordion is open"; it is now "which
+  // step the rail is pointing at", and unlike the old accordion it is never 0 —
+  // there is always a step showing.
   const [expanded, setExpanded] = useState(1);
   const [furthest, setFurthest] = useState(1);
   const [generating, setGenerating] = useState(false);
@@ -1066,6 +1159,41 @@ export default function MotivationWizardPage() {
    * they had typed a word in it. Green now means "there is something in here
    * and nothing outstanding".
    */
+  /**
+   * The registry sections that belong to each step, in plan order.
+   *
+   * Built from the LIVE `sections` list, so a step whose sections do not exist
+   * for this licence type simply comes out empty — S24 has no "Dedicated
+   * status", S13 no "Experience" — and empty content steps are dropped from
+   * the rail below rather than shown as a dead end.
+   */
+  const stepSections = useMemo(() => {
+    const byStep: (typeof sections)[] = STEP_PLAN.map(() => []);
+    for (const sec of sections) {
+      const idx = STEP_PLAN.findIndex((s) => s.sections.includes(sec.section));
+      byStep[idx >= 0 ? idx : UNPLANNED_STEP].push(sec);
+    }
+    return byStep;
+  }, [sections]);
+
+  /**
+   * The steps actually shown, and their numbers.
+   *
+   * Steps 1 (documents) and the last (prepare) always exist — they carry
+   * uploads and Generate, not registry fields — so they are kept even when
+   * they hold no sections.
+   */
+  const steps = useMemo(
+    () =>
+      STEP_PLAN.map((def, i) => ({ def, sections: stepSections[i], index: i }))
+        .filter(
+          (s, i) =>
+            i === 0 || i === STEP_PLAN.length - 1 || s.sections.length > 0,
+        )
+        .map((s, i) => ({ ...s, n: i + 1 })),
+    [stepSections],
+  );
+
   const stepStatus = (
     n: number,
     missing: number,
@@ -1091,28 +1219,96 @@ export default function MotivationWizardPage() {
   };
 
   /**
-   * Toggle, not just open.
+   * Move to a step.
    *
-   * Clicking the header of the step you are ON now COLLAPSES it. Previously
-   * every click expanded, so the open step could never be shrunk and a long
-   * section left no way to see the rest of the form. Operator, 2026-08-19.
+   * ⚠️ NO LONGER A TOGGLE. As an accordion this collapsed the step you clicked
+   * if you were already on it, so a long section could be shrunk to get at the
+   * rest of the form. In a wizard there is only ever one step on screen and
+   * "collapse it" means a page with nothing on it — the navigation IS the way
+   * to get at the rest of the form now. Scrolls to the top because the step
+   * being replaced may have been longer than the screen.
    */
   const go = (n: number) => {
-    setExpanded((cur) => (cur === n ? 0 : n));
+    setExpanded(n);
     setFurthest((f) => Math.max(f, n));
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
-  // Open the first section that still has something outstanding, rather than
+  /**
+   * The rail.
+   *
+   * ⚠️ THE SAME `outstanding` THE GENERATE GATE USES. If the rail counted
+   * differently from the gate, a form could show six green ticks and still be
+   * refused — which is the dead end the union at `outstanding` exists to
+   * prevent. One source, two readers.
+   */
+  const railSteps = useMemo(
+    () =>
+      steps.map((s) => {
+        const fields = s.sections.flatMap((sec) => sec.fields);
+        const missing = fields.filter((f) =>
+          outstanding.includes(f.key),
+        ).length;
+        const answered = fields.filter((f) =>
+          (answers[f.key] ?? '').trim(),
+        ).length;
+        return {
+          key: s.def.key,
+          label: s.def.label,
+          status: stepStatus(s.n, missing, answered),
+        };
+      }),
+    [steps, outstanding, answers, expanded],
+  );
+
+  /**
+   * Which step owns a section.
+   *
+   * Sections stay in registry order in the DOM and each one hides itself when
+   * its step is not the one on screen — rather than the JSX being re-ordered
+   * into step buckets. Every step's sections happen to be contiguous in
+   * registry order, so a step never renders its own content out of order, and
+   * hiding (rather than moving or unmounting) is what keeps every controlled
+   * input mounted and the autosave untouched.
+   */
+  const stepOfSection = useCallback(
+    (sectionName: string): number => {
+      const found = steps.find((s) =>
+        s.sections.some((sec) => sec.section === sectionName),
+      );
+      return found ? found.n : 1;
+    },
+    [steps],
+  );
+
+  /** Which step a field key sits on, for the Generate-refusal jump. */
+  const stepForKey = useCallback(
+    (key: string): number | null => {
+      for (const s of steps) {
+        if (s.sections.some((sec) => sec.fields.some((f) => f.key === key))) {
+          return s.n;
+        }
+      }
+      return null;
+    },
+    [steps],
+  );
+
+  // Open the first step that still has something outstanding, rather than
   // assuming step 1 exists. A returning applicant lands on the work left to do.
   const opened = useRef(false);
   useEffect(() => {
     if (opened.current || loading || !sections.length) return;
     opened.current = true;
-    const firstIncomplete = sections.findIndex((sec) =>
-      sec.fields.some((f) => outstanding.includes(f.key)),
+    const firstIncomplete = steps.find((s) =>
+      s.sections.some((sec) =>
+        sec.fields.some((f) => outstanding.includes(f.key)),
+      ),
     );
-    setExpanded(firstIncomplete >= 0 ? firstIncomplete + 2 : 0);
-  }, [loading, sections, outstanding]);
+    setExpanded(firstIncomplete ? firstIncomplete.n : 1);
+  }, [loading, sections, steps, outstanding]);
 
   if (loading) {
     return <main className="mx-auto max-w-3xl p-6">Loading your application…</main>;
@@ -1181,6 +1377,25 @@ export default function MotivationWizardPage() {
         )}
       </header>
 
+      <MotivationStepRail
+        steps={railSteps}
+        current={expanded}
+        onJump={go}
+      />
+
+      {/* The step's own heading. One per step, all but the current one hidden
+          — see the note on stepOfSection for why nothing is unmounted. */}
+      {steps.map((s) => (
+        <div key={`h-${s.def.key}`} hidden={expanded !== s.n} className="mb-4">
+          <h2 className="text-lg font-semibold">{s.def.title}</h2>
+          {s.def.blurb && (
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              {s.def.blurb}
+            </p>
+          )}
+        </div>
+      ))}
+
       {/* Documents FIRST.
         *
         * Operator, 2026-08-19: take the documents up front, because there is a
@@ -1190,8 +1405,8 @@ export default function MotivationWizardPage() {
         * serial of a firearm they already own — which is exactly what the
         * overlap check needs. Re-typing all that off a card in your hand is the
         * part of a form people abandon. */}
+      <div hidden={expanded !== 1}>
       <section className="mb-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
-        <h2 className="font-medium">Start with your documents</h2>
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
           Photograph or upload what you already have and we will read what we
           can off them, so you type less. You confirm everything before it goes
@@ -1469,18 +1684,23 @@ export default function MotivationWizardPage() {
         )}
       </section>
 
-      {/* 1 — the profile offer */}
+      {/* The profile offer — a plain card inside step 1.
+        *
+        * ⚠️ IT WAS AN ACCORDION AND MUST NOT BE ONE HERE. The step it lives on
+        * is already the thing being expanded and collapsed; a second header
+        * inside it toggled `expanded` to the value it already had, so the
+        * header looked clickable and did nothing — exactly the "looks tappable
+        * but is not" trap the witness rail refuses. It is one short offer, so
+        * it simply shows. */}
       {offer && offer.fields.length > 0 && !offer.alreadyConsented && (
-        <StepAccordion
-          number={1}
-          title="Use what we already have?"
-          description={offer.note}
-          status={stepStatus(1, 0, offer.alreadyConsented ? 1 : 0)}
-          expanded={expanded === 1}
-          onToggle={() => go(1)}
-          hideContinue
-        >
-          <div className="space-y-3">
+        <section className="mb-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
+          <h3 className="font-medium">Use what we already have?</h3>
+          {offer.note && (
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              {offer.note}
+            </p>
+          )}
+          <div className="mt-3 space-y-3">
             <p className="text-sm text-[var(--text-secondary)]">
               We can fill these in from your All Outdoor profile. Nothing is
               copied until you say so, and anything you have already typed is
@@ -1525,36 +1745,28 @@ export default function MotivationWizardPage() {
               </button>
             </div>
           </div>
-        </StepAccordion>
+        </section>
       )}
+      </div>
 
-      {/* 2 — the questions, straight from the registry */}
-      {sections.map((sec, i) => {
-        const n = i + 2;
-        const missingHere = sec.fields.filter((f) =>
-          outstanding.includes(f.key),
-        ).length;
-        const answeredHere = sec.fields.filter((f) =>
-          (answers[f.key] ?? '').trim(),
-        ).length;
+      {/* The registry sections. Each one hides itself unless its step is the
+          one on screen — see stepOfSection. */}
+      {sections.map((sec) => {
+        const n = stepOfSection(sec.section);
         const isOwned = sec.section === 'Firearms you already own';
+        // The step heading already names a single-section step; repeating it
+        // on the card would be the same words twice on one screen.
+        const soleSection =
+          (steps.find((s) => s.n === n)?.sections.length ?? 1) === 1;
         return (
-          <StepAccordion
+          <section
             key={sec.section}
-            number={n}
-            title={sec.section}
-            status={stepStatus(n, missingHere, answeredHere)}
-            expanded={expanded === n}
-            onToggle={() => go(n)}
-            summary={
-              missingHere > 0
-                ? `${missingHere} still to answer`
-                : answeredHere > 0
-                  ? 'Done'
-                  : 'Nothing yet'
-            }
-            onContinue={() => go(n + 1)}
+            hidden={expanded !== n}
+            className="mb-4 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4"
           >
+            {!soleSection && (
+              <h3 className="mb-3 font-medium">{sec.section}</h3>
+            )}
             <div className="space-y-4">
               {/* WHAT THEY HAVE ALREADY TOLD US. Only in the two sections the
                   vault can actually answer: the competency number lives in
@@ -1772,9 +1984,27 @@ export default function MotivationWizardPage() {
                 </p>
               )}
             </div>
-          </StepAccordion>
+          </section>
         );
       })}
+
+      {/* One Continue per step, after that step's cards. The last step ends
+          with Generate instead, so it gets none. */}
+      {steps.map((s) =>
+        s.n === steps.length ? null : (
+          <div key={`c-${s.def.key}`} hidden={expanded !== s.n} className="mb-6">
+            <button
+              type="button"
+              className="rounded bg-[var(--red)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--red-hover)]"
+              onClick={() => go(s.n + 1)}
+            >
+              Continue
+            </button>
+          </div>
+        ),
+      )}
+
+      <div hidden={expanded !== steps.length}>
 
       {/* 3 — Boet's follow-ups */}
       {openQuestions.length > 0 && (
@@ -1939,10 +2169,14 @@ export default function MotivationWizardPage() {
                       .get(token, id)
                       .then(setDetail)
                       .catch(() => undefined);
-                    const first = sections.findIndex((sec) =>
-                      sec.fields.some((f) => e.missing!.includes(f.key)),
-                    );
-                    if (first >= 0) go(first + 2);
+                    // Jump to the STEP holding the first missing field. The
+                    // whole point of naming them is that the applicant can get
+                    // to them; a message about a field on a step they are not
+                    // on is the dead end this replaced.
+                    const target = e.missing
+                      .map(stepForKey)
+                      .find((n): n is number => n !== null);
+                    if (target) go(target);
                   } else {
                     setError(
                       e instanceof MotivationApiError
@@ -2072,6 +2306,7 @@ export default function MotivationWizardPage() {
           Removes everything, including the documents you uploaded.
         </p>
       </section>
+      </div>
     </main>
     </>
   );
