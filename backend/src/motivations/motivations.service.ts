@@ -76,7 +76,10 @@ import {
 import { packConsistency } from './motivation-verify';
 import {
   FIELD_REGISTRY_VERSION,
+  FIREARM_SOURCE_KEY,
   LICENCE_TYPE_LABELS,
+  SOURCE_DEALER,
+  SOURCE_PRIVATE,
   fieldByKey,
   fieldsFor,
   missingRequired,
@@ -4022,6 +4025,30 @@ export class MotivationsService {
     if (yearMatch) {
       const years = asAt.getUTCFullYear() - Number(yearMatch[1]);
       if (years >= 0 && years < 80) derived.years_dedicated = String(years);
+    }
+
+    // WHERE THE FIREARM IS UNTIL THE APPLICATION IS DECIDED.
+    //
+    // Operator, item 3 of twelve, 2026-08-24, on the dealer route: put the
+    // invoice in "as proof of purchase and also where the fire arm is
+    // currently stored until the application has reached it's outcome."
+    //
+    // It is a question every DFO has and almost no motivation answers: an
+    // applicant cannot lawfully hold the firearm before the licence is
+    // granted, so somebody else is holding it, and saying who closes the loop.
+    //
+    // ⚠️ NEVER "IN MY POSSESSION", AND NEVER "COLLECTED PRIVATELY". A firearm
+    // always moves through a licensed dealer; on the private route the seller
+    // keeps lawful possession until that transfer happens. Deriving this in
+    // code rather than asking is what stops the writer inventing a custody
+    // arrangement that would be an offence if true.
+    const source = (answers[FIREARM_SOURCE_KEY] ?? '').trim();
+    if (source === SOURCE_DEALER) {
+      derived.custody_pending_outcome =
+        'The dealer holds the firearm in their stock until the licence is granted; the applicant takes possession only after that.';
+    } else if (source === SOURCE_PRIVATE) {
+      derived.custody_pending_outcome =
+        'The current licensed owner keeps the firearm until the licence is granted, and the transfer is then done through a licensed dealer.';
     }
 
     return derived;

@@ -1,5 +1,9 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
-import { FIREARM_SOURCE_KEY, SOURCE_PRIVATE } from './motivation-fields';
+import {
+  FIREARM_SOURCE_KEY,
+  SOURCE_DEALER,
+  SOURCE_PRIVATE,
+} from './motivation-fields';
 
 // ────────────────────────────────────────────────────────────────────
 // WHICH DOCUMENTS AN APPLICATION ACTUALLY NEEDS.
@@ -286,6 +290,43 @@ const SAFE_SHOTS_NOTE =
 const SAFE_WHY =
   'Take three, and add them all on this line: the safe closed with the key out of it, half open with the key in the door, and the roll bolts that hold the safe to the wall. The closed shot shows the unit, the half-open shot shows the lock belongs to it, and the wall bolts are what stop the whole safe being carried out of the house — a DFO looks for all three. The safe is checked twice over — the photographs go in the pack, and regulation 13(12) makes compliant storage a condition of the licence being ISSUED, so the DFO also inspects your premises before it comes through.';
 
+/**
+ * What the "where this firearm is coming from" row asks for.
+ *
+ * ⚠️ IT DEPENDS ON THE ROUTE, AND FOR A LONG TIME IT DID NOT. Operator, item 3
+ * of twelve, 2026-08-24: "Where the firearm is coming from should have a
+ * dealer option as well." The option was always there — SOURCE_DEALER is the
+ * FIRST choice in the list — but picking it was byte-identical to picking
+ * "Not decided yet" and to never answering: the only branch anywhere on this
+ * answer added the seller's licence for the PRIVATE route. So a dealer buyer
+ * read guidance written for both routes at once and got no acknowledgement
+ * that they had answered at all.
+ *
+ * The document itself stays OPTIONAL on the dealer route, per the operator:
+ * "We can ask for the dealers invoice but it's not mandatory." A dealer
+ * completing the SAPS 271 attaches their own particulars anyway.
+ */
+export function sourceProofWhy(source: string): string {
+  if (source === SOURCE_DEALER) {
+    return (
+      'The dealer’s invoice or quote, if you have one — it is not required. ' +
+      'A DFO reads this to answer one question: whose firearm is this. An invoice ' +
+      'also shows the dealer is holding it for you, which is where it stays until ' +
+      'your licence is granted.'
+    );
+  }
+  if (source === SOURCE_PRIVATE) {
+    return (
+      'A letter from the person who currently owns the firearm saying they agree ' +
+      'to you applying for a licence over it — or send them the consent link ' +
+      'below and we will build it for you. A DFO reads this to answer one ' +
+      'question: whose firearm is this, and an application that cannot answer it ' +
+      'stalls.'
+    );
+  }
+  return WHY.FIREARM_SOURCE_PROOF ?? '';
+}
+
 const WHY: Partial<Record<MotivationUploadKind, string>> = {
   SHOOTING_ACTIVITY_LOG:
     'Your log of hunts or competitions \u2014 dates, where, what discipline or species. This is the annexure that shows you actually do the thing you are applying to do, rather than saying you intend to. Nothing in the Act asks for it; the packs that get taken seriously all carry one.',
@@ -466,7 +507,14 @@ export function documentStatus(
       label: LABELS[kind],
       tier,
       // The safe's text has to name every shot, so it lives apart from WHY.
-      why: kind === 'SAFE_PHOTOGRAPHS' ? SAFE_WHY : (WHY[kind] ?? ''),
+      // The source row's text depends on which route the applicant took —
+      // see sourceProofWhy.
+      why:
+        kind === 'SAFE_PHOTOGRAPHS'
+          ? SAFE_WHY
+          : kind === 'FIREARM_SOURCE_PROOF'
+            ? sourceProofWhy(source)
+            : (WHY[kind] ?? ''),
       have: satisfied(kind),
       ...(min > 1
         ? { minFiles: min, minFilesNote: SAFE_SHOTS_NOTE }

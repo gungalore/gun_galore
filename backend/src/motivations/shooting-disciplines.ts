@@ -682,6 +682,60 @@ export const SHOOTING_DISCIPLINES: ShootingDiscipline[] = [
       "https://ctsasa.co.za/rules/",
       "https://ctsasa.co.za/clay-target-shooting-disciplines/"
     ]
+  },
+  {
+    "value": "plains-game-hunting",
+    "label": "Plains game hunting",
+    "group": "Physical hunting",
+    "body": "The hunt itself, rather than a governing body's rulebook. Dedicated hunter status is endorsed by an accredited hunting association; what may lawfully be hunted, with what, is set by the nature conservation ordinance of the province you hunt in and by the landowner's permit conditions.",
+    "kind": "hunting",
+    "requirement": "Plains game in South Africa runs from small antelope of a few kilograms to eland of well over half a tonne, and the shot is usually taken between 100 and 300 metres from field positions rather than a bench. That asks for a centrefire rifle with enough retained energy at range to reach the vitals of the largest species hunted, a trajectory flat enough to be certain of placement at the distances involved, and recoil the hunter can shoot accurately from sticks or prone. Humane, single-shot placement is the standard the hunt is judged by, which is what makes an adequate calibre an ethical requirement and not a preference. Provincial ordinances set the legal minimums and they differ from province to province, so confirm the requirement for the province you hunt in before relying on this.",
+    "sources": []
+  },
+  {
+    "value": "dangerous-game-hunting",
+    "label": "Dangerous game hunting",
+    "group": "Physical hunting",
+    "body": "The hunt itself, rather than a governing body's rulebook. Dedicated hunter status is endorsed by an accredited hunting association; what may lawfully be hunted, with what, is set by the nature conservation ordinance of the province you hunt in and by the landowner's permit conditions.",
+    "kind": "hunting",
+    "requirement": "Dangerous game is hunted at close quarters where a wounded animal is a threat to the hunter and to everyone with them, so the firearm must be able to stop as well as to kill. That means a heavy centrefire calibre delivering deep penetration through heavy bone and muscle, an action that can be worked and fired again quickly under pressure, and sights usable at short range in poor light. Provincial ordinances prescribe minimum calibres for the dangerous species specifically, and outfitters and landowners commonly set their own floor above that. Provincial ordinances set the legal minimums and they differ from province to province, so confirm the requirement for the province you hunt in before relying on this.",
+    "sources": []
+  },
+  {
+    "value": "wingshooting-birds",
+    "label": "Bird and wing shooting",
+    "group": "Physical hunting",
+    "body": "The hunt itself, rather than a governing body's rulebook. Dedicated hunter status is endorsed by an accredited hunting association; what may lawfully be hunted, with what, is set by the nature conservation ordinance of the province you hunt in and by the landowner's permit conditions.",
+    "kind": "hunting",
+    "requirement": "Driven and walked-up birds are shot on the wing at ranges inside about 40 metres, with a shotgun swung onto a moving target rather than aimed. The requirement is a shotgun that fits the shooter well enough to shoot instinctively, in a gauge and choke suited to the species and the typical range, chambered for the shell length being used. Non-toxic shot is required over wetlands in several provinces, which constrains both choke and shell selection. Provincial ordinances set the legal minimums and they differ from province to province, so confirm the requirement for the province you hunt in before relying on this.",
+    "sources": []
+  },
+  {
+    "value": "small-game-and-varmint",
+    "label": "Small game and varmint hunting",
+    "group": "Physical hunting",
+    "body": "The hunt itself, rather than a governing body's rulebook. Dedicated hunter status is endorsed by an accredited hunting association; what may lawfully be hunted, with what, is set by the nature conservation ordinance of the province you hunt in and by the landowner's permit conditions.",
+    "kind": "hunting",
+    "requirement": "Small game and varmint shooting is precision work at extended range on small targets, often in wind. It asks for an accurate rifle in a light, flat-shooting calibre that does not destroy meat or pelt unnecessarily, with optics that resolve a small aiming point, and a report and recoil low enough to allow spotting one's own shot. The same rifle is typically used across long sessions, so barrel quality and consistency matter more than power. Provincial ordinances set the legal minimums and they differ from province to province, so confirm the requirement for the province you hunt in before relying on this.",
+    "sources": []
+  },
+  {
+    "value": "predator-and-problem-animal-control",
+    "label": "Predator and problem animal control",
+    "group": "Physical hunting",
+    "body": "The hunt itself, rather than a governing body's rulebook. Dedicated hunter status is endorsed by an accredited hunting association; what may lawfully be hunted, with what, is set by the nature conservation ordinance of the province you hunt in and by the landowner's permit conditions.",
+    "kind": "hunting",
+    "requirement": "Problem animal control is carried out at a landowner's request on animals taking stock or damaging crops, frequently at night and often at short notice. The work asks for a rifle that is accurate enough for a certain first shot on a small target, usable with a lamp or thermal optic where the province permits it, and quick to bring to bear. Because the animal is already causing loss, the alternative to an accurate shot is repeated attempts, which is worse for the animal and for the landowner. Provincial ordinances set the legal minimums and they differ from province to province, so confirm the requirement for the province you hunt in before relying on this.",
+    "sources": []
+  },
+  {
+    "value": "culling-and-population-management",
+    "label": "Culling and population management",
+    "group": "Physical hunting",
+    "body": "The hunt itself, rather than a governing body's rulebook. Dedicated hunter status is endorsed by an accredited hunting association; what may lawfully be hunted, with what, is set by the nature conservation ordinance of the province you hunt in and by the landowner's permit conditions.",
+    "kind": "hunting",
+    "requirement": "Culling is managed reduction of a species on a property to a number the land can carry, usually under a permit and to a quota, and often several animals in one session. It asks for a rifle the hunter can shoot accurately and repeatedly without fatigue, in a calibre adequate for the species being reduced, with an action allowing a prompt follow-up where a group is being worked. Meat is normally recovered, so shot placement and calibre are chosen to limit carcass damage. Provincial ordinances set the legal minimums and they differ from province to province, so confirm the requirement for the province you hunt in before relying on this.",
+    "sources": []
   }
 ];
 
