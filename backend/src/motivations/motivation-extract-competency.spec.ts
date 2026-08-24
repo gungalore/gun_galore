@@ -150,3 +150,25 @@ describe('the multi guard that dropped everything', () => {
     expect(out).toEqual([]);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE EXTRACTION MUST NOT DEPEND ON VISION BEING REACHABLE.
+//
+// The Vision key is IP-restricted to the live box, so off it there is no OCR
+// text at all — which is the state every developer machine and CI run is in.
+// The service is constructed WITHOUT a Vision dependency here, exactly as it
+// would degrade in production if the key were revoked.
+// ────────────────────────────────────────────────────────────────────
+describe('reading a document with no OCR text available', () => {
+  it('still parses everything it did before', () => {
+    const bare = new MotivationExtractService();
+    const parseBare = (bare as unknown as { parse: Parse }).parse.bind(bare);
+    const out = parseBare(
+      model('S/L-RIFLE/CARB/SHOTGUN'),
+      [COMPETENCY_FOR],
+      'COMPETENCY_CERTIFICATE',
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].value).toContain('self-loading');
+  });
+});

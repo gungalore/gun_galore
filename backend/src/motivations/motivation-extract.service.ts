@@ -4,6 +4,7 @@ import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import { fieldsFor } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
+import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
 
 // ────────────────────────────────────────────────────────────────────
 // READING WHAT THE APPLICANT ALREADY HAS.
@@ -164,7 +165,7 @@ export class MotivationExtractService {
   private readonly logger = new Logger(MotivationExtractService.name);
   private readonly client: Anthropic | null;
 
-  constructor() {
+  constructor(private readonly vision?: GoogleVisionOcrService) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     this.client = apiKey
       ? new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 })
@@ -253,8 +254,20 @@ export class MotivationExtractService {
     // it is bounded at two: a document that genuinely carries none of these
     // fields must not be paid for over and over. A second empty answer is
     // taken at its word.
+    // ⚠️ ONE VISION CALL, NOT ONE PER ATTEMPT. The retry below exists because
+    // the MODEL is inconsistent on marginal documents; the OCR is not, and
+    // paying Google twice for the same bytes would be spending money to
+    // receive the identical string. Read once, hand it to both attempts.
+    //
+    // A PDF is skipped: Vision's images:annotate takes images, and the block
+    // above only produces an image type for image mime types.
+    const ocrText =
+      this.vision && args.mimeType.startsWith('image/')
+        ? await this.vision.text(args.bytes).catch(() => null)
+        : null;
+
     for (let attempt = 0; attempt < 2; attempt++) {
-      const found = await this.attemptRead(block, asked, args.kind);
+      const found = await this.attemptRead(block, asked, args.kind, ocrText);
       if (found.length) return found;
     }
     return [];
@@ -271,6 +284,18 @@ export class MotivationExtractService {
       choices?: readonly string[];
     }[],
     kind: MotivationUploadKind,
+    /**
+     * What Google Vision read off the same image, when it could.
+     *
+     * ⚠️ ALONGSIDE THE PICTURE, NOT INSTEAD OF IT. Operator, 2026-08-24. The
+     * model reading the IMAGE sees layout — which column a serial sits in,
+     * which label owns which value; Vision reading the same image resolves
+     * CHARACTERS better on dense or faint print. Given both, a misread digit
+     * has to survive two independent readers. Null whenever Vision had nothing
+     * to add, which includes every run off the live box because the key is
+     * IP-restricted.
+     */
+    ocrText: string | null,
   ): Promise<ExtractedField[]> {
     if (!this.client) return [];
     let text = '';
@@ -295,6 +320,26 @@ export class MotivationExtractService {
             role: 'user',
             content: [
               block as never,
+              ...(ocrText
+                ? [
+                    {
+                      type: 'text' as const,
+                      text:
+                        'A separate OCR pass over the SAME image read the ' +
+                        'following characters. Use it to settle anything the ' +
+                        'picture leaves ambiguous. Where the two disagree, ' +
+                        'trust the picture for LAYOUT (which value belongs to ' +
+                        'which label) and this for CHARACTERS, and mark the ' +
+                        'field low confidence.' +
+                        String.fromCharCode(10) + String.fromCharCode(10) +
+                        '<ocr>' +
+                        String.fromCharCode(10) +
+                        ocrText +
+                        String.fromCharCode(10) +
+                        '</ocr>',
+                    },
+                  ]
+                : []),
               {
                 type: 'text',
                 text: this.userPrompt(asked),

@@ -7,6 +7,7 @@ import { MotivationsService } from './motivations.service';
 import { MotivationPdfService } from './motivation-pdf.service';
 import { MotivationRetentionService } from './motivation-retention.service';
 import { MotivationExtractService } from './motivation-extract.service';
+import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
 import { CipSheetService } from './cip-sheet.service';
 import { FirearmImageService } from './motivation-firearm-image';
 import { MotivationWitnessService } from './motivation-witness.service';
@@ -68,6 +69,7 @@ import { VaultAdoptionService } from './vault-adoption.service';
     MotivationClaudeService,
     MotivationRetentionService,
     MotivationExtractService,
+    GoogleVisionOcrService,
     CipSheetService,
     Saps271Service,
     FirearmImageService,
