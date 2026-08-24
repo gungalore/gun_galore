@@ -19,7 +19,14 @@ import MotivationWitnesses from '@/components/motivation-witnesses';
 import MotivationSellerConsent from '@/components/motivation-seller-consent';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { StepStatus } from '@/components/step-accordion';
 import MotivationStepRail from '@/components/motivation-step-rail';
 import {
@@ -1060,7 +1067,29 @@ export default function MotivationWizardPage() {
     return n;
   }, [answers]);
   const [assocRowsShown, setAssocRowsShown] = useState(1);
-  const assocRows = Math.max(assocRowsFilled, assocRowsShown);
+
+  /**
+   * How many rows have EVER been on screen this session. Only ever rises.
+   *
+   * ⚠️ WITHOUT THIS, EMPTYING A GATING BOX DELETES ITS WHOLE PANEL MID-EDIT.
+   * `ownedRowsFilled` is recomputed from live answers on every keystroke, and
+   * a row that exists only because it was filled disappears the instant its
+   * calibre goes empty — the section filter drops every field of that row, and
+   * React unmounts the disclosure the applicant is standing in. Select-all and
+   * retype in the Calibre box of firearm 2 and make, type, serials and use all
+   * vanish from under the cursor. Associations key on the name, which is the
+   * panel's own title, so it is worse there.
+   *
+   * The same class of bug as the open/shut latch and the prefilled capture: a
+   * default worked out from a live value, applied while somebody is typing
+   * into that value. Once a row has been seen it stays; an emptied one prints
+   * blank and can be filled in again, which is what the copy already promises.
+   */
+  const ownedHigh = useRef(1);
+  ownedHigh.current = Math.max(ownedHigh.current, ownedRowsFilled, ownedRowsShown);
+  const assocHigh = useRef(1);
+  assocHigh.current = Math.max(assocHigh.current, assocRowsFilled, assocRowsShown);
+  const assocRows = Math.max(1, assocHigh.current);
 
   /**
    * Fields that ALREADY had a value when this application loaded — read off a
@@ -1090,7 +1119,7 @@ export default function MotivationWizardPage() {
   // a spinner on the wrong one is worse than no spinner.
   const [busyKind, setBusyKind] = useState<string | null>(null);
   const [uploadErr, setUploadErr] = useState<string | null>(null);
-  const ownedRows = Math.max(1, ownedRowsFilled, ownedRowsShown);
+  const ownedRows = Math.max(1, ownedHigh.current);
 
   const { sections } = useMemo(() => {
     // Hide the rows beyond the ones in play. They stay in the registry — the
@@ -1437,17 +1466,27 @@ export default function MotivationWizardPage() {
       const out: FieldGroup[] = [];
       const bySlot = new Map<string, MotivationField[]>();
       const order: string[] = [];
+      // ⚠️ A SLOT'S PLACE IS RESERVED WHERE ITS FIRST FIELD APPEARS, not
+      // appended after the loop. Building the items afterwards put every loose
+      // field AHEAD of every collapsible, however far down the section it
+      // really sits — so `overlap_justification`, which the registry puts last
+      // and which only exists once there IS an overlap, led the section it is
+      // meant to close: a 2000-character "anything you want us to lead with"
+      // textarea as the first thing in "Firearms you already own", above the
+      // firearms it is asking about.
+      const at = new Map<string, number>();
       for (const f of sec.fields) {
         const slot = slotOf(f.key);
         if (slot === null) {
-          // Anything that is not part of a repeating item (the overlap
-          // question, for one) stays loose, in place.
+          // Not part of a repeating item — stays loose, in registry order.
           out.push({ kind: 'plain', id: f.key, fields: [f] });
           continue;
         }
         if (!bySlot.has(slot)) {
           bySlot.set(slot, []);
           order.push(slot);
+          // Hold the position; the real group replaces it below.
+          at.set(slot, out.push({ kind: 'plain', id: `hold-${slot}`, fields: [] }) - 1);
         }
         bySlot.get(slot)!.push(f);
       }
@@ -1469,7 +1508,7 @@ export default function MotivationWizardPage() {
         if (!(id in groupOpenInit.current)) {
           groupOpenInit.current[id] = !filled || missing > 0;
         }
-        out.push({
+        out[at.get(slot)!] = {
           kind: 'item',
           id,
           title: label(slot),
@@ -1477,7 +1516,7 @@ export default function MotivationWizardPage() {
           missing,
           open: groupOpen[id] ?? groupOpenInit.current[id],
           fields,
-        });
+        };
       }
       return out;
     };
@@ -2051,7 +2090,18 @@ export default function MotivationWizardPage() {
               )}
               {groupFields(sec).map((grp) =>
                 grp.kind === 'plain' ? (
-                  grp.fields.map(renderField)
+                  /*
+                   * ⚠️ KEYED, AND THE ARRAY IT REPLACES WAS A REAL BUG. Returning
+                   * a bare array from a .map arm gives React no key for the arm
+                   * itself, so the children are reconciled BY POSITION. Any
+                   * field that appears or disappears mid-section — answering
+                   * marital_status = "Married" inserts spouse_name — would then
+                   * destroy and recreate every field after it, losing focus,
+                   * selection and IME state in whatever box the applicant was
+                   * in. `grp.id` is the field key, so this restores the
+                   * key-based identity the fields had before they were grouped.
+                   */
+                  <Fragment key={grp.id}>{grp.fields.map(renderField)}</Fragment>
                 ) : (
                   /*
                    * ONE REPEATING ITEM, COLLAPSED.
@@ -2127,7 +2177,24 @@ export default function MotivationWizardPage() {
                           ) {
                             return;
                           }
-                          for (const f of grp.fields) setAnswer(f.key, '');
+                          for (const f of grp.fields) {
+                            // ⚠️ UNMARK BEFORE EMPTYING, OR THE BOXES COME BACK
+                            // BLANK AND READ-ONLY. Every column of an owned
+                            // firearm is docSourced, so reading a licence marks
+                            // them all — and `locked` asks only whether a key is
+                            // marked, never whether a value is still in it. The
+                            // clear promised "the boxes are emptied"; without
+                            // this it delivered seven grey panels that cannot be
+                            // typed into until each is unlocked by its own pen.
+                            //
+                            // This does not break the add-only rule. That rule
+                            // stops a SKIPPED write from locking an answer the
+                            // applicant typed; this is the applicant explicitly
+                            // throwing the document's value away, which is
+                            // exactly when the mark should go with it.
+                            prefilled.current?.delete(f.key);
+                            setAnswer(f.key, '');
+                          }
                         }}
                       >
                         Clear this one

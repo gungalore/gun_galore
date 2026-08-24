@@ -241,6 +241,31 @@ describe('firearmLabel', () => {
     expect(firearmLabel({ label: '   ' })).toBe('');
   });
 
+  // ⚠️ THE LABEL LANDS IN AN OUTBOUND SMS SENT UNDER OUR OWN SENDER ID, to a
+  // number the buyer typed. A newline in it opens a second paragraph the
+  // recipient reads as coming from us — a phishing message we sent and paid
+  // for. Flattened, always.
+  it('kills a newline-injected second paragraph', () => {
+    // Escapes are built from char codes so nothing in the toolchain can
+    // quietly turn them into real line breaks in this source file.
+    const LF = String.fromCharCode(10);
+    const evil = 'gun.' + LF + LF + 'Verify your licence at http://evil.example now.';
+    const out = firearmLabel({ label: evil });
+    expect(out.split(LF)).toHaveLength(1);
+    expect(out).not.toContain(String.fromCharCode(13));
+    expect(out).toBe('gun. Verify your licence at http://evil.example now.');
+  });
+
+  it('kills carriage returns and tabs too', () => {
+    const s2 = 'a' + String.fromCharCode(13) + String.fromCharCode(10) + 'b' + String.fromCharCode(9) + 'c';
+    expect(firearmLabel({ label: s2 })).toBe('a b c');
+  });
+
+  it('does not eat the letter s', () => {
+    // A whitespace regex that lost its backslash would return "the Howa".
+    expect(firearmLabel({ label: 'Sass shotgun' })).toBe('Sass shotgun');
+  });
+
   it('caps a label somebody pasted an essay into', () => {
     expect(firearmLabel({ label: 'x'.repeat(500) })).toHaveLength(80);
   });
@@ -430,6 +455,73 @@ describe('submit replaces the firearm with the card, keeps the applicant', () =>
     const snap = JSON.parse(tryDecryptText(get()!.firearmSnapshotEncrypted as string)!);
     expect(snap.make).toBe('CZ'); // not blanked
     expect(snap.applicantName).toBe('Gerhard Fourie');
+  });
+
+  // ⚠️ THE GUARANTEE THE RELAXED INVITE GATE HANDED OVER.
+  //
+  // The invite used to demand a make and a serial, so a consent could not be
+  // about nothing. That gate named a box the default dealer path never shows,
+  // so it had to go — and the guarantee had to land here instead, at the one
+  // moment when somebody who knows the answer is on screen and can fix it.
+  describe('a consent that names no firearm cannot be signed', () => {
+    it('⚠️ REFUSES when neither the buyer nor the card named anything', async () => {
+      const { svc, get } = submitHarness({ applicantName: 'Gerhard Fourie' });
+      await expect(
+        svc.submit({ ...base, firearm: {} } as never),
+      ).rejects.toThrow(/at least one of the firearm details/i);
+      // Nothing was marked COMPLETED — the row is untouched.
+      expect(get()).toBeFalsy();
+    });
+
+    it('⚠️ a SECTION alone does not name a firearm', async () => {
+      // cardRowsFor() counts the section row, so a row-count check would have
+      // passed this — "SECTION 15" is a licence category, not a firearm.
+      const { svc } = submitHarness({ applicantName: 'G F' });
+      await expect(
+        svc.submit({ ...base, firearm: { section: 'SECTION 15' } } as never),
+      ).rejects.toThrow(/at least one of the firearm details/i);
+    });
+
+    it('⚠️ REFUSES BEFORE WRITING, so no orphaned blobs are left behind', async () => {
+      // The signature and both photographs are encrypted to disk moments after
+      // this point. Refusing afterwards would strand three files per attempt
+      // with nothing pointing at them to ever clean them up.
+      const files = { write: jest.fn(), remove: jest.fn() };
+      const prisma = {
+        motivationSellerConsent: {
+          findUnique: jest.fn(async () => ({
+            id: 'consent-1',
+            motivationId: 'mo-1',
+            status: 'INVITED',
+            firearmSnapshotEncrypted: null,
+          })),
+          update: jest.fn(),
+        },
+        motivationUpload: { create: jest.fn() },
+      };
+      const svc = new MotivationSellerConsentService(
+        prisma as never,
+        { sendSms: jest.fn() } as never,
+        files as never,
+        { mint: jest.fn() } as never,
+      );
+      await expect(
+        svc.submit({ ...base, firearm: {} } as never),
+      ).rejects.toThrow(/at least one of the firearm details/i);
+      expect(files.write).not.toHaveBeenCalled();
+    });
+
+    it('accepts a single identifying detail — a calibre is enough', async () => {
+      const { svc, get } = submitHarness({ applicantName: 'G F' });
+      await svc.submit({
+        ...base,
+        firearm: { calibre: '6.5MM CREEDMOOR' },
+      } as never);
+      const snap = JSON.parse(
+        tryDecryptText(get()!.firearmSnapshotEncrypted as string)!,
+      );
+      expect(snap.calibre).toBe('6.5MM CREEDMOOR');
+    });
   });
 });
 

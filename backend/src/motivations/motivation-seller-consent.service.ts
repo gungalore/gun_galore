@@ -152,10 +152,36 @@ export interface FirearmSnapshot {
  * invite refuses on.
  */
 export function firearmLabel(f: Partial<FirearmSnapshot>): string {
-  const own = (f.label ?? '').trim();
+  // ⚠️ FLATTENED TO ONE LINE, BECAUSE IT IS INTERPOLATED INTO AN OUTBOUND SMS.
+  //
+  // This is free text from the buyer, and the message it lands in goes out
+  // under our own sender ID to a phone number the same buyer typed. A label
+  // carrying newlines can open a second paragraph in that message — "Verify
+  // your licence at <some-url>" under a name the recipient trusts — which is a
+  // phishing SMS we sent and paid for. Control characters and line breaks
+  // collapse to single spaces; the recipient sees one line, always.
+  const flat = (v: string) =>
+    Array.from(v)
+      .map((ch) => {
+        const c = ch.codePointAt(0) ?? 0;
+        // C0 and C1 control ranges (every newline form included) plus the
+        // Unicode line and paragraph separators, which some handsets honour
+        // as breaks too. Written as code points rather than a character class
+        // so no literal control byte ever sits in this source file.
+        const isBreak =
+          c < 0x20 || (c >= 0x7f && c <= 0x9f) || c === 0x2028 || c === 0x2029;
+        return isBreak ? ' ' : ch;
+      })
+      .join('')
+      // Every control character is already a space by here, so collapsing
+      // runs of spaces is all that is left.
+      .replace(/ +/g, ' ')
+      .trim();
+
+  const own = flat(f.label ?? '');
   if (own) return own.slice(0, 80);
   const parts = [f.make, f.model, f.calibre]
-    .map((v) => (v ?? '').trim())
+    .map((v) => flat(v ?? ''))
     .filter((v) => v && v.toUpperCase() !== 'NONE');
   return parts.join(' ').slice(0, 80);
 }
@@ -691,6 +717,57 @@ export class MotivationSellerConsentService {
       throw new BadRequestException('Photographs must be JPEG or PNG.');
     }
 
+    const existingSnap = row.firearmSnapshotEncrypted
+      ? (JSON.parse(tryDecryptText(row.firearmSnapshotEncrypted) ?? '{}') as Record<
+          string,
+          unknown
+        >)
+      : {};
+    const cardFirearm = sanitiseCardFirearm(args.firearm);
+    const merged = {
+      ...existingSnap,
+      ...cardFirearm,
+      _version: CONSENT_FORM_VERSION,
+    };
+
+
+    // ⚠️ A CONSENT THAT NAMES NO FIREARM MUST NOT BE SIGNABLE, AND THIS IS
+    // CHECKED BEFORE A SINGLE BYTE IS WRITTEN.
+    //
+    // The invite gate used to guarantee a named firearm by demanding a make
+    // and a serial up front. Relaxing it to a label — correctly, because that
+    // gate named a box the default dealer path never shows — moved the
+    // guarantee here. Without it a buyer who typed only "the Howa", a seller
+    // whose OCR came back empty in bad light, and a confirm panel left blank
+    // together produce a signed declaration whose firearm list prints ZERO
+    // rows: "the firearm listed below", followed by nothing.
+    //
+    // ⚠️ IDENTIFYING ROWS ONLY. cardRowsFor() would also count the section
+    // row, and "SECTION 15" on its own names a licence category, not a
+    // firearm — it would satisfy a row count while naming nothing.
+    //
+    // ⚠️ AND IT RUNS BEFORE files.write(). Refusing after the signature and
+    // both photographs are on disk would leave three orphaned encrypted blobs
+    // per attempt, with nothing pointing at them to ever clean them up.
+    const IDENTIFYING: (keyof FirearmSnapshot)[] = [
+      'make',
+      'model',
+      'type',
+      'calibre',
+      'serial',
+      'barrelSerial',
+      'receiverSerial',
+      'frameSerial',
+    ];
+    const namesTheFirearm = IDENTIFYING.some((k) =>
+      String((merged as Record<string, unknown>)[k] ?? '').trim(),
+    );
+    if (!namesTheFirearm) {
+      throw new BadRequestException(
+        'Fill in at least one of the firearm details from your licence card — the make, the calibre or a serial number — so the consent says which firearm it is about.',
+      );
+    }
+
     const signature = await this.files.write(
       'motivations',
       args.signature,
@@ -739,20 +816,7 @@ export class MotivationSellerConsentService {
     // cannot touch those keys. If the card fields somehow arrive empty (OCR
     // dead, seller cleared them), the buyer's values remain rather than the
     // declaration being blanked.
-    const existingSnap = row.firearmSnapshotEncrypted
-      ? (JSON.parse(tryDecryptText(row.firearmSnapshotEncrypted) ?? '{}') as Record<
-          string,
-          unknown
-        >)
-      : {};
-    const cardFirearm = sanitiseCardFirearm(args.firearm);
-    const rebuiltSnapshot = encryptText(
-      JSON.stringify({
-        ...existingSnap,
-        ...cardFirearm,
-        _version: CONSENT_FORM_VERSION,
-      }),
-    );
+    const rebuiltSnapshot = encryptText(JSON.stringify(merged));
 
     await this.prisma.motivationSellerConsent.update({
       where: { id: row.id },

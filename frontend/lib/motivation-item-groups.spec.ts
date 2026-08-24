@@ -6,6 +6,7 @@ import {
   nameKeyFor,
   slotOfKey,
   summaryKeysFor,
+  partitionKeys,
 } from './motivation-item-groups';
 
 describe('slotOfKey — owned firearms', () => {
@@ -96,5 +97,79 @@ describe('the header of a collapsed item', () => {
       const k = nameKeyFor(OWNED_SECTION, slot)!;
       expect(slotOfKey(OWNED_SECTION, k)).toBe(slot);
     }
+  });
+});
+
+// ⚠️ THE ORDERING BUG THIS LOCKS WAS SILENT. Nothing errored and no field was
+// lost — the section simply rendered in the wrong order, with a trailing
+// optional textarea promoted above the firearms it asks about.
+describe('partitionKeys — an item sits where its first field sits', () => {
+  it('keeps a trailing loose field trailing', () => {
+    const out = partitionKeys(OWNED_SECTION, [
+      'existing_firearm_1_make',
+      'existing_firearm_1_calibre',
+      'existing_firearm_2_make',
+      'overlap_justification',
+    ]);
+    expect(out.map((o) => (o.kind === 'item' ? `item:${o.slot}` : o.key))).toEqual([
+      'item:1',
+      'item:2',
+      'overlap_justification',
+    ]);
+  });
+
+  it('keeps a leading loose field leading', () => {
+    const out = partitionKeys(OWNED_SECTION, [
+      'some_intro',
+      'existing_firearm_1_make',
+    ]);
+    expect(out[0]).toEqual({ kind: 'plain', key: 'some_intro' });
+    expect(out[1].kind).toBe('item');
+  });
+
+  it('gathers every field of an item even when interleaved', () => {
+    const out = partitionKeys(OWNED_SECTION, [
+      'existing_firearm_1_make',
+      'existing_firearm_2_make',
+      'existing_firearm_1_calibre',
+    ]);
+    expect(out).toHaveLength(2);
+    const first = out[0] as { kind: 'item'; slot: string; keys: string[] };
+    expect(first.slot).toBe('1');
+    expect(first.keys).toEqual([
+      'existing_firearm_1_make',
+      'existing_firearm_1_calibre',
+    ]);
+  });
+
+  it('⚠️ loses nothing and duplicates nothing', () => {
+    const keys = [
+      'existing_firearm_1_make',
+      'existing_firearm_1_use',
+      'existing_firearm_2_make',
+      'overlap_justification',
+    ];
+    const out = partitionKeys(OWNED_SECTION, keys);
+    const flat = out.flatMap((o) => (o.kind === 'item' ? o.keys : [o.key]));
+    expect(flat.sort()).toEqual([...keys].sort());
+  });
+
+  it('bundles the unnumbered first association in place', () => {
+    const out = partitionKeys(ASSOCIATION_SECTION, [
+      'association_name',
+      'association_number',
+      'dedicated_since',
+      'association_2_name',
+    ]);
+    expect(out).toHaveLength(2);
+    expect((out[0] as { slot: string }).slot).toBe('1');
+    expect((out[0] as { keys: string[] }).keys).toHaveLength(3);
+    expect((out[1] as { slot: string }).slot).toBe('2');
+  });
+
+  it('leaves a non-repeating section entirely alone', () => {
+    const keys = ['full_name', 'id_number', 'occupation'];
+    const out = partitionKeys('About you', keys);
+    expect(out).toEqual(keys.map((key) => ({ kind: 'plain', key })));
   });
 });

@@ -80,3 +80,42 @@ export function summaryKeysFor(section: string, slot: string): string[] {
 export function isRepeatingSection(section: string): boolean {
   return section === OWNED_SECTION || section === ASSOCIATION_SECTION;
 }
+
+export type Partitioned =
+  | { kind: 'plain'; key: string }
+  | { kind: 'item'; slot: string; keys: string[] };
+
+/**
+ * A section's keys, in render order, with each repeating item bundled.
+ *
+ * ⚠️ AN ITEM TAKES THE POSITION OF ITS FIRST FIELD. Building the items and
+ * appending them after the loose fields is the obvious implementation and it is
+ * wrong: it hoists every loose field ahead of every collapsible, however far
+ * down the section it actually sits. `overlap_justification` is declared last
+ * in the registry and only exists once there IS an overlap — appended-items
+ * ordering put it FIRST, so "Firearms you already own" opened with a
+ * 2000-character "anything you want us to lead with" textarea sitting above the
+ * firearms it is asking about.
+ *
+ * Pure, and tested, because that failure is invisible: nothing errors, nothing
+ * is lost, the section is simply in the wrong order.
+ */
+export function partitionKeys(section: string, keys: string[]): Partitioned[] {
+  const out: Partitioned[] = [];
+  const at = new Map<string, number>();
+  for (const key of keys) {
+    const slot = slotOfKey(section, key);
+    if (slot === null) {
+      out.push({ kind: 'plain', key });
+      continue;
+    }
+    const seen = at.get(slot);
+    if (seen === undefined) {
+      at.set(slot, out.length);
+      out.push({ kind: 'item', slot, keys: [key] });
+      continue;
+    }
+    (out[seen] as { keys: string[] }).keys.push(key);
+  }
+  return out;
+}
