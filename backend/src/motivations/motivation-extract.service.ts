@@ -111,6 +111,37 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
     'firearm_action',
     'firearm_serial',
   ],
+  // ⚠️ THE DOCUMENT THAT DESCRIBES THE FIREARM BEING BOUGHT, AND IT WAS NEVER
+  // READ. FIREARM_SOURCE_PROOF appeared in no extractable list at all, so a
+  // dealer's invoice — which names the make, model, calibre and serial of the
+  // exact firearm — was stored and used for nothing, and the applicant typed
+  // all four again off the paper in their hand.
+  //
+  // Routing spec §5.4 covers FOUR source paths and puts every one of them in
+  // this same slot: a dealer invoice, a dealer-prefilled SAPS 271, a private
+  // seller's paperwork, and estate letters. They differ in what else they
+  // carry, but all four name the firearm, so one extractable list serves all
+  // four and the classifier does not have to tell them apart to be useful.
+  //
+  // ⚠️ INCLUDING THE PREFILLED 271, WHICH §5.4 B CALLS "the common real-world
+  // case": the dealer hands the buyer a 271 with parts E and F already
+  // completed and the buyer photographs it. Read as a scan against its printed
+  // labels, never as an AcroForm — it is a picture of paper.
+  //
+  // ⚠️ AND THE CONFLICT HANDLING IS ALREADY RIGHT, WHICH IS WHY THIS IS A ONE
+  // LINE CHANGE. §5.4 B asks that where the scan and the applicant's own
+  // entries disagree the difference is SURFACED rather than silently resolved.
+  // That is exactly what addOneUpload already does: an empty box is filled,
+  // and a box they have typed into goes to the "we read N things" panel with
+  // both values. Nothing new is needed for the diff.
+  FIREARM_SOURCE_PROOF: [
+    'firearm_type',
+    'firearm_action',
+    'firearm_make',
+    'firearm_model',
+    'firearm_calibre',
+    'firearm_serial',
+  ],
   EMPLOYMENT_CONFIRMATION: ['employer_name', 'employer_address'],
   // Written against ROW 1 and remapped to whichever row is free — see
   // nextOwnedSlot(). The barrel serial is on the licence where the firearm has
@@ -629,6 +660,9 @@ const CLASSIFIABLE: MotivationUploadKind[] = [
   'SAFE_PHOTOGRAPHS',
   'CHARACTER_REFERENCE',
   'INCIDENT_REPORT',
+  // A dealer's invoice, a prefilled 271, a seller's paperwork or estate
+  // letters — routing spec §5.4's four source paths, which all file here.
+  'FIREARM_SOURCE_PROOF',
   'PREVIOUS_MOTIVATION',
   'OTHER',
 ];

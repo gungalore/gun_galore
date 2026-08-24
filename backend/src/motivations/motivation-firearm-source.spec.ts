@@ -263,3 +263,62 @@ describe('inheriting a firearm', () => {
     expect(d.custody_pending_outcome).not.toMatch(/in my possession|i hold/i);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE SOURCE DOCUMENT IS FINALLY READ.
+//
+// Routing spec §5.4: four source paths — dealer invoice, dealer-prefilled SAPS
+// 271, private seller, estate — all filing into SLOT_FIREARM_SOURCE.
+//
+// FIREARM_SOURCE_PROOF appeared in NO extractable list, so a dealer's invoice
+// naming the make, model, calibre and serial of the exact firearm was stored
+// and used for nothing, while the applicant retyped all four off the paper in
+// their hand.
+// ────────────────────────────────────────────────────────────────────
+describe('reading the source document', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { MotivationExtractService } = require('./motivation-extract.service');
+
+  it('⚠️ can be read at all', () => {
+    expect(MotivationExtractService.canExtract('FIREARM_SOURCE_PROOF')).toBe(true);
+  });
+
+  it('fills the firearm from it, not the applicant’s identity', () => {
+    const svc = new MotivationExtractService();
+    const parse = (svc as unknown as {
+      parse: (t: string, a: unknown[], k: string) => { key: string; value: string }[];
+    }).parse.bind(svc);
+
+    const asked = [
+      { key: 'firearm_make', label: 'Make' },
+      { key: 'firearm_serial', label: 'Serial number' },
+      // Offered but NOT on this document's list — a source proof must not be
+      // able to reach the applicant's ID number.
+      { key: 'id_number', label: 'ID number' },
+    ];
+    const out = parse(
+      JSON.stringify({
+        fields: [
+          { key: 'firearm_make', value: 'HOWA', confidence: 'high' },
+          { key: 'firearm_serial', value: 'B477423', confidence: 'high' },
+        ],
+      }),
+      asked,
+      'FIREARM_SOURCE_PROOF',
+    );
+    expect(out.map((o) => o.key).sort()).toEqual(['firearm_make', 'firearm_serial']);
+  });
+
+  it('⚠️ the classifier knows the kind exists, or a photographed invoice is misfiled', () => {
+    // Without this a dealer invoice lands under whatever else the classifier
+    // finds plausible, and then reads nothing because that kind's list does
+    // not mention firearms.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const src = require('node:fs').readFileSync(
+      require('node:path').join(__dirname, 'motivation-extract.service.ts'),
+      'utf8',
+    );
+    const classifiable = src.slice(src.indexOf('CLASSIFIABLE'));
+    expect(classifiable).toContain("'FIREARM_SOURCE_PROOF'");
+  });
+});
