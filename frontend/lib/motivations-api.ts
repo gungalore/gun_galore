@@ -236,8 +236,16 @@ export interface MotivationDetail extends MotivationSummary {
  */
 export type TemplateFormat = 'comprehensive';
 
-/** The ten schemes from the design handoff. */
+/**
+ * The house scheme, then the ten from the design handoff.
+ *
+ * ⚠️ 'alloutdoor' IS FIRST AND IS THE DEFAULT, added 2026-08-24 when the pack
+ * was rebranded — the site's own near-black and #C8102E red. It leads the union
+ * for the same reason it leads SCHEME_KEYS on the server: the picker renders in
+ * list order and opens on the first entry.
+ */
 export type Colourway =
+  | 'alloutdoor'
   | 'eucalyptus'
   | 'slate'
   | 'stone'
@@ -870,7 +878,7 @@ export const motivationsApi = {
       layouts: [],
       defaults: {
         format: 'comprehensive',
-        colourway: 'eucalyptus',
+        colourway: 'alloutdoor',
         layout: 'banner',
       },
     }),
@@ -901,7 +909,7 @@ export const motivationsApi = {
       { method: 'PATCH', body: JSON.stringify(choice) },
       // ⚠️ THE FALLBACK MUST MATCH THE RENDERER'S OWN DEFAULTS, or a failed
       // PATCH shows the member a selection their document does not have.
-      { format: 'comprehensive', colourway: 'eucalyptus', layout: 'banner' },
+      { format: 'comprehensive', colourway: 'alloutdoor', layout: 'banner' },
     ),
 
   /** Write the suggestions the applicant accepted. */

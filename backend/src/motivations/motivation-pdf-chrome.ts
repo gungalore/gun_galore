@@ -30,6 +30,34 @@ export const mm = (n: number): number => n * 2.8346456693;
 /** CSS pixels (96 dpi, as the handoff is authored) to PDF points. */
 export const px = (n: number): number => n * 0.75;
 
+// ────────────────────────────────────────────────────────────────────
+// THE BRAND, AS OPPOSED TO THE COLOURWAY.
+//
+// Operator, 2026-08-24: "make them match the website branding. Should still
+// look very professional."
+//
+// ⚠️ TWO DIFFERENT KINDS OF COLOUR LIVE ON THIS PAGE AND CONFLATING THEM IS
+// WHAT MADE THE DOCUMENT LOOK LIKE A TEMPLATE. A COLOURWAY is the member's
+// decorative choice — ten muted fields they pick between. THE BRAND is not a
+// choice: it is who prepared the pack, and it is the same red on a eucalyptus
+// document as on a graphite one, exactly as the site's red is the same on
+// every page of alloutdoor.co.za.
+//
+// So the red below is a constant, and `accent` on a scheme is that scheme's
+// own harmonious answer to it — see SchemeColours.
+//
+// ⚠️ #E01B24 IS THE LOGO'S OWN RED, SAMPLED FROM THE ARTWORK, and it is NOT
+// the site token --red (#C8102E). They differ because the raster lockup was
+// drawn before the token existed. The logo is the thing printed here, so the
+// furniture around it matches the logo rather than the stylesheet — a rule
+// two shades off the mark it sits beside is worse than either shade alone.
+// ────────────────────────────────────────────────────────────────────
+
+/** All Outdoor red, sampled from the lockup. Never scheme-dependent. */
+export const BRAND_RED = '#E01B24';
+/** The near-black the lockup is drawn in. */
+export const BRAND_INK = '#111111';
+
 export const PAGE_W = mm(210);
 export const PAGE_H = mm(297);
 
@@ -319,8 +347,20 @@ export function footerStrip(
   keep: string[],
   /** Shed from the tail until the line fits: name, firearm, licence type. */
   optional: string[] = [],
+  /**
+   * Where the wash band starts.
+   *
+   * ⚠️ FOR THE LEDGER LAYOUT'S EDGE BAR, and it exists because the band is
+   * drawn full-width. The bar runs the height of the page; a full-width footer
+   * painted over it chops the last 10 mm off, so the bar reads as stopping
+   * short on every single page. The byline and the mark sit at PAD_X (14 mm),
+   * already clear of the 9 mm bar, so only the fill has to move.
+   */
+  insetLeft = 0,
 ): void {
-  doc.rect(0, PAGE_H - FOOTER_H, PAGE_W, FOOTER_H).fill(c.wash);
+  doc
+    .rect(insetLeft, PAGE_H - FOOTER_H, PAGE_W - insetLeft, FOOTER_H)
+    .fill(c.wash);
   const size = px(8);
   const tracking = size * 0.28;
 
@@ -339,15 +379,20 @@ export function footerStrip(
   // when the asset is missing, and this pass runs AFTER every page has been
   // emitted — a throw here fails the whole download rather than losing a small
   // picture. Same reasoning as the unpaid mark that shares this asset.
-  const markH = FOOTER_H * 0.34;
-  const markW = markH * LOGO_ASPECT;
+  // ⚠️ THE MONOGRAM, NOT THE LOCKUP, AND THIS WAS A REAL DEFECT. The strip
+  // drew the full lockup at 0.34 of a 10 mm footer — 3.4 mm — which sets
+  // "ALL Outdoor" at about 0.8 mm. It rendered as a gritty smear beside the
+  // byline on every page of every pack. The monogram carries no small type,
+  // so the same height reads as a mark instead of as dirt, and it is set a
+  // touch larger now that there is no wordmark to crush.
+  const markH = FOOTER_H * 0.46;
+  const mark = brandMark({ monogram: true });
   const midY = PAGE_H - FOOTER_H + FOOTER_H / 2;
-  const logo = logoPath();
   let leftEdge = PAD_X;
-  if (logo) {
+  if (mark) {
     try {
-      doc.image(logo, PAD_X, midY - markH / 2, { height: markH });
-      leftEdge = PAD_X + markW + px(4);
+      doc.image(mark.path, PAD_X, midY - markH / 2, { height: markH });
+      leftEdge = PAD_X + markH * mark.aspect + px(5);
     } catch {
       /* unreadable asset — the byline alone still says who prepared it */
     }
@@ -414,8 +459,33 @@ export function footerStrip(
  */
 const LOGO_FILE = 'all-outdoor-logo.png';
 
-/** Its intrinsic proportions, so laying it out costs no image decode. */
+/**
+ * THE MONOGRAM ALONE, and it exists because of a fault visible on every page.
+ *
+ * ⚠️ A LOCKUP WITH A WORDMARK CANNOT BE SET AT 9 pt. The footer drew the full
+ * lockup at 3.4 mm tall, which puts "ALL Outdoor" at roughly 0.8 mm — below
+ * the size any letterform survives. On a 110 dpi proof it is a grey smudge
+ * beside the byline, and on an office laser it is worse. The monogram has no
+ * small type in it and reads cleanly at that height, and the byline beside it
+ * already says the words the wordmark would have said.
+ */
+const MARK_FILE = 'all-outdoor-mark.png';
+
+/**
+ * Knockout variants for dark grounds — black ink turned white, brand red kept.
+ *
+ * ⚠️ THE BLACK LOCKUP DISAPPEARS ON A DEEP BANNER. It is #111111 artwork; on
+ * the Banner cover's 80 mm field it is near-invisible ink on near-black, which
+ * is how a masthead becomes an empty rectangle. Generated from the same
+ * artwork rather than hand-drawn so the two can never drift apart.
+ */
+const LOGO_LIGHT_FILE = 'all-outdoor-logo-light.png';
+const MARK_LIGHT_FILE = 'all-outdoor-mark-light.png';
+
+/** Intrinsic proportions, so laying either out costs no image decode. */
 const LOGO_ASPECT = 600 / 392;
+export const MARK_ASPECT = 538 / 308;
+export const LOCKUP_ASPECT = LOGO_ASPECT;
 
 /** What the mark says, in one place so the renderer and its spec agree. */
 export const WATERMARK_TEXT = 'NOT FOR USE';
@@ -432,7 +502,10 @@ const WATERMARK_OPACITY = 0.07;
 /** Pure black, like the body — the mark is a shadow of the page, not a colour. */
 const WATERMARK_INK = '#000000';
 
-let resolvedLogo: string | null = null;
+const resolvedAssets = new Map<string, string>();
+
+/** One warning per process when a knockout variant is missing. */
+let warnedMissingLight = false;
 
 /**
  * Find the brand mark on disk once per process.
@@ -441,29 +514,76 @@ let resolvedLogo: string | null = null;
  * asset degrades the mark to its words alone. An unpaid pack that loses its
  * logo is still stamped; an unpaid pack that 500s is a support ticket.
  */
-export function logoPath(): string | null {
-  if (resolvedLogo !== null) return resolvedLogo || null;
+function assetPath(file: string): string | null {
+  const cached = resolvedAssets.get(file);
+  if (cached !== undefined) return cached || null;
   const candidates = [
     // Running from dist/ under pm2 — assets sit beside the app root.
-    path.join(process.cwd(), 'assets', LOGO_FILE),
+    path.join(process.cwd(), 'assets', file),
     // Running from the repo root.
-    path.join(process.cwd(), 'backend', 'assets', LOGO_FILE),
+    path.join(process.cwd(), 'backend', 'assets', file),
     // Relative to this file, source or compiled.
-    path.join(__dirname, '..', '..', 'assets', LOGO_FILE),
-    path.join(__dirname, '..', '..', '..', 'assets', LOGO_FILE),
+    path.join(__dirname, '..', '..', 'assets', file),
+    path.join(__dirname, '..', '..', '..', 'assets', file),
   ];
   for (const candidate of candidates) {
     try {
       if (fs.existsSync(candidate)) {
-        resolvedLogo = candidate;
+        resolvedAssets.set(file, candidate);
         return candidate;
       }
     } catch {
       /* unreadable candidate — try the next */
     }
   }
-  resolvedLogo = '';
+  resolvedAssets.set(file, '');
   return null;
+}
+
+export function logoPath(): string | null {
+  return assetPath(LOGO_FILE);
+}
+
+/**
+ * The brand mark for a given ground and size.
+ *
+ * ⚠️ FALLS BACK TO THE FULL LOCKUP RATHER THAN TO NOTHING. The three new
+ * variants are generated assets; a deploy that ships only the original still
+ * gets a mark on the page, just the old one. Losing the brand entirely because
+ * a build step was skipped is the worse failure.
+ */
+export function brandMark(opts: {
+  /** Monogram only — the one legible below about 6 mm. */
+  monogram?: boolean;
+  /** Knockout, for a dark ground. */
+  light?: boolean;
+}): { path: string; aspect: number } | null {
+  const wanted = opts.monogram
+    ? opts.light
+      ? MARK_LIGHT_FILE
+      : MARK_FILE
+    : opts.light
+      ? LOGO_LIGHT_FILE
+      : LOGO_FILE;
+  const found = assetPath(wanted);
+  if (found) {
+    return { path: found, aspect: opts.monogram ? MARK_ASPECT : LOCKUP_ASPECT };
+  }
+  // ⚠️ A MISSING KNOCKOUT IS NOT A HARMLESS FALLBACK. Dropping back to the
+  // dark lockup is right for monogram-vs-lockup, and wrong for `light`: the
+  // knockouts exist because #111111 artwork is invisible on a deep field, so
+  // the mark is then technically drawn and visually absent. Every test still
+  // passes in that state — nothing else would ever tell us the binaries did
+  // not ship, so this says it once.
+  if (opts.light && !warnedMissingLight) {
+    warnedMissingLight = true;
+    console.warn(
+      `[motivation-pdf] ${wanted} not found — the brand mark will render dark ` +
+        'on a dark field. Check backend/assets shipped with the deploy.',
+    );
+  }
+  const fallback = assetPath(LOGO_FILE);
+  return fallback ? { path: fallback, aspect: LOCKUP_ASPECT } : null;
 }
 
 /**
@@ -707,10 +827,15 @@ export function sectionHeader(
   const nodeX = PAD_X + r;
   const bandH = size * 1.2 + padY * 2;
   const nodeY = y + bandH / 2;
+  // ⚠️ THE RING IS THE ACCENT, NOT `deep`, AND IT IS THE ONLY SATURATED MARK
+  // ON A BODY PAGE. With the band neutral this 9 px circle is where the brand
+  // shows in the argument itself — once per section, never a field. `deep` put
+  // a near-black ring on a near-black-and-white page, which is to say nothing
+  // at all.
   doc
     .circle(nodeX, nodeY, r)
     .lineWidth(px(2))
-    .fillAndStroke('#ffffff', c.deep);
+    .fillAndStroke('#ffffff', c.accent);
 
   const bandX = PAD_X + px(9) + px(10);
   doc.font(f.sansBold).fontSize(size);

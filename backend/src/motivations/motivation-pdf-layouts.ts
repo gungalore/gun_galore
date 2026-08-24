@@ -71,6 +71,14 @@ export interface LayoutSpec {
    * applicant on every page.
    */
   runningBanner: boolean;
+  /**
+   * A colour bar down the left edge of every page.
+   *
+   * ⚠️ LEDGER'S BLURB HAS PROMISED THIS SINCE THE AXIS SHIPPED and nothing
+   * drew it. 9 mm wide, which is inside the 14 mm side margin, so turning it
+   * on moves no text anywhere — see EDGE_BAR_W.
+   */
+  edgeBar: boolean;
 }
 
 export const LAYOUTS: Record<TemplateLayout, LayoutSpec> = {
@@ -84,6 +92,7 @@ export const LAYOUTS: Record<TemplateLayout, LayoutSpec> = {
     bodyFace: 'serif',
     hangingRule: true,
     runningBanner: true,
+    edgeBar: false,
   },
   plate: {
     key: 'plate',
@@ -95,6 +104,7 @@ export const LAYOUTS: Record<TemplateLayout, LayoutSpec> = {
     bodyFace: 'serif',
     hangingRule: false,
     runningBanner: false,
+    edgeBar: false,
   },
   rule: {
     key: 'rule',
@@ -106,6 +116,7 @@ export const LAYOUTS: Record<TemplateLayout, LayoutSpec> = {
     bodyFace: 'sans',
     hangingRule: false,
     runningBanner: false,
+    edgeBar: false,
   },
   ledger: {
     key: 'ledger',
@@ -117,6 +128,7 @@ export const LAYOUTS: Record<TemplateLayout, LayoutSpec> = {
     bodyFace: 'serif',
     hangingRule: true,
     runningBanner: false,
+    edgeBar: true,
   },
   classic: {
     key: 'classic',
@@ -128,6 +140,7 @@ export const LAYOUTS: Record<TemplateLayout, LayoutSpec> = {
     bodyFace: 'serif',
     hangingRule: false,
     runningBanner: false,
+    edgeBar: false,
   },
 };
 

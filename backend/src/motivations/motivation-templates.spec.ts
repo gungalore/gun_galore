@@ -23,14 +23,16 @@ describe('the template catalogue', () => {
   const cat = templateCatalogue();
 
   it('offers exactly what the renderer can draw', () => {
-    // \u26a0\ufe0f ONE FORMAT, TEN SCHEMES since 2026-08-21. It was five colourways
-    // x three formats; the operator withdrew the two shorter formats
-    // ("only comprehensive stays") and the palette became the ten schemes
-    // from the design handoff.
+    // \u26a0\ufe0f ONE FORMAT, ELEVEN SCHEMES. It was five colourways x three formats;
+    // the operator withdrew the two shorter formats on 2026-08-21 ("only
+    // comprehensive stays") and the palette became the ten schemes from the
+    // design handoff. On 2026-08-24 the house scheme joined them at the head
+    // of the list — the site's own near-black and red — and became the default.
     expect(cat.formats.map((f) => f.key)).toEqual(FORMAT_KEYS);
     expect(cat.formats).toHaveLength(1);
     expect(cat.colours.map((c) => c.key)).toEqual(SCHEME_KEYS);
-    expect(cat.colours).toHaveLength(10);
+    expect(cat.colours).toHaveLength(SCHEME_KEYS.length);
+    expect(cat.colours[0].key).toBe('alloutdoor');
   });
 
   it('serves the renderer’s own hex values, not a copy of them', () => {
@@ -98,11 +100,13 @@ describe('the template catalogue', () => {
     expect(cat.colours[0].key).toBe(DEFAULT_SCHEME);
   });
 
-  it('carries all eight scheme variables, none of them blank', () => {
+  it('carries all nine scheme variables, none of them blank', () => {
     // The preview draws a gradient banner, a footer strip and wash panels from
     // these. A missing one renders as transparent rather than as an error.
+    // `accent` joined them on 2026-08-24 and is the one the preview most needs
+    // to show: it is the only saturated colour a member will see on the page.
     for (const c of cat.colours) {
-      for (const k of ['deep','deep2','ink','sub','mut','band','hair','wash'] as const) {
+      for (const k of ['deep','deep2','ink','sub','mut','band','hair','wash','accent'] as const) {
         expect(c[k]).toMatch(/^#[0-9a-f]{6}$/i);
       }
     }

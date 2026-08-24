@@ -113,6 +113,8 @@ const FORMAT_COPY: Record<
  * otherwise would be selling them something that is not there.
  */
 const SCHEME_NAMES: Record<Scheme, string> = {
+  // The house scheme, and the one a new motivation opens on.
+  alloutdoor: 'All Outdoor',
   eucalyptus: 'Eucalyptus',
   slate: 'Slate',
   stone: 'Stone',

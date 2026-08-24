@@ -13,7 +13,7 @@ import type {
 } from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
-// THE TEMPLATE PICKER — five colourways x three formats.
+// THE TEMPLATE PICKER — eleven colourways x five layouts, one format.
 //
 // Operator, 2026-08-19: "It would be nice if the user could have a visual of
 // the templates we offer and could choose one to build their motivation on.

@@ -15,6 +15,7 @@ import {
 } from './motivation-pdf-merge';
 import type { AnnexureEntry, CertificationLevel } from './motivation-checklist';
 import { COVER_FRAME_MM } from './motivation-cover-photo';
+import { coverMasthead, edgeBar, EDGE_BAR_W } from './motivation-pdf-cover';
 import { closingRule, drawMark, type MarkName } from './motivation-pdf-marks';
 import * as K from './motivation-pdf-chrome';
 import { renderStatementForm } from './motivation-pdf-form';
@@ -182,6 +183,7 @@ const QUOTE_INDENT = 28;
  * design while the other half drew the new one.
  */
 export type Scheme =
+  | 'alloutdoor'
   | 'eucalyptus'
   | 'slate'
   | 'stone'
@@ -202,28 +204,72 @@ export interface SchemeColours {
   band: string;
   hair: string;
   wash: string;
+  /**
+   * The one saturated colour on the page: the rule under a cover title, and
+   * the short mark in front of a Ledger heading.
+   *
+   * ⚠️ A NINTH VARIABLE, ADDED 2026-08-24, BECAUSE EIGHT MUTED VALUES CANNOT
+   * MAKE AN ACCENT. Every colour in a scheme was a tint or a shade of one
+   * desaturated hue, so nothing on the page could carry emphasis and the whole
+   * document read as a single grey wash — which is most of why it looked like
+   * a word-processor template rather than something prepared for a member.
+   *
+   * ⚠️ AND IT IS NOT THE BRAND RED ON EVERY SCHEME. The brand is constant and
+   * lives in the mark, which prints on every page. This is each colourway's
+   * own harmonious answer to it: somebody who chose Sage did not choose a red
+   * document, and a flat #E01B24 rule on a mauve page is a clash rather than a
+   * signature. On the All Outdoor scheme the two are the same value.
+   */
+  accent: string;
 }
 
 export const SCHEMES: Record<Scheme, SchemeColours> = {
-  eucalyptus: { deep: '#587068', deep2: '#40524c', ink: '#29342f', sub: '#475650', mut: '#869590', band: '#dfe9e5', hair: '#dbe4e0', wash: '#f2f7f5' },
-  slate:      { deep: '#565e6e', deep2: '#3f4654', ink: '#2a2f38', sub: '#4c5460', mut: '#8a8f99', band: '#e3e2ec', hair: '#e2e0da', wash: '#f6f5f2' },
-  stone:      { deep: '#6b645c', deep2: '#4e4841', ink: '#33302b', sub: '#57524b', mut: '#948e85', band: '#e9e4dc', hair: '#e4dfd7', wash: '#f7f5f1' },
-  sage:       { deep: '#5f6b5e', deep2: '#454f45', ink: '#2c332c', sub: '#4d574d', mut: '#8a938a', band: '#e2e8df', hair: '#dfe3da', wash: '#f4f6f2' },
-  fogblue:    { deep: '#58687a', deep2: '#3f4c5b', ink: '#29323c', sub: '#485664', mut: '#8795a3', band: '#e0e7ed', hair: '#dde3e8', wash: '#f3f6f8' },
-  clay:       { deep: '#7a615a', deep2: '#594641', ink: '#362c29', sub: '#5c4f4a', mut: '#998a81', band: '#ece2dd', hair: '#e6ddd6', wash: '#f8f4f1' },
-  olive:      { deep: '#6a6a52', deep2: '#4d4d3b', ink: '#30302a', sub: '#55554a', mut: '#90907f', band: '#e7e7d9', hair: '#e2e2d5', wash: '#f6f6ef' },
-  sand:       { deep: '#8a7c62', deep2: '#665b47', ink: '#38332a', sub: '#5d5648', mut: '#9c9484', band: '#eee7d8', hair: '#e8e1d2', wash: '#f9f6ee' },
-  graphite:   { deep: '#4a4a4e', deep2: '#333336', ink: '#26262a', sub: '#46464b', mut: '#8b8b90', band: '#e4e4e7', hair: '#e0e0e2', wash: '#f4f4f5' },
-  mauve:      { deep: '#6e5f6a', deep2: '#50454d', ink: '#322c31', sub: '#544a51', mut: '#93878f', band: '#e9e1e7', hair: '#e3dce1', wash: '#f7f3f6' },
+  // ⚠️ THE HOUSE SCHEME, AND THE DEFAULT SINCE 2026-08-24. Operator: "make
+  // them match the website branding." The site is a #0f0f0f ground, a #C8102E
+  // brand and Archivo display — so deep/deep2 are the site's own near-blacks
+  // and the accent is its red.
+  //
+  // ⚠️ `band` IS NEUTRAL AND WAS BRIEFLY NOT. A pale red wash seemed like the
+  // obvious way to brand it, and on a rendered body page it is five pink chips
+  // down the sheet — a highlighter, not a submission. The same value also
+  // colours Report's big margin numerals, so it was five pink numerals as
+  // well. The brand belongs in the accent, which appears ONCE per section (the
+  // node ring) and once per cover (the rule); a tint repeated eight times is
+  // not an accent, it is a background.
+  //
+  // ⚠️ THE PAGE IS STILL WHITE, AND THAT IS NOT A COMPROMISE. This document
+  // is read off paper, photocopied at a police station and filed. Flooding A4
+  // with #0f0f0f would drink a cartridge, band on any office laser and
+  // photocopy as a black rectangle. Matching a dark-mode site on paper means
+  // carrying its INK and its TYPE across, never its background.
+  alloutdoor: { deep: '#1f1f1f', deep2: '#0f0f0f', ink: '#141414', sub: '#3f3f3f', mut: '#7d7d7d', band: '#f0f0f0', hair: '#e0e0e0', wash: '#f7f7f7', accent: '#C8102E' },
+  eucalyptus: { deep: '#587068', deep2: '#40524c', ink: '#29342f', sub: '#475650', mut: '#869590', band: '#dfe9e5', hair: '#dbe4e0', wash: '#f2f7f5', accent: '#2f6b56' },
+  slate:      { deep: '#565e6e', deep2: '#3f4654', ink: '#2a2f38', sub: '#4c5460', mut: '#8a8f99', band: '#e3e2ec', hair: '#e2e0da', wash: '#f6f5f2', accent: '#3b5b8a' },
+  stone:      { deep: '#6b645c', deep2: '#4e4841', ink: '#33302b', sub: '#57524b', mut: '#948e85', band: '#e9e4dc', hair: '#e4dfd7', wash: '#f7f5f1', accent: '#8a6a3d' },
+  sage:       { deep: '#5f6b5e', deep2: '#454f45', ink: '#2c332c', sub: '#4d574d', mut: '#8a938a', band: '#e2e8df', hair: '#dfe3da', wash: '#f4f6f2', accent: '#44753f' },
+  fogblue:    { deep: '#58687a', deep2: '#3f4c5b', ink: '#29323c', sub: '#485664', mut: '#8795a3', band: '#e0e7ed', hair: '#dde3e8', wash: '#f3f6f8', accent: '#2f6f8f' },
+  clay:       { deep: '#7a615a', deep2: '#594641', ink: '#362c29', sub: '#5c4f4a', mut: '#998a81', band: '#ece2dd', hair: '#e6ddd6', wash: '#f8f4f1', accent: '#a0522d' },
+  olive:      { deep: '#6a6a52', deep2: '#4d4d3b', ink: '#30302a', sub: '#55554a', mut: '#90907f', band: '#e7e7d9', hair: '#e2e2d5', wash: '#f6f6ef', accent: '#69762c' },
+  sand:       { deep: '#8a7c62', deep2: '#665b47', ink: '#38332a', sub: '#5d5648', mut: '#9c9484', band: '#eee7d8', hair: '#e8e1d2', wash: '#f9f6ee', accent: '#a5762f' },
+  graphite:   { deep: '#4a4a4e', deep2: '#333336', ink: '#26262a', sub: '#46464b', mut: '#8b8b90', band: '#e4e4e7', hair: '#e0e0e2', wash: '#f4f4f5', accent: '#5c5c66' },
+  mauve:      { deep: '#6e5f6a', deep2: '#50454d', ink: '#322c31', sub: '#544a51', mut: '#93878f', band: '#e9e1e7', hair: '#e3dce1', wash: '#f7f3f6', accent: '#7a4a70' },
 };
 
 /** Eucalyptus first \u2014 the handoff's default, and the picker opens on it. */
 export const SCHEME_KEYS: Scheme[] = [
+  'alloutdoor',
   'eucalyptus', 'slate', 'stone', 'sage', 'fogblue',
   'clay', 'olive', 'sand', 'graphite', 'mauve',
 ];
 
-export const DEFAULT_SCHEME: Scheme = 'eucalyptus';
+/**
+ * ⚠️ CHANGED FROM 'eucalyptus' ON 2026-08-24, and it is safe only because
+ * asScheme() validates on READ rather than on write. A row that stored
+ * 'eucalyptus' still renders eucalyptus; only a motivation with no stored
+ * preference — which is what a new one has — picks this up. No existing pack
+ * changes colour underneath anybody.
+ */
+export const DEFAULT_SCHEME: Scheme = 'alloutdoor';
 
 /**
  * \u26a0\ufe0f THE REQUIRED-RED IS FIXED ACROSS ALL TEN SCHEMES. It marks the one
@@ -590,6 +636,24 @@ export class MotivationPdfService {
     const realFonts = K.registerFonts(doc);
     const F = K.faces(realFonts);
     const chrome: K.Chrome = { doc, c: C, f: F };
+
+    // ── the running face ────────────────────────────────────────
+    //
+    // ⚠️ `bodyFace` WAS DECLARED ON EVERY LAYOUT AND READ BY NOTHING. The
+    // picker has been telling members that Report is "sans-serif throughout"
+    // while the renderer set every one of its paragraphs in Source Serif, the
+    // same as the other four. B is what makes the promise true: on the four
+    // serif layouts these ARE B.body*, so nothing about them moves.
+    //
+    // ⚠️ ARCHIVO HAS NO ITALIC IN THE REGISTERED SET, so the sans document's
+    // italic maps to its regular. That is deliberate rather than a gap: the
+    // alternative is falling back to a serif italic, which would put two
+    // typefaces on a page whose entire character is that it uses one.
+    const B = {
+      body: L.bodyFace === 'sans' ? F.sans : F.serif,
+      bodySemi: L.bodyFace === 'sans' ? F.sansSemi : F.serifSemi,
+      bodyItalic: L.bodyFace === 'sans' ? F.sans : F.serifItalic,
+    };
     if (!realFonts) {
       this.logger.warn(
         'Motivation fonts not found on disk \u2014 rendering in the standard faces',
@@ -606,95 +670,19 @@ export class MotivationPdfService {
     // decides what it is without opening it.
     // The 80 mm gradient block, as the handoff opens: reference, the spaced
     // MOTIVATION wordmark, a boxed subtitle, a rule and the section line.
-    {
-      const g = doc.linearGradient(0, 0, K.PAGE_W, K.COVER_BANNER_H);
-      g.stop(0, C.deep).stop(0.6, C.deep2).stop(1, C.deep2);
-      doc.rect(0, 0, K.PAGE_W, K.COVER_BANNER_H).fill(g);
-
-      let cy = K.mm(18);
-      doc
-        .font(F.sans)
-        .fontSize(K.px(10))
-        .fillColor('#ffffff')
-        .fillOpacity(0.75)
-        .text(`REFERENCE ${input.referenceNumber}`.toUpperCase(), 0, cy, {
-          width: K.PAGE_W,
-          align: 'center',
-          characterSpacing: K.px(10) * 0.4,
-          lineBreak: false,
-        })
-        .fillOpacity(1);
-
-      cy += K.mm(9);
-      doc
-        .font(F.sans)
-        .fontSize(K.px(38))
-        .fillColor('#ffffff')
-        // The handoff letter-spaces the wordmark itself: "M O T I V A T I O N".
-        .text('MOTIVATION'.split('').join(' '), 0, cy, {
-          width: K.PAGE_W,
-          align: 'center',
-          characterSpacing: K.px(38) * 0.2,
-          lineBreak: false,
-        });
-
-      cy += K.mm(14);
-      const boxLabel = 'APPLICATION FOR A FIREARM LICENCE';
-      doc.font(F.sans).fontSize(K.px(12));
-      const boxW =
-        doc.widthOfString(boxLabel, { characterSpacing: K.px(12) * 0.32 }) +
-        K.px(52);
-      const boxH = K.px(12) * 1.2 + K.px(20);
-      doc
-        .rect((K.PAGE_W - boxW) / 2, cy, boxW, boxH)
-        .lineWidth(0.8)
-        .strokeOpacity(0.65)
-        .strokeColor('#ffffff')
-        .stroke()
-        .strokeOpacity(1);
-      doc
-        .fillColor('#ffffff')
-        .text(boxLabel, 0, cy + K.px(10), {
-          width: K.PAGE_W,
-          align: 'center',
-          characterSpacing: K.px(12) * 0.32,
-          lineBreak: false,
-        });
-
-      cy += boxH + K.mm(6);
-      doc
-        .moveTo(K.PAGE_W / 2 - K.px(32), cy)
-        .lineTo(K.PAGE_W / 2 + K.px(32), cy)
-        .lineWidth(2)
-        .strokeOpacity(0.8)
-        .strokeColor('#ffffff')
-        .stroke()
-        .strokeOpacity(1);
-
-      cy += K.mm(5);
-      doc
-        .font(F.sans)
-        .fontSize(K.px(10))
-        .fillColor('#ffffff')
-        .fillOpacity(0.8)
-        .text(input.licenceTypeLabel.toUpperCase(), 0, cy, {
-          width: K.PAGE_W,
-          align: 'center',
-          characterSpacing: K.px(10) * 0.3,
-          lineBreak: false,
-        })
-        .fillOpacity(1);
-    }
-
-    // ── The framed photograph of the firearm ──────────────────────────
+    // ⚠️ FIVE MASTHEADS, NOT ONE. Until 2026-08-24 this block drew the same
+    // 80 mm gradient whichever layout was chosen — `LayoutSpec.cover` was set
+    // on all five and read by nothing, so rasterising the five and hashing
+    // them returned ONE checksum. See motivation-pdf-cover for what each
+    // style now owes its blurb.
     //
-    // ⚠️ THE CAPTION NAMES THE APPLICANT'S OWN FIREARM; THE PICTURE MAY BE OF
-    // THE MODEL. We hold one photograph per make-and-model, and where even
-    // that misses we fall back to the make (see motivation-firearm-image).
-    // So the frame says what the applicant told us, and the picture illustrates
-    // it — the page never claims to show their specific firearm, which would
-    // be a false statement on a document they sign.
-    let coverY = K.COVER_BANNER_H + K.mm(12);
+    // The photograph frame and the dossier grid below are deliberately NOT
+    // part of the style: they are the information a DFO opens the folder for,
+    // and every cover hands back the y at which they resume.
+    let coverY = coverMasthead(chrome, L.cover, {
+      referenceNumber: input.referenceNumber,
+      licenceTypeLabel: input.licenceTypeLabel,
+    });
     if (input.firearmPhoto) {
       // ── The frame is fixed; the photograph is FITTED INSIDE IT ─────
       //
@@ -776,13 +764,13 @@ export class MotivationPdfService {
     // Right of the photograph: who it is addressed to.
     const dossierX = input.firearmPhoto ? MARGIN : MARGIN;
     doc
-      .font(F.serif)
+      .font(B.body)
       .fontSize(K.px(13.5))
       .fillColor(C.sub)
       .text('To:', dossierX, doc.y, { width: contentWidth, lineBreak: false });
     doc.y += K.px(13.5) * 1.5;
     doc
-      .font(F.serifSemi)
+      .font(B.bodySemi)
       .fillColor(C.ink)
       .text('The Registrar of Firearms', dossierX, doc.y, {
         width: contentWidth,
@@ -790,7 +778,7 @@ export class MotivationPdfService {
       });
     doc.y += K.px(13.5) * 1.5;
     doc
-      .font(F.serif)
+      .font(B.body)
       .fillColor(C.sub)
       .text(
         'through the Designated Firearms Officer, South African Police Service',
@@ -844,6 +832,46 @@ export class MotivationPdfService {
         : []),
     ];
 
+    const labelW = K.mm(42);
+
+    // ── THE GRID HAS TO BE ASKED WHETHER IT FITS ─────────────────────────
+    //
+    // ⚠️ WITHOUT THIS THE COVER SPRAYS ORPHAN PAGES, and it did. Every row is
+    // drawn with `.text(v, x, y, { width })`, and a width is precisely what
+    // routes a pdfkit draw through LineWrapper — whose FIRST act is to compare
+    // doc.y against the bottom margin and call addPage(). So a grid that does
+    // not fit does not overflow tidily; it emits one nearly-blank page per row
+    // that did not fit, each carrying a single value like "24 August 2026".
+    //
+    // Measured on the real renderer with a cover photograph and six rows:
+    // Banner produced SEVEN pages where the same pack without a photograph
+    // produced four. That is the DEFAULT layout, and it was already reaching
+    // members before the layout work — the taller Plate and Classic covers
+    // added on 2026-08-24 only made an existing fault easy to see (Plate hit
+    // twelve). Fixing the cause here fixes all five.
+    //
+    // ⚠️ THE WHOLE GRID MOVES, NOT THE OVERFLOWING ROW. Splitting a six-row
+    // identification block across a page break is worse than starting it
+    // cleanly overleaf: a DFO reading "Firearm" on one sheet and its serial on
+    // the next has to hold the pack open at two places.
+    const rowGap = K.mm(2.4) * 2;
+    doc.font(B.body).fontSize(K.px(13));
+    const gridHeight =
+      K.mm(3) +
+      rows.reduce((sum, [, v]) => {
+        const h = Math.max(
+          doc.heightOfString(v, { width: contentWidth - labelW }),
+          K.px(13) * 1.2,
+        );
+        return sum + h + rowGap;
+      }, 0);
+
+    if (doc.y + gridHeight > K.BODY_BOTTOM) {
+      doc.addPage();
+      doc.x = MARGIN;
+      doc.y = K.BODY_TOP;
+    }
+
     doc
       .moveTo(MARGIN, doc.y)
       .lineTo(MARGIN + contentWidth, doc.y)
@@ -852,12 +880,26 @@ export class MotivationPdfService {
       .stroke();
     doc.y += K.mm(3);
 
-    const labelW = K.mm(42);
     for (const [k, v] of rows) {
+      // A backstop for the pathological single row — a firearm line long
+      // enough to wrap several times can still outgrow what the measurement
+      // above reserved for it once the grid has started.
+      doc.font(B.body).fontSize(K.px(13));
+      const need =
+        Math.max(
+          doc.heightOfString(v, { width: contentWidth - labelW }),
+          K.px(13) * 1.2,
+        ) + rowGap;
+      if (doc.y + need > K.BODY_BOTTOM) {
+        doc.addPage();
+        doc.x = MARGIN;
+        doc.y = K.BODY_TOP;
+      }
+
       const y = doc.y;
       K.label(chrome, k, MARGIN, y + 1, labelW - K.mm(3));
       doc
-        .font(F.serif)
+        .font(B.body)
         .fontSize(K.px(13))
         .fillColor(C.ink)
         .text(v, MARGIN + labelW, y, { width: contentWidth - labelW });
@@ -1026,7 +1068,7 @@ export class MotivationPdfService {
         // the furniture. Annexure cross-references are set italic in `deep`,
         // as inline <em> in the reference.
         doc
-          .font(isRef ? F.serifItalic : F.serif)
+          .font(isRef ? B.bodyItalic : B.body)
           .fontSize(BODY_SIZE)
           .fillColor(isRef ? C.deep : C.ink)
           .text(block, MARGIN + K.SECTION_INDENT, doc.y, {
@@ -1124,7 +1166,7 @@ export class MotivationPdfService {
         // content on a first application, and it was the one line of prose in
         // the document still in the old italic sans.
         doc
-          .font(F.serifItalic)
+          .font(B.bodyItalic)
           .fontSize(K.BODY_SIZE)
           .fillColor(C.ink)
           .text(
@@ -1216,7 +1258,7 @@ export class MotivationPdfService {
       .stroke();
     doc.y = sigY + K.mm(2);
     doc
-      .font(F.serif)
+      .font(B.body)
       .fontSize(K.px(13))
       .fillColor(C.ink)
       .text(input.applicantName, MARGIN, doc.y, { width: sigW });
@@ -1339,7 +1381,7 @@ export class MotivationPdfService {
         const isLabel = /:$/.test(block) && block.length < 40;
 
         doc
-          .font(isLabel ? F.sansSemi : F.serif)
+          .font(isLabel ? F.sansSemi : B.body)
           .fontSize(isLabel ? K.px(10) : K.BODY_SIZE);
         const need = doc.heightOfString(block, {
           width: bodyW - (numbered ? K.mm(6) : 0),
@@ -1397,7 +1439,7 @@ export class MotivationPdfService {
         .stroke();
       doc.y = pnSigY + K.mm(2);
       doc
-        .font(F.serif)
+        .font(B.body)
         .fontSize(K.px(13))
         .fillColor(C.ink)
         .text(input.applicantName, MARGIN, doc.y, { width: K.mm(72) });
@@ -1465,7 +1507,7 @@ export class MotivationPdfService {
         .stroke();
       doc.y += K.mm(4);
       doc
-        .font(F.serifItalic)
+        .font(B.bodyItalic)
         .fontSize(K.px(12))
         .fillColor(C.sub)
         .text(
@@ -1509,7 +1551,7 @@ export class MotivationPdfService {
 
       for (const a of input.annexures) {
         const label = a.count > 1 ? `${a.label} (${a.count} items)` : a.label;
-        doc.font(F.serif).fontSize(K.px(13));
+        doc.font(B.body).fontSize(K.px(13));
         const need =
           doc.heightOfString(label, { width: labelW, lineGap: K.px(2) }) +
           K.mm(6);
@@ -1528,7 +1570,7 @@ export class MotivationPdfService {
             lineBreak: false,
           });
         doc
-          .font(F.serif)
+          .font(B.body)
           .fontSize(K.px(13))
           .fillColor(C.ink)
           .text(label, MARGIN + letterW, y, { width: labelW, lineGap: K.px(2) });
@@ -1912,7 +1954,7 @@ export class MotivationPdfService {
         // ended its take-with-you page with an empty square and no line
         // beside it, which reads as a checklist entry somebody forgot to
         // write. A box without its line is worse than a page break.
-        doc.font(F.serif).fontSize(K.BODY_SIZE);
+        doc.font(B.body).fontSize(K.BODY_SIZE);
         let need = doc.heightOfString(item.label, {
           width: itemW,
           lineGap: K.px(2),
@@ -1939,7 +1981,7 @@ export class MotivationPdfService {
           .strokeColor(C.mut)
           .stroke();
         doc
-          .font(F.serif)
+          .font(B.body)
           .fontSize(K.BODY_SIZE)
           .fillColor(C.ink)
           .text(item.label, itemX, y, { width: itemW, lineGap: K.px(2) });
@@ -1998,7 +2040,7 @@ export class MotivationPdfService {
         );
         const title = titleCase(entry.heading);
 
-        doc.font(F.serif).fontSize(K.px(13.5)).fillColor(C.ink);
+        doc.font(B.body).fontSize(K.px(13.5)).fillColor(C.ink);
         // ⚠️ ELLIPSISED, NOT WRAPPED. A contents line that wraps puts its page
         // number level with the first line and its tail under the leaders,
         // which reads as two entries. "Annexure E — Request for prior notice
@@ -2045,7 +2087,7 @@ export class MotivationPdfService {
       // stops implies there is nothing after the last line.
       doc.y += K.mm(4);
       doc
-        .font(F.serifItalic)
+        .font(B.bodyItalic)
         .fontSize(K.px(11.5))
         .fillColor(C.sub)
         .text(
@@ -2207,6 +2249,12 @@ export class MotivationPdfService {
         if (L.runningBanner) {
           K.banner(chrome, `${shortName} \u25c7 Motivation`, pageLabels[i] ?? '');
         }
+        // ⚠️ DRAWN BEFORE THE FOOTER, WHICH IS WHY THE FOOTER TAKES AN INSET.
+        // The bar runs the full height of the page; the footer's wash band is
+        // full width, so painting it afterwards would cut the last 10 mm off
+        // the bar on every page. The cover draws its own — it has the monogram
+        // sitting on top of it, which a redraw here would cover.
+        if (L.edgeBar) edgeBar(chrome);
       }
 
       // The footer strip: one wash band, one line of small caps naming the
@@ -2231,6 +2279,7 @@ export class MotivationPdfService {
         chrome,
         [input.referenceNumber, `Page ${shifted} of ${totalPages}`],
         [shortName, input.firearmLine ?? '', input.licenceTypeLabel],
+        L.edgeBar ? EDGE_BAR_W : 0,
       );
 
       doc.page.margins.bottom = keep;

@@ -283,14 +283,28 @@ describe('the unpaid mark', () => {
   it('embeds the logo ONCE, however many pages carry it', async () => {
     // ⚠️ doc.image() caches by string src, so the renderer hands it the PATH.
     // Reading the file and passing the bytes instead re-embeds the artwork per
-    // page — a megabyte and a half onto a long pack, for one mark. Two image
-    // objects is the whole cost: the logo and the soft mask carrying its alpha.
+    // page — a megabyte and a half onto a long pack, for one mark.
+    //
+    // ⚠️ ASSERTED AS "DOES NOT GROW WITH THE PACK", NOT AS A FIXED NUMBER, and
+    // that rewrite is the point. It used to expect exactly 2 — the lockup and
+    // the soft mask carrying its alpha — which was true while the document
+    // used ONE piece of artwork. Branding the covers added two more (the white
+    // knockout for a deep masthead, the monogram the footer needs because a
+    // wordmark is illegible at 3 mm), and a literal 2 failed for a change that
+    // broke nothing: the cache still works, there is simply more than one
+    // mark. A count that has to be edited every time a mark is added tests the
+    // artwork inventory; what actually matters is that a 20-page pack costs no
+    // more image data than a 3-page one.
+    const short = await svc.render({ ...makeInput(), watermark: true });
     const marked = await svc.render({ ...makeInput(long), watermark: true });
-    const images = (
-      marked.pdf.toString('latin1').match(/\/Subtype\s*\/Image/g) ?? []
-    ).length;
-    expect(pageCount(marked.pdf)).toBeGreaterThan(2);
-    expect(images).toBe(2);
+    const images = (pdf: Buffer) =>
+      (pdf.toString('latin1').match(/\/Subtype\s*\/Image/g) ?? []).length;
+
+    expect(pageCount(marked.pdf)).toBeGreaterThan(pageCount(short.pdf));
+    expect(images(marked.pdf)).toBe(images(short.pdf));
+    // Two objects per distinct mark, and a small, bounded number of marks.
+    expect(images(marked.pdf) % 2).toBe(0);
+    expect(images(marked.pdf)).toBeLessThanOrEqual(8);
   });
 
   it('says on the cover that a clean copy exists', async () => {
