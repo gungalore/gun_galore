@@ -142,6 +142,15 @@ export class LicenceCentreService {
       );
     }
 
+    // Whether the fallback five-year competency date is even the rule for this
+    // member — see derivedExpiryFor. A licence on file means the competency
+    // follows it instead, and we cannot compute that here.
+    const holdsAnyLicence = rows.some(
+      (r) =>
+        r.kind === 'FIREARM_LICENCE' ||
+        r.coversKinds.includes('FIREARM_LICENCE'),
+    );
+
     return rows.map((r) => ({
       id: r.id,
       kind: r.kind,
@@ -172,6 +181,7 @@ export class LicenceCentreService {
         r.kind,
         r.expiresOn ? toIsoDate(r.expiresOn) : null,
         r.issuedOn ? toIsoDate(r.issuedOn) : null,
+        holdsAnyLicence,
       ),
       // The row can outlive its bytes after an erasure. Say so rather than
       // let a download fail with something puzzling.
@@ -369,6 +379,21 @@ export class LicenceCentreService {
         );
     }
 
+    // Same question as the list path asks: does a five-year competency date
+    // even apply to this member? Counted here rather than assumed, because a
+    // member who already holds a licence must not be handed a date we know
+    // the statute does not give them.
+    const holdsAnyLicence =
+      (await this.prisma.credential.count({
+        where: {
+          userId: user.id,
+          OR: [
+            { kind: 'FIREARM_LICENCE' },
+            { coversKinds: { has: 'FIREARM_LICENCE' } },
+          ],
+        },
+      })) > 0;
+
     return {
       id: created.id,
       kind: resolved,
@@ -393,18 +418,26 @@ export class LicenceCentreService {
         /**
          * An expiry we worked out rather than read.
          *
-         * ⚠️ ONLY WHERE A STATUTE SETS IT. A competency certificate normally
-         * prints an issue date and nothing else — the operator photographed
-         * one whose issue date read perfectly and whose expiry box we then
-         * told him we could not read, which is true and useless. Section
-         * 10(2) says a competency certificate lapses five years from issue,
-         * so the arithmetic is worth doing for him.
+         * ⚠️ ONLY WHERE A STATUTE SETS IT, AND FOR COMPETENCY THAT IS
+         * NARROWER THAN IT LOOKS. A competency certificate prints an issue
+         * date and no expiry — telling the member we could not read a date
+         * that is not there is true and useless. But s10(2) AS AMENDED does
+         * not give a flat five years: the competency inherits the period of
+         * the licence it relates to, and five-from-issue is only the fallback
+         * for a firearm type holding no licence. So the arithmetic is offered
+         * to a member with no licence on file and withheld from everyone
+         * else — see derivedExpiryFor.
          *
          * Never for a licence (section 27 sets two, five or ten years by
          * section) and never for dedicated status (the association sets it).
          * Guessing either would be inventing a deadline.
          */
-        derivedExpiry: derivedExpiryFor(resolved, reading?.expiresOn ?? null, reading?.issuedOn ?? null),
+        derivedExpiry: derivedExpiryFor(
+          resolved,
+          reading?.expiresOn ?? null,
+          reading?.issuedOn ?? null,
+          holdsAnyLicence,
+        ),
       },
     };
   }
@@ -924,18 +957,48 @@ export class LicenceCentreService {
  * is indistinguishable to the member from one we read off the page — and this
  * one they are being asked to confirm.
  */
-function derivedExpiryFor(
+export function derivedExpiryFor(
   kind: CredentialKind,
   readExpiry: string | null,
   readIssued: string | null,
+  /**
+   * Does this member hold ANY firearm licence in the vault?
+   *
+   * ⚠️ IT DECIDES WHETHER THE FIVE-YEAR DATE IS EVEN TRUE. See below.
+   */
+  holdsAnyLicence = false,
 ): { on: string; why: string } | null {
   if (readExpiry || !readIssued) return null;
   if (kind !== 'COMPETENCY_CERTIFICATE') return null;
   const issued = parseIsoDate(readIssued);
   if (!issued) return null;
+
+  // ⚠️ THIS USED TO SAY "a competency certificate lapses five years after it
+  // is issued (section 10(2))", AND THAT IS THE OPPOSITE OF WHAT s10(2) NOW
+  // SAYS. As amended by Act 28 of 2006 (commenced 10 January 2011) it reads:
+  // a competency remains valid for the same period as the LICENCE it relates
+  // to. SA Firearm Competency Reference §5.1-§5.3: competency has no
+  // independent lifespan, the expiry is the latest licence expiry in that
+  // firearm type, and it ROLLS FORWARD every time a licence there is granted
+  // or renewed. Five years from issue is only the fallback for a type that
+  // holds no licence at all (§5.2).
+  //
+  // It also told the member to "check it against your certificate". §9 calls
+  // that out specifically: the certificate does not print an expiry date, so
+  // that instruction sends somebody looking for something that is not there.
+  //
+  // ⚠️ AND WE CANNOT COMPUTE THE REAL DATE HERE. The derivation is PER FIREARM
+  // TYPE, and a vault FIREARM_LICENCE row does not record which type its
+  // firearm is. So the honest thing is to offer the fallback only where it is
+  // actually the rule — a member with no licence on file — and otherwise to
+  // prefill NOTHING and say why. Prefilling a date we have reason to believe
+  // is wrong, on a field the member is asked to confirm, is worse than
+  // leaving it blank: they confirm it, and we have manufactured a deadline.
+  if (holdsAnyLicence) return null;
+
   return {
     on: toIsoDate(competencyLapses(issued)),
-    why: 'A competency certificate lapses five years after it is issued (section 10(2) of the Firearms Control Act). Check it against your certificate.',
+    why: 'You have no firearm licence on file, so this competency runs five years from issue and then lapses (section 10(2) of the Firearms Control Act, as amended). Once you licence a firearm, it follows that licence instead and moves out with every renewal — your certificate does not print a date.',
   };
 }
 

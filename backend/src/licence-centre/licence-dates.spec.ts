@@ -178,9 +178,19 @@ describe('the stage table itself', () => {
 });
 
 describe('competencyLapses', () => {
-  // ⚠️ SECTION 10(2): "A competency certificate lapses after five years from
-  // its date of issue." Read from the Act, not recalled — and offered to the
-  // member as a suggestion to check, never written as a confirmed date.
+  // ⚠️ THIS IS THE FALLBACK, NOT THE RULE — AND THE COMMENT THAT USED TO SIT
+  // HERE QUOTED THE UN-AMENDED ACT. It read: 'SECTION 10(2): "A competency
+  // certificate lapses after five years from its date of issue." Read from the
+  // Act, not recalled.' That IS the original s10(2), and it was replaced by
+  // the Firearms Control Amendment Act 28 of 2006, commenced 10 January 2011.
+  // The current s10(2) says a competency remains valid for the same period as
+  // the LICENCE it relates to — it has no independent lifespan and rolls
+  // forward with every grant or renewal in that firearm type.
+  //
+  // So this arithmetic is right only where a firearm type holds no licence at
+  // all (SA Firearm Competency Reference §5.2), and derivedExpiryFor now
+  // offers it only to a member with no licence on file. The function stays
+  // because the fallback is real; the framing was wrong.
   it('adds five years to the issue date', () => {
     expect(toIsoDate(competencyLapses(new Date('2025-06-06T00:00:00Z')))).toBe(
       '2030-06-06',

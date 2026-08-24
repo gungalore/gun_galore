@@ -627,14 +627,26 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     showIf: { key: 'safe_mounted', equals: 'Yes' },
     required: true,
   },
-  {
-    key: 'other_licensed_firearms',
-    label: 'Firearms already licensed to you',
-    kind: 'long',
-    section: 'Storage and safety',
-    help: 'Leave blank if this is your first.',
-    maxLength: 1000,
-  },
+  // ⚠️ `other_licensed_firearms` WAS HERE AND IS DELIBERATELY GONE.
+  //
+  // Operator, item 7 of twelve, 2026-08-24: "Storage and your record —
+  // 'Firearms already licensed to you', isn't that the same as 'Firearms you
+  // already own' that has everything already in it?" It was. A 1000-character
+  // free-text box in this section asked for exactly what the six structured
+  // rows in 'Firearms you already own' already hold — and those rows fill
+  // THEMSELVES from a photographed licence, so the applicant was being asked
+  // to retype, in prose, a list we had already read for them.
+  //
+  // The defence written here used to be "prose is right for the motivation".
+  // It is not right enough to be worth asking twice: the structured rows reach
+  // the writer as facts (they are not NEVER_PROMPTED), and the overlap
+  // engine's verdict reaches it as argument. The writer was receiving the same
+  // firearms from both directions and nothing else read this field at all —
+  // a grep for it outside its own declaration returned nothing.
+  //
+  // Removing a key is safe by construction: sanitiseAnswers logs an
+  // unregistered key and drops it, which is the documented behaviour for a
+  // stale client, and stored text simply stops being prompted.
   // ── THE SIX HISTORY QUESTIONS, straight off the SAPS 271 ─────────
   //
   // Every one is yes/no with detail if yes, and they are the part of the form
@@ -1013,8 +1025,9 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   // ── FIREARMS ALREADY LICENSED TO THE APPLICANT (SAPS 271 item 2.1) ─
   //
-  // other_licensed_firearms above is prose, and prose is right for the
-  // motivation. These are the form's own six columns, and they exist for a
+  // These are the form's own six columns, and they are now the ONLY place the
+  // applicant states what they already hold — the prose duplicate that used to
+  // sit in 'Storage and safety' is gone; see the note there. They exist for a
   // second reason that matters more: THE OVERLAP CHECK READS THEM.
   //
   // "I already have a .308" cannot be answered from free text, and it is the
