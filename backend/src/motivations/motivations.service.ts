@@ -28,6 +28,8 @@ import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
 import { asLayout } from './motivation-pdf-layouts';
 import { applicationBlockers } from './motivation-eligibility';
+import { decideAutolink } from './motivation-autolink';
+import { primaryUploadKind } from './motivation-credentials';
 import { consentFormFor } from './motivation-consent-statement';
 import { MotivationClaudeService } from './motivation-claude.service';
 import {
@@ -1072,6 +1074,139 @@ export class MotivationsService {
    * kind, same answer — re-running vision would spend money to arrive back
    * where we started.
    */
+  /**
+   * Attach everything this application needs that the member already holds.
+   *
+   * Operator, 2026-08-24: "why can't the server add the relevant documents in
+   * place and mark them green for me?"
+   *
+   * ⚠️ A POST, NEVER A SIDE EFFECT OF READING. The wizard calls this once when
+   * the documents step is first opened. Attaching on a GET would mean a page
+   * refresh, a poll or a second tab silently changing what is on somebody's
+   * licence application — and the 20-second poll on that page would do it
+   * every twenty seconds.
+   *
+   * ⚠️ CONSENT FIRST, AND `given` MEANS GIVEN. Not "has not said no". Reusing
+   * vault documents unasked is new automatic processing and needs a yes;
+   * mayKeep() is the one function allowed to answer that, so this asks it
+   * rather than reading a column.
+   *
+   * Idempotent: a kind already attached is skipped, so calling it twice
+   * attaches nothing twice.
+   */
+  async autolink(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, licenceType: true, status: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (!EDITABLE.includes(row.status)) {
+      return { attached: [], skipped: [], reason: 'not-editable' as const };
+    }
+
+    if (!(await this.vaultConsent.mayKeepFor(user.id))) {
+      // Not an error: they have simply not agreed, or have withdrawn. The
+      // library still offers everything for them to attach by hand.
+      return { attached: [], skipped: [], reason: 'no-consent' as const };
+    }
+
+    // ⚠️ CREDENTIALS ONLY, NOT UPLOADS FROM OTHER APPLICATIONS. The freshness
+    // rule needs a date we can stand behind, and only a vault credential
+    // carries one the member has CONFIRMED. An upload on a previous
+    // application has no date on the row at all, so "is it still valid" would
+    // be unanswerable — and answering it anyway is how a stale document gets
+    // attached silently. Those still appear in the library to be attached by
+    // hand, where the member can see what they are.
+    const [credentials, uploads] = await Promise.all([
+      this.prisma.credential.findMany({
+        where: {
+          userId: user.id,
+          storageKey: { not: null },
+          purgedAt: null,
+          // ⚠️ CONFIRMED DATES ONLY. An unconfirmed expiry is our reading of a
+          // document, not the member's answer, and the whole freshness rule
+          // rests on it.
+          confirmedAt: { not: null },
+        },
+        select: {
+          id: true,
+          kind: true,
+          coversKinds: true,
+          disciplineType: true,
+          title: true,
+          expiresOn: true,
+        },
+      }),
+      this.prisma.motivationUpload.findMany({
+        where: { motivationId: row.id },
+        select: { kind: true, sha256: true },
+      }),
+    ]);
+
+    const wanted = documentStatus(row.licenceType, [], {}).needs.map(
+      (n) => n.kind,
+    );
+
+    const candidates = credentials
+      .map((c) => {
+        // The slot it actually belongs in — disciplineType beats the primary
+        // kind, so a sworn good standing letter is not offered as a card.
+        const declared = (c.disciplineType ?? '').trim();
+        const kind =
+          declared && declared in MotivationUploadKind
+            ? (declared as MotivationUploadKind)
+            : primaryUploadKind(c.kind);
+        return kind
+          ? {
+              sourceId: c.id,
+              source: 'credential' as const,
+              kind,
+              expiresOn: c.expiresOn ? toIsoDay(c.expiresOn) : null,
+              title: c.title,
+            }
+          : null;
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+
+    const decision = decideAutolink(
+      candidates,
+      wanted,
+      uploads.map((u) => u.kind),
+      new Date(),
+    );
+
+    const attached: { kind: string; title: string }[] = [];
+    for (const c of decision.attach) {
+      try {
+        await this.addFromLibrary(clerkId, id, c.source, c.sourceId);
+        attached.push({ kind: c.kind, title: c.title });
+      } catch (err) {
+        // ⚠️ ONE FAILURE MUST NOT COST THE REST. A purged file or a
+        // since-deleted credential is a reason to skip that document, not to
+        // abandon the other five the member does hold.
+        this.logger.warn(
+          `Motivation ${row.id}: could not auto-attach ${c.kind}: ${
+            (err as Error).message
+          }`,
+        );
+      }
+    }
+
+    return {
+      attached,
+      // Said out loud, so "why is my competency not on here" has an answer
+      // the member can read rather than a silence they have to guess at.
+      skipped: decision.skipped.map((s) => ({
+        kind: s.candidate.kind,
+        title: s.candidate.title,
+        why: s.why,
+      })),
+      reason: 'ok' as const,
+    };
+  }
+
   async addFromLibrary(
     clerkId: string,
     id: string,

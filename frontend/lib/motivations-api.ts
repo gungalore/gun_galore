@@ -613,6 +613,25 @@ export const motivationsApi = {
     ),
 
   /** Attach one, without asking for the file again. */
+  /**
+   * Attach everything this application needs that the member already holds.
+   *
+   * ⚠️ CALLED ONCE, ON PURPOSE. It is a POST because it writes to the
+   * application; firing it from an effect that can re-run would silently
+   * change what a DFO sees.
+   */
+  autolink: (t: TokenGetter, id: string) =>
+    request<{
+      attached: { kind: string; title: string }[];
+      skipped: { kind: string; title: string; why: string }[];
+      reason: 'ok' | 'no-consent' | 'not-editable';
+    }>(
+      t,
+      `/${id}/autolink`,
+      { method: 'POST' },
+      { attached: [], skipped: [], reason: 'ok' },
+    ),
+
   addFromLibrary: (
     t: TokenGetter,
     id: string,

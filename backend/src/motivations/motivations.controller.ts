@@ -587,6 +587,24 @@ export class MotivationsController {
     return this.motivations.library(clerkId, id);
   }
 
+  /**
+   * Attach everything this application needs that the member already holds.
+   *
+   * Operator, 2026-08-24: "why can't the server add the relevant documents in
+   * place and mark them green for me?"
+   *
+   * ⚠️ A POST, DELIBERATELY, THOUGH IT READS LIKE A GET. Attaching is a WRITE
+   * to somebody's licence application. Doing it as a side effect of loading
+   * the page would mean a refresh, a second tab or the documents step's own
+   * 20-second poll silently changing what a DFO will see — every twenty
+   * seconds. The wizard calls this once, on purpose, and it is idempotent.
+   */
+  @Post(':id/autolink')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  autolink(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.autolink(clerkId, id);
+  }
+
   /** Attach one of them, without asking for the file again. */
   @Post(':id/uploads/from-library')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })

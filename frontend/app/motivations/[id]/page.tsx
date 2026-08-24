@@ -676,6 +676,45 @@ export default function MotivationWizardPage() {
   }, [loadLibrary]);
 
   /**
+   * Attach what the member already holds, once.
+   *
+   * Operator: "why can't the server add the relevant documents in place and
+   * mark them green for me?"
+   *
+   * ⚠️ ONCE PER MOUNT, GUARDED BY A REF, AND THAT GUARD IS LOAD-BEARING. This
+   * is a POST that writes to the application. The effect's deps are stable,
+   * but a ref costs nothing and the failure it prevents is bad: React 18
+   * StrictMode double-invokes effects in development, and any future dep
+   * change would turn "attach my documents" into "attach my documents again,
+   * on every render". The server skips a kind already attached, so a repeat is
+   * harmless — but relying on the server to be idempotent for correctness of
+   * the CLIENT is how the client stops being careful.
+   */
+  const autolinkRan = useRef(false);
+  useEffect(() => {
+    if (autolinkRan.current) return;
+    autolinkRan.current = true;
+    void (async () => {
+      try {
+        const res = await motivationsApi.autolink(token, id);
+        if (!res.attached.length) return;
+        setAutolinked(res.attached);
+        // Everything downstream reads from these, so refresh rather than
+        // patching the lists by hand and risking a disagreement.
+        const up = await motivationsApi.uploads(token, id);
+        setUploads(up.files);
+        setDocuments(up.documents);
+        setUploadKinds(up.kinds ?? []);
+      } catch {
+        // Never costs the page. The member attaches by hand, as before.
+      }
+    })();
+  }, [token, id]);
+  const [autolinked, setAutolinked] = useState<
+    { kind: string; title: string }[]
+  >([]);
+
+  /**
    * Which line the single upload control is pointed at.
    *
    * ⚠️ IT DEFAULTS TO THE FIRST THING STILL MISSING, so the common case —
@@ -1781,6 +1820,33 @@ export default function MotivationWizardPage() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* ⚠️ NEVER SILENT. Documents were added to a licence application without
+        * being asked for — that is a convenience only while the member can see
+        * it happened and undo it. An unannounced change to what a DFO will see
+        * is the difference between "it filled itself in" and "something else
+        * is filling in my police paperwork".
+        *
+        * Green, because this is the one banner on the page that is purely good
+        * news: nothing is required of them. */}
+      {autolinked.length > 0 && (
+        <div className="mb-4 rounded border border-[rgba(47,158,107,0.38)] bg-[rgba(47,158,107,0.10)] p-3">
+          <p className="text-sm font-medium">
+            We added {autolinked.length}{' '}
+            {autolinked.length === 1 ? 'document' : 'documents'} from your
+            Document Centre
+          </p>
+          <ul className="mt-1 text-xs text-[var(--text-secondary)]">
+            {autolinked.map((a) => (
+              <li key={a.kind}>{a.title}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
+            They are in your documents step, and you can remove any of them
+            there.
+          </p>
         </div>
       )}
 
