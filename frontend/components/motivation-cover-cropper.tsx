@@ -55,7 +55,7 @@ const MAX_ZOOM = 6;
  * dead instead, and says why.
  *
  * ⚠️ AND ZOOM IS WHAT BREACHES IT, which is not obvious. Zooming in does not
- * add pixels; it takes FEWER source pixels and prints them at the same 86 mm.
+ * add pixels; it takes FEWER source pixels and prints them at the same width.
  * Zoomed to 2.5x, a 960 px stock photograph yields a 193 px crop — 57 dpi
  * across the frame, a visible blur on a document going to the police, and the
  * applicant's only clue would have been that it looked fine on a screen.

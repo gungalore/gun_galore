@@ -681,17 +681,29 @@ export class MotivationPdfService {
     // be a false statement on a document they sign.
     let coverY = K.COVER_BANNER_H + K.mm(12);
     if (input.firearmPhoto) {
-      // ── The frame is fixed ────────────────────────────────────────
+      // ── The frame is fixed; the photograph is FITTED INSIDE IT ─────
       //
-      // ⚠️ AND EVERYTHING SENT HERE ALREADY FITS IT. The browser's trim tool
-      // locks its red box to COVER_ASPECT and pans and zooms the photograph
-      // behind it, so what arrives is already this shape: `cover` below trims
-      // nothing but sub-pixel rounding.
+      // ⚠️ `fit`, NOT `cover`, AND THAT IS THE WHOLE FIX. It was `cover` on the
+      // reasoning that everything arriving here had already been trimmed to
+      // COVER_ASPECT by the browser's tool, so filling the frame clipped
+      // nothing. Two things were wrong with that. The frame was 86 mm — 47% of
+      // the content column, a leftover from a two-column cover — so the tool
+      // was forcing every photograph into a narrow letterbox before it ever
+      // got here; and a stock photograph off Commons never goes through the
+      // tool at all and could be any shape, so `cover` guillotined it.
       //
-      // It stays a `cover` rather than a `fit` for the one case that does not
-      // come through the trim tool — a stock photograph off Commons, which can
-      // be any shape at all. Filling the frame and clipping beats a rifle
-      // floating in two centimetres of dead wash.
+      // The operator sent a screenshot of a lever-action rifle cut off at both
+      // ends: "the box cuts the picture off... we need to make a plan so we can
+      // fit almost any shape picture and that it does not screw up the
+      // documents formatting."
+      //
+      // ⚠️ THE BOX STAYS FIXED, WHICH IS WHAT KEEPS THE FORMATTING SAFE. The
+      // page reserves the same rectangle whatever the photograph is, so the
+      // dossier below never moves and no cover is a different length from any
+      // other — the reason the fixed frame was introduced in the first place.
+      // What changed is that the IMAGE is now fitted within that rectangle
+      // rather than cropped to it: a rifle fills the width, an upright
+      // photograph sits centred with wash either side, and nothing is cut.
       const frameW = K.mm(COVER_FRAME_MM.w);
       const frameH = K.mm(COVER_FRAME_MM.h);
 
@@ -706,7 +718,7 @@ export class MotivationPdfService {
           .rect(MARGIN + pad, coverY + pad, frameW - pad * 2, frameH - pad * 2)
           .clip();
         doc.image(input.firearmPhoto, MARGIN + pad, coverY + pad, {
-          cover: [frameW - pad * 2, frameH - pad * 2],
+          fit: [frameW - pad * 2, frameH - pad * 2],
           align: 'center',
           valign: 'center',
         });

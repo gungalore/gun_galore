@@ -732,9 +732,16 @@ export const motivationsApi = {
       hasOwn: false,
       firearmLine: null,
       stock: null,
-      aspect: 86 / 44,
-      frameMm: { w: 86, h: 44 },
-      maxPx: { w: 1200, h: 614 },
+      // ⚠️ A COPY OF THE SERVER'S FRAME, AND IT WENT STALE ONCE ALREADY. The
+      // real numbers arrive from /cover-photo, which serves COVER_FRAME_MM
+      // directly; these are used ONLY when that fetch fails. They still have
+      // to track it: while the frame was widened from 86 x 44 to the full
+      // content column, a failed fetch would have gone on locking the trim box
+      // to the old letterbox — the exact crop the operator reported, appearing
+      // only for people whose first request happened to fail.
+      aspect: 182 / 85,
+      frameMm: { w: 182, h: 85 },
+      maxPx: { w: 2200, h: 1028 },
     }),
 
   /**

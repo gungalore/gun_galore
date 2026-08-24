@@ -104,12 +104,42 @@ describe('the frame', () => {
     expect(COVER_ASPECT).toBeCloseTo(COVER_FRAME_MM.w / COVER_FRAME_MM.h, 6);
   });
 
-  it('is a landscape letterbox, because the subject is a firearm', () => {
-    // ⚠️ NOT 4:3. A rifle is long and thin. The frame was 62 x 46 (1.35:1)
-    // and a rifle in it was either cropped to its receiver or floating in
-    // dead space — see the note on COVER_FRAME_MM.
+  it('is landscape, because the subject is usually a firearm', () => {
+    // ⚠️ NOT 4:3. A rifle is long and thin.
     expect(COVER_ASPECT).toBeGreaterThan(1.7);
+    // ⚠️ AND NOT A SLOT, EITHER. The frame no longer crops — it fits — so the
+    // ratio decides how LARGE each shape prints rather than whether it
+    // survives. Past roughly 2.5 an upright photograph is starved: at 3:1 a
+    // portrait would print 61 mm tall on a 182 mm page. The first attempt at
+    // widening this used 182 x 68 (2.68) and was a WIDER letterbox than the
+    // 86 x 44 it replaced, which would have made upright photographs smaller
+    // while appearing to fix the operator's complaint.
     expect(COVER_ASPECT).toBeLessThan(2.5);
+  });
+
+  it('⚠️ leaves every common shape room to print whole', () => {
+    // The operator's complaint was a rifle cut off at both ends. These are the
+    // shapes that actually arrive — a phone photograph, a stock image off
+    // Commons, an upright snap of a handgun on a bench — and none of them may
+    // be starved by the frame they are fitted into.
+    const { w, h } = COVER_FRAME_MM;
+    for (const [name, ratio] of [
+      ['panorama', 3],
+      ['16:9', 16 / 9],
+      ['3:2', 1.5],
+      ['square', 1],
+      ['upright 3:4', 0.75],
+    ] as const) {
+      const drawnW = Math.min(w, h * ratio);
+      const drawnH = drawnW / ratio;
+      // Nothing is cropped: it fits inside the box on both axes.
+      expect(drawnW).toBeLessThanOrEqual(w + 0.001);
+      expect(drawnH).toBeLessThanOrEqual(h + 0.001);
+      // And it is big enough to be worth printing — a sixth of the page's
+      // width at minimum, whatever its shape.
+      expect(drawnW).toBeGreaterThan(35);
+      void name;
+    }
   });
 
   it('sizes the pixel ceiling to the frame it fills', () => {
@@ -120,6 +150,10 @@ describe('the frame', () => {
   });
 
   it('still prints past what an office printer resolves', () => {
+    // ⚠️ THIS TRACKS THE FRAME AND CAUGHT IT WHEN IT DID NOT. Widening the
+    // frame to 182 mm without raising the ceiling dropped the cover to 167
+    // dpi — visibly soft on the one page somebody looks at before deciding
+    // whether to read the rest.
     const dpi = COVER_MAX_PX.w / (COVER_FRAME_MM.w / 25.4);
     expect(dpi).toBeGreaterThan(300);
   });
