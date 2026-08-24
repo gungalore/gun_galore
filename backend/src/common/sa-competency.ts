@@ -162,6 +162,25 @@ const ACTION_TOKENS: { re: RegExp; selfLoading: boolean }[] = [
 ];
 
 /**
+ * Self-loading or not, read off any SAPS wording that states it.
+ *
+ * ⚠️ NULL MEANS "THE TEXT DOES NOT SAY", AND THAT IS A REAL ANSWER. A licence
+ * card's type row reads "S/L: RIFLE CAL - RIFLE/CARBINE" or "MANUALLY OPERATED
+ * RIFLE" — the first states the action, the second states only that it is not
+ * self-loading. Neither says bolt, lever, pump or break. A caller filling a
+ * finer field than this can express must fill it ONLY on true, and leave the
+ * applicant to choose otherwise.
+ */
+export function selfLoadingFromText(raw: string): boolean | null {
+  const text = (raw ?? '').trim();
+  if (!text) return null;
+  for (const a of ACTION_TOKENS) {
+    if (a.re.test(text)) return a.selfLoading;
+  }
+  return null;
+}
+
+/**
  * Firearm-type abbreviations (§4.2).
  *
  * ⚠️ PIST CAL CARB IS A RIFLE/CARBINE, NOT A HANDGUN — §4.7 spells it out

@@ -10,6 +10,7 @@ import { SmsService } from '../sms/sms.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { encryptText, tryDecryptText } from '../common/blob-crypto';
+import { selfLoadingFromText } from '../common/sa-competency';
 
 // ────────────────────────────────────────────────────────────────────
 // THE PREVIOUS OWNER'S CONSENT.
@@ -301,6 +302,31 @@ export function mapCardType(cardType?: string): string | undefined {
   return undefined;
 }
 
+/**
+ * The applicant's Action field, where the card actually settles it.
+ *
+ * ⚠️ ONLY THE SELF-LOADING CASE, AND THE ASYMMETRY IS THE POINT. A licence
+ * card's type row states the action in SAPS's vocabulary — "S/L: RIFLE CAL"
+ * or "MANUALLY OPERATED RIFLE" — but our Action field is FINER than that on
+ * purpose (bolt, lever, pump, single shot, break, revolver), because "a
+ * bolt-action .308" is something a motivation can reason about and "Manual" is
+ * not.
+ *
+ * So "S/L" maps cleanly onto exactly one of our options and is filled.
+ * "MANUALLY OPERATED" maps onto FIVE of them and is left for the applicant —
+ * picking one would be inventing a fact about a firearm on a document they
+ * sign, and it is the kind of detail a DFO checks against the card.
+ *
+ * This closes the gap that made firearm_action unfillable from a card at all:
+ * it is a REQUIRED field, and before this the only thing in the system that
+ * could supply it was an S16 association endorsement.
+ */
+export function mapCardAction(cardType?: string): string | undefined {
+  return selfLoadingFromText(cardType ?? '') === true
+    ? 'Semi-automatic (self-loading)'
+    : undefined;
+}
+
 /** The first serial that is present and is not the card's literal "NONE". */
 export function primarySerial(f: Partial<FirearmSnapshot>): string | undefined {
   for (const v of [f.serial, f.barrelSerial, f.receiverSerial, f.frameSerial]) {
@@ -332,6 +358,8 @@ export function cardToApplicationFirearm(
   if (model) out.firearm_model = model;
   const type = mapCardType(f.type);
   if (type) out.firearm_type = type;
+  const action = mapCardAction(f.type);
+  if (action) out.firearm_action = action;
   const calibre = keep(f.calibre);
   if (calibre) out.firearm_calibre = calibre;
   const serial = primarySerial(f);

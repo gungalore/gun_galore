@@ -100,6 +100,14 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
     'firearm_type',
     'firearm_calibre',
     'firearm_make',
+    // ⚠️ ADDED 2026-08-24. firearm_model is REQUIRED and was the one field on
+    // the applied-for firearm that NO path could fill — not this endorsement,
+    // which names the firearm in full, and not the licence-card OCR, which
+    // reads a Model row. An applicant whose every other firearm box filled
+    // itself still had to type this one, which reads as the feature not
+    // working. Operator, item 5 of twelve: "get the details from the consent
+    // or the upload and fill it."
+    'firearm_model',
     'firearm_action',
     'firearm_serial',
   ],

@@ -132,3 +132,66 @@ describe('the custody fact handed to the writer', () => {
     expect(derive('').custody_pending_outcome).toBeUndefined();
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// ITEM 5 — THE APPLIED-FOR FIREARM, FILLED FROM WHAT WE ALREADY HAVE.
+//
+// Operator: "Same for the firearm that's applied for, get the details from the
+// consent or the upload and fill it."
+//
+// Two gaps closed. firearm_action was REQUIRED and unfillable from a licence
+// card, because the card has no Action row — the only thing in the system that
+// could supply it was an S16 association endorsement. And firearm_model was
+// required and fillable by NOTHING at all.
+// ────────────────────────────────────────────────────────────────────
+describe('the action read off a licence card', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { mapCardAction, cardToApplicationFirearm } = require('./motivation-seller-consent.service');
+
+  it('⚠️ fills the action when the card says SELF-LOADING', () => {
+    expect(mapCardAction('S/L: RIFLE CAL - RIFLE/CARBINE')).toBe(
+      'Semi-automatic (self-loading)',
+    );
+    expect(mapCardAction('SELF-LOADING SHOTGUN')).toBe(
+      'Semi-automatic (self-loading)',
+    );
+  });
+
+  it('⚠️ REFUSES to pick one when the card says MANUALLY OPERATED', () => {
+    // Our Action field is finer than SAPS's wording on purpose — bolt, lever,
+    // pump, single shot and break are five different answers to "manually
+    // operated". Choosing one would invent a fact about a firearm on a
+    // document the applicant signs, and it is exactly what a DFO checks
+    // against the card.
+    expect(mapCardAction('MANUALLY OPERATED RIFLE')).toBeUndefined();
+    expect(mapCardAction('N/S/L HG')).toBeUndefined();
+  });
+
+  it('says nothing about a card that does not state the action', () => {
+    expect(mapCardAction('RIFLE')).toBeUndefined();
+    expect(mapCardAction('')).toBeUndefined();
+    expect(mapCardAction(undefined)).toBeUndefined();
+  });
+
+  it('carries the action through into the application answers', () => {
+    const out = cardToApplicationFirearm({
+      make: 'VEKTOR',
+      type: 'S/L: RIFLE CAL - RIFLE/CARBINE',
+      calibre: '5.56x45',
+      serial: 'AB123',
+    });
+    expect(out.firearm_action).toBe('Semi-automatic (self-loading)');
+    expect(out.firearm_type).toBe('Rifle');
+  });
+
+  it('leaves the action out where the card cannot settle it', () => {
+    const out = cardToApplicationFirearm({
+      make: 'HOWA',
+      type: 'MANUALLY OPERATED RIFLE',
+      calibre: '6.5MM CREEDMOOR',
+      serial: 'B477423',
+    });
+    expect(out.firearm_action).toBeUndefined();
+    expect(out.firearm_type).toBe('Rifle'); // the TYPE is still unambiguous
+  });
+});
