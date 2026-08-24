@@ -67,7 +67,7 @@ export class MotivationsConsentController {
       'https://alloutdoor.co.za';
     return this.consent.invite({
       motivationId: id,
-      applicantUserId: clerkId,
+      applicantClerkId: clerkId,
       applicantName: (body.applicantName ?? '').trim() || 'A buyer',
       name: body.name ?? '',
       phone: body.phone ?? '',

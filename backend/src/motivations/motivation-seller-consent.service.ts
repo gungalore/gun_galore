@@ -201,13 +201,45 @@ export class MotivationSellerConsentService {
    */
   async invite(args: {
     motivationId: string;
-    applicantUserId: string;
+    /**
+     * The CLERK subject, not our User.id — resolved below.
+     *
+     * ⚠️ NAMED FOR WHAT IT IS. It was `applicantUserId`, the controller passed
+     * the Clerk subject into it, and the name was the whole reason nobody
+     * spotted that the value was wrong all the way down to a foreign key.
+     */
+    applicantClerkId: string;
     applicantName: string;
     name: string;
     phone: string;
     firearm: FirearmSnapshot;
     baseUrl: string;
   }) {
+    // ⚠️ RESOLVE THE CLERK SUBJECT TO OUR OWN USER ROW. `User.id` is a cuid
+    // and `User.clerkId` is `user_...`; they are different values, and
+    // ActionToken.authorisedUserId is a REQUIRED foreign key to User.id. The
+    // controller passed the Clerk subject straight through, so every invite
+    // this flow ever attempted died on a foreign-key violation — a 500, before
+    // any SMS. The witness flow does not have the bug because it resolves
+    // through requireOwnMotivation first; this is the same resolution.
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId: args.applicantClerkId },
+      select: { id: true },
+    });
+    // ⚠️ AND CHECK THE MOTIVATION IS ACTUALLY THEIRS. Nothing here did. The
+    // route is guarded, so the caller is signed in, but the id in the path was
+    // never matched against them — so any member could attach a consent to
+    // somebody else's application, overwrite a pending one, and spend our SMS
+    // credits doing it. "Not found" rather than "not yours": whether a given
+    // motivation exists is not something a stranger is entitled to learn.
+    const owns = user
+      ? await this.prisma.motivation.findFirst({
+          where: { id: args.motivationId, userId: user.id },
+          select: { id: true },
+        })
+      : null;
+    if (!user || !owns) throw new NotFoundException('Motivation not found');
+
     const name = args.name.trim();
     const phone = args.phone.trim();
     if (name.length < 2) throw new BadRequestException('Enter their name.');
@@ -281,37 +313,54 @@ export class MotivationSellerConsentService {
           },
         });
 
-    const token = await this.tokens.mint({
-      purpose: 'SELLER_CONSENT',
-      targetType: 'motivationsellerconsent',
-      targetId: row.id,
-      // Who ASKED. Never used to authenticate the caller — see the file header.
-      authorisedUserId: args.applicantUserId,
-      expiresAt: new Date(Date.now() + CONSENT_TOKEN_TTL_MS),
-    });
+    // ⚠️ EVERYTHING PAST THE ROW IS ROLLED BACK ON FAILURE. The row has to
+    // exist before the token can point at it, so a mint or send that throws
+    // used to leave a row sitting at INVITED with no token and no SMS — and
+    // because the resend cooldown below keys on updatedAt, that dead row then
+    // locked the applicant out of retrying for a full minute. A first attempt
+    // that fails must cost nothing.
+    try {
+      const token = await this.tokens.mint({
+        purpose: 'SELLER_CONSENT',
+        targetType: 'motivationsellerconsent',
+        targetId: row.id,
+        // Who ASKED. Never used to authenticate the caller — see the file header.
+        authorisedUserId: user.id,
+        expiresAt: new Date(Date.now() + CONSENT_TOKEN_TTL_MS),
+      });
 
-    const link = `${args.baseUrl.replace(/\/$/, '')}/consent/${token}`;
-    const sent = await this.sms.sendSms({
-      to: phone,
-      message:
-        `${args.applicantName} is applying for a licence for the ` +
-        `${args.firearm.make} (serial ${
-          [
-            args.firearm.serial,
-            args.firearm.barrelSerial,
-            args.firearm.receiverSerial,
-            args.firearm.frameSerial,
-          ]
-            .map((v) => (v ?? '').trim())
-            .find((v) => v && v.toUpperCase() !== 'NONE') ?? '—'
-        }) and needs your consent as the current owner.\n\n${link}\n\n` +
-        `This link works for 48 hours. All Outdoor.`,
-      reference: `consent-${row.id}`,
-    });
-    if (!sent.success) {
-      throw new BadRequestException(
-        'Could not send the SMS. Check the number and try again.',
-      );
+      const link = `${args.baseUrl.replace(/\/$/, '')}/consent/${token}`;
+      const sent = await this.sms.sendSms({
+        to: phone,
+        message:
+          `${args.applicantName} is applying for a licence for the ` +
+          `${args.firearm.make} (serial ${
+            [
+              args.firearm.serial,
+              args.firearm.barrelSerial,
+              args.firearm.receiverSerial,
+              args.firearm.frameSerial,
+            ]
+              .map((v) => (v ?? '').trim())
+              .find((v) => v && v.toUpperCase() !== 'NONE') ?? '—'
+          }) and needs your consent as the current owner.\n\n${link}\n\n` +
+          `This link works for 48 hours. All Outdoor.`,
+        reference: `consent-${row.id}`,
+      });
+      if (!sent.success) {
+        throw new BadRequestException(
+          'Could not send the SMS. Check the number and try again.',
+        );
+      }
+    } catch (err) {
+      // Only a row THIS call created. An existing one predates the failure and
+      // deleting it would throw away a consent the applicant already had.
+      if (!existing) {
+        await this.prisma.motivationSellerConsent
+          .delete({ where: { id: row.id } })
+          .catch(() => undefined);
+      }
+      throw err;
     }
 
     this.logger.log(`Invited seller consent ${row.id}`);

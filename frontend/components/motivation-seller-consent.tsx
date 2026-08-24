@@ -42,9 +42,26 @@ export default function MotivationSellerConsent({
   const { getToken } = useAuth();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [serial, setSerial] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ⚠️ THE SERIAL HAS NOWHERE ELSE TO COME FROM ON THE DEFAULT PATH, WHICH
+  // MADE THIS WHOLE PANEL UNREACHABLE. The server refuses an invite without a
+  // serial — correctly, since a consent that does not name the firearm gives a
+  // DFO nothing to match. But the only serial in the registry, firearm_serial,
+  // is formOnly: it is hidden unless the applicant opted into having the SAPS
+  // 271 filled in, and NOT ANSWERING THAT QUESTION IS THE DEALER PATH, which
+  // is the default. So on the ordinary route the refusal named a box that was
+  // not on screen anywhere. Asking for it here is the smallest fix that does
+  // not weaken the gate: the applicant buying privately can see the firearm.
+  const known = (firearm.serial ?? '').trim();
+  const needsSerial = !known || known.toUpperCase() === 'NONE';
+  const serialToSend = needsSerial ? serial.trim() : known;
+  // Make is a normal required field in "The firearm", so it has a home already
+  // — point at it rather than duplicating the question down here.
+  const makeMissing = !(firearm.make ?? '').trim();
 
   const send = async () => {
     setBusy(true);
@@ -54,7 +71,7 @@ export default function MotivationSellerConsent({
         name,
         phone,
         applicantName,
-        firearm,
+        firearm: { ...firearm, serial: serialToSend },
       });
       setSent(true);
     } catch (e) {
@@ -124,6 +141,22 @@ export default function MotivationSellerConsent({
         />
       </label>
 
+      {needsSerial && (
+        <label className="mt-2 block text-xs text-[var(--text-secondary)]">
+          The firearm&rsquo;s serial number
+          <input
+            value={serial}
+            onChange={(e) => setSerial(e.target.value)}
+            className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          />
+          <span className="mt-1 block text-[var(--text-tertiary)]">
+            The consent has to name the firearm it is about, so the owner can
+            check it is theirs before signing. Ask them for it if you do not
+            have it in front of you.
+          </span>
+        </label>
+      )}
+
       {/* ⚠️ TELL THEM TO SPEAK TO THE SELLER FIRST. A stranger receiving an
           unexplained SMS about a firearm licence is a stranger who ignores it,
           and the applicant then waits on a link that was never going to move. */}
@@ -131,12 +164,27 @@ export default function MotivationSellerConsent({
         Speak to them first so they know it is coming.
       </p>
 
+      {/* Caught here rather than at the server: the make lives in "The
+          firearm" and the applicant needs telling where to go, not a refusal. */}
+      {makeMissing && (
+        <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+          Fill in the firearm&rsquo;s make under &ldquo;The firearm&rdquo;
+          first &mdash; the owner is consenting to one specific firearm.
+        </p>
+      )}
+
       {error && <p className="mt-2 text-xs text-[var(--red)]">{error}</p>}
 
       <button
         type="button"
         onClick={send}
-        disabled={busy || name.trim().length < 2 || phone.trim().length < 9}
+        disabled={
+          busy ||
+          name.trim().length < 2 ||
+          phone.trim().length < 9 ||
+          makeMissing ||
+          !serialToSend
+        }
         className="mt-3 w-full rounded-[var(--radius)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
       >
         {busy ? 'Sending…' : 'Send them the link'}
