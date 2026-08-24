@@ -8,6 +8,12 @@ import {
   type SchemeColours,
   type TemplateFormat,
 } from './motivation-pdf.service';
+import {
+  DEFAULT_LAYOUT,
+  LAYOUTS,
+  LAYOUT_KEYS,
+  type TemplateLayout,
+} from './motivation-pdf-layouts';
 
 // ────────────────────────────────────────────────────────────────────
 // THE TEMPLATE CATALOGUE — what the picker renders.
@@ -49,6 +55,26 @@ export interface TemplateFormatOption {
 export interface TemplateSchemeOption extends SchemeColours {
   key: Scheme;
   name: string;
+}
+
+/**
+ * One layout, as the picker and the preview need it.
+ *
+ * ⚠️ TOKENS, NOT A RENDERED PAGE — the same hard constraint the whole
+ * catalogue is built on. Operator, 2026-08-19: "we must never open it in a
+ * window with a print option to prevent them printing to pdf." So the preview
+ * is drawn in the DOM from these, and there is no document on the wire that
+ * could be saved.
+ */
+export interface TemplateLayoutOption {
+  key: TemplateLayout;
+  name: string;
+  blurb: string;
+  cover: string;
+  heading: string;
+  bodyFace: 'serif' | 'sans';
+  runningBanner: boolean;
+  hangingRule: boolean;
 }
 
 /**
@@ -106,7 +132,20 @@ export interface TemplateCatalogue {
    * them; renaming the field would have been a client change for no gain.
    */
   colours: TemplateSchemeOption[];
-  defaults: { format: TemplateFormat; colourway: Scheme };
+  /**
+   * The five ways the same document can be set.
+   *
+   * ⚠️ A SEPARATE AXIS FROM `colours`, and the picker must present it as one.
+   * Fifty combinations, none of them special: a layout says WHERE the ink
+   * goes, a scheme says WHICH ink. It is also NOT the retired concise/standard
+   * axis returning — every layout carries every section.
+   */
+  layouts: TemplateLayoutOption[];
+  defaults: {
+    format: TemplateFormat;
+    colourway: Scheme;
+    layout: TemplateLayout;
+  };
 }
 
 export function templateCatalogue(): TemplateCatalogue {
@@ -124,6 +163,22 @@ export function templateCatalogue(): TemplateCatalogue {
     // ⚠️ MUST MATCH asFormat/asScheme in the renderer, which fall back to
     // exactly these — a picker opening on anything else would show a member a
     // selection their document does not have.
-    defaults: { format: 'comprehensive', colourway: DEFAULT_SCHEME },
+    layouts: LAYOUT_KEYS.map((key) => ({
+      key,
+      name: LAYOUTS[key].name,
+      blurb: LAYOUTS[key].blurb,
+      // The tokens the client needs to DRAW the mock page, so the preview can
+      // differ per layout without the client knowing how a PDF is built.
+      cover: LAYOUTS[key].cover,
+      heading: LAYOUTS[key].heading,
+      bodyFace: LAYOUTS[key].bodyFace,
+      runningBanner: LAYOUTS[key].runningBanner,
+      hangingRule: LAYOUTS[key].hangingRule,
+    })),
+    defaults: {
+      format: 'comprehensive',
+      colourway: DEFAULT_SCHEME,
+      layout: DEFAULT_LAYOUT,
+    },
   };
 }

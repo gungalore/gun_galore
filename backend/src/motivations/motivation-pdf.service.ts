@@ -19,6 +19,11 @@ import { closingRule, drawMark, type MarkName } from './motivation-pdf-marks';
 import * as K from './motivation-pdf-chrome';
 import { renderStatementForm } from './motivation-pdf-form';
 import type { CharacterStatementForm } from './motivation-character-statement';
+import {
+  LAYOUTS,
+  asLayout,
+  type TemplateLayout,
+} from './motivation-pdf-layouts';
 
 // ────────────────────────────────────────────────────────────────────
 // The formal motivation document. This is the thing the applicant signs and
@@ -288,6 +293,15 @@ export interface MotivationPdfInput {
   templateVersion: string;
   /** Only one format remains; accepted so older callers still type-check. */
   format?: TemplateFormat;
+  /**
+   * How the document is SET - cover, headings, furniture, body face.
+   *
+   * WARNING: NOT THE OLD FORMAT AXIS. `format` decided how much document; that
+   * question was settled in favour of `comprehensive` on 2026-08-21 and stays
+   * settled. This decides only how the same content looks. Every layout
+   * carries every section. See motivation-pdf-layouts.
+   */
+  layout?: TemplateLayout;
   /**
    * Which of the ten schemes. Defaults to eucalyptus, the handoff's own.
    *
@@ -567,6 +581,7 @@ export class MotivationPdfService {
     // before the formats were consolidated renders as comprehensive.
     const feat = FORMAT_FEATURES[asFormat(input.format)];
     const C = SCHEMES[asScheme(input.colourway)];
+    const L = LAYOUTS[asLayout(input.layout)];
 
     // \u26a0\ufe0f A MISSING FONT MUST NOT FAIL A DOWNLOAD. registerFonts returns
     // false when the assets did not ship \u2014 see the path-resolution note in
@@ -969,6 +984,7 @@ export class MotivationPdfService {
         mark
           ? (mx, my, ms) => drawMark(chrome, mark, mx, my, ms, C.deep, 0.55)
           : undefined,
+        L.heading,
       );
 
       // ⚠️ PUT THE CURSOR BACK. pdfkit's text(str, x, y) leaves doc.x AT x, and
@@ -2182,7 +2198,15 @@ export class MotivationPdfService {
       // strip and nothing else. Drawing the 16 mm running banner over it would
       // put a second gradient across the title.
       if (i > 0) {
-        K.banner(chrome, `${shortName} \u25c7 Motivation`, pageLabels[i] ?? '');
+        // WARNING: NOT EVERY LAYOUT CARRIES A RUNNING BANNER. The quieter ones
+        // put nothing across the top of a body page at all, which is the
+        // single biggest difference between reading a Banner pack and a
+        // Classic one. The footer already names the reference, the applicant
+        // and the page on every page, so nothing identifying is lost when the
+        // banner goes.
+        if (L.runningBanner) {
+          K.banner(chrome, `${shortName} \u25c7 Motivation`, pageLabels[i] ?? '');
+        }
       }
 
       // The footer strip: one wash band, one line of small caps naming the

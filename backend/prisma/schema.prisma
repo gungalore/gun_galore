@@ -4295,6 +4295,11 @@ model Motivation {
   // without decrypting the answers blob.
   templateFormat    String? @db.VarChar(20)
   templateColourway String? @db.VarChar(20)
+  /// Which of the five LAYOUTS the pack is set in - cover, section headings,
+  /// running furniture, body face. Orthogonal to templateColourway: the layout
+  /// says where the ink goes, the scheme says which ink. Null = 'banner', the
+  /// existing document. See motivation-pdf-layouts.ts.
+  templateLayout    String? @db.VarChar(20)
 
   /// WHICH PHOTOGRAPH GOES ON THE COVER, and whether the applicant has looked
   /// at it.

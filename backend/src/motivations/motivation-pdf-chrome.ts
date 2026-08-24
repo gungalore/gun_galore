@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SchemeColours } from './motivation-pdf.service';
+import type { HeadingStyle } from './motivation-pdf-layouts';
 
 // ────────────────────────────────────────────────────────────────────
 // THE PAGE FURNITURE — banner, footer strip, section headers, panels.
@@ -554,8 +555,116 @@ export function watermark({ doc, f }: Chrome): void {
  *
  * @returns the y the section's body should start at.
  */
-export function sectionHeader(
+/**
+ * The four headings that are not the original band.
+ *
+ * ⚠️ EACH ONE RETURNS THE Y THE BODY STARTS AT, exactly as the band does, and
+ * that contract is what keeps the rest of the renderer ignorant of layout. A
+ * heading that returned the wrong baseline would not look wrong — it would
+ * overlap the first paragraph, on one layout, somewhere down page four.
+ *
+ * ⚠️ AND NONE OF THEM HARD-CODES A COLOUR. Every value comes from the scheme,
+ * so all five layouts work in all ten colourways. A heading that reached for
+ * a literal would be right in one scheme and wrong in nine.
+ */
+function alternateHeader(
   { doc, c, f }: Chrome,
+  number: string,
+  title: string,
+  y: number,
+  style: HeadingStyle,
+  drawMark?: (x: number, y: number, size: number) => void,
+): number {
+  const upper = title.toUpperCase();
+
+  if (style === 'underline') {
+    // Centred small caps over a hairline the full width of the column.
+    const size = px(12);
+    const tracking = size * 0.26;
+    doc.font(f.sansSemi).fontSize(size).fillColor(c.deep);
+    doc.text(upper, PAD_X, y, {
+      width: CONTENT_W,
+      align: 'center',
+      characterSpacing: tracking,
+      lineBreak: false,
+    });
+    const ruleY = y + size * 1.5;
+    doc
+      .moveTo(PAD_X, ruleY)
+      .lineTo(PAD_X + CONTENT_W, ruleY)
+      .lineWidth(0.9)
+      .strokeColor(c.hair)
+      .stroke();
+    return ruleY + mm(5);
+  }
+
+  if (style === 'numeral') {
+    // A large numeral hanging in the margin, the title set beside it.
+    const numSize = px(30);
+    const titleSize = px(13);
+    doc.font(f.sansBold).fontSize(numSize).fillColor(c.band);
+    doc.text(number, PAD_X, y, { lineBreak: false });
+    const numW = doc.widthOfString(number);
+    const tx = PAD_X + numW + px(10);
+    doc
+      .font(f.sansBold)
+      .fontSize(titleSize)
+      .fillColor(c.deep)
+      .text(upper, tx, y + numSize * 0.45, {
+        width: CONTENT_W - (tx - PAD_X),
+        characterSpacing: titleSize * 0.2,
+        lineBreak: false,
+      });
+    if (drawMark) {
+      const markSize = mm(5.8);
+      const mx = PAD_X + CONTENT_W - markSize;
+      drawMark(mx, y + numSize * 0.35, markSize);
+    }
+    return y + numSize * 1.15 + mm(4);
+  }
+
+  if (style === 'bar') {
+    // A short heavy bar, then the title on the same line.
+    const size = px(12.5);
+    const barW = mm(9);
+    const barH = size * 0.9;
+    doc.rect(PAD_X, y + size * 0.15, barW, barH).fill(c.deep);
+    const tx = PAD_X + barW + px(9);
+    doc
+      .font(f.sansBold)
+      .fontSize(size)
+      .fillColor(c.deep)
+      .text(`${number}  ${upper}`, tx, y, {
+        width: CONTENT_W - (tx - PAD_X),
+        characterSpacing: size * 0.2,
+        lineBreak: false,
+      });
+    if (drawMark) {
+      const markSize = mm(5.8);
+      const mx = PAD_X + CONTENT_W - markSize;
+      if (mx > tx + mm(30)) drawMark(mx, y - px(1), markSize);
+    }
+    return y + size * 1.6 + mm(3.5);
+  }
+
+  // 'caps' — letterspaced small caps, generous air, no rule and no fill. The
+  // quietest of the five: nothing on the page but type.
+  const size = px(11.5);
+  const tracking = size * 0.42;
+  doc
+    .font(f.sansSemi)
+    .fontSize(size)
+    .fillColor(c.mut)
+    .text(`${number} — ${upper}`, PAD_X, y, {
+      width: CONTENT_W,
+      characterSpacing: tracking,
+      lineBreak: false,
+    });
+  return y + size * 1.4 + mm(6);
+}
+
+export function sectionHeader(
+  chrome: Chrome,
   number: string,
   title: string,
   y: number,
@@ -568,7 +677,26 @@ export function sectionHeader(
    * a long way from the file that caused it.
    */
   drawMark?: (x: number, y: number, size: number) => void,
+  /**
+   * How this layout announces a section.
+   *
+   * ⚠️ LAST, AND AFTER drawMark, DELIBERATELY. Inserting it before an existing
+   * optional parameter silently rebinds every positional call — the renderer's
+   * own drawMark callback started arriving here as `style`, which tsc caught
+   * only because the types happened to be incompatible. A parameter that had
+   * been `string` would have compiled and drawn the wrong heading.
+   *
+   * ⚠️ AND IT IS THE HEADING THAT MAKES TWO LAYOUTS LOOK LIKE DIFFERENT
+   * DOCUMENTS. The cover is seen once; this is seen on every section of every
+   * page. Defaults to the original band, so every stored preference and every
+   * caller that has not been updated is unaffected.
+   */
+  style: HeadingStyle = 'band',
 ): number {
+  const { doc, c, f } = chrome;
+  if (style !== 'band') {
+    return alternateHeader(chrome, number, title, y, style, drawMark);
+  }
   const label = `${number} · ${title.toUpperCase()}`;
   const size = px(11);
   const padX = px(15);

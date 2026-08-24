@@ -26,6 +26,7 @@ import {
 } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
+import { asLayout } from './motivation-pdf-layouts';
 import { consentFormFor } from './motivation-consent-statement';
 import { MotivationClaudeService } from './motivation-claude.service';
 import {
@@ -609,11 +610,13 @@ export class MotivationsService {
       declarationAcceptedAt: row.declarationAcceptedAt,
       hasDocument: !!row.documentTextEncrypted,
       documentVersion: row.documentVersion,
-      // Which of the fifteen templates this pack is set in. Validated on read
-      // because the columns are plain VARCHARs — see asFormat/asScheme.
+      // Which of the fifty settings this pack is in - five layouts times ten
+      // colourways. Validated on read because the columns are plain VARCHARs;
+      // see asFormat/asScheme/asLayout.
       template: {
         format: asFormat(row.templateFormat),
         colourway: asScheme(row.templateColourway),
+        layout: asLayout(row.templateLayout),
       },
       // ⚠️ WATERMARK UNTIL IT IS PAID FOR. Operator, 2026-08-19: "Be sure to
       // watermark any item that has not been paid for"; and again 2026-08-22,
@@ -3261,7 +3264,7 @@ export class MotivationsService {
   async setTemplate(
     clerkId: string,
     id: string,
-    choice: { format?: string; colourway?: string },
+    choice: { format?: string; colourway?: string; layout?: string },
   ) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
@@ -3283,13 +3286,21 @@ export class MotivationsService {
         ...(choice.colourway !== undefined
           ? { templateColourway: asScheme(choice.colourway) }
           : {}),
+        ...(choice.layout !== undefined
+          ? { templateLayout: asLayout(choice.layout) }
+          : {}),
       },
-      select: { templateFormat: true, templateColourway: true },
+      select: {
+        templateFormat: true,
+        templateColourway: true,
+        templateLayout: true,
+      },
     });
 
     return {
       format: asFormat(updated.templateFormat),
       colourway: asScheme(updated.templateColourway),
+      layout: asLayout(updated.templateLayout),
     };
   }
 
@@ -3310,6 +3321,7 @@ export class MotivationsService {
         completedAt: true,
         templateFormat: true,
         templateColourway: true,
+        templateLayout: true,
         structurePlan: true,
         coverPhotoChoice: true,
         coverPhotoKey: true,
@@ -3417,6 +3429,7 @@ export class MotivationsService {
       // unrecognised value falls back rather than failing the download.
       format: asFormat(row.templateFormat),
       colourway: asScheme(row.templateColourway),
+      layout: asLayout(row.templateLayout),
       // See isPaidFor. Payments are not live, so today this stamps almost
       // every download — which is the right way round.
       watermark: !isPaidFor(row),

@@ -1,0 +1,23 @@
+-- Which of the five layouts the applicant picked for their pack.
+--
+-- Operator, 2026-08-24: "we need at least 5 styles that looks vastly different
+-- from each other but still have all the same information in. each style can
+-- be chosen in the color we already offer."
+--
+-- A SECOND AXIS BESIDE templateColourway, NOT A REPLACEMENT FOR IT. Ten
+-- schemes times five layouts is fifty combinations: the layout says where the
+-- ink goes, the scheme says which ink.
+--
+-- NOT the retired concise/standard format axis returning. That varied the
+-- CONTENT and was settled in favour of `comprehensive` on 2026-08-21. Every
+-- layout carries every section.
+--
+-- A plain VarChar for the same reason templateFormat and templateColourway are:
+-- adding or retiring a layout is then a code deploy and a picker row, never an
+-- ALTER TYPE — which is one-way and cannot run in the transaction that adds it.
+-- The renderer validates and falls back, so an unknown value degrades to the
+-- default rather than failing a download somebody has already paid for.
+--
+-- NULLABLE, and null means the default ('banner' — the existing document). No
+-- backfill: nobody's pack changes shape because a new axis was added under it.
+ALTER TABLE "Motivation" ADD COLUMN "templateLayout" VARCHAR(20);
