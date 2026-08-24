@@ -195,3 +195,71 @@ describe('the action read off a licence card', () => {
     expect(out.firearm_type).toBe('Rifle'); // the TYPE is still unambiguous
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE ESTATE ROUTE, WHICH HAD NO WAY IN.
+//
+// Routing spec §5.4 D. EXECUTOR_APPOINTMENT has carried a label and guidance
+// since the document list was written — "SAPS asks for the letter of
+// appointment as executor by name, and an estate firearm cannot be licensed
+// without it" — and appeared in NO tier of any licence type. So an heir
+// applying for their late father's rifle could not say that was what they were
+// doing, and had no slot for the one document the application cannot proceed
+// without.
+// ────────────────────────────────────────────────────────────────────
+describe('inheriting a firearm', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { SOURCE_ESTATE } = require('./motivation-fields');
+  const status = (source: string) =>
+    documentStatus(MotivationLicenceType.S16_DEDICATED_HUNTER, [], {
+      firearm_source: source,
+    } as Record<string, string>);
+
+  it('⚠️ REQUIRES the executor letter — not "expected", not "helpful"', () => {
+    // It is not a document that strengthens a case; it establishes that the
+    // applicant may deal with the firearm at all.
+    const row = status(SOURCE_ESTATE).needs.find(
+      (n) => n.kind === 'EXECUTOR_APPOINTMENT',
+    );
+    expect(row?.tier).toBe('required');
+  });
+
+  it('does not ask any other route for it', () => {
+    for (const s of [SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_UNDECIDED, '']) {
+      expect(
+        status(s).needs.some((n) => n.kind === 'EXECUTOR_APPOINTMENT'),
+      ).toBe(false);
+    }
+  });
+
+  it('⚠️ does NOT drag in the private-seller consent', () => {
+    // There is no living seller to consent. Asking an heir to obtain the
+    // deceased's permission is the kind of thing that makes a form feel
+    // written by somebody who has never used it.
+    expect(
+      status(SOURCE_ESTATE).needs.some((n) => n.kind === 'SELLER_LICENCE'),
+    ).toBe(false);
+  });
+
+  it('asks for it in words that say why it is required', () => {
+    const why = sourceProofWhy(SOURCE_ESTATE);
+    expect(why).toMatch(/executor/i);
+    expect(why).toMatch(/cannot be licensed without it/i);
+  });
+
+  it('⚠️ states custody WITHOUT implying the heir already holds it', () => {
+    // The heir is the person most likely to be living in the same house as the
+    // firearm. A motivation implying they were keeping it would describe an
+    // offence on a document they sign.
+    const svc = Object.create(
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('./motivations.service').MotivationsService.prototype,
+    ) as { deriveFacts: (a: Record<string, string>, d?: Date) => Record<string, string> };
+    const d = svc.deriveFacts(
+      { firearm_source: SOURCE_ESTATE },
+      new Date('2026-08-24T00:00:00Z'),
+    );
+    expect(d.custody_pending_outcome).toMatch(/held by the estate/i);
+    expect(d.custody_pending_outcome).not.toMatch(/in my possession|i hold/i);
+  });
+});

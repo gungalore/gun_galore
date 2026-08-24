@@ -71,6 +71,19 @@ export const FIREARM_SOURCE_KEY = 'firearm_source';
 export const SOURCE_DEALER = 'From a dealer';
 export const SOURCE_PRIVATE = 'From a private owner';
 export const SOURCE_UNDECIDED = 'Not decided yet';
+/**
+ * Inherited from a deceased estate.
+ *
+ * ⚠️ A ROUTE WITH ITS OWN REQUIRED DOCUMENT, AND IT WAS UNREACHABLE. The
+ * EXECUTOR_APPOINTMENT upload kind has carried a label and guidance since the
+ * document list was written — "SAPS asks for the letter of appointment as
+ * executor by name, and an estate firearm cannot be licensed without it" — and
+ * appeared in NO tier of any licence type, so nothing ever asked for it. An
+ * heir applying for their father's rifle had no way to say that was what they
+ * were doing, and no slot for the one document the application cannot proceed
+ * without. Operator's routing spec §5.4 D.
+ */
+export const SOURCE_ESTATE = 'Inherited from a deceased estate';
 
 export const SAPS271_OPT_KEY = 'fill_saps271';
 export const SAPS271_FILL = 'Fill it in for me';
@@ -555,7 +568,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Where is this firearm coming from?',
     kind: 'choice',
     section: 'The firearm',
-    choices: [SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_UNDECIDED],
+    choices: [SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_ESTATE, SOURCE_UNDECIDED],
     help: 'A dealer sale and a private transfer need different paperwork at the counter. Telling us which lets us ask for the right documents instead of all of them.',
     // ⚠️ NOT formOnly, DELIBERATELY, AND IT IS THE WHOLE POINT. formOnly hangs
     // a field off the SAPS 271 opt-in, so a member whose dealer fills the form

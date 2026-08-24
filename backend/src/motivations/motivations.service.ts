@@ -83,6 +83,7 @@ import {
   FIREARM_SOURCE_KEY,
   LICENCE_TYPE_LABELS,
   SOURCE_DEALER,
+  SOURCE_ESTATE,
   SOURCE_PRIVATE,
   fieldByKey,
   fieldsFor,
@@ -4229,6 +4230,15 @@ export class MotivationsService {
     } else if (source === SOURCE_PRIVATE) {
       derived.custody_pending_outcome =
         'The current licensed owner keeps the firearm until the licence is granted, and the transfer is then done through a licensed dealer.';
+    } else if (source === SOURCE_ESTATE) {
+      // ⚠️ THE ESTATE HOLDS IT, AND SAYING SO MATTERS MORE HERE THAN ANYWHERE.
+      // An heir living in the deceased's house is the person most likely to
+      // have the firearm in the same building already, and a motivation that
+      // implied they were keeping it would describe an offence on a document
+      // they sign. An estate firearm is held by the executor, in a licensed
+      // dealer's safe or with SAPS, until the licence is decided.
+      derived.custody_pending_outcome =
+        'The firearm is held by the estate — with a licensed dealer or SAPS — until the licence is granted and it is transferred through a dealer.';
     }
 
     return derived;

@@ -2,6 +2,7 @@ import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
   FIREARM_SOURCE_KEY,
   SOURCE_DEALER,
+  SOURCE_ESTATE,
   SOURCE_PRIVATE,
 } from './motivation-fields';
 
@@ -315,6 +316,14 @@ export function sourceProofWhy(source: string): string {
       'your licence is granted.'
     );
   }
+  if (source === SOURCE_ESTATE) {
+    return (
+      'The letter of appointment as executor, plus anything the estate has ' +
+      'given you about the firearm. SAPS asks for the letter by name and an ' +
+      'estate firearm cannot be licensed without it, so this one is required ' +
+      'rather than helpful. It is printed into your pack as an annexure.'
+    );
+  }
   if (source === SOURCE_PRIVATE) {
     return (
       'A letter from the person who currently owns the firearm saying they agree ' +
@@ -476,6 +485,18 @@ export function documentStatus(
   // application written before the firearm is found is normal — the motivation
   // is what the dealer or the seller gets shown.
   const source = (answers[FIREARM_SOURCE_KEY] ?? '').trim();
+  // ⚠️ AN ESTATE FIREARM CANNOT BE LICENSED WITHOUT THE LETTER OF
+  // APPOINTMENT, and until now nothing asked for it: EXECUTOR_APPOINTMENT had
+  // a label and guidance and sat in no tier of any licence type. REQUIRED
+  // rather than expected, because this is not a document that strengthens a
+  // case — it is the document that establishes the applicant may deal with the
+  // firearm at all. Routing spec §5.4 D.
+  if (source === SOURCE_ESTATE && licenceType !== 'S24_RENEWAL') {
+    if (!required.includes('EXECUTOR_APPOINTMENT')) {
+      required.push('EXECUTOR_APPOINTMENT');
+    }
+  }
+
   if (source === SOURCE_PRIVATE && licenceType !== 'S24_RENEWAL') {
     // The seller's licence proves the person consenting is entitled to
     // consent. It sat at the bottom of the picker as an "extra" — reachable

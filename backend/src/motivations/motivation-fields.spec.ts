@@ -11,6 +11,7 @@ import {
   SAPS271_OPT_KEY,
   FIREARM_SOURCE_KEY,
   SOURCE_DEALER,
+  SOURCE_ESTATE,
   SOURCE_PRIVATE,
   SOURCE_UNDECIDED,
   YES_NO,
@@ -778,13 +779,19 @@ describe('where the firearm is coming from', () => {
     }
   });
 
-  it('offers exactly the three routes, and does not force one', () => {
+  it('offers exactly the four routes, and does not force one', () => {
+    // ⚠️ PINNED ON PURPOSE. Each route drives a different required document
+    // and a different custody statement, so a route added without its routing
+    // is a dead option and a route removed silently strands whoever picked it.
+    // The estate route joined on 2026-08-24 and brought EXECUTOR_APPOINTMENT
+    // into a tier for the first time.
     const f = fieldsFor(MotivationLicenceType.S13_SELF_DEFENCE).find(
       (x) => x.key === FIREARM_SOURCE_KEY,
     )!;
     expect(f.choices).toEqual([
       SOURCE_DEALER,
       SOURCE_PRIVATE,
+      SOURCE_ESTATE,
       SOURCE_UNDECIDED,
     ]);
     // ⚠️ NOT REQUIRED. Plenty of applications are written before the firearm
