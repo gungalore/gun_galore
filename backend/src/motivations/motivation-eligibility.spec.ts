@@ -63,7 +63,7 @@ describe('what a section will not permit', () => {
   it('⚠️ BLOCKS a self-loading rifle under section 13', () => {
     const out = applicationBlockers(MotivationLicenceType.S13_SELF_DEFENCE, SL_RIFLE);
     expect(out.map((b) => b.code)).toContain('section-forbids-firearm');
-    expect(out[0].message).toMatch(/handgun or a shotgun/i);
+    expect(out[0].message).toMatch(/rifle or carbine cannot be licensed/i);
     // It must say what WOULD work, not only what does not.
     expect(out[0].message).toMatch(/different section/i);
   });
@@ -73,20 +73,40 @@ describe('what a section will not permit', () => {
     expect(out.map((b) => b.code)).toContain('section-forbids-firearm');
   });
 
-  it('⚠️ ALLOWS a self-loading shotgun under section 13 — the exception', () => {
-    // The one self-loading firearm section 13 takes. A blanket "no
-    // self-loading under S13" rule would wrongly refuse it.
-    expect(
-      applicationBlockers(MotivationLicenceType.S13_SELF_DEFENCE, SL_SHOTGUN),
-    ).toEqual([]);
+  it('⚠️ BLOCKS a semi-automatic shotgun under section 13', () => {
+    // ⚠️ THIS TEST ASSERTED THE OPPOSITE. It read "ALLOWS a self-loading
+    // shotgun under section 13 — the exception", and the wizard told
+    // applicants so. s13(1)(a) of the Act: "shotgun which is NOT FULLY OR
+    // SEMI-AUTOMATIC". A semi-automatic shotgun is a restricted firearm under
+    // s14(1)(a). Reference v3 §12 #1 lists this as the correction that "could
+    // cause real harm".
+    const out = applicationBlockers(
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      SL_SHOTGUN,
+    );
+    expect(out.map((b) => b.code)).toContain('section-forbids-firearm');
+    // And it must name the way through, not just the refusal.
+    expect(out[0].message).toMatch(/section 14/i);
   });
 
-  it('allows a pistol under section 13', () => {
+  it('allows a pistol under section 13, semi-automatic or not', () => {
+    // s13(1)(b) excludes only the FULLY automatic handgun.
     expect(applicationBlockers(MotivationLicenceType.S13_SELF_DEFENCE, PISTOL)).toEqual([]);
   });
 
-  it('blocks every self-loading firearm under section 15', () => {
-    for (const f of [SL_RIFLE, SL_SHOTGUN, PISTOL]) {
+  it('⚠️ ALLOWS a semi-automatic pistol under section 15', () => {
+    // ⚠️ THE SAME BUG POINTING THE OTHER WAY, AND THIS ONE REFUSED LAWFUL
+    // APPLICATIONS. The rule was "section 15 excludes self-loading firearms",
+    // applied to every firearm. s15(1) draws the line per type: "(a) handgun
+    // which is not fully automatic; (b) rifle or shotgun which is not fully
+    // or semi-automatic". A semi-automatic pistol under s15 is ordinary.
+    expect(
+      applicationBlockers(MotivationLicenceType.S15_OCCASIONAL_HUNTER, PISTOL),
+    ).toEqual([]);
+  });
+
+  it('blocks a semi-automatic RIFLE or SHOTGUN under section 15', () => {
+    for (const f of [SL_RIFLE, SL_SHOTGUN]) {
       const out = applicationBlockers(MotivationLicenceType.S15_OCCASIONAL_HUNTER, f);
       expect(out.map((b) => b.code)).toContain('section-forbids-firearm');
     }

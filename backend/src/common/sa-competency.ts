@@ -16,7 +16,7 @@
 // LAW. Its own changelog (§12) lists fifteen errors, several of which were
 // transcribed straight into this file and shipped. Anything here that reads
 // like settled fact should be checked against the committed reference before
-// it is relied on again. The two that were live in production:
+// it is relied on again. Three were live in production:
 //
 //   • A MUZZLE LOADER COMPETENCY LAPSES TEN YEARS FROM ISSUE, not five —
 //     s10(3), added by s9(c) of Act 28 of 2006. v2 omitted the number and this
@@ -25,6 +25,9 @@
 //     years from its date of issue".
 //   • THE s27 LICENCE TABLE HERE WAS THE PRE-2011 ONE, and named a section
 //     16(2) that does not exist. See LICENCE_YEARS below.
+//   • sectionAllows PUT A SEMI-AUTOMATIC SHOTGUN UNDER s13 AND REFUSED A
+//     PISTOL UNDER s15 — two errors of law pointing opposite ways, both
+//     reaching applicants. See the note on that function.
 //
 // ⚠️ AND v2's HEADLINE CLAIM — "a competency certificate has no expiry date on
 // it, never parse one" — IS WITHDRAWN. §5.2: SAPS's own SAPS 271 form, section
@@ -486,38 +489,76 @@ export function deriveExpiry(args: {
 // ── what a section will actually allow ──────────────────────────────
 
 /**
- * Whether a firearm of this endorsement can be licensed under this section.
+ * Whether a firearm of this shape can be licensed under this section.
  *
- * From §7.1, worth encoding because getting it wrong wastes an application:
- * S13 takes a handgun or a shotgun only; S15 excludes self-loading firearms;
- * a self-loading rifle or carbine must therefore go under S16 with dedicated
- * status. The self-loading SHOTGUN is the exception in the self-loading group
- * — it may be licensed under S13.
+ * ⚠️ THIS FUNCTION SHIPPED TWO ERRORS OF LAW, AND THEY POINTED IN OPPOSITE
+ * DIRECTIONS. Both reached applicants through motivation-eligibility, and both
+ * came from v2 of the reference, whose changelog (§12 #1) says of the first
+ * that it "could cause real harm".
+ *
+ *   • IT SAID A SEMI-AUTOMATIC SHOTGUN COULD GO UNDER s13, and called it "the
+ *     exception in the self-loading group". s13(1)(a), read in the Act itself:
+ *     "any shotgun which is **not fully or semi-automatic**". A semi-automatic
+ *     shotgun is expressly a RESTRICTED firearm under s14(1)(a). Telling
+ *     somebody to lodge it under s13 sends them to a refusal at best.
+ *   • IT REFUSED EVERY SELF-LOADING FIREARM UNDER s15, including a pistol.
+ *     s15(1): "(a) handgun which is not fully automatic; (b) rifle or shotgun
+ *     which is not fully or semi-automatic". Semi-automatic is excluded for
+ *     RIFLES AND SHOTGUNS ONLY. A semi-automatic pistol under s15 is ordinary
+ *     and lawful, and we were blocking it.
+ *
+ * ⚠️ IT ALSO LET A MUZZLE LOADER THROUGH EVERYWHERE BUT s13, by falling out
+ * of the bottom. s3(2): a muzzle loader needs no licence at all, only the
+ * competency. Every section refuses one.
+ *
+ * ⚠️ WHAT IT DELIBERATELY DOES NOT REFUSE. Under s14, s16 and s16A this only
+ * screens out the muzzle loader, and that is a decision rather than an
+ * omission. s14(1)(b) admits any firearm the Minister declares restricted, so
+ * nothing can be ruled out categorically. s16(1)(b) reads "rifle or shotgun
+ * which is not fully automatic" while s16(1)(c) separately admits a
+ * semi-automatic shotgun "manufactured to fire no more than five shots in
+ * succession without having to be reloaded" — the two overlap, and we do not
+ * hold a magazine capacity to tell them apart. Guessing would refuse lawful
+ * applications, which is the failure this rewrite exists to stop.
+ *
+ * @param selfLoading null where the applicant has not said. Never guessed:
+ *   an unstated action is not a reason to block anybody.
  */
 export function sectionAllows(
   section: LicenceSection,
-  endorsement: Endorsement,
+  category: CompetencyCategory,
+  selfLoading: boolean | null,
 ): { ok: boolean; why?: string } {
-  const spec = endorsementSpec(endorsement);
-  if (!spec) return { ok: true };
+  // s3(2) — no licence exists for one, so no section can take it.
+  if (category === 'muzzle-loader') {
+    return {
+      ok: false,
+      why: 'A muzzle loading firearm does not take a licence at all — the competency certificate on its own is what allows you to possess it.',
+    };
+  }
 
   if (section === 'S13') {
-    if (spec.category === 'rifle-carbine') {
+    if (category === 'rifle-carbine') {
       return {
         ok: false,
-        why: 'Section 13 is for a handgun or a shotgun. A rifle or carbine cannot be licensed for self-defence.',
+        why: 'Section 13 takes a shotgun that is not semi-automatic, or a handgun that is not fully automatic. A rifle or carbine cannot be licensed for self-defence.',
       };
     }
-    if (spec.category === 'muzzle-loader') {
-      return { ok: false, why: 'A muzzle loader does not need a licence.' };
+    if (category === 'shotgun' && selfLoading === true) {
+      return {
+        ok: false,
+        why: 'Section 13 takes only a shotgun that is not semi-automatic. A semi-automatic shotgun is a restricted firearm — it goes under section 14, or under section 16 with dedicated status if it fires no more than five shots without reloading.',
+      };
     }
+    // A handgun is fine here, semi-automatic or not: s13(1)(b) excludes only
+    // fully automatic.
     return { ok: true };
   }
 
-  if (section === 'S15' && spec.selfLoading) {
+  if (section === 'S15' && selfLoading === true && category !== 'handgun') {
     return {
       ok: false,
-      why: 'Section 15 excludes self-loading firearms. A self-loading firearm needs section 16 dedicated status.',
+      why: 'Section 15 takes a rifle or shotgun only where it is not semi-automatic. A semi-automatic rifle needs section 16 with dedicated status, or section 14; a semi-automatic shotgun needs section 14, or section 16 if it fires no more than five shots without reloading.',
     };
   }
 

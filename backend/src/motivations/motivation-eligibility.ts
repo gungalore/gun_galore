@@ -1,5 +1,6 @@
 import { MotivationLicenceType } from '@prisma/client';
 import {
+  type CompetencyCategory,
   type Endorsement,
   ENDORSEMENTS,
   endorsementFromLabel,
@@ -73,18 +74,26 @@ function sectionOf(t: MotivationLicenceType): LicenceSection | null {
  *
  * Returns null when the applicant has not said enough yet.
  */
-export function requiredEndorsement(
+/**
+ * What the applicant says the firearm IS, in the two terms the Act turns on.
+ *
+ * ⚠️ THE ACTION IS NOW CARRIED SEPARATELY, and that is the point. Section
+ * eligibility turns on whether a firearm is semi-automatic — s13, s14, s15 and
+ * s16 each draw the line differently — but the endorsement no longer records
+ * it for a handgun or a shotgun, because there is no separate unit standard
+ * for either. Reading it off the endorsement was how sectionAllows came to
+ * refuse a lawful semi-automatic pistol under s15.
+ */
+export function firearmShape(
   answers: Record<string, string>,
-): Endorsement | null {
+): { category: CompetencyCategory; selfLoading: boolean } | null {
   const type = (answers.firearm_type ?? '').trim();
   const action = (answers.firearm_action ?? '').trim();
   if (!type || !action) return null;
 
-  const selfLoading = action === 'Semi-automatic (self-loading)';
-
-  // ⚠️ A COMBINATION GUN IS BOTH, so no single endorsement covers it and we
+  // ⚠️ A COMBINATION GUN IS BOTH, so no single category covers it and we
   // must not pick one. Left unresolved rather than half-answered.
-  const category =
+  const category: CompetencyCategory | null =
     type === 'Rifle'
       ? 'rifle-carbine'
       : type === 'Shotgun'
@@ -94,9 +103,19 @@ export function requiredEndorsement(
           : null;
   if (!category) return null;
 
+  return { category, selfLoading: action === 'Semi-automatic (self-loading)' };
+}
+
+export function requiredEndorsement(
+  answers: Record<string, string>,
+): Endorsement | null {
+  const shape = firearmShape(answers);
+  if (!shape) return null;
+
   return (
     ENDORSEMENTS.find(
-      (e) => e.category === category && e.selfLoading === selfLoading,
+      (e) =>
+        e.category === shape.category && e.selfLoading === shape.selfLoading,
     )?.value ?? null
   );
 }
@@ -118,8 +137,17 @@ export function applicationBlockers(
   const section = sectionOf(licenceType);
 
   // ── 1. Does this section permit this firearm at all? ──────────────
-  if (section) {
-    const verdict = sectionAllows(section, needed);
+  const shape = firearmShape(answers);
+  if (section && shape) {
+    // ⚠️ THE SHAPE, NOT THE ENDORSEMENT. See firearmShape: the endorsement
+    // cannot answer "is it semi-automatic?" for a handgun or a shotgun, and
+    // that question is what every one of these sections turns on.
+    //
+    // ⚠️ AND NO DEFAULT CATEGORY. An earlier draft of this line fell back to
+    // 'handgun' when the shape was unknown, which would have screened a
+    // firearm nobody had described against the rules for a different one.
+    // Unknown means we check nothing.
+    const verdict = sectionAllows(section, shape.category, shape.selfLoading);
     if (!verdict.ok) {
       out.push({
         code: 'section-forbids-firearm',

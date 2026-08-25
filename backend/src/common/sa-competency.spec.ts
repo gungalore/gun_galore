@@ -203,26 +203,75 @@ describe('the derived expiry — §5.2 and §5.3', () => {
 
 describe('what a section will allow — §7.1', () => {
   it('refuses a rifle or carbine under section 13', () => {
-    expect(sectionAllows('S13', 'rifle-sl').ok).toBe(false);
-    expect(sectionAllows('S13', 'rifle-mo').ok).toBe(false);
+    expect(sectionAllows('S13', 'rifle-carbine', true).ok).toBe(false);
+    expect(sectionAllows('S13', 'rifle-carbine', false).ok).toBe(false);
   });
 
-  it('⚠️ ALLOWS a SELF-LOADING SHOTGUN under section 13 — the exception', () => {
-    // The reference calls this out specifically: it is the one self-loading
-    // firearm that section 13 takes. A blanket "no self-loading under S13"
-    // rule would wrongly block it.
-    expect(sectionAllows('S13', 'shotgun-sl').ok).toBe(true);
-    expect(sectionAllows('S13', 'handgun-sl').ok).toBe(true);
+  it('⚠️ REFUSES a semi-automatic shotgun under section 13', () => {
+    // ⚠️ THIS TEST ASSERTED THE OPPOSITE, AND SAID SO IN CAPITALS. It read
+    // "ALLOWS a SELF-LOADING SHOTGUN under section 13 — the exception", on the
+    // strength of v2 of the reference. v3 §12 #1 lists that as the error that
+    // "could cause real harm", and the Act settles it in one line:
+    //
+    //   s13(1): "A firearm in respect of which a licence may be issued in
+    //   terms of this section is any— (a) shotgun which is NOT FULLY OR
+    //   SEMI-AUTOMATIC; or (b) handgun which is not fully automatic."
+    //
+    // A semi-automatic shotgun is expressly a restricted firearm under
+    // s14(1)(a). Sending an applicant to s13 with one wastes an application
+    // at best.
+    expect(sectionAllows('S13', 'shotgun', true).ok).toBe(false);
+    // The non-semi-automatic shotgun is exactly what s13(1)(a) is for.
+    expect(sectionAllows('S13', 'shotgun', false).ok).toBe(true);
   });
 
-  it('excludes every self-loading firearm from section 15', () => {
-    expect(sectionAllows('S15', 'rifle-sl').ok).toBe(false);
-    expect(sectionAllows('S15', 'shotgun-sl').ok).toBe(false);
-    expect(sectionAllows('S15', 'handgun-sl').ok).toBe(false);
-    expect(sectionAllows('S15', 'rifle-mo').ok).toBe(true);
+  it('⚠️ ALLOWS a semi-automatic pistol under section 15', () => {
+    // ⚠️ THE OTHER HALF OF THE SAME BUG, POINTING THE OTHER WAY. The rule was
+    // "section 15 excludes self-loading firearms", applied to everything. The
+    // Act draws the line per firearm type:
+    //
+    //   s15(1): "(a) handgun which is not fully automatic; (b) rifle or
+    //   shotgun which is NOT FULLY OR SEMI-AUTOMATIC".
+    //
+    // Semi-automatic is excluded for RIFLES AND SHOTGUNS ONLY. A semi-
+    // automatic pistol under s15 is ordinary and lawful, and we refused it.
+    expect(sectionAllows('S15', 'handgun', true).ok).toBe(true);
+    expect(sectionAllows('S15', 'rifle-carbine', true).ok).toBe(false);
+    expect(sectionAllows('S15', 'shotgun', true).ok).toBe(false);
+    expect(sectionAllows('S15', 'rifle-carbine', false).ok).toBe(true);
   });
 
   it('lets section 16 take a self-loading rifle, which is the whole route', () => {
-    expect(sectionAllows('S16', 'rifle-sl').ok).toBe(true);
+    expect(sectionAllows('S16', 'rifle-carbine', true).ok).toBe(true);
+  });
+
+  it('⚠️ refuses a muzzle loader under EVERY section, not just 13', () => {
+    // s3(2): a muzzle loading firearm takes no licence at all — the competency
+    // on its own is what allows possession. Only the s13 branch caught this;
+    // every other section fell out of the bottom of the function and returned
+    // ok, so the wizard would have walked somebody through a licence
+    // application for a firearm that cannot be licensed.
+    for (const section of ['S13', 'S14', 'S15', 'S16', 'S16A'] as const) {
+      expect(sectionAllows(section, 'muzzle-loader', false).ok).toBe(false);
+    }
+  });
+
+  it('blocks nothing on an unstated action', () => {
+    // ⚠️ null IS NOT false. An applicant who has not said whether their
+    // shotgun is semi-automatic has not told us it is a s13 problem, and
+    // guessing would refuse a lawful application — the exact failure the s15
+    // rule above produced for four months.
+    expect(sectionAllows('S13', 'shotgun', null).ok).toBe(true);
+    expect(sectionAllows('S15', 'rifle-carbine', null).ok).toBe(true);
+  });
+
+  it('does not pretend to screen s14, s16 or s16A beyond the muzzle loader', () => {
+    // Deliberate. s14(1)(b) admits anything the Minister declares restricted,
+    // and s16(1)(b) and (c) overlap on the semi-automatic shotgun with a
+    // five-shot limit we do not hold a magazine capacity to test. Refusing on
+    // a guess would be the same class of error as the two above.
+    expect(sectionAllows('S14', 'shotgun', false).ok).toBe(true);
+    expect(sectionAllows('S16', 'shotgun', true).ok).toBe(true);
+    expect(sectionAllows('S16A', 'handgun', true).ok).toBe(true);
   });
 });
