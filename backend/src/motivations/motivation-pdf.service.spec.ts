@@ -1,4 +1,3 @@
-import * as zlib from 'node:zlib';
 import {
   DEFAULT_SCHEME,
   FORMAT_FEATURES,
@@ -27,20 +26,73 @@ import { MotivationUploadKind } from '@prisma/client';
 // ARRAY form of bfrange and the parser only handled the contiguous form.
 //
 // pdf-parse 2.4.5 ships a CommonJS build (dist/pdf-parse/cjs/index.cjs) that
-// requires no config change at all. It reads this document completely:
-// reference, identity number, "Česká zbrojovka", and the Archivo section
-// headings the hand-rolled reader never managed. The premise the old note
-// rested on was simply out of date.
+// reads this document completely: reference, identity number, "Česká
+// zbrojovka", and the Archivo section headings the hand-rolled reader never
+// managed.
 //
-// Hours went into the version this replaced. Reading a PDF properly is a real
-// piece of work, and it was already installed.
+// ⚠️ A COMMONJS ENTRY POINT WAS NOT ENOUGH. pdfjs still reaches for its worker
+// with a dynamic `import()` the first time a document is opened, and Jest's
+// CJS runtime refuses that unless node was started with
+// --experimental-vm-modules. The `test` script passes the flag, so `npm test`
+// was green — but a bare `npx jest`, an IDE runner or a CI step that calls
+// jest directly is not, and there every assertion that reads the document
+// failed inside node_modules with
+//
+//     Setting up fake worker failed: "A dynamic import callback was invoked
+//     without --experimental-vm-modules"
+//
+// which looks like an infrastructure problem and gets treated as one. These
+// are the compliance assertions — disclaimer carried, no outcome language, no
+// mascot branding, prose paginated rather than truncated, the unpaid mark on
+// every page — so red-and-explained-away is the worst state for them.
+//
+// The reader is therefore loaded through NODE'S OWN module loader rather than
+// Jest's sandboxed one. Node 22.12+ can require() an ES module, so pdf-parse
+// and the pdfjs worker behind it both resolve natively, outside the vm where
+// the restriction lives, whatever flags jest was started with. Nothing about
+// the assertions changes — the bytes handed over are the real rendered
+// document, and pdfjs really parses them.
+//
+// The require() fallback is the same reader under Jest's loader: it keeps the
+// flagged invocation working if Module._load ever goes away, and fails loudly
+// rather than quietly stubbing the document out.
 // ────────────────────────────────────────────────────────────────────
+type PdfParseModule = {
+  PDFParse: new (opts: { data: Uint8Array }) => {
+    getText(): Promise<{ text?: string }>;
+  };
+};
+
+let pdfParseModule: PdfParseModule | undefined;
+
+/** Node's own CommonJS loader, which Jest leaves alone. */
+type NodeLoader = {
+  Module: { _load(request: string, parent: null, isMain: boolean): unknown };
+};
+
+function loadPdfParse(): PdfParseModule {
+  if (pdfParseModule) return pdfParseModule;
+  const entry = require.resolve('pdf-parse');
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Module } = require('node:module') as NodeLoader;
+    const loaded = Module._load(entry, null, false) as PdfParseModule;
+    if (typeof loaded?.PDFParse === 'function') {
+      pdfParseModule = loaded;
+      return pdfParseModule;
+    }
+  } catch {
+    /* fall through to Jest's loader, which needs --experimental-vm-modules */
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return (pdfParseModule = require('pdf-parse') as PdfParseModule);
+}
+
 async function readPdfAsync(pdf: Buffer): Promise<{ text: string }> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { PDFParse } = require('pdf-parse');
+  const { PDFParse } = loadPdfParse();
   const parser = new PDFParse({ data: new Uint8Array(pdf) });
   const out = await parser.getText();
-  return { text: (out?.text as string) ?? '' };
+  return { text: out?.text ?? '' };
 }
 
 // Collapse whitespace before asserting on phrases.
