@@ -47,6 +47,8 @@ function makeController(
   rows: Row[],
   /** Extra token metadata — the KYC destination's arrival stamp lives here. */
   extraMeta: Record<string, unknown> = {},
+  /** Stamped when the member presses "I am finished" on the phone. */
+  usedAt: Date | null = null,
 ) {
   const count = jest.fn((args: { where: Record<string, unknown> }) =>
     Promise.resolve(rows.filter((r) => matches(args.where, r)).length),
@@ -58,7 +60,7 @@ function makeController(
         createdAt: MINTED,
         // Far enough out that the session is never graded 'expired'.
         expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-        usedAt: null,
+        usedAt,
         metadataJson: JSON.stringify({
           ...(dest === 'motivation'
             ? { dest: 'motivation', motivationId: 'm1' }
@@ -233,5 +235,84 @@ describe('the two no-vision lists', () => {
     for (const kind of NO_VISION_KINDS) {
       expect(Object.keys(MotivationUploadKind)).toContain(kind);
     }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// WHEN THE DESKTOP IS ALLOWED TO STOP WATCHING.
+//
+// Operator, 2026-08-25, having scanned six documents from a phone: "It
+// uploaded only 1 of the 6 documents but the mobile app said everything is
+// uploaded" — then, moments later, "now after I checked the one document all
+// of them appeared."
+//
+// Nothing was lost. The phone had uploaded all six. The DESKTOP fired its
+// arrival callback on the first one and closed itself 1.6 seconds later, so
+// the review screen was built from a one-document sample and told a member
+// that five of their documents had not arrived.
+//
+// The end-of-session signal already existed — the done endpoint consumes the
+// token and stamps usedAt, and this handler already SELECTED usedAt — and was
+// then dropped on the floor. These tests hold it in the response.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the end of a scanning session', () => {
+  it('⚠️ is NOT finished merely because a document arrived', () => {
+    // The whole defect in one assertion. One document landing is not the
+    // member saying they are done, and treating it as such is what reported a
+    // pack of six as a pack of one.
+    return makeController('licence-centre', [
+      {
+        kind: CredentialKind.SAFE_PHOTOGRAPHS,
+        extractionOk: false,
+        createdAt: ago(1),
+      },
+    ])
+      .controller.status('clerk_1', 'h1')
+      .then((res) => {
+        expect(res.added).toBe(1);
+        expect(res.finished).toBe(false);
+      });
+  });
+
+  it('is finished once the phone says so', async () => {
+    const { controller } = makeController(
+      'licence-centre',
+      [
+        {
+          kind: CredentialKind.SAFE_PHOTOGRAPHS,
+          extractionOk: false,
+          createdAt: ago(1),
+        },
+      ],
+      {},
+      new Date(),
+    );
+    const res = await controller.status('clerk_1', 'h1');
+    expect(res.finished).toBe(true);
+    expect(res.pending).toBe(0);
+  });
+
+  it('reports what has landed but cannot be read yet', async () => {
+    // A licence photographed two seconds ago whose reading has not come back
+    // is not counted in `added` — deliberately, so the desktop never shows a
+    // document it can say nothing about. Without `pending` the dialog cannot
+    // tell that from "there is nothing more coming", and would close on a
+    // member mid-pack.
+    const { controller } = makeController('licence-centre', [
+      {
+        kind: CredentialKind.FIREARM_LICENCE,
+        extractionOk: true,
+        createdAt: ago(60),
+      },
+      {
+        kind: CredentialKind.FIREARM_LICENCE,
+        extractionOk: false,
+        createdAt: ago(2),
+      },
+    ]);
+    const res = await controller.status('clerk_1', 'h1');
+    expect(res.added).toBe(1);
+    expect(res.pending).toBe(1);
   });
 });

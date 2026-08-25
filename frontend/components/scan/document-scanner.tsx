@@ -331,6 +331,35 @@ export default function DocumentScanner({
     };
   }, [say, started]);
 
+  /**
+   * Keep the element and the stream married, whatever else re-renders.
+   *
+   * ⚠️ BELT AND BRACES BEHIND THE MOUNT FIX ABOVE. The video no longer
+   * unmounts between shots, so in the ordinary run this does nothing — but
+   * the whole defect was that ONE assignment, inside an effect keyed on
+   * something else, was the only thing standing between the member and a
+   * black screen. Any future change that remounts this element recovers here
+   * instead of shipping the same bug again.
+   *
+   * ⚠️ THE NULL BRANCH IS NOT OPTIONAL. backToChooser stops the tracks and
+   * clears streamRef; with the element now permanently mounted, leaving a
+   * dead stream attached would leave the chooser sitting behind a frozen last
+   * frame of whatever was last in shot.
+   */
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const stream = streamRef.current;
+    if (!stream) {
+      if (v.srcObject) v.srcObject = null;
+      return;
+    }
+    if (v.srcObject !== stream) {
+      v.srcObject = stream;
+      void v.play().catch(() => undefined);
+    }
+  }, [phase, started]);
+
   // ⚠️ iOS SAFARI TEARS THE STREAM DOWN when the tab goes to the background,
   // and hands back a black viewfinder with a working shutter that captures
   // nothing. The existing KYC camera in this repo has that bug; this does not.
@@ -866,22 +895,55 @@ export default function DocumentScanner({
           />
         )}
 
+        {/*
+          ⚠️ THE VIDEO IS MOUNTED FOR THE LIFE OF THE SCANNER, AND HIDDEN RATHER
+          THAN REMOVED. It used to sit inside the phase gate below, which does
+          not include `review` — so every single shot destroyed this element,
+          and coming back to the camera mounted a brand new empty one.
+
+          The stream is bound to it in exactly ONE place (`srcObject` in the
+          camera effect above), and that effect is deliberately keyed on
+          `started` rather than `phase` so a six-page pack does not pay for a
+          fresh getUserMedia and an autofocus hunt per page. That reasoning is
+          right and stays. What was missed is the consequence: the STREAM
+          survived review, the ELEMENT did not, and nothing remarried them.
+
+          Operator, 2026-08-25: "When I scan a document and choose next scan
+          the screen goes black, I then have to go back and select the size
+          document I want to scan and it opens correctly." Both halves are
+          explained by that. "Next page" and "Take it again" only set the
+          phase, so they landed on a fresh element with no source — black,
+          with a live camera light and a shutter that did nothing, because
+          capture() early-returns on videoWidth 0. Going back to the chooser
+          is the ONLY path that flips `started`, which is the only thing that
+          re-runs the effect that assigns srcObject; the shape was never the
+          point, the toggle was.
+
+          ⚠️ visibility, NOT display:none. Some mobile browsers pause or drop
+          the track on a display:none video, which is the same black frame by
+          another route.
+        */}
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          autoPlay
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            background: '#000',
+            visibility:
+              phase === 'starting' || phase === 'live' || phase === 'working'
+                ? 'visible'
+                : 'hidden',
+          }}
+        />
+
         {(phase === 'starting' || phase === 'live' || phase === 'working') && (
           <>
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              autoPlay
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                background: '#000',
-              }}
-            />
             <canvas
               ref={overlayRef}
               aria-hidden="true"

@@ -284,16 +284,79 @@ export class ScanHandoffController {
               },
             });
 
+    /**
+     * EVERYTHING that landed this session, whether it can be read yet or not.
+     *
+     * ⚠️ A SECOND COUNT, NOT A CLEVERER FIRST ONE. `added` above only counts
+     * rows whose reading has come back — or that were never going to have one,
+     * or that are past the 45-second window — because the desktop must not
+     * show a document before we can say anything about it. That leaves a gap
+     * the dialog cannot see: "the member has finished and everything is read"
+     * and "the member has finished and the last photograph is still inside its
+     * window" look identical from there. This is the difference, and it is
+     * what tells the dialog when closing is actually safe.
+     *
+     * An earlier draft replaced both with a single findMany and did the
+     * settling test in JavaScript — fewer queries, and it broke seven specs
+     * that pin the 45-second rule and the no-vision kinds. Those assertions
+     * are worth more than the query: the rule they hold is the reason a
+     * photograph of a safe does not sit on "waiting" for three quarters of a
+     * minute after it has plainly arrived.
+     */
+    const landed =
+      meta.dest === 'kyc'
+        ? added
+        : meta.dest === 'motivation' && typeof meta.motivationId === 'string'
+          ? await this.prisma.motivationUpload.count({
+              where: {
+                motivationId: meta.motivationId,
+                createdAt: { gte: row.createdAt },
+              },
+            })
+          : await this.prisma.credential.count({
+              where: {
+                userId: user.id,
+                createdAt: { gte: row.createdAt },
+              },
+            });
+
+    const counted = added;
+    // Never negative: the two counts are a few milliseconds apart and a row
+    // can settle between them.
+    const pending = Math.max(0, landed - added);
+
     const expired = row.expiresAt <= new Date();
     const connected = typeof meta.openedAt === 'string';
     const state = expired
       ? 'expired'
-      : added > 0
+      : counted > 0
         ? 'uploaded'
         : connected
           ? 'connected'
           : 'waiting';
 
-    return { state, added, connected, expiresAt: row.expiresAt.toISOString() };
+    return {
+      state,
+      added: counted,
+      connected,
+      /**
+       * The member pressed "I am finished" on the phone.
+       *
+       * ⚠️ THIS SIGNAL ALREADY EXISTED AND WAS DROPPED ON THE FLOOR. The done
+       * endpoint consumes the token and stamps usedAt; this handler already
+       * SELECTED usedAt and then never mentioned it again — so the desktop had
+       * no way to know a session had ended and fell back on a timer that
+       * closed it 1.6 seconds after the FIRST document, which is why a pack of
+       * six was reported to the operator as one.
+       *
+       * A sibling boolean rather than a fifth `state`, because `state` has
+       * spec assertions and the dialog's heading branches on it, and a new
+       * enum member would break both for nothing.
+       */
+      finished: row.usedAt !== null,
+      /** Landed but not yet readable. See the note above `settled`. */
+      pending,
+      expiresAt: row.expiresAt.toISOString(),
+    };
   }
 }

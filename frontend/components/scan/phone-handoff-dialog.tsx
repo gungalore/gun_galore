@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
 
@@ -105,6 +105,66 @@ export default function PhoneHandoffDialog({
   }, []);
 
   // ── watch for the phone ──────────────────────────────────────────
+  /**
+   * ── WHEN THIS DIALOG IS ALLOWED TO GIVE UP ────────────────────
+   *
+   * ⚠️ IT USED TO TREAT THE FIRST DOCUMENT AS THE END OF THE SESSION. The
+   * poll fired the arrival callback the moment `added` went above zero and
+   * closed itself 1600ms later — so on a six-document pack the desktop saw
+   * document one, stopped watching, and the operator was shown a review
+   * screen reading "We read 1". Nothing was lost; the phone had uploaded all
+   * six correctly and a later list refresh brought them in. But for the
+   * length of that review the site was telling a member that five of their
+   * documents had not arrived.
+   *
+   * It only ever fired once by accident, too: the check was on the LEVEL of
+   * `added` rather than on it changing, and it stayed true for the rest of
+   * the session. 1600ms simply beat the 3000ms tick.
+   *
+   * Three things end a session now, and nothing else:
+   *   1. the member pressing "I am finished" on the phone — `finished`, which
+   *      the server has always known and never said out loud;
+   *   2. the token expiring;
+   *   3. the member closing this by hand.
+   *
+   * A phone that locks, or is walked away from, ends none of them —
+   * deliberately. Both the phone page and the done endpoint refuse to fake
+   * that signal on pagehide, because a locked screen would consume the token
+   * and 410 the rest of the pack. The count stays live and the button reads
+   * Done.
+   */
+  const reportedRef = useRef(0);
+  const latestRef = useRef(0);
+  const finishedAtRef = useRef<number | null>(null);
+
+  /**
+   * Tell the caller what has landed — at most once per new document.
+   *
+   * ⚠️ AN EDGE, NOT A LEVEL. Reporting on the level would re-fire every
+   * three seconds for the rest of the session, and on the Document Centre
+   * that callback rebuilds the entire review screen from a fresh read of the
+   * list — under the hands of somebody who may be typing an expiry date into
+   * it.
+   */
+  const report = useCallback((n: number) => {
+    if (n <= reportedRef.current) return;
+    reportedRef.current = n;
+    arrivedRef.current(n);
+  }, []);
+
+  /**
+   * Every way out of this dialog, so that none of them loses the count.
+   *
+   * ⚠️ CANCEL, DONE, ESCAPE AND THE BACKDROP ALL USED TO SKIP THE CALLBACK
+   * ENTIRELY. Closing by hand after three documents had landed refreshed
+   * nothing at all: the member watched a counter reach three and then saw an
+   * unchanged page behind it.
+   */
+  const finishUp = useCallback(() => {
+    report(latestRef.current);
+    closeRef.current();
+  }, [report]);
+
   useEffect(() => {
     if (!handoffId) return;
     let alive = true;
@@ -118,20 +178,65 @@ export default function PhoneHandoffDialog({
       try {
         const res = await viewerFetch(`${API_URL}/scan-handoff/${handoffId}`);
         if (!res?.ok || !alive) return;
-        const s = (await res.json()) as { state: State; added: number };
+        const s = (await res.json()) as {
+          state: State;
+          added: number;
+          /** The member pressed "I am finished" on the phone. */
+          finished?: boolean;
+          /** Landed, but not readable yet. */
+          pending?: number;
+        };
         if (!alive) return;
         setState(s.state);
         setAdded(s.added);
-        if (s.added > 0) {
-          // ⚠️ NOT INSTANTLY. The member is still standing there holding a
-          // phone; a dialog that vanishes the moment the first page lands
-          // looks like a crash, and they have no way to tell whether the
-          // rest of the pack went anywhere. A beat to read "1 document
-          // arrived" is the difference.
-          arrivedRef.current(s.added);
-          window.setTimeout(() => {
-            if (alive) closeRef.current();
-          }, 1600);
+        latestRef.current = s.added;
+
+        // ⚠️ IDENTITY VERIFICATION IS EXACTLY ONE DOCUMENT, so it keeps the
+        // old behaviour on purpose: that upload REPLACES rather than adds,
+        // and the very next thing the desktop does is move the member on to
+        // the selfie. There is nothing to carry on scanning.
+        if (dest === 'kyc') {
+          if (s.added > 0) {
+            report(s.added);
+            // A beat to read "Your ID arrived" — vanishing on the instant
+            // reads as a crash.
+            window.setTimeout(() => {
+              if (alive) closeRef.current();
+            }, 1600);
+          }
+          return;
+        }
+
+        // ⚠️ THE MOTIVATION WIZARD WANTS EACH DOCUMENT AS IT LANDS; THE
+        // DOCUMENT CENTRE MUST NOT HAVE THEM. The difference is what the
+        // callback does at each end: on the wizard it refreshes a list of
+        // uploads, which is harmless mid-session, and moving it to
+        // fire-once-at-close would make that page worse than it is today.
+        // On the Document Centre it BUILDS THE REVIEW SCREEN, and rebuilding
+        // that while a member is part-way through it moves the ground under
+        // them — an open panel would sprout a back link and relabel its
+        // buttons, and somebody who had reached "All filed" would be pulled
+        // back into a review. That one gets a single build, after the end.
+        if (dest === 'motivation') report(s.added);
+
+        if (s.state === 'expired') {
+          finishUp();
+          return;
+        }
+
+        if (s.finished) {
+          // Everything read: close, handing over the final count.
+          if (!s.pending) {
+            finishUp();
+            return;
+          }
+          // Finished, but the last photograph is still inside its reading
+          // window. Wait for it — though not forever: one document we can
+          // never read must not pin this dialog open in front of a member who
+          // has already put their phone down.
+          const since = finishedAtRef.current ?? Date.now();
+          finishedAtRef.current = since;
+          if (Date.now() - since > 60_000) finishUp();
         }
       } catch {
         // A dropped poll is not worth a message — the next one is 2s away.
@@ -156,10 +261,15 @@ export default function PhoneHandoffDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handoffId]);
 
+  // ⚠️ HELD IN A REF, because the effect below mounts once while finishUp
+  // is rebuilt whenever `report` is.
+  const finishUpRef = useRef(finishUp);
+  finishUpRef.current = finishUp;
+
   // Escape closes, like every other overlay in here.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeRef.current();
+      if (e.key === 'Escape') finishUpRef.current();
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
@@ -209,7 +319,7 @@ export default function PhoneHandoffDialog({
         background: 'rgba(0,0,0,0.72)',
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) finishUp();
       }}
     >
       <div
@@ -242,7 +352,11 @@ export default function PhoneHandoffDialog({
           </p>
         )}
 
-        {url && state !== 'expired' && state !== 'uploaded' && (
+        {/* ⚠️ STILL SHOWN AFTER THE FIRST ARRIVAL. It used to disappear on
+            `state === 'uploaded'` — which only means the session has produced
+            one document — so a member whose phone locked half way through a
+            pack had nothing left on screen to scan again. */}
+        {url && state !== 'expired' && (
           // ⚠️ FORCED WHITE, ALWAYS. A QR code drawn in theme tokens is a QR
           // code that stops scanning the moment somebody's OS flips to dark
           // — the reader needs light modules on a dark ground, or the
@@ -266,7 +380,7 @@ export default function PhoneHandoffDialog({
         <div style={{ marginTop: 20 }}>
           <button
             type="button"
-            onClick={onClose}
+            onClick={finishUp}
             style={{
               minHeight: 44,
               padding: '0 18px',
