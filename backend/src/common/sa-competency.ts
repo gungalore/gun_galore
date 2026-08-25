@@ -29,14 +29,29 @@
 //     PISTOL UNDER s15 — two errors of law pointing opposite ways, both
 //     reaching applicants. See the note on that function.
 //
-// ⚠️ AND v2's HEADLINE CLAIM — "a competency certificate has no expiry date on
-// it, never parse one" — IS WITHDRAWN. §5.2: SAPS's own SAPS 271 form, section
-// F.1.6 and F.1.7, requires the applicant to enter the competency's date of
-// issue AND its expiry date, and certificates issued before 10 January 2011
-// carry a printed five-year expiry on their face. What is true is narrower and
-// still matters: a printed date is ADVISORY INPUT, never the answer, because
-// s10(2) decoupled validity from the certificate. A printed date and the CFR
-// position can and do disagree.
+// ⚠️ A COMPETENCY CERTIFICATE HAS NO EXPIRY DATE ON IT. This is the single
+// most important rule here and the easiest to get wrong, because every other
+// document the Centre reads HAS one printed.
+//
+// ⚠️ AND IT WAS BRIEFLY UNSAID, ON A CORRECTION THAT WAS ITSELF WRONG. v3
+// called v2's version overstated, reasoning that SAPS 271 §F.1.6 and §F.1.7 ask
+// the applicant for the competency's date of issue AND its expiry date, so the
+// field must exist somewhere. v4 examined three genuine SAPS 524 certificates
+// from 2022, 2024 and 2025 and found NO EXPIRY FIELD — not blank, absent from
+// the form. §5.2 reverses the correction: v2 was right.
+//
+// The inference failed in a way worth remembering: SAPS's licence application
+// form asks for a date SAPS's own certificate does not print. That is not
+// evidence of a hidden field, it is one more instance of SAPS forms
+// disagreeing with each other — the same pattern as the SAPS 271 still
+// printing a business-licence period table repealed in 2011.
+//
+// §4.8.7, on what a platform should extract: "Expiry date — does not exist. Do
+// not model it as nullable — model it as absent." Pre-2011 card-format
+// certificates are the one open question: they fell under the repealed flat
+// five-year regime and are reported to carry a printed expiry, though no
+// specimen was examined. Any such legacy date is advisory only, because
+// s10(2) decoupled validity from the certificate on 10 January 2011.
 //
 // The expiry is DERIVED, per firearm category, as the latest expiry among the
 // licences held in that category — see deriveExpiry. It MOVES: it rolls forward
@@ -517,7 +532,17 @@ export const LICENCE_YEARS: Record<LicenceSection, number> = {
  * if no license is linked to it." That is the rule this product runs on, and
  * it is recorded here as a DFO-confirmed operating rule rather than as
  * statute, because it is not statute — s10(2) supplies no period at all in
- * this case. Member-facing wording must not cite s10(2) as its authority; an
+ * this case.
+ *
+ * ⚠️ AND §5.3.1 EXPLAINS WHERE THE NUMBER CAME FROM, WHICH IS WORTH KNOWING
+ * BEFORE ANYONE DEFENDS IT AS LAW. Five years is not a fallback somebody
+ * designed. It is the REPEALED s10(2), which read "A competency certificate
+ * lapses after five years from its date of issue" until 10 January 2011. The
+ * amendment removed it and put nothing in its place for the no-licence case,
+ * so what survives is the memory of the old rule, applied out of habit where
+ * the new rule has nothing to bite on. It is the number SAPS is most likely to
+ * reach for, which is exactly why it is a sound operating assumption and a
+ * hopeless legal citation. Member-facing wording must not cite s10(2) as its authority; an
  * earlier version of the Document Centre did exactly that, in the one case
  * where s10(2) is silent.
  *
@@ -670,6 +695,15 @@ export function deriveExpiry(args: {
  * succession without having to be reloaded" — the two overlap, and we do not
  * hold a magazine capacity to tell them apart. Guessing would refuse lawful
  * applications, which is the failure this rewrite exists to stop.
+ *
+ * ⚠️ AND THE FIVE-SHOT LIMIT IS STILL LAW, however much has been written
+ * saying it is gone. The long title of Act 28 of 2006 promises "to delete the
+ * restriction on magazine capacity of a semi-automatic shotgun for use by a
+ * dedicated hunter or sports person", and its section 11 does exactly that
+ * — but section 11 appears in NEITHER commencement proclamation and has never
+ * come into force (§0.5). Roughly two thirds of that Amendment Act never did.
+ * Anyone reasoning from its long title, or from an article written off it,
+ * will conclude s16(1)(c) is repealed. It stands.
  *
  * @param selfLoading null where the applicant has not said. Never guessed:
  *   an unstated action is not a reason to block anybody.

@@ -453,7 +453,16 @@ export class LicenceCentreExtractService {
           this.logger.warn(`Credential read gave an unusable ${key}`);
           continue;
         }
-        if (key === 'expires_on') out.expiresOn = value;
+        // ⚠️ NEVER OFF A COMPETENCY CERTIFICATE, whatever the model says. The
+        // prompt above tells it there is no expiry; this is what happens when
+        // it answers anyway. An invented expiry here does not stay harmless:
+        // create() writes it to Credential.expiresOn, the member confirms a
+        // date they have no way to check against the card, and the reminder
+        // sweep then chases a deadline nobody set. The real date is derived
+        // from the licences in that category — see common/sa-competency.
+        if (key === 'expires_on' && kind !== 'COMPETENCY_CERTIFICATE') {
+          out.expiresOn = value;
+        }
         else out.issuedOn = value;
         continue;
       }
@@ -559,9 +568,33 @@ function userPrompt(
     'Transcribe these keys where they appear:',
     ...keys.map((k) => `- ${k}`),
     '',
-    'The expiry date matters more than anything else here: it is what a',
-    'reminder will be calculated from. If you cannot read it with certainty,',
-    'omit it and the member will be asked to type it.',
+    ...(kind === 'COMPETENCY_CERTIFICATE'
+      ? [
+          // ⚠️ A COMPETENCY CERTIFICATE HAS NO EXPIRY DATE ON IT, and telling
+          // the model otherwise is how one gets invented. The SAPS 524 has no
+          // expiry FIELD — not blank, absent from the form — confirmed across
+          // three specimens spanning 2022, 2024 and 2025 (reference §5.2,
+          // §4.8.7: "Do not model it as nullable — model it as absent"). In its
+          // place the certificate prints the s10(2) rule verbatim and leaves
+          // the holder to derive the date.
+          //
+          // ⚠️ AND THE OFFICE DATE STAMP IS NOT THE ISSUE DATE. It is the date
+          // the copy was PRINTED: one of the operator's specimens is a 2024
+          // reprint of a certificate issued in 2022 (§4.8.3). A model told the
+          // expiry "matters more than anything else" and given a document with
+          // no expiry on it will reach for the nearest date on the page, and
+          // the stamp is the nearest date on the page.
+          'This document has NO EXPIRY DATE. Do not look for one and do not',
+          'infer one. Leave expires_on out entirely.',
+          'Read date_of_issue from the boxed yyyy-mm-dd row labelled "Date of',
+          'issue". IGNORE the official date stamp - that is when the copy was',
+          'printed, which is often years after it was issued.',
+        ]
+      : [
+          'The expiry date matters more than anything else here: it is what a',
+          'reminder will be calculated from. If you cannot read it with certainty,',
+          'omit it and the member will be asked to type it.',
+        ]),
   ].join('\n');
 }
 

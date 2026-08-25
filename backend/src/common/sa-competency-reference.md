@@ -1,6 +1,10 @@
 # SA Firearm Competency Reference
 
-**Version 3.0 — verified 25 August 2026.** Supersedes v2.
+**Version 5.0 — verified 25 August 2026.** Supersedes v4, v3 and v2.
+
+**v5 adds §0: the commencement map of the Firearms Control Amendment Act 28 of 2006**, read from the gazetted text (GN 775, GG 30210, 22 August 2007). This is the Act your competency certificate cites, and it is the reason most of this reference reads the way it does. **Roughly two-thirds of it has never come into force** — §0 sets out exactly which parts did.
+
+**v4 added §4.8: the anatomy of a real SAPS 524 certificate, from three genuine specimens.** That evidence reversed one of v3's corrections — see §5.2 and §12.0.
 
 Authoritative reference for South African firearm competency certificates under the **Firearms Control Act 60 of 2000 (FCA)**, as amended (most recently by the Domestic Violence Amendment Act 14 of 2021, commenced 14 April 2023).
 
@@ -15,9 +19,111 @@ Every non-obvious claim in this document carries one:
 | **[ACT]** | Stated expressly in the FCA or the Firearms Control Regulations, 2004. Quoted or paraphrased directly. Highest confidence. |
 | **[SAPS]** | Stated on a SAPS page or a SAPS form. Authoritative as to practice, but SAPS material is frequently out of date — see §11. |
 | **[PRACTICE]** | Industry consensus (SA Hunters, NATSHOOT, NARFO, SAGA, established training providers). Widely followed, not codified. |
+| **[SPECIMEN]** | Observed directly on a genuine SAPS document examined for this version. Evidence of what SAPS actually issues. |
+| **[GAZETTE]** | Read from the gazetted text of an amending Act or proclamation. Settles what the words were and when they took effect. |
 | **[UNVERIFIED]** | Asserted somewhere, but no primary source found. Do not rely on it for a compliance decision. |
 
-**Section 12 is a changelog of everything corrected from v2.** If you have code or content built on v2, read that first.
+**Section 12 is a changelog.** If you have code or content built on an earlier version, read that first.
+
+---
+
+## 0. The Amendment Act your certificate cites — and what actually commenced
+
+Every SAPS 524 competency certificate prints this line (§4.8.4):
+
+> *"The Firearms Control Amendment Act, no 28 of 2006 stipulates that the Competency Certificate remains valid for the same period of validity as the period determined in the Act in the respect of the licence to which the Competency Certificate relates…"*
+
+### 0.1 Act 28 of 2006 is not a free-standing set of rules
+
+It is an **amending Act**. It contains no operative rules of its own: every section says *"Section X of the principal Act is hereby amended"*. The law you comply with is the **Firearms Control Act 60 of 2000 as amended** — and only to the extent each amendment has been brought into force by presidential proclamation.
+
+Section 54 of Act 28 of 2006 (its own short title provision) makes this explicit: **[GAZETTE]**
+
+> *"This Act is called the Firearms Control Amendment Act, 2006, and comes into operation on a date determined by the President by Proclamation in the Gazette."*
+
+**The President never proclaimed the whole Act.** Assented to 17 August 2007, gazetted 22 August 2007, and brought into force in **two partial batches** — 10 January 2011 and 1 March 2012. **The remainder has still not commenced as at August 2026**, nineteen years after assent.
+
+This is the single most important thing to understand about South African firearm law, and it is why so much published guidance is wrong. **An uncommenced amendment is not the law.** Reading Act 28 of 2006 as though it were in force will produce confidently wrong answers.
+
+### 0.2 The two commencement proclamations
+
+| Proclamation | Date | Sections of Act 28 of 2006 brought into force |
+|---|---|---|
+| Proc. 77, GG 33871 (17 Dec 2010) | **10 January 2011** | **1(b), 1(i), 2, 4, 8, 9, 10, 18, 52** |
+| Proc. R9, GG 35047 (17 Feb 2012) | **1 March 2012** | **1(c), 1(f), 1(h), 1(l), 3, 6, 7, 12, 13, 14, 15, 19, 26, 27, 49, 50, 51** |
+
+Everything else — **32 of the Act's 53 substantive sections, and 7 of its 13 definition paragraphs** — has never taken effect. **[GAZETTE — verified to the 14 April 2023 consolidation; not independently re-verified for 2023–2026]**
+
+### 0.3 What commenced, and what it did to the FCA
+
+| Act 28 s | Amends FCA | Effect | In force |
+|---|---|---|---|
+| 1(b) | s1 | Deletes the definition of *"antique firearm"* | 10 Jan 2011 |
+| 1(i) | s1 | Inserts the definition of *"muzzle loading firearm"* | 10 Jan 2011 |
+| 2 | s3 | Substitutes the general prohibition; adds s3(2) — muzzle loader needs **competency only, no licence** | 10 Jan 2011 |
+| 4 | s5 | *"[an antique]"* → *"a muzzle loading firearm"* | 10 Jan 2011 |
+| **8** | **s9(1)** | **Adds muzzle loading and private collector to the competency types** | **10 Jan 2011** |
+| **9** | **s10** | **Inserts s10(1)(a)(iA) and (iB); replaces the 5-year lapse rule with the licence-linked rule; adds the 10-year muzzle loader rule** | **10 Jan 2011** |
+| **10** | **s10A** | **Inserts the whole renewal-of-competency section** | **10 Jan 2011** |
+| **18** | **s27** | **Substitutes the licence validity Table** | **10 Jan 2011** |
+| 52 | Schedule 1 | Inserts Item 1A — muzzle loader transitional (§0.6) | 10 Jan 2011 |
+| 1(c) | s1 | Inserts *"calibre"* (for ss 18(2)(b), 19(3)) | 1 Mar 2012 |
+| 1(f) | s1 | *"firearm"* excludes a muzzle loading firearm | 1 Mar 2012 |
+| 1(h) | s1 | *"juristic person"* **includes a trust** | 1 Mar 2012 |
+| 1(l) | s1 | Inserts *"professional hunter"* | 1 Mar 2012 |
+| 3 | s4 | Prohibited firearms | 1 Mar 2012 |
+| 6 | s7 | Responsible person must hold the relevant competency; trusts as juristic persons | 1 Mar 2012 |
+| 7 | s8 | Cancellation of accreditation procedure | 1 Mar 2012 |
+| **12** | **s16A** | **Inserts the professional hunting licence** | **1 Mar 2012** |
+| 13 | s17 | Substitutes private collection licence | 1 Mar 2012 |
+| 14 | s18 | Ammunition permit in private collection | 1 Mar 2012 |
+| 15 | s19 | Public collection | 1 Mar 2012 |
+| 19 | s31 | Unlicensed trading | 1 Mar 2012 |
+| 26 | s91 | >200 cartridges — extends to professional hunters | 1 Mar 2012 |
+| 27 | s93 | >2 400 primers — extends to professional hunters | 1 Mar 2012 |
+| 49, 50, 51 | ss 148, 149, 150 | Destruction and deactivation | 1 Mar 2012 |
+
+**Every provision this reference relies on for competency — s9(1), s10, s10A, s27 — is in the 10 January 2011 batch and is fully in force.** The document's foundations are sound.
+
+### 0.4 What never commenced — and where it bites
+
+These are the traps. In each case the amending Act promises a change that **has not happened**, and the pre-amendment FCA text still governs.
+
+| Act 28 s | Would have changed | **Current law, because it never commenced** |
+|---|---|---|
+| **11** | Deletes FCA **s16(1)(c)** | **The five-shot limit on semi-automatic shotguns under s16 STILL APPLIES.** See §0.5. |
+| **5** | FCA **s6(1)(a)**: *"[a full set of] such fingerprints as the Registrar may require"* | **A FULL SET of fingerprints is still statutorily required** for a competency application. The Registrar has no discretion to accept fewer. |
+| **1(g)** | Inserts a definition of *"fit and proper person"* | **"Fit and proper" remains undefined in the Act.** s9(2)(c) requires it without saying what it means, which is why Regulation 14(1)'s key-indicator list carries so much weight and why the Registrar's discretion is so wide. |
+| **1(j), 1(k)** | Removes *"but who is not a member of an accredited hunting association"* from *"occasional hunter"* / *"occasional sports person"* | **An occasional hunter is still, by definition, someone who is NOT a member of an accredited association.** Joining an association arguably takes you out of the s15 definition. |
+| **1(a), 1(d)** | Redefines *"ammunition"* and *"cartridge"* | *"Ammunition"* still means *"a primer or **complete** cartridge"*. |
+| 1(e), 1(m) | *"dispossession"*, *"Secretary for Safety and Security"* | Not defined. |
+| 16, 17 | ss 21, 22 — temporary authorisation, use by another person | Original text. |
+| 20–25, 28–48 | ss 42, 45, 56, 70, 73, 88, 94, 96, 102–104, 110–120, 132–137, 140, 145–147 | Original text. Includes the s102/s103 unfitness inquiry procedure and the s120 offences. |
+| 53 | Schedule 4 penalties | Original penalty schedule. |
+
+### 0.5 The semi-automatic shotgun trap
+
+Worth isolating, because it is the one most likely to be got wrong.
+
+The **long title** of Act 28 of 2006 promises: **[GAZETTE]**
+
+> *"…to delete the restriction on magazine capacity of a semi-automatic shotgun for use by a dedicated hunter or sports person…"*
+
+Section 11 delivers it: *"Section 16 of the principal Act is hereby amended by the deletion in subsection (1) of paragraph (c)."*
+
+**Section 11 is in neither commencement proclamation.** It has never come into force. So **FCA s16(1)(c) stands**, and a semi-automatic shotgun licensed under s16 must still be *"manufactured to fire no more than five shots in succession without having to be reloaded."*
+
+Anyone quoting the long title of Act 28 of 2006 — or an article written from it — will tell you the five-shot limit is gone. **It is not.** See §7.1.
+
+### 0.6 The muzzle loader transitional — expired
+
+Section 52 (in force 10 January 2011) inserted **Item 1A into Schedule 1**: **[GAZETTE]**
+
+> *"A person who possesses a muzzle loading firearm must apply within one year from the date of commencement of section 52 … for the relevant competency certificate to possess a muzzle loading firearm… (2) No prosecution may be instituted during the period referred to in subitem (1) against any person found in possession of a muzzle loading firearm without having been issued with a relevant competency certificate."*
+
+The window ran to **10 January 2012** (extendable by the Minister by notice; no extension found). Item 1A(4): if the application was lodged in time, possession stayed lawful until it was decided.
+
+**That amnesty is long closed.** A person holding a muzzle loading firearm today without a competency certificate has no transitional protection — and no licence layer to fall back on, because muzzle loaders are not licensed (§5.5).
 
 ---
 
@@ -188,6 +294,7 @@ Everything in §4.1, §4.2, §4.5 and §4.6 is **[PRACTICE]** — card-printing 
 | s21 | Temporary authorisation | [ACT] |
 | s24 | Renewal of firearm licences — 90-day rule | [ACT] |
 | s27 | Period of validity of licence or permit (see §5.4) | [ACT] |
+| **SAPS 524** | **The competency certificate itself** — the document issued to the holder (see §4.8) | [SPECIMEN] |
 | **SAPS 517** | Application for a competency certificate | [SAPS] |
 | **SAPS 517(a)** | Application for a **further** competency certificate | [SAPS] |
 | **SAPS 517(b)** | Duplicate licence/permit/certificate (lost, stolen, defaced) | [SAPS] |
@@ -229,13 +336,126 @@ Everything in §4.1, §4.2, §4.5 and §4.6 is **[PRACTICE]** — card-printing 
 
 ### 4.7 Compound endorsements and data-capture errors
 
-A block such as `S/L-RIFLE/CARB/PIST CAL CARB` reads as competency to possess **self-loading rifles/carbines and self-loading pistol calibre carbines**, from unit standard 119650. **[PRACTICE]**
+A block such as `S/L-RIFLE/CARB/PIST CAL CARB` reads as competency to possess **self-loading rifles/carbines and self-loading pistol calibre carbines**, from unit standard 119650. **[SPECIMEN — see §4.8]**
 
 `PIST CAL CARB` is spelled out because it is commonly misread. A 9mm AR-pattern carbine, CZ Scorpion, Kel-Tec Sub2000 and similar fire a handgun cartridge but are treated as carbines, falling under rifle/carbine competency, **not** handgun competency.
 
 > **Correction from v2.** v2 stated: *"Barrel length and overall length drive the classification, not calibre."* **There is no statutory basis for this.** The FCA defines *"handgun"* (s1: *"a pistol or revolver which can be held in and discharged with one hand"*) but defines neither *"rifle"*, *"carbine"* nor *"shotgun"*. The word *"carbine"* does not appear in the Act or the 2004 Regulations at all. The PCC-as-carbine treatment is CFR/SAPS administrative practice and the criteria are not published. **[UNVERIFIED]** — the practical conclusion (get rifle/carbine competency for a PCC) still holds, but do not state a length threshold as if it were law.
 
-**Caution — unchanged and still correct.** SAPS data capturers are inconsistent. The same endorsement appears written out in full on some certificates and abbreviated on others, and typos occur. **Any discrepancy must be corrected at the DFO before a licence application is lodged**, because the licence application is validated against the CFR competency record, not against the piece of paper. **[PRACTICE]**
+**Caution — unchanged, and now confirmed by specimen evidence.** SAPS data capturers are inconsistent. The same endorsement appears written out in full on some certificates and abbreviated on others, and terms are dropped. **Any discrepancy must be corrected at the DFO before a licence application is lodged**, because the licence application is validated against the CFR competency record, not against the piece of paper. **[SPECIMEN]**
+
+---
+
+### 4.8 Anatomy of a real competency certificate — SAPS 524
+
+**This section is built from three genuine certificates issued to one holder between 2022 and 2025 (Durbanville and Bellville, Western Cape). Personal identifiers are redacted. Marked [SPECIMEN] throughout — direct observation of primary documents, the highest confidence available short of the Act itself.**
+
+#### 4.8.1 The form is SAPS 524
+
+The competency certificate itself is **SAPS 524**, printed top-right. v3 did not name this form at all.
+
+Distinguish carefully:
+
+| Form | What it is |
+|---|---|
+| **SAPS 517** | Application *for* a competency certificate |
+| **SAPS 517(a)** | Application for a *further* competency certificate |
+| **SAPS 517(g)** | Application for *renewal* of a competency certificate |
+| **SAPS 524** | **The competency certificate itself — the document you receive** |
+
+#### 4.8.2 Every field on the document
+
+A4 portrait, SAPS crest, large watermark. Header: *"SOUTH AFRICAN POLICE SERVICE / COMPETENCY CERTIFICATE / Section 10 of the Firearms Control Act, 2000 (Act No 60 of 2000)"*.
+
+| Field | Notes |
+|---|---|
+| Initials and surname | Initials only, not full names |
+| Identity number | 13 boxed digits |
+| **Type of competency certificate** | Free-text block, up to 2 lines. Line 1 is always the category (*"COMPETENCY TO POSSESS A FIREARM"*); line 2 is the firearm-type endorsement. **This is the field that matters.** |
+| Competency certificate number | Format `C` + 7–8 digits |
+| Certification paragraph | Confirms s9(2)(q) knowledge test and s9(2)(r) practical tests completed |
+| Validity paragraph | Quotes s10(2) — reproduced in §4.8.4 |
+| **Date of issue** | Boxed `YYYY-MM-DD` |
+| Official date stamp | Station name, date, PO Box, phone/fax |
+| Signature block | *"f/THE REGISTRAR"*, name in block letters, rank in block letters, **Persal number** |
+
+**There is no expiry date field.** Not blank — absent. See §5.2.
+
+#### 4.8.3 The three specimens
+
+Same holder, same ID number, **three separate certificates**:
+
+| # | Cert number | Type of competency certificate (verbatim) | Date of issue | Station |
+|---|---|---|---|---|
+| 1 | `C9105644` | `COMPETENCY TO POSSESS A FIREARM` / `MANUALLY OPERATED RIFLE` | 2022-08-13 | Bellville (reprinted 2024-07-09) |
+| 2 | `C9882094` | `COMPETENCY TO POSSESS A FIREARM` / `HANDGUN` | 2024-09-26 | Durbanville |
+| 3 | `C10167347` | `COMPETENCY TO POSSESS A FIREARM` / `S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN` | 2025-06-06 | Durbanville |
+
+Five things follow.
+
+**(a) One certificate per application, not one cumulative card.** A further competency (SAPS 517(a)) produces a **brand-new SAPS 524 with a new number and a new issue date**. It does not amend, supersede or reissue the earlier one. The holder above possesses three live certificates covering different types.
+
+> **This corrects a structural assumption in v2 and v3.** Both described "endorsements on a single certificate" and warned that "derived expiry differs per endorsement on the same certificate". In reality the endorsements are usually spread across **several certificates**, each with its own issue date. The per-type expiry model still holds — the container is just different. **Any process that asks for "your competency certificate", singular, will miss types.**
+
+**(b) A single certificate can still carry multiple types**, when they were applied for together — specimen 3 covers three.
+
+**(c) Certificate numbers are sequential application numbers**, monotonic with issue date (`C9105644` 2022 → `C9882094` 2024 → `C10167347` 2025). A number wildly out of step with its stated issue date is a red flag. Do not treat this as a checksum; it is a sanity check.
+
+**(d) The date stamp is not the issue date.** Specimen 1 was issued 2022-08-13 but carries a 2024-07-09 stamp — it is a **reprint**. Certificates are generated on demand from the CFR, so the stamp records when that copy was printed. **Always read "Date of issue", never the stamp.**
+
+**(e) The footer reveals the CFR endpoint.** Specimens 1 and 3 were printed from a browser and carry the URL `http://frsprd:8610/pls/vwrwprd/compcert?app_nr=C9882094`. `frsprd` is an internal SAPS host (Oracle PL/SQL web toolkit) — **not reachable from the public internet**, so there is no verification API here. What it does confirm: **the competency certificate number IS the application number**, and the document is a live render of the CFR record.
+
+#### 4.8.4 The validity paragraph, verbatim
+
+Every specimen prints this in place of an expiry date:
+
+> *"The Firearms Control Amendment Act, no 28 of 2006 stipulates that the Competency Certificate remains valid for the same period of validity as the period determined in the Act in the respect of the licence to which the Competency Certificate relates, unless the Competency Certificate is terminated or renewed in accordance to the provisions of the Act."*
+
+SAPS's own answer to "when does this expire" is to restate s10(2) and leave the holder to work it out. **[SPECIMEN]**
+
+#### 4.8.5 Decoding the endorsement line — full wording vs abbreviation
+
+The three specimens show the full range, exactly as reported in the field:
+
+| Specimen | Endorsement as written | Style |
+|---|---|---|
+| 2 | `HANDGUN` | Plain, no qualifier at all |
+| 1 | `MANUALLY OPERATED RIFLE` | Full words, and **"or carbine" dropped** |
+| 3 | `S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN` | Heavily abbreviated compound |
+
+**`HANDGUN` carries no action qualifier.** This is direct evidence for the §2.2 correction: SAPS does **not** split handgun competency into self-loading and non-self-loading. One unit standard (119649), one endorsement, covering pistols and revolvers alike. Where `S/L HG` or `N/S/L HG` appears on an older card, treat it as legacy capture, not a narrower competency.
+
+**`MANUALLY OPERATED RIFLE` drops "or carbine"**, which unit standard 119651 includes and which specimen 3 preserves as `RIFLE/CARB`. Same competency, inconsistently captured. A DFO reading specimen 1 literally could argue it excludes a manually-operated carbine. It does not — but this is precisely the discrepancy §4.7 says to fix at the DFO before lodging.
+
+#### 4.8.6 The compound endorsement — a real ambiguity
+
+`S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN` has two possible readings:
+
+| Reading | Meaning | Assessment |
+|---|---|---|
+| **A — `S/L` binds the rifle cluster only** | Self-loading rifle/carbine + self-loading pistol calibre carbine, **and shotgun (all actions)** | **Preferred.** |
+| **B — `S/L` distributes across everything** | …and self-loading shotgun only | v2 asserted this. **Doubtful.** |
+
+Reading A is preferred because **there is no self-loading-shotgun unit standard.** 119652 is *"Handle and use a shotgun"* — undifferentiated by action. SAPS would have no training basis on which to issue a shotgun competency restricted to self-loading actions. The hyphen placement supports it too: `S/L-RIFLE/CARB` reads as one bound token, with `PIST CAL CARB` and `SHOTGUN` as further list items.
+
+> **Correction to v2 §4.7.** v2 stated the `S/L` prefix *"distributes across the whole block"*, giving *"self-loading shotguns"*. On the evidence that is probably wrong, and it matters: under Reading A the holder is already competent for a pump-action shotgun; under Reading B they are not.
+>
+> **This is a genuine ambiguity in SAPS's own capture, not a gap in this document. [UNVERIFIED — resolve at the DFO, per holder.]** Do not resolve it in code. Where a compound endorsement is involved and the answer changes the outcome, escalate to a human.
+
+#### 4.8.7 What a platform should extract
+
+From a SAPS 524 image, five fields are reliably present and machine-readable:
+
+| Field | Reliability |
+|---|---|
+| Certificate number (`C` + 7–8 digits) | High — fixed format |
+| Identity number (13 digits) | High — boxed |
+| Initials and surname | High |
+| Date of issue (`YYYY-MM-DD`) | High — boxed. **Not the stamp date.** |
+| Type / endorsement line | **Low — free text, inconsistent vocabulary, needs human review** |
+| Expiry date | **Does not exist. Do not model it as nullable — model it as absent.** |
+
+And: **always ask for every certificate the person holds, never "your competency certificate".**
 
 ---
 
@@ -247,7 +467,13 @@ Section 10(2), as substituted by section 9(b) of Act 28 of 2006 with effect from
 
 > *"A competency certificate contemplated in subsection (1)(a)(i), (ii), (iii) and (iv), remains valid for the same period of validity as the period determined in this Act in respect of the licence to which the competency certificate relates, unless the competency certificate is terminated or renewed in accordance with the provisions of this Act."*
 
-SAPS restates this verbatim on its own FAQ. **[SAPS]**
+SAPS restates this verbatim on its own FAQ **[SAPS]**, and the certificate itself prints a paraphrase of it **[SPECIMEN]**.
+
+**What it replaced.** The gazetted amending text shows the deleted words in square brackets: **[GAZETTE]**
+
+> *"(2) A competency certificate **[lapses after five years from its date of issue]** contemplated in subsection (1)(a)(i), (ii), (iii) and (iv), remains valid for the same period of validity as the period determined in this Act in respect of the licence to which the competency certificate relates…"*
+
+**This is where the "five years" folklore comes from.** Until 10 January 2011 a competency certificate simply lapsed five years from issue, full stop. That rule was repealed. Every training provider, DFO and forum post still repeating "competency is valid for five years" is quoting a provision that has been dead for over fifteen years. See §5.3.1.
 
 Three things follow that v2 did not flag:
 
@@ -255,19 +481,24 @@ Three things follow that v2 did not flag:
 2. The section says *"the same period of validity as the **period** determined in this Act"*, and *"the licence"* — **singular**. On a literal reading it aligns the *duration* (5 years / 10 years) rather than mandating a maximum across a portfolio of licences.
 3. **The "maximum across all licences in the category" model is an interpretation, not the statutory text.** It is what SAPS does and what the whole industry teaches, but it is not what s10(2) says. See §5.3.
 
-### 5.2 Does the certificate carry an expiry date?
+### 5.2 Does the certificate carry an expiry date? — No.
 
-> **Major correction from v2.** v2 stated emphatically: *"A competency certificate does not carry an expiry date… Never parse an expiry date off a competency certificate. There isn't one."* **This is overstated and, for many certificates, simply wrong.**
+> **v3 got this wrong and v2 was right. This section reverses v3's correction #4.**
 >
-> **SAPS's own SAPS 271 form, Section F, fields 1.6 and 1.7, requires the applicant to enter the competency certificate's "Date of issue" AND its "Expiry date".** SAPS would not ask for a field that does not exist. **[SAPS]**
+> v2 said: *"A competency certificate does not carry an expiry date… Never parse an expiry date off a competency certificate. There isn't one."* v3 called that overstated, reasoning that **SAPS 271 Section F fields 1.6 and 1.7 ask the applicant for the competency's "Date of issue" AND its "Expiry date"** — so the field must exist somewhere.
+>
+> **It does not.** Three genuine SAPS 524 certificates (2022, 2024, 2025) were examined for v4. **None has an expiry date field.** Not blank — absent from the form. In its place the certificate prints the s10(2) rule verbatim (§4.8.4) and leaves the holder to derive the date. **[SPECIMEN]**
+>
+> The inference from SAPS 271 was wrong, and the reason it was wrong is itself worth recording: **SAPS's licence application form asks the applicant to supply a date that SAPS's own competency certificate does not print.** That is not evidence of a hidden field. It is one more instance of SAPS forms not agreeing with each other — the same pattern as the SAPS 271 business-licence period table being 15 years out of date (§5.4).
 
 The accurate position:
 
-- **Certificates and cards do frequently carry a printed expiry date.** Pre-10-January-2011 certificates were issued under the original flat 5-year regime and carry a 5-year expiry on their face.
-- **That printed date is not legally determinative.** After 10 January 2011, s10(2) decoupled validity from the certificate. SAGA's guidance at the time: certificates valid on 10 January 2011 had their expiry *"automatically extended to expire on the same date as your longest relevant existing firearm licence."* **[PRACTICE]**
-- Consequently a printed date and the CFR position can disagree — and industry sources state plainly that SAPS may link the competency to the longest valid licence *"even though there may be a different expiry date on the competency."* **[PRACTICE]**
+- **The current A4 SAPS 524 carries a date of issue and no expiry date.** Confirmed across three specimens spanning three years and two stations. **[SPECIMEN]**
+- **Older card-format competencies are a separate question.** Certificates issued before 10 January 2011 fell under the original flat 5-year regime and are reported to carry a 5-year expiry on their face. **No pre-2011 specimen was examined for v4.** **[PRACTICE — unverified by specimen]**
+- **Any such legacy printed date is not legally determinative.** After 10 January 2011, s10(2) decoupled validity from the certificate. SAGA's guidance at the time: certificates valid on 10 January 2011 had their expiry *"automatically extended to expire on the same date as your longest relevant existing firearm licence."* **[PRACTICE]**
+- Industry sources confirm SAPS links competency to the longest valid licence *"even though there may be a different expiry date on the competency."* **[PRACTICE]**
 
-**Operational rule for a platform (revised):** read the printed expiry date if there is one, but **treat it as advisory input, never as the answer**. The determinative position is the CFR record, confirmed via the DFO. Do not build a hard gate on either a printed date or a computed date — see §8.
+**Operational rule for a platform:** **do not model competency expiry as a field on the certificate.** It is absent by design on every current certificate. If a legacy card presents one, treat it as advisory input only. The determinative position is the CFR record, confirmed via the DFO. Do not build a hard gate on either a printed date or a computed date — see §8.
 
 ### 5.3 The derived-expiry model
 
@@ -305,7 +536,9 @@ Consequences of the model:
 >
 > What is actually true: **SAPS practice varies, and it is often treated as 5 years.** The most candid industry sources say exactly that, and training providers tell holders to phone their DFO to find out — which is itself evidence that the answer lives in the CFR system, not in a published rule. **[UNVERIFIED]**
 
-Treat the 5-year figure as a **planning assumption**, not a rule. Never present it to a user as the legal position.
+**v5 adds the origin of the number.** The 5 years is not a fallback anyone designed. It is the **repealed** s10(2), which read *"A competency certificate lapses after five years from its date of issue"* until 10 January 2011 (§5.1). **[GAZETTE]** When the amendment removed it, it left nothing in its place for the no-licence case. What survives in practice is the memory of the old rule, applied out of habit where the new rule has nothing to bite on.
+
+That makes the 5-year figure a reasonable **planning assumption** — it is at least the number SAPS is most likely to reach for — but it is emphatically not the law. Never present it to a user as the legal position.
 
 ### 5.4 Licence periods feeding the calculation — CORRECTED
 
@@ -420,7 +653,7 @@ In practice DFOs also require: **[SAPS/PRACTICE]**
 - Three character references (typically one family member, two friends/colleagues)
 - Two full-colour passport photographs
 - Three photographs of the safe: door closed, door open, and the mounting bolts (not a requirement for competency, but commonly requested)
-- Full set of fingerprints taken by the DFO on **SAPS 91(a)**
+- **Full set** of fingerprints taken by the DFO on **SAPS 91(a)**. *"Full set"* is still the statutory standard: FCA s6(1)(a) requires *"a full set of"* fingerprints, and section 5 of Act 28 of 2006 — which would have softened this to *"such fingerprints as the Registrar may require"* — **never commenced**. **[GAZETTE]** §0.4
 - Prescribed fee, paid via **SAPS 523(a)** remittance advice; keep the receipt
 
 ### 6.5 Fees
@@ -461,10 +694,16 @@ Verified directly against the Act. **[ACT]**
 | **s13** self-defence | *"any shotgun which is **not fully or semi-automatic**; or handgun which is not fully automatic"* | s13(1) |
 | **s14** restricted self-defence | *"any semi-automatic rifle or shotgun, which cannot readily be converted into a fully automatic firearm"*, or a firearm declared restricted by the Minister | s14(1) |
 | **s15** occasional | *"handgun which is not fully automatic; rifle or shotgun which is **not fully or semi-automatic**"* — and not a restricted firearm | s15(1) |
-| **s16** dedicated | *"handgun which is not fully automatic; rifle or shotgun which is not fully automatic; **semi-automatic shotgun manufactured to fire no more than five shots in succession without having to be reloaded**"* | s16(1) |
+| **s16** dedicated | *"handgun which is not fully automatic; rifle or shotgun which is not fully automatic; **semi-automatic shotgun manufactured to fire no more than five shots in succession without having to be reloaded**"* | s16(1) — **and see the warning below** |
 | **s16A** professional hunting | handgun / rifle / shotgun not fully automatic | s16A(1) |
 
 > **Correction from v2 — this one could cause real harm.** v2 stated: *"A self-loading shotgun is the exception in the self-loading group: it can be licensed under S13."* **This is flatly wrong.** Section 13(1)(a) permits only a shotgun *"which is **not** fully or semi-automatic"*. A semi-automatic shotgun is expressly a **restricted firearm** under s14(1)(a) and must be licensed under **s14 (two years)** or, if it is manufactured to fire no more than five shots without reloading, under **s16 (ten years)** with dedicated status.
+
+> **The five-shot limit is still law — despite what Act 28 of 2006 appears to say. [GAZETTE]**
+>
+> The long title of Act 28 of 2006 promises *"to delete the restriction on magazine capacity of a semi-automatic shotgun for use by a dedicated hunter or sports person"*, and its **section 11** does exactly that: *"Section 16 of the principal Act is hereby amended by the deletion in subsection (1) of paragraph (c)."*
+>
+> **Section 11 has never been proclaimed into force.** It appears in neither the 10 January 2011 nor the 1 March 2012 commencement batch. **s16(1)(c) therefore stands**, and a semi-auto shotgun licensed under s16 must still be manufactured to fire no more than five shots without reloading. Anyone working from the long title of the Amendment Act will get this wrong. See §0.5.
 
 Also correct in v2 and confirmed: a self-loading rifle or carbine cannot go under s13 or s15; it must go under **s16** (or s14 for self-defence, or s16A), requiring dedicated hunter / dedicated sport shooter status through an accredited association — **s16(2)** requires a sworn statement from the chairperson of an accredited association confirming registered membership.
 
@@ -485,7 +724,10 @@ These are hard constraints on what a buyer can actually license, and belong in a
 
 - Buyer must hold **valid competency for the correct firearm category** before a transfer can proceed, and must separately obtain the licence for that specific firearm under the applicable section.
 - **Type matching matters, but use the categories that actually exist.** SAPS 271 splits competency three ways — handgun / rifle / shotgun — with the rifle side further split by action (manual vs self-loading) through the unit standards. A handgun endorsement does not cover a pistol calibre carbine. Validate against firearm classification, not calibre.
-- **Do not treat a printed expiry date as authoritative, and do not treat its absence as meaning there is none.** Both occur. §5.2.
+- **There is no expiry date on a current competency certificate.** Model it as absent, not nullable. If a legacy card shows one, treat it as advisory only. §5.2, §4.8.
+- **Collect every certificate the holder has, not "their competency certificate".** Each application produces a separate SAPS 524 with its own number and issue date; a person's coverage is the union across all of them. §4.8.3.
+- **Parse the certificate number, ID, name and date of issue; escalate the endorsement line to a human.** The endorsement is free text with inconsistent vocabulary, and compound endorsements carry a real ambiguity that changes eligibility. §4.8.5–§4.8.7.
+- **Read "Date of issue", never the official date stamp.** Certificates are reprinted from the CFR on demand; the stamp is the print date. §4.8.3(d).
 - **Do not treat a computed expiry as authoritative either.** The max-licence-expiry model is well-supported practice with no verifiable primary source, and the no-licence case has no rule at all. §5.3, §5.3.1.
 - **Recommended design:** store competency expiry as a **user-supplied, user-editable, advisory field** with a "confirm with your DFO" note. Drive any hard gate off the **licence** expiry, which is unambiguous and printed. Where a competency check is genuinely required, require sight of the certificate without the platform adjudicating its expiry.
 - Any stored `competency_expiry` is a **cached derivation**, not a fact. Recompute whenever a linked licence is added, renewed or lapses. Invalidatable state, not an immutable field.
@@ -502,13 +744,14 @@ Ranked by how likely they are to bite.
 2. **No rule at all for a competency with no licence behind it.** Practice varies; "5 years" is a common default, not a rule. **[UNVERIFIED]**
 3. **No rule for private-collector competency validity.** s10(2) does not cover s10(1)(a)(iB) and s10(3) covers only muzzle loaders. **[UNVERIFIED]**
 4. **s10A(6) is anchored to s10A(2), the muzzle-loading provision.** Whether SAPS reads it as generally applicable is unknown. **[UNVERIFIED]**
-5. **SAPS's own SAPS 271 form contradicts s27 on business licence periods** and omits s16A. Expect DFO friction where the Act and the form differ. **[ACT vs SAPS conflict]**
-6. **Unit standard 117705's last-enrolment date (30 June 2026) has passed** with no replacement registered. **[Verified as at Aug 2026; status may have changed]**
-7. **The PFTC / QCTO / SASSETA accreditation dispute is unresolved**, preserved by an interim court order of 11 July 2024 confirmed in ZAGPPHC 795 (1 August 2025). No 2026 outcome found. **[UNVERIFIED beyond Aug 2025]**
-8. **No 2026/27 SAPS fee schedule found.** **[UNVERIFIED]**
-9. **Certificates issued 2004–2011 remain the messiest.** The Act 28 of 2006 provisions commenced on **10 January 2011**, so pre-commencement certificates were issued under the original flat 5-year regime and may carry a printed 5-year expiry that was superseded by the s10(2) linkage.
-10. **Training providers routinely say "some competencies are 5 years and some are 10, check yours."** This is a rough restatement of the derived rule, communicated as if the period were fixed at issue. It is not.
-11. **The CFR record is authoritative.** It gates the licence application. Where a calculated date, a printed date and the CFR disagree, **the CFR wins.** Confirm through the DFO before relying on any date for a compliance decision.
+5. **The compound endorsement `S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN` is ambiguous as to whether `S/L` qualifies `SHOTGUN`.** The better reading says it does not, but SAPS's capture does not settle it and eligibility turns on the answer. Resolve per holder at the DFO. **[UNVERIFIED]** §4.8.6
+6. **SAPS's own SAPS 271 form asks for a competency "Expiry date" that the SAPS 524 certificate does not print** — and contradicts s27 on business licence periods, and omits s16A. Expect DFO friction where the Act and the form differ. **[ACT vs SAPS conflict]**
+7. **Unit standard 117705's last-enrolment date (30 June 2026) has passed** with no replacement registered. **[Verified as at Aug 2026; status may have changed]**
+8. **The PFTC / QCTO / SASSETA accreditation dispute is unresolved**, preserved by an interim court order of 11 July 2024 confirmed in ZAGPPHC 795 (1 August 2025). No 2026 outcome found. **[UNVERIFIED beyond Aug 2025]**
+9. **No 2026/27 SAPS fee schedule found.** **[UNVERIFIED]**
+10. **Certificates issued 2004–2011 remain the messiest.** The Act 28 of 2006 provisions commenced on **10 January 2011**, so pre-commencement certificates were issued under the original flat 5-year regime and may carry a printed 5-year expiry that was superseded by the s10(2) linkage.
+11. **Training providers routinely say "some competencies are 5 years and some are 10, check yours."** This is a rough restatement of the derived rule, communicated as if the period were fixed at issue. It is not.
+12. **The CFR record is authoritative.** It gates the licence application. Where a calculated date, a printed date and the CFR disagree, **the CFR wins.** Confirm through the DFO before relying on any date for a compliance decision.
 
 ---
 
@@ -529,7 +772,7 @@ Amending Acts, in commencement order:
 | **Domestic Violence Amendment Act 14 of 2021** | **14 Apr 2023** |
 | Firearms Control Amendment Act 28 of 2006 | **staggered: 10 Jan 2011 and 1 Mar 2012 — the remainder is still uncommenced** |
 
-> The staggered commencement of Act 28 of 2006 is the single biggest source of confusion in this area. ss 8, 9, 10 and 18 of that Act — which rewrote s9(1), s10, inserted s10A and substituted the s27 Table — took effect **10 January 2011**. Section 16A took effect **1 March 2012**. Parts of Act 28 of 2006 have **never** commenced.
+> The staggered commencement of Act 28 of 2006 is the single biggest source of confusion in this area. ss 8, 9, 10 and 18 of that Act — which rewrote s9(1), s10, inserted s10A and substituted the s27 Table — took effect **10 January 2011**. Section 12 (s16A) took effect **1 March 2012**. **32 of the Act's 53 substantive sections have never commenced.** The full commencement map, read from the gazetted text, is at **§0** — read it before relying on anything sourced from Act 28 of 2006.
 
 **Firearms Control Amendment Bill:** as at August 2026 there is **no firearms bill before Parliament**. A 2021 draft (GG 44593, May 2021) drew over 200,000 objections and was "held back" by the Portfolio Committee on Police on 24 November 2021 — held back, not withdrawn. A revived 2025 draft went to NEDLAC and circulated publicly around 6 November 2025; the DA rejected it on 13 November and 1 December 2025. It was reported in June 2026 that Government is still "considering" a Bill proposing to remove self-defence as a valid reason for firearm ownership. **No B-number, no tabling, no gazette number for the 2025 version was found.** **[Likely — based on PMG's current-bills index showing no firearms bill]**
 
@@ -540,6 +783,9 @@ Amending Acts, in commencement order:
 ## 11. Source basis
 
 **Primary — consulted directly:**
+- **Firearms Control Amendment Act 28 of 2006**, gazetted text — GN 775, GG 30210, Vol. 506, 22 August 2007 (assented 17 August 2007). Read in full for v5; basis for §0. Shows deleted words in square brackets and inserted words underlined, which is what makes the pre-amendment position recoverable.
+- Commencement proclamations: **Proc. 77, GG 33871 (17 Dec 2010)** — in force 10 Jan 2011; **Proc. R9, GG 35047 (17 Feb 2012)** — in force 1 Mar 2012.
+- **Three genuine SAPS 524 competency certificates**, one holder, issued 2022-08-13 (Bellville), 2024-09-26 and 2025-06-06 (Durbanville). Basis for §4.8 and the §5.2 reversal. Personal identifiers redacted in this document.
 - Firearms Control Act 60 of 2000, consolidated text (ss 1, 3, 9, 10, 10A, 11–21, 24, 27, 28) — local copy `FCA-60-of-2000-with-amendments.pdf`, consolidation to 31 Jan 2015, cross-checked against the SAFLII consolidation to 14 Apr 2023
 - Firearms Control Regulations, 2004 (GN R.345, GG 26156 of 26 March 2004), esp. Regulations 13, 14 and Annexure "A" forms index — local copy `Fire arms regulations/26156.pdf`
 - **SAPS 271** (Application for Licence to Possess a Firearm), form text — local copy
@@ -561,7 +807,42 @@ Amending Acts, in commencement order:
 
 ---
 
-## 12. Changelog — what changed from v2
+## 12. Changelog
+
+### 12.-1 What changed in v5 — the gazetted Amendment Act
+
+Act 28 of 2006 was read in full from the gazette. Effects:
+
+| Change | § |
+|---|---|
+| **New §0 — full commencement map of Act 28 of 2006.** 32 of 53 substantive sections and 7 of 13 definition paragraphs **never commenced**. Nothing in this reference should be sourced from the Amendment Act without checking §0 first. | 0 |
+| **New warning: the five-shot semi-auto shotgun limit is STILL LAW.** Act 28's long title and its s11 delete FCA s16(1)(c) — but s11 was never proclaimed. Anyone working from the Amendment Act will get this wrong. v4's statement of the limit was correct; v5 explains why it survives. | 0.5, 7.1 |
+| **New: the origin of the "5 years" folklore.** The repealed s10(2) read *"lapses after five years from its date of issue"*. It is not a fallback — it is the **dead** rule, applied from habit. | 5.1, 5.3.1 |
+| **New: "full set" of fingerprints is still the statutory standard.** Act 28 s5 would have softened FCA s6(1)(a) to *"such fingerprints as the Registrar may require"*; it never commenced. | 0.4, 6.4 |
+| **New: "fit and proper person" is still undefined in the Act.** Act 28 s1(g) would have defined it; never commenced. This is why Regulation 14(1) and the Registrar's discretion carry so much weight. | 0.4 |
+| **New: an "occasional hunter" is still statutorily someone NOT a member of an accredited association.** Act 28 ss 1(j)/(k) would have removed that exclusion; never commenced. Bears on s15 eligibility. | 0.4 |
+| **New: the muzzle loader transitional amnesty (Schedule 1 Item 1A) closed 10 January 2012.** No transitional protection remains. | 0.6 |
+| **Corroborated from the amending text itself:** the s27 Table changes v4 identified — s20 game rancher/hunting **[Five] → 10 years**, s20 other business **[Two] → Five years**, s16A inserted at 10 years. The gazette shows the old values in square brackets, confirming the SAPS 271 form prints the repealed table. | 5.4 |
+| **Confirmed sound:** every provision this reference depends on for competency — FCA s9(1), s10, s10A, s27 — is in the 10 January 2011 batch and fully in force. | 0.3 |
+| New **[GAZETTE]** confidence marker. | — |
+
+### 12.0 What changed in v4 — specimen evidence
+
+Three genuine SAPS 524 certificates were examined. Effects:
+
+| Change | § |
+|---|---|
+| **REVERSAL — v3's correction #4 was wrong.** The certificate has **no expiry date field**. v2 was right; v3's inference from the SAPS 271 form was not. | 5.2 |
+| **New: the certificate is SAPS 524.** v3 named every application form but never the certificate itself. | 4.8.1, 4.4 |
+| **Structural correction to v2 *and* v3.** Endorsements are not "on a single certificate". Each application yields a **separate SAPS 524** with its own number and issue date. Asking for "your competency certificate" misses types. | 4.8.3(a) |
+| **`HANDGUN` is written with no action qualifier** — direct confirmation that handgun competency is not split S/L vs N/S/L. | 4.8.5 |
+| **Correction to v2's compound-endorsement reading.** In `S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN`, `S/L` most likely binds the rifle cluster only, leaving `SHOTGUN` unqualified — not "self-loading shotgun" as v2 asserted. Flagged as unresolved. | 4.8.6 |
+| **New: the official date stamp is the print date, not the issue date.** One specimen is a 2024 reprint of a 2022 certificate. | 4.8.3(d) |
+| **New: certificate number = CFR application number**, sequential and monotonic with issue date. The `frsprd` endpoint in the footer is internal to SAPS — there is no public verification API. | 4.8.3(c), (e) |
+| **New: field-level extraction guidance** for a platform ingesting certificate images. | 4.8.7 |
+| **Confirmed as reported:** the mix of full wording and abbreviation on the endorsement line, including terms silently dropped (`MANUALLY OPERATED RIFLE` omits "or carbine"). | 4.8.5 |
+
+### 12.1 What changed in v3 — from v2
 
 **Errors of law corrected (would have produced wrong advice):**
 
@@ -570,7 +851,7 @@ Amending Acts, in commencement order:
 | 1 | A self-loading shotgun can be licensed under s13 | **False.** s13(1)(a) permits only a shotgun *"not fully or semi-automatic"*. Semi-auto shotguns are restricted firearms → s14, or s16 if ≤5 shots | 7.1 |
 | 2 | s20: hunting business 5 yrs; other/security/training/film/game rancher 2 yrs | **Pre-2011 position.** Current s27: game rancher **and** hunting **10 yrs**; all other business **5 yrs**. The SAPS 271 form still prints the old table | 5.4 |
 | 3 | 119650 = manually operated shotgun; 119652 = self-loading rifle/carbine; 123515 = self-loading shotgun | **All three wrong.** 119650 = self-loading rifle/carbine; 119652 = shotgun; 123515 = handgun *for business purposes* | 3 |
-| 4 | "A competency certificate does not carry an expiry date. There isn't one." | **Overstated.** SAPS 271 §F.1.7 requires the competency's *"Expiry date"*. Many certificates carry one. It is just not legally determinative | 5.2 |
+| 4 | ~~"A competency certificate does not carry an expiry date. There isn't one."~~ | ~~**Overstated.**~~ **v4: RETRACTED — v2 was correct.** Three specimens confirm no expiry field exists. See §12.0 | 5.2 |
 | 5 | Competency renews automatically as part of the licence renewal | **Half true.** Two forms, two fees, lodged together (s10A(1)). A 517(g) is due only when the competency is actually expiring | 6.2 |
 | 6 | Muzzle loader competency: 90-day renewal rule | Correct, but **omitted s10(3): it lapses 10 years from date of issue** | 5.5 |
 | 7 | "5 years from issue" fallback where no licence exists | **No official support.** SAPS practice varies; commonly treated as 5 years. A planning assumption, not a rule | 5.3.1 |

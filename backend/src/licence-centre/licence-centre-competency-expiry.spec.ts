@@ -53,22 +53,26 @@ describe('the competency date the Document Centre offers', () => {
     expect(out?.why ?? '').not.toMatch(/section 10|s10\(2\)|Firearms Control Act/i);
   });
 
-  it('⚠️ does not claim the certificate prints no date', () => {
-    // ⚠️ THIS TEST USED TO ASSERT THE OPPOSITE, and reference v3 withdrew the
-    // claim it was enforcing. v2 said flatly "a competency certificate does
-    // not carry an expiry date... never parse one", and this spec held the
-    // copy to saying so. v3 §5.2: SAPS's own SAPS 271 form, §F.1.6 and §F.1.7,
-    // requires the applicant to enter the competency's date of issue AND its
-    // expiry date, and certificates issued before 10 January 2011 carry a
-    // printed five-year expiry on their face.
+  it('⚠️ says the certificate prints no date, and never sends them to look', () => {
+    // ⚠️ THIS ASSERTION HAS NOW BEEN FLIPPED TWICE, AND v5 SETTLES IT WITH
+    // EVIDENCE. It began asserting that our copy says a competency prints no
+    // expiry (v2). Reference v3 called that overstated — reasoning from SAPS
+    // 271 §F.1.6/F.1.7 asking the applicant for the competency's expiry date
+    // that the field must exist somewhere — and the assertion was inverted to
+    // match. v4 then examined three genuine SAPS 524 certificates, from 2022,
+    // 2024 and 2025, and found NO EXPIRY FIELD: not blank, absent from the
+    // form. §5.2 reverses v3's correction outright.
     //
-    // The true position is narrower: a printed date is advisory input, never
-    // determinative, because s10(2) decoupled validity from the certificate.
-    // Telling a member their card has no date is simply false for many of
-    // them, and invites them to distrust everything else on the screen.
+    // The lesson is in the reasoning, not the outcome: an inference from one
+    // SAPS form about what another SAPS form contains is worth nothing, and
+    // SAPS forms routinely disagree with each other — the 271 also prints a
+    // business-licence period table repealed in 2011.
+    //
+    // So the copy tells the member there is no date on the card, and does not
+    // send them to look for one. §9: any guidance saying "check the expiry on
+    // your card" is wrong.
     const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, false);
-    expect(out?.why ?? '').not.toMatch(/does not print|no expiry date on|there isn.t one/i);
-    // Still no instruction to go and read the card, for the amended reason.
+    expect(out?.why ?? '').toMatch(/does not print a date/i);
     expect(out?.why ?? '').not.toMatch(/check it against your certificate/i);
   });
 
