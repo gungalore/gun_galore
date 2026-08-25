@@ -1508,17 +1508,22 @@ function CredentialCard({
       word in it.
     */
     <li className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-card)] p-4">
-      {/* The document itself is one tap away on Open; this is a placeholder,
-          not a render. Fetching and decrypting a blob for every selection
-          would spend a request on a thumbnail nobody asked for. */}
-      <div className="flex h-[148px] items-center justify-center rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)]">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--border-hover)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <path d="M14 2v6h6" />
-        </svg>
-      </div>
+      {/* ⚠️ NO PREVIEW HERE, AND THIS IS THE SECOND TIME THAT HAS BEEN
+          DECIDED. A 148px box holding a generic page glyph stood here — it
+          was in the approved drawing, and it rendered the same for every
+          document, so it told nobody anything about the one they had
+          selected. Operator, 2026-08-25: "remove that small preview, just
+          keep the information underneath it. There is a view option so that
+          would be more than fine."
 
-      <div className="mt-4">
+          The thing it stood in for is real and reachable: View below fetches
+          the decrypted bytes and opens the actual document. What it would
+          take to render it in place is written up in the same conversation —
+          cheap for a photographed licence, and needing a PDF rasteriser this
+          backend does not have for anything scanned to PDF. If that is ever
+          revisited, put a real render here or nothing; a placeholder is the
+          one option already tried twice. */}
+      <div>
         {/* ⚠️ WE NAME IT, THEY OWN THE NAME. A firearm licence is titled make +
             calibre off the document — "Howa 6.5 Creedmoor" — because six rows
             reading "Firearm licence" cannot be told apart. But what somebody
