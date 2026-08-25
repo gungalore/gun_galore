@@ -1,0 +1,175 @@
+import { describe, expect, it } from 'vitest';
+import { CredentialKind } from './licence-centre-api';
+import {
+  ReviewItem,
+  expiryAnswer,
+  needsALook,
+  refileNeedsPanel,
+  settleableInBulk,
+} from './document-review-rules';
+
+// ────────────────────────────────────────────────────────────────────
+// The rules the Document Centre's review screen files documents by.
+//
+// The first test is the one that matters. It pins a bug a pre-ship review
+// caught, which would have confirmed a firearm licence with no expiry date and
+// no way for any surface to ever ask about it again. Deleting it, or relaxing
+// what it asserts, puts that back.
+// ────────────────────────────────────────────────────────────────────
+
+function doc(over: Partial<ReviewItem> = {}): ReviewItem {
+  return {
+    id: 'c1',
+    kind: 'OTHER' as CredentialKind,
+    title: 'A document',
+    mimeType: 'image/jpeg',
+    autoFiled: true,
+    confident: true,
+    neverExpires: false,
+    issuedOnUnknown: false,
+    proposed: {
+      expiresOn: null,
+      issuedOn: null,
+      details: {},
+      lowConfidence: [],
+      derivedExpiry: null,
+    },
+    ...over,
+  };
+}
+
+describe('correcting the type of a document', () => {
+  it('⚠️ NEVER settles a licence misread as a photograph in one tap', () => {
+    // The failure this exists for, start to finish:
+    //
+    // A firearm licence is misread and filed as SAFE_PHOTOGRAPHS. The server
+    // pre-ticks "Never expires" for that kind, because a photograph has no
+    // date, and skips the vision read entirely. The member spots it and taps
+    // the type control to correct it.
+    //
+    // If that tap were allowed to post straight through, it would send the
+    // photograph's tick under the licence's kind: confirmed, expiresOn null.
+    // The reminder sweep requires confirmedAt AND expiresOn, so no renewal
+    // reminder could ever fire — and because it is confirmed, no screen would
+    // ask again. The member's own correction is what buries it.
+    const misfiled = doc({
+      kind: 'SAFE_PHOTOGRAPHS' as CredentialKind,
+      neverExpires: true, // the server put this here, not the member
+      confident: true, // and it was sure, which is why the tap is available
+    });
+
+    expect(refileNeedsPanel(misfiled, 'FIREARM_LICENCE' as CredentialKind)).toBe(
+      true,
+    );
+  });
+
+  it('⚠️ never carries a WORKED-OUT date across a change of type', () => {
+    // A competency certificate prints no expiry; a statute supplies five years
+    // from its issue date. That arithmetic is about the kind we guessed, so it
+    // means nothing once the kind is corrected — and confirming it would put a
+    // five-year expiry on, say, a club membership.
+    const derived = doc({
+      kind: 'COMPETENCY_CERTIFICATE' as CredentialKind,
+      proposed: {
+        ...doc().proposed,
+        derivedExpiry: { on: '2029-04-01', why: 'five years from issue' },
+      },
+    });
+
+    expect(
+      refileNeedsPanel(derived, 'DEDICATED_DISCIPLINE' as CredentialKind),
+    ).toBe(true);
+  });
+
+  it('DOES allow one tap when the date was read off the page', () => {
+    // A date printed on the document is a fact about the document. It survives
+    // being told the document is a different kind of thing, so the correction
+    // needs nothing more from the member.
+    const read = doc({
+      kind: 'OTHER' as CredentialKind,
+      proposed: { ...doc().proposed, expiresOn: '2032-11-28' },
+    });
+
+    expect(refileNeedsPanel(read, 'FIREARM_LICENCE' as CredentialKind)).toBe(
+      false,
+    );
+  });
+
+  it('confirming the SAME type needs no panel when there is an answer', () => {
+    const photo = doc({
+      kind: 'SAFE_PHOTOGRAPHS' as CredentialKind,
+      neverExpires: true,
+    });
+    expect(refileNeedsPanel(photo, 'SAFE_PHOTOGRAPHS' as CredentialKind)).toBe(
+      false,
+    );
+  });
+
+  it('confirming the same type still needs the panel with no answer at all', () => {
+    expect(refileNeedsPanel(doc(), 'OTHER' as CredentialKind)).toBe(true);
+  });
+});
+
+describe('what the member has to look at', () => {
+  it('always asks about a photograph we filed ourselves', () => {
+    expect(
+      needsALook(
+        doc({ kind: 'SAFE_PHOTOGRAPHS' as CredentialKind, confident: true }),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not ask about a photograph the MEMBER filed', () => {
+    // They chose the box. There is no guess of ours to check.
+    expect(
+      needsALook(
+        doc({ kind: 'SAFE_PHOTOGRAPHS' as CredentialKind, autoFiled: false }),
+      ),
+    ).toBe(false);
+  });
+
+  it('asks whenever we were unsure', () => {
+    expect(needsALook(doc({ confident: false }))).toBe(true);
+  });
+
+  it('does not ask about a confident reading of an ordinary kind', () => {
+    expect(
+      needsALook(doc({ kind: 'FIREARM_LICENCE' as CredentialKind })),
+    ).toBe(false);
+  });
+});
+
+describe('what can be settled in bulk', () => {
+  it('refuses a document with no date and no tick', () => {
+    // The confirm panel disables its own button on exactly this, and the
+    // server refuses it. A bulk button must not post what the panel will not.
+    expect(settleableInBulk(doc())).toBe(false);
+    expect(expiryAnswer(doc())).toBeNull();
+  });
+
+  it('refuses a date we worked out rather than read', () => {
+    expect(
+      settleableInBulk(
+        doc({
+          proposed: {
+            ...doc().proposed,
+            derivedExpiry: { on: '2029-04-01', why: 'five years from issue' },
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('accepts a tick, which is a complete answer', () => {
+    expect(settleableInBulk(doc({ neverExpires: true }))).toBe(true);
+    // ⚠️ EMPTY STRING, NOT NULL. The tick IS the answer and the server checks
+    // it before it parses anything; null would read as "unanswered".
+    expect(expiryAnswer(doc({ neverExpires: true }))).toBe('');
+  });
+
+  it('accepts a date read off the page', () => {
+    const read = doc({ proposed: { ...doc().proposed, expiresOn: '2032-11-28' } });
+    expect(settleableInBulk(read)).toBe(true);
+    expect(expiryAnswer(read)).toBe('2032-11-28');
+  });
+});

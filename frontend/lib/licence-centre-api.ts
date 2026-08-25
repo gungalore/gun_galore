@@ -125,6 +125,17 @@ export interface CredentialRow {
   mimeType: string;
   byteSize: number;
   createdAt: string;
+  /**
+   * WE named this one, not the member — so there is a guess on it to check.
+   *
+   * ⚠️ STORED NOW, WHICH IS THE ONLY REASON THE REVIEW SURVIVES A REFRESH.
+   * Both of these used to exist solely in the create response, so rebuilding
+   * the check-these list from here had to assume the worst for every row: nine
+   * documents we were sure about read exactly like the three we were not.
+   */
+  autoFiled: boolean;
+  /** Only meaningful while autoFiled. False reads as "not sure", never "sure". */
+  namedConfident: boolean;
 }
 
 /** What came back from adding one document. */
@@ -150,6 +161,15 @@ export interface AddedCredential {
    */
   neverExpires?: boolean;
   issuedOnUnknown?: boolean;
+  /**
+   * What the browser called the file, so a review row knows whether spending
+   * a fetch on a thumbnail could possibly draw one.
+   *
+   * ⚠️ A HINT, NOT A VERDICT — it is the declared type, copied verbatim and
+   * never re-checked against the bytes. Optional because the caller has the
+   * File in hand either way and can fall back to its own `type`.
+   */
+  mimeType?: string;
   proposed: CredentialProposal;
 }
 

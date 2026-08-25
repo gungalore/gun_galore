@@ -8,6 +8,22 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LicenceCentreMotivations from '@/components/licence-centre-motivations';
 import DocumentCentreAdd from '@/components/document-centre-add';
+/*
+  ⚠️ THE FOUR DECISIONS THAT CAN LOSE A DOCUMENT LIVE IN lib/, NOT HERE.
+  They decide whether a member has to look at a document and whether its type
+  can be corrected in one tap — and a bug in exactly that logic, caught in a
+  pre-ship review, would have confirmed a firearm licence with no expiry and
+  left nothing able to remind on it or ask about it again. In lib/ they are
+  covered by document-review-rules.spec.ts; in here they were not testable at
+  all, because this file cannot be imported without a DOM.
+*/
+import {
+  ReviewItem,
+  expiryAnswer,
+  needsALook,
+  refileNeedsPanel,
+  settleableInBulk,
+} from '@/lib/document-review-rules';
 import {
   AddedCredential,
   CredentialKind,
@@ -632,7 +648,24 @@ function AddPanel({
    * batched away — an unconfirmed date is invisible to the reminder sweep,
    * which is the entire point of the Centre.
    */
-  const [queue, setQueue] = useState<AddedCredential[]>([]);
+  const [queue, setQueue] = useState<ReviewItem[]>([]);
+  /**
+   * Files that never became documents, carried into the review beside the
+   * ones that did.
+   *
+   * ⚠️ THEY USED TO BE A JOINED STRING. `failed.join(' · ')` in one red line
+   * beside the buttons — which is unreadable at three files and actively
+   * misleading at eleven, where an unconfigured secret produces eleven
+   * identical sentences. As rows they say which file, why, and whether trying
+   * again could possibly help.
+   */
+  const [rejected, setRejected] = useState<RejectedFile[]>([]);
+  /**
+   * The type the member declared for the last batch, so "Try again" on a row
+   * repeats what they actually asked for rather than quietly falling back to
+   * "work it out for me".
+   */
+  const lastDeclared = useRef<CredentialKind | ''>('');
   const [progress, setProgress] = useState<{
     done: number;
     total: number;
@@ -683,10 +716,16 @@ function AddPanel({
           id: r.id,
           kind: r.kind,
           title: r.title,
-          // The phone path never asked them the type, so the confirm step
-          // must — same as a batch-sorted desktop upload.
-          autoFiled: true,
-          confident: false,
+          mimeType: r.mimeType,
+          // ⚠️ READ OFF THE ROW NOW, NOT ASSUMED. This said `autoFiled: true,
+          // confident: false` for every unconfirmed document, because neither
+          // value was stored anywhere and there was nothing better to go on.
+          // That is the bug the review screen could not survive: a refresh
+          // flattened nine documents we were sure about into the same amber
+          // "check this" as the three we were not, and the three that actually
+          // needed a human became invisible among them.
+          autoFiled: r.autoFiled,
+          confident: r.namedConfident,
           // ⚠️ CARRIED THROUGH, NOT DEFAULTED. A safe photograph arrives with
           // "Never expires" already ticked by the server, and a confirm step
           // that started it unticked would show a disabled-looking form
@@ -712,6 +751,16 @@ function AddPanel({
   async function uploadFiles(
     picked: File[],
     declared: CredentialKind | '' = '',
+    /**
+     * Add to the review rather than start a new one.
+     *
+     * ⚠️ WITHOUT THIS, "TRY AGAIN" ON ONE FAILED FILE THREW AWAY THE BATCH.
+     * The two setters below assign wholesale, which is right for a fresh pick
+     * and catastrophic for a retry: one tap discarded every document still
+     * waiting to be checked AND every other failed row — and a failed row
+     * holds the only reference this app has to that File.
+     */
+    merge = false,
   ) {
     if (!picked.length) return;
 
@@ -719,29 +768,38 @@ function AddPanel({
     // immediate and NAMES the file. The server's rejection is a
     // generic 400 by the time it reaches the browser — and one
     // unusable file must not cost the whole pack a round trip.
-    const failed: string[] = [];
+    const failed: RejectedFile[] = [];
     const files = picked.filter((f) => {
+      // ⚠️ NO `file` ON EITHER OF THESE. A pre-flight refusal is about the
+      // file itself, so trying again produces the identical refusal — and a
+      // button whose only outcome is the same error reads as the site being
+      // broken rather than the file being wrong. See RejectedFile.
       if (!ACCEPTED.includes(f.type)) {
-        failed.push(
-          `${f.name}: we cannot read ${f.type || 'that file type'}`,
-        );
+        failed.push({
+          key: `r${(rejectSeq += 1)}`,
+          name: f.name,
+          reason: `We cannot read ${f.type || 'that file type'}. Use a JPG, PNG, WebP or PDF — on an iPhone, pick it from your photo library rather than from Files.`,
+        });
         return false;
       }
       if (f.size > 10 * 1024 * 1024) {
-        failed.push(
-          `${f.name}: ${(f.size / 1024 / 1024).toFixed(1)} MB, over the 10 MB limit`,
-        );
+        failed.push({
+          key: `r${(rejectSeq += 1)}`,
+          name: f.name,
+          reason: `${(f.size / 1024 / 1024).toFixed(1)} MB — over the 10 MB limit. Take it again a little further back.`,
+        });
         return false;
       }
       return true;
     });
 
     if (!files.length) {
-      setErr(
-        `${failed.join(' · ')}. Use a JPG, PNG, WebP or PDF — on an iPhone, pick the photos from your library rather than from Files.`,
-      );
+      // Nothing was added, so there is nothing to review: the message beside
+      // the buttons is the whole answer.
+      setErr(failed.map((f) => `${f.name}: ${f.reason}`).join(' '));
       return;
     }
+    lastDeclared.current = declared;
 
     setBusy(true);
     setErr(null);
@@ -750,7 +808,7 @@ function AddPanel({
     // ONE AT A TIME. Each upload writes an encrypted file and makes a
     // vision call; firing eight at once would race the per-minute
     // limit and give no usable progress.
-    const added: AddedCredential[] = [];
+    const added: ReviewItem[] = [];
     for (const [i, file] of files.entries()) {
       try {
         // ONE file keeps the type the member picked. SEVERAL is a
@@ -769,82 +827,59 @@ function AddPanel({
         // photographs of one safe, and making the classifier re-derive that
         // eight times was the old behaviour's real cost. Blank still means
         // "work it out for me", which is still the default.
-        added.push(
-          await licenceCentreApi.create(token, declared, '', file),
-        );
+        const r = await licenceCentreApi.create(token, declared, '', file);
+        added.push({
+          id: r.id,
+          kind: r.kind,
+          title: r.title,
+          // The server tells us; the File in hand is the backstop.
+          mimeType: r.mimeType ?? file.type,
+          autoFiled: r.autoFiled === true,
+          confident: r.confident === true,
+          neverExpires: r.neverExpires === true,
+          issuedOnUnknown: r.issuedOnUnknown === true,
+          proposed: r.proposed,
+        });
       } catch (ex) {
-        // One bad file must not abandon the rest of the pack.
-        failed.push(
-          `${file.name}: ${
-            ex instanceof LicenceApiError
-              ? ex.message
-              : 'did not upload'
-          }`,
-        );
+        // One bad file must not abandon the rest of the pack — and THIS one
+        // keeps its File, because a failure here is a dropped connection or a
+        // server that was busy, and trying again is exactly right.
+        failed.push({
+          key: `r${(rejectSeq += 1)}`,
+          name: file.name,
+          reason:
+            ex instanceof LicenceApiError ? ex.message : 'It did not upload.',
+          file,
+        });
       }
       setProgress({ done: i + 1, total: files.length });
     }
 
     setBusy(false);
     setProgress(null);
-    setErr(failed.length ? failed.join(' · ') : null);
+    // ⚠️ CLEARED, NOT SET. The failures are rows in the review now; leaving
+    // them in the toolbar line as well would say the same thing twice, in the
+    // one place that cannot say which file.
+    setErr(null);
+    if (merge) {
+      setQueue((q) => [...q, ...added]);
+      setRejected((prev) => [...prev, ...failed]);
+    } else {
+      setRejected(failed);
+    }
     // ⚠️ THE UPLOAD RESPONSE CARRIES THE TICKS ITSELF NOW. It used to
     // return the proposal and stop, while the same call had already
     // stamped `neverExpires: true` on a photograph of a safe — so this
     // line re-read the entire list after every upload to learn something
     // the server had just decided. Taking the response at face value was
     // the fix; the round trip was the workaround.
-    setQueue(added);
+    if (!merge) setQueue(added);
     // Always, not only on failure: a row may have been committed and
     // its response lost — the vision read runs after the insert and
     // can outlast the proxy's patience. Without this the document is
     // invisible AND a retry is refused as a duplicate, which
     // contradicts the error we just showed.
     await onAdded().catch(() => undefined);
-  }
-
-  if (queue.length) {
-    const [current, ...rest] = queue;
-    return (
-      <div>
-        {queue.length > 1 && (
-          <p className="mt-6 text-sm text-[var(--text-secondary)]">
-            {queue.length} documents left to check.
-          </p>
-        )}
-        <ConfirmPanel
-          /* ⚠️ KEYED ON THE DOCUMENT, OR THE PANEL NEVER FORGETS THE LAST ONE.
-             Advancing the queue only swaps the props — React keeps the one
-             instance sitting at this position — so everything the panel holds
-             in state walked forward into the next document: the expiry, the
-             issue date, the type, the name, and now the two ticks. It was
-             already wrong with a date; the ticks made it destructive. Confirm a
-             photograph of a safe and the firearm licence behind it in the queue
-             opened with “Never expires” ticked, the expiry we had just read off
-             it cleared and its box disabled, and one enabled button reading
-             “That is right” — which filed the licence as a safe photograph,
-             wiped the date and stamped confirmedAt. That is a licence no
-             reminder can ever fire for again. */
-          key={current.id}
-          token={token}
-          id={current.id}
-          proposed={current.proposed}
-          /* The type controls appear only where WE did the naming. Where the
-             member picked the type themselves there is nothing to check. */
-          kinds={current.autoFiled ? KINDS : undefined}
-          currentKind={current.kind}
-          uncertain={current.autoFiled === true && current.confident !== true}
-          defaultTitle={current.title}
-          neverExpires={current.neverExpires}
-          issuedOnUnknown={current.issuedOnUnknown}
-          onDone={async () => {
-            setQueue(rest);
-            await onAdded();
-          }}
-        />
-        {err && <p className="mt-2 text-sm text-[var(--red)]">{err}</p>}
-      </div>
-    );
   }
 
   // ── TWO BUTTONS, AND THE TYPE ASKED FIRST ────────────────────────────
@@ -877,7 +912,29 @@ function AddPanel({
   // hand-off to a phone — a genuinely longer road — and the file already on
   // the machine is the shorter one. Both are one tap either way.
   return (
-    <div className="flex items-center gap-2">
+    <>
+      {(queue.length > 0 || rejected.length > 0) && (
+        <ReviewScreen
+          token={token}
+          items={queue}
+          rejected={rejected}
+          onFinish={() => {
+            setQueue([]);
+            setRejected([]);
+          }}
+          uploading={busy}
+          onRetry={(r) => {
+            if (!r.file) return;
+            // Dropped BY KEY, not by name: two folders can hand us two files
+            // called scan.jpg, and only one of them is being retried.
+            setRejected((prev) => prev.filter((x) => x.key !== r.key));
+            // Merged, so the retry joins the review instead of replacing it.
+            void uploadFiles([r.file], lastDeclared.current, true);
+          }}
+          onChanged={onAdded}
+        />
+      )}
+      <div className="flex items-center gap-2">
       <DocumentCentreAdd
         groups={KIND_GROUPS}
         busy={busy}
@@ -895,6 +952,753 @@ function AddPanel({
         </span>
       )}
       {err && <span className="text-xs text-[var(--red)]">{err}</span>}
+      </div>
+    </>
+  );
+}
+
+// ── the review screen ───────────────────────────────────────────────
+//
+// Operator, 2026-08-25, on the approved drawing: "Review screen looks right,
+// build it."
+//
+// WHAT IT REPLACES. A batch used to be taken apart the moment it landed: one
+// full-width confirm panel per document, in upload order, inside a toolbar
+// flex cell, with nothing but "N documents left to check" for context — and
+// that panel shows no filename and no picture. Five things filed as
+// "Something else" were five identical screens asking what they were, and the
+// three we were unsure about sat at positions 2, 7 and 11 behind nine
+// identical panels with no way to see them together or skip to them.
+//
+// ⚠️ EVERY ROW OWNS ITS OWN STATE, AND THAT IS THE WHOLE SAFETY STORY. The
+// queue this replaces carries a comment recording what happens when it does
+// not: advancing it handed one document's state to the next, so confirming a
+// photograph of a safe opened the firearm licence behind it with "Never
+// expires" already ticked and the expiry we had just read off it cleared,
+// under one button reading "That is right" — filing the licence as a safe
+// photograph and stamping it confirmed. That is a licence no reminder can
+// ever fire for again. A screen that shows a whole batch at once is exactly
+// where that class of bug lives, so nothing here is shared between rows: the
+// panel is keyed on the document, and the accept path reads each row's own
+// proposal and never a running variable.
+//
+// ⚠️ AND THE FIRST DRAFT OF THIS SCREEN REACHED THAT SAME END STATE ANYWAY,
+// through its own repair gesture. A pre-ship review caught it. The one-tap
+// type control let a member re-file a mis-read document without opening the
+// panel — and posted the OLD kind's date answer with the NEW kind. A firearm
+// licence wrongly filed as a photograph arrives with "Never expires" already
+// ticked by the server, because that is right for a photograph; one tap to
+// correct the type therefore stamped the licence confirmed, with no expiry,
+// and dropped it out of every surface that would have asked again. Hence
+// `settleableInBulk` and the guard at the top of `refile`: a date is only
+// carried across a change of type when we READ it off the page, because that
+// is a fact about the document rather than about our guess at what it is.
+
+/**
+ * Two document fetches at a time, no more.
+ *
+ * ⚠️ A THUMBNAIL COSTS THE MOST EXPENSIVE REQUEST ON THIS PAGE. There is no
+ * thumbnail column and nothing generates one: the only way to draw a document
+ * is to fetch and decrypt its whole bytes, which is why the detail panel
+ * deliberately shows no preview at all. It is worth it HERE and only here —
+ * a triage row without a picture cannot do its job, which is the reason the
+ * panel this replaces could not do its job either. Twelve rows firing twelve
+ * concurrent decrypting reads at a single-process API is not, so they queue.
+ */
+const THUMB_AT_ONCE = 2;
+const thumbGate: { active: number; waiting: (() => void)[] } = {
+  active: 0,
+  waiting: [],
+};
+async function withThumbSlot(
+  run: () => Promise<void>,
+  /** Checked AFTER the wait: a row that has gone must not spend its turn. */
+  cancelled: () => boolean,
+): Promise<void> {
+  if (thumbGate.active >= THUMB_AT_ONCE) {
+    await new Promise<void>((resolve) => thumbGate.waiting.push(resolve));
+  }
+  thumbGate.active += 1;
+  try {
+    // ⚠️ THE SLOT IS STILL TAKEN AND RELEASED. Returning before `run` skips
+    // the fetch, not the bookkeeping — bailing out without the increment and
+    // the finally below would leak a slot and eventually wedge the queue.
+    if (cancelled()) return;
+    await run();
+  } finally {
+    thumbGate.active -= 1;
+    thumbGate.waiting.shift()?.();
+  }
+}
+
+function GlyphThumb({ label }: { label?: string }) {
+  return (
+    <div
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)]"
+      aria-hidden
+    >
+      {label ? (
+        <span className="text-[8.5px] font-semibold tracking-[0.06em] text-[var(--text-tertiary-on-card)]">
+          {label}
+        </span>
+      ) : (
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--border-hover)"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <path d="M14 2v6h6" />
+        </svg>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The document itself, at 40px.
+ *
+ * ⚠️ THE TYPE IS A HINT, NOT A VERDICT. `mimeType` holds whatever the browser
+ * declared when the file was picked, copied verbatim and never re-checked
+ * against the bytes — so it decides whether to spend a fetch, and the image's
+ * own error decides whether the result can actually be drawn.
+ */
+function DocThumb({
+  token,
+  id,
+  mimeType,
+}: {
+  token: () => Promise<string | null>;
+  id: string;
+  mimeType: string;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [broke, setBroke] = useState(false);
+  /**
+   * ⚠️ THE TOKEN GETTER IS HELD IN A REF, NOT A DEPENDENCY. It comes from
+   * Clerk through a useCallback; a re-created identity in the dependency list
+   * would re-run this effect, and this effect fetches and decrypts a whole
+   * document. A refetch loop here is not a wasted render, it is a wasted
+   * request per row per render.
+   */
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+
+  const isImage = mimeType.startsWith('image/');
+
+  useEffect(() => {
+    if (!isImage) return;
+    let alive = true;
+    let made: string | null = null;
+    void withThumbSlot(
+      async () => {
+        try {
+          const u = await licenceCentreApi.fileBlobUrl(tokenRef.current, id);
+          if (!alive) {
+            URL.revokeObjectURL(u);
+            return;
+          }
+          made = u;
+          setUrl(u);
+        } catch {
+          // The glyph is the fallback and says nothing alarming. A thumbnail
+          // that will not load is not a reason to interrupt a member who is
+          // trying to file their documents.
+          if (alive) setBroke(true);
+        }
+      },
+      () => !alive,
+    );
+    return () => {
+      alive = false;
+      // ⚠️ REVOKED, ALWAYS. These are decrypted document bytes sitting in
+      // browser memory; a batch of twelve left pinned for the life of the tab
+      // is both a leak and the wrong thing to leave lying about.
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [id, isImage]);
+
+  if (!isImage) {
+    return (
+      <GlyphThumb label={mimeType === 'application/pdf' ? 'PDF' : undefined} />
+    );
+  }
+  if (!url || broke) return <GlyphThumb />;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt=""
+      onError={() => setBroke(true)}
+      className="h-10 w-10 shrink-0 rounded-[6px] border border-[var(--border)] object-cover"
+    />
+  );
+}
+
+/** Numbers a rejected row apart from its filename, which is not unique. */
+let rejectSeq = 0;
+
+/** A file that never became a document. */
+interface RejectedFile {
+  /** Its own identity: two folders can hand us two files called scan.jpg. */
+  key: string;
+  name: string;
+  reason: string;
+  /**
+   * Kept only where trying again could possibly work.
+   *
+   * ⚠️ ABSENT ON A PRE-FLIGHT REFUSAL, DELIBERATELY. A .HEIC is still a .HEIC
+   * and a 14 MB photo is still 14 MB; offering "Try again" on those is a
+   * button whose only outcome is the same refusal, which reads as the site
+   * being broken rather than the file being wrong.
+   */
+  file?: File;
+}
+
+function ReviewScreen({
+  token,
+  items,
+  rejected,
+  uploading,
+  onFinish,
+  onRetry,
+  onChanged,
+}: {
+  token: () => Promise<string | null>;
+  items: ReviewItem[];
+  rejected: RejectedFile[];
+  /** AddPanel is mid-upload — its progress line is behind this overlay. */
+  uploading: boolean;
+  /** Leave the review. The documents stay exactly as they are. */
+  onFinish: () => void;
+  onRetry: (r: RejectedFile) => void;
+  /** Re-read the list behind the overlay. */
+  onChanged: () => Promise<void>;
+}) {
+  /**
+   * ONE DOCUMENT IS NOT A BATCH. A group label over a single row, a chip
+   * counting to one and a tap to reach the date form is worse than the panel
+   * this screen replaced — and one document is the ordinary phone path.
+   */
+  const single = items.length === 1 && rejected.length === 0;
+
+  const [done, setDone] = useState<string[]>([]);
+  const [open, setOpen] = useState<string | null>(single ? items[0].id : null);
+  const [sheetFor, setSheetFor] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const busy = working || uploading;
+  const left = items.filter((d) => !done.includes(d.id));
+
+  // ⚠️ SORTED BY WHAT NEEDS A HUMAN, NOT BY UPLOAD ORDER. The whole complaint
+  // about the queue this replaces is that the two documents worth looking at
+  // sat behind nine that were not.
+  const needs = left.filter((d) => needsALook(d) || !settleableInBulk(d));
+  const fine = left.filter((d) => !needs.includes(d));
+  // Two different reasons a row needs the member, and they get two different
+  // words: one is a guess at what the document IS, the other is a missing
+  // date on a document whose type was never in question.
+  const unsureCount = needs.filter(needsALook).length;
+  const datelessCount = needs.length - unsureCount;
+
+  const panelFor = open ? left.find((d) => d.id === open) : null;
+  const sheetItem = sheetFor ? left.find((d) => d.id === sheetFor) : null;
+  const finished = left.length === 0 && rejected.length === 0;
+
+  /** One document settled — drop it from the review and refresh behind. */
+  async function settle(id: string) {
+    setDone((d) => [...d, id]);
+    setOpen(null);
+    setSheetFor(null);
+    await onChanged().catch(() => undefined);
+  }
+
+  /**
+   * "These N are right."
+   *
+   * ⚠️ ONE ROW AT A TIME, AND EACH FROM ITS OWN PROPOSAL. There is no batch
+   * confirm route; this is N posts. They run in series because a confirm
+   * writes and then resolves a notification, and because a failure part-way
+   * has to leave the rows it did not reach alone and say which ones those are
+   * — not abandon the batch and not claim it finished.
+   */
+  async function acceptAll() {
+    setWorking(true);
+    setErr(null);
+    const settled: string[] = [];
+    const stuck: string[] = [];
+    for (const d of fine) {
+      const expires = expiryAnswer(d);
+      // Cannot happen — `fine` excludes these — but a batch write is the last
+      // place to trust that a filter upstream stayed correct.
+      if (expires === null) {
+        stuck.push(d.title);
+        continue;
+      }
+      try {
+        await licenceCentreApi.confirm(token, d.id, {
+          expiresOn: expires,
+          issuedOn: d.issuedOnUnknown
+            ? undefined
+            : d.proposed.issuedOn || undefined,
+          neverExpires: d.neverExpires,
+          issuedOnUnknown: d.issuedOnUnknown,
+          // ⚠️ NO kind AND NO title. This gesture means "the dates and the
+          // filing are right", so it changes as little as it can: sending a
+          // kind is the one thing here that can put a document in the wrong
+          // box, and nothing on this path has asked the member about the type.
+          // The rows where the type IS in question are in `needs`, not here.
+        });
+        settled.push(d.id);
+      } catch (ex) {
+        stuck.push(
+          `${d.title}${ex instanceof LicenceApiError ? ` — ${ex.message}` : ''}`,
+        );
+      }
+    }
+    setDone((prev) => [...prev, ...settled]);
+    setErr(
+      stuck.length
+        ? `We could not finish ${stuck.length === 1 ? 'one' : stuck.length}: ${stuck.join(' · ')}. ${stuck.length === 1 ? 'It is' : 'They are'} still here.`
+        : null,
+    );
+    setWorking(false);
+    await onChanged().catch(() => undefined);
+  }
+
+  /** The member picked a type from the sheet. */
+  async function refile(d: ReviewItem, kind: CredentialKind) {
+    /**
+     * ⚠️ A CHANGE OF TYPE GOES THROUGH THE PANEL UNLESS WE READ A DATE OFF THE
+     * PAGE. This is the guard the pre-ship review put here, and the header of
+     * this section says what it prevents. Every other kind of date answer this
+     * row carries was derived from the type we GUESSED — "Never expires" is
+     * pre-ticked by the server for a photograph, and a worked-out expiry comes
+     * from the statute for the kind we assumed. Carrying either across a
+     * correction posts the old guess's answer under the new type, and for a
+     * licence wrongly filed as a photograph that means confirmed, dateless and
+     * beyond the reach of every reminder, in one tap.
+     *
+     * A date printed on the document is a fact about the document, so it
+     * survives the correction. Picking the SAME type is not a correction and
+     * needs no guard.
+     */
+    if (refileNeedsPanel(d, kind)) {
+      setSheetFor(null);
+      setOpen(d.id);
+      return;
+    }
+    const expires = expiryAnswer(d);
+    /* istanbul ignore next — refileNeedsPanel already excludes this. */
+    if (expires === null) {
+      setSheetFor(null);
+      setOpen(d.id);
+      return;
+    }
+    setWorking(true);
+    setErr(null);
+    try {
+      await licenceCentreApi.confirm(token, d.id, {
+        expiresOn: expires,
+        issuedOn: d.issuedOnUnknown
+          ? undefined
+          : d.proposed.issuedOn || undefined,
+        neverExpires: d.neverExpires,
+        issuedOnUnknown: d.issuedOnUnknown,
+        kind,
+      });
+      setWorking(false);
+      await settle(d.id);
+    } catch (ex) {
+      setWorking(false);
+      setErr(
+        ex instanceof LicenceApiError
+          ? ex.message
+          : 'We could not file that just now.',
+      );
+    }
+  }
+
+  return (
+    <div
+      /* ⚠️ z-[60] AND TAGGED. The bottom tab bar sits at z55/56, so anything
+         lower is occluded on a phone; and the add menu stands down on this
+         marker rather than treating a tap in here as a tap outside itself. */
+      data-blocking-overlay="true"
+      className="fixed inset-0 z-[60] overflow-y-auto bg-[var(--bg)]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Check what we made of your documents"
+    >
+      <div className="mx-auto w-full max-w-2xl px-4 pb-24 pt-6">
+        {finished ? (
+          <div className="pt-10 text-center">
+            <h2 className="text-[22px] font-semibold tracking-[-0.01em]">
+              {done.length === 1
+                ? 'That one is filed'
+                : `All ${done.length} filed`}
+            </h2>
+            <p className="mt-2 text-[13px] text-[var(--text-secondary)]">
+              We will remind you before anything here runs out.
+            </p>
+            <button
+              type="button"
+              onClick={onFinish}
+              className="mx-auto mt-6 rounded-[10px] border border-[var(--red)] bg-[var(--red)] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[var(--red-hover)]"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <>
+            {panelFor && (
+              <>
+                {!single && (
+                  <button
+                    type="button"
+                    onClick={() => setOpen(null)}
+                    className="mb-4 text-[12.5px] text-[var(--text-secondary)] underline"
+                  >
+                    ← Back to the list
+                  </button>
+                )}
+                {/* ⚠️ KEYED ON THE DOCUMENT. Not decoration: see the note at
+                    the top of this section for what a shared panel instance
+                    did to the document behind it in the queue. */}
+                <ConfirmPanel
+                  key={panelFor.id}
+                  token={token}
+                  id={panelFor.id}
+                  proposed={panelFor.proposed}
+                  /* ⚠️ ALWAYS THE FULL MENU. Gating this on autoFiled left a
+                     member-declared document with no date sitting in "Needs
+                     you" under a control labelled "Change the type" that
+                     opened a panel with no type control in it. */
+                  kinds={KINDS}
+                  currentKind={panelFor.kind}
+                  uncertain={needsALook(panelFor)}
+                  defaultTitle={panelFor.title}
+                  neverExpires={panelFor.neverExpires}
+                  issuedOnUnknown={panelFor.issuedOnUnknown}
+                  cancelLabel={single ? 'I will do this later' : 'Back to the list'}
+                  onDone={async () => {
+                    await settle(panelFor.id);
+                  }}
+                  /* ⚠️ CANCEL IS NOT DONE, AND SHARING ONE CALLBACK SAID IT
+                     WAS. Backing out counted the document as filed: it left
+                     the review, the green "N filed" line went up by one, and
+                     confirmedAt was still null — so nothing reminded on it and
+                     nothing asked again. */
+                  onCancel={() => (single ? onFinish() : setOpen(null))}
+                />
+              </>
+            )}
+
+            {/* ⚠️ HIDDEN, NOT UNMOUNTED. Rendering this branch only when no
+                panel is open tore down every thumbnail each time a row was
+                opened, and each one is a fetch and a whole-file decrypt with
+                no cache behind it — a twelve-document batch with two amber
+                rows cost thirty-three full document reads instead of twelve. */}
+            <div className={panelFor ? 'hidden' : ''}>
+              <h2 className="text-[22px] font-semibold tracking-[-0.01em]">
+                We read {items.length}
+              </h2>
+
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {fine.length > 0 && (
+                  <span className="rounded-full border border-[rgba(47,158,107,0.42)] bg-[rgba(47,158,107,0.09)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--success)]">
+                    {fine.length} look{fine.length === 1 ? 's' : ''} right
+                  </span>
+                )}
+                {unsureCount > 0 && (
+                  <span className="rounded-full border border-[rgba(232,181,58,0.32)] bg-[rgba(232,181,58,0.1)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--gold)]">
+                    {unsureCount} we are not sure about
+                  </span>
+                )}
+                {datelessCount > 0 && (
+                  <span className="rounded-full border border-[var(--border-hover)] bg-[var(--bg-inset)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--text-secondary)]">
+                    {datelessCount} need{datelessCount === 1 ? 's' : ''} a date
+                  </span>
+                )}
+                {rejected.length > 0 && (
+                  <span className="rounded-full border border-[rgba(200,16,46,0.5)] bg-[rgba(200,16,46,0.09)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--red)]">
+                    {rejected.length} did not go through
+                  </span>
+                )}
+              </div>
+
+              {done.length > 0 && (
+                <p className="mt-3 text-[12px] text-[var(--success)]" role="status">
+                  {done.length} filed.
+                </p>
+              )}
+              {uploading && (
+                <p
+                  className="mt-3 text-[12px] text-[var(--text-secondary)]"
+                  role="status"
+                >
+                  Adding…
+                </p>
+              )}
+
+              {(needs.length > 0 || rejected.length > 0) && (
+                <GroupLabel>Needs you</GroupLabel>
+              )}
+              <div className="flex flex-col gap-2">
+                {needs.map((d) => (
+                  <ReviewRow
+                    key={d.id}
+                    token={token}
+                    item={d}
+                    attention
+                    unsure={needsALook(d)}
+                    busy={busy}
+                    onOpen={() => setOpen(d.id)}
+                    onType={() =>
+                      settleableInBulk(d) ? setSheetFor(d.id) : setOpen(d.id)
+                    }
+                  />
+                ))}
+                {rejected.map((r) => (
+                  <div
+                    key={r.key}
+                    className="flex items-center gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--bg-card)] p-2.5"
+                  >
+                    <GlyphThumb />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12.5px] font-medium">
+                        {r.name}
+                      </p>
+                      <p className="text-[11px] text-[var(--red)]">{r.reason}</p>
+                    </div>
+                    {r.file && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onRetry(r)}
+                        className="shrink-0 rounded-[6px] border border-[var(--border-hover)] bg-[var(--bg-inset)] px-2.5 py-1 text-[11px] font-semibold disabled:opacity-50"
+                      >
+                        Try again
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {fine.length > 0 && <GroupLabel>Look right</GroupLabel>}
+              <div className="flex flex-col gap-2">
+                {fine.map((d) => (
+                  <ReviewRow
+                    key={d.id}
+                    token={token}
+                    item={d}
+                    busy={busy}
+                    onOpen={() => setOpen(d.id)}
+                    onType={() =>
+                      settleableInBulk(d) ? setSheetFor(d.id) : setOpen(d.id)
+                    }
+                  />
+                ))}
+              </div>
+
+              {err && (
+                <p className="mt-4 text-[12.5px] text-[var(--red)]" role="alert">
+                  {err}
+                </p>
+              )}
+
+              <div className="mt-6 flex flex-col gap-2">
+                {fine.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void acceptAll()}
+                    className="rounded-[10px] border border-[var(--red)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--red-hover)] disabled:opacity-50"
+                  >
+                    {working
+                      ? 'Filing…'
+                      : `${fine.length === 1 ? 'This one is' : `These ${fine.length} are`} right`}
+                  </button>
+                )}
+                {/* ⚠️ BORDERED WHEN IT IS THE ONLY WAY OUT. With nothing to
+                    accept, a borderless grey line was the sole control on the
+                    screen and did not read as a control at all. */}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={onFinish}
+                  className={
+                    fine.length > 0
+                      ? 'rounded-[10px] px-4 py-2 text-[12.5px] text-[var(--text-secondary)] disabled:opacity-50'
+                      : 'rounded-[10px] border border-[var(--border-hover)] px-4 py-2.5 text-sm font-semibold hover:bg-[var(--bg-card-hover)] disabled:opacity-50'
+                  }
+                >
+                  {/* ⚠️ TRUE AS WRITTEN. Nothing here is a draft: every
+                      document is already stored and already in the list. What
+                      is outstanding is the member's confirmation, and the way
+                      back to it is the button on each row. */}
+                  Finish later — they are saved
+                </button>
+              </div>
+
+              <p className="mt-3 text-[11.5px] leading-relaxed text-[var(--text-tertiary-on-card)]">
+                Nothing is reminded about until you have checked its dates.
+                {rejected.length > 0
+                  ? ' Files that did not go through were never added.'
+                  : ''}
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+
+      {sheetItem && (
+        <div
+          className="fixed inset-0 z-[61] flex items-end justify-center bg-black/60"
+          onClick={() => setSheetFor(null)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-t-[16px] border-t border-[var(--border-hover)] bg-[var(--bg-card)] p-4 pb-8"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="What is this document?"
+          >
+            <p className="mb-3 text-[13px] font-semibold">
+              What is this document?
+            </p>
+            <div className="flex max-h-[52vh] flex-col gap-0.5 overflow-y-auto">
+              {KINDS.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void refile(sheetItem, k)}
+                  className={`flex min-h-[44px] items-center justify-between gap-3 rounded-[6px] border px-3 text-left text-[12.5px] disabled:opacity-50 ${
+                    k === sheetItem.kind
+                      ? 'border-[var(--red)] bg-[rgba(200,16,46,0.09)] font-semibold'
+                      : 'border-transparent hover:bg-[var(--bg-card-hover)]'
+                  }`}
+                >
+                  <span>{KIND_LABELS[k] ?? k}</span>
+                  {k === sheetItem.kind && (
+                    <span className="text-[var(--red)]">✓</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GroupLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-2 mt-5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
+      {children}
+      <span className="h-px flex-1 bg-[var(--border-divider)]" />
+    </p>
+  );
+}
+
+function ReviewRow({
+  token,
+  item,
+  attention = false,
+  unsure = false,
+  busy,
+  onOpen,
+  onType,
+}: {
+  token: () => Promise<string | null>;
+  item: ReviewItem;
+  /** In the "needs you" group, for whatever reason. */
+  attention?: boolean;
+  /** We guessed the TYPE and are not sure — a narrower thing than attention. */
+  unsure?: boolean;
+  busy: boolean;
+  onOpen: () => void;
+  onType: () => void;
+}) {
+  const kindLabel = KIND_LABELS[item.kind] ?? item.kind;
+  /**
+   * What is outstanding about this row's dates.
+   *
+   * ⚠️ A WORKED-OUT DATE IS NOT SHOWN AS A DATE. `derivedExpiry` only exists
+   * where the document prints no expiry and a statute supplies one; printing
+   * that number here, in the same style as one we read off the page, would
+   * make a calculation look like a reading. The panel explains it; the row
+   * says there is something to look at.
+   */
+  const when = item.neverExpires
+    ? 'Kept on file'
+    : item.proposed.expiresOn
+      ? formatDate(item.proposed.expiresOn)
+      : item.proposed.derivedExpiry
+        ? 'No date printed on it'
+        : 'No date yet';
+
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-[10px] border p-2.5 ${
+        attention
+          ? 'border-[rgba(232,181,58,0.32)] bg-[rgba(232,181,58,0.07)]'
+          : 'border-[var(--border)] bg-[var(--bg-card)]'
+      }`}
+    >
+      <DocThumb token={token} id={item.id} mimeType={item.mimeType} />
+
+      {/* The row body opens the full panel — dates, ticks, the name and the
+          type menu — which is the only place a document with no date can be
+          answered at all. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={busy}
+        className="min-w-0 flex-1 text-left disabled:opacity-50"
+      >
+        <span className="block truncate text-[12.5px] font-medium">
+          {item.title}
+        </span>
+        {/* ⚠️ THE DATE ONLY. The type used to be repeated here as well, which
+            put "Photographs of my safe" on the title, the subtitle AND the
+            control — three copies on one row. */}
+        <span className="block truncate text-[11px] text-[var(--text-tertiary-on-card)]">
+          {when}
+        </span>
+      </button>
+
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <button
+          type="button"
+          onClick={onType}
+          disabled={busy}
+          aria-label={`Change the type of ${item.title} — currently ${kindLabel}`}
+          /* ⚠️ CAPPED AND TRUNCATED. Some registry labels are long
+             ("Association status or membership") and a phone row has no room
+             to argue; the full label is on the sheet this opens. */
+          className="min-h-[30px] max-w-[7rem] truncate rounded-full border border-[var(--border-hover)] bg-[var(--bg-inset)] px-3 text-[10.5px] font-semibold disabled:opacity-50 sm:max-w-[12rem]"
+        >
+          {kindLabel} ▾
+        </button>
+        {unsure && (
+          /* ⚠️ A WORD, NOT ONLY A COLOUR, AND ONLY WHERE IT IS TRUE. Amber
+             against green is the red-green-blind failure pair; and a document
+             whose type the MEMBER chose is not one we are unsure about, it
+             just has no date yet — the subtitle says so. */
+          <span className="text-[10px] font-semibold text-[var(--gold)]">
+            Not sure
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -906,6 +1710,7 @@ function ConfirmPanel({
   id,
   proposed,
   onDone,
+  onCancel,
   cancelLabel = 'I will do this later',
   kinds,
   currentKind,
@@ -918,6 +1723,17 @@ function ConfirmPanel({
   id: string;
   proposed: CredentialProposal;
   onDone: () => Promise<void>;
+  /**
+   * Backing out WITHOUT confirming.
+   *
+   * ⚠️ DEFAULTS TO onDone FOR THE CALLERS THAT ALWAYS MEANT THAT — on the
+   * card, dismissing the panel and finishing it are the same "put this away".
+   * The review screen is the caller for which they are opposites: it counts
+   * what came back from onDone as filed, and a cancel routed there removed a
+   * document from the review, added it to the "N filed" line, and left
+   * confirmedAt null — so nothing reminded on it and nothing asked again.
+   */
+  onCancel?: () => void;
   /** "I will do this later" is right after an upload and wrong as a cancel. */
   cancelLabel?: string;
   /**
@@ -1232,7 +2048,7 @@ function ConfirmPanel({
         <button
           type="button"
           className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
-          onClick={() => void onDone()}
+          onClick={() => (onCancel ? onCancel() : void onDone())}
         >
           {cancelLabel}
         </button>

@@ -15,6 +15,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { decryptJson, encryptJson } from '../common/blob-crypto';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 import {
+  cleanAlsoCovers,
   currentKind,
   LicenceCentreExtractService,
 } from './licence-centre-extract.service';
@@ -231,6 +232,8 @@ export class LicenceCentreService {
         mimeType: true,
         byteSize: true,
         createdAt: true,
+        autoFiled: true,
+        namedConfident: true,
       },
     });
 
@@ -308,6 +311,12 @@ export class LicenceCentreService {
       mimeType: r.mimeType,
       byteSize: r.byteSize,
       createdAt: r.createdAt,
+      // ⚠️ THE ONLY REASON THE REVIEW SCREEN SURVIVES A REFRESH. Rebuilt
+      // from this list rather than from whatever the upload happened to
+      // return, so the documents we were unsure about stay the documents we
+      // were unsure about. See the model for what these two mean.
+      autoFiled: r.autoFiled,
+      namedConfident: r.namedConfident,
     }));
   }
 
@@ -412,6 +421,11 @@ export class LicenceCentreService {
           mimeType: file.mimetype,
           byteSize: stored.byteSize,
           sha256: stored.sha256,
+          // ⚠️ STORED, NOT JUST RETURNED. Both of these are in the create
+          // response below and were, until now, nowhere else — so the answer
+          // survived exactly as long as the page did. See the model.
+          autoFiled,
+          namedConfident: confident,
           // ⚠️ PRE-TICKED ONLY WHERE WE NEVER LOOKED. A photograph of a safe
           // has no date on it in any sense, and no vision call is spent on
           // one — so starting the box ticked saves a tap that could only ever
@@ -529,6 +543,14 @@ export class LicenceCentreService {
       // Tells the confirm step which documents WE named, so it can ask.
       autoFiled,
       confident,
+      // ⚠️ SO THE REVIEW ROW CAN DECIDE WHETHER TO DRAW A PICTURE. Without
+      // it the screen has to fetch and decrypt every document's bytes just to
+      // discover the ones it cannot render — spending the most expensive
+      // request on this page to learn something the upload already knew.
+      // It stays a hint, not a verdict: this is the type the BROWSER declared,
+      // copied verbatim and never re-checked against the bytes, so the row
+      // still falls back to the glyph if the image will not draw.
+      mimeType: file.mimetype,
       proposed: {
         expiresOn: reading?.expiresOn ?? null,
         issuedOn: reading?.issuedOn ?? null,
@@ -641,9 +663,30 @@ export class LicenceCentreService {
     // the document it replaced.
     const before = await this.prisma.credential.findFirst({
       where: { id, userId: user.id },
-      select: { id: true, expiresOn: true },
+      select: {
+        id: true,
+        expiresOn: true,
+        coversKinds: true,
+        kind: true,
+        title: true,
+      },
     });
     if (!before) throw new NotFoundException('Document not found');
+
+    /**
+     * The type the member settled on, if they changed it.
+     *
+     * ⚠️ RE-FILING HAS TO RE-CLEAN `coversKinds`, AND UNTIL NOW IT DID NOT.
+     * That list holds the OTHER roles one document fills, and it is forbidden
+     * from naming the row's own kind — a row covering itself double-matches a
+     * single checklist row on a motivation. It was cleaned once, on create,
+     * against the kind we guessed at. Move the row into a kind its own
+     * coversKinds already names and the forbidden state is exactly what you
+     * get. That was survivable while re-filing meant opening a panel and
+     * working a menu; the review screen makes it one tap, which is precisely
+     * the sort of change that turns a latent bug into a daily one.
+     */
+    const nextKind = kind ? currentKind(kind) : null;
 
     // ⚠️ NULL COUNTS AS A CHANGE when the row previously had a date. Somebody
     // correcting a misread expiry to "never expires" must not leave five
@@ -687,7 +730,35 @@ export class LicenceCentreService {
         // control on the confirm panel, so a stale bundle can put a retired
         // value here too — and unlike an upload, this one lands on a row the
         // member has already been told is filed correctly.
-        ...(kind ? { kind: currentKind(kind) } : {}),
+        ...(nextKind
+          ? {
+              kind: nextKind,
+              // See nextKind above: the row must never cover its own kind.
+              coversKinds: cleanAlsoCovers(nextKind, before.coversKinds),
+              // The member has settled the type, so it is no longer OUR guess
+              // and there is nothing left on this row to ask them about.
+              autoFiled: false,
+              namedConfident: false,
+              /**
+               * ⚠️ A RE-FILED DOCUMENT MUST NOT KEEP THE OLD KIND'S NAME, AND
+               * NOTHING ELSE WILL EVER FIX IT. list() repairs placeholder
+               * titles, but its guard is `title !== DEFAULT_TITLE[kind]` — so
+               * the moment the kind moves, the old kind's placeholder stops
+               * matching the new kind's and is read as a name the member typed.
+               * It is then permanent, and it is what the renewal reminder puts
+               * in its subject line: a real section 24 warning arriving under
+               * "Photographs of my safe".
+               *
+               * Only ever replaces OUR placeholder. A name the member chose is
+               * theirs and survives a re-filing, and an explicit title in this
+               * request overrides this anyway — the spread below comes after.
+               */
+              ...(nextKind !== before.kind &&
+              before.title === DEFAULT_TITLE[before.kind]
+                ? { title: DEFAULT_TITLE[nextKind] }
+                : {}),
+            }
+          : {}),
         ...((title ?? '').trim()
           ? { title: (title ?? '').trim().slice(0, MAX_TITLE) }
           : {}),

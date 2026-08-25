@@ -4988,6 +4988,27 @@ model Credential {
   neverExpires    Boolean @default(false)
   issuedOnUnknown Boolean @default(false)
 
+  /// ── HOW THIS DOCUMENT GOT ITS NAME, AND HOW SURE WE WERE ──────────
+  ///
+  /// ⚠️ THESE EXIST BECAUSE THE ANSWER USED TO LIVE FOR ONE PAGE LOAD. Both
+  /// were computed on upload and returned in the create response ONLY — never
+  /// stored. So the review screen could tell the three documents it was unsure
+  /// about from the nine it was not, right up until the member refreshed, at
+  /// which point every row read "check this" identically and the three that
+  /// actually needed a human became invisible among the nine that did not.
+  /// Rebuilding the queue from the list had no choice but to assume the worst
+  /// for every row.
+  ///
+  /// `autoFiled` is a fact about history: WE named this, the member did not,
+  /// so there is a guess on it worth checking. It goes false the moment the
+  /// member settles the type themselves — from then on the name is theirs.
+  ///
+  /// `namedConfident` is only meaningful while autoFiled is true, and it is
+  /// deliberately NOT nullable: a row with no answer recorded must read as
+  /// "not sure", never as "sure".
+  autoFiled      Boolean @default(false)
+  namedConfident Boolean @default(false)
+
   /// Opaque key into SecureFileStorageService, namespace `credentials`.
   /// Nullable so a row can outlive its bytes after an erasure.
   storageKey String?
