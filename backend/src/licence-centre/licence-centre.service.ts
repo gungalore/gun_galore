@@ -1173,9 +1173,13 @@ export function derivedExpiryFor(
   // or renewed. Five years from issue is only the fallback for a type that
   // holds no licence at all (§5.2).
   //
-  // It also told the member to "check it against your certificate". §9 calls
-  // that out specifically: the certificate does not print an expiry date, so
-  // that instruction sends somebody looking for something that is not there.
+  // It also told the member to "check it against your certificate". That was
+  // removed on the strength of v2's claim that a certificate prints no expiry
+  // — which v3 §5.2 WITHDRAWS: SAPS 271 §F.1.7 asks for the competency's expiry
+  // date, and pre-2011 certificates carry a printed five-year one. The reason
+  // not to send them to the card stands, but it is a different reason: after
+  // 10 January 2011 the printed date is not determinative, so a member reading
+  // it off the card can be reading a superseded number.
   //
   // ⚠️ AND WE CANNOT COMPUTE THE REAL DATE HERE. The derivation is PER FIREARM
   // TYPE, and a vault FIREARM_LICENCE row does not record which type its
@@ -1188,7 +1192,14 @@ export function derivedExpiryFor(
 
   return {
     on: toIsoDate(competencyLapses(issued)),
-    why: 'You have no firearm licence on file, so this competency runs five years from issue and then lapses (section 10(2) of the Firearms Control Act, as amended). Once you licence a firearm, it follows that licence instead and moves out with every renewal — your certificate does not print a date.',
+    // ⚠️ NO STATUTE IS CITED, AND THAT IS THE CORRECTION. This sentence cited
+    // "section 10(2) of the Firearms Control Act, as amended" as the authority
+    // for five years — in the one case where s10(2) says nothing at all. As
+    // amended it ties validity to "the licence to which the competency
+    // certificate relates", and here there is no such licence; the provision
+    // is silent, not supportive. The five years is the operator's operating
+    // rule, confirmed with their DFO on 2026-08-25, and is stated as ours.
+    why: 'You have no firearm licence on file, so there is nothing for this competency to follow: it runs five years from the date it was issued. Licence a firearm and the competency follows that licence instead, moving out with every renewal. Worth confirming with your DFO — the police record is what counts.',
   };
 }
 

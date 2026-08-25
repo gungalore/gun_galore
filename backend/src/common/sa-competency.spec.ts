@@ -163,7 +163,17 @@ describe('the derived expiry — §5.2 and §5.3', () => {
     expect(out.on).toBeNull();
   });
 
-  it('gives a muzzle loader its own cycle — §5.5', () => {
+  it('⚠️ gives a muzzle loader TEN years, not five — s10(3)', () => {
+    // ⚠️ THE NUMBER IS THE POINT, AND THIS TEST USED TO ASSERT ONLY THE
+    // WORDING. It passed happily while the code gave five years, because it
+    // checked \"needs no licence\" and the basis label and never the date.
+    // Five was invented: v2 of the reference omitted the period, and s10(3)
+    // — added by s9(c) of Act 28 of 2006 — says ten.
+    //
+    // It is not a symmetrical error. A muzzle loader has no licence layer
+    // beneath it, so calling a live competency lapsed makes lawful possession
+    // look unlawful, and calling a lapsed one live hides a real lapse under
+    // which possession IS unlawful.
     const out = deriveExpiry({
       category: 'muzzle-loader',
       issuedOn: issued,
@@ -171,8 +181,23 @@ describe('the derived expiry — §5.2 and §5.3', () => {
         { section: 'S16', category: 'rifle-carbine', expiresOn: new Date('2040-01-01T00:00:00Z') },
       ],
     });
-    expect(out.basis).toBe('fallback');
+    expect(out.on?.getUTCFullYear()).toBe(issued.getUTCFullYear() + 10);
+    // A statutory period, not our five-year no-licence assumption.
+    expect(out.basis).toBe('statute');
+    // And a rifle licence in the bag does not reach it.
     expect(out.why).toMatch(/needs no licence/i);
+  });
+
+  it('the no-licence fallback is five years and cites no statute', () => {
+    // ⚠️ s10(2) SUPPLIES NO PERIOD HERE, so nothing may claim it does. The
+    // Document Centre shipped copy citing "section 10(2) of the Firearms
+    // Control Act, as amended" as the authority for five years — in the one
+    // case where s10(2) is silent. The rule is the operator's, confirmed with
+    // their DFO on 2026-08-25, and must be stated as such.
+    const out = deriveExpiry({ category: 'handgun', issuedOn: issued, licences: [] });
+    expect(out.on?.getUTCFullYear()).toBe(issued.getUTCFullYear() + 5);
+    expect(out.basis).toBe('fallback');
+    expect(out.why).not.toMatch(/section 10|s10|Firearms Control Act/i);
   });
 });
 

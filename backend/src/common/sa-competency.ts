@@ -7,25 +7,53 @@
 // to recognize which competency the user scanned and when the competency will
 // expire."
 //
-// Source: SA Firearm Competency Reference (operator-supplied, 2026-08-24),
-// citing FCA 60 of 2000 ss 9, 10, 10A as amended by Act 28 of 2006 (commenced
-// 10 January 2011), and the Firearms Control Regulations 2004. Section numbers
-// in these comments (§n) are that reference's.
+// Source: SA Firearm Competency Reference **v3.0**, verified 25 August 2026,
+// committed beside this file as sa-competency-reference.md. Section numbers in
+// these comments (§n) are that document's. Operator, 2026-08-25: "it overwrites
+// any other rules there are inside here. It is the source of truth."
 //
-// ⚠️ A COMPETENCY CERTIFICATE HAS NO EXPIRY DATE ON IT. This is the single
-// most important rule here and the easiest to get wrong, because every other
-// document we read HAS one printed. §5.2: the card carries an issue date and
-// the endorsed firearm types, nothing more. §8: "Never parse an expiry date
-// off a competency certificate. There isn't one." §9: any guidance saying
-// "check the expiry on your card" is wrong.
+// ⚠️ THIS FILE WAS FIRST WRITTEN FROM v2, AND v3 CORRECTS v2 ON MATTERS OF
+// LAW. Its own changelog (§12) lists fifteen errors, several of which were
+// transcribed straight into this file and shipped. Anything here that reads
+// like settled fact should be checked against the committed reference before
+// it is relied on again. The two that were live in production:
 //
-// The expiry is DERIVED, per firearm type, as the latest expiry among the
-// licences held in that type — see deriveExpiry. It MOVES: it rolls forward
+//   • A MUZZLE LOADER COMPETENCY LAPSES TEN YEARS FROM ISSUE, not five —
+//     s10(3), added by s9(c) of Act 28 of 2006. v2 omitted the number and this
+//     file invented five. Verified against the Gazette text of the amending
+//     Act and against a consolidation to 31 January 2015: "lapses after ten
+//     years from its date of issue".
+//   • THE s27 LICENCE TABLE HERE WAS THE PRE-2011 ONE, and named a section
+//     16(2) that does not exist. See LICENCE_YEARS below.
+//
+// ⚠️ AND v2's HEADLINE CLAIM — "a competency certificate has no expiry date on
+// it, never parse one" — IS WITHDRAWN. §5.2: SAPS's own SAPS 271 form, section
+// F.1.6 and F.1.7, requires the applicant to enter the competency's date of
+// issue AND its expiry date, and certificates issued before 10 January 2011
+// carry a printed five-year expiry on their face. What is true is narrower and
+// still matters: a printed date is ADVISORY INPUT, never the answer, because
+// s10(2) decoupled validity from the certificate. A printed date and the CFR
+// position can and do disagree.
+//
+// The expiry is DERIVED, per firearm category, as the latest expiry among the
+// licences held in that category — see deriveExpiry. It MOVES: it rolls forward
 // every time a licence in that category is granted or renewed (§5.3), so it is
 // a CACHED DERIVATION and never a stored fact (§8).
 //
-// ⚠️ THE CFR IS AUTHORITATIVE OVER ANYTHING COMPUTED HERE (§9). All of this is
-// decision support for an applicant, not a compliance determination.
+// ⚠️ THE DERIVED MODEL IS CONFIRMED BY THE OPERATOR'S OWN DFO, and that
+// matters because the document could not confirm it. §5.3 and §9.1 mark the
+// max-licence-expiry rule [UNVERIFIED as to primary source]: SAPS applies it
+// and the industry teaches it, but the National Commissioner's Directive of
+// 3 February 2016 cited for it could not be retrieved, and no judgment or
+// published CFR circular states it. Operator, 2026-08-25: "i confirmed with
+// the DFO. The competency that is related to a firearm category expires when
+// the last firearm license expires. And in the same breath it renews with the
+// latest firearm license obtained." That is a DFO's statement, not a published
+// rule — but it is better evidence than the document had, and it is the basis
+// on which this runs.
+//
+// ⚠️ THE CFR IS AUTHORITATIVE OVER ANYTHING COMPUTED HERE (§9.11). All of this
+// is decision support for an applicant, not a compliance determination.
 // ────────────────────────────────────────────────────────────────────
 
 /**
@@ -273,27 +301,97 @@ export function parseEndorsements(raw: string): Endorsement[] {
 
 // ── the derived expiry ──────────────────────────────────────────────
 
-/** Licence sections that can feed a competency's validity (§5.4). */
-export type LicenceSection = 'S13' | 'S14' | 'S15' | 'S16' | 'S16(2)';
+/**
+ * Licence sections that can feed a competency's validity (§5.4).
+ *
+ * ⚠️ THERE IS NO SECTION 16(2) LICENCE, and this union used to name one.
+ * s16(2) is the sworn-statement requirement inside the dedicated-status
+ * section, not a licence type. Private collection is s17. v3 §1 and §12 #11.
+ *
+ * ⚠️ AND s16A AND s19 WERE MISSING. s16A (professional hunting) has been in
+ * force since 1 March 2012; s19 is public collection. A professional hunter's
+ * licences could not be typed at all, so they would have dropped out of the
+ * derivation entirely and the holder would have been told a ten-year
+ * competency had lapsed.
+ */
+export type LicenceSection =
+  | 'S13'
+  | 'S14'
+  | 'S15'
+  | 'S16'
+  | 'S16A'
+  | 'S17'
+  | 'S18'
+  | 'S19'
+  | 'S20_HUNTING_OR_GAME_RANCHER'
+  | 'S20_OTHER';
 
-/** Statutory validity per section, in years (§5.4). */
+/**
+ * Statutory validity per section, in years — the section 27 Table as
+ * substituted by s18 of Act 28 of 2006, in force 10 January 2011 (§5.4).
+ *
+ * ⚠️ THIS TABLE WAS THE PRE-2011 ONE. It is worth understanding why, because
+ * the same trap is still sitting there: **the SAPS 271 form in circulation
+ * still prints the old table** — its section D.3 lists business in hunting as
+ * five years and game rancher as two — and its header omits s16A altogether.
+ * Where the form and the Act disagree, the Act governs. Expect DFO friction.
+ */
 export const LICENCE_YEARS: Record<LicenceSection, number> = {
   S13: 5,
   S14: 2,
   S15: 10,
   S16: 10,
-  'S16(2)': 10,
+  S16A: 10,
+  S17: 10,
+  S18: 10,
+  S19: 10,
+  // Business purposes splits in two, and this is the half v2 had at two years.
+  S20_HUNTING_OR_GAME_RANCHER: 10,
+  S20_OTHER: 5,
 };
 
 /**
- * The fallback when no licence has ever been issued in a category (§5.2).
+ * Where no licence is linked in the category, the competency runs five years
+ * from its issue date.
  *
- * ⚠️ A FALLBACK, NOT THE RULE. Treating it as the rule is exactly the error
- * §9 calls out — providers telling owners "some are five years and some are
- * ten, check yours", as though the period were fixed at issue. It is not; it
- * moves with the linked licences.
+ * ⚠️ THE DOCUMENT WOULD NOT LET US SAY THIS; THE OPERATOR'S DFO DID. §5.3.1
+ * withdraws v2's flat assertion of it — "No official source supports this...
+ * s10(2) is circular where no licence exists" — and instructs: "Treat the
+ * 5-year figure as a planning assumption, not a rule. Never present it to a
+ * user as the legal position."
+ *
+ * Operator, 2026-08-25, after checking: "the competency expires within 5 years
+ * if no license is linked to it." That is the rule this product runs on, and
+ * it is recorded here as a DFO-confirmed operating rule rather than as
+ * statute, because it is not statute — s10(2) supplies no period at all in
+ * this case. Member-facing wording must not cite s10(2) as its authority; an
+ * earlier version of the Document Centre did exactly that, in the one case
+ * where s10(2) is silent.
+ *
+ * ⚠️ IT IS ALSO THE ONLY DATE HERE WE INVENT. Everywhere else the derivation
+ * copies an expiry off a licence the member already holds and can read for
+ * themselves. This one has no such check.
  */
 export const FALLBACK_YEARS = 5;
+
+/**
+ * A muzzle loading firearm needs no licence at all (s3(2)), so there is
+ * nothing to inherit from and the Act gives this competency its own lifespan.
+ *
+ * ⚠️ TEN YEARS, AND THIS FILE SAID FIVE. Section 10(3), added by s9(c) of
+ * Act 28 of 2006: "A competency certificate relating to a muzzle loading
+ * firearm lapses after ten years from its date of issue, unless the competency
+ * certificate is terminated or renewed." v2 omitted the number — §5.5 of v3
+ * calls it "the single most concrete validity number in the whole Act" — and
+ * five was invented to fill the gap. Verified in the Gazette text of the
+ * amending Act and in a consolidation to 31 January 2015.
+ *
+ * Getting this wrong is not symmetrical: a muzzle loader has no licence layer
+ * beneath it, so a competency we wrongly call lapsed makes lawful possession
+ * look unlawful, and one we wrongly call live hides a real lapse under which
+ * possession IS unlawful.
+ */
+export const MUZZLE_LOADER_YEARS = 10;
 
 export interface LinkedLicence {
   section: LicenceSection;
@@ -305,7 +403,16 @@ export interface LinkedLicence {
 export interface DerivedExpiry {
   /** Null when we genuinely cannot say. */
   on: Date | null;
-  basis: 'licence' | 'fallback' | 'unknown';
+  /**
+   * Where the date came from, which decides how firmly it may be stated.
+   *
+   * 'licence'  — copied off a licence the member holds. A fact they can check.
+   * 'statute'  — a period the Act fixes (muzzle loaders, s10(3)).
+   * 'fallback' — the five-year no-licence rule. Confirmed with the operator's
+   *              DFO, but supplied by no statute. The only date we invent.
+   * 'unknown'  — we cannot say. Never dress this up as a date.
+   */
+  basis: 'licence' | 'statute' | 'fallback' | 'unknown';
   /** One sentence for a member. Always safe to show. */
   why: string;
 }
@@ -339,9 +446,9 @@ export function deriveExpiry(args: {
       return { on: null, basis: 'unknown', why: 'We do not have the issue date.' };
     }
     return {
-      on: plusYears(args.issuedOn, FALLBACK_YEARS),
-      basis: 'fallback',
-      why: 'A muzzle loader needs no licence, so this competency runs on its own five-year cycle.',
+      on: plusYears(args.issuedOn, MUZZLE_LOADER_YEARS),
+      basis: 'statute',
+      why: 'A muzzle loader needs no licence, so this competency runs on its own ten-year cycle from the date it was issued (section 10(3) of the Firearms Control Act). Renew it at least 90 days before that date.',
     };
   }
 
@@ -369,7 +476,10 @@ export function deriveExpiry(args: {
   return {
     on: plusYears(args.issuedOn, FALLBACK_YEARS),
     basis: 'fallback',
-    why: 'No licence is held in this category yet, so it runs five years from issue and then lapses.',
+    // ⚠️ NO STATUTE IS CITED HERE, DELIBERATELY. s10(2) supplies no period
+    // where there is no licence to inherit from; quoting it would be citing a
+    // provision for the one thing it does not say. See FALLBACK_YEARS.
+    why: 'You have no licence on file in this category, so there is nothing for this competency to follow. It runs five years from the date it was issued and then lapses. Licence a firearm in this category and it will follow that licence instead.',
   };
 }
 

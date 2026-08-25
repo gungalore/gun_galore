@@ -38,17 +38,47 @@ describe('the competency date the Document Centre offers', () => {
     expect(out).toBeNull();
   });
 
-  it('⚠️ never tells anyone to read an expiry off the certificate', () => {
-    // The certificate does not print one. §9 names this exact instruction.
+  it('⚠️ never cites section 10(2) for the five years', () => {
+    // ⚠️ THE ONE CASE WHERE s10(2) IS SILENT. As amended it ties a competency
+    // to "the licence to which the competency certificate relates" — and here
+    // the member holds none, so the provision supplies no period at all. The
+    // shipped copy cited it anyway, as the authority for five years.
+    //
+    // The five years is real and is what we run on: the operator confirmed it
+    // with their DFO on 2026-08-25. It is simply not statute, and reference
+    // v3 §5.3.1 is explicit — "never present it to a user as the legal
+    // position". So it may be stated; it may not be dressed in a section
+    // number.
     const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, false);
+    expect(out?.why ?? '').not.toMatch(/section 10|s10\(2\)|Firearms Control Act/i);
+  });
+
+  it('⚠️ does not claim the certificate prints no date', () => {
+    // ⚠️ THIS TEST USED TO ASSERT THE OPPOSITE, and reference v3 withdrew the
+    // claim it was enforcing. v2 said flatly "a competency certificate does
+    // not carry an expiry date... never parse one", and this spec held the
+    // copy to saying so. v3 §5.2: SAPS's own SAPS 271 form, §F.1.6 and §F.1.7,
+    // requires the applicant to enter the competency's date of issue AND its
+    // expiry date, and certificates issued before 10 January 2011 carry a
+    // printed five-year expiry on their face.
+    //
+    // The true position is narrower: a printed date is advisory input, never
+    // determinative, because s10(2) decoupled validity from the certificate.
+    // Telling a member their card has no date is simply false for many of
+    // them, and invites them to distrust everything else on the screen.
+    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, false);
+    expect(out?.why ?? '').not.toMatch(/does not print|no expiry date on|there isn.t one/i);
+    // Still no instruction to go and read the card, for the amended reason.
     expect(out?.why ?? '').not.toMatch(/check it against your certificate/i);
-    expect(out?.why ?? '').toMatch(/does not print a date/i);
   });
 
   it('says WHY, so the member can tell a derivation from a reading', () => {
     const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, false);
     expect(out?.why).toMatch(/no firearm licence on file/i);
-    expect(out?.why).toMatch(/moves out with every renewal/i);
+    // The rolling behaviour, however it is worded — the operator's DFO put it
+    // as "it renews with the latest firearm license obtained".
+    expect(out?.why).toMatch(/renewal/i);
+    expect(out?.why).toMatch(/follows that licence/i);
   });
 
   it('stays out of the way when the document printed its own date', () => {
