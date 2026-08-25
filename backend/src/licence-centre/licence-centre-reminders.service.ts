@@ -17,9 +17,22 @@ import {
 // the renewal has to be lodged well before that date, so the reminder is
 // worth more than the storage.
 //
-// ⚠️ ONLY A CONFIRMED DATE FIRES. `confirmedAt: { not: null }` is in the
-// WHERE clause of every query in this file. Extraction proposes a date; the
-// member confirms it; nothing here can promote an unconfirmed guess.
+// ⚠️ ONLY A SETTLED DATE FIRES, AND THERE ARE NOW TWO WAYS TO SETTLE ONE.
+// This used to read "only a CONFIRMED date fires... extraction proposes a
+// date; the member confirms it; nothing here can promote an unconfirmed
+// guess." Defensible, and it meant a member who uploaded a firearm licence
+// and never went back to tick a box got NO REMINDER AT ALL — in the one
+// product whose entire job is warning them before it expires.
+//
+// Operator, 2026-08-25: "insert it. No further user interaction required.
+// Thats why we are designing this system, for automation and ease of use!"
+//
+// So the predicate is `confirmedAt` OR `dateSource` — a date the member
+// settled, or one we filled in and armed. What promotes a guess is not this
+// file: credential-auto-date.ts decides, before anything is stored, whether a
+// reading is sure enough to act on. A date we are not sure of is still
+// written and shown; it simply never gets a dateSource, so nothing here can
+// see it. That distinction is the safety property, and it lives there.
 //
 // ⚖️ WE REMIND, WE NEVER ENSURE. Not "we'll make sure you never miss a
 // renewal" — that is an outcome promise. The responsibility to renew stays
@@ -114,7 +127,8 @@ export class LicenceCentreRemindersService {
     // twice. A band silently skips anyone not looked at on the exact night.
     const rows = await this.prisma.credential.findMany({
       where: {
-        confirmedAt: { not: null },
+        // Settled by the member, or filled in and armed by us. See the header.
+        OR: [{ confirmedAt: { not: null } }, { dateSource: { not: null } }],
         remindersMuted: false,
         purgedAt: null,
         expiresOn: { not: null, lte: cutoff },

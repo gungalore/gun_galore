@@ -309,10 +309,20 @@ export default function LicenceCentrePage() {
   // needed a date — nine errands that do not exist. A row the member has
   // ticked "Never expires" on has no date outstanding; what is still worth a
   // look on it is whether we filed it as the right type.
-  const needDate = (rows ?? []).filter((r) => !r.confirmed && !r.neverExpires);
-  const needFiling = (rows ?? []).filter(
-    (r) => !r.confirmed && r.neverExpires,
-  );
+  /**
+   * ⚠️ AND A ROW WE DATED OURSELVES IS NOT AN ERRAND. `!r.confirmed` was the
+   * whole test, from when nothing could settle a date except the member.
+   * Now the Centre fills dates in and arms the reminder — operator,
+   * 2026-08-25: "insert it. No further user interaction required" — so a
+   * counter that still keys on `confirmed` would put every automatically
+   * dated licence back on the to-do list it was just taken off, which is the
+   * exact nagging this change exists to stop.
+   *
+   * The date is still theirs to change; it is simply no longer a task.
+   */
+  const settled = (r: CredentialRow) => r.confirmed || r.dateSource !== null;
+  const needDate = (rows ?? []).filter((r) => !settled(r) && !r.neverExpires);
+  const needFiling = (rows ?? []).filter((r) => !settled(r) && r.neverExpires);
 
   return (
     <main className="mx-auto max-w-[var(--page-max)] px-4 py-8">
@@ -709,7 +719,8 @@ function AddPanel({
       // guessed at from the picture, and dropping it here would leave that
       // guess standing with nothing on the page ever asking about it. The
       // banner counts differently, because the banner says "dates".
-      const need = rows.filter((r) => !r.confirmed);
+      // Settled by us counts as settled: see the note on `settled` above.
+      const need = rows.filter((r) => !r.confirmed && r.dateSource === null);
       if (!need.length) return;
       setQueue(
         need.map((r) => ({
@@ -2452,12 +2463,23 @@ function CredentialCard({
             <span className="text-[var(--text-tertiary-on-card)]">
               Date confirmed
             </span>
+            {/* ⚠️ THREE STATES, AND THE MIDDLE ONE IS NEW. It was a binary: "By
+                you" or "Not yet". Now the Centre fills dates in and arms the
+                reminder itself, and neither word fits — "By you" would be a
+                false record of who checked it, on a page about firearm
+                licences, and "Not yet" would call a settled row an errand.
+                Amber-neutral, never the green tick: the green tick means a
+                human looked. */}
             {row.confirmed ? (
               <span className="flex items-center gap-1.5 text-[var(--success)]">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M20 6 9 17l-5-5" />
                 </svg>
                 By you
+              </span>
+            ) : row.dateSource ? (
+              <span className="text-[var(--text-secondary)]">
+                {row.dateSource === 'derived' ? 'Worked out for you' : 'Filled in for you'}
               </span>
             ) : (
               <span className="text-[var(--warning)]">Not yet</span>

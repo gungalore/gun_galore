@@ -136,6 +136,17 @@ export interface CredentialRow {
   autoFiled: boolean;
   /** Only meaningful while autoFiled. False reads as "not sure", never "sure". */
   namedConfident: boolean;
+  /**
+   * Who put the expiry date there: null, 'read' or 'derived'.
+   *
+   * ⚠️ NON-NULL MEANS WE FILLED IT IN AND NOBODY HAS CHECKED IT — and that
+   * the reminder is nonetheless armed. Operator, 2026-08-25: "insert it. No
+   * further user interaction required." The row must say so plainly and must
+   * never claim the member confirmed it.
+   */
+  dateSource: 'read' | 'derived' | null;
+  /** The sentence saying where the date came from. Safe to show as-is. */
+  dateSourceNote: string | null;
 }
 
 /** What came back from adding one document. */

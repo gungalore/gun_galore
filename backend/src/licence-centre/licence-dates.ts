@@ -146,7 +146,21 @@ export const RENEWAL_LEAD_DAYS = 180;
 
 export function expiryState(
   expiresOn: Date | null | undefined,
-  confirmedAt: Date | null | undefined,
+  /**
+   * The date is SETTLED — either the member confirmed it, or we filled it in
+   * and armed it.
+   *
+   * ⚠️ THIS WAS `confirmedAt`, AND ONLY THE MEMBER COULD PROVIDE IT. Which
+   * meant a document we had read a perfectly good date off sat in "unknown"
+   * — grey, no state, no reminder — until somebody went back and ticked a box.
+   * Operator, 2026-08-25: "insert it. No further user interaction required."
+   *
+   * It is passed as a boolean rather than a date because the two sources are
+   * different columns (confirmedAt and dateSource) and only their presence
+   * ever mattered here. A caller that passes `row.confirmedAt` alone is now a
+   * caller that has forgotten the automatic half.
+   */
+  settled: boolean | Date | null | undefined,
   now: Date,
   /**
    * The member ticked "Never expires".
@@ -160,7 +174,7 @@ export function expiryState(
   neverExpires = false,
 ): ExpiryState {
   if (neverExpires) return 'no-expiry';
-  if (!expiresOn || !confirmedAt) return 'unknown';
+  if (!expiresOn || !settled) return 'unknown';
   const left = daysUntil(expiresOn, now);
   if (left < 0) return 'expired';
   if (left <= EXPIRING_WITHIN_DAYS) return 'expiring';
@@ -170,10 +184,11 @@ export function expiryState(
 /** Is this close enough that offering a renewal is helpful rather than noise? */
 export function withinRenewalWindow(
   expiresOn: Date | null | undefined,
-  confirmedAt: Date | null | undefined,
+  /** Settled: confirmed by the member, or filled in and armed by us. */
+  settled: boolean | Date | null | undefined,
   now: Date,
 ): boolean {
-  if (!expiresOn || !confirmedAt) return false;
+  if (!expiresOn || !settled) return false;
   return daysUntil(expiresOn, now) <= RENEWAL_LEAD_DAYS;
 }
 
@@ -235,4 +250,25 @@ export function competencyLapses(issuedOn: Date): Date {
   const d = new Date(issuedOn.getTime());
   d.setUTCFullYear(d.getUTCFullYear() + COMPETENCY_YEARS);
   return d;
+}
+
+/**
+ * Is this row's expiry date settled — by the member, or by us?
+ *
+ * ⚠️ ONE DEFINITION, USED EVERYWHERE. Every surface that used to ask "is
+ * confirmedAt set?" has to ask this instead, or it will keep nagging about a
+ * date we have already filled in and armed — which is the whole complaint
+ * this change answers.
+ *
+ * The two halves stay distinguishable on purpose: `confirmedAt` still means a
+ * human looked, `dateSource` still means we did it and nobody has checked.
+ * The card says which. What they share is that a reminder may fire.
+ */
+export function dateIsSettled(row: {
+  confirmedAt?: Date | null;
+  dateSource?: string | null;
+}): boolean {
+  return row.confirmedAt !== null && row.confirmedAt !== undefined
+    ? true
+    : Boolean(row.dateSource);
 }

@@ -14,6 +14,12 @@ import { FLAGS, SettingsService } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { decryptJson, encryptJson } from '../common/blob-crypto';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
+import { dateIsSettled } from './licence-dates';
+import {
+  mayArmDerivedExpiry,
+  mayArmReadExpiry,
+} from './credential-auto-date';
+import { recomputeDerivedCompetencies } from './credential-derive-recompute';
 import {
   cleanAlsoCovers,
   currentKind,
@@ -243,6 +249,8 @@ export class LicenceCentreService {
         autoFiled: true,
         namedConfident: true,
         firearmCategory: true,
+        dateSource: true,
+        dateSourceNote: true,
       },
     });
 
@@ -344,13 +352,13 @@ export class LicenceCentreService {
       neverExpires: r.neverExpires,
       issuedOnUnknown: r.issuedOnUnknown,
       remindersMuted: r.remindersMuted,
-      state: expiryState(r.expiresOn, r.confirmedAt, now, r.neverExpires),
+      state: expiryState(r.expiresOn, dateIsSettled(r), now, r.neverExpires),
       // ⚠️ DELIBERATELY NOT `state === 'expiring'`. The card turns amber at 90
       // days, which is the section 24(1) deadline itself; the renewal is
       // offered at six months so there is still time to act on it. Tying the
       // two together would first mention renewal on the last day it can be
       // lodged.
-      renewalDue: withinRenewalWindow(r.expiresOn, r.confirmedAt, now),
+      renewalDue: withinRenewalWindow(r.expiresOn, dateIsSettled(r), now),
       details: this.readDetails(r.detailsEncrypted),
       // Same statutory arithmetic the upload path offers, so a document that
       // reaches the confirm step FROM THE LIST — which is how every
@@ -377,6 +385,16 @@ export class LicenceCentreService {
       // were unsure about. See the model for what these two mean.
       autoFiled: r.autoFiled,
       namedConfident: r.namedConfident,
+      /**
+       * WHO PUT THE DATE THERE.
+       *
+       * ⚠️ THE CARD MUST NOT SAY "By you" ABOUT OUR READING. Attributing a
+       * date we filled in to the member, by name, on a page about firearm
+       * licences, is a false record of who checked what — and the first thing
+       * they would check if the reminder were ever wrong.
+       */
+      dateSource: r.dateSource,
+      dateSourceNote: r.dateSourceNote,
     }));
   }
 
@@ -538,6 +556,31 @@ export class LicenceCentreService {
       ? null
       : derivedCredentialTitle(resolved, reading?.details ?? {});
 
+    /**
+     * May we act on the date we just read, or only show it?
+     *
+     * ⚠️ DECIDED BEFORE THE WRITE, AND LOGGED WHEN REFUSED. A refusal is not
+     * a failure the member sees — the date still lands in the box — but it is
+     * the difference between a reminder that fires and one that does not, so
+     * it must be findable afterwards.
+     */
+    const armed = reading
+      ? mayArmReadExpiry({
+          kind: resolved,
+          coversKinds: alsoCovers,
+          expiresOn: reading.expiresOn,
+          issuedOn: reading.issuedOn,
+          section: reading.details.section ?? null,
+          lowConfidence: reading.lowConfidence,
+          now: new Date(),
+        })
+      : { arm: false as const };
+    if (reading?.expiresOn && !armed.arm) {
+      this.logger.log(
+        `Credential ${created.id}: date read but not armed — ${armed.reason}`,
+      );
+    }
+
     if (reading) {
       await this.prisma.credential
         .update({
@@ -545,10 +588,20 @@ export class LicenceCentreService {
           data: {
             ...(derived ? { title: derived } : {}),
             issuedOn: parseIsoDate(reading.issuedOn),
-            // ⚠️ PROPOSED, NOT CONFIRMED. expiresOn is written so the member
-            // sees a filled-in date to check, and confirmedAt stays null, so
-            // the reminder sweep cannot see this row until they say it is
-            // right.
+            // ⚠️ WRITTEN, AND ARMED WHERE WE ARE SURE OF IT. This used to say
+            // "PROPOSED, NOT CONFIRMED... the reminder sweep cannot see this
+            // row until they say it is right", and that was the defect: a
+            // member who uploaded a firearm licence and never went back to
+            // tick a box got no renewal reminder at all.
+            //
+            // Operator, 2026-08-25: "insert it. No further user interaction
+            // required. Thats why we are designing this system, for
+            // automation and ease of use!"
+            //
+            // The date is written either way. What `armed` decides is whether
+            // the sweep may act on it — see credential-auto-date.ts, which is
+            // the only thing now standing between an OCR misreading and an
+            // SMS about somebody's firearm licence.
             expiresOn: parseIsoDate(reading.expiresOn),
             // ⚠️ FOUND A DATE, SO IT IS NOT A NEVER-EXPIRES DOCUMENT. Only
             // reachable if a kind is ever both pre-ticked and read; leaving
@@ -569,6 +622,14 @@ export class LicenceCentreService {
                   firearmCategory: categoryFromText(
                     reading.details.firearm_type ?? '',
                   ),
+                }
+              : {}),
+            ...(armed.arm
+              ? {
+                  dateSource: 'read',
+                  dateSourceNote:
+                    'We read this date off the document you uploaded. Change it if it is wrong.',
+                  dateReadConfident: true,
                 }
               : {}),
             // Keys in the clear, values encrypted. The key names are not PII.
@@ -612,6 +673,76 @@ export class LicenceCentreService {
       category: r.firearmCategory as LinkedLicence['category'],
       expiresOn: r.expiresOn,
     }));
+
+    /**
+     * A competency's date is arithmetic, so work it out and write it.
+     *
+     * ⚠️ THE ONE DOCUMENT THAT CANNOT BE READ AND MUST BE COMPUTED. A SAPS
+     * 524 prints no expiry at all — in its place it prints the s10(2) rule and
+     * leaves the holder to derive the date. Until now we derived it, showed it
+     * as a prefill, and waited: so the single document in the Centre whose
+     * date we can be MOST certain about was the one guaranteed to remind on
+     * nothing.
+     *
+     * ⚠️ ARMED ONLY WHERE A REAL LICENCE BACKS IT. mayArmDerivedExpiry
+     * refuses the five-year no-licence figure, which is the repealed s10(2)
+     * applied from habit and which the reference forbids stating as the legal
+     * position. It is still shown, still explained, still asks.
+     *
+     * ⚠️ AND IT IS A SNAPSHOT OF SOMETHING THAT MOVES. The date rolls forward
+     * with every licence renewed in the same category, so this is only correct
+     * until the member's next licence lands — which is what recomputeDerived
+     * on the licence write paths is for.
+     */
+    /**
+     * A NEW licence re-dates the competencies too.
+     *
+     * ⚠️ AND THIS IS WHY ORDER STOPPED MATTERING. The browser uploads a pack
+     * one file at a time; without this, a member whose competency happened to
+     * go up before their rifle licence would have it dated off the licences
+     * that existed at that instant — possibly none — and it would stay wrong
+     * until they confirmed something. Now the licence corrects it on arrival.
+     */
+    if (
+      (resolved === 'FIREARM_LICENCE' ||
+        alsoCovers.includes('FIREARM_LICENCE')) &&
+      armed.arm
+    ) {
+      await recomputeDerivedCompetencies(
+        this.prisma,
+        user.id,
+        (blob) => this.readDetails(blob).covers ?? '',
+        this.logger,
+      );
+    }
+
+    if (resolved === 'COMPETENCY_CERTIFICATE' && reading) {
+      const endorsements = parseEndorsements(reading.details.covers ?? '');
+      const issuedOn = parseIsoDate(reading.issuedOn);
+      const d = deriveCertificateExpiry({ endorsements, issuedOn, licences });
+      const ok = mayArmDerivedExpiry(d.basis);
+      if (d.on && ok.arm) {
+        await this.prisma.credential
+          .update({
+            where: { id: created.id },
+            data: {
+              expiresOn: d.on,
+              neverExpires: false,
+              dateSource: 'derived',
+              dateSourceNote: d.why,
+            },
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `Could not date competency ${created.id}: ${(err as Error).message}`,
+            ),
+          );
+      } else if (d.on) {
+        this.logger.log(
+          `Credential ${created.id}: competency date derived but not armed — ${ok.reason}`,
+        );
+      }
+    }
 
     return {
       id: created.id,
@@ -867,6 +998,24 @@ export class LicenceCentreService {
         resolvedBy: 'user_action',
       })
       .catch(() => undefined);
+
+    /**
+     * A licence just changed, so every competency dated off it is now stale.
+     *
+     * ⚠️ AWAITED, NOT FIRED AND FORGOTTEN. The member is looking at the list
+     * that this response refreshes; re-dating afterwards would show them the
+     * old number and correct it on some later load, which reads as the site
+     * changing its mind. It is cheap — two queries and an update only where
+     * something actually moved — and it cannot throw.
+     */
+    if (before.kind === 'FIREARM_LICENCE' || nextKind === 'FIREARM_LICENCE') {
+      await recomputeDerivedCompetencies(
+        this.prisma,
+        user.id,
+        (blob) => this.readDetails(blob).covers ?? '',
+        this.logger,
+      );
+    }
 
     return { confirmed: true, expiresOn: expiry ? toIsoDate(expiry) : null };
   }

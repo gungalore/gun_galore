@@ -4961,9 +4961,58 @@ model Credential {
   /// IN THE CLEAR — the reminder cron queries on it. See the header.
   issuedOn    DateTime?
   expiresOn   DateTime?
-  /// THE SAFETY RAIL. Null until the member has looked at the dates and said
-  /// they are right. The reminder sweep will not see a row without it.
+  /// A MEMBER LOOKED AT THIS AND SAID IT WAS RIGHT. Nothing automatic ever
+  /// writes it — see dateSource, which is the other half of the answer.
+  ///
+  /// ⚠️ IT USED TO BE THE SAFETY RAIL, AND THE RAIL WAS THE HAZARD. It read
+  /// "null until the member has looked at the dates and said they are right;
+  /// the reminder sweep will not see a row without it". Which meant a member
+  /// who uploaded a firearm licence and never went back to tick a box got no
+  /// renewal reminder at all — in a product whose entire job is warning
+  /// somebody before their licence expires. Operator, 2026-08-25: "insert it.
+  /// No further user interaction required. Thats why we are designing this
+  /// system, for automation and ease of use!"
+  ///
+  /// The sweep now sees a row that EITHER the member confirmed OR we dated
+  /// ourselves. This column keeps its one narrow meaning so the two can still
+  /// be told apart — by us, and on the card.
   confirmedAt DateTime?
+
+  /// ── WHO PUT THE DATE THERE ───────────────────────────────────
+  ///
+  /// null | 'read' | 'derived'.
+  ///
+  /// NON-NULL MEANS: WE FILLED THIS IN AND NO HUMAN HAS CHECKED IT. Null means
+  /// either nobody has settled it yet, or the member has (confirmedAt).
+  ///
+  /// ⚠️ WITHOUT THIS COLUMN, "RECOMPUTE WHEN A LICENCE CHANGES" DEGRADES TO
+  /// "RECOMPUTE NEVER". A competency's expiry is not a fact, it is arithmetic
+  /// over the member's licences, and it MOVES — it rolls forward every time a
+  /// licence in its category is renewed. Once the answer is stored, a
+  /// recomputation has to know whether it is refreshing its own working or
+  /// about to overwrite a date the member typed. Nothing else on the row can
+  /// tell those apart, so without it the safe choice is to never recompute,
+  /// and the stored date is wrong from the next renewal onwards.
+  ///
+  /// 'read'    — taken off the document by the extractor, and it passed the
+  ///             confidence guard. See dateReadConfident.
+  /// 'derived' — computed from the licences in the categories a competency
+  ///             covers. Only ever written where the derivation was backed by
+  ///             a real licence, never for the five-year no-licence
+  ///             assumption: that figure is a DFO operating rule, the
+  ///             reference forbids presenting it as the legal position, and a
+  ///             reminder is the loudest way to present something.
+  dateSource     String? @db.VarChar(16)
+  /// The sentence shown on the card, saying where the date came from. Written
+  /// with dateSource and cleared with it.
+  dateSourceNote String?
+  /// The extractor was sure about the date it read.
+  ///
+  /// ⚠️ THE MODEL'S DOUBT USED TO BE DISCARDED. The date branch of the parser
+  /// returned before the confidence was captured, so lowConfidence could never
+  /// contain expires_on — the one field where it matters most. Storing it here
+  /// is what lets the decision survive a page refresh.
+  dateReadConfident Boolean @default(false)
 
   /// ── WHAT THE MEMBER SAID ABOUT THE DATES ──────────────────────────
   ///
@@ -5091,4 +5140,7 @@ model Credential {
   @@index([userId, kind])
   // The competency derivation groups a member's licences by category.
   @@index([userId, firearmCategory])
+  // The reminder sweep's SECOND predicate: a row we dated ourselves is armed
+  // just as a confirmed one is. See dateSource.
+  @@index([dateSource, remindersMuted, expiresOn])
 }

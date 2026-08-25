@@ -460,10 +460,26 @@ export class LicenceCentreExtractService {
         // date they have no way to check against the card, and the reminder
         // sweep then chases a deadline nobody set. The real date is derived
         // from the licences in that category — see common/sa-competency.
-        if (key === 'expires_on' && kind !== 'COMPETENCY_CERTIFICATE') {
-          out.expiresOn = value;
+        if (key === 'expires_on') {
+          // ⚠️ DROPPED, NOT REDIRECTED, AND THE DIFFERENCE IS THE BUG THIS
+          // FIXES. The guard was written as `if (expires_on && kind !==
+          // COMPETENCY) ... else out.issuedOn = value`, so an expiry returned
+          // for a competency failed the condition and fell into the else —
+          // landing in issuedOn and overwriting the real date of issue. That
+          // is the one date a competency certificate DOES print, and it is
+          // what the five-year no-licence rule is counted from.
+          if (kind !== 'COMPETENCY_CERTIFICATE') out.expiresOn = value;
+        } else {
+          out.issuedOn = value;
         }
-        else out.issuedOn = value;
+        // ⚠️ THE MODEL'S OWN DOUBT, CAPTURED BEFORE THE `continue`. This
+        // branch used to return here, past the confidence check below, so
+        // lowConfidence could never contain a date key — the one field where
+        // it matters most. Nothing could gate on "was the model sure about
+        // this expiry?" because the answer was thrown away every time.
+        if ((f?.confidence ?? '').toLowerCase() === 'low') {
+          out.lowConfidence.push(key);
+        }
         continue;
       }
 
