@@ -123,6 +123,35 @@ describe('arming a date we read off a document', () => {
     expect(mayArmReadExpiry(licence({ expiresOn: null })).arm).toBe(false);
   });
 
+  it('⚠️ reads the section however the card writes it', () => {
+    // ⚠️ WITHOUT THIS, NOTHING IS EVER ARMED. The extractor asks for `section`
+    // with no format instruction, so the model returns what the card says.
+    // The term table is keyed 'S16'. A raw lookup misses on every one of these
+    // but the bare 'S16', the term check finds nothing to compare against, and
+    // the guard refuses — silently, on every licence, with the member seeing a
+    // filled-in date and no reminder and no explanation.
+    for (const written of ['S16', 'Section 16', 'section 16(1)', '16', 'SEC. 16']) {
+      expect(
+        mayArmReadExpiry(licence({ section: written })).arm,
+      ).toBe(true);
+    }
+  });
+
+  it('⚠️ refuses section 20, because the number does not say the term', () => {
+    // Business purposes runs ten years for a game rancher or a hunting
+    // business and five for everything else. Guessing is a five-year error
+    // whichever way it goes, so it is left for the member.
+    expect(mayArmReadExpiry(licence({ section: '20' })).arm).toBe(false);
+    expect(mayArmReadExpiry(licence({ section: 'Section 20' })).arm).toBe(false);
+  });
+
+  it('tells s16 from s16A', () => {
+    // Both ten years, so the arming outcome matches — but they are different
+    // licences and the distinction must survive the parse.
+    expect(mayArmReadExpiry(licence({ section: 'S16A' })).arm).toBe(true);
+    expect(mayArmReadExpiry(licence({ section: 'Section 16A' })).arm).toBe(true);
+  });
+
   it('gets an s13 five-year term right too', () => {
     expect(
       mayArmReadExpiry(

@@ -1,5 +1,5 @@
 import { CredentialKind } from '@prisma/client';
-import { LICENCE_YEARS, type LicenceSection } from '../common/sa-competency';
+import { LICENCE_YEARS, sectionFromText } from '../common/sa-competency';
 import { parseIsoDate } from './licence-dates';
 
 // ────────────────────────────────────────────────────────────────────
@@ -124,7 +124,11 @@ export function mayArmReadExpiry(args: {
   //
   // No section read means no cross-check, which means no arming. That is a
   // deliberate cost: the alternative is trusting a date nothing corroborates.
-  const term = LICENCE_YEARS[args.section as LicenceSection];
+  // ⚠️ NORMALISED, NOT LOOKED UP RAW. The card says "Section 16"; the table
+  // is keyed 'S16'. A direct lookup misses on almost every real card and the
+  // guard then refuses every licence, silently.
+  const parsed = sectionFromText(args.section);
+  const term = parsed ? LICENCE_YEARS[parsed] : undefined;
   if (!issued || !term) {
     return { arm: false, reason: 'no issue date or section to check the term against' };
   }
@@ -133,7 +137,7 @@ export function mayArmReadExpiry(args: {
   if (Math.abs(daysBetween(expiry, expected)) > TERM_TOLERANCE_DAYS) {
     return {
       arm: false,
-      reason: `expiry ${args.expiresOn} does not match a ${term}-year ${args.section} term from ${args.issuedOn}`,
+      reason: `expiry ${args.expiresOn} does not match a ${term}-year ${parsed} term from ${args.issuedOn}`,
     };
   }
 

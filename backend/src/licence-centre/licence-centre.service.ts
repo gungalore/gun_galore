@@ -330,7 +330,10 @@ export class LicenceCentreService {
             r.coversKinds.includes('FIREARM_LICENCE')) &&
           r.firearmCategory !== null &&
           r.expiresOn !== null &&
-          r.confirmedAt !== null,
+          // Settled by the member OR armed by us — see dateIsSettled. Keyed on
+          // confirmedAt alone, an auto-dated licence never reached the
+          // derivation and every competency fell back to five years.
+          dateIsSettled(r),
       )
       .map((r) => ({
         category: (categorised.get(r.id) ??
@@ -659,13 +662,26 @@ export class LicenceCentreService {
       await this.prisma.credential.findMany({
         where: {
           userId: user.id,
-          OR: [
-            { kind: 'FIREARM_LICENCE' },
-            { coversKinds: { has: 'FIREARM_LICENCE' } },
+          // ⚠️ TWO INDEPENDENT CONDITIONS, SO THEY GO IN AN `AND`. Prisma takes
+          // one `OR` per object; writing a second silently kept only the last
+          // one, which tsc caught here and would not have in a looser shape.
+          AND: [
+            {
+              OR: [
+                { kind: 'FIREARM_LICENCE' },
+                { coversKinds: { has: 'FIREARM_LICENCE' } },
+              ],
+            },
+            {
+              // Settled by the member, or filled in and armed by us.
+              OR: [
+                { confirmedAt: { not: null } },
+                { dateSource: { not: null } },
+              ],
+            },
           ],
           firearmCategory: { not: null },
           expiresOn: { not: null },
-          confirmedAt: { not: null },
         },
         select: { firearmCategory: true, expiresOn: true },
       })

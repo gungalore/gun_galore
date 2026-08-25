@@ -82,9 +82,23 @@ export async function recomputeDerivedCompetencies(
       prisma.credential.findMany({
         where: {
           userId,
-          OR: [
-            { kind: 'FIREARM_LICENCE' },
-            { coversKinds: { has: 'FIREARM_LICENCE' } },
+          // ⚠️ TWO INDEPENDENT CONDITIONS, SO THEY GO IN AN `AND`. Prisma takes
+          // one `OR` per object; writing a second silently kept only the last
+          // one, which tsc caught here and would not have in a looser shape.
+          AND: [
+            {
+              OR: [
+                { kind: 'FIREARM_LICENCE' },
+                { coversKinds: { has: 'FIREARM_LICENCE' } },
+              ],
+            },
+            {
+              // Settled by the member, or filled in and armed by us.
+              OR: [
+                { confirmedAt: { not: null } },
+                { dateSource: { not: null } },
+              ],
+            },
           ],
           firearmCategory: { not: null },
           expiresOn: { not: null },

@@ -518,6 +518,44 @@ export type LicenceSection =
   | 'S20_OTHER';
 
 /**
+ * Whatever a licence card calls its section, as a section we can price.
+ *
+ * ⚠️ WITHOUT THIS, NOTHING IS EVER ARMED. The extractor asks for `section`
+ * with no format instruction, so the model returns what the card says —
+ * "Section 16", "S16", "16", "sec 16(1)". LICENCE_YEARS is keyed on 'S16', so
+ * a direct lookup misses on every one of those but the second, the term check
+ * finds no term, and the guard refuses the date. Silently: the member would
+ * see a filled-in expiry, no reminder, and nothing explaining why.
+ *
+ * ⚠️ SECTION 20 RETURNS NULL ON PURPOSE. Business purposes runs ten years
+ * for a game rancher or a hunting business and five for everything else, and
+ * the number alone does not say which. Guessing would be a five-year error in
+ * whichever direction it guessed wrong, so a s20 licence is left for the
+ * member to date.
+ */
+export function sectionFromText(raw: string | null | undefined): LicenceSection | null {
+  const t = (raw ?? '').trim().toUpperCase();
+  if (!t || t.length > 40) return null;
+  // "SECTION 16A(1)", "S16", "16 A", "SEC. 15" — the number is what matters,
+  // with the A suffix as the only meaningful decoration. A subsection such
+  // as "16(1)" is matched on the 16 and the rest ignored — the subsection
+  // does not change the term.
+  const m = t.match(/(?:S(?:EC(?:TION)?)?\.?\s*)?(\d{1,2})\s*(A)?/);
+  if (!m) return null;
+  const n = m[1];
+  const a = m[2] === 'A';
+  if (n === '16') return a ? 'S16A' : 'S16';
+  if (n === '13') return 'S13';
+  if (n === '14') return 'S14';
+  if (n === '15') return 'S15';
+  if (n === '17') return 'S17';
+  if (n === '18') return 'S18';
+  if (n === '19') return 'S19';
+  // 20 is deliberately absent — see the note above.
+  return null;
+}
+
+/**
  * Statutory validity per section, in years — the section 27 Table as
  * substituted by s18 of Act 28 of 2006, in force 10 January 2011 (§5.4).
  *
