@@ -28,13 +28,19 @@ import { CredentialKind, KIND_LABELS } from '@/lib/licence-centre-api';
 //   THE BOX IT LANDS IN, which is what the operator asked for in as many
 //   words — a document filed under the wrong kind is one a DFO will not find.
 //
-// ⚠️ THE CAPTURE IS NEVER FORCED OPEN FROM HERE. An earlier draft added an
-// `autoOpen` prop to ScanButton that set its `open` state directly. That skips
-// the choice ScanButton exists to make — it offers the webcam to NOBODY on a
-// desktop ("an option that never yields a usable document is not a fallback,
-// it is a trap") and hands off to the phone instead — so a button reading
-// "Scan with phone" opened the laptop webcam. The panel below renders
-// ScanButton's own controls and lets it decide.
+// ⚠️ PICKING THE TYPE IS THE LAST TAP, AND THE SURFACE IS STILL NOT OURS TO
+// CHOOSE. Operator, 2026-08-25: "Remove this and immediately open the QR
+// code" — the type IS the question this menu asks, so answering it opens the
+// hand-off rather than a panel offering the same two options again.
+//
+// It does that through ScanButton's `autoStart`, NOT by forcing a surface. An
+// earlier draft added an `autoOpen` prop that set ScanButton's `open` state
+// directly, which skips the choice ScanButton exists to make — it offers the
+// webcam to NOBODY on a desktop ("an option that never yields a usable
+// document is not a fallback, it is a trap") and hands off to the phone
+// instead — so a button reading "Scan with phone" opened the laptop webcam.
+// `autoStart` says "you have already been asked"; ScanButton still decides
+// what that means on this device.
 //
 // ⚠️ "WORK IT OUT FOR ME" STAYS, AND STAYS FIRST. The classifier is good and
 // the confirm step shows its answer either way; a list that forced a choice
@@ -63,6 +69,14 @@ const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
  * ⚠️ AND IT SHOWS BEFORE THE CAPTURE, NOT AFTER. Told at the confirm step, the
  * member has already put the phone down — the second, third and fourth
  * photographs are the ones they will not go back for.
+ */
+/**
+ * ⚠️ AND IT IS WHY ONE KIND STILL GETS A PANEL. Picking a type now opens the
+ * hand-off straight away, which is right for a document the member simply
+ * holds up — but the safe photographs are the case where WHICH photographs
+ * get taken is the whole difficulty, and this is the last screen they read
+ * before the phone is in their hand. The QR dialog is on the desktop and the
+ * camera is on the phone, so there is nowhere later to say it.
  */
 const GUIDANCE: Partial<Record<CredentialKind, string>> = {
   SAFE_PHOTOGRAPHS:
@@ -222,6 +236,62 @@ export default function DocumentCentreAdd({
 
   const guidance = chosen ? GUIDANCE[chosen] : undefined;
 
+  /*
+    Keyed on the type so a second document gets a scanner aimed for it rather
+    than the last one's guide. ScanButton picks the phone hand-off or the
+    on-device camera itself — see the note at the top of this file for why
+    that choice is not ours to make.
+  */
+  const scanControl = (auto: boolean) => (
+    <ScanButton
+      key={chosen || 'auto'}
+      autoStart={auto}
+      /* ⚠️ WITHOUT THIS THE STRAY CONTROLS OUTLIVE THE DIALOG. Nothing else
+         closes this menu on the straight-through path: the member would shut
+         the QR and find ScanButton's own two buttons sitting in the toolbar
+         where the Upload and Scan buttons belong. */
+      onClosed={
+        auto
+          ? () => {
+              setMode(null);
+              setChosen(null);
+            }
+          : undefined
+      }
+      shape={chosen ? shapeForKind(chosen) : 'a4'}
+      title="Photograph the document"
+      kind={chosen || undefined}
+      handoff={{ dest: 'licence-centre' }}
+      /* ⚠️ THIS DOES NOT ALSO CLOSE THE PANEL. PhoneHandoffDialog reports the
+         arrival and then holds itself open for a beat so the member sees what
+         came through; tearing it down in the same tick replaced that with a
+         flash. ScanButton closes it on its own. */
+      onHandoffArrived={onHandoffArrived}
+      onFiles={(files) => handOff(files, chosen ?? '')}
+      disabled={busy}
+      label="Take a photo"
+      fallback={
+        <FilePickerButton
+          accept={ACCEPT}
+          multiple
+          disabled={busy}
+          onFiles={(files) => handOff(files, chosen ?? '')}
+        >
+          Choose files instead
+        </FilePickerButton>
+      }
+    />
+  );
+
+  /**
+   * A scan of a kind with nothing to be told first — straight to the hand-off.
+   *
+   * Renders ScanButton and nothing else: under `autoStart` it draws no
+   * controls of its own while the hand-off opens over it, and falls back to
+   * the picker only if the hand-off turns out not to be available at all.
+   */
+  const straightToScan = mode === 'scan' && chosen !== null && !guidance;
+
   const step2 = (
     <div
       className={`${panelClass} p-4`}
@@ -246,35 +316,7 @@ export default function DocumentCentreAdd({
 
       <div className="mt-3">
         {mode === 'scan' ? (
-          /* Keyed on the type so a second document gets a scanner aimed for it
-             rather than the last one's guide. ScanButton picks the phone
-             hand-off or the on-device camera itself — see the note at the top
-             of this file for why that choice is not ours to make. */
-          <ScanButton
-            key={chosen || 'auto'}
-            shape={chosen ? shapeForKind(chosen) : 'a4'}
-            title="Photograph the document"
-            kind={chosen || undefined}
-            handoff={{ dest: 'licence-centre' }}
-            /* ⚠️ THIS DOES NOT ALSO CLOSE THE PANEL. PhoneHandoffDialog reports
-               the arrival and then holds itself open for a beat so the member
-               sees what came through; tearing it down in the same tick
-               replaced that with a flash. ScanButton closes it on its own. */
-            onHandoffArrived={onHandoffArrived}
-            onFiles={(files) => handOff(files, chosen ?? '')}
-            disabled={busy}
-            label="Take a photo"
-            fallback={
-              <FilePickerButton
-                accept={ACCEPT}
-                multiple
-                disabled={busy}
-                onFiles={(files) => handOff(files, chosen ?? '')}
-              >
-                Choose files instead
-              </FilePickerButton>
-            }
-          />
+          scanControl(false)
         ) : (
           <FilePickerButton
             accept={ACCEPT}
@@ -376,7 +418,8 @@ export default function DocumentCentreAdd({
         Scan with phone
       </button>
 
-      {mode && (chosen === null ? list : step2)}
+      {mode &&
+        (chosen === null ? list : straightToScan ? scanControl(true) : step2)}
     </div>
   );
 }

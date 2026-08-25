@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DocShape } from '@/lib/scan/shapes';
 
 // ────────────────────────────────────────────────────────────────────
@@ -74,6 +74,25 @@ export interface ScanButtonProps {
    * screen reader and a hover both have room for it.
    */
   compact?: boolean;
+  /**
+   * Skip the trigger: the caller has ALREADY asked what is coming.
+   *
+   * ⚠️ THIS DOES NOT PICK A SURFACE, AND THAT IS THE ENTIRE POINT OF IT. An
+   * earlier attempt at the same thing set `open` from outside, which opened
+   * the on-device camera — on a desktop, where this component deliberately
+   * offers the webcam to nobody, behind a button reading "Scan with phone".
+   * The choice below stays here: the phone hand-off when this is not a
+   * handheld, the camera when it is, and neither when neither is available.
+   *
+   * ⚠️ AND IT HIDES THIS COMPONENT'S OWN CONTROLS WHILE IT WORKS. They would
+   * otherwise render for as long as the probe and the dialog's chunk take,
+   * then be covered by the overlay — two buttons flashing up in a toolbar and
+   * vanishing. They come back only in the case where nothing opened, which is
+   * the case where the member genuinely needs them.
+   */
+  autoStart?: boolean;
+  /** Fires when the scanner or the hand-off closes, however it was closed. */
+  onClosed?: () => void;
 }
 
 export default function ScanButton({
@@ -88,9 +107,20 @@ export default function ScanButton({
   disabled = false,
   label = 'Take a photo',
   compact = false,
+  autoStart = false,
+  onClosed,
 }: ScanButtonProps) {
   const [open, setOpen] = useState(false);
   const [phone, setPhone] = useState(false);
+  /**
+   * Opened once, ever — and a ref rather than a dependency.
+   *
+   * ⚠️ `handheld` and `usable` are resolved asynchronously, so the effect
+   * below runs again as they land. Without the latch, a member who opened the
+   * hand-off and closed it would have it reopen under them the moment the
+   * second probe settled: a dialog that cannot be dismissed.
+   */
+  const started = useRef(false);
   /**
    * Is this a device somebody actually holds?
    *
@@ -139,10 +169,37 @@ export default function ScanButton({
     };
   }, []);
 
+  const canPhone = handheld === false && !!handoff;
+  const canCamera = handheld === true && usable === true;
+  /**
+   * The probe has answered and NEITHER surface is available: an auto-start
+   * that will never start.
+   *
+   * ⚠️ KEYED ON `usable`, NOT ON `handheld`. The catch path above sets only
+   * `usable`, leaving `handheld` null forever — a member whose browser throws
+   * on enumerateDevices would otherwise sit in front of a component that
+   * renders nothing at all, having hidden the picker to wait for something
+   * that is never coming.
+   */
+  const stalled = autoStart && usable !== null && !canPhone && !canCamera;
+
+  useEffect(() => {
+    if (!autoStart || started.current) return;
+    if (canPhone) {
+      started.current = true;
+      setPhone(true);
+      return;
+    }
+    if (canCamera) {
+      started.current = true;
+      setOpen(true);
+    }
+  }, [autoStart, canPhone, canCamera]);
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       {/* On a desktop the phone is the ONLY camera offered. */}
-      {handoff && handheld === false && (
+      {!autoStart && handoff && handheld === false && (
         <button
           type="button"
           disabled={disabled}
@@ -172,7 +229,7 @@ export default function ScanButton({
           that has to be taken again. An option that never yields a usable
           document is not a fallback, it is a trap — and the file picker
           beside it is the honest one. */}
-      {usable && handheld === true && (
+      {!autoStart && usable && handheld === true && (
         <button
           type="button"
           disabled={disabled}
@@ -196,15 +253,21 @@ export default function ScanButton({
       )}
 
       {/* The picker is always here, and always first in the DOM: a member who
-          cannot see the screen reaches the path that does not need sight. */}
-      {fallback}
+          cannot see the screen reaches the path that does not need sight.
+          Under `autoStart` it waits until the auto-start is known to have
+          failed — see `stalled`; the one thing it must never do is stay
+          hidden, which is why that flag reads the probe and not the choice. */}
+      {(!autoStart || stalled) && fallback}
 
       {phone && handoff && (
         <PhoneHandoffDialog
           dest={handoff.dest}
           motivationId={handoff.motivationId}
           kind={kind}
-          onClose={() => setPhone(false)}
+          onClose={() => {
+            setPhone(false);
+            onClosed?.();
+          }}
           onArrived={(n) => onHandoffArrived?.(n)}
         />
       )}
@@ -215,7 +278,10 @@ export default function ScanButton({
           multiDefault={multiDefault}
           title={title}
           onDone={onFiles}
-          onClose={() => setOpen(false)}
+          onClose={() => {
+            setOpen(false);
+            onClosed?.();
+          }}
         />
       )}
     </div>
