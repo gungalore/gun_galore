@@ -1,10 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pt, Quad, orderQuad } from '@/lib/scan/geometry';
+import {
+  Pt,
+  Quad,
+  isConvex,
+  minInteriorAngle,
+  orderQuad,
+  quadArea,
+} from '@/lib/scan/geometry';
 import {
   containFit,
   loupeCrosshair,
+  loupeSize,
   loupeSource,
   magnifierSpot,
 } from '@/lib/scan/magnifier';
@@ -29,7 +37,7 @@ import {
 // ────────────────────────────────────────────────────────────────────
 
 const BLUE = '#4DA3FF';
-const LOUPE = { width: 148, height: 148 };
+
 const ZOOM = 3.5;
 /** Finger-sized. The visible dot is smaller; this is what you can grab. */
 const GRAB = 44;
@@ -59,8 +67,15 @@ export default function CornerEditor({
   const [pts, setPts] = useState<Quad>(quad);
   const [dragging, setDragging] = useState<number | null>(null);
   const [view, setView] = useState({ w: 0, h: 0 });
-  // Which corner the keyboard is on, so this works without a touchscreen.
-  const [focused, setFocused] = useState(0);
+  /**
+   * Which corner the keyboard is on, so this works without a touchscreen.
+   *
+   * ⚠️ null, NOT 0. It started at 0, so the editor opened with a selection
+   * ring drawn around the top-left corner when nothing was focused and the
+   * arrow keys would have moved nothing — the one thing on screen telling the
+   * member which corner they were about to move was wrong from first paint.
+   */
+  const [focused, setFocused] = useState<number | null>(null);
 
   // ⚠️ CONTAIN FITS BY WHICHEVER AXIS RUNS OUT FIRST, and then centres what
   // is left over. A portrait phone showing a landscape photograph letterboxes
@@ -99,12 +114,35 @@ export default function CornerEditor({
     return () => ro.disconnect();
   }, []);
 
+  /**
+   * Where inside the grab pad the finger landed, in VIEW pixels.
+   *
+   * ⚠️ WITHOUT THIS THE CORNER JUMPS TO THE FINGERTIP. The 44px pad exists so
+   * a thumb can grab a small dot without covering it — but the drag assigned
+   * the pointer's ABSOLUTE position, so the first pixel of movement threw the
+   * corner up to 22 view pixels out from under the dot, before the magnifier
+   * had shown anything. The member then dragged it back blind with their thumb
+   * over the destination. Touching a corner to look at it must not move it.
+   *
+   * ⚠️ VIEW SPACE, NOT IMAGE SPACE. `toImage` clamps to the photograph's
+   * bounds, so an offset recorded after that conversion is truncated at
+   * exactly the edge corners that matter most. A ref, not state, so the drag
+   * effect's deps do not re-subscribe mid-drag.
+   */
+  const grab = useRef({ dx: 0, dy: 0 });
+
   const moveTo = useCallback(
     (i: number, clientX: number, clientY: number) => {
       const el = boxRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      const p = toImage(clientX - r.left, clientY - r.top);
+      // Subtract the grab offset BEFORE converting, so the clamp inside
+      // toImage stays the last operation and the corner still cannot leave
+      // the photograph.
+      const p = toImage(
+        clientX - r.left - grab.current.dx,
+        clientY - r.top - grab.current.dy,
+      );
       setPts((cur) => {
         const next = [...cur] as Quad;
         next[i] = p;
@@ -134,7 +172,16 @@ export default function CornerEditor({
   }, [dragging, moveTo]);
 
   const viewPts = pts.map(toView);
-  const active = dragging ?? -1;
+  // ⚠️ FOCUS COUNTS AS ACTIVE, so the keyboard path gets a magnifier too. It
+  // had none: the loupe existed only while a finger was down, which meant the
+  // one member who cannot see where the dot landed — the one nudging it with
+  // arrow keys — was the one placing corners blind. magnifierSpot, loupeSource
+  // and loupeCrosshair are pure and take any point, so this costs nothing.
+  const active = dragging ?? focused ?? -1;
+  // ⚠️ SIZED TO THE FRAME, NOT FIXED AT 148. A fixed loupe leaves 2px of
+  // clearance on a 320px-wide phone and touches the dot at 280 — parking the
+  // magnifier under the finger it exists to see past. See loupeSize.
+  const LOUPE = loupeSize({ width: view.w, height: view.h });
   const loupeAt =
     active >= 0 && view.w > 0
       ? magnifierSpot(viewPts[active], { width: view.w, height: view.h }, LOUPE)
@@ -148,6 +195,30 @@ export default function CornerEditor({
     active >= 0 ? loupeCrosshair(pts[active], size, LOUPE, mag) : null;
 
   const CORNER_NAMES = ['top left', 'top right', 'bottom right', 'bottom left'];
+
+  /**
+   * Is the shape on screen something we can actually cut a document out of?
+   *
+   * ⚠️ NOTHING VALIDATED THIS. Dragging the top-left corner past the top-right
+   * draws a bow-tie, and Apply took it: `orderQuad` silently re-sorted the four
+   * points, so the rectangle produced was NOT the shape the member drew, and
+   * nothing said so. I checked the arithmetic rather than guessing — neither a
+   * triangle nor a one-pixel sliver throws; both solve to a valid homography
+   * and both produce garbage.
+   *
+   * The three tests are the ones the detector already applies to its own quads
+   * (detect.ts), minus the strictness a machine guess deserves and a member's
+   * deliberate placement does not: 15° rather than 50°, because a document
+   * photographed at a genuinely oblique angle is a real thing somebody may be
+   * correcting, and refusing it would be refusing the honest case.
+   *
+   * ⚠️ THE DRAWN ORDER, NOT THE SORTED ONE. Validating orderQuad(pts) would let
+   * a bow-tie through by silently repairing it — which is the behaviour being
+   * fixed.
+   */
+  const tooSmall = Math.abs(quadArea(pts)) < size.width * size.height * 0.01;
+  const crossed = !isConvex(pts) || minInteriorAngle(pts) < 15;
+  const invalid = crossed || tooSmall;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -190,9 +261,14 @@ export default function CornerEditor({
             <defs>
               <mask id="gg-quad-mask">
                 <rect width={view.w} height={view.h} fill="white" />
+                {/* ⚠️ evenodd. With SVG's default nonzero winding rule, a
+                    bow-tie's two lobes BOTH read as "inside the crop" — so the
+                    dimming showed the member a selection that could never be
+                    cut. evenodd draws the self-intersection honestly. */}
                 <polygon
                   points={viewPts.map((p) => `${p.x},${p.y}`).join(' ')}
                   fill="black"
+                  fillRule="evenodd"
                 />
               </mask>
             </defs>
@@ -210,16 +286,33 @@ export default function CornerEditor({
             />
             {viewPts.map((p, i) => (
               <g key={i}>
+                {/* ⚠️ A RING AT REST, NOT A CAP. A filled 20px dot sits exactly
+                    over the pixel the member is trying to judge — this file
+                    already makes that argument about its own crosshair ("a
+                    crosshair that covers the corner it is pointing at defeats
+                    the loupe") and then covered the corner anyway. Open in the
+                    middle, the corner stays visible without being touched.
+                    Solid only while active, where the loupe is showing the
+                    true pixel a few centimetres away.
+                    The dark halo is the same trick AimFrame uses: blue on a
+                    blue-grey desk is otherwise invisible. */}
                 <circle
                   cx={p.x}
                   cy={p.y}
                   r={active === i ? 13 : 10}
-                  fill={BLUE}
-                  fillOpacity={active === i ? 1 : 0.85}
-                  stroke="#fff"
-                  strokeWidth={2}
+                  fill="none"
+                  stroke="rgba(0,0,0,0.55)"
+                  strokeWidth={active === i ? 7 : 6}
                 />
-                {focused === i && active < 0 && (
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={active === i ? 13 : 10}
+                  fill={active === i ? BLUE : 'none'}
+                  stroke={active === i ? '#fff' : BLUE}
+                  strokeWidth={active === i ? 2 : 3}
+                />
+                {focused === i && dragging === null && (
                   <circle
                     cx={p.x}
                     cy={p.y}
@@ -244,9 +337,24 @@ export default function CornerEditor({
               type="button"
               aria-label={`Move the ${CORNER_NAMES[i]} corner`}
               onFocus={() => setFocused(i)}
+              onBlur={() => setFocused((f) => (f === i ? null : f))}
               onPointerDown={(e) => {
                 e.preventDefault();
                 (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+                // How far the finger is from the corner itself. Held for the
+                // life of the drag so the corner tracks the finger's MOTION
+                // rather than snapping to its position — see `grab` above.
+                const box = boxRef.current?.getBoundingClientRect();
+                grab.current = box
+                  ? { dx: e.clientX - box.left - p.x, dy: e.clientY - box.top - p.y }
+                  : { dx: 0, dy: 0 };
+                // ⚠️ preventDefault() ABOVE SUPPRESSES THE BUTTON'S OWN FOCUS,
+                // which left `focused` permanently decoupled from the real
+                // activeElement. preventScroll is load-bearing: these buttons
+                // are absolutely positioned inside an overflow:hidden box and a
+                // corner at x=0 sits at left:-22, so a focus-induced scroll
+                // would slide the quad off the photograph.
+                e.currentTarget.focus({ preventScroll: true });
                 setFocused(i);
                 setDragging(i);
               }}
@@ -392,6 +500,26 @@ export default function CornerEditor({
         )}
       </div>
 
+      {invalid && (
+        <p
+          id="gg-corner-invalid"
+          role="status"
+          style={{
+            margin: '8px 16px 0',
+            padding: '8px 10px',
+            fontSize: 13,
+            borderRadius: 6,
+            background: 'rgba(212,154,58,0.14)',
+            borderLeft: '3px solid var(--warning)',
+            color: '#fff',
+          }}
+        >
+          {crossed
+            ? 'Those corners cross over each other, so we cannot cut a document out of them. Drag them back into the four corners of the page.'
+            : 'That area is too small to read. Drag the corners out to the edges of the document.'}
+        </p>
+      )}
+
       <p
         style={{
           margin: 0,
@@ -411,23 +539,45 @@ export default function CornerEditor({
           padding: '10px 16px max(16px, env(safe-area-inset-bottom))',
         }}
       >
-        <button type="button" onClick={onCancel} style={btn}>
+        {/* ⚠️ ALL THREE GO QUIET TOGETHER. Cancel used to stay live during a
+            re-cut, and pressing it unmounted the editor mid-flight — which put
+            the live camera back over the member's photograph, the exact flash
+            the busy state exists to prevent. */}
+        <button type="button" onClick={onCancel} disabled={busy} style={btn}>
           Cancel
         </button>
         <button
           type="button"
           onClick={() => setPts(quad)}
+          disabled={busy}
           style={btn}
-          aria-label="Put the corners back where we found them"
+          // ⚠️ NOT aria-label. An accessible name that replaces the visible
+          // one leaves a speech-control user saying "Reset" at a button whose
+          // only name is a sentence. The description sits beside it instead.
+          title="Put the corners back where we found them"
         >
           Reset
         </button>
         <div style={{ flex: 1 }} />
+        {/* ⚠️ aria-disabled, NOT disabled. A plain disabled button cannot take
+            focus, so a screen-reader member tabbing to the end of this editor
+            would find nothing there and no explanation of why. This one is
+            reachable and describes its own refusal. */}
         <button
           type="button"
           disabled={busy}
-          onClick={() => onApply(orderQuad([...pts]))}
-          style={{ ...btn, background: 'var(--red)', border: 'none' }}
+          aria-disabled={invalid || undefined}
+          aria-describedby={invalid ? 'gg-corner-invalid' : undefined}
+          onClick={() => {
+            if (invalid || busy) return;
+            onApply(orderQuad([...pts]));
+          }}
+          style={{
+            ...btn,
+            background: 'var(--red)',
+            border: 'none',
+            opacity: invalid ? 0.5 : 1,
+          }}
         >
           {busy ? 'Working…' : 'Apply'}
         </button>

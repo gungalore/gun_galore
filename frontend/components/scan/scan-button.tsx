@@ -96,7 +96,11 @@ export interface ScanButtonProps {
 }
 
 export default function ScanButton({
-  shape = 'any',
+  // ⚠️ NO `= 'any'` DEFAULT. It laundered "the caller did not say" into "the
+  // caller said: something else" before DocumentScanner ever saw it, which is
+  // what made the chooser open with the vaguest option pre-ticked. Passing
+  // undefined straight through lets the scanner tell the two apart.
+  shape,
   multiDefault = false,
   handoff,
   kind,
@@ -208,7 +212,7 @@ export default function ScanButton({
           title="Use my phone camera"
           className={
             compact
-              ? 'gg-datecell inline-flex h-10 w-10 items-center justify-center rounded border disabled:opacity-50'
+              ? 'gg-datecell inline-flex h-11 w-11 items-center justify-center rounded border disabled:opacity-50'
               : 'gg-datecell inline-flex min-h-[44px] items-center gap-2 rounded border px-3 py-2 text-sm disabled:opacity-50'
           }
           style={{
@@ -238,7 +242,7 @@ export default function ScanButton({
           title={label}
           className={
             compact
-              ? 'gg-datecell inline-flex h-10 w-10 items-center justify-center rounded border disabled:opacity-50'
+              ? 'gg-datecell inline-flex h-11 w-11 items-center justify-center rounded border disabled:opacity-50'
               : 'gg-datecell inline-flex min-h-[44px] items-center gap-2 rounded border px-3 py-2 text-sm disabled:opacity-50'
           }
           style={{
@@ -264,6 +268,12 @@ export default function ScanButton({
           dest={handoff.dest}
           motivationId={handoff.motivationId}
           kind={kind}
+          // ⚠️ THE WHOLE title CHAIN WAS DEAD. The dialog declares the prop and
+          // posts it with the mint, and the backend stores it on the token —
+          // but no caller ever passed one, so every hand-off ever minted
+          // carried `title: undefined`. It costs nothing to send the name of
+          // the thing the member is standing at the desk trying to photograph.
+          title={title}
           onClose={() => {
             setPhone(false);
             onClosed?.();

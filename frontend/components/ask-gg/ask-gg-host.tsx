@@ -85,10 +85,20 @@ export function AskGgHost() {
 
   return (
     <>
-      {/* FAB — browser modes only; standalone PWA enters via the tab (W6). */}
-      {!standalone && (
-        <AskGgLauncher panelArmed={armed} onOpen={openWith} />
-      )}
+      {/* ⚠️ THE FAB IS NOW THE ONLY ENTRY, IN BOTH MODES.
+          The installed app used to reach Ask Boet through a bottom tab, which
+          cost it one of five slots in the primary navigation — and those five
+          slots had no room for the CART, so an installed member could add
+          items and then, on any route where the top bar is hidden, have no way
+          back to them. A paid assistant does not outrank the basket.
+
+          The launcher is not a demotion: as a floating control it is reachable
+          from every shopping screen at once rather than from one tab in five,
+          which is more presence per pixel, not less. It already knew how to sit
+          in the installed app — DOCK_STACKING_CSS in the launcher lifts it
+          clear of the tab bar under html[data-standalone] — it was simply
+          never rendered there. */}
+      <AskGgLauncher panelArmed={armed} onOpen={openWith} />
       {/* Panel chunk downloads on first open, stays mounted after. */}
       {armed && <AskGgPanelLazy />}
     </>

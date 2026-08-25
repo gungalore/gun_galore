@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FINGER,
+  LOUPE_MAX,
   containFit,
   loupeCrosshair,
+  loupeSize,
   loupeSource,
   magnifierSpot,
   noGoTop,
@@ -97,6 +100,58 @@ describe('magnifierSpot', () => {
     const p = magnifierSpot({ x: 150, y: 100 }, tiny, LOUPE);
     expect(p.y).toBeGreaterThanOrEqual(0);
     expect(p.x).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('loupeSize', () => {
+  // ⚠️ THE SPEC ONLY EVER SWEPT 390 WIDE, WHICH IS WHY THIS SHIPPED.
+  // At 390 even a fixed 148px loupe clears the dot by 42px, so every
+  // assertion passed while the narrow phones nobody tested were the ones
+  // parking the magnifier under the finger.
+  const WIDTHS = [280, 320, 360, 375, 390, 414];
+
+  it('keeps a fingertip of clearance at every width, for every dot position', () => {
+    for (const width of WIDTHS) {
+      const frame = { width, height: Math.round(width * 1.7) };
+      const loupe = loupeSize(frame);
+      let worst = Infinity;
+      for (let x = 0; x <= frame.width; x += 5) {
+        for (let y = 0; y <= frame.height; y += 5) {
+          const at = magnifierSpot({ x, y }, frame, loupe);
+          const dx = Math.max(at.x - x, 0, x - (at.x + loupe.width));
+          const dy = Math.max(at.y - y, 0, y - (at.y + loupe.height));
+          worst = Math.min(worst, Math.hypot(dx, dy));
+        }
+      }
+      expect(
+        worst,
+        `at ${width}px wide the loupe came within ${worst.toFixed(1)}px of the dot`,
+      ).toBeGreaterThanOrEqual(FINGER);
+    }
+  });
+
+  it('still fits inside the frame and stays out of the hand at every width', () => {
+    for (const width of WIDTHS) {
+      const frame = { width, height: Math.round(width * 1.7) };
+      const loupe = loupeSize(frame);
+      for (let x = 0; x <= frame.width; x += 5) {
+        for (let y = 0; y <= frame.height; y += 5) {
+          const at = magnifierSpot({ x, y }, frame, loupe);
+          expect(at.x).toBeGreaterThanOrEqual(0);
+          expect(at.y).toBeGreaterThanOrEqual(0);
+          expect(at.x + loupe.width).toBeLessThanOrEqual(frame.width);
+          expect(at.y + loupe.height).toBeLessThanOrEqual(noGoTop(frame));
+        }
+      }
+    }
+  });
+
+  it('does not shrink the loupe on phones that can carry a full one', () => {
+    // 375 is the narrowest common iPhone; it and everything above keep today's
+    // size, so the fix costs the majority nothing.
+    for (const width of [375, 390, 414, 430]) {
+      expect(loupeSize({ width, height: 700 }).width).toBe(LOUPE_MAX);
+    }
   });
 });
 

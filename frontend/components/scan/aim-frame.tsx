@@ -99,21 +99,45 @@ export default function AimFrame({
         </svg>
       )}
 
+      {/* ⚠️ ON A PLATE, NOT ON A SHADOW. 85%-white at 12px sat directly over
+          whatever the camera was pointed at — which, when the member has done
+          exactly what was asked, is the document itself or the bright desk
+          beside it. So the one instruction on the viewfinder vanished at the
+          precise moment it was being followed. The brackets above get an
+          explicit dark halo pass for this same reason; the words beside them
+          got nothing.
+
+          A solid fill, not a box-shadow: globals.css kills every box-shadow in
+          the app, so a shadow here would be dead code. 70% black under white
+          composites to roughly 7:1, clear of AA with headroom.
+
+          +14 rather than +10: a hard-edged plate tucked right under the
+          brackets reintroduces what this component's own header warns about —
+          a straight line on a live camera IS an edge, and the member lines the
+          document up against it. */}
       {hold && (
         <p
           style={{
             position: 'absolute',
             left: 0,
             right: 0,
-            top: box ? box.y + box.height + 10 : '60%',
+            top: box ? box.y + box.height + 14 : '60%',
             margin: 0,
             textAlign: 'center',
             fontSize: 12,
-            color: 'rgba(255,255,255,0.85)',
-            textShadow: '0 1px 3px rgba(0,0,0,0.9)',
           }}
         >
-          Hold the phone {hold}
+          <span
+            style={{
+              display: 'inline-block',
+              padding: '4px 10px',
+              borderRadius: 6,
+              background: 'rgba(0,0,0,0.70)',
+              color: '#fff',
+            }}
+          >
+            Hold the phone {hold}
+          </span>
         </p>
       )}
     </div>

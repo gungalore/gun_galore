@@ -21,25 +21,24 @@
 //                 A buyer opening "Shop" is looking for a THING, not a
 //                 transaction format; only someone who already knows how
 //                 the site sells thinks in modes.
-//   2. Alerts   → routes to /notifications. Bell icon. When there are
-//                 unresolved notifications, shows a red active-count
-//                 badge in the top-right corner of the bell.
+//   2. Saved    → /wishlist. Heart icon with a saved-count badge.
 //   3. Sell     → /listings/new (centred, raised red FAB — the
 //                 prominent primary action).
-//   4. Ask Boet   → /ask-gg. Sparkles icon. Paid AI assistant — answers
-//                 firearm / shooting / SA gun-law questions, identifies
-//                 firearms from photos (Phase B), helps with checkout
-//                 and reloading. FREE tier sees an upgrade card; MEMBER
-//                 and PRO tiers get the live chat. Topic-gated at the
-//                 system-prompt level so it won't entertain off-topic
-//                 questions. (Wishlist used to live in this slot — it
-//                 moved to the 25% button next to the search bar at
-//                 the top of the PWA. See TopWishlistButton.)
-//   5. More     → bottom sheet headed by the user's avatar + username,
+//   4. Alerts   → routes to /notifications. Bell icon. When there are
+//                 unresolved notifications, shows a red active-count
+//                 badge in the top-right corner of the bell.
+//   5. Account  → bottom sheet headed by the user's avatar + username,
 //                 followed by My account / Shop / Legal sections.
 //                 All `/my/*` destinations + /dashboard + /profile
-//                 live in here, plus a Wishlist fallback link under
-//                 Shop for routes where the top search bar is hidden.
+//                 live in here.
+//
+// ⚠️ ASK BOET IS NOT A TAB, DELIBERATELY. It held slot 4, which pushed the
+// wishlist up into the top bar and left the primary navigation with no CART —
+// so an installed member could fill a basket and then, on any route where the
+// top bar is hidden, have no way back to it. A paid assistant does not outrank
+// the basket. Ask Boet is now the floating launcher it already was in browser
+// mode (components/ask-gg/ask-gg-host.tsx), which reaches every shopping
+// screen rather than one tab in five. Do not put it back in here.
 //
 // Active-route highlighting via usePathname() + a search-aware match
 // helper (so /?listingType=AUCTION lights up the Shop tab even
@@ -53,11 +52,11 @@ import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
 import { PRO_NAME } from '@/lib/brand';
 import { useStandalone } from '@/lib/use-standalone';
 import { useCart } from '@/lib/cart-store';
+import { useWishlist } from '@/lib/use-wishlist';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { useScrollDirection } from '@/lib/use-scroll-direction';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
 import { AccountMenuList } from '@/lib/account-menu';
-import { isSuppressed as isAskGgSuppressed } from '@/components/ask-gg/ask-gg-host';
 import type { CategoryWithCount } from '@/lib/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -124,7 +123,7 @@ interface Tab {
   // circular-FAB treatment. Only works at 5 tabs (position 3 = 50%).
   prominent?: boolean;
   // 'shop' / 'more' open sheets instead of navigating.
-  action?: 'shop' | 'more' | 'ask';
+  action?: 'shop' | 'more';
 }
 
 // Inline SVG icons — no extra dep. 24×24 viewbox, currentColor stroke
@@ -223,6 +222,26 @@ function IconUser() {
     </svg>
   );
 }
+// Same outline heart the top-bar wishlist button used, so the control that
+// moved down here is visually the one members already knew.
+function IconHeart() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  );
+}
+
 function IconMore() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -311,6 +330,9 @@ export function BottomTabBar() {
   const [shopOpen, setShopOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [alertsCount, setAlertsCount] = useState<number>(0);
+  // Saved-count badge for the Saved tab — same store the old top-bar
+  // wishlist button read, so the number cannot disagree between surfaces.
+  const wishlist = useWishlist();
 
   // Hide the tab bar when the user is scrolling DOWN (give them more
   // reading room) and re-show when they scroll back up — standard
@@ -516,12 +538,21 @@ export function BottomTabBar() {
       isActive: () => shopOpen || isShopSurface,
       action: 'shop',
     },
+    // ⚠️ SAVED IS BACK IN THE TAB BAR, AND ASK BOET IS OUT.
+    //
+    // Wishlist was moved up to the top bar when Ask Boet took this slot. That
+    // left the header carrying search + heart + cart, and the primary nav
+    // carrying a paid assistant but NO CART — so an installed member could add
+    // items and then, on any route where the top bar is hidden, have no way
+    // back to them. Ask Boet is now the floating launcher it already is in
+    // browser mode (see components/ask-gg/ask-gg-host.tsx), which reaches
+    // every shopping screen rather than one tab in five, and the slot goes
+    // back to the list people actually keep.
     {
-      key: 'alerts',
-      label: 'Alerts',
-      href: '/notifications',
-      isActive: (p) => p.startsWith('/notifications'),
-      // No `action` — this is a real Link, not a sheet.
+      key: 'wishlist',
+      label: 'Saved',
+      href: '/wishlist',
+      isActive: (p) => p.startsWith('/wishlist'),
     },
     {
       key: 'sell',
@@ -531,19 +562,18 @@ export function BottomTabBar() {
       prominent: true,
     },
     {
-      key: 'ask-gg',
-      label: 'Ask Boet',
-      // W6 — the tab now opens the site-wide PANEL in place (context
-      // preserved: same conversation, same page). On routes where the
-      // panel is suppressed (checkout, admin, /ask-gg itself…) the
-      // click handler falls back to navigating to the full page.
-      href: '/ask-gg',
-      isActive: (p) => p.startsWith('/ask-gg'),
-      action: 'ask',
+      key: 'alerts',
+      label: 'Alerts',
+      href: '/notifications',
+      isActive: (p) => p.startsWith('/notifications'),
+      // No `action` — this is a real Link, not a sheet.
     },
     {
+      // ⚠️ "Account", NOT "More". "More" is a name for a place with no idea
+      // what is in it, and everything behind it — orders, bids, offers,
+      // listings, sales, verification — is the member's own account.
       key: 'more',
-      label: 'More',
+      label: 'Account',
       href: '#more',
       isActive: () => moreOpen,
       action: 'more',
@@ -594,13 +624,40 @@ export function BottomTabBar() {
         );
       case 'sell':
         return <IconPlus />;
-      case 'ask-gg':
-        // Sparkles icon — universal "AI / smart helper" affordance.
-        // Drop 1 ships no badge; future drops can surface "N messages
-        // left this month" for FREE users (their 5-msg cap).
-        return <IconSparkles />;
+      case 'wishlist':
+        // Heart + saved count, caps at 50+ like the old top-bar button did.
+        return (
+          <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <IconHeart />
+            {wishlist.count > 0 && (
+              <span
+                aria-label={`${wishlist.count} saved`}
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -6,
+                  minWidth: 16,
+                  height: 16,
+                  padding: '0 4px',
+                  borderRadius: 8,
+                  background: 'var(--red)',
+                  color: '#fff',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  lineHeight: 1,
+                  border: '1.5px solid var(--bg-deep)',
+                }}
+              >
+                {wishlist.count > 50 ? '50+' : wishlist.count}
+              </span>
+            )}
+          </span>
+        );
       case 'more':
-        return <IconMore />;
+        return <IconUser />;
       default:
         return null;
     }
@@ -706,26 +763,9 @@ export function BottomTabBar() {
                     onClick={() => {
                       if (tab.action === 'shop') openSheet('shop');
                       else if (tab.action === 'more') openSheet('more');
-                      else if (tab.action === 'ask') {
-                        // Open the in-place panel; fall back to the
-                        // full page where the panel is suppressed.
-                        if (isAskGgSuppressed(pathname)) {
-                          router.push('/ask-gg');
-                        } else {
-                          window.dispatchEvent(
-                            new CustomEvent('gg:ask-gg-open'),
-                          );
-                        }
-                      }
                     }}
                     aria-label={tab.label}
-                    aria-expanded={
-                      tab.action === 'ask'
-                        ? undefined
-                        : tab.action === 'shop'
-                          ? shopOpen
-                          : moreOpen
-                    }
+                    aria-expanded={tab.action === 'shop' ? shopOpen : moreOpen}
                     style={{
                       width: '100%',
                       height: '100%',

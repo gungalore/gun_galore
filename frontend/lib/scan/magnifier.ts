@@ -69,12 +69,40 @@ export function noGoTop(frame: Box): number {
   return frame.height / 2;
 }
 
+/** Roughly half a fingertip. What the loupe must clear the dot by. */
+export const FINGER = 28;
+
+/** The largest loupe we ever draw, on a phone wide enough to take it. */
+export const LOUPE_MAX = 148;
+
+/**
+ * How big the loupe may be in a given frame.
+ *
+ * ⚠️ A FIXED 148px LOUPE SITS ON THE FINGER ON A NARROW PHONE. `magnifierSpot`
+ * returns the FURTHEST of its parking spots, but "furthest" is not "far": with
+ * no floor and no fallback it happily returns a spot touching the dot when
+ * every spot is bad. Swept across every dot position, the worst-case clearance
+ * for a 148px loupe is 42px at 390 wide, 22px at 360, **2px at 320** and
+ * **0px at 280** — i.e. on a small phone the magnifier parks under the very
+ * finger it exists to see past, and the member lifts it to look, which ends
+ * the drag.
+ *
+ * Deriving the size from the constraint instead of fixing it gives at least
+ * 29px of clearance at every width tested, and leaves 375px-and-up — the
+ * common case — on the full 148px it has today.
+ */
+export function loupeSize(frame: Box): Box {
+  const fits = Math.floor((frame.width - 2 * PAD - 2 * FINGER) / 2);
+  const side = Math.max(72, Math.min(LOUPE_MAX, fits));
+  return { width: side, height: side };
+}
+
 /**
  * Park the loupe.
  *
  * @param dot    the corner being dragged, in frame coordinates
  * @param frame  the area the loupe may occupy
- * @param loupe  its size
+ * @param loupe  its size — from `loupeSize(frame)`, not a constant
  */
 export function magnifierSpot(dot: Pt, frame: Box, loupe: Box): Placement {
   const low = Math.max(PAD, noGoTop(frame) - loupe.height - PAD);

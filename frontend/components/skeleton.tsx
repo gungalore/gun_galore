@@ -8,6 +8,7 @@
 // Plus a few route-shaped wrappers for the surfaces we hit most.
 
 import type { CSSProperties } from 'react';
+import { CARD_PHOTO_ASPECT } from './listing-card';
 
 export function Skel({
   className = '',
@@ -60,7 +61,7 @@ export function SkeletonGrid({ count = 6 }: { count?: number }) {
             border: '0.5px solid var(--border)',
           }}
         >
-          <Skel style={{ paddingBottom: '52.5%', width: '100%' }} className="rounded-none" />
+          <Skel style={{ paddingBottom: CARD_PHOTO_ASPECT, width: '100%' }} className="rounded-none" />
           <div className="p-3 space-y-2">
             <Skel className="h-3 w-3/4" />
             <Skel className="h-4 w-1/3" />

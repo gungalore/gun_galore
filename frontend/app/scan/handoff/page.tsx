@@ -28,7 +28,7 @@ const DocumentScanner = dynamic(
 // components/scan/phone-handoff-dialog.tsx.
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
-type Phase = 'ready' | 'sending' | 'sent' | 'error';
+type Phase = 'ready' | 'sending' | 'sent' | 'error' | 'done';
 
 export default function ScanHandoffPage() {
   const params = useSearchParams();
@@ -43,6 +43,20 @@ export default function ScanHandoffPage() {
   const [err, setErr] = useState<string | null>(null);
   /** Said out loud when a KYC session photographed more than the one ID. */
   const [trimmed, setTrimmed] = useState(false);
+  /**
+   * The files a failed batch never got to.
+   *
+   * ⚠️ WITHOUT THIS, ONE FAILURE DISCARDS THE REST. Uploads run in sequence and
+   * the first failure returned out of the loop while the list was a local
+   * const — so a member who got three of five up was told only "That did not go
+   * through", with the other two gone and "Try again" reopening an empty
+   * camera. The honest response to that screen is to re-photograph all five and
+   * duplicate the three that landed.
+   */
+  const [pending, setPending] = useState<File[]>([]);
+  /** How many of the batch that just failed did make it. */
+  const [batchOk, setBatchOk] = useState(0);
+  const [batchTotal, setBatchTotal] = useState(0);
 
   // Identity verification takes ONE document — the photo side of the card or
   // the photograph page of the book — and the upload REPLACES whatever was
@@ -99,6 +113,17 @@ export default function ScanHandoffPage() {
           // boundary and produces a 400 nobody can read.
           const res = await fetch(url, { method: 'POST', body });
           if (!res.ok) {
+            // ⚠️ THE ONE STATUS WE MUST NOT PASS THROUGH. An expired or
+            // already-finished link answers 401, and the server's body says
+            // "Unauthorized" — a word that tells a member holding a phone
+            // nothing at all, and sounds like they have done something wrong.
+            // It is the single likeliest failure on this screen: the link is on
+            // a fifteen-minute clock and the member walked off to find a folder.
+            if (res.status === 401 || res.status === 403) {
+              throw new Error(
+                'This link has expired. Scan the code on your computer screen again to get a fresh one — nothing you already sent is lost.',
+              );
+            }
             const text = await res.text().catch(() => '');
             let msg = 'That upload did not go through.';
             try {
@@ -112,12 +137,22 @@ export default function ScanHandoffPage() {
           }
           ok += 1;
         } catch (e) {
-          setErr((e as Error).message);
+          setErr(
+            (e instanceof Error && e.message) || 'That upload did not go through.',
+          );
+          // Keep what has not been tried yet, so "Send the rest" is a real
+          // option and nobody has to re-photograph what already landed.
+          setPending(toSend.slice(ok));
+          setBatchOk(ok);
+          setBatchTotal(toSend.length);
           setPhase('error');
           setSent((n) => n + ok);
           return;
         }
       }
+      setPending([]);
+      setBatchOk(0);
+      setBatchTotal(0);
       setSent((n) => n + ok);
       setPhase('sent');
     },
@@ -133,7 +168,7 @@ export default function ScanHandoffPage() {
       method: 'POST',
     }).catch(() => undefined);
     setOpen(false);
-    setPhase('sent');
+    setPhase('done');
   }, [token]);
 
   if (!token) {
@@ -162,6 +197,24 @@ export default function ScanHandoffPage() {
                 ? 'Photograph your documents'
                 : 'Photograph the document'
           }
+          // ⚠️ THE PHONE ARRIVES WITH NO CONTEXT AT ALL. A member points a
+          // camera at a QR code on a screen and lands on a full-screen
+          // viewfinder — with nothing saying which of the documents on the desk
+          // it wants, or where the photograph is about to go. Both halves
+          // matter: the first so they photograph the right thing, the second
+          // because this page deliberately does not ask them to sign in, and a
+          // page that asks for your ID without saying where it goes is a page
+          // that should worry you.
+          //
+          // Still nothing about WHO. A QR code on a screen can be photographed
+          // by anyone in the room — see this file's header.
+          subtitle={
+            dest === 'kyc'
+              ? 'It goes straight to your verification at your computer.'
+              : dest === 'motivation'
+                ? 'They go straight to your motivation at your computer.'
+                : 'It goes straight to your documents at your computer.'
+          }
           onDone={(files) => void upload(files)}
           onClose={() => setOpen(false)}
         />
@@ -177,11 +230,68 @@ export default function ScanHandoffPage() {
           )}
           {phase === 'error' && (
             <>
-              <h1 style={h1}>That did not go through</h1>
+              <h1 style={h1}>
+                {batchOk > 0
+                  ? `${batchOk} of ${batchTotal} sent`
+                  : 'That did not go through'}
+              </h1>
               <p style={p}>{err}</p>
-              <button type="button" style={btn} onClick={() => setOpen(true)}>
-                Try again
+              {/* ⚠️ THE REST, NOT THE LOT. Reopening the camera here means
+                  re-photographing everything, including what already landed —
+                  which is how a five-document pack becomes eight. */}
+              {pending.length > 0 && (
+                <button
+                  type="button"
+                  style={btn}
+                  onClick={() => void upload(pending)}
+                >
+                  Send the {pending.length === 1 ? 'last one' : `other ${pending.length}`}
+                </button>
+              )}
+              <button
+                type="button"
+                style={
+                  pending.length > 0
+                    ? { ...btn, background: 'var(--bg-inset)', color: 'var(--text-secondary)', border: '0.5px solid var(--border)' }
+                    : btn
+                }
+                onClick={() => setOpen(true)}
+              >
+                {batchOk > 0 ? 'Scan another' : 'Try again'}
               </button>
+              {sent > 0 && (
+                <button
+                  type="button"
+                  style={{
+                    ...btn,
+                    background: 'var(--bg-inset)',
+                    color: 'var(--text-secondary)',
+                    border: '0.5px solid var(--border)',
+                  }}
+                  onClick={() => void finish()}
+                >
+                  I am finished
+                </button>
+              )}
+            </>
+          )}
+
+          {/* ⚠️ "I AM FINISHED" USED TO LAND BACK ON THE SAME SCREEN.
+              It consumed the token — the one irreversible act on this page —
+              and then rendered the ready/sent screen again, still offering
+              "Scan another" against a link that no longer works. The next tap
+              produced a raw 401. A finished session now says so and stops
+              offering the camera. */}
+          {phase === 'done' && (
+            <>
+              <h1 style={h1}>All done</h1>
+              <p style={p}>
+                {sent === 1
+                  ? 'Your document is on your computer.'
+                  : `Your ${sent} documents are on your computer.`}{' '}
+                You can put the phone down and carry on at the desk — this link
+                is now closed.
+              </p>
             </>
           )}
           {(phase === 'sent' || phase === 'ready') && (
@@ -238,6 +348,13 @@ export default function ScanHandoffPage() {
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <main
+      // ⚠️ EVERY SCREEN ON THIS PAGE IS A STATE CHANGE, AND ALL OF THEM WERE
+      // SILENT. Sending, sent, failed and finished all swap the heading and the
+      // body in place with no navigation and no announcement — so a member
+      // using a screen reader pressed "Open the camera", uploaded, and was told
+      // nothing at all about whether it had worked. One region around the whole
+      // shell, because exactly one of these screens is on at a time.
+      aria-live="polite"
       style={{
         minHeight: '100dvh',
         display: 'flex',

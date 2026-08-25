@@ -356,6 +356,24 @@ function shrinkForDetect(r: Raster): { gray: Gray; scale: number } {
 }
 
 /**
+ * One thing worth saying about a capture.
+ *
+ * ⚠️ THE LEVEL IS THE POINT. These used to be a flat `string[]`, so "it is
+ * quite dark" and "this may be a photograph of the mat instead of your
+ * document" arrived as identical grey lines in the same unlabelled list,
+ * directly above a red button reading "Use it". They are not the same kind of
+ * statement:
+ *
+ *   note — the scan is usable; it could be better. Cosmetic.
+ *   warn — we may have cropped the WRONG OBJECT. Nothing downstream recovers
+ *          from that, and the member is the only one who can see it.
+ */
+export interface Verdict {
+  level: 'note' | 'warn';
+  text: string;
+}
+
+/**
  * What is worth saying about a capture, in the member's words.
  *
  * ⚠️ THIS IS THE HONEST HALF OF THE FEATURE. We cannot recover a blown
@@ -363,40 +381,48 @@ function shrinkForDetect(r: Raster): { gray: Gray; scale: number } {
  * can do is notice, and say so, and let them take it again — which fixes it
  * completely and costs three seconds.
  */
-export function verdicts(r: ScanResult): string[] {
-  const out: string[] = [];
+export function verdicts(r: ScanResult): Verdict[] {
+  const out: Verdict[] = [];
   if (r.report.glare > 0.015) {
-    out.push(
-      'There is a glare on it. Tilting the phone a little, or moving out from under the light, will clear it.',
-    );
+    out.push({
+      level: 'note',
+      text: 'There is a glare on it. Tilting the phone a little, or moving out from under the light, will clear it.',
+    });
   }
   if (r.report.sharpness < 3.5) {
-    out.push(
-      'This one came out soft. Holding still for a moment before you tap will read better.',
-    );
+    out.push({
+      level: 'note',
+      text: 'This one came out soft. Holding still for a moment before you tap will read better.',
+    });
   }
   if (r.report.meanLuma < 55) {
-    out.push('It is quite dark. More light on the document will help.');
+    out.push({
+      level: 'note',
+      text: 'It is quite dark. More light on the document will help.',
+    });
   }
   if (r.source === 'frame') {
-    out.push(
-      'We could not find the edges, so we used the frame. Check the corners and drag them if they are wrong.',
-    );
+    out.push({
+      level: 'warn',
+      text: 'We could not find the edges, so we used the frame. Check the corners and drag them if they are wrong.',
+    });
   } else if (r.sourceEdge < 1400) {
     // ⚠️ THE CAMERA STREAM IS NOT THE STILL CAMERA. A browser gives us video
     // frames, and on many phones that is 1080p or less against a 48-megapixel
     // stills sensor. It is enough for a licence card filling the frame; it is
     // not enough for a card photographed from across a desk. Saying so is
     // better than handing over something unreadable.
-    out.push(
-      'The camera gave us a small image, so fine print may not read. Filling more of the frame with the document, or choosing a file taken with your normal camera app, will be sharper.',
-    );
+    out.push({
+      level: 'note',
+      text: 'The camera gave us a small image, so fine print may not read. Filling more of the frame with the document, or choosing a file taken with your normal camera app, will be sharper.',
+    });
   } else if (r.ink < 0.06) {
     // Almost no print in what we cropped — most often the mat or folder the
     // document was lying on, whose edge is stronger than the document's own.
-    out.push(
-      'There is very little writing in this crop, so we may have caught the mat or folder underneath instead of the document. Worth a look before you use it.',
-    );
+    out.push({
+      level: 'warn',
+      text: 'There is very little writing in this crop, so we may have caught the mat or folder underneath instead of the document. Worth a look before you use it.',
+    });
   }
   return out;
 }

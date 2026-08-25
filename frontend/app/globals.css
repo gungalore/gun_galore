@@ -317,30 +317,30 @@ html[data-standalone='true'] body {
   padding-bottom: calc(60px + env(safe-area-inset-bottom));
 }
 
-/* When the sticky featured strip is mounted (only on the 5 shopping
-   surface pages in standalone mode), extend the bottom padding to
-   clear the strip too. Otherwise the last row of listings sits behind
-   it. Strip is now ~110pt tall (cards bumped from 64→83pt at user's
-   request, plus header band + padding). The strip itself sets
-   body[data-has-sticky-strip="true"] on mount and removes the
-   attribute on unmount. */
-html[data-standalone='true'] body[data-has-sticky-strip='true'] {
-  padding-bottom: calc(60px + 110px + env(safe-area-inset-bottom));
-}
+/* ⚠️ THE EXTRA 110px FOR THE STICKY FEATURED STRIP IS GONE, AND SO IS THE
+   STRIP. Between them the strip and the tab bar reserved 170px — 21% of an
+   iPhone 13 — before a single product had loaded, and the strip's half of that
+   was a paid ad band that readers learn to look past. Featured placement moved
+   into the results grid (components/featured-in-feed.tsx), which is both
+   cheaper in pixels and better read.
+
+   The rule above (60px + safe area, for the tab bar) is now the only bottom
+   chrome any page reserves. body[data-has-sticky-strip] no longer exists —
+   nothing sets it, so do not write selectors against it. */
 
 /* Suppress the inline mobile FeaturedRail AND the collapsed empty-state
-   nudge in standalone mode — the StickyFeaturedStrip (which hugs the
-   bottom tab bar, and now shows its own gold nudge when empty) covers the
-   same job, so showing both would double up the featured CTA. */
+   nudge in standalone mode. The reason has changed but the rule has not:
+   featured is now carried by the in-feed card inside the results grid
+   (components/featured-in-feed.tsx), so a rail as well would be the same
+   paid slots twice on one screen. */
 html[data-standalone='true'] [data-featured-rail-inline],
 html[data-standalone='true'] [data-featured-empty-nudge] {
   display: none;
 }
 
-/* Same logic for the bare-homepage "Featured" marquee section —
-   redundant in standalone mode because the sticky strip already
-   surfaces the same featured slots more compactly. Browser users
-   on the homepage still see it (no regression). */
+/* Same logic for the bare-homepage "Featured" marquee section — the in-feed
+   card already carries featured in standalone. Browser users on the homepage
+   still see the marquee (no regression). */
 html[data-standalone='true'] [data-featured-home-section] {
   display: none;
 }

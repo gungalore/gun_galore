@@ -1191,9 +1191,20 @@ export default async function ListingDetailPage({
               >
                 {listing.title}
               </p>
+              {/* Same price treatment as the cards the buyer arrived from —
+                  Archivo 600 with tabular figures — so the number they tapped
+                  and the number they are about to pay look like the same
+                  number. */}
               <p
-                className="text-base"
-                style={{ color: 'var(--red)', fontWeight: 500 }}
+                style={{
+                  color: 'var(--red)',
+                  fontWeight: 600,
+                  fontFamily: 'var(--font-head)',
+                  fontSize: 19,
+                  letterSpacing: '-0.03em',
+                  fontVariantNumeric: 'tabular-nums',
+                  lineHeight: 1.2,
+                }}
               >
                 {buyBarPrice}
               </p>

@@ -69,6 +69,17 @@ export default function PhoneHandoffDialog({
   // on every tick would make the poll rate a function of the render count.
   const closeRef = useRef(onClose);
   const arrivedRef = useRef(onArrived);
+  /**
+   * The card, so focus can be moved into it.
+   *
+   * ⚠️ THIS IS THE DESKTOP-ONLY SURFACE — the one place in the whole scan flow
+   * where keyboard and screen-reader members actually are — and it declared
+   * role="dialog" aria-modal="true" while doing no focus work whatsoever.
+   * Pressing "Use my phone camera" left focus on the button behind the scrim,
+   * so the QR code, the heading and the only exit were all unreachable except
+   * by tabbing blind through the page underneath.
+   */
+  const cardRef = useRef<HTMLDivElement>(null);
   closeRef.current = onClose;
   arrivedRef.current = onArrived;
 
@@ -219,8 +230,18 @@ export default function PhoneHandoffDialog({
         // back into a review. That one gets a single build, after the end.
         if (dest === 'motivation') report(s.added);
 
+        // ⚠️ IT USED TO CLOSE INSTEAD OF EXPLAINING. setState('expired') above
+        // and finishUp() here batch into ONE commit under React 19, so the
+        // "That code has expired / Close this and press the button again for a
+        // fresh one" copy a few lines down has never once painted for a member
+        // whose link timed out. What they got was the dialog vanishing on its
+        // own — indistinguishable from a crash, and with no hint that the fix
+        // is simply to press the button again.
+        //
+        // The count still has to reach the caller, so report() is kept and only
+        // the close is dropped. The member closes it, having read why.
         if (s.state === 'expired') {
-          finishUp();
+          report(latestRef.current);
           return;
         }
 
@@ -275,6 +296,17 @@ export default function PhoneHandoffDialog({
     return () => document.removeEventListener('keydown', onKey, true);
   }, []);
 
+  // Take focus on open and hand it back on close — see cardRef.
+  useEffect(() => {
+    const returnTo = document.activeElement as HTMLElement | null;
+    cardRef.current?.focus({ preventScroll: true });
+    return () => {
+      if (returnTo && document.contains(returnTo)) {
+        returnTo.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
   // ⚠️ THE KYC WORDING IS NOT DECORATION. A count is honest for a vault, where
   // the member may still be holding three more things; identity verification
   // takes exactly one ID document and the very next thing that happens is the
@@ -300,10 +332,19 @@ export default function PhoneHandoffDialog({
         ? 'Carry on there — what you photograph will appear here.'
         : state === 'expired'
           ? 'Close this and press the button again for a fresh one.'
-          : 'Open the camera on your phone and point it at the code. No need to sign in there.';
+          : // ⚠️ SAY WHY THERE IS NO WEBCAM. A member sitting at a laptop with
+            // a perfectly good camera presses a button and is handed a QR code,
+            // with no explanation — which reads as the feature being broken or
+            // as us being awkward. The reason is good and is already written
+            // down at the top of this very file: a webcam points at your face
+            // and focuses at half a metre, so it cannot resolve the serial on a
+            // licence card. One sentence turns a refusal into a reason.
+            'Your laptop camera focuses too far away to read a serial number, so we use the one in your pocket. Open the camera on your phone and point it at the code — no need to sign in there.';
 
   return (
     <div
+      ref={cardRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label="Use your phone camera"
@@ -325,26 +366,39 @@ export default function PhoneHandoffDialog({
       <div
         style={{
           width: 'min(420px, 100%)',
-          borderRadius: 14,
+          borderRadius: 'var(--r-lg)',
           padding: 24,
           textAlign: 'center',
-          background: 'var(--bg-surface, #14110f)',
+          // ⚠️ --bg-surface WAS NEVER DEFINED. One hit in the whole repo — this
+          // line — so the fallback was what actually painted: #14110f, a warm
+          // brown-black, on the one scan surface that sits beside the Document
+          // Centre's ordinary --bg-card chrome. It also meant defining that
+          // token later, for any purpose at all, would silently repaint this
+          // dialog.
+          background: 'var(--bg-card)',
           border: '1px solid var(--border, rgba(255,255,255,0.15))',
           color: 'var(--text-primary, #fff)',
         }}
       >
-        <h2 style={{ margin: '0 0 6px', fontSize: 19 }} aria-live="polite">
-          {heading}
-        </h2>
-        <p
-          style={{
-            margin: '0 0 18px',
-            fontSize: 14,
-            color: 'var(--text-secondary, rgba(255,255,255,0.7))',
-          }}
-        >
-          {body}
-        </p>
+        {/* ⚠️ THE LIVE REGION WRAPS BOTH HALVES.
+            aria-live sat on the <h2> alone, and every state change here rewrites
+            the heading and the body together — so a screen-reader member heard
+            "Phone connected" and never the sentence telling them what to do
+            next. The instruction is the half that matters.
+            One region, so the pair is announced as one thought rather than as
+            two competing updates. */}
+        <div aria-live="polite">
+          <h2 style={{ margin: '0 0 6px', fontSize: 19 }}>{heading}</h2>
+          <p
+            style={{
+              margin: '0 0 18px',
+              fontSize: 14,
+              color: 'var(--text-secondary, rgba(255,255,255,0.7))',
+            }}
+          >
+            {body}
+          </p>
+        </div>
 
         {err && (
           <p role="alert" style={{ margin: '0 0 14px', color: 'var(--red)' }}>
@@ -369,7 +423,17 @@ export default function PhoneHandoffDialog({
               background: '#fff',
             }}
           >
-            <QRCodeSVG value={url} size={QR_PX} level="M" />
+            {/* ⚠️ qrcode.react RENDERS role="img" WITH NO NAME. To a screen
+                reader the entire centre of this dialog was nothing at all —
+                an axe role-img-alt failure, and on the one surface where
+                screen-reader members actually are. The library takes a `title`
+                for exactly this. */}
+            <QRCodeSVG
+              value={url}
+              size={QR_PX}
+              level="M"
+              title="QR code linking this document upload to your phone"
+            />
           </div>
         )}
 
@@ -384,14 +448,24 @@ export default function PhoneHandoffDialog({
             style={{
               minHeight: 44,
               padding: '0 18px',
-              borderRadius: 8,
-              border: '1px solid var(--border, rgba(255,255,255,0.3))',
-              background: 'transparent',
-              color: 'inherit',
+              // --r-md is what globals.css maps buttons to, and the sibling
+              // scan-button.tsx already uses 10px. Every token here sits on an
+              // unconditional :root, so the old fallbacks were dead code.
+              borderRadius: 'var(--r-md)',
+              // The app's actual secondary-button pattern. A bare 0.5px border
+              // on a transparent ground drops this control's only affordance to
+              // about 1.3:1 — under WCAG 1.4.11's 3:1 for UI components — so
+              // the inset fill does the work instead of the line.
+              border: '0.5px solid var(--border)',
+              background: 'var(--bg-inset)',
+              color: 'var(--text-secondary)',
               fontSize: 15,
             }}
           >
-            {state === 'uploaded' ? 'Done' : 'Cancel'}
+            {/* "Cancel" against an already-dead link reads as though closing
+                were what killed it. Now that the expired state actually paints
+                (see the poll above), it needs a word that just means "close". */}
+            {state === 'uploaded' ? 'Done' : state === 'expired' ? 'Close' : 'Cancel'}
           </button>
         </div>
 

@@ -3,7 +3,6 @@ import {
   BRIGHT_AT,
   DARK_AT,
   GLARE_AT,
-  exposureAllowsAutoCapture,
   exposureProblem,
 } from './exposure';
 
@@ -53,33 +52,5 @@ describe('exposureProblem', () => {
     expect(exposureProblem(GLARE_AT, 128, false)).toBeNull();
     expect(exposureProblem(0, BRIGHT_AT, false)).toBeNull();
     expect(exposureProblem(0, DARK_AT, false)).toBeNull();
-  });
-});
-
-describe('exposureAllowsAutoCapture', () => {
-  it('⚠️ REFUSES TO SHOOT THROUGH ANY OF THEM', () => {
-    // The whole point of the alert is that the member is being asked to fix
-    // something. Firing anyway hands them a scan they cannot read and no
-    // explanation of why.
-    expect(exposureAllowsAutoCapture(0.2, 128)).toBe(false);
-    expect(exposureAllowsAutoCapture(0, 250)).toBe(false);
-    expect(exposureAllowsAutoCapture(0, 10)).toBe(false);
-  });
-
-  it('allows an ordinary frame', () => {
-    expect(exposureAllowsAutoCapture(0, 128)).toBe(true);
-  });
-
-  it('⚠️ AGREES WITH WHAT THE MEMBER IS BEING TOLD', () => {
-    // Two thresholds drifting apart would mean a scanner that shows a warning
-    // and then fires anyway, or shows nothing and refuses to fire — both of
-    // which read as broken.
-    for (let g = 0; g <= 0.1; g += 0.005) {
-      for (let l = 0; l <= 255; l += 5) {
-        expect(exposureAllowsAutoCapture(g, l)).toBe(
-          exposureProblem(g, l, false) === null,
-        );
-      }
-    }
   });
 });

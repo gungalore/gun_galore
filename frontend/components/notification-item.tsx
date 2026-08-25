@@ -210,6 +210,20 @@ export function NotificationItem({
   );
 
   return (
+    // ⚠️ "YOU MUST DO SOMETHING" AND "FOR YOUR INFORMATION" NOW LOOK
+    // DIFFERENT BEFORE A WORD IS READ.
+    //
+    // This inbox resolves BY ACTION, not by being opened — a row stays, and
+    // keeps counting toward the bell badge, until the member accepts the offer,
+    // dispatches the sale or places the higher bid. That rule was invisible:
+    // an outbid warning and a "payment released" receipt rendered as the same
+    // card on the same ground, so the feed read as a list of things that had
+    // already happened, and the ones still waiting on the member hid among
+    // them.
+    //
+    // The rail is 2px of brand red down the leading edge, plus a faint tint.
+    // Colour is not the only signal — action-required rows also carry the
+    // "Act" pill and no dismiss ×, and informational rows carry the reverse.
     <li
       style={{
         display: 'flex',
@@ -217,8 +231,15 @@ export function NotificationItem({
         gap: 12,
         padding: '12px 14px',
         borderRadius: 10,
-        background: 'var(--bg-card)',
+        background:
+          !resolved && !item.dismissible
+            ? 'color-mix(in srgb, var(--red) 6%, var(--bg-card))'
+            : 'var(--bg-card)',
         border: '0.5px solid var(--border)',
+        borderLeft:
+          !resolved && !item.dismissible
+            ? '2px solid var(--red)'
+            : '0.5px solid var(--border)',
         marginBottom: 8,
         opacity: resolved ? 0.6 : 1,
       }}

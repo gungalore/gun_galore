@@ -1,14 +1,16 @@
+import { Fragment } from 'react';
 import Link from 'next/link';
 import { BRAND_NAME } from '@/lib/brand';
 import { viewerFetch } from '@/lib/api-viewer';
 import { BrowseResponse, Category } from '@/lib/types';
-import { ListingCard } from '@/components/listing-card';
+import { CARD_PHOTO_ASPECT, ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
 import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { FeaturedRail } from '@/components/featured-rail';
+import { FeaturedInFeedCard } from '@/components/featured-in-feed';
 import { FeaturedAvailabilityBar } from '@/components/featured-availability-bar';
 import { HomeInfoPanel } from '@/components/home-info-panel';
 import { DraggableMarquee } from '@/components/draggable-marquee';
@@ -490,8 +492,16 @@ export default async function HomePage({
                     'repeat(auto-fill, minmax(240px, 1fr))',
                 }}
               >
-                {browse.listings.map((l) => (
-                  <ListingCard key={l.id} listing={l} />
+                {browse.listings.map((l, i) => (
+                  <Fragment key={l.id}>
+                    <ListingCard listing={l} />
+                  {/* ⚠️ AFTER THE FIRST ROW, NOT BEFORE IT. A paid card in
+                      slot one reads as an advert wall; after four real
+                      results it reads as more stock, which is the whole
+                      reason in-feed beats a banner. Renders nothing when no
+                      slot is sold. */}
+                    {i === 3 && <FeaturedInFeedCard />}
+                  </Fragment>
                 ))}
               </div>
             </div>
@@ -823,8 +833,11 @@ export default async function HomePage({
               data-reveal
               className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-4"
             >
-              {browse.listings.map((listing) => (
-                <ListingCard key={listing.id} listing={listing} />
+              {browse.listings.map((listing, i) => (
+                <Fragment key={listing.id}>
+                  <ListingCard listing={listing} />
+                  {i === 3 && <FeaturedInFeedCard />}
+                </Fragment>
               ))}
             </div>
 
@@ -873,9 +886,9 @@ function EmptyFeaturedSlotCard({ slotNumber }: { slotNumber: number }) {
         height: '100%',
       }}
     >
-      {/* Same 4:3 box ListingCard uses (52.5% padding-bottom) — keeps
+      {/* Same photo box ListingCard uses (CARD_PHOTO_ASPECT) — keeps
           the placeholder card the exact same height as a real one. */}
-      <div className="relative" style={{ paddingBottom: '52.5%' }}>
+      <div className="relative" style={{ paddingBottom: CARD_PHOTO_ASPECT }}>
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
           {/* Gold star — the universal "featured" glyph */}
           <svg

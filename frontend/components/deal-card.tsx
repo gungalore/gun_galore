@@ -6,9 +6,10 @@ import type { DealPublic } from '@/lib/types';
 import { formatPrice, discountPercent, CONDITION_LABELS } from '@/lib/utils';
 import { DealCountdown } from './deal-countdown';
 import { UrgencyChip } from './urgency-chip';
+import { CARD_PHOTO_ASPECT } from './listing-card';
 
 // Daily Deals storefront card (DD-3). Deliberately mirrors ListingCard's
-// geometry (same 52.5% image box, same next/image sizes, same body layout) so
+// geometry (shared CARD_PHOTO_ASPECT image box, same next/image sizes, same body layout) so
 // the /deals grid sits visually flush with the rest of the marketplace — but
 // it's deal-native: it links to the deal-chrome PDP (/deals/[id]), always
 // shows the was/now/save chrome (a deal always has a was-price), a live
@@ -35,7 +36,7 @@ export function DealCard({ deal }: { deal: DealPublic }) {
           (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card)';
         }}
       >
-        <div className="relative" style={{ paddingBottom: '52.5%' }}>
+        <div className="relative" style={{ paddingBottom: CARD_PHOTO_ASPECT }}>
           {primaryImage ? (
             <Image
               src={primaryImage.url}

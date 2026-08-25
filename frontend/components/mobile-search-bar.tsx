@@ -4,11 +4,11 @@
 //
 // In standalone mode globals.css hides the whole top nav
 // (`html[data-standalone='true'] [data-public-nav] { display: none }`), so
-// this bar is the only chrome above the page. It carries three things: the
-// search input, the wishlist heart and the cart. The cart is the
-// load-bearing one — the bottom tab bar has Shop / Alerts / Sell / Ask Boet /
-// More and no cart slot, so without this bar an installed user could add
-// items and then have no way to reach them (see TopCartButton).
+// this bar is the only chrome above the page. It carries two things: the
+// search input and the cart. The cart is the load-bearing one — the bottom tab
+// bar is Shop / Saved / Sell / Alerts / Account and has no cart slot, so
+// without this bar an installed user could add items and then have no way to
+// reach them (see TopCartButton).
 //
 // ⚠️ DO NOT RENDER THIS IN A BROWSER TAB — AND DO NOT PUT IT BACK.
 // It used to render on mobile web too (`md:hidden`), because nav.tsx's
@@ -47,7 +47,6 @@
 import { usePathname } from 'next/navigation';
 import { useStandalone } from '@/lib/use-standalone';
 import { LiveSearch } from '@/components/live-search';
-import { TopWishlistButton } from '@/components/top-wishlist-button';
 import { TopCartButton } from '@/components/top-cart-button';
 import { isChromelessRoute } from '@/lib/chromeless-routes';
 
@@ -125,19 +124,23 @@ export function MobileSearchBar() {
         paddingTop: 'calc(10px + env(safe-area-inset-top))',
       }}
     >
-      {/* Search takes the remaining width, with wishlist + cart as fixed-size
-          icon buttons beside it. This bar IS the header in the installed app,
-          so it carries the two shopping affordances the hidden nav used to
-          own. The cart matters most: without an entry point here an installed
-          user could add items and then have nowhere to reach them — the
-          bottom tab bar has no cart slot (see TopCartButton).
-          The buttons are fixed-width and never shrink; only the search input
+      {/* Search takes the remaining width, with the cart as a fixed-size icon
+          button beside it. This bar IS the header in the installed app, and
+          the cart is the load-bearing part: the bottom tab bar has no cart
+          slot, so without an entry point here an installed member could add
+          items and then have nowhere to reach them (see TopCartButton).
+
+          ⚠️ THE WISHLIST HEART LEFT THIS ROW. It only came up here because Ask
+          Boet had taken its tab slot; Ask Boet is now the floating launcher and
+          "Saved" is a tab again, so a heart here as well would be the same
+          control twice on one screen. See components/bottom-tab-bar.tsx.
+
+          The button is fixed-width and never shrinks; only the search input
           gives ground, so both stay tappable down to ~320px viewports. */}
       <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <LiveSearch />
         </div>
-        <TopWishlistButton />
         <TopCartButton />
       </div>
     </div>

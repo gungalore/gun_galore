@@ -23,10 +23,7 @@ import {
 } from '@/lib/scan/shapes';
 import AimFrame from './aim-frame';
 import { aimAgreement, aimBox } from '@/lib/scan/aim';
-import {
-  exposureAllowsAutoCapture,
-  exposureProblem,
-} from '@/lib/scan/exposure';
+import { exposureProblem } from '@/lib/scan/exposure';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SCANNER.
@@ -51,6 +48,34 @@ import {
 // ⚠️ Z-INDEX 130. Above the date picker at 121, above the admin modal shell at
 // 100, above the tab bar at 55. This is full-screen and nothing may sit over
 // it.
+//
+// ⚠️ THERE IS NO AUTOMATIC CAPTURE, AND IT IS NOT AN OVERSIGHT.
+//
+// The scanner could once fire on its own: four gates (a locked quad, the quad
+// inside the aim box, workable light, and the phone held still for 1.1s), a
+// ring round the shutter filling to show a shot coming, an "Auto ON/OFF"
+// toggle, and a per-frame motion measure feeding the stillness clock. All of
+// it has been removed — operator's instruction on the rebuild: manual capture
+// only.
+//
+// The history is worth keeping because it is the argument against reviving it.
+// It went through three rounds of tuning. It fired early at 700ms; at 1100ms
+// it fired late. Stillness measured on the detected quad meant a patterned
+// carpet could stall the clock forever, so it moved to frame pixels. And a
+// well-meant "you reached for the shutter, so auto is not helping" rule
+// silently switched it off for the rest of the session, producing a doom loop
+// nobody could describe from the outside: two screen recordings show corners
+// locked green for eleven seconds with the scanner sitting there doing
+// nothing. Every one of those was a real fix for a real report, and the
+// feature still cost more trust than it saved time — because a misfire costs a
+// retake AND the member's belief that the next one will behave.
+//
+// What replaced it is the flow that was already the default: point, shoot,
+// then fix the corners. Detection survives and does two jobs — it turns the
+// aim box green, and its quad is what the corner editor opens on.
+//
+// If automatic capture is ever wanted again, SPECIFY IT AFRESH. Do not revive
+// this from git history.
 // ────────────────────────────────────────────────────────────────────
 
 const Z = 130;
@@ -111,15 +136,6 @@ export interface DocumentScannerProps {
   onClose: () => void;
 }
 
-/**
- * Why automatic capture has not fired yet.
- *
- * 'steady' is not a fault — it means everything else is satisfied and the
- * only thing left is for the phone to stop moving, which is what the ring
- * around the shutter is filling up to show.
- */
-type Blocker = 'off' | 'searching' | 'aim' | 'light' | 'steady';
-
 type Phase =
   /**
    * ⚠️ THE CAMERA DOES NOT OPEN UNTIL THE MEMBER HAS SAID WHAT THEY ARE
@@ -138,7 +154,12 @@ type Phase =
   | 'nocamera';
 
 export default function DocumentScanner({
-  shape: initialShape = 'any',
+  // ⚠️ NO DEFAULT HERE ON PURPOSE. `= 'any'` made "nobody has answered yet"
+  // indistinguishable from "they answered: something else", and the chooser
+  // rendered the vaguest option pre-ticked with the red selected border. A
+  // member in a hurry taps past it to Open the camera and gets the weakest aim
+  // prior we have. `picked` below carries the distinction.
+  shape: initialShape,
   multiDefault = false,
   skipChoose = false,
   staticAim = false,
@@ -150,6 +171,16 @@ export default function DocumentScanner({
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  /**
+   * The dialog itself, so focus can be moved into it.
+   *
+   * ⚠️ IT DECLARES aria-modal AND THEN DID NO FOCUS WORK AT ALL. The scanner
+   * is portalled to document.body, so it is the LAST child of body while the
+   * trigger that opened it sits earlier in the tab order — meaning a keyboard
+   * member who opened a full-screen camera was still focused on the button
+   * behind it, and tabbing walked the page underneath rather than the dialog.
+   */
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   // ⚠️ skipChoose STARTS AT 'starting', NOT 'live'. The camera still has to be
   // asked for and the permission prompt still has to be answered; jumping
@@ -157,7 +188,20 @@ export default function DocumentScanner({
   // exist yet. All skipChoose does is answer the "what are you holding"
   // question on the caller's behalf.
   const [phase, setPhase] = useState<Phase>(skipChoose ? 'starting' : 'choose');
-  const [shape, setShape] = useState<DocShape>(initialShape);
+  // ⚠️ STILL NON-NULL. `shape` is dereferenced without a guard in five places
+  // (SHAPES[shape].label, SHAPES[shape].multiLabel, aimBox, AimFrame,
+  // expectAspectFor), so a null here blows up on the chooser's own first paint.
+  // 'any' remains the working value; `picked` is what the chooser reads to
+  // decide whether anyone has actually chosen it.
+  const [shape, setShape] = useState<DocShape>(initialShape ?? 'any');
+  /**
+   * Has a shape been chosen — by the member, or by a caller that knows?
+   *
+   * A caller passing `shape` IS an answer: shapeForKind returns 'any'
+   * deliberately for SAFE_PHOTOGRAPHS and OTHER, and there it is the right
+   * answer and should show as ticked.
+   */
+  const [picked, setPicked] = useState(initialShape !== undefined);
   /**
    * Is the member scanning more than one page or side?
    *
@@ -175,21 +219,45 @@ export default function DocumentScanner({
   const [shot, setShot] = useState<ScanResult | null>(null);
   const [pages, setPages] = useState<File[]>([]);
   const [editing, setEditing] = useState(false);
-  const [said, setSaid] = useState('');
   /**
-   * Auto-capture: shoot by itself once the corners are locked and the phone
-   * has stopped moving.
+   * A re-cut from the corner editor is in flight.
    *
-   * ⚠️ OFF BY DEFAULT — the operator's verdict, after three rounds of tuning
-   * it, in his own words. On the surfaces people actually photograph
-   * documents against, the automatic path spent more trust than it saved
-   * time: every misfire cost a retake AND a member's confidence that the
-   * next one would behave. The flow it gates is now the exception; the flow
-   * is manual shutter, then the corner editor. The toggle stays for whoever
-   * wants it back.
+   * ⚠️ NOT `phase = 'working'`. That phase makes the <video>, the overlay
+   * canvas and the aim frame visible again, so pressing Apply replaced the
+   * member's photograph with a live picture of their desk — at the exact
+   * moment they were told to trust the correction. The editor now stays
+   * mounted over the top and this flag only disables its buttons, so the
+   * thing on screen while we work is the thing they were looking at.
    */
-  const [auto, setAuto] = useState(false);
-  const [holdPct, setHoldPct] = useState(0);
+  const [recutting, setRecutting] = useState(false);
+  /**
+   * Asking before the exit that would eat what is already scanned.
+   *
+   * ⚠️ THE × AND ESCAPE ARE WHAT A PANICKING MEMBER REACHES FOR. Both used to
+   * call onClose() straight through, so four pages into a licence pack they
+   * destroyed all four without a word. The dead-end screens in this same file
+   * already carry a "Use the {n} I have" button for exactly this reason.
+   */
+  const [confirmExit, setConfirmExit] = useState(false);
+  /**
+   * The FULL-RESOLUTION capture, for the corner editor's magnifier.
+   *
+   * ⚠️ THE LOUPE WAS MAGNIFYING A SHRUNKEN COPY OF THE THING IT EXISTS TO
+   * SHOW. `shot.sourcePreview` is previewUrl(raster, 1200) at quality 0.82,
+   * while `shot.sourceSize` is the full raster — so the magnifier's
+   * backgroundSize, computed from sourceSize, UPSCALED a lossy 1200px image
+   * and put JPEG block artefacts exactly on the paper/desk boundary the member
+   * was aiming at. It bit hardest on the good hardware, which is the opposite
+   * of what should happen.
+   *
+   * The raw blob is the original capture at quality 0.95 and is already alive
+   * for the whole editing session — `reprocess` re-decodes it on Apply — so
+   * this costs one object URL and no extra encode. Geometry is unaffected:
+   * processCapture's decode shrink is uniform, so the aspect matches and
+   * containFit still maps through `sourceSize`.
+   */
+  const [editorSrc, setEditorSrc] = useState<string | null>(null);
+  const [said, setSaid] = useState('');
   /**
    * Blown-out fraction of the live frame.
    *
@@ -215,10 +283,6 @@ export default function DocumentScanner({
   const lockRef = useRef(0);
   const rawBlobRef = useRef<Blob | null>(null);
   const closedRef = useRef(false);
-  // Read by the detect loop, which must not re-subscribe when these change —
-  // tearing the loop down mid-hold would reset the stillness timer forever.
-  const autoRef = useRef(true);
-  const holdRef = useRef(0);
   const capturingRef = useRef(false);
   /** Does the latest detection look like a document, not just like a shape? */
   const confidentRef = useRef(false);
@@ -229,26 +293,22 @@ export default function DocumentScanner({
   /**
    * Does what the detector found sit where the member was asked to put it?
    *
-   * Turns the aim box green, and gates auto-capture. ⚠️ IT IS ALSO WHAT
-   * STOPS THE SCANNER SHOOTING THE DESK. On the operator's own IMG_4947 the
-   * detector picked out the fabric and the ruler — a bigger, cleaner
-   * rectangle than the licence card lying in the corner of the frame — and
-   * scored it 0.68, comfortably above the acceptance floor. Nothing in the
-   * image says which rectangle is the document. The member does, by putting
-   * it in the box.
+   * Turns the aim box green.
+   *
+   * ⚠️ IT USED TO GATE AUTO-CAPTURE TOO, and the reason it did is worth
+   * keeping even though the shutter is now always the member's: on the
+   * operator's own IMG_4947 the detector picked out the fabric and the ruler
+   * — a bigger, cleaner rectangle than the licence card lying in the corner
+   * of the frame — and scored it 0.68, comfortably above the acceptance
+   * floor. Nothing in the image says which rectangle is the document. The
+   * member does, by putting it in the box. That is why the box exists and
+   * why the corner editor follows every shot.
    */
   const aimedRef = useRef(false);
   const aimShownRef = useRef(false);
   /** Consecutive frames the quad has been outside the box. */
   const aimMissRef = useRef(3);
   const [aimed, setAimed] = useState(false);
-  /** Which auto-capture condition is currently unmet. */
-  const blockerShownRef = useRef<Blocker>('searching');
-  const [blocker, setBlocker] = useState<Blocker>('searching');
-  const captureRef = useRef<(() => Promise<void>) | null>(null);
-
-  autoRef.current = auto;
-  holdRef.current = holdPct;
 
   const say = useCallback((m: string) => {
     setSaid('');
@@ -378,6 +438,24 @@ export default function DocumentScanner({
   // ── detect, smooth, draw ──────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'live') return;
+
+    // ⚠️ START EACH DOCUMENT BLANK. These refs live on the component, so they
+    // survived the trip through review and back: page two of a pack opened
+    // with page one's quad still drawn and the aim box still green, over a
+    // camera pointed at something else entirely. The member is told we have
+    // found their document before they have even put it down — and if they
+    // shoot on that cue, the aim box we hand processCapture is the only thing
+    // that saves the crop.
+    quadRef.current = null;
+    lockRef.current = 0;
+    confidentRef.current = false;
+    aimedRef.current = false;
+    aimMissRef.current = 3;
+    if (aimShownRef.current) {
+      aimShownRef.current = false;
+      setAimed(false);
+    }
+
     let raf = 0;
     let timer = 0;
     let scratch: CanvasRenderingContext2D | null = null;
@@ -385,26 +463,12 @@ export default function DocumentScanner({
     let rolling = 0;
     let alive = true;
 
-    // How long the quad must sit still before the shutter fires, and how far
-    // a corner may drift while it does. 700ms is long enough not to fire while
-    // somebody is still framing, short enough not to feel broken.
-    // ⚠️ 1100ms, NOT 700. The operator's verdict on the first version was
-    // "super sensitive", and they were right: at 700ms it fired while the
-    // phone was still being positioned. A shutter that goes off early costs a
-    // retake AND the member's trust in it; one that waits a beat too long
-    // costs a beat.
-    const HOLD_MS = 1100;
-    /**
-     * Mean frame-to-frame luma change below which the phone counts as still,
-     * on a 0-255 scale. A hand at rest measures 1-3; deliberate movement is
-     * 8 and up; the gap between them is wide.
-     */
-    const MOTION_STILL = 4;
-    let steadySince = 0;
-    /** Every 8th luma of the previous frame, for the motion measure. */
-    let prevSample: Uint8Array | null = null;
-    let motion = 255;
-
+    // ⚠️ THIS LOOP NO LONGER DECIDES WHEN TO SHOOT — IT ONLY DRAWS.
+    // Detection survives because it does two jobs worth keeping: it turns the
+    // aim box green so the member can see we have found their document, and
+    // the quad it produces is what the corner editor opens on. The shutter is
+    // the member's, always. See the note on the removal of auto-capture at the
+    // top of this file.
     const detectOnce = () => {
       if (!alive) return;
       const video = videoRef.current;
@@ -428,31 +492,12 @@ export default function DocumentScanner({
         if (gray) {
           let blown = 0;
           let sum = 0;
-          // ── motion, measured on the IMAGE ─────────────────────────
+          // ⚠️ THE FRAME-TO-FRAME MOTION MEASURE IS GONE WITH AUTO-CAPTURE.
+          // It existed only to decide whether the phone was being held still
+          // enough to fire by itself. Nothing else read it, and it walked
+          // every eighth pixel of every detected frame — so removing it is
+          // also the cheapest thing this loop has ever gained.
           //
-          // ⚠️ NOT ON THE DETECTED QUAD, and this is the fix for "only the
-          // A4 ever auto-captures". Stillness used to be quad drift between
-          // consecutive detections — so on a textured carpet, where the
-          // detector flip-flops between candidates, the drift spiked every
-          // few frames and the 1.1-second clock restarted forever. The
-          // member was perfectly still; the DETECTOR was fidgeting; and the
-          // member is the one the clock is supposed to be about. Comparing
-          // the sampled pixels of consecutive frames measures the hand and
-          // only the hand.
-          const n8 = Math.ceil(gray.data.length / 8);
-          if (!prevSample || prevSample.length !== n8) {
-            prevSample = new Uint8Array(n8);
-            motion = 255; // first frame: unknown, treat as moving
-          } else {
-            let diff = 0;
-            for (let i = 0, j = 0; i < gray.data.length; i += 8, j++) {
-              diff += Math.abs(gray.data[i] - prevSample[j]);
-            }
-            motion = diff / n8;
-          }
-          for (let i = 0, j = 0; i < gray.data.length; i += 8, j++) {
-            prevSample[j] = gray.data[i];
-          }
           // Every eighth pixel is plenty for a percentage, and keeps this off
           // the detection budget.
           for (let i = 0; i < gray.data.length; i += 8) {
@@ -572,75 +617,15 @@ export default function DocumentScanner({
       } catch {
         quadRef.current = null;
       }
-      // ── the stillness gate ──────────────────────────────────────────
+      // ⚠️ AUTO-CAPTURE WAS REMOVED HERE. This is where the scanner used to
+      // decide to fire by itself: a "blocker" readout naming which of four
+      // gates was shut, then a 1.1-second stillness clock. Operator, on the
+      // rebuild: manual capture only. The member presses the shutter.
       //
-      // Locked corners are not enough: the detector locks while the phone is
-      // still drifting, and a capture taken mid-drift is the blurry one the
-      // member then has to retake. So the quad must ALSO have stopped moving
-      // — measured on the quad itself rather than on the accelerometer,
-      // because it is the image that has to be sharp, and a phone panning
-      // slowly across a desk registers as still to a motion sensor.
+      // `now` stays — the frame-timing measure below is what throttles
+      // detection on a slow phone, and that has nothing to do with the
+      // shutter.
       const now = performance.now();
-      const q = quadRef.current;
-
-      // ⚠️ SAY WHICH GATE IS SHUT. Auto-capture is four conditions and a
-      // timer, and when it does not fire the member sees a camera doing
-      // nothing — which is indistinguishable from a camera that is broken.
-      // Two rounds of "auto capture still not working" were spent guessing at
-      // this from the outside; the scanner knows the answer every frame and
-      // was simply not saying it.
-      const why: Blocker = !autoRef.current
-        ? 'off'
-        : !q
-          ? 'searching'
-          : !aimedRef.current
-            ? 'aim'
-            : !exposureAllowsAutoCapture(glareRef.current, lumaRef.current)
-              ? 'light'
-              : 'steady';
-      if (why !== blockerShownRef.current) {
-        blockerShownRef.current = why;
-        setBlocker(why);
-      }
-
-      // ⚠️ THREE GATES, EACH ABOUT THE MEMBER, NONE ABOUT THE DETECTOR.
-      //
-      // Something is in the box (aimed — hysteresis absorbs the detector's
-      // fidgeting), the light is workable, and the HAND is still. The lock
-      // count and quad drift are gone from this decision: both measured the
-      // detector's stability, and on a patterned carpet the detector
-      // flip-flops between candidates indefinitely while the member stands
-      // rock still doing everything right. Only the A4 page — big enough to
-      // drown the carpet out — could ever pass, which is exactly the split
-      // the operator reported. The lock still decides when markers draw;
-      // it has no say over the shutter any more.
-      if (
-        autoRef.current &&
-        aimedRef.current &&
-        // ⚠️ THE SAME CALL THE ALERT MAKES. Two copies of these thresholds
-        // would eventually disagree, and a scanner that shows a warning and
-        // then fires anyway — or shows nothing and refuses to fire — reads as
-        // broken in a way nobody can describe well enough to report.
-        exposureAllowsAutoCapture(glareRef.current, lumaRef.current)
-      ) {
-        if (motion <= MOTION_STILL) {
-          if (!steadySince) steadySince = now;
-        } else {
-          steadySince = 0;
-        }
-        const held = steadySince ? now - steadySince : 0;
-        setHoldPct(Math.min(1, held / HOLD_MS));
-        if (held >= HOLD_MS && !capturingRef.current) {
-          capturingRef.current = true;
-          alive = false;
-          setHoldPct(0);
-          void captureRef.current?.();
-          return;
-        }
-      } else {
-        steadySince = 0;
-        if (holdRef.current !== 0) setHoldPct(0);
-      }
 
       const ms = now - t0;
       rolling = rolling * 0.8 + ms * 0.2;
@@ -702,7 +687,10 @@ export default function DocumentScanner({
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
     capturingRef.current = true;
-    setHoldPct(0);
+    // ⚠️ AFTER THE GUARD, NOT BEFORE IT. Clearing on the first line would mean
+    // a shutter press against a dead stream wipes the only explanation the
+    // member has of why the last one failed.
+    setErr(null);
     setPhase('working');
     say('Photo taken. Straightening it up.');
     try {
@@ -754,29 +742,43 @@ export default function DocumentScanner({
       setEditing(true);
       say('Check the corners, then apply.');
     } catch (e) {
-      setErr((e as Error).message || 'That did not work. Try again.');
+      setErr((e instanceof Error && e.message) || 'That did not work. Try again.');
       setPhase('live');
     } finally {
       capturingRef.current = false;
     }
   }, [say, shape]);
 
-  captureRef.current = capture;
-
   /** Re-run with corners the member dragged. Detection is deliberately skipped. */
   const reprocess = useCallback(
     async (quad: Quad) => {
       const blob = rawBlobRef.current;
       if (!blob) return;
-      setPhase('working');
+      setErr(null);
+      // ⚠️ THE SUCCESS PATH USED TO RUN WHETHER OR NOT IT SUCCEEDED. setPhase,
+      // setEditing(false) and "Corners updated." all sat AFTER the try/catch,
+      // so a failed re-cut threw the member out of the editor, destroyed the
+      // corners they had just spent half a minute placing (CornerEditor holds
+      // them in local state and unmounts with them), put the OLD wrong crop
+      // back on screen — and told a screen reader it had worked.
+      setRecutting(true);
       try {
-        setShot(await processCapture(blob, { manualQuad: quad }));
+        const next = await processCapture(blob, { manualQuad: quad });
+        setShot(next);
+        setEditing(false);
+        say('Corners updated.');
       } catch (e) {
-        setErr((e as Error).message);
+        // ⚠️ `instanceof`, NOT `(e as Error).message`. A rejection with null or
+        // undefined makes that cast throw INSIDE the catch, which escapes the
+        // callback and leaves the scanner wedged with nothing on screen.
+        setErr(
+          (e instanceof Error && e.message) ||
+            'We could not re-cut that. Your corners are still where you put them — try Apply again.',
+        );
+        // Stay in the editor. The corners are still on screen and still theirs.
+      } finally {
+        setRecutting(false);
       }
-      setPhase('review');
-      setEditing(false);
-      say('Corners updated.');
     },
     [say],
   );
@@ -827,13 +829,48 @@ export default function DocumentScanner({
     [onDone, onClose],
   );
 
+  /**
+   * The exit the × and Escape actually take.
+   *
+   * ⚠️ IT ASKS FIRST WHEN THERE IS SOMETHING TO LOSE. Both used to call
+   * onClose() straight through. Four pages into a licence pack that destroyed
+   * all four, instantly and silently — and those two controls are precisely
+   * what somebody reaches for when they think they have done something wrong.
+   * The dead-end screens further down this file already carry a "Use the {n}
+   * I have" button under a comment reading "A DEAD END MUST NOT EAT WHAT IS
+   * ALREADY SCANNED"; the ordinary exits were the ones that did.
+   *
+   * Nothing captured yet → straight out, as before. No confirmation on an
+   * empty scanner: that is a dialog for the sake of one.
+   */
+  const heldCount = pages.length + (shot ? 1 : 0);
+  const requestClose = useCallback(() => {
+    if (heldCount > 0) {
+      setConfirmExit(true);
+      return;
+    }
+    onClose();
+  }, [heldCount, onClose]);
+
   // Escape closes, in the capture phase so a modal underneath survives.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
       e.preventDefault();
-      onClose();
+      // ⚠️ THE INNERMOST LAYER FIRST. CornerEditor has no key handler of its
+      // own, so Escape mid-edit used to skip past it and take down the whole
+      // session — including the corners being dragged at that moment.
+      if (confirmExit) {
+        setConfirmExit(false);
+        return;
+      }
+      if (recutting) return;
+      if (editing) {
+        setEditing(false);
+        return;
+      }
+      requestClose();
     };
     document.addEventListener('keydown', onKey, true);
     const prev = document.body.style.overflow;
@@ -842,13 +879,56 @@ export default function DocumentScanner({
       document.removeEventListener('keydown', onKey, true);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+  }, [requestClose, confirmExit, editing, recutting]);
+
+  // Full-resolution source for the editor's loupe — see `editorSrc`. Created
+  // when the editor opens and revoked when it closes, so a six-page pack never
+  // holds more than one of these at a time.
+  useEffect(() => {
+    if (!editing) return;
+    const blob = rawBlobRef.current;
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    setEditorSrc(url);
+    return () => {
+      URL.revokeObjectURL(url);
+      setEditorSrc(null);
+    };
+  }, [editing, shot]);
+
+  /**
+   * Take focus on open, hand it back on close.
+   *
+   * ⚠️ SEPARATE EFFECT, EMPTY DEPS. The Escape effect above re-runs whenever
+   * the phase changes; moving focus from there would drag it back to the
+   * container every time the member took a photo, out of whatever control they
+   * were on. This runs once per mount, which is what "on open" means.
+   *
+   * preventScroll because the container is a fixed full-screen layer — letting
+   * the browser scroll to it would shift the page behind it for no reason.
+   */
+  useEffect(() => {
+    const returnTo = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus({ preventScroll: true });
+    return () => {
+      // Only if the trigger is still in the document — a scanner opened from a
+      // row that has since re-rendered would otherwise throw focus to nowhere,
+      // which sends a screen reader back to the top of the page.
+      if (returnTo && document.contains(returnTo)) {
+        returnTo.focus({ preventScroll: true });
+      }
+    };
+  }, []);
 
   const body = (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label={title}
+      // Focusable as a container, not as a stop on the tab route: -1 means
+      // focus() can reach it while Tab never lands on it again.
+      tabIndex={-1}
       data-blocking-overlay="true"
       style={{
         position: 'fixed',
@@ -869,12 +949,20 @@ export default function DocumentScanner({
       <Header
         title={title}
         subtitle={subtitle}
-        onClose={onClose}
+        onClose={requestClose}
         // ⚠️ ALWAYS A WAY BACK. Every phase except the chooser itself can
         // return to it, including the two dead ends — a member who lands on
         // "no camera" with two pages already scanned must not be stuck
         // choosing between abandoning them and closing the whole thing.
-        onBack={phase === 'choose' ? undefined : backToChooser}
+        // ⚠️ NO BACK ARROW INTO A CHOOSER THE CALLER OPTED OUT OF. With
+        // skipChoose the member was never asked what they are holding — the
+        // link they tapped already said. Offering "back" to a screen they have
+        // never seen invents a step, and lands them on a question with no
+        // obvious answer. They still change shape from the chooser if they
+        // reach it any other way; they just are not sent there.
+        onBack={
+          phase === 'choose' || skipChoose ? undefined : backToChooser
+        }
         pages={pages.length}
       />
 
@@ -882,7 +970,11 @@ export default function DocumentScanner({
         {phase === 'choose' && (
           <Chooser
             shape={shape}
-            onShape={setShape}
+            picked={picked}
+            onShape={(s) => {
+              setShape(s);
+              setPicked(true);
+            }}
             multi={multi}
             onMulti={setMulti}
             pages={pages.length}
@@ -972,7 +1064,6 @@ export default function DocumentScanner({
               textAlign: 'center',
               fontSize: 13,
               color: '#fff',
-              textShadow: '0 1px 3px rgba(0,0,0,0.8)',
               pointerEvents: 'none',
             }}
           >
@@ -985,20 +1076,58 @@ export default function DocumentScanner({
                 are green from the start, so "inside the red corners" described
                 a box that was never red — the same disagree-with-the-picture
                 trap this very comment warns about. */}
-            {!auto
-              ? aimed
-                ? 'Got it — take the photo.'
-                : `Put the ${SHAPES[shape].label.toLowerCase()} inside the ${staticAim ? 'green' : 'red'} corners.`
-              : blocker === 'searching'
-                ? 'Looking for the edges…'
-                : blocker === 'aim'
-                  ? `Put the ${SHAPES[shape].label.toLowerCase()} inside the ${staticAim ? 'green' : 'red'} corners.`
-                  : blocker === 'light'
-                    ? 'Fix the lighting above and it will take itself.'
-                    : 'Got it — hold still.'}
+            {/* ⚠️ AND EXPOSURE OUTRANKS ALL OF IT. On the manual path — which
+                is the DEFAULT, since auto is off — this line only ever asked
+                the detector. So a member holding a licence card under a lamp
+                got "Glare on the document" pinned across the top of the screen
+                and "Got it — take the photo." across the bottom, at the same
+                time, about the same frame. They take the photo, because that is
+                the one that sounds like an instruction.
+
+                Read from exposureProblem, which is what the alert on screen is
+                already saying — see lib/scan/exposure.ts. */}
+            {/* Three states now, not eight: fix the light, line it up, take it.
+                The branches naming what auto-capture was waiting for went with
+                auto-capture — there is nothing left to wait for. */}
+            <span
+              style={{
+                display: 'inline-block',
+                padding: '5px 12px',
+                borderRadius: 6,
+                background: 'rgba(0,0,0,0.70)',
+              }}
+            >
+              {exposureProblem(glare, luma, torchOn)
+                ? 'Fix the lighting above first.'
+                : aimed
+                  ? 'Got it — take the photo.'
+                  : `Put the ${SHAPES[shape].label.toLowerCase()} inside the ${staticAim ? 'green' : 'red'} corners.`}
+            </span>
           </p>
         )}
           </>
+        )}
+
+        {/* ⚠️ THE PERMISSION PROMPT ARRIVES OVER A BLANK SCREEN. Between
+            pressing "Open the camera" and the stream arriving, the member saw a
+            black rectangle with four aim corners floating on it and not one
+            word — while the browser put a permission dialog on top asking them
+            to decide something. Saying what is happening is the difference
+            between "it is starting" and "it has broken". */}
+        {phase === 'starting' && (
+          <div style={overlayCentre}>
+            <p style={{ fontSize: 15 }}>Starting the camera…</p>
+            <p
+              style={{
+                fontSize: 13,
+                opacity: 0.8,
+                maxWidth: 260,
+                textAlign: 'center',
+              }}
+            >
+              If your phone asks, allow it to use the camera.
+            </p>
+          </div>
         )}
 
         {phase === 'working' && (
@@ -1010,14 +1139,28 @@ export default function DocumentScanner({
         {(phase === 'denied' || phase === 'nocamera') && (
           <div style={{ ...overlayCentre, padding: 24, textAlign: 'center' }}>
             <p style={{ fontSize: 16, fontWeight: 600 }}>
+              {/* ⚠️ "No camera we can use" WAS ALSO WHAT A BUSY CAMERA GOT.
+                  Every non-permission failure lands on `nocamera`, and the
+                  commonest of them by far is NotReadableError — the lens is
+                  held by another app, which is fixable in five seconds if you
+                  are told. The old heading said the device had no camera, which
+                  is both wrong and unactionable. */}
               {phase === 'denied'
                 ? 'The camera is blocked'
-                : 'No camera we can use'}
+                : 'We cannot reach the camera'}
             </p>
             <p style={{ marginTop: 8, fontSize: 14, opacity: 0.85 }}>
+              {/* ⚠️ "IN THE ADDRESS BAR" NAMES A CONTROL THE PHONE DOES NOT
+                  HAVE. This screen is reached overwhelmingly from a handheld —
+                  and in an installed PWA there is no address bar on screen at
+                  all. Sending somebody to look for one is sending them to look
+                  for nothing, on the screen where they are already stuck. The
+                  padlock is the control that actually exists in mobile Safari
+                  and Chrome, and "your browser settings" covers the rest
+                  without promising a specific button. */}
               {phase === 'denied'
-                ? 'Your browser is holding the camera back for this site. You can allow it in the address bar, or close this and choose a file instead — either works.'
-                : 'Close this and choose a file instead. Everything after that is the same.'}
+                ? 'Your browser is holding the camera back for this site. You can allow it from the padlock beside the web address, or from your browser settings — or close this and choose a file instead. Either works.'
+                : 'Another app may be using the camera, or this browser cannot reach one. Closing the other app and trying again usually does it — or close this and choose a file instead. Everything after that is the same.'}
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button type="button" style={secondaryBtn} onClick={backToChooser}>
@@ -1047,12 +1190,19 @@ export default function DocumentScanner({
           <Review
             shot={shot}
             editing={editing}
+            busy={recutting}
+            sourceSrc={editorSrc}
             onEdit={() => setEditing(true)}
-            onCancelEdit={() => setEditing(false)}
+            // A cancel mid-recut would unmount the editor and flash the live
+            // camera back over the photograph — the very thing A1 removed.
+            onCancelEdit={() => {
+              if (!recutting) setEditing(false);
+            }}
             onQuad={reprocess}
             onRetake={() => {
               setShot(null);
               setEditing(false);
+              setErr(null);
               setPhase('live');
               say('Ready for another go.');
             }}
@@ -1067,12 +1217,144 @@ export default function DocumentScanner({
               setPages((p) => [...p, shot.file]);
               setShot(null);
               setEditing(false);
+              setErr(null);
               setPhase('live');
               say('Saved. Ready for the next page.');
             }}
           />
         )}
+
+        {/* ⚠️ THE ONLY SCREEN IN HERE THAT CAN LOSE WORK, SO IT SAYS SO IN
+            THE COUNT. "You have 4 photos" is the whole argument — a member who
+            genuinely wants out still gets out in one more tap, and a member who
+            hit × by mistake keeps their morning. Ordered safest-first: the
+            default action under the thumb is the one that changes nothing. */}
+        {confirmExit && (
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="You have photos that have not been used yet"
+            style={{ ...overlayCentre, background: 'rgba(0,0,0,0.86)', padding: 24 }}
+          >
+            <p style={{ fontSize: 17, fontWeight: 600, margin: 0, textAlign: 'center' }}>
+              {heldCount === 1
+                ? 'You have 1 photo'
+                : `You have ${heldCount} photos`}
+            </p>
+            <p
+              style={{
+                fontSize: 14,
+                margin: '6px 0 0',
+                textAlign: 'center',
+                color: 'rgba(255,255,255,0.75)',
+                maxWidth: 300,
+              }}
+            >
+              Closing now throws them away.
+            </p>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                marginTop: 20,
+                width: '100%',
+                maxWidth: 300,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setConfirmExit(false)}
+                style={{
+                  ...secondaryBtn,
+                  background: 'var(--red)',
+                  border: 'none',
+                }}
+              >
+                Keep scanning
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmExit(false);
+                  finish(shot ? [...pages, shot.file] : pages);
+                }}
+                style={secondaryBtn}
+              >
+                {heldCount === 1 ? 'Use the 1 I have' : `Use the ${heldCount} I have`}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmExit(false);
+                  onClose();
+                }}
+                style={{
+                  ...secondaryBtn,
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.6)',
+                  fontSize: 14,
+                }}
+              >
+                Throw them away
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* ⚠️ ABOVE THE CONTROLS, AND DISMISSIBLE.
+          It used to render BELOW the shutter row, so the shutter jumped down
+          under the member's thumb the instant an error appeared — at the one
+          moment they were about to press it again. And setErr(null) existed in
+          exactly one place in the file (backToChooser), so a single transient
+          failure stayed pinned through the retry, the review and every page
+          after it. A red banner that outlives its problem is how a member
+          learns to ignore all of them.
+
+          The × belongs to THIS banner only. ExposureAlert stays
+          non-dismissible and clears solely when the frame is good — see its
+          own note, and lib/scan/exposure.ts. */}
+      {err && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            padding:
+              phase === 'live'
+                ? '10px 8px 10px 16px'
+                : '10px 8px max(10px, env(safe-area-inset-bottom)) 16px',
+            // The brand red at 90%, previously spelled out longhand as
+            // rgba(200,16,46,0.9) — the same colour, but nothing tied it to the
+            // token, so it read as a third arbitrary red. color-mix rather than
+            // bare var(--red), which would silently drop the alpha.
+            background: 'color-mix(in srgb, var(--red) 90%, transparent)',
+            fontSize: 14,
+          }}
+        >
+          <span style={{ flex: 1, minWidth: 0 }}>{err}</span>
+          <button
+            type="button"
+            onClick={() => setErr(null)}
+            aria-label="Dismiss this message"
+            style={{
+              width: 44,
+              height: 44,
+              marginTop: -10,
+              flex: '0 0 auto',
+              border: 'none',
+              background: 'transparent',
+              color: '#fff',
+              fontSize: 20,
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {phase === 'live' && (
         <Controls
@@ -1088,48 +1370,22 @@ export default function DocumentScanner({
               });
               setTorchOn(next);
             } catch {
-              setHasTorch(false);
+              // ⚠️ SAY SO; DO NOT VANISH. This used to call setHasTorch(false),
+              // and the button is rendered under `{hasTorch && ...}` — so the
+              // single most common outcome of a platform refusing the torch was
+              // the control disappearing from under the member's finger at the
+              // exact moment they pressed it. Nothing tells them what happened,
+              // and there is no way to try again. Plenty of tracks advertise
+              // the capability and refuse the first call but honour a later
+              // one, so keeping the button is also the more useful behaviour.
+              setTorchOn(false);
+              setErr('This phone would not let us turn the light on.');
             }
           }}
-          onShutter={() => {
-            // ⚠️ TAKE THE PHOTO. THAT IS ALL.
-            //
-            // This used to also turn automatic capture OFF, on the theory
-            // that reaching for the shutter meant the automatic one was not
-            // helping. Two screen recordings killed that theory: on an A4
-            // certificate the corners sat locked and green for eleven
-            // seconds straight — detection was perfect — and the scanner
-            // never fired, because one manual press early in the session had
-            // silently switched auto off and nothing switched it back.
-            //
-            // It is a doom loop. Auto feels slow, so you press the shutter,
-            // which disables auto, so every document after it needs a press,
-            // which confirms that auto never works. The operator's report was
-            // "every time I have to manual capture", and he was right.
-            //
-            // The toggle beside the shutter is how somebody turns it off.
-            // That one is deliberate, visible and reversible; this one was
-            // none of the three.
-            void capture();
-          }}
-          auto={auto}
-          onAuto={() => setAuto((a2) => !a2)}
-          holdPct={holdPct}
+          onShutter={() => void capture()}
           onDone={pages.length ? () => finish(pages) : undefined}
           pages={pages.length}
         />
-      )}
-
-      {err && (
-        <p
-          style={{
-            padding: '10px 16px',
-            background: 'rgba(200,16,46,0.9)',
-            fontSize: 14,
-          }}
-        >
-          {err}
-        </p>
       )}
 
       <span
@@ -1222,8 +1478,13 @@ const overlayCentre: React.CSSProperties = {
   background: 'rgba(0,0,0,0.55)',
 };
 
+// ⚠️ NO marginTop. It used to carry `marginTop: 16`, which is a spacing
+// decision belonging to a layout, not to a button — and this one button is
+// used in three layouts. In the chooser it doubled with the row's own
+// `marginTop: 14` to a 30px gap; in the review row, inside `flexWrap`, it put
+// 16px above every button on every wrapped line. Layouts space their own
+// children now, with `gap`.
 const secondaryBtn: React.CSSProperties = {
-  marginTop: 16,
   minHeight: 44,
   padding: '0 18px',
   borderRadius: 8,
@@ -1251,6 +1512,7 @@ const secondaryBtn: React.CSSProperties = {
  */
 function Chooser({
   shape,
+  picked,
   onShape,
   multi,
   onMulti,
@@ -1260,6 +1522,8 @@ function Chooser({
   onUsePages,
 }: {
   shape: DocShape;
+  /** Has anyone actually answered, or is `shape` just the working default? */
+  picked: boolean;
   onShape: (s: DocShape) => void;
   multi: boolean;
   onMulti: (v: boolean) => void;
@@ -1288,7 +1552,9 @@ function Chooser({
       <div role="radiogroup" aria-label="What are you photographing?">
         {SHAPE_ORDER.map((k) => {
           const spec = SHAPES[k];
-          const on = shape === k;
+          // Nothing reads as chosen until somebody has chosen it — this drives
+          // both aria-checked and the red selected border.
+          const on = picked && shape === k;
           return (
             <button
               key={k}
@@ -1310,7 +1576,13 @@ function Chooser({
                 border: on
                   ? '2px solid var(--red)'
                   : '1px solid rgba(255,255,255,0.25)',
-                background: on ? 'rgba(224,49,49,0.14)' : 'transparent',
+                // Keyed to the same token as the border above it. It used to be
+                // rgba(224,49,49,0.14) — the AIM FRAME's red, inside a
+                // var(--red) border, so the fill and its own outline were two
+                // different colours.
+                background: on
+                  ? 'color-mix(in srgb, var(--red) 14%, transparent)'
+                  : 'transparent',
               }}
             >
               <ShapeGlyph shape={k} />
@@ -1536,6 +1808,13 @@ function ExposureAlert({
         right: 12,
         padding: '10px 12px',
         borderRadius: 10,
+        // ⚠️ DELIBERATELY NOT var(--red), AND NOT DRIFT. This alert is
+        // composited over a LIVE CAMERA — often a bright document under a lamp,
+        // which is exactly the frame it fires on. The brand red is darker and
+        // loses its edge against that; this one is brighter and near-opaque so
+        // the single warning no algorithm can undo stays readable on the worst
+        // possible backdrop. Recorded here because undocumented is how it got
+        // mistaken for a fourth stray red.
         background: 'rgba(180,32,32,0.94)',
         color: '#fff',
         display: 'flex',
@@ -1557,6 +1836,20 @@ function ExposureAlert({
   );
 }
 
+/**
+ * The shutter row.
+ *
+ * ⚠️ THERE IS NO AUTOMATIC CAPTURE. The scanner used to be able to fire by
+ * itself once the corners were locked, the light was workable and the phone
+ * had been still for 1.1 seconds — with an "Auto ON/OFF" toggle here and a
+ * ring around the shutter filling to show a shot coming. All of it is gone, on
+ * the operator's instruction: manual capture only.
+ *
+ * It is not coming back by accident. Three rounds of tuning went into it and
+ * it still cost more trust than it saved time — a misfire costs a retake AND
+ * the member's confidence that the next one will behave. If it is ever wanted
+ * again it should be re-specified from scratch, not revived from git.
+ */
 function Controls({
   hasTorch,
   torchOn,
@@ -1564,9 +1857,6 @@ function Controls({
   onShutter,
   onDone,
   pages,
-  auto,
-  onAuto,
-  holdPct,
 }: {
   hasTorch: boolean;
   torchOn: boolean;
@@ -1574,9 +1864,6 @@ function Controls({
   onShutter: () => void;
   onDone?: () => void;
   pages: number;
-  auto: boolean;
-  onAuto: () => void;
-  holdPct: number;
 }) {
   return (
     <div
@@ -1614,29 +1901,6 @@ function Controls({
       </div>
 
       <div style={{ position: 'relative', width: 72, height: 72 }}>
-        {/* The hold ring: fills as the phone holds still, so an automatic
-            capture is never a surprise — the member can see it coming and
-            move if they did not mean it. */}
-        {auto && holdPct > 0 && (
-          <svg
-            width="72"
-            height="72"
-            viewBox="0 0 72 72"
-            aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}
-          >
-            <circle
-              cx="36"
-              cy="36"
-              r="33"
-              fill="none"
-              stroke={MARK}
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeDasharray={`${holdPct * 207} 207`}
-            />
-          </svg>
-        )}
         <button
           type="button"
           onClick={onShutter}
@@ -1652,28 +1916,6 @@ function Controls({
       </div>
 
       <div style={{ width: 88, textAlign: 'right' }}>
-        <button
-          type="button"
-          onClick={onAuto}
-          aria-pressed={auto}
-          aria-label={
-            auto
-              ? 'Automatic capture is on. Turn it off.'
-              : 'Automatic capture is off. Turn it on.'
-          }
-          style={{
-            minHeight: 44,
-            padding: '0 10px',
-            borderRadius: 8,
-            border: '1px solid rgba(255,255,255,0.3)',
-            background: auto ? 'rgba(77,163,255,0.25)' : 'transparent',
-            color: '#fff',
-            fontSize: 13,
-            marginBottom: onDone ? 8 : 0,
-          }}
-        >
-          {auto ? 'Auto on' : 'Auto off'}
-        </button>
         {onDone && (
           <button
             type="button"
@@ -1701,6 +1943,8 @@ function Controls({
 function Review({
   shot,
   editing,
+  busy,
+  sourceSrc,
   onEdit,
   onCancelEdit,
   onQuad,
@@ -1712,6 +1956,15 @@ function Review({
 }: {
   shot: ScanResult;
   editing: boolean;
+  /** A re-cut is in flight — the editor stays up, its buttons go quiet. */
+  busy: boolean;
+  /**
+   * Full-resolution capture for the editor. Null for the frame or two before
+   * the object URL exists, which falls back to the 1200px preview — the same
+   * picture at lower resolution, so it reads as sharpening rather than as a
+   * flash.
+   */
+  sourceSrc: string | null;
   onEdit: () => void;
   onCancelEdit: () => void;
   onQuad: (q: Quad) => void;
@@ -1733,9 +1986,10 @@ function Review({
     return (
       <div style={{ position: 'absolute', inset: 0, background: '#000' }}>
         <CornerEditor
-          src={shot.sourcePreview}
+          src={sourceSrc ?? shot.sourcePreview}
           size={shot.sourceSize}
           quad={shot.quad}
+          busy={busy}
           onCancel={onCancelEdit}
           onApply={onQuad}
         />
@@ -1775,45 +2029,113 @@ function Review({
         <ul
           style={{
             margin: 0,
-            padding: '0 18px 6px',
+            padding: '0 16px 6px',
             fontSize: 13,
-            opacity: 0.9,
             listStyle: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
           }}
         >
-          {notes.map((n) => (
-            <li key={n} style={{ marginBottom: 4 }}>
-              {n}
+          {/* ⚠️ "IT IS A BIT DARK" AND "THIS MAY BE YOUR DESK, NOT YOUR
+              DOCUMENT" ARE NOT THE SAME SENTENCE. They used to render as
+              identical grey lines in one unlabelled list, immediately above a
+              red button saying "Use it" — and a member in a hurry reads the
+              picture, not the small print. A warn now sits on its own tinted
+              plate with a rule down the side.
+
+              ⚠️ THE opacity USED TO SIT ON THIS <ul>, so no child could reach
+              full opacity from inside it however it was styled. It moved to
+              the note rows, which are the only ones that should be quiet. */}
+          {notes.map((v) => (
+            <li
+              key={v.text}
+              style={
+                v.level === 'warn'
+                  ? {
+                      background: 'rgba(212,154,58,0.14)',
+                      borderLeft: '3px solid var(--warning)',
+                      borderRadius: 6,
+                      padding: '8px 10px',
+                      color: '#fff',
+                      display: 'flex',
+                      gap: 8,
+                    }
+                  : { opacity: 0.9 }
+              }
+            >
+              {v.level === 'warn' && (
+                <>
+                  {/* A bare glyph announces as "warning sign", which is not a
+                      sentence. The word carries it instead. */}
+                  <span
+                    aria-hidden="true"
+                    style={{ color: 'var(--warning)', flex: '0 0 auto' }}
+                  >
+                    &#9888;
+                  </span>
+                  <span
+                    style={{
+                      position: 'absolute',
+                      width: 1,
+                      height: 1,
+                      overflow: 'hidden',
+                      clipPath: 'inset(50%)',
+                    }}
+                  >
+                    Warning:
+                  </span>
+                </>
+              )}
+              <span>{v.text}</span>
             </li>
           ))}
         </ul>
       )}
 
+      {/* ⚠️ THE PRIMARY ACTION SITS IN ONE PLACE, ALWAYS.
+          This was a single `flexWrap` row of five buttons. At 15px with the
+          38px chassis that is roughly 680px of buttons into 358px of usable
+          width, so it wrapped to THREE lines and the red primary landed alone
+          in the bottom-LEFT corner — the furthest point on the screen from a
+          right thumb, in a different place on every page of a six-page pack.
+
+          Now: one full-width primary on its own line, everything else in a
+          two-column grid beneath it. At 358px each column is 174px, which
+          clears the widest label ("Different document"). The primary still
+          follows what the member already told us — somebody who said "front
+          and back" gets "Next page", never "Use it". */}
       <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          padding: '10px 16px max(16px, env(safe-area-inset-bottom))',
+        }}
+      >
+        <button
+          type="button"
+          onClick={multi ? onAddAnother : onUse}
           style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 10,
-            padding: '10px 16px max(16px, env(safe-area-inset-bottom))',
+            ...secondaryBtn,
+            width: '100%',
+            background: 'var(--red)',
+            border: 'none',
+            fontWeight: 600,
           }}
         >
+          {multi ? 'Next page' : 'Use it'}
+        </button>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <button type="button" onClick={onRetake} style={secondaryBtn}>
             Take it again
           </button>
           <button type="button" onClick={onEdit} style={secondaryBtn}>
             Fix the corners
           </button>
-          <div style={{ flex: 1 }} />
-          {/* ⚠️ THE PRIMARY ACTION FOLLOWS WHAT THEY ALREADY TOLD US.
-              Somebody who said "front and back" is going to press "Next page"
-              — putting "Use it" under their thumb instead means one tap ends
-              the job with half the document. Somebody scanning one page never
-              sees "Next page" at all. */}
           {multi ? (
             <>
-              <button type="button" onClick={onUse} style={secondaryBtn}>
-                That is all
-              </button>
               {/* ⚠️ THE NEXT THING IS OFTEN A DIFFERENT SHAPE. Somebody
                   working through a motivation pack photographs an A4
                   competency certificate, then a licence card, then the page
@@ -1823,37 +2145,21 @@ function Review({
               <button type="button" onClick={onNextDocument} style={secondaryBtn}>
                 Different document
               </button>
-              <button
-                type="button"
-                onClick={onAddAnother}
-                style={{
-                  ...secondaryBtn,
-                  background: 'var(--red)',
-                  border: 'none',
-                }}
-              >
-                Next page
+              <button type="button" onClick={onUse} style={secondaryBtn}>
+                That is all
               </button>
             </>
           ) : (
-            <>
-              <button type="button" onClick={onAddAnother} style={secondaryBtn}>
-                Add another
-              </button>
-              <button
-                type="button"
-                onClick={onUse}
-                style={{
-                  ...secondaryBtn,
-                  background: 'var(--red)',
-                  border: 'none',
-                }}
-              >
-                Use it
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={onAddAnother}
+              style={{ ...secondaryBtn, gridColumn: '1 / -1' }}
+            >
+              Add another
+            </button>
           )}
         </div>
+      </div>
     </div>
   );
 }

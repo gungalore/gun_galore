@@ -12,7 +12,6 @@ import { AvatarLightbox } from '@/components/avatar-lightbox';
 import { SwKillSwitch } from '@/components/sw-killswitch';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { MobileSearchBar } from '@/components/mobile-search-bar';
-import { StickyFeaturedStrip } from '@/components/sticky-featured-strip';
 import { ConnectionStatusBanner } from '@/components/connection-status-banner';
 import { SwUpdateBanner } from '@/components/sw-update-banner';
 import { PageViewTracker } from '@/components/page-view-tracker';
@@ -318,10 +317,17 @@ export default function RootLayout({
           <PublicFooter>
             <SiteFooter />
           </PublicFooter>
-          {/* Sticky featured-listings strip — hugs the bottom tab bar
-              on the 5 shopping-surface pages in standalone mode.
-              Self-gates on standalone + pathname. */}
-          <StickyFeaturedStrip />
+          {/* ⚠️ THE STICKY FEATURED STRIP WAS REMOVED FROM HERE.
+              It hugged the bottom tab bar on every shopping surface in
+              standalone mode and reserved 110px of body padding for itself —
+              which, with the tab bar's own 60px, spoke for 21% of an iPhone
+              13's screen before any product had loaded.
+
+              Featured placement did not go away; it moved into the results
+              grid as <FeaturedInFeedCard />, where it is read as stock rather
+              than as a banner. See that component for the full argument.
+              app/globals.css no longer reserves the 110px, and
+              body[data-has-sticky-strip] is gone with it. */}
           {/* Bottom tab bar — installed-PWA users only. Renders null
               in browser-mobile mode so server HTML stays identical
               and the existing hamburger drawer in nav.tsx is what

@@ -385,6 +385,38 @@ never printed.
 
 ---
 
+## Automate It — Do Not Ask
+
+**If the system can determine a value, WRITE it.** Never park it in a confirm
+step and wait for the member to come back and tick a box.
+
+> Operator, 2026-08-25: "if the certificate date is determined by the math
+> insert it, don't wait for the user to go and confirm it. Same for the
+> licenses, they all have an expiry date, insert it. No further user
+> interaction required. Thats why we are designing this system, for automation
+> and ease of use!"
+
+This overturned a "safety rail" in the Document Centre: `Credential.confirmedAt`
+was null until the member said the dates were right, and the reminder sweep
+ignored every row without it. Defensible in isolation, and it meant a member
+who uploaded a firearm licence and never went back to tick a box got **no
+renewal reminder at all**. A cautious blank is not safer than a good answer.
+For a product whose whole job is warning somebody before a licence expires,
+silence is the worst outcome available.
+
+Applying it:
+
+- **Fill it in, arm it, let them change it.** Editable beats unasked.
+- **Gate on OUR confidence, not on their attention.** Do not write a reading we
+  are unsure of, and never invent one that is simply absent — absent stays
+  absent, which is a different thing from wrong.
+- **Record provenance** whenever a value is written for them, so a later
+  recomputation can tell its own arithmetic from something they typed, and
+  never overwrites theirs.
+- **Say it was filled in**, on the row, in passing — never as a task.
+- Look for the same pattern elsewhere. Any confirm step guarding a value we
+  already hold is work we invented for the member.
+
 ## Absolute Rules — Never Break These
 
 1. **The word "escrow" never appears anywhere** — not in code, UI,
@@ -1482,19 +1514,29 @@ the quad, `warp` rectifies, `enhance` cleans, `aim` sizes the box,
   bug to re-weight — see the skipped regression in `detect.spec.ts`,
   which records what was tried (aim-weighted re-ranking; capping the
   growth walk) and why both were reverted.
-- **So the aim box gates auto-capture** rather than fixing detection, and
+- **So the aim box constrains the crop** rather than fixing detection, and
   the corner editor is the safety net. A wrong crop the member can see
   and fix beats a clever one they cannot.
+- **There is NO automatic capture. Manual shutter only** (operator,
+  2026-08-25). Removed in full: the four gates, the 1.1s stillness clock, the
+  per-frame motion measure, the ring around the shutter, the Auto ON/OFF
+  toggle, and `exposureAllowsAutoCapture` in `exposure.ts`. Detection stays,
+  because it still does two jobs — it turns the aim box green, and its quad is
+  what the corner editor opens on.
+
+  > It went through three rounds of tuning and still cost more trust than it
+  > saved time: it fired early at 700ms and late at 1100ms; stillness measured
+  > on the detected quad let a patterned carpet stall the clock forever; and a
+  > "you reached for the shutter, so auto isn't helping" rule silently switched
+  > it off for the rest of the session, producing a doom loop nobody could
+  > describe from outside — two screen recordings show corners locked green for
+  > eleven seconds with the scanner sitting there. **Do not revive it from git.
+  > If it is ever wanted again, specify it afresh.**
 - **Glare / too bright / too dark hold on screen until resolved** — they
-  are the only failures no processing recovers. `exposure.ts` is the
-  single source for both the warning and the auto-capture gate, so the
-  scanner can never warn and then fire anyway.
-- **Auto-capture must never be switched off silently.** It once was, by the
-  manual shutter ("you reached for it, so auto isn't helping"). That is a doom
-  loop: auto feels slow → you press → auto is off for the rest of the session
-  → every document needs a press. Two screen recordings showed the corners
-  locked green for eleven seconds with the scanner sitting there. The toggle
-  beside the shutter is the only thing that may change it.
+  are the only failures no processing recovers. `exposure.ts` (`exposureProblem`)
+  is the single source for both the held alert and the viewfinder hint, so the
+  scanner can never warn at the top of the screen and say "take the photo" at
+  the bottom. It did exactly that until 2026-08-25.
 - **Desktop opens no camera.** A laptop webcam focuses at half a metre and
   cannot resolve a licence serial. `pointer:coarse && maxTouchPoints > 0` is
   the handheld test (`enumerateDevices` reports a webcam, so it cannot answer

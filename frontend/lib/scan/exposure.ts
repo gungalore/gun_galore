@@ -83,12 +83,17 @@ export function exposureProblem(
   return null;
 }
 
-/**
- * May the scanner fire by itself on this frame?
- *
- * Auto-capture through a problem the member has been told about — and has not
- * fixed yet — produces an unreadable scan with nobody to blame for it.
- */
-export function exposureAllowsAutoCapture(glare: number, luma: number): boolean {
-  return exposureProblem(glare, luma, false) === null;
-}
+// ⚠️ `exposureAllowsAutoCapture` LIVED HERE AND IS GONE.
+//
+// It answered "may the scanner fire by itself on this frame?", and it existed
+// in this file rather than in the component so that the WARNING and the GATE
+// could never drift apart — a scanner that warns and then shoots anyway reads
+// as broken in a way nobody can describe well enough to report.
+//
+// There is no automatic capture any more (operator, on the rebuild: manual
+// only), so there is no gate, and a lone exported predicate with tests and no
+// callers is just something for the next person to wire up by mistake.
+//
+// `exposureProblem` above is unchanged and still does both remaining jobs: it
+// is what the held alert renders, and what the viewfinder hint reads so the
+// two can never contradict each other.
