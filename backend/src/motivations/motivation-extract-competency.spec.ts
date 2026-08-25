@@ -1,3 +1,4 @@
+import { ENDORSEMENT_LABELS } from '../common/sa-competency';
 import { MotivationExtractService } from './motivation-extract.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -32,19 +33,16 @@ const svc = new MotivationExtractService();
 // WHERE the defect was rather than mocking the model around it.
 const parse = (svc as unknown as { parse: Parse }).parse.bind(svc);
 
+// ⚠️ BUILT FROM THE REGISTRY, NOT RETYPED. This fixture used to hardcode the
+// seven v2 labels, so when §2.2 collapsed them to five every test here failed
+// on the CHOICES check rather than on the parsing it was written to cover —
+// and a hardcoded list can also drift the other way, passing while the real
+// field offers something else entirely.
 const COMPETENCY_FOR = {
   key: 'competency_for',
   label: 'What your competency covers',
   kind: 'multi',
-  choices: [
-    'Handgun — non-self-loading (revolver)',
-    'Handgun — self-loading (pistol)',
-    'Shotgun — manually operated (pump / break / bolt)',
-    'Shotgun — self-loading',
-    'Rifle or carbine — manually operated (bolt / lever / pump / single shot)',
-    'Rifle or carbine — self-loading (includes pistol calibre carbine)',
-    'Muzzle loading firearm',
-  ],
+  choices: [...ENDORSEMENT_LABELS],
 };
 
 const model = (value: string) =>
@@ -61,8 +59,10 @@ describe('competency_for now survives the read', () => {
       'COMPETENCY_CERTIFICATE',
     );
     expect(out).toHaveLength(1);
-    expect(out[0].value).toContain('Shotgun — self-loading');
-    expect(out[0].value).toContain('Rifle or carbine — self-loading');
+    // — and the shotgun is now just "Shotgun": §2.2 removes the self-loading
+    // shotgun endorsement, there being no unit standard for one.
+    expect(out[0].value).toContain('Shotgun');
+    expect(out[0].value).toContain('Rifle or carbine - semi-automatic');
   });
 
   it('reads the written-out form SAPS uses on other certificates', () => {
@@ -71,7 +71,31 @@ describe('competency_for now survives the read', () => {
       [COMPETENCY_FOR],
       'COMPETENCY_CERTIFICATE',
     );
-    expect(out[0].value).toBe('Handgun — self-loading (pistol)');
+    expect(out[0].value).toBe('Handgun');
+  });
+
+  it('⚠️ reads the operator\'s own three certificates end to end', () => {
+    // ⚠️ TWO OF THESE PRODUCED NOTHING. Operator, 2026-08-25: "Seems like
+    // sometimes they will add the full word too. See my current competencies
+    // as examples." Their SAPS 524s read, verbatim:
+    //   • COMPETENCY TO POSSESS A FIREARM / HANDGUN
+    //   • COMPETENCY TO POSSESS A FIREARM / MANUALLY OPERATED RIFLE
+    //   • COMPETENCY TO POSSESS A FIREARM / S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN
+    // The first two carry no action for a category that was split in two, so
+    // the parser refused to choose and the field never populated.
+    const handgun = parse(
+      model('COMPETENCY TO POSSESS A FIREARM HANDGUN'),
+      [COMPETENCY_FOR],
+      'COMPETENCY_CERTIFICATE',
+    );
+    expect(handgun[0].value).toBe('Handgun');
+
+    const rifle = parse(
+      model('COMPETENCY TO POSSESS A FIREARM MANUALLY OPERATED RIFLE'),
+      [COMPETENCY_FOR],
+      'COMPETENCY_CERTIFICATE',
+    );
+    expect(rifle[0].value).toBe('Rifle or carbine - manually operated');
   });
 
   it('⚠️ keeps SEVERAL endorsements, which is the case that failed hardest', () => {
@@ -82,8 +106,8 @@ describe('competency_for now survives the read', () => {
     );
     const parts = out[0].value.split(', ');
     expect(parts).toHaveLength(2);
-    expect(out[0].value).toContain('Handgun — non-self-loading');
-    expect(out[0].value).toContain('Rifle or carbine — manually operated');
+    expect(out[0].value).toContain('Handgun');
+    expect(out[0].value).toContain('Rifle or carbine - manually operated');
   });
 
   it('⚠️ files a pistol calibre carbine as a rifle, never a handgun', () => {

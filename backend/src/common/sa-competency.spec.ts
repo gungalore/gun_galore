@@ -1,7 +1,9 @@
 import {
   ENDORSEMENTS,
   deriveExpiry,
+  endorsementDisplay,
   endorsementFromLabel,
+  normaliseCompetencyForAnswer,
   parseEndorsements,
   sectionAllows,
 } from './sa-competency';
@@ -12,14 +14,19 @@ import {
 // ────────────────────────────────────────────────────────────────────
 
 describe('reading the endorsements off a certificate', () => {
-  it('⚠️ distributes a single action prefix across every type — §4.7', () => {
-    // The reference's own worked example, and the reason it exists: the S/L
-    // prefix governs the whole block, so this is self-loading rifle/carbine
-    // AND self-loading shotgun. Reading it as "a rifle, and some shotgun"
-    // would understate what the holder may possess.
+  it('⚠️ reads the compound block off a REAL certificate — §4.7', () => {
+    // ⚠️ THIS STRING IS NOT FROM THE REFERENCE. It is copied off the
+    // operator's own SAPS 524 issued 2025-06-06. A conformance review flagged
+    // the trailing "/SHOTGUN" as invented, because §4.7's printed example
+    // stops at PIST CAL CARB — the real card carries the tail. Do not
+    // "correct" it back to the document's shorter version.
+    //
+    // The S/L prefix governs the block, so the rifle side is self-loading.
+    // The shotgun is now just SHOTGUN: §2.2 removes the self-loading shotgun
+    // endorsement entirely, there being no unit standard for one.
     expect(parseEndorsements('S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN')).toEqual([
-      'shotgun-sl',
       'rifle-sl',
+      'shotgun',
     ]);
   });
 
@@ -29,34 +36,64 @@ describe('reading the endorsements off a certificate', () => {
     // competency covers a firearm it does not.
     const out = parseEndorsements('S/L PIST CAL CARB');
     expect(out).toContain('rifle-sl');
-    expect(out).not.toContain('handgun-sl');
+    expect(out).not.toContain('handgun');
   });
 
-  it('keeps N/S/L and S/L apart', () => {
-    expect(parseEndorsements('N/S/L HG')).toEqual(['handgun-nsl']);
-    expect(parseEndorsements('S/L HG')).toEqual(['handgun-sl']);
+  it('⚠️ treats N/S/L HG and S/L HG as the same handgun competency', () => {
+    // §2.2 and §12 #3: there is no separate unit standard for a self-loading
+    // handgun — 119649 covers handguns whole. Where a card prints the action
+    // anyway it is data-capture convention, and §2.2 says to read it as such.
+    expect(parseEndorsements('N/S/L HG')).toEqual(['handgun']);
+    expect(parseEndorsements('S/L HG')).toEqual(['handgun']);
+    // Same for the shotgun, which v2 also split.
+    expect(parseEndorsements('M/O SG')).toEqual(['shotgun']);
+    expect(parseEndorsements('S/L SG')).toEqual(['shotgun']);
   });
 
   it('reads the written-out forms as well as the abbreviations', () => {
-    expect(parseEndorsements('Handgun, self-loading')).toEqual(['handgun-sl']);
+    expect(parseEndorsements('Handgun, self-loading')).toEqual(['handgun']);
     expect(parseEndorsements('Rifle or carbine, manually operated')).toEqual([
       'rifle-mo',
     ]);
-    expect(parseEndorsements('MANUALLY OPERATED SHOTGUN')).toEqual(['shotgun-mo']);
+    expect(parseEndorsements('MANUALLY OPERATED SHOTGUN')).toEqual(['shotgun']);
+  });
+
+  it('⚠️ reads the operator\'s three real certificates', () => {
+    // ⚠️ TWO OF THESE THREE PARSED TO NOTHING before the §2.2 collapse, and
+    // this is the case the operator reported: "Seems like sometimes they will
+    // add the full word too." SAPS writes the type line either way, and the
+    // handgun card carries no action at all — because there is none to carry.
+    // The parser refused every category without a stated action, so a
+    // perfectly clear certificate read as unreadable.
+    expect(
+      parseEndorsements('COMPETENCY TO POSSESS A FIREARM HANDGUN'),
+    ).toEqual(['handgun']);
+    expect(
+      parseEndorsements('COMPETENCY TO POSSESS A FIREARM MANUALLY OPERATED RIFLE'),
+    ).toEqual(['rifle-mo']);
+    expect(
+      parseEndorsements(
+        'COMPETENCY TO POSSESS A FIREARM S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN',
+      ),
+    ).toEqual(['rifle-sl', 'shotgun']);
   });
 
   it('reads several clauses, each with its own action', () => {
     const out = parseEndorsements('N/S/L HG, M/O RIFLE/CARB');
-    expect(out).toEqual(['handgun-nsl', 'rifle-mo']);
+    expect(out).toEqual(['handgun', 'rifle-mo']);
   });
 
-  it('⚠️ REFUSES TO GUESS when no action is stated', () => {
-    // "RIFLE" alone does not say whether it is self-loading, and the two
-    // differ in what may be licensed under which section (§7.1). Returning
+  it('⚠️ STILL REFUSES TO GUESS a rifle with no action stated', () => {
+    // Narrowed, not removed. "RIFLE" alone does not say whether it is
+    // self-loading, 119651 and 119650 are different unit standards, and s13,
+    // s15 and s16 each treat a semi-automatic rifle differently. Returning
     // nothing sends the applicant to the tick boxes; guessing sends them to a
     // refusal.
     expect(parseEndorsements('RIFLE')).toEqual([]);
-    expect(parseEndorsements('HANDGUN')).toEqual([]);
+    expect(parseEndorsements('RIFLE OR CARBINE')).toEqual([]);
+    // But HANDGUN alone is now complete, because nothing is left to guess at.
+    expect(parseEndorsements('HANDGUN')).toEqual(['handgun']);
+    expect(parseEndorsements('SHOTGUN')).toEqual(['shotgun']);
   });
 
   it('takes a muzzle loader without an action, because it has none', () => {
@@ -273,5 +310,75 @@ describe('what a section will allow — §7.1', () => {
     expect(sectionAllows('S14', 'shotgun', false).ok).toBe(true);
     expect(sectionAllows('S16', 'shotgun', true).ok).toBe(true);
     expect(sectionAllows('S16A', 'handgun', true).ok).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// WHAT THE MEMBER SEES, AND WHAT SURVIVES A CHANGE TO IT.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('how an endorsement is shown', () => {
+  it('names it the way the operator asked', () => {
+    // Operator, 2026-08-25: "list it as 'Competency - Semi-auto Rifle' if the
+    // code was S/L Rifle for example".
+    expect(endorsementDisplay('rifle-sl')).toBe('Competency - Semi-auto Rifle');
+    expect(endorsementDisplay('rifle-mo')).toBe('Competency - Manual Rifle');
+    expect(endorsementDisplay('handgun')).toBe('Competency - Handgun');
+    expect(endorsementDisplay('shotgun')).toBe('Competency - Shotgun');
+    expect(endorsementDisplay('muzzle-loader')).toBe('Competency - Muzzle Loader');
+  });
+
+  it('⚠️ keeps the shown wording out of the stored wording', () => {
+    // They are different columns for a reason: `label` is what lands in a
+    // member's saved answers, `display` is chrome. If the two were one field,
+    // rewording the Document Centre would silently invalidate every stored
+    // answer and the field validator would bin the whole key.
+    for (const e of ENDORSEMENTS) expect(e.display).not.toBe(e.label);
+  });
+
+  it('⚠️ no label or display string contains a comma', () => {
+    // competency_for is a multi field stored COMMA-JOINED, and four code paths
+    // split on the comma. A label carrying its own comma cannot survive a
+    // round trip — this shipped once, as "(bolt, lever, pump, single shot)".
+    for (const e of ENDORSEMENTS) {
+      expect(e.label).not.toContain(',');
+      expect(e.display).not.toContain(',');
+    }
+  });
+});
+
+describe('answers stored under the old seven endorsements', () => {
+  it('⚠️ still resolve, or the cover warning silently stops firing', () => {
+    // The failure this prevents is silent in the worst way: the eligibility
+    // check resolves each stored label, DROPS what it cannot resolve, and only
+    // warns if something survived. An all-stale answer therefore reads as "we
+    // have not seen the certificate yet" rather than as an error.
+    expect(endorsementFromLabel('Handgun \u2014 self-loading (pistol)')).toBe(
+      'handgun',
+    );
+    expect(endorsementFromLabel('Handgun \u2014 non-self-loading (revolver)')).toBe(
+      'handgun',
+    );
+    expect(endorsementFromLabel('Shotgun \u2014 self-loading')).toBe('shotgun');
+  });
+
+  it('collapses the two old handgun answers into one', () => {
+    const out = normaliseCompetencyForAnswer(
+      'Handgun \u2014 self-loading (pistol), Handgun \u2014 non-self-loading (revolver)',
+    );
+    expect(out).toBe('Handgun');
+  });
+
+  it('⚠️ keeps wording it cannot read rather than deleting it', () => {
+    // An unreadable part is still the member's answer. Dropping it here would
+    // quietly delete something they typed or ticked.
+    const out = normaliseCompetencyForAnswer('Handgun, Something we never offered');
+    expect(out).toContain('Something we never offered');
+  });
+
+  it('leaves the muzzle loader answer exactly as it was', () => {
+    expect(normaliseCompetencyForAnswer('Muzzle loading firearm')).toBe(
+      'Muzzle loading firearm',
+    );
   });
 });

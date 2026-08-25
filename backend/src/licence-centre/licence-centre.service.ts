@@ -19,6 +19,10 @@ import {
   currentKind,
   LicenceCentreExtractService,
 } from './licence-centre-extract.service';
+import {
+  endorsementDisplay,
+  parseEndorsements,
+} from '../common/sa-competency';
 import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
 import { MotivationsService } from '../motivations/motivations.service';
 import { REFUSAL_COPY, renewalPlan, renewalRefusal } from './licence-renewal';
@@ -1212,8 +1216,15 @@ export function derivedExpiryFor(
  * owned-firearms fill especially — offers six identical choices.
  *
  * Make and calibre is what a shooter actually calls a firearm: "Howa 6.5
- * Creedmoor", not "licence 3088". Anything else keeps its plain kind name,
- * because a competency certificate has nothing to distinguish it BY.
+ * Creedmoor", not "licence 3088".
+ *
+ * ⚠️ AND A COMPETENCY CERTIFICATE HAS PLENTY TO DISTINGUISH IT BY — this
+ * used to say it did not. A member holds ONE CERTIFICATE PER ENDORSEMENT
+ * GROUP, each its own SAPS 524 with its own number and its own issue date:
+ * the operator's three read "HANDGUN", "MANUALLY OPERATED RIFLE" and
+ * "S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN". Filed here they were three
+ * identical rows called "Competency certificate" — exactly the unlabelled
+ * filing cabinet this function exists to cure, and the one case it skipped.
  *
  * Returns null when there is nothing better to say, so the caller can leave
  * the existing title alone rather than overwrite it with a worse one.
@@ -1233,6 +1244,33 @@ export function derivedCredentialTitle(
     const name = [association, status].filter(Boolean).join(' — ');
     return name.length >= 3 ? name.slice(0, MAX_TITLE) : null;
   }
+  /**
+   * Operator, 2026-08-25: "check the firearm codes the competency is for and
+   * list it as 'Competency - Semi-auto Rifle' if the code was S/L Rifle for
+   * example."
+   *
+   * ⚠️ READ IN CODE, FROM THE VERBATIM TRANSCRIPTION. `covers` holds what
+   * SAPS actually printed, and the extractor is told it is a transcriber, not
+   * an interpreter — so the interpreting happens here, against the rules in
+   * sa-competency. That transcription is never rewritten: the confirm panel
+   * asks the member to check it against the card in their hand, and a card
+   * reading "S/L RIFLE" must still read "S/L RIFLE" when they do.
+   *
+   * ⚠️ NULL WHEN WE CANNOT READ IT, which leaves DEFAULT_TITLE standing. A
+   * card we half-understand must not become a title asserting less than the
+   * certificate covers.
+   */
+  if (kind === 'COMPETENCY_CERTIFICATE') {
+    const shown = parseEndorsements(clean(details.covers))
+      .map((e) => endorsementDisplay(e))
+      .filter((d): d is string => !!d);
+    if (!shown.length) return null;
+    // "Competency - Semi-auto Rifle + Shotgun" — one certificate, two
+    // endorsements, which is what the operator's 2025 card actually carries.
+    const name = shown[0] + shown.slice(1).map((d) => ` + ${d.replace(/^Competency - /, '')}`).join('');
+    return name.slice(0, MAX_TITLE);
+  }
+
   if (kind !== 'FIREARM_LICENCE') return null;
   const tidy = (v: string | undefined) =>
     (v ?? '')

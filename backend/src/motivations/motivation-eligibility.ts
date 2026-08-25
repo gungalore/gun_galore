@@ -112,12 +112,19 @@ export function requiredEndorsement(
   const shape = firearmShape(answers);
   if (!shape) return null;
 
-  return (
-    ENDORSEMENTS.find(
-      (e) =>
-        e.category === shape.category && e.selfLoading === shape.selfLoading,
-    )?.value ?? null
+  // ⚠️ THE ACTION ONLY SELECTS AMONG RIFLES. Matching on it for every
+  // category was correct while handgun and shotgun were each split in two;
+  // after the v3 collapse those endorsements carry selfLoading null, so
+  // `null === false` failed and a manually operated handgun matched NOTHING
+  // — which makes requiredEndorsement return null, which short-circuits
+  // applicationBlockers before a single check runs. The competency cover
+  // warning would simply have stopped existing for handguns and shotguns.
+  const hit = ENDORSEMENTS.find((e) =>
+    e.category === shape.category
+      ? e.category !== 'rifle-carbine' || e.selfLoading === shape.selfLoading
+      : false,
   );
+  return hit?.value ?? null;
 }
 
 /**

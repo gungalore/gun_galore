@@ -126,3 +126,62 @@ describe('the roles a document also covers', () => {
     expect(clean('DEDICATED_STATUS', 'GOOD_STANDING')).toEqual([]);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// NAMING A COMPETENCY CERTIFICATE.
+//
+// Operator, 2026-08-25: "check the firearm codes the competency is for and
+// list it as 'Competency - Semi-auto Rifle' if the code was S/L Rifle for
+// example", and, sending photographs of their own three certificates: "Seems
+// like sometimes they will add the full word too."
+//
+// A member holds ONE CERTIFICATE PER ENDORSEMENT GROUP — each its own SAPS
+// 524, its own number, its own issue date. All three of the operator's were
+// filed here as identical rows called "Competency certificate".
+// ────────────────────────────────────────────────────────────────────
+
+describe('naming a competency certificate', () => {
+  it('⚠️ names the operator’s three real certificates', () => {
+    // Verbatim from the "Type of competency certificate" box on each SAPS 524.
+    expect(
+      derivedCredentialTitle('COMPETENCY_CERTIFICATE', {
+        covers: 'COMPETENCY TO POSSESS A FIREARM HANDGUN',
+      }),
+    ).toBe('Competency - Handgun');
+
+    expect(
+      derivedCredentialTitle('COMPETENCY_CERTIFICATE', {
+        covers: 'COMPETENCY TO POSSESS A FIREARM MANUALLY OPERATED RIFLE',
+      }),
+    ).toBe('Competency - Manual Rifle');
+
+    // One certificate, two endorsements — and this is the card that made the
+    // one-expiry-column problem real: the rifle side and the shotgun side
+    // derive their dates from different licences.
+    expect(
+      derivedCredentialTitle('COMPETENCY_CERTIFICATE', {
+        covers:
+          'COMPETENCY TO POSSESS A FIREARM S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN',
+      }),
+    ).toBe('Competency - Semi-auto Rifle + Shotgun');
+  });
+
+  it('takes the abbreviated card wording too', () => {
+    expect(
+      derivedCredentialTitle('COMPETENCY_CERTIFICATE', { covers: 'S/L RIFLE' }),
+    ).toBe('Competency - Semi-auto Rifle');
+    expect(
+      derivedCredentialTitle('COMPETENCY_CERTIFICATE', { covers: 'M/O SG' }),
+    ).toBe('Competency - Shotgun');
+  });
+
+  it('⚠️ leaves the plain name standing when it cannot read the card', () => {
+    // Returning a title here would assert less than the certificate covers.
+    // "RIFLE" alone does not say whether it is semi-automatic, and those are
+    // different unit standards and different sections.
+    expect(
+      derivedCredentialTitle('COMPETENCY_CERTIFICATE', { covers: 'RIFLE' }),
+    ).toBeNull();
+    expect(derivedCredentialTitle('COMPETENCY_CERTIFICATE', {})).toBeNull();
+  });
+});

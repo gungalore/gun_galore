@@ -62,18 +62,35 @@
 /**
  * What a competency is endorsed FOR.
  *
- * ⚠️ ENDORSED PER FIREARM TYPE, AND A PERSON MAY HOLD ANY COMBINATION (§2.1),
- * which is why this is always a SET. A handgun endorsement and a self-loading
- * rifle endorsement on one card are independent — including their expiry
- * dates, which are computed separately (§5.2).
+ * ⚠️ ENDORSED PER FIREARM TYPE, AND A PERSON MAY HOLD ANY COMBINATION
+ * (§2.2), which is why this is always a SET. Two endorsements on one card are
+ * independent — including their expiry dates, which are computed separately
+ * per category (§5.3).
+ *
+ * ⚠️ FIVE, NOT SEVEN. This union used to split handgun into self-loading and
+ * non-self-loading, and shotgun the same way. §2.2 and §12 #3 remove both:
+ * there is NO separate unit standard for a self-loading handgun or a
+ * self-loading shotgun. 119649 covers handguns whole, 119652 covers shotguns
+ * whole, and the only action split with training behind it is rifle/carbine
+ * — 119651 manual against 119650 self-loading.
+ *
+ * ⚠️ AND THE SPLIT WAS COSTING REAL CERTIFICATES. The parser refuses to
+ * guess an action, so where the split existed a card had to state one. The
+ * operator's own SAPS 524 reads, in full, "COMPETENCY TO POSSESS A FIREARM /
+ * HANDGUN" — no action, because there is none to state — and parsed to
+ * nothing at all. Their rifle card reads "MANUALLY OPERATED RIFLE" and their
+ * third reads "S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN". Two of the three were
+ * unreadable to us.
+ *
+ * Where a card DOES print `S/L HG` or `M/O SG`, §2.2 says treat it as
+ * data-capture convention: it maps onto the one handgun or shotgun
+ * endorsement rather than selecting between two.
  */
 export type Endorsement =
-  | 'handgun-nsl'
-  | 'handgun-sl'
-  | 'shotgun-mo'
-  | 'shotgun-sl'
+  | 'handgun'
   | 'rifle-mo'
   | 'rifle-sl'
+  | 'shotgun'
   | 'muzzle-loader';
 
 /** The category an endorsement belongs to, which is the unit expiry works in. */
@@ -95,65 +112,137 @@ export type CompetencyCategory =
 export interface EndorsementSpec {
   /** Stored value. APPEND-ONLY — these end up in saved answers. */
   value: Endorsement;
+  /**
+   * What the member picks and what gets STORED in their answers.
+   *
+   * ⚠️ CHANGING ONE IS A DATA MIGRATION, not a rename — see
+   * normaliseCompetencyForAnswer.
+   */
   label: string;
+  /**
+   * What the Document Centre SHOWS. Chrome, never stored.
+   *
+   * Operator, 2026-08-25: "check the firearm codes the competency is for and
+   * list it as 'Competency - Semi-auto Rifle' if the code was S/L Rifle".
+   * Kept separate from `label` precisely so the shown wording can change
+   * without touching a single saved answer.
+   */
+  display: string;
   category: CompetencyCategory;
-  /** Self-loading (semi-automatic)? Drives the §7.1 section restrictions. */
-  selfLoading: boolean;
-  /** The SASSETA unit standard behind it (§3). */
+  /**
+   * Self-loading, where the endorsement itself settles it.
+   *
+   * ⚠️ NULL FOR HANDGUN, SHOTGUN AND MUZZLE LOADER, and that is the whole
+   * point of the v3 collapse: those endorsements do not record an action
+   * because no separate unit standard distinguishes one. Section eligibility
+   * still turns on the action — s13, s14, s15 and s16 each draw the line
+   * differently — so it must be carried alongside, from what the applicant
+   * says the firearm is. Reading it off the endorsement is how sectionAllows
+   * came to refuse a lawful semi-automatic pistol under s15.
+   */
+  selfLoading: boolean | null;
+  /**
+   * The SAQA unit standard behind it (§3).
+   *
+   * ⚠️ QUALITY-ASSURED BY THE PFTC, NOT SASSETA. §3.2 and §12 #13: the QCTO
+   * delegated firearm-training quality assurance to the PFTC in 2013, and
+   * SASSETA is contesting it in litigation that is still unresolved. Train at
+   * a PFTC-accredited provider.
+   */
   unitStandard?: string;
 }
 
-/** The seven endorsements of §2.1, in the reference's own order. */
+/**
+ * The five endorsements of §2.2, in the reference's own order.
+ *
+ * ⚠️ THREE UNIT STANDARDS HERE WERE WRONG, and §12 #3 calls it "the worst
+ * error in the document". v2 mapped 119650 to a manually operated shotgun,
+ * 119652 to a self-loading rifle, and 123515 to a self-loading shotgun. All
+ * three were wrong, and 123515 is not a shotgun standard at all — it is
+ * handgun FOR BUSINESS PURPOSES. Verified against the SAQA register.
+ */
 export const ENDORSEMENTS: readonly EndorsementSpec[] = [
   {
-    value: 'handgun-nsl',
-    label: 'Handgun — non-self-loading (revolver)',
+    value: 'handgun',
+    label: 'Handgun',
+    display: 'Competency - Handgun',
     category: 'handgun',
-    selfLoading: false,
+    selfLoading: null,
     unitStandard: '119649',
-  },
-  {
-    value: 'handgun-sl',
-    label: 'Handgun — self-loading (pistol)',
-    category: 'handgun',
-    selfLoading: true,
-    unitStandard: '119649',
-  },
-  {
-    value: 'shotgun-mo',
-    label: 'Shotgun — manually operated (pump / break / bolt)',
-    category: 'shotgun',
-    selfLoading: false,
-    unitStandard: '119650',
-  },
-  {
-    value: 'shotgun-sl',
-    label: 'Shotgun — self-loading',
-    category: 'shotgun',
-    selfLoading: true,
-    unitStandard: '123515',
   },
   {
     value: 'rifle-mo',
-    label: 'Rifle or carbine — manually operated (bolt / lever / pump / single shot)',
+    label: 'Rifle or carbine - manually operated',
+    display: 'Competency - Manual Rifle',
     category: 'rifle-carbine',
     selfLoading: false,
     unitStandard: '119651',
   },
   {
     value: 'rifle-sl',
-    label: 'Rifle or carbine — self-loading (includes pistol calibre carbine)',
+    // ⚠️ "Semi-automatic (self-loading)" IS HOUSE WORDING, not a third
+    // vocabulary. It is exactly the firearm_action choice in the motivation
+    // registry, phrased that way because the operator could not find the
+    // option when it read only "Self-loading". The Act's own word is
+    // self-loading and stays in the generated prose and on the SAPS 271.
+    label: 'Rifle or carbine - semi-automatic (self-loading)',
+    display: 'Competency - Semi-auto Rifle',
     category: 'rifle-carbine',
     selfLoading: true,
+    unitStandard: '119650',
+  },
+  {
+    value: 'shotgun',
+    label: 'Shotgun',
+    display: 'Competency - Shotgun',
+    category: 'shotgun',
+    selfLoading: null,
     unitStandard: '119652',
   },
   {
     value: 'muzzle-loader',
+    // Unchanged from v2 on purpose: the one stored answer that needs no remap.
     label: 'Muzzle loading firearm',
+    display: 'Competency - Muzzle Loader',
     category: 'muzzle-loader',
-    selfLoading: false,
+    selfLoading: null,
+    unitStandard: '243200',
   },
 ];
+
+/**
+ * v2 wording, and every other spelling seen on a card, onto current labels.
+ *
+ * ⚠️ WITHOUT THIS THE SAFETY CHECK TURNS ITSELF OFF, SILENTLY. A stored
+ * answer is a comma-joined list of LABELS inside an encrypted blob. Four of
+ * the seven v2 labels no longer exist, and the eligibility check resolves each
+ * part with endorsementFromLabel, drops what it cannot resolve, and then only
+ * fires "your competency does not cover this firearm" if anything survived. An
+ * all-stale answer therefore reads as "we have not seen the certificate yet"
+ * rather than as an error, with no log line and nothing on screen.
+ *
+ * Collapsing revolver and pistol onto one handgun endorsement is not
+ * reversible, which is why this is a read-side map and not a rewrite of the
+ * stored blob.
+ */
+const LEGACY_LABELS: Record<string, Endorsement> = {
+  'handgun \u2014 non-self-loading (revolver)': 'handgun',
+  'handgun \u2014 self-loading (pistol)': 'handgun',
+  'handgun - non-self-loading (revolver)': 'handgun',
+  'handgun - self-loading (pistol)': 'handgun',
+  'shotgun \u2014 manually operated (pump / break / bolt)': 'shotgun',
+  'shotgun \u2014 self-loading': 'shotgun',
+  'shotgun - manually operated (pump / break / bolt)': 'shotgun',
+  'shotgun - self-loading': 'shotgun',
+  'rifle or carbine \u2014 manually operated (bolt / lever / pump / single shot)':
+    'rifle-mo',
+  'rifle or carbine - manually operated (bolt / lever / pump / single shot)':
+    'rifle-mo',
+  'rifle or carbine \u2014 self-loading (includes pistol calibre carbine)':
+    'rifle-sl',
+  'rifle or carbine - self-loading (includes pistol calibre carbine)':
+    'rifle-sl',
+};
 
 const BY_VALUE = new Map(ENDORSEMENTS.map((e) => [e.value, e]));
 
@@ -166,10 +255,53 @@ export const ENDORSEMENT_LABELS: readonly string[] = ENDORSEMENTS.map(
   (e) => e.label,
 );
 
-/** Label back to value, so a stored label still resolves. */
+/** Label back to value, so a stored label still resolves — v2 wording too. */
 export function endorsementFromLabel(label: string): Endorsement | undefined {
   const t = (label ?? '').trim().toLowerCase();
-  return ENDORSEMENTS.find((e) => e.label.toLowerCase() === t)?.value;
+  const current = ENDORSEMENTS.find((e) => e.label.toLowerCase() === t)?.value;
+  return current ?? LEGACY_LABELS[t];
+}
+
+/** What the Document Centre shows for one endorsement. */
+export function endorsementDisplay(value: string): string | undefined {
+  return endorsementSpec(value)?.display;
+}
+
+/**
+ * Bring a stored `competency_for` answer up to current wording.
+ *
+ * ⚠️ APPLIED AT THE ANSWERS BOUNDARY, not inside endorsementFromLabel. Four
+ * separate paths read this value and only one of them goes through that
+ * function: the eligibility check resolves labels, the wizard ticks
+ * checkboxes by exact string match against the served choices, the generator
+ * puts the raw string into its prompt, and the field validator BINS THE WHOLE
+ * KEY if any comma part is not a current choice. Normalising in one place
+ * downstream would fix the first and leave the other three showing, printing
+ * or discarding v2 wording.
+ *
+ * Returns the same comma-joined shape it was given, in registry order and
+ * de-duplicated — two v2 handgun endorsements collapse to one.
+ */
+export function normaliseCompetencyForAnswer(raw: string): string {
+  const parts = (raw ?? '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (!parts.length) return '';
+  const values = new Set<Endorsement>();
+  const unknown: string[] = [];
+  for (const p of parts) {
+    const v = endorsementFromLabel(p);
+    if (v) values.add(v);
+    // ⚠️ KEPT, NOT DROPPED. Something we cannot read is the member's answer
+    // and may be wording we have not seen; discarding it here would delete an
+    // answer they gave. The field validator downstream decides its fate.
+    else unknown.push(p);
+  }
+  return [
+    ...ENDORSEMENTS.filter((e) => values.has(e.value)).map((e) => e.label),
+    ...unknown,
+  ].join(', ');
 }
 
 // ── reading what SAPS actually printed ──────────────────────────────
@@ -236,9 +368,17 @@ const TYPE_TOKENS: { re: RegExp; category: CompetencyCategory }[] = [
  * Read the endorsements off a competency certificate's own wording.
  *
  * Handles the compound form of §4.7 — S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN —
- * where one action prefix DISTRIBUTES across every type after it. That example
- * must yield self-loading rifle/carbine plus self-loading shotgun, and it is
- * the reference's worked example for exactly that reason.
+ * where one action prefix DISTRIBUTES across every type after it.
+ *
+ * ⚠️ THAT STRING IS COPIED OFF A REAL CERTIFICATE, not from the reference. A
+ * conformance review flagged the trailing "/SHOTGUN" as invented, because
+ * §4.7's printed example stops at PIST CAL CARB. The operator's own SAPS 524,
+ * issued 2025-06-06, carries the shotgun tail. Do not "correct" it back.
+ *
+ * It now yields self-loading rifle/carbine plus SHOTGUN — not "self-loading
+ * shotgun", which §2.2 says is not a thing. Whether the S/L prefix was ever
+ * meant to reach the shotgun at the end of that string is unknowable from the
+ * text, and under the five-endorsement model it no longer matters.
  *
  * Returns [] when it cannot tell. Never a guess.
  */
@@ -282,18 +422,28 @@ export function parseEndorsements(raw: string): Endorsement[] {
     if (!categories.size) continue;
 
     for (const category of categories) {
-      if (category === 'muzzle-loader') {
-        found.add('muzzle-loader');
+      // ⚠️ AN ACTION IS ONLY NEEDED FOR A RIFLE OR CARBINE, and narrowing
+      // this is what made the operator's own certificates readable. It used to
+      // refuse every category without a stated action, because handgun and
+      // shotgun were each split in two and picking between them on the word
+      // "HANDGUN" alone would have been a guess. §2.2 removes both splits, so
+      // for those three categories there is nothing left to guess AT — and a
+      // SAPS 524 reading exactly "COMPETENCY TO POSSESS A FIREARM / HANDGUN"
+      // is complete and unambiguous. It parsed to nothing.
+      //
+      // Rifle keeps the refusal, and must: 119651 and 119650 are different
+      // unit standards, and s13, s15 and s16 each treat a semi-automatic rifle
+      // differently. Guessing there would tell somebody they hold self-loading
+      // competency on the strength of the word "RIFLE".
+      if (category === 'rifle-carbine') {
+        if (selfLoading === null) continue;
+        const hit = ENDORSEMENTS.find(
+          (e) => e.category === category && e.selfLoading === selfLoading,
+        );
+        if (hit) found.add(hit.value);
         continue;
       }
-      // ⚠️ NO ACTION STATED MEANS WE DO NOT KNOW WHICH OF THE TWO IT IS, and
-      // the two differ in what may be licensed under which section (§7.1).
-      // Guessing would tell somebody they hold self-loading rifle competency
-      // on the strength of the word "RIFLE" alone.
-      if (selfLoading === null) continue;
-      const hit = ENDORSEMENTS.find(
-        (e) => e.category === category && e.selfLoading === selfLoading,
-      );
+      const hit = ENDORSEMENTS.find((e) => e.category === category);
       if (hit) found.add(hit.value);
     }
   }

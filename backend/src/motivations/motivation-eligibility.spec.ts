@@ -36,9 +36,14 @@ describe('which endorsement a firearm needs', () => {
   it('reads type and action together', () => {
     expect(requiredEndorsement(SL_RIFLE)).toBe('rifle-sl');
     expect(requiredEndorsement(BOLT_RIFLE)).toBe('rifle-mo');
-    expect(requiredEndorsement(PISTOL)).toBe('handgun-sl');
+    expect(requiredEndorsement(PISTOL)).toBe('handgun');
+    // ⚠️ A REVOLVER AND A PISTOL ARE THE SAME COMPETENCY. §2.2 and §12 #3:
+    // there is no separate unit standard for a self-loading handgun — 119649
+    // covers handguns whole — so the action changes nothing here. It still
+    // matters for SECTION eligibility, which is why it is carried separately;
+    // see firearmShape.
     expect(requiredEndorsement({ firearm_type: 'Handgun', firearm_action: 'Revolver' })).toBe(
-      'handgun-nsl',
+      'handgun',
     );
   });
 
