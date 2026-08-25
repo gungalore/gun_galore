@@ -3,6 +3,7 @@
 import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
 import { todayYmd, toIso } from '@/lib/date-picker-model';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LicenceCentreMotivations from '@/components/licence-centre-motivations';
@@ -12,6 +13,7 @@ import {
   CredentialKind,
   CredentialProposal,
   CredentialRow,
+  CredentialUsage,
   KIND_LABELS,
   LicenceApiError,
   STATE_TONE,
@@ -144,6 +146,14 @@ export default function LicenceCentrePage() {
   /** The detail column, so a phone can be scrolled to it on selection. */
   const detailRef = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState('');
+  /**
+   * Which applications each document is already in.
+   *
+   * ⚠️ ITS OWN STATE, NOT PART OF `rows`. It is a second request that is
+   * allowed to fail, and folding it into the list would make a document's
+   * dates depend on whether its usage loaded.
+   */
+  const [usage, setUsage] = useState<Record<string, CredentialUsage[]>>({});
 
   /**
    * The folders, and every row placed in exactly one of them.
@@ -239,6 +249,13 @@ export default function LicenceCentrePage() {
     } catch {
       setLoadFailed(true);
     }
+    // ⚠️ AFTER the list, and never allowed to fail it. A document that has
+    // just been attached to an application changes this, so it is re-read on
+    // every refresh rather than once at mount.
+    licenceCentreApi
+      .usage(token)
+      .then(setUsage)
+      .catch(() => undefined);
   }, [token]);
 
   useEffect(() => {
@@ -553,6 +570,7 @@ export default function LicenceCentrePage() {
               <CredentialCard
                 key={selected.id}
                 row={selected}
+                usedIn={usage[selected.id] ?? []}
                 token={token}
                 onChanged={refresh}
                 onError={setError}
@@ -1381,11 +1399,14 @@ function DocRow({
 
 function CredentialCard({
   row,
+  usedIn,
   token,
   onChanged,
   onError,
 }: {
   row: CredentialRow;
+  /** Applications this document already appears in. Empty is the normal case. */
+  usedIn: CredentialUsage[];
   token: () => Promise<string | null>;
   onChanged: () => Promise<void>;
   onError: (m: string | null) => void;
@@ -1738,6 +1759,45 @@ function CredentialCard({
               await onChanged();
             }}
           />
+        </div>
+      )}
+
+      {/* ── WHERE THIS DOCUMENT ALREADY IS ───────────────────────────────
+          Renders nothing at all when the document is in no application, which
+          is most of them — an empty "Used in" heading over nothing is worse
+          than no heading. */}
+      {usedIn.length > 0 && (
+        <div className="mt-4 border-t border-[var(--border-divider)] pt-4">
+          <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+            Used in
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {usedIn.map((u) => (
+              <Link
+                key={u.motivationId}
+                href={`/motivations/${u.motivationId}`}
+                className="flex items-center gap-2 text-[12.5px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                  className="shrink-0"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <path d="M14 2v6h6" />
+                </svg>
+                <span className="gg-nums">{u.referenceNumber}</span>
+                {u.annexure && <span>\u2014 Annexure {u.annexure}</span>}
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 

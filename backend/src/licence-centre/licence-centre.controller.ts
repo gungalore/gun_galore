@@ -150,6 +150,21 @@ export class LicenceCentreController {
    * endpoint 404s, and the page needs one call it can trust to render the
    * "not open yet" state instead of storming the rest.
    */
+  /**
+   * Where each stored document already appears.
+   *
+   * ⚠️ DECLARED BEFORE ANY ':id' ROUTE. Nest matches in declaration order, so
+   * a bare parameter route above this one would swallow /usage as an id.
+   *
+   * One request for the whole list rather than one per document: a member has
+   * a few dozen documents and a handful of applications, and the panel would
+   * otherwise fire a request on every click through the file list.
+   */
+  @Get('usage')
+  usage(@CurrentUser() clerkId: string) {
+    return this.svc.usage(clerkId);
+  }
+
   @Get('status')
   status() {
     return this.quota.status();

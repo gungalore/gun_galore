@@ -21,6 +21,7 @@ import {
 import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
 import { MotivationsService } from '../motivations/motivations.service';
 import { REFUSAL_COPY, renewalPlan, renewalRefusal } from './licence-renewal';
+import { buildAnnexures } from '../motivations/motivation-checklist';
 import {
   competencyLapses,
   expiryState,
@@ -44,6 +45,16 @@ import {
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_TITLE = 120;
+
+/** One application a stored document already appears in. */
+export interface CredentialUsage {
+  motivationId: string;
+  referenceNumber: string;
+  licenceType: string;
+  status: string;
+  /** Null until the pack has enough attached for this kind to be lettered. */
+  annexure: string | null;
+}
 
 @Injectable()
 export class LicenceCentreService {
@@ -83,6 +94,114 @@ export class LicenceCentreService {
       );
       return {};
     }
+  }
+
+  /**
+   * Which of the member's applications each stored document already sits in.
+   *
+   * ⚠️ MATCHED ON THE FILE FINGERPRINT, BECAUSE THERE IS NO LINK COLUMN AND
+   * THERE DOES NOT NEED TO BE. Attaching a document from the Document Centre
+   * copies its bytes into a MotivationUpload; both rows then carry sha256 of
+   * the SAME plaintext, which the schema already keeps to spot a document
+   * uploaded twice and to prove which file a reading came from. So "where else
+   * is this?" is a join on a column that exists rather than a migration.
+   *
+   * ⚠️ TWO THINGS THIS BUYS THAT A LINK COLUMN WOULD NOT. A file the member
+   * uploaded straight into an application, never having filed it here, still
+   * matches — it IS the same page in that pack. And a document attached before
+   * this endpoint existed is found, where a column added today would have been
+   * null for every one of them.
+   *
+   * ⚠️ AND ONE IT LOSES: replacing a document with a newer scan changes its
+   * bytes, so packs built from the old file stop matching. That is a real
+   * limit, stated at the call site, not a bug to fix here.
+   *
+   * ⚠️ SCOPED TO THE MEMBER'S OWN MOTIVATIONS, ALWAYS. A sha256 is a global
+   * fact about bytes: two people who upload the identical blank SAPS form
+   * share one. Matching on the hash alone would tell each of them their
+   * document is in a stranger's application, and name it.
+   */
+  async usage(clerkId: string): Promise<Record<string, CredentialUsage[]>> {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    const creds = await this.prisma.credential.findMany({
+      where: { userId: user.id },
+      select: { id: true, kind: true, sha256: true },
+    });
+    if (creds.length === 0) return {};
+
+    // Several documents can share a fingerprint only if they are the same
+    // bytes, which @@unique([userId, sha256]) already prevents per member —
+    // but the grouping below does not depend on that holding.
+    const byHash = new Map<string, string[]>();
+    for (const c of creds) {
+      byHash.set(c.sha256, [...(byHash.get(c.sha256) ?? []), c.id]);
+    }
+
+    // Every application of THIS member holding any of those bytes.
+    const hits = await this.prisma.motivationUpload.findMany({
+      where: {
+        sha256: { in: [...byHash.keys()] },
+        motivation: { userId: user.id },
+      },
+      select: { sha256: true, kind: true, motivationId: true },
+    });
+    if (hits.length === 0) return {};
+
+    // ⚠️ THE LETTER NEEDS THE WHOLE PACK, NOT THE MATCHED ROW. buildAnnexures
+    // letters a motivation's uploads in kind order, so the letter this
+    // document carries depends on everything ELSE attached to that
+    // application. Fetching only the matches would letter from A every time.
+    const motivationIds = [...new Set(hits.map((h) => h.motivationId))];
+    const motivations = await this.prisma.motivation.findMany({
+      where: { id: { in: motivationIds }, userId: user.id },
+      select: {
+        id: true,
+        referenceNumber: true,
+        licenceType: true,
+        status: true,
+        uploads: { select: { kind: true } },
+      },
+    });
+
+    const packs = new Map(
+      motivations.map((m) => [
+        m.id,
+        {
+          referenceNumber: m.referenceNumber,
+          licenceType: m.licenceType,
+          status: m.status,
+          letterFor: new Map(
+            buildAnnexures(m.uploads.map((u) => u.kind)).map((a) => [
+              a.kind,
+              a.letter,
+            ]),
+          ),
+        },
+      ]),
+    );
+
+    const out: Record<string, CredentialUsage[]> = {};
+    for (const hit of hits) {
+      const pack = packs.get(hit.motivationId);
+      if (!pack) continue; // scoped out above; belt and braces
+      for (const credentialId of byHash.get(hit.sha256) ?? []) {
+        const already = out[credentialId] ?? [];
+        // One line per application, even where a pack holds several copies of
+        // the same page under one letter (four safe photographs do).
+        if (already.some((u) => u.motivationId === hit.motivationId)) continue;
+        already.push({
+          motivationId: hit.motivationId,
+          referenceNumber: pack.referenceNumber,
+          licenceType: pack.licenceType,
+          status: pack.status,
+          annexure: pack.letterFor.get(hit.kind) ?? null,
+        });
+        out[credentialId] = already;
+      }
+    }
+    return out;
   }
 
   async list(clerkId: string) {

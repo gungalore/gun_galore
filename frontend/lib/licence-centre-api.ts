@@ -217,6 +217,17 @@ export const licenceCentreApi = {
       { enabled: false, reminders: false, maxCredentials: 0 },
     ),
 
+  /**
+   * Where every stored document already appears, keyed by credential id.
+   *
+   * ⚠️ FALLS BACK TO EMPTY RATHER THAN THROWING. This is a "by the way" line
+   * under a document; a member whose applications failed to load should still
+   * be able to confirm a date and delete a file. Nothing on this screen
+   * depends on it.
+   */
+  usage: (t: TokenGetter) =>
+    request<Record<string, CredentialUsage[]>>(t, '/usage', {}, {}),
+
   list: (t: TokenGetter) => request<CredentialRow[]>(t, '', {}, []),
 
   /**
@@ -407,6 +418,23 @@ export const licenceCentreApi = {
     return URL.createObjectURL(await r.blob());
   },
 };
+
+/**
+ * One application a stored document already appears in.
+ *
+ * ⚠️ MATCHED ON THE FILE'S FINGERPRINT, not on a stored link — attaching a
+ * document copies its bytes, and both rows keep sha256 of the same plaintext.
+ * Worth knowing at the call site: replacing a document with a newer scan
+ * changes its bytes, so packs built from the old file stop matching.
+ */
+export interface CredentialUsage {
+  motivationId: string;
+  referenceNumber: string;
+  licenceType: string;
+  status: string;
+  /** Null until the pack has enough attached for this kind to be lettered. */
+  annexure: string | null;
+}
 
 export const KIND_LABELS: Record<CredentialKind, string> = {
   FIREARM_LICENCE: 'Firearm licence',
