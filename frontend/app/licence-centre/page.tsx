@@ -20,6 +20,7 @@ import DocumentCentreAdd from '@/components/document-centre-add';
 import {
   ReviewItem,
   expiryAnswer,
+  mergeReviewQueue,
   needsALook,
   refileNeedsPanel,
   settleableInBulk,
@@ -759,19 +760,39 @@ function AddPanel({
     }
   }
 
+  /**
+   * Upload a batch and add it to the review.
+   *
+   * ⚠️ IT ALWAYS MERGES. IT USED TO REPLACE, AND THAT LOST DOCUMENTS.
+   *
+   * There was a `merge` flag, false by default, and on the false path the two
+   * setters below assigned WHOLESALE: `setQueue(added)` and
+   * `setRejected(failed)`. It was added for the retry button — "try again on
+   * one failed file threw away the batch" — and the fresh-pick path was left
+   * replacing, on the reasoning that a new pick starts a new review.
+   *
+   * That reasoning is wrong, because the Document Centre hands off ONE
+   * DOCUMENT AT A TIME: the panel closes after each hand-off (see
+   * DocumentCentreAdd.handOff), so adding six licences is six separate calls
+   * to this function — and each one wiped the five before it out of the
+   * review. Operator, 2026-08-25: "took scans of 6 licenses. 2 made it
+   * through."
+   *
+   * The documents themselves were never lost — every one of them uploaded and
+   * is on the server. What they lost was their place in the review, which is
+   * the only screen that asks a human to confirm the type and the dates. So
+   * they sat unconfirmed and unfiled, which for an expiry reminder is the same
+   * as not being there.
+   *
+   * There is no case where discarding an unconfirmed row is right: the queue
+   * holds only documents still waiting to be checked, and the phone hand-off
+   * path (queueHandoffArrivals) already rebuilds it from EVERY unconfirmed row
+   * for exactly this reason. So this merges, always, and de-duplicates by id —
+   * the hand-off refresh and this function can legitimately name the same row.
+   */
   async function uploadFiles(
     picked: File[],
     declared: CredentialKind | '' = '',
-    /**
-     * Add to the review rather than start a new one.
-     *
-     * ⚠️ WITHOUT THIS, "TRY AGAIN" ON ONE FAILED FILE THREW AWAY THE BATCH.
-     * The two setters below assign wholesale, which is right for a fresh pick
-     * and catastrophic for a retry: one tap discarded every document still
-     * waiting to be checked AND every other failed row — and a failed row
-     * holds the only reference this app has to that File.
-     */
-    merge = false,
   ) {
     if (!picked.length) return;
 
@@ -872,19 +893,15 @@ function AddPanel({
     // them in the toolbar line as well would say the same thing twice, in the
     // one place that cannot say which file.
     setErr(null);
-    if (merge) {
-      setQueue((q) => [...q, ...added]);
-      setRejected((prev) => [...prev, ...failed]);
-    } else {
-      setRejected(failed);
-    }
+    setQueue((q) => mergeReviewQueue(q, added));
+    setRejected((prev) => [...prev, ...failed]);
     // ⚠️ THE UPLOAD RESPONSE CARRIES THE TICKS ITSELF NOW. It used to
     // return the proposal and stop, while the same call had already
-    // stamped `neverExpires: true` on a photograph of a safe — so this
-    // line re-read the entire list after every upload to learn something
-    // the server had just decided. Taking the response at face value was
-    // the fix; the round trip was the workaround.
-    if (!merge) setQueue(added);
+    // stamped `neverExpires: true` on a photograph of a safe — so the batch
+    // was re-read after every upload to learn something the server had just
+    // decided. Taking the response at face value was the fix; the round trip
+    // was the workaround. (The second, replacing setQueue(added) that used to
+    // sit here is gone — see the note at the top of this function.)
     // Always, not only on failure: a row may have been committed and
     // its response lost — the vision read runs after the insert and
     // can outlast the proxy's patience. Without this the document is
@@ -939,8 +956,7 @@ function AddPanel({
             // Dropped BY KEY, not by name: two folders can hand us two files
             // called scan.jpg, and only one of them is being retried.
             setRejected((prev) => prev.filter((x) => x.key !== r.key));
-            // Merged, so the retry joins the review instead of replacing it.
-            void uploadFiles([r.file], lastDeclared.current, true);
+            void uploadFiles([r.file], lastDeclared.current);
           }}
           onChanged={onAdded}
         />
@@ -952,18 +968,65 @@ function AddPanel({
         onFiles={(files, declared) => void uploadFiles(files, declared)}
         onHandoffArrived={() => void queueHandoffArrivals()}
       />
-      {busy && (
-        <span
-          className="text-xs text-[var(--text-tertiary-on-card)]"
-          aria-live="polite"
-        >
-          {progress && progress.total > 1
-            ? `Reading ${Math.min(progress.done + 1, progress.total)} of ${progress.total}\u2026`
-            : 'Reading\u2026'}
-        </span>
-      )}
       {err && <span className="text-xs text-[var(--red)]">{err}</span>}
       </div>
+
+      {/* \u26a0\ufe0f A BAR, NOT A 12px LINE OF GREY TEXT.
+          Each document is uploaded, encrypted and then READ by a vision call
+          before the next one starts, so a pack of six is a genuine wait \u2014
+          tens of seconds \u2014 and the only thing on screen saying so was
+          "Reading 3 of 6\u2026" in tertiary grey beside the buttons. Operator,
+          2026-08-25: "I would rather have them be automatically sent one by
+          one with a progress bar so the user knows he must wait."
+
+          It fills per DOCUMENT, not per byte, because that is the unit the
+          member counts in and the only one we can honestly report: the upload
+          finishing tells us nothing about the read that follows it.
+          Single-file uploads get the same bar at 0 \u2192 100 rather than a
+          special case; one bar that always means the same thing beats two
+          states that mean nearly the same thing. */}
+      {busy && (
+        <div
+          className="mt-3 rounded-[10px] border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-baseline justify-between">
+            <span className="text-[13px] text-[var(--text-primary)]">
+              {progress && progress.total > 1
+                ? `Reading document ${Math.min(progress.done + 1, progress.total)} of ${progress.total}`
+                : 'Reading your document'}
+            </span>
+            <span className="gg-nums text-[11.5px] text-[var(--text-tertiary-on-card)]">
+              {progress ? `${progress.done} of ${progress.total} done` : ''}
+            </span>
+          </div>
+
+          <div
+            className="mt-2 h-[6px] w-full overflow-hidden rounded-[99px] bg-[var(--bg-inset)]"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={progress?.total ?? 1}
+            aria-valuenow={progress?.done ?? 0}
+            aria-label="Documents read"
+          >
+            <div
+              className="h-full rounded-[99px] bg-[var(--red)]"
+              style={{
+                width: progress
+                  ? `${Math.round((progress.done / progress.total) * 100)}%`
+                  : '8%',
+                transition: 'width 240ms cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            />
+          </div>
+
+          <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--text-tertiary-on-card)]">
+            Each one is read as it arrives, so this takes a moment. You can
+            leave this page open &mdash; nothing is lost if you wait.
+          </p>
+        </div>
+      )}
     </>
   );
 }

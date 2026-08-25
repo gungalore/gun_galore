@@ -3,6 +3,7 @@ import { CredentialKind } from './licence-centre-api';
 import {
   ReviewItem,
   expiryAnswer,
+  mergeReviewQueue,
   needsALook,
   refileNeedsPanel,
   settleableInBulk,
@@ -171,5 +172,50 @@ describe('what can be settled in bulk', () => {
     const read = doc({ proposed: { ...doc().proposed, expiresOn: '2032-11-28' } });
     expect(settleableInBulk(read)).toBe(true);
     expect(expiryAnswer(read)).toBe('2032-11-28');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// Adding a second batch must not discard the first.
+//
+// ⚠️ THE BUG THIS PINS LOST FOUR DOCUMENTS OUT OF SIX, IN PRODUCTION.
+// The Document Centre closes its add panel after every hand-off, so adding
+// six licences is six separate uploads — and the page replaced the review
+// queue on each one instead of adding to it. Every document uploaded fine;
+// they just lost their place in the only screen that asks a human to confirm
+// the type and the dates, so they sat unconfirmed and unfiled for ever.
+// Operator, 2026-08-25: "took scans of 6 licenses. 2 made it through."
+// ────────────────────────────────────────────────────────────────────
+describe('mergeReviewQueue', () => {
+  it('⚠️ KEEPS DOCUMENTS FROM EARLIER BATCHES — six added one at a time are six', () => {
+    let queue = [] as ReviewItem[];
+    for (let n = 1; n <= 6; n++) {
+      queue = mergeReviewQueue(queue, [doc({ id: `c${n}` })]);
+    }
+    expect(queue).toHaveLength(6);
+    expect(queue.map((d) => d.id)).toEqual(['c1', 'c2', 'c3', 'c4', 'c5', 'c6']);
+  });
+
+  it('de-duplicates by id, because the hand-off refresh names the same rows', () => {
+    // queueHandoffArrivals seeds from every unconfirmed row on the server; a
+    // desktop upload of one of those must not double it.
+    const seeded = [doc({ id: 'c1' }), doc({ id: 'c2' })];
+    const merged = mergeReviewQueue(seeded, [doc({ id: 'c2' }), doc({ id: 'c3' })]);
+    expect(merged.map((d) => d.id)).toEqual(['c1', 'c2', 'c3']);
+  });
+
+  it('lets the later arrival win, as the fresher read of the same document', () => {
+    const stale = doc({ id: 'c1', title: 'Scan 1', confident: false });
+    const fresh = doc({ id: 'c1', title: 'Firearm licence', confident: true });
+    const merged = mergeReviewQueue([stale], [fresh]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].title).toBe('Firearm licence');
+    expect(merged[0].confident).toBe(true);
+  });
+
+  it('does not mutate what it was handed', () => {
+    const waiting = [doc({ id: 'c1' })];
+    mergeReviewQueue(waiting, [doc({ id: 'c2' })]);
+    expect(waiting).toHaveLength(1);
   });
 });

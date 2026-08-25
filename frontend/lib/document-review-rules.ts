@@ -105,3 +105,36 @@ export function refileNeedsPanel(d: ReviewItem, to: CredentialKind): boolean {
   // the correction. Every other answer came from the kind we guessed.
   return d.proposed.expiresOn === null;
 }
+
+/**
+ * Add a freshly-uploaded batch to the documents already waiting to be checked.
+ *
+ * ⚠️ THIS EXISTS BECAUSE THE PAGE USED TO REPLACE INSTEAD OF ADD, AND THAT
+ * QUIETLY LOST DOCUMENTS. The Document Centre hands off ONE document at a
+ * time — the add panel closes after each hand-off — so a member adding six
+ * licences makes six separate upload calls, and the old
+ * `setQueue(added)` wiped the five before it out of the review every time.
+ * Operator, 2026-08-25: "took scans of 6 licenses. 2 made it through."
+ *
+ * Nothing was lost from the server; every document uploaded. What they lost
+ * was their place in the review, which is the only screen that asks a human to
+ * confirm the type and the dates — so they sat unconfirmed and unfiled, which
+ * for an expiry reminder is the same as not existing.
+ *
+ * There is no case where dropping an unconfirmed row is correct: this queue
+ * holds only documents still waiting on a human, and the phone hand-off path
+ * already rebuilds it from EVERY unconfirmed row for the same reason.
+ *
+ * De-duplicates by id, because the hand-off refresh and a desktop upload can
+ * legitimately name the same row. The later arrival wins: it is the fresher
+ * read of what the server made of the document.
+ */
+export function mergeReviewQueue(
+  waiting: readonly ReviewItem[],
+  added: readonly ReviewItem[],
+): ReviewItem[] {
+  const byId = new Map<string, ReviewItem>();
+  for (const item of waiting) byId.set(item.id, item);
+  for (const item of added) byId.set(item.id, item);
+  return [...byId.values()];
+}
