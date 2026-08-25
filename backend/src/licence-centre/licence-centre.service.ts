@@ -20,7 +20,11 @@ import {
   LicenceCentreExtractService,
 } from './licence-centre-extract.service';
 import {
+  categoryFromText,
+  deriveCertificateExpiry,
+  type Endorsement,
   endorsementDisplay,
+  type LinkedLicence,
   parseEndorsements,
 } from '../common/sa-competency';
 import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
@@ -238,6 +242,7 @@ export class LicenceCentreService {
         createdAt: true,
         autoFiled: true,
         namedConfident: true,
+        firearmCategory: true,
       },
     });
 
@@ -250,13 +255,38 @@ export class LicenceCentreService {
     // member typed is never touched. Failures are swallowed — a rename is a
     // convenience and must not take the Centre down with it.
     const renamed = new Map<string, string>();
+    /**
+     * Licences filed before the category column existed.
+     *
+     * ⚠️ REPAIRED HERE RATHER THAN IN THE MIGRATION, because the type lives
+     * inside an AES-GCM blob that only the application can open — SQL cannot
+     * backfill it. This loop already decrypts every row for the naming repair,
+     * so the category costs nothing extra to work out.
+     *
+     * ⚠️ ONLY WHERE IT IS NULL. Never re-derived over a value already stored:
+     * a member may have corrected the type, and re-reading our own extraction
+     * over their correction on every list() would put it back.
+     */
+    const categorised = new Map<string, string>();
     for (const r of rows) {
-      if (r.title !== DEFAULT_TITLE[r.kind]) continue;
-      const better = derivedCredentialTitle(
-        r.kind,
-        this.readDetails(r.detailsEncrypted),
+      const details = this.readDetails(r.detailsEncrypted);
+      if (r.title === DEFAULT_TITLE[r.kind]) {
+        const better = derivedCredentialTitle(r.kind, details);
+        if (better) renamed.set(r.id, better);
+      }
+      if (r.kind === 'FIREARM_LICENCE' && r.firearmCategory === null) {
+        const cat = categoryFromText(details.firearm_type ?? '');
+        if (cat) categorised.set(r.id, cat);
+      }
+    }
+    if (categorised.size) {
+      await Promise.all(
+        [...categorised].map(([id, firearmCategory]) =>
+          this.prisma.credential
+            .update({ where: { id }, data: { firearmCategory } })
+            .catch(() => undefined),
+        ),
       );
-      if (better) renamed.set(r.id, better);
     }
     if (renamed.size) {
       await Promise.all(
@@ -268,14 +298,37 @@ export class LicenceCentreService {
       );
     }
 
-    // Whether the fallback five-year competency date is even the rule for this
-    // member — see derivedExpiryFor. A licence on file means the competency
-    // follows it instead, and we cannot compute that here.
-    const holdsAnyLicence = rows.some(
-      (r) =>
-        r.kind === 'FIREARM_LICENCE' ||
-        r.coversKinds.includes('FIREARM_LICENCE'),
-    );
+    /**
+     * The member's licences, in the shape the derivation wants.
+     *
+     * ⚠️ BUILT ONCE FOR THE WHOLE LIST. This replaced a boolean — "does this
+     * member hold ANY firearm licence" — which could not express the rule,
+     * because the rule is per firearm CATEGORY. A rifle licence says nothing
+     * about a handgun competency.
+     *
+     * ⚠️ A LICENCE WITH NO CATEGORY IS LEFT OUT, NOT DEFAULTED. It would
+     * otherwise push some competency's expiry out on the strength of a firearm
+     * we could not identify. The category is filled in above on first read,
+     * so this is empty only for a card we genuinely cannot categorise.
+     *
+     * ⚠️ AND A CONFIRMED DATE ONLY. An unconfirmed expiry is our reading, not
+     * the member's answer; letting one date a competency would build a
+     * derivation on a guess and then remind on it.
+     */
+    const licences: LinkedLicence[] = rows
+      .filter(
+        (r) =>
+          (r.kind === 'FIREARM_LICENCE' ||
+            r.coversKinds.includes('FIREARM_LICENCE')) &&
+          r.firearmCategory !== null &&
+          r.expiresOn !== null &&
+          r.confirmedAt !== null,
+      )
+      .map((r) => ({
+        category: (categorised.get(r.id) ??
+          r.firearmCategory) as LinkedLicence['category'],
+        expiresOn: r.expiresOn,
+      }));
 
     return rows.map((r) => ({
       id: r.id,
@@ -307,7 +360,10 @@ export class LicenceCentreService {
         r.kind,
         r.expiresOn ? toIsoDate(r.expiresOn) : null,
         r.issuedOn ? toIsoDate(r.issuedOn) : null,
-        holdsAnyLicence,
+        licences,
+        r.kind === 'COMPETENCY_CERTIFICATE'
+          ? parseEndorsements(this.readDetails(r.detailsEncrypted).covers ?? '')
+          : [],
       ),
       // The row can outlive its bytes after an erasure. Say so rather than
       // let a download fail with something puzzling.
@@ -502,6 +558,19 @@ export class LicenceCentreService {
             extractionOk:
               Boolean(reading.expiresOn) ||
               Object.keys(reading.details).length > 0,
+            // ⚠️ IN THE CLEAR, SO A COMPETENCY CAN BE DATED. See the column
+            // note on the model: the firearm type is read into
+            // detailsEncrypted, which SQL cannot open, and the whole
+            // derivation is a group-by on the category. Written HERE and not
+            // at create() because the row is committed before the document is
+            // read — there is nothing to categorise until this point.
+            ...(resolved === 'FIREARM_LICENCE'
+              ? {
+                  firearmCategory: categoryFromText(
+                    reading.details.firearm_type ?? '',
+                  ),
+                }
+              : {}),
             // Keys in the clear, values encrypted. The key names are not PII.
             extractedFields: Object.keys(reading.details),
             detailsEncrypted: Object.keys(reading.details).length
@@ -516,20 +585,33 @@ export class LicenceCentreService {
         );
     }
 
-    // Same question as the list path asks: does a five-year competency date
-    // even apply to this member? Counted here rather than assumed, because a
-    // member who already holds a licence must not be handed a date we know
-    // the statute does not give them.
-    const holdsAnyLicence =
-      (await this.prisma.credential.count({
+    /**
+     * The member's licences, so a competency uploaded now can be dated now.
+     *
+     * ⚠️ THE SAME PREDICATE THE LIST PATH USES, and it must stay that way:
+     * a document reaching the confirm step from an upload and the same
+     * document reaching it from the list have to propose the same date, or
+     * the member is shown two different deadlines for one certificate
+     * depending on how they got there.
+     */
+    const licences: LinkedLicence[] = (
+      await this.prisma.credential.findMany({
         where: {
           userId: user.id,
           OR: [
             { kind: 'FIREARM_LICENCE' },
             { coversKinds: { has: 'FIREARM_LICENCE' } },
           ],
+          firearmCategory: { not: null },
+          expiresOn: { not: null },
+          confirmedAt: { not: null },
         },
-      })) > 0;
+        select: { firearmCategory: true, expiresOn: true },
+      })
+    ).map((r) => ({
+      category: r.firearmCategory as LinkedLicence['category'],
+      expiresOn: r.expiresOn,
+    }));
 
     return {
       id: created.id,
@@ -563,15 +645,11 @@ export class LicenceCentreService {
         /**
          * An expiry we worked out rather than read.
          *
-         * ⚠️ ONLY WHERE A STATUTE SETS IT, AND FOR COMPETENCY THAT IS
-         * NARROWER THAN IT LOOKS. A competency certificate prints an issue
-         * date and no expiry — telling the member we could not read a date
-         * that is not there is true and useless. But s10(2) AS AMENDED does
-         * not give a flat five years: the competency inherits the period of
-         * the licence it relates to, and five-from-issue is only the fallback
-         * for a firearm type holding no licence. So the arithmetic is offered
-         * to a member with no licence on file and withheld from everyone
-         * else — see derivedExpiryFor.
+         * A competency certificate prints an issue date and no expiry (§5.2),
+         * so telling the member we could not read a date that is not there is
+         * true and useless. s10(2) as amended ties it to the licence it
+         * relates to, per firearm category, and five-from-issue applies only
+         * where that category holds no licence at all.
          *
          * Never for a licence (section 27 sets two, five or ten years by
          * section) and never for dedicated status (the association sets it).
@@ -581,7 +659,10 @@ export class LicenceCentreService {
           resolved,
           reading?.expiresOn ?? null,
           reading?.issuedOn ?? null,
-          holdsAnyLicence,
+          licences,
+          resolved === 'COMPETENCY_CERTIFICATE'
+            ? parseEndorsements(reading?.details?.covers ?? '')
+            : [],
         ),
       },
     };
@@ -1156,11 +1237,18 @@ export function derivedExpiryFor(
   readExpiry: string | null,
   readIssued: string | null,
   /**
-   * Does this member hold ANY firearm licence in the vault?
+   * The member's licences, so the date can be derived rather than declined.
    *
-   * ⚠️ IT DECIDES WHETHER THE FIVE-YEAR DATE IS EVEN TRUE. See below.
+   * ⚠️ THIS REPLACED A BOOLEAN, "does this member hold ANY firearm licence",
+   * and the boolean could not express the rule. The derivation is per firearm
+   * CATEGORY: a rifle licence says nothing about a handgun competency. Asking
+   * the question member-wide meant a member with one rifle licence was refused
+   * the five-year date that was correct for their handgun-only competency, and
+   * given nothing in its place.
    */
-  holdsAnyLicence = false,
+  licences: readonly LinkedLicence[] = [],
+  /** What the certificate covers, read off its own wording. */
+  endorsements: readonly Endorsement[] = [],
 ): { on: string; why: string } | null {
   if (readExpiry || !readIssued) return null;
   if (kind !== 'COMPETENCY_CERTIFICATE') return null;
@@ -1188,14 +1276,39 @@ export function derivedExpiryFor(
   // certificates carry a date of issue and the s10(2) rule printed verbatim,
   // and nothing else about validity.
   //
-  // ⚠️ AND WE CANNOT COMPUTE THE REAL DATE HERE. The derivation is PER FIREARM
-  // TYPE, and a vault FIREARM_LICENCE row does not record which type its
-  // firearm is. So the honest thing is to offer the fallback only where it is
-  // actually the rule — a member with no licence on file — and otherwise to
-  // prefill NOTHING and say why. Prefilling a date we have reason to believe
-  // is wrong, on a field the member is asked to confirm, is worse than
-  // leaving it blank: they confirm it, and we have manufactured a deadline.
-  if (holdsAnyLicence) return null;
+  // ⚠️ IT CAN NOW COMPUTE THE REAL DATE, AND THIS IS WHERE IT DID NOT. The
+  // comment that stood here said the derivation is per firearm type and a
+  // vault licence row "does not record which type its firearm is", so the only
+  // honest thing was to offer the five-year fallback where it was genuinely
+  // the rule and prefill NOTHING otherwise. That reasoning was right and the
+  // conclusion was a dead end: a member with any licence at all got no date,
+  // no reminder, and nothing on any screen asking again.
+  //
+  // Credential.firearmCategory now holds the category in the clear, so the
+  // licences can be grouped and the real rule applied. Operator, 2026-08-25:
+  // "I confirmed with the DFO. The competency that is related to a firearm
+  // category expires when the last firearm license expires. And in the same
+  // breath it renews with the latest firearm license obtained", and "the
+  // competency expires within 5 years if no license is linked to it."
+  //
+  // ⚠️ THE FALLBACK IS PER CATEGORY, NOT PER MEMBER, and that is the bug the
+  // boolean hid. Somebody holding a rifle licence and a handgun-only
+  // competency was refused the five years that IS correct for their handgun,
+  // because the check asked "any licence at all?". Their handgun competency
+  // showed no date, fired no reminder, and really did lapse.
+  const derived = deriveCertificateExpiry({
+    endorsements,
+    issuedOn: issued,
+    licences,
+  });
+  if (derived.on) {
+    return { on: toIsoDate(derived.on), why: derived.why };
+  }
+  if (endorsements.length) {
+    // We read the certificate but cannot date it — say nothing rather than
+    // fall through to a fallback that does not apply.
+    return null;
+  }
 
   return {
     on: toIsoDate(competencyLapses(issued)),

@@ -42,6 +42,9 @@ function build() {
     user: { findUnique: jest.fn(async () => ({ id: 'u1' })) },
     credential: {
       count: jest.fn(async () => 0),
+      // The member's licences, which the competency derivation groups by
+      // category. None here: this suite is about kind normalisation.
+      findMany: jest.fn(async (): Promise<any[]> => []),
       create,
       update,
       findFirst: jest.fn(

@@ -380,6 +380,29 @@ const TYPE_TOKENS: { re: RegExp; category: CompetencyCategory }[] = [
 ];
 
 /**
+ * The one firearm category this text describes, or null.
+ *
+ * ⚠️ FOR A LICENCE, NOT A COMPETENCY. A competency certificate can name
+ * several categories at once and parseEndorsements returns them all; a licence
+ * is for ONE firearm (s11: a separate licence for each), so its type row names
+ * one thing. This is what gets written to Credential.firearmCategory so the
+ * derivation can group licences without decrypting anything.
+ *
+ * ⚠️ NULL RATHER THAN A GUESS, and null must stay meaningful downstream: a
+ * licence we cannot categorise has to be left OUT of the derivation rather
+ * than swept into a default category, or it would push a competency's expiry
+ * out on the strength of a firearm we could not identify.
+ */
+export function categoryFromText(raw: string): CompetencyCategory | null {
+  const text = (raw ?? '').trim();
+  if (!text) return null;
+  // TYPE_TOKENS is ordered so PIST CAL CARB is tested before PISTOL; keep
+  // that order here or a pistol calibre carbine files as a handgun.
+  for (const t of TYPE_TOKENS) if (t.re.test(text)) return t.category;
+  return null;
+}
+
+/**
  * Read the endorsements off a competency certificate's own wording.
  *
  * Handles the compound form of §4.7 — S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN —
@@ -572,7 +595,15 @@ export const FALLBACK_YEARS = 5;
 export const MUZZLE_LOADER_YEARS = 10;
 
 export interface LinkedLicence {
-  section: LicenceSection;
+  /**
+   * ⚠️ OPTIONAL, AND deriveExpiry NEVER READS IT. The derivation takes the
+   * latest expiry in the category; the section only decides how long a licence
+   * RUNS, which is already baked into the expiry printed on the card. Making
+   * it required would have excluded every licence whose section we could not
+   * read — and excluding a licence shortens the competency's derived date,
+   * which is the failure that matters.
+   */
+  section?: LicenceSection;
   /** The category this licence's firearm falls in. */
   category: CompetencyCategory;
   expiresOn: Date | null;
@@ -748,3 +779,80 @@ export function sectionAllows(
 
   return { ok: true };
 }
+
+/**
+ * When a whole competency certificate runs out.
+ *
+ * ⚠️ ONE CERTIFICATE CAN COVER TWO CATEGORIES AND THEY EXPIRE SEPARATELY.
+ * §5.3: "each endorsement on a single certificate can have a different derived
+ * expiry, computed independently per firearm type". The operator's own 2025
+ * SAPS 524 reads S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN — a rifle side and a
+ * shotgun side, following whatever licences they hold in each.
+ *
+ * ⚠️ SO THIS TAKES THE EARLIEST, AND THE CHOICE IS NOT NEUTRAL. A Credential
+ * holds one expiresOn, and the two candidates fail in opposite directions:
+ * the LATEST matches how the rule is usually worded and would let the rifle
+ * half lapse silently for years while the row still reads green; the EARLIEST
+ * warns when the first half stops working, which is the first moment the
+ * member cannot license or renew anything in that category (§7).
+ *
+ * This is a reminder product. Early and explicable beats late and silent — so
+ * `why` names the category that drove the date, or the member is looking at a
+ * date that matches none of their licences with no way to work out which half
+ * it belongs to.
+ */
+export function deriveCertificateExpiry(args: {
+  endorsements: readonly Endorsement[];
+  issuedOn: Date | null;
+  licences: readonly LinkedLicence[];
+}): DerivedExpiry {
+  const categories = [
+    ...new Set(
+      args.endorsements
+        .map((e) => endorsementSpec(e)?.category)
+        .filter((c): c is CompetencyCategory => !!c),
+    ),
+  ];
+  if (!categories.length) {
+    return {
+      on: null,
+      basis: 'unknown',
+      why: 'We could not read which firearms this certificate covers.',
+    };
+  }
+
+  const each = categories.map((category) => ({
+    category,
+    derived: deriveExpiry({
+      category,
+      issuedOn: args.issuedOn,
+      licences: args.licences,
+    }),
+  }));
+
+  // A category we cannot date at all makes the whole certificate undatable:
+  // saying "2031" while one half is unknown is worse than saying we do not
+  // know, because the row would look settled.
+  const unknown = each.find((e) => e.derived.on === null);
+  if (unknown) return unknown.derived;
+
+  const earliest = each.reduce((a, b) =>
+    (a.derived.on as Date) <= (b.derived.on as Date) ? a : b,
+  );
+  if (each.length === 1) return earliest.derived;
+
+  return {
+    ...earliest.derived,
+    why:
+      `This certificate covers ${categories.length} kinds of firearm and each follows its own licences. ` +
+      `The earliest is the ${CATEGORY_WORDS[earliest.category]} side: ${earliest.derived.why}`,
+  };
+}
+
+/** How a member would say each category out loud. */
+const CATEGORY_WORDS: Record<CompetencyCategory, string> = {
+  handgun: 'handgun',
+  'rifle-carbine': 'rifle',
+  shotgun: 'shotgun',
+  'muzzle-loader': 'muzzle loader',
+};

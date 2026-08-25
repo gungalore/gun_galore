@@ -5009,6 +5009,27 @@ model Credential {
   autoFiled      Boolean @default(false)
   namedConfident Boolean @default(false)
 
+  /// WHICH FIREARM CATEGORY A LICENCE IS FOR, in the clear.
+  ///
+  /// 'handgun' | 'rifle-carbine' | 'shotgun' | 'muzzle-loader'. Written only on
+  /// a FIREARM_LICENCE; null everywhere else and null where we could not read
+  /// the type off the card.
+  ///
+  /// ⚠️ PLAINTEXT FOR THE SAME REASON disciplineType IS. The firearm type is
+  /// already read off every licence — and lands inside detailsEncrypted, an
+  /// AES-GCM blob SQL cannot open. So nothing could group licences by
+  /// category, and a competency certificate could not be dated: its expiry is
+  /// the latest expiry among the licences IN ITS CATEGORY, which is a
+  /// group-by. The Document Centre's answer was to offer no date at all once a
+  /// member held any licence, and say so in a comment.
+  ///
+  /// ⚠️ NULL IS EXCLUDED FROM THE DERIVATION, NOT DEFAULTED. A licence we
+  /// cannot categorise must not push a competency's expiry out on the strength
+  /// of a firearm we could not identify.
+  ///
+  /// It holds a category, never a make, a calibre or a serial.
+  firearmCategory String? @db.VarChar(16)
+
   /// Opaque key into SecureFileStorageService, namespace `credentials`.
   /// Nullable so a row can outlive its bytes after an erasure.
   storageKey String?
@@ -5068,4 +5089,6 @@ model Credential {
   @@index([confirmedAt, remindersMuted, expiresOn])
   // Grouping the Centre by kind, and adoption's per-kind counts.
   @@index([userId, kind])
+  // The competency derivation groups a member's licences by category.
+  @@index([userId, firearmCategory])
 }
