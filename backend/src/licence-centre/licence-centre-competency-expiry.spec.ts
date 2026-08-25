@@ -73,13 +73,26 @@ describe('the competency date the Document Centre offers', () => {
     expect(out?.on).toBe('2025-03-01');
   });
 
-  it('⚠️ takes the EARLIEST side of a certificate covering two categories', () => {
-    // The operator's own 2025 SAPS 524 covers a rifle side and a shotgun side,
-    // and §5.3 says each follows its own licences. A Credential holds one
-    // expiry, and the two candidates fail in opposite directions: the latest
-    // lets the earlier half lapse silently while the row still reads green.
-    // This is a reminder product, so early and explicable beats late and
-    // silent — and the sentence must name which side drove the date.
+  it('⚠️ ONE CERTIFICATE TAKES ONE DATE — the longest licence behind it', () => {
+    // ⚠️ THIS ASSERTED THE EARLIEST SIDE, on §5.3's "each endorsement can have
+    // a different derived expiry, computed independently per firearm type",
+    // and on the argument that a reminder product should warn when the first
+    // half stops working.
+    //
+    // Operator, 2026-08-25, from their DFO: "If they are done under the same
+    // competency the longest standing will determine the validity of the whole
+    // certificate. Like this one, the rifle will make the shotgun 10 years."
+    //
+    // §5.3 is marked [PRACTICE — not officially published] and §9.1 concedes
+    // its source could not be retrieved; the operator has been to the DFO. And
+    // the administration agrees with them: the CFR holds one record per
+    // certificate, so it carries one date. There is no half-expired
+    // certificate.
+    //
+    // ⚠️ IT IS THE MORE GENEROUS ANSWER, and that is the trade. Taking the
+    // latest can only push a date OUT, so if a category ever does lapse on its
+    // own this hides it — and a reminder that never fires is the silent
+    // failure. Recorded as the operator's decision, on advice we do not hold.
     const out = derivedExpiryFor(
       'COMPETENCY_CERTIFICATE',
       null,
@@ -90,8 +103,53 @@ describe('the competency date the Document Centre offers', () => {
       ],
       ['rifle-sl', 'shotgun'],
     );
-    expect(out?.on).toBe('2029-06-15');
-    expect(out?.why).toMatch(/shotgun/i);
+    expect(out?.on).toBe('2040-01-01');
+    // And it says which licence set it, or the date matches nothing they hold.
+    expect(out?.why).toMatch(/rifle/i);
+  });
+
+  it('⚠️ the rifle carries a shotgun side that has no licence of its own', () => {
+    // The operator's real case: their 2025 certificate covers a semi-auto
+    // rifle side and a shotgun side. They hold four rifle licences and no
+    // shotgun. Under the per-category reading the shotgun half fell to five
+    // years from issue and dragged the whole certificate to 2030; under the
+    // DFO's reading the rifle licence carries it.
+    const out = derivedExpiryFor(
+      'COMPETENCY_CERTIFICATE',
+      null,
+      ISSUED,
+      [{ category: 'rifle-carbine', expiresOn: new Date('2035-09-21T00:00:00Z') }],
+      ['rifle-sl', 'shotgun'],
+    );
+    expect(out?.on).toBe('2035-09-21');
+  });
+
+  it('a handgun licence does not extend a rifle-and-shotgun certificate', () => {
+    // s10(2) ties validity to "the licence to which the competency certificate
+    // RELATES". A handgun licence relates to the handgun certificate.
+    const out = derivedExpiryFor(
+      'COMPETENCY_CERTIFICATE',
+      null,
+      ISSUED,
+      [{ category: 'handgun', expiresOn: new Date('2040-01-01T00:00:00Z') }],
+      ['rifle-sl', 'shotgun'],
+    );
+    expect(out?.on).toBe('2025-03-01');
+  });
+
+  it('⚠️ only an s13 licence means the certificate goes with it', () => {
+    // Operator: "with the exception if the person only has a s13 license the
+    // certificate will expire within 5 years with the section 13 license."
+    // Not a special case — it falls out of taking the latest, because a
+    // five-year s13 is then the latest thing there is.
+    const out = derivedExpiryFor(
+      'COMPETENCY_CERTIFICATE',
+      null,
+      ISSUED,
+      [{ category: 'handgun', expiresOn: new Date('2029-01-31T00:00:00Z') }],
+      ['handgun'],
+    );
+    expect(out?.on).toBe('2029-01-31');
   });
 
   it('leaves a licence we could not categorise out of it', () => {

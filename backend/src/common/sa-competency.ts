@@ -783,37 +783,53 @@ export function sectionAllows(
 /**
  * When a whole competency certificate runs out.
  *
- * ⚠️ ONE CERTIFICATE CAN COVER TWO CATEGORIES AND THEY EXPIRE SEPARATELY.
- * §5.3: "each endorsement on a single certificate can have a different derived
- * expiry, computed independently per firearm type". The operator's own 2025
- * SAPS 524 reads S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN — a rifle side and a
- * shotgun side, following whatever licences they hold in each.
+ * ⚠️ ONE CERTIFICATE, ONE DATE, AND IT IS THE LONGEST LICENCE BEHIND IT.
+ * Operator, 2026-08-25, from their DFO: "If they are done under the same
+ * competency the longest standing will determine the validity of the whole
+ * certificate. Like this one, the rifle will make the shotgun 10 years. If all
+ * the categories were on one certificate they all will be 10 years if it was
+ * linked to a rifle, with the exception if the person only has a s13 license
+ * the certificate will expire within 5 years with the section 13 license."
  *
- * ⚠️ SO THIS TAKES THE EARLIEST, AND THE CHOICE IS NOT NEUTRAL. A Credential
- * holds one expiresOn, and the two candidates fail in opposite directions:
- * the LATEST matches how the rule is usually worded and would let the rifle
- * half lapse silently for years while the row still reads green; the EARLIEST
- * warns when the first half stops working, which is the first moment the
- * member cannot license or renew anything in that category (§7).
+ * That last clause is not a special case — it falls out of taking the latest.
+ * A member whose only licence is a five-year s13 has a latest of five years.
  *
- * This is a reminder product. Early and explicable beats late and silent — so
- * `why` names the category that drove the date, or the member is looking at a
- * date that matches none of their licences with no way to work out which half
- * it belongs to.
+ * ⚠️ THIS SUPERSEDES §5.3 OF THE REFERENCE, WHICH SAYS THE OPPOSITE. §5.3:
+ * "each endorsement on a single certificate can have a different derived
+ * expiry, computed independently per firearm type". That reading is what this
+ * function shipped first, taking the EARLIEST side on the argument that a
+ * reminder product should warn when the first half stops working.
+ *
+ * The operator has been to the DFO and the reference has not: §5.3 is marked
+ * [PRACTICE — not officially published] and §9.1 concedes its primary source
+ * could not be retrieved. And the administrative logic favours the operator:
+ * the CFR holds ONE record per certificate, so it carries ONE date. There is
+ * no such thing as half an expired certificate.
+ *
+ * ⚠️ WHICH MAKES THIS THE MORE GENEROUS ANSWER, AND THAT IS THE RISK WORTH
+ * NAMING. Taking the latest can only ever push a date OUT. If the DFO's rule
+ * is right, this is correct. If a category on a certificate does in fact lapse
+ * on its own, this hides it — and a reminder that never fires is the silent
+ * failure this product exists to prevent. It is recorded here as the
+ * operator's decision, taken on advice we do not have, so that anyone
+ * revisiting it knows exactly what was traded and why.
+ *
+ * ⚠️ ONLY LICENCES IN A CATEGORY THIS CERTIFICATE COVERS. A handgun licence
+ * does not extend a rifle-and-shotgun certificate: it relates to a different
+ * certificate entirely, and s10(2) ties validity to "the licence to which the
+ * competency certificate RELATES".
  */
 export function deriveCertificateExpiry(args: {
   endorsements: readonly Endorsement[];
   issuedOn: Date | null;
   licences: readonly LinkedLicence[];
 }): DerivedExpiry {
-  const categories = [
-    ...new Set(
-      args.endorsements
-        .map((e) => endorsementSpec(e)?.category)
-        .filter((c): c is CompetencyCategory => !!c),
-    ),
-  ];
-  if (!categories.length) {
+  const categories = new Set(
+    args.endorsements
+      .map((e) => endorsementSpec(e)?.category)
+      .filter((c): c is CompetencyCategory => !!c),
+  );
+  if (!categories.size) {
     return {
       on: null,
       basis: 'unknown',
@@ -821,31 +837,54 @@ export function deriveCertificateExpiry(args: {
     };
   }
 
-  const each = categories.map((category) => ({
-    category,
-    derived: deriveExpiry({
-      category,
+  // ⚠️ A MUZZLE LOADER IS NEVER PART OF THIS. It takes no licence at all
+  // (s3(2)), so it has nothing to inherit from and the Act gives it its own
+  // ten-year life under s10(3). A certificate that is ONLY a muzzle loader
+  // goes to deriveExpiry for that; one that somehow carries a muzzle loader
+  // alongside a licensable category must not have its muzzle-loader half
+  // silently extended by somebody's rifle.
+  if (categories.size === 1 && categories.has('muzzle-loader')) {
+    return deriveExpiry({
+      category: 'muzzle-loader',
       issuedOn: args.issuedOn,
       licences: args.licences,
-    }),
-  }));
+    });
+  }
 
-  // A category we cannot date at all makes the whole certificate undatable:
-  // saying "2031" while one half is unknown is worse than saying we do not
-  // know, because the row would look settled.
-  const unknown = each.find((e) => e.derived.on === null);
-  if (unknown) return unknown.derived;
-
-  const earliest = each.reduce((a, b) =>
-    (a.derived.on as Date) <= (b.derived.on as Date) ? a : b,
+  const linked = args.licences.filter(
+    (l) =>
+      l.expiresOn &&
+      l.category !== 'muzzle-loader' &&
+      categories.has(l.category),
   );
-  if (each.length === 1) return earliest.derived;
 
+  if (linked.length) {
+    const latest = linked.reduce((a, b) =>
+      (a.expiresOn as Date) >= (b.expiresOn as Date) ? a : b,
+    );
+    const on = latest.expiresOn as Date;
+    const many = categories.size > 1;
+    return {
+      on,
+      basis: 'licence',
+      why:
+        `It follows your longest-running licence in ${
+          many ? 'the categories this certificate covers' : 'this category'
+        }, which runs to ${on.toISOString().slice(0, 10)}. ` +
+        (many
+          ? `One certificate carries one date, so the ${CATEGORY_WORDS[latest.category]} licence sets it for everything on this certificate. `
+          : '') +
+        'Renewing or adding a licence here pushes it out with it.',
+    };
+  }
+
+  if (!args.issuedOn) {
+    return { on: null, basis: 'unknown', why: 'We do not have the issue date.' };
+  }
   return {
-    ...earliest.derived,
-    why:
-      `This certificate covers ${categories.length} kinds of firearm and each follows its own licences. ` +
-      `The earliest is the ${CATEGORY_WORDS[earliest.category]} side: ${earliest.derived.why}`,
+    on: plusYears(args.issuedOn, FALLBACK_YEARS),
+    basis: 'fallback',
+    why: 'You have no licence on file for anything this certificate covers, so there is nothing for it to follow. It runs five years from the date it was issued and then lapses. Licence a firearm it covers and it will follow that licence instead.',
   };
 }
 
