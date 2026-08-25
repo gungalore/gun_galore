@@ -147,6 +147,20 @@ export class LicenceCentreRemindersService {
             id: true,
             email: true,
             phone: true,
+            // ⚠️ THE REMINDER RAIL WAS WEAKER THAN THE BROADCAST RAIL IN THE
+            // SAME CODEBASE. admin-broadcast.service.ts gates every SMS on
+            // `{ phone: { not: null }, phoneVerified: true }` and honours
+            // notifySmsEnabled; this one selected `phone` and texted it.
+            //
+            // A phone number here is self-typed at sign-up and only becomes
+            // verified when an OTP is answered — which happens at seller
+            // onboarding, so a member who has never sold has never proved the
+            // number is theirs. Texting it sends a message about somebody's
+            // FIREARM LICENCE to whoever actually holds that number, and a
+            // mistyped digit is the ordinary case, not the exotic one.
+            phoneVerified: true,
+            // Their own switch. Ignoring it is how a reminder becomes spam.
+            notifySmsEnabled: true,
             firstName: true,
             subscriptionTier: true,
           },
@@ -199,7 +213,15 @@ export class LicenceCentreRemindersService {
           // 29 days away", contradicting its own date.
           daysLeft: Math.max(0, daysUntil(c.expiresOn, startOfUtcDay(now))),
           stage: stage.stage,
-          smsEnabled: smsOn && isPro,
+          // Verified, opted in, and on a tier that includes it. Any one of
+          // those missing means the in-app notification still lands — nothing
+          // is lost, only the text is withheld.
+          smsEnabled:
+            smsOn &&
+            isPro &&
+            c.user.phoneVerified &&
+            c.user.notifySmsEnabled &&
+            Boolean(c.user.phone),
           emailEnabled: isPro,
         })
         // One bad recipient must not reject the loop — the claim is already
