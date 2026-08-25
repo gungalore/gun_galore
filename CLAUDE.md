@@ -1781,8 +1781,33 @@ they survive any future memory wipe:
 **Production status — LIVE since 2026-06-24.** Site is public
 (`COMING_SOON_GATE=off`), payments run in **manual EFT mode**
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
-legal docs finalised (draft notices removed). Deployed at commit
-`9725daa` + the `20260624120000_add_manual_payments` migration.
+legal docs finalised (draft notices removed).
+
+**Last deploy: 2026-08-25, commit `5f53384`.** No migrations pending.
+Backend + frontend reloaded, health checks doubled, public 200. Shipped:
+auto-capture removed from the document scanner (manual shutter only — see
+the Document Scanner section); the scanner's work-destroying paths fixed
+(failed re-cut announced as success, × and Escape binning scanned pages,
+Apply flashing the live camera, one failed upload discarding the rest of a
+batch); the corner editor's teleporting grab, upscaled loupe and bow-tie
+crop; and the mobile redesign — sticky featured strip retired into an
+in-feed card, card photos 52.5% → 75%, tabs now Shop / Saved / Sell /
+Alerts / Account with Ask Boet as a floating launcher.
+
+> ⚠️ **THE BACKEND TYPE-CHECK GATE IS CURRENTLY RED, AND THIS DEPLOY WENT
+> OUT ANYWAY ON THE OPERATOR'S EXPLICIT CALL.** `npx tsc --noEmit` in
+> `backend/` reports **17 errors in two files** —
+> `src/licence-centre/licence-centre-competency-expiry.spec.ts` (8 ×
+> TS2345, a `boolean` where `readonly LinkedLicence[]` is expected) and
+> `src/licence-centre/licence-centre-usage.spec.ts` (9 × TS2339, the mock's
+> intersection collapsing to `never` now that `prisma` is private on
+> `LicenceCentreService`).
+>
+> Both are spec-only and `tsconfig.build.json` excludes `**/*spec.ts`, so
+> `nest build` is green and nothing reached `dist`. It is NOT the stale-
+> Prisma-types trap — `prisma generate` was run and changed nothing.
+> **Fix these before the next deploy**, or STEP 1 stops being a gate that
+> means anything.
 
 Pending external items (operator track — none of these are coding
 work, but the platform can't fully launch without them; see
