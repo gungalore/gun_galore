@@ -2,13 +2,11 @@
 
 import { useAuth } from '@clerk/nextjs';
 import DateField from '@/components/date-field';
-import FilePickerButton from '@/components/file-picker-button';
-import ScanButton from '@/components/scan/scan-button';
-import { shapeForKind } from '@/lib/scan/shapes';
 import { todayYmd, toIso } from '@/lib/date-picker-model';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LicenceCentreMotivations from '@/components/licence-centre-motivations';
+import DocumentCentreAdd from '@/components/document-centre-add';
 import {
   AddedCredential,
   CredentialKind,
@@ -145,6 +143,7 @@ export default function LicenceCentrePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** The detail column, so a phone can be scrolled to it on selection. */
   const detailRef = useRef<HTMLElement | null>(null);
+  const [query, setQuery] = useState('');
 
   /**
    * The folders, and every row placed in exactly one of them.
@@ -157,6 +156,14 @@ export default function LicenceCentrePage() {
    * the folders inherit the same duty. Anything unplaced falls into the last
    * folder, which is "Anything else".
    */
+  /** Licences close enough to their expiry that the page says so. */
+  const attention = useMemo(
+    () =>
+      (rows ?? []).filter((r) => r.state === 'expiring' || r.state === 'expired')
+        .length,
+    [rows],
+  );
+
   const folders = useMemo(() => {
     const all = rows ?? [];
     const placed = KIND_GROUPS.map((g) => ({
@@ -172,9 +179,32 @@ export default function LicenceCentrePage() {
     return placed;
   }, [rows]);
 
-  const visible = useMemo(
-    () => (openGroup === null ? (rows ?? []) : (folders[openGroup]?.rows ?? [])),
-    [openGroup, rows, folders],
+  const visible = useMemo(() => {
+    const inFolder =
+      openGroup === null ? (rows ?? []) : (folders[openGroup]?.rows ?? []);
+    const q = query.trim().toLowerCase();
+    if (!q) return inFolder;
+    // Title AND type, because half of these are named off the document
+    // ("Howa 6.5 Creedmoor") and half are looked for by what they ARE
+    // ("competency"). Matching only one of the two finds neither reliably.
+    return inFolder.filter(
+      (r) =>
+        r.title.toLowerCase().includes(q) ||
+        (KIND_LABELS[r.kind] ?? '').toLowerCase().includes(q),
+    );
+  }, [openGroup, rows, folders, query]);
+
+  /**
+   * What the folder heading says under its name.
+   *
+   * Counted off the SAME rows the list is showing, so a search that hides the
+   * one expiring licence does not leave "1 needs renewing" hanging over a
+   * result set that no longer contains it.
+   */
+  const needsRenewing = useMemo(
+    () => visible.filter((r) => r.state === 'expiring' || r.state === 'expired')
+      .length,
+    [visible],
   );
 
   /**
@@ -293,8 +323,6 @@ export default function LicenceCentrePage() {
         </div>
       )}
 
-      <AddPanel token={token} onAdded={refresh} />
-
       {/*
         ── THE THREE COLUMNS ──────────────────────────────────────────
 
@@ -352,19 +380,92 @@ export default function LicenceCentrePage() {
               )}
             </div>
           ))}
+
+          {/* ── what is actually outstanding ──────────────────────────
+              The reference this was drawn from puts a storage meter here.
+              Nothing on this page has a size worth watching; what goes wrong
+              with these documents is that they lapse, or that nobody has ever
+              confirmed the date we read off them. */}
+          {rows !== null && (needDate.length > 0 || attention > 0) && (
+            <div className="mt-5 border-t border-[var(--border-divider)] pt-4">
+              <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
+                Needs attention
+              </p>
+              <div className="flex flex-col gap-2">
+                {attention > 0 && (
+                  <span className="flex items-center gap-2 text-[12.5px] text-[var(--warning)]">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M12 7.5v5M12 16.4v.01" />
+                    </svg>
+                    {attention === 1 ? '1 renewal due' : `${attention} renewals due`}
+                  </span>
+                )}
+                {needDate.length > 0 && (
+                  <span className="flex items-center gap-2 text-[12.5px] text-[var(--text-secondary)]">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.4M12 17.4v.01" />
+                    </svg>
+                    {needDate.length === 1
+                      ? '1 date not confirmed'
+                      : `${needDate.length} dates not confirmed`}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* ── the files in that folder ──────────────────────────── */}
         <section className="mt-6 min-w-0 lg:mt-0">
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 className="text-sm font-medium">
-              {openGroup === null ? 'All documents' : folders[openGroup].label}
-            </h2>
-            <span className="gg-nums text-xs text-[var(--text-tertiary-on-card)]">
-              {visible.length}{' '}
-              {visible.length === 1 ? 'document' : 'documents'}
-            </span>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-semibold">
+                {openGroup === null ? 'All documents' : folders[openGroup].label}
+              </h2>
+              <p className="mt-0.5 text-[12.5px] text-[var(--text-tertiary-on-card)]">
+                <span className="gg-nums">{visible.length}</span>{' '}
+                {visible.length === 1 ? 'document' : 'documents'}
+                {needsRenewing > 0 && (
+                  <> · {needsRenewing} needs renewing</>
+                )}
+              </p>
+            </div>
+
+            <label className="flex min-h-[38px] w-[216px] items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-3">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search documents"
+                aria-label="Search documents"
+                className="w-full bg-transparent text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
+              />
+            </label>
+
+            <AddPanel token={token} onAdded={refresh} />
           </div>
+
+          {/* Column headings, because three of the four things on a row are
+              different KINDS of fact and the middle one is a date. */}
+          {rows !== null && visible.length > 0 && (
+            <div className="mt-4 grid grid-cols-[minmax(0,1fr)_112px] gap-3 border-b border-[var(--border-divider)] px-3.5 pb-2 sm:grid-cols-[minmax(0,1fr)_112px_124px]">
+              <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+                Document
+              </span>
+              <span className="hidden text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)] sm:block">
+                Expires
+              </span>
+              <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+                State
+              </span>
+            </div>
+          )}
 
           {loadFailed ? (
             <div className="mt-2 rounded-[10px] border border-[var(--border)] p-4 text-sm">
@@ -503,8 +604,6 @@ function AddPanel({
    * while a model that could have read it off the page sat unused two lines
    * away. Now nothing is sent unless they deliberately override.
    */
-  const [kind, setKind] = useState<CredentialKind | ''>('');
-  const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   /**
@@ -592,7 +691,10 @@ function AddPanel({
     }
   }
 
-  async function uploadFiles(picked: File[]) {
+  async function uploadFiles(
+    picked: File[],
+    declared: CredentialKind | '' = '',
+  ) {
     if (!picked.length) return;
 
     // Checked HERE as well as on the server, so the answer is
@@ -640,13 +742,17 @@ function AddPanel({
         // classifies with Haiku and reads the dates off the page, and the
         // confirm step then shows what it made of it. A folder was always
         // handled this way; there was never a reason one file should not be.
+        // ⚠️ THE DECLARED TYPE NOW APPLIES TO THE WHOLE BATCH, where it
+        // used to apply only when exactly one file was picked. That rule
+        // existed because a folder was assumed to be MIXED, so classifying
+        // per file beat forcing one type onto all of them. The member is now
+        // asked what they are adding BEFORE the picker opens, so a batch is a
+        // declared batch — eight photographs of one safe are eight
+        // photographs of one safe, and making the classifier re-derive that
+        // eight times was the old behaviour's real cost. Blank still means
+        // "work it out for me", which is still the default.
         added.push(
-          await licenceCentreApi.create(
-            token,
-            files.length === 1 ? kind : '',
-            files.length === 1 ? title : '',
-            file,
-          ),
+          await licenceCentreApi.create(token, declared, '', file),
         );
       } catch (ex) {
         // One bad file must not abandon the rest of the pack.
@@ -715,7 +821,6 @@ function AddPanel({
           issuedOnUnknown={current.issuedOnUnknown}
           onDone={async () => {
             setQueue(rest);
-            if (!rest.length) setTitle('');
             await onAdded();
           }}
         />
@@ -724,129 +829,59 @@ function AddPanel({
     );
   }
 
+  // ── TWO BUTTONS, AND THE TYPE ASKED FIRST ────────────────────────────
+  //
+  // Operator, 2026-08-24: "replace the Add button with two buttons, Upload and
+  // Scan with phone (Use Icons). If either button is clicked open a dropdown
+  // menu for the user to select which document they are going to provide so it
+  // can be correctly OCR’d and placed in the correct box."
+  //
+  // ⚠️ THE PROSE THAT USED TO SIT HERE IS GONE, AND ONE PARAGRAPH OF IT HAD
+  // TO SURVIVE. Four explained the file types, the 10 MB cap, the iPhone HEIC
+  // trap and the three safe photographs a DFO wants. A header row cannot carry
+  // them and a tooltip nobody opens is not carrying them either, so the ones
+  // that prevent a failed upload are raised at the point of failure instead:
+  // the per-file rejection in uploadFiles already NAMES the file and says why.
+  //
+  // ⚠️ THE SAFE-PHOTOGRAPH PARAGRAPH IS NOT ONE OF THOSE. It changes which
+  // photographs get TAKEN, so it has to arrive before the camera does — it
+  // lives in GUIDANCE in document-centre-add.tsx and shows on the step between
+  // choosing "Photographs of my safe" and opening the picker. An earlier draft
+  // of this comment claimed it had moved to the confirm step; it had been
+  // deleted outright, which is the regression the 2026-08-23 comment on the
+  // collapsed menu entry explicitly forbade.
+  //
+  // ⚠️ UPLOAD IS THE SOLID BUTTON AND SCAN IS THE OUTLINED ONE, which
+  // demotes a control an earlier comment called a peer ("the camera and the
+  // picker are peers, not a primary and a fallback"). That reasoning was about
+  // a licence CARD, where a photograph beats a scan. It still holds on a
+  // phone. On the desktop this page is mostly used from, "scan" means a QR
+  // hand-off to a phone — a genuinely longer road — and the file already on
+  // the machine is the shorter one. Both are one tap either way.
   return (
-    <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
-      <p className="text-sm font-medium">Add a document</p>
-      <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
-        A photograph of the card or a PDF both work. Give it a name you will
-        recognise — not the serial number.
-      </p>
-      {/* SAID BEFORE THE PICKER, NOT AFTER THE REJECTION. An iPhone photo is
-          often HEIC, which we do not accept — the format caused oversized
-          uploads — and a full-resolution photo can exceed the limit. Both
-          were previously an opaque "that upload did not work". */}
-      <p className="mt-1 text-xs text-[var(--text-tertiary-on-card)]">
-        Photograph it or pick a file and we read the document itself — what
-        kind it is, and the dates on it — then show you what we made of it to
-        check. Set the type yourself only if you want to overrule us. JPG,
-        PNG, WebP or PDF, up to 10 MB each; pick a whole folder at once if you
-        have them together. On an iPhone, choose the photos from your library
-        rather than a file — iOS converts them for you.
-      </p>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <select
-          className={control}
-          value={kind}
-          onChange={(e) => setKind(e.target.value as CredentialKind | '')}
-          aria-label="Document type"
-          title="Leave this alone and we read the document to work out what it is."
-        >
-          <option value="">Work it out for me</option>
-          {KIND_GROUPS.map((g) => (
-            <optgroup key={g.label} label={g.label}>
-              {g.kinds.map((k) => (
-                <option key={k} value={k}>
-                  {KIND_LABELS[k]}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        <input
-          className={`${control} flex-1`}
-          placeholder="What you call it — “my .308”"
-          value={title}
-          maxLength={120}
-          onChange={(e) => setTitle(e.target.value)}
-          aria-label="Document name"
-        />
-      </div>
-
-      {/* ⚠️ THE MENU ENTRY COLLAPSED; THE INSTRUCTION MUST NOT. Four entries
-          named the shots between them — closed, ajar, bolts, installation —
-          and the operator was right that it looked bad, but the naming was
-          doing real work: a DFO wants all of them and each proves something
-          the others cannot. With one entry this line is the only place the
-          member is told, so losing "the roll bolts" from it would be a real
-          regression dressed up as tidying. */}
-      {kind === 'SAFE_PHOTOGRAPHS' && (
-        <p className="mt-2 text-xs text-[var(--text-secondary)]">
-          Add several: the safe closed, half open with the key in the door, and
-          fully open so the roll bolts show. A DFO looks for all three. A fourth
-          is worth having if you can take it — how the safe is bolted to the
-          wall or floor.
-        </p>
-      )}
-
-      <div className="mt-3">
-        {/* The camera and the picker are peers, not a primary and a fallback.
-            A licence card photographed straight is what the reader wants; a
-            PDF the association emailed is equally valid and needs no camera
-            at all. */}
-        <ScanButton
-          // Follows the picker above: choose "competency certificate" and the
-          // guide is a card, choose "proof of address" and it is an A4 sheet.
-          // ⚠️ A4 WHILE NOTHING IS CHOSEN. The aim box is a guide, never a
-          // filter — and "work it out for me" is now the default, so most
-          // uploads arrive with no declared type at all.
-          shape={kind ? shapeForKind(kind) : 'a4'}
-          title="Photograph the document"
-          onFiles={uploadFiles}
-          disabled={busy}
-          // ⚠️ ON A DESKTOP THE WEBCAM IS NOT THE ANSWER. It focuses at half a
-          // metre and cannot resolve a licence serial, so the phone already in
-          // their pocket is offered first and the webcam is demoted.
-          handoff={{ dest: 'licence-centre' }}
-          kind={kind || undefined}
-          // ⚠️ THIS WAS STILL CALLING onAdded, AND queueHandoffArrivals WAS
-          // DEAD CODE — eslint's no-unused-vars is what surfaced it. The whole
-          // of the "recognition is broken" fix documented on that function was
-          // written and never wired in: a phone hand-off refreshed the list
-          // and showed the member nothing it had read, which is the exact
-          // behaviour it was written to end.
-          onHandoffArrived={() => void queueHandoffArrivals()}
-          fallback={
-            <FilePickerButton
-              accept="image/jpeg,image/png,image/webp,application/pdf"
-              // A FOLDER GOES IN AT ONCE. Picking one file at a time and
-              // naming each is the slowest possible way to hand over
-              // paperwork the member already has together.
-              multiple
-              disabled={busy}
-              onFiles={uploadFiles}
-            >
-              Choose files
-            </FilePickerButton>
-          }
-        />
-      </div>
+    <div className="flex items-center gap-2">
+      <DocumentCentreAdd
+        groups={KIND_GROUPS}
+        busy={busy}
+        onFiles={(files, declared) => void uploadFiles(files, declared)}
+        onHandoffArrived={() => void queueHandoffArrivals()}
+      />
       {busy && (
-        <p
-          className="mt-2 text-xs text-[var(--text-tertiary-on-card)]"
+        <span
+          className="text-xs text-[var(--text-tertiary-on-card)]"
           aria-live="polite"
         >
           {progress && progress.total > 1
-            ? `Reading document ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…`
-            : 'Reading the document…'}
-        </p>
+            ? `Reading ${Math.min(progress.done + 1, progress.total)} of ${progress.total}\u2026`
+            : 'Reading\u2026'}
+        </span>
       )}
-      {err && <p className="mt-2 text-sm text-[var(--red)]">{err}</p>}
-    </section>
+      {err && <span className="text-xs text-[var(--red)]">{err}</span>}
+    </div>
   );
 }
 
-// ── the safety rail ─────────────────────────────────────────────────
+// ── the safety rail ──────────────────────────────────────────
 
 function ConfirmPanel({
   token,
@@ -1293,49 +1328,43 @@ function DocRow({
       type="button"
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
-      className="flex w-full items-center gap-3 rounded-[10px] px-3.5 py-3 text-left hover:bg-[var(--bg-card-hover)]"
+      className="grid w-full grid-cols-[minmax(0,1fr)_112px] items-center gap-3 rounded-[10px] px-3.5 py-3 text-left hover:bg-[var(--bg-card-hover)] sm:grid-cols-[minmax(0,1fr)_112px_124px]"
       style={{
         background: selected ? 'var(--bg-card)' : 'transparent',
         border: `1px solid ${selected ? 'var(--border)' : 'transparent'}`,
         outlineOffset: 2,
       }}
     >
-      <span
-        aria-hidden
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)]"
-      >
-        <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="var(--text-tertiary-on-card)"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      <span className="flex min-w-0 items-center gap-3">
+        <span
+          aria-hidden
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)]"
         >
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <path d="M14 2v6h6" />
-        </svg>
-      </span>
-
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary-on-card)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6" />
+          </svg>
+        </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13.5px] font-medium">
           {row.title || KIND_LABELS[row.kind] || row.kind}
         </span>
         <span className="mt-0.5 block truncate text-[11.5px] text-[var(--text-tertiary-on-card)]">
           {KIND_LABELS[row.kind] ?? row.kind}
+          {' \u00b7 added '}
+          {formatDate(row.createdAt.slice(0, 10))}
         </span>
       </span>
+      </span>
 
-      <span className="gg-nums hidden w-28 shrink-0 text-xs text-[var(--text-secondary)] sm:block">
+      <span className="gg-nums hidden text-xs text-[var(--text-secondary)] sm:block">
         {expiry}
       </span>
 
       {/* State carries a word, never only a colour — same rule the step rail
           follows, and the reason every one of these has a label. */}
       <span
-        className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+        className="justify-self-start rounded-full px-2.5 py-1 text-[11px] font-semibold"
         style={{
           color: tone.colour,
           background: tone.wash,
@@ -1437,114 +1466,179 @@ function CredentialCard({
   };
 
   return (
-    <li
-      className="rounded border p-3"
-      style={{ borderColor: tone.line, background: tone.wash }}
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="min-w-0">
-          {/* ⚠️ WE NAME IT, THEY OWN THE NAME. A firearm licence is titled
-              make + calibre off the document — "Howa 6.5 Creedmoor" — because
-              six rows reading "Firearm licence" cannot be told apart. But
-              what somebody calls their own rifle is theirs to decide, and our
-              reading is only as good as the photograph. The pen edits in
-              place; it never moves the row or opens a dialog. */}
-          {renaming ? (
-            <input
-              autoFocus
-              className="w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1 text-sm font-medium"
-              value={draftName}
-              maxLength={120}
-              onChange={(e) => setDraftName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void saveName();
-                if (e.key === 'Escape') {
-                  setDraftName(row.title);
-                  setRenaming(false);
-                }
-              }}
-              onBlur={() => void saveName()}
-              aria-label="Name for this document"
-            />
-          ) : (
-            <p className="flex items-center gap-1.5 font-medium">
-              <span className="truncate">{row.title}</span>
-              <button
-                type="button"
-                className="shrink-0 rounded p-1 text-[var(--text-tertiary-on-card)] hover:text-[var(--text-primary)]"
-                aria-label={`Rename ${row.title}`}
-                title="Rename"
-                onClick={() => {
-                  setDraftName(row.title);
-                  setRenaming(true);
-                }}
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
-                </svg>
-              </button>
-            </p>
-          )}
-          <p className="text-xs text-[var(--text-tertiary-on-card)]">
-            {KIND_LABELS[row.kind]}
-            {row.coversKinds.length > 0 && (
-              // ⚠️ SAYING SO IS THE POINT. Without it a member looking for
-              // their letter of good standing sees no such row, and uploads a
-              // second copy of the certificate they have already given us.
-              <>
-                {' · also counts as '}
-                {row.coversKinds.map((k) => KIND_LABELS[k]).join(' and ')}
-              </>
-            )}
-          </p>
-          {nextStep && (
-            // What is actually standing between this row and settled, named.
-            // "Needs checking" tells somebody nothing about what to do next.
-            <p className="mt-1 text-xs" style={{ color: tone.colour }}>
-              {nextStep}
-            </p>
-          )}
-        </div>
-        <span className="text-xs font-medium" style={{ color: tone.colour }}>
-          {tone.label}
-        </span>
+    /*
+      ── THE DETAIL PANEL ────────────────────────────────────────────
+
+      This was a compact tinted card in a grouped list. It is now the third
+      column of the Document Centre, restyled to the approved drawing:
+      preview, name, what else the page counts as, its dates, then what you
+      can do with it.
+
+      ⚠️ EVERY BEHAVIOUR BELOW IS THE ONE THAT WAS HERE. The rename pen, the
+      never-expires wording, the section 24 renewal offer and its two
+      thresholds, the confirm panel as the way back from a mis-filed document,
+      the Safari popup rule on View, the missing reminder switch on a dateless
+      row — each has a comment explaining a bug it closed, and this change
+      moved boxes, not rules.
+
+      ⚠️ THE TINT IS GONE FROM THE CONTAINER. It carried the expiry state, and
+      in a full-height column a wash of amber over 500px reads as an error
+      page. The state now sits where the list puts it too: on a pill, with a
+      word in it.
+    */
+    <li className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-card)] p-4">
+      {/* The document itself is one tap away on Open; this is a placeholder,
+          not a render. Fetching and decrypting a blob for every selection
+          would spend a request on a thumbnail nobody asked for. */}
+      <div className="flex h-[148px] items-center justify-center rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)]">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--border-hover)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <path d="M14 2v6h6" />
+        </svg>
       </div>
+
+      <div className="mt-4">
+        {/* ⚠️ WE NAME IT, THEY OWN THE NAME. A firearm licence is titled make +
+            calibre off the document — "Howa 6.5 Creedmoor" — because six rows
+            reading "Firearm licence" cannot be told apart. But what somebody
+            calls their own rifle is theirs to decide, and our reading is only
+            as good as the photograph. The pen edits in place; it never moves
+            the row or opens a dialog. */}
+        {renaming ? (
+          <input
+            autoFocus
+            className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1 text-base font-semibold"
+            value={draftName}
+            maxLength={120}
+            onChange={(e) => setDraftName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void saveName();
+              if (e.key === 'Escape') {
+                setDraftName(row.title);
+                setRenaming(false);
+              }
+            }}
+            onBlur={() => void saveName()}
+            aria-label="Name for this document"
+          />
+        ) : (
+          <p className="flex items-start gap-1.5 text-base font-semibold leading-snug">
+            <span className="min-w-0">{row.title}</span>
+            <button
+              type="button"
+              className="mt-0.5 shrink-0 rounded p-1 text-[var(--text-tertiary-on-card)] hover:text-[var(--text-primary)]"
+              aria-label={`Rename ${row.title}`}
+              title="Rename"
+              onClick={() => {
+                setDraftName(row.title);
+                setRenaming(true);
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+              </svg>
+            </button>
+          </p>
+        )}
+        <p className="mt-0.5 text-xs text-[var(--text-tertiary-on-card)]">
+          {KIND_LABELS[row.kind]}
+        </p>
+      </div>
+
+      {/* ⚠️ SAYING SO IS THE POINT, and it has its own box now rather than a
+          clause. Without it a member looking for their letter of good standing
+          sees no such row and uploads a second copy of the certificate they
+          have already given us. */}
+      {row.coversKinds.length > 0 && (
+        <div className="mt-4 rounded-[10px] border border-[var(--border)] bg-[var(--bg-inset)] p-3.5">
+          <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+            This one page also counts as
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {row.coversKinds.map((k) => (
+              <span
+                key={k}
+                className="flex items-center gap-2 text-[12.5px] text-[var(--text-secondary)]"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                {KIND_LABELS[k]}
+              </span>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+            One row, several roles — never a second copy of the same page, which
+            would print as two annexures.
+          </p>
+        </div>
+      )}
+
+      {nextStep && (
+        // What is actually standing between this row and settled, named.
+        // "Needs checking" tells somebody nothing about what to do next.
+        <p className="mt-3 text-xs" style={{ color: tone.colour }}>
+          {nextStep}
+        </p>
+      )}
 
       {/* ⚠️ "Expires —" IS NOT A FACT, IT IS A BLANK. On a document the member
           has told us never expires it read as a date we had failed to find,
           over the em dash formatDate returns for null — and the "reminders
           off" marker beside it describes a reminder that could never have
-          fired. Say what is true instead, and show the issue date where we
-          have one: a proof of address is judged on how recent it is, and that
-          is the only date it carries. */}
-      {row.state === 'no-expiry' ? (
-        <p className="mt-2 text-sm text-[var(--text-secondary)]">
-          {row.issuedOn
-            ? `No expiry date · issued ${formatDate(row.issuedOn)}`
-            : 'No expiry date — kept on file'}
-        </p>
-      ) : (
-        <p className="mt-2 text-sm">
-          <span className="text-[var(--text-secondary)]">Expires </span>
-          <span className="font-medium">{formatDate(row.expiresOn)}</span>
-          {row.remindersMuted && (
-            <span className="ml-2 text-xs text-[var(--text-tertiary-on-card)]">
-              reminders off
+          fired. Say what is true instead. */}
+      <div className="mt-4 flex flex-col gap-2.5 border-t border-[var(--border-divider)] pt-4">
+        {row.issuedOn && (
+          <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
+            <span className="text-[var(--text-tertiary-on-card)]">Issued</span>
+            <span className="gg-nums font-medium">{formatDate(row.issuedOn)}</span>
+          </div>
+        )}
+        <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
+          <span className="text-[var(--text-tertiary-on-card)]">Expires</span>
+          {row.state === 'no-expiry' ? (
+            <span className="text-[var(--text-secondary)]">Kept on file</span>
+          ) : (
+            <span className="gg-nums font-medium">
+              {formatDate(row.expiresOn)}
             </span>
           )}
-        </p>
-      )}
+        </div>
+        {row.state !== 'no-expiry' && (
+          <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
+            <span className="text-[var(--text-tertiary-on-card)]">
+              Date confirmed
+            </span>
+            {row.confirmed ? (
+              <span className="flex items-center gap-1.5 text-[var(--success)]">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                By you
+              </span>
+            ) : (
+              <span className="text-[var(--warning)]">Not yet</span>
+            )}
+          </div>
+        )}
+        {/* Only where a reminder could exist at all — see the note on the
+            switch below. */}
+        {row.state !== 'no-expiry' && (
+          <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
+            <span className="text-[var(--text-tertiary-on-card)]">Reminders</span>
+            <span className="text-[var(--text-secondary)]">
+              {row.remindersMuted ? 'Off' : 'On'}
+            </span>
+          </div>
+        )}
+        <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
+          <span className="text-[var(--text-tertiary-on-card)]">Added</span>
+          <span className="gg-nums text-[var(--text-secondary)]">
+            {formatDate(row.createdAt.slice(0, 10))}
+          </span>
+        </div>
+      </div>
 
       {/* THE LOOP. A firearm licence whose date is confirmed and whose expiry
           is close enough to act on.
