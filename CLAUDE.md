@@ -1783,16 +1783,31 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-08-25, commit `5f53384`.** No migrations pending.
-Backend + frontend reloaded, health checks doubled, public 200. Shipped:
-auto-capture removed from the document scanner (manual shutter only — see
-the Document Scanner section); the scanner's work-destroying paths fixed
-(failed re-cut announced as success, × and Escape binning scanned pages,
-Apply flashing the live camera, one failed upload discarding the rest of a
-batch); the corner editor's teleporting grab, upscaled loupe and bow-tie
-crop; and the mobile redesign — sticky featured strip retired into an
-in-feed card, card photos 52.5% → 75%, tabs now Shop / Saved / Sell /
-Alerts / Account with Ask Boet as a floating launcher.
+**Last deploy: 2026-08-25, commit `5faf095`.** No migrations pending.
+Backend + frontend reloaded, health checks doubled, public 200.
+
+Shipped in `5faf095`: **the Document Centre stopped losing documents between
+batches.** `uploadFiles` assigned the review queue wholesale
+(`setQueue(added)`), and the add panel closes after every hand-off — so six
+licences added one at a time were six upload calls, each wiping the review
+of the five before it. Operator: "took scans of 6 licenses. 2 made it
+through." Nothing was lost from the server; the documents lost their place in
+the only screen that asks a human to confirm the type and the dates, so they
+sat unconfirmed and unfiled — for an expiry reminder, the same as absent.
+`mergeReviewQueue` in `lib/document-review-rules.ts` now always merges,
+de-duplicated by id, and is pinned by a test that was confirmed to fail
+against the old behaviour. Upload progress became a real bar (per document,
+because the vision read after each upload is most of the wait).
+
+Shipped in the previous deploy `5f53384`: auto-capture removed from the
+document scanner (manual shutter only — see the Document Scanner section);
+the scanner's work-destroying paths fixed (failed re-cut announced as
+success, × and Escape binning scanned pages, Apply flashing the live camera,
+one failed upload discarding the rest of a batch); the corner editor's
+teleporting grab, upscaled loupe and bow-tie crop; and the mobile redesign —
+sticky featured strip retired into an in-feed card, card photos 52.5% → 75%,
+tabs now Shop / Saved / Sell / Alerts / Account with Ask Boet as a floating
+launcher.
 
 > ⚠️ **THE BACKEND TYPE-CHECK GATE IS RED, AND IT IS NOT ROT — IT IS
 > WORK IN FLIGHT. DO NOT "FIX" IT.** `npx tsc --noEmit` in `backend/`
