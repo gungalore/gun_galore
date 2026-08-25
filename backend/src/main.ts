@@ -187,6 +187,31 @@ async function bootstrap() {
       // Same-origin / curl / Postman → no Origin header → allow.
       if (!origin) return callback(null, true);
       const isProd = process.env.NODE_ENV === 'production';
+      /**
+       * Let a developer's machine talk to THIS server.
+       *
+       * ⚠️ OFF UNLESS THE SERVER'S OWN .env TURNS IT ON, AND IT MUST GO OFF
+       * BEFORE REAL MEMBERS ARRIVE. With this set, any process on any machine
+       * that can reach the API may make CREDENTIALED requests to it from a
+       * localhost page — which is exactly the hole the production branch below
+       * exists to close.
+       *
+       * It is here because the site is not carrying real members yet and the
+       * alternative was worse: the Document Centre could not be exercised
+       * against a real server at all. A developer's browser on localhost:3000
+       * was refused by CORS, their local backend was not running, and its
+       * database was 25 migrations behind — so every scan uploaded into
+       * nothing, silently, and the documents simply never appeared.
+       *
+       * A flag rather than a code change, so switching it off at launch is one
+       * line in the server's .env and needs no deploy of this file — and so
+       * that it is VISIBLE in configuration instead of buried in a boolean
+       * here. Default stays refuse: an unset variable behaves exactly as
+       * before.
+       *
+       * ⚠️ REMOVE THIS WITH THE FIRST REAL SIGN-UP. See LAUNCH-CHECKLIST.md.
+       */
+      const allowLocalInProd = process.env.ALLOW_LOCAL_ORIGINS === 'true';
       const allowed = [
         process.env.FRONTEND_URL,
         // Capacitor (Hunt Ballistics iOS app + future Android). Each
@@ -199,8 +224,10 @@ async function bootstrap() {
         /^ionic:\/\/localhost$/,
         // Local dev / LAN origins are DEV-ONLY — never trusted (with
         // credentials) in production, where only FRONTEND_URL + the app
-        // schemes above are valid.
-        ...(isProd
+        // schemes above are valid. ALLOW_LOCAL_ORIGINS is the deliberate,
+        // temporary exception while the site carries no real members; see the
+        // note on it above.
+        ...(isProd && !allowLocalInProd
           ? []
           : [
               /^https?:\/\/localhost(:\d+)?$/,
@@ -232,6 +259,19 @@ async function bootstrap() {
     },
     credentials: true,
   });
+
+  // ⚠️ SAID EVERY BOOT, AT WARN, SO IT CANNOT BE FORGOTTEN. A temporary hole
+  // that nobody is reminded of is a permanent hole.
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.ALLOW_LOCAL_ORIGINS === 'true'
+  ) {
+    corsLog.warn(
+      'ALLOW_LOCAL_ORIGINS=true — this PRODUCTION server is accepting ' +
+        'credentialed requests from localhost and LAN origins. Intended only ' +
+        'while the site carries no real members. Unset it before launch.',
+    );
+  }
 
   const port = process.env.PORT ?? 3001;
   await app.listen(port);

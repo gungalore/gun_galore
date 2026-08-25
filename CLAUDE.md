@@ -1837,6 +1837,18 @@ launcher.
 > files reaches `dist`. It is also NOT the stale-Prisma-types trap —
 > `prisma generate` was run first and changed nothing.
 
+**⚠️ TURN OFF BEFORE THE FIRST REAL SIGN-UP:
+`ALLOW_LOCAL_ORIGINS=true` in `backend/.env` on the box.** It lets the
+PRODUCTION API accept credentialed requests from `localhost` and LAN
+origins, so a developer can run the frontend locally and have the data
+land on the real server. It exists because the site is not carrying real
+members yet and there was no other way to exercise the Document Centre
+against a real backend — local dev had no backend running and a database
+25 migrations behind, so every scan uploaded into nothing, silently.
+Unset the variable and `pm2 reload alloutdoor-backend --update-env`; the
+code refuses local origins in production by default, so nothing else
+needs deploying. The backend WARNs about it on every boot while it is on.
+
 Pending external items (operator track — none of these are coding
 work, but the platform can't fully launch without them; see
 LAUNCH-CHECKLIST.md for the authoritative list):
