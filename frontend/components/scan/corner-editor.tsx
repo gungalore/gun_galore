@@ -152,6 +152,52 @@ export default function CornerEditor({
     [toImage],
   );
 
+  /**
+   * Which corner the magnifier is currently showing — NOT the same thing as
+   * which corner is selected.
+   *
+   * ⚠️ IT USED TO BE THE SAME THING, AND THE LOUPE THEN STAYED ON SCREEN AFTER
+   * THE FINGER LEFT. The loupe was derived from `dragging ?? focused`, so that
+   * a keyboard member nudging a corner with arrow keys could see where it
+   * landed — they had no magnifier at all before that. But a TOUCH also leaves
+   * the corner focused, so lifting the finger ended the drag and left the
+   * magnifier sitting there over the photograph until something else was
+   * touched. Operator, 2026-08-25: "when I set a corner the magnifier stays
+   * behind when I lift my finger."
+   *
+   * So the two are separated: `active` still drives the dot's own styling, and
+   * this drives the loupe. It lingers 500ms after the finger lifts — long
+   * enough to see where the corner actually landed, which is the whole reason
+   * to look — and then goes. The keyboard path keeps its magnifier for as long
+   * as the corner is focused, because there is no "lift" to hide it on.
+   */
+  const [loupeOn, setLoupeOn] = useState<number | null>(null);
+  const hideTimer = useRef<number | null>(null);
+
+  const showLoupe = useCallback((i: number) => {
+    if (hideTimer.current !== null) {
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    setLoupeOn(i);
+  }, []);
+
+  const fadeLoupe = useCallback((delay: number) => {
+    if (hideTimer.current !== null) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => {
+      hideTimer.current = null;
+      setLoupeOn(null);
+    }, delay);
+  }, []);
+
+  // A pending timer outliving the editor would setState on an unmounted tree.
+  useEffect(
+    () => () => {
+      if (hideTimer.current !== null) window.clearTimeout(hideTimer.current);
+    },
+    [],
+  );
+
   // Pointer events on the WINDOW while dragging, so a finger that slides off
   // the image — which is exactly what happens at a corner — keeps dragging.
   useEffect(() => {
@@ -160,7 +206,12 @@ export default function CornerEditor({
       e.preventDefault();
       moveTo(dragging, e.clientX, e.clientY);
     };
-    const onUp = () => setDragging(null);
+    const onUp = () => {
+      setDragging(null);
+      // The corner has just landed. Hold the magnifier for half a second so
+      // the member can see WHERE it landed, then let it go.
+      fadeLoupe(500);
+    };
     window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
@@ -169,7 +220,7 @@ export default function CornerEditor({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragging, moveTo]);
+  }, [dragging, moveTo, fadeLoupe]);
 
   const viewPts = pts.map(toView);
   // ⚠️ FOCUS COUNTS AS ACTIVE, so the keyboard path gets a magnifier too. It
@@ -182,17 +233,20 @@ export default function CornerEditor({
   // clearance on a 320px-wide phone and touches the dot at 280 — parking the
   // magnifier under the finger it exists to see past. See loupeSize.
   const LOUPE = loupeSize({ width: view.w, height: view.h });
+  // The LOUPE follows `loupeOn`, not `active` — see the note on loupeOn. A
+  // corner stays selected after the finger lifts; the magnifier does not.
+  const lens = loupeOn ?? -1;
   const loupeAt =
-    active >= 0 && view.w > 0
-      ? magnifierSpot(viewPts[active], { width: view.w, height: view.h }, LOUPE)
+    lens >= 0 && view.w > 0
+      ? magnifierSpot(viewPts[lens], { width: view.w, height: view.h }, LOUPE)
       : null;
   // Image pixels to loupe pixels. ZOOM is relative to what is ON SCREEN, so
   // "3.5x" means three and a half times the size the member is already
   // looking at — not some ratio of the raw file they have no feel for.
   const mag = ZOOM * fit;
-  const loupeSrc = active >= 0 ? loupeSource(pts[active], size, LOUPE, mag) : null;
+  const loupeSrc = lens >= 0 ? loupeSource(pts[lens], size, LOUPE, mag) : null;
   const cross =
-    active >= 0 ? loupeCrosshair(pts[active], size, LOUPE, mag) : null;
+    lens >= 0 ? loupeCrosshair(pts[lens], size, LOUPE, mag) : null;
 
   const CORNER_NAMES = ['top left', 'top right', 'bottom right', 'bottom left'];
 
@@ -231,6 +285,24 @@ export default function CornerEditor({
           // touch-action none, or the browser pans the page instead of
           // giving us the drag.
           touchAction: 'none',
+          // ⚠️ NO TEXT SELECTION. A press that lands slightly OFF a corner
+          // misses the grab pad, so nothing calls preventDefault, and the drag
+          // that follows is read by the browser as "select from here" — the
+          // whole editor floods translucent blue and the member's next tap
+          // just moves the selection instead of the corner. Operator,
+          // 2026-08-25: "sometimes when I press just a little off the corner
+          // aligner it selects the whole page and makes it that transparent
+          // blue."
+          //
+          // touchAction and the buttons' own preventDefault do not cover it:
+          // the first is about scrolling, the second only fires when the press
+          // actually hits a button. Nothing in here is text a member would
+          // want to select, so the whole surface opts out.
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          // iOS long-press otherwise raises the copy/share sheet over the
+          // photograph mid-drag.
+          WebkitTouchCallout: 'none',
           overflow: 'hidden',
         }}
       >
@@ -337,7 +409,11 @@ export default function CornerEditor({
               type="button"
               aria-label={`Move the ${CORNER_NAMES[i]} corner`}
               onFocus={() => setFocused(i)}
-              onBlur={() => setFocused((f) => (f === i ? null : f))}
+              onBlur={() => {
+                setFocused((f) => (f === i ? null : f));
+                // Nothing is being placed any more.
+                fadeLoupe(0);
+              }}
               onPointerDown={(e) => {
                 e.preventDefault();
                 (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
@@ -357,6 +433,7 @@ export default function CornerEditor({
                 e.currentTarget.focus({ preventScroll: true });
                 setFocused(i);
                 setDragging(i);
+                showLoupe(i);
               }}
               onKeyDown={(e) => {
                 const step = e.shiftKey ? 10 : 1;
@@ -369,6 +446,9 @@ export default function CornerEditor({
                 const move = d[e.key];
                 if (!move) return;
                 e.preventDefault();
+                // The keyboard path has no "lift" to hide on, so its magnifier
+                // stays up for as long as the corner is focused.
+                showLoupe(i);
                 setPts((cur) => {
                   const next = [...cur] as Quad;
                   next[i] = {
