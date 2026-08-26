@@ -127,13 +127,12 @@ export function Nav() {
   }, [mobileOpen]);
 
   // Shopping surfaces — shared between desktop nav row and mobile drawer.
+  // Cut to two on 2026-08-26. Take a Shot moved INTO the listing page as an
+  // offer on a Buy Now item, so it is no longer a browse surface; Swop, Daily
+  // Deals and the Prize Draw were removed as modules.
   const SHOP_LINKS = [
     { href: '/?listingType=BUY_NOW', label: 'Buy Now' },
     { href: '/?listingType=AUCTION', label: 'Auctions' },
-    { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
-    { href: '/?listingType=SWOP', label: 'Swop / Trade' },
-    { href: '/deals', label: 'Daily Deals' },
-    { href: '/raffle', label: 'Prize Draw' },
   ];
 
   // Account menu items now live in lib/account-menu.tsx (ACCOUNT_GROUPS) so the

@@ -39,8 +39,8 @@ const isPublicRoute = createRouteMatcher([
   '/wanted(.*)',   // Wanted module REMOVED 2026-07-19 — keep public so the
                    // dead URLs 404 instead of 307ing to sign-in (same
                    // precedent as /competitions).
-  '/raffle(.*)',   // PRO prize-draw page — public marketing surface
-                   // (anonymous browsing is the whole lure).
+  '/raffle(.*)',   // RETIRED 2026-08-26 with the PRO membership. Kept public
+                   // so dead URLs 404 rather than 307ing to sign-in.
   '/brand(.*)',    // P5.7 — public brand index (/brands) + brand landing
                    // pages (/brand/[slug]); SEO surfaces, must be crawlable
                    // without auth (mirrors /category above).
@@ -98,6 +98,14 @@ const isPublicRoute = createRouteMatcher([
                          // dead / previously-indexed competition URLs serve a
                          // clean 404 instead of being 307-redirected to sign-in
                          // by Clerk.
+  // RETIRED 2026-08-26 with their modules. Same precedent as /competitions:
+  // public means a dead URL serves an honest 404 instead of a login form.
+  '/subscribe',                          // PRO membership purchase path
+  '/my/swaps',                           // Swop / Trade
+  '/featured(.*)',                       // Featured homepage slots
+  '/experiences-cancellation-policy',    // Hunting Packages legal page — note
+                                         // this was NEVER in the matcher,
+                                         // unlike every sibling legal page.
   '/ask-gg(.*)',         // RETIRED 2026-08-26 — the Ask Boet assistant was
                          // removed. Same precedent as /competitions: the page
                          // was signed-in-only, so without this entry Clerk

@@ -49,7 +49,6 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SignInButton, useUser, useClerk, useAuth } from '@clerk/nextjs';
-import { PRO_NAME } from '@/lib/brand';
 import { useStandalone } from '@/lib/use-standalone';
 import { useCart } from '@/lib/cart-store';
 import { useWishlist } from '@/lib/use-wishlist';
@@ -1075,88 +1074,6 @@ function ShopSheet({
       isActive:
         pathname === '/' && searchParams.get('listingType') === 'AUCTION',
     },
-    {
-      key: 'takeashot',
-      href: '/?listingType=TAKE_A_SHOT',
-      title: 'Take a Shot',
-      tagline: 'Make an offer — sellers can accept, counter once, or decline',
-      icon: <IconTarget />,
-      isActive:
-        pathname === '/' && searchParams.get('listingType') === 'TAKE_A_SHOT',
-    },
-    {
-      key: 'swop',
-      href: '/?listingType=SWOP',
-      title: 'Swop / Trade',
-      tagline: 'Trade your gear for someone else’s — add cash if needed',
-      icon: (
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M7 4 3 8l4 4" />
-          <path d="M3 8h13" />
-          <path d="m17 20 4-4-4-4" />
-          <path d="M21 16H8" />
-        </svg>
-      ),
-      isActive:
-        pathname === '/' && searchParams.get('listingType') === 'SWOP',
-    },
-    {
-      key: 'deals',
-      href: '/deals',
-      title: 'Daily Deals',
-      tagline: 'One hot deal at a time — gone when it sells out',
-      icon: (
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" />
-        </svg>
-      ),
-      isActive: pathname.startsWith('/deals'),
-    },
-    {
-      key: 'raffle',
-      href: '/raffle',
-      title: 'Prize Draw',
-      tagline: `${PRO_NAME} members are entered free — amazing prizes`,
-      icon: (
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M20 7h-16v5h16z" />
-          <path d="M12 7v15" />
-          <path d="M5 12h14v10H5z" />
-          <path d="M12 7c-2.5 0-4-1.2-4-2.5S9.5 2 12 2s4 1.2 4 2.5S14.5 7 12 7z" />
-        </svg>
-      ),
-      isActive: pathname.startsWith('/raffle'),
-    },
   ];
 
   return (
@@ -1492,10 +1409,6 @@ function MoreSheet({
       badgeLabel: `${cartCount} item${cartCount === 1 ? '' : 's'}`,
     },
     { href: '/wishlist', label: 'Wishlist' },
-    { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
-    { href: '/?listingType=SWOP', label: 'Swop / Trade' },
-    { href: '/deals', label: 'Daily Deals' },
-    { href: '/raffle', label: 'Prize Draw' },
   ];
   // Account destinations now come from the shared ACCOUNT_GROUPS (rendered via
   // <AccountMenuList/>) so this sheet stays in lockstep with the desktop

@@ -36,7 +36,6 @@ const GROUPS: NavGroup[] = [
       { href: '/admin/listings', label: 'Listings' },
       { href: '/admin/transactions', label: 'Transactions' },
       { href: '/admin/orders', label: 'Orders' },
-      { href: '/admin/swaps', label: 'Swaps' },
       { href: '/admin/users', label: 'Users' },
       // Renamed: the page is no longer read-only — the daily payout run
       // (preview + confirm-gated "Run payouts now") lives here.
@@ -60,9 +59,7 @@ const GROUPS: NavGroup[] = [
       { href: '/admin/categories', label: 'Categories' },
       { href: '/admin/dealers', label: 'Dealers' },
       { href: '/admin/suppliers', label: 'Suppliers' },
-      { href: '/admin/featured', label: 'Featured Slots' },
       { href: '/admin/deals', label: 'Daily Deals' },
-      { href: '/admin/raffle', label: 'Prize Draw' },
       { href: '/admin/campaigns', label: 'SMS Campaigns' },
       { href: '/admin/credits', label: 'Credits' },
     ],
