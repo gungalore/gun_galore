@@ -19,8 +19,6 @@ import { PushFirstLaunchPrompt } from '@/components/push-first-launch-prompt';
 import { ProfileSetupPrompt } from '@/components/profile-setup-prompt';
 import { WishlistProvider } from '@/lib/use-wishlist';
 import ConsentSync from '@/components/consent-sync';
-import { AskGgProvider } from '@/lib/use-ask-gg-widget';
-import { AskGgHost } from '@/components/ask-gg/ask-gg-host';
 import { WelcomeBanner } from '@/components/welcome-banner';
 import './globals.css';
 
@@ -287,7 +285,6 @@ export default function RootLayout({
               session is live (POPIA record). No-op when signed out. */}
           <ConsentSync />
           <WishlistProvider>
-          <AskGgProvider>
           {/* PublicNav + PublicFooter hide themselves on /admin/*
               (the admin layout owns its own chrome) so the public
               Nav and ECT § 43 footer only render on the buyer/
@@ -372,15 +369,9 @@ export default function RootLayout({
               to /profile/edit. Fully dismissible (unlike the create-
               listing hard-wall modal). */}
           <ProfileSetupPrompt />
-          {/* Ask Boet Everywhere — site-wide launcher + lazy chat panel.
-              Self-gates off /admin, /checkout, /ask-gg, auth and other
-              focused routes; FAB in browser modes only (the PWA tab is
-              the standalone entry). The chat chunk loads on first open. */}
-          <AskGgHost />
           {/* SMS-arrival welcome banner — self-gates: renders only when the
               URL carries an active campaign key (?c=KEY), once per session. */}
           <WelcomeBanner />
-          </AskGgProvider>
           </WishlistProvider>
         </body>
       </html>

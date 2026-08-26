@@ -21,7 +21,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { CartridgeSpecPanel } from './CartridgeSpecPanel';
 import {
-  isUpgradeRequired,
   useLoadData,
   type CartridgeLoadsResponse,
   type CartridgeLoadsResult,
@@ -183,10 +182,6 @@ export function LoadDataBrowser() {
       <CenterNote>Couldn&rsquo;t load the calibre list right now.</CenterNote>
     );
   }
-  if (isUpgradeRequired(cartResult)) {
-    return <UpgradeNudge reason={cartResult.reason} />;
-  }
-
   const data: ManualCartridgesResponse = cartResult;
 
   const tree = (
@@ -525,18 +520,9 @@ function LoadDataPanel({
       </CenterNote>
     );
   }
-  // The reference spec panel is free + independent of the PRO load-data gate,
-  // so it renders above whatever the load area shows (upgrade nudge, demo, or
-  // full data). Self-hides when we hold no verified spec for the cartridge.
+  // Renders above whatever the load area shows. Self-hides when we hold no
+  // verified spec for the cartridge.
   const specPanel = <CartridgeSpecPanel cartridgeKey={selectedKey} />;
-  if (isUpgradeRequired(loads)) {
-    return (
-      <>
-        {specPanel}
-        <UpgradeNudge reason={loads.reason} />
-      </>
-    );
-  }
   if (!loads.found || loads.groups.length === 0) {
     return (
       <>
@@ -550,14 +536,6 @@ function LoadDataPanel({
     <>
       {specPanel}
       <LoadDataView key={loads.cartridge} data={loads} />
-      {loads.demo && (
-        <UpgradeNudge
-          reason={
-            loads.upgradeReason ??
-            `You're previewing 3 of ${loads.totalLoads} published loads. All Outdoor PRO unlocks all of them.`
-          }
-        />
-      )}
     </>
   );
 }
@@ -890,58 +868,3 @@ function LoadCard({ load }: { load: ManualLoadRow }) {
   );
 }
 
-// ─── PRO upgrade nudge ──────────────────────────────────────────────
-
-function UpgradeNudge({ reason }: { reason: string }) {
-  return (
-    <div
-      role="status"
-      style={{
-        padding: '14px 16px',
-        borderRadius: 10,
-        background: 'rgba(200,16,46,0.08)',
-        border: '0.5px solid rgba(200,16,46,0.35)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-      }}
-    >
-      <span
-        style={{
-          fontSize: 11,
-          textTransform: 'uppercase',
-          letterSpacing: 0.6,
-          color: 'var(--red)',
-          fontWeight: 600,
-        }}
-      >
-        Pro feature
-      </span>
-      <span
-        style={{
-          fontSize: 13,
-          color: 'var(--text-primary)',
-          lineHeight: 1.45,
-        }}
-      >
-        {reason ||
-          'The Load Data browser is a All Outdoor PRO perk. Upgrade to browse published manual load data by calibre — every powder, charge, velocity and manual citation.'}
-      </span>
-      <Link
-        href="/ask-gg"
-        style={{
-          alignSelf: 'flex-start',
-          padding: '8px 14px',
-          background: 'var(--bg-inset)',
-          color: 'var(--text-secondary)',
-          border: '0.5px solid var(--border-hover)',
-          borderRadius: 8,
-          fontSize: 12,
-          textDecoration: 'none',
-        }}
-      >
-        Subscription launching soon
-      </Link>
-    </div>
-  );
-}

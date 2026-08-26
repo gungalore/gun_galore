@@ -1165,7 +1165,6 @@ export default async function ListingDetailPage({
                 // covers the CTA. Same trick globals.css already uses for
                 // the install prompt — and we defer to that rule when both
                 // are on screen, because its lift is the taller one.
-                `@media (max-width:1023px){html:not([data-standalone='true']) body:not([data-install-prompt='true']):has([data-listing-buy-bar]) #askgg-dock{bottom:calc(84px + env(safe-area-inset-bottom));}}`,
               ].join(''),
             }}
           />

@@ -172,6 +172,14 @@ const BookIcon: IconC = () => (
   </Svg>
 );
 
+const CartridgeIcon: IconC = () => (
+  <Svg>
+    <path d="M12 2.5c1.6 1.5 2.4 3.1 2.4 5v1.6H9.6V7.5c0-1.9.8-3.5 2.4-5z" />
+    <path d="M9.6 9.1h4.8V19H9.6z" />
+    <path d="M9 19h6" />
+  </Svg>
+);
+
 // ── Structure ────────────────────────────────────────────────────────
 export interface AccountMenuItem {
   href: string;
@@ -228,6 +236,16 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     items: [
       { href: '/documents', label: 'Document Centre', Icon: ShieldDocIcon },
       { href: '/motivations', label: 'Motivation Centre', Icon: DocIcon },
+    ],
+  },
+  {
+    // Load Lab moved here on 2026-08-26. It used to be a tab inside the Ask
+    // Boet page; when the assistant was removed the operator kept Load Lab and
+    // put it in the account beside the licence tools. Its own group rather
+    // than inside "Licences" because reloading data is not paperwork.
+    title: 'Tools',
+    items: [
+      { href: '/load-lab', label: 'Load Lab', Icon: CartridgeIcon },
     ],
   },
   {

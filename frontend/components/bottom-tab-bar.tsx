@@ -679,7 +679,7 @@ export function BottomTabBar() {
           // rule everywhere it is written down. The bar owns the full bottom
           // edge in standalone, which is why nothing else may claim the
           // bottom-right corner here: the Ask Boet dock is browser-only
-          // (AskGgHost gates on useStandalone) and the footer's "Get the app"
+          // (the removed AskGgHost gated on useStandalone) and the footer's "Get the app"
           // pill is hidden with the rest of the public footer.
           zIndex: 55,
           background: 'var(--bg-deep)',

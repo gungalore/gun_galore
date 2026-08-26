@@ -497,7 +497,7 @@ function ConfirmModal({
       case 'kyc':
         return 'KYC overrides bypass VerifyNow + Home Affairs. Use only when you have independent verification of identity (manual document review).';
       case 'subscription':
-        return `Manually sets the ${PRO_NAME} subscription tier without going through paid checkout — a comp / support grant. PRO unlocks Ask Boet Pro features, Load Lab, and the ballistics calculator. Reversible; recorded in the audit log.`;
+        return `Manually sets the ${PRO_NAME} subscription tier without going through paid checkout — a comp / support grant. PRO now only reduces featured-slot fees — Ask Boet was removed and Load Lab is open to every member. Reversible; recorded in the audit log.`;
       case 'clearStrikes':
         return 'Resets seller reject-strikes to 0, lifts the selling ban if one is in force, and resolves the open strike alerts. Use after reviewing the SELLER_REJECT_STRIKE alerts. Audited.';
       case 'closeAccount':

@@ -337,9 +337,9 @@ footer li > a {
      asked for reduced motion.
 
      Tag any future scroll-driven chrome with data-chrome-slide and it is
-     covered automatically. Deliberately NOT applied to the Ask Boet
-     launcher: that one is an opacity cross-fade, which is not the
-     vestibular-triggering motion this query exists to suppress. */
+     covered automatically. (It deliberately skipped the Ask Boet launcher,
+     an opacity cross-fade rather than vestibular motion; the launcher was
+     removed 2026-08-26 and the carve-out went with it.) */
   [data-chrome-slide] {
     transition: none !important;
   }
@@ -425,56 +425,7 @@ html[data-standalone='true']::view-transition-new(root) {
   animation: gg-vt-slide-in 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-/* ─── Ask Boet "lure" glow ────────────────────────────────────────────
-   A gentle pulsing red halo on the Ask Boet nav pill to draw the eye to
-   the AI assistant. Hover intensifies + pauses the pulse; reduced-motion
-   users get a soft static glow instead of the animation. */
-@keyframes gg-ask-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 5px rgba(200, 16, 46, 0.35);
-  }
-  50% {
-    box-shadow: 0 0 14px rgba(200, 16, 46, 0.7);
-  }
-}
-.ask-gg-lure {
-  animation: gg-ask-glow 2.4s ease-in-out infinite;
-}
-.ask-gg-lure:hover {
-  box-shadow: 0 0 16px rgba(200, 16, 46, 0.85);
-  animation-play-state: paused;
-}
-@media (prefers-reduced-motion: reduce) {
-  .ask-gg-lure {
-    animation: none;
-    box-shadow: 0 0 10px rgba(200, 16, 46, 0.5);
-  }
-}
 
-/* There used to be two `body[data-install-prompt='true']` rules here lifting
-   #askgg-dock and #askgg-hello clear of the install prompt. Those stay gone:
-   the PROMPT is a centred modal at `position:fixed; inset:0; z-index:1000`
-   with a full backdrop (install-prompt.tsx), so it covers the whole viewport
-   and there is nothing in the corner to dodge — the lift moved Boet from one
-   covered position to another. The body attribute is still stamped and still
-   load-bearing: ask-gg-launcher.tsx reads it to keep Boet from popping a
-   bubble underneath the modal.
-
-   The rule below is the case that comment said to watch for — "don't re-add
-   the lift unless the prompt goes back to a card". Something did: the passive
-   install BAR (also install-prompt.tsx) is a strip pinned to the bottom edge
-   in mobile web, and Boet's browser-mode dock sits at
-   bottom:calc(12px + safe-area) in exactly that space. Without the lift he
-   stands on top of it and covers the Install button.
-
-   Keyed on the element, not on a body attribute, so it cannot drift out of
-   sync with what is actually rendered — and the bar is render-gated rather
-   than CSS-hidden on listing pages for the same reason, since :has() matches
-   a display:none element and would lift Boet over a bar that is not there. */
-body:has([data-install-bar]) #askgg-dock {
-  bottom: calc(74px + env(safe-area-inset-bottom));
-}
 
 /* And give the page back the height the bar is standing on, or the last row
    of the footer sits underneath it with no way to scroll further.
@@ -494,47 +445,6 @@ html:not([data-standalone='true']) body:has([data-install-bar]) {
   padding-bottom: calc(62px + env(safe-area-inset-bottom));
 }
 
-/* Boet — the Ask Boet mascot (components/ask-gg/ask-gg-mascot.tsx).
-   A safari ranger from the Claude Design "Safari Helper" handoff: one
-   inline 260x300 SVG with 10 activity scenes the launcher wanders
-   between. Ported faithfully; the design's gg-* animation names are
-   renamed boet-* here to avoid clashing with other gg- rules. Scene props
-   use viewBox-unit transform-origins, so force transform-box: view-box on
-   every element. Reduced motion: everything stills except the blink, and
-   the launcher never switches scenes, so he simply idles. */
-.boet-svg,
-.boet-svg * {
-  transform-box: view-box;
-}
-
-@keyframes boet-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
-@keyframes boet-blink { 0%, 90%, 96%, 100% { transform: scaleY(1); } 93% { transform: scaleY(.08); } }
-@keyframes boet-sway { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
-@keyframes boet-wave { from { transform: rotate(-136deg); } to { transform: rotate(-174deg); } }
-@keyframes boet-pan { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
-@keyframes boet-flame { 0%, 100% { transform: scaleY(1) scaleX(1); } 50% { transform: scaleY(1.18) scaleX(.9); } }
-@keyframes boet-glow { 0%, 100% { opacity: .14; } 50% { opacity: .24; } }
-@keyframes boet-spark { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-36px); } }
-@keyframes boet-poke { from { transform: rotate(30deg); } to { transform: rotate(42deg); } }
-@keyframes boet-hammer { 0%, 50% { transform: rotate(58deg); } 65% { transform: rotate(6deg); } 78%, 100% { transform: rotate(58deg); } }
-@keyframes boet-wobble { 0%, 63%, 80%, 100% { transform: rotate(0deg); } 68% { transform: rotate(1.6deg); } 74% { transform: rotate(-1deg); } }
-@keyframes boet-flash { 0%, 70%, 79%, 100% { opacity: 0; } 73%, 76% { opacity: 1; } }
-@keyframes boet-bobber { 0%, 32%, 58%, 100% { transform: translateY(0); } 42% { transform: translateY(4px); } 70% { transform: translateY(10px); } 78% { transform: translateY(-2px); } }
-@keyframes boet-sharpen { from { transform: rotate(6deg); } to { transform: rotate(30deg); } }
-@keyframes boet-maptilt { from { transform: rotate(-2.4deg); } to { transform: rotate(2.4deg); } }
-@keyframes boet-qmark { 0%, 55% { opacity: 0; transform: translateY(6px); } 64%, 86% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; } }
-@keyframes boet-drive { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
-@keyframes boet-wheel { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes boet-dust { 0% { opacity: .5; transform: translate(0, 0) scale(.6); } 100% { opacity: 0; transform: translate(30px, -16px) scale(1.7); } }
-
-@media (prefers-reduced-motion: reduce) {
-  /* Still everything (inline scene animations + the rig) but keep the
-     blink so he still reads as alive. Higher-specificity blink rule wins
-     over the blanket kill. */
-  .boet-svg *,
-  .boet-svg #boet-rig { animation: none !important; }
-  .boet-svg .boet-eyes { animation: boet-blink 4.6s linear infinite !important; }
-}
 
 @keyframes gg-hello-in { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
 
@@ -604,14 +514,6 @@ html:not([data-standalone='true']) body:has([data-install-bar]) {
   color: #fff;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Ask Boet — adventure moments (components/ask-gg/adventure-scenes.tsx).
-   Four rare one-shot scenes staged in a card popping out of the
-   launcher corner. Ported 1:1 from the operator-approved mockup.
-   RULE (learned the hard way): with transform-box:fill-box,
-   transform-origin must be center/%, never px viewBox coordinates —
-   px origins are bbox-relative and send wheels/props orbiting.
-   ═══════════════════════════════════════════════════════════════════ */
 .gg-adv {
   background: radial-gradient(120% 90% at 50% 108%, #211d16 0%, #141310 55%, #100f0d 100%);
   border: 0.5px solid var(--border);

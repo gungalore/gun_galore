@@ -1,6 +1,6 @@
 'use client';
 
-// LoadLabPanel — the Load Lab surface on the /ask-gg page. Two sub-views,
+// LoadLabPanel — the Load Lab surface at /load-lab. Two sub-views,
 // toggled by the segmented control at the top:
 //
 //   • Load data  — a PRO-gated browser over PUBLISHED reloading-manual load

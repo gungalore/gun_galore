@@ -288,12 +288,10 @@ export default function FeesPage() {
       <h3>7.1 {PRO_NAME} membership</h3>
       <p>
         {PRO_NAME} is the optional paid membership, at{' '}
-        <strong>R99 per 31-day period</strong>. It includes the full Ask Boet
-        assistant, the Load Lab load-data browser, swap benefits, and reduced
-        fees on featured homepage slots (see below). Membership is prepaid —
-        there is no debit order and no fixed-term contract; it simply lapses
-        if you don&apos;t renew. The free tier includes a working preview of
-        every PRO feature.
+        <strong>R99 per 31-day period</strong>. It includes reduced fees on
+        featured homepage slots (see below). Membership is prepaid — there is
+        no debit order and no fixed-term contract; it simply lapses if you
+        don&apos;t renew.
       </p>
 
       <h3>7.2 Featured homepage slots</h3>

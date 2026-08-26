@@ -68,14 +68,12 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    key: 'askgg',
-    label: 'Ask Boet',
-    items: [
-      { href: '/admin/ask-gg/kb', label: 'Knowledge Base' },
-      { href: '/admin/ask-gg/guides', label: 'Page Guides' },
-      { href: '/admin/ask-gg/experts', label: 'Experts' },
-      { href: '/admin/reloading', label: 'Reloading Library' },
-    ],
+    // Was the "Ask Boet" group. The assistant was removed 2026-08-26 and its
+    // KB / Page Guides / Experts admin screens went with it; the reloading
+    // library survived because it is what Load Lab reads.
+    key: 'loadlab',
+    label: 'Load Lab',
+    items: [{ href: '/admin/reloading', label: 'Reloading Library' }],
   },
   {
     key: 'system',

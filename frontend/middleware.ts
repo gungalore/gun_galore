@@ -98,6 +98,16 @@ const isPublicRoute = createRouteMatcher([
                          // dead / previously-indexed competition URLs serve a
                          // clean 404 instead of being 307-redirected to sign-in
                          // by Clerk.
+  '/ask-gg(.*)',         // RETIRED 2026-08-26 — the Ask Boet assistant was
+                         // removed. Same precedent as /competitions: the page
+                         // was signed-in-only, so without this entry Clerk
+                         // 307s the dead URL to sign-in and a signed-in user
+                         // gets a 404 while a signed-out one gets a login
+                         // form. Public = an honest 404 for both.
+                         // NOTE: unrelated to the backend's /ask-gg API
+                         // prefix, which is a different origin and still
+                         // serves POST /ask-gg/identify-listing for the
+                         // create-listing photo helper.
 ]);
 
 // Routes that ALWAYS pass through the coming-soon gate, even without

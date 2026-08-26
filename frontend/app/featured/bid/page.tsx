@@ -331,7 +331,7 @@ export default function FeaturedBidPage() {
             {bidderTier === 'PRO' ? PRO_NAME : `GG+ ${bidderTier}`}
           </span>
           <span style={{ color: 'var(--text-secondary)' }}>
-            Your Ask Boet subscription unlocks{' '}
+            Your {PRO_NAME} membership unlocks{' '}
             <strong style={{ color: 'var(--text-primary)' }}>
               {bidderDiscount}% off
             </strong>{' '}
@@ -352,8 +352,8 @@ export default function FeaturedBidPage() {
           }}
         >
           <span style={{ color: 'var(--text-tertiary)' }}>
-            <Link href="/ask-gg" style={{ color: 'var(--red)' }}>
-              Subscribe to Ask Boet
+            <Link href="/subscribe" style={{ color: 'var(--red)' }}>
+              Subscribe to {PRO_NAME}
             </Link>{' '}
             for 25% off featured bids (PRO: 50% off).
           </span>
