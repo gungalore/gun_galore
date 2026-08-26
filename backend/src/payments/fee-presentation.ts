@@ -218,7 +218,12 @@ function randPhrase(cents: number): string {
  * Mirrors the branch TransactionsService takes when it prices a checkout, so
  * the stored column and the maths can never disagree.
  *
- * ⚠️ An EXPERIENCE is SELLER_DEDUCT because the service tests isExperience
+ * Hunting Packages were removed on 2026-08-26. They used to take a third
+ * branch here (SELLER_DEDUCT, because the service tested isExperience
+ * before the buy-now branch) and carried a known bug where a BUY_NOW
+ * experience was marked up AND then had commission deducted from the
+ * marked-up price. Both the branch and the bug are gone with the feature.
+
  * BEFORE the buy-now branch and prices it with breakdownExperience, which
  * honours the listing's own fee flag and deducts from the seller.
  *

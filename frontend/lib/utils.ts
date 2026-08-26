@@ -50,13 +50,4 @@ export const LISTING_TYPE_LABELS: Record<string, string> = {
   BUY_NOW: 'Buy Now',
   TAKE_A_SHOT: 'Take a Shot',
   AUCTION: 'Auction',
-  SWOP: 'Swop / Trade',
-};
-
-// Hunting Packages / Experiences (Phase E). Maps the ExperienceType enum
-// to the user-facing package label shown on the sell form, listing detail,
-// and order page.
-export const EXPERIENCE_TYPE_LABELS: Record<string, string> = {
-  RANGE_DAY: 'Range day',
-  PLAINS_GAME_HUNT: 'Plains-game hunt',
 };

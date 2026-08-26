@@ -94,41 +94,6 @@ describe('computeFees ↔ FeeCalculator parity', () => {
     expect(top.commissionRand).toBeLessThan(plain.commissionRand);
   });
 
-  it('experience parity', () => {
-    const out = svc.computeFees(
-      { kind: 'experience', priceZar: 15_000, passFeeToBuyer: true },
-      false,
-    ) as unknown as Record<string, number>;
-    const b = fees.breakdownExperience(1_500_000, true, false, 'manual');
-    expect(out.buyerTotalRand).toBe(b.buyerTotal / 100);
-    expect(out.sellerPayoutRand).toBe(b.sellerPayout / 100);
-  });
-
-  it('swap leg + swap cash parity', () => {
-    const leg = svc.computeFees(
-      { kind: 'swapLeg', courierZar: 95, cashZar: 500 },
-      false,
-    ) as unknown as Record<string, number>;
-    const bl = fees.breakdownSwapLeg(9_500, 50_000, false, 'manual');
-    expect(leg.partyTotalRand).toBe(bl.partyTotal / 100);
-    expect(leg.serviceFeeRand).toBe(50);
-
-    const fire = svc.computeFees(
-      { kind: 'swapLeg', isFirearmLeg: true },
-      false,
-    ) as unknown as Record<string, number>;
-    expect(fire.serviceFeeRand).toBe(100);
-
-    const cash = svc.computeFees({ kind: 'swapCash', cashZar: 3_000 }, false) as {
-      commissionRand: number;
-    };
-    expect(cash.commissionRand).toBe(fees.swapCashCommission(300_000) / 100);
-    const free = svc.computeFees({ kind: 'swapCash', cashZar: 900 }, false) as {
-      commissionRand: number;
-    };
-    expect(free.commissionRand).toBe(0);
-  });
-
   it('garbage inputs never throw and never go negative', () => {
     const out = svc.computeFees(
       { kind: 'sale', priceZar: -50 as number, shippingZar: NaN as number },

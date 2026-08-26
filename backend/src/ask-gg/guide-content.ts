@@ -61,7 +61,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
       'South Africa’s new and secondhand outdoor store — camping, overlanding, fishing, optics, knives and outdoor clothing, with your payment protected on every deal.',
     points: [
       'Browse or search for anything outdoors. Every buy is protected: your payment is held until you’ve got the item.',
-      'Four ways to buy: Buy Now, make an offer (Take a Shot), bid in an Auction, or Swop an item you own.',
+      'Three ways to buy: Buy Now, make an offer (Take a Shot), or bid in an Auction.',
       'Selling is free to list — you only pay a commission when it sells.',
       'Stuck? I’m on every page — ask me anything about the site, your orders, or the gear itself.',
     ],
@@ -159,26 +159,13 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ],
   },
 
-  'listing-experience': {
-    key: 'listing-experience',
-    title: 'Booking this experience',
-    points: [
-      'This is a booked on-site experience (a guided hunt or range day), not a shipped item.',
-      'Your payment is held until the booking is honoured, so you’re protected if plans change.',
-      'Cancellation terms follow the Consumer Protection Act — ask me how refunds work before you book.',
-    ],
-    ctas: [
-      { label: 'How do cancellations work?', ask: 'How do cancellations and refunds work for a booked experience or hunt?' },
-    ],
-  },
-
   'sell-form': {
     key: 'sell-form',
     title: 'Listing your item well',
     points: [
       'Good photos + an honest, specific description sell faster and for more. I can draft the title and description for you.',
       'Price it right: ask me for a suggested price based on what similar items actually sold for.',
-      'Pick your selling mode — Buy Now for a quick sale, Auction to let the market decide, Take a Shot to invite offers, or Swop to trade.',
+      'Pick your selling mode — Buy Now for a quick sale, Auction to let the market decide, or Take a Shot to invite offers.',
       'Listing is free — you only pay a commission when it sells.',
       'Restricted categories ask for extra detail — the item identifier, proof of entitlement and where the hand-over will happen. The form tells you exactly what it needs once you pick the category.',
     ],
@@ -262,7 +249,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     title: 'Your seller dashboard',
     points: [
       'This is your seller standing — your tier, trust score and what’s left to reach the next level.',
-      'A higher seller tier earns real perks: lower commission once you reach Top Seller, and more trust with buyers. (Featured-slot discounts are a separate GG+ membership perk.)',
+      'A higher seller tier earns real perks: lower commission once you reach Top Seller, and more trust with buyers.',
       'Keep deliveries on time, your ratings up, and KYC + banking complete — that’s what moves the score.',
       'Buyers can ask questions on your listings; answering quickly builds trust and sales.',
     ],
@@ -305,7 +292,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     key: 'subscribe',
     title: 'GG+ membership',
     points: [
-      'GG+ has two tiers — Member and Pro — with perks like more Ask GG advice, featured-slot discounts and bigger photo limits.',
+      'GG+ has two tiers — Member and Pro — with perks like more Ask GG advice and bigger photo limits.',
       'It’s prepaid by EFT: no debit order, no auto-renew. You’re only ever charged when you choose to renew.',
       'Pro unlocks the most — including the reloading Load Lab and the deepest advice quota.',
       'Not sure it’s worth it? Ask me to compare the tiers against what you actually use.',
@@ -387,21 +374,6 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ],
   },
 
-  swaps: {
-    key: 'swaps',
-    title: 'Your swaps',
-    points: [
-      'Follow each two-way trade here: proposal, both sides funding, proof-of-possession, shipping and completion.',
-      'Both sides fund before anything ships — if only one side pays, that person is fully reimbursed, so no one is left out of pocket.',
-      'You’ll be asked to photograph your item next to a unique code — that proves it exists before either item moves.',
-      'Payment references and banking for a swap show on this page; I never handle those directly.',
-    ],
-    ctas: [
-      { label: 'Walk me through a swop', ask: 'Walk me through how a Swop works from proposal to completion, including the photo step.' },
-      { label: 'Update me on my swaps', ask: 'Give me an update on my swaps and what each one is waiting on.' },
-    ],
-  },
-
   earnings: {
     key: 'earnings',
     title: 'Your earnings & payouts',
@@ -428,20 +400,6 @@ export const GUIDES: Record<string, AskGgGuide> = {
     ],
     ctas: [
       { label: 'What do the badges mean?', ask: 'What do the seller tier and badges (Top Seller, Verified Expert) mean?' },
-    ],
-  },
-
-  featured: {
-    key: 'featured',
-    title: 'Featuring your listing',
-    points: [
-      'Featured slots put your listing on prime real estate (like the homepage) for a set run.',
-      'You bid for a slot — the top bid wins it for the slot’s duration. There’s a minimum bid per slot tier.',
-      'GG+ members get a discount on featured bids — Pro more than Member.',
-      'Featured-slot fees aren’t refundable once the slot runs, so bid what a burst of exposure is worth to you.',
-    ],
-    ctas: [
-      { label: 'Is featuring worth it for me?', ask: 'How do featured slots work and is it worth featuring my listing?' },
     ],
   },
 

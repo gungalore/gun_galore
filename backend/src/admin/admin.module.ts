@@ -37,14 +37,12 @@ import {
   AdminSettingsController,
   AdminBroadcastController,
 } from './admin.controller';
-import { AdminSwapsController } from './admin-swaps.controller';
 import { AdminJwtGuard } from './guards/admin-jwt.guard';
 import { SuperadminGuard } from './guards/superadmin.guard';
 import { ListingsModule } from '../listings/listings.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
 import { ShippingModule } from '../shipping/shipping.module';
-import { SwapsModule } from '../swaps/swaps.module';
 
 @Module({
   // ListingsModule so reviewListing can re-index the listing in
@@ -58,7 +56,6 @@ import { SwapsModule } from '../swaps/swaps.module';
     ListingsModule,
     PaymentsModule,
     ZohoBooksModule,
-    SwapsModule, // AdminSwapsController → SwapFundingService (force-complete / unwind)
     ShippingModule, // AdminTransactionsController → ShippingService (record a failed shipment)
   ],
   providers: [
@@ -104,7 +101,6 @@ import { SwapsModule } from '../swaps/swaps.module';
     AdminCategoryAttributesController,
     AdminSettingsController,
     AdminBroadcastController,
-    AdminSwapsController,
   ],
   // Export AdminCreditsService so TasksModule's pollCreditBalances
   // cron can inject it without us having to declare the service in

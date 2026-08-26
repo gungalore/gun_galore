@@ -17,15 +17,12 @@ import { vicinityLabel } from '@/lib/vicinity';
 import SellerControls from './seller-controls';
 import OfferPanel from './offer-panel';
 import AuctionPanel from './auction-panel';
-import SwapPanel from './swap-panel';
-import ExperiencePanel from './experience-panel';
 import ModerationBanner from './moderation-banner';
 import BackLink from './back-link';
 import { QuestionsPanel } from './questions-panel';
 import { ImageGallery } from './image-gallery';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
-import { FeaturedRail } from '@/components/featured-rail';
 import { HelpTip } from '@/components/help-tip';
 import { ClickableAvatar } from '@/components/avatar-lightbox';
 import { HelpText } from '@/components/help-text';
@@ -164,14 +161,12 @@ export default async function ListingDetailPage({
   // also suppressed, so it can never offer an action the page refuses:
   //   • the seller viewing their own listing (self-buy is rejected anyway),
   //   • anything not ACTIVE (sold / cancelled / expired / payment-pending),
-  //   • sold-out inventory-tracked listings (wishlist is the only CTA there),
-  //   • fixed-price experiences, which render their own Book CTA.
+  //   • sold-out inventory-tracked listings (wishlist is the only CTA there).
   const soldOut = trackedSellable !== null && trackedSellable <= 0;
   const showBuyBar =
     listing.status === 'ACTIVE' &&
     !isOwnListing &&
-    !soldOut &&
-    !(listing.isExperience && listing.listingType !== 'AUCTION');
+    !soldOut;
   // The bar stays DUMB for auctions: the live figure comes from the polled
   // auction state, not listing.price (which is only the starting bid), so it
   // shows a label and scrolls to the panel rather than quoting a stale number.
@@ -294,19 +289,6 @@ export default async function ListingDetailPage({
           dominant without the background washing the page out. */}
       <PageBackground imageSrc="/marketplace.jpg" opacity={0.36} />
 
-      {/* Layout: <FeaturedRail> sits next to the listing detail column on
-          desktop; on MOBILE it stacks BELOW the product (order-2), because a
-          buyer who tapped a specific item must see that item first — not
-          other sellers' featured cards (or the "featured spots open" seller
-          advert) pushing the product photo below the fold. On lg the wrapper
-          dissolves via display:contents so the sticky desktop aside stays a
-          direct flex child, exactly as before. */}
-      <div className="flex flex-col lg:flex-row gap-6">
-        <div className="order-2 lg:contents">
-          <FeaturedRail />
-        </div>
-        <div className="flex-1 min-w-0 order-1 lg:order-none">
-
       {/* Back link stays OUTSIDE PageReveal so it's clickable instantly.
           Uses router.back() so the user lands back on their previous
           filter / search state instead of being dropped on the home
@@ -426,9 +408,7 @@ export default async function ListingDetailPage({
                   ? 'Marketplace: pay the listed price and go. No bidding, no negotiation. Goes straight to checkout.'
                   : listing.listingType === 'AUCTION'
                     ? 'Auction: timed bidding with proxy bids and snipe protection. The highest bid at close wins, provided the reserve is met.'
-                    : listing.listingType === 'SWOP'
-                      ? 'Swop / Trade: the owner wants to trade this item rather than sell it. Propose a swap — your item, plus optional cash either way — and the owner can accept, counter the cash, or decline.'
-                      : 'Take a Shot: make an offer below the listed price. The seller can accept, counter once, or decline. You get 48 hours to act on a counter.'}
+                    : 'Take a Shot: make an offer below the listed price. The seller can accept, counter once, or decline. You get 48 hours to act on a counter.'}
               </HelpTip>
             </span>
           </div>
@@ -557,20 +537,11 @@ export default async function ListingDetailPage({
             </div>
           )}
 
-          {/* Hunting Packages / Experiences (Phase E) — the experience detail
-              panel replaces the standard shipping/CTA block. For a fixed-price
-              experience it renders its own "Book" CTA into checkout; for an
-              auction experience it shows the event details and the standard
-              AuctionPanel below handles bidding. */}
-          {listing.isExperience && (
-            <ExperiencePanel listing={listing} isOwnListing={isOwnListing} />
-          )}
-
           {/* CTA — wrapped so the sticky mobile buy bar (UX-28) has a stable
               in-page anchor to scroll to for the non-checkout listing types.
               scrollMarginTop clears the sticky top nav on landing. */}
           <div id="buy-panel" style={{ scrollMarginTop: 88 }}>
-          {listing.isExperience && listing.listingType !== 'AUCTION' ? null : listing.status === 'ACTIVE' && listing.listingType === 'BUY_NOW' ? (
+          {listing.status === 'ACTIVE' && listing.listingType === 'BUY_NOW' ? (
             isOwnListing ? (
               // Self-buy guard. Backend rejects the purchase anyway,
               // but the button shouldn't be clickable in the first
@@ -694,13 +665,6 @@ export default async function ListingDetailPage({
             <AuctionPanel
               listingId={listing.id}
               sellerClerkId={listing.seller.clerkId}
-            />
-          ) : listing.status === 'ACTIVE' && listing.listingType === 'SWOP' ? (
-            <SwapPanel
-              listingId={listing.id}
-              sellerClerkId={listing.seller.clerkId}
-              isOwnListing={isOwnListing}
-              isFirearm={listing.isFirearm}
             />
           ) : listing.status !== 'ACTIVE' ? (
             <div
@@ -846,9 +810,8 @@ export default async function ListingDetailPage({
                   protection and the seller is paid directly. The copy
                   branches on listing.isFirearm + shippingMethods so
                   non-firearm listings don't see the opt-out paragraph
-                  at all. Experiences have no shipping — the ExperiencePanel
-                  renders its own on-site notice instead. */}
-          {listing.status === 'ACTIVE' && !listing.isExperience && (
+                  at all. */}
+          {listing.status === 'ACTIVE' && (
             <div
               className="rounded-[6px] p-3 mb-4 text-xs"
               style={{
@@ -1115,8 +1078,6 @@ export default async function ListingDetailPage({
         </div>
       </div>
       </PageReveal>
-        </div>
-      </div>
 
       {/* Cross-sell — "Complete your kit". Complements for THIS listing's
           category, calibre-matched where relevant (uses the listing's

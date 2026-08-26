@@ -33,7 +33,7 @@ const MAX_QA_ENTRIES = 5;
 const MAX_PHOTO_BLOCKS = 3;
 
 export interface ComputeFeesInput {
-  kind?: 'sale' | 'experience' | 'swapLeg' | 'swapCash';
+  kind?: 'sale';
   /**
    * How the sale is priced. Defaults to 'buyNow', which is the marked-up
    * model every new listing uses: the seller names what they want to
@@ -48,9 +48,6 @@ export interface ComputeFeesInput {
   shippingZar?: number;
   passFeeToBuyer?: boolean;
   includeCourierWaybill?: boolean;
-  cashZar?: number;
-  courierZar?: number;
-  isFirearmLeg?: boolean;
 }
 
 export interface ListingDetailsResult {
@@ -100,7 +97,6 @@ export class AskGgPlatformToolsService {
    * whole RAND for the model; the calculator works in cents internally.
    */
   computeFees(input: ComputeFeesInput, isTopSeller: boolean) {
-    const kind = input.kind ?? 'sale';
     const toCents = (zar: number | undefined, cap = 100_000_000): number => {
       const n = Number(zar);
       if (!Number.isFinite(n) || n < 0) return 0;
@@ -108,59 +104,6 @@ export class AskGgPlatformToolsService {
       // keeps a hallucinated huge number from producing nonsense output.
       return Math.round(Math.min(n, cap) * 100);
     };
-
-    if (kind === 'swapCash') {
-      const cashCents = toCents(input.cashZar);
-      const commission = this.fees.swapCashCommission(cashCents);
-      return {
-        kind,
-        cashRand: rand(cashCents),
-        commissionRand: rand(commission),
-        commissionFreeAllowanceRand: 1000,
-        note:
-          commission === 0
-            ? 'Cash top-ups up to R1,000 carry no commission.'
-            : 'Standard commission bands apply to the cash above the R1,000 allowance, deducted from the cash paid to the recipient at settlement.',
-      };
-    }
-
-    if (kind === 'swapLeg') {
-      const b = this.fees.breakdownSwapLeg(
-        toCents(input.courierZar),
-        toCents(input.cashZar),
-        input.isFirearmLeg === true,
-        'manual',
-      );
-      return {
-        kind,
-        isFirearmLeg: input.isFirearmLeg === true,
-        courierRand: rand(b.courierCost),
-        serviceFeeRand: rand(b.serviceFee),
-        cashContributionRand: rand(b.cashContribution),
-        partyTotalRand: rand(b.partyTotal),
-        note: 'Each party funds the leg they send: courier rate + the flat All Outdoor service fee (R50 courier leg / R100 firearm dealer-transfer leg) + any agreed cash top-up.',
-      };
-    }
-
-    if (kind === 'experience') {
-      const b = this.fees.breakdownExperience(
-        toCents(input.priceZar),
-        input.passFeeToBuyer ?? true,
-        isTopSeller,
-        'manual',
-      );
-      return {
-        kind,
-        packagePriceRand: rand(b.listingPrice),
-        commissionRand: rand(b.commissionZar),
-        processingFeeRand: rand(b.processingFee),
-        buyerTotalRand: rand(b.buyerTotal),
-        sellerPayoutRand: rand(b.sellerPayout),
-        passFeeToBuyer: input.passFeeToBuyer ?? true,
-        topSellerDiscountApplied: isTopSeller,
-        note: 'On-site experience: no courier, no shipping handling. Full value is held until the experience is completed.',
-      };
-    }
 
     // ─── Ordinary sale ────────────────────────────────────────────────
     // ⚠️ THIS IS THE ONLY PLACE A SELLER IS QUOTED A PAYOUT BEFORE THEY

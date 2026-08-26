@@ -372,22 +372,7 @@ html[data-standalone='true'] body {
    chrome any page reserves. body[data-has-sticky-strip] no longer exists —
    nothing sets it, so do not write selectors against it. */
 
-/* Suppress the inline mobile FeaturedRail AND the collapsed empty-state
-   nudge in standalone mode. The reason has changed but the rule has not:
-   featured is now carried by the in-feed card inside the results grid
-   (components/featured-in-feed.tsx), so a rail as well would be the same
-   paid slots twice on one screen. */
-html[data-standalone='true'] [data-featured-rail-inline],
-html[data-standalone='true'] [data-featured-empty-nudge] {
-  display: none;
-}
 
-/* Same logic for the bare-homepage "Featured" marquee section — the in-feed
-   card already carries featured in standalone. Browser users on the homepage
-   still see the marquee (no regression). */
-html[data-standalone='true'] [data-featured-home-section] {
-  display: none;
-}
 
 /* Prevent text-selection on nav / tab-bar / button chrome — these are
    tappable surfaces, not content. Body content (listings, descriptions,

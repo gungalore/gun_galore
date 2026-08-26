@@ -24,9 +24,7 @@ import { OrdersModule } from './orders/orders.module';
 import { RatingsModule } from './ratings/ratings.module';
 import { AdminModule } from './admin/admin.module';
 import { OffersModule } from './offers/offers.module';
-import { SwapsModule } from './swaps/swaps.module';
 import { AuctionsModule } from './auctions/auctions.module';
-import { FeaturedModule } from './featured/featured.module';
 import { DealsModule } from './deals/deals.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { TasksModule } from './tasks/tasks.module';
@@ -35,7 +33,6 @@ import { ReferenceNumberModule } from './common/reference-number.service';
 import { ZohoBooksModule } from './zoho/zoho-books.module';
 import { ActionTokensModule } from './actions/action-tokens.module';
 import { WishlistModule } from './wishlist/wishlist.module';
-import { RaffleModule } from './raffle/raffle.module';
 import { MarketingModule } from './marketing/marketing.module';
 import { SavedSearchesModule } from './saved-searches/saved-searches.module';
 import { ReportsModule } from './reports/reports.module';
@@ -50,7 +47,6 @@ import { ReloadingModule } from './reloading/reloading.module';
 import { HuntBallisticsModule } from './hunt-ballistics/hunt-ballistics.module';
 import { ManualPaymentsModule } from './manual-payments/manual-payments.module';
 import { MyShipmentsModule } from './my-shipments/my-shipments.module';
-import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { LoadLabModule } from './load-lab/load-lab.module';
 
 @Module({
@@ -89,9 +85,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     RatingsModule,
     AdminModule,
     OffersModule,
-    SwapsModule,
     AuctionsModule,
-    FeaturedModule,
     DealsModule,
     SuppliersModule,
     TasksModule,
@@ -100,7 +94,6 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     ZohoBooksModule,
     ActionTokensModule,
     WishlistModule,
-    RaffleModule,
     MarketingModule,
     SavedSearchesModule,
     ReportsModule,
@@ -110,7 +103,6 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     HuntBallisticsModule,
     ManualPaymentsModule,
     MyShipmentsModule,
-    SubscriptionsModule,
     LoadLabModule,
     SupportModule,
     ComplaintsModule,

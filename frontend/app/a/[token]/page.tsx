@@ -8,7 +8,6 @@ import {
   TransactionAcceptPage,
   type TransactionAcceptPayload,
 } from './transaction-accept';
-import { SwapDecisionPage, type SwapDecisionPayload } from './swap-decision';
 import { RunnerUpPage, type RunnerUpPayload } from './runner-up';
 
 /**
@@ -39,7 +38,6 @@ type ResolvedPayload =
   | CheckoutPayload
   | KycVerifyPayload
   | TransactionAcceptPayload
-  | SwapDecisionPayload
   | ScanHandoffPayload
   | RunnerUpPayload;
 
@@ -136,9 +134,6 @@ export default async function ActionTokenPage({
         <AuctionBidPage token={token} payload={payload} />
       ) : payload.kind === 'TRANSACTION_ACCEPT' ? (
         <TransactionAcceptPage token={token} payload={payload} />
-      ) : payload.kind === 'SWAP_PROPOSAL_DECISION' ||
-        payload.kind === 'SWAP_COUNTER_DECISION' ? (
-        <SwapDecisionPage token={token} payload={payload} />
       ) : payload.kind === 'AUCTION_RUNNER_UP' ? (
         <RunnerUpPage token={token} payload={payload} />
       ) : (

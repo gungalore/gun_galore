@@ -328,10 +328,9 @@ export default function RootLayout({
               which, with the tab bar's own 60px, spoke for 21% of an iPhone
               13's screen before any product had loaded.
 
-              Featured placement did not go away; it moved into the results
-              grid as <FeaturedInFeedCard />, where it is read as stock rather
-              than as a banner. See that component for the full argument.
-              app/globals.css no longer reserves the 110px, and
+              Featured placement moved into the results grid as an in-feed
+              card, and was then removed entirely with the Featured module on
+              2026-08-26. app/globals.css no longer reserves the 110px, and
               body[data-has-sticky-strip] is gone with it. */}
           {/* Bottom tab bar — installed-PWA users only. Renders null
               in browser-mobile mode so server HTML stays identical

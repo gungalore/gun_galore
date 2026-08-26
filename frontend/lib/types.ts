@@ -1,11 +1,4 @@
-export type ListingType = 'BUY_NOW' | 'TAKE_A_SHOT' | 'AUCTION' | 'SWOP';
-// Hunting Packages / Experiences (Phase E). An experience is NOT a new
-// ListingType — it's a snapshot flag (Category.isExperience →
-// Listing.isExperience) on a BUY_NOW or AUCTION listing, fulfilled
-// on-site (ShippingMethod.ON_SITE_SERVICE, no courier/parcel). This is
-// the package "shape": RANGE_DAY (shooting-range day) or PLAINS_GAME_HUNT
-// (guided plains-game hunt, which also carries a speciesList).
-export type ExperienceType = 'RANGE_DAY' | 'PLAINS_GAME_HUNT';
+export type ListingType = 'BUY_NOW' | 'TAKE_A_SHOT' | 'AUCTION';
 export type ListingStatus = 'DRAFT' | 'PENDING_REVIEW' | 'ACTIVE' | 'PAYMENT_PENDING' | 'SOLD' | 'CANCELLED' | 'EXPIRED';
 export type Condition = 'NEW' | 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
 export type SellerTier = 'NEW' | 'ESTABLISHED' | 'TRUSTED' | 'TOP_SELLER' | 'DEALER';
@@ -57,11 +50,6 @@ export interface Category {
   name: string;
   slug: string;
   isFirearm: boolean;
-  // Hunting Packages / Experiences (Phase E) — categories whose listings are
-  // future-dated on-site services (hunting packages / range days). Snapshotted
-  // to Listing.isExperience at create; drives the experience sell flow,
-  // detail panel, checkout attestations, and the browse "Experiences" chip.
-  isExperience?: boolean;
   // Collection-only categories (e.g. trailers / caravans) — items are
   // collected in person from the seller, never couriered. Forces
   // shippingMethods = ['COLLECTION'] on the listing.
@@ -306,26 +294,6 @@ export interface Listing {
   // working" claim at listing. The SELLER'S own statement (CPA s41), shown as
   // a "Seller attests: tested & working" badge on the detail page.
   testedWorkingAttestedAt?: string | null;
-  // ── Hunting Packages / Experiences (Phase E) ──────────────────────────
-  // isExperience is snapshotted from Category.isExperience at create (like
-  // isFirearm). When true the listing is a future-dated on-site SERVICE —
-  // BUY_NOW or AUCTION only, fulfilled via ShippingMethod.ON_SITE_SERVICE
-  // (no courier / no parcel), funds held until the buyer confirms it
-  // happened. The experience-panel + checkout attestations + order-page CPA
-  // cancel quote all gate on this flag. All the metadata below is null on a
-  // non-experience listing.
-  isExperience?: boolean;
-  experienceType?: ExperienceType | null;
-  eventStartDate?: string | null; // scheduled date / window start (ISO)
-  eventEndDate?: string | null; // null = single day; set = multi-day window
-  eventProvince?: Province | null;
-  locationText?: string | null; // property / area, free text (no exact address)
-  capacitySlots?: number | null; // hunters / guests the package accommodates
-  durationText?: string | null; // e.g. "3 nights / 2 hunting days"
-  speciesList?: string[]; // for PLAINS_GAME_HUNT
-  whatsIncluded?: string | null; // accommodation, PH/guide, field prep…
-  rifleProvided?: boolean; // rifle provided vs bring-your-own
-  supplierRegistrationNumber?: string | null;
   // Inventory / quantity (Phase 8a). trackInventory=false for single items.
   trackInventory?: boolean;
   quantityAvailable?: number;
@@ -590,20 +558,6 @@ export interface Transaction {
   // screen at checkout. Used by the order page to gate the
   // contact-reveal card.
   privateArrangeAcceptedAt: string | null;
-  // ── Hunting Packages / Experiences (Phase E) ──────────────────────────
-  // An experience booking (listing.isExperience, shippingMethod
-  // ON_SITE_SERVICE): the buyer picks an eventDate within the listing's
-  // window + a partySize (≤ capacitySlots), and payment stays HELD until the
-  // buyer confirms the experience happened (or a CPA-s17 cancellation runs).
-  // These drive the order-page experience panel. Null on every other flow.
-  eventDate?: string | null; // the scheduled date the buyer chose (ISO)
-  eventEndDate?: string | null; // copy of the listing window end for multi-day
-  partySize?: number | null; // hunters / guests on this booking
-  // Outfitter (seller) accepts / declines the booking, then the buyer
-  // confirms it happened on/after the event date.
-  bookingConfirmedAt?: string | null;
-  bookingDeclinedAt?: string | null;
-  eventCompletedConfirmedAt?: string | null;
   // Dealer stock-in verification (firearm DEALER_TRANSFER only).
   // See backend/src/payments/dealer-verification.service.ts for the
   // lifecycle. Null on every other shipping method.

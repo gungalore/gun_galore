@@ -36,12 +36,21 @@ describe('account-standing helper', () => {
 // EVERY BAN GATE ALSO REFUSES A CLOSED ACCOUNT.
 //
 // ⚠️ THIS IS A SOURCE SWEEP, NOT A UNIT TEST, AND THAT IS DELIBERATE — the
-// same reasoning as api-route-contract.spec.ts. There are eleven of these
-// gates across seven services, they are one line each, and nothing in the
-// compiler connects `if (user.isBanned) throw` to "…and closed too". The
-// failure mode is not that today's gates are wrong; it is that the twelfth
-// gate gets added six months from now, next to a `isBanned` line that was
-// copied from one of these, and a closed account silently keeps trading.
+// same reasoning as api-route-contract.spec.ts. There are six of these gates
+// across four services (listings ×3, auctions, offers, transactions), they are
+// one line each, and nothing in the compiler connects `if (user.isBanned)
+// throw` to "…and closed too". The failure mode is not that today's gates are
+// wrong; it is that the seventh gate gets added six months from now, next to
+// an `isBanned` line that was copied from one of these, and a closed account
+// silently keeps trading.
+//
+// It was ELEVEN gates across seven services until 2026-08-26, when Swop,
+// Featured slots, the PRO subscription and Hunting Packages were removed and
+// took their five gates with them. The floor below moved 11 → 6 for that
+// reason and no other: the companion test — that every gate found is preceded
+// by assertAccountNotClosed — kept passing throughout, so no surviving gate
+// was touched. If this floor ever needs lowering again, check that the same
+// companion test is still green before you believe the drop is benign.
 // ────────────────────────────────────────────────────────────────────
 
 /** Every .ts under src/, minus the tests. */
@@ -81,7 +90,7 @@ describe('write gates: banned implies closed is checked too', () => {
   }
 
   it('finds the gates at all (the regex has not gone stale)', () => {
-    expect(gates.length).toBeGreaterThanOrEqual(11);
+    expect(gates.length).toBeGreaterThanOrEqual(6);
   });
 
   it.each(

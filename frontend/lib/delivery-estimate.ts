@@ -26,23 +26,11 @@ export function getListingDeliveryEstimate(
   listing: Pick<
     Listing,
     | 'listingType'
-    | 'isExperience'
     | 'isFirearm'
     | 'collectionOnly'
     | 'shippingMethods'
   >,
 ): ListingDeliveryEstimate {
-  // Experiences are an on-site service on a fixed event date, not a parcel —
-  // the ExperiencePanel already surfaces the date/location.
-  if (listing.isExperience) return null;
-
-  // Swaps have no purchase/dispatch — a two-way exchange ships per leg after
-  // the swap is agreed + funded (flat swap service fee), so a purchase-style
-  // "after dispatch" courier ETA would misdescribe the flow. The SwapPanel
-  // owns delivery expectations for swaps; hide the pre-purchase estimate here
-  // even when a courier method is listed.
-  if (listing.listingType === 'SWOP') return null;
-
   // Firearms always route via a licensed dealer — no platform-estimable
   // courier transit; we show the method, not a window.
   if (listing.isFirearm) return { kind: 'FIREARM' };
@@ -54,7 +42,7 @@ export function getListingDeliveryEstimate(
   const days: number[] = [];
   if (methods.includes('PUDO')) days.push(TRANSIT_BUSINESS_DAYS.PUDO);
   if (methods.includes('TCG')) days.push(TRANSIT_BUSINESS_DAYS.TCG);
-  // Nothing platform-estimable (e.g. PRIVATE_ARRANGE only, or a swap leg).
+  // Nothing platform-estimable (e.g. PRIVATE_ARRANGE only).
   if (days.length === 0) return null;
 
   return { kind: 'COURIER', minDays: Math.min(...days), maxDays: Math.max(...days) };
@@ -96,18 +84,11 @@ export function getCollectionMode(
   listing: Pick<
     Listing,
     | 'listingType'
-    | 'isExperience'
     | 'collectionOnly'
     | 'shippingMethods'
     | 'attributes'
   >,
 ): CollectionMode {
-  // Experiences are an on-site service, not a thing anyone collects.
-  if (listing.isExperience) return null;
-  // Swaps exchange per leg after the swap is agreed and the SwapPanel owns
-  // that story — same carve-out getListingDeliveryEstimate makes above.
-  if (listing.listingType === 'SWOP') return null;
-
   // Union of both signals, matching checkout-form's isCollection: the flag is
   // the snapshot, the method array is the belt-and-braces for older payloads.
   const isCollection =

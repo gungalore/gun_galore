@@ -36,7 +36,6 @@ interface ZohoFailedSwap {
 }
 interface ZohoFailed {
   transactions: ZohoFailedRow[];
-  featuredBids: ZohoFailedRow[];
   subscriptionCharges: ZohoFailedRow[];
   swaps: ZohoFailedSwap[];
   totalFailed: number;
@@ -676,7 +675,7 @@ export default function HeldFundsAdminPage() {
         ) : (
           <div className="overflow-x-auto">
             <p className="text-xs mb-2" style={{ color: 'var(--red)' }}>
-              {zohoFailed.totalFailed} entit{zohoFailed.totalFailed === 1 ? 'y' : 'ies'} failed their last Books sync. Transactions &amp; featured bids retry from their dossier; swap leg-fee receipts retry automatically each hour.
+              {zohoFailed.totalFailed} entit{zohoFailed.totalFailed === 1 ? 'y' : 'ies'} failed their last Books sync. Transactions retry from their dossier; swap leg-fee receipts retry automatically each hour.
             </p>
             <table className="w-full text-sm">
               <thead>
@@ -690,7 +689,6 @@ export default function HeldFundsAdminPage() {
                 {(
                   [
                     ['Transaction', zohoFailed.transactions],
-                    ['Featured bid', zohoFailed.featuredBids],
                     ['Subscription', zohoFailed.subscriptionCharges],
                   ] as Array<[string, ZohoFailedRow[]]>
                 ).flatMap(([type, rows]) =>
@@ -700,12 +698,7 @@ export default function HeldFundsAdminPage() {
                     // dossier", so link them there instead of making them copy
                     // the reference and search for it. Subscription rows self-
                     // heal hourly and have no dossier, so they stay plain text.
-                    const href =
-                      type === 'Transaction'
-                        ? `/admin/transactions/${r.id}`
-                        : type === 'Featured bid'
-                          ? '/admin/featured'
-                          : null;
+                    const href = type === 'Transaction' ? `/admin/transactions/${r.id}` : null;
                     return (
                       <tr key={`${type}-${r.id}`} style={{ borderTop: '0.5px solid var(--border)' }}>
                         <td className="py-2 pr-4">{type}</td>

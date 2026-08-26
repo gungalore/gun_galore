@@ -464,7 +464,6 @@ export class AskGgGuideService {
       if (seg[1] === 'orders' || seg[1] === 'sales') return 'orders';
       if (seg[1] === 'offers' || seg[1] === 'bids') return 'offers';
       if (seg[1] === 'listings') return 'my-listings';
-      if (seg[1] === 'swaps') return 'swaps';
       if (seg[1] === 'earnings') return 'earnings';
       return 'orders';
     }
@@ -480,7 +479,6 @@ export class AskGgGuideService {
     if (seg[0] === 'wishlist') return 'wishlist';
     if (seg[0] === 'saved-searches') return 'saved-searches';
     if (seg[0] === 'notifications') return 'notifications';
-    if (seg[0] === 'featured') return 'featured';
 
     if (
       seg[0] === 'faq' ||
@@ -500,7 +498,6 @@ export class AskGgGuideService {
         'aml-policy',
         'firearms-compliance',
         'refund-policy',
-        'experiences-cancellation-policy',
         'legal',
       ].includes(seg[0])
     ) {
@@ -519,7 +516,6 @@ export class AskGgGuideService {
       select: {
         listingType: true,
         status: true,
-        isExperience: true,
         currentBid: true,
         endTime: true,
         reservePrice: true, // compared server-side; NEVER emitted
@@ -535,19 +531,16 @@ export class AskGgGuideService {
     // state and time-left of a firearm auction to anyone with the id.
     if (!clerkId && !l.publicVisible) return this.resolveGuide('listing-buy-now');
 
-    // AUCTION wins the guide (the "how to win" playbook is what a bidder needs)
-    // even when the item is an experience; otherwise experiences get the
-    // booking guide, then swop / take-a-shot / buy-now.
+    // AUCTION wins the guide (the "how to win" playbook is what a bidder needs);
+    // otherwise resolve by listing type: swop / take-a-shot / buy-now.
     const key =
       l.listingType === 'AUCTION'
         ? 'listing-auction'
-        : l.isExperience
-          ? 'listing-experience'
-          : l.listingType === 'SWOP'
-            ? 'listing-swop'
-            : l.listingType === 'TAKE_A_SHOT'
-              ? 'listing-take-a-shot'
-              : 'listing-buy-now';
+        : l.listingType === 'SWOP'
+          ? 'listing-swop'
+          : l.listingType === 'TAKE_A_SHOT'
+            ? 'listing-take-a-shot'
+            : 'listing-buy-now';
 
     const guide = await this.resolveGuide(key);
     // Live state ALWAYS wins the intro for auctions — an admin override can

@@ -213,23 +213,11 @@ export class ManualPaymentsService {
   async getZohoFailedSyncs() {
     const [
       transactions,
-      featuredBids,
       subscriptionCharges,
       swaps,
       dealPurchaseOrderRows,
     ] = await Promise.all([
         this.prisma.transaction.findMany({
-          where: { zohoSyncStatus: 'FAILED' },
-          orderBy: { zohoSyncLastAttemptAt: 'desc' },
-          take: 50,
-          select: {
-            id: true,
-            orderReference: true,
-            zohoSyncError: true,
-            zohoSyncLastAttemptAt: true,
-          },
-        }),
-        this.prisma.featuredSlotBid.findMany({
           where: { zohoSyncStatus: 'FAILED' },
           orderBy: { zohoSyncLastAttemptAt: 'desc' },
           take: 50,
@@ -315,13 +303,11 @@ export class ManualPaymentsService {
     }));
     return {
       transactions,
-      featuredBids,
       subscriptionCharges,
       swaps,
       dealPurchaseOrders,
       totalFailed:
         transactions.length +
-        featuredBids.length +
         subscriptionCharges.length +
         swaps.length +
         dealPurchaseOrders.length,

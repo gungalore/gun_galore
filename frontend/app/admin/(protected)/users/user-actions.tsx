@@ -3,14 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/admin-auth';
-import { PRO_NAME } from '@/lib/brand';
 
 const TIERS = ['NEW', 'ESTABLISHED', 'TRUSTED', 'TOP_SELLER', 'DEALER'];
 // Must match the KycStatus enum (backend @IsEnum rejects anything else).
 // 'SUBMITTED' was never a real status; 'UNDER_REVIEW' is the Claude-flow
 // human-review state; 'NONE' resets a user to unverified.
 const KYC_STATUSES = ['NONE', 'PENDING', 'VERIFIED', 'REJECTED', 'UNDER_REVIEW'];
-const SUBSCRIPTION_TIERS = ['FREE', 'PRO']; // MEMBER retired 2026-07-19
 
 // Destructive admin actions on a user now require:
 //   1. A typed reason (audit log — backend enforces ≥3 chars).
@@ -30,7 +28,6 @@ export default function UserActions({
   accountClosedAt = null,
   sellerTier,
   kycStatus,
-  subscriptionTier,
   sellerRejectStrikes = 0,
   sellingBanned = false,
 }: {
@@ -46,7 +43,6 @@ export default function UserActions({
   accountClosedAt?: string | null;
   sellerTier: string;
   kycStatus: string;
-  subscriptionTier: string;
   // Reject-strike policy state — shows the clear-strikes action when there
   // is anything to clear (strikes > 0 or a selling ban in force).
   sellerRejectStrikes?: number;
@@ -61,7 +57,6 @@ export default function UserActions({
     | { kind: 'unban' }
     | { kind: 'tier'; value: string }
     | { kind: 'kyc'; value: string }
-    | { kind: 'subscription'; value: string }
     | { kind: 'clearStrikes' }
     | { kind: 'closeAccount' }
   >(null);
@@ -145,30 +140,6 @@ export default function UserActions({
               }}
             >
               {KYC_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <p className="text-xs mb-1" style={{ color: 'var(--text-tertiary)' }}>
-              {PRO_NAME}
-            </p>
-            <select
-              defaultValue={subscriptionTier}
-              onChange={(e) =>
-                e.target.value !== subscriptionTier &&
-                askConfirm({ kind: 'subscription', value: e.target.value })
-              }
-              className="w-full px-2 py-1 rounded text-xs outline-none"
-              style={{
-                background: 'var(--bg-inset)',
-                border: '0.5px solid var(--border)',
-                color: 'var(--text-primary)',
-              }}
-            >
-              {SUBSCRIPTION_TIERS.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -427,7 +398,6 @@ function ConfirmModal({
     | { kind: 'ban' | 'unban' }
     | { kind: 'tier'; value: string }
     | { kind: 'kyc'; value: string }
-    | { kind: 'subscription'; value: string }
     | { kind: 'clearStrikes' }
     | { kind: 'closeAccount' };
   userId: string;
@@ -477,8 +447,6 @@ function ConfirmModal({
         return `Change tier to ${confirm.value}?`;
       case 'kyc':
         return `Override KYC status to ${confirm.value}?`;
-      case 'subscription':
-        return `Set ${PRO_NAME} subscription to ${confirm.value}?`;
       case 'clearStrikes':
         return `Clear reject strikes for @${username ?? 'this user'}?`;
       case 'closeAccount':
@@ -496,8 +464,6 @@ function ConfirmModal({
         return 'Tier changes affect commission discount and the badge shown on listings. DEALER is sticky and bypasses the auto-tier algorithm.';
       case 'kyc':
         return 'KYC overrides bypass VerifyNow + Home Affairs. Use only when you have independent verification of identity (manual document review).';
-      case 'subscription':
-        return `Manually sets the ${PRO_NAME} subscription tier without going through paid checkout — a comp / support grant. PRO now only reduces featured-slot fees — Ask Boet was removed and Load Lab is open to every member. Reversible; recorded in the audit log.`;
       case 'clearStrikes':
         return 'Resets seller reject-strikes to 0, lifts the selling ban if one is in force, and resolves the open strike alerts. Use after reviewing the SELLER_REJECT_STRIKE alerts. Audited.';
       case 'closeAccount':
@@ -532,8 +498,6 @@ function ConfirmModal({
               if (confirm.kind === 'unban') body.isBanned = false;
               if (confirm.kind === 'tier') body.sellerTier = confirm.value;
               if (confirm.kind === 'kyc') body.kycStatus = confirm.value;
-              if (confirm.kind === 'subscription')
-                body.subscriptionTier = confirm.value;
               return adminFetch(`/admin/users/${userId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },

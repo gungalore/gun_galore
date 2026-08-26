@@ -25,7 +25,6 @@ interface User {
   phone: string | null;
   sellerTier: string;
   kycStatus: string;
-  subscriptionTier: string;
   isBanned: boolean;
   // See the note on the same field in ./page.tsx — a closure is not a ban.
   accountClosedAt: string | null;
@@ -230,8 +229,7 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
                       accountClosedAt={u.accountClosedAt}
                       sellerTier={u.sellerTier}
                       kycStatus={u.kycStatus}
-                      subscriptionTier={u.subscriptionTier}
-                    />
+                              />
                   </td>
                 </tr>
               );

@@ -254,16 +254,20 @@ describe('normaliseEligibility', () => {
     ]);
   });
 
+  // The example code here is incidental — what is under test is that a
+  // WARNING passes through without blocking and still gets its href mapped.
+  // It used ACTIVE_SUBSCRIPTION until 2026-08-26, when the PRO membership was
+  // removed and that code went with it; PAYOUT_DUE exercises the same path.
   it('carries warnings through without blocking', () => {
     const e = normaliseEligibility({
       eligible: true,
       blockers: [],
       warnings: [
-        { code: 'ACTIVE_SUBSCRIPTION', message: 'Your PRO subscription ends' },
+        { code: 'PAYOUT_DUE', message: 'A payout is still on its way to you' },
       ],
     });
     expect(e.eligible).toBe(true);
     expect(e.warnings).toHaveLength(1);
-    expect(e.warnings[0].href).toBe('/subscribe');
+    expect(e.warnings[0].href).toBe('/my/earnings');
   });
 });

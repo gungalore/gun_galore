@@ -32,27 +32,6 @@ interface MyBidRow {
   payByAt?: string | null;
 }
 
-interface MyFeaturedBidRow {
-  bidId: string;
-  slotId: string;
-  slotNumber: number;
-  slotStatus: 'VACANT' | 'AUCTION_RUNNING' | 'BIND_WINDOW' | 'OCCUPIED';
-  amountCents: number;
-  tier: 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
-  bidStatus: 'ACTIVE' | 'OUTBID' | 'WITHDRAWN' | 'COMMITTED' | 'REFUNDED';
-  auctionStatus:
-    | 'OPEN'
-    | 'CLOSED_AWARDED'
-    | 'CLOSED_NO_BIDS'
-    | 'CANCELLED_BY_ADMIN';
-  closesAt: string | null;
-  closedAt: string | null;
-  isWinner: boolean;
-  youAreHighBidder: boolean;
-  currentTopBid: number | null;
-  createdAt: string;
-}
-
 // Server-rendered static deadline chip for a WON auction awaiting payment —
 // the same shape as the buyer-side ExpiryCountdown on /my/offers, with the
 // auction consequence spelled out. This is load-bearing, not decoration:
@@ -146,20 +125,11 @@ export default async function MyBidsPage() {
   if (!userId) redirect('/sign-in?redirect_url=/my/bids');
 
   const token = await getToken();
-  const [auctionRes, featuredRes] = await Promise.all([
-    fetch(`${API_URL}/auctions/me/bids`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    }),
-    fetch(`${API_URL}/featured/me/bids`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    }),
-  ]);
+  const auctionRes = await fetch(`${API_URL}/auctions/me/bids`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
   const bids: MyBidRow[] = auctionRes.ok ? await auctionRes.json() : [];
-  const featuredBids: MyFeaturedBidRow[] = featuredRes.ok
-    ? await featuredRes.json()
-    : [];
 
   const live = bids.filter(
     (b) => b.listingStatus === 'ACTIVE' && !b.endedAt,
@@ -205,18 +175,6 @@ export default async function MyBidsPage() {
   );
   const payByAt = new Map<string, string | null>(payByEntries);
 
-  // Featured bids split: still bidding / won the slot (BIND_WINDOW) /
-  // everything else (auction closed-and-lost, refunded, etc.).
-  const featuredLive = featuredBids.filter(
-    (b) => b.auctionStatus === 'OPEN' && b.bidStatus === 'ACTIVE',
-  );
-  const featuredWon = featuredBids.filter(
-    (b) => b.isWinner && b.slotStatus === 'BIND_WINDOW',
-  );
-  const featuredClosed = featuredBids.filter(
-    (b) => !featuredLive.includes(b) && !featuredWon.includes(b),
-  );
-
   return (
     <main className="max-w-[760px] mx-auto px-4 py-8">
       <PageReveal variant="slide-up">
@@ -228,7 +186,7 @@ export default async function MyBidsPage() {
         My Bids
       </h1>
 
-      {bids.length === 0 && featuredBids.length === 0 && (
+      {bids.length === 0 && (
         <div
           data-reveal
           className="rounded-[8px] py-12 px-6 text-center"
@@ -247,9 +205,7 @@ export default async function MyBidsPage() {
             className="text-sm mb-5"
             style={{ color: 'var(--text-tertiary)' }}
           >
-            Bid on a live auction to score gear at competitive prices,
-            or bid for a featured slot to advertise one of your own
-            listings on the rail.
+            Bid on a live auction to score gear at competitive prices.
           </p>
           <div className="flex gap-2 justify-center flex-wrap">
             <Link
@@ -263,20 +219,6 @@ export default async function MyBidsPage() {
               }}
             >
               Browse live auctions →
-            </Link>
-            <Link
-              href="/featured/bid"
-              className="gg-bid-spot inline-flex items-center gap-2 py-2.5 px-5 rounded-[6px] text-sm"
-              style={{
-                background:
-                  'radial-gradient(130% 160% at 50% 0%, rgba(232, 181, 58, 0.16) 0%, transparent 70%), var(--bg-card)',
-                color: 'var(--text-primary)',
-                textDecoration: 'none',
-                fontWeight: 600,
-              }}
-            >
-              <span aria-hidden="true" style={{ color: '#e8b53a' }}>★</span>
-              Bid for a featured spot
             </Link>
           </div>
         </div>
@@ -319,50 +261,6 @@ export default async function MyBidsPage() {
         </Section></div>
       )}
 
-      {/* ─── Featured-slot bids ───────────────────────────────────────
-          Separate visual group so the seller knows these are bids for
-          advertising slots, not for buying listings. */}
-      {featuredBids.length > 0 && (
-        <div
-          data-reveal
-          style={{
-            marginTop: 32,
-            paddingTop: 24,
-            borderTop: '0.5px solid var(--border)',
-          }}
-        >
-          <h2
-            className="text-base mb-4"
-            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-          >
-            Featured slot bids
-          </h2>
-
-          {featuredLive.length > 0 && (
-            <Section title="Live">
-              {featuredLive.map((b) => (
-                <FeaturedBidCard key={b.bidId} row={b} />
-              ))}
-            </Section>
-          )}
-
-          {featuredWon.length > 0 && (
-            <Section title="Won — bind a listing now">
-              {featuredWon.map((b) => (
-                <FeaturedBidCard key={b.bidId} row={b} />
-              ))}
-            </Section>
-          )}
-
-          {featuredClosed.length > 0 && (
-            <Section title="Closed">
-              {featuredClosed.map((b) => (
-                <FeaturedBidCard key={b.bidId} row={b} />
-              ))}
-            </Section>
-          )}
-        </div>
-      )}
       </PageReveal>
     </main>
   );
@@ -606,156 +504,3 @@ function BidCard({
   );
 }
 
-function FeaturedBidCard({ row }: { row: MyFeaturedBidRow }) {
-  const auctionOpen = row.auctionStatus === 'OPEN';
-  const ahead = row.youAreHighBidder && row.bidStatus === 'ACTIVE';
-
-  const statusLabel = row.isWinner
-    ? row.slotStatus === 'BIND_WINDOW'
-      ? 'Won — bind now'
-      : 'Won'
-    : !auctionOpen
-      ? 'Lost'
-      : ahead
-        ? 'High bidder'
-        : 'Outbid';
-  const statusColor = row.isWinner
-    ? '#22c55e'
-    : !auctionOpen
-      ? 'var(--text-tertiary)'
-      : ahead
-        ? '#22c55e'
-        : '#f59e0b';
-  const isActive = auctionOpen && row.bidStatus === 'ACTIVE';
-
-  const countdown =
-    auctionOpen && row.closesAt
-      ? remaining(row.closesAt)
-      : auctionOpen
-        ? 'Waiting for first bid'
-        : '';
-
-  return (
-    <div
-      className="rounded-[8px] p-4"
-      style={{
-        background: 'var(--bg-card)',
-        border: '0.5px solid var(--border)',
-      }}
-    >
-      <div className="flex items-center justify-between mb-3">
-        <span
-          className="text-[10px] uppercase px-2 py-0.5 rounded-full"
-          style={{
-            background: isActive
-              ? 'rgba(34,197,94,0.14)'
-              : 'rgba(108,108,108,0.16)',
-            color: isActive ? '#22c55e' : 'var(--text-tertiary)',
-            border: `0.5px solid ${
-              isActive ? 'rgba(34,197,94,0.35)' : 'var(--border)'
-            }`,
-            fontWeight: 600,
-            letterSpacing: '0.06em',
-          }}
-        >
-          {isActive ? 'Active' : 'Closed'}
-        </span>
-        <span className="text-xs" style={{ color: statusColor }}>
-          {statusLabel}
-        </span>
-      </div>
-      <div className="flex gap-3">
-        <div
-          className="w-16 h-16 flex-shrink-0 rounded-[4px] flex flex-col items-center justify-center"
-          style={{
-            // Subtle red→gold gradient so the card reads visually as a
-            // featured-slot bid, not a listing bid.
-            background:
-              'linear-gradient(135deg, rgba(200,16,46,0.18), rgba(232,181,58,0.18))',
-            border: '0.5px solid rgba(232,181,58,0.35)',
-          }}
-        >
-          <span
-            className="text-[10px] uppercase"
-            style={{
-              color: 'var(--text-tertiary)',
-              letterSpacing: '0.06em',
-            }}
-          >
-            Slot
-          </span>
-          <span
-            className="text-base"
-            style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-          >
-            #{row.slotNumber}
-          </span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p
-            className="text-sm font-medium leading-snug"
-            style={{ color: 'var(--text-primary)' }}
-          >
-            Featured slot #{row.slotNumber}{' '}
-            <span
-              className="text-xs"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
-              · {row.tier}
-            </span>
-          </p>
-          <div className="mt-1 flex items-center gap-2 flex-wrap">
-            <span
-              className="text-xs"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
-              Your bid:{' '}
-              <span style={{ color: 'var(--text-primary)' }}>
-                {formatPrice(row.amountCents)}
-              </span>
-            </span>
-            <span
-              className="text-xs"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
-              Top bid:{' '}
-              <span style={{ color: 'var(--text-primary)' }}>
-                {row.currentTopBid !== null
-                  ? formatPrice(row.currentTopBid)
-                  : '—'}
-              </span>
-            </span>
-            {countdown && (
-              <span
-                className="text-xs"
-                style={{ color: 'var(--text-tertiary)' }}
-              >
-                {countdown}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {row.isWinner && row.slotStatus === 'BIND_WINDOW' && (
-        <div
-          className="mt-3 pt-3"
-          style={{ borderTop: '0.5px solid var(--border)' }}
-        >
-          <Link
-            href="/featured/bid"
-            className="block w-full py-2.5 rounded-[6px] text-sm text-center"
-            style={{
-              background: 'var(--red)',
-              color: '#fff',
-              fontWeight: 500,
-              textDecoration: 'none',
-            }}
-          >
-            Bind a listing — 15 min window
-          </Link>
-        </div>
-      )}
-    </div>
-  );
-}

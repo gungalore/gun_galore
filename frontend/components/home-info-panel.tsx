@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { BRAND_NAME } from '@/lib/brand';
 
 /**
  * "Good to know" — the quiet answers strip that sits near the bottom of the
@@ -72,24 +71,6 @@ const SECTIONS: { q: string; a: React.ReactNode }[] = [
           Commission is banded — 9% on the first R5,000, then 7%, 5% and 3% on
           higher portions. The full schedule and a worked example are on the{' '}
           <Link href="/fees" style={{ color: 'var(--red)' }}>Fees</Link> page.
-        </p>
-      </>
-    ),
-  },
-  {
-    q: 'Front-page placement',
-    a: (
-      <>
-        <p>
-          The featured strip at the top of the store is the first thing every
-          visitor sees. Ten spots run there, and sellers bid for them — win
-          one and your listing sits at the top of {BRAND_NAME} for the
-          duration of your tier.
-        </p>
-        <p>
-          <Link href="/featured/bid" style={{ color: 'var(--red)' }}>
-            Bid for a spot →
-          </Link>
         </p>
       </>
     ),

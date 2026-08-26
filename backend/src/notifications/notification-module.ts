@@ -26,9 +26,6 @@ export function moduleForNotification(
   // Auction bids — always the bidder (buyer) side.
   if (type.startsWith('bid_') || type.startsWith('auction_')) return '/my/bids';
 
-  // Swaps — both parties act on /my/swaps.
-  if (type.startsWith('swap_')) return '/my/swaps';
-
   // Banking / profile actions.
   if (type.startsWith('bank_verify') || type === 'refund_needs_bank_details') {
     return '/profile';
@@ -37,14 +34,12 @@ export function moduleForNotification(
   // Subscription (AO PRO).
   if (type.startsWith('subscription_')) return '/subscribe';
 
-  // Seller's listings — moderation results, delisting, licence expiry,
-  // featured-slot payment.
+  // Seller's listings — moderation results, delisting, licence expiry.
   if (
     type === 'listing_approved' ||
     type === 'listing_rejected' ||
     type === 'firearm_listing_delisted' ||
-    type === 'firearm_licence_expiring' ||
-    type === 'featured_payment_received'
+    type === 'firearm_licence_expiring'
   ) {
     return '/my/listings';
   }
