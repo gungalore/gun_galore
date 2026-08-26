@@ -335,7 +335,7 @@ export default async function HomePage({
                 fontWeight: 600,
                 letterSpacing: '0.02em',
                 background:
-                  'linear-gradient(135deg, #C8102E 0%, #E8B53A 100%)',
+                  'linear-gradient(135deg, #C8102E 0%, var(--gold) 100%)',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
@@ -535,7 +535,7 @@ export default async function HomePage({
                   width="26"
                   height="26"
                   viewBox="0 0 24 24"
-                  fill="#e8b53a"
+                  fill="var(--gold)"
                   aria-hidden="true"
                   style={{ filter: 'drop-shadow(0 0 8px rgba(232,181,58,0.55))', flexShrink: 0 }}
                 >
@@ -544,7 +544,7 @@ export default async function HomePage({
                 <span className="text-left">
                   <span
                     className="block text-[11px] uppercase"
-                    style={{ color: '#e8b53a', letterSpacing: '0.12em', fontWeight: 700 }}
+                    style={{ color: 'var(--gold-strong)', letterSpacing: '0.12em', fontWeight: 700 }}
                   >
                     Featured spots open
                   </span>
@@ -895,7 +895,7 @@ function EmptyFeaturedSlotCard({ slotNumber }: { slotNumber: number }) {
             width="30"
             height="30"
             viewBox="0 0 24 24"
-            fill="#e8b53a"
+            fill="var(--gold)"
             aria-hidden="true"
             style={{ filter: 'drop-shadow(0 0 8px rgba(232,181,58,0.55))' }}
           >
@@ -905,7 +905,7 @@ function EmptyFeaturedSlotCard({ slotNumber }: { slotNumber: number }) {
             className="text-[11px] uppercase"
             style={{
               letterSpacing: '0.12em',
-              color: '#e8b53a',
+              color: 'var(--gold-strong)',
               fontWeight: 700,
             }}
           >

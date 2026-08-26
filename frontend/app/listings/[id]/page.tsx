@@ -387,7 +387,7 @@ export default async function ListingDetailPage({
                 className="text-xs px-2 py-0.5 rounded-[3px]"
                 style={{
                   background: 'rgba(245,158,11,0.10)',
-                  color: '#f59e0b',
+                  color: 'var(--warning)',
                   border: '0.5px solid rgba(245,158,11,0.45)',
                 }}
               >
@@ -403,7 +403,7 @@ export default async function ListingDetailPage({
                 className="text-xs px-2 py-0.5 rounded-[3px]"
                 style={{
                   background: 'rgba(0,160,60,0.10)',
-                  color: '#00a03c',
+                  color: 'var(--success)',
                   border: '0.5px solid rgba(0,160,60,0.45)',
                 }}
               >

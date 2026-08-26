@@ -79,9 +79,9 @@ function FirearmAttest({
   return (
     <div
       className="text-xs p-2 rounded-[6px]"
-      style={{ background: 'var(--bg-card)', border: '0.5px solid #f59e0b', color: 'var(--text-secondary)', lineHeight: 1.5 }}
+      style={{ background: 'var(--bg-card)', border: '0.5px solid var(--warning)', color: 'var(--text-secondary)', lineHeight: 1.5 }}
     >
-      <p className="mb-1.5" style={{ color: '#f59e0b', fontWeight: 600 }}>
+      <p className="mb-1.5" style={{ color: 'var(--warning)', fontWeight: 600 }}>
         Firearm — dealer transfer
       </p>
       <p className="mb-2">
@@ -234,7 +234,7 @@ export default function SwapPanel({
       </div>
 
       {flash && (
-        <p className="text-xs mb-2" style={{ color: '#16a34a' }}>
+        <p className="text-xs mb-2" style={{ color: 'var(--success)' }}>
           {flash}
         </p>
       )}

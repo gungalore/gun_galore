@@ -201,8 +201,8 @@ export function CategoryMenu({ variant = 'nav' }: { variant?: 'nav' | 'search' }
         aria-label="Shop by category"
         className={
           isSearch
-            ? 'flex items-center gap-1 shrink-0 hover:text-[#f5f5f5] transition-colors'
-            : 'flex items-center gap-1 hover:text-[#f5f5f5] transition-colors'
+            ? 'flex items-center gap-1 shrink-0 hover:text-[color:var(--text-primary)] transition-colors'
+            : 'flex items-center gap-1 hover:text-[color:var(--text-primary)] transition-colors'
         }
         style={
           isSearch

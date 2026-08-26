@@ -86,8 +86,8 @@ export function ListingCard({ listing }: { listing: Listing }) {
             <span
               className="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
               style={{
-                background: 'rgba(232,181,58,0.85)',
-                color: '#1a1206',
+                background: 'rgba(168,123,20,0.85)',
+                color: 'var(--gold-tag-ink)',
                 fontWeight: 600,
               }}
             >
@@ -98,7 +98,8 @@ export function ListingCard({ listing }: { listing: Listing }) {
               className="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
               style={{
                 background: 'rgba(0,0,0,0.72)',
-                color: 'var(--text-secondary)',
+                // On the photo scrim, not the card — see --text-on-dark.
+                color: 'var(--text-on-dark-muted)',
               }}
             >
               {listing.category.name}
@@ -113,7 +114,8 @@ export function ListingCard({ listing }: { listing: Listing }) {
             className="absolute bottom-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
             style={{
               background: 'rgba(0,0,0,0.72)',
-              color: 'var(--text-secondary)',
+              // On the photo scrim, not the card — see --text-on-dark.
+              color: 'var(--text-on-dark-muted)',
             }}
           >
             {CONDITION_LABELS[listing.condition]}

@@ -219,7 +219,9 @@ export function Hero() {
           <h1
             className="hero-reveal hero-reveal-2 text-4xl sm:text-5xl lg:text-[3.4rem] leading-[1.12] mb-5"
             style={{
-              color: 'var(--text-primary)',
+              // Over the hero photo, never the page — the paired textShadow
+              // below only makes sense under light letters.
+              color: 'var(--text-on-dark)',
               fontWeight: 500,
               letterSpacing: '-0.02em',
               textShadow: '0 2px 8px rgba(0, 0, 0, 0.55)',

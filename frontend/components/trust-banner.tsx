@@ -98,7 +98,7 @@ export function TrustCard() {
         </span>
         <span
           className="text-sm font-semibold"
-          style={{ color: 'var(--text-primary)' }}
+          style={{ color: 'var(--text-on-dark)' }}
         >
           Shop with confidence
         </span>
@@ -111,7 +111,7 @@ export function TrustCard() {
             className="gg-tc-point flex items-center gap-2.5 text-sm"
             style={
               {
-                color: 'var(--text-secondary)',
+                color: 'var(--text-on-dark-muted)',
                 ['--i' as string]: String(i),
               } as React.CSSProperties
             }

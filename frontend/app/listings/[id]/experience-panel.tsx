@@ -53,7 +53,7 @@ export default function ExperiencePanel({
             className="text-xs px-2 py-0.5 rounded-[3px]"
             style={{
               background: 'rgba(232,181,58,0.12)',
-              color: '#E8B53A',
+              color: 'var(--gold-strong)',
               border: '0.5px solid rgba(232,181,58,0.45)',
             }}
           >

@@ -2,7 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Gun Galore design tokens — canonical source: CLAUDE.md */
+/* All Outdoor design tokens — "Winkel" white retail theme.
+   Canonical source: CLAUDE.md. Every name here is load-bearing: components
+   read these vars, so the theme changes by editing VALUES, never names. */
 :root {
   /* ── Page width ────────────────────────────────────────────────────────
      THE single source of truth for how wide the site's content runs. Every
@@ -20,42 +22,80 @@
      column over the old 1280. */
   --page-max: 1600px;
 
-  /* Surfaces */
-  --bg:          #0f0f0f;
-  --bg-deep:     #0a0a0a;
-  --bg-card:     #1a1a1a;
-  --bg-card-hover: #202020;
-  --bg-inset:    #131313;
+  /* ── Surfaces ─────────────────────────────────────────────────────
+     Winkel: a white retail skin. The page is a warm off-white and cards
+     sit ON it in pure white, so a card reads as raised without needing a
+     shadow (see the box-shadow rule further down, which forbids them).
+     --bg-deep was the DARKEST surface on the old dark theme; on a light
+     theme there is nothing deeper than the page, so it now carries the
+     chrome white used by the header, which separates it from --bg. */
+  --bg:          #F6F5F1;
+  --bg-deep:     #FFFFFF;
+  --bg-card:     #FFFFFF;
+  --bg-card-hover: #FAF9F5;
+  --bg-inset:    #F4F2EC;
 
-  /* Borders */
-  --border:      #2a2a2a;
-  --border-hover: #3a3a3a;
-  --border-divider: #1e1e1e;
+  /* Borders. --border-divider is SUBTLER than --border (it was darker on
+     the dark theme for the same reason: closer to the surface it sits on). */
+  --border:      #E5E1D8;
+  --border-hover: #D5CFC2;
+  --border-divider: #EDEAE1;
 
   /* Brand */
   --red:         #C8102E;
-  --red-hover:   #a00d24;
+  --red-hover:   #A00D24;
+  /* Links. Red at full strength vibrates against body text at reading
+     size, so inline links get the deeper tone. */
+  --link:        #B10E28;
 
-  /* Text */
-  --text-primary:   #f5f5f5;
-  --text-secondary: #a0a0a0;
-  --text-tertiary:  #6b6b6b;
-  /* WCAG AA-passing alternative for --text-tertiary when used on
-     --bg-card surfaces. #6b6b6b on #1a1a1a is 3.7:1 (fails AA);
-     #8a8a8a on the same background is 5.4:1 (passes AA for body
-     text). Used in the site footer; safe to use anywhere
-     --text-tertiary sits on a card background. */
-  --text-tertiary-on-card: #8a8a8a;
+  /* Text. Contrast against --bg-card (#FFFFFF):
+       --text-primary   16.4:1   --text-secondary 9.0:1
+       --text-tertiary   4.5:1   --text-faint     3.0:1
+     --text-faint therefore does NOT pass AA for body copy — it is for
+     large text, disabled states and decorative meta only. */
+  --text-primary:   #1A1613;
+  --text-secondary: #4A443C;
+  --text-tertiary:  #7A7267;
+  --text-faint:     #9C948A;
+  /* On the dark theme --text-tertiary failed AA on cards and this token
+     was the lighter stand-in. On white, --text-tertiary already passes at
+     4.5:1, so the two are deliberately identical: the alias is kept so the
+     footer and everything else that reads it keeps compiling. */
+  --text-tertiary-on-card: #7A7267;
 
-  /* Status */
-  --success: #2f9e6b;
-  --warning: #d49a3a;
+  /* ⚠️ TEXT ON A DELIBERATELY DARK SURFACE — not the same thing as dark mode.
+     A few surfaces stay dark on purpose whatever the page theme: the hero
+     photo and its overlay, the frosted trust card, the scrim pills on a
+     product thumbnail. Text there must NOT use --text-primary/-secondary,
+     because those track the PAGE and just inverted: on the dark-theme site
+     they were near-white and correct, and the moment the page went white
+     they became near-black on near-black and vanished. That is exactly how
+     the homepage h1 and the listing-card badges broke during this re-skin.
+     Anything painting on top of a dark plate reads from these two instead,
+     which never invert. */
+  --text-on-dark:       #F4F1ED;
+  --text-on-dark-muted: rgba(244, 241, 237, 0.88);
 
-  /* Gold — the "featured / paid placement" signal. One place, so the
-     marquee, the bid CTA and the availability dot can't drift apart. */
-  --gold:       #E8B53A;
-  --gold-line:  rgba(232, 181, 58, 0.38);
-  --gold-wash:  rgba(232, 181, 58, 0.10);
+  /* Status. These exist because the codebase paints status inline with raw
+     Tailwind-palette hexes (#22c55e, #f59e0b, #3b82f6 …) that were chosen
+     against a near-black card. On white they fail contrast outright —
+     #f59e0b is 2.1:1 — so the sweep points every semantic use here. */
+  --success: #1F7A50;
+  --warning: #8F6E0F;
+  --danger:  #C8102E;
+  --info:    #2A6FB0;
+
+  /* Gold — the "featured / paid placement / auction" signal. One place, so
+     the marquee, the bid CTA and the availability dot can't drift apart.
+     --gold is 3.75:1 on white: fine for borders, icons and large figures,
+     NOT for small text — that is what --gold-strong is for. The bright
+     --gold-tag-fill is a FILL, never ink; it carries --gold-tag-ink. */
+  --gold:          #A87B14;
+  --gold-strong:   #8F6E0F;
+  --gold-line:     rgba(168, 123, 20, 0.38);
+  --gold-wash:     rgba(168, 123, 20, 0.10);
+  --gold-tag-fill: #E8B53A;
+  --gold-tag-ink:  #1A1614;
 
   /* Typefaces. The *-var values are set by next/font on <html>; the
      fallback chain matters because it is what renders for the ~100ms
@@ -68,14 +108,18 @@
      within a single viewport, which reads as unresolved rather than
      designed. Everything now picks from these three. */
   --r-sm: 6px;    /* chips, inputs, small controls */
-  --r-md: 10px;   /* cards, panels, buttons */
-  --r-lg: 16px;   /* hero-level surfaces (trust card) */
+  --r-md: 8px;    /* cards, panels, buttons */
+  --r-lg: 12px;   /* hero-level surfaces (trust card) */
 
   /* Hairline. 0.5px is a Retina affectation: on a standard-DPI desktop
      monitor it rounds to 0 or to a muddy grey and the border simply
      disappears, so cards lost their edges on exactly the screens most
-     buyers use. A 1px line at 8% white reads as a crisp edge on both. */
-  --hairline: rgba(255, 255, 255, 0.09);
+     buyers use. A 1px line reads as a crisp edge on both.
+
+     ⚠️ This ink INVERTED with the theme. It was white at 9% (a light line
+     on dark); on Winkel it must be the dark ink at 10%, or every card edge
+     drawn with it vanishes into the white page. */
+  --hairline: rgba(26, 22, 19, 0.10);
 }
 
 html,

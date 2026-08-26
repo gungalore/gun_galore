@@ -120,7 +120,7 @@ export function PageBackground({
   }
 
   // ── Dot-pattern fallback ──────────────────────────────────────────
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tile}" height="${tile}"><circle cx="1" cy="1" r="1" fill="%232a2a2a"/></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tile}" height="${tile}"><circle cx="1" cy="1" r="1" fill="%23e5e1d8"/></svg>`;
   return (
     <div
       aria-hidden

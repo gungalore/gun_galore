@@ -211,7 +211,7 @@ export default function OfferPanel({
       <div className="mb-5">
         <div
           className="rounded-[6px] px-4 py-3 mb-2 text-sm text-center"
-          style={{ background: '#f59e0b14', border: '0.5px solid #f59e0b', color: '#f59e0b' }}
+          style={{ background: '#f59e0b14', border: '0.5px solid var(--warning)', color: 'var(--warning)' }}
         >
           This offer was below the seller&apos;s minimum and was declined
           automatically. You can try a higher offer — attempts are limited, so
@@ -251,7 +251,7 @@ export default function OfferPanel({
         className="rounded-[6px] px-4 py-3 mb-5 text-sm text-center"
         style={
           meetsAutoAccept
-            ? { background: '#16a34a14', border: '0.5px solid #16a34a', color: 'var(--text-secondary)' }
+            ? { background: '#16a34a14', border: '0.5px solid var(--success)', color: 'var(--text-secondary)' }
             : { background: 'var(--bg-inset)', border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }
         }
       >
@@ -490,7 +490,7 @@ function ExistingOfferCard({
         background: 'var(--bg-card)',
         border:
           offer.status === 'COUNTERED'
-            ? '0.5px solid #3b82f6'
+            ? '0.5px solid var(--info)'
             : '0.5px solid var(--border)',
         color: 'var(--text-secondary)',
         lineHeight: 1.55,
@@ -514,7 +514,7 @@ function ExistingOfferCard({
             {left && (
               <>
                 {' '}
-                <span style={{ color: left.urgent ? '#f59e0b' : 'var(--text-tertiary)' }}>
+                <span style={{ color: left.urgent ? 'var(--warning)' : 'var(--text-tertiary)' }}>
                   ({left.text} to respond)
                 </span>
               </>
@@ -536,7 +536,7 @@ function ExistingOfferCard({
         <>
           <p className="mt-1">
             The seller countered at{' '}
-            <strong style={{ color: '#3b82f6' }}>
+            <strong style={{ color: 'var(--info)' }}>
               {rand(offer.counterAmount ?? 0)}
             </strong>
             . Accept or decline — sellers only get one counter, so this is
@@ -544,7 +544,7 @@ function ExistingOfferCard({
             {left && (
               <>
                 {' '}
-                <span style={{ color: left.urgent ? '#f59e0b' : 'var(--text-tertiary)' }}>
+                <span style={{ color: left.urgent ? 'var(--warning)' : 'var(--text-tertiary)' }}>
                   ({left.text} to answer — after that the counter lapses.)
                 </span>
               </>
@@ -586,12 +586,12 @@ function ExistingOfferCard({
 
       {offer.status === 'ACCEPTED' && (
         <>
-          <p className="mt-1" style={{ color: '#22c55e' }}>
+          <p className="mt-1" style={{ color: 'var(--success)' }}>
             Accepted at {rand(settled)}.
             {left && (
               <>
                 {' '}
-                <span style={{ color: left.urgent ? '#f59e0b' : 'var(--text-tertiary)' }}>
+                <span style={{ color: left.urgent ? 'var(--warning)' : 'var(--text-tertiary)' }}>
                   ({left.text} to complete checkout — after that the offer
                   expires and the listing goes back on sale.)
                 </span>

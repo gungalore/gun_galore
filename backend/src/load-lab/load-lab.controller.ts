@@ -1,17 +1,19 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ClerkGuard } from '../auth/clerk.guard';
-import { CurrentUser } from '../auth/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecommendedLoadsService } from './recommended-loads.service';
 import { BurnChartService } from './burn-chart.service';
 import { ManualBrowseService } from './manual-browse.service';
 
 /**
- * Load Lab HTTP surface. Serves the PRO-gated published manual-load browser
+ * Load Lab HTTP surface. Serves the published manual-load browser
  * (calibre hierarchy → all loads for a cartridge) + the free powder burn-rate
  * chart. The internal-ballistics calculator was removed 2026-07-13 (operator
  * decision) — Load Lab is manual data only now.
  */
+// ClerkGuard is the only gate: every route needs a signed-in user, and since
+// 2026-08-26 none of them care WHICH user — the PRO tier check was removed and
+// with it the per-request subscriptionTier lookup it needed.
 @UseGuards(ClerkGuard)
 @Controller('load-lab')
 export class LoadLabController {
@@ -58,44 +60,27 @@ export class LoadLabController {
   /**
    * The calibre hierarchy for the "Load data" browser — every cartridge we hold
    * published manual data for, grouped into calibre families, with per-cartridge
-   * load counts. PRO-gated.
+   * load counts.
    */
   @Get('manual-cartridges')
-  async manualCartridges(@CurrentUser() clerkId: string) {
-    // FREE demo (2026-07-19): everyone browses the calibre tree — the tree
-    // is the lure; the load DATA is the PRO value (capped below).
-    await this.tierOf(clerkId); // still requires a signed-in, synced user
+  async manualCartridges() {
     return this.manualBrowse.listCartridges();
   }
 
   /**
    * All published manual loads for one cartridge (by canonical key), grouped by
-   * bullet weight → powder, each with a source manual + page citation. PRO-gated.
+   * bullet weight → powder, each with a source manual + page citation.
+   *
+   * UNGATED as of 2026-08-26. This used to serve PRO the full set and everyone
+   * else a 3-load teaser with an `upgradeReason`. Load Lab moved into the
+   * account area as a member tool and the operator removed the PRO gate
+   * outright, so every signed-in reloader now gets the complete data. The
+   * teaser shape (`demo` / `upgradeReason`) is gone from the response — any
+   * client still branching on it will simply never see it.
    */
   @Get('manual-loads')
-  async manualLoads(@CurrentUser() clerkId: string, @Query('cartridgeKey') cartridgeKey: string) {
-    const tier = await this.tierOf(clerkId);
-    const full = await this.manualBrowse.loadsForCartridge(cartridgeKey ?? '');
-    if (tier === 'PRO') return full;
-    // FREE demo (2026-07-19): the first bullet-weight group with its first
-    // 3 loads is shown; the rest is counted but withheld. Enough to prove
-    // the data is real, not enough to reload from.
-    const groups = Array.isArray(full.groups) ? full.groups : [];
-    const firstGroup = groups[0]
-      ? [
-          {
-            ...(groups[0] as Record<string, unknown>),
-            loads: ((groups[0] as { loads?: unknown[] }).loads ?? []).slice(0, 3),
-          },
-        ]
-      : [];
-    return {
-      ...full,
-      groups: firstGroup,
-      demo: true,
-      upgradeReason:
-        'You are previewing 3 of the published loads for this calibre. All Outdoor PRO unlocks all of them, with source manual + page citations.',
-    };
+  async manualLoads(@Query('cartridgeKey') cartridgeKey: string) {
+    return this.manualBrowse.loadsForCartridge(cartridgeKey ?? '');
   }
 
   /**
@@ -107,11 +92,7 @@ export class LoadLabController {
    * paywall. Returns null when we hold no verified spec (wildcats, etc.).
    */
   @Get('cartridge-spec')
-  async cartridgeSpec(
-    @CurrentUser() clerkId: string,
-    @Query('cartridgeKey') cartridgeKey: string,
-  ) {
-    await this.tierOf(clerkId); // signed-in gate only
+  async cartridgeSpec(@Query('cartridgeKey') cartridgeKey: string) {
     if (!cartridgeKey) return { spec: null };
     const spec = await this.prisma.cartridgeSpec.findUnique({
       where: { cartridgeKey },
@@ -121,24 +102,15 @@ export class LoadLabController {
 
   /**
    * Recommended published loads for a cartridge + bullet weight (±tolerance,
-   * default 5gr), quoted from the manual library. PRO-gated. Still served for
-   * the Ask GG `lookupPublishedLoads` tool parity path.
+   * default 5gr), quoted from the manual library. UNGATED as of 2026-08-26 —
+   * see manualLoads above.
    */
   @Get('recommended-loads')
   async recommendedLoads(
-    @CurrentUser() clerkId: string,
     @Query('cartridge') cartridge: string,
     @Query('bulletWeightGr') bulletWeightGr: string,
     @Query('toleranceGr') toleranceGr?: string,
   ) {
-    const tier = await this.tierOf(clerkId);
-    if (tier !== 'PRO') {
-      return {
-        upgradeRequired: true,
-        reason:
-          'Recommended loads are a All Outdoor PRO feature. Upgrade to see published manual loads.',
-      };
-    }
     const w = parseFloat(bulletWeightGr);
     if (!cartridge || !(w > 0)) {
       return {
@@ -154,11 +126,4 @@ export class LoadLabController {
     return this.recommended.recommend(cartridge, w, tol);
   }
 
-  private async tierOf(clerkId: string): Promise<string> {
-    const u = await this.prisma.user.findUnique({
-      where: { clerkId },
-      select: { subscriptionTier: true },
-    });
-    return u?.subscriptionTier ?? 'FREE';
-  }
 }

@@ -613,7 +613,7 @@ export function Nav() {
                 key={link.href}
                 href={link.href}
                 style={{ color: 'var(--text-secondary)' }}
-                className="hover:text-[#f5f5f5] transition-colors"
+                className="hover:text-[var(--text-primary)] transition-colors"
               >
                 {link.label}
               </Link>
@@ -626,7 +626,7 @@ export function Nav() {
               href="/ask-gg"
               className="ask-gg-lure flex items-center gap-1.5"
               style={{
-                color: '#fff',
+                color: 'var(--red)',
                 fontWeight: 500,
                 background: 'rgba(200,16,46,0.14)',
                 border: '0.5px solid rgba(200,16,46,0.55)',
