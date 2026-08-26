@@ -489,11 +489,47 @@ export type ShippingMethod =
                         // the event date. Invisible to every courier sweep.
 export type ShippingStatus = 'PENDING' | 'COLLECTED' | 'IN_TRANSIT' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'DELIVERY_FAILED' | 'RETURNED';
 
+/** One rendered money row. Cents; the label is server-chosen. */
+export interface MoneyLine {
+  label: string;
+  cents: number;
+}
+
+/**
+ * The money rows to SHOW, computed server-side by payments/fee-presentation.ts.
+ *
+ * ⚠️ RENDER THESE — do not re-derive a breakdown from the raw columns. We run
+ * two opposite fee models that write identical columns: on a marked-up Buy Now
+ * the commission and gateway fee are already INSIDE listingPrice and nothing is
+ * deducted from the seller, while on an auction or offer they sit outside it.
+ * Every surface that did its own arithmetic got one of the two wrong.
+ */
+export interface TransactionFeeBreakdown {
+  buyer: {
+    lines: MoneyLine[];
+    totalLabel: string;
+    total: number;
+    balances: boolean;
+  };
+  seller: {
+    grossLabel: string;
+    gross: number;
+    deductions: MoneyLine[];
+    netLabel: string;
+    net: number;
+    feesInPrice: boolean;
+    note: string;
+    balances: boolean;
+  };
+}
+
 export interface Transaction {
   id: string;
   listingId: string;
   buyerId: string;
   sellerId: string;
+  /** Present on the single-transaction detail response. */
+  feeBreakdown?: TransactionFeeBreakdown;
   listingPrice: number;
   commissionZar: number;
   processingFee: number;

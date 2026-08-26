@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { FeeCalculator } from '../payments/fee.calculator';
+import {
+  FeeCalculator,
+  MIN_COMMISSION_CENTS,
+  shippingHandlingCentsFor,
+} from '../payments/fee.calculator';
 import { AskGgKbService } from './ask-gg-kb.service';
 
 // ─── Ask GG Everywhere — platform + marketplace-intelligence tools ────
@@ -30,6 +34,16 @@ const MAX_PHOTO_BLOCKS = 3;
 
 export interface ComputeFeesInput {
   kind?: 'sale' | 'experience' | 'swapLeg' | 'swapCash';
+  /**
+   * How the sale is priced. Defaults to 'buyNow', which is the marked-up
+   * model every new listing uses: the seller names what they want to
+   * RECEIVE and we mark it up for the buyer.
+   *
+   * ⚠️ Set 'auction' for a bid-discovered price or an accepted offer, where
+   * there is nothing to mark up: commission comes off the seller and the
+   * buyer carries the gateway fee.
+   */
+  saleModel?: 'buyNow' | 'auction';
   priceZar?: number;
   shippingZar?: number;
   passFeeToBuyer?: boolean;
@@ -148,20 +162,49 @@ export class AskGgPlatformToolsService {
       };
     }
 
-    // Default: ordinary sale.
+    // ─── Ordinary sale ────────────────────────────────────────────────
+    // ⚠️ THIS IS THE ONLY PLACE A SELLER IS QUOTED A PAYOUT BEFORE THEY
+    // LIST, and it quoted the wrong model. It always called fees.breakdown()
+    // — the DEDUCT model — so it told every prospective Buy Now seller that
+    // commission would come off their price. Under the markup model it does
+    // not: they name what they want to receive, we mark the buyer's price up,
+    // and they receive 100% of the ask. Quoting a deduction that will not
+    // happen is the same falsehood the post-sale documents were making, only
+    // earlier and to someone deciding whether to sell here at all.
     const shippingCents = toCents(input.shippingZar);
     const handling =
-      input.includeCourierWaybill === false || shippingCents === 0 ? 0 : 1500;
-    const b = this.fees.breakdown(
-      toCents(input.priceZar),
-      input.passFeeToBuyer ?? true,
-      isTopSeller,
-      shippingCents,
-      'manual',
-      handling,
-    );
+      input.includeCourierWaybill === false || shippingCents === 0
+        ? 0
+        : shippingHandlingCentsFor(shippingCents);
+    const isBuyNow = (input.saleModel ?? 'buyNow') === 'buyNow';
+    const b = isBuyNow
+      ? this.fees.breakdownBuyNow(
+          toCents(input.priceZar), // the seller's ASK, not a list price
+          isTopSeller,
+          shippingCents,
+          // ⚠️ MATCH WHAT ACTUALLY PRICES THE LISTING. listings.service's
+          // priceFieldsFor calls listPriceFromSellerAsk with the mode omitted,
+          // i.e. the paygate card rate — so quoting 'manual' here would tell a
+          // seller a list price the Sell form will not produce for the same
+          // ask. The estimator's job is to predict that number exactly.
+          'paygate',
+          handling,
+        )
+      : this.fees.breakdown(
+          toCents(input.priceZar),
+          // A bid-discovered price always puts the gateway fee on the buyer.
+          true,
+          isTopSeller,
+          shippingCents,
+          'manual',
+          handling,
+        );
     return {
       kind: 'sale',
+      saleModel: isBuyNow ? 'buyNow' : 'auction',
+      // Under the markup model the input was the seller's ask and this is the
+      // marked-up number the buyer sees — they are deliberately different.
+      sellerAskRand: isBuyNow ? rand(b.sellerPayout) : undefined,
       listingPriceRand: rand(b.listingPrice),
       shippingRand: rand(b.shippingCost),
       shippingHandlingRand: rand(b.shippingHandlingCents),
@@ -169,11 +212,12 @@ export class AskGgPlatformToolsService {
       processingFeeRand: rand(b.processingFee),
       buyerTotalRand: rand(b.buyerTotal),
       sellerPayoutRand: rand(b.sellerPayout),
-      passFeeToBuyer: input.passFeeToBuyer ?? true,
+      feesDeductedFromSeller: !isBuyNow,
       topSellerDiscountApplied: isTopSeller,
-      bands:
-        'Commission is marginal: first R5,000 at 9%, R5,001–R20,000 at 7%, R20,001–R100,000 at 5%, above that 3%; minimum R30. Top Sellers get 0.5% off the total price.',
-      note: 'Processing fee is the payment fee on (price + shipping) — currently 1.5% on EFT. The R15 shipping handling applies once per courier waybill; collection and dealer-transfer orders have none.',
+      bands: `Commission is marginal: first R5,000 at 9%, R5,001–R20,000 at 7%, R20,001–R100,000 at 5%, above that 3%; minimum R${MIN_COMMISSION_CENTS / 100}. Top Sellers get 0.5% off the total price.`,
+      note: isBuyNow
+        ? 'Buy Now: the seller lists free and receives their full asking price. Our commission and the payment fee are built INTO the price the buyer sees, so nothing is deducted from the seller. Delivery is quoted to the buyer as one figure.'
+        : 'Auction or accepted offer: the price is discovered by bidding, so there is nothing to mark up. Commission comes off the seller and the buyer pays the transaction fee on top.',
     };
   }
 

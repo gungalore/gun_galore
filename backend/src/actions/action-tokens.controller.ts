@@ -23,6 +23,7 @@ import { SwapProposalsService } from '../swaps/swap-proposals.service';
 import { AuctionsService } from '../auctions/auctions.service';
 import { TransactionsService } from '../payments/transactions.service';
 import { SwapRole } from '@prisma/client';
+import { sellerBreakdown } from '../payments/fee-presentation';
 
 /**
  * Public, token-gated endpoints powering the /a/<token> SMS-link
@@ -753,6 +754,18 @@ export class ActionTokensController {
         rejectedAt: true,
         acceptDeadlineAt: true,
         shippingMethod: true,
+        // The seller's own money. Without these the accept screen headlined
+        // the BUYER's marked-up price as "Sale price" and showed no payout at
+        // all - on the one screen where the seller decides to take the sale.
+        listingPrice: true,
+        commissionZar: true,
+        processingFee: true,
+        shippingCost: true,
+        shippingHandlingCents: true,
+        buyerTotal: true,
+        sellerPayout: true,
+        passFeeToBuyer: true,
+        feeModel: true,
         listing: {
           select: {
             id: true,
@@ -790,6 +803,12 @@ export class ActionTokensController {
         listPrice: tx.listing.price,
         primaryImageUrl: tx.listing.images[0]?.url ?? null,
       },
+      // ⚠️ WHAT THE SELLER ACTUALLY GETS, from the one shared builder. This
+      // page used to headline listing.price — the marked-up number the BUYER
+      // pays — as though it were the seller's sale price, and showed no payout
+      // at all. Under the markup model those differ by our whole margin, so
+      // the figure the seller was deciding on was never theirs.
+      money: sellerBreakdown(tx),
       buyerUsername: tx.buyer?.username ?? 'the buyer',
     };
   }

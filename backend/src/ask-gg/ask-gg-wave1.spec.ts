@@ -8,7 +8,10 @@ jest.mock('meilisearch', () => ({
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { FeeCalculator } from '../payments/fee.calculator';
+import {
+  FeeCalculator,
+  shippingHandlingCentsFor,
+} from '../payments/fee.calculator';
 import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
 import { buildSystemBlocks } from './ask-gg-claude.service';
 import {
@@ -30,17 +33,51 @@ describe('computeFees ↔ FeeCalculator parity', () => {
     {} as never,
   );
 
-  it('sale parity — buyer-paid fee, courier + waybill', () => {
+  // ⚠️ THE DEFAULT SALE IS A MARKED-UP BUY NOW, NOT A DEDUCTION.
+  //
+  // This test used to assert parity with fees.breakdown() — the model where
+  // commission comes OFF the seller. That is wrong for the platform's primary
+  // selling path: a Buy Now seller names what they want to RECEIVE and gets
+  // 100% of it, because our cut is added to the buyer's price instead. This is
+  // the only place a seller is quoted a payout BEFORE they list, so quoting a
+  // deduction that will not happen is the costliest version of the bug.
+  //
+  // It also asserted a flat R15 waybill handling, which fee.calculator
+  // replaced with 10% of the carrier rate on 2026-08-15 — so the estimator was
+  // quoting R15 on a leg the system charges R12 for.
+  it('sale parity — default Buy Now is marked up, seller keeps 100%', () => {
     const out = svc.computeFees(
-      { kind: 'sale', priceZar: 8500, shippingZar: 120, passFeeToBuyer: true },
+      { kind: 'sale', priceZar: 8500, shippingZar: 120 },
       false,
     ) as unknown as Record<string, number>;
-    const b = fees.breakdown(850_000, true, false, 12_000, 'manual', 1_500);
+    const handling = shippingHandlingCentsFor(12_000);
+    // ⚠️ 'paygate', matching listings.service.priceFieldsFor, which omits the
+    // mode when it prices a listing. The estimator predicts the number the
+    // Sell form will show, so it must use the same rate that produced it.
+    const b = fees.breakdownBuyNow(850_000, false, 12_000, 'paygate', handling);
     expect(out.buyerTotalRand).toBe(b.buyerTotal / 100);
-    expect(out.sellerPayoutRand).toBe(b.sellerPayout / 100);
     expect(out.commissionRand).toBe(b.commissionZar / 100);
     expect(out.processingFeeRand).toBe(b.processingFee / 100);
-    expect(out.shippingHandlingRand).toBe(15);
+    expect(out.shippingHandlingRand).toBe(handling / 100);
+    // The whole promise of the markup model, stated as an assertion.
+    expect(out.sellerPayoutRand).toBe(8500);
+    expect(out.sellerAskRand).toBe(8500);
+    expect(out.feesDeductedFromSeller as unknown as boolean).toBe(false);
+  });
+
+  it('sale parity — an auction still deducts from the seller', () => {
+    // A bid discovers the price, so there is nothing to mark up: commission
+    // comes off the seller and the buyer carries the gateway fee.
+    const out = svc.computeFees(
+      { kind: 'sale', saleModel: 'auction', priceZar: 8500, shippingZar: 120 },
+      false,
+    ) as unknown as Record<string, number>;
+    const handling = shippingHandlingCentsFor(12_000);
+    const b = fees.breakdown(850_000, true, false, 12_000, 'manual', handling);
+    expect(out.buyerTotalRand).toBe(b.buyerTotal / 100);
+    expect(out.sellerPayoutRand).toBe(b.sellerPayout / 100);
+    expect(out.sellerPayoutRand).toBeLessThan(8500);
+    expect(out.feesDeductedFromSeller as unknown as boolean).toBe(true);
   });
 
   it('sale parity — top-seller discount applied from the server flag', () => {

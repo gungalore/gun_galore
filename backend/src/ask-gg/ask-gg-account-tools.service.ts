@@ -57,6 +57,12 @@ interface TxRowView {
   listingPrice: number;
   buyerTotal: number;
   sellerPayout: number;
+  /**
+   * Which fee model priced the sale. Needed because listingPrice means two
+   * different things: under BUYNOW_MARKUP it is what the BUYER paid (our fees
+   * inside it), under SELLER_DEDUCT it is the seller's own sale price.
+   */
+  feeModel: string;
   paymentStatus: string;
   shippingStatus: string | null;
   trackingReference: string | null;
@@ -140,8 +146,17 @@ export class AskGgAccountToolsService {
         id: t.id,
         title: clip(t.listing?.title),
         quantity: t.quantity,
-        saleRand: rand(t.listingPrice),
+        // ⚠️ BOTH NUMBERS, LABELLED. saleRand alone was ambiguous: under the
+        // markup model listingPrice is what the BUYER paid, which is larger
+        // than anything the seller sold for, so a seller asking "what did I
+        // sell it for?" got our marked-up figure back. feesInPrice tells the
+        // assistant not to describe the gap as a deduction.
+        buyerPaidRand: rand(t.listingPrice),
+        yourPriceRand: rand(
+          t.feeModel === 'BUYNOW_MARKUP' ? t.sellerPayout : t.listingPrice,
+        ),
         yourPayoutRand: rand(t.sellerPayout),
+        feesInPrice: t.feeModel === 'BUYNOW_MARKUP',
         paymentStatus: t.paymentStatus,
         shippingStatus: t.shippingStatus ?? null,
         isFirearm: t.listing?.isFirearm ?? false,

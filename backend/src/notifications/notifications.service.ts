@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
-import { NotificationCategory } from '@prisma/client';
+import { FeeModel, NotificationCategory } from '@prisma/client';
 import { SmsService } from '../sms/sms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
 import { Saps534Service, Saps534Data } from '../payments/saps534.service';
+import { buyerBreakdown, sellerBreakdown } from '../payments/fee-presentation';
 import { EMAIL_FROM, PRO_NAME, SUPPORT_EMAIL } from '../common/brand';
 
 // Compile-time list of the entity types we can link a Notification
@@ -345,7 +346,22 @@ export interface SaleDetails {
   processingFee: number;
   buyerTotal: number;
   sellerPayout: number;
+  /**
+   * ⚠️ The EFFECTIVE flag — whether the BUYER was charged the gateway fee as
+   * a separate line. Meaningless under BUYNOW_MARKUP, where the fee is inside
+   * listingPrice; read feeModel first. See payments/fee-presentation.ts.
+   */
   passFeeToBuyer: boolean;
+  /**
+   * Which fee model priced this sale. Without it these columns cannot be
+   * described truthfully: the buyer's confirmation double-counted the fee on
+   * every marked-up BUY NOW, and the seller's "Sale price − Commission =
+   * Your payout" line did not subtract to the payout it printed.
+   */
+  feeModel: FeeModel;
+  /** Carrier rate and our delivery margin — shown to the buyer as ONE figure. */
+  shippingCost: number;
+  shippingHandlingCents: number;
   shippingMethod: string | null;
   /**
    * Optional TRANSACTION_ACCEPT token URL (`/a/<token>`). When set, the
@@ -576,21 +592,35 @@ export class NotificationsService {
     // don't tell a trailer/caravan buyer to wait for a dispatch SMS that
     // never comes.
     const isCollection = d.shippingMethod === 'COLLECTION';
+    // ⚠️ ONE SHARED BUILDER, AND THE ROWS FOOT.
+    //
+    // This used to print "Listing price", then a "Processing fee" gated on
+    // d.passFeeToBuyer, then "Total paid" — with no delivery row at all. On a
+    // marked-up BUY NOW the fee is ALREADY inside the listing price, so the
+    // email showed the buyer a charge that had not been added, and the rows
+    // did not reconcile to the total in either direction.
+    const shown = buyerBreakdown(d);
+    if (!shown.balances) {
+      // Cannot happen for a row the current checkout wrote, and the spec
+      // covers the matrix. But an email is the one artefact we cannot recall,
+      // so a row that does not foot leaves a trace rather than going out
+      // silently. Same guard the receipt carries.
+      this.logger.error(
+        `orderConfirmedBuyer ${d.transactionId}: rows do not sum to buyerTotal (${shown.total}) — fee model ${d.feeModel}`,
+      );
+    }
     const rows: { label: string; value: string }[] = [
       { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
-      { label: 'Listing price', value: formatRand(d.listingPrice) },
+      ...shown.lines.map((l) => ({
+        label: l.label,
+        value: formatRand(l.cents),
+      })),
+      { label: shown.totalLabel, value: formatRand(shown.total) },
+      {
+        label: 'Shipping method',
+        value: prettyShippingMethod(d.shippingMethod),
+      },
     ];
-    if (d.passFeeToBuyer) {
-      rows.push({
-        label: 'Processing fee',
-        value: formatRand(d.processingFee),
-      });
-    }
-    rows.push({ label: 'Total paid', value: formatRand(d.buyerTotal) });
-    rows.push({
-      label: 'Shipping method',
-      value: prettyShippingMethod(d.shippingMethod),
-    });
     const html = this.email({
       status: { tone: 'success', label: 'Order confirmed' },
       headline: 'Order confirmed',
@@ -914,6 +944,17 @@ export class NotificationsService {
   }
 
   async newSaleSeller(d: SaleDetails) {
+    // ⚠️ ONE SET OF NUMBERS ACROSS EMAIL, INBOX AND SMS. Hoisted to the top of
+    // the method because the inbox row is built long before the email body,
+    // and it used to quote d.listingPrice — the BUYER's marked-up price — so
+    // a seller's phone said "sold for R511.97" while the email beside it said
+    // "Your price R450.00". Same sale, two numbers.
+    const sellerRows = sellerBreakdown(d);
+    if (!sellerRows.balances) {
+      this.logger.error(
+        `newSaleSeller ${d.transactionId}: gross − deductions ≠ payout (${sellerRows.net}) — fee model ${d.feeModel}`,
+      );
+    }
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     // When TransactionsService minted a TRANSACTION_ACCEPT token we
     // prefer the /a/<token> link in BOTH email CTA + SMS — that lets
@@ -934,8 +975,8 @@ export class NotificationsService {
       type: 'new_sale',
       title: 'Your listing sold',
       body: hasAcceptToken
-        ? `${d.listingTitle} sold for ${formatRand(d.listingPrice)} — accept within 48h`
-        : `${d.listingTitle} sold for ${formatRand(d.listingPrice)} — dispatch within 48h`,
+        ? `${d.listingTitle} sold — ${formatRand(sellerRows.net)} to you, accept within 48h`
+        : `${d.listingTitle} sold — ${formatRand(sellerRows.net)} to you, dispatch within 48h`,
       // When we have a token URL, point the inbox row at it directly so
       // tapping the row → /a/<token> → Accept page works without sign-in.
       // Otherwise fall back to the transaction page.
@@ -979,11 +1020,22 @@ export class NotificationsService {
       status: { tone: 'success', label: 'New sale' },
       headline: hasAcceptToken ? 'New sale — accept within 48h' : 'You have a new sale',
       body: bodyText,
+      // ⚠️ THE SUBTRACTION HAS TO BE TRUE.
+      //
+      // This was hardcoded as "Sale price − Commission = Your payout", which
+      // on a marked-up BUY NOW reads R511.97 − R40.50 = R450.00 and simply
+      // does not subtract. Under that model nothing is deducted from the
+      // seller at all: they asked R450 and they receive R450, because our cut
+      // was added to the buyer's price. sellerBreakdown() emits the rows that
+      // are actually true for the model this sale ran under.
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
-        { label: 'Sale price', value: formatRand(d.listingPrice) },
-        { label: 'Commission', value: '-' + formatRand(d.commissionZar) },
-        { label: 'Your payout', value: formatRand(d.sellerPayout) },
+        { label: sellerRows.grossLabel, value: formatRand(sellerRows.gross) },
+        ...sellerRows.deductions.map((l) => ({
+          label: l.label,
+          value: '-' + formatRand(l.cents),
+        })),
+        { label: sellerRows.netLabel, value: formatRand(sellerRows.net) },
         {
           label: 'Shipping method',
           value: prettyShippingMethod(d.shippingMethod),
@@ -992,9 +1044,12 @@ export class NotificationsService {
       cta: hasAcceptToken
         ? { label: 'Accept this sale', url: acceptUrl }
         : { label: 'View sale', url: txUrl },
+      // The model note always rides along: under the markup model a seller
+      // seeing no commission row needs to know why, and under the deduct
+      // model it says plainly who carried the gateway fee.
       footnote: hasAcceptToken
-        ? 'One-tap accept — no sign-in needed. Link expires in 48 hours.'
-        : undefined,
+        ? `One-tap accept — no sign-in needed. Link expires in 48 hours. ${sellerRows.note}`
+        : sellerRows.note,
       preheader: `New sale — ${d.listingTitle}`,
     });
     await this.send(d.sellerEmail, 'New sale: ' + d.listingTitle, html);

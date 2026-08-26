@@ -317,7 +317,7 @@ const TOOLS: Tool[] = [
   {
     name: 'computeFees',
     description:
-      'EXACT All Outdoor fee arithmetic from the live fee engine — the SAME code checkout uses. Call this for ANY concrete number about fees, commission, payout or buyer total ("what will I pay?", "what do I get after fees if I sell for R8,500?", "what does a swap cost?"). NEVER hand-derive fee amounts yourself — the bands are marginal and easy to get wrong. kinds: "sale" (ordinary listing: pass priceZar, optional shippingZar + passFeeToBuyer), "experience" (hunting package / on-site service: priceZar), "swapLeg" (one party\'s swap funding: courierZar + optional cashZar + isFirearmLeg), "swapCash" (commission on a swap cash top-up: cashZar). Amounts are whole RAND in and out.',
+      'EXACT All Outdoor fee arithmetic from the live fee engine — the SAME code checkout uses. Call this for ANY concrete number about fees, commission, payout or buyer total ("what will I pay?", "what do I get after fees if I sell for R8,500?", "what does a swap cost?"). NEVER hand-derive fee amounts yourself — the bands are marginal and easy to get wrong. kinds: "sale" (ordinary listing: pass priceZar, plus saleModel — "buyNow" (DEFAULT: the seller names what they want to RECEIVE and we mark the price the buyer sees up, so the seller keeps 100%) or "auction" for a bid-discovered price or accepted offer, where commission comes off the seller and the buyer pays a transaction fee — and optional shippingZar), "experience" (hunting package / on-site service: priceZar), "swapLeg" (one party\'s swap funding: courierZar + optional cashZar + isFirearmLeg), "swapCash" (commission on a swap cash top-up: cashZar). Amounts are whole RAND in and out.',
     input_schema: {
       type: 'object',
       properties: {
@@ -326,10 +326,16 @@ const TOOLS: Tool[] = [
           enum: ['sale', 'experience', 'swapLeg', 'swapCash'],
           description: 'Which fee calculation. Default "sale".',
         },
-        priceZar: { type: 'number', description: 'Listing / package price in whole rand.' },
+        saleModel: {
+          type: 'string',
+          enum: ['buyNow', 'auction'],
+          description:
+            'Sale kind only. "buyNow" (default) is the markup model: priceZar is what the SELLER WANTS TO RECEIVE, fees are built into the price the buyer sees, and the seller keeps 100%. "auction" is a bid-discovered price or an accepted offer: priceZar is the agreed price, commission is deducted from the seller, and the buyer pays a transaction fee on top. Getting this wrong quotes a seller a deduction that will not happen.',
+        },
+        priceZar: { type: 'number', description: 'Sale: for saleModel "buyNow" this is what the SELLER WANTS TO RECEIVE, not a shelf price. For "auction" it is the agreed/bid price. Experience: the package price. Whole rand.' },
         shippingZar: { type: 'number', description: 'Courier quote in whole rand (sale kind). 0 / omit for collection or dealer transfer.' },
         passFeeToBuyer: { type: 'boolean', description: 'Whether the processing fee is added to the buyer\'s total (default true) or absorbed by the seller.' },
-        includeCourierWaybill: { type: 'boolean', description: 'Sale kind: whether a courier waybill exists (adds the flat R15 handling). Defaults true when shippingZar > 0.' },
+        includeCourierWaybill: { type: 'boolean', description: 'Sale kind: whether a courier waybill exists (adds our delivery margin, 10% of the carrier rate — quoted to the buyer inside one delivery figure, never itemised). Defaults true when shippingZar > 0.' },
         cashZar: { type: 'number', description: 'Swap cash top-up in whole rand (swapLeg / swapCash kinds).' },
         courierZar: { type: 'number', description: 'This party\'s courier rate in whole rand (swapLeg kind).' },
         isFirearmLeg: { type: 'boolean', description: 'swapLeg kind: firearm dealer-transfer leg (R100 flat fee, no courier).' },

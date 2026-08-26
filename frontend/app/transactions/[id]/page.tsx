@@ -1282,32 +1282,44 @@ export default async function TransactionPage({
           </div>
 
           {/* Breakdown */}
+          {/* ⚠️ LINES COME FROM THE SERVER, and they foot.
+              This block used to do its own arithmetic off the raw columns and
+              was wrong twice over: it added a processing fee on top of an item
+              price that already contained it (marked-up Buy Now), and it
+              subtracted commission from the BUYER's price to reach a seller
+              payout that number cannot produce. It also itemised our delivery
+              margin as its own "Handling" line, which is never shown to a
+              buyer. tx.feeBreakdown is built by the one shared builder. */}
+          {/* Detail responses always carry it; guarded so a stale cached
+              list-shaped response renders nothing rather than throwing. */}
+          {tx.feeBreakdown && (
           <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between">
-              <span style={{ color: 'var(--text-tertiary)' }}>Item price</span>
-              <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.listingPrice)}</span>
-            </div>
+            {isBuyer &&
+              tx.feeBreakdown.buyer.lines.map((l) => (
+                <div key={l.label} className="flex justify-between">
+                  <span style={{ color: 'var(--text-tertiary)' }}>{l.label}</span>
+                  <span style={{ color: 'var(--text-primary)' }}>{formatPrice(l.cents)}</span>
+                </div>
+              ))}
 
-            {tx.shippingCost > 0 && (
+            {isSeller && (
               <div className="flex justify-between">
-                <span style={{ color: 'var(--text-tertiary)' }}>Shipping</span>
-                <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.shippingCost)}</span>
+                <span style={{ color: 'var(--text-tertiary)' }}>
+                  {tx.feeBreakdown.seller.grossLabel}
+                </span>
+                <span style={{ color: 'var(--text-primary)' }}>
+                  {formatPrice(tx.feeBreakdown.seller.gross)}
+                </span>
               </div>
             )}
 
-            {tx.shippingHandlingCents > 0 && (
-              <div className="flex justify-between">
-                <span style={{ color: 'var(--text-tertiary)' }}>Handling</span>
-                <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.shippingHandlingCents)}</span>
-              </div>
-            )}
-
-            {tx.passFeeToBuyer && tx.processingFee > 0 && (
-              <div className="flex justify-between">
-                <span style={{ color: 'var(--text-tertiary)' }}>Processing fee</span>
-                <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.processingFee)}</span>
-              </div>
-            )}
+            {isSeller &&
+              tx.feeBreakdown.seller.deductions.map((l) => (
+                <div key={l.label} className="flex justify-between">
+                  <span style={{ color: 'var(--text-tertiary)' }}>{l.label}</span>
+                  <span style={{ color: 'var(--text-primary)' }}>−{formatPrice(l.cents)}</span>
+                </div>
+              ))}
 
             <div
               className="my-2"
@@ -1317,29 +1329,30 @@ export default async function TransactionPage({
             {isBuyer && (
               <div className="flex justify-between font-medium">
                 <span style={{ color: 'var(--text-secondary)' }}>You paid</span>
-                <span style={{ color: 'var(--red)' }}>{formatPrice(tx.buyerTotal)}</span>
+                <span style={{ color: 'var(--red)' }}>
+                  {formatPrice(tx.feeBreakdown.buyer.total)}
+                </span>
               </div>
             )}
 
             {isSeller && (
               <>
-                <div className="flex justify-between">
-                  <span style={{ color: 'var(--text-tertiary)' }}>Commission</span>
-                  <span style={{ color: 'var(--text-primary)' }}>−{formatPrice(tx.commissionZar)}</span>
-                </div>
-                {!tx.passFeeToBuyer && tx.processingFee > 0 && (
-                  <div className="flex justify-between">
-                    <span style={{ color: 'var(--text-tertiary)' }}>Processing fee</span>
-                    <span style={{ color: 'var(--text-primary)' }}>−{formatPrice(tx.processingFee)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between font-medium">
-                  <span style={{ color: 'var(--text-secondary)' }}>Your payout</span>
-                  <span style={{ color: '#00a03c' }}>{formatPrice(tx.sellerPayout)}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {tx.feeBreakdown.seller.netLabel}
+                  </span>
+                  <span style={{ color: '#00a03c' }}>
+                    {formatPrice(tx.feeBreakdown.seller.net)}
+                  </span>
                 </div>
+                {/* Why there is no commission row on a marked-up sale. */}
+                <p className="text-xs pt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  {tx.feeBreakdown.seller.note}
+                </p>
               </>
             )}
           </div>
+          )}
 
           {tx.paidAt && (
             <p className="text-xs mt-4" style={{ color: 'var(--text-tertiary)' }}>

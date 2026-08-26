@@ -1991,13 +1991,18 @@ export class AdminService {
         commissionZar: true,
         processingFee: true,
         shippingCost: true,
-        // R15/waybill handling margin (GG-retained). Kept as its own column
-        // so Gross = Item + Shipping + Shipping handling + Processing closes
-        // per courier row.
+        // Our waybill handling margin (GG-retained), kept as its own column.
+        // ⚠️ THE IDENTITY IT ONCE ASSERTED IS ONLY TRUE UNDER SELLER_DEDUCT.
+        // This comment used to claim "Gross = Item + Shipping + Shipping
+        // handling + Processing closes per courier row". Under BUYNOW_MARKUP
+        // the processing fee is already inside Item price, so adding it again
+        // overshoots Gross by exactly that fee. Read the Fee model column
+        // before reconciling; see payments/fee-presentation.ts.
         shippingHandlingCents: true,
         buyerTotal: true,
         sellerPayout: true,
         refundedAmount: true,
+        feeModel: true,
         listing: { select: { title: true } },
         buyer: { select: { username: true, email: true } },
         seller: { select: { username: true, email: true } },
@@ -2013,6 +2018,15 @@ export class AdminService {
       'Buyer', 'Buyer email', 'Seller', 'Seller email',
       'Item price', 'Gross (buyer paid)', 'Commission', 'Processing fee',
       'Shipping', 'Shipping handling (GG)', 'Net payout', 'Refunded',
+      // ⚠️ WITHOUT THIS COLUMN THE EXPORT CANNOT BE RECONCILED. The raw
+      // columns are identical under both fee models but mean opposite things:
+      // under BUYNOW_MARKUP the commission and processing fee are ALREADY
+      // INSIDE "Item price" and were charged to the buyer, so
+      // Item + Shipping + Handling + Processing double-counts the fee and the
+      // seller was never deducted anything. Under SELLER_DEDUCT they sit
+      // outside it and the seller really was. Raw values are kept as-is
+      // (an accountant wants the actual columns) — this says how to read them.
+      'Fee model',
     ];
     const body = rows.map((t) => [
       t.orderReference ?? t.order?.orderReference ?? '',
@@ -2033,6 +2047,7 @@ export class AdminService {
       r(t.shippingHandlingCents),
       r(t.sellerPayout),
       r(t.refundedAmount),
+      t.feeModel === 'BUYNOW_MARKUP' ? 'Buy Now (fees in price)' : 'Deducted from seller',
     ]);
 
     await this.audit.record({

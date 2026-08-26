@@ -1,11 +1,13 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { PrismaService } from '../prisma/prisma.service';
 import { SUPPORT_EMAIL } from '../common/brand';
+import { buyerBreakdown } from './fee-presentation';
 
 // ────────────────────────────────────────────────────────────────────
 // Buyer purchase receipt (Phase 2). All Outdoor-issued proof of purchase —
@@ -35,6 +37,8 @@ function money(cents: number): string {
 
 @Injectable()
 export class ReceiptService {
+  private readonly logger = new Logger(ReceiptService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -147,16 +151,30 @@ export class ReceiptService {
       right(money(cents), 10, b);
       y -= 16;
     };
-    line('Item price', tx.listingPrice);
-    if (tx.shippingCost > 0) line('Shipping', tx.shippingCost);
-    // P6.4 — the R15/waybill handling margin is part of buyerTotal but stored
-    // apart from the (remitted) carrier rate, so it needs its own line or the
-    // breakdown won't sum to "Total paid". Guarded on > 0 so firearm /
-    // collection / consolidated-sibling receipts (handling 0) are unchanged.
-    if (tx.shippingHandlingCents > 0)
-      line('Handling', tx.shippingHandlingCents);
-    if (tx.passFeeToBuyer && tx.processingFee > 0)
-      line('Processing fee', tx.processingFee);
+    // ⚠️ THE LINES COME FROM ONE SHARED BUILDER, and they FOOT.
+    //
+    // This block used to print "Item price", then "Shipping", then
+    // "Handling", then a "Processing fee" gated on `tx.passFeeToBuyer` — and
+    // on a marked-up BUY NOW that fee is ALREADY INSIDE the item price, so
+    // the receipt overshot its own "Total paid" by the fee. On an auction
+    // whose listing carried a legacy false flag it undershot instead. Two
+    // ways to hand a buyer a receipt that does not add up.
+    //
+    // It also itemised our delivery margin as its own "Handling" line, which
+    // fee.calculator.ts is explicit must never be shown separately.
+    //
+    // buyerBreakdown() decides both, from the fee model recorded on the row.
+    const shown = buyerBreakdown(tx);
+    for (const l of shown.lines) line(l.label, l.cents);
+    if (!shown.balances) {
+      // Cannot happen for a row written by the current checkout, and it is
+      // covered by fee-presentation.spec. If a restored or hand-edited row
+      // ever does not foot, say so here rather than printing a document that
+      // silently disagrees with itself.
+      this.logger.error(
+        `Receipt ${tx.id}: line items do not sum to buyerTotal (${shown.total}) — fee model ${tx.feeModel}`,
+      );
+    }
     y -= 4;
     page.drawLine({
       start: { x: M, y: y + 10 },
@@ -165,7 +183,7 @@ export class ReceiptService {
       color: rgb(0.8, 0.82, 0.86),
     });
     y -= 6;
-    line('Total paid', tx.buyerTotal, true);
+    line(shown.totalLabel, shown.total, true);
     y -= 26;
 
     // Footer notes

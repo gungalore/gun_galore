@@ -12,6 +12,11 @@ import {
   SHIPMENT_FAILURE_LABEL,
 } from '../common/shipment-failure-policy';
 import { FeeCalculator, shippingHandlingCentsFor } from './fee.calculator';
+import {
+  buyerBreakdown,
+  feeModelFor,
+  sellerBreakdown,
+} from './fee-presentation';
 import { PeachService, PeachPaymentResult } from './peach.service';
 import { evaluateBanvMatches, banvFlagsSummary } from './peach-banks';
 import { FraudRiskService } from './fraud-risk.service';
@@ -406,6 +411,24 @@ export class TransactionsService {
     // existed, which falls back to the old deduct-from-seller behaviour.
     const isMarkedUpBuyNow =
       !offerRecord && !auctionWin && listing.sellerAskCents != null;
+
+    // ─── The two facts every downstream document needs ────────────────
+    // Both fee models below write the SAME columns, so without recording
+    // which one ran, no receipt, email, statement or ledger entry can
+    // describe the sale truthfully — and five of them described it three
+    // different ways. Snapshotted here, beside the money they explain.
+    const feeModel = feeModelFor({ isExperience, isMarkedUpBuyNow });
+    // ⚠️ THE EFFECTIVE FLAG. An auction win and an accepted offer FORCE the
+    // buyer to carry the gateway fee whatever the seller once ticked on the
+    // listing; an experience honours the listing's own choice. This is the
+    // value the fee maths actually runs with, so it is the value we store —
+    // the row used to keep `listing.passFeeToBuyer`, which answered a
+    // different question than every consumer was asking of it.
+    const buyerPaysProcessingFee = isExperience
+      ? listing.passFeeToBuyer
+      : auctionWin || offerRecord
+        ? true
+        : listing.passFeeToBuyer;
     // ⚠️ The null fallback below is a SAFETY NET, not a supported state. The
     // buyer's checkout cannot tell a marked-up BUY_NOW from a legacy one —
     // sellerAskCents is owner-gated and never reaches a buyer — so it assumes
@@ -581,7 +604,7 @@ export class TransactionsService {
         // Experiences are single-item, so quantity is always 1 here.
         this.fees.breakdownExperience(
           agreedPrice,
-          listing.passFeeToBuyer,
+          buyerPaysProcessingFee,
           isTopSeller,
           PAYMENT_MODE,
         )
@@ -614,7 +637,7 @@ export class TransactionsService {
             // the AUCTION rules, not the marked-up BUY_NOW ones. Widen this to
             // cover it rather than letting it fall through to the listing's
             // legacy passFeeToBuyer flag.
-            auctionWin || offerRecord ? true : listing.passFeeToBuyer,
+            buyerPaysProcessingFee,
             isTopSeller,
             shippingCostCents,
             PAYMENT_MODE, // manual = flat 1.5% EFT fee; paygate = card rate
@@ -721,7 +744,10 @@ export class TransactionsService {
         shippingServiceCode,
         shippingProviderSlug,
         shippingServiceLevelCode,
-        passFeeToBuyer: listing.passFeeToBuyer,
+        // The EFFECTIVE flag and the model that produced these columns — see
+        // where both are derived above. Every document downstream reads them.
+        passFeeToBuyer: buyerPaysProcessingFee,
+        feeModel,
         buyerTotal,
         sellerPayout: effectiveSellerPayout, // DD-2 — 0 for a house deal (GG doesn't pay itself)
         shippingMethod: dto.shippingMethod,
@@ -2142,8 +2168,10 @@ export class TransactionsService {
       // we must NOT accept+book until EVERY sibling in the order is paid (HELD)
       // — otherwise bookForTransaction (which only sees HELD siblings) declares
       // an under-weight/under-insured parcel that can never grow. Defer until
-      // the parent Order's paid-claim commits; confirmManualOrder re-drives us
-      // then, and the 5-min reconcile sweep is a backstop. A single-item deal
+      // the parent Order's paid-claim commits; maybeConfirmWholeOrder re-drives
+      // us the moment it wins that claim (confirmManualOrder, named here before,
+      // was deleted with the manual-EFT rail and re-drove nothing), and the
+      // 5-min reconcile sweep is a backstop. A single-item deal
       // (no orderId) is unaffected and auto-accepts immediately.
       if (tx.orderId) {
         const order = await this.prisma.order.findUnique({
@@ -3272,9 +3300,23 @@ export class TransactionsService {
     // Manual EFT retired (Phase 1) — GG bank details are never exposed to
     // buyers. The field is kept (always null) for response-shape stability
     // until the full plumbing purge.
+    // ⚠️ THE BREAKDOWN IS COMPUTED HERE, NOT IN THE BROWSER.
+    //
+    // The order page used to do its own arithmetic off the raw columns, and
+    // got it wrong in both directions: it added the processing fee on top of
+    // an item price that already contained it (marked-up Buy Now), and it
+    // subtracted commission from the buyer's price to reach a seller payout
+    // that number cannot produce. Sending the rendered lines means there is
+    // exactly ONE implementation of this arithmetic, on the server, covered
+    // by fee-presentation.spec — rather than a second copy in TSX free to
+    // drift the next time the fee model changes.
     return {
       ...tx,
       bankDetails: null,
+      feeBreakdown: {
+        buyer: buyerBreakdown(tx),
+        seller: sellerBreakdown(tx),
+      },
     };
   }
 
@@ -4704,6 +4746,102 @@ export class TransactionsService {
   // kept intact and rail-agnostic — a future card paygate calls markPaid
   // directly from its verify/webhook handler exactly as the gateway path does.
 
+  /**
+   * ONE confirmation for a whole basket, sent when its last line is paid.
+   *
+   * Every line of a cart is its own Transaction (its own seller, shipment and
+   * payout), but the buyer made ONE payment and wants ONE receipt of it. The
+   * per-line confirmation is suppressed for order children precisely so this
+   * can fire instead.
+   *
+   * ⚠️ CAS-GUARDED, BECAUSE THE LAST LINE IS A RACE. Peach's result page and
+   * its webhook both drive markPaid, and a multi-seller cart pays several
+   * lines that can land in any order and concurrently. Without an atomic
+   * claim, two callers could each see "all lines paid" and the buyer would be
+   * emailed twice for one order. `paidAt: null` in the predicate means
+   * exactly one caller can ever win; count === 0 is a successful no-op.
+   *
+   * ⚠️ NEVER THROWS. This runs after the money is already committed. A dead
+   * mail provider must not turn a paid order into a failed request — the
+   * caller is inside the post-payment notification block, and the same
+   * best-effort contract applies as everywhere else in it.
+   */
+  private async maybeConfirmWholeOrder(orderId: string): Promise<void> {
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          orderReference: true,
+          paidAt: true,
+          buyer: {
+            select: {
+              email: true,
+              phone: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          transactions: {
+            select: { id: true, paidAt: true, buyerTotal: true },
+          },
+        },
+      });
+      if (!order || order.paidAt) return;
+
+      // Still waiting on a line. Note this counts CHILD rows, not the order's
+      // own money snapshot — a line that was cancelled before payment would
+      // otherwise hold the basket open forever.
+      const lines = order.transactions;
+      if (!lines.length || lines.some((t) => t.paidAt === null)) return;
+
+      // ⚠️ Sum what was ACTUALLY paid, rather than trusting the Order's
+      // money snapshot: a line re-priced between reservation and payment
+      // (shipping re-quoted on a new address) would leave the snapshot stale,
+      // and the buyer's confirmation must state the figure that left their
+      // account.
+      const buyerTotal = lines.reduce((t, l) => t + l.buyerTotal, 0);
+
+      const claimed = await this.prisma.order.updateMany({
+        where: { id: orderId, paidAt: null },
+        data: { status: 'PAID', paidAt: new Date() },
+      });
+      if (claimed.count === 0) return; // another line's handler got there first
+
+      await this.notifications.orderConfirmedBuyerMulti({
+        buyerEmail: order.buyer.email,
+        buyerName:
+          [order.buyer.firstName, order.buyer.lastName]
+            .filter(Boolean)
+            .join(' ') || 'Buyer',
+        buyerPhone: order.buyer.phone,
+        orderId: order.id,
+        orderReference:
+          order.orderReference ?? order.id.slice(-8).toUpperCase(),
+        itemCount: lines.length,
+        buyerTotal,
+      });
+      this.logger.log(
+        `Order ${orderId} fully paid (${lines.length} lines, ${buyerTotal}c) — buyer confirmed`,
+      );
+
+      // ⚠️ RE-DRIVE THE LINES THAT WERE WAITING ON THIS CLAIM. A house-deal
+      // line in a cart refuses to auto-accept until the parent Order is paid
+      // (so the courier booking sees every sibling and cannot declare an
+      // under-weight parcel). That deferral used to be re-driven by
+      // confirmManualOrder, which no longer exists — leaving only the 5-minute
+      // reconcile sweep, so a paid basket sat undispatched until a cron
+      // noticed. Idempotent on acceptedAt and a no-op for non-deal rows, so
+      // firing it for every line is safe. Detached deliberately: a booking
+      // failure must not unwind the confirmation we just sent.
+      for (const l of lines) void this.maybeAutoAcceptHouseDeal(l.id);
+    } catch (err) {
+      this.logger.error(
+        `Could not confirm whole order ${orderId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
   // ------------------------------------------------------------------
   // Private helpers
   // ------------------------------------------------------------------
@@ -5079,6 +5217,25 @@ export class TransactionsService {
       });
       if (!tx) return;
 
+      // ─── The basket, once every line in it is paid for ────────────────
+      // ⚠️ MUST RUN BEFORE THE TWO BAIL-OUTS BELOW. PRIVATE_ARRANGE returns
+      // at the next guard and a Daily-Deals house line returns a little
+      // further down, and BOTH are legal cart lines — createOrderCheckout
+      // consolidates deal lines by supplier, and a firearm line routes to
+      // PRIVATE_ARRANGE. Placed after those returns (as it first was), the
+      // confirmer is simply never reached when either kind happens to be the
+      // LAST line paid, and the consequences compound:
+      //   · orderConfirmedBuyerMulti never fires — the exact silence this
+      //     whole change exists to close, left open for those baskets;
+      //   · Order.paidAt stays null and status stays AWAITING_PAYMENT
+      //     forever, because orderStatusRollupSweep only scans status PAID;
+      //   · worst, maybeAutoAcceptHouseDeal refuses to accept an order-linked
+      //     deal line until order.paidAt is set, so a cart deal line is never
+      //     accepted, never booked and never dispatched — the buyer has paid,
+      //     the funds sit HELD, and nothing ships.
+      // Safe this early: the method no-ops unless every sibling is paid.
+      if (tx.orderId) await this.maybeConfirmWholeOrder(tx.orderId);
+
       // FLOW-F4 (H22/M15/M24/M25) — PRIVATE_ARRANGE has NO accept/dispatch
       // step: maybeImmediatePayout releases the funds at payment and
       // sendPrivateArrangeContactReveal already notifies BOTH parties with
@@ -5120,6 +5277,9 @@ export class TransactionsService {
             buyerTotal: tx.buyerTotal,
             sellerPayout: tx.sellerPayout,
             passFeeToBuyer: tx.passFeeToBuyer,
+            feeModel: tx.feeModel,
+            shippingCost: tx.shippingCost,
+            shippingHandlingCents: tx.shippingHandlingCents,
             shippingMethod: tx.shippingMethod,
           });
         }
@@ -5169,6 +5329,9 @@ export class TransactionsService {
         buyerTotal: tx.buyerTotal,
         sellerPayout: tx.sellerPayout,
         passFeeToBuyer: tx.passFeeToBuyer,
+        feeModel: tx.feeModel,
+        shippingCost: tx.shippingCost,
+        shippingHandlingCents: tx.shippingHandlingCents,
         shippingMethod: tx.shippingMethod,
         // Optional — when set, the seller-facing SMS + email use this
         // /a/<token> URL for the "Accept this sale" call-to-action.
@@ -5176,10 +5339,19 @@ export class TransactionsService {
       };
       await Promise.all([
         // Buyer "order confirmed" — SKIPPED for multi-item order children
-        // (tx.orderId set). confirmManualOrder sends ONE consolidated buyer
-        // confirmation after every line of the cart is paid, so the buyer
-        // isn't emailed/SMSed N times for one order. Single-item sales
-        // (orderId null — every Phase 1–7 sale) keep the per-tx confirmation.
+        // (tx.orderId set), which instead get ONE consolidated confirmation
+        // from maybeConfirmWholeOrder (called above, before the PA and
+        // house-deal bail-outs), so the buyer isn't emailed and
+        // SMSed N times for one basket. Single-item sales (orderId null) keep
+        // the per-transaction confirmation.
+        //
+        // ⚠️ THIS SUPPRESSION USED TO LEAD NOWHERE. It deferred to
+        // confirmManualOrder, which was DELETED with the manual-EFT rail —
+        // and its replacement, NotificationsService.orderConfirmedBuyerMulti,
+        // had no caller anywhere in production (its only reference was a jest
+        // mock for a service file that no longer exists). So a multi-item cart
+        // buyer would have received no confirmation at all, by either route,
+        // the moment PAYMENTS_LIVE was switched on.
         tx.orderId
           ? Promise.resolve()
           : this.notifications.orderConfirmedBuyer(details),

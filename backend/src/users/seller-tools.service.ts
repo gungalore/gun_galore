@@ -1,6 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { csvCell } from '../common/csv.util';
+import {
+  sellerBreakdown,
+  type SellerBreakdown,
+} from '../payments/fee-presentation';
 
 // Seller self-service tools (Phase 6): payout statement + analytics.
 // Read-only aggregations over the existing schema scoped to the signed-in
@@ -39,6 +48,8 @@ function periodDays(period: SellerPeriod): number | null {
 
 @Injectable()
 export class SellerToolsService {
+  private readonly logger = new Logger(SellerToolsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async sellerId(clerkId: string): Promise<string> {
@@ -97,40 +108,82 @@ export class SellerToolsService {
         commissionZar: true,
         processingFee: true,
         shippingCost: true,
+        shippingHandlingCents: true,
         sellerPayout: true,
         buyerTotal: true,
+        passFeeToBuyer: true,
+        feeModel: true,
         listing: { select: { title: true } },
         buyer: { select: { username: true } },
       },
       orderBy: { releasedAt: 'desc' },
     });
 
-    const released = rows.filter((r) => r.paymentStatus === 'RELEASED');
+    // ⚠️ COMMISSION IS NOT ALWAYS A DEDUCTION. Under BUYNOW_MARKUP our cut
+    // was added to the BUYER's price; the seller was never charged it and
+    // receives their full ask. This statement billed commissionZar and
+    // processingFee as seller deductions unconditionally — right for an
+    // auction, a fiction for every marked-up Buy Now, and the CSV's TOTAL row
+    // did not subtract to the payout it printed. sellerBreakdown() returns the
+    // deductions that actually happened, and guarantees gross − deductions =
+    // net for both models.
+    const priced = rows.map((r) => ({ r, b: sellerBreakdown(r) }));
+    // ⚠️ HONOUR THE CONTRACT THE BUILDER OFFERS. Every other caller checks
+    // `balances`; this one rendered rows and a TOTAL line regardless, so a row
+    // whose columns do not subtract (a CPA-cancelled experience deliberately
+    // stores a partial payout that is not price − commission) would print a
+    // statement that quietly does not add up. Surfaced, never hidden.
+    for (const p of priced) {
+      if (!p.b.balances) {
+        this.logger.warn(
+          `Statement row ${p.r.id}: ${p.b.gross} − deductions ≠ ${p.b.net} (fee model ${p.r.feeModel}) — shown as stored`,
+        );
+      }
+    }
+    const ded = (b: SellerBreakdown, label: string) =>
+      b.deductions.find((d) => d.label === label)?.cents ?? 0;
+
+    const released = priced.filter((p) => p.r.paymentStatus === 'RELEASED');
     const summary = {
       orderCount: released.length,
-      grossSales: released.reduce((s, r) => s + r.listingPrice, 0),
-      totalCommission: released.reduce((s, r) => s + r.commissionZar, 0),
-      totalProcessingFees: released.reduce((s, r) => s + r.processingFee, 0),
-      totalShipping: released.reduce((s, r) => s + r.shippingCost, 0),
-      netPayout: released.reduce((s, r) => s + r.sellerPayout, 0),
+      // The seller's own gross — their ask under the markup model, the sale
+      // price under the deduct model. NOT the marked-up number the buyer saw.
+      grossSales: released.reduce((s, p) => s + p.b.gross, 0),
+      totalCommission: released.reduce(
+        (s, p) => s + ded(p.b, 'Commission'),
+        0,
+      ),
+      totalProcessingFees: released.reduce(
+        (s, p) => s + ded(p.b, 'Payment processing fee'),
+        0,
+      ),
+      totalShipping: released.reduce((s, p) => s + p.r.shippingCost, 0),
+      netPayout: released.reduce((s, p) => s + p.b.net, 0),
       refundedCount: rows.length - released.length,
     };
 
     return {
       period: { from: from.toISOString(), to: to.toISOString() },
       summary,
-      orders: rows.map((r) => ({
+      orders: priced.map(({ r, b }) => ({
         id: r.id,
         reference: r.orderReference,
         date: (r.releasedAt ?? r.createdAt).toISOString(),
         listingTitle: r.listing.title,
         buyerUsername: r.buyer.username,
         status: r.paymentStatus,
-        listingPrice: r.listingPrice,
-        commission: r.commissionZar,
-        processingFee: r.processingFee,
+        // What the buyer was charged for the item — informational, and NOT
+        // the number the payout is derived from under the markup model.
+        buyerPaid: r.listingPrice,
+        // The seller's own starting figure, which the deductions come off.
+        yourPrice: b.gross,
+        commission: ded(b, 'Commission'),
+        processingFee: ded(b, 'Payment processing fee'),
         shipping: r.shippingCost,
-        netPayout: r.sellerPayout,
+        netPayout: b.net,
+        // True when our fees were inside the buyer's price, so the UI can say
+        // so instead of showing two mysterious zeroes.
+        feesInPrice: b.feesInPrice,
       })),
     };
   }
@@ -142,13 +195,18 @@ export class SellerToolsService {
     toISO?: string,
   ): Promise<string> {
     const stmt = await this.payoutStatement(clerkId, fromISO, toISO);
+    // ⚠️ "Your price" − Commission − Processing fee = "Net payout", for BOTH
+    // fee models. "Buyer paid" is shown alongside because under the markup
+    // model it is a bigger number than the seller's own price and its absence
+    // made the statement look wrong.
     const header = [
       'Reference',
       'Date',
       'Item',
       'Buyer',
       'Status',
-      'Item price',
+      'Buyer paid',
+      'Your price',
       'Commission',
       'Processing fee',
       'Shipping',
@@ -163,7 +221,8 @@ export class SellerToolsService {
           o.listingTitle,
           o.buyerUsername ?? '',
           o.status,
-          rand(o.listingPrice),
+          rand(o.buyerPaid),
+          rand(o.yourPrice),
           rand(o.commission),
           rand(o.processingFee),
           rand(o.shipping),
@@ -174,7 +233,19 @@ export class SellerToolsService {
       );
     }
     lines.push(
-      ['TOTAL', '', '', '', `${stmt.summary.orderCount} orders`, rand(stmt.summary.grossSales), rand(stmt.summary.totalCommission), rand(stmt.summary.totalProcessingFees), rand(stmt.summary.totalShipping), rand(stmt.summary.netPayout)]
+      [
+        'TOTAL',
+        '',
+        '',
+        '',
+        `${stmt.summary.orderCount} orders`,
+        '',
+        rand(stmt.summary.grossSales),
+        rand(stmt.summary.totalCommission),
+        rand(stmt.summary.totalProcessingFees),
+        rand(stmt.summary.totalShipping),
+        rand(stmt.summary.netPayout),
+      ]
         .map(csvCell)
         .join(','),
     );
@@ -234,7 +305,14 @@ export class SellerToolsService {
       period,
       kpis: {
         salesCount: agg._count,
-        grossSalesCents: agg._sum.buyerTotal ?? 0,
+        // ⚠️ RENAMED, BECAUSE IT WAS NEVER "GROSS SALES". This is buyerTotal —
+        // what the BUYER was charged, delivery and our margin included. Under
+        // the markup model that is materially bigger than anything the seller
+        // sold for, and it sat on the same screen as a statement table that
+        // (correctly) shows the seller's own price, giving one page two
+        // conflicting definitions of the same word. Net payout below is the
+        // seller's real headline; this is the order value.
+        buyerPaidCents: agg._sum.buyerTotal ?? 0,
         netPayoutCents: agg._sum.sellerPayout ?? 0,
         avgOrderValueCents: Math.round(agg._avg.buyerTotal ?? 0),
         activeListings,

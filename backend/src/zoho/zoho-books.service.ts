@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PaymentStatus } from '@prisma/client';
+import { FeeModel, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 
@@ -558,10 +558,20 @@ export class ZohoBooksService {
       const orderRef =
         tx.listing.referenceNumber ?? tx.id.slice(-8).toUpperCase();
 
-      // H&G-style reference: spells out the math in plain language
-      // so the seller sees "what I sold for - what you took = what I
-      // get". This is exactly what the H&G invoice we mirrored does.
-      const reference = `Sold for ${this.formatRand(listingPriceRand)} - ${this.formatRand(commissionRand)} (Platform Fee) = ${this.formatRand(sellerPayoutRand)} Due to you`;
+      // Reference line that spells the maths out in plain language — but it
+      // has to be maths that HAPPENED.
+      //
+      // ⚠️ It was hardcoded as "Sold for X - Y (Platform Fee) = Z Due to
+      // you". Under BUYNOW_MARKUP that subtraction is false: the listed price
+      // already contains BOTH our commission and the gateway fee, so
+      // listingPrice - commission overshoots the payout by the fee every
+      // time (R511.97 - R40.50 = R471.47, but the seller is due R450.00).
+      // Nothing was taken off them at all — our cut was added to the buyer's
+      // price. Say that instead of printing an equation that does not hold.
+      const isMarkup = tx.feeModel === FeeModel.BUYNOW_MARKUP;
+      const reference = isMarkup
+        ? `Your price ${this.formatRand(sellerPayoutRand)} Due to you (listed to the buyer at ${this.formatRand(listingPriceRand)}, fees included in the price)`
+        : `Sold for ${this.formatRand(listingPriceRand)} - ${this.formatRand(commissionRand)} (Platform Fee) = ${this.formatRand(sellerPayoutRand)} Due to you`;
 
       // Resolve Commission Revenue account so Books posts the income
       // to the right ledger row. Cached after first lookup.
@@ -607,7 +617,14 @@ export class ZohoBooksService {
           account_id: commissionAccountId,
         },
       ];
-      if (!tx.passFeeToBuyer && tx.processingFee > 0) {
+      // ⚠️ OUR PROCESSING REVENUE WAS NEVER BOOKED ON A MARKED-UP SALE.
+      // The old condition was `!tx.passFeeToBuyer && processingFee > 0`, and
+      // the sell form hardcodes the listing flag TRUE — so on every Buy Now
+      // this branch was skipped and the gateway margin we had marked INTO the
+      // price went unrecorded. Under the markup model the fee is real revenue
+      // recovered from the buyer and belongs on the invoice; under the deduct
+      // model it is only ours when the seller carried it.
+      if ((isMarkup || !tx.passFeeToBuyer) && tx.processingFee > 0) {
         const processingAccountId =
           (await this.getAccountIdByName('Processing Fee Revenue')) ??
           commissionAccountId;
@@ -1427,7 +1444,23 @@ export class ZohoBooksService {
       const commissionRand = tx.commissionZar / 100;
       const orderRef = tx.listing.referenceNumber ?? tx.id.slice(-8).toUpperCase();
       const reason = (refundReason ?? 'Transaction refunded by admin').slice(0, 200);
-      const reference = `Refund — ${orderRef} (reversing commission of ${this.formatRand(commissionRand)})`;
+      // ⚠️ THE CREDIT NOTE MUST REVERSE WHAT THE INVOICE RAISED. The invoice
+      // books a second 'Payment Processing Fee' line whenever the fee was
+      // ours to keep — under BUYNOW_MARKUP (recovered from the buyer inside
+      // the list price) or when the seller absorbed it. Reversing only the
+      // commission would leave that revenue standing against a sale that no
+      // longer exists, which is exactly the kind of one-sided entry the
+      // partial-refund gap already causes. Same condition, both directions.
+      const isMarkup = tx.feeModel === FeeModel.BUYNOW_MARKUP;
+      const reversesProcessingFee =
+        (isMarkup || !tx.passFeeToBuyer) && tx.processingFee > 0;
+      // What the note is actually worth — used both to word the reference and
+      // to apply it against the invoice.
+      const creditNoteTotalRand =
+        commissionRand + (reversesProcessingFee ? tx.processingFee / 100 : 0);
+      const reference = reversesProcessingFee
+        ? `Refund — ${orderRef} (reversing commission of ${this.formatRand(commissionRand)} and processing fee of ${this.formatRand(tx.processingFee / 100)})`
+        : `Refund — ${orderRef} (reversing commission of ${this.formatRand(commissionRand)})`;
       const today = new Date().toISOString().slice(0, 10);
 
       type CreateCreditNoteResp = {
@@ -1446,6 +1479,21 @@ export class ZohoBooksService {
             quantity: 1,
             account_id: commissionAccountId,
           },
+          ...(reversesProcessingFee
+            ? [
+                {
+                  name: 'Payment Processing Fee — refund',
+                  description: `${orderRef} — payment handling (${reason})`,
+                  rate: tx.processingFee / 100,
+                  quantity: 1,
+                  // Falls back to Commission Revenue exactly as the invoice
+                  // does, so a missing account cannot strand the reversal.
+                  account_id:
+                    (await this.getAccountIdByName('Processing Fee Revenue')) ??
+                    commissionAccountId,
+                },
+              ]
+            : []),
         ],
         notes: `${reference}.\nAll Outdoor transaction reference: ${orderRef}\nReason: ${reason}`,
       };
@@ -1475,7 +1523,13 @@ export class ZohoBooksService {
             invoices: [
               {
                 invoice_id: tx.zohoCommissionInvoiceId,
-                amount_applied: commissionRand,
+                // ⚠️ THE FULL CREDIT-NOTE TOTAL, NOT JUST THE COMMISSION.
+                // The note now carries a second 'Payment Processing Fee —
+                // refund' line whenever the invoice raised one. Applying only
+                // the commission leaves the invoice short by exactly the
+                // processing fee, so the seller's open balance never zeroes —
+                // which is the one thing this apply call exists to do.
+                amount_applied: creditNoteTotalRand,
               },
             ],
           },

@@ -9,9 +9,18 @@
 import { BadRequestException } from '@nestjs/common';
 
 /**
- * One cart line's money, taken verbatim from FeeCalculator.breakdown() for
- * that listing (so the per-line numbers are identical to a single-item
- * checkout of the same listing). All values are ZAR cents, integers.
+ * One cart line's money, taken verbatim from whichever FeeCalculator method
+ * priced that listing, so the per-line numbers are identical to a single-item
+ * checkout of the same listing. All values are ZAR cents, integers.
+ *
+ * ⚠️ IT IS NOT ALWAYS breakdown(). This said "taken verbatim from
+ * FeeCalculator.breakdown()", which stopped being true when the markup model
+ * shipped: a Buy Now line is priced by breakdownBuyNow(), where the commission
+ * and processing fee are already INSIDE listingPrice and the seller is not
+ * deducted. Nothing here needs to care — this module only SUMS lines the
+ * caller supplies — but anyone reading that sentence would have concluded the
+ * fields mean something they do not. Which model ran is recorded per line on
+ * Transaction.feeModel; see payments/fee-presentation.ts to render them.
  */
 export interface OrderLineBreakdown {
   /** Unit price snapshot (ZAR cents) — listing.price at checkout. */
