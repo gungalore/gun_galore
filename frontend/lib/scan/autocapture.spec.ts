@@ -1,0 +1,120 @@
+import { describe, expect, it } from 'vitest';
+import { BRIGHT_AT, DARK_AT, GLARE_AT } from './exposure';
+import {
+  HOLD_MS,
+  INK_AT,
+  LOWEST_MEASURED_DOCUMENT_INK,
+  MOTION_STILL,
+  autoBlocker,
+  autoHint,
+  holdComplete,
+  holdProgress,
+} from './autocapture';
+
+// ────────────────────────────────────────────────────────────────────
+// The gate that decides whether the scanner may shoot by itself.
+//
+// The first test is the one that matters. Automatic capture was removed once
+// because it NEVER FIRED: the gate asked the detector whether it agreed with
+// the aim box, and on a real licence card the detector never sees the card at
+// all (see the skipped regression in detect.spec.ts). Nothing here may consult
+// the detector — a document sitting in the box, in decent light, held still,
+// must fire.
+// ────────────────────────────────────────────────────────────────────
+
+/** A frame with a document in the box, good light, phone at rest. */
+function good(over: Partial<Parameters<typeof autoBlocker>[1]> = {}) {
+  return { ink: 0.3, motion: 1, glare: 0, luma: 128, ...over };
+}
+
+describe('autoBlocker', () => {
+  it('⚠️ FIRES on a document in the box, in good light, held still', () => {
+    // The whole point. If this ever goes red, auto-capture is back to the
+    // behaviour that got it deleted.
+    expect(autoBlocker(true, good())).toBeNull();
+  });
+
+  it('refuses when the member turned it off, whatever the frame looks like', () => {
+    expect(autoBlocker(false, good())).toBe('off');
+  });
+
+  it('refuses an empty box — the mat is not a document', () => {
+    expect(autoBlocker(true, good({ ink: 0 }))).toBe('empty');
+    expect(autoBlocker(true, good({ ink: INK_AT - 0.001 }))).toBe('empty');
+    // At the floor exactly, it is a document.
+    expect(autoBlocker(true, good({ ink: INK_AT }))).toBeNull();
+  });
+
+  it('⚠️ REFUSES TO SHOOT THROUGH GLARE, TOO BRIGHT OR TOO DARK', () => {
+    // These three are the only failures no processing recovers. Firing anyway
+    // hands the member a scan they cannot read and no explanation of why.
+    expect(autoBlocker(true, good({ glare: GLARE_AT + 0.01 }))).toBe('light');
+    expect(autoBlocker(true, good({ luma: BRIGHT_AT + 1 }))).toBe('light');
+    expect(autoBlocker(true, good({ luma: DARK_AT - 1 }))).toBe('light');
+  });
+
+  it('waits for the phone to stop moving', () => {
+    expect(autoBlocker(true, good({ motion: MOTION_STILL + 1 }))).toBe('steady');
+    expect(autoBlocker(true, good({ motion: MOTION_STILL }))).toBeNull();
+  });
+
+  it('⚠️ NAMES THE SHUT GATE IN THE ORDER THE MEMBER CAN ACT ON IT', () => {
+    // Point it at the document, THEN fix the light, THEN hold still. A frame
+    // failing all three must say "empty" first: telling somebody to hold still
+    // while the camera is pointed at their desk is how the old version became
+    // impossible to report on.
+    const awful = { ink: 0, motion: 50, glare: 0.9, luma: 250 };
+    expect(autoBlocker(true, awful)).toBe('empty');
+    expect(autoBlocker(true, { ...awful, ink: 0.3 })).toBe('light');
+    expect(autoBlocker(true, { ...awful, ink: 0.3, glare: 0, luma: 128 })).toBe(
+      'steady',
+    );
+  });
+});
+
+describe('the ink floor against the real photographs', () => {
+  it('⚠️ STAYS BELOW THE FAINTEST DOCUMENT EVER MEASURED', () => {
+    // The eighteen calibration photographs are PII and can never be committed,
+    // so the measurement they produced is pinned here instead: the faintest
+    // real document scored 0.173 over the aim box. A floor at or above that
+    // starts refusing real documents, which is exactly the failure that got
+    // auto-capture deleted the first time.
+    expect(INK_AT).toBeLessThan(LOWEST_MEASURED_DOCUMENT_INK);
+    // And with room to spare — a floor 0.01 under the faintest one measured is
+    // a floor tuned to eighteen photographs, not to the world.
+    expect(LOWEST_MEASURED_DOCUMENT_INK - INK_AT).toBeGreaterThan(0.05);
+  });
+
+  it('admits the faintest measured document', () => {
+    const faintest = { ink: LOWEST_MEASURED_DOCUMENT_INK, motion: 1, glare: 0, luma: 128 };
+    expect(autoBlocker(true, faintest)).toBeNull();
+  });
+});
+
+describe('the hold', () => {
+  it('fills the ring across the hold and never past it', () => {
+    expect(holdProgress(0)).toBe(0);
+    expect(holdProgress(-5)).toBe(0);
+    expect(holdProgress(HOLD_MS / 2)).toBeCloseTo(0.5, 5);
+    expect(holdProgress(HOLD_MS)).toBe(1);
+    expect(holdProgress(HOLD_MS * 10)).toBe(1);
+  });
+
+  it('⚠️ DOES NOT FIRE EARLY — 700ms was "super sensitive"', () => {
+    expect(holdComplete(700)).toBe(false);
+    expect(holdComplete(HOLD_MS - 1)).toBe(false);
+    expect(holdComplete(HOLD_MS)).toBe(true);
+  });
+});
+
+describe('autoHint', () => {
+  it('says the thing the member can act on, per gate', () => {
+    expect(autoHint('empty', 'card')).toContain('inside the corners');
+    expect(autoHint('light', 'card')).toContain('lighting');
+    expect(autoHint('steady', 'card')).toContain('Hold still');
+  });
+
+  it('tells a member who turned it off that the shutter is theirs', () => {
+    expect(autoHint('off', 'card')).toContain('take the photo');
+  });
+});

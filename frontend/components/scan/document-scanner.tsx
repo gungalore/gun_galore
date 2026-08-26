@@ -24,6 +24,15 @@ import {
 import AimFrame from './aim-frame';
 import { aimAgreement, aimBox } from '@/lib/scan/aim';
 import { exposureProblem } from '@/lib/scan/exposure';
+import {
+  AutoBlocker,
+  MOTION_STILL,
+  autoBlocker,
+  autoHint,
+  holdComplete,
+  holdProgress,
+} from '@/lib/scan/autocapture';
+import { inkiness } from '@/lib/scan/detect';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SCANNER.
@@ -49,33 +58,43 @@ import { exposureProblem } from '@/lib/scan/exposure';
 // 100, above the tab bar at 55. This is full-screen and nothing may sit over
 // it.
 //
-// ⚠️ THERE IS NO AUTOMATIC CAPTURE, AND IT IS NOT AN OVERSIGHT.
+// ⚠️ AUTOMATIC CAPTURE IS ON BY DEFAULT, AND THIS IS ITS SECOND LIFE.
 //
-// The scanner could once fire on its own: four gates (a locked quad, the quad
-// inside the aim box, workable light, and the phone held still for 1.1s), a
-// ring round the shutter filling to show a shot coming, an "Auto ON/OFF"
-// toggle, and a per-frame motion measure feeding the stillness clock. All of
-// it has been removed — operator's instruction on the rebuild: manual capture
-// only.
+// It existed, failed in two distinct ways, was removed in full, and has been
+// re-specified rather than revived. Both failures shaped what is here now, so
+// neither may be lost:
 //
-// The history is worth keeping because it is the argument against reviving it.
-// It went through three rounds of tuning. It fired early at 700ms; at 1100ms
-// it fired late. Stillness measured on the detected quad meant a patterned
-// carpet could stall the clock forever, so it moved to frame pixels. And a
-// well-meant "you reached for the shutter, so auto is not helping" rule
-// silently switched it off for the rest of the session, producing a doom loop
-// nobody could describe from the outside: two screen recordings show corners
-// locked green for eleven seconds with the scanner sitting there doing
-// nothing. Every one of those was a real fix for a real report, and the
-// feature still cost more trust than it saved time — because a misfire costs a
-// retake AND the member's belief that the next one will behave.
+//   1. "IT NEVER CAPTURED." The old gate required the DETECTED quad to agree
+//      with the aim box — and on a real licence card the detector never sees
+//      the card at all (the skipped regression in detect.spec.ts: "the card is
+//      never a CANDIDATE"; the mat is). The gate waited on an agreement that
+//      could not arrive.
 //
-// What replaced it is the flow that was already the default: point, shoot,
-// then fix the corners. Detection survives and does two jobs — it turns the
-// aim box green, and its quad is what the corner editor opens on.
+//   2. "THE IMAGES CAME OUT SKEW OR OUTSIDE THE FOCUS LINES." The crop also
+//      came from the detector's quad back then, so a shot cut out whatever
+//      rectangle it had latched onto.
 //
-// If automatic capture is ever wanted again, SPECIFY IT AFRESH. Do not revive
-// this from git history.
+// The second is already dead, and not by anything to do with auto-capture:
+// processCapture now crops EXACTLY the aim box, so a capture can only produce
+// the rectangle the member lined the document up against.
+//
+// The first is fixed by taking the detector out of the decision. It has no say
+// in the crop, so it does not hold the trigger either — the gate now asks three
+// questions about the FRAME (is a document in the box, can it be read, is it
+// still) and lives in lib/scan/autocapture.ts with tests. Detection still runs,
+// and still does exactly one job: turning the aim box green.
+//
+// ⚠️ THE RULES THAT SURVIVED FROM THE FIRST LIFE, ALL PAID FOR:
+//   * 1100ms hold, not 700 — at 700 it fired while the phone was still being
+//     positioned.
+//   * Stillness measured on FRAME PIXELS, never on the detected quad, which a
+//     patterned carpet could stall for ever.
+//   * The manual shutter must NEVER switch auto off. That rule produced a doom
+//     loop nobody could describe: auto feels slow → you press → auto is off for
+//     the session → every document needs a press → auto never works. The toggle
+//     beside the shutter is the only thing that may change it.
+//   * The ring round the shutter fills as the hold completes, so a shot is
+//     never a surprise.
 // ────────────────────────────────────────────────────────────────────
 
 const Z = 130;
@@ -240,6 +259,23 @@ export default function DocumentScanner({
    */
   const [confirmExit, setConfirmExit] = useState(false);
   /**
+   * Shoot by itself once a document is in the box, the light is workable and
+   * the phone has stopped moving.
+   *
+   * ⚠️ ON BY DEFAULT — operator, 2026-08-25. The previous version defaulted OFF
+   * because it could not be trusted to fire; this one asks a question it can
+   * actually answer (see lib/scan/autocapture.ts). The toggle beside the
+   * shutter is the ONLY thing that may change this. In particular the manual
+   * shutter must NOT: that rule cost two screen recordings and a doom loop
+   * last time — auto feels slow, so you press, which disables auto, so every
+   * document after it needs a press, which proves auto never works.
+   */
+  const [auto, setAuto] = useState(true);
+  /** 0-1 around the shutter, so an automatic shot is never a surprise. */
+  const [holdPct, setHoldPct] = useState(0);
+  /** Which gate is currently shut — drives the caption under the aim box. */
+  const [blocker, setBlocker] = useState<AutoBlocker | null>('empty');
+  /**
    * The FULL-RESOLUTION capture, for the corner editor's magnifier.
    *
    * ⚠️ THE LOUPE WAS MAGNIFYING A SHRUNKEN COPY OF THE THING IT EXISTS TO
@@ -284,6 +320,15 @@ export default function DocumentScanner({
   const rawBlobRef = useRef<Blob | null>(null);
   const closedRef = useRef(false);
   const capturingRef = useRef(false);
+  // Read by the detect loop, which must not tear down and re-subscribe when
+  // these change — restarting it mid-hold would reset the stillness clock for
+  // ever, which is one of the ways the old version never fired.
+  const autoRef = useRef(true);
+  const holdShownRef = useRef(0);
+  const blockerShownRef = useRef<AutoBlocker | null>('empty');
+  const captureRef = useRef<(() => Promise<void>) | null>(null);
+  /** inkiness() over the aim box, refreshed every detection tick. */
+  const inkRef = useRef(0);
   /** Does the latest detection look like a document, not just like a shape? */
   const confidentRef = useRef(false);
   const glareRef = useRef(0);
@@ -309,6 +354,8 @@ export default function DocumentScanner({
   /** Consecutive frames the quad has been outside the box. */
   const aimMissRef = useRef(3);
   const [aimed, setAimed] = useState(false);
+
+  autoRef.current = auto;
 
   const say = useCallback((m: string) => {
     setSaid('');
@@ -463,12 +510,17 @@ export default function DocumentScanner({
     let rolling = 0;
     let alive = true;
 
-    // ⚠️ THIS LOOP NO LONGER DECIDES WHEN TO SHOOT — IT ONLY DRAWS.
-    // Detection survives because it does two jobs worth keeping: it turns the
-    // aim box green so the member can see we have found their document, and
-    // the quad it produces is what the corner editor opens on. The shutter is
-    // the member's, always. See the note on the removal of auto-capture at the
-    // top of this file.
+    /** Every 8th luma of the previous frame, for the motion measure. */
+    let prevSample: Uint8Array | null = null;
+    let motion = 255;
+    /** When the phone last started being still, or 0 while it is moving. */
+    let steadySince = 0;
+
+    // ⚠️ THE DETECTOR DOES NOT HOLD THE TRIGGER. It turns the aim box green
+    // and it supplies nothing else — the crop is the aim box and the fire
+    // decision is made from the frame itself (lib/scan/autocapture.ts). That
+    // separation is the whole fix for "it never captured": the old gate waited
+    // on a detector that, on a real licence card, never sees the card at all.
     const detectOnce = () => {
       if (!alive) return;
       const video = videoRef.current;
@@ -492,12 +544,29 @@ export default function DocumentScanner({
         if (gray) {
           let blown = 0;
           let sum = 0;
-          // ⚠️ THE FRAME-TO-FRAME MOTION MEASURE IS GONE WITH AUTO-CAPTURE.
-          // It existed only to decide whether the phone was being held still
-          // enough to fire by itself. Nothing else read it, and it walked
-          // every eighth pixel of every detected frame — so removing it is
-          // also the cheapest thing this loop has ever gained.
+          // ── motion, measured on the IMAGE ─────────────────────────
           //
+          // ⚠️ NOT ON THE DETECTED QUAD. Stillness used to be quad drift
+          // between consecutive detections — so on a textured carpet, where
+          // the detector flip-flops between candidates, the drift spiked every
+          // few frames and the clock restarted for ever. The member was
+          // perfectly still; the DETECTOR was fidgeting; and the member is the
+          // one the clock is supposed to be about. Comparing the sampled
+          // pixels of consecutive frames measures the hand and only the hand.
+          const n8 = Math.ceil(gray.data.length / 8);
+          if (!prevSample || prevSample.length !== n8) {
+            prevSample = new Uint8Array(n8);
+            motion = 255; // first frame: unknown, treat as moving
+          } else {
+            let diff = 0;
+            for (let i = 0, j = 0; i < gray.data.length; i += 8, j++) {
+              diff += Math.abs(gray.data[i] - prevSample[j]);
+            }
+            motion = diff / n8;
+          }
+          for (let i = 0, j = 0; i < gray.data.length; i += 8, j++) {
+            prevSample[j] = gray.data[i];
+          }
           // Every eighth pixel is plenty for a percentage, and keeps this off
           // the detection budget.
           for (let i = 0; i < gray.data.length; i += 8) {
@@ -518,6 +587,37 @@ export default function DocumentScanner({
           if (Math.abs(frac - glareShownRef.current) > 0.01) {
             glareShownRef.current = frac;
             setGlare(frac);
+          }
+
+          // ── is there a document in the box? ──────────────────────
+          //
+          // ⚠️ MEASURED ON THE AIM BOX, NOT ON ANYTHING THE DETECTOR FOUND,
+          // and computed OUTSIDE the detection branch below so it is answered
+          // on every frame even when detection finds nothing at all. That is
+          // the entire fix for "it never captured": the old gate could only
+          // speak when the detector did, and on a real licence card the
+          // detector never sees the card.
+          //
+          // The gray buffer is sized to the VISIBLE region (makeScratch above)
+          // and the aim box is drawn over exactly that region, so the two
+          // share a coordinate space up to one uniform scale.
+          const elBox = video.getBoundingClientRect();
+          if (elBox.width > 0) {
+            const b = aimBox(shape, {
+              width: elBox.width,
+              height: elBox.height,
+            });
+            const k = gray.width / elBox.width;
+            const x0 = b.x * k;
+            const y0 = b.y * k;
+            const x1 = (b.x + b.width) * k;
+            const y1 = (b.y + b.height) * k;
+            inkRef.current = inkiness(gray, [
+              { x: x0, y: y0 },
+              { x: x1, y: y0 },
+              { x: x1, y: y1 },
+              { x: x0, y: y1 },
+            ]);
           }
         }
         const found = gray
@@ -617,15 +717,53 @@ export default function DocumentScanner({
       } catch {
         quadRef.current = null;
       }
-      // ⚠️ AUTO-CAPTURE WAS REMOVED HERE. This is where the scanner used to
-      // decide to fire by itself: a "blocker" readout naming which of four
-      // gates was shut, then a 1.1-second stillness clock. Operator, on the
-      // rebuild: manual capture only. The member presses the shutter.
+      // ── may we shoot? ───────────────────────────────────────────────
       //
-      // `now` stays — the frame-timing measure below is what throttles
-      // detection on a slow phone, and that has nothing to do with the
-      // shutter.
+      // Three questions about the FRAME, none about the detector: is there a
+      // document in the box, can it be read, is it still. See
+      // lib/scan/autocapture.ts for why it is three and why they are these.
       const now = performance.now();
+      const why = autoBlocker(autoRef.current, {
+        ink: inkRef.current,
+        motion,
+        glare: glareRef.current,
+        luma: lumaRef.current,
+      });
+
+      // ⚠️ SAY WHICH GATE IS SHUT. When it does not fire, the member sees a
+      // camera doing nothing — indistinguishable from a camera that is broken.
+      // Two rounds of "auto capture still not working" were spent guessing at
+      // this from the outside; the scanner knows the answer every frame and
+      // was simply not saying it.
+      if (why !== blockerShownRef.current) {
+        blockerShownRef.current = why;
+        setBlocker(why);
+      }
+
+      if (why === null) {
+        if (!steadySince) steadySince = now;
+        const held = now - steadySince;
+        const pct = holdProgress(held);
+        // Only re-render when the ring visibly moves.
+        if (Math.abs(pct - holdShownRef.current) > 0.02 || pct === 1) {
+          holdShownRef.current = pct;
+          setHoldPct(pct);
+        }
+        if (holdComplete(held) && !capturingRef.current) {
+          capturingRef.current = true;
+          alive = false;
+          holdShownRef.current = 0;
+          setHoldPct(0);
+          void captureRef.current?.();
+          return;
+        }
+      } else {
+        steadySince = 0;
+        if (holdShownRef.current !== 0) {
+          holdShownRef.current = 0;
+          setHoldPct(0);
+        }
+      }
 
       const ms = now - t0;
       rolling = rolling * 0.8 + ms * 0.2;
@@ -748,6 +886,11 @@ export default function DocumentScanner({
       capturingRef.current = false;
     }
   }, [say, shape]);
+
+  // The detect loop fires through this rather than closing over `capture`, so
+  // it never has to re-subscribe when the callback is rebuilt — a teardown
+  // mid-hold would reset the stillness clock.
+  captureRef.current = capture;
 
   /** Re-run with corners the member dragged. Detection is deliberately skipped. */
   const reprocess = useCallback(
@@ -1097,11 +1240,13 @@ export default function DocumentScanner({
                 background: 'rgba(0,0,0,0.70)',
               }}
             >
-              {exposureProblem(glare, luma, torchOn)
-                ? 'Fix the lighting above first.'
-                : aimed
-                  ? 'Got it — take the photo.'
-                  : `Put the ${SHAPES[shape].label.toLowerCase()} inside the ${staticAim ? 'green' : 'red'} corners.`}
+              {auto
+                ? autoHint(blocker, SHAPES[shape].label.toLowerCase())
+                : exposureProblem(glare, luma, torchOn)
+                  ? 'Fix the lighting above first.'
+                  : aimed
+                    ? 'Got it — take the photo.'
+                    : `Put the ${SHAPES[shape].label.toLowerCase()} inside the ${staticAim ? 'green' : 'red'} corners.`}
             </span>
           </p>
         )}
@@ -1382,7 +1527,19 @@ export default function DocumentScanner({
               setErr('This phone would not let us turn the light on.');
             }
           }}
+          // ⚠️ TAKE THE PHOTO. THAT IS ALL. It must NOT also switch auto off.
+          // That rule was tried and it produced a doom loop nobody could
+          // describe: auto feels slow, so you press the shutter, which
+          // disables auto, so every document after it needs a press, which
+          // proves auto never works. Two screen recordings showed corners
+          // locked green for eleven seconds with the scanner sitting there,
+          // because one manual press early in the session had silently
+          // switched it off. The toggle beside the shutter is the only thing
+          // that may change it — deliberate, visible and reversible.
           onShutter={() => void capture()}
+          auto={auto}
+          onAuto={() => setAuto((a) => !a)}
+          holdPct={holdPct}
           onDone={pages.length ? () => finish(pages) : undefined}
           pages={pages.length}
         />
@@ -1857,6 +2014,9 @@ function Controls({
   onShutter,
   onDone,
   pages,
+  auto,
+  onAuto,
+  holdPct,
 }: {
   hasTorch: boolean;
   torchOn: boolean;
@@ -1864,6 +2024,10 @@ function Controls({
   onShutter: () => void;
   onDone?: () => void;
   pages: number;
+  auto: boolean;
+  onAuto: () => void;
+  /** 0-1 of the way through the hold. */
+  holdPct: number;
 }) {
   return (
     <div
@@ -1901,6 +2065,29 @@ function Controls({
       </div>
 
       <div style={{ position: 'relative', width: 72, height: 72 }}>
+        {/* The hold ring: fills as the phone holds still, so an automatic
+            capture is never a surprise — the member can see it coming and move
+            if they did not mean it. */}
+        {auto && holdPct > 0 && (
+          <svg
+            width="72"
+            height="72"
+            viewBox="0 0 72 72"
+            aria-hidden="true"
+            style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}
+          >
+            <circle
+              cx="36"
+              cy="36"
+              r="33"
+              fill="none"
+              stroke={MARK}
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeDasharray={`${holdPct * 207} 207`}
+            />
+          </svg>
+        )}
         <button
           type="button"
           onClick={onShutter}
@@ -1916,6 +2103,53 @@ function Controls({
       </div>
 
       <div style={{ width: 88, textAlign: 'right' }}>
+        {/* ⚠️ A NAME AND A STATE, NOT A SENTENCE. "Auto off" reads equally as
+            "auto is off" and "tap to turn auto off". The torch button beside
+            it gets this right — "Light on" / "Light", never "Light off". The
+            ON chip reuses MARK, the same accent as the hold ring, so "auto is
+            armed" is one colour wherever it appears; deliberately NOT the gold
+            the torch uses, or two neighbouring toggles would read alike. */}
+        <button
+          type="button"
+          onClick={onAuto}
+          aria-pressed={auto}
+          aria-label={
+            auto
+              ? 'Automatic capture is on. Turn it off.'
+              : 'Automatic capture is off. Turn it on.'
+          }
+          style={{
+            minHeight: 44,
+            padding: '0 10px',
+            borderRadius: 8,
+            border: '1px solid rgba(255,255,255,0.3)',
+            background: 'transparent',
+            color: '#fff',
+            fontSize: 13,
+            marginBottom: onDone ? 8 : 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+          }}
+        >
+          <span>Auto</span>
+          <span
+            style={{
+              fontSize: 11,
+              letterSpacing: '0.06em',
+              padding: '2px 6px',
+              borderRadius: 6,
+              textShadow: 'none',
+              background: auto ? MARK : 'transparent',
+              color: auto ? '#0f0f0f' : '#fff',
+              border: auto ? '1px solid transparent' : '1px solid rgba(255,255,255,0.55)',
+              fontWeight: 600,
+            }}
+          >
+            {auto ? 'ON' : 'OFF'}
+          </span>
+        </button>
         {onDone && (
           <button
             type="button"

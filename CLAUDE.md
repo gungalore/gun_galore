@@ -1517,21 +1517,38 @@ the quad, `warp` rectifies, `enhance` cleans, `aim` sizes the box,
 - **So the aim box constrains the crop** rather than fixing detection, and
   the corner editor is the safety net. A wrong crop the member can see
   and fix beats a clever one they cannot.
-- **There is NO automatic capture. Manual shutter only** (operator,
-  2026-08-25). Removed in full: the four gates, the 1.1s stillness clock, the
-  per-frame motion measure, the ring around the shutter, the Auto ON/OFF
-  toggle, and `exposureAllowsAutoCapture` in `exposure.ts`. Detection stays,
-  because it still does two jobs — it turns the aim box green, and its quad is
-  what the corner editor opens on.
+- **Automatic capture is ON by default, with a toggle** (operator, 2026-08-25).
+  It was removed entirely earlier that day and then RE-SPECIFIED, not revived —
+  the decision lives in `lib/scan/autocapture.ts` with tests.
 
-  > It went through three rounds of tuning and still cost more trust than it
-  > saved time: it fired early at 700ms and late at 1100ms; stillness measured
-  > on the detected quad let a patterned carpet stall the clock forever; and a
-  > "you reached for the shutter, so auto isn't helping" rule silently switched
-  > it off for the rest of the session, producing a doom loop nobody could
-  > describe from outside — two screen recordings show corners locked green for
-  > eleven seconds with the scanner sitting there. **Do not revive it from git.
-  > If it is ever wanted again, specify it afresh.**
+  > **The two failures that killed the first version, and what fixes them.**
+  > *"It never captured"* — the gate required the DETECTED quad to agree with
+  > the aim box, and on a real licence card the detector never sees the card
+  > (the skipped regression in `detect.spec.ts`: the card is never a candidate;
+  > the mat is). *"The images came out skew or outside the focus lines"* — the
+  > CROP also came from the detector's quad.
+  >
+  > The second is already dead: `processCapture` crops exactly the aim box, so
+  > a capture can only produce the rectangle the member aimed with. The first is
+  > fixed by removing the detector from the decision — it holds neither the crop
+  > nor the trigger. The gate asks three questions about the FRAME: is a
+  > document in the box (`inkiness` over the aim box, floor `INK_AT` = 0.06, the
+  > same number `verdicts()` already uses for "we may have caught the mat"), can
+  > it be read (`exposureProblem`), is it still (frame-pixel motion ≤ 4 for
+  > 1100ms). Three gates, not four — every extra gate is another way to never
+  > fire.
+  >
+  > **Rules that survived and are all paid for:** 1100ms not 700 (at 700 it
+  > fired mid-positioning); stillness on frame pixels never on the detected quad
+  > (a patterned carpet stalls that clock for ever); **the manual shutter must
+  > never switch auto off** (doom loop: auto feels slow → you press → auto is
+  > off for the session → auto never works); the ring round the shutter fills so
+  > a shot is never a surprise.
+  >
+  > ⚠️ `INK_AT` **has not been calibrated against the eighteen photographs** —
+  > they are gitignored and were not on the machine. If it fires on an empty
+  > desk, raise it; if it sits there on a real document, lower it.
+  > `scripts/scan-diag.cjs` reports ink per photograph.
 - **Glare / too bright / too dark hold on screen until resolved** — they
   are the only failures no processing recovers. `exposure.ts` (`exposureProblem`)
   is the single source for both the held alert and the viewfinder hint, so the
