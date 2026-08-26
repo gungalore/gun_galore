@@ -1,4 +1,7 @@
-// Seeded Help-Centre entries for the Ask GG knowledge base.
+// Seeded Help-Centre entries.
+// Was the Ask GG knowledge base; the assistant was removed 2026-08-26 and the
+// entries that described it, and the GG+ subscription that sold access to it,
+// went with it. The content is retained as the site help corpus.
 // SINGLE SOURCE OF TRUTH for platform Q&A copy — edit here and rerun
 // `npm run seed:help` (idempotent upsert on sourceKey). Authored from the
 // live site copy (FAQ, how-selling-works, legal pages, fee calculator).
@@ -69,14 +72,6 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
       'The available method is shown at checkout — currently manual EFT: you get Gun Galore banking details plus a unique payment reference, pay from your own bank, and the order confirms once the payment reconciles. Always use the exact reference so the payment matches automatically. Whichever method you use, your payment is held by Gun Galore and only released to the seller after delivery is confirmed.',
     tags: ['payments', 'eft', 'checkout'],
   },
-  {
-    sourceKey: 'fees-swap-fees',
-    title: 'What does a Swop / Trade cost?',
-    question: 'What are the fees on a swap?',
-    answer:
-      'A swap has no sale price, so instead of commission each party pays a flat service fee for the leg they send: R50 for a courier parcel (plus the actual courier rate for that parcel) or R100 for a firearm dealer-transfer leg. No processing fee is added on swap funding. If the deal includes a cash top-up, amounts up to R1,000 are commission-free; only the portion above R1,000 attracts the standard commission bands, deducted from the cash paid to the recipient at settlement. Both sides must fund before anything ships — if only one side funds, that member is fully reimbursed.',
-    tags: ['fees', 'swap', 'trade'],
-  },
 
   // ── Selling modes ──────────────────────────────────────────────────
   {
@@ -84,8 +79,8 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     title: 'What are the ways to sell on Gun Galore?',
     question: 'Which selling formats can I choose?',
     answer:
-      "Four: Marketplace (Buy Now) — one fixed price, the fastest way to sell; Auction — buyers bid and the highest bid at the deadline wins, with an optional hidden reserve; Take a Shot — buyers name their price and you accept, decline or counter; and Swop / Trade — trade your item for someone else's, with optional cash either way. Whichever you pick, listings are checked before going live and the buyer's payment is held until delivery is confirmed. Full guide: [How selling works](/how-selling-works).",
-    tags: ['selling', 'auction', 'marketplace', 'swap'],
+      "Three: Marketplace (Buy Now) — one fixed price, the fastest way to sell; Auction — buyers bid and the highest bid at the deadline wins, with an optional hidden reserve; and Take a Shot — buyers name their price and you accept, decline or counter. Whichever you pick, listings are checked before going live and the buyer's payment is held until delivery is confirmed. Full guide: [How selling works](/how-selling-works).",
+    tags: ['selling', 'auction', 'marketplace', 'offers'],
   },
   {
     sourceKey: 'sell-marketplace-buy-now',
@@ -118,14 +113,6 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     answer:
       "Take a Shot lets buyers name their price. A buyer sends you an offer; you can accept, decline, or counter once. You can also set an optional hidden auto-accept price — any offer at or above it closes the sale instantly. It suits items that are hard to price or where negotiation works better than a fixed price. As with every sale, payment is held until delivery is confirmed before it reaches you.",
     tags: ['selling', 'take a shot', 'offers'],
-  },
-  {
-    sourceKey: 'sell-swop-trade',
-    title: 'How does Swop / Trade work?',
-    question: 'Can I trade my gear instead of selling it?',
-    answer:
-      "Yes. List the item you want to trade — no price. Other members propose a swap: their item, plus optional cash in either direction. You accept, decline, or counter the cash once. Gun Galore arranges both couriers and any cash is held until both parcels are delivered, then released. Firearms can be swapped too — each side transfers through a SAPS-licensed dealer, exactly like a normal firearm sale.",
-    tags: ['swap', 'trade', 'selling'],
   },
   {
     sourceKey: 'sell-listing-review',
@@ -188,18 +175,10 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
   {
     sourceKey: 'buy-not-refundable',
     title: 'What is not refundable?',
-    question: 'Are featured-slot purchases refundable?',
+    question: 'Is anything not refundable?',
     answer:
-      'Two things: featured-listing slot wins, except where we remove the listing for an admin-side error; and shipping costs on an order you cancel by choice after the courier has already collected the parcel. Everything else follows the normal [Refund & Dispute Policy](/refund-policy).',
-    tags: ['refunds', 'featured'],
-  },
-  {
-    sourceKey: 'buy-experience-cancellation',
-    title: 'Can I cancel a hunting package or experience booking?',
-    question: 'What happens if I cancel an experience booking?',
-    answer:
-      'Yes — under section 17 of the Consumer Protection Act you may cancel an advance booking, subject to a reasonable charge that grows as the event date nears: 60+ days out, only a R250 admin fee; 30–59 days, 20% retained; 21–29 days, 40%; 14–20 days, 50%; 7–13 days, 75%; under 7 days or a no-show, 100%. You are refunded in full, with no charge, if the outfitter cancels or fails to deliver, or on death or hospitalisation of the person booked (CPA s17(5)). The exact amounts show before you confirm a cancellation. Full schedule: [Experiences Cancellation Policy](/experiences-cancellation-policy).',
-    tags: ['experiences', 'cancellation', 'refunds'],
+      'Shipping costs are not refunded on an order you cancel by choice after the courier has already collected the parcel. Everything else follows the normal [Refund & Dispute Policy](/refund-policy).',
+    tags: ['refunds', 'shipping'],
   },
 
   // ── Shipping & delivery ────────────────────────────────────────────
@@ -360,31 +339,6 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     tags: ['payouts', 'selling', 'eft'],
   },
 
-  // ── GG+ subscription & Ask GG ──────────────────────────────────────
-  {
-    sourceKey: 'ggplus-tiers',
-    title: 'What is GG+ and what does it include?',
-    question: 'What do the GG+ Member and Pro subscriptions offer?',
-    answer:
-      'GG+ Member (R49/month): Ask GG at 20 messages per hour, unlimited photo identification (5 photos per query), the ballistic calculator, a GG+ username badge and 25% off featured-listing bids. GG+ Pro (R149/month): Ask GG at 60 messages per hour, photo identification with 10 photos per query, ballistic calculator plus Load Lab, a GG+ Pro username badge and 50% off featured-listing bids. Compare and subscribe at [GG+](/subscribe).',
-    tags: ['gg+', 'subscription', 'ask gg'],
-  },
-  {
-    sourceKey: 'ggplus-billing',
-    title: 'How does GG+ billing work?',
-    question: 'Is GG+ a debit order? Does it auto-renew?',
-    answer:
-      'No debit orders and no auto-renew — GG+ is prepaid. Pick a tier, EFT the amount with your unique reference within the 24-hour pay-by window, and the tier activates as soon as the payment reconciles. Each payment buys 31 days; renewing the same tier before expiry stacks the extra days on top, so paid days are never lost. You can switch tiers once your current period ends, and if you do not renew you simply drop back to the free tier — no cancellation needed.',
-    tags: ['gg+', 'billing', 'subscription'],
-  },
-  {
-    sourceKey: 'ggplus-askgg-limits',
-    title: 'What are the Ask GG usage limits?',
-    question: 'How many Ask GG questions can I ask?',
-    answer:
-      'Free accounts get 5 Ask GG messages per rolling 30-day window, plus 5 photo identifications per 30 days. GG+ Member raises that to 20 messages per hour and GG+ Pro to 60 per hour, both with unlimited photo identification (Member 5 photos per query, Pro 10). The composer shows how many free messages you have left. Upgrade any time at [GG+](/subscribe).',
-    tags: ['ask gg', 'limits', 'gg+'],
-  },
 
   // ── Account & support ──────────────────────────────────────────────
   {
@@ -420,14 +374,6 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     answer:
       "Can't find what you want? Post a Wanted ad describing it — make, model, condition, budget — and sellers who have a match come to you. It's completely free to post: no upfront fees to advertise. A seller responds by linking one of their own active listings; you then buy it through the normal protected checkout, with your payment held until you receive the item. Only usernames are shared, so your deal stays on-platform. Post one at [Wanted](/wanted/new).",
     tags: ['wanted', 'buying', 'demand'],
-  },
-  {
-    sourceKey: 'featured-listings',
-    title: 'How do featured listings work?',
-    question: 'How do I get my listing featured, and what does it cost?',
-    answer:
-      'Featured slots put your listing in prime spots (like the homepage) for a set run. You bid for a slot in a tiered auction — the top bid wins the slot for its duration, and there is a minimum bid per slot tier. GG+ members get a discount on featured bids (Pro more than Member). Featured-slot fees are not refundable once the slot has run, so bid what a burst of extra exposure is worth to you. Manage bids at [Featured](/featured/bid).',
-    tags: ['featured', 'selling', 'promotion'],
   },
   {
     sourceKey: 'saved-searches',
@@ -471,14 +417,6 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
       'Yes — you can add several items from the same seller to your cart and check out in one go. Shipping is consolidated per parcel, so the flat R15 handling fee applies per courier parcel rather than per item. A cart is single-seller: to buy from more than one seller you check out with each separately, and your payment is protected on every order. Your cart is at [Cart](/cart).',
     tags: ['cart', 'buying', 'shipping'],
   },
-  {
-    sourceKey: 'experiences-booking',
-    title: 'How do hunting packages and experiences work?',
-    question: 'How do I book a guided hunt or range day?',
-    answer:
-      "Experiences — guided hunts, range days and the like — are booked on-site services, not shipped items, so there's no courier. You book and pay, and your payment is held until the experience has been honoured, so you're protected if plans change. Experiences can be sold at a fixed price or by auction. Cancellation terms follow the Consumer Protection Act — see the [Experiences cancellation policy](/experiences-cancellation-policy) or ask me before you book.",
-    tags: ['experiences', 'hunting', 'booking'],
-  },
 
   // ── Operational rules (G4 gap-fill) ─────────────────────────────────
   {
@@ -488,14 +426,6 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     answer:
       'When you list a firearm or barrel you must say where you plan to dealer-stock it — the dealer name, province and area — and it is required before the listing can go live. This is because every firearm sale completes through a licensed-dealer transfer, so buyers need to know where the item will move through. It also applies to older firearm listings, which are asked to fill it in when next edited. You still add the serial and a licence photo too, all verified.',
     tags: ['firearms', 'selling', 'dealer'],
-  },
-  {
-    sourceKey: 'swap-proof-of-possession',
-    title: 'Why am I asked to photograph my item with a code?',
-    question: 'What is the swap proof-of-possession step?',
-    answer:
-      "Before anything ships in a swap, each side photographs their item next to a unique code we give you for that leg. It proves the item genuinely exists and is in hand — an anti-fraud check that protects both traders. Both sides must also fund their leg before either item moves; if only one side funds, that person is fully reimbursed, so no one is left out of pocket. Track each step at [My swaps](/my/swaps).",
-    tags: ['swap', 'trade', 'safety'],
   },
   {
     sourceKey: 'payment-window-reference',
@@ -544,13 +474,5 @@ export const HELP_CENTRE_ENTRIES: HelpCentreSeedEntry[] = [
     answer:
       `You can close your account at any time and request access to or deletion of your personal information under POPIA — email ${SUPPORT_EMAIL}. Some records must be kept even after closure: transaction and financial records for legal and tax reasons, and — where you have bought or sold a firearm — the encrypted copy of your SA ID is retained for firearm-transfer (SAP 534) compliance rather than being purged. The [Privacy Policy](/privacy) sets out exactly what we hold, why, and for how long.`,
     tags: ['account', 'privacy', 'popia'],
-  },
-  {
-    sourceKey: 'about-ask-gg',
-    title: 'What is Ask GG and can I trust its answers?',
-    question: 'Is Ask GG giving me official or legal advice?',
-    answer:
-      "I'm GG, the Gun Galore assistant — I help you use the site, understand fees and rules, track your own orders and offers, and give outdoor and gear guidance. Site and account help is free for signed-in members; in-depth outdoor and reloading advice uses your GG+ advice quota. I aim to be accurate and grounded in how the platform actually works, but I'm a guide, not a lawyer, financial adviser or Designated Firearms Officer — for firearm law, tax or legal decisions, confirm with a dealer (DFO) or professional. If you need a person, I can draft a support ticket for you to send.",
-    tags: ['ask gg', 'support', 'help'],
   },
 ];

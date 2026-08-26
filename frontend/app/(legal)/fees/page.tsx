@@ -8,10 +8,7 @@
 //     (PEACH_RATE, PEACH_FIXED_CENTS, VAT_MULTIPLIER)
 //   - Buy Now markup direction: FeeCalculator.listPriceFromSellerAsk() —
 //     ask → +commission → +transaction fee → listed price
-//   - Shipping handling (R15/waybill) + swap leg fees: same file
-//   - AO PRO membership prices: backend/src/settings/settings.service.ts
-//     (launch defaults R49 / R149; operator-tunable)
-//   - Featured-slot ladder: FeaturedSlotConfig defaults in schema.prisma
+//   - Shipping handling (R15/waybill): same file
 //
 // Operator decision 2026-08-15 — the direction of our cut changed and the
 // two sale modes now differ. Keep them separate on this page:
@@ -29,7 +26,6 @@
 //   The worked examples below are COMPUTED from the constants above —
 //   recompute them, never guess, if a rate ever changes.
 
-import { PRO_NAME } from '@/lib/brand';
 import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import { LegalDocHeader } from '../legal-frame';
@@ -37,7 +33,7 @@ import { LegalDocHeader } from '../legal-frame';
 export const metadata = {
   title: 'Fees',
   description:
-    'What All Outdoor charges — Buy Now sellers receive their full asking price, banded commission, the transaction fee, payouts, delivery and optional extras.',
+    'What All Outdoor charges — Buy Now sellers receive their full asking price, banded commission, the transaction fee, payouts and delivery.',
 };
 
 export default function FeesPage() {
@@ -73,7 +69,6 @@ export default function FeesPage() {
           </li>
           <li><strong>Commission is banded</strong> — a lower percentage applies the higher the price (see below), with a R10 minimum.</li>
           <li><strong>No charge until a sale completes.</strong> Nothing is billed up front, in either mode.</li>
-          <li>Optional extras (an {PRO_NAME} membership or a featured homepage slot) are the only things you can choose to pay for separately.</li>
         </ul>
       </div>
       <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 24 }}>
@@ -214,11 +209,6 @@ export default function FeesPage() {
         R19.84 on the R450.00 on its own, a little more once a delivery
         charge is added.
       </p>
-      <p>
-        The same applies to a Swop / Trade cash top-up above the
-        threshold in section&nbsp;7.3: commission is deducted from the
-        cash the receiving party is paid.
-      </p>
 
       <h2>4. Transaction fee</h2>
       {/* House rule: never name a payment provider in public copy until a contract is signed (TPPP). */}
@@ -283,67 +273,7 @@ export default function FeesPage() {
         collected or refunded by All Outdoor.
       </p>
 
-      <h2>7. Optional extras</h2>
-
-      <h3>7.1 {PRO_NAME} membership</h3>
-      <p>
-        {PRO_NAME} is the optional paid membership, at{' '}
-        <strong>R99 per 31-day period</strong>. It includes reduced fees on
-        featured homepage slots (see below). Membership is prepaid — there is
-        no debit order and no fixed-term contract; it simply lapses if you
-        don&apos;t renew.
-      </p>
-
-      <h3>7.2 Featured homepage slots</h3>
-      <p>
-        There are ten featured slots on the homepage, allocated by
-        auction. You bid the amount you're willing to pay, and the amount
-        determines how long your listing stays featured. Bidding starts at
-        a floor of <strong>R100</strong>. The current ladder is:
-      </p>
-      <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse', marginBottom: 16 }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid var(--border)' }}>
-            <th style={{ textAlign: 'left', padding: '8px 0' }}>Slot fee</th>
-            <th style={{ textAlign: 'left', padding: '8px 0' }}>Featured for</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[
-            ['R100', '1 day'],
-            ['R200', '2 days'],
-            ['R300', '5 days'],
-            ['R400', '7 days'],
-            ['R500', '14 days'],
-          ].map(([fee, dur], i) => (
-            <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
-              <td style={{ padding: '6px 8px 6px 0' }}>{fee}</td>
-              <td style={{ padding: '6px 0' }}>{dur}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p>
-        {PRO_NAME} members pay less for a featured slot: <strong>PRO saves 50%</strong>
-        {' '}off the slot fee. The live tiers, floor and any discount are
-        always shown on the bidding page before you commit.
-      </p>
-
-      <h3>7.3 Swap / Trade</h3>
-      <p>
-        When two members swap items rather than buy and sell, each party
-        pays a service fee for the leg they send:{' '}
-        <strong>1.5% of the item&apos;s declared value</strong>, with a
-        minimum of <strong>R50</strong> for a courier leg (<strong>R100</strong>{' '}
-        for a leg that has to complete through a licensed dealer) and a cap of{' '}
-        <strong>R750</strong>{' '}
-        per leg. {PRO_NAME} members get 25% off the swap service fee. Any cash
-        top-up above R1,000 carries the standard commission bands on the
-        amount above R1,000, deducted from the cash the receiving party is
-        paid at settlement. Your exact fee is always shown before you pay.
-      </p>
-
-      <h2>8. Currency and VAT</h2>
+      <h2>7. Currency and VAT</h2>
       <p>
         All prices are quoted and charged in South African Rand (ZAR).
         ALLOUTDOOR (PTY) LTD is not currently registered for VAT and
@@ -352,14 +282,14 @@ export default function FeesPage() {
         on that fee.
       </p>
 
-      <h2>9. Changes to our fees</h2>
+      <h2>8. Changes to our fees</h2>
       <p>
         If we change our fees we will update this page and the "Effective"
         date at the top. The fees that apply to any sale are the fees shown
         to you at the time you list and at checkout.
       </p>
 
-      <h2>10. Questions</h2>
+      <h2>9. Questions</h2>
       <p>
         For anything about fees, email{' '}
         <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: 'var(--red)' }}>
