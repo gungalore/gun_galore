@@ -28,8 +28,18 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#0f0f0f',
-    theme_color: '#0f0f0f',
+    // ⚠️ THESE HAD DRIFTED FROM THE REST OF THE THEME. Both were still the
+    // pre-Winkel #0f0f0f while app/layout.tsx's viewport themeColor had
+    // already moved to #F6F5F1 — so the browser tab was painted the light
+    // ground and the INSTALLED app was painted near-black, from the same
+    // codebase. background_color is what Android paints behind the splash
+    // before first paint, which is why an installed app flashed dark and then
+    // loaded a white site.
+    //
+    // Keep both equal to --bg and equal to layout.tsx. Three places name this
+    // colour; they must not disagree again.
+    background_color: '#F6F5F1',
+    theme_color: '#F6F5F1',
     categories: ['shopping', 'sports', 'lifestyle'],
     lang: 'en-ZA',
     // Lets navigator.getInstalledRelatedApps() actually report THIS PWA as
