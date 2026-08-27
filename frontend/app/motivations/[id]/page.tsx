@@ -61,6 +61,7 @@ import {
   visibleFields,
 } from '@/lib/motivations-api';
 import { mergeReviewQueue } from '@/lib/document-review-rules';
+import { useScrollToTop } from '@/components/shell/shell-scroll';
 
 // ────────────────────────────────────────────────────────────────────
 // The motivation wizard.
@@ -255,6 +256,9 @@ export default function MotivationWizardPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const id = params.id;
+  // Scrolls the live scroller to the top — `window` on the web, the shell
+  // pane in the installed app. See components/shell/shell-scroll.tsx.
+  const scrollToTop = useScrollToTop();
 
   const [detail, setDetail] = useState<MotivationDetail | null>(null);
   const [fields, setFields] = useState<MotivationField[]>([]);
@@ -1370,9 +1374,7 @@ export default function MotivationWizardPage() {
   const go = (n: number) => {
     setExpanded(n);
     setFurthest((f) => Math.max(f, n));
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+    scrollToTop('smooth');
   };
 
   /**
