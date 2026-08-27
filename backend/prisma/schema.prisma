@@ -531,6 +531,12 @@ model User {
   // via PushSubscription.category.
   notifyEmailEnabled    Boolean @default(true)
   notifySmsEnabled      Boolean @default(true)
+  // Offers specifically. A seller who lists twenty items and is happy to
+  // receive offers on all of them may still not want a ping for each one —
+  // operator, 2026-08-27. This silences the notification only: the offer is
+  // still made, still recorded, and still shown in the seller's own lists.
+  // Muting a channel must never quietly discard someone's offer.
+  notifyOffersEnabled   Boolean @default(true)
   // ⚠️ Default TRUE on purpose — and the default is NOT what keeps this
   // channel quiet. The toggle ships greyed out ("coming soon") while we
   // build sender trust with Meta on shipping messages alone, so a member
@@ -1085,6 +1091,30 @@ model Listing {
   // Field is kept for backwards compatibility with old rows but is no
   // longer surfaced in the Sell form.
   passFeeToBuyer Boolean @default(false)
+
+  // ⚠️ TAKE A SHOT IS NOT A LISTING TYPE ANY MORE. Operator, 2026-08-27:
+  // "Take a shot is not a third selling option. It needs to be an option
+  // inside every buy now and auction listing."
+  //
+  // It used to be ListingType.TAKE_A_SHOT — a third, mutually exclusive mode
+  // with a null price, so a seller had to choose between naming a price and
+  // taking offers. That is the wrong trade: every fixed-price item is one a
+  // buyer might reasonably haggle over, and forcing the seller to give up the
+  // price to find out cost both sides the sale.
+  //
+  // Now it is a flag on any BUY_NOW or AUCTION listing. Offers are already
+  // listing-scoped in the data model (Offer.listingId, not Offer.listingType),
+  // so this only replaces the guard that used to insist on the old type.
+  //
+  // Defaults TRUE: the whole point of the change is liquidity, and a seller
+  // who does not want offers turns it off on the listing. Flip the default if
+  // that reads as too permissive — nothing else depends on it.
+  //
+  // The TAKE_A_SHOT enum value is deliberately still present. It is referenced
+  // in ~40 files and there were zero live listings using it at cutover, so
+  // removing it is a safe but separate cleanup; what changed here is that it
+  // is no longer selectable.
+  acceptsOffers Boolean @default(true)
 
   // Seller-offered shipping methods. For non-firearm listings this is
   // some non-empty subset of [PUDO, TCG]. For firearm / barrel listings

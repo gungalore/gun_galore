@@ -80,8 +80,12 @@ export class OffersService {
     });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.status !== 'ACTIVE') throw new BadRequestException('Listing is no longer available');
-    if (listing.listingType !== 'TAKE_A_SHOT') {
-      throw new BadRequestException('Offers can only be made on Take a Shot listings');
+    // ⚠️ THIS USED TO BE `listingType !== 'TAKE_A_SHOT'`. Offers are no longer
+    // a listing TYPE — they are a flag any Buy Now or Auction listing can
+    // carry (operator, 2026-08-27), so the gate is the seller's own choice on
+    // this listing rather than which of three modes they picked at creation.
+    if (!listing.acceptsOffers) {
+      throw new BadRequestException('This listing is not accepting offers.');
     }
     if (listing.sellerId === buyer.id) throw new BadRequestException('Sellers cannot offer on their own listings');
     // Listing-banned seller (3 reject strikes): their ACTIVE listings were
@@ -1039,6 +1043,17 @@ export class OffersService {
           this.logger.warn(`OFFER_DECISION token mint failed: ${(err as Error).message}`);
           return null;
         });
+      // ⚠️ THE OFFER IS ALREADY WRITTEN AND STAYS WRITTEN. This gate silences a
+      // ping, nothing more: the offer exists, the seller sees it in their own
+      // lists, and the 48-hour clock runs either way. A seller who lists twenty
+      // items and welcomes offers on all of them may still not want twenty
+      // notifications (operator, 2026-08-27) — but muting a channel must never
+      // quietly discard someone's offer.
+      if (offer.listing.seller.notifyOffersEnabled === false) {
+        this.logger.log(
+          `offer ${offer.id}: seller has offer notifications off — recorded, not announced`,
+        );
+      } else {
       await this.notifications.offerReceived({
         sellerEmail: offer.listing.seller.email,
         sellerName: offer.listing.seller.firstName ?? 'Seller',
@@ -1054,6 +1069,7 @@ export class OffersService {
         actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
         meetsAutoAccept,
       });
+      }
     } catch (err) {
       this.logger.error(`notifySellerOfOffer failed: ${(err as Error).message}`);
     }

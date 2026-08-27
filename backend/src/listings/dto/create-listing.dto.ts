@@ -71,6 +71,18 @@ export class CreateListingDto {
   @IsBoolean()
   passFeeToBuyer: boolean;
 
+  /**
+   * Whether this listing accepts offers ("Take a Shot").
+   *
+   * Not a listing type any more — any Buy Now or Auction listing can take
+   * offers, and the seller decides per listing. Omitted means the schema
+   * default (true), so an older client that does not send it still behaves
+   * the way the operator asked for.
+   */
+  @IsOptional()
+  @IsBoolean()
+  acceptsOffers?: boolean;
+
   @IsOptional()
   @IsString()
   @MaxLength(100)
