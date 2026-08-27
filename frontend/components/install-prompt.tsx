@@ -7,6 +7,7 @@ import { installPlatform, useInstallPrompt } from '@/lib/use-install-prompt';
 import { useWishlist } from '@/lib/use-wishlist';
 import { BRAND_NAME } from '@/lib/brand';
 import { isChromelessRoute } from '@/lib/chromeless-routes';
+import { isTabRoute } from '@/lib/shell-routes';
 import {
   trackInstall,
   type InstallPlatform,
@@ -439,6 +440,11 @@ function InstallPromptBody() {
     !isSuppressedRoute(pathname) &&
     !isListingDetail(pathname);
 
+  // The tab bar now renders on mobile web too, on the shopping routes
+  // isTabRoute() names (lib/shell-routes) — it is no longer standalone-only.
+  // The bar's own bottom-offset uses this to lift clear of it; see there.
+  const tabBarPresent = isTabRoute(pathname);
+
   // Ask Boet Everywhere — keep the body attribute stamped while our popup is up
   // so the Sparkie daily-hello suppresses (it checks data-install-prompt) and
   // the launcher lift rules stay coherent. Harmless behind our backdrop.
@@ -732,12 +738,20 @@ function InstallPromptBody() {
             position: 'fixed',
             left: 0,
             right: 0,
-            bottom: 0,
-            // Under Boet (z-60) and under the standalone tab bar (z-55), both
-            // of which outrank it by the house rule. Neither can actually
-            // collide with it: the tab bar renders only in standalone and this
-            // bar renders only in mobile web, and Boet is lifted clear of it
-            // by a rule in globals.css keyed on [data-install-bar].
+            // Flush against the viewport edge on its own. When isTabRoute()
+            // also puts the tab bar on this route, lift clear of it instead —
+            // the tab bar occupies its own height plus its own safe-area
+            // padding (see [data-shell-tabs] in globals.css), so that's what
+            // this bar's floor becomes.
+            bottom: tabBarPresent
+              ? 'calc(var(--shell-tab-h) + env(safe-area-inset-bottom))'
+              : 0,
+            // Under Boet (z-60) and under the tab bar (z-55), both of which
+            // outrank it by the house rule. Boet is lifted clear of this bar
+            // by a rule in globals.css keyed on [data-install-bar]; the tab
+            // bar is handled above instead of by a z-index assumption, now
+            // that it renders on mobile web too and the two can share a
+            // route.
             zIndex: 54,
             display: 'flex',
             alignItems: 'center',

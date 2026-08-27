@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { Me } from '@/lib/types';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -172,12 +173,12 @@ export function ProfileSetupPrompt() {
     setOpen(true);
   }, [open, isLoaded, isSignedIn, me, userId, pathname, user]);
 
-  // Entry transition + body scroll lock + Esc-to-dismiss while open.
+  useScrollLock(open);
+
+  // Entry transition + Esc-to-dismiss while open.
   useEffect(() => {
     if (!open) return;
     const raf = requestAnimationFrame(() => setEntered(true));
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     dialogRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') dismiss();
@@ -185,7 +186,6 @@ export function ProfileSetupPrompt() {
     document.addEventListener('keydown', onKey);
     return () => {
       cancelAnimationFrame(raf);
-      document.body.style.overflow = prevOverflow;
       document.removeEventListener('keydown', onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import TemplatePreview, { type PreviewPage } from './motivation-template-preview';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 import type {
   Colourway,
   TemplateCatalogue,
@@ -399,6 +400,8 @@ function EnlargedPreview({
   onClose: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // The page behind must not scroll under the overlay on iOS.
+  useScrollLock(true);
   const pages = pagesFor(format);
 
   // Escape closes, and focus moves into the panel so a screen reader lands on
@@ -413,12 +416,8 @@ function EnlargedPreview({
   useEffect(() => {
     document.addEventListener('keydown', onKey);
     panelRef.current?.focus();
-    // The page behind must not scroll under the overlay on iOS.
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
     };
   }, [onKey]);
 

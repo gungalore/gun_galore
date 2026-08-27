@@ -266,8 +266,13 @@ export default async function ListingDetailPage({
   }
 
   return (
+    // At lg this page stops scrolling and its two columns scroll instead
+    // (see .gg-twopane in globals.css). <main> owns the height — one viewport
+    // less the sticky header — and lays its children out in a column so the
+    // shell below can take whatever the back link and padding leave, without
+    // anybody hardcoding a pixel figure for that remainder.
     <main
-      className="relative max-w-[var(--page-max)] mx-auto px-4 py-6"
+      className="gg-listing-main relative max-w-[var(--page-max)] mx-auto px-4 py-6 lg:h-[calc(100vh-var(--nav-h))] lg:flex lg:flex-col lg:overflow-hidden"
     >
       {/* Product/Offer structured data for search engines (not visible).
           Suppressed for members-only stock: the schema publishes name,
@@ -295,17 +300,111 @@ export default async function ListingDetailPage({
           page with no context. */}
       <BackLink />
 
-      <PageReveal>
-        <div data-reveal className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8">
-        {/* Left: images — fully interactive gallery (hero swap on
+      {/* ⚠️ THE className IS LOAD-BEARING, NOT DECORATION. PageReveal renders a
+          plain wrapper div, so at lg it sits between <main> (which owns the
+          viewport height) and the two-pane shell (which wants to consume it).
+          Left as a default block it sizes to its content, overflows main, and
+          gets silently cropped by main's overflow:hidden — the panes then
+          measure taller than the screen and NEITHER of them ever scrolls.
+          Making it a flex item that takes the remaining height and passes it
+          down is what actually lets the panes resolve a scrollable height. */}
+      <PageReveal className="lg:flex lg:flex-col lg:flex-1 lg:min-h-0">
+        <div data-reveal className="gg-twopane flex flex-col gap-8">
+        {/* Left pane: images — fully interactive gallery (hero swap on
             thumbnail click, lightbox on hero click, ← → navigation,
-            2× zoom on click inside the lightbox). */}
-        <div>
+            2× zoom on click inside the lightbox). Scrolls independently of
+            the right at lg; plain stacked block below it. */}
+        <div className="gg-twopane-main">
           <ImageGallery images={allImages} title={listing.title} />
+
+          {/* ⚠️ THE READING COLUMN — these three blocks were moved out of the
+              buy column on 2026-08-27, and moving them back would undo the
+              point of the layout. The right pane is 408px wide and fixed to
+              the viewport; a description, a spec table and a Q&A thread in
+              there scroll for a thousand pixels inside a column the width of
+              a phone, while this pane sits empty. Reading content goes here,
+              beside the photographs it describes; the buy column keeps only
+              what answers "should I buy this, and how". */}
+          <div className="gg-reading lg:mt-6">
+          {/* Description — moved 2026-05-26 to sit right under the CTA
+              so the buyer reads what they're actually buying before the
+              legal/shipping block. Reduces vertical scroll on mobile.
+              Make/Model/Calibre are NOT rendered to buyers per spec — the
+              fields live on Listing for search/filtering only. */}
+          <div
+            className="rounded-[6px] p-3 mb-4 text-sm"
+            style={{
+              background: 'var(--bg-card)',
+              border: '0.5px solid var(--border)',
+            }}
+          >
+            <p
+              className="text-xs uppercase mb-2"
+              style={{
+                color: 'var(--text-tertiary)',
+                letterSpacing: '0.05em',
+              }}
+            >
+              Description
+            </p>
+            <ListingDescription text={listing.description} />
+          </div>
+
+          {/* Specifications (P4.2) — structured per-category attributes,
+              joined to their definitions for human labels + units. Only
+              rendered when at least one attribute has a value; the rows are
+              already ordered by the definition order (leaf-first). */}
+          {specRows.length > 0 && (
+            <div
+              className="rounded-[6px] p-3 mb-4 text-sm"
+              style={{
+                background: 'var(--bg-card)',
+                border: '0.5px solid var(--border)',
+              }}
+            >
+              <p
+                className="text-xs uppercase mb-2"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                Specifications
+              </p>
+              <dl className="grid grid-cols-1 gap-y-1.5">
+                {specRows.map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-baseline justify-between gap-4"
+                  >
+                    <dt style={{ color: 'var(--text-tertiary)' }}>
+                      {row.label}
+                    </dt>
+                    <dd
+                      className="text-right"
+                      style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+                    >
+                      {row.display}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+
+          {/* Q&A — Claude-moderated, product-only. Replaces buyer-seller
+              messaging entirely; sellers reply from /dashboard. */}
+          <QuestionsPanel
+            listingId={listing.id}
+            sellerClerkId={listing.seller.clerkId}
+          />
+          </div>
         </div>
 
-        {/* Right: details */}
-        <div>
+        {/* Right pane: details, price and the bid/buy controls. Scrolls on
+            its own at lg so the gallery can be read without losing the
+            controls off the top of the screen. */}
+        <div className="gg-twopane-side">
           {/* Reference number — shown above all other detail so the
               seller / buyer always knows the trackable code (UM000123,
               AU000045, TS000007). Monospace so it's easy to copy-paste
@@ -540,7 +639,7 @@ export default async function ListingDetailPage({
           {/* CTA — wrapped so the sticky mobile buy bar (UX-28) has a stable
               in-page anchor to scroll to for the non-checkout listing types.
               scrollMarginTop clears the sticky top nav on landing. */}
-          <div id="buy-panel" style={{ scrollMarginTop: 88 }}>
+          <div id="buy-panel" className="gg-anchor-buy">
           {listing.status === 'ACTIVE' && listing.listingType === 'BUY_NOW' ? (
             isOwnListing ? (
               // Self-buy guard. Backend rejects the purchase anyway,
@@ -730,72 +829,6 @@ export default async function ListingDetailPage({
               (homepage rail, wishlist empty-state rail) pick it up. */}
           <RecordVisit listingId={listing.id} />
 
-          {/* Description — moved 2026-05-26 to sit right under the CTA
-              so the buyer reads what they're actually buying before the
-              legal/shipping block. Reduces vertical scroll on mobile.
-              Make/Model/Calibre are NOT rendered to buyers per spec — the
-              fields live on Listing for search/filtering only. */}
-          <div
-            className="rounded-[6px] p-3 mb-4 text-sm"
-            style={{
-              background: 'var(--bg-card)',
-              border: '0.5px solid var(--border)',
-            }}
-          >
-            <p
-              className="text-xs uppercase mb-2"
-              style={{
-                color: 'var(--text-tertiary)',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Description
-            </p>
-            <ListingDescription text={listing.description} />
-          </div>
-
-          {/* Specifications (P4.2) — structured per-category attributes,
-              joined to their definitions for human labels + units. Only
-              rendered when at least one attribute has a value; the rows are
-              already ordered by the definition order (leaf-first). */}
-          {specRows.length > 0 && (
-            <div
-              className="rounded-[6px] p-3 mb-4 text-sm"
-              style={{
-                background: 'var(--bg-card)',
-                border: '0.5px solid var(--border)',
-              }}
-            >
-              <p
-                className="text-xs uppercase mb-2"
-                style={{
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Specifications
-              </p>
-              <dl className="grid grid-cols-1 gap-y-1.5">
-                {specRows.map((row) => (
-                  <div
-                    key={row.label}
-                    className="flex items-baseline justify-between gap-4"
-                  >
-                    <dt style={{ color: 'var(--text-tertiary)' }}>
-                      {row.label}
-                    </dt>
-                    <dd
-                      className="text-right"
-                      style={{ color: 'var(--text-primary)', fontWeight: 500 }}
-                    >
-                      {row.display}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          )}
-
           {/* Shipping + payment protection explainer — kept compact so
               it doesn't dominate the buy panel area, but visible
               BEFORE checkout so buyers (especially first-time buyers
@@ -950,13 +983,6 @@ export default async function ListingDetailPage({
             </div>
           )}
 
-          {/* Q&A — Claude-moderated, product-only. Replaces buyer-seller
-              messaging entirely; sellers reply from /dashboard. */}
-          <QuestionsPanel
-            listingId={listing.id}
-            sellerClerkId={listing.seller.clerkId}
-          />
-
           {/* Province */}
           <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
             {vicinityLabel(listing)}
@@ -1097,16 +1123,16 @@ export default async function ListingDetailPage({
       {/* ── UX-28 · sticky mobile buy bar ──────────────────────────────
           Rendered inside <main> ON PURPOSE. <main> is position:relative
           z-index:1, i.e. its own stacking context, so nothing in here can
-          out-paint the installed-app bottom tab bar (z-index 55, mounted in
-          the root layout) whatever z-index we pick. Instead of fighting that
-          we stay out of its way GEOMETRICALLY: in standalone the bar is
-          offset a full tab-bar height up, so the two never overlap and the
-          "renders under the tab bar" failure can't happen. Within <main> the
-          bar sits at 58 — above the page content, still below the auction
-          BidModal's z-[60] — and the :has() rule below hides it outright
-          while any blocking overlay is mounted, since a modal inside the
-          PageReveal wrapper gets its own stacking context and z-index alone
-          would not be enough. */}
+          out-paint anything mounted in the root layout whatever z-index we
+          pick — moot here anyway: listing detail is a PUSH route, not a tab
+          route (lib/shell-routes.ts), so the installed app never mounts a
+          bottom tab bar under this page for the buy bar to dodge. It sits
+          flush at the bottom edge in both browser and standalone. Within
+          <main> the bar sits at 58 — above the page content, still below the
+          auction BidModal's z-[60] — and the :has() rule below hides it
+          outright while any blocking overlay is mounted, since a modal
+          inside the PageReveal wrapper gets its own stacking context and
+          z-index alone would not be enough. */}
       {showBuyBar && (
         <>
           {/* Spacer so the last content on the page can always be scrolled
@@ -1115,11 +1141,12 @@ export default async function ListingDetailPage({
           <style
             dangerouslySetInnerHTML={{
               __html: [
-                // Browser mode: hug the bottom edge, pad past the home
-                // indicator. Standalone: sit on top of the 60pt tab bar
-                // (which owns the safe-area inset itself).
+                // Sit flush at the bottom edge, padded past the home
+                // indicator. No tab bar mounts under this route (listing
+                // detail is a PUSH route, not a tab route —
+                // lib/shell-routes.ts), so browser and standalone share
+                // this one rule.
                 `[data-listing-buy-bar]{bottom:0;padding-bottom:calc(10px + env(safe-area-inset-bottom));}`,
-                `html[data-standalone='true'] [data-listing-buy-bar]{bottom:calc(60px + env(safe-area-inset-bottom));padding-bottom:10px;}`,
                 // Any blocking overlay (currently the auction BidModal) wins.
                 `body:has([data-blocking-overlay]) [data-listing-buy-bar]{display:none;}`,
                 // Lift Boet's dock clear of the bar so the mascot never

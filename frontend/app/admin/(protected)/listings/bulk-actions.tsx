@@ -17,7 +17,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/lib/admin-auth';
-import { useStandalone } from '@/lib/use-standalone';
 
 export function useBulkSelect(ids: string[]) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -58,9 +57,6 @@ export function BulkListingActionsBar({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const count = selected.size;
-  // In the installed PWA, offset the sticky toolbar above the bottom tab bar
-  // (fixed, 60px + safe-area) so it isn't hidden behind it.
-  const isStandalone = useStandalone();
 
   async function execute() {
     if (!action) return;
@@ -98,7 +94,7 @@ export function BulkListingActionsBar({
       <div
         style={{
           position: 'sticky',
-          bottom: isStandalone ? 'calc(76px + env(safe-area-inset-bottom))' : 16,
+          bottom: 16,
           marginTop: 16,
           zIndex: 30,
           background: 'var(--bg-card)',

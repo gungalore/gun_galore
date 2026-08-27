@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 
 // Site-wide click-to-enlarge for user profile photos.
 //
@@ -35,12 +36,7 @@ export function AvatarLightbox() {
     };
   }, []);
 
-  useEffect(() => {
-    document.body.style.overflow = view ? 'hidden' : '';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [view]);
+  useScrollLock(!!view);
 
   if (!view) return null;
 

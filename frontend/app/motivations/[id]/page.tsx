@@ -30,6 +30,7 @@ import {
 import type { StepStatus } from '@/components/step-accordion';
 import MotivationStepRail from '@/components/motivation-step-rail';
 import MotivationStepNav from '@/components/motivation-step-nav';
+import { useShellStep } from '@/components/shell/shell-step';
 import {
   OWNED_SECTION,
   isRepeatingSection,
@@ -61,6 +62,7 @@ import {
   visibleFields,
 } from '@/lib/motivations-api';
 import { mergeReviewQueue } from '@/lib/document-review-rules';
+import { useScrollToTop } from '@/components/shell/shell-scroll';
 
 // ────────────────────────────────────────────────────────────────────
 // The motivation wizard.
@@ -255,6 +257,9 @@ export default function MotivationWizardPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const id = params.id;
+  // Scrolls the live scroller to the top — `window` on the web, the shell
+  // pane in the installed app. See components/shell/shell-scroll.tsx.
+  const scrollToTop = useScrollToTop();
 
   const [detail, setDetail] = useState<MotivationDetail | null>(null);
   const [fields, setFields] = useState<MotivationField[]>([]);
@@ -1370,9 +1375,7 @@ export default function MotivationWizardPage() {
   const go = (n: number) => {
     setExpanded(n);
     setFurthest((f) => Math.max(f, n));
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+    scrollToTop('smooth');
   };
 
   /**
@@ -1383,6 +1386,19 @@ export default function MotivationWizardPage() {
    * refused — which is the dead end the union at `outstanding` exists to
    * prevent. One source, two readers.
    */
+  // The same step the rail shows, published to the mobile shell header — the
+  // rail itself is `hidden lg:block`, so without this a phone has no sense of
+  // position in a five-step licence motivation at all.
+  //
+  // `steps` is filtered from STEP_PLAN (empty middle steps drop out), so the
+  // total is its length rather than STEP_PLAN's — the counter has to match the
+  // rail the member sees, not the plan behind it.
+  const shellStep = useMemo(() => {
+    const s = steps.find((x) => x.n === expanded);
+    return s ? { label: s.def.label, current: s.n, total: steps.length } : null;
+  }, [steps, expanded]);
+  useShellStep(shellStep);
+
   const railSteps = useMemo(
     () =>
       steps.map((s) => {
@@ -2973,7 +2989,9 @@ function FieldInput({
 }) {
   // EXPLICIT background and colour on every control.
   //
-  // The site is dark (--bg #0f0f0f) and <body> sets near-white text, but a
+  // ⚠️ The reason below still holds; the premise it used to give did not. It
+  // said "the site is dark (--bg #0f0f0f)" — true before the white retail
+  // skin, and wrong since. <body> sets its text colour explicitly, but a
   // <select> or <input> with no background of its own gets the BROWSER's
   // default light chrome — so the inherited white text landed on white and was
   // invisible. Operator, 2026-08-19: "I can't read the dropdown menus".

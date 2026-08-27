@@ -6,6 +6,7 @@ import { CONDITION_LABELS, PROVINCE_LABELS } from '@/lib/utils';
 import { SUPPORT_EMAIL } from '@/lib/brand';
 import { modalIn } from '@/lib/anim';
 import { gsap } from 'gsap';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 
 // Result shape returned by POST /listings/preview. Keep in sync with
 // backend/src/listings/listings.service.ts → PreviewResult.
@@ -86,14 +87,8 @@ export function ListingPreviewModal({
     return () => window.removeEventListener('keydown', handleKey);
   }, [onEdit, publishing]);
 
-  // Lock body scroll while the modal is open.
-  useEffect(() => {
-    const original = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = original;
-    };
-  }, []);
+  // Lock the page behind the modal while it's open.
+  useScrollLock(true);
 
   // Entrance animation — fade overlay + scale-and-rise panel, then
   // stagger the issue chips and reasons list. Runs once on mount.

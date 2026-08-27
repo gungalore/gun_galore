@@ -215,19 +215,16 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     // scan hand-off's `dest` string all stay `licence-centre`: a phone
     // mid-hand-off is holding a token minted against that path, and renaming
     // it would strand whoever is standing at their desk right now.
+    // ⚠️ LOAD LAB SITS HERE, WITH THE TWO CENTRES (operator, 2026-08-27:
+    // "load lab needs to sit with License and Motivation Centre"). It briefly
+    // had its own "Tools" group on the reasoning that reloading data is not
+    // paperwork — true, but a group of one reads as an oversight, and the
+    // design pack's Account board puts all three together under LICENCE
+    // SERVICES. Three items, one group.
     title: 'Licences',
     items: [
       { href: '/documents', label: 'Document Centre', Icon: ShieldDocIcon },
       { href: '/motivations', label: 'Motivation Centre', Icon: DocIcon },
-    ],
-  },
-  {
-    // Load Lab moved here on 2026-08-26. It used to be a tab inside the Ask
-    // Boet page; when the assistant was removed the operator kept Load Lab and
-    // put it in the account beside the licence tools. Its own group rather
-    // than inside "Licences" because reloading data is not paperwork.
-    title: 'Tools',
-    items: [
       { href: '/load-lab', label: 'Load Lab', Icon: CartridgeIcon },
     ],
   },

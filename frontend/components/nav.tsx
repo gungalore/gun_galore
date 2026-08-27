@@ -24,14 +24,12 @@ export function Nav() {
   const { signOut } = useClerk();
   const router = useRouter();
   const pathname = usePathname();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   // Mobile-web search: no permanent search chrome on phones any more. The
   // icon beside Sell opens a panel under the top row, and a closed panel
   // renders NOTHING — no reserved height, nothing pinned to the viewport.
   // (The installed PWA hides this whole nav, so it keeps its own header bar.)
   const [searchOpen, setSearchOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const {
     canInstall,
     isInstalled,
@@ -81,25 +79,17 @@ export function Nav() {
   })();
 
   useEffect(() => {
-    function close(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
-    }
     // Escape closes the dropdown too (basic keyboard affordance — the
     // outside-click listener alone stranded keyboard users).
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        setMenuOpen(false);
         // Same affordance for the mobile search panel — it has no visible
         // close button, so Escape is the keyboard way back out.
         setSearchOpen(false);
       }
     }
-    document.addEventListener('mousedown', close);
     document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('mousedown', close);
       document.removeEventListener('keydown', onKey);
     };
   }, []);
@@ -148,7 +138,7 @@ export function Nav() {
           borderBottom: '0.5px solid var(--border)',
         }}
       >
-        <div className="max-w-[var(--page-max)] mx-auto px-4 h-14 flex items-center gap-3 sm:gap-6">
+        <div className="max-w-[var(--page-max)] mx-auto px-4 h-[var(--nav-h)] flex items-center gap-3 sm:gap-6">
           {/* Logo — the composed nav lockup, and the MARK ALONE on phones.
 
               The nav constrains by HEIGHT, so shape decides width. The
@@ -306,18 +296,31 @@ export function Nav() {
               <div className="hidden md:flex items-center gap-3">
                 {isSignedIn ? (
                   <>
-                    <div className="relative" ref={menuRef}>
+                    {/* `relative` and the menuRef were positioning
+                        context for the dropdown that used to hang off
+                        this tile. The menu is gone; the wrapper stays
+                        only to keep the flex row's spacing. */}
+                    <div>
                       {/* One consolidated account tile: avatar + name +
                           chevron. Replaces the old separate name link,
                           "Account ▾" button, and Clerk UserButton. The
                           avatar is wrapped in AvatarCompletionRing, which
                           draws a profile-completeness arc hugging it and
                           vanishes at 100%. */}
-                      <button
-                        onClick={() => setMenuOpen((o) => !o)}
-                        aria-label="Account menu"
-                        aria-expanded={menuOpen}
+                      {/* ⚠️ A LINK, NOT A MENU TRIGGER (operator,
+                          2026-08-27). This opened a 27-link dropdown; the
+                          account tile page is the design's answer to the
+                          same need, so the avatar just goes there.
+                          aria-expanded / aria-haspopup went with the menu:
+                          announcing a popup that no longer exists is worse
+                          than announcing nothing. */}
+                      <Link
+                        href="/account"
+                        aria-label="Your account"
+                        className="gg-press"
                         style={{
+                          textDecoration: 'none',
+                          color: 'var(--text-primary)',
                           display: 'flex',
                           alignItems: 'center',
                           gap: 8,
@@ -395,127 +398,7 @@ export function Nav() {
                         >
                           <path d="M6 9l6 6 6-6" />
                         </svg>
-                      </button>
-                      {menuOpen && (
-                        <div
-                          className="absolute right-0 mt-1 w-64 rounded-[8px] z-50 overflow-hidden"
-                          style={{
-                            background: 'var(--bg-card)',
-                            border: '0.5px solid var(--border)',
-                            boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-                            // Header + sign-out stay pinned; only the middle
-                            // link list scrolls (it gets its own themed
-                            // scrollbar). 88px ≈ nav height + breathing room.
-                            maxHeight: 'calc(100vh - 88px)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                          }}
-                        >
-                          <Link
-                            href="/account"
-                            onClick={() => setMenuOpen(false)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 10,
-                              padding: '12px 14px',
-                              borderBottom: '0.5px solid var(--border)',
-                              textDecoration: 'none',
-                              flexShrink: 0,
-                            }}
-                          >
-                            {user?.imageUrl ? (
-                              // Same avatar the chip shows — the header used
-                              // to render a generic initial circle instead.
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={user.imageUrl}
-                                alt=""
-                                width={34}
-                                height={34}
-                                style={{
-                                  width: 34,
-                                  height: 34,
-                                  borderRadius: '50%',
-                                  objectFit: 'cover',
-                                  flexShrink: 0,
-                                }}
-                              />
-                            ) : (
-                              <div
-                                style={{
-                                  width: 34,
-                                  height: 34,
-                                  borderRadius: '50%',
-                                  background: 'var(--red)',
-                                  color: '#fff',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontWeight: 500,
-                                  fontSize: 14,
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {(displayName || 'G').charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <p
-                                style={{
-                                  margin: 0,
-                                  fontSize: 13,
-                                  fontWeight: 500,
-                                  color: 'var(--text-primary)',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {displayName || 'Your account'}
-                              </p>
-                              <p style={{ margin: 0, fontSize: 11, color: 'var(--text-tertiary)' }}>
-                                Account overview
-                              </p>
-                            </div>
-                          </Link>
-                          <div className="gg-menu-scroll" style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
-                            <AccountMenuList
-                              pathname={pathname}
-                              onNavigate={() => setMenuOpen(false)}
-                              compact
-                            />
-                          </div>
-                          <div style={{ borderTop: '0.5px solid var(--border)', flexShrink: 0 }}>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                setMenuOpen(false);
-                                await signOut();
-                                router.push('/');
-                              }}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 12,
-                                width: '100%',
-                                textAlign: 'left',
-                                padding: '10px 12px',
-                                color: 'var(--red)',
-                                background: 'transparent',
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontSize: 13,
-                              }}
-                            >
-                              <span style={{ display: 'inline-flex' }}>
-                                <LogoutIcon />
-                              </span>
-                              Sign out
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                      </Link>
                     </div>
                   </>
                 ) : (
@@ -598,27 +481,23 @@ export function Nav() {
           </div>
         )}
 
-        {/* Second tier — the selling-mode links. Desktop only; keeps the
-            selling modes fully visible on their own slim strip instead of
-            crushing the search on the top row. Mobile reaches these via the
-            hamburger drawer's Shop section. */}
-        <div
-          className="hidden md:block"
-          style={{ borderTop: '0.5px solid var(--border)' }}
-        >
-          <div className="max-w-[var(--page-max)] mx-auto px-4 h-10 flex items-center gap-5 text-sm">
-            {SHOP_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                style={{ color: 'var(--text-secondary)' }}
-                className="hover:text-[var(--text-primary)] transition-colors"
-              >
-                {link.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+        {/* ⚠️ THE SECOND TIER IS GONE (2026-08-27). It carried the Buy Now /
+            Auctions links on their own slim desktop strip, and existed only
+            because the storefront had nowhere else to put the two modes. The
+            design pack's header — identical across nine desktop boards, each
+            carrying the authored note "lifted from OptionE so the chrome is
+            identical site-wide" — is a SINGLE 62px row with no such tier, and
+            the modes now live in the Shop-by-mode tiles under the hero.
+
+            THE TRADE-OFF, STATED PLAINLY: those tiles are on the homepage only,
+            so from a listing or cart page the two modes are now two clicks
+            (logo → home → tile) rather than one. That is what the design
+            specifies, consistently, on every board — but it is a real
+            reduction. If it bites, the fix is a mode entry in the Categories
+            flyout, not this strip back.
+
+            SHOP_LINKS survives: it still feeds the mobile drawer's Shop
+            section, which is how phones reach the modes. */}
       </nav>
 
       {/* ─── Mobile drawer ──────────────────────────────────────────────

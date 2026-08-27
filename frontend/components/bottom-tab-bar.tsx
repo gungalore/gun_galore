@@ -53,7 +53,7 @@ import { useStandalone } from '@/lib/use-standalone';
 import { useCart } from '@/lib/cart-store';
 import { useWishlist } from '@/lib/use-wishlist';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
-import { useScrollDirection } from '@/lib/use-scroll-direction';
+import { isTabRoute } from '@/lib/shell-routes';
 import { PushToggleRow } from '@/components/push-opt-in-banner';
 import { AccountMenuList } from '@/lib/account-menu';
 import type { CategoryWithCount } from '@/lib/types';
@@ -122,11 +122,39 @@ interface Tab {
   // circular-FAB treatment. Only works at 5 tabs (position 3 = 50%).
   prominent?: boolean;
   // 'shop' / 'more' open sheets instead of navigating.
-  action?: 'shop' | 'more';
+  action?: 'shop' | 'more' | 'search';
 }
 
 // Inline SVG icons — no extra dep. 24×24 viewbox, currentColor stroke
 // so the active state can tint via `color: var(--red)`.
+function IconHome() {
+  return (
+    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3.5 10.5 L12 3.5 L20.5 10.5 V20 A1 1 0 0 1 19.5 21 H14.5 V15 H9.5 V21 H4.5 A1 1 0 0 1 3.5 20 Z"
+        stroke="currentColor"
+        strokeWidth={1.9}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconSearch() {
+  return (
+    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="11" cy="11" r="6" stroke="currentColor" strokeWidth={1.9} />
+      <path
+        d="M15.5 15.5 21 21"
+        stroke="currentColor"
+        strokeWidth={1.9}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function IconShop() {
   // Shopping-bag silhouette — universal "browse / shop" affordance.
   return (
@@ -168,6 +196,27 @@ function IconList() {
         stroke="currentColor"
         strokeWidth="1.6"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+/* Orders. A parcel, not a receipt or a cart: what the member is checking on
+   this tab is the thing in transit, and it is the only glyph in the bar that
+   has to read at 24px against four line-drawn siblings. */
+function IconBox() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3.5 7.5 12 3.5l8.5 4v9L12 20.5l-8.5-4v-9Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M3.5 7.5 12 11.5l8.5-4M12 11.5v9"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
       />
     </svg>
   );
@@ -250,24 +299,6 @@ function IconMore() {
     </svg>
   );
 }
-function IconBell() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M6 9a6 6 0 0 1 12 0v5l1.5 2.5h-15L6 14V9z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M10 19a2 2 0 0 0 4 0"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
 function IconSparkles() {
   // Four-point sparkle cluster — universal "AI / magic" affordance.
   // A large centre sparkle with two smaller satellite sparkles reads
@@ -325,7 +356,6 @@ export function BottomTabBar() {
   const { isSignedIn, user } = useUser();
   const { getToken } = useAuth();
   const { signOut } = useClerk();
-  const scrollDir = useScrollDirection();
   const [shopOpen, setShopOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [alertsCount, setAlertsCount] = useState<number>(0);
@@ -340,7 +370,16 @@ export function BottomTabBar() {
   // mid-interaction. `data-bottom-chrome-hidden` is mirrored onto
   // <body> so the sticky featured strip can hide in sync.
   const sheetOpen = shopOpen || moreOpen;
-  const hideChrome = scrollDir === 'down' && !sheetOpen;
+  // ⚠️ THE AUTO-HIDE IS GONE, DELIBERATELY. The bar used to slide away on
+  // scroll-down and return on scroll-up. Three reasons it went:
+  //   * No board shows it. All eleven draw a static bar.
+  //   * On a touch device momentum scrolling flips direction constantly, so it
+  //     flickered under the reader's thumb. The header's identical experiment
+  //     was reverted the same day for exactly this — see the history in the
+  //     .gg-shell note in app/globals.css.
+  //   * It read window.scrollY, which in the installed app never changes
+  //     again: the pane scrolls, not the document. The behaviour was about to
+  //     become permanently stuck in the "visible" state anyway.
 
   // ── Hardware BACK closes the sheet ────────────────────────────────
   // In the installed PWA the Android back gesture was leaving the page
@@ -418,13 +457,6 @@ export function BottomTabBar() {
     };
   }, [sheetOpen, dismissSheet]);
 
-  useEffect(() => {
-    if (hideChrome) {
-      document.body.dataset.bottomChromeHidden = 'true';
-    } else {
-      delete document.body.dataset.bottomChromeHidden;
-    }
-  }, [hideChrome]);
 
   // Auto-close any open sheet on route change (mirrors the mobile-drawer
   // behaviour in nav.tsx). Drops the history claim WITHOUT popping — the
@@ -454,7 +486,10 @@ export function BottomTabBar() {
   // until the migration + controller land). Also refreshes when the
   // user navigates (covers the case where they just took an action).
   useEffect(() => {
-    if (!isStandalone || !isSignedIn) {
+    // ⚠️ WAS `!isStandalone || !isSignedIn`. The bar renders on mobile web
+    // now, so gating the poll on standalone would have shipped a badge that is
+    // always zero — visible, and permanently wrong — to every phone visitor.
+    if (!isSignedIn) {
       setAlertsCount(0);
       return;
     }
@@ -517,11 +552,20 @@ export function BottomTabBar() {
     };
   }, [isStandalone, isSignedIn, getToken, pathname]);
 
-  // Server HTML stays identical to browser-mobile — the tab bar only
-  // exists for installed PWA users. The CSS rule that pads the body
-  // (`html[data-standalone='true'] body { padding-bottom: ... }`)
-  // still applies regardless so the layout is consistent.
-  if (!isStandalone) return null;
+  // ⚠️ A ROUTE ALLOWLIST, NOT A DISPLAY-MODE CHECK. This used to read
+  // `if (!isStandalone) return null`, which had two faults at once. It hid the
+  // bar from every mobile-web visitor, so the phone's only navigation was the
+  // hamburger drawer and the Shop/Account sheets did not exist for them at all.
+  // And having no route awareness, it put a five-tab shopping bar across
+  // /witness and /consent for installed users — the statutory statements that
+  // lib/chromeless-routes.ts exists to keep marketplace chrome off — plus every
+  // /admin page.
+  //
+  // The allowlist in lib/shell-routes.ts fixes both, and is wrong only in the
+  // safe direction: a missing tab bar, never a shopping bar over a legal
+  // notice. Visibility by width is CSS's job (.gg-shell-chrome), so the server
+  // HTML stays identical at every viewport.
+  if (!isTabRoute(pathname)) return null;
 
   // "Shop" tab is active on the shopping surfaces (i.e. anywhere the
   // picker would point to). /category/* is included now that the sheet
@@ -531,27 +575,33 @@ export function BottomTabBar() {
 
   const tabs: Tab[] = [
     {
-      key: 'shop',
-      label: 'Shop',
-      href: '#shop',
-      isActive: () => shopOpen || isShopSurface,
-      action: 'shop',
+      // ⚠️ "Home", AND IT IS A LINK NOW, NOT A SHEET TRIGGER. This was "Shop",
+      // and it opened a category-first bottom sheet. Every mobile board names
+      // this tab Home and points it at the storefront, and the storefront
+      // itself now carries the category rail the sheet existed to provide —
+      // so the sheet was one tap of indirection in front of the same list.
+      key: 'home',
+      label: 'Home',
+      href: '/',
+      isActive: (p, sp) =>
+        (p === '/' && !sp?.get('q')) || p.startsWith('/category/'),
     },
-    // ⚠️ SAVED IS BACK IN THE TAB BAR, AND ASK BOET IS OUT.
-    //
-    // Wishlist was moved up to the top bar when Ask Boet took this slot. That
-    // left the header carrying search + heart + cart, and the primary nav
-    // carrying a paid assistant but NO CART — so an installed member could add
-    // items and then, on any route where the top bar is hidden, have no way
-    // back to them. Ask Boet is now the floating launcher it already is in
-    // browser mode (see components/ask-gg/ask-gg-host.tsx), which reaches
-    // every shopping screen rather than one tab in five, and the slot goes
-    // back to the list people actually keep.
     {
-      key: 'wishlist',
-      label: 'Saved',
-      href: '/wishlist',
-      isActive: (p) => p.startsWith('/wishlist'),
+      // ⚠️ THIS SLOT WAS "SAVED" (→ /wishlist). The design names it Search and
+      // puts the wishlist heart in the header instead, where it sits beside the
+      // cart on every root screen — so nothing was lost, it moved up.
+      //
+      // There is no /search route and there should not be one: the storefront
+      // at "/" IS the search surface (it already takes q, listingType,
+      // categoryId and sort, and /listings redirects to it). So this tab does
+      // what the design's Search board actually shows — the storefront with its
+      // search field focused. Routing to a new page that rendered the same
+      // results would have duplicated the homepage's whole data path to no end.
+      key: 'search',
+      label: 'Search',
+      href: '/',
+      isActive: (_p, sp) => Boolean(sp?.get('q')),
+      action: 'search',
     },
     {
       key: 'sell',
@@ -561,37 +611,52 @@ export function BottomTabBar() {
       prominent: true,
     },
     {
-      key: 'alerts',
-      label: 'Alerts',
-      href: '/notifications',
-      isActive: (p) => p.startsWith('/notifications'),
+      // ⚠️ THIS SLOT WAS "ALERTS" (→ /notifications) UNTIL THE THEME PACK.
+      //
+      // All ten mobile boards name this tab Orders, and none of them shows a
+      // notifications surface anywhere — so a straight swap would have taken
+      // the unread-alert badge, the one "you have unfinished business" signal
+      // an installed member gets, and left it nowhere. It did not go: it moved
+      // onto the Account tab below, which is where everything else about the
+      // member's own business already lives. /notifications is still one tap
+      // away inside that sheet.
+      key: 'orders',
+      label: 'Orders',
+      href: '/my/orders',
+      isActive: (p) => p.startsWith('/my/orders') || p.startsWith('/orders/'),
       // No `action` — this is a real Link, not a sheet.
     },
     {
-      // ⚠️ "Account", NOT "More". "More" is a name for a place with no idea
-      // what is in it, and everything behind it — orders, bids, offers,
-      // listings, sales, verification — is the member's own account.
-      key: 'more',
+      // ⚠️ "Account", NOT "More" — and a route, not a sheet. "More" is a name
+      // for a place with no idea what is in it. The sheet it opened rendered
+      // ACCOUNT_GROUPS from lib/account-menu-data; /account renders the same
+      // ACCOUNT_GROUPS as a full page, which is what the design draws, so the
+      // sheet was a smaller window onto identical content.
+      key: 'account',
       label: 'Account',
-      href: '#more',
-      isActive: () => moreOpen,
-      action: 'more',
+      href: '/account',
+      isActive: (p) => p.startsWith('/account'),
     },
   ];
 
   function renderIcon(key: string) {
     switch (key) {
-      case 'shop':
-        return <IconShop />;
-      case 'alerts':
-        // Bell + an optional unread-count badge in the top-right corner.
-        // Badge only renders when alertsCount > 0 — the clear "you have
-        // unfinished business" indicator that polls via active-count
-        // and only drops when the user ACTS on the underlying entity
-        // (server-side auto-resolve), NOT when they open the inbox.
+      case 'home':
+        return <IconHome />;
+      case 'search':
+        return <IconSearch />;
+      case 'orders':
+        return <IconBox />;
+      case 'account':
+        // The badge, NOT the bell, is the thing that had to survive the tab
+        // rename: it only renders when alertsCount > 0, polls via active-count,
+        // and only clears when the member ACTS on the underlying entity
+        // (server-side auto-resolve) rather than merely opening the inbox.
+        // It now rides on the Account glyph, since everything it points at
+        // lives inside that sheet.
         return (
           <span style={{ position: 'relative', display: 'inline-flex' }}>
-            <IconBell />
+            <IconUser />
             {alertsCount > 0 && (
               <span
                 aria-label={`${alertsCount} unresolved`}
@@ -655,8 +720,6 @@ export function BottomTabBar() {
             )}
           </span>
         );
-      case 'more':
-        return <IconUser />;
       default:
         return null;
     }
@@ -665,53 +728,53 @@ export function BottomTabBar() {
   return (
     <>
       <nav
-        data-chrome-slide
-        className="app-chrome"
+        data-shell-tabs
+        className="app-chrome gg-shell-chrome"
         aria-label="Primary"
         style={{
-          position: 'fixed',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          // 55 is the number the "anything floating must be z >= 60" house
-          // rule is measured against — don't raise it without updating that
-          // rule everywhere it is written down. The bar owns the full bottom
-          // edge in standalone, which is why nothing else may claim the
-          // bottom-right corner here: the Ask Boet dock is browser-only
-          // (the removed AskGgHost gated on useStandalone) and the footer's "Get the app"
-          // pill is hidden with the rest of the public footer.
-          zIndex: 55,
-          background: 'var(--bg-deep)',
-          borderTop: '0.5px solid var(--border)',
+          // ⚠️ position / bottom / z-index LIVE IN CSS NOW, not here. The bar is
+          // fixed over the document on mobile web but a plain flex sibling
+          // inside the locked shell in the installed app, and only a stylesheet
+          // can express "different in standalone" without a JS branch that
+          // would make the server HTML depend on display mode. See
+          // [data-shell-tabs] in app/globals.css. z-index stays 55, which is
+          // the number the "anything floating must be z >= 60" house rule is
+          // measured against — don't move it without updating that rule
+          // everywhere it is written down.
+          flexDirection: 'column',
+          background: 'var(--bg-card)',
+          borderTop: '1px solid var(--border)',
           // Pad below the home indicator so the tappable row sits above it.
+          // The design draws no device chrome at all, so this is ours.
           paddingBottom: 'env(safe-area-inset-bottom)',
-          // Auto-hide on downward scroll. translateY by 100% + the
-          // safe-area inset so it slides fully off-screen including
-          // the padding below the home indicator.
-          transform: hideChrome
-            ? 'translateY(calc(100% + env(safe-area-inset-bottom)))'
-            : 'translateY(0)',
-          transition: 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)',
-          willChange: 'transform',
         }}
       >
         <ul
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(5, 1fr)',
+            display: 'flex',
+            // ⚠️ flex-start, not centre. The design pins each tab to the top of
+            // the row and spaces it with its own padding-top — 9px for the four
+            // icon tabs, 4px for the raised Sell button. Centring them instead
+            // and the FAB no longer lines up with the icons beside it.
+            alignItems: 'flex-start',
             margin: 0,
             padding: 0,
             listStyle: 'none',
-            height: 60,
+            height: 62,
           }}
         >
           {tabs.map((tab) => {
             const active = tab.isActive(pathname, searchParams);
+            // Three greys, not two. Active is red; Sell's label is
+            // --text-tertiary (#7A7267); every other inactive tab is one step
+            // lighter again at --text-faint (#9C948A). The old code used
+            // --text-primary for Sell, which made the one label under a red
+            // button the darkest text in the row.
             const color = active
               ? 'var(--red)'
               : tab.prominent
-                ? 'var(--text-primary)'
-                : 'var(--text-tertiary)';
+                ? 'var(--text-tertiary)'
+                : 'var(--text-faint)';
 
             const inner = (
               <span
@@ -719,52 +782,68 @@ export function BottomTabBar() {
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 3,
-                  height: '100%',
+                  gap: tab.prominent ? 4 : 5,
+                  paddingTop: tab.prominent ? 4 : 9,
                   color,
-                  fontSize: 10.5,
-                  fontWeight: active ? 600 : 500,
-                  letterSpacing: 0.1,
+                  fontSize: 10,
+                  fontWeight: active ? 600 : 400,
                   textDecoration: 'none',
                 }}
               >
                 {tab.prominent ? (
                   <span
                     style={{
-                      width: 40,
-                      height: 40,
+                      width: 38,
+                      height: 38,
                       borderRadius: '50%',
                       background: 'var(--red)',
                       color: '#fff',
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      marginTop: -8,
-                      // Raised effect — gives the central primary action visual weight.
-                      boxShadow: '0 4px 12px rgba(200, 16, 46, 0.4)',
+                      // ⚠️ NO marginTop: -8 AND NO boxShadow HERE ANY MORE. The
+                      // design seats this button flush in the row rather than
+                      // lifting it above the border, and the shadow that was
+                      // supposed to sell the lift never rendered at all —
+                      // `* { box-shadow: none !important }` is global in
+                      // globals.css and has been for the whole rebuild. It was
+                      // a declaration that read as an intent and did nothing.
                     }}
+                    className="gg-tab-fab"
                   >
                     {renderIcon(tab.key)}
                   </span>
                 ) : (
-                  renderIcon(tab.key)
+                  <span className="gg-tab-icon" style={{ display: 'inline-flex' }}>
+                    {renderIcon(tab.key)}
+                  </span>
                 )}
                 <span>{tab.label}</span>
               </span>
             );
 
             return (
-              <li key={tab.key} style={{ height: '100%' }}>
+              <li key={tab.key} style={{ flex: 1, height: '100%' }}>
                 {tab.action ? (
                   <button
                     type="button"
                     onClick={() => {
-                      if (tab.action === 'shop') openSheet('shop');
-                      else if (tab.action === 'more') openSheet('more');
+                      if (tab.action === 'search') {
+                        // The storefront IS the search surface, so this focuses
+                        // the field the shell header already renders rather
+                        // than navigating to a second page that would run the
+                        // same query. Route there first if we are elsewhere;
+                        // the focus then lands after the header mounts.
+                        if (pathname !== '/') router.push('/');
+                        requestAnimationFrame(() => {
+                          const input = document.querySelector<HTMLInputElement>(
+                            '[data-shell-header] input',
+                          );
+                          input?.focus();
+                        });
+                      }
                     }}
                     aria-label={tab.label}
-                    aria-expanded={tab.action === 'shop' ? shopOpen : moreOpen}
                     style={{
                       width: '100%',
                       height: '100%',

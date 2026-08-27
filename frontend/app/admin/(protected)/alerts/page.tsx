@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { adminFetch, requireAdminToken } from '@/lib/admin-auth';
 import { AdminPageHeader } from '@/components/admin/page-header';
-import { useStandalone } from '@/lib/use-standalone';
 
 // Alerts inbox — the working surface for AdminAlert rows. The command
 // center counts unresolved alerts and deep-links here; before this page
@@ -212,10 +211,6 @@ export default function AdminAlertsPage() {
   const [bulkReason, setBulkReason] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkResult, setBulkResult] = useState<string | null>(null);
-
-  // The admin surface is reachable from the installed PWA, where a fixed
-  // bottom tab bar would sit on top of a sticky toolbar.
-  const isStandalone = useStandalone();
 
   const queryFor = useCallback(
     (cursor?: string) => {
@@ -749,9 +744,7 @@ export default function AdminAlertsPage() {
             <div
               style={{
                 position: 'sticky',
-                bottom: isStandalone
-                  ? 'calc(76px + env(safe-area-inset-bottom))'
-                  : 16,
+                bottom: 16,
                 marginTop: 16,
                 zIndex: 60,
                 background: 'var(--bg-card)',

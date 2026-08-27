@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { licenceCentreApi, type TokenGetter } from '@/lib/licence-centre-api';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 
 // ────────────────────────────────────────────────────────────────────
 // MAY WE KEEP YOUR DOCUMENTS?
@@ -181,16 +182,17 @@ export default function VaultConsentModal({
   const panel = useRef<HTMLDivElement>(null);
   const snoozeKey = `gg-vault-consent-later-until-${userId}`;
 
+  // Mounted only while this overlay is shown, so the lock runs for its
+  // whole life — see lib/use-scroll-lock.ts.
+  useScrollLock(true);
+
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     panel.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') dismiss();
     };
     document.addEventListener('keydown', onKey);
     return () => {
-      document.body.style.overflow = prev;
       document.removeEventListener('keydown', onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

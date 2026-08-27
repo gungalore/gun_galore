@@ -29,7 +29,7 @@ export default function GlobalError({
   return (
     <main
       style={{
-        minHeight: 'calc(100vh - 91px)',
+        minHeight: 'calc(100vh - var(--nav-h))',
         background: 'var(--bg-deep)',
         display: 'flex',
         alignItems: 'center',

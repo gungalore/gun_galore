@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Listing } from '@/lib/types';
@@ -23,6 +24,14 @@ import { SellerRating } from './seller-rating';
 export const CARD_PHOTO_ASPECT = '75%';
 
 export function ListingCard({ listing }: { listing: Listing }) {
+  // See the fade note on the <Image> below.
+  const [imgLoaded, setImgLoaded] = useState(false);
+  // Seeds the fade from the element itself. A cached image can finish loading
+  // BEFORE React attaches onLoad — without this the photo would sit at
+  // opacity 0 permanently on every second page view.
+  const imgRef = useCallback((el: HTMLImageElement | null) => {
+    if (el?.complete) setImgLoaded(true);
+  }, []);
   // Defensive: if upstream returns a partial listing without the
   // images array (e.g. raw Meilisearch hits — see the historical
   // browseViaSearch bug), fall back to an empty array so .find()
@@ -37,21 +46,28 @@ export function ListingCard({ listing }: { listing: Listing }) {
       : null;
 
   return (
-    <Link href={`/listings/${listing.id}`} className="block group">
-      <div
-        className="rounded-[6px] overflow-hidden transition-colors"
-        style={{
-          background: 'var(--bg-card)',
-          border: '0.5px solid var(--border)',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-hover)';
-          (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card-hover)';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)';
-          (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card)';
-        }}
+    // ⚠️ NOT A LINK ANY MORE. The whole card used to be one <Link>; the
+    // action row below is itself a link, and an anchor inside an anchor is
+    // invalid HTML and a screen-reader trap. The card is a container now,
+    // the photo and text are the link, and the action is its sibling.
+    <div
+      className="rounded-[6px] overflow-hidden transition-colors flex flex-col h-full"
+      style={{
+        background: 'var(--bg-card)',
+        border: '0.5px solid var(--border)',
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-hover)';
+        (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card-hover)';
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)';
+        (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card)';
+      }}
+    >
+      <Link
+        href={`/listings/${listing.id}`}
+        className="block group gg-press flex-1"
       >
         {/* Photo — 4:3.
             ⚠️ IT WAS 52.5%, AND THAT WAS TOO SHORT TO BUY FROM. The squeeze
@@ -70,6 +86,21 @@ export function ListingCard({ listing }: { listing: Listing }) {
               fill
               className="object-cover"
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              ref={imgRef}
+              onLoad={() => setImgLoaded(true)}
+              // A failed image must still reveal its alt text rather than
+              // leaving a blank box: the fade fails to "no fade", never to
+              // "no photo".
+              onError={() => setImgLoaded(true)}
+              // Fade in on load. Photos used to pop to full opacity the instant
+              // each finished downloading, so a grid filled in as a series of
+              // jolts — the most visible jank on the site. Opacity only: the
+              // 4:3 frame already reserves the box, so nothing reflows and
+              // nothing else has to move.
+              style={{
+                opacity: imgLoaded ? 1 : 0,
+                transition: 'opacity var(--dur-fast) var(--ease-out)',
+              }}
             />
           ) : (
             <div
@@ -79,17 +110,26 @@ export function ListingCard({ listing }: { listing: Listing }) {
               No photo
             </div>
           )}
-          {/* Category badge — top-left. */}
-          <span
-            className="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
-            style={{
-              background: 'rgba(0,0,0,0.72)',
-              // On the photo scrim, not the card — see --text-on-dark.
-              color: 'var(--text-on-dark-muted)',
-            }}
-          >
-            {listing.category.name}
-          </span>
+          {/* Mode badge — top-left, AUCTIONS ONLY. The pack marks the MODE
+              here, not the category: in a mixed feed "fixed price or bid?" is
+              what a browser needs answered at a glance, and the category is
+              usually the filter they arrived through. Buy Now carries no badge
+              at all, so the gold reads as the exception it is. */}
+          {listing.listingType === 'AUCTION' && (
+            <span
+              className="absolute top-2 left-2 px-[7px] py-[3px] rounded-[3px] leading-none"
+              style={{
+                background: 'var(--gold-tag-fill)',
+                color: 'var(--gold-tag-ink)',
+                fontFamily: 'var(--font-head)',
+                fontWeight: 800,
+                fontSize: '9.5px',
+                letterSpacing: '0.7px',
+              }}
+            >
+              AUCTION
+            </span>
+          )}
           {/* Condition chip — moved to bottom-left of the image (was
               top-right) to free the top-right corner for the heart
               button. Keeps the at-a-glance "Used" / "Like new" info
@@ -136,21 +176,20 @@ export function ListingCard({ listing }: { listing: Listing }) {
             their neighbours. Title drops to secondary; price sits alone in
             Archivo at 17px. */}
         <div className="p-3">
-          <p
-            className="text-[13px] leading-snug line-clamp-2"
-            style={{ color: 'var(--text-secondary)', fontWeight: 400 }}
-          >
-            {listing.title}
-          </p>
-
-          <div className="flex items-center justify-between mt-1.5">
+          <div className="flex items-center justify-between">
             <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
               <span
                 style={{
-                  color: 'var(--red)',
-                  fontWeight: 600,
+                  // Gold on auctions, ink on Buy Now — the pack's own
+                  // split, and the only thing telling the two modes apart at a
+                  // glance in a mixed feed. Every price used to be red.
+                  color:
+                    listing.listingType === 'AUCTION'
+                      ? 'var(--gold)'
+                      : 'var(--text-primary)',
+                  fontWeight: 700,
                   fontFamily: 'var(--font-head)',
-                  fontSize: 17,
+                  fontSize: 19,
                   letterSpacing: '-0.02em',
                   fontVariantNumeric: 'tabular-nums',
                 }}
@@ -185,6 +224,17 @@ export function ListingCard({ listing }: { listing: Listing }) {
               isVerifiedExpert={listing.seller.isVerifiedExpert}
             />
           </div>
+
+          {/* Title, now BELOW the price. min-height reserves two lines
+              whether the title needs them or not, so the meta and action rows
+              land on the same baseline right across a row of cards — without
+              it they jitter as titles wrap. */}
+          <p
+            className="text-[12.5px] leading-[1.35] line-clamp-2 mt-[5px]"
+            style={{ color: 'var(--text-secondary)', minHeight: 34 }}
+          >
+            {listing.title}
+          </p>
 
           {/* ⚠️ ONE SELLER LINE, NOT TWO. The tier chip used to sit on the
               price row and the rating on a row of its own beneath it — so
@@ -222,33 +272,66 @@ export function ListingCard({ listing }: { listing: Listing }) {
             </span>
           </div>
 
-          {/* Auction-specific meta — bid count + time remaining.
-              Snipe-protection extension means endTime can change, but
-              the card refreshes when the page re-fetches; we compute
-              "time remaining" relative to render and let the user click
-              into the listing for the live countdown. The chip turns
-              red when <1h so browsers can spot the urgent auctions
-              without expanding every card. */}
-          {listing.listingType === 'AUCTION' && (
-            <div
-              className="flex items-center justify-between text-xs mt-1"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
-              <span>
-                {listing.bidCount > 0
-                  ? `${listing.bidCount} bid${listing.bidCount === 1 ? '' : 's'}`
-                  : 'Starting bid'}
-              </span>
-              <AuctionTimeChip endTime={listing.endTime} />
-            </div>
-          )}
-
           <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
             {listing.province.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
           </p>
         </div>
+      </Link>
+
+      {/* Action row — pinned to the foot of the card so every one across a
+          row lands on the same baseline (the title's min-height above does
+          the other half of that job).
+
+          Both controls are LINKS to the listing's buy panel, not buttons: a
+          card has no price lock, no quantity and no auth context, so
+          anything that looked like it committed you from here would be
+          lying about what it does. */}
+      <div className="px-3 pb-3 flex items-center justify-between gap-2">
+        <Link
+          href={`/listings/${listing.id}#buy-panel`}
+          className="gg-press inline-flex items-center shrink-0"
+          style={{
+            height: 28,
+            padding: '0 13px',
+            borderRadius: 5,
+            fontFamily: 'var(--font-head)',
+            fontWeight: 700,
+            fontSize: 12,
+            textDecoration: 'none',
+            ...(listing.listingType === 'AUCTION'
+              ? {
+                  border: '1px solid var(--gold)',
+                  color: 'var(--gold)',
+                }
+              : {
+                  background: 'var(--red)',
+                  color: '#fff',
+                }),
+          }}
+        >
+          {listing.listingType === 'AUCTION' ? 'Place bid' : 'Buy now'}
+        </Link>
+
+        {/* Auctions put their live state on this side — the pack's own
+            layout. Buy Now has nothing to say here: the pack shows a "Take
+            a shot" link, but that flow exists only on TAKE_A_SHOT
+            listings, so offering it on a Buy Now card would be a promise
+            the listing page cannot keep. */}
+        {listing.listingType === 'AUCTION' && (
+          <span
+            className="flex items-center gap-1.5 text-[11px] min-w-0"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            <span className="truncate">
+              {listing.bidCount > 0
+                ? `${listing.bidCount} bid${listing.bidCount === 1 ? '' : 's'}`
+                : 'Starting bid'}
+            </span>
+            <AuctionTimeChip endTime={listing.endTime} />
+          </span>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }
 

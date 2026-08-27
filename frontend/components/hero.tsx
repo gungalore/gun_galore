@@ -89,7 +89,14 @@ export function Hero() {
             url('${av('/hero-outdoor.jpg')}') type('image/jpeg')
           );
           background-size: cover;
-          background-position: center center;
+          /* BOTTOM, not centre. Once the band is capped at the design's 330px
+             it can only show ~62% of a 3:1 plate, so which 62% is a real
+             decision. Anchoring to the bottom keeps the ridge line, the
+             two-track, the bakkie, the tent and the campfire — every subject
+             that makes this read as overlanding — and gives up only sky, which
+             is the emptiest part of the frame. Centre keeps the moon and loses
+             the camp; top is almost entirely sky. */
+          background-position: center bottom;
           background-repeat: no-repeat;
           /* No brightness filter. The previous plate carried brightness(0.95)
              to keep white type crisp over a lit sky; this one is a night
@@ -119,12 +126,20 @@ export function Hero() {
             background-position: 80% center;
           }
           .hero-overlay {
-            /* The copy sits BELOW the picture on phones, so this only has to
-               blend the foot of the photograph into the panel behind it. The
-               end stop is the section background exactly, so there is no
-               seam between plate and copy. */
+            /* ⚠️ THE COPY IS OVER THE PICTURE ON PHONES NOW, NOT UNDER IT.
+               It used to sit below, on the section's dark panel, and this
+               gradient only had to blend the foot of the plate into that
+               panel. Stacked that way the hero cost a 390px phone the picture
+               PLUS the full height of the copy — around 1250px, so the
+               storefront itself never appeared on the first screen. The mobile
+               board draws one 260px band with the words on the photograph.
+
+               This wash is therefore doing contrast work, not blending: dark
+               at the top so the eyebrow reads, lightest across the middle
+               where the ridges are, dark again at the foot under the
+               sub-heading. */
             background:
-              linear-gradient(180deg, rgba(18,18,17,0) 45%, rgba(18,18,17,0.55) 80%, #121211 100%);
+              linear-gradient(180deg, rgba(10,10,10,0.55) 0%, rgba(10,10,10,0.30) 45%, rgba(10,10,10,0.62) 100%);
           }
         }
 
@@ -140,7 +155,66 @@ export function Hero() {
           aspect-ratio: 2172 / 724;
         }
         @media (max-width: 767.98px) {
-          .hero-frame { aspect-ratio: 4 / 3; }
+          /* A FIXED BAND, like the desktop rule below, not a ratio.
+             4/3 on a 390px phone is 293px of picture BEFORE the copy that sits
+             under it, which pushed the storefront itself off the first screen
+             entirely -- on the mobile boards the hero is 260px and the two shop
+             tiles are visible without scrolling. aspect-ratio has to be cleared
+             explicitly or it keeps fighting the height. */
+          .hero-frame {
+            aspect-ratio: auto;
+            height: 260px;
+            max-height: none;
+          }
+
+          /* Overlay the copy, the same way the desktop rule below does — the
+             section is the positioning context and the content covers the
+             frame. */
+          .hero-section { position: relative; }
+          .hero-content {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            padding-top: 0;
+            padding-bottom: 0;
+            gap: 11px;
+          }
+
+          /* The board's type ramp for this band. The Tailwind classes on these
+             elements are mobile-first and set 36px/16px, which was sized for
+             copy on its own panel; over a 260px photograph it has to come
+             down or there is no photograph left. */
+          .hero-reveal-1 {
+            font-size: 10.5px;
+            letter-spacing: 2px;
+          }
+          .hero-reveal-2 {
+            font-size: 27px;
+            line-height: 1.15;
+            letter-spacing: -0.6px;
+            /* text-shadow, NOT box-shadow. The global box-shadow:none
+               !important rule in globals.css kills every box-shadow on the
+               site, but it does not touch text-shadow — and white type over a
+               moonlit ridge needs the separation.
+               (No backticks in this block: it lives inside a JSX template
+               literal and a backtick ends the string. See the warning at the
+               top of the style tag.) */
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+          }
+          .hero-reveal-3 {
+            font-size: 13.5px;
+            line-height: 1.55;
+          }
+
+          /* ⚠️ NO CTA BUTTON ON PHONES. The board does not draw one, and there
+             is no room for a 46px button inside a 260px band that already
+             carries three lines of copy. It is not a lost action: the Buy Now
+             and Auctions tiles sit immediately below the hero and are the
+             storefront's real entry points, which is exactly the arrangement
+             the board shows. */
+          .hero-cta {
+            display: none;
+          }
         }
         @media (min-width: 768px) {
           .hero-section { position: relative; }
@@ -149,9 +223,33 @@ export function Hero() {
             inset: 0;
             z-index: 1;
           }
-          /* Guards against an absurd band on an ultrawide monitor; the plate
-             fills the cap from the centre, losing only the outer edges. */
-          .hero-frame { max-height: 88vh; }
+          /* A FIXED BAND, not a ratio. Deriving height from the plate's own
+             3:1 meant the hero grew with the window — 706px on a wide desktop,
+             filling the fold and pushing the entire storefront below it. The
+             design is a 330px band and it stays 330px at every desktop width;
+             background-size: cover crops the rest. aspect-ratio has to be
+             cleared explicitly or it keeps fighting the height. */
+          .hero-frame {
+            aspect-ratio: auto;
+            height: 330px;
+            max-height: none;
+          }
+        }
+
+        /* The primary landing CTA carried a transition-colors class for months
+           with nothing to transition TO — no hover, focus or active rule
+           existed anywhere, so it was decoration on an inert button. Colour
+           only, and gated so it never fires from a touch (a sticky hover after
+           a tap is worse than no hover). The press comes from .gg-press.
+
+           ⚠️ NO BACKTICKS IN THIS BLOCK. It lives inside a JSX template
+           literal, so a backtick here ends the string and takes the whole
+           component out with it. */
+        @media (hover: hover) and (pointer: fine) {
+          .hero-cta {
+            transition: background-color var(--dur-fast) var(--ease-standard);
+          }
+          .hero-cta:hover { background: var(--red-hover) !important; }
         }
 
         .hero-reveal { opacity: 1; transform: translateX(0); }
@@ -177,15 +275,20 @@ export function Hero() {
           it sits over the photograph; on mobile it sits on the section's dark
           panel. Do not reach for --text-primary/--text-secondary here — those
           track the PAGE theme, which is light, and would vanish. */}
-      <div className="hero-content relative max-w-[var(--page-max)] mx-auto px-4 sm:px-6 py-10 sm:py-14 flex flex-col justify-center">
-        <div className="max-w-[600px]">
+      <div className="hero-content relative max-w-[var(--page-max)] mx-auto px-4 sm:px-6 py-10 md:py-0 flex flex-col justify-center">
+        {/* The design's copy column: 700px wide, 40px of inset, and a single
+            15px gap doing ALL the vertical rhythm — the four children used to
+            carry their own mb-4/mb-5/mb-8, which is what made the block ~312px
+            tall and impossible to centre in a 330px band. md:py-0 above lets
+            justify-center do the centring instead of padding. */}
+        <div className="max-w-[600px] md:max-w-[700px] md:px-10 flex flex-col gap-4 md:gap-[15px]">
           {/* Eyebrow. Warm-white rather than var(--red): the brand red is
               dark enough that it cannot reach 4.5:1 at this size against the
               plate without becoming a pink that isn't the brand. Red stays
               where it still has the contrast to carry — "outdoor gear" at
               display size, and the CTA. */}
           <p
-            className="hero-reveal hero-reveal-1 text-xs uppercase mb-4"
+            className="hero-reveal hero-reveal-1 text-xs md:text-[11px] uppercase"
             style={{
               color: 'rgba(255, 250, 245, 0.85)',
               letterSpacing: '0.18em',
@@ -200,8 +303,12 @@ export function Hero() {
               lines at every viewport, and a nowrap guard stops "trip."
               orphaning. text-shadow keeps a crisp edge wherever the plate
               crops behind it. */}
+          {/* 44px at md+, not 54px. The old lg:text-[3.4rem] was sized for a
+              706px hero; in a 330px band two lines of it plus the eyebrow,
+              subhead and CTA simply do not fit. 44/1.1 is the design's own
+              figure and it is what makes the band work. */}
           <h1
-            className="hero-reveal hero-reveal-2 text-4xl sm:text-5xl lg:text-[3.4rem] leading-[1.12] mb-5"
+            className="hero-reveal hero-reveal-2 text-4xl sm:text-5xl md:text-[44px] leading-[1.12] md:leading-[1.1]"
             style={{
               color: 'var(--text-on-dark)',
               fontWeight: 500,
@@ -217,7 +324,7 @@ export function Hero() {
           </h1>
 
           <p
-            className="hero-reveal hero-reveal-3 text-base sm:text-lg leading-relaxed mb-8 max-w-[520px]"
+            className="hero-reveal hero-reveal-3 text-base sm:text-lg md:text-[15.5px] leading-relaxed md:leading-[1.6] max-w-[520px]"
             style={{
               color: 'rgba(245, 245, 245, 0.88)',
               textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
@@ -234,16 +341,21 @@ export function Hero() {
               recruitment pitch (operator, 2026-08-16). Selling now lives in
               the nav and in the disclosure panel further down. One button,
               buyer-facing, is also simply the cleaner composition. */}
+          {/* self-start matters: the parent is now a flex COLUMN, so a child
+              would stretch to full width and the button would run the length
+              of the copy block. inline-flex alone does not prevent that —
+              flex items stretch on the cross axis by default. */}
           <Link
             href="/?listingType=BUY_NOW"
-            className="hero-reveal hero-reveal-4 inline-flex items-center justify-center px-8 text-sm transition-colors"
+            className="hero-cta gg-press hero-reveal hero-reveal-4 self-start inline-flex items-center justify-center text-sm"
             style={{
               background: 'var(--red)',
               color: '#fff',
               fontWeight: 600,
               textDecoration: 'none',
-              minHeight: 50,
-              borderRadius: 'var(--r-md)',
+              height: 46,
+              padding: '0 32px',
+              borderRadius: 'var(--r-sm)',
               letterSpacing: '0.01em',
             }}
           >
