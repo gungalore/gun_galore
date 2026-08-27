@@ -15,7 +15,6 @@ import {
   emptyManualAddress,
   type ManualAddressValue,
 } from '@/components/manual-address-fields';
-import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { StepAccordion, type StepStatus } from '@/components/step-accordion';
 import { HelpTip } from '@/components/help-tip';
@@ -739,12 +738,6 @@ export default function EditProfilePage() {
           swap the imageSrc per route. */}
       {/* setting.jpg is a dark wrenches scene — high opacity + low tint
           so the photo reads through against the page's #0f0f0f surface. */}
-      <PageBackground
-        imageSrc="/setting.jpg"
-        opacity={0.5}
-        tint={0.12}
-        vignette={0.7}
-      />
 
       {/* Page header — sits OUTSIDE PageReveal so it renders at full
           opacity immediately. Only the body cards animate. */}

@@ -120,6 +120,7 @@ export const PUBLIC_LISTING_SELECT = {
   endedAt: true,
   // Legacy fee flag — checkout reads it to render the (locked-off) fee line.
   passFeeToBuyer: true,
+  acceptsOffers: true,
   shippingMethods: true,
   // Planned dealer-stock hint — intentionally shown to buyers on the PDP.
   plannedDealerLocation: true,
@@ -1600,6 +1601,8 @@ export class ListingsService {
         licenceHolderName: firearmLicenceHolderName,
         licenceExpiresAt: firearmLicenceExpiresAt,
         passFeeToBuyer: dto.passFeeToBuyer,
+        // Undefined leaves the schema default (true) in place.
+        acceptsOffers: dto.acceptsOffers,
         autoAcceptThreshold: dto.autoAcceptThreshold,
         autoDeclineThreshold: dto.autoDeclineThreshold,
         declaredValueCents: dto.declaredValueCents ?? null,
@@ -3289,6 +3292,8 @@ export class ListingsService {
     id: string;
     listingType: ListingType;
     bidCount: number;
+    // The offer edit-lock reads this; callers pass the full listing row.
+    acceptsOffers: boolean;
   }): Promise<void> {
     if (listing.listingType === ListingType.AUCTION && listing.bidCount > 0) {
       throw new ConflictException({
@@ -3299,7 +3304,12 @@ export class ListingsService {
         listingId: listing.id,
       });
     }
-    if (listing.listingType === ListingType.TAKE_A_SHOT) {
+    // ⚠️ KEYED ON THE OFFER FLAG, NOT THE OLD LISTING TYPE. This lock exists
+    // because editing a listing out from under a live offer changes what the
+    // buyer offered on. That is now possible on ANY listing, since Buy Now and
+    // Auction listings take offers too — so checking the type would have left
+    // every one of them editable mid-offer.
+    if (listing.acceptsOffers) {
       const activeOffer = await this.prisma.offer.findFirst({
         where: {
           listingId: listing.id,
@@ -3329,7 +3339,14 @@ export class ListingsService {
   }> {
     const listing = await this.prisma.listing.findUnique({
       where: { id: listingId },
-      select: { id: true, listingType: true, status: true, bidCount: true },
+      select: {
+        id: true,
+        listingType: true,
+        status: true,
+        bidCount: true,
+        // Read by the offer edit-lock below.
+        acceptsOffers: true,
+      },
     });
     if (!listing) {
       return { canEdit: false, reason: 'Listing not found', code: 'not-found' };
@@ -3354,7 +3371,12 @@ export class ListingsService {
         code: 'listing-locked-by-bids',
       };
     }
-    if (listing.listingType === ListingType.TAKE_A_SHOT) {
+    // ⚠️ KEYED ON THE OFFER FLAG, NOT THE OLD LISTING TYPE. This lock exists
+    // because editing a listing out from under a live offer changes what the
+    // buyer offered on. That is now possible on ANY listing, since Buy Now and
+    // Auction listings take offers too — so checking the type would have left
+    // every one of them editable mid-offer.
+    if (listing.acceptsOffers) {
       const activeOffer = await this.prisma.offer.findFirst({
         where: {
           listingId: listing.id,

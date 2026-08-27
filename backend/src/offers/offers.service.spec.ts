@@ -100,16 +100,21 @@ function makeMocks() {
   return { service, prisma, notifications, contactFilter, spies };
 }
 
+// A listing that takes offers. It used to be defined by its TYPE — offers only
+// existed on TAKE_A_SHOT — and is now defined by the flag, which is what the
+// submit() guard actually reads. The type is left as TAKE_A_SHOT so the legacy
+// path stays covered; acceptsOffers is what makes these cases valid.
 function tasListing(overrides: Record<string, unknown> = {}) {
   return {
     id: 'L1',
     sellerId: 'S1',
     status: 'ACTIVE',
     listingType: 'TAKE_A_SHOT',
+    acceptsOffers: true,
     title: 'Test item',
     autoAcceptThreshold: null,
     autoDeclineThreshold: null,
-    seller: { clerkId: 'seller-clerk', email: 's@x.co' },
+    seller: { clerkId: 'seller-clerk', email: 's@x.co', notifyOffersEnabled: true },
     ...overrides,
   };
 }
@@ -155,17 +160,17 @@ describe('submit — gates', () => {
     ).rejects.toThrow(/already accepted another offer/);
   });
 
-  it('enforces the 5-attempt cap per listing', async () => {
+  it('allows one offer per buyer per listing, and refuses the second', async () => {
     const { service, prisma } = makeMocks();
     prisma.listing.findUnique.mockResolvedValue(tasListing());
     prisma.offer.findUnique.mockResolvedValue({
       id: 'O1',
       status: 'REJECTED',
-      attemptCount: 5,
+      attemptCount: 1,
     });
     await expect(
       service.submit('clerk-b', { listingId: 'L1', offerAmount: 10_000 }),
-    ).rejects.toThrow(/limit of 5 offers/);
+    ).rejects.toThrow(/already made your offer/);
   });
 });
 
@@ -223,26 +228,27 @@ describe('submit — resolution', () => {
     expect(res.autoAccepted).toBe(false);
   });
 
-  it('re-offer after a close UPDATES the same row (audit identity), clears the old counter, bumps attemptCount', async () => {
+  // ⚠️ THIS TEST WAS INVERTED, NOT DELETED. It used to assert that a buyer
+  // whose offer had been closed could open a FRESH ROUND on the same row —
+  // correct under the old five-attempt allowance, and impossible under "one
+  // chance to make a reasonable offer" (operator, 2026-08-27). The re-offer
+  // path still exists in the service for the general case, so this now guards
+  // the rule from the other side: a closed offer must not become a new one,
+  // and nothing may be written when it is refused.
+  it('refuses a second offer after the first was closed, and writes nothing', async () => {
     const { service, prisma } = makeMocks();
     prisma.listing.findUnique.mockResolvedValue(tasListing());
     prisma.offer.findUnique.mockResolvedValue({
       id: 'O1',
       status: 'REJECTED',
-      attemptCount: 2,
+      attemptCount: 1,
     });
-    await service.submit('clerk-b', { listingId: 'L1', offerAmount: 12_000 });
-    expect(prisma.offer.delete).not.toHaveBeenCalled();
+    await expect(
+      service.submit('clerk-b', { listingId: 'L1', offerAmount: 12_000 }),
+    ).rejects.toThrow(/already made your offer/);
+    expect(prisma.offer.update).not.toHaveBeenCalled();
     expect(prisma.offer.create).not.toHaveBeenCalled();
-    const upd = prisma.offer.update.mock.calls[0][0];
-    expect(upd.where).toEqual({ id: 'O1' });
-    expect(upd.data).toMatchObject({
-      offerAmount: 12_000,
-      counterAmount: null,
-      sellerNote: null,
-      status: OfferStatus.PENDING,
-      attemptCount: { increment: 1 },
-    });
+    expect(prisma.offer.delete).not.toHaveBeenCalled();
   });
 });
 

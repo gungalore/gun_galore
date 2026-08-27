@@ -12,8 +12,8 @@ import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
 import { PhotoDropzone } from '@/components/photo-dropzone';
 import { StepAccordion, StepStatus } from '@/components/step-accordion';
 import { useShellStep } from '@/components/shell/shell-step';
+import { StepRail } from '@/components/step-rail';
 import IdentifyFromPhotos from './identify-from-photos';
-import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import {
   AddressAutocomplete,
@@ -82,9 +82,11 @@ const VAT_MULTIPLIER = 1.15;
 // through a dealer never gets one).
 const SHIPPING_HANDLING_FEE_CENTS = 1_500; // R15
 
-// The three ways to list — rendered as descriptive choice cards in Step 3
-// so sellers can compare and know where to list before picking. Copy mirrors
-// the /how-selling-works help page.
+// The two ways to list — rendered as descriptive choice cards in Step 3
+// so sellers can compare and know where to list before picking. Take a
+// Shot is no longer a mode of its own (operator decision 2026-08-27): it's
+// now the "Also accept offers" toggle available on either mode below, not
+// a third card here. Copy mirrors the /how-selling-works help page.
 const SELL_MODES: {
   value: 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT';
   name: string;
@@ -102,12 +104,6 @@ const SELL_MODES: {
     name: 'Auction',
     tagline: 'Let buyers compete and bid it up.',
     bestFor: ['Rare or in-demand', 'Unsure how high it’ll go', 'Hidden reserve protects you'],
-  },
-  {
-    value: 'TAKE_A_SHOT',
-    name: 'Take a Shot',
-    tagline: 'Buyers make offers; you decide.',
-    bestFor: ['Hard to price', 'Open to offers', 'Optional instant auto-accept'],
   },
 ];
 
@@ -230,10 +226,21 @@ function normaliseAttrValues(
 
 // ─────────────────────────── Shared styles ───────────────────────────
 
+// ⚠️ WHITE, NOT INSET GREY — and this one constant is most of why the page
+// used to look nothing like the design. Every field on the form reads from
+// here, so a --bg-inset background made the whole thing a column of sunken grey
+// wells. The board draws white card fields on the page ground, with a real 1px
+// border doing the work the fill used to. Operator ruled for the board,
+// 2026-08-27 ("a day and night difference. I prefer the board").
+//
+// 1px, not 0.5px: globals.css already argues this at length under --hairline —
+// a half-pixel border is a Retina affectation that loses the edge entirely on
+// the screens most sellers use, which is exactly what a form field cannot
+// afford.
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  background: 'var(--bg-inset)',
-  border: '0.5px solid var(--border)',
+  background: 'var(--bg-card)',
+  border: '1px solid var(--border-hover)',
   color: 'var(--text-primary)',
   borderRadius: '6px',
   padding: '10px 12px',
@@ -673,6 +680,12 @@ export default function NewListingPage() {
     // off mid-form blanks the price so a stale value can't leak through.
     offerBuyNow: false,
     buyNowPrice: '',
+    // Take a Shot, promoted from a third mode to an "Also accept offers"
+    // toggle on Buy Now + Auction (operator decision 2026-08-27). Defaults
+    // ON to match the backend's Listing.acceptsOffers default — a seller
+    // who never opens Step 3's toggle still gets the same behaviour as one
+    // who explicitly ticked it.
+    acceptsOffers: true,
   });
 
   // Furthest step the seller has explicitly advanced to via the Continue
@@ -741,7 +754,10 @@ export default function NewListingPage() {
   const typeSeedRef = useRef(false);
   useEffect(() => {
     if (typeSeedRef.current || !typeParam || relistFromId) return;
-    const allowed = ['BUY_NOW', 'AUCTION', 'TAKE_A_SHOT'] as const;
+    // TAKE_A_SHOT excluded — it's no longer a pickable mode, so a stale
+    // ?type=TAKE_A_SHOT link now falls through as unknown (below) instead
+    // of pre-selecting a card the Step-3 picker no longer offers.
+    const allowed = ['BUY_NOW', 'AUCTION'] as const;
     const match = allowed.find((t) => t === typeParam.toUpperCase());
     if (!match) return;
     typeSeedRef.current = true;
@@ -1782,6 +1798,36 @@ export default function NewListingPage() {
   // step is open at a time (classic accordion). Defaults to step 1.
   // Filling out a step does NOT change this — only a Continue click or a
   // user header click does.
+  // Values the "How it will look" preview reads. The price is the BUYER-FACING
+  // one — listPriceFromSellerAsk is the same mirror of the fee calculator the
+  // rest of the form uses, so the preview can never disagree with the fee
+  // breakdown shown a few fields above it.
+  const previewPriceCents = useMemo(() => {
+    const typed = Number(form.price);
+    if (!Number.isFinite(typed) || typed <= 0) return 0;
+    const askCents = Math.round(typed * 100);
+    return form.listingType === 'BUY_NOW'
+      ? listPriceFromSellerAsk(askCents).listPrice
+      : askCents;
+  }, [form.price, form.listingType]);
+
+  // ⚠️ REVOKED ON CHANGE. images is File[], so the preview needs an object URL,
+  // and every one of those pins its blob in memory until it is revoked. A
+  // seller reordering or re-picking photos would otherwise leak one blob per
+  // change for the life of the page — and this form is one people sit on for a
+  // long time with several large photos.
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const first = images[0];
+    if (!first) {
+      setPreviewImageUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(first);
+    setPreviewImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [images]);
+
   const [expandedStep, setExpandedStep] = useState<1 | 2 | 3 | 4 | null>(1);
   const isOpen = (n: number) => expandedStep === n;
 
@@ -2028,6 +2074,11 @@ export default function NewListingPage() {
       condition: form.condition,
       province,
       passFeeToBuyer: form.passFeeToBuyer,
+      // Whether buyers may send offers against this listing — the "Also
+      // accept offers" toggle in Step 3. Sent for every mode; a TAKE_A_SHOT
+      // listing (relisted from before this change) already accepts offers
+      // by definition, so the flag is harmless there too.
+      acceptsOffers: form.acceptsOffers,
       // De-dupe defensively so a stale state can't ever send the API a
       // duplicate (which would fail @ArrayMaxSize(2) on the DTO).
       shippingMethods: Array.from(new Set(shippingMethods)),
@@ -2588,10 +2639,26 @@ export default function NewListingPage() {
     <main
       className="relative max-w-[var(--page-max)] mx-auto px-4 py-8 sm:py-12"
     >
-      {/* SA banknotes scenery behind the form, with a black vignette +
-          dark tint so it stays "felt, not seen". File lives at
-          public/sell-bg.jpeg. */}
-      <PageBackground imageSrc="/sell-bg.jpg" opacity={0.36} />
+      {/* The house step rail. Desktop only — below md the shell header shows
+          the compact "Photos · Step 1 of 4" row instead, published by the
+          useShellStep call above. Tapping a step opens it, but only steps the
+          seller has already reached are offered: a link to a step they have
+          not got to is a link to an empty form. */}
+      <StepRail
+        steps={SELL_STEP_LABELS.map((label, i) => ({
+          label,
+          complete: [
+            stepComplete.step1,
+            stepComplete.step2,
+            stepComplete.step3,
+            stepComplete.step4,
+          ][i],
+        }))}
+        current={expandedStep ?? activeStep}
+        mobile="shell"
+        onJump={(n) => setExpandedStep(n as 1 | 2 | 3 | 4)}
+        className="-mx-4 mb-8"
+      />
 
       <PageReveal variant="slide-up">
       {/* Page header */}
@@ -3188,7 +3255,7 @@ export default function NewListingPage() {
             <Field
               label="Listing type"
               required
-              tipTitle="Three ways to sell"
+              tipTitle="Two ways to sell"
               tip={
                 <>
                   <strong>Marketplace:</strong> fixed price, buyer hits Buy
@@ -3196,9 +3263,10 @@ export default function NewListingPage() {
                   <strong>Auction:</strong> timed bidding with snipe
                   protection. Best for items where value is uncertain.
                   <br />
-                  <strong>Take a Shot:</strong> buyers send offers; you
-                  accept, decline, or counter once. Good when you&apos;re
-                  open to negotiation.
+                  <br />
+                  Either way, you can also let buyers send offers below
+                  the price — see &ldquo;Also accept offers&rdquo; below
+                  once you&apos;ve picked a type.
                   <br />
                   <br />
                   Whichever you pick is locked once the listing publishes —
@@ -3752,6 +3820,49 @@ export default function NewListingPage() {
               </>
             )}
 
+            {/* Also accept offers — Take a Shot, promoted from a third mode
+                to an option on both of the remaining ones (operator decision
+                2026-08-27). Sets acceptsOffers, which the backend now gates
+                the offer flow on (`if (!listing.acceptsOffers)`) instead of
+                requiring listingType === 'TAKE_A_SHOT'. Everything the offer
+                actually DOES once made — OfferPanel, reject reasons +
+                strikes, the 48-hour clock, counter-offers, the SMS decision
+                link — is unchanged; this only decides whether the listing is
+                reachable from an offer at all. Defaults ON to match the
+                backend default, so unticking is a deliberate opt-out. */}
+            {(form.listingType === 'BUY_NOW' ||
+              form.listingType === 'AUCTION') && (
+              <div className="mt-1">
+                <label
+                  className="flex items-start gap-2 cursor-pointer"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.acceptsOffers}
+                    onChange={(e) => set('acceptsOffers', e.target.checked)}
+                    style={{
+                      accentColor: 'var(--red)',
+                      marginTop: 3,
+                    }}
+                  />
+                  <span className="text-sm">
+                    Also accept offers
+                    <span
+                      className="block text-xs mt-0.5"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      Buyers can send an offer below the listed price
+                      (which already includes our fees, so the offer is
+                      against that price). You get 48 hours to accept,
+                      decline, or counter each one — nothing sells until
+                      you respond.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+
             {/* Take a Shot extras */}
             {form.listingType === 'TAKE_A_SHOT' && (
               <>
@@ -3803,10 +3914,10 @@ export default function NewListingPage() {
                   <>
                     The lowball filter. Offers at or below this number
                     are declined automatically without notifying you,
-                    so time-wasters never reach your inbox. Buyers are
-                    limited to 5 offers per listing, so they can&apos;t
-                    fish for the threshold either. Must be below the
-                    auto-accept threshold if you set both.
+                    so time-wasters never reach your inbox. Each buyer
+                    gets one offer on a listing, so nobody can fish for
+                    the threshold either. Must be below the auto-accept
+                    threshold if you set both.
                   </>
                 }
               >
@@ -4587,6 +4698,100 @@ export default function NewListingPage() {
               border: '0.5px solid var(--border)',
             }}
           >
+            {/* How it will look — the board's live preview. Renders from the
+                moment there is a title, so it appears while the seller is
+                still typing rather than as a reward at the end. */}
+            {form.title.trim().length > 0 && (
+              <div>
+                <p
+                  className="text-xs uppercase mb-3"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    letterSpacing: '0.1em',
+                  }}
+                >
+                  How it will look
+                </p>
+                <div
+                  className="rounded-[6px] overflow-hidden"
+                  style={{ border: '1px solid var(--border)' }}
+                >
+                  <div
+                    style={{
+                      height: 118,
+                      background: 'var(--bg-inset)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {previewImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={previewImageUrl}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <span
+                        className="text-xs"
+                        style={{ color: 'var(--text-faint)' }}
+                      >
+                        Your first photo goes here
+                      </span>
+                    )}
+                  </div>
+                  <div className="px-3 py-3 space-y-1">
+                    <div
+                      style={{
+                        fontFamily: 'var(--font-display), Archivo, sans-serif',
+                        fontWeight: 700,
+                        fontSize: 17,
+                        color:
+                          form.listingType === 'AUCTION'
+                            ? 'var(--gold)'
+                            : 'var(--text-primary)',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {previewPriceCents > 0
+                        ? formatRand(previewPriceCents)
+                        : '—'}
+                    </div>
+                    <div
+                      className="text-sm"
+                      style={{
+                        color: 'var(--text-secondary)',
+                        lineHeight: 1.35,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {form.title}
+                    </div>
+                    {(form.condition || form.province) && (
+                      <div className="text-xs" style={{ color: 'var(--text-faint)' }}>
+                        {[form.condition, form.province]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <p
+                  className="text-xs mt-2"
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+                >
+                  {form.listingType === 'AUCTION'
+                    ? 'Bidding opens here. Our fees come off what the item sells for — you never pay to list.'
+                    : 'This is what buyers pay. Our fees are already inside it, so nothing is added at their checkout and nothing comes off your side.'}
+                </p>
+              </div>
+            )}
+
             <div>
               <p
                 className="text-xs uppercase mb-3"

@@ -7,7 +7,6 @@ import { FilterBar } from '@/components/filter-bar';
 import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
 import { ShopModeTiles } from '@/components/shop-mode-tiles';
-import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { HomeInfoPanel } from '@/components/home-info-panel';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
@@ -261,26 +260,15 @@ export default async function HomePage({
 
   return (
     <main className="relative">
-      {/* Per-surface scenery. Same PageBackground component the Sell
-          page uses — each photo gets the dark tint + radial vignette
-          so the listing cards stay primary. */}
-      {/* Buy Now runs LIGHTER than the house default (0.18 / tint 0.55 /
-          vignette 0.85). marketplace.jpg is operator brand art — a gear
-          flat-lay shot with a deliberately empty centre for the cards to sit
-          in — and at the house settings it rendered as very nearly solid
-          black. The old plate was a stock handgun photo that wanted burying;
-          this one is meant to be seen. Only this surface is lifted: Auctions,
-          Take a Shot, Sell, dashboard and profile keep the defaults, since
-          those are stock photos with no dead centre to sit content in. */}
-      {isMarketplace && (
-        <PageBackground imageSrc="/marketplace.jpg" />
-      )}
-      {isAuction && (
-        <PageBackground imageSrc="/auction.jpg" />
-      )}
-      {isTakeAShot && (
-        <PageBackground imageSrc="/take-a-shot.jpg" />
-      )}
+      {/* ⚠️ THE PER-SURFACE SCENERY IS GONE, SITE-WIDE AND ON PURPOSE.
+          Each shopping surface used to drop its own photograph behind the
+          grid — marketplace.jpg here, auction.jpg, take-a-shot.jpg — under a
+          dark tint and a radial vignette. Operator, 2026-08-27: "remove all
+          the backgrounds, white background only on the whole website."
+
+          It is a universal rule, not a per-page tweak, so the component went
+          with it rather than being switched off page by page. Do not
+          reintroduce a background image on any surface. */}
 
       {/* Hero now carries the trust card on its right, so the competitive
           "why All Outdoor" proof lives inside <Hero /> — no separate banner. */}

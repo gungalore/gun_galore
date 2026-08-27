@@ -11,19 +11,19 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 // The buyer MAY re-offer afterwards (offers.service.ts re-uses the same row on
 // REJECTED/WITHDRAWN/EXPIRED) but each fresh round increments attemptCount
 // against the 5-offer cap for that listing — so the honest warning is "you can
-// re-offer, but attempts are limited", not "you can never offer again".
+// this is final", because with a one-offer cap it genuinely is.
 // The seller side of this exact flow already confirms before closing an offer;
 // one mis-tap on mobile shouldn't quietly kill a live negotiation.
 const CONFIRM_COPY = {
   reject: {
     title: 'Decline this counter?',
-    body: "Declining ends this negotiation — the seller's counter closes for good and they're told you passed. You can make a fresh offer on this listing afterwards, but each listing allows only 5 offers in total.",
+    body: "Declining ends this negotiation for good — the seller's counter closes and they're told you passed. You get one offer per listing, so you cannot start again on this one.",
     cta: 'Yes, decline',
     keep: 'Keep negotiating',
   },
   withdraw: {
     title: 'Withdraw your offer?',
-    body: 'The seller is told you pulled out and this offer closes immediately. You can offer on this listing again later, but each listing allows only 5 offers in total.',
+    body: 'The seller is told you pulled out and this offer closes immediately. You get one offer per listing, so this is your only one — you cannot offer on it again.',
     cta: 'Yes, withdraw',
     keep: 'Keep my offer',
   },

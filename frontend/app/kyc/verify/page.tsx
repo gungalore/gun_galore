@@ -15,6 +15,8 @@ import { processImage } from '@/lib/process-image';
 import DateField from '@/components/date-field';
 import { shiftYears, toIso, todayYmd } from '@/lib/date-picker-model';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
+import { StepRail, type StepRailStep } from '@/components/step-rail';
+import { useShellStep } from '@/components/shell/shell-step';
 
 // TWO FLOWS live on this page, branched by GET /kyc/status → `flow`:
 //
@@ -681,96 +683,46 @@ function VerifyKycPageInner() {
     );
   }
 
-  // Step indicator pill bar — items depend on the active flow.
-  function StepBar() {
-    const items: { key: Step; label: string }[] =
-      flow === 'CLAUDE'
-        ? [
-            { key: 'consent', label: 'Consent' },
-            { key: 'details', label: 'Details' },
-            { key: 'document', label: 'ID document' },
-            { key: 'selfie', label: 'Selfie' },
-          ]
-        : [
-            { key: 'consent', label: 'Consent' },
-            { key: 'id', label: 'ID Verify' },
-            { key: 'selfie', label: 'Face Match' },
-          ];
-    const order: Step[] = items.map((i) => i.key);
-    const currentIdx = order.indexOf(step);
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginBottom: 24,
-          justifyContent: 'center',
-          // Wrap the ROW instead of letting individual labels wrap. Four
-          // steps do not fit across a narrow phone, and without this
-          // "ID document" broke onto a second line inside its own segment,
-          // pushing that segment taller than the connector beside it — which
-          // read as the text overlapping the box.
-          flexWrap: 'wrap',
-          rowGap: 10,
-        }}
-      >
-        {items.map((s, i) => {
-          const sIdx = order.indexOf(s.key);
-          const done = currentIdx > sIdx || step === 'success';
-          const active = currentIdx === sIdx;
-          return (
-            <div
-              key={s.key}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                flexShrink: 0,
-              }}
-            >
-              <div
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: '50%',
-                  background: done || active ? 'var(--red)' : 'var(--bg-inset)',
-                  border: '0.5px solid var(--border)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 10,
-                  color: '#fff',
-                  fontWeight: 500,
-                }}
-              >
-                {done ? '✓' : i + 1}
-              </div>
-              <span
-                style={{
-                  fontSize: 11,
-                  color: active ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {s.label}
-              </span>
-              {i < items.length - 1 && (
-                <div
-                  style={{
-                    width: 24,
-                    height: '0.5px',
-                    background: 'var(--border)',
-                    flexShrink: 0,
-                  }}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
+  // The house step rail (components/step-rail.tsx) — one system, every
+  // multi-step flow, replacing what used to be a bespoke pill bar here.
+  // Items depend on the active flow, same as the pill bar before it.
+  //
+  // ⚠️ HIDDEN ON CONSENT (index 0) AND ON THE LOADING/REVIEW/SUCCESS/FAILED
+  // SCREENS, none of which appear in `kycStepItems` — matching the old pill
+  // bar, which was never rendered on those screens either.
+  const kycStepItems: { key: Step; label: string }[] =
+    flow === 'CLAUDE'
+      ? [
+          { key: 'consent', label: 'Consent' },
+          { key: 'details', label: 'Details' },
+          { key: 'document', label: 'ID document' },
+          { key: 'selfie', label: 'Selfie' },
+        ]
+      : [
+          { key: 'consent', label: 'Consent' },
+          { key: 'id', label: 'ID Verify' },
+          { key: 'selfie', label: 'Face Match' },
+        ];
+  const kycStepOrder: Step[] = kycStepItems.map((i) => i.key);
+  const kycStepIdx = kycStepOrder.indexOf(step);
+  const kycStepVisible = kycStepIdx > 0;
+  const kycRailSteps: StepRailStep[] = kycStepItems.map((it, i) => ({
+    label: it.label,
+    complete: kycStepIdx > i,
+  }));
+
+  // Mobile counterpart of the rail below — the compact "Details · Step 2 of
+  // 4" row the shell header shows under 768px. Gated identically to the
+  // rail so the two are never both visible and never both hidden.
+  useShellStep(
+    kycStepVisible
+      ? {
+          label: kycStepItems[kycStepIdx].label,
+          current: kycStepIdx + 1,
+          total: kycStepItems.length,
+        }
+      : null,
+  );
 
   return (
     <main
@@ -911,6 +863,14 @@ function VerifyKycPageInner() {
           </div>
         </div>
 
+        {/* The house step rail. Desktop only — below md the shell header
+            shows the compact "Details · Step 2 of 4" row instead, published
+            by the useShellStep call above. Indicative only: nothing here is
+            clickable, matching the old pill bar it replaces. */}
+        {kycStepVisible && (
+          <StepRail steps={kycRailSteps} current={kycStepIdx + 1} className="mb-6" mobile="shell" />
+        )}
+
         {/* ─── Loading (status fetch) ───────────────────────────── */}
         {step === 'loading' && (
           <div style={{ ...cardStyle, textAlign: 'center', padding: '40px 24px' }}>
@@ -1037,7 +997,6 @@ function VerifyKycPageInner() {
         {/* ─── Claude Step 2: ID number + date of birth ─────────── */}
         {step === 'details' && (
           <div style={cardStyle}>
-            <StepBar />
             {verifiedName && (
               <div
                 style={{
@@ -1114,7 +1073,6 @@ function VerifyKycPageInner() {
         {/* ─── Claude Step 3: ID document upload ────────────────── */}
         {step === 'document' && (
           <div style={cardStyle}>
-            <StepBar />
             <div
               style={{
                 fontSize: 13,
@@ -1275,7 +1233,6 @@ function VerifyKycPageInner() {
         {/* ─── Step 2 (legacy): SA ID number ────────────────────── */}
         {step === 'id' && (
           <div style={cardStyle}>
-            <StepBar />
             {verifiedName && (
               <div
                 style={{
@@ -1338,7 +1295,6 @@ function VerifyKycPageInner() {
         {/* ─── Step 3: selfie ───────────────────────────────────── */}
         {step === 'selfie' && (
           <div style={cardStyle}>
-            <StepBar />
             <div
               style={{
                 fontSize: 13,

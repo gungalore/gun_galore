@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { auth } from '@clerk/nextjs/server';
 import { TrustDashboard, SellerTier } from '@/lib/types';
 import { RatingReply } from './rating-reply';
-import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { DashboardProfileProgress } from '@/components/dashboard-profile-progress';
 import { SellerQuestionsCard } from './seller-questions-card';
@@ -74,12 +73,6 @@ export default async function DashboardPage() {
           to the rest of the seller's control-room pages (Edit Profile,
           Profile). zIndex:1 on <main> keeps content above the fixed
           background layers. */}
-      <PageBackground
-        imageSrc="/setting.jpg"
-        opacity={0.5}
-        tint={0.12}
-        vignette={0.7}
-      />
 
       {/* Page header — OUTSIDE PageReveal so it renders at full opacity
           immediately (per house standard: only body cards animate). */}

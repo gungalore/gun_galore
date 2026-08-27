@@ -30,7 +30,17 @@ const COUNTER_TTL_HOURS = 24;
 const CHECKOUT_TTL_HOURS = 24;
 // eBay-style attempt cap — a buyer gets this many offers per listing
 // across the row's lifetime (re-offers re-use the row; see submit()).
-const MAX_OFFER_ATTEMPTS = 5;
+// ⚠️ ONE. Operator, 2026-08-27: "Buyer gets One chance to make a reasonable
+// offer and seller one counter."
+//
+// It was 5 — an eBay-style allowance that let a buyer walk a seller up in
+// increments and probe for the auto-accept threshold. One offer changes what
+// the buyer is doing: with a single shot they have to name the number they
+// actually mean, which is the point of asking them to make a reasonable one.
+//
+// The seller's side of the rule was already right — counter() has always
+// refused a second counter on the same offer.
+const MAX_OFFER_ATTEMPTS = 1;
 // Lazy getter — must NOT be a module-level constant. ES module imports
 // hoist before main.ts's dotenv.config() runs, so a top-level
 // `const APP_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000'`
@@ -80,8 +90,12 @@ export class OffersService {
     });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.status !== 'ACTIVE') throw new BadRequestException('Listing is no longer available');
-    if (listing.listingType !== 'TAKE_A_SHOT') {
-      throw new BadRequestException('Offers can only be made on Take a Shot listings');
+    // ⚠️ THIS USED TO BE `listingType !== 'TAKE_A_SHOT'`. Offers are no longer
+    // a listing TYPE — they are a flag any Buy Now or Auction listing can
+    // carry (operator, 2026-08-27), so the gate is the seller's own choice on
+    // this listing rather than which of three modes they picked at creation.
+    if (!listing.acceptsOffers) {
+      throw new BadRequestException('This listing is not accepting offers.');
     }
     if (listing.sellerId === buyer.id) throw new BadRequestException('Sellers cannot offer on their own listings');
     // Listing-banned seller (3 reject strikes): their ACTIVE listings were
@@ -116,7 +130,7 @@ export class OffersService {
     }
     if (existing && existing.attemptCount >= MAX_OFFER_ATTEMPTS) {
       throw new BadRequestException(
-        `You've reached the limit of ${MAX_OFFER_ATTEMPTS} offers on this listing.`,
+        "You've already made your offer on this listing. Each buyer gets one.",
       );
     }
 
@@ -1039,6 +1053,17 @@ export class OffersService {
           this.logger.warn(`OFFER_DECISION token mint failed: ${(err as Error).message}`);
           return null;
         });
+      // ⚠️ THE OFFER IS ALREADY WRITTEN AND STAYS WRITTEN. This gate silences a
+      // ping, nothing more: the offer exists, the seller sees it in their own
+      // lists, and the 48-hour clock runs either way. A seller who lists twenty
+      // items and welcomes offers on all of them may still not want twenty
+      // notifications (operator, 2026-08-27) — but muting a channel must never
+      // quietly discard someone's offer.
+      if (offer.listing.seller.notifyOffersEnabled === false) {
+        this.logger.log(
+          `offer ${offer.id}: seller has offer notifications off — recorded, not announced`,
+        );
+      } else {
       await this.notifications.offerReceived({
         sellerEmail: offer.listing.seller.email,
         sellerName: offer.listing.seller.firstName ?? 'Seller',
@@ -1054,6 +1079,7 @@ export class OffersService {
         actionUrl: token ? `${APP_URL()}/a/${token}` : undefined,
         meetsAutoAccept,
       });
+      }
     } catch (err) {
       this.logger.error(`notifySellerOfOffer failed: ${(err as Error).message}`);
     }

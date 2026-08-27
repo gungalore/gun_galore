@@ -12,6 +12,7 @@ import { useSignUp } from '@clerk/nextjs/legacy';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { isClerkAPIResponseError } from '@clerk/nextjs/errors';
 import { readCampaignAttrib, clearCampaignAttrib } from '@/lib/campaign-attrib';
+import { StepRail, type StepRailStep } from '@/components/step-rail';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -62,6 +63,19 @@ function writePendingConsent(marketing: boolean) {
 }
 
 type Step = 'form' | 'verify';
+
+// This two-screen flow (details → verify) is hand-rolled by us — Clerk only
+// supplies the imperative signUp.create / attemptEmailAddressVerification
+// calls, not any UI — so it gets the house step rail like every other
+// multi-step setup. Desktop only: /sign-up is a NO_SHELL route
+// (lib/shell-routes.ts) with no mobile header at any width, so there is no
+// shell surface for useShellStep to publish a mobile-row counterpart to.
+function signupSteps(current: 1 | 2): StepRailStep[] {
+  return [
+    { label: 'Your details', complete: current > 1 },
+    { label: 'Verify email' },
+  ];
+}
 
 type UsernameStatus =
   | { kind: 'idle' }
@@ -390,6 +404,8 @@ export default function SignUpForm() {
           />
         </Link>
       </div>
+
+      <StepRail steps={signupSteps(1)} current={1} className="mb-6" />
 
       {/* Card */}
       <div
@@ -803,6 +819,15 @@ function VerifyStep({
           />
         </Link>
       </div>
+
+      {/* Step 1 shows complete + reachable here so tapping it re-uses the same
+          "start over" reset offered by the link below. */}
+      <StepRail
+        steps={signupSteps(2)}
+        current={2}
+        onJump={(n) => n === 1 && onStartOver()}
+        className="mb-6"
+      />
 
       <div
         className="rounded-[8px] p-6 sm:p-8"

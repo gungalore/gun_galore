@@ -210,6 +210,9 @@ export interface Me {
   // Per-channel notification mute (Phase 2). Default true.
   notifyEmailEnabled?: boolean;
   notifySmsEnabled?: boolean;
+  // Silences the Take a Shot offer notification ONLY (Default true). The
+  // offer itself is still written and still appears in the seller's lists.
+  notifyOffersEnabled?: boolean;
   // Seller default parcel size (Phase 6 P6.3) — pre-fills the sell form.
   defaultWeightGrams?: number | null;
   defaultLengthCm?: number | null;
@@ -308,6 +311,10 @@ export interface Listing {
   // units to render the specifications table.
   attributes?: Record<string, unknown> | null;
   passFeeToBuyer: boolean;
+  // Take a Shot offers, as an option available on every BUY_NOW/AUCTION
+  // listing rather than a third selling mode (seller-set at listing time;
+  // default true). The offer guard everywhere is `!acceptsOffers`.
+  acceptsOffers: boolean;
   // Owner-only: the hidden auto-accept/auto-decline thresholds are
   // returned by GET /listings/:id ONLY to the seller (edit-form
   // prefill), so they're optional on the shared type — absent from the

@@ -6,7 +6,6 @@ import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { Me, SellerTier } from '@/lib/types';
 import { ACCOUNT_GROUPS } from '@/lib/account-menu-data';
-import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { AccountWishlistCount } from './wishlist-count';
 
@@ -123,7 +122,6 @@ export default async function AccountPage() {
 
   return (
     <>
-      <PageBackground />
       <main className="max-w-[1000px] mx-auto px-4 py-8">
         {/* Identity header card */}
         <div
@@ -289,8 +287,39 @@ export default async function AccountPage() {
                 sheet — and that sheet is no longer reachable now the Account
                 tab is a link to this page rather than a sheet trigger. Without
                 it here an installed member has no way to turn notifications on
-                or off at all. It self-hides where push is unsupported. */}
-            <PushToggleRow />
+                or off at all. It self-hides where push is unsupported.
+
+                ⚠️ THE <ul> AND THE CARD AROUND IT ARE BOTH REQUIRED.
+                PushToggleRow returns a bare <li> — it was written for the
+                sheet's list. Dropped straight into this grid it rendered as an
+                orphan list item: a bullet point and a label, floating under the
+                card grid with no card around it. Verified on the live site
+                before this wrapper existed. */}
+            <div
+              className="rounded-[10px] overflow-hidden"
+              style={{
+                background: 'var(--bg-card)',
+                border: '0.5px solid var(--border)',
+                marginTop: 16,
+                maxWidth: 'calc(50% - 8px)',
+              }}
+            >
+              <p
+                className="text-xs uppercase"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  letterSpacing: '0.06em',
+                  fontWeight: 600,
+                  padding: '14px 16px 6px',
+                  margin: 0,
+                }}
+              >
+                Notifications
+              </p>
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                <PushToggleRow />
+              </ul>
+            </div>
           </div>
         </PageReveal>
       </main>
