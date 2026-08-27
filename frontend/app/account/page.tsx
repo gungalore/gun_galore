@@ -6,6 +6,64 @@ import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { Me, SellerTier } from '@/lib/types';
 import { ACCOUNT_GROUPS, type AccountMenuItem } from '@/lib/account-menu-data';
+
+/** Shape of GET /users/me/account-summary. Mirrors the service's return type. */
+type AccountSummary = {
+  listings: {
+    active: number;
+    draft: number;
+    pendingReview: number;
+    paymentPending: number;
+    sold: number;
+    cancelled: number;
+    expired: number;
+  };
+  pendingOffersAsSeller: number;
+  pendingBidsAsBuyer: number;
+  parcelsInTransit: number;
+  totalPayoutReleasedCents: number;
+};
+
+/**
+ * The quiet state total beside a destination's label — "3 active · 1 draft".
+ *
+ * ⚠️ NOT A BADGE, DELIBERATELY. The red pill on this page means "something is
+ * waiting for your answer". These say how much of a thing exists, which is a
+ * different claim, and rendering them the same way would turn every passive
+ * total into a demand.
+ *
+ * Returns null rather than "0" for an empty state: a member with no drafts does
+ * not need to be told so on a menu row.
+ */
+function statFor(href: string, s: AccountSummary | null): string | null {
+  if (!s) return null;
+  const parts: string[] = [];
+  switch (href) {
+    case '/my/listings': {
+      if (s.listings.active) parts.push(`${s.listings.active} active`);
+      if (s.listings.draft) parts.push(`${s.listings.draft} draft`);
+      break;
+    }
+    case '/offers/received':
+      if (s.pendingOffersAsSeller) {
+        parts.push(
+          `${s.pendingOffersAsSeller} need${s.pendingOffersAsSeller === 1 ? 's' : ''} your answer`,
+        );
+      }
+      break;
+    case '/my/bids':
+      if (s.pendingBidsAsBuyer) parts.push(`${s.pendingBidsAsBuyer} open`);
+      break;
+    case '/shipping':
+      if (s.parcelsInTransit) {
+        parts.push(`${s.parcelsInTransit} on the way`);
+      }
+      break;
+    default:
+      return null;
+  }
+  return parts.length ? parts.join(' · ') : null;
+}
 import { PageReveal } from '@/components/page-reveal';
 import { AccountWishlistCount } from './wishlist-count';
 
@@ -277,12 +335,16 @@ export default async function AccountPage() {
   const token = await getToken();
   const headers = { Authorization: `Bearer ${token}` };
 
-  const [meRes, alertsRes, moduleCountsRes] = await Promise.all([
+  const [meRes, alertsRes, moduleCountsRes, summaryRes] = await Promise.all([
     fetch(`${API_URL}/users/me`, { headers, cache: 'no-store' }).catch(() => null),
     fetch(`${API_URL}/notifications/me/active-count`, { headers, cache: 'no-store' }).catch(() => null),
     // Same per-module notification counts the dropdown / drawer / PWA More
     // sheet badge with, so the hub cards and the menus always agree.
     fetch(`${API_URL}/notifications/me/module-counts`, { headers, cache: 'no-store' }).catch(() => null),
+    // State totals for the hub's stat lines. In the same Promise.all as the
+    // rest — this page already makes three calls and a fourth in series would
+    // add its whole latency to a page opened on every visit.
+    fetch(`${API_URL}/users/me/account-summary`, { headers, cache: 'no-store' }).catch(() => null),
   ]);
 
   // Distinguish "the backend answered and this is your real state" from
@@ -294,6 +356,10 @@ export default async function AccountPage() {
   const me = await safeJson<Me | null>(meRes, null);
   const alerts = await safeJson<{ total?: number } | null>(alertsRes, null);
   const moduleCounts = await safeJson<Record<string, number>>(moduleCountsRes, {});
+
+  // Null, not zeros, when the call fails — see the note at the top of the stat
+  // helpers. Every line keys off this being present.
+  const summary = await safeJson<AccountSummary | null>(summaryRes, null);
 
   // A 200 with an empty/unparseable body is just as unusable as a non-OK
   // one — /users/me always returns a record for a synced user.
@@ -482,14 +548,20 @@ export default async function AccountPage() {
                           <item.Icon />
                         </span>
                         <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
-                        {/* A future passive total — e.g. Listings'
-                            "3 active · 1 draft" from the design board —
-                            would render here as a small tertiary-colour
-                            span, sourced from a new per-item summary
-                            endpoint (there is no active/draft breakdown
-                            today). It is NOT the same thing as `count`
-                            below, which is an unresolved-notification
-                            tally, not a state total. */}
+                        {/* The board's passive state total. NOT the same
+                            thing as `count` below, which is an unresolved-
+                            notification tally — see statFor(). */}
+                        {(() => {
+                          const stat = statFor(item.href, summary);
+                          return stat ? (
+                            <span
+                              className="text-xs"
+                              style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}
+                            >
+                              {stat}
+                            </span>
+                          ) : null;
+                        })()}
                         {item.href === '/wishlist' ? (
                           <AccountWishlistCount />
                         ) : count && count > 0 ? (
