@@ -89,7 +89,14 @@ export function Hero() {
             url('${av('/hero-outdoor.jpg')}') type('image/jpeg')
           );
           background-size: cover;
-          background-position: center center;
+          /* BOTTOM, not centre. Once the band is capped at the design's 330px
+             it can only show ~62% of a 3:1 plate, so which 62% is a real
+             decision. Anchoring to the bottom keeps the ridge line, the
+             two-track, the bakkie, the tent and the campfire — every subject
+             that makes this read as overlanding — and gives up only sky, which
+             is the emptiest part of the frame. Centre keeps the moon and loses
+             the camp; top is almost entirely sky. */
+          background-position: center bottom;
           background-repeat: no-repeat;
           /* No brightness filter. The previous plate carried brightness(0.95)
              to keep white type crisp over a lit sky; this one is a night
@@ -149,9 +156,33 @@ export function Hero() {
             inset: 0;
             z-index: 1;
           }
-          /* Guards against an absurd band on an ultrawide monitor; the plate
-             fills the cap from the centre, losing only the outer edges. */
-          .hero-frame { max-height: 88vh; }
+          /* A FIXED BAND, not a ratio. Deriving height from the plate's own
+             3:1 meant the hero grew with the window — 706px on a wide desktop,
+             filling the fold and pushing the entire storefront below it. The
+             design is a 330px band and it stays 330px at every desktop width;
+             background-size: cover crops the rest. aspect-ratio has to be
+             cleared explicitly or it keeps fighting the height. */
+          .hero-frame {
+            aspect-ratio: auto;
+            height: 330px;
+            max-height: none;
+          }
+        }
+
+        /* The primary landing CTA carried a transition-colors class for months
+           with nothing to transition TO — no hover, focus or active rule
+           existed anywhere, so it was decoration on an inert button. Colour
+           only, and gated so it never fires from a touch (a sticky hover after
+           a tap is worse than no hover). The press comes from .gg-press.
+
+           ⚠️ NO BACKTICKS IN THIS BLOCK. It lives inside a JSX template
+           literal, so a backtick here ends the string and takes the whole
+           component out with it. */
+        @media (hover: hover) and (pointer: fine) {
+          .hero-cta {
+            transition: background-color var(--dur-fast) var(--ease-standard);
+          }
+          .hero-cta:hover { background: var(--red-hover) !important; }
         }
 
         .hero-reveal { opacity: 1; transform: translateX(0); }
@@ -177,15 +208,20 @@ export function Hero() {
           it sits over the photograph; on mobile it sits on the section's dark
           panel. Do not reach for --text-primary/--text-secondary here — those
           track the PAGE theme, which is light, and would vanish. */}
-      <div className="hero-content relative max-w-[var(--page-max)] mx-auto px-4 sm:px-6 py-10 sm:py-14 flex flex-col justify-center">
-        <div className="max-w-[600px]">
+      <div className="hero-content relative max-w-[var(--page-max)] mx-auto px-4 sm:px-6 py-10 md:py-0 flex flex-col justify-center">
+        {/* The design's copy column: 700px wide, 40px of inset, and a single
+            15px gap doing ALL the vertical rhythm — the four children used to
+            carry their own mb-4/mb-5/mb-8, which is what made the block ~312px
+            tall and impossible to centre in a 330px band. md:py-0 above lets
+            justify-center do the centring instead of padding. */}
+        <div className="max-w-[600px] md:max-w-[700px] md:px-10 flex flex-col gap-4 md:gap-[15px]">
           {/* Eyebrow. Warm-white rather than var(--red): the brand red is
               dark enough that it cannot reach 4.5:1 at this size against the
               plate without becoming a pink that isn't the brand. Red stays
               where it still has the contrast to carry — "outdoor gear" at
               display size, and the CTA. */}
           <p
-            className="hero-reveal hero-reveal-1 text-xs uppercase mb-4"
+            className="hero-reveal hero-reveal-1 text-xs md:text-[11px] uppercase"
             style={{
               color: 'rgba(255, 250, 245, 0.85)',
               letterSpacing: '0.18em',
@@ -200,8 +236,12 @@ export function Hero() {
               lines at every viewport, and a nowrap guard stops "trip."
               orphaning. text-shadow keeps a crisp edge wherever the plate
               crops behind it. */}
+          {/* 44px at md+, not 54px. The old lg:text-[3.4rem] was sized for a
+              706px hero; in a 330px band two lines of it plus the eyebrow,
+              subhead and CTA simply do not fit. 44/1.1 is the design's own
+              figure and it is what makes the band work. */}
           <h1
-            className="hero-reveal hero-reveal-2 text-4xl sm:text-5xl lg:text-[3.4rem] leading-[1.12] mb-5"
+            className="hero-reveal hero-reveal-2 text-4xl sm:text-5xl md:text-[44px] leading-[1.12] md:leading-[1.1]"
             style={{
               color: 'var(--text-on-dark)',
               fontWeight: 500,
@@ -217,7 +257,7 @@ export function Hero() {
           </h1>
 
           <p
-            className="hero-reveal hero-reveal-3 text-base sm:text-lg leading-relaxed mb-8 max-w-[520px]"
+            className="hero-reveal hero-reveal-3 text-base sm:text-lg md:text-[15.5px] leading-relaxed md:leading-[1.6] max-w-[520px]"
             style={{
               color: 'rgba(245, 245, 245, 0.88)',
               textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
@@ -234,16 +274,21 @@ export function Hero() {
               recruitment pitch (operator, 2026-08-16). Selling now lives in
               the nav and in the disclosure panel further down. One button,
               buyer-facing, is also simply the cleaner composition. */}
+          {/* self-start matters: the parent is now a flex COLUMN, so a child
+              would stretch to full width and the button would run the length
+              of the copy block. inline-flex alone does not prevent that —
+              flex items stretch on the cross axis by default. */}
           <Link
             href="/?listingType=BUY_NOW"
-            className="hero-reveal hero-reveal-4 inline-flex items-center justify-center px-8 text-sm transition-colors"
+            className="hero-cta gg-press hero-reveal hero-reveal-4 self-start inline-flex items-center justify-center text-sm"
             style={{
               background: 'var(--red)',
               color: '#fff',
               fontWeight: 600,
               textDecoration: 'none',
-              minHeight: 50,
-              borderRadius: 'var(--r-md)',
+              height: 46,
+              padding: '0 32px',
+              borderRadius: 'var(--r-sm)',
               letterSpacing: '0.01em',
             }}
           >
