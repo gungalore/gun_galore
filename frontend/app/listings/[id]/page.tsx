@@ -21,7 +21,6 @@ import ModerationBanner from './moderation-banner';
 import BackLink from './back-link';
 import { QuestionsPanel } from './questions-panel';
 import { ImageGallery } from './image-gallery';
-import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { HelpTip } from '@/components/help-tip';
 import { ClickableAvatar } from '@/components/avatar-lightbox';
@@ -292,7 +291,6 @@ export default async function ListingDetailPage({
           detail to the marketplace index visually. opacity:0.18
           matches the marketplace homepage so the product photo stays
           dominant without the background washing the page out. */}
-      <PageBackground imageSrc="/marketplace.jpg" opacity={0.36} />
 
       {/* Back link stays OUTSIDE PageReveal so it's clickable instantly.
           Uses router.back() so the user lands back on their previous

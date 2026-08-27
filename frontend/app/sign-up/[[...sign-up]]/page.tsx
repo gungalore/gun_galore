@@ -22,10 +22,11 @@ export default function SignUpPage() {
   return (
     <main
       className="min-h-screen flex items-center justify-center px-4 py-12"
-      style={{
-        background:
-          'linear-gradient(180deg, var(--bg-deep) 0%, var(--bg) 50%, var(--bg-deep) 100%)',
-      }}
+      // Plain page ground, like every other surface. This carried a vertical
+      // gradient between --bg-deep and --bg; harmless on its own, but the rule
+      // is one background for the whole site (operator, 2026-08-27) and a
+      // gradient is still a background. The ground comes from <html> now.
+      style={{ background: 'var(--bg)' }}
     >
       <SignUpForm />
     </main>

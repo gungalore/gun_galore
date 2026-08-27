@@ -6,7 +6,6 @@ import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { Me, SellerTier } from '@/lib/types';
 import { ACCOUNT_GROUPS } from '@/lib/account-menu-data';
-import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { AccountWishlistCount } from './wishlist-count';
 
@@ -123,7 +122,6 @@ export default async function AccountPage() {
 
   return (
     <>
-      <PageBackground />
       <main className="max-w-[1000px] mx-auto px-4 py-8">
         {/* Identity header card */}
         <div

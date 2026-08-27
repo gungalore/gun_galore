@@ -31,6 +31,7 @@ import type { StepStatus } from '@/components/step-accordion';
 import MotivationStepRail from '@/components/motivation-step-rail';
 import MotivationStepNav from '@/components/motivation-step-nav';
 import { useShellStep } from '@/components/shell/shell-step';
+import { StepRail } from '@/components/step-rail';
 import {
   OWNED_SECTION,
   isRepeatingSection,
@@ -1919,6 +1920,14 @@ export default function MotivationWizardPage() {
       </div>
 
       <div className="lg:grid lg:grid-cols-[264px_minmax(0,1fr)] lg:items-start lg:gap-8">
+        {/* ⚠️ THE SIDE NAV STAYS, AND THE RAIL IS NOT A REPLACEMENT FOR IT.
+            The rail is the house progress display now required on every
+            multi-step flow (operator, 2026-08-27), and it renders above the
+            form. This side nav does something the rail cannot: it shows,
+            per step, how many questions are answered out of how many are
+            answerable — which is what tells someone why the Generate button
+            is still refusing. Losing that would make the gate inexplicable.
+            One says WHERE you are, the other says WHAT IS LEFT. */}
         <MotivationStepNav
           steps={railSteps}
           current={expanded}
@@ -1929,6 +1938,23 @@ export default function MotivationWizardPage() {
         />
 
         <div className="min-w-0">
+          {/* The house step rail, on every multi-step flow. Desktop only —
+              below md the shell header carries the compact "You & firearm ·
+              Step 2 of 5" row instead, published by the useShellStep call
+              further up. `complete` mirrors the side nav's own reckoning so
+              the two can never disagree about which steps are done. */}
+          <StepRail
+            steps={steps.map((st, i) => ({
+              label: st.def.label,
+              // The side nav's own reckoning, so the two can never disagree
+              // about which steps are done: nothing outstanding means done.
+              complete: railSteps[i]?.outstanding === 0,
+            }))}
+            current={expanded}
+            mobile="shell"
+            onJump={go}
+            className="-mx-4 mb-6"
+          />
 
       {/* The step's own heading. One per step, all but the current one hidden
           — see the note on stepOfSection for why nothing is unmounted. */}

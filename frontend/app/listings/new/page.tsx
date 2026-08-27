@@ -12,8 +12,8 @@ import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
 import { PhotoDropzone } from '@/components/photo-dropzone';
 import { StepAccordion, StepStatus } from '@/components/step-accordion';
 import { useShellStep } from '@/components/shell/shell-step';
+import { StepRail } from '@/components/step-rail';
 import IdentifyFromPhotos from './identify-from-photos';
-import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import {
   AddressAutocomplete,
@@ -2588,10 +2588,26 @@ export default function NewListingPage() {
     <main
       className="relative max-w-[var(--page-max)] mx-auto px-4 py-8 sm:py-12"
     >
-      {/* SA banknotes scenery behind the form, with a black vignette +
-          dark tint so it stays "felt, not seen". File lives at
-          public/sell-bg.jpeg. */}
-      <PageBackground imageSrc="/sell-bg.jpg" opacity={0.36} />
+      {/* The house step rail. Desktop only — below md the shell header shows
+          the compact "Photos · Step 1 of 4" row instead, published by the
+          useShellStep call above. Tapping a step opens it, but only steps the
+          seller has already reached are offered: a link to a step they have
+          not got to is a link to an empty form. */}
+      <StepRail
+        steps={SELL_STEP_LABELS.map((label, i) => ({
+          label,
+          complete: [
+            stepComplete.step1,
+            stepComplete.step2,
+            stepComplete.step3,
+            stepComplete.step4,
+          ][i],
+        }))}
+        current={expandedStep ?? activeStep}
+        mobile="shell"
+        onJump={(n) => setExpandedStep(n as 1 | 2 | 3 | 4)}
+        className="-mx-4 mb-8"
+      />
 
       <PageReveal variant="slide-up">
       {/* Page header */}

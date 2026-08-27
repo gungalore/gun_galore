@@ -8,7 +8,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { auth } from '@clerk/nextjs/server';
-import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 
 const API_URL =
@@ -99,7 +98,6 @@ export default async function ShippingPage() {
 
   return (
     <>
-      <PageBackground />
       <main className="max-w-[860px] mx-auto px-4 py-8">
         <h1 className="text-2xl mb-1" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
           Shipping

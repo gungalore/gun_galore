@@ -11,6 +11,18 @@
 // to — and a rail that looks tappable but is not is worse than one that
 // obviously is not. Back is a button, on the step, where it can be reasoned
 // about.
+//
+// ⚠️ NOT components/step-rail.tsx, DELIBERATELY. Operator 2026-08-27: "all
+// multi step setups has to have the same horizontal step rail system" — so the
+// colours and sizing below (green complete, red current, outlined upcoming;
+// 24px circle; 12.5px label) are lifted from that shared component to match
+// its look. But the component itself is hidden below 768px (`.gg-step-rail`
+// in app/globals.css) and expects a paired "Step X of N" row published by the
+// mobile shell header — and /witness is chromeless (lib/chromeless-routes.ts):
+// no shell mounts here, so nothing would ever publish that row. Importing it
+// as-is would leave a witness who opened this on a phone, which given it
+// arrives by SMS is most of them, with no progress indicator at all. This
+// stepper stays its own component, visible at every width, for that reason.
 // ────────────────────────────────────────────────────────────────────
 
 export interface StepDef {
@@ -42,10 +54,12 @@ export default function WitnessStepper({
           >
             <span
               className={[
-                'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
-                done || active
-                  ? 'bg-[var(--red)] text-white'
-                  : 'border border-[var(--border)] text-[var(--text-secondary)]',
+                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11.5px]',
+                done
+                  ? 'bg-[var(--success)] font-bold text-white'
+                  : active
+                    ? 'bg-[var(--red)] font-bold text-white'
+                    : 'border border-[var(--border-hover)] font-semibold text-[var(--text-faint)]',
               ].join(' ')}
             >
               {done ? (
@@ -67,10 +81,12 @@ export default function WitnessStepper({
             </span>
             <span
               className={[
-                'truncate text-xs sm:text-sm',
-                active
+                'truncate text-[12.5px]',
+                done
                   ? 'font-semibold text-[var(--text-primary)]'
-                  : 'text-[var(--text-secondary)]',
+                  : active
+                    ? 'font-bold text-[var(--text-primary)]'
+                    : 'font-medium text-[var(--text-faint)]',
               ].join(' ')}
             >
               {s.label}

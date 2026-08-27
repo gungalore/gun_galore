@@ -931,6 +931,19 @@ html:not([data-standalone='true'])
 .gg-tab-icon > svg { width: 21px; height: 21px; stroke-width: 1.9; }
 .gg-tab-fab > svg  { width: 20px; height: 20px; stroke-width: 2.4; }
 
+/* The horizontal step rail is the DESKTOP half of the progress pair.
+   Below md the mobile shell header shows the compact "Photos · Step 1 of 4"
+   row instead (components/shell/shell-step.tsx) — five labelled steps do not
+   fit across a phone, and the design pack draws the two presentations
+   separately for exactly that reason. Hiding one in CSS rather than branching
+   in JS keeps the server HTML identical at every width. */
+.gg-step-rail { display: none; }
+.gg-step-rail-inline { display: flex; }
+@media (min-width: 768px) {
+  .gg-step-rail { display: flex; }
+  .gg-step-rail-inline { display: none; }
+}
+
 /* ============ The mobile app shell ============
    Two scroll models sharing one DOM. The markup is identical everywhere —
    header, pane, tab bar, always rendered, always in the same order — and CSS

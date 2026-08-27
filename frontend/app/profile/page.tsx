@@ -4,7 +4,6 @@ import Image from 'next/image';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { Me, TrustDashboard, SellerTier } from '@/lib/types';
 import { SUPPORT_EMAIL } from '@/lib/brand';
-import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { HelpTip } from '@/components/help-tip';
 import { SellerVerificationProgress } from '@/components/seller-verification-progress';
@@ -206,12 +205,6 @@ export default async function ProfilePage() {
     >
       {/* House standard scenery — wrenches, matches /profile/edit so
           the identity pages feel like one suite. */}
-      <PageBackground
-        imageSrc="/setting.jpg"
-        opacity={0.5}
-        tint={0.12}
-        vignette={0.7}
-      />
 
       {/* ── Hero ──────────────────────────────────────────────────────
           Hero is the page <header> — sits OUTSIDE PageReveal so the
@@ -223,17 +216,12 @@ export default async function ProfilePage() {
       <header
         className="rounded-[8px] p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center gap-5 sm:gap-7 mb-6"
         style={{
-          // STACKING NOTE — this is critical, do not delete the
-          // position/zIndex below. <PageBackground> renders three
-          // fixed-position divs (image, tint, vignette) at zIndex 0
-          // INSIDE main. Without an explicit stacking context here, the
-          // hero paints in normal flow (step 3 of the stacking algo)
-          // and the fixed divs (step 5, explicit z-index) paint OVER
-          // it — the visible effect is the wrenches bleeding straight
-          // through the card. Stat cards below avoid this because
-          // PageReveal applies `transform` to its descendants, which
-          // creates a new stacking context for free. The hero is
-          // outside PageReveal, so we need to make our own.
+          // The position/zIndex below outlived the reason they were added.
+          // They existed to stop this page's fixed background layers painting
+          // over the card; those layers are gone site-wide now. Kept because
+          // the card still sits outside PageReveal and needs its own stacking
+          // context against transformed siblings — but the old warning about
+          // scenery bleeding through no longer describes anything possible.
           background: 'var(--bg-card)',
           border: '0.5px solid var(--border)',
           position: 'relative',
