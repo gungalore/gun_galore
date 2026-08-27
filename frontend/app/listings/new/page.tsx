@@ -226,10 +226,21 @@ function normaliseAttrValues(
 
 // ─────────────────────────── Shared styles ───────────────────────────
 
+// ⚠️ WHITE, NOT INSET GREY — and this one constant is most of why the page
+// used to look nothing like the design. Every field on the form reads from
+// here, so a --bg-inset background made the whole thing a column of sunken grey
+// wells. The board draws white card fields on the page ground, with a real 1px
+// border doing the work the fill used to. Operator ruled for the board,
+// 2026-08-27 ("a day and night difference. I prefer the board").
+//
+// 1px, not 0.5px: globals.css already argues this at length under --hairline —
+// a half-pixel border is a Retina affectation that loses the edge entirely on
+// the screens most sellers use, which is exactly what a form field cannot
+// afford.
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  background: 'var(--bg-inset)',
-  border: '0.5px solid var(--border)',
+  background: 'var(--bg-card)',
+  border: '1px solid var(--border-hover)',
   color: 'var(--text-primary)',
   borderRadius: '6px',
   padding: '10px 12px',
@@ -1787,6 +1798,36 @@ export default function NewListingPage() {
   // step is open at a time (classic accordion). Defaults to step 1.
   // Filling out a step does NOT change this — only a Continue click or a
   // user header click does.
+  // Values the "How it will look" preview reads. The price is the BUYER-FACING
+  // one — listPriceFromSellerAsk is the same mirror of the fee calculator the
+  // rest of the form uses, so the preview can never disagree with the fee
+  // breakdown shown a few fields above it.
+  const previewPriceCents = useMemo(() => {
+    const typed = Number(form.price);
+    if (!Number.isFinite(typed) || typed <= 0) return 0;
+    const askCents = Math.round(typed * 100);
+    return form.listingType === 'BUY_NOW'
+      ? listPriceFromSellerAsk(askCents).listPrice
+      : askCents;
+  }, [form.price, form.listingType]);
+
+  // ⚠️ REVOKED ON CHANGE. images is File[], so the preview needs an object URL,
+  // and every one of those pins its blob in memory until it is revoked. A
+  // seller reordering or re-picking photos would otherwise leak one blob per
+  // change for the life of the page — and this form is one people sit on for a
+  // long time with several large photos.
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const first = images[0];
+    if (!first) {
+      setPreviewImageUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(first);
+    setPreviewImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [images]);
+
   const [expandedStep, setExpandedStep] = useState<1 | 2 | 3 | 4 | null>(1);
   const isOpen = (n: number) => expandedStep === n;
 
@@ -4657,6 +4698,100 @@ export default function NewListingPage() {
               border: '0.5px solid var(--border)',
             }}
           >
+            {/* How it will look — the board's live preview. Renders from the
+                moment there is a title, so it appears while the seller is
+                still typing rather than as a reward at the end. */}
+            {form.title.trim().length > 0 && (
+              <div>
+                <p
+                  className="text-xs uppercase mb-3"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    letterSpacing: '0.1em',
+                  }}
+                >
+                  How it will look
+                </p>
+                <div
+                  className="rounded-[6px] overflow-hidden"
+                  style={{ border: '1px solid var(--border)' }}
+                >
+                  <div
+                    style={{
+                      height: 118,
+                      background: 'var(--bg-inset)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {previewImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={previewImageUrl}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <span
+                        className="text-xs"
+                        style={{ color: 'var(--text-faint)' }}
+                      >
+                        Your first photo goes here
+                      </span>
+                    )}
+                  </div>
+                  <div className="px-3 py-3 space-y-1">
+                    <div
+                      style={{
+                        fontFamily: 'var(--font-display), Archivo, sans-serif',
+                        fontWeight: 700,
+                        fontSize: 17,
+                        color:
+                          form.listingType === 'AUCTION'
+                            ? 'var(--gold)'
+                            : 'var(--text-primary)',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {previewPriceCents > 0
+                        ? formatRand(previewPriceCents)
+                        : '—'}
+                    </div>
+                    <div
+                      className="text-sm"
+                      style={{
+                        color: 'var(--text-secondary)',
+                        lineHeight: 1.35,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {form.title}
+                    </div>
+                    {(form.condition || form.province) && (
+                      <div className="text-xs" style={{ color: 'var(--text-faint)' }}>
+                        {[form.condition, form.province]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <p
+                  className="text-xs mt-2"
+                  style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}
+                >
+                  {form.listingType === 'AUCTION'
+                    ? 'Bidding opens here. Our fees come off what the item sells for — you never pay to list.'
+                    : 'This is what buyers pay. Our fees are already inside it, so nothing is added at their checkout and nothing comes off your side.'}
+                </p>
+              </div>
+            )}
+
             <div>
               <p
                 className="text-xs uppercase mb-3"
