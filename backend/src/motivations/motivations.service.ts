@@ -427,6 +427,7 @@ export class MotivationsService {
         qualityScore: true,
         createdAt: true,
         completedAt: true,
+        label: true,
       },
     });
     return rows.map((r) => ({
@@ -593,6 +594,9 @@ export class MotivationsService {
       referenceNumber: row.referenceNumber,
       licenceType: row.licenceType,
       licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
+      // The member's own name, or null if they have not set one — see
+      // rename() below. Purely a list label; not an answer.
+      label: row.label,
       status: row.status,
       fields: fieldsFor(row.licenceType),
       answers,
@@ -3497,6 +3501,43 @@ export class MotivationsService {
       colourway: asScheme(updated.templateColourway),
       layout: asLayout(updated.templateLayout),
     };
+  }
+
+  /**
+   * The member's own name for this application, e.g. "Home defence" against a
+   * Section 13 draft. Operator, board review 2026-08-27: "User must be able
+   * to rename the motivation."
+   *
+   * ⚠️ ALLOWED IN EVERY STATUS, same reasoning as setTemplate above: this is
+   * not an answer, changes nothing the document argues, and is not read into
+   * answersEncrypted, documentTextEncrypted or the rendered PDF. A finished
+   * motivation is still allowed to be renamed on the list.
+   *
+   * ⚠️ WHITESPACE-ONLY IS THE SAME AS UNNAMED. The DTO caps length but does
+   * not forbid a string of spaces, and this is user input on a page that
+   * generates a legal document — trimmed here, so "   " is never mistaken
+   * for a real name and is stored as null instead, matching what an
+   * untouched motivation already looks like.
+   */
+  async rename(clerkId: string, id: string, rawLabel: string | undefined) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const trimmed = (rawLabel ?? '').trim();
+
+    const updated = await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: { label: trimmed || null },
+      select: { label: true },
+    });
+
+    return { label: updated.label };
   }
 
   async renderPdf(clerkId: string, id: string) {

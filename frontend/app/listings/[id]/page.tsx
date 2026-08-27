@@ -92,6 +92,29 @@ export async function generateMetadata({
   };
 }
 
+// Board review — reference-row "Listed…" line. createdAt already ships on
+// the listing but nothing rendered it. A raw day-count keeps climbing
+// forever ("listed 47 days ago" reads worse than a date), so relative
+// phrasing only covers the first few weeks; older listings fall back to an
+// absolute date in the same en-ZA format app/account/page.tsx's fmtDate uses.
+function listedAgoLabel(createdAt: string): string {
+  const created = new Date(createdAt);
+  if (Number.isNaN(created.getTime())) return '';
+  const days = Math.floor((Date.now() - created.getTime()) / 86_400_000);
+  if (days <= 0) return 'Listed today';
+  if (days === 1) return 'Listed 1 day ago';
+  if (days < 14) return `Listed ${days} days ago`;
+  if (days < 28) {
+    const weeks = Math.floor(days / 7);
+    return `Listed ${weeks} week${weeks === 1 ? '' : 's'} ago`;
+  }
+  return `Listed ${created.toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })}`;
+}
+
 export default async function ListingDetailPage({
   params,
 }: {
@@ -148,6 +171,9 @@ export default async function ListingDetailPage({
   // UX-1c — pre-purchase delivery estimate line (computed from the listing's
   // shipping shape; no extra fetch).
   const deliveryEstimate = getListingDeliveryEstimate(listing);
+
+  // Board review — reference-row "Listed…" line (see listedAgoLabel above).
+  const listedLabel = listedAgoLabel(listing.createdAt);
 
   // Bulky-goods copy interim (audit Big-4). "Collection only" reads to buyers
   // as "same city only", which is what caps trailers / off-road caravans at
@@ -427,23 +453,69 @@ export default async function ListingDetailPage({
               AU000045, TS000007). Monospace so it's easy to copy-paste
               into support emails. Falls back to a short cuid for legacy
               listings that haven't been back-filled yet. */}
-          <p
-            className="text-xs mb-2 inline-block"
-            style={{
-              fontFamily: 'ui-monospace, monospace',
-              color: 'var(--text-secondary)',
-              background: 'var(--bg-inset)',
-              border: '0.5px solid var(--border)',
-              borderRadius: 4,
-              padding: '3px 8px',
-              letterSpacing: '0.04em',
-            }}
-          >
-            {listing.referenceNumber ?? `#${listing.id.slice(-8)}`}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <p
+              className="text-xs inline-block"
+              style={{
+                fontFamily: 'ui-monospace, monospace',
+                color: 'var(--text-secondary)',
+                background: 'var(--bg-inset)',
+                border: '0.5px solid var(--border)',
+                borderRadius: 4,
+                padding: '3px 8px',
+                letterSpacing: '0.04em',
+              }}
+            >
+              {listing.referenceNumber ?? `#${listing.id.slice(-8)}`}
+            </p>
+            {/* Board review — "listed N days ago" was previously nowhere on
+                the page despite createdAt already being on the payload. */}
+            {listedLabel && (
+              <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                {listedLabel}
+              </span>
+            )}
+          </div>
 
           {/* Badges */}
           <div className="flex flex-wrap gap-1.5 mb-3">
+            {/* Board review — dealer-transfer chip. For a firearm, that it
+                moves through a SAPS-licensed dealer (never couriered to a
+                buyer's home) is the single most important fact on the page,
+                so it sits first in the badge row at the same weight as the
+                category/condition chips rather than buried in the
+                shipping/payment prose below. Gold is the platform's
+                verification/trust accent (globals.css); --gold-strong is the
+                small-text-safe ink (--gold alone is a large-figure/border/
+                icon colour only). Wording locked to "Dealer transfer" — no
+                "private collection", no timing or outcome claim. */}
+            {listing.isFirearm && (
+              <span
+                title="This firearm moves through a SAPS-licensed dealer — not courier."
+                className="text-xs px-2 py-0.5 rounded-[3px] inline-flex items-center gap-1"
+                style={{
+                  background: 'var(--gold-wash)',
+                  color: 'var(--gold-strong)',
+                  border: '0.5px solid var(--gold-line)',
+                }}
+              >
+                <svg
+                  aria-hidden
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 21c-4-1.5-8-5-8-11V5l8-3 8 3v5c0 6-4 9.5-8 11z" />
+                  <path d="M9 12l2 2 4-4" />
+                </svg>
+                Dealer transfer
+              </span>
+            )}
             {/* Category chip — links to the category landing page so the
                 crawler (and the reader) can reach /category/[slug]. Kept
                 visually identical to the other chips; just wrapped in a
@@ -713,13 +785,19 @@ export default async function ListingDetailPage({
                       {`${trackedSellable} in stock`}
                     </p>
                   )}
+                {/* Board review — Buy CTA typography. Display face (Archivo)
+                    at 700, sized up from the body-font 500 the buttons used
+                    to render at; matches the treatment now also applied to
+                    AddToCartButton. Appearance only — href/behaviour
+                    untouched. */}
                 <Link
                   href={`/checkout/${listing.id}`}
-                  className="block w-full py-3 rounded-[6px] text-sm text-center mb-2"
+                  className="block w-full py-3 rounded-[6px] text-[14.5px] lg:text-[13.5px] text-center mb-2"
                   style={{
                     background: 'var(--red)',
                     color: '#fff',
-                    fontWeight: 500,
+                    fontFamily: 'var(--font-head)',
+                    fontWeight: 700,
                     textDecoration: 'none',
                   }}
                 >

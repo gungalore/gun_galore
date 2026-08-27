@@ -64,6 +64,12 @@ import {
 } from '@/lib/motivations-api';
 import { mergeReviewQueue } from '@/lib/document-review-rules';
 import { useScrollToTop } from '@/components/shell/shell-scroll';
+// Not motivationsApi's `request()` — lib/motivations-api.ts is a different
+// file's territory in this same review, and its MotivationDetail does not
+// yet type `label`. safeJson is a plain read-only helper, so importing it
+// costs nothing and keeps the rename call's empty-204 handling consistent
+// with every other request on this page.
+import { safeJson } from '@/lib/safe-json';
 
 // ────────────────────────────────────────────────────────────────────
 // The motivation wizard.
@@ -288,6 +294,28 @@ export default function MotivationWizardPage() {
   // Values read off uploaded documents, waiting to be confirmed. NOT answers.
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
 
+  // ── The member's own name for this application ───────────────────────
+  //
+  // Operator, board review 2026-08-27: "User must be able to rename the
+  // motivation." A member may be running a Section 13 self-defence and two
+  // Section 16 dedicated-hunter applications at once; without this they are
+  // told apart only by section and date. Purely a label for their own list —
+  // see motivations.service.ts#rename for why it never reaches the document.
+  //
+  // ⚠️ HELD SEPARATELY FROM `detail`, NOT FOLDED INTO ITS TYPE. MotivationDetail
+  // in lib/motivations-api.ts does not yet declare `label` — that file belongs
+  // to a different change in this same review, so this reads the field off the
+  // wire response by hand rather than widening a shared type out from under it.
+  const [label, setLabel] = useState<string | null>(null);
+  // The section text ("Section 13 — Self-defence"), served by
+  // motivationsApi.fields rather than duplicated here — see the load effect.
+  // The fallback title when no label has been set.
+  const [licenceLabel, setLicenceLabel] = useState('');
+  const [renamingLabel, setRenamingLabel] = useState(false);
+  const [labelValue, setLabelValue] = useState('');
+  const [labelSaving, setLabelSaving] = useState(false);
+  const [labelError, setLabelError] = useState<string | null>(null);
+
   // ── The template picker ─────────────────────────────────────
   //
   // ⚠️ THE SELECTION IS HELD LOCALLY AND APPLIED OPTIMISTICALLY. Picking a
@@ -343,7 +371,11 @@ export default function MotivationWizardPage() {
         }
 
         setDetail(d);
+        // `label` is on the wire (motivations.service.ts#findOne) but not on
+        // MotivationDetail's declared type — see the state declaration above.
+        setLabel((d as MotivationDetail & { label?: string | null }).label ?? null);
         setFields(fs.fields);
+        setLicenceLabel(fs.label);
         setAnswers(merged);
         const up = await motivationsApi.uploads(token, id);
         setUploads(up.files);
@@ -381,6 +413,77 @@ export default function MotivationWizardPage() {
       alive = false;
     };
   }, [id, token]);
+
+  // The mobile push header's title for THIS motivation, not the index's fixed
+  // "Motivation Centre" — see lib/shell-routes.ts (only the exact '/motivations'
+  // path keeps the mapped title now) and shell-header.tsx's PushHeader, which
+  // takes whatever this sets as document.title and shows everything before the
+  // first em dash.
+  //
+  // ⚠️ THE EM DASH IS NEUTRALISED, NOT CARRIED THROUGH. Both the section text
+  // ("Section 13 — Self-defence") and a member's own typed name can contain
+  // "—", and PushHeader's derived-title effect does a naive
+  // `document.title.split('—')[0]`. Left alone, "Section 13 — Self-defence —
+  // All Outdoor" would show as bare "Section 13" in the header. Swapping "—"
+  // for a plain hyphen keeps every word without tripping that split.
+  useEffect(() => {
+    if (!detail) return;
+    const name = (label && label.trim()) || licenceLabel || 'Motivation';
+    document.title = `${name.replace(/—/g, '-')} — All Outdoor`;
+  }, [detail, label, licenceLabel]);
+
+  /**
+   * The member's own name for this application, e.g. "Home defence" against a
+   * Section 13 draft. Never an answer, never read into the document — see
+   * motivations.service.ts#rename.
+   *
+   * ⚠️ A HAND-ROLLED FETCH, NOT motivationsApi — lib/motivations-api.ts is a
+   * different file's territory in this same review. Mirrors that module's own
+   * request() conventions (fresh token per call, safeJson on a body that is
+   * empty on most days) so it fails the same way the rest of this page does.
+   */
+  const saveLabel = useCallback(
+    async (raw: string) => {
+      setLabelSaving(true);
+      setLabelError(null);
+      try {
+        const API_URL =
+          process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+        const tok = await token();
+        const res = await fetch(`${API_URL}/motivations/${id}/label`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+          },
+          body: JSON.stringify({ label: raw }),
+        });
+        if (!res.ok) {
+          const body = await safeJson<{ message?: string | string[] }>(res, {});
+          throw new MotivationApiError(
+            Array.isArray(body.message)
+              ? body.message.join(' ')
+              : (body.message ?? 'We could not save that name.'),
+            res.status,
+          );
+        }
+        const saved = await safeJson<{ label: string | null }>(res, {
+          label: null,
+        });
+        setLabel(saved.label);
+        setRenamingLabel(false);
+      } catch (e) {
+        setLabelError(
+          e instanceof MotivationApiError
+            ? e.message
+            : 'We could not save that name. Please try again.',
+        );
+      } finally {
+        setLabelSaving(false);
+      }
+    },
+    [id, token],
+  );
 
   /**
    * Apply a template choice.
@@ -1728,6 +1831,80 @@ export default function MotivationWizardPage() {
       <main className="mx-auto max-w-3xl px-4 py-6 lg:max-w-6xl">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">Your firearm licence motivation</h1>
+        {/* THE MEMBER'S OWN NAME FOR THIS ONE — see the label state above for
+          * why it lives here rather than on `detail`. Purely a list label:
+          * it is never read into the answers, the document, or anything the
+          * Registrar sees. */}
+        {renamingLabel ? (
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="text"
+              autoFocus
+              value={labelValue}
+              onChange={(e) => setLabelValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void saveLabel(labelValue);
+                if (e.key === 'Escape') {
+                  setRenamingLabel(false);
+                  setLabelError(null);
+                }
+              }}
+              maxLength={80}
+              placeholder="Name this application, e.g. Home defence"
+              className="flex-1 rounded border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-1.5 text-sm text-[var(--text-primary)] focus:border-[var(--border-hover)] focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => void saveLabel(labelValue)}
+              disabled={labelSaving}
+              className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-60"
+            >
+              {labelSaving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRenamingLabel(false);
+                setLabelError(null);
+              }}
+              className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-card-hover)]"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setLabelValue(label ?? '');
+              setLabelError(null);
+              setRenamingLabel(true);
+            }}
+            aria-label={label ? 'Rename this application' : 'Name this application'}
+            className="mt-1 flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          >
+            <span>{label || licenceLabel || 'Name this application'}</span>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+            </svg>
+          </button>
+        )}
+        {labelError && (
+          <p className="mt-1 text-xs text-[var(--red)]" role="alert">
+            {labelError}
+          </p>
+        )}
         <p className="mt-1 text-sm text-[var(--text-secondary)]">
           Reference {detail.referenceNumber}. Everything stays here until you
           print it — nothing is sent to SAPS by us.

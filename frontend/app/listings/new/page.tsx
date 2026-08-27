@@ -2856,7 +2856,7 @@ export default function NewListingPage() {
           <StepAccordion
             number={1}
             title="Photos"
-            description="Buyers click photos first. Bright, sharp, every angle. 1–6 photos, drag to reorder."
+            description="Buyers click photos first. Bright, sharp, every angle. 1–10 photos, drag to reorder."
             status={statusFor(1)}
             expanded={isOpen(1)}
             onToggle={() => toggleStep(1)}
@@ -2876,7 +2876,7 @@ export default function NewListingPage() {
               files={images}
               onChange={setImages}
               minFiles={1}
-              maxFiles={6}
+              maxFiles={10}
             />
             {/* Multi-angle nudge — the single biggest thing a seller can do
                 to avoid "not as described" disputes later. */}
@@ -3319,7 +3319,7 @@ export default function NewListingPage() {
                       className="text-left rounded-[8px] p-3"
                       style={{
                         background: selected
-                          ? 'rgba(200,16,46,0.06)'
+                          ? 'rgba(200,16,46,0.03)'
                           : 'var(--bg-card)',
                         border: `1px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
                         cursor: 'pointer',

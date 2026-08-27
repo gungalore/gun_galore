@@ -14,10 +14,13 @@ export function AddToCartButton({ item }: { item: CartItem }) {
   if (inCart) {
     return (
       <div className="flex gap-2 mb-3">
+        {/* Board review — Buy CTA typography (display face, 700, sized up
+            from the body-font 500 this used to render at). Same treatment
+            as the Buy Now button on the listing page; appearance only. */}
         <Link
           href="/cart"
-          className="flex-1 py-3 rounded-[6px] text-sm text-center"
-          style={{ background: 'var(--bg-card)', border: '0.5px solid var(--red)', color: 'var(--red)', fontWeight: 500 }}
+          className="flex-1 py-3 rounded-[6px] text-[14.5px] lg:text-[13.5px] text-center"
+          style={{ background: 'var(--bg-card)', border: '0.5px solid var(--red)', color: 'var(--red)', fontFamily: 'var(--font-head)', fontWeight: 700 }}
         >
           In cart ✓ — View cart
         </Link>
@@ -48,9 +51,29 @@ export function AddToCartButton({ item }: { item: CartItem }) {
           );
         }
       }}
-      className="block w-full py-3 rounded-[6px] text-sm text-center mb-3"
-      style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', fontWeight: 500 }}
+      // Board review — Buy CTA typography: display face (Archivo) at 700
+      // (was body-font 500), plus a cart icon (16px, matches the nav
+      // CartButton glyph) since this is "the add-to-cart action". Flex
+      // replaces block+text-center so the icon sits on the text baseline
+      // instead of just floating inline before it.
+      className="flex w-full items-center justify-center gap-1.5 py-3 rounded-[6px] text-[14.5px] lg:text-[13.5px] text-center mb-3"
+      style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)', color: 'var(--text-primary)', fontFamily: 'var(--font-head)', fontWeight: 700 }}
     >
+      <svg
+        aria-hidden
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="9" cy="21" r="1" />
+        <circle cx="20" cy="21" r="1" />
+        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+      </svg>
       Add to cart
     </button>
   );

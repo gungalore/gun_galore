@@ -106,7 +106,7 @@ export function StepAccordion({
   // Status colour
   const accent =
     status === 'complete'
-      ? '#22c55e'
+      ? 'var(--success)'
       : status === 'active'
         ? 'var(--red)'
         : status === 'partial'
@@ -125,7 +125,7 @@ export function StepAccordion({
           status === 'active'
             ? 'var(--red)'
             : status === 'complete'
-              ? 'rgba(34,197,94,0.4)'
+              ? 'color-mix(in srgb, var(--success) 40%, transparent)'
               : status === 'partial'
                 ? 'rgba(212,154,58,0.45)'
                 : 'var(--border)'
@@ -157,7 +157,7 @@ export function StepAccordion({
             height: 28,
             background:
               status === 'complete'
-                ? 'rgba(34,197,94,0.15)'
+                ? 'color-mix(in srgb, var(--success) 15%, transparent)'
                 : status === 'active'
                   ? 'var(--red)'
                   : status === 'partial'
@@ -165,7 +165,7 @@ export function StepAccordion({
                     : 'var(--bg-inset)',
             color:
               status === 'complete'
-                ? '#22c55e'
+                ? 'var(--success)'
                 : status === 'active'
                   ? '#fff'
                   : status === 'partial'
@@ -173,7 +173,7 @@ export function StepAccordion({
                     : 'var(--text-tertiary)',
             border:
               status === 'complete'
-                ? '0.5px solid rgba(34,197,94,0.4)'
+                ? '0.5px solid color-mix(in srgb, var(--success) 40%, transparent)'
                 : status === 'active'
                   ? '0.5px solid var(--red)'
                   : status === 'partial'
@@ -205,7 +205,7 @@ export function StepAccordion({
             {status === 'complete' && (
               <span
                 className="text-xs"
-                style={{ color: '#22c55e', fontWeight: 500 }}
+                style={{ color: 'var(--success)', fontWeight: 500 }}
               >
                 · Done
               </span>

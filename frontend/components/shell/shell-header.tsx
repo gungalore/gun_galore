@@ -181,10 +181,24 @@ function Avatar() {
   );
 }
 
-function RootHeader() {
+/** Cart icon + badge, shared by both header archetypes — ROOT's own slot and
+ *  PUSH's trailing slot (every push route now carries it; see PushHeader). */
+function CartLink() {
   const items = useCart();
-  const { count: savedCount } = useWishlist();
   const cartCount = items.reduce((sum, i) => sum + (i.quantity ?? 1), 0);
+  return (
+    <TapTarget
+      href="/cart"
+      aria-label={cartCount === 0 ? 'Cart, empty' : `Cart, ${cartCount} items`}
+      badge={cartCount}
+    >
+      <IconCart />
+    </TapTarget>
+  );
+}
+
+function RootHeader() {
+  const { count: savedCount } = useWishlist();
 
   return (
     <div
@@ -214,13 +228,7 @@ function RootHeader() {
         <TapTarget href="/wishlist" aria-label={`Wishlist, ${savedCount} saved`} badge={savedCount}>
           <IconHeart />
         </TapTarget>
-        <TapTarget
-          href="/cart"
-          aria-label={cartCount === 0 ? 'Cart, empty' : `Cart, ${cartCount} items`}
-          badge={cartCount}
-        >
-          <IconCart />
-        </TapTarget>
+        <CartLink />
         <Avatar />
       </span>
     </div>
@@ -297,11 +305,13 @@ function PushHeader({ pathname }: { pathname: string }) {
       >
         {title}
       </span>
-      {/* The design leaves this slot filled differently on each push board —
-          share + cart on a listing, search on Orders, and genuinely empty on
-          Cart, Checkout, Sell and both Centres. Empty is the honest default;
-          per-board fills belong with those pages, not in the shell. */}
-      <span style={{ display: 'flex', alignItems: 'center' }} />
+      {/* Trailing slot — cart on every push route now (board review,
+          2026-08-27), reusing CartLink from the ROOT header so the icon,
+          badge and count logic can't drift between the two archetypes. The
+          design draws share alongside it on a listing board, but share is
+          per-page (it needs that page's own title/url/image) and belongs
+          with the listing, not hardcoded into the shell. */}
+      <CartLink />
     </div>
   );
 }

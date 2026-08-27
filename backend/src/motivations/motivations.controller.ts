@@ -39,6 +39,7 @@ import {
   AcceptDeclarationDto,
   AnswerFollowUpDto,
   CreateMotivationDto,
+  RenameMotivationDto,
   SaveAnswersDto,
   SetTemplateDto,
 } from './dto/motivation.dto';
@@ -192,6 +193,22 @@ export class MotivationsController {
     @Body() dto: SetTemplateDto,
   ) {
     return this.motivations.setTemplate(clerkId, id, dto);
+  }
+
+  /**
+   * The member's own name for this application on their list.
+   *
+   * Operator, board review 2026-08-27: "User must be able to rename the
+   * motivation." Purely organisational — see motivations.service.ts#rename
+   * for why it never reaches the document.
+   */
+  @Patch(':id/label')
+  rename(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body() dto: RenameMotivationDto,
+  ) {
+    return this.motivations.rename(clerkId, id, dto.label);
   }
 
   /**
