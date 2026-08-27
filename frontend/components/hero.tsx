@@ -126,12 +126,20 @@ export function Hero() {
             background-position: 80% center;
           }
           .hero-overlay {
-            /* The copy sits BELOW the picture on phones, so this only has to
-               blend the foot of the photograph into the panel behind it. The
-               end stop is the section background exactly, so there is no
-               seam between plate and copy. */
+            /* ⚠️ THE COPY IS OVER THE PICTURE ON PHONES NOW, NOT UNDER IT.
+               It used to sit below, on the section's dark panel, and this
+               gradient only had to blend the foot of the plate into that
+               panel. Stacked that way the hero cost a 390px phone the picture
+               PLUS the full height of the copy — around 1250px, so the
+               storefront itself never appeared on the first screen. The mobile
+               board draws one 260px band with the words on the photograph.
+
+               This wash is therefore doing contrast work, not blending: dark
+               at the top so the eyebrow reads, lightest across the middle
+               where the ridges are, dark again at the foot under the
+               sub-heading. */
             background:
-              linear-gradient(180deg, rgba(18,18,17,0) 45%, rgba(18,18,17,0.55) 80%, #121211 100%);
+              linear-gradient(180deg, rgba(10,10,10,0.55) 0%, rgba(10,10,10,0.30) 45%, rgba(10,10,10,0.62) 100%);
           }
         }
 
@@ -147,7 +155,66 @@ export function Hero() {
           aspect-ratio: 2172 / 724;
         }
         @media (max-width: 767.98px) {
-          .hero-frame { aspect-ratio: 4 / 3; }
+          /* A FIXED BAND, like the desktop rule below, not a ratio.
+             4/3 on a 390px phone is 293px of picture BEFORE the copy that sits
+             under it, which pushed the storefront itself off the first screen
+             entirely -- on the mobile boards the hero is 260px and the two shop
+             tiles are visible without scrolling. aspect-ratio has to be cleared
+             explicitly or it keeps fighting the height. */
+          .hero-frame {
+            aspect-ratio: auto;
+            height: 260px;
+            max-height: none;
+          }
+
+          /* Overlay the copy, the same way the desktop rule below does — the
+             section is the positioning context and the content covers the
+             frame. */
+          .hero-section { position: relative; }
+          .hero-content {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            padding-top: 0;
+            padding-bottom: 0;
+            gap: 11px;
+          }
+
+          /* The board's type ramp for this band. The Tailwind classes on these
+             elements are mobile-first and set 36px/16px, which was sized for
+             copy on its own panel; over a 260px photograph it has to come
+             down or there is no photograph left. */
+          .hero-reveal-1 {
+            font-size: 10.5px;
+            letter-spacing: 2px;
+          }
+          .hero-reveal-2 {
+            font-size: 27px;
+            line-height: 1.15;
+            letter-spacing: -0.6px;
+            /* text-shadow, NOT box-shadow. The global box-shadow:none
+               !important rule in globals.css kills every box-shadow on the
+               site, but it does not touch text-shadow — and white type over a
+               moonlit ridge needs the separation.
+               (No backticks in this block: it lives inside a JSX template
+               literal and a backtick ends the string. See the warning at the
+               top of the style tag.) */
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+          }
+          .hero-reveal-3 {
+            font-size: 13.5px;
+            line-height: 1.55;
+          }
+
+          /* ⚠️ NO CTA BUTTON ON PHONES. The board does not draw one, and there
+             is no room for a 46px button inside a 260px band that already
+             carries three lines of copy. It is not a lost action: the Buy Now
+             and Auctions tiles sit immediately below the hero and are the
+             storefront's real entry points, which is exactly the arrangement
+             the board shows. */
+          .hero-cta {
+            display: none;
+          }
         }
         @media (min-width: 768px) {
           .hero-section { position: relative; }

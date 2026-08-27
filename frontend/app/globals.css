@@ -30,6 +30,21 @@
      the header changed shape. The design's header is a single 62px row. */
   --nav-h: 62px;
 
+  /* ── The mobile app shell ─────────────────────────────────────────
+     Separate tokens from --nav-h ON PURPOSE. --nav-h is the DESKTOP header
+     row, and three unrelated surfaces read it (.gg-anchor-buy's scroll
+     margin, error.tsx, not-found.tsx). The mobile chrome is a different
+     shape — a 54px chrome row, sometimes a second row under it, and a 62px
+     tab bar — so it gets its own names. Changing --nav-h to mean the tab bar
+     would silently move all three of those.
+
+     --shell-search-h is arithmetic, not a board value: the design draws the
+     search row as 10px padding, a 46px field, 10px padding, and declares no
+     height on the row itself. */
+  --shell-header-h: 54px;
+  --shell-search-h: 66px;
+  --shell-tab-h: 62px;
+
   /* ── Surfaces ─────────────────────────────────────────────────────
      Winkel: a white retail skin. The page is a warm off-white and cards
      sit ON it in pure white, so a card reads as raised without needing a
@@ -435,11 +450,47 @@ html[data-standalone='true'] [data-public-footer] {
   display: none;
 }
 
-/* Leave room at the bottom of every scrollable page for the fixed
-   bottom tab bar in standalone mode (60pt nav + safe-area padding).
-   Without this the last item in any list sits behind the tab bar. */
-html[data-standalone='true'] body {
-  padding-bottom: calc(60px + env(safe-area-inset-bottom));
+/* The same swap on mobile web, where the shell header and tab bar now render
+   too. Without this the phone carries BOTH navigations at once: two Sell
+   entries, two carts, two ways to browse, stacked.
+
+   ⚠️ THE BREAKPOINT MATCHES nav.tsx'S OWN. Every mobile-only control in that
+   file is `md:hidden` (the hamburger trigger, its backdrop, the search
+   trigger), so at 768px the drawer already ceases to exist and the desktop row
+   takes over. Hiding the nav below the same 768px leaves no dead zone and no
+   double chrome, and touches nothing above it — the pack contains no desktop
+   boards, so nothing above the breakpoint is specified and nothing moves.
+
+   The FOOTER deliberately stays on mobile web. It carries Terms, Privacy, PAIA
+   and the ECT §43 disclosures, and mobile web is a browser: those links have to
+   remain reachable. In the installed app the rule above still hides it and the
+   Account screen carries them instead. */
+@media (max-width: 767px) {
+  [data-public-nav] {
+    display: none;
+  }
+}
+
+/* ── Bottom chrome clearance ──────────────────────────────────────────
+   ⚠️ THE STANDALONE RULE THAT USED TO LIVE HERE IS GONE ON PURPOSE. It read
+   `html[data-standalone='true'] body { padding-bottom: calc(60px + inset) }`,
+   and under the app shell it was reserving space on an element that no longer
+   scrolls: in the installed app the shell is a locked flex column, the tab bar
+   is a real flex sibling with real height, and the pane between them is what
+   scrolls. Padding on `body` in that mode holds open a gap no content can ever
+   reach, while the pane's last row still renders flush under the tab bar. The
+   flex layout reserves the space now; nothing else has to.
+
+   (It also said 60px while --nav-h next to it said 62px, and the design's bar
+   is 62px. Three numbers, one bar.)
+
+   On mobile WEB the bar is `position: fixed` over normal document scroll, so
+   clearance is still needed — but only on the routes that actually render it,
+   which is why these key on the bar's own presence rather than on a breakpoint
+   alone. See the specificity warning further down: the `html:not(...)` prefix
+   is what lets a `:has()` rule beat the plain `body` rule above it. */
+html:not([data-standalone='true']) body:has([data-shell-tabs]) {
+  padding-bottom: calc(var(--shell-tab-h) + env(safe-area-inset-bottom));
 }
 
 /* ⚠️ THE EXTRA 110px FOR THE STICKY FEATURED STRIP IS GONE, AND SO IS THE
@@ -509,6 +560,15 @@ html[data-standalone='true']::view-transition-new(root) {
    only symptom is a page that will not scroll the last inch. */
 html:not([data-standalone='true']) body:has([data-install-bar]) {
   padding-bottom: calc(62px + env(safe-area-inset-bottom));
+}
+
+/* Both bars at once. The install bar now sits ON TOP of the tab bar rather
+   than under it (see components/install-prompt.tsx), so the page has to clear
+   the pair, not the taller of the two. Scores (0,3,2) — one more :has() than
+   the rule above — so it wins wherever both are present. */
+html:not([data-standalone='true'])
+  body:has([data-install-bar]):has([data-shell-tabs]) {
+  padding-bottom: calc(62px + var(--shell-tab-h) + env(safe-area-inset-bottom));
 }
 
 
@@ -783,6 +843,272 @@ html:not([data-standalone='true']) body:has([data-install-bar]) {
   -ms-overflow-style: none;
 }
 .gg-row::-webkit-scrollbar { display: none; }
+
+/* ============ Two independently scrolling panes ============
+   The WeBuyCars pattern the operator asked for by name: the PAGE does not
+   scroll, each column does. Read the gallery and the description on the left
+   while the price and bid controls stay put on the right, and vice versa.
+
+   ⚠️ DESKTOP ONLY, AND IT UNWINDS COMPLETELY BELOW lg. Two locked panes on a
+   phone is unusable — you cannot reach the second one without discovering that
+   the first has its own scroll. Below 1024px these are plain stacked blocks in
+   normal page flow, which is exactly what the mobile boards show.
+
+   ⚠️ THE HEIGHT IS INHERITED, NOT HARDCODED. The design boards are fixed-size
+   canvases, so their shells say `height: 900px` — that is the artboard, not a
+   spec, and pinning it would clip the panel on a laptop and strand it on a big
+   monitor. The page sets `calc(100vh - var(--nav-h))` on its own wrapper and
+   this takes what is left via flex, so the back link and any padding above are
+   accounted for without anyone counting pixels.
+
+   ⚠️ `min-height: 0` twice, and both are load-bearing. A flex child defaults to
+   min-height:auto and refuses to shrink below its content, so without it each
+   pane grows to fit, the shell's overflow:hidden crops the overflow away, and
+   NEITHER pane ever scrolls. This is the single most common way this layout is
+   got wrong. */
+@media (min-width: 1024px) {
+  .gg-twopane {
+    flex-direction: row;
+    gap: 0;
+    flex: 1;
+    min-height: 0;
+  }
+  .gg-twopane > .gg-twopane-main,
+  .gg-twopane > .gg-twopane-side {
+    min-height: 0;
+    overflow-y: auto;
+    /* ⚠️ DELIBERATELY NOT `overscroll-behavior: contain`. The site footer sits
+       below this shell, and the shell is a full viewport tall, so the only way
+       to reach the footer is to chain out of a pane once it bottoms out.
+       Containing the scroll makes Terms, Privacy and PAIA unreachable by wheel
+       on every listing page. */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-hover) transparent;
+  }
+  .gg-twopane > .gg-twopane-main::-webkit-scrollbar,
+  .gg-twopane > .gg-twopane-side::-webkit-scrollbar { width: 9px; }
+  .gg-twopane > .gg-twopane-main::-webkit-scrollbar-track,
+  .gg-twopane > .gg-twopane-side::-webkit-scrollbar-track { background: var(--border-divider); }
+  .gg-twopane > .gg-twopane-main::-webkit-scrollbar-thumb,
+  .gg-twopane > .gg-twopane-side::-webkit-scrollbar-thumb {
+    background: var(--border-hover);
+    border-radius: 5px;
+  }
+
+  .gg-twopane > .gg-twopane-main {
+    flex: 1;
+    min-width: 0;
+    padding-right: 22px;
+  }
+  /* 408px is the pack's figure. The page shipped 360px, which is narrow enough
+     that the bid controls and the odometer's four rings start wrapping. */
+  .gg-twopane > .gg-twopane-side {
+    width: 408px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border);
+    padding-left: 24px;
+  }
+}
+
+/* Tab-bar icon geometry.
+   The glyphs in the row are shared components drawn at their own sizes — 24px
+   at stroke 1.6 for the box and person, 22px for the heart — and they are used
+   elsewhere at those sizes. The design's row wants every one at 21px / 1.9,
+   and 20px / 2.4 inside the Sell button. Normalising here rather than editing
+   each component keeps the glyphs correct everywhere else they appear.
+   CSS stroke-width overrides the SVG presentation attribute, which is what
+   lets this reach components that hard-code it. */
+/* The shell header's search field.
+   LiveSearch is shared with the desktop nav, where it sits in a 44px row and
+   sizes itself to it. The mobile boards draw a 46px field, and the row's
+   height (66px) is that plus its 10px padding top and bottom -- so the field
+   height is what actually sets the row. Overriding here keeps LiveSearch
+   itself untouched for the desktop row it also serves. */
+[data-shell-header] input {
+  height: 46px;
+}
+
+.gg-tab-icon > svg { width: 21px; height: 21px; stroke-width: 1.9; }
+.gg-tab-fab > svg  { width: 20px; height: 20px; stroke-width: 2.4; }
+
+/* ============ The mobile app shell ============
+   Two scroll models sharing one DOM. The markup is identical everywhere —
+   header, pane, tab bar, always rendered, always in the same order — and CSS
+   alone decides whether any of it is a box. That is what keeps the server HTML
+   width-independent, which is the property components/public-chrome.tsx is
+   written to protect.
+
+   DEFAULT (mobile web, and every desktop width): the shell is
+   `display: contents`. It is not a box at all — no wrapper, no flex context,
+   no new containing block. The document scrolls exactly as it did before this
+   file gained a shell, the header is an ordinary block at the top of the page,
+   and only the tab bar is fixed. Nothing about the existing page layout
+   changes.
+
+   INSTALLED PWA: the shell becomes a locked viewport-height flex column and
+   the middle pane scrolls instead of the document. This is the "app" model —
+   chrome that never moves because there is no browser chrome to move with.
+
+   ⚠️ THE HEADER IS DELIBERATELY NOT STICKY ON MOBILE WEB, AND THIS IS A
+   STANDING OPERATOR DECISION, NOT AN OVERSIGHT. A sticky mobile-web search
+   header was built three separate times and rejected all three — sticky under
+   the nav ("it is sticking to the screen and scrolling with"), hide-on-scroll
+   (reverted the same day: momentum scrolling flips direction constantly, so it
+   flickered under the reader's thumb), then sticky again. See the header of
+   components/mobile-search-bar.tsx for the full history. In a browser the URL
+   bar is already spending that band; a second permanent bar under it is what
+   was objected to. In the installed app there is no URL bar and the header IS
+   the navigation, so there it is pinned. Do not make the mobile-web header
+   sticky.
+
+   ⚠️ NEVER PUT transform, filter, perspective, will-change OR contain ON THE
+   SHELL. Any of them makes it the containing block for every `position: fixed`
+   descendant, so fixed overlays inside a page would clip to the shell box
+   instead of the viewport. This repo has already been bitten by exactly that
+   twice — see the note in components/filter-bar.tsx about PageReveal keeping a
+   non-none transform after its entrance settles, which is why the filter sheet
+   and the listing lightbox both had to be portalled to document.body. */
+.gg-shell,
+.gg-shell-pane {
+  display: contents;
+}
+
+/* The chrome is hidden by default and switched on for phones, plus for the
+   installed app at ANY width — a desktop-installed PWA has no browser chrome
+   either, so it needs the shell's own. */
+.gg-shell-chrome {
+  display: none;
+}
+@media (max-width: 767px) {
+  .gg-shell-chrome {
+    display: flex;
+  }
+}
+html[data-standalone='true'] .gg-shell-chrome {
+  display: flex;
+}
+
+html[data-standalone='true'] .gg-shell {
+  display: flex;
+  flex-direction: column;
+  /* 100vh first as the fallback, then 100dvh where supported. On mobile
+     browsers dvh tracks the collapsing toolbars; in standalone there are none,
+     so the two agree — the fallback matters for older engines only. */
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+html[data-standalone='true'] .gg-shell-pane {
+  display: block;
+  flex: 1;
+  /* Load-bearing. A flex child defaults to min-height:auto and refuses to
+     shrink below its content, so without this the pane grows to fit, the
+     shell's overflow:hidden crops the excess, and the pane never scrolls. */
+  min-height: 0;
+  overflow-y: auto;
+  /* The pane is the scrollport now, so it owns the rubber-band. The global
+     `html, body { overscroll-behavior-y: none }` further up constrains the
+     document, which in this mode is not what moves. */
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* The header sits above page content in both modes so the search dropdown,
+   which renders absolutely inside it, stacks over the page. Deliberately below
+   60: modals and sheets live at z >= 60 and must be able to cover the chrome. */
+[data-shell-header] {
+  position: relative;
+  z-index: 50;
+  flex-shrink: 0;
+}
+
+/* Fixed to the viewport on mobile web; a plain flex sibling in the installed
+   app, where the locked column already puts it at the bottom and giving it
+   position:fixed would take it out of the flow the shell depends on. */
+[data-shell-tabs] {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 55;
+  flex-shrink: 0;
+}
+html[data-standalone='true'] [data-shell-tabs] {
+  position: static;
+}
+
+/* The listing page's desktop two-pane shell measures itself against the
+   viewport. Inside a locked pane that is the wrong ruler — it would size to a
+   full viewport within a pane that is already shorter than one, and the page
+   would scroll twice. Desktop-installed PWA only; rare, but silently broken
+   without this. */
+@media (min-width: 1024px) {
+  html[data-standalone='true'] .gg-listing-main {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+/* ============ The listing page below lg ============
+   ⚠️ STACKING ORDER IS NOT SOURCE ORDER HERE, AND IT HAS TO NOT BE.
+   The desktop layout puts the gallery and the reading content (description,
+   specifications, Q&A) in one pane and the buy column in the other. Stack those
+   two panes naively on a phone and the result is: photographs, description,
+   spec table, Q&A thread — and only then the price and the Buy button. The
+   buyer scrolls past everything to reach the thing they came to do.
+
+   So below lg the reading pane becomes `display: contents`, which dissolves it
+   as a box and promotes the gallery and the reading block to siblings of the
+   buy column. Then order puts them back in the sequence a phone wants:
+   pictures, price and action, then the detail you read if you are still
+   deciding. Above lg the pane is a box again and order is irrelevant, because
+   the two columns are side by side. */
+@media (max-width: 1023px) {
+  .gg-twopane > .gg-twopane-main {
+    display: contents;
+  }
+  /* Every part of the reading pane defaults to order 1, not just its first
+     child. The gallery is not one element — the hero and the thumbnail strip
+     are separate siblings — so ordering `:first-child` alone promoted one of
+     them and left the other sitting at the default order 0, which put the
+     thumbnails above the photograph they belong to. */
+  .gg-twopane > .gg-twopane-main > * {
+    order: 1;
+  }
+  .gg-twopane > .gg-twopane-side {
+    order: 2;
+  }
+  .gg-twopane > .gg-twopane-main > .gg-reading {
+    order: 3;
+  }
+}
+
+/* ============ The #buy-panel fragment target ============
+   Every listing card's "Place bid" / "Buy now" links to
+   /listings/<id>#buy-panel, so this element is a real navigation target.
+
+   Below lg it sits in normal page flow under a sticky header, so it needs the
+   usual header-height scroll margin or the header covers it.
+
+   ⚠️ AT lg IT MUST NOT MOVE ANYTHING, AND THE NAIVE VALUE ACTIVELY BREAKS THE
+   PAGE. In the two-pane layout the buy panel is already at the top of the buy
+   pane when the page loads, so the fragment has nothing to do — but a fragment
+   scrolls EVERY ancestor scrollport, not just the nearest one. That means the
+   pane scrolls and then the document scrolls, and because the shell is exactly
+   one viewport tall the document scroll drags the entire shell upward and
+   carries the buy panel off the top of the screen. Measured before this rule:
+   the page landed at scrollY 486 with the target at viewport y -285 — arriving
+   from a card's Buy now button put the buy button out of sight.
+
+   A scroll-margin taller than the viewport puts the start-alignment point above
+   the top of both scrollports, so both clamp to zero and nothing moves at all,
+   which is the correct outcome here. */
+.gg-anchor-buy { scroll-margin-top: calc(var(--nav-h) + 8px); }
+@media (min-width: 1024px) {
+  .gg-anchor-buy { scroll-margin-top: 100vh; }
+}
 
 /* ============ Interaction states — the house pattern ============
    THE DESIGN PACK SPECIFIES NONE OF THIS. Across all 23 boards there is

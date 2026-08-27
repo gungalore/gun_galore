@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { AccountSignOut } from '@/components/account-sign-out';
+import { PushToggleRow } from '@/components/push-opt-in-banner';
 import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { Me, SellerTier } from '@/lib/types';
@@ -282,6 +283,14 @@ export default async function AccountPage() {
 
             {/* Help now lives in ACCOUNT_GROUPS (shared with the dropdown /
                 drawer / More sheet), so it renders with the groups above. */}
+
+            {/* ⚠️ PUSH NOTIFICATIONS HAVE NOWHERE ELSE TO GO. This toggle used
+                to exist in exactly one place — the bottom tab bar's "More"
+                sheet — and that sheet is no longer reachable now the Account
+                tab is a link to this page rather than a sheet trigger. Without
+                it here an installed member has no way to turn notifications on
+                or off at all. It self-hides where push is unsupported. */}
+            <PushToggleRow />
           </div>
         </PageReveal>
       </main>

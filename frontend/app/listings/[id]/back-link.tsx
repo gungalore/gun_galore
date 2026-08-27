@@ -22,7 +22,10 @@ export default function BackLink() {
           router.push('/');
         }
       }}
-      className="text-sm inline-block mb-6"
+      // ⚠️ hidden below md — the mobile shell header already carries a back
+      // chevron on every push route, and this rendered directly underneath it,
+      // giving the same screen two back affordances stacked.
+      className="text-sm hidden md:inline-block mb-6"
       style={{
         color: 'var(--text-tertiary)',
         background: 'transparent',

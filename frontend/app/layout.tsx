@@ -10,8 +10,7 @@ import { AddedToCartDrawer } from '@/components/added-to-cart-drawer';
 import { InstallPrompt } from '@/components/install-prompt';
 import { AvatarLightbox } from '@/components/avatar-lightbox';
 import { SwKillSwitch } from '@/components/sw-killswitch';
-import { BottomTabBar } from '@/components/bottom-tab-bar';
-import { MobileSearchBar } from '@/components/mobile-search-bar';
+import { AppShell } from '@/components/shell/app-shell';
 import { ConnectionStatusBanner } from '@/components/connection-status-banner';
 import { SwUpdateBanner } from '@/components/sw-update-banner';
 import { PageViewTracker } from '@/components/page-view-tracker';
@@ -300,11 +299,14 @@ export default function RootLayout({
           <PageViewTracker />
           <SwUpdateBanner />
           <PublicNav />
-          {/* Search affordance for standalone-PWA users on the Browse
-              screen — the top nav (with its search input) is hidden
-              in standalone mode, so this fills the gap. Self-gates on
-              both display-mode + pathname, no-op everywhere else. */}
-          <MobileSearchBar />
+          {/* ⚠️ MobileSearchBar WAS MOUNTED HERE AND IS NOW PART OF THE SHELL.
+              It was the installed app's entire header — a sticky search field
+              plus the cart, standalone-only — living as a <body> sibling. Two
+              problems under the app shell: as a body sibling it has no
+              scrolling ancestor once the pane owns scroll, and its cart was
+              load-bearing (the tab bar has no cart slot). Both moved into
+              components/shell/shell-header.tsx, which is where the design puts
+              them. The file is gone; do not re-mount it. */}
           {/* NOTE on View Transitions: React 19.2.6 stable doesn't
               expose `unstable_ViewTransition` yet — only the React
               experimental channel does. We've left
@@ -316,10 +318,17 @@ export default function RootLayout({
               behind the flag, the slide-on-route-change activates
               with zero further changes. Until then routes navigate
               with a hard cut (existing behaviour). */}
-          {children}
-          <PublicFooter>
-            <SiteFooter />
-          </PublicFooter>
+          {/* The mobile app shell. On desktop and mobile web it is
+              `display: contents` — not a box, no layout effect at all — so
+              this wraps every page without changing how any of them lay out.
+              In the installed PWA it becomes the locked flex column that owns
+              the header, the scrolling pane and the tab bar. */}
+          <AppShell>
+            {children}
+            <PublicFooter>
+              <SiteFooter />
+            </PublicFooter>
+          </AppShell>
           {/* ⚠️ THE STICKY FEATURED STRIP WAS REMOVED FROM HERE.
               It hugged the bottom tab bar on every shopping surface in
               standalone mode and reserved 110px of body padding for itself —
@@ -330,17 +339,12 @@ export default function RootLayout({
               card, and was then removed entirely with the Featured module on
               2026-08-26. app/globals.css no longer reserves the 110px, and
               body[data-has-sticky-strip] is gone with it. */}
-          {/* Bottom tab bar — installed-PWA users only. Renders null
-              in browser-mobile mode so server HTML stays identical
-              and the existing hamburger drawer in nav.tsx is what
-              browser-mobile users see.
-              Wrapped in Suspense because it reads useSearchParams()
-              for the active-tab matcher; without the boundary, Next
-              fails to prerender static pages that don't otherwise
-              use search params (e.g. /admin/featured/banned). */}
-          <Suspense fallback={null}>
-            <BottomTabBar />
-          </Suspense>
+          {/* ⚠️ THE BOTTOM TAB BAR MOVED INTO <AppShell>. In the installed app
+              the shell is a locked flex column and the bar has to be a real
+              flex sibling of the scrolling pane — mounted out here as a body
+              sibling it could only ever be position:fixed, which takes it out
+              of the flow the shell measures against. See
+              components/shell/app-shell.tsx. */}
           {/* Floating "Install All Outdoor" CTA — listens for
               beforeinstallprompt on Android/desktop, shows an iOS
               "Share → Add to Home Screen" hint on iOS Safari. 14-day
