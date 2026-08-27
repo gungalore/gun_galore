@@ -172,6 +172,27 @@ function IconList() {
     </svg>
   );
 }
+/* Orders. A parcel, not a receipt or a cart: what the member is checking on
+   this tab is the thing in transit, and it is the only glyph in the bar that
+   has to read at 24px against four line-drawn siblings. */
+function IconBox() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3.5 7.5 12 3.5l8.5 4v9L12 20.5l-8.5-4v-9Z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M3.5 7.5 12 11.5l8.5-4M12 11.5v9"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 function IconCart() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -247,24 +268,6 @@ function IconMore() {
       <circle cx="5" cy="12" r="1.7" fill="currentColor" />
       <circle cx="12" cy="12" r="1.7" fill="currentColor" />
       <circle cx="19" cy="12" r="1.7" fill="currentColor" />
-    </svg>
-  );
-}
-function IconBell() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M6 9a6 6 0 0 1 12 0v5l1.5 2.5h-15L6 14V9z"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M10 19a2 2 0 0 0 4 0"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
     </svg>
   );
 }
@@ -561,10 +564,19 @@ export function BottomTabBar() {
       prominent: true,
     },
     {
-      key: 'alerts',
-      label: 'Alerts',
-      href: '/notifications',
-      isActive: (p) => p.startsWith('/notifications'),
+      // ⚠️ THIS SLOT WAS "ALERTS" (→ /notifications) UNTIL THE THEME PACK.
+      //
+      // All ten mobile boards name this tab Orders, and none of them shows a
+      // notifications surface anywhere — so a straight swap would have taken
+      // the unread-alert badge, the one "you have unfinished business" signal
+      // an installed member gets, and left it nowhere. It did not go: it moved
+      // onto the Account tab below, which is where everything else about the
+      // member's own business already lives. /notifications is still one tap
+      // away inside that sheet.
+      key: 'orders',
+      label: 'Orders',
+      href: '/my/orders',
+      isActive: (p) => p.startsWith('/my/orders') || p.startsWith('/orders/'),
       // No `action` — this is a real Link, not a sheet.
     },
     {
@@ -583,15 +595,18 @@ export function BottomTabBar() {
     switch (key) {
       case 'shop':
         return <IconShop />;
-      case 'alerts':
-        // Bell + an optional unread-count badge in the top-right corner.
-        // Badge only renders when alertsCount > 0 — the clear "you have
-        // unfinished business" indicator that polls via active-count
-        // and only drops when the user ACTS on the underlying entity
-        // (server-side auto-resolve), NOT when they open the inbox.
+      case 'orders':
+        return <IconBox />;
+      case 'more':
+        // The badge, NOT the bell, is the thing that had to survive the tab
+        // rename: it only renders when alertsCount > 0, polls via active-count,
+        // and only clears when the member ACTS on the underlying entity
+        // (server-side auto-resolve) rather than merely opening the inbox.
+        // It now rides on the Account glyph, since everything it points at
+        // lives inside that sheet.
         return (
           <span style={{ position: 'relative', display: 'inline-flex' }}>
-            <IconBell />
+            <IconUser />
             {alertsCount > 0 && (
               <span
                 aria-label={`${alertsCount} unresolved`}
@@ -655,8 +670,6 @@ export function BottomTabBar() {
             )}
           </span>
         );
-      case 'more':
-        return <IconUser />;
       default:
         return null;
     }

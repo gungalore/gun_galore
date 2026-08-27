@@ -116,6 +116,14 @@
   --danger:  #C8102E;
   --info:    #2A6FB0;
 
+  /* The last-minute auction accent. NOT --red and NOT --gold: it is a third
+     colour the design pack introduces, used for the seconds ring, the minutes
+     ring once under a minute, and the "closing" price treatment. The hour ring
+     never takes it. Also the pink in MobileHome's hero headline.
+     ⚠️ On a white card this is 2.9:1 — a FILL and a large-figure colour, never
+     small ink. Pair it with --text-primary for any body copy. */
+  --hot:     #F07087;
+
   /* Gold — the "featured / paid placement / auction" signal. One place, so
      the marquee, the bid CTA and the availability dot can't drift apart.
      --gold is 3.75:1 on white: fine for borders, icons and large figures,
@@ -151,6 +159,40 @@
      on dark); on Winkel it must be the dark ink at 10%, or every card edge
      drawn with it vanishes into the white page. */
   --hairline: rgba(26, 22, 19, 0.10);
+
+  /* ── Motion ───────────────────────────────────────────────────────
+     THE curves and durations. Before these existed the codebase ran EIGHT
+     different cubic-beziers with no names, and the design pack introduced a
+     ninth — so a 23-surface rebuild would have had every surface picking its
+     own feel. These three are not new: two are simply the two curves already
+     most used here, given names.
+
+     --ease-out       the house curve. Anything entering, growing or settling.
+                      Already what heroSlideIn uses.
+     --ease-standard  symmetrical moves — colour, a disclosure opening, a
+                      thing that goes out the way it came in.
+     --ease-odo       AUCTION ONLY. The design pack's own signature, kept
+                      separate so the odometer stays a deliberate exception
+                      rather than leaking into ordinary UI.
+
+     Durations are a ladder, not a menu — pick the rung, don't invent 250ms.
+     --dur-press is deliberately below the 160ms feedback floor: the card it
+     exists for is the most-tapped control on the site, and at that frequency
+     anything slower is felt as lag rather than as feedback.
+
+     ⚠️ Animate transform and opacity. Colour is fine. Anything that triggers
+     layout (height, width, top) is not — use a grid-template-rows 0fr→1fr
+     wrapper for disclosure instead. And remember `* { box-shadow: none
+     !important }` further down: a shadow cannot animate here because it
+     cannot render at all. */
+  --ease-out:      cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-odo:      cubic-bezier(0.16, 0.9, 0.24, 1);
+
+  --dur-press: 120ms;   /* :active feedback on high-frequency controls */
+  --dur-fast:  200ms;   /* colour, image fade, small state swaps          */
+  --dur-base:  300ms;   /* entrances, outcome cards                       */
+  --dur-sheet: 420ms;   /* sheets and drawers                             */
 }
 
 html,
@@ -683,6 +725,107 @@ html:not([data-standalone='true']) body:has([data-install-bar]) {
 .gg-menu-scroll::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;
+}
+
+/* ============ Scrolling panes and strips ============
+   The design pack's two shared scroll utilities, which nine separate boards
+   re-declared identically — they are chrome, not per-page design.
+
+   .gg-pane   a column that scrolls independently of the page. The two-pane
+              listing, search and motivation layouts are built from a pair of
+              these inside a shell that is itself `overflow: hidden`.
+   .gg-row    a horizontal strip that scrolls with NO visible scrollbar —
+              category chips, thumbnail rails, filter chips.
+
+   ⚠️ `min-height: 0` on .gg-pane is load-bearing, not defensive. A flex child
+   defaults to `min-height: auto`, which refuses to shrink below its content —
+   so without it the pane grows to fit its content, the shell's overflow:hidden
+   crops the overflow away, and the pane never scrolls at all. This is the
+   single most common way this layout is got wrong.
+
+   The pack hardcodes #CFC9BC / #EFEDE6 for the thumb and track. Those are
+   within a shade of --border-hover and --border-divider, so the tokens are
+   used instead — scrollbar chrome that ignores the theme would be the one
+   part of the page that cannot follow it. */
+.gg-pane {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+.gg-pane::-webkit-scrollbar { width: 9px; }
+.gg-pane::-webkit-scrollbar-track { background: var(--border-divider); }
+.gg-pane::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: 5px;
+}
+/* Phones get the narrower skin the mobile boards specify. Touch scrolling
+   needs far less target, and 9px of chrome on a 390px column is a tax. */
+@media (max-width: 767.98px) {
+  .gg-pane::-webkit-scrollbar { width: 5px; }
+  .gg-pane::-webkit-scrollbar-track { background: transparent; }
+  .gg-pane::-webkit-scrollbar-thumb { border-radius: 3px; }
+}
+
+.gg-row {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.gg-row::-webkit-scrollbar { display: none; }
+
+/* ============ Interaction states — the house pattern ============
+   THE DESIGN PACK SPECIFIES NONE OF THIS. Across all 23 boards there is
+   exactly one interactive rule — `a:hover { color: #C8102E }` — and zero
+   `:focus` anything. Most of the clickable surfaces in the mockups are plain
+   <div>s (the Account board has 4 anchors against 46 divs), so even that one
+   rule does not reach them. These states had to be decided rather than
+   copied; this block is that decision, so twenty-three surfaces do not each
+   invent their own.
+
+   1. FOCUS is not optional. Written with :where() so it carries ZERO
+      specificity — every existing Tailwind `focus-visible:ring-*` and every
+      component rule still wins. This is the floor, not the ceiling.
+   2. HOVER is colour only, and only for real pointers. A hover that moves
+      something reflows the page under a mouse; a hover that fires on touch
+      sticks after the tap. Both are worse than nothing.
+   3. PRESS is the one transform, and it is deliberately tiny. See --dur-press. */
+:where(a, button, summary, [role='button'], [role='tab'], input, select, textarea):focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+/* Opt-in press feedback. Put it on things a finger lands on — cards, tiles,
+   primary buttons. NOT on rows in a long list: at that frequency the scale
+   reads as the list wobbling. */
+.gg-press {
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.gg-press:active {
+  transform: scale(0.985);
+}
+
+/* Colour-only hover, gated so it never fires from a touch. Pair with an
+   explicit background/border transition on the element itself. */
+@media (hover: hover) and (pointer: fine) {
+  .gg-hover-card {
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      border-color var(--dur-fast) var(--ease-standard);
+  }
+  .gg-hover-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-hover);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Gentler, not zero: the colour change still communicates state, only the
+     movement goes. */
+  .gg-press { transition: none; }
+  .gg-press:active { transform: none; }
 }
 
 /* ============ SMS welcome banner (components/welcome-banner.tsx) ============
