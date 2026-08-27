@@ -50,7 +50,6 @@ export interface Ctx {
   cats: {
     normal: string;
     firearm: string;
-    experience: string;
     collection: string;
   };
   // DD-F5 — optional: the captured JIT supplier collection bookings. installStubs
@@ -352,7 +351,6 @@ export async function resolveCategories(prisma: PrismaService): Promise<Ctx['cat
       'normal',
     ),
     firearm: await pick({ isFirearm: true, parentId: { not: null } }, 'firearm'),
-    experience: await pick({ isExperience: true }, 'experience'),
     collection: await pick({ collectionOnly: true }, 'collection'),
   };
 }
