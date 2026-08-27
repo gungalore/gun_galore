@@ -8,7 +8,7 @@ import SidebarNav from './sidebar-nav';
 // /admin/login if the token is missing.
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen flex" style={{ background: 'var(--bg-page)' }}>
+    <div className="min-h-screen flex" style={{ background: 'var(--bg)' }}>
       {/* Sidebar */}
       <aside
         className="w-52 shrink-0 flex flex-col py-6 px-3"
@@ -38,7 +38,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <header
           className="px-6 py-3 sticky top-0 z-40"
           style={{
-            background: 'var(--bg-page)',
+            background: 'var(--bg)',
             borderBottom: '0.5px solid var(--border)',
             backdropFilter: 'blur(8px)',
           }}

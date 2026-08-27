@@ -28,7 +28,19 @@
      shadow (see the box-shadow rule further down, which forbids them).
      --bg-deep was the DARKEST surface on the old dark theme; on a light
      theme there is nothing deeper than the page, so it now carries the
-     chrome white used by the header, which separates it from --bg. */
+     chrome white used by the header, which separates it from --bg.
+
+     ⚠️ THE PAGE GROUND IS `--bg`, AND IT HAS NO OTHER NAME. Six components
+     spent months reaching for a `--bg-page` that was never defined in any
+     commit — the admin shell and its sticky header, the admin login screen,
+     the /a/[token] mobile shell, the sign-up gradient, and the knockout ring
+     on the edit page's remove-photo button. An undefined var() with no
+     fallback makes the WHOLE declaration invalid at computed-value time, so
+     every one of those silently painted `transparent` instead (and the
+     sign-up gradient was dropped altogether) from the day it was written
+     until 2026-08-27. Nothing warns: not tsc, not the build, not the browser
+     console. It went unnoticed only because the ground behind happened to be
+     light too. If you want the page colour in a component, write var(--bg). */
   --bg:          #F6F5F1;
   --bg-deep:     #FFFFFF;
   --bg-card:     #FFFFFF;

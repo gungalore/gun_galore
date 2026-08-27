@@ -155,7 +155,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
     <div
       style={{
         minHeight: '100vh',
-        background: 'var(--bg-page)',
+        background: 'var(--bg)',
         padding: '20px 16px 32px',
       }}
     >

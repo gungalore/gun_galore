@@ -56,7 +56,7 @@ export default function AdminLoginPage() {
   return (
     <div
       className="min-h-screen flex items-center justify-center px-4"
-      style={{ background: 'var(--bg-page)' }}
+      style={{ background: 'var(--bg)' }}
     >
       <div
         className="w-full max-w-[360px] rounded-[10px] p-7"

@@ -629,7 +629,7 @@ export default function EditListingPage() {
                       borderRadius: '50%',
                       background: 'var(--red)',
                       color: '#fff',
-                      border: '0.5px solid var(--bg-page)',
+                      border: '0.5px solid var(--bg)',
                       fontSize: 12,
                       lineHeight: '18px',
                       cursor: 'pointer',
