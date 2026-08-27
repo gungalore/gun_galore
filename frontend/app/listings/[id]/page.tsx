@@ -18,7 +18,6 @@ import SellerControls from './seller-controls';
 import OfferPanel from './offer-panel';
 import AuctionPanel from './auction-panel';
 import ModerationBanner from './moderation-banner';
-import BackLink from './back-link';
 import { QuestionsPanel } from './questions-panel';
 import { ImageGallery } from './image-gallery';
 import { PageReveal } from '@/components/page-reveal';
@@ -37,6 +36,7 @@ import { UrgencyChip } from '@/components/urgency-chip';
 import { SellerRating } from '@/components/seller-rating';
 import { TrustBullets } from '@/components/trust-bullets';
 import { ListingDescription } from '@/components/listing-description';
+import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 import {
   getListingDeliveryEstimate,
   getCollectionMode,
@@ -238,6 +238,15 @@ export default async function ListingDetailPage({
   // guarantee order; sort here once).
   const allImages = [...listing.images].sort((a, b) => a.order - b.order);
 
+  // Breadcrumb trail — Home / category / this listing. `category.slug` is
+  // the same field the category chip further down already links through, so
+  // there's no risk of pointing the crawler (or a click) at a slug we made up.
+  const breadcrumbTrail: Crumb[] = [
+    { label: 'Home', href: '/' },
+    { label: listing.category.name, href: `/category/${listing.category.slug}` },
+    { label: listing.title },
+  ];
+
   // Specifications (P4.2) — the listing carries structured per-category
   // attributes keyed by attribute-def key. To render human labels + units
   // we fetch the category's attribute definitions and JOIN: for each def
@@ -298,11 +307,15 @@ export default async function ListingDetailPage({
           matches the marketplace homepage so the product photo stays
           dominant without the background washing the page out. */}
 
-      {/* Back link stays OUTSIDE PageReveal so it's clickable instantly.
-          Uses router.back() so the user lands back on their previous
-          filter / search state instead of being dropped on the home
-          page with no context. */}
-      <BackLink />
+      {/* Breadcrumbs replace the "Back to listings" link that used to sit
+          here. Both are an "up" affordance, and stacking them (this page's
+          BackLink was md+ only, same as Breadcrumbs) is the exact problem
+          breadcrumbs.tsx's own header comment warns about on mobile, just
+          reproduced on desktop instead. The breadcrumb wins: it states the
+          listing's place in the category structure — JSON-LD'd for crawlers
+          too — which router.back()'s jump to the previous filtered search
+          never did. Stays OUTSIDE PageReveal so it's clickable instantly. */}
+      <Breadcrumbs trail={breadcrumbTrail} className="mb-6" />
 
       {/* ⚠️ THE className IS LOAD-BEARING, NOT DECORATION. PageReveal renders a
           plain wrapper div, so at lg it sits between <main> (which owns the

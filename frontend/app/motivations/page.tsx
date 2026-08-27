@@ -10,6 +10,7 @@ import {
 } from '@/lib/motivations-api';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
 import VaultConsentModal, { snoozed } from '@/components/vault-consent';
+import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 
 // The way in. Lists what someone has started and lets them begin another.
 //
@@ -52,6 +53,12 @@ const LICENCE_TYPES = [
     section: 'Section 24',
     blurb: 'The purpose has not changed — you are renewing what you hold.',
   },
+];
+
+const MOTIVATIONS_TRAIL: Crumb[] = [
+  { label: 'Home', href: '/' },
+  { label: 'Account', href: '/account' },
+  { label: 'Motivation Centre' },
 ];
 
 const STATUS_COPY: Record<string, string> = {
@@ -128,6 +135,7 @@ export default function MotivationsPage() {
   if (enabled === false) {
     return (
       <main className="mx-auto max-w-[var(--content-max)] px-4 py-10">
+        <Breadcrumbs trail={MOTIVATIONS_TRAIL} className="mb-6" />
         <h1 className="text-2xl font-semibold">Motivation Centre</h1>
         <p className="mt-3 text-[var(--text-secondary)]">
           We are still putting this together. It will appear here when it opens.
@@ -146,6 +154,7 @@ export default function MotivationsPage() {
           onDone={() => setAskConsent(false)}
         />
       )}
+      <Breadcrumbs trail={MOTIVATIONS_TRAIL} className="mb-6" />
       <h1 className="text-2xl font-semibold">Motivation Centre</h1>
       <p className="mt-2 text-[var(--text-secondary)]">
         We ask you about your circumstances, then prepare a formal motivation

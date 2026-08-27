@@ -32,7 +32,14 @@ import {
 } from '@/components/firearm-consents';
 import { TrustBullets } from '@/components/trust-bullets';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
+import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 import type { Address } from '@/lib/types';
+
+// Two-crumb trail — Breadcrumbs renders nothing for fewer than two, so this
+// is the shortest trail that still shows. Same on every state below (empty,
+// payments-coming-soon, populated): the page's place in the site doesn't
+// change with what's in the cart.
+const CART_TRAIL: Crumb[] = [{ label: 'Home', href: '/' }, { label: 'Cart' }];
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -406,6 +413,7 @@ export default function CartPage() {
   if (comingSoon) {
     return (
       <main className="max-w-[var(--content-max)] mx-auto px-4 py-8">
+        <Breadcrumbs trail={CART_TRAIL} className="mb-6" />
         <PaymentsComingSoon />
       </main>
     );
@@ -415,6 +423,7 @@ export default function CartPage() {
   if (items.length === 0) {
     return (
       <main className="max-w-[var(--content-max)] mx-auto px-4 py-16 text-center">
+        <Breadcrumbs trail={CART_TRAIL} className="mb-6 justify-center" />
         <h1 className="text-lg font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
           Your cart is empty
         </h1>
@@ -434,6 +443,7 @@ export default function CartPage() {
 
   return (
     <main className="max-w-[var(--content-max)] mx-auto px-4 py-8">
+      <Breadcrumbs trail={CART_TRAIL} className="mb-6" />
       <h1 className="text-lg font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
         Your cart
       </h1>

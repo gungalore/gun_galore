@@ -427,6 +427,24 @@ export default function AuctionPanel({
         }
       />
 
+      {/* Absolute close time, ALONGSIDE the odometer's relative countdown —
+          not a replacement, and not a second clock. The rings' days arc caps
+          its fill at 7 (see the "week is an arbitrary span" note in
+          auction-odometer.tsx) and is unpadded besides, so on a multi-day
+          auction the relative D/H/M/S alone never tells a buyer which actual
+          calendar day and time it ends. formatDeadline is the same en-ZA
+          absolute-time formatter already used below for the winner's payment
+          deadline, for the same reason: a relative time alone is easy to
+          forget, an absolute one alone is easy to misjudge. */}
+      {!auctionOver && state.endTime && (
+        <p
+          className="text-xs text-center -mt-1"
+          style={{ color: 'var(--text-tertiary)' }}
+        >
+          Closes {formatDeadline(new Date(state.endTime))}
+        </p>
+      )}
+
       {/* What the odometer does NOT carry. The pack modelled none of this and
           all of it matters: who is winning, whether the hidden reserve is met,
           and why a starting bid sits where it does. */}

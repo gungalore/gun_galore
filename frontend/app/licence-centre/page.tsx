@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LicenceCentreMotivations from '@/components/licence-centre-motivations';
 import DocumentCentreAdd from '@/components/document-centre-add';
+import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 /*
   ⚠️ THE FOUR DECISIONS THAT CAN LOSE A DOCUMENT LIVE IN lib/, NOT HERE.
   They decide whether a member has to look at a document and whether its type
@@ -143,6 +144,15 @@ const KIND_GROUPS: { label: string; kinds: CredentialKind[] }[] = [
   { label: 'Anything else', kinds: ['OTHER'] },
 ];
 
+// This page is still named /licence-centre in the URL and in every API call
+// below — the rename to "Document Centre" was copy-only — so the trail names
+// what the reader sees, not the route.
+const LICENCE_CENTRE_TRAIL: Crumb[] = [
+  { label: 'Home', href: '/' },
+  { label: 'Account', href: '/account' },
+  { label: 'Document Centre' },
+];
+
 export default function LicenceCentrePage() {
   const { getToken } = useAuth();
   const token = useCallback(() => getToken(), [getToken]);
@@ -163,6 +173,14 @@ export default function LicenceCentrePage() {
   /** The detail column, so a phone can be scrolled to it on selection. */
   const detailRef = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState('');
+  /**
+   * ⚠️ THE SEARCH BOX ITSELF IS THE THING THAT DID NOT FIT. A fixed 216px
+   * field, a title and two labelled buttons were one `flex flex-wrap` row
+   * with no mobile variant, so a 390px screen wrapped them onto extra lines.
+   * Below `md` the box collapses behind this toggle instead; `query` and
+   * `setQuery` above are unchanged, so nothing about what search DOES moves.
+   */
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   /**
    * Which applications each document is already in.
    *
@@ -189,6 +207,20 @@ export default function LicenceCentrePage() {
       (rows ?? []).filter((r) => r.state === 'expiring' || r.state === 'expired')
         .length,
     [rows],
+  );
+
+  /**
+   * How many documents already sit inside a motivation.
+   *
+   * ⚠️ BUILT FROM `usage`, WHICH THE PAGE ALREADY FETCHES — see the note on
+   * that state above. Nothing new is requested for this count; a document
+   * with no entry in `usage` (the fetch has not resolved, or it failed) reads
+   * as not-yet-used, the same as every other reader of this state on the
+   * page, rather than as a fact we are certain of.
+   */
+  const inUseCount = useMemo(
+    () => (rows ?? []).filter((r) => (usage[r.id]?.length ?? 0) > 0).length,
+    [rows, usage],
   );
 
   const folders = useMemo(() => {
@@ -296,6 +328,7 @@ export default function LicenceCentrePage() {
   if (enabled === false) {
     return (
       <main className="mx-auto max-w-[var(--content-max)] px-4 py-10">
+        <Breadcrumbs trail={LICENCE_CENTRE_TRAIL} className="mb-6" />
         <h1 className="text-2xl font-semibold">Document Centre</h1>
         <p className="mt-3 text-[var(--text-secondary)]">
           We are still putting this together. It will appear here when it opens.
@@ -327,6 +360,7 @@ export default function LicenceCentrePage() {
 
   return (
     <main className="mx-auto max-w-[var(--content-max)] px-4 py-8">
+      <Breadcrumbs trail={LICENCE_CENTRE_TRAIL} className="mb-6" />
       <h1 className="text-2xl font-semibold">Document Centre</h1>
       <p className="mt-2 text-[var(--text-secondary)]">
         Keep your licences, certificates and supporting paperwork in one place,
@@ -463,8 +497,14 @@ export default function LicenceCentrePage() {
 
         {/* ── the files in that folder ──────────────────────────── */}
         <section className="mt-6 min-w-0 lg:mt-0">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="min-w-0 flex-1">
+          {/* ⚠️ THE TITLE STACKS ABOVE THE CONTROLS BELOW `md`, RATHER THAN
+              WRAPPING INTO THEM. A folder name plus a document count is
+              already two lines on a phone; sharing a row with a search box
+              and two buttons was what produced the wrap this replaces. At
+              `md` and up the two go back to sitting side by side — nothing
+              about the desktop row changes. */}
+          <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
+            <div className="min-w-0 md:flex-1">
               <h2 className="text-lg font-semibold">
                 {openGroup === null ? 'All documents' : folders[openGroup].label}
               </h2>
@@ -477,30 +517,97 @@ export default function LicenceCentrePage() {
               </p>
             </div>
 
-            <label className="flex min-h-[38px] w-[216px] items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-3">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-3.5-3.5" />
-              </svg>
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search documents"
+            <div className="flex items-center gap-2">
+              {/* ⚠️ ICON BELOW `md`, WHERE THE FIXED 216px BOX IS WHAT DID NOT
+                  FIT. It toggles the full-width field below; `md:hidden` takes
+                  it out entirely once the box beside it has room to sit inline. */}
+              <button
+                type="button"
+                onClick={() => setMobileSearchOpen((v) => !v)}
+                aria-expanded={mobileSearchOpen}
+                aria-controls="doc-search-mobile"
                 aria-label="Search documents"
-                className="w-full bg-transparent text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
-              />
-            </label>
+                className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] md:hidden"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.5-3.5" />
+                </svg>
+              </button>
 
-            <AddPanel token={token} onAdded={refresh} />
+              <label className="hidden min-h-[38px] w-[216px] items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-3 md:flex">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.5-3.5" />
+                </svg>
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search documents"
+                  aria-label="Search documents"
+                  className="w-full bg-transparent text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
+                />
+              </label>
+
+              <AddPanel token={token} onAdded={refresh} />
+            </div>
+
+            {/* Same field as the one above — one `query` state, two markups —
+                shown only below `md` and only once the icon has been tapped. */}
+            {mobileSearchOpen && (
+              <label
+                id="doc-search-mobile"
+                className="flex min-h-[38px] w-full items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-3 md:hidden"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.5-3.5" />
+                </svg>
+                <input
+                  autoFocus
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search documents"
+                  aria-label="Search documents"
+                  className="w-full bg-transparent text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
+                />
+              </label>
+            )}
           </div>
+
+          {/* ── the three counts the board puts above the list ────────────
+              ⚠️ ONLY WHEN THERE IS SOMETHING TO COUNT. Three tiles reading
+              zero above an already-empty folder would repeat the empty state
+              below in a louder voice. */}
+          {rows !== null && rows.length > 0 && (
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <DocStat label="In the vault" value={rows.length} />
+              <DocStat
+                label={attention === 1 ? 'Renewal due' : 'Renewals due'}
+                value={attention}
+                warn
+              />
+              <DocStat
+                label={inUseCount === 1 ? 'In a motivation' : 'In motivations'}
+                value={inUseCount}
+              />
+            </div>
+          )}
 
           {/* Column headings, because three of the four things on a row are
               different KINDS of fact and the middle one is a date. */}
           {rows !== null && visible.length > 0 && (
-            <div className="mt-4 grid grid-cols-[minmax(0,1fr)_112px] gap-3 border-b border-[var(--border-divider)] px-3.5 pb-2 sm:grid-cols-[minmax(0,1fr)_112px_124px]">
+            <div className="mt-4 grid grid-cols-[minmax(0,1fr)_112px] gap-3 border-b border-[var(--border-divider)] px-3.5 pb-2 sm:grid-cols-[minmax(0,1fr)_108px_112px_124px]">
               <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
                 Document
+              </span>
+              {/* The licence or competency number — a monospaced column so a
+                  member can find the right document without opening each one.
+                  See docNumber() below the row it feeds. */}
+              <span className="hidden text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)] sm:block">
+                Number
               </span>
               <span className="hidden text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)] sm:block">
                 Expires
@@ -2198,11 +2305,97 @@ function FolderRow({
   );
 }
 
+// ── one number above the list ───────────────────────────────────
+
+/**
+ * How many documents, how many need a renewal, how many already sit inside a
+ * motivation — the board's three tiles above the list.
+ *
+ * ⚠️ `warn` ONLY TINTS WHEN THE COUNT IS ABOVE ZERO. A tile reading "0
+ * renewals due" in the same amber as one reading "3" would tell a member
+ * something is wrong when nothing is — the colour is meant to carry urgency,
+ * not to mark which tile this is.
+ */
+function DocStat({
+  label,
+  value,
+  warn = false,
+}: {
+  label: string;
+  value: number;
+  warn?: boolean;
+}) {
+  const tone = STATE_TONE.expiring;
+  const lit = warn && value > 0;
+  return (
+    <div
+      className="rounded-[10px] border px-3.5 py-3"
+      style={{
+        borderColor: lit ? tone.line : 'var(--border)',
+        background: lit ? tone.wash : 'var(--bg-card)',
+      }}
+    >
+      <p
+        className="gg-nums text-xl font-semibold"
+        style={{ color: lit ? tone.colour : 'var(--text-primary)' }}
+      >
+        {value}
+      </p>
+      <p className="mt-0.5 text-[11px] leading-tight text-[var(--text-tertiary-on-card)]">
+        {label}
+      </p>
+    </div>
+  );
+}
+
 // ── one row in the file list ────────────────────────────────────
 //
 // Presentational and deliberately thin: it names the document, says when it
 // runs out and what state that puts it in, and nothing else. Everything you
 // can DO to a document lives in the detail column, which is CredentialCard.
+
+/**
+ * The one key per kind that holds a licence or competency number, for the
+ * monospaced column on the row.
+ *
+ * ⚠️ NOT "the first value in details". `details` is a flat bag, and one
+ * document can carry several numbers that are not interchangeable — a
+ * hunting association's letter alone holds a good-standing reference, a
+ * membership number AND a dedicated status number (see WANTED in
+ * licence-centre-extract.service.ts on the backend, which these keys mirror).
+ * Reading the wrong one into this column would put the wrong reference in
+ * front of a member who trusts the column enough not to open the document.
+ *
+ * ⚠️ AN ID COPY, A PROOF OF ADDRESS AND A SAFE PHOTOGRAPH HAVE NO ENTRY HERE
+ * AT ALL, deliberately — none of them carries a licence or competency number.
+ * An identity document's `id_number` is a different kind of number and does
+ * not belong in a column about licences.
+ */
+const NUMBER_DETAIL_KEYS: Partial<Record<CredentialKind, string[]>> = {
+  FIREARM_LICENCE: ['licence_number'],
+  COMPETENCY_CERTIFICATE: ['competency_number'],
+  DEDICATED_DISCIPLINE: [
+    'status_number',
+    'membership_number',
+    'good_standing_number',
+    'registration_number',
+  ],
+  DEDICATED_STATUS: ['status_number'],
+  DEDICATED_HUNTER: ['status_number'],
+  PROFESSIONAL_HUNTER: ['registration_number'],
+  GOOD_STANDING: ['good_standing_number', 'membership_number', 'status_number'],
+  PROFICIENCY: ['certificate_number'],
+  OTHER: ['reference_number'],
+};
+
+/** Degrades to a dash — never a blank cell — when a document has no number. */
+function docNumber(row: CredentialRow): string {
+  for (const key of NUMBER_DETAIL_KEYS[row.kind] ?? []) {
+    const v = row.details[key];
+    if (v && v.trim()) return v.trim();
+  }
+  return '—';
+}
 
 function DocRow({
   row,
@@ -2236,7 +2429,7 @@ function DocRow({
       type="button"
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
-      className="grid w-full grid-cols-[minmax(0,1fr)_112px] items-center gap-3 rounded-[10px] px-3.5 py-3 text-left hover:bg-[var(--bg-card-hover)] sm:grid-cols-[minmax(0,1fr)_112px_124px]"
+      className="grid w-full grid-cols-[minmax(0,1fr)_112px] items-center gap-3 rounded-[10px] px-3.5 py-3 text-left hover:bg-[var(--bg-card-hover)] sm:grid-cols-[minmax(0,1fr)_108px_112px_124px]"
       style={{
         background: selected ? 'var(--bg-card)' : 'transparent',
         border: `1px solid ${selected ? 'var(--border)' : 'transparent'}`,
@@ -2263,6 +2456,12 @@ function DocRow({
           {formatDate(row.createdAt.slice(0, 10))}
         </span>
       </span>
+      </span>
+
+      {/* The licence or competency number, monospaced so a column of them
+          lines up — see docNumber() above for which key answers it per kind. */}
+      <span className="hidden truncate font-mono text-xs text-[var(--text-secondary)] sm:block">
+        {docNumber(row)}
       </span>
 
       <span className="gg-nums hidden text-xs text-[var(--text-secondary)] sm:block">
