@@ -1800,6 +1800,55 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
+**Last deploy: 2026-08-27, commit `60736d8`.** ⚠️ **THIS ONE CARRIED A
+MIGRATION** — `20260825200000_transaction_fee_model`, the first non-frontend-only
+deploy since the fee model was deliberately held back on 2026-08-26. **FULL
+DEPLOY** (`deploy.sh`, both apps). Pre-deploy dump
+`alloutdoor-20260827-105627.dump` taken before `prisma migrate deploy` ran.
+Both apps rebuilt, artefacts verified (`dist/src/main.js`, `.next/BUILD_ID`
+non-empty before each reload), health doubled on :3001 and :3000, public 200
+twice.
+
+Shipped in `60736d8`: **the Winkel rebuild** — 255 files, +2,642/−37,546. The
+storefront is Buy Now + Auction only; Swop, Hunting Packages, AO PRO, Featured
+listings and Ask Boet are gone from code and routes (Prisma models deliberately
+kept); Load Lab survives, ungated, in the account. The white retail theme is
+live. Plus the fee model, the new moonlit hero plate, the black-ink logo, and
+the CSS-token fixes below.
+
+The migration is additive and needs no backfill: `CREATE TYPE "FeeModel"` plus
+`ADD COLUMN "feeModel" NOT NULL DEFAULT 'SELLER_DEDUCT'`. SELLER_DEDUCT is the
+correct reading for every pre-existing row — the markup model shipped
+2026-08-15 and this platform has not traded (PAYMENTS_LIVE unset, checkout 503).
+
+> **TWO SILENT CSS-VARIABLE TRAPS WERE FIXED HERE. Both are invisible to the
+> toolchain — not tsc, not the build, not the browser console.**
+>
+> 1. **An undefined `var()` with no fallback kills the WHOLE declaration** at
+>    computed-value time, so the property takes its INITIAL value: `background`
+>    → `transparent`, `border-radius` → `0`, `border-color` → `currentColor`,
+>    and one bad stop drops an entire gradient. Six properties were referenced
+>    but never defined in any commit (`--bg-page`, `--radius`, `--brand`,
+>    `--amber`, `--green`, `--foreground`/`--background`). A `var()` WITH a
+>    fallback is fine — do not report those as broken.
+> 2. **You cannot alpha-dilute a custom property by concatenation.**
+>    `var(--red)` + `18` expands to two tokens, not one 8-digit colour, so it
+>    dies the same way. 44 sites did this. Use `--red-wash` / `--red-line` /
+>    `--gold-wash`, or `color-mix(in srgb, var(--x) N%, transparent)`.
+>
+> ⚠️ Restoring a tinted fill re-opens the ink's contrast: these chips derive
+> both ink and a tint of itself, and `--text-tertiary` is exactly 4.5:1 on
+> white, so any tint behind it fails. The neutral chip colour is now
+> `--text-secondary`.
+
+Verified live after this deploy: the homepage carries the new plate at
+`?v=20260827` and the `-dark` logo files, "Shop with confidence" is gone, and
+every route that genuinely existed and was removed returns **404** rather than
+redirecting to sign-in (`/my/swaps`, `/raffle`, `/subscribe`, `/ask-gg`,
+`/featured/bid`). Note that **307 is the baseline for ANY unknown path** while
+logged out, so a 307 on a URL that never existed is not a missing matcher —
+check the route actually existed before chasing it.
+
 **Last deploy: 2026-08-27, commit `22dcedb`.** No migrations pending.
 **FRONTEND ONLY** (`deploy.sh --frontend-only`) — the delta is nine frontend
 files and no `backend/` or `prisma/` file, so the backend was never rebuilt or
