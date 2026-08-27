@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { storeCampaignAttrib } from '@/lib/campaign-attrib';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -89,17 +90,17 @@ export function WelcomeBanner() {
     };
   }, []);
 
-  // Lock body scroll + wire Escape while visible.
+  // Freeze the page behind this full-viewport banner while it's open.
+  useScrollLock(visible);
+
+  // Wire Escape while visible.
   useEffect(() => {
     if (!visible) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') dismiss();
     };
     document.addEventListener('keydown', onKey);
     return () => {
-      document.body.style.overflow = prev;
       document.removeEventListener('keydown', onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

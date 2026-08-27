@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Category, CategoryAttributeDef } from '@/lib/types';
 import { PROVINCE_LABELS, CONDITION_LABELS, formatPrice } from '@/lib/utils';
 import { LiveSearch } from '@/components/live-search';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -339,13 +340,14 @@ export function FilterBar({
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => setPortalReady(true), []);
 
+  // Lock the page behind the sheet while it's open.
+  useScrollLock(sheetOpen);
+
   useEffect(() => {
     if (!sheetOpen) return;
-    // Lock the page behind the sheet, close on Escape, and drop focus onto
-    // the close button so keyboard/screen-reader users land inside the
-    // dialog rather than continuing down the page underneath it.
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    // Close on Escape, and drop focus onto the close button so keyboard/
+    // screen-reader users land inside the dialog rather than continuing down
+    // the page underneath it.
     closeBtnRef.current?.focus();
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') setSheetOpen(false);
@@ -361,7 +363,6 @@ export function FilterBar({
     document.addEventListener('keydown', onKey);
     mq.addEventListener('change', onWide);
     return () => {
-      document.body.style.overflow = prevOverflow;
       document.removeEventListener('keydown', onKey);
       mq.removeEventListener('change', onWide);
     };

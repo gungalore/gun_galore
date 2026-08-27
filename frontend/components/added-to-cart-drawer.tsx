@@ -20,12 +20,16 @@ import { usePathname } from 'next/navigation';
 import { useCart, type CartItem } from '@/lib/cart-store';
 import { formatPrice } from '@/lib/utils';
 import { CrossSellRow } from '@/components/cross-sell-row';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 
 export function AddedToCartDrawer() {
   const [item, setItem] = useState<CartItem | null>(null);
   const [entered, setEntered] = useState(false);
   const pathname = usePathname();
   const items = useCart();
+
+  // Lock the page behind the drawer while it's open.
+  useScrollLock(!!item);
 
   // Open on the add event.
   useEffect(() => {
@@ -40,16 +44,14 @@ export function AddedToCartDrawer() {
     return () => window.removeEventListener('gg:added-to-cart', onAdded);
   }, []);
 
-  // Body-scroll lock + Escape while open.
+  // Escape closes the drawer while open.
   useEffect(() => {
     if (!item) return;
-    document.body.style.overflow = 'hidden';
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') close();
     }
     document.addEventListener('keydown', onKey);
     return () => {
-      document.body.style.overflow = '';
       document.removeEventListener('keydown', onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

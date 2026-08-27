@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 import {
   AddressAutocomplete,
   type ParsedAddressComponents,
@@ -191,14 +192,9 @@ export function ProfileCompletionModal({
     bankAccountType,
   ]);
 
-  // Body scroll lock so the seller can't scroll behind the modal.
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
+  // Hard-wall modal with no closed state of its own — locked for as long as
+  // it's mounted, so the seller can't scroll the payout-gated page behind it.
+  useScrollLock(true);
 
   // Pre-fill the autocomplete display with the saved address (if any)
   // so the seller sees their current address rather than an empty

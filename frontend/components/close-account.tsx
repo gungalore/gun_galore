@@ -15,6 +15,7 @@ import {
   type ClosureEligibility,
   type TokenGetter,
 } from '@/lib/users-api';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 
 // ────────────────────────────────────────────────────────────────────
 // CLOSE MY ACCOUNT
@@ -190,16 +191,17 @@ function CloseAccountDialog({
     void load();
   }, [load]);
 
+  // Mounted only while this overlay is shown, so the lock runs for its
+  // whole life — see lib/use-scroll-lock.ts.
+  useScrollLock(true);
+
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     panel.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !inFlight.current) dismissRef.current();
     };
     document.addEventListener('keydown', onKey);
     return () => {
-      document.body.style.overflow = prev;
       document.removeEventListener('keydown', onKey);
     };
     // Mount only — see dismissRef above.

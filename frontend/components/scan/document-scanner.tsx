@@ -22,6 +22,7 @@ import {
   holdHint,
 } from '@/lib/scan/shapes';
 import AimFrame from './aim-frame';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 import { aimAgreement, aimBox } from '@/lib/scan/aim';
 import { exposureProblem } from '@/lib/scan/exposure';
 import {
@@ -996,6 +997,10 @@ export default function DocumentScanner({
     onClose();
   }, [heldCount, onClose]);
 
+  // Full-screen camera for as long as this component is mounted — the
+  // scanner has no closed state of its own, the parent unmounts it.
+  useScrollLock(true);
+
   // Escape closes, in the capture phase so a modal underneath survives.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1017,11 +1022,8 @@ export default function DocumentScanner({
       requestClose();
     };
     document.addEventListener('keydown', onKey, true);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', onKey, true);
-      document.body.style.overflow = prev;
     };
   }, [requestClose, confirmExit, editing, recutting]);
 

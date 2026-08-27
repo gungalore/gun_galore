@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 
 // Subset of Prisma's ListingImage that the gallery actually reads.
 // Mirrors the inline interface used on the listing detail page so we
@@ -119,14 +120,7 @@ export function ImageGallery({
   // Body scroll lock while the lightbox is open. Without this the
   // page jumps + you can scroll the listing underneath the overlay,
   // which feels broken.
-  useEffect(() => {
-    if (!lightboxOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [lightboxOpen]);
+  useScrollLock(lightboxOpen);
 
   const openAt = useCallback((idx: number) => {
     setActiveIdx(idx);

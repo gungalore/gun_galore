@@ -29,6 +29,7 @@ import {
   MAX_YEAR,
   MIN_YEAR,
 } from '@/lib/date-picker-model';
+import { useScrollLock } from '@/lib/use-scroll-lock';
 
 // ────────────────────────────────────────────────────────────────────
 // THE THREE-STEP DATE SHEET.
@@ -192,18 +193,13 @@ export default function DatePickerSheet({
     return () => document.removeEventListener('keydown', onKey, true);
   }, [close]);
 
-  // ── body scroll lock, SAVE AND RESTORE ────────────────────────────
+  // ── body scroll lock, reference-counted ────────────────────────────
   //
-  // Never `= ''` on cleanup: this sheet can legitimately open on top of an
-  // admin modal that has already locked the body, and resetting to empty
-  // would unlock the page while that modal is still up.
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
+  // useScrollLock is what makes this safe: this sheet can legitimately open
+  // on top of an admin modal that has already locked the scroller, and the
+  // hook's per-element count means this sheet's own close does not unlock
+  // the page while that modal is still up.
+  useScrollLock(true);
 
   // ── the Android back button closes the picker ─────────────────────
   //
