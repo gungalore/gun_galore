@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { AccountSignOut } from '@/components/account-sign-out';
 import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { Me, SellerTier } from '@/lib/types';
@@ -201,6 +202,13 @@ export default async function AccountPage() {
           >
             Edit profile
           </Link>
+
+          {/* ⚠️ THE ONLY DESKTOP SIGN-OUT NOW. It used to live solely
+              inside the nav's avatar dropdown; the avatar became a link to
+              this page on 2026-08-27, so without this there is no way out
+              on desktop at all. The design's Account board puts Log out
+              here, at the top right of the identity card. */}
+          <AccountSignOut />
         </div>
 
         {/* Grouped account cards */}
