@@ -15,7 +15,6 @@ import { TrackingTimeline } from './tracking-timeline';
 import { AcceptRejectPanel } from './accept-reject-panel';
 import BuyerCancelPanel from './buyer-cancel-panel';
 import PodProofSection from './pod-proof-section';
-import ExperienceOrderPanel from './experience-order-panel';
 import AwaitingAcceptChip from './awaiting-accept-chip';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -108,13 +107,12 @@ export default async function TransactionPage({
   // "Confirm collection").
   const isCollection = tx.shippingMethod === 'COLLECTION';
 
-  // Hunting Packages / Experiences (Phase E) — a future-dated on-site
-  // booking (ON_SITE_SERVICE). Its whole lifecycle (outfitter accept/decline,
-  // buyer confirm-completed, CPA-s17 cancel quote + cancel, dispute) lives in
-  // the dedicated ExperienceOrderPanel and uses its own endpoints — so we
-  // suppress the standard accept-panel + awaiting-accept chip below for it.
-  const isExperience =
-    !!tx.listing?.isExperience || tx.shippingMethod === 'ON_SITE_SERVICE';
+  // A historic on-site booking. Hunting Packages were removed 2026-08-26 and
+  // nothing can create one now, but ON_SITE_SERVICE stays on the shipping
+  // union for rows that already carry it — so this keeps suppressing the
+  // accept panel and labelling the card "Booking" rather than rendering a
+  // courier surface for something that never had a courier leg.
+  const isOnSiteBooking = tx.shippingMethod === 'ON_SITE_SERVICE';
 
   // P6.2 — this line is a consolidated SIBLING: it ships inside the same parcel
   // as the rest of the order, and the carrier ("main item") line owns the
@@ -132,7 +130,7 @@ export default async function TransactionPage({
     !!tx.paidAt && !tx.acceptedAt && !tx.rejectedAt && !tx.dispatchedAt;
   const isRejected = !!tx.rejectedAt;
   const canAccept =
-    isSeller && isPaidAwaitingAccept && !isPrivateArrange && !isExperience;
+    isSeller && isPaidAwaitingAccept && !isPrivateArrange && !isOnSiteBooking;
   const canDispatch =
     !isPrivateArrange &&
     !isCollection && // collection has no dispatch step
@@ -274,23 +272,6 @@ export default async function TransactionPage({
               )}
             </div>
           </div>
-
-          {/* Hunting Packages / Experiences (Phase E) — the on-site booking
-              lifecycle panel: outfitter accept/decline, buyer confirm-happened,
-              live CPA-s17 cancel quote + cancel, and a dispute escape. Replaces
-              the courier accept/dispatch/confirm-delivery surfaces (which don't
-              apply to an on-site service). */}
-          {isExperience && (isBuyer || isSeller) && (
-            <ExperienceOrderPanel
-              transactionId={tx.id}
-              role={isBuyer ? 'buyer' : isSeller ? 'seller' : 'other'}
-              paymentStatus={tx.paymentStatus}
-              eventDate={tx.eventDate ?? null}
-              bookingConfirmedAt={tx.bookingConfirmedAt ?? null}
-              bookingDeclinedAt={tx.bookingDeclinedAt ?? null}
-              eventCompletedConfirmedAt={tx.eventCompletedConfirmedAt ?? null}
-            />
-          )}
 
           {/* P6.2 — consolidated-shipment SIBLING note. This line ships inside
               the same parcel as the rest of the order; the carrier ("main item")
@@ -520,7 +501,7 @@ export default async function TransactionPage({
             style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
           >
             <p className="text-xs uppercase mb-3" style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}>
-              {isExperience ? 'Booking' : isCollection ? 'Shipping' : 'Shipping'}
+              {isOnSiteBooking ? 'Booking' : isCollection ? 'Shipping' : 'Shipping'}
             </p>
             <div className="space-y-2">
               <div className="flex justify-between">
@@ -651,7 +632,7 @@ export default async function TransactionPage({
                 Hidden for collection — there's no courier to track — and for
                 a consolidated sibling, whose authoritative tracking lives on
                 the carrier (surfaced in the "Ships with your order" note). */}
-            {!isCollection && !isConsolidatedSibling && !isExperience && (
+            {!isCollection && !isConsolidatedSibling && !isOnSiteBooking && (
               <div
                 className="mt-4 pt-4"
                 style={{ borderTop: '0.5px solid var(--border-divider)' }}
@@ -856,7 +837,7 @@ export default async function TransactionPage({
               PA has no accept step and funds are already released. Mirrors canAccept. */}
           {/* The countdown itself lives in a client component so it ticks —
               rendered here it froze at the server-render timestamp. */}
-          {isBuyer && isPaidAwaitingAccept && !isPrivateArrange && !isExperience && tx.acceptDeadlineAt && (
+          {isBuyer && isPaidAwaitingAccept && !isPrivateArrange && !isOnSiteBooking && tx.acceptDeadlineAt && (
             <AwaitingAcceptChip acceptDeadlineAt={tx.acceptDeadlineAt} />
           )}
 
@@ -1282,32 +1263,44 @@ export default async function TransactionPage({
           </div>
 
           {/* Breakdown */}
+          {/* ⚠️ LINES COME FROM THE SERVER, and they foot.
+              This block used to do its own arithmetic off the raw columns and
+              was wrong twice over: it added a processing fee on top of an item
+              price that already contained it (marked-up Buy Now), and it
+              subtracted commission from the BUYER's price to reach a seller
+              payout that number cannot produce. It also itemised our delivery
+              margin as its own "Handling" line, which is never shown to a
+              buyer. tx.feeBreakdown is built by the one shared builder. */}
+          {/* Detail responses always carry it; guarded so a stale cached
+              list-shaped response renders nothing rather than throwing. */}
+          {tx.feeBreakdown && (
           <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between">
-              <span style={{ color: 'var(--text-tertiary)' }}>Item price</span>
-              <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.listingPrice)}</span>
-            </div>
+            {isBuyer &&
+              tx.feeBreakdown.buyer.lines.map((l) => (
+                <div key={l.label} className="flex justify-between">
+                  <span style={{ color: 'var(--text-tertiary)' }}>{l.label}</span>
+                  <span style={{ color: 'var(--text-primary)' }}>{formatPrice(l.cents)}</span>
+                </div>
+              ))}
 
-            {tx.shippingCost > 0 && (
+            {isSeller && (
               <div className="flex justify-between">
-                <span style={{ color: 'var(--text-tertiary)' }}>Shipping</span>
-                <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.shippingCost)}</span>
+                <span style={{ color: 'var(--text-tertiary)' }}>
+                  {tx.feeBreakdown.seller.grossLabel}
+                </span>
+                <span style={{ color: 'var(--text-primary)' }}>
+                  {formatPrice(tx.feeBreakdown.seller.gross)}
+                </span>
               </div>
             )}
 
-            {tx.shippingHandlingCents > 0 && (
-              <div className="flex justify-between">
-                <span style={{ color: 'var(--text-tertiary)' }}>Handling</span>
-                <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.shippingHandlingCents)}</span>
-              </div>
-            )}
-
-            {tx.passFeeToBuyer && tx.processingFee > 0 && (
-              <div className="flex justify-between">
-                <span style={{ color: 'var(--text-tertiary)' }}>Processing fee</span>
-                <span style={{ color: 'var(--text-primary)' }}>{formatPrice(tx.processingFee)}</span>
-              </div>
-            )}
+            {isSeller &&
+              tx.feeBreakdown.seller.deductions.map((l) => (
+                <div key={l.label} className="flex justify-between">
+                  <span style={{ color: 'var(--text-tertiary)' }}>{l.label}</span>
+                  <span style={{ color: 'var(--text-primary)' }}>−{formatPrice(l.cents)}</span>
+                </div>
+              ))}
 
             <div
               className="my-2"
@@ -1317,29 +1310,30 @@ export default async function TransactionPage({
             {isBuyer && (
               <div className="flex justify-between font-medium">
                 <span style={{ color: 'var(--text-secondary)' }}>You paid</span>
-                <span style={{ color: 'var(--red)' }}>{formatPrice(tx.buyerTotal)}</span>
+                <span style={{ color: 'var(--red)' }}>
+                  {formatPrice(tx.feeBreakdown.buyer.total)}
+                </span>
               </div>
             )}
 
             {isSeller && (
               <>
-                <div className="flex justify-between">
-                  <span style={{ color: 'var(--text-tertiary)' }}>Commission</span>
-                  <span style={{ color: 'var(--text-primary)' }}>−{formatPrice(tx.commissionZar)}</span>
-                </div>
-                {!tx.passFeeToBuyer && tx.processingFee > 0 && (
-                  <div className="flex justify-between">
-                    <span style={{ color: 'var(--text-tertiary)' }}>Processing fee</span>
-                    <span style={{ color: 'var(--text-primary)' }}>−{formatPrice(tx.processingFee)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between font-medium">
-                  <span style={{ color: 'var(--text-secondary)' }}>Your payout</span>
-                  <span style={{ color: '#00a03c' }}>{formatPrice(tx.sellerPayout)}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {tx.feeBreakdown.seller.netLabel}
+                  </span>
+                  <span style={{ color: '#00a03c' }}>
+                    {formatPrice(tx.feeBreakdown.seller.net)}
+                  </span>
                 </div>
+                {/* Why there is no commission row on a marked-up sale. */}
+                <p className="text-xs pt-1" style={{ color: 'var(--text-tertiary)' }}>
+                  {tx.feeBreakdown.seller.note}
+                </p>
               </>
             )}
           </div>
+          )}
 
           {tx.paidAt && (
             <p className="text-xs mt-4" style={{ color: 'var(--text-tertiary)' }}>

@@ -48,7 +48,7 @@ export default function RenewButton({
 
   if (done) {
     return (
-      <span className="px-2.5 py-1 text-xs" style={{ color: 'var(--green, #2e7d32)' }}>
+      <span className="px-2.5 py-1 text-xs" style={{ color: 'var(--success)' }}>
         ✓ Renewed
       </span>
     );

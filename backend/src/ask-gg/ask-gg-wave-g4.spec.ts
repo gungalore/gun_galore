@@ -176,16 +176,6 @@ function build(opts: { userExists?: boolean; auctionListing?: boolean } = {}) {
       },
     ]),
   };
-  const swapFunding = {
-    getMySwaps: jest.fn().mockResolvedValue({
-      bankDetails: { accountNumber: POISON.bankAccount, branchCode: POISON.branchCode },
-      swaps: [],
-    }),
-  };
-  const swapProposals = {
-    getMine: jest.fn().mockResolvedValue([]),
-    getReceived: jest.fn().mockResolvedValue([]),
-  };
   const sellerTools = {
     payoutStatement: jest.fn().mockResolvedValue({
       period: { from: '2026-06-12', to: '2026-07-12' },
@@ -219,8 +209,6 @@ function build(opts: { userExists?: boolean; auctionListing?: boolean } = {}) {
     transactions as any,
     offers as any,
     auctions as any,
-    swapFunding as any,
-    swapProposals as any,
     sellerTools as any,
   );
   const guide = new AskGgGuideService(
@@ -327,20 +315,17 @@ describe('G4 static coverage — new keys resolve for their paths', () => {
     ['/saved-searches', 'saved-searches'],
     ['/notifications', 'notifications'],
     ['/my/listings', 'my-listings'],
-    ['/my/swaps', 'swaps'],
     ['/my/earnings', 'earnings'],
     ['/my/offers', 'offers'],
     ['/my/bids', 'offers'],
     ['/offers/received', 'offers'],
     ['/sellers/user_abc', 'sellers'],
-    ['/featured/bid', 'featured'],
     ['/brands', 'browse'],
     ['/brand/vortex', 'browse'],
     ['/transactions/tx1/dealer-verification', 'dealer-verification'],
     ['/support', 'help'],
     ['/terms', 'legal'],
     ['/privacy', 'legal'],
-    ['/experiences-cancellation-policy', 'legal'],
   ];
   it.each(cases)('%s → %s', async (path, key) => {
     const { guide } = build();

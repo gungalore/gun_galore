@@ -10,7 +10,7 @@ import { ShippingModule } from '../shipping/shipping.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
 
 // Daily Deals (DD-1). Self-contained module (Pattern B, mirrors
-// FeaturedModule): JwtModule for the AdminJwtGuard on the admin
+// the admin-guarded modules): JwtModule for the AdminJwtGuard on the admin
 // controller; AdminAuditService provided locally (it only needs the
 // global PrismaService). PrismaService, CloudinaryService, SettingsService
 // and ReferenceNumberService all come from their @Global() modules.

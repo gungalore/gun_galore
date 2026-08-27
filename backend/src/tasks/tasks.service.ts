@@ -1,18 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { OffersService } from '../offers/offers.service';
-import { SwapProposalsService } from '../swaps/swap-proposals.service';
-import { SwapFundingService } from '../swaps/swap-funding.service';
 import { AuctionsService } from '../auctions/auctions.service';
-import {
-  FeaturedService,
-  FEATURED_UNPAID_MAX_MS,
-} from '../featured/featured.service';
 import { KycService } from '../kyc/kyc.service';
 import { TrackingService } from '../shipping/tracking.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { DispatchSlaService } from '../payments/dispatch-sla.service';
-import { ExperienceSlaService } from '../payments/experience-sla.service';
 import { TransactionsService } from '../payments/transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeOrderRollupStatus } from '../orders/order-math';
@@ -25,11 +18,9 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../sms/sms.service';
 import { decideOpsAlert } from './ops-alert-decision';
 import { PushService } from '../push/push.service';
-import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { SavedSearchesService } from '../saved-searches/saved-searches.service';
 import { DealsService } from '../deals/deals.service';
-import { RaffleService } from '../raffle/raffle.service';
 import { RatingsService } from '../ratings/ratings.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
@@ -76,26 +67,20 @@ export class TasksService {
 
   constructor(
     private readonly offersService: OffersService,
-    private readonly swapProposals: SwapProposalsService,
-    private readonly swapFunding: SwapFundingService,
     private readonly auctionsService: AuctionsService,
-    private readonly featured: FeaturedService,
     private readonly kycService: KycService,
     private readonly trackingService: TrackingService,
     private readonly shipping: ShippingService,
     private readonly dispatchSla: DispatchSlaService,
-    private readonly experienceSla: ExperienceSlaService,
     private readonly transactions: TransactionsService,
     private readonly prisma: PrismaService,
     private readonly adminCredits: AdminCreditsService,
     private readonly notifications: NotificationsService,
     private readonly sms: SmsService,
     private readonly push: PushService,
-    private readonly subscriptions: SubscriptionsService,
     private readonly zohoBooks: ZohoBooksService,
     private readonly savedSearches: SavedSearchesService,
     private readonly deals: DealsService,
-    private readonly raffle: RaffleService,
     private readonly ratings: RatingsService,
     private readonly settings: SettingsService,
     private readonly wishlistAlerts: WishlistAlertsService,
@@ -709,39 +694,6 @@ export class TasksService {
     }
   }
 
-  // ─── Featured-slot tick ─────────────────────────────────────────
-  // Runs every minute. Five jobs in one pass to keep latency tight:
-  //   1. Open SCHEDULED pre-auctions for slots whose featuredUntil
-  //      is within scheduledAuctionSec of now AND no auction is open
-  //   2. Close OPEN auctions whose closesAt has passed
-  //   3. Expire bind windows that have elapsed without a listing
-  //      being bound (cascade to runner-up)
-  //   4. Expire featuredUntil that have ticked past (frees the slot
-  //      — the parallel SCHEDULED auction should have just closed
-  //      and promoted the next occupant)
-  //   5. Open AD_HOC auctions for any VACANT slot that doesn't have
-  //      a currentAuction (catches cold-start + post-sale gaps)
-  // AUDIT M14 + M34 — outer try/catch so one bad slot doesn't poison
-  // every subsequent feature-tick pass; `recordCronRun('featured-tick')`
-  // in finally so the admin health dashboard sees it heartbeat.
-  // Without these guards a persistent error on a single slot would
-  // re-throw every minute, blocking ALL featured-slot lifecycle
-  // processing AND leaving the operator blind to the stall (the
-  // dashboard would show "never run").
-  @Cron(CronExpression.EVERY_MINUTE)
-  async featuredTick() {
-    try {
-      await this.featuredTickImpl();
-    } catch (err) {
-      this.logger.error(
-        `featuredTick failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('featured-tick');
-    }
-  }
-
   // ─── DD-4 — Daily Deals scheduled drops ──────────────────────────
   // Every minute: auto go-live SCHEDULED deals whose start has arrived,
   // auto-END deals at their endsAt / extendedUntil (the hard time-gate the
@@ -794,140 +746,6 @@ export class TasksService {
     }
   }
 
-  private async featuredTickImpl() {
-    const now = new Date();
-    const cfg = await this.featured.getConfig();
-
-    // 0) Detect featured listings that are no longer up for grabs and free
-    //    the slot so an ad-hoc auction can open. Catches:
-    //      (a) the listing left ACTIVE — sold (PAYMENT_PENDING/SOLD),
-    //          cancelled, or expired; and
-    //      (b) the seller ACCEPTED an offer — the item is promised to a
-    //          buyer, so the feature has done its job even though the
-    //          listing stays ACTIVE until that buyer runs checkout.
-    //    Done in the cron (rather than via a TransactionsService /
-    //    OffersService → FeaturedService call) to avoid a cross-module
-    //    forwardRef; the display side is guarded instantly in getRail /
-    //    getFeaturedListings, this just recycles the slot within ~a minute.
-    const featuredButUnavailable = await this.prisma.featuredSlot.findMany({
-      where: {
-        status: 'OCCUPIED',
-        currentListing: {
-          OR: [
-            { status: { notIn: ['ACTIVE'] } },
-            { offers: { some: { status: 'ACCEPTED' } } },
-          ],
-        },
-      },
-      select: { id: true, currentListingId: true },
-    });
-    for (const s of featuredButUnavailable) {
-      if (s.currentListingId) {
-        await this.featured.releaseSoldListing(s.currentListingId);
-      }
-    }
-
-    // 1) Close auctions whose timer has run out. Only auctions with
-    //    closesAt SET are eligible — closesAt=null means we're still
-    //    waiting for the first bid to start the timer.
-    const dueToClose = await this.prisma.featuredAuction.findMany({
-      where: {
-        status: 'OPEN',
-        closesAt: { not: null, lte: now },
-      },
-      select: { id: true },
-    });
-    for (const a of dueToClose) {
-      await this.featured.closeAuction(a.id);
-    }
-
-    // 2) Expire bind windows (winner had 15min to pick a listing).
-    //    P1.2 guard — do NOT cascade a winner who is mid-EFT-payment:
-    //    (a) unpaid with a live paymentPayByAt = they've committed and
-    //        have until the deadline to pay;
-    //    (b) PAID but not yet bound (auto-bind failed, e.g. the pending
-    //        listing sold while the money was in flight) = they've paid
-    //        for the slot and must be able to re-pick; only admin
-    //        force-evict frees such a slot.
-    //
-    //    Review fix (re-arm squat): (a) shields an UNPAID winner while
-    //    paymentPayByAt is live, but re-binding re-arms that deadline with
-    //    no cap — a winner could hold a homepage slot for free forever.
-    //    Cap the TOTAL unpaid hold at the auction's closedAt + one pay
-    //    window (+ bind window slack): past FEATURED_UNPAID_MAX_MS the slot
-    //    is forfeited regardless of a re-armed paymentPayByAt, because
-    //    closedAt never advances for the original winner.
-    const bindCutoff = new Date(now.getTime() - cfg.bindWindowSec * 1000);
-    const unpaidHardCutoff = new Date(
-      now.getTime() - (cfg.bindWindowSec * 1000 + FEATURED_UNPAID_MAX_MS),
-    );
-    const expiredBinds = await this.prisma.featuredSlot.findMany({
-      where: {
-        status: 'BIND_WINDOW',
-        currentAuction: { closedAt: { lte: bindCutoff } },
-        OR: [
-          // Normal path: window lapsed and not shielded by paid/live-EFT.
-          {
-            NOT: {
-              currentAuction: {
-                winningBid: {
-                  OR: [
-                    { paidAt: { not: null } },
-                    { paidAt: null, paymentPayByAt: { gt: now } },
-                  ],
-                },
-              },
-            },
-          },
-          // Absolute cap: an UNPAID winner past the hard cutoff is forfeited
-          // even if they keep re-arming paymentPayByAt (paid winners are
-          // never touched here — they need admin force-evict).
-          {
-            currentAuction: {
-              closedAt: { lte: unpaidHardCutoff },
-              winningBid: { paidAt: null },
-            },
-          },
-        ],
-      },
-      select: { id: true },
-    });
-    for (const s of expiredBinds) {
-      await this.featured.expireBindWindow(s.id);
-    }
-
-    // 3) Expire featuredUntil that have elapsed (occupant's time up).
-    const expiredFeatured = await this.prisma.featuredSlot.findMany({
-      where: { status: 'OCCUPIED', featuredUntil: { lte: now } },
-      select: { id: true },
-    });
-    for (const s of expiredFeatured) {
-      await this.featured.expireFeatured(s.id);
-    }
-
-    // 4) Open auctions on any slot that's VACANT + auctionless.
-    //    Auctions sit at closesAt=null waiting for the first bid.
-    const vacantNoAuction = await this.prisma.featuredSlot.findMany({
-      where: { status: 'VACANT', currentAuctionId: null },
-      select: { id: true },
-    });
-    for (const s of vacantNoAuction) {
-      await this.featured.openAuction(s.id);
-    }
-
-    if (
-      dueToClose.length +
-        expiredBinds.length +
-        expiredFeatured.length +
-        vacantNoAuction.length >
-      0
-    ) {
-      this.logger.log(
-        `featured tick: closed=${dueToClose.length} bindExpired=${expiredBinds.length} featuredExpired=${expiredFeatured.length} opened=${vacantNoAuction.length}`,
-      );
-    }
-  }
-
   // AUDIT M15 — every cron below wraps work in try/catch with
   // recordCronRun in finally. A DB hiccup in the leading findMany
   // would otherwise skip the heartbeat, leaving the admin health
@@ -956,101 +774,6 @@ export class TasksService {
     }
   }
 
-  // P1.1 — every 10 minutes: fail subscription charges whose 24h EFT
-  // window lapsed unpaid, send the 3-days-out renewal reminder, and
-  // downgrade expired prepaid periods to FREE. All three passes are
-  // idempotent (atomic WHERE re-checks inside the service).
-  @Cron(CronExpression.EVERY_10_MINUTES)
-  async subscriptionSweep() {
-    this.logger.debug('Running subscription sweep cron');
-    try {
-      await this.subscriptions.sweep();
-    } catch (err) {
-      this.logger.error(
-        `subscriptionSweep failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('subscription-sweep');
-    }
-  }
-
-  // Run every 10 minutes — expire pending/countered swap proposals past
-  // their TTL (48h propose / 24h counter). Mirrors offer expiry.
-  @Cron(CronExpression.EVERY_10_MINUTES)
-  async expireSwapProposals() {
-    this.logger.debug('Running swap-proposal expiry cron');
-    try {
-      await this.swapProposals.expireStale();
-    } catch (err) {
-      this.logger.error(
-        `expireSwapProposals failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('swap-proposal-expire');
-    }
-  }
-
-  // Run every 10 minutes — sweep swaps whose funding deadline lapsed without
-  // both sides paying: cancel, restock both listings, reimburse any side that
-  // did pay (synthetic refund → FNB batch).
-  @Cron(CronExpression.EVERY_10_MINUTES)
-  async sweepSwapFunding() {
-    this.logger.debug('Running swap funding sweep cron');
-    try {
-      await this.swapFunding.sweepExpiredFunding();
-    } catch (err) {
-      this.logger.error(
-        `sweepSwapFunding failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('swap-funding-sweep');
-    }
-  }
-
-  // Hourly — run any PRO prize draw whose draw date has passed. No-ops
-  // while pro_draw_enabled is OFF.
-  @Cron(CronExpression.EVERY_HOUR)
-  async runPrizeDraws() {
-    this.logger.debug('Running prize draw cron');
-    try {
-      await this.raffle.runDueDraws();
-    } catch (err) {
-      this.logger.error(
-        `runPrizeDraws failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('prize-draw');
-    }
-  }
-
-  // Hourly — cancel agreed swaps that never reached funding setup (proof
-  // photo / delivery address outstanding past the pre-funding window):
-  // restock both listings + strike the ghosting side. Runs regardless of
-  // payment mode — no money exists before funding setup, and this is what
-  // un-wedges reserved listings when a party disappears after agreeing.
-  @Cron(CronExpression.EVERY_HOUR)
-  async sweepUnreadySwaps() {
-    this.logger.debug('Running swap pre-funding sweep cron');
-    try {
-      await this.swapFunding.sweepUnreadySwaps();
-    } catch (err) {
-      this.logger.error(
-        `sweepUnreadySwaps failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('swap-prefunding-sweep');
-    }
-  }
-
-  // P1.3 — hourly retry for swap leg-fee Zoho receipts that failed at
-  // completion (createSwapFeeReceipts is idempotent per side, so a re-fire
-  // can only fill a missing receipt). Keeps Books whole without an admin
-  // clicking a retry button.
   // Daily 03:00 — refresh trust scores for sellers with recent activity
   // (the dashboard no longer recomputes on view, so the time-based score
   // components refresh here instead).
@@ -1125,25 +848,11 @@ export class TasksService {
     }
   }
 
-  @Cron(CronExpression.EVERY_HOUR)
-  async retrySwapFeeReceipts() {
-    try {
-      await this.zohoBooks.retryMissingSwapFeeReceipts();
-    } catch (err) {
-      this.logger.error(
-        `retrySwapFeeReceipts failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('swap-fee-receipt-retry');
-    }
-  }
-
   // DD-F — hourly retry for deal purchase orders that never reached Zoho (the
   // DealPurchaseOrder row is missing) or failed at placement (zohoSyncStatus
   // FAILED). createDealPurchaseOrder is idempotent (guarded by the row + its
   // zohoPurchaseOrderId), so a re-fire can only fill the gap — keeps Books
-  // whole without an admin clicking retry. Mirrors retrySwapFeeReceipts.
+  // whole without an admin clicking retry.
   // INERT until deals go live + POs exist (the query returns empty → no-op).
   @Cron(CronExpression.EVERY_HOUR)
   async retryDealPurchaseOrders() {
@@ -1183,57 +892,6 @@ export class TasksService {
     } finally {
       this.dealCollectionSweepRunning = false;
       await this.recordCronRun('deal-collection-sweep');
-    }
-  }
-
-  // Re-drive swaps wedged at LOCKED (crash between the lock write and the
-  // IN_TRANSIT flip). Runs every 5 min so a stranded fully-funded swap is
-  // picked up promptly, not left for the admin to notice by hand.
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async sweepStalledLockedSwaps() {
-    this.logger.debug('Running swap LOCKED re-drive sweep');
-    try {
-      await this.swapFunding.sweepStalledLockedSwaps();
-    } catch (err) {
-      this.logger.error(
-        `sweepStalledLockedSwaps failed: ${(err as Error).message}`,
-      );
-    } finally {
-      await this.recordCronRun('swap-locked-redrive');
-    }
-  }
-
-  // Run hourly — flag LOCKED+booked swaps where a party never dropped their
-  // parcel (booked but uncollected past the SLA) → DISPUTED for admin review.
-  @Cron(CronExpression.EVERY_HOUR)
-  async sweepStalledSwapShipping() {
-    this.logger.debug('Running swap shipping SLA sweep');
-    try {
-      await this.swapFunding.sweepStalledSwapShipping();
-    } catch (err) {
-      this.logger.error(
-        `sweepStalledSwapShipping failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('swap-shipping-sla');
-    }
-  }
-
-  // Run hourly — AWAITING_VERIFICATION swaps past their 48h window with no
-  // dispute → release held cash to the recipient + COMPLETED (S5).
-  @Cron(CronExpression.EVERY_HOUR)
-  async sweepSwapVerification() {
-    this.logger.debug('Running swap verification-window sweep');
-    try {
-      await this.swapFunding.sweepSwapVerification();
-    } catch (err) {
-      this.logger.error(
-        `sweepSwapVerification failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('swap-verification-sweep');
     }
   }
 
@@ -1432,40 +1090,6 @@ export class TasksService {
       this.logger.warn(`In-transit stall sweep failed: ${(err as Error).message}`);
     }
     await this.recordCronRun('dispatch-sla');
-  }
-
-  // EXP-E4 — experience (hunting-package) SLA sweep. The nudge/alert twin of
-  // the dispatch SLA for future-dated ON_SITE_SERVICE bookings (invisible to
-  // every courier/DT/collection sweep by design). Four idempotent passes in
-  // one call: outfitter booking-confirm nudge → escalate-to-admin past the 48h
-  // window; confirmed-booking pre-event reminder; post-event buyer confirm
-  // nudge → admin alert if still HELD after the 7-day window. NO pass moves
-  // money, releases, or refunds. Hourly (like dispatchSlaSweep — the human
-  // doesn't perceive a sub-hour difference); heartbeat in finally.
-  @Cron(CronExpression.EVERY_HOUR)
-  async experienceSlaSweep() {
-    try {
-      const r = await this.experienceSla.experienceSlaSweep();
-      if (
-        r.bookingNudged > 0 ||
-        r.bookingEscalated > 0 ||
-        r.preEventReminded > 0 ||
-        r.postEventNudged > 0 ||
-        r.postEventAlerted > 0
-      ) {
-        this.logger.log(
-          `Experience SLA sweep: booking nudged ${r.bookingNudged}, escalated ${r.bookingEscalated}, ` +
-            `pre-event reminded ${r.preEventReminded}, post-event nudged ${r.postEventNudged}, alerted ${r.postEventAlerted}`,
-        );
-      }
-    } catch (err) {
-      this.logger.error(
-        `experienceSlaSweep failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      await this.recordCronRun('experience-sla');
-    }
   }
 
   // P5.3 — stuck HELD funds: courier orders delivered >72h ago that the buyer

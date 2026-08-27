@@ -50,7 +50,6 @@ export interface Ctx {
   cats: {
     normal: string;
     firearm: string;
-    experience: string;
     collection: string;
   };
   // DD-F5 — optional: the captured JIT supplier collection bookings. installStubs
@@ -82,15 +81,7 @@ export async function cleanup(prisma: PrismaService) {
     'contactDetailRejection',
     'rating',
     'message',
-    'featuredSlotBid',
-    'featuredSlotAuditEvent',
-    'featuredSlotBidderBan',
-    'swapProposal',
-    'subscriptionCharge',
-    'subscription',
     'transaction', // self-refs (refundOf / shipsWith) resolve within one delete
-    'featuredAuction',
-    'featuredSlot',
     // DD-F5 — Daily Deals JIT fulfilment. DealPurchaseOrder holds an FK to Deal
     // (child → before deal). Supplier is pointed-to by Deal via the OPTIONAL
     // Deal.supplierId (default ON DELETE SET NULL), so wiping it first just
@@ -100,7 +91,6 @@ export async function cleanup(prisma: PrismaService) {
     'deal', // DD-2 — cascade-deletes with listing anyway, but explicit is safer
     'listing',
     'order',
-    'swap',
     'payoutBatch',
     'notification',
     'pushSubscription',
@@ -247,9 +237,6 @@ export async function seedActors(prisma: PrismaService): Promise<Record<string, 
   actors.dealerbuyer = await upsertUser(prisma, 'dealerbuyer');
   actors.bidderA = await upsertUser(prisma, 'bidderA');
   actors.bidderB = await upsertUser(prisma, 'bidderB');
-  actors.swapA = await upsertUser(prisma, 'swapA');
-  actors.swapB = await upsertUser(prisma, 'swapB');
-  actors.member = await upsertUser(prisma, 'member', { subscriptionTier: 'MEMBER' }); // subscription
   return actors;
 }
 
@@ -364,7 +351,6 @@ export async function resolveCategories(prisma: PrismaService): Promise<Ctx['cat
       'normal',
     ),
     firearm: await pick({ isFirearm: true, parentId: { not: null } }, 'firearm'),
-    experience: await pick({ isExperience: true }, 'experience'),
     collection: await pick({ collectionOnly: true }, 'collection'),
   };
 }

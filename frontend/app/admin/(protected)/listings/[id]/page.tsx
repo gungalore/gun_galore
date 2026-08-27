@@ -345,7 +345,7 @@ export default function ListingDossierPage() {
                       ? '#22c55e18'
                       : l.claudeConfidence >= 0.5
                         ? '#f59e0b18'
-                        : 'var(--red)18',
+                        : 'var(--red-wash)',
                   color:
                     l.claudeConfidence >= 0.8
                       ? '#22c55e'
@@ -560,7 +560,7 @@ export default function ListingDossierPage() {
                     {q.reportedCount > 0 && (
                       <span
                         className="text-xs px-2 py-0.5 rounded-full"
-                        style={{ background: 'var(--red)18', color: 'var(--red)' }}
+                        style={{ background: 'var(--red-wash)', color: 'var(--red)' }}
                       >
                         {q.reportedCount} report{q.reportedCount === 1 ? '' : 's'}
                       </span>

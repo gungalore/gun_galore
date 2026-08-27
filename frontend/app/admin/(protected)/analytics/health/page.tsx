@@ -254,7 +254,7 @@ function RefundRiskTable({ rows }: { rows: RefundRiskSeller[] }) {
               <td className="px-4 py-3 text-right">
                 <span
                   className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--red)18', color: 'var(--red)', fontWeight: 500 }}
+                  style={{ background: 'var(--red-wash)', color: 'var(--red)', fontWeight: 500 }}
                 >
                   +{r.ppDifference.toFixed(1)}pp
                 </span>

@@ -274,7 +274,7 @@ export default function WitnessPage({
                 <button
                   type="button"
                   onClick={() => setStep(1)}
-                  className="rounded bg-[var(--brand,#1b3a2f)] px-4 py-2 text-sm text-white"
+                  className="rounded bg-[var(--red)] px-4 py-2 text-sm text-white"
                 >
                   I am happy to do this
                 </button>
@@ -352,7 +352,7 @@ export default function WitnessPage({
                     setBusy(false);
                   }
                 }}
-                className="mt-4 rounded bg-[var(--brand,#1b3a2f)] px-4 py-2 text-sm text-white disabled:opacity-50"
+                className="mt-4 rounded bg-[var(--red)] px-4 py-2 text-sm text-white disabled:opacity-50"
               >
                 {busy ? 'Sending…' : 'Send me the code'}
               </button>
@@ -388,7 +388,7 @@ export default function WitnessPage({
                         setBusy(false);
                       }
                     }}
-                    className="rounded bg-[var(--brand,#1b3a2f)] px-4 py-2 text-sm text-white disabled:opacity-50"
+                    className="rounded bg-[var(--red)] px-4 py-2 text-sm text-white disabled:opacity-50"
                   >
                     Continue
                   </button>
@@ -470,7 +470,7 @@ export default function WitnessPage({
                         className={[
                           'rounded border px-3 py-1.5 text-sm',
                           answers[d.key] === o
-                            ? 'border-[var(--brand,#1b3a2f)] bg-[var(--brand,#1b3a2f)] text-white'
+                            ? 'border-[var(--red)] bg-[var(--red)] text-white'
                             : 'border-[var(--border)]',
                         ].join(' ')}
                       >
@@ -667,7 +667,7 @@ function Nav({
         type="button"
         onClick={onNext}
         disabled={nextDisabled}
-        className="rounded bg-[var(--brand,#1b3a2f)] px-4 py-2 text-sm text-white disabled:opacity-50"
+        className="rounded bg-[var(--red)] px-4 py-2 text-sm text-white disabled:opacity-50"
       >
         {nextLabel}
       </button>

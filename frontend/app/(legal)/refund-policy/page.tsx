@@ -164,7 +164,6 @@ export default function RefundPolicyPage() {
 
       <h2>5. What is not refundable</h2>
       <ul>
-        <li><strong>Featured-slot bid wins</strong> — the cost of buying a featured-listing slot at auction is non-refundable except where the listing is removed by us for an admin-side error.</li>
         <li><strong>Shipping costs on cancelled orders</strong> where the cancellation is the buyer's choice and the parcel has already been collected by the courier.</li>
         <li>
           <strong>Where the item is, or how far you have to travel to it.</strong>{' '}

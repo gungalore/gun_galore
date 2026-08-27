@@ -4,7 +4,6 @@ import Image from 'next/image';
 import { auth } from '@clerk/nextjs/server';
 import { Me, SellerTier } from '@/lib/types';
 import { ACCOUNT_GROUPS } from '@/lib/account-menu-data';
-import { PRO_NAME } from '@/lib/brand';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { AccountWishlistCount } from './wishlist-count';
@@ -85,9 +84,8 @@ export default async function AccountPage() {
   const token = await getToken();
   const headers = { Authorization: `Bearer ${token}` };
 
-  const [meRes, subRes, alertsRes, moduleCountsRes] = await Promise.all([
+  const [meRes, alertsRes, moduleCountsRes] = await Promise.all([
     fetch(`${API_URL}/users/me`, { headers, cache: 'no-store' }).catch(() => null),
-    fetch(`${API_URL}/subscriptions/me`, { headers, cache: 'no-store' }).catch(() => null),
     fetch(`${API_URL}/notifications/me/active-count`, { headers, cache: 'no-store' }).catch(() => null),
     // Same per-module notification counts the dropdown / drawer / PWA More
     // sheet badge with, so the hub cards and the menus always agree.
@@ -97,17 +95,10 @@ export default async function AccountPage() {
   // Distinguish "the backend answered and this is your real state" from
   // "we couldn't reach the backend". safeJson degrades both to null, and
   // rendering the fallback as fact is actively misleading here: a verified
-  // seller would be shown "ID not verified" and a paying PRO subscriber the
-  // "Get AO PRO" upsell, and neither has any way to tell it's a blip.
-  // Each fetch is judged on its own so one outage doesn't blank the other.
+  // seller would be shown "ID not verified" with no way to tell it's a blip.
   const meFailed = !meRes || !meRes.ok;
-  const subFailed = !subRes || !subRes.ok;
 
   const me = await safeJson<Me | null>(meRes, null);
-  const sub = await safeJson<{ tier?: string; periodEnd?: string | null } | null>(
-    subRes,
-    null,
-  );
   const alerts = await safeJson<{ total?: number } | null>(alertsRes, null);
   const moduleCounts = await safeJson<Record<string, number>>(moduleCountsRes, {});
 
@@ -127,8 +118,6 @@ export default async function AccountPage() {
 
   const username = me?.username ?? 'Your account';
   const kyc = KYC_TONE[me?.kycStatus ?? 'NONE'] ?? KYC_TONE.NONE;
-  const ggPlus = sub?.tier === 'MEMBER' || sub?.tier === 'PRO' ? sub.tier : null;
-  const periodEnd = fmtDate(sub?.periodEnd);
 
   return (
     <>
@@ -181,34 +170,6 @@ export default async function AccountPage() {
                   {kyc.label}
                 </span>
               )}
-              {/* AO PRO tier chip (or an upgrade nudge — the single paid
-                  tier since 2026-07-19; legacy MEMBER rows show their own
-                  label until they lapse). Suppressed entirely when the
-                  subscription fetch failed: showing the upsell to a paying
-                  subscriber is the worst of the two wrong answers. */}
-              {subFailed ? null : ggPlus ? (
-                <span
-                  className="text-xs px-2 py-0.5 rounded-[4px]"
-                  style={{ color: 'var(--red)', background: 'rgba(200,16,46,0.10)', border: '0.5px solid var(--red)' }}
-                >
-                  {ggPlus === 'PRO' ? PRO_NAME : `GG+ ${ggPlus}`}
-                  {periodEnd ? ` · renews ${periodEnd}` : ''}
-                </span>
-              ) : (
-                <Link
-                  href="/subscribe"
-                  className="text-xs px-2 py-0.5 rounded-[4px]"
-                  style={{
-                    color: 'var(--red)',
-                    background: 'rgba(200,16,46,0.08)',
-                    border: '0.5px solid rgba(200,16,46,0.45)',
-                    textDecoration: 'none',
-                    fontWeight: 500,
-                  }}
-                >
-                  Get {PRO_NAME} — R99/mo
-                </Link>
-              )}
               {me && (
                 <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                   {TIER_LABEL[me.sellerTier]}
@@ -218,7 +179,7 @@ export default async function AccountPage() {
             {/* Transient-failure notice. Neutral tone on purpose — this is
                 our problem, not a problem with their account, and the chips
                 above are absent rather than wrong while it shows. */}
-            {(identityUnknown || subFailed) && (
+            {identityUnknown && (
               <p
                 className="text-xs"
                 style={{ color: 'var(--text-tertiary)', margin: '8px 0 0' }}

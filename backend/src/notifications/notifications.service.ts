@@ -1,11 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
-import { NotificationCategory } from '@prisma/client';
+import { FeeModel, NotificationCategory } from '@prisma/client';
 import { SmsService } from '../sms/sms.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
 import { Saps534Service, Saps534Data } from '../payments/saps534.service';
-import { EMAIL_FROM, PRO_NAME, SUPPORT_EMAIL } from '../common/brand';
+import { buyerBreakdown, sellerBreakdown } from '../payments/fee-presentation';
+import { EMAIL_FROM, SUPPORT_EMAIL } from '../common/brand';
 
 // Compile-time list of the entity types we can link a Notification
 // row to. Used by resolveByEntity() callers so typos don't sit silently
@@ -16,10 +17,6 @@ export type NotificationLinkedType =
   | 'transaction'
   | 'bid'
   | 'listing'
-  | 'swapProposal'
-  | 'swap'
-  | 'subscription'
-  | 'featured'
   // Bank-account verification rows — linkedId is the USER id. Resolved
   // when the user re-saves bank details or a later verification passes.
   | 'bank'
@@ -345,7 +342,22 @@ export interface SaleDetails {
   processingFee: number;
   buyerTotal: number;
   sellerPayout: number;
+  /**
+   * ⚠️ The EFFECTIVE flag — whether the BUYER was charged the gateway fee as
+   * a separate line. Meaningless under BUYNOW_MARKUP, where the fee is inside
+   * listingPrice; read feeModel first. See payments/fee-presentation.ts.
+   */
   passFeeToBuyer: boolean;
+  /**
+   * Which fee model priced this sale. Without it these columns cannot be
+   * described truthfully: the buyer's confirmation double-counted the fee on
+   * every marked-up BUY NOW, and the seller's "Sale price − Commission =
+   * Your payout" line did not subtract to the payout it printed.
+   */
+  feeModel: FeeModel;
+  /** Carrier rate and our delivery margin — shown to the buyer as ONE figure. */
+  shippingCost: number;
+  shippingHandlingCents: number;
   shippingMethod: string | null;
   /**
    * Optional TRANSACTION_ACCEPT token URL (`/a/<token>`). When set, the
@@ -576,21 +588,35 @@ export class NotificationsService {
     // don't tell a trailer/caravan buyer to wait for a dispatch SMS that
     // never comes.
     const isCollection = d.shippingMethod === 'COLLECTION';
+    // ⚠️ ONE SHARED BUILDER, AND THE ROWS FOOT.
+    //
+    // This used to print "Listing price", then a "Processing fee" gated on
+    // d.passFeeToBuyer, then "Total paid" — with no delivery row at all. On a
+    // marked-up BUY NOW the fee is ALREADY inside the listing price, so the
+    // email showed the buyer a charge that had not been added, and the rows
+    // did not reconcile to the total in either direction.
+    const shown = buyerBreakdown(d);
+    if (!shown.balances) {
+      // Cannot happen for a row the current checkout wrote, and the spec
+      // covers the matrix. But an email is the one artefact we cannot recall,
+      // so a row that does not foot leaves a trace rather than going out
+      // silently. Same guard the receipt carries.
+      this.logger.error(
+        `orderConfirmedBuyer ${d.transactionId}: rows do not sum to buyerTotal (${shown.total}) — fee model ${d.feeModel}`,
+      );
+    }
     const rows: { label: string; value: string }[] = [
       { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
-      { label: 'Listing price', value: formatRand(d.listingPrice) },
+      ...shown.lines.map((l) => ({
+        label: l.label,
+        value: formatRand(l.cents),
+      })),
+      { label: shown.totalLabel, value: formatRand(shown.total) },
+      {
+        label: 'Shipping method',
+        value: prettyShippingMethod(d.shippingMethod),
+      },
     ];
-    if (d.passFeeToBuyer) {
-      rows.push({
-        label: 'Processing fee',
-        value: formatRand(d.processingFee),
-      });
-    }
-    rows.push({ label: 'Total paid', value: formatRand(d.buyerTotal) });
-    rows.push({
-      label: 'Shipping method',
-      value: prettyShippingMethod(d.shippingMethod),
-    });
     const html = this.email({
       status: { tone: 'success', label: 'Order confirmed' },
       headline: 'Order confirmed',
@@ -914,6 +940,17 @@ export class NotificationsService {
   }
 
   async newSaleSeller(d: SaleDetails) {
+    // ⚠️ ONE SET OF NUMBERS ACROSS EMAIL, INBOX AND SMS. Hoisted to the top of
+    // the method because the inbox row is built long before the email body,
+    // and it used to quote d.listingPrice — the BUYER's marked-up price — so
+    // a seller's phone said "sold for R511.97" while the email beside it said
+    // "Your price R450.00". Same sale, two numbers.
+    const sellerRows = sellerBreakdown(d);
+    if (!sellerRows.balances) {
+      this.logger.error(
+        `newSaleSeller ${d.transactionId}: gross − deductions ≠ payout (${sellerRows.net}) — fee model ${d.feeModel}`,
+      );
+    }
     const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
     // When TransactionsService minted a TRANSACTION_ACCEPT token we
     // prefer the /a/<token> link in BOTH email CTA + SMS — that lets
@@ -934,8 +971,8 @@ export class NotificationsService {
       type: 'new_sale',
       title: 'Your listing sold',
       body: hasAcceptToken
-        ? `${d.listingTitle} sold for ${formatRand(d.listingPrice)} — accept within 48h`
-        : `${d.listingTitle} sold for ${formatRand(d.listingPrice)} — dispatch within 48h`,
+        ? `${d.listingTitle} sold — ${formatRand(sellerRows.net)} to you, accept within 48h`
+        : `${d.listingTitle} sold — ${formatRand(sellerRows.net)} to you, dispatch within 48h`,
       // When we have a token URL, point the inbox row at it directly so
       // tapping the row → /a/<token> → Accept page works without sign-in.
       // Otherwise fall back to the transaction page.
@@ -979,11 +1016,22 @@ export class NotificationsService {
       status: { tone: 'success', label: 'New sale' },
       headline: hasAcceptToken ? 'New sale — accept within 48h' : 'You have a new sale',
       body: bodyText,
+      // ⚠️ THE SUBTRACTION HAS TO BE TRUE.
+      //
+      // This was hardcoded as "Sale price − Commission = Your payout", which
+      // on a marked-up BUY NOW reads R511.97 − R40.50 = R450.00 and simply
+      // does not subtract. Under that model nothing is deducted from the
+      // seller at all: they asked R450 and they receive R450, because our cut
+      // was added to the buyer's price. sellerBreakdown() emits the rows that
+      // are actually true for the model this sale ran under.
       rows: [
         { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
-        { label: 'Sale price', value: formatRand(d.listingPrice) },
-        { label: 'Commission', value: '-' + formatRand(d.commissionZar) },
-        { label: 'Your payout', value: formatRand(d.sellerPayout) },
+        { label: sellerRows.grossLabel, value: formatRand(sellerRows.gross) },
+        ...sellerRows.deductions.map((l) => ({
+          label: l.label,
+          value: '-' + formatRand(l.cents),
+        })),
+        { label: sellerRows.netLabel, value: formatRand(sellerRows.net) },
         {
           label: 'Shipping method',
           value: prettyShippingMethod(d.shippingMethod),
@@ -992,9 +1040,12 @@ export class NotificationsService {
       cta: hasAcceptToken
         ? { label: 'Accept this sale', url: acceptUrl }
         : { label: 'View sale', url: txUrl },
+      // The model note always rides along: under the markup model a seller
+      // seeing no commission row needs to know why, and under the deduct
+      // model it says plainly who carried the gateway fee.
       footnote: hasAcceptToken
-        ? 'One-tap accept — no sign-in needed. Link expires in 48 hours.'
-        : undefined,
+        ? `One-tap accept — no sign-in needed. Link expires in 48 hours. ${sellerRows.note}`
+        : sellerRows.note,
       preheader: `New sale — ${d.listingTitle}`,
     });
     await this.send(d.sellerEmail, 'New sale: ' + d.listingTitle, html);
@@ -1889,197 +1940,6 @@ export class NotificationsService {
           ? `All Outdoor: R${(d.buyerTotal / 100).toFixed(0)} refund approved for ${truncate(d.listingTitle, 30)}. Add your bank details on your profile so we can pay it: ${this.appUrl}/profile/edit`
           : `All Outdoor: Refund of R${(d.buyerTotal / 100).toFixed(0)} for ${truncate(d.listingTitle, 40)} issued. Allow ${d.manualEft ? '1-3 business days' : REFUND_ETA_SMS}.`,
         `refund-${d.transactionId}`,
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------
-  // Subscriptions (P1.1) — prepaid MEMBER/PRO periods on the EFT rail.
-  // Financial events → BOTH email + SMS (house rule); SMS skips
-  // silently when phone is null.
-  // ---------------------------------------------------------------
-  async subscriptionActivated(d: {
-    email: string;
-    name: string;
-    phone?: string | null;
-    tier: string;
-    periodEnd: Date;
-  }) {
-    const until = formatDateShort(d.periodEnd);
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'subscription_activated',
-      title: `GG+ ${d.tier} active`,
-      body: `Your ${d.tier} subscription is active until ${until}. Enjoy the perks!`,
-      url: '/ask-gg',
-      iconKey: 'transaction',
-      linkedType: 'subscription',
-      linkedId: d.tier,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'success', label: 'Active' },
-      headline: `Your GG+ ${d.tier} subscription is active`,
-      body: `Hi ${b(d.name)}, thanks — your payment has been received and your ${b(
-        `GG+ ${d.tier}`,
-      )} subscription is now active until ${b(until)}. All your tier perks (Ask GG limits, photo ID, badge and more) are live right now. Your subscription does not auto-renew — we'll remind you before it ends so you can top up if you want to keep it.`,
-      rows: [
-        { label: 'Tier', value: `GG+ ${d.tier}` },
-        { label: 'Active until', value: until },
-      ],
-      cta: { label: 'Open Ask GG', url: `${this.appUrl}/ask-gg` },
-      preheader: `GG+ ${d.tier} active until ${until}`,
-    });
-    await this.send(d.email, `GG+ ${d.tier} subscription active`, html);
-    if (d.phone) {
-      await this.sendSms(
-        d.phone,
-        `All Outdoor: your GG+ ${d.tier} subscription is active until ${until}. No auto-renew - we'll remind you before it ends.`,
-        `sub-active-${d.email}-${d.periodEnd.getTime()}`,
-      );
-    }
-  }
-
-  async subscriptionExpiring(d: {
-    email: string;
-    name: string;
-    phone?: string | null;
-    tier: string;
-    periodEnd: Date;
-  }) {
-    const until = formatDateShort(d.periodEnd);
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'subscription_expiring',
-      title: `GG+ ${d.tier} ends ${until}`,
-      body: `Your ${d.tier} subscription ends on ${until}. Renew now to keep your perks without a gap.`,
-      url: '/subscribe',
-      iconKey: 'transaction',
-      linkedType: 'subscription',
-      linkedId: d.tier,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Ending soon' },
-      headline: `Your GG+ ${d.tier} ends on ${until}`,
-      body: `Hi ${b(d.name)}, a heads-up that your ${b(
-        `GG+ ${d.tier}`,
-      )} subscription ends on ${b(
-        until,
-      )}. Subscriptions are prepaid and never renew automatically — if you'd like to keep your perks, renew before then and your new period simply stacks on top of the current one (no days lost).`,
-      rows: [
-        { label: 'Tier', value: `GG+ ${d.tier}` },
-        { label: 'Ends on', value: until },
-      ],
-      cta: { label: 'Renew now', url: `${this.appUrl}/subscribe` },
-      preheader: `GG+ ${d.tier} ends ${until} — renew to keep your perks`,
-    });
-    await this.send(d.email, `Your GG+ ${d.tier} ends on ${until}`, html);
-    if (d.phone) {
-      await this.sendSms(
-        d.phone,
-        `All Outdoor: your GG+ ${d.tier} ends on ${until}. Renew at ${this.appUrl}/subscribe to keep your perks - new days stack on top, none lost.`,
-        `sub-expiring-${d.email}-${d.periodEnd.getTime()}`,
-      );
-    }
-  }
-
-  async subscriptionLapsed(d: {
-    email: string;
-    name: string;
-    phone?: string | null;
-    tier: string;
-  }) {
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'subscription_lapsed',
-      title: `GG+ ${d.tier} has ended`,
-      body: `Your ${d.tier} subscription has ended and your account is back on the free tier. Renew any time.`,
-      url: '/subscribe',
-      iconKey: 'transaction',
-      linkedType: 'subscription',
-      linkedId: d.tier,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Ended' },
-      headline: `Your GG+ ${d.tier} subscription has ended`,
-      body: `Hi ${b(d.name)}, your prepaid ${b(
-        `GG+ ${d.tier}`,
-      )} period has ended and your account is back on the free tier. Nothing has been charged — subscriptions never renew automatically. You can re-subscribe any time and your perks switch back on immediately.`,
-      cta: { label: 'Re-subscribe', url: `${this.appUrl}/subscribe` },
-      preheader: `GG+ ${d.tier} ended — re-subscribe any time`,
-    });
-    await this.send(d.email, `Your GG+ ${d.tier} subscription has ended`, html);
-    if (d.phone) {
-      await this.sendSms(
-        d.phone,
-        `All Outdoor: your GG+ ${d.tier} subscription has ended - you're back on the free tier. Re-subscribe any time: ${this.appUrl}/subscribe`,
-        `sub-lapsed-${d.email}-${d.tier}`,
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------
-  // Featured slot (P1.2) — EFT slot-fee received. bound=false means the
-  // listing they picked stopped being bindable while the money was in
-  // flight — they must pick another (ACTION REQUIRED, money already
-  // taken). Financial event → email + SMS.
-  // ---------------------------------------------------------------
-  async featuredSlotPaymentReceived(d: {
-    email: string;
-    name: string;
-    phone?: string | null;
-    amountCents: number;
-    bound: boolean;
-    featuredUntil?: Date | null;
-  }) {
-    const until = d.featuredUntil ? formatDateShort(d.featuredUntil) : null;
-    await this.persistByEmail(d.email, {
-      category: 'SELLER',
-      type: 'featured_payment_received',
-      title: d.bound ? 'Your listing is featured!' : 'Payment received — pick a listing',
-      body: d.bound
-        ? `Payment of ${formatRand(d.amountCents)} received — your listing is live on the homepage${until ? ` until ${until}` : ''}.`
-        : `Payment of ${formatRand(d.amountCents)} received, but the listing you picked is no longer available to feature. Choose another listing to use your slot.`,
-      url: d.bound ? '/' : '/featured/bid',
-      iconKey: 'transaction',
-      linkedType: 'featured',
-      linkedId: 'slot',
-      dismissible: d.bound,
-    });
-    const html = this.email({
-      status: d.bound
-        ? { tone: 'success', label: 'Featured live' }
-        : { tone: 'pending', label: 'Action needed' },
-      headline: d.bound
-        ? 'Your featured slot is live'
-        : 'Payment received — choose a listing to feature',
-      body: d.bound
-        ? `Hi ${b(d.name)}, we've received your slot fee of ${b(formatRand(d.amountCents))} and your listing is now featured on the homepage${until ? ` until ${b(until)}` : ''}. Good luck with the extra eyes!`
-        : `Hi ${b(d.name)}, we've received your slot fee of ${b(formatRand(d.amountCents))} — but the listing you originally picked is no longer available to feature (it may have sold or been paused in the meantime). Your slot is reserved and paid for: just pick another of your active listings to complete the feature.`,
-      rows: [{ label: 'Amount received', value: formatRand(d.amountCents) }],
-      cta: d.bound
-        ? { label: 'View homepage', url: this.appUrl }
-        : { label: 'Pick a listing', url: `${this.appUrl}/featured/bid` },
-      preheader: d.bound
-        ? `Featured live — ${formatRand(d.amountCents)} received`
-        : `Slot fee received — pick a listing to feature`,
-    });
-    await this.send(
-      d.email,
-      d.bound
-        ? 'Your featured slot is live'
-        : 'Action needed: pick a listing for your featured slot',
-      html,
-    );
-    if (d.phone) {
-      await this.sendSms(
-        d.phone,
-        d.bound
-          ? `All Outdoor: R${(d.amountCents / 100).toFixed(0)} slot fee received - your listing is now featured on the homepage${until ? ` until ${until}` : ''}.`
-          : `All Outdoor: R${(d.amountCents / 100).toFixed(0)} slot fee received, but your chosen listing is no longer available. Pick another at ${this.appUrl}/featured/bid - your slot is paid and reserved.`,
-        `featured-paid-${d.email}-${d.amountCents}`,
       );
     }
   }
@@ -3785,172 +3645,6 @@ export class NotificationsService {
   }
 
   // ---------------------------------------------------------------
-  // EXP-E4 — experience booking-confirm nudge (outfitter). The buyer
-  // has paid for a hunting package / range day and the outfitter has
-  // NOT yet confirmed the booking with the accept-window deadline
-  // approaching. One-shot, best-effort — reminds the outfitter to
-  // confirm or the booking will be escalated to admin. NO auto-refund
-  // is threatened on this path (an experience never auto-refunds).
-  // ---------------------------------------------------------------
-  async experienceBookingConfirmNudgeOutfitter(d: {
-    sellerEmail: string;
-    sellerName: string;
-    sellerPhone?: string | null;
-    listingTitle: string;
-    transactionId: string;
-    eventDate?: Date | null;
-  }) {
-    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    const when = d.eventDate
-      ? d.eventDate.toLocaleDateString('en-ZA', {
-          weekday: 'short',
-          day: 'numeric',
-          month: 'short',
-        })
-      : null;
-    await this.persistByEmail(d.sellerEmail, {
-      category: 'SELLER',
-      type: 'experience_booking_confirm_nudge',
-      title: 'Confirm this booking',
-      body: `${d.listingTitle} — a client has paid. Please confirm the booking.`,
-      url: `/transactions/${d.transactionId}`,
-      iconKey: 'transaction',
-      linkedType: 'transaction',
-      linkedId: d.transactionId,
-      dismissible: false,
-    });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Action needed' },
-      headline: 'Please confirm this booking',
-      body: `Hi ${b(d.sellerName)}, a client has paid for ${b(d.listingTitle)}${when ? ` (booked for ${b(when)})` : ''} and their payment is being held for you. Please confirm the booking so the client knows it's locked in. If you don't confirm soon, our team will follow up.`,
-      rows: [
-        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
-        ...(when ? [{ label: 'Event date', value: when }] : []),
-      ],
-      cta: { label: 'Confirm booking', url: txUrl },
-      preheader: `Confirm the booking for ${d.listingTitle}`,
-    });
-    await this.send(
-      d.sellerEmail,
-      'Action needed: confirm the booking for ' + d.listingTitle,
-      html,
-    );
-    await this.sendSms(
-      d.sellerPhone,
-      `All Outdoor: a client paid for ${truncate(d.listingTitle, 30)}. Please confirm the booking: ${txUrl}`,
-      `experience-booking-nudge-${d.transactionId}`,
-    );
-  }
-
-  // ---------------------------------------------------------------
-  // EXP-E4 — pre-event reminder (buyer + outfitter). Sent ~3 days out
-  // for a confirmed experience booking. Best-effort, informational —
-  // reminds both parties the event is coming up. One method, called
-  // once per recipient by the SLA sweep.
-  // ---------------------------------------------------------------
-  async experiencePreEventReminder(d: {
-    recipientEmail: string;
-    recipientName: string;
-    recipientPhone?: string | null;
-    role: 'BUYER' | 'OUTFITTER';
-    listingTitle: string;
-    transactionId: string;
-    eventDate?: Date | null;
-  }) {
-    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    const when = d.eventDate
-      ? d.eventDate.toLocaleDateString('en-ZA', {
-          weekday: 'short',
-          day: 'numeric',
-          month: 'short',
-        })
-      : 'soon';
-    const isBuyer = d.role === 'BUYER';
-    await this.persistByEmail(d.recipientEmail, {
-      category: isBuyer ? 'BUYER' : 'SELLER',
-      type: 'experience_pre_event_reminder',
-      title: 'Your experience is coming up',
-      body: `${d.listingTitle} — ${when}`,
-      url: `/transactions/${d.transactionId}`,
-      iconKey: 'transaction',
-      linkedType: 'transaction',
-      linkedId: d.transactionId,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Reminder' },
-      headline: 'Your experience is coming up',
-      body: isBuyer
-        ? `Hi ${b(d.recipientName)}, this is a reminder that your booking for ${b(d.listingTitle)} is on ${b(when)}. Make sure you've sorted any travel and gear. After the event, tap <b>Confirm it happened</b> on your order page so the outfitter's payment is released.`
-        : `Hi ${b(d.recipientName)}, this is a reminder that the booking for ${b(d.listingTitle)} is on ${b(when)}. Please make sure everything's ready for your client.`,
-      rows: [
-        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
-        { label: 'Event date', value: when },
-      ],
-      cta: { label: 'View booking', url: txUrl },
-      preheader: `${d.listingTitle} is coming up on ${when}`,
-    });
-    await this.send(
-      d.recipientEmail,
-      'Reminder: ' + d.listingTitle + ' is coming up',
-      html,
-    );
-    await this.sendSms(
-      d.recipientPhone,
-      `All Outdoor: reminder — ${truncate(d.listingTitle, 30)} is on ${when}. Details: ${txUrl}`,
-      `experience-pre-event-${d.role.toLowerCase()}-${d.transactionId}`,
-    );
-  }
-
-  // ---------------------------------------------------------------
-  // EXP-E4 — post-event confirm nudge (buyer). The event date has
-  // passed but the buyer hasn't confirmed the experience happened, so
-  // the outfitter's payment is still held. One-shot, best-effort —
-  // asks the buyer to confirm (or raise a dispute if it didn't happen).
-  // NO auto-release / auto-refund on this path.
-  // ---------------------------------------------------------------
-  async experiencePostEventConfirmNudgeBuyer(d: {
-    buyerEmail: string;
-    buyerName: string;
-    buyerPhone?: string | null;
-    listingTitle: string;
-    transactionId: string;
-  }) {
-    const txUrl = `${this.appUrl}/transactions/${d.transactionId}`;
-    await this.persistByEmail(d.buyerEmail, {
-      category: 'BUYER',
-      type: 'experience_post_event_confirm_nudge',
-      title: 'Did your experience happen?',
-      body: `${d.listingTitle} — confirm it happened to release the outfitter's payment.`,
-      url: `/transactions/${d.transactionId}`,
-      iconKey: 'transaction',
-      linkedType: 'transaction',
-      linkedId: d.transactionId,
-      dismissible: false,
-    });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Action needed' },
-      headline: 'Did your experience happen?',
-      body: `Hi ${b(d.buyerName)}, the date for your booking of ${b(d.listingTitle)} has passed. If everything went ahead, please tap <b>Confirm it happened</b> on your order page so the outfitter's payment can be released. If it didn't happen or something went wrong, you can raise a dispute from the same page and our team will help sort it out.`,
-      rows: [
-        { label: 'Reference', value: d.transactionId.slice(-8).toUpperCase() },
-      ],
-      cta: { label: 'Confirm it happened', url: txUrl },
-      preheader: `Confirm your experience for ${d.listingTitle}`,
-    });
-    await this.send(
-      d.buyerEmail,
-      'Action needed: confirm your experience for ' + d.listingTitle,
-      html,
-    );
-    await this.sendSms(
-      d.buyerPhone,
-      `All Outdoor: did your booking for ${truncate(d.listingTitle, 30)} go ahead? Confirm it happened (or raise an issue) here: ${txUrl}`,
-      `experience-post-event-nudge-${d.transactionId}`,
-    );
-  }
-
-  // ---------------------------------------------------------------
   // Dispatch SLA — auto-refund fired. Two emails (buyer gets the
   // "good news, your money is back" message; seller gets the strike
   // warning).
@@ -4379,191 +4073,6 @@ export class NotificationsService {
     return this.sendSms(to, message, reference);
   }
 
-  // ---------------------------------------------------------------
-  // Swop / Trade (SWOP) — proposal lifecycle notifications
-  // ---------------------------------------------------------------
-  private swapCashLine(cashAmount: number, payerLabel: string): string {
-    return cashAmount > 0
-      ? `${payerLabel} ${formatRand(cashAmount)} cash`
-      : 'No cash top-up';
-  }
-
-  // Owner of the wanted listing receives a swap proposal.
-  async swapProposalReceived(d: {
-    ownerEmail: string;
-    ownerName: string;
-    ownerPhone?: string | null;
-    proposerName: string;
-    wantedTitle: string;
-    wantedListingId: string;
-    offeredTitle: string;
-    cashAmount: number;
-    cashFromProposer: boolean; // true = proposer adds cash; false = owner adds cash
-    proposalId: string;
-    actionUrl?: string;
-  }) {
-    const url = d.actionUrl ?? `${this.appUrl}/listings/${d.wantedListingId}`;
-    await this.persistByEmail(d.ownerEmail, {
-      category: 'SELLER',
-      type: 'swap_proposal_received',
-      title: 'New swap proposal',
-      body: `${d.proposerName} wants to swap their ${d.offeredTitle} for your ${d.wantedTitle}`,
-      url: `/listings/${d.wantedListingId}`,
-      iconKey: 'offer',
-      linkedType: 'swapProposal',
-      linkedId: d.proposalId,
-      dismissible: false,
-    });
-    const cashLine = this.swapCashLine(
-      d.cashAmount,
-      d.cashFromProposer ? 'They add' : 'You add',
-    );
-    const html = this.email({
-      status: { tone: 'pending', label: 'Swap proposal' },
-      headline: 'New swap proposal',
-      body: `Hi ${b(d.ownerName)}, ${b(d.proposerName)} wants to swap their ${b(d.offeredTitle)} for your ${b(d.wantedTitle)}. You can accept, decline, or counter the cash once. The proposal expires in 48 hours.`,
-      rows: [
-        { label: 'They give', value: d.offeredTitle },
-        { label: 'You give', value: d.wantedTitle },
-        { label: 'Cash', value: cashLine },
-      ],
-      cta: { label: 'Review swap', url },
-      preheader: `${d.proposerName} proposed a swap for ${d.wantedTitle}`,
-    });
-    await this.send(d.ownerEmail, 'New swap proposal: ' + d.wantedTitle, html);
-    if (d.actionUrl) {
-      await this.sendSms(
-        d.ownerPhone,
-        `All Outdoor: ${truncate(d.proposerName, 16)} wants to swap their ${truncate(d.offeredTitle, 20)} for your ${truncate(d.wantedTitle, 20)}. Decide: ${d.actionUrl}`,
-        `swap-${d.proposalId}`,
-      );
-    }
-  }
-
-  // Proposer is told the owner countered the cash.
-  async swapProposalCountered(d: {
-    proposerEmail: string;
-    proposerName: string;
-    proposerPhone?: string | null;
-    wantedTitle: string;
-    wantedListingId: string;
-    counterCashAmount: number;
-    counterCashFromProposer: boolean;
-    ownerNote?: string;
-    proposalId: string;
-    actionUrl?: string;
-  }) {
-    const url = d.actionUrl ?? `${this.appUrl}/listings/${d.wantedListingId}`;
-    await this.persistByEmail(d.proposerEmail, {
-      category: 'BUYER',
-      type: 'swap_proposal_countered',
-      title: 'Swap counter received',
-      body: `The owner countered your swap for ${d.wantedTitle}`,
-      url: `/listings/${d.wantedListingId}`,
-      iconKey: 'offer',
-      linkedType: 'swapProposal',
-      linkedId: d.proposalId,
-      dismissible: false,
-    });
-    const cashLine = this.swapCashLine(
-      d.counterCashAmount,
-      d.counterCashFromProposer ? 'You add' : 'They add',
-    );
-    const html = this.email({
-      status: { tone: 'pending', label: 'Counter' },
-      headline: 'The owner countered your swap',
-      body: `Hi ${b(d.proposerName)}, the owner of ${b(d.wantedTitle)} countered the cash on your swap. You can accept or decline.${d.ownerNote ? ` Their note: ${b(d.ownerNote)}` : ''}`,
-      rows: [{ label: 'Cash now', value: cashLine }],
-      cta: { label: 'Review counter', url },
-      preheader: `Counter on your swap for ${d.wantedTitle}`,
-    });
-    await this.send(
-      d.proposerEmail,
-      'Swap counter: ' + d.wantedTitle,
-      html,
-    );
-    if (d.actionUrl) {
-      await this.sendSms(
-        d.proposerPhone,
-        `All Outdoor: The owner countered your swap for ${truncate(d.wantedTitle, 26)}. Decide: ${d.actionUrl}`,
-        `swap-counter-${d.proposalId}`,
-      );
-    }
-  }
-
-  // A party is told the swap was AGREED (both items reserved). Funding +
-  // shipping details follow once the cash rail opens.
-  async swapAgreed(d: {
-    email: string;
-    name: string;
-    phone?: string | null;
-    counterpartyName: string;
-    yourItemTitle: string;
-    theirItemTitle: string;
-    swapId: string;
-  }) {
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'swap_agreed',
-      title: 'Swap agreed',
-      body: `You're swapping ${d.yourItemTitle} for ${d.theirItemTitle}`,
-      url: `/listings`,
-      iconKey: 'offer',
-      linkedType: 'swap',
-      linkedId: d.swapId,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'success', label: 'Swap agreed' },
-      headline: 'Your swap is agreed',
-      body: `Hi ${b(d.name)}, you and ${b(d.counterpartyName)} have agreed to swap. Both items are now reserved. We'll send the funding (if any) and shipping details for your parcel shortly.`,
-      rows: [
-        { label: 'You give', value: d.yourItemTitle },
-        { label: 'You get', value: d.theirItemTitle },
-      ],
-      preheader: `Swap agreed with ${d.counterpartyName}`,
-    });
-    await this.send(d.email, 'Swap agreed — next steps coming', html);
-    await this.sendSms(
-      d.phone,
-      `All Outdoor: Your swap with ${truncate(d.counterpartyName, 18)} is agreed — both items reserved. Funding + shipping details to follow.`,
-      `swap-agreed-${d.swapId}`,
-    );
-  }
-
-  // Proposer/owner told their swap was declined or expired.
-  async swapDeclined(d: {
-    email: string;
-    name: string;
-    wantedTitle: string;
-    wantedListingId: string;
-    reason: 'declined' | 'expired';
-    proposalId: string;
-  }) {
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'swap_declined',
-      title: d.reason === 'expired' ? 'Swap proposal expired' : 'Swap declined',
-      body: `Your swap for ${d.wantedTitle} ${d.reason === 'expired' ? 'expired' : 'was declined'}`,
-      url: `/listings/${d.wantedListingId}`,
-      iconKey: 'offer',
-      linkedType: 'swapProposal',
-      linkedId: d.proposalId,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: {
-        tone: 'pending',
-        label: d.reason === 'expired' ? 'Expired' : 'Declined',
-      },
-      headline: d.reason === 'expired' ? 'Your swap proposal expired' : 'Your swap was declined',
-      body: `Hi ${b(d.name)}, your swap proposal for ${b(d.wantedTitle)} ${d.reason === 'expired' ? 'expired before the owner responded' : 'was declined by the owner'}. You can propose a new swap any time.`,
-      cta: { label: 'View listing', url: `${this.appUrl}/listings/${d.wantedListingId}` },
-      preheader: `Swap ${d.reason} — ${d.wantedTitle}`,
-    });
-    await this.send(d.email, `Swap ${d.reason}: ` + d.wantedTitle, html);
-  }
-
   // Seller: a buyer rated one of their sales. 1–2★ gets the phone buzz
   // (forcePush) so the seller can reply quickly; 3–5★ stays inbox/email.
   async ratingReceived(d: {
@@ -4597,261 +4106,6 @@ export class NotificationsService {
       preheader: `${d.buyerUsername} left a ${starsLabel} review`,
     });
     await this.send(d.email, `New ${starsLabel} review from ${d.buyerUsername}`, html);
-  }
-
-  // PRO prize-draw winner — inbox + email + SMS. Never states how the
-  // draw is funded; the equal-value exchange option is mentioned so a
-  // licence-bearing prize never corners the winner.
-  async raffleWinner(d: {
-    email: string;
-    name: string;
-    phone?: string | null;
-    prizeTitle: string;
-    prizeValueCents: number;
-  }) {
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'raffle_winner',
-      title: 'You won this month’s PRO prize draw! 🎉',
-      body: `You won: ${d.prizeTitle} (value ${formatRand(d.prizeValueCents)}). We'll contact you to arrange delivery.`,
-      url: '/raffle',
-      iconKey: 'offer',
-      // Dismissible (no in-app action to resolve) but the win still
-      // deserves the phone buzz — the one informational event that does.
-      dismissible: true,
-      forcePush: true,
-    });
-    const html = this.email({
-      status: { tone: 'success', label: 'Winner' },
-      headline: `You won the ${PRO_NAME} prize draw!`,
-      body: `Hi ${b(d.name)}, congratulations — you are this cycle's ${PRO_NAME} prize-draw winner. Your prize: ${b(d.prizeTitle)} (value ${formatRand(d.prizeValueCents)}). Our team will contact you within 2 business days to arrange delivery. If you'd prefer, you can exchange your prize for an alternative of equal value.`,
-      cta: { label: 'See the draw page', url: `${this.appUrl}/raffle` },
-      preheader: `You won the ${PRO_NAME} prize draw`,
-    });
-    await this.send(d.email, `You won the ${PRO_NAME} prize draw! 🎉`, html);
-    if (d.phone) {
-      await this.sendSms(
-        d.phone,
-        `All Outdoor: congratulations — you WON the ${PRO_NAME} prize draw (${d.prizeTitle}). We'll contact you to arrange delivery.`,
-        'raffle-winner',
-      );
-    }
-  }
-
-  // Owner is told the proposer declined their counter.
-  async swapCounterRejected(d: {
-    email: string;
-    name: string;
-    proposerName: string;
-    wantedTitle: string;
-    wantedListingId: string;
-    proposalId: string;
-  }) {
-    await this.persistByEmail(d.email, {
-      category: 'SELLER',
-      type: 'swap_counter_rejected',
-      title: 'Swap counter declined',
-      body: `${d.proposerName} declined your counter on ${d.wantedTitle}`,
-      url: `/listings/${d.wantedListingId}`,
-      iconKey: 'offer',
-      linkedType: 'swapProposal',
-      linkedId: d.proposalId,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Counter declined' },
-      headline: 'Your swap counter was declined',
-      body: `Hi ${b(d.name)}, ${b(d.proposerName)} declined the counter you made on the swap for ${b(d.wantedTitle)}. Your listing stays active for other proposals.`,
-      cta: { label: 'View listing', url: `${this.appUrl}/listings/${d.wantedListingId}` },
-      preheader: `Counter declined — ${d.wantedTitle}`,
-    });
-    await this.send(d.email, 'Swap counter declined: ' + d.wantedTitle, html);
-  }
-
-  // Owner is told the proposer withdrew their swap proposal.
-  async swapProposalWithdrawn(d: {
-    email: string;
-    name: string;
-    proposerName: string;
-    wantedTitle: string;
-    wantedListingId: string;
-    proposalId: string;
-  }) {
-    await this.persistByEmail(d.email, {
-      category: 'SELLER',
-      type: 'swap_withdrawn',
-      title: 'Swap proposal withdrawn',
-      body: `${d.proposerName} withdrew their swap proposal on ${d.wantedTitle}`,
-      url: `/listings/${d.wantedListingId}`,
-      iconKey: 'offer',
-      linkedType: 'swapProposal',
-      linkedId: d.proposalId,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Withdrawn' },
-      headline: 'A swap proposal was withdrawn',
-      body: `Hi ${b(d.name)}, ${b(d.proposerName)} withdrew their swap proposal on ${b(d.wantedTitle)}. No action is needed — your listing stays active.`,
-      cta: { label: 'View listing', url: `${this.appUrl}/listings/${d.wantedListingId}` },
-      preheader: `Swap proposal withdrawn — ${d.wantedTitle}`,
-    });
-    await this.send(d.email, 'Swap proposal withdrawn: ' + d.wantedTitle, html);
-  }
-
-  // Swap funding is set up — this party's EFT instructions (amount + ref).
-  async swapFundingReady(d: {
-    email: string;
-    name: string;
-    phone?: string | null;
-    amountCents: number;
-    reference: string;
-    swapId: string;
-  }) {
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'swap_funding_ready',
-      title: 'Fund your swap',
-      body: `Pay ${formatRand(d.amountCents)} (ref ${d.reference}) to lock your swap`,
-      url: '/my/swaps',
-      iconKey: 'offer',
-      linkedType: 'swap',
-      linkedId: d.swapId,
-      dismissible: false,
-    });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Action needed' },
-      headline: 'Fund your swap',
-      body: `Hi ${b(d.name)}, your swap is agreed and ready to fund. Pay ${b(formatRand(d.amountCents))} by EFT using the reference ${b(d.reference)} so we can book the couriers. Both parties must pay for the swap to go ahead — if the other side doesn't pay, you're refunded in full.`,
-      rows: [
-        { label: 'Amount', value: formatRand(d.amountCents) },
-        { label: 'Reference', value: d.reference },
-      ],
-      cta: { label: 'View payment details', url: `${this.appUrl}/my/swaps` },
-      preheader: `Pay ${formatRand(d.amountCents)} to lock your swap`,
-    });
-    await this.send(d.email, 'Fund your swap — ' + d.reference, html);
-    await this.sendSms(
-      d.phone,
-      `All Outdoor: Fund your swap — pay R${Math.round(d.amountCents / 100)} ref ${d.reference} by EFT. Details: ${this.appUrl}/my/swaps`,
-      `swap-fund-${d.swapId}-${d.reference}`,
-    );
-  }
-
-  // Both sides funded — the swap is locked; couriers being arranged.
-  async swapLocked(d: {
-    email: string;
-    name: string;
-    phone?: string | null;
-    swapId: string;
-  }) {
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'swap_locked',
-      title: 'Swap locked in',
-      body: `Both sides have paid — we're arranging the couriers`,
-      url: '/my/swaps',
-      iconKey: 'offer',
-      linkedType: 'swap',
-      linkedId: d.swapId,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'success', label: 'Locked in' },
-      headline: 'Your swap is locked in',
-      body: `Hi ${b(d.name)}, both sides have funded the swap. We're arranging the couriers now — you'll get your parcel's collection details shortly.`,
-      preheader: 'Both sides funded — couriers being arranged',
-    });
-    await this.send(d.email, 'Swap locked in — couriers next', html);
-    await this.sendSms(
-      d.phone,
-      `All Outdoor: Your swap is funded by both sides and locked in. Courier details to follow.`,
-      `swap-locked-${d.swapId}`,
-    );
-  }
-
-  // Funding lapsed — the swap is cancelled; reimbursement note if they paid.
-  async swapFundingCancelled(d: { email: string; name: string; swapId: string }) {
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'swap_funding_cancelled',
-      title: 'Swap cancelled',
-      body: `The swap was cancelled — funding wasn't completed by both sides`,
-      url: '/my/swaps',
-      iconKey: 'offer',
-      linkedType: 'swap',
-      linkedId: d.swapId,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Cancelled' },
-      headline: 'Your swap was cancelled',
-      body: `Hi ${b(d.name)}, the swap didn't go ahead because both sides didn't fund it in time. Both items are back on the marketplace. If you already paid your side, you'll be refunded in full to your registered bank account.`,
-      preheader: 'Swap cancelled — refund if you paid',
-    });
-    await this.send(d.email, 'Swap cancelled', html);
-  }
-
-  // Swap complete — both items delivered, the swap is closed. If this party is
-  // the cash recipient, tell them their top-up payout is on its way.
-  async swapCompleted(d: {
-    email: string;
-    name: string;
-    phone?: string | null;
-    swapId: string;
-    cashPayoutCents: number;
-  }) {
-    const gotCash = d.cashPayoutCents > 0;
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'swap_completed',
-      title: 'Swap complete',
-      body: gotCash
-        ? `Your swap is done — your ${formatRand(d.cashPayoutCents)} top-up is on its way to your bank`
-        : `Your swap is done — both items delivered`,
-      url: '/my/swaps',
-      iconKey: 'offer',
-      linkedType: 'swap',
-      linkedId: d.swapId,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'success', label: 'Complete' },
-      headline: 'Your swap is complete',
-      body: gotCash
-        ? `Hi ${b(d.name)}, both items have been delivered and the swap is closed. Your ${b(formatRand(d.cashPayoutCents))} cash top-up will be paid to your registered bank account in the next payout run.`
-        : `Hi ${b(d.name)}, both items have been delivered and the swap is closed. Thanks for trading on All Outdoor!`,
-      preheader: 'Swap complete',
-    });
-    await this.send(d.email, 'Swap complete', html);
-    if (gotCash) {
-      await this.sendSms(
-        d.phone,
-        `All Outdoor: Your swap is complete. Your ${formatRand(d.cashPayoutCents)} top-up will be paid to your bank in the next payout run.`,
-        `swap-completed-${d.swapId}`,
-      );
-    }
-  }
-
-  // A party flagged a problem after delivery — the swap is under admin review.
-  async swapDisputed(d: { email: string; name: string; swapId: string }) {
-    await this.persistByEmail(d.email, {
-      category: 'BUYER',
-      type: 'swap_disputed',
-      title: 'Swap under review',
-      body: `An issue was raised on your swap — our team will be in touch`,
-      url: '/my/swaps',
-      iconKey: 'offer',
-      linkedType: 'swap',
-      linkedId: d.swapId,
-      dismissible: true,
-    });
-    const html = this.email({
-      status: { tone: 'pending', label: 'Under review' },
-      headline: 'Your swap is under review',
-      body: `Hi ${b(d.name)}, an issue was raised on this swap so we've put it on hold. Any held funds stay protected while our team reviews it — we'll be in touch.`,
-      preheader: 'Swap on hold — under review',
-    });
-    await this.send(d.email, 'Swap under review', html);
   }
 
   // ---------------------------------------------------------------

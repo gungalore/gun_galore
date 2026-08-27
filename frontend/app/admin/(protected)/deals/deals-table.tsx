@@ -494,17 +494,17 @@ function ActionBtn({
 // colour ramp from the deal lifecycle so the two chips never read as one:
 // DRAFT muted, PLACED blue, EMAILED green, CANCELLED red.
 const PO_COLOR: Record<string, string> = {
-  DRAFT: 'var(--text-tertiary)',
+  DRAFT: 'var(--text-secondary)',
   PLACED: '#3b82f6',
   EMAILED: '#22c55e',
   CANCELLED: 'var(--red)',
 };
 function PoChip({ status }: { status: string }) {
-  const c = PO_COLOR[status] ?? 'var(--text-tertiary)';
+  const c = PO_COLOR[status] ?? 'var(--text-secondary)';
   return (
     <span
       className="text-xs px-2 py-0.5 rounded-full inline-block whitespace-nowrap"
-      style={{ color: c, background: `${c}18` }}
+      style={{ color: c, background: `color-mix(in srgb, ${c} 9%, transparent)` }}
     >
       PO {status.replace(/_/g, ' ')}
     </span>

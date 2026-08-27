@@ -402,8 +402,8 @@ export default function AuctionPanel({
           className="rounded-[6px] px-3 py-2 text-xs flex items-center gap-2"
           style={{
             background: 'rgba(245,158,11,0.10)',
-            border: '0.5px solid #f59e0b',
-            color: '#f59e0b',
+            border: '0.5px solid var(--warning)',
+            color: 'var(--warning)',
             fontWeight: 500,
           }}
         >
@@ -465,7 +465,7 @@ export default function AuctionPanel({
             High bidder:{' '}
             <span
               style={{
-                color: myBid?.isHighBidder ? '#22c55e' : 'var(--text-primary)',
+                color: myBid?.isHighBidder ? 'var(--success)' : 'var(--text-primary)',
                 fontWeight: 500,
               }}
             >
@@ -488,7 +488,7 @@ export default function AuctionPanel({
               <p
                 className="text-xs"
                 style={{
-                  color: state.reserveMet ? '#16a34a' : 'var(--text-tertiary)',
+                  color: state.reserveMet ? 'var(--success)' : 'var(--text-tertiary)',
                 }}
               >
                 {state.reserveMet ? '✓ Reserve met' : 'Reserve not yet met'}
@@ -679,7 +679,7 @@ export default function AuctionPanel({
               style={{
                 background:
                   myBid?.proxyActive ? 'rgba(34,197,94,0.18)' : 'var(--red)',
-                color: myBid?.proxyActive ? '#22c55e' : '#fff',
+                color: myBid?.proxyActive ? 'var(--success)' : '#fff',
                 border: myBid?.proxyActive
                   ? '0.5px solid rgba(34,197,94,0.55)'
                   : 'none',
@@ -924,7 +924,7 @@ function EndedAuctionNotice({
           lineHeight: 1.55,
         }}
       >
-        <p style={{ color: '#22c55e', fontWeight: 600 }}>
+        <p style={{ color: 'var(--success)', fontWeight: 600 }}>
           🏆 You won this auction
         </p>
         <p className="mt-1">

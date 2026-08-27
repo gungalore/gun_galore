@@ -174,7 +174,7 @@ export default function MotivationSellerConsent({
   //    and the buyer confirms it into their own application. ──────────────
   if (status === 'COMPLETED') {
     return (
-      <div className="rounded-[var(--radius)] border border-[var(--border)] p-4">
+      <div className="rounded-[var(--r-md)] border border-[var(--border)] p-4">
         <p className="text-sm font-semibold text-[var(--success)]">
           The owner has signed
         </p>
@@ -183,7 +183,7 @@ export default function MotivationSellerConsent({
         </p>
 
         {cardFirearm && onAdopt && !adopted && (
-          <div className="mt-3 rounded-[var(--radius)] border border-[var(--border)] p-3">
+          <div className="mt-3 rounded-[var(--r-md)] border border-[var(--border)] p-3">
             <p className="text-xs font-semibold">
               Their licence card records this firearm as:
             </p>
@@ -203,7 +203,7 @@ export default function MotivationSellerConsent({
                 <img
                   src={frontUrl}
                   alt="The front of the owner’s licence card, as they photographed it"
-                  className="w-full rounded-[var(--radius)] border border-[var(--border)]"
+                  className="w-full rounded-[var(--r-md)] border border-[var(--border)]"
                 />
                 <figcaption className="mt-1 text-xs text-[var(--text-tertiary)]">
                   Their licence, as they photographed it. Check the details
@@ -221,7 +221,7 @@ export default function MotivationSellerConsent({
                 onAdopt(cardFirearm);
                 setAdopted(true);
               }}
-              className="mt-3 w-full rounded-[var(--radius)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white"
+              className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white"
             >
               Use these details in my application
             </button>
@@ -240,7 +240,7 @@ export default function MotivationSellerConsent({
 
   if (status === 'DECLINED') {
     return (
-      <div className="rounded-[var(--radius)] border border-[var(--border)] p-4">
+      <div className="rounded-[var(--r-md)] border border-[var(--border)] p-4">
         <p className="text-sm font-semibold">The owner declined</p>
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
           They did not agree to the transfer on the link. If that is a mistake,
@@ -262,7 +262,7 @@ export default function MotivationSellerConsent({
 
   if (sent || status === 'INVITED') {
     return (
-      <div className="rounded-[var(--radius)] border border-[var(--border)] p-4">
+      <div className="rounded-[var(--r-md)] border border-[var(--border)] p-4">
         <p className="text-sm font-semibold">Waiting on the owner</p>
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
           {(name || 'They').trim()} {name ? 'has' : 'have'} been sent a link to
@@ -285,7 +285,7 @@ export default function MotivationSellerConsent({
   }
 
   return (
-    <div className="rounded-[var(--radius)] border border-[var(--border)] p-4">
+    <div className="rounded-[var(--r-md)] border border-[var(--border)] p-4">
       <p className="text-sm font-semibold">
         Buying from a private owner?
       </p>
@@ -302,7 +302,7 @@ export default function MotivationSellerConsent({
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
       <label className="mt-2 block text-xs text-[var(--text-secondary)]">
@@ -312,7 +312,7 @@ export default function MotivationSellerConsent({
           onChange={(e) => setPhone(e.target.value)}
           inputMode="tel"
           placeholder="082 000 0000"
-          className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
 
@@ -339,7 +339,7 @@ export default function MotivationSellerConsent({
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           placeholder={knownLabel || 'e.g. the Howa 6.5'}
-          className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
         />
         <span className="mt-1 block text-[var(--text-tertiary)]">
           Just enough for them to know which one you mean. We read the make,
@@ -366,7 +366,7 @@ export default function MotivationSellerConsent({
           phone.trim().length < 9 ||
           !labelToSend
         }
-        className="mt-3 w-full rounded-[var(--radius)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+        className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
       >
         {busy ? 'Sending…' : 'Send them the link'}
       </button>

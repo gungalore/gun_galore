@@ -147,7 +147,7 @@ export default function SellerControls({
                 ? 'flex-1 py-2 rounded-[6px] text-sm font-medium'
                 : 'px-3 py-2 rounded-[6px] text-sm'
             }
-            style={{ color: 'var(--red)', border: '0.5px solid var(--red)40' }}
+            style={{ color: 'var(--red)', border: '0.5px solid var(--red-line)' }}
           >
             Cancel listing
           </button>

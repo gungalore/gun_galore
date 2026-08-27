@@ -6,7 +6,7 @@ import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { AdminAuditService } from '../admin/admin-audit.service';
 
 // Daily Deals suppliers (DD-F). Self-contained module (Pattern B, mirrors
-// DealsModule / FeaturedModule): JwtModule for the AdminJwtGuard on the admin
+// DealsModule): JwtModule for the AdminJwtGuard on the admin
 // controller; AdminAuditService provided locally (it only needs the global
 // PrismaService). PrismaService comes from its @Global() module.
 //

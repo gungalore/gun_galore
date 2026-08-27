@@ -4,12 +4,10 @@ import { UsersService } from '../users/users.service';
 import { TransactionsService } from '../payments/transactions.service';
 import { OffersService } from '../offers/offers.service';
 import { AuctionsService } from '../auctions/auctions.service';
-import { SwapFundingService } from '../swaps/swap-funding.service';
-import { SwapProposalsService } from '../swaps/swap-proposals.service';
 import { SellerToolsService } from '../users/seller-tools.service';
 
 /**
- * Ask GG Everywhere (W5 / B3) — the 8 read-only account tools.
+ * Ask GG Everywhere (W5 / B3) — the 7 read-only account tools.
  *
  * THE PRIVACY CONTRACT (enforced by the wave-5 PII gate spec):
  *  - Zero user-identifier inputs. Every method takes the AUTHENTICATED
@@ -57,6 +55,12 @@ interface TxRowView {
   listingPrice: number;
   buyerTotal: number;
   sellerPayout: number;
+  /**
+   * Which fee model priced the sale. Needed because listingPrice means two
+   * different things: under BUYNOW_MARKUP it is what the BUYER paid (our fees
+   * inside it), under SELLER_DEDUCT it is the seller's own sale price.
+   */
+  feeModel: string;
   paymentStatus: string;
   shippingStatus: string | null;
   trackingReference: string | null;
@@ -80,8 +84,6 @@ export class AskGgAccountToolsService {
     private readonly transactions: TransactionsService,
     private readonly offers: OffersService,
     private readonly auctions: AuctionsService,
-    private readonly swapFunding: SwapFundingService,
-    private readonly swapProposals: SwapProposalsService,
     private readonly sellerTools: SellerToolsService,
   ) {}
 
@@ -140,8 +142,17 @@ export class AskGgAccountToolsService {
         id: t.id,
         title: clip(t.listing?.title),
         quantity: t.quantity,
-        saleRand: rand(t.listingPrice),
+        // ⚠️ BOTH NUMBERS, LABELLED. saleRand alone was ambiguous: under the
+        // markup model listingPrice is what the BUYER paid, which is larger
+        // than anything the seller sold for, so a seller asking "what did I
+        // sell it for?" got our marked-up figure back. feesInPrice tells the
+        // assistant not to describe the gap as a deduction.
+        buyerPaidRand: rand(t.listingPrice),
+        yourPriceRand: rand(
+          t.feeModel === 'BUYNOW_MARKUP' ? t.sellerPayout : t.listingPrice,
+        ),
         yourPayoutRand: rand(t.sellerPayout),
+        feesInPrice: t.feeModel === 'BUYNOW_MARKUP',
         paymentStatus: t.paymentStatus,
         shippingStatus: t.shippingStatus ?? null,
         isFirearm: t.listing?.isFirearm ?? false,
@@ -324,53 +335,6 @@ export class AskGgAccountToolsService {
         href: `/listings/${b.listingId}`,
       })),
       href: '/my/offers',
-    };
-  }
-
-  /** 7. Swaps — in-flight funded swaps + proposal counts. Drops the
-   *  banking block and EFT references the page shows (bank details
-   *  never travel through the AI; link the page instead). */
-  async getMySwaps(account: AskGgAccount) {
-    type SwapView = {
-      swapId: string;
-      status: string;
-      side: string;
-      fundingSetUp: boolean;
-      myFunded: boolean;
-      counterpartyFunded: boolean;
-      payByAt: Date | null;
-      give: { title: string } | null;
-      get: { title: string } | null;
-      giveIsFirearm: boolean;
-      getIsFirearm: boolean;
-      giveTracking: { status: string | null } | null;
-      getTracking: { status: string | null } | null;
-    };
-    const [funding, mine, received] = await Promise.all([
-      this.swapFunding.getMySwaps(account.clerkId),
-      this.swapProposals.getMine(account.clerkId),
-      this.swapProposals.getReceived(account.clerkId),
-    ]);
-    const swaps = (funding as unknown as { swaps: SwapView[] }).swaps ?? [];
-    return {
-      activeSwaps: swaps.slice(0, 8).map((s) => ({
-        id: s.swapId,
-        status: s.status,
-        giving: clip(s.give?.title),
-        getting: clip(s.get?.title),
-        youPaid: s.myFunded,
-        counterpartyPaid: s.counterpartyFunded,
-        payBy: day(s.payByAt),
-        givingIsFirearm: s.giveIsFirearm,
-        gettingIsFirearm: s.getIsFirearm,
-        givingShipment: s.giveTracking?.status ?? null,
-        gettingShipment: s.getTracking?.status ?? null,
-        href: '/my/swaps',
-      })),
-      proposalsSent: (mine as unknown[]).length,
-      proposalsReceived: (received as unknown[]).length,
-      note: 'Payment references and banking details for swap funding are shown on the swaps page itself.',
-      href: '/my/swaps',
     };
   }
 

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PaymentStatus } from '@prisma/client';
+import { FeeModel, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 
@@ -15,13 +15,12 @@ import { SettingsService, FLAGS } from '../settings/settings.service';
  *     spells out "Sold for R X - R Y (Platform Fee) = R Z Due to you".
  *   - When the seller payout fires, we mark the invoice paid in Books
  *     against the Client Funds Payable liability — closing the loop.
- *   - Featured-slot bid wins create invoices to the winning seller.
  *
  * Failure handling:
  *   - Every public method is fire-and-forget from the caller's
  *     perspective. We never block the user-facing flow on a Books API
  *     call — Books going down can't delay payouts or break checkout.
- *   - Each All Outdoor record (Transaction, FeaturedSlotBid)
+ *   - Each All Outdoor record (Transaction)
  *     has zohoSyncStatus + zohoSyncError + zohoSyncLastAttemptAt
  *     fields. On failure we write FAILED + the error message; the
  *     admin panel shows these + a retry button.
@@ -558,10 +557,20 @@ export class ZohoBooksService {
       const orderRef =
         tx.listing.referenceNumber ?? tx.id.slice(-8).toUpperCase();
 
-      // H&G-style reference: spells out the math in plain language
-      // so the seller sees "what I sold for - what you took = what I
-      // get". This is exactly what the H&G invoice we mirrored does.
-      const reference = `Sold for ${this.formatRand(listingPriceRand)} - ${this.formatRand(commissionRand)} (Platform Fee) = ${this.formatRand(sellerPayoutRand)} Due to you`;
+      // Reference line that spells the maths out in plain language — but it
+      // has to be maths that HAPPENED.
+      //
+      // ⚠️ It was hardcoded as "Sold for X - Y (Platform Fee) = Z Due to
+      // you". Under BUYNOW_MARKUP that subtraction is false: the listed price
+      // already contains BOTH our commission and the gateway fee, so
+      // listingPrice - commission overshoots the payout by the fee every
+      // time (R511.97 - R40.50 = R471.47, but the seller is due R450.00).
+      // Nothing was taken off them at all — our cut was added to the buyer's
+      // price. Say that instead of printing an equation that does not hold.
+      const isMarkup = tx.feeModel === FeeModel.BUYNOW_MARKUP;
+      const reference = isMarkup
+        ? `Your price ${this.formatRand(sellerPayoutRand)} Due to you (listed to the buyer at ${this.formatRand(listingPriceRand)}, fees included in the price)`
+        : `Sold for ${this.formatRand(listingPriceRand)} - ${this.formatRand(commissionRand)} (Platform Fee) = ${this.formatRand(sellerPayoutRand)} Due to you`;
 
       // Resolve Commission Revenue account so Books posts the income
       // to the right ledger row. Cached after first lookup.
@@ -607,7 +616,14 @@ export class ZohoBooksService {
           account_id: commissionAccountId,
         },
       ];
-      if (!tx.passFeeToBuyer && tx.processingFee > 0) {
+      // ⚠️ OUR PROCESSING REVENUE WAS NEVER BOOKED ON A MARKED-UP SALE.
+      // The old condition was `!tx.passFeeToBuyer && processingFee > 0`, and
+      // the sell form hardcodes the listing flag TRUE — so on every Buy Now
+      // this branch was skipped and the gateway margin we had marked INTO the
+      // price went unrecorded. Under the markup model the fee is real revenue
+      // recovered from the buyer and belongs on the invoice; under the deduct
+      // model it is only ours when the seller carried it.
+      if ((isMarkup || !tx.passFeeToBuyer) && tx.processingFee > 0) {
         const processingAccountId =
           (await this.getAccountIdByName('Processing Fee Revenue')) ??
           commissionAccountId;
@@ -1047,14 +1063,12 @@ export class ZohoBooksService {
    * Bounded per run; never throws.
    */
   /**
-   * Hourly self-heal for the two revenue documents that previously had NO
-   * automatic retry (only the manual /zoho-retry button): commission
-   * invoices whose last sync FAILED (or stranded PENDING >1h — a crash
-   * between markPending and the result), and SUCCEEDED subscription
-   * charges with no sales receipt after 15 min. Both create-calls are
-   * idempotent (guarded on zohoCommissionInvoiceId / zohoReceiptId), so
-   * re-firing a false negative is a no-op. SKIPPED rows are deliberate
-   * decisions and are never retried.
+   * Hourly self-heal for commission invoices that previously had NO
+   * automatic retry (only the manual /zoho-retry button): invoices whose
+   * last sync FAILED (or stranded PENDING >1h — a crash between
+   * markPending and the result). createCommissionInvoice is idempotent
+   * (guarded on zohoCommissionInvoiceId), so re-firing a false negative is
+   * a no-op. SKIPPED rows are deliberate decisions and are never retried.
    */
   async retryFailedRevenueDocs(limit = 25): Promise<void> {
     if (!this.isEnabled()) return;
@@ -1078,22 +1092,9 @@ export class ZohoBooksService {
         await this.createCommissionInvoice(t.id);
       }
 
-      const missingReceipts = await this.prisma.subscriptionCharge.findMany({
-        where: {
-          status: 'SUCCEEDED',
-          zohoReceiptId: null,
-          chargedAt: { lt: new Date(Date.now() - 15 * 60_000) },
-        },
-        select: { id: true },
-        take: limit,
-      });
-      for (const c of missingReceipts) {
-        await this.createSubscriptionSalesReceipt(c.id);
-      }
-
-      if (failedInvoices.length || missingReceipts.length) {
+      if (failedInvoices.length) {
         this.logger.log(
-          `retryFailedRevenueDocs: re-fired ${failedInvoices.length} commission invoice(s) + ${missingReceipts.length} subscription receipt(s)`,
+          `retryFailedRevenueDocs: re-fired ${failedInvoices.length} commission invoice(s)`,
         );
       }
     } catch (err) {
@@ -1427,7 +1428,23 @@ export class ZohoBooksService {
       const commissionRand = tx.commissionZar / 100;
       const orderRef = tx.listing.referenceNumber ?? tx.id.slice(-8).toUpperCase();
       const reason = (refundReason ?? 'Transaction refunded by admin').slice(0, 200);
-      const reference = `Refund — ${orderRef} (reversing commission of ${this.formatRand(commissionRand)})`;
+      // ⚠️ THE CREDIT NOTE MUST REVERSE WHAT THE INVOICE RAISED. The invoice
+      // books a second 'Payment Processing Fee' line whenever the fee was
+      // ours to keep — under BUYNOW_MARKUP (recovered from the buyer inside
+      // the list price) or when the seller absorbed it. Reversing only the
+      // commission would leave that revenue standing against a sale that no
+      // longer exists, which is exactly the kind of one-sided entry the
+      // partial-refund gap already causes. Same condition, both directions.
+      const isMarkup = tx.feeModel === FeeModel.BUYNOW_MARKUP;
+      const reversesProcessingFee =
+        (isMarkup || !tx.passFeeToBuyer) && tx.processingFee > 0;
+      // What the note is actually worth — used both to word the reference and
+      // to apply it against the invoice.
+      const creditNoteTotalRand =
+        commissionRand + (reversesProcessingFee ? tx.processingFee / 100 : 0);
+      const reference = reversesProcessingFee
+        ? `Refund — ${orderRef} (reversing commission of ${this.formatRand(commissionRand)} and processing fee of ${this.formatRand(tx.processingFee / 100)})`
+        : `Refund — ${orderRef} (reversing commission of ${this.formatRand(commissionRand)})`;
       const today = new Date().toISOString().slice(0, 10);
 
       type CreateCreditNoteResp = {
@@ -1446,6 +1463,21 @@ export class ZohoBooksService {
             quantity: 1,
             account_id: commissionAccountId,
           },
+          ...(reversesProcessingFee
+            ? [
+                {
+                  name: 'Payment Processing Fee — refund',
+                  description: `${orderRef} — payment handling (${reason})`,
+                  rate: tx.processingFee / 100,
+                  quantity: 1,
+                  // Falls back to Commission Revenue exactly as the invoice
+                  // does, so a missing account cannot strand the reversal.
+                  account_id:
+                    (await this.getAccountIdByName('Processing Fee Revenue')) ??
+                    commissionAccountId,
+                },
+              ]
+            : []),
         ],
         notes: `${reference}.\nAll Outdoor transaction reference: ${orderRef}\nReason: ${reason}`,
       };
@@ -1475,7 +1507,13 @@ export class ZohoBooksService {
             invoices: [
               {
                 invoice_id: tx.zohoCommissionInvoiceId,
-                amount_applied: commissionRand,
+                // ⚠️ THE FULL CREDIT-NOTE TOTAL, NOT JUST THE COMMISSION.
+                // The note now carries a second 'Payment Processing Fee —
+                // refund' line whenever the invoice raised one. Applying only
+                // the commission leaves the invoice short by exactly the
+                // processing fee, so the seller's open balance never zeroes —
+                // which is the one thing this apply call exists to do.
+                amount_applied: creditNoteTotalRand,
               },
             ],
           },
@@ -1601,415 +1639,6 @@ export class ZohoBooksService {
       );
     } catch (err) {
       await this.markFailed(transactionId, err as Error);
-    }
-  }
-
-  /**
-   * P1.1 — Sales Receipt for a paid subscription period (manual EFT).
-   * Fired by SubscriptionsService.confirmPayment. Idempotent via
-   * SubscriptionCharge.zohoReceiptId. Never throws.
-   */
-  async createSubscriptionSalesReceipt(chargeId: string): Promise<void> {
-    if (!this.isEnabled()) return;
-    const charge = await this.prisma.subscriptionCharge.findUnique({
-      where: { id: chargeId },
-      include: {
-        subscription: {
-          include: {
-            user: { select: { id: true, email: true, username: true } },
-          },
-        },
-      },
-    });
-    if (!charge || charge.zohoReceiptId) return; // missing or already synced
-    if (charge.status !== 'SUCCEEDED' || charge.amountCents <= 0) return;
-
-    const user = charge.subscription.user;
-    const tier = charge.tierPurchased ?? charge.subscription.tier;
-    const amountRand = charge.amountCents / 100;
-    const reference = `Ask GG ${tier} subscription — ${charge.orderReference ?? charge.id.slice(-8).toUpperCase()} (${charge.periodDays} days)`;
-
-    try {
-      const contactId = await this.ensureContact(user.id, user.email);
-      if (!contactId) throw new Error('Could not resolve Books contact');
-      const revenueAccountId =
-        (await this.getAccountIdByName('Subscription Revenue')) ??
-        (await this.getAccountIdByName('Commission Revenue'));
-      if (!revenueAccountId) {
-        throw new Error(
-          'No revenue account found in Books (need "Subscription Revenue" or "Commission Revenue")',
-        );
-      }
-      // Manual-EFT money lands straight in FNB — prefer the bank account.
-      const depositAccountId =
-        (await this.getAccountIdByName('Bank — FNB Business')) ??
-        (await this.getAccountIdByName('Bank — Peach Pending'));
-      if (!depositAccountId) {
-        throw new Error(
-          'No deposit account found in Books (need "Bank — FNB Business" or "Bank — Peach Pending")',
-        );
-      }
-      const today = new Date().toISOString().slice(0, 10);
-      type CreateSalesReceiptResp = {
-        salesreceipt?: { salesreceipt_id?: string; salesreceipt_number?: string };
-        message?: string;
-      };
-      const resp = await this.request<CreateSalesReceiptResp>(
-        'POST',
-        '/salesreceipts',
-        {
-          customer_id: contactId,
-          reference_number: reference,
-          date: today,
-          line_items: [
-            {
-              name: `Ask GG ${tier} subscription`,
-              description: reference,
-              rate: amountRand,
-              quantity: 1,
-              account_id: revenueAccountId,
-            },
-          ],
-          payment_mode: 'Bank Transfer',
-          deposit_to_account_id: depositAccountId,
-          notes: `${reference}.\nPaid by EFT (reference-matched).`,
-        },
-      );
-      const receiptId = resp.salesreceipt?.salesreceipt_id;
-      if (!receiptId) {
-        throw new Error(
-          `Books sales-receipt create returned no id: ${resp.message ?? 'unknown'}`,
-        );
-      }
-      await this.prisma.subscriptionCharge.update({
-        where: { id: chargeId },
-        data: { zohoReceiptId: receiptId },
-      });
-      this.logger.log(
-        `Created subscription sales receipt ${resp.salesreceipt?.salesreceipt_number ?? receiptId} (R${amountRand.toFixed(2)}, ${tier}, user ${user.username ?? user.id})`,
-      );
-    } catch (err) {
-      // No zohoSync* columns on SubscriptionCharge — record the failure in
-      // errorMessage (the charge itself already SUCCEEDED financially).
-      const message = (err as Error).message.slice(0, 900);
-      this.logger.error(`Zoho subscription receipt FAILED for ${chargeId}: ${message}`);
-      await this.prisma.subscriptionCharge
-        .update({
-          where: { id: chargeId },
-          data: { errorMessage: `Zoho receipt failed: ${message}` },
-        })
-        .catch(() => undefined);
-    }
-  }
-
-  /**
-   * P1.3 — Sales Receipts for the two flat swap leg fees GG retained
-   * (courier service fee / firearm handling fee, snapshotted on the
-   * Swap as swapFeeInitiator / swapFeeOwner and collected inside each
-   * party's funding EFT). Booked at swap COMPLETION — the only point
-   * where the fees are definitively earned (any earlier cancel/unwind
-   * reimburses the payer in full). One receipt per paying party so the
-   * Books entries mirror the two EFTs that actually landed in FNB.
-   * Idempotent per side via zoho*FeeReceiptId. Never throws.
-   */
-  async createSwapFeeReceipts(swapId: string): Promise<void> {
-    if (!this.isEnabled()) return;
-    try {
-      const swap = await this.prisma.swap.findUnique({
-        where: { id: swapId },
-        select: {
-          id: true,
-          status: true,
-          swapFeeInitiator: true,
-          swapFeeOwner: true,
-          initiatorFundingRef: true,
-          ownerFundingRef: true,
-          zohoInitiatorFeeReceiptId: true,
-          zohoOwnerFeeReceiptId: true,
-          initiator: { select: { id: true, email: true } },
-          owner: { select: { id: true, email: true } },
-        },
-      });
-      if (!swap || swap.status !== 'COMPLETED') return;
-
-      const revenueAccountId =
-        (await this.getAccountIdByName('Swap Service Revenue')) ??
-        (await this.getAccountIdByName('Commission Revenue'));
-      if (!revenueAccountId) {
-        throw new Error(
-          'No revenue account found in Books (need "Swap Service Revenue" or "Commission Revenue")',
-        );
-      }
-      const depositAccountId =
-        (await this.getAccountIdByName('Bank — FNB Business')) ??
-        (await this.getAccountIdByName('Bank — Peach Pending'));
-      if (!depositAccountId) {
-        throw new Error(
-          'No deposit account found in Books (need "Bank — FNB Business" or "Bank — Peach Pending")',
-        );
-      }
-
-      const sides: Array<{
-        key: 'initiator' | 'owner';
-        feeCents: number;
-        alreadyId: string | null;
-        userId: string;
-        email: string;
-        fundingRef: string | null;
-        column: 'zohoInitiatorFeeReceiptId' | 'zohoOwnerFeeReceiptId';
-      }> = [
-        {
-          key: 'initiator',
-          feeCents: swap.swapFeeInitiator,
-          alreadyId: swap.zohoInitiatorFeeReceiptId,
-          userId: swap.initiator.id,
-          email: swap.initiator.email,
-          fundingRef: swap.initiatorFundingRef,
-          column: 'zohoInitiatorFeeReceiptId',
-        },
-        {
-          key: 'owner',
-          feeCents: swap.swapFeeOwner,
-          alreadyId: swap.zohoOwnerFeeReceiptId,
-          userId: swap.owner.id,
-          email: swap.owner.email,
-          fundingRef: swap.ownerFundingRef,
-          column: 'zohoOwnerFeeReceiptId',
-        },
-      ];
-
-      const today = new Date().toISOString().slice(0, 10);
-      type CreateSalesReceiptResp = {
-        salesreceipt?: { salesreceipt_id?: string; salesreceipt_number?: string };
-        message?: string;
-      };
-
-      for (const side of sides) {
-        if (side.alreadyId || side.feeCents <= 0) continue;
-        const contactId = await this.ensureContact(side.userId, side.email);
-        if (!contactId) {
-          throw new Error(`Could not resolve Books contact for swap ${side.key}`);
-        }
-        const reference = `Swap service fee — ${side.fundingRef ?? swap.id.slice(-8).toUpperCase()}`;
-        const resp = await this.request<CreateSalesReceiptResp>(
-          'POST',
-          '/salesreceipts',
-          {
-            customer_id: contactId,
-            reference_number: reference,
-            date: today,
-            line_items: [
-              {
-                name: 'Swap leg service fee',
-                description: `${reference} — flat per-leg fee collected inside the funding EFT; recognised at swap completion.`,
-                rate: side.feeCents / 100,
-                quantity: 1,
-                account_id: revenueAccountId,
-              },
-            ],
-            payment_mode: 'Bank Transfer',
-            deposit_to_account_id: depositAccountId,
-            notes: `${reference}. Swap ${swap.id}.`,
-          },
-        );
-        const receiptId = resp.salesreceipt?.salesreceipt_id;
-        if (!receiptId) {
-          throw new Error(
-            `Books sales-receipt create returned no id: ${resp.message ?? 'unknown'}`,
-          );
-        }
-        await this.prisma.swap.update({
-          where: { id: swap.id },
-          data: { [side.column]: receiptId },
-        });
-        this.logger.log(
-          `Created swap fee receipt ${resp.salesreceipt?.salesreceipt_number ?? receiptId} (R${(side.feeCents / 100).toFixed(2)}, ${side.key}, swap ${swap.id})`,
-        );
-      }
-    } catch (err) {
-      // No zohoSync* columns on Swap — log only. The failure is DETECTED by
-      // getZohoFailedSyncs (COMPLETED swap with a fee>0 side whose receipt id
-      // is still null) and RE-FIRED by retryMissingSwapFeeReceipts (this is
-      // idempotent per side, so a retry can only fill the missing receipt).
-      this.logger.error(
-        `Zoho swap fee receipts FAILED for ${swapId}: ${(err as Error).message}`,
-      );
-    }
-  }
-
-  /**
-   * P1.3 — hourly retry for swap leg-fee receipts that failed at completion.
-   * createSwapFeeReceipts is idempotent per side (guarded by
-   * zoho*FeeReceiptId), so re-firing it for a COMPLETED swap with a missing
-   * receipt can only fill the gap. Bounded per run; never throws.
-   */
-  async retryMissingSwapFeeReceipts(limit = 25): Promise<number> {
-    if (!this.isEnabled()) return 0;
-    try {
-      const due = await this.prisma.swap.findMany({
-        where: {
-          status: 'COMPLETED',
-          OR: [
-            { swapFeeInitiator: { gt: 0 }, zohoInitiatorFeeReceiptId: null },
-            { swapFeeOwner: { gt: 0 }, zohoOwnerFeeReceiptId: null },
-          ],
-        },
-        orderBy: { completedAt: 'asc' },
-        take: limit,
-        select: { id: true },
-      });
-      for (const s of due) {
-        await this.createSwapFeeReceipts(s.id);
-      }
-      if (due.length > 0) {
-        this.logger.log(
-          `retryMissingSwapFeeReceipts: re-fired ${due.length} swap fee receipt(s)`,
-        );
-      }
-      return due.length;
-    } catch (err) {
-      this.logger.error(
-        `retryMissingSwapFeeReceipts failed: ${(err as Error).message}`,
-      );
-      return 0;
-    }
-  }
-
-  /**
-   * Invoice for a featured-slot fee.
-   *
-   * Called from FeaturedService.bindListingToSlot() once the winning
-   * bid is committed (status=WON, paidAt set). Issues the seller a
-   * paid invoice for the slot fee — analogous to the commission
-   * invoice flow but for featured-listing service revenue.
-   *
-   * Idempotent — skips if zohoInvoiceId already set on the bid.
-   * Never throws — failures stamp FAILED on the bid row.
-   */
-  async createFeaturedSlotInvoice(bidId: string): Promise<void> {
-    if (!this.isEnabled()) return;
-
-    // M16 — the entire body runs inside try so the leading findUnique +
-    // related lookups can't throw past the bare void caller in
-    // featured.service.ts. Previously the findUnique sat OUTSIDE the
-    // try block, so a DB hiccup there became an unhandled rejection
-    // on a fire-and-forget call site.
-    try {
-      const bid = await this.prisma.featuredSlotBid.findUnique({
-        where: { id: bidId },
-        include: {
-          bidder: { select: { id: true, email: true } },
-          auction: { select: { slotId: true } },
-        },
-      });
-      if (!bid) return;
-      if (bid.zohoInvoiceId) return;
-      // Phase E2 — receipt uses the cents we actually CHARGED
-      // (post-discount), falling back to the face bid for legacy
-      // rows from before the discount fields existed.
-      const billableCents = bid.chargedAmountCents ?? bid.amountCents;
-      if (billableCents <= 0) return;
-
-      const contactId = await this.ensureContact(bid.bidder.id, bid.bidder.email);
-      if (!contactId) {
-        throw new Error('Could not resolve Books contact for winning bidder');
-      }
-      const featuredAccountId = await this.getAccountIdByName(
-        'Featured-Slot Revenue',
-      );
-      if (!featuredAccountId) {
-        throw new Error(
-          'Featured-Slot Revenue account not found in Books chart-of-accounts',
-        );
-      }
-      // P1.3 — EFT-paid slot fees land in FNB; bank account first.
-      const depositAccountId =
-        (await this.getAccountIdByName('Bank — FNB Business')) ??
-        (await this.getAccountIdByName('Bank — Peach Pending'));
-
-      const feeRand = billableCents / 100;
-      const today = new Date().toISOString().slice(0, 10);
-      const bidRef = bid.id.slice(-8).toUpperCase();
-      // Phase E2 — surface the discount on the receipt so the
-      // operator can see it in Books without re-doing the math.
-      const discountSuffix =
-        bid.discountPercent && bid.discountPercent > 0
-          ? ` — GG+ ${bid.discountPercent}% off (face R${(bid.amountCents / 100).toFixed(0)})`
-          : '';
-      const reference = `Featured-slot ${bid.tier} — slot ${bid.auction?.slotId ?? 'unknown'} — bid ${bidRef}${discountSuffix}`;
-
-      // Featured-slot fees are paid at the moment the bid commits
-      // (the seller's card was already charged by Peach). So we use
-      // a Sales Receipt (paid-at-issue), not the marketplace
-      // commission-invoice + mark-paid two-step.
-      type CreateSalesReceiptResp = {
-        salesreceipt?: { salesreceipt_id?: string; salesreceipt_number?: string };
-        message?: string;
-      };
-      const payload: Record<string, unknown> = {
-        customer_id: contactId,
-        reference_number: reference,
-        date: today,
-        line_items: [
-          {
-            name: 'Featured-Slot Fee',
-            description: `${bid.tier} tier — slot ${bid.auction?.slotId ?? 'unknown'} — bid ${bidRef}`,
-            rate: feeRand,
-            quantity: 1,
-            account_id: featuredAccountId,
-          },
-        ],
-        payment_mode: 'Other',
-        notes: reference,
-      };
-      if (depositAccountId) {
-        payload.deposit_to_account_id = depositAccountId;
-      }
-
-      const resp = await this.request<CreateSalesReceiptResp>(
-        'POST',
-        '/salesreceipts',
-        payload,
-      );
-
-      const receiptId = resp.salesreceipt?.salesreceipt_id;
-      if (!receiptId) {
-        throw new Error(
-          `Books featured-slot receipt create returned no id: ${resp.message ?? 'unknown'}`,
-        );
-      }
-
-      await this.prisma.featuredSlotBid.update({
-        where: { id: bidId },
-        data: {
-          zohoInvoiceId: receiptId,
-          zohoSyncStatus: 'OK',
-          zohoSyncError: null,
-          zohoSyncLastAttemptAt: new Date(),
-        },
-      });
-      this.logger.log(
-        `Created featured-slot receipt ${resp.salesreceipt?.salesreceipt_number ?? receiptId} (R${feeRand.toFixed(2)}, bid ${bidRef})`,
-      );
-    } catch (err) {
-      const message = (err as Error).message.slice(0, 1000);
-      this.logger.error(
-        `Featured-slot Books sync FAILED for bid ${bidId}: ${message}`,
-      );
-      try {
-        await this.prisma.featuredSlotBid.update({
-          where: { id: bidId },
-          data: {
-            zohoSyncStatus: 'FAILED',
-            zohoSyncError: message,
-            zohoSyncLastAttemptAt: new Date(),
-          },
-        });
-      } catch (writeErr) {
-        this.logger.error(
-          `Could not write FAILED status to bid ${bidId}: ${(writeErr as Error).message}`,
-        );
-      }
     }
   }
 

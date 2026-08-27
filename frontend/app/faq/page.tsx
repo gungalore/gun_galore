@@ -118,14 +118,7 @@ export default function FaqPage() {
           style={{ color: 'var(--red)', textDecoration: 'underline' }}
         >
           Email support
-        </a>{' '}
-        or ask{' '}
-        <Link
-          href="/ask-gg"
-          style={{ color: 'var(--red)', textDecoration: 'underline' }}
-        >
-          Ask Boet
-        </Link>
+        </a>
         .
       </p>
 

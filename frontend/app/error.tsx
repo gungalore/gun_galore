@@ -41,7 +41,7 @@ export default function GlobalError({
         <Image
           // Nav mark: the full scene is 1.5:1 and its wordmark is unreadable
           // below ~120px tall. See the header of logo-nav.svg.
-          src={av('/logo-nav.svg')}
+          src={av('/logo-nav-dark.svg')}
           alt="All Outdoor"
           width={106}
           height={40}

@@ -16,7 +16,7 @@ type Period = '7d' | '30d' | '90d' | '365d' | 'all';
 interface Analytics {
   kpis: {
     salesCount: number;
-    grossSalesCents: number;
+    buyerPaidCents: number;
     netPayoutCents: number;
     avgOrderValueCents: number;
     activeListings: number;
@@ -42,11 +42,17 @@ interface Statement {
     listingTitle: string;
     buyerUsername: string | null;
     status: string;
-    listingPrice: number;
+    /** What the buyer was charged for the item. Under the markup model this is
+     *  BIGGER than the seller's own price, because our fees are inside it. */
+    buyerPaid: number;
+    /** The seller's own figure, which the deductions below come off. */
+    yourPrice: number;
     commission: number;
     processingFee: number;
     shipping: number;
     netPayout: number;
+    /** True when our fees were inside the buyer's price, so nothing was deducted. */
+    feesInPrice: boolean;
   }[];
 }
 
@@ -129,7 +135,7 @@ export default function EarningsPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <Kpi label="Net payout" value={rand(k.netPayoutCents)} accent />
           <Kpi label="Sales" value={String(k.salesCount)} />
-          <Kpi label="Gross sales" value={rand(k.grossSalesCents)} />
+          <Kpi label="Buyer paid" value={rand(k.buyerPaidCents)} />
           <Kpi label="Avg order" value={rand(k.avgOrderValueCents)} />
           <Kpi label="Active listings" value={String(k.activeListings)} />
           <Kpi label="Sold listings" value={String(k.soldListings)} />
@@ -185,7 +191,8 @@ export default function EarningsPage() {
                 <tr className="text-left text-[var(--text-tertiary)] text-xs">
                   <th className="p-3">Item</th>
                   <th className="p-3">Date</th>
-                  <th className="p-3 text-right">Item price</th>
+                  <th className="p-3 text-right">Buyer paid</th>
+                  <th className="p-3 text-right">Your price</th>
                   <th className="p-3 text-right">Fees</th>
                   <th className="p-3 text-right">Net</th>
                 </tr>
@@ -204,9 +211,23 @@ export default function EarningsPage() {
                       )}
                     </td>
                     <td className="p-3 text-[var(--text-tertiary)]">{o.date.slice(0, 10)}</td>
-                    <td className="p-3 text-right text-[var(--text-secondary)]">{rand(o.listingPrice)}</td>
+                    <td className="p-3 text-right text-[var(--text-tertiary)]">{rand(o.buyerPaid)}</td>
+                    <td className="p-3 text-right text-[var(--text-secondary)]">{rand(o.yourPrice)}</td>
+                    {/* ⚠️ THE ROW HAS TO SUBTRACT. This used to show
+                        commission + processingFee + SHIPPING against the
+                        listing price — shipping is buyer-paid and remitted to
+                        the carrier, never a seller deduction, so the arithmetic
+                        could not work. And under the markup model none of it is
+                        deducted at all: the seller receives their full price.
+                        Now "Your price" − "Fees" = "Net", both models. */}
                     <td className="p-3 text-right text-[var(--text-secondary)]">
-                      {rand(o.commission + o.processingFee + o.shipping)}
+                      {o.feesInPrice ? (
+                        <span className="text-[var(--text-tertiary)]" title="Our fees were built into the price the buyer paid, so nothing is deducted from you.">
+                          in price
+                        </span>
+                      ) : (
+                        rand(o.commission + o.processingFee)
+                      )}
                     </td>
                     <td className="p-3 text-right text-[var(--text-primary)] font-medium">
                       {rand(o.netPayout)}
@@ -215,7 +236,7 @@ export default function EarningsPage() {
                 ))}
                 {statement.orders.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="p-6 text-center text-[var(--text-tertiary)]">
+                    <td colSpan={6} className="p-6 text-center text-[var(--text-tertiary)]">
                       No payouts in this window yet.
                     </td>
                   </tr>

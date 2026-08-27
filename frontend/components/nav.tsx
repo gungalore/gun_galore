@@ -127,13 +127,12 @@ export function Nav() {
   }, [mobileOpen]);
 
   // Shopping surfaces — shared between desktop nav row and mobile drawer.
+  // Cut to two on 2026-08-26. Take a Shot moved INTO the listing page as an
+  // offer on a Buy Now item, so it is no longer a browse surface; Swop, Daily
+  // Deals and the Prize Draw were removed as modules.
   const SHOP_LINKS = [
     { href: '/?listingType=BUY_NOW', label: 'Buy Now' },
     { href: '/?listingType=AUCTION', label: 'Auctions' },
-    { href: '/?listingType=TAKE_A_SHOT', label: 'Take a Shot' },
-    { href: '/?listingType=SWOP', label: 'Swop / Trade' },
-    { href: '/deals', label: 'Daily Deals' },
-    { href: '/raffle', label: 'Prize Draw' },
   ];
 
   // Account menu items now live in lib/account-menu.tsx (ACCOUNT_GROUPS) so the
@@ -170,7 +169,7 @@ export function Nav() {
             aria-label="All Outdoor"
           >
             <Image
-              src={av('/logo-mark.svg')}
+              src={av('/logo-mark-dark.svg')}
               alt="All Outdoor"
               width={36}
               height={36}
@@ -178,7 +177,7 @@ export function Nav() {
               className="h-9 w-auto object-contain sm:hidden"
             />
             <Image
-              src={av('/logo-nav.svg')}
+              src={av('/logo-nav-dark.svg')}
               alt="All Outdoor"
               width={264}
               height={44}
@@ -599,10 +598,10 @@ export function Nav() {
           </div>
         )}
 
-        {/* Second tier — selling-mode links + Ask Boet. Desktop only; keeps
-            the selling modes fully visible on their own slim strip instead
-            of crushing the search on the top row. Mobile reaches these via
-            the hamburger drawer's Shop / Assistant sections. */}
+        {/* Second tier — the selling-mode links. Desktop only; keeps the
+            selling modes fully visible on their own slim strip instead of
+            crushing the search on the top row. Mobile reaches these via the
+            hamburger drawer's Shop section. */}
         <div
           className="hidden md:block"
           style={{ borderTop: '0.5px solid var(--border)' }}
@@ -613,51 +612,11 @@ export function Nav() {
                 key={link.href}
                 href={link.href}
                 style={{ color: 'var(--text-secondary)' }}
-                className="hover:text-[#f5f5f5] transition-colors"
+                className="hover:text-[var(--text-primary)] transition-colors"
               >
                 {link.label}
               </Link>
             ))}
-            {/* Ask Boet — paid AI assistant, set apart from SHOP_LINKS with a
-                sparkles icon so it reads as a different product. Pushed to the
-                right edge of the strip. Mobile-web reaches it via the drawer's
-                Assistant section; the installed PWA has its own bottom tab. */}
-            <Link
-              href="/ask-gg"
-              className="ask-gg-lure flex items-center gap-1.5"
-              style={{
-                color: '#fff',
-                fontWeight: 500,
-                background: 'rgba(200,16,46,0.14)',
-                border: '0.5px solid rgba(200,16,46,0.55)',
-                borderRadius: 999,
-                padding: '3px 12px',
-              }}
-              aria-label="Ask Boet — AI assistant"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden
-                style={{ color: 'var(--red)' }}
-              >
-                <path
-                  d="M12 4 L13.6 9.4 L19 11 L13.6 12.6 L12 18 L10.4 12.6 L5 11 L10.4 9.4 Z"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M18.5 4 L19 5.5 L20.5 6 L19 6.5 L18.5 8 L18 6.5 L16.5 6 L18 5.5 Z"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              Ask Boet
-            </Link>
           </div>
         </div>
       </nav>
@@ -696,7 +655,7 @@ export function Nav() {
               style={{ borderBottom: '0.5px solid var(--border)' }}
             >
               <Image
-                src={av('/logo-nav.svg')}
+                src={av('/logo-nav-dark.svg')}
                 alt="All Outdoor"
                 width={96}
                 height={36}
@@ -817,58 +776,6 @@ export function Nav() {
                 </p>
               </div>
             )}
-
-            {/* Assistant section — Ask Boet. Separate from Shop because
-                it's a paid AI feature, not a shopping surface. On the
-                installed PWA the equivalent entry is the dedicated
-                bottom-tab-bar tab; here in the mobile-web drawer it
-                lives as its own section so the entry is discoverable
-                even outside the installed app. */}
-            <div
-              className="px-4 py-4"
-              style={{ borderTop: '0.5px solid var(--border)' }}
-            >
-              <p
-                className="text-xs uppercase mb-2"
-                style={{ color: 'var(--text-tertiary)', letterSpacing: '0.08em' }}
-              >
-                Assistant
-              </p>
-              <Link
-                href="/ask-gg"
-                onClick={() => setMobileOpen(false)}
-                className="px-3 py-3 rounded-[6px] text-base flex items-center gap-2"
-                style={{
-                  color: 'var(--text-primary)',
-                  textDecoration: 'none',
-                  background: 'transparent',
-                  fontWeight: 500,
-                }}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  aria-hidden
-                  style={{ color: 'var(--red)' }}
-                >
-                  <path
-                    d="M12 4 L13.6 9.4 L19 11 L13.6 12.6 L12 18 L10.4 12.6 L5 11 L10.4 9.4 Z"
-                    stroke="currentColor"
-                    strokeWidth="1.4"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M18.5 4 L19 5.5 L20.5 6 L19 6.5 L18.5 8 L18 6.5 L16.5 6 L18 5.5 Z"
-                    stroke="currentColor"
-                    strokeWidth="1.2"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                Ask Boet
-              </Link>
-            </div>
 
             {/* Account section — what's shown depends on sign-in state */}
             <div

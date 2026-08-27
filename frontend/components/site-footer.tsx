@@ -15,7 +15,6 @@
 // route group with its own chrome) but rendered on every public
 // page. Server-rendered to keep zero JS cost.
 
-import { PRO_NAME } from '@/lib/brand';
 import { SUPPORT_EMAIL, SUPPORT_PHONE_DISPLAY } from '@/lib/support-contact';
 
 import Link from 'next/link';
@@ -80,13 +79,8 @@ export function SiteFooter() {
             Shop
           </p>
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, lineHeight: 1.9 }}>
-            <li><Link href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Buy Now</Link></li>
+            <li><Link href="/?listingType=BUY_NOW" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Buy Now</Link></li>
             <li><Link href="/?listingType=AUCTION" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Auctions</Link></li>
-            <li><Link href="/?listingType=TAKE_A_SHOT" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Take a Shot</Link></li>
-            <li><Link href="/?listingType=SWOP" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Swop / Trade</Link></li>
-            <li><Link href="/deals" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Daily Deals</Link></li>
-            <li><Link href="/raffle" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Prize Draw</Link></li>
-            <li><Link href="/subscribe" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>{PRO_NAME}</Link></li>
             <li><Link href="/listings/new" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Sell</Link></li>
             <li><Link href="/faq" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Help &amp; FAQ</Link></li>
           </ul>

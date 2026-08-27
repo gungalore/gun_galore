@@ -239,12 +239,12 @@ export function QuestionsPanel({
             role="status"
             style={{
               background: 'rgba(245,158,11,0.10)',
-              border: '0.5px solid #f59e0b',
+              border: '0.5px solid var(--warning)',
               color: 'var(--text-secondary)',
               lineHeight: 1.55,
             }}
           >
-            <p style={{ color: '#f59e0b', fontWeight: 600 }}>
+            <p style={{ color: 'var(--warning)', fontWeight: 600 }}>
               {pending.length} unanswered question
               {pending.length === 1 ? '' : 's'} on this listing
             </p>
@@ -439,8 +439,8 @@ export function QuestionsPanel({
                       toast.tone === 'err'
                         ? 'var(--red)'
                         : toast.tone === 'auto'
-                          ? '#6366f1'
-                          : '#00a03c',
+                          ? 'var(--info)'
+                          : 'var(--success)',
                   }}
                 >
                   {toast.text}

@@ -44,9 +44,9 @@ interface OrderDetail {
 
 const ORDER_STATUS_LABEL: Record<string, { label: string; tone: string }> = {
   AWAITING_PAYMENT: { label: 'Awaiting payment', tone: 'var(--warning, #f59e0b)' },
-  PAID: { label: 'Paid', tone: 'var(--green, #16a34a)' },
+  PAID: { label: 'Paid', tone: 'var(--success)' },
   PARTIALLY_FULFILLED: { label: 'Partially fulfilled', tone: 'var(--warning, #f59e0b)' },
-  COMPLETED: { label: 'Completed', tone: 'var(--green, #16a34a)' },
+  COMPLETED: { label: 'Completed', tone: 'var(--success)' },
   CANCELLED: { label: 'Cancelled', tone: 'var(--text-tertiary)' },
   REFUNDED: { label: 'Refunded', tone: 'var(--text-tertiary)' },
 };
@@ -166,14 +166,18 @@ export default function OrderDetailPage() {
           <span style={{ color: 'var(--text-tertiary)' }}>Items</span>
           <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{formatPrice(order.itemsSubtotal)}</span>
         </div>
-        <div className="flex justify-between text-sm py-1">
-          <span style={{ color: 'var(--text-tertiary)' }}>Shipping</span>
-          <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{formatPrice(order.shippingSubtotal)}</span>
-        </div>
-        {order.handlingSubtotal > 0 && (
+        {/* ⚠️ ONE DELIVERY FIGURE. Our handling margin was itemised as its
+            own "Handling" row, which publishes it to the buyer —
+            fee.calculator.ts is explicit that it "IS NEVER SHOWN SEPARATELY:
+            the buyer sees ONE delivery figure, already inclusive". Same rule
+            the receipt and the order page now follow; the split stays
+            server-side because carrier remittance and our margin are
+            different obligations at payout, not because the buyer needs the
+            arithmetic. */}
+        {order.shippingSubtotal + order.handlingSubtotal > 0 && (
           <div className="flex justify-between text-sm py-1">
-            <span style={{ color: 'var(--text-tertiary)' }}>Handling</span>
-            <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{formatPrice(order.handlingSubtotal)}</span>
+            <span style={{ color: 'var(--text-tertiary)' }}>Delivery</span>
+            <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{formatPrice(order.shippingSubtotal + order.handlingSubtotal)}</span>
           </div>
         )}
         {/* Processing fee is only a BUYER line when the seller passes it on

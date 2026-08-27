@@ -9,9 +9,9 @@ export const ADMIN_STATUS_COLOR: Record<string, string> = {
   ACTIVE: '#22c55e',
   PENDING_REVIEW: '#f59e0b',
   SOLD: '#3b82f6',
-  CANCELLED: 'var(--text-tertiary)',
-  EXPIRED: 'var(--text-tertiary)',
-  DRAFT: 'var(--text-tertiary)',
+  CANCELLED: 'var(--text-secondary)',
+  EXPIRED: 'var(--text-secondary)',
+  DRAFT: 'var(--text-secondary)',
   PAYMENT_PENDING: '#f59e0b',
   // Claude moderation decisions
   APPROVE: '#22c55e',
@@ -22,10 +22,10 @@ export const ADMIN_STATUS_COLOR: Record<string, string> = {
   // Offers
   PENDING: '#f59e0b',
   ACCEPTED: '#22c55e',
-  REJECTED: 'var(--text-tertiary)',
+  REJECTED: 'var(--text-secondary)',
   COUNTERED: '#3b82f6',
-  WITHDRAWN: 'var(--text-tertiary)',
-  EXPIRED_OFFER: 'var(--text-tertiary)',
+  WITHDRAWN: 'var(--text-secondary)',
+  EXPIRED_OFFER: 'var(--text-secondary)',
   // Q&A
   ANSWERED_BY_SELLER: '#22c55e',
   AUTO_ANSWERED: '#3b82f6',
@@ -49,7 +49,7 @@ export const ADMIN_STATUS_COLOR: Record<string, string> = {
   SCHEDULED: '#6366f1',
   LIVE: '#22c55e',
   EXTENDED: '#f59e0b',
-  ENDED: 'var(--text-tertiary)',
+  ENDED: 'var(--text-secondary)',
   SOLD_OUT: '#3b82f6',
 };
 
@@ -64,11 +64,21 @@ export function AdminStatusChip({
   status: string;
   color?: string;
 }) {
-  const c = color ?? ADMIN_STATUS_COLOR[status] ?? 'var(--text-tertiary)';
+  // One colour drives BOTH the ink and a 9% tint of itself as the fill, so the
+  // chip is only legible if that colour clears 4.5:1 against its own tint.
+  // That is why the neutral statuses above are --text-secondary (8.3:1) and
+  // not --text-tertiary: tertiary is documented at exactly 4.5:1 on white, so
+  // putting any tint behind it drops the label under AA (4.24:1).
+  //
+  // The background used to append a two-digit hex alpha directly onto `c`,
+  // which silently rendered TRANSPARENT for every var()-valued status in the
+  // map above - concatenating an alpha suffix onto a custom property does not
+  // work, because substitution is token-based. See --red-wash in globals.css.
+  const c = color ?? ADMIN_STATUS_COLOR[status] ?? 'var(--text-secondary)';
   return (
     <span
       className="text-xs px-2 py-0.5 rounded-full inline-block"
-      style={{ color: c, background: `${c}18` }}
+      style={{ color: c, background: `color-mix(in srgb, ${c} 9%, transparent)` }}
     >
       {status.replace(/_/g, ' ')}
     </span>

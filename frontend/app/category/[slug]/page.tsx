@@ -5,9 +5,7 @@ import type { Metadata } from 'next';
 import { viewerFetch } from '@/lib/api-viewer';
 import { browseMetaDescription } from '@/lib/seo';
 import { BrowseResponse, Category, SoldComps } from '@/lib/types';
-import { Fragment } from 'react';
 import { ListingCard } from '@/components/listing-card';
-import { FeaturedInFeedCard } from '@/components/featured-in-feed';
 import { Pagination } from '@/components/pagination';
 import { SoldCompsStrip } from '@/components/sold-comps';
 
@@ -179,12 +177,8 @@ export default async function CategoryPage({
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-6">
-          {browse.listings.map((l, i) => (
-            <Fragment key={l.id}>
-              <ListingCard listing={l} />
-              {/* One paid card after the first row — see FeaturedInFeedCard. */}
-              {i === 3 && <FeaturedInFeedCard />}
-            </Fragment>
+          {browse.listings.map((l) => (
+            <ListingCard key={l.id} listing={l} />
           ))}
         </div>
       )}

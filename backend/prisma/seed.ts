@@ -40,9 +40,6 @@ interface ParentCat {
   collectionOnly?: boolean;
   requiresPapers?: boolean;
   showTestedWorkingAttestation?: boolean; // P5.4 (parents rarely set it)
-  // Hunting Packages & Experiences (on-site SERVICE, no shipping). Snapshotted
-  // to Listing.isExperience; drives Buy Now/Auction-only + PENDING_REVIEW.
-  isExperience?: boolean;
   isActive?: boolean;
   // Visible to signed-out visitors + crawlers. OMITTED = members-only, because
   // Category.publicVisible defaults to false and this is an allowlist: a tree
@@ -123,10 +120,6 @@ const categories: ParentCat[] = [
   { name: 'Hunting', slug: 'hunting', sortOrder: 16, availableNewStore: true, publicVisible: true },
   { name: 'Outdoor Clothing & Footwear', slug: 'outdoor-clothing-footwear', sortOrder: 17, availableNewStore: true, publicVisible: true },
   { name: 'Archery & Bowhunting', slug: 'archery-bowhunting', sortOrder: 18, availableNewStore: true, publicVisible: true },
-  // Hunting Packages & Experiences (EXP module) — future-dated on-site SERVICE
-  // (guided hunts / range days), no shipping. Buy Now or Auction only; every
-  // listing routes to PENDING_REVIEW for supplier-doc review.
-  { name: 'Hunting Packages & Experiences', slug: 'hunting-packages-experiences', sortOrder: 19, isExperience: true, publicVisible: true },
 ];
 
 // Sub-categories keyed by parent slug. Each child inherits the parent's
@@ -544,7 +537,11 @@ async function main() {
       collectionOnly: cat.collectionOnly ?? false,
       requiresPapers: cat.requiresPapers ?? false,
       showTestedWorkingAttestation: cat.showTestedWorkingAttestation ?? false,
-      isExperience: cat.isExperience ?? false,
+      // Always false: Hunting Packages & Experiences was removed 2026-08-26.
+      // Written explicitly rather than omitted for the same reason the note
+      // below gives for publicVisible — an upsert that omits a column does not
+      // leave it alone, and this one must not resurrect a stale true.
+      isExperience: false,
       // MUST be written explicitly. Omitting it does not "leave it alone" — the
       // column defaults to false, so an upsert without it silently demotes every
       // public root and the signed-out shop goes empty. Children then read

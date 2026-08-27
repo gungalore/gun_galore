@@ -81,8 +81,8 @@ export default function PayoutHoldPanel({
           <span
             className="text-xs px-2 py-1 rounded-full"
             style={{
-              background: 'var(--amber, #f59e0b)22',
-              color: 'var(--amber, #f59e0b)',
+              background: 'var(--gold-wash)',
+              color: 'var(--warning)',
               fontWeight: 500,
             }}
           >

@@ -79,31 +79,17 @@ export function ListingCard({ listing }: { listing: Listing }) {
               No photo
             </div>
           )}
-          {/* Category badge — top-left. For an experience (hunting package)
-              we swap in a distinct "Experience · on-site" badge so browsers
-              can tell at a glance it's a booking, not a shippable item. */}
-          {listing.isExperience ? (
-            <span
-              className="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
-              style={{
-                background: 'rgba(232,181,58,0.85)',
-                color: '#1a1206',
-                fontWeight: 600,
-              }}
-            >
-              Experience · on-site
-            </span>
-          ) : (
-            <span
-              className="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
-              style={{
-                background: 'rgba(0,0,0,0.72)',
-                color: 'var(--text-secondary)',
-              }}
-            >
-              {listing.category.name}
-            </span>
-          )}
+          {/* Category badge — top-left. */}
+          <span
+            className="absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
+            style={{
+              background: 'rgba(0,0,0,0.72)',
+              // On the photo scrim, not the card — see --text-on-dark.
+              color: 'var(--text-on-dark-muted)',
+            }}
+          >
+            {listing.category.name}
+          </span>
           {/* Condition chip — moved to bottom-left of the image (was
               top-right) to free the top-right corner for the heart
               button. Keeps the at-a-glance "Used" / "Like new" info
@@ -113,7 +99,8 @@ export function ListingCard({ listing }: { listing: Listing }) {
             className="absolute bottom-2 left-2 text-xs px-1.5 py-0.5 rounded-[4px] leading-none"
             style={{
               background: 'rgba(0,0,0,0.72)',
-              color: 'var(--text-secondary)',
+              // On the photo scrim, not the card — see --text-on-dark.
+              color: 'var(--text-on-dark-muted)',
             }}
           >
             {CONDITION_LABELS[listing.condition]}
@@ -171,11 +158,9 @@ export function ListingCard({ listing }: { listing: Listing }) {
                 {/* For auctions, show the current bid (or starting bid if no bids yet). */}
                 {listing.listingType === 'AUCTION'
                   ? formatPrice(listing.currentBid ?? listing.price ?? 0)
-                  : listing.listingType === 'SWOP'
-                    ? 'Swap'
-                    : listing.price
-                      ? formatPrice(listing.price)
-                      : 'Make an offer'}
+                  : listing.price
+                    ? formatPrice(listing.price)
+                    : 'Make an offer'}
               </span>
               {/* UX-7 — "was" price + % off (BUY_NOW only). */}
               {compareAtPct != null && (

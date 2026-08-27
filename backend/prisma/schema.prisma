@@ -64,6 +64,15 @@ enum PaymentStatus {
   REFUNDED
 }
 
+// Which direction our fees ran on a sale. See Transaction.feeModel for the
+// full note; the short version is that BUYNOW_MARKUP builds the fee INTO the
+// price the buyer sees, and SELLER_DEDUCT takes it OUT of what the seller gets.
+// The columns look identical either way, which is precisely why this exists.
+enum FeeModel {
+  BUYNOW_MARKUP
+  SELLER_DEDUCT
+}
+
 enum Condition {
   NEW
   LIKE_NEW
@@ -1487,7 +1496,35 @@ model Transaction {
   // Null on every legacy-carrier row and on non-courier sales.
   shippingProviderSlug     String?
   shippingServiceLevelCode String?
-  passFeeToBuyer           Boolean // snapshot of listing.passFeeToBuyer
+  // ⚠️ THE EFFECTIVE FLAG, NOT THE LISTING'S. Was "snapshot of
+  // listing.passFeeToBuyer", which is a different fact: an auction win and an
+  // accepted offer FORCE the buyer to pay the gateway fee regardless of what
+  // the seller once ticked (transactions.service.ts, the `auctionWin ||
+  // offerRecord ? true : ...` branch). Storing the listing's raw flag meant no
+  // consumer could tell whether the buyer had actually been charged the fee —
+  // and every consumer reads it for exactly that. Now it records what the fee
+  // maths was actually run with.
+  //
+  // MEANINGLESS ON A BUYNOW_MARKUP ROW: there the fee is inside listingPrice
+  // and was never a separate charge. Read feeModel FIRST — see fee-presentation.ts.
+  passFeeToBuyer           Boolean
+  // Which of the two economic models priced this sale. Both produce the same
+  // columns, so without this nothing downstream can render them truthfully:
+  //
+  //   BUYNOW_MARKUP — commissionZar and processingFee are ALREADY INSIDE
+  //     listingPrice. The buyer pays the listed price; the seller receives
+  //     their full ask (sellerPayout). Adding the fee to the item price
+  //     double-counts it, and showing commission as a seller deduction is
+  //     simply false — nothing was deducted from them.
+  //
+  //   SELLER_DEDUCT — the original model, still used for auction wins,
+  //     accepted offers, experiences and legacy listings. Fees sit OUTSIDE
+  //     listingPrice: the buyer may be charged processingFee on top, and the
+  //     seller is genuinely deducted commission.
+  //
+  // Defaults to SELLER_DEDUCT so any row predating this column reads as the
+  // older model, which is what those rows are.
+  feeModel                 FeeModel @default(SELLER_DEDUCT)
   buyerTotal               Int // what buyer is charged by Peach
   sellerPayout             Int // what seller receives after deductions
 

@@ -806,7 +806,7 @@ function VerifyKycPageInner() {
           aria-modal="true"
           aria-label="May we keep your ID?"
         >
-          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-[var(--radius)] bg-[var(--bg-card)] p-5 sm:rounded-[var(--radius)]">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-[var(--r-lg)] bg-[var(--bg-card)] p-5 sm:rounded-[var(--r-lg)]">
             <h2 className="text-lg font-semibold">May we keep your ID?</h2>
             <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
               A copy of your ID is the first thing every firearm licence
@@ -839,7 +839,7 @@ function VerifyKycPageInner() {
                     .catch(() => setIdOffer('answered'))
                     .finally(() => setHoldRedirect(false));
                 }}
-                className="rounded-[var(--radius)] bg-[var(--red)] px-4 py-2 text-sm text-white disabled:opacity-60"
+                className="rounded-[var(--r-sm)] bg-[var(--red)] px-4 py-2 text-sm text-white disabled:opacity-60"
               >
                 {idOffer === 'saving' ? 'Saving…' : 'Yes, keep it'}
               </button>
@@ -850,7 +850,7 @@ function VerifyKycPageInner() {
                   setIdOffer('answered');
                   setHoldRedirect(false);
                 }}
-                className="rounded-[var(--radius)] border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-60"
+                className="rounded-[var(--r-sm)] border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-60"
               >
                 No, do not keep it
               </button>
@@ -862,7 +862,7 @@ function VerifyKycPageInner() {
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <Image
             // Nav mark — the full scene's wordmark is unreadable at 36px.
-            src={av('/logo-nav.svg')}
+            src={av('/logo-nav-dark.svg')}
             alt="All Outdoor"
             width={96}
             height={36}
@@ -1577,7 +1577,7 @@ function VerifyKycPageInner() {
                 style={{
                   marginTop: 16,
                   padding: '10px 18px',
-                  borderRadius: 'var(--radius)',
+                  borderRadius: 'var(--r-sm)',
                   border: '0.5px solid var(--border)',
                   background: 'transparent',
                   color: 'var(--text-secondary)',

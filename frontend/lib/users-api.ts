@@ -135,10 +135,7 @@ const BLOCKER_HREF: Record<string, string> = {
   // that adding the predicate server-side does not silently ship a linkless
   // blocker; harmless while nothing sends them.
   PAYOUT_HELD: '/my/earnings',
-  OPEN_SWAP_PROPOSAL: '/my/swaps',
-  LIVE_SWAP: '/my/swaps',
   OPEN_ORDER: '/my/orders',
-  ACTIVE_SUBSCRIPTION: '/subscribe',
 };
 
 /** Codes that mean "an admin has to do this", not "finish this first". */

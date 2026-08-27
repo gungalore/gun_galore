@@ -35,11 +35,7 @@ import {
   moduleAuctions,
   moduleOffers,
   moduleOrders,
-  moduleExperiences,
-  moduleSubscriptions,
-  moduleFeatured,
   moduleContentSmoke,
-  moduleSwap,
   moduleDailyDeals,
   moduleFinalLedger,
 } from './dummy-run/modules';
@@ -166,10 +162,6 @@ async function main() {
   await runModule(ctx, 'Auctions', moduleAuctions);
   await runModule(ctx, 'Take-a-Shot offers', moduleOffers);
   await runModule(ctx, 'Cart / Orders (multi-seller)', moduleOrders);
-  await runModule(ctx, 'Experiences (on-site)', moduleExperiences);
-  await runModule(ctx, 'Subscriptions', moduleSubscriptions);
-  await runModule(ctx, 'Featured slots', moduleFeatured);
-  await runModule(ctx, 'Swop / Trade', moduleSwap);
   await runModule(ctx, 'Daily Deals (house)', moduleDailyDeals);
   await runModule(ctx, 'Content smoke', moduleContentSmoke);
   await runModule(ctx, 'Held-funds closing balance', moduleFinalLedger);

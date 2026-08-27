@@ -129,7 +129,7 @@ export function VaultConsentBody({
           type="button"
           disabled={busy}
           onClick={() => onAnswer(true)}
-          className="rounded-[var(--radius)] bg-[var(--red)] px-4 py-2 text-sm text-white disabled:opacity-60"
+          className="rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2 text-sm text-white disabled:opacity-60"
         >
           {busy ? 'Saving…' : 'Yes, keep my documents'}
         </button>
@@ -137,7 +137,7 @@ export function VaultConsentBody({
           type="button"
           disabled={busy}
           onClick={() => onAnswer(false)}
-          className="rounded-[var(--radius)] border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-60"
+          className="rounded-[var(--r-md)] border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-60"
         >
           No, do not keep them
         </button>
@@ -238,7 +238,7 @@ export default function VaultConsentModal({
         aria-modal="true"
         aria-label="May we keep your documents?"
         tabIndex={-1}
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-[var(--radius)] bg-[var(--bg-card)] p-5 outline-none sm:rounded-[var(--radius)]"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-[var(--r-lg)] bg-[var(--bg-card)] p-5 outline-none sm:rounded-[var(--r-lg)]"
       >
         <VaultConsentBody
           retentionDays={retentionDays}

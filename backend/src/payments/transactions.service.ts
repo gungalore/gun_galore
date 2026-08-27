@@ -12,6 +12,11 @@ import {
   SHIPMENT_FAILURE_LABEL,
 } from '../common/shipment-failure-policy';
 import { FeeCalculator, shippingHandlingCentsFor } from './fee.calculator';
+import {
+  buyerBreakdown,
+  feeModelFor,
+  sellerBreakdown,
+} from './fee-presentation';
 import { PeachService, PeachPaymentResult } from './peach.service';
 import { evaluateBanvMatches, banvFlagsSummary } from './peach-banks';
 import { FraudRiskService } from './fraud-risk.service';
@@ -36,14 +41,6 @@ import { TrackingService } from '../shipping/tracking.service';
 import { Inject, forwardRef } from '@nestjs/common';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { ReferenceNumberService } from '../common/reference-number.service';
-import {
-  computeCpaCancellation,
-  isExemptReason,
-  DEFAULT_CANCELLATION_TIERS,
-  CPA_ADMIN_FEE_CENTS,
-  type CancellationExemptReason,
-  type CancellationTier,
-} from './cancellation-policy';
 
 // Payment-mode seam moved to ./payment-mode (a dependency-free module) so
 // lightweight consumers can read the rail + gate without pulling in the
@@ -236,119 +233,14 @@ export class TransactionsService {
     }
     // ----
 
-    // ─── Hunting Packages / Experiences (EXP-E1) checkout branch ────────
-    // An experience is a future-dated ON-SITE service — no courier, no parcel,
-    // no shipping quote. It may only be BUY_NOW or AUCTION (E0 forces that at
-    // listing create + rejects TAKE_A_SHOT/SWOP), so the offer path above can
-    // never carry one; only the BUY_NOW ACTIVE gate + the AUCTION-winner gate
-    // reach here for an experience. We compute the booking evidence up front so
-    // the create + fee maths below can branch on a single isExperience flag.
-    const isExperience = listing.isExperience;
-    let experienceEventDate: Date | null = null;
-    let experienceEventEndDate: Date | null = null;
-    let experiencePartySize: number | null = null;
-    let experienceStampAt: Date | null = null;
-    if (isExperience) {
-      // Experiences NEVER ride the multi-item cart / Order path (single-item
-      // v1). reserveAndCreateLine is called by both single create() and
-      // createOrderCheckout; when it's a cart line the caller passes a
-      // shippingOverride. Reject an experience that reached here as a cart line
-      // so it can't be fanned out (createOrderCheckout also excludes it up
-      // front, before any reservation — this is defence in depth).
-      if (shippingOverride !== undefined) {
-        throw new BadRequestException(
-          'Hunting packages and experiences must be booked individually, not in a cart.',
-        );
-      }
-
-      // HARD gate — all five buyer attestations must be explicitly true.
-      // Mirror the firearm 18+ server check: the frontend gate is UX, this is
-      // authoritative. Each maps to a *At evidence stamp persisted below.
-      if (
-        dto.experienceBuyerAttested18Plus !== true ||
-        dto.experienceHuntingLicenceOrSupervisionAccepted !== true ||
-        dto.experienceIntermediaryAcknowledged !== true ||
-        dto.experienceCancellationPolicyAccepted !== true ||
-        dto.experienceRisksAccepted !== true
-      ) {
-        throw new BadRequestException(
-          'To book this experience you must confirm all of: you are 18+, you hold a firearm licence/competency or will hunt under the outfitter’s supervision, you understand All Outdoor is a payment-protection intermediary and the outfitter is the supplier, you accept the cancellation policy, and you accept the hunting risks.',
-        );
-      }
-      experienceStampAt = new Date();
-
-      // Force the on-site fulfilment method + skip the courier shipping
-      // validator entirely (validateShipping only knows courier/firearm/
-      // collection methods and would reject ON_SITE_SERVICE). No Pudo/TCG/
-      // dealer path, no rate quote — shippingCost stays 0.
-      dto.shippingMethod = ShippingMethod.ON_SITE_SERVICE;
-
-      // eventDate is required and must be one of the dates the outfitter
-      // offered: inside the listing window and in the future. Bind to the
-      // listing's server-side window, never a client-sent range.
-      if (!dto.eventDate) {
-        throw new BadRequestException(
-          'Please choose the date you want to book for this experience.',
-        );
-      }
-      const chosen = new Date(dto.eventDate);
-      if (Number.isNaN(chosen.getTime())) {
-        throw new BadRequestException('The chosen booking date is not valid.');
-      }
-      const windowStart = listing.eventStartDate;
-      if (!windowStart) {
-        throw new BadRequestException(
-          'This experience has no scheduled date and cannot be booked yet.',
-        );
-      }
-      const windowEnd = listing.eventEndDate ?? windowStart;
-      const now = new Date();
-      if (chosen.getTime() < now.getTime()) {
-        throw new BadRequestException(
-          'The chosen booking date is in the past.',
-        );
-      }
-      // Compare against the window on a whole-day basis at the boundaries so a
-      // same-day time-of-day difference doesn't reject a legitimate date. The
-      // window end is inclusive to the end of that day.
-      const windowStartMs = windowStart.getTime();
-      const windowEndMs =
-        windowEnd.getTime() + 24 * 60 * 60 * 1000 - 1; // inclusive end-of-day
-      if (chosen.getTime() < windowStartMs || chosen.getTime() > windowEndMs) {
-        throw new BadRequestException(
-          'The chosen date is outside the dates this experience is offered on.',
-        );
-      }
-      experienceEventDate = chosen;
-      experienceEventEndDate = listing.eventEndDate ?? null;
-
-      // partySize: default 1, must be within the package's capacity.
-      const requestedParty = dto.partySize ?? 1;
-      if (!Number.isInteger(requestedParty) || requestedParty < 1) {
-        throw new BadRequestException('Party size must be a whole number of 1 or more.');
-      }
-      const capacity = listing.capacitySlots ?? 1;
-      if (requestedParty > capacity) {
-        throw new BadRequestException(
-          `This package accommodates up to ${capacity} guest${capacity === 1 ? '' : 's'}.`,
-        );
-      }
-      experiencePartySize = requestedParty;
-    }
-
     // Enforce shipping routing rules: legal class (firearm vs not) AND
-    // the seller's offered methods (a subset of the legal options). SKIPPED
-    // for experiences — ON_SITE_SERVICE is not a courier/firearm/collection
-    // method the validator knows about, and the experience branch above has
-    // already pinned the method + attestations.
-    if (!isExperience) {
-      this.validateShipping(
-        listing.isFirearm,
-        listing.collectionOnly,
-        listing.shippingMethods,
-        dto.shippingMethod,
-      );
-    }
+    // the seller's offered methods (a subset of the legal options).
+    this.validateShipping(
+      listing.isFirearm,
+      listing.collectionOnly,
+      listing.shippingMethods,
+      dto.shippingMethod,
+    );
 
     // M33 — 18+/competency attestation on firearm checkouts. Required
     // by the audit + SAPS regulatory framework. Refuse the transaction
@@ -406,6 +298,21 @@ export class TransactionsService {
     // existed, which falls back to the old deduct-from-seller behaviour.
     const isMarkedUpBuyNow =
       !offerRecord && !auctionWin && listing.sellerAskCents != null;
+
+    // ─── The two facts every downstream document needs ────────────────
+    // Both fee models below write the SAME columns, so without recording
+    // which one ran, no receipt, email, statement or ledger entry can
+    // describe the sale truthfully — and five of them described it three
+    // different ways. Snapshotted here, beside the money they explain.
+    const feeModel = feeModelFor({ isExperience: false, isMarkedUpBuyNow });
+    // ⚠️ THE EFFECTIVE FLAG. An auction win and an accepted offer FORCE the
+    // buyer to carry the gateway fee whatever the seller once ticked on the
+    // listing. This is the value the fee maths actually runs with, so it is
+    // the value we store — the row used to keep `listing.passFeeToBuyer`,
+    // which answered a different question than every consumer was asking of
+    // it.
+    const buyerPaysProcessingFee =
+      auctionWin || offerRecord ? true : listing.passFeeToBuyer;
     // ⚠️ The null fallback below is a SAFETY NET, not a supported state. The
     // buyer's checkout cannot tell a marked-up BUY_NOW from a legacy one —
     // sellerAskCents is owner-gated and never reaches a buyer — so it assumes
@@ -573,53 +480,41 @@ export class TransactionsService {
       processingFee,
       buyerTotal,
       sellerPayout,
-    } = isExperience
-      ? // EXP-E1 — full package value held, standard tiered bands, R0
-        // shipping + R0 handling (no waybill). Price is bound to the
-        // server-side value (listing.price for BUY_NOW, listing.currentBid for
-        // an AUCTION winner) via agreedPrice above — never a client amount.
-        // Experiences are single-item, so quantity is always 1 here.
-        this.fees.breakdownExperience(
-          agreedPrice,
-          listing.passFeeToBuyer,
+    } = isMarkedUpBuyNow
+      ? // BUY NOW — our cut is already inside listing.price. The seller
+        // receives the ask they typed and NOTHING is added at checkout but
+        // shipping and the handling margin. Recomputed FORWARD from the ask
+        // rather than reversed out of the price: the markup is banded,
+        // floored and Top-Seller-discounted, so it is not reliably
+        // invertible, and forward always reproduces what the seller was shown.
+        this.fees.breakdownBuyNow(
+          listing.sellerAskCents!,
           isTopSeller,
+          shippingCostCents,
           PAYMENT_MODE,
+          handlingFeeCents,
+          quantity,
         )
-      : isMarkedUpBuyNow
-        ? // BUY NOW — our cut is already inside listing.price. The seller
-          // receives the ask they typed and NOTHING is added at checkout but
-          // shipping and the handling margin. Recomputed FORWARD from the ask
-          // rather than reversed out of the price: the markup is banded,
-          // floored and Top-Seller-discounted, so it is not reliably
-          // invertible, and forward always reproduces what the seller was shown.
-          this.fees.breakdownBuyNow(
-            listing.sellerAskCents!,
-            isTopSeller,
-            shippingCostCents,
-            PAYMENT_MODE,
-            handlingFeeCents,
-            quantity,
-          )
-        : this.fees.breakdown(
-            agreedPrice * quantity, // line subtotal — commission bands apply to the line
-            // AUCTIONS AND OFFERS: the buyer pays the gateway fee, surfaced as
-            // a "Transaction fee" (operator 2026-08-15). A bid discovers the
-            // price, so there is nothing to mark up — the commission comes out
-            // of the seller as it always did, and the gateway cost is the
-            // buyer's. Anything else (a legacy BUY_NOW with no ask recorded)
-            // keeps the seller's own passFeeToBuyer choice.
-            // ⚠️ When a buy-now-on-auction flow is built (Listing.buyNowPrice
-            // is stored but nothing purchases it yet), it belongs on THIS
-            // branch too — operator 2026-08-15: buy now on an auction follows
-            // the AUCTION rules, not the marked-up BUY_NOW ones. Widen this to
-            // cover it rather than letting it fall through to the listing's
-            // legacy passFeeToBuyer flag.
-            auctionWin || offerRecord ? true : listing.passFeeToBuyer,
-            isTopSeller,
-            shippingCostCents,
-            PAYMENT_MODE, // manual = flat 1.5% EFT fee; paygate = card rate
-            handlingFeeCents,
-          );
+      : this.fees.breakdown(
+          agreedPrice * quantity, // line subtotal — commission bands apply to the line
+          // AUCTIONS AND OFFERS: the buyer pays the gateway fee, surfaced as
+          // a "Transaction fee" (operator 2026-08-15). A bid discovers the
+          // price, so there is nothing to mark up — the commission comes out
+          // of the seller as it always did, and the gateway cost is the
+          // buyer's. Anything else (a legacy BUY_NOW with no ask recorded)
+          // keeps the seller's own passFeeToBuyer choice.
+          // ⚠️ When a buy-now-on-auction flow is built (Listing.buyNowPrice
+          // is stored but nothing purchases it yet), it belongs on THIS
+          // branch too — operator 2026-08-15: buy now on an auction follows
+          // the AUCTION rules, not the marked-up BUY_NOW ones. Widen this to
+          // cover it rather than letting it fall through to the listing's
+          // legacy passFeeToBuyer flag.
+          buyerPaysProcessingFee,
+          isTopSeller,
+          shippingCostCents,
+          PAYMENT_MODE, // manual = flat 1.5% EFT fee; paygate = card rate
+          handlingFeeCents,
+        );
 
     // ─── DD-2 — Daily Deals first-party economics ──────────────────────
     // GG is the seller of a house deal (Listing.isDealListing), so there is
@@ -721,7 +616,10 @@ export class TransactionsService {
         shippingServiceCode,
         shippingProviderSlug,
         shippingServiceLevelCode,
-        passFeeToBuyer: listing.passFeeToBuyer,
+        // The EFFECTIVE flag and the model that produced these columns — see
+        // where both are derived above. Every document downstream reads them.
+        passFeeToBuyer: buyerPaysProcessingFee,
+        feeModel,
         buyerTotal,
         sellerPayout: effectiveSellerPayout, // DD-2 — 0 for a house deal (GG doesn't pay itself)
         shippingMethod: dto.shippingMethod,
@@ -760,17 +658,6 @@ export class TransactionsService {
         buyerTermsAckAt: new Date(),
         buyerTermsAckVersion: REFUND_TERMS_VERSION,
         buyerLocationShown: vicinityLabel(listing),
-        // EXP-E1 — experience booking + the 5 buyer-attestation evidence
-        // stamps. All null for a non-experience checkout. experienceStampAt is
-        // the single affirm instant captured once the hard gate passed above.
-        eventDate: experienceEventDate,
-        eventEndDate: experienceEventEndDate,
-        partySize: experiencePartySize,
-        experienceAttested18PlusAt: experienceStampAt,
-        experienceLicenceOrSupervisionAt: experienceStampAt,
-        experienceIntermediaryAckAt: experienceStampAt,
-        experienceCancellationAcceptedAt: experienceStampAt,
-        experienceRisksAcceptedAt: experienceStampAt,
       },
     });
     const tx = await createTx().catch(async (err) => {
@@ -990,7 +877,6 @@ export class TransactionsService {
         id: true,
         listingType: true,
         isFirearm: true,
-        isExperience: true,
         sellerId: true,
         collectionOnly: true,
         title: true,
@@ -1006,20 +892,6 @@ export class TransactionsService {
     if (lineListings.some((l) => l.listingType !== 'BUY_NOW')) {
       throw new BadRequestException(
         'Auctions, swaps and offer items must be bought individually, not in a cart.',
-      );
-    }
-    // EXP-E1 — an experience is a BUY_NOW listing (so the type gate above lets
-    // it through) but is a future-dated on-site booking that must be checked
-    // out individually: it needs the 5 buyer attestations + eventDate +
-    // partySize the cart line DTO doesn't carry, ships ON_SITE_SERVICE (never
-    // consolidates), and holds full value against ONE booking. Reject it up
-    // front — before any reservation — and NAME the item so the buyer knows
-    // which line to remove and book on its own. (reserveAndCreateLine also
-    // rejects an experience cart line as defence in depth.)
-    const experienceLine = lineListings.find((l) => l.isExperience);
-    if (experienceLine) {
-      throw new BadRequestException(
-        `"${experienceLine.title}" is a hunting package / experience — it must be booked individually, not in a cart. Remove it and book it on its own.`,
       );
     }
     // Collection-only lines can't ride the cart rail — the cart only carries
@@ -2142,8 +2014,10 @@ export class TransactionsService {
       // we must NOT accept+book until EVERY sibling in the order is paid (HELD)
       // — otherwise bookForTransaction (which only sees HELD siblings) declares
       // an under-weight/under-insured parcel that can never grow. Defer until
-      // the parent Order's paid-claim commits; confirmManualOrder re-drives us
-      // then, and the 5-min reconcile sweep is a backstop. A single-item deal
+      // the parent Order's paid-claim commits; maybeConfirmWholeOrder re-drives
+      // us the moment it wins that claim (confirmManualOrder, named here before,
+      // was deleted with the manual-EFT rail and re-drove nothing), and the
+      // 5-min reconcile sweep is a backstop. A single-item deal
       // (no orderId) is unaffected and auto-accepts immediately.
       if (tx.orderId) {
         const order = await this.prisma.order.findUnique({
@@ -3272,9 +3146,23 @@ export class TransactionsService {
     // Manual EFT retired (Phase 1) — GG bank details are never exposed to
     // buyers. The field is kept (always null) for response-shape stability
     // until the full plumbing purge.
+    // ⚠️ THE BREAKDOWN IS COMPUTED HERE, NOT IN THE BROWSER.
+    //
+    // The order page used to do its own arithmetic off the raw columns, and
+    // got it wrong in both directions: it added the processing fee on top of
+    // an item price that already contained it (marked-up Buy Now), and it
+    // subtracted commission from the buyer's price to reach a seller payout
+    // that number cannot produce. Sending the rendered lines means there is
+    // exactly ONE implementation of this arithmetic, on the server, covered
+    // by fee-presentation.spec — rather than a second copy in TSX free to
+    // drift the next time the fee model changes.
     return {
       ...tx,
       bankDetails: null,
+      feeBreakdown: {
+        buyer: buyerBreakdown(tx),
+        seller: sellerBreakdown(tx),
+      },
     };
   }
 
@@ -3299,19 +3187,6 @@ export class TransactionsService {
     if (tx.buyer.clerkId !== buyerClerkId) throw new ForbiddenException('Only the buyer can confirm delivery');
     if (tx.paymentStatus !== 'HELD') throw new BadRequestException('Payment is not in HELD state');
     if (tx.confirmedDeliveryAt) throw new BadRequestException('Delivery already confirmed');
-
-    // EXP — an on-site experience (hunting package / range day) is a
-    // future-dated SERVICE, NOT a parcel. It must NEVER settle through the
-    // goods delivery-confirmation path: that flips HELD→RELEASED the instant
-    // the buyer clicks, which could pay the outfitter BEFORE the event date.
-    // Experiences release only via the dedicated post-event completion step
-    // (guarded on eventDate). Refuse here so experience funds can never move
-    // early via this endpoint.
-    if (tx.shippingMethod === 'ON_SITE_SERVICE') {
-      throw new BadRequestException(
-        'On-site experiences are confirmed through the "Confirm the experience happened" step after the event date, not delivery confirmation.',
-      );
-    }
 
     // Firearm DEALER_TRANSFER gates payout on the SAPS 534 verification
     // having been APPROVED (either automatically by Claude vision or
@@ -3574,1135 +3449,106 @@ export class TransactionsService {
     return { disputed: true };
   }
 
-  // ==================================================================
-  // Hunting Packages / Experiences (EXP-E2) — the happy money-OUT path
-  // ==================================================================
-  // Three seller/buyer lifecycle methods that replace the goods
-  // accept→dispatch→confirm-delivery machinery for a future-dated ON-SITE
-  // service (ShippingMethod.ON_SITE_SERVICE). Each mirrors an existing money
-  // method 1:1 and reuses the SAME atomic primitives — no new money mechanics:
-  //   • acceptExperienceBooking   ≙ acceptTransaction   (seller CAS, NO release)
-  //   • confirmExperienceCompleted ≙ confirmDelivery    (atomic HELD→RELEASED)
-  //   • declineExperienceBooking  ≙ rejectTransaction   (full refund + relist)
-  // Money invariants preserved: (a) NO release before eventDate; (b) NO
-  // double-release (CAS count===0); (c) DISPUTED blocks release (CAS requires
-  // HELD); (d) decline never pays the seller + always relists; (e) commission
-  // invoice fires once on release; (f) seller-only accept/decline, buyer-only
-  // confirm-completed.
-
-  // ------------------------------------------------------------------
-  // OUTFITTER confirms the booking (EXP-E2) — the "accept" step
-  // ------------------------------------------------------------------
-  // Seller-only. Atomic compare-and-set stamps bookingConfirmedAt exactly once
-  // on a HELD ON_SITE_SERVICE row that isn't already confirmed. Mirrors
-  // acceptTransaction's seller-auth pattern, but there is NO courier booking
-  // and — crucially — NO funds release: an experience releases only via the
-  // post-event confirmExperienceCompleted step (guarded on eventDate). A
-  // confirmed booking simply tells the buyer the outfitter will honour it.
-  async acceptExperienceBooking(transactionId: string, sellerClerkId: string) {
-    const tx = await this.prisma.transaction.findUnique({
-      where: { id: transactionId },
-      include: {
-        listing: { select: { title: true, isExperience: true } },
-        buyer: {
-          select: {
-            email: true,
-            firstName: true,
-            phone: true,
-            username: true,
-          },
-        },
-      },
-    });
-    if (!tx) throw new NotFoundException('Transaction not found');
-
-    const seller = await this.prisma.user.findUnique({
-      where: { clerkId: sellerClerkId },
-    });
-    if (!seller || tx.sellerId !== seller.id) {
-      throw new ForbiddenException('Not authorised');
-    }
-    if (!tx.paidAt) {
-      throw new BadRequestException('Payment not confirmed yet');
-    }
-    if (tx.shippingMethod !== ShippingMethod.ON_SITE_SERVICE) {
-      throw new BadRequestException(
-        'This is not an experience booking — use the standard accept flow.',
-      );
-    }
-    if (tx.bookingConfirmedAt) {
-      // Idempotent — already-confirmed is a successful no-op.
-      return tx;
-    }
-
-    // Atomic CAS — stamp bookingConfirmedAt on a still-HELD, still-unconfirmed
-    // experience row. count===0 ⇒ another pass confirmed it, it moved out of
-    // HELD (DISPUTED / REFUNDED / RELEASED), or it isn't an experience. Does
-    // NOT touch paymentStatus: money stays HELD until the post-event confirm.
-    const confirmedAt = new Date();
-    const stamped = await this.prisma.transaction.updateMany({
-      where: {
-        id: transactionId,
-        paymentStatus: 'HELD',
-        shippingMethod: ShippingMethod.ON_SITE_SERVICE,
-        bookingConfirmedAt: null,
-      },
-      data: { bookingConfirmedAt: confirmedAt },
-    });
-    if (stamped.count === 0) {
-      throw new BadRequestException(
-        'This booking can no longer be confirmed — it may already be confirmed, refunded, or disputed.',
-      );
-    }
-
-    // Best-effort buyer notice + timeline (fire-and-forget; never blocks the
-    // seller's confirm). Reuse the existing sale_accepted buyer notification —
-    // a COLLECTION-style accept (no dispatch/tracking), which is the closest
-    // fit for an on-site booking. E5 can introduce experience-specific copy.
-    void this.tracking.recordInternal(transactionId, 'SELLER_ACCEPTED', {
-      occurredAt: confirmedAt,
-    });
-    void this.notifications.resolveByEntity('transaction', transactionId);
-    void this.notifications
-      .saleAcceptedBuyer({
-        buyerEmail: tx.buyer.email,
-        buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
-        buyerPhone: tx.buyer.phone,
-        listingTitle: tx.listing.title,
-        transactionId: tx.id,
-        dispatchDeadlineAt: tx.eventDate ?? confirmedAt,
-        isCollection: true,
-      })
-      .catch((err) =>
-        this.logger.warn(
-          `acceptExperienceBooking notify failed for ${transactionId}: ${(err as Error).message}`,
-        ),
-      );
-
-    this.logger.log(
-      `Experience booking ${transactionId} confirmed by outfitter ${seller.id}`,
-    );
-    return (
-      (await this.prisma.transaction.findUnique({
-        where: { id: transactionId },
-      })) ?? tx
-    );
-  }
-
-  // ------------------------------------------------------------------
-  // BUYER confirms the experience happened (EXP-E2) — the release step
-  // ------------------------------------------------------------------
-  // Buyer-only. The load-bearing anti-early-release guard is `now >= eventDate`
-  // — funds can NEVER move before the event, no matter what the buyer clicks.
-  // Mirrors confirmDelivery's atomic HELD→RELEASED CAS exactly (same $transaction
-  // shape, same count===0 abort, same totalSales++ + idempotent Zoho commission
-  // invoice). Because the CAS where-clause requires paymentStatus='HELD', a
-  // DISPUTED row can never release underneath it. Once RELEASED, the funds
-  // become payout-eligible through the UNCHANGED getPayoutsDue (RELEASED +
-  // sellerPayout>0 + KYC gate) — no payout-path change.
-  async confirmExperienceCompleted(transactionId: string, buyerClerkId: string) {
-    const tx = await this.prisma.transaction.findUnique({
-      where: { id: transactionId },
-      include: { buyer: true },
-    });
-    if (!tx) throw new NotFoundException('Transaction not found');
-    if (tx.buyer.clerkId !== buyerClerkId) {
-      throw new ForbiddenException(
-        'Only the buyer can confirm the experience happened',
-      );
-    }
-    if (tx.shippingMethod !== ShippingMethod.ON_SITE_SERVICE) {
-      throw new BadRequestException(
-        'This is not an experience — use the standard confirm-delivery flow.',
-      );
-    }
-    if (tx.paymentStatus !== 'HELD') {
-      // DISPUTED / REFUNDED / RELEASED all land here — nothing to release.
-      throw new BadRequestException(
-        'Payment is not in a releasable state — it may have been disputed or already released.',
-      );
-    }
-    if (tx.eventCompletedConfirmedAt) {
-      throw new BadRequestException('You have already confirmed this experience.');
-    }
-    // ANTI-EARLY-RELEASE — the single most important guard on this method.
-    // The buyer can only confirm the hunt happened AFTER the event date; before
-    // then there is nothing to confirm and releasing would pay the outfitter for
-    // a service not yet rendered.
-    if (!tx.eventDate) {
-      throw new BadRequestException(
-        'This booking has no event date on record — contact support.',
-      );
-    }
-    const now = new Date();
-    if (now.getTime() < tx.eventDate.getTime()) {
-      throw new BadRequestException(
-        'You can only confirm the experience after the event date.',
-      );
-    }
-
-    // Atomic guarded release — identical shape to confirmDelivery. Including
-    // paymentStatus='HELD' + eventCompletedConfirmedAt=null in the WHERE makes
-    // this a compare-and-set: a concurrent admin dispute (HELD→DISPUTED) or a
-    // double-click can't slip between the read above and this write and release
-    // a disputed / already-released booking. count===0 → the row moved out of
-    // HELD since we read it; abort and roll the whole interactive transaction
-    // back (seller increment too). We stamp deliveredAt/confirmedDeliveryAt too
-    // so the row's downstream shape matches a settled goods sale (receipts,
-    // ratings-eligibility, analytics all key off those).
-    await this.prisma.$transaction(async (txc) => {
-      const guard = await txc.transaction.updateMany({
-        where: {
-          id: transactionId,
-          paymentStatus: 'HELD',
-          eventCompletedConfirmedAt: null,
-        },
-        data: {
-          paymentStatus: 'RELEASED',
-          releasedAt: now,
-          eventCompletedConfirmedAt: now,
-          confirmedDeliveryAt: now,
-          deliveredAt: now,
-        },
-      });
-      if (guard.count === 0) {
-        throw new BadRequestException(
-          'Payment is no longer in a releasable state — it may have been disputed or already released.',
-        );
-      }
-      await txc.user.update({
-        where: { id: tx.sellerId },
-        data: { totalSales: { increment: 1 } },
-      });
-    });
-
-    this.logger.log(
-      `Experience ${transactionId} confirmed completed by buyer — payment released`,
-    );
-    // Commission invoice into Books at release — exactly like confirmDelivery
-    // (idempotent + never throws). breakdownExperience populated commissionZar /
-    // listingPrice / sellerPayout at checkout, so no Zoho change is needed.
-    void this.zohoBooks.createCommissionInvoice(transactionId);
-    void this.tracking.recordInternal(transactionId, 'BUYER_CONFIRMED_DELIVERY', {
-      occurredAt: now,
-    });
-    void this.tracking.recordInternal(transactionId, 'PAYOUT_RELEASED', {
-      occurredAt: new Date(now.getTime() + 1),
-    });
-    void this.sendReleasedNotification(transactionId);
-    void this.notifications.resolveByEntity('transaction', transactionId, {
-      userId: tx.buyerId,
-    });
-    return { released: true };
-  }
-
-  // ------------------------------------------------------------------
-  // OUTFITTER declines the booking (EXP-E2) — full refund + relist
-  // ------------------------------------------------------------------
-  // Seller-only. The outfitter can't / won't honour the booking → the buyer is
-  // FULLY refunded and the listing goes back to ACTIVE. NEVER releases funds to
-  // the seller. Mirrors rejectTransaction's mechanics, using the manual-rail
-  // synthetic-child refund primitive (the same one AdminService.refundTransaction
-  // uses): an atomic HELD-guarded flip to REFUNDED that ALSO mints a synthetic
-  // REFUNDED child (buyerTotal = the slice the FNB refund batch pays the buyer),
-  // then reactivates the listing via reversalListingData. Manual rail only —
-  // refunds are gated to PAYMENT_MODE=manual (a card gateway reverses the card
-  // itself; paying the batch too would double-refund).
-  async declineExperienceBooking(
-    transactionId: string,
-    sellerClerkId: string,
-    reason?: string,
-  ) {
-    const trimmedReason = (reason ?? '').trim().slice(0, 500) || undefined;
-
-    const tx = await this.prisma.transaction.findUnique({
-      where: { id: transactionId },
-      include: {
-        listing: { select: { id: true, title: true, trackInventory: true, listingType: true } },
-        buyer: {
-          select: {
-            email: true,
-            firstName: true,
-            phone: true,
-            username: true,
-            bankAccountHolder: true,
-            bankAccountNumber: true,
-            bankBranchCode: true,
-          },
-        },
-        seller: {
-          select: { email: true, firstName: true, phone: true, username: true },
-        },
-      },
-    });
-    if (!tx) throw new NotFoundException('Transaction not found');
-
-    const seller = await this.prisma.user.findUnique({
-      where: { clerkId: sellerClerkId },
-    });
-    if (!seller || tx.sellerId !== seller.id) {
-      throw new ForbiddenException('Not authorised');
-    }
-    if (!tx.paidAt) {
-      throw new BadRequestException('Payment not confirmed yet');
-    }
-    if (tx.shippingMethod !== ShippingMethod.ON_SITE_SERVICE) {
-      throw new BadRequestException(
-        'This is not an experience booking — use the standard reject flow.',
-      );
-    }
-    if (tx.bookingDeclinedAt) {
-      // Idempotent — already-declined is a successful no-op.
-      return tx;
-    }
-    // Decline is only legal while the money is still HELD — mirror the reject /
-    // cancel HELD guard. A RELEASED / REFUNDED / DISPUTED experience must not be
-    // flipped to REFUNDED here (that would move money twice / undercut an admin
-    // dispute resolution).
-    if (tx.paymentStatus !== 'HELD') {
-      throw new BadRequestException(
-        'This booking can no longer be declined — payment has already been settled or is under dispute. Contact support if something is wrong.',
-      );
-    }
-    // Refunds only settle on the manual EFT rail (the FNB batch pays the
-    // synthetic child). Under a live card gateway the reversal happens on the
-    // card, so this path would need the gateway reversal instead — fail loudly
-    // rather than silently mis-refunding. (E5/paygate seam handles card mode.)
-    if (PAYMENT_MODE !== 'manual') {
-      throw new BadRequestException(
-        'Experience decline refunds are currently available via EFT only.',
-      );
-    }
-
-    // Atomic claim + synthetic refund child, in ONE interactive transaction —
-    // the SAME primitive AdminService.refundTransaction uses on the manual rail.
-    // The HELD-guarded updateMany is the concurrency lock (a simultaneous buyer
-    // confirm-completed or admin dispute sees count===0 and this bails); the
-    // minted REFUNDED child (buyerTotal = full value, refundOfId = parent) is
-    // what the FNB refund batch actually pays the buyer. The full buyerTotal is
-    // refunded — an outfitter decline is a supplier failure, so no cancellation
-    // charge applies (CPA: the supplier didn't perform).
-    const declinedAt = new Date();
-    const res = await this.prisma.$transaction(async (txc) => {
-      const claim = await txc.transaction.updateMany({
-        where: { id: transactionId, paymentStatus: 'HELD' },
-        data: {
-          paymentStatus: 'REFUNDED',
-          bookingDeclinedAt: declinedAt,
-          bookingDeclinedReason: trimmedReason ?? null,
-          refundedAmount: tx.buyerTotal,
-          lastRefundAt: declinedAt,
-          releasedAt: null,
-        },
-      });
-      if (claim.count === 0) return { count: 0 };
-      // Synthetic REFUNDED child — the FNB refund batch pays THIS row to the
-      // buyer (buyerTotal = the full package value; sellerPayout 0 so the
-      // outfitter is never paid). refundOfId links it to the parent so it's
-      // excluded from the sales/purchase lists + the payout (not refund) queue.
-      await txc.transaction.create({
-        data: {
-          refundOfId: transactionId,
-          listingId: tx.listingId,
-          buyerId: tx.buyerId,
-          sellerId: tx.sellerId,
-          quantity: 1,
-          listingPrice: 0,
-          commissionZar: 0,
-          processingFee: 0,
-          shippingCost: 0,
-          passFeeToBuyer: false,
-          buyerTotal: tx.buyerTotal, // full-value refund slice the FNB batch pays
-          sellerPayout: 0,
-          refundedAmount: tx.buyerTotal,
-          paymentStatus: 'REFUNDED',
-          orderReference: `${tx.orderReference ?? tx.id}-R${tx.buyerTotal}`,
-        },
-      });
-      return { count: claim.count };
-    });
-    if (res.count === 0) {
-      throw new BadRequestException(
-        'This booking could not be declined — its state just changed (it may have been confirmed complete or disputed). Reload and try again.',
-      );
-    }
-
-    // Reactivate the listing so it can be booked again. reversalListingData:
-    // ended auctions land EXPIRED (never resurrected to ACTIVE), tracked
-    // listings restock, single items → plain ACTIVE. Experiences are single
-    // BUY_NOW/AUCTION items, so this is the same reactivation reject/cancel use.
-    await this.prisma.listing
-      .update({
-        where: { id: tx.listingId },
-        data: reversalListingData(
-          tx.listing.trackInventory ?? false,
-          tx.quantity ?? 1,
-          tx.listing.listingType,
-        ),
-      })
-      .catch(() => undefined);
-
-    // Timeline + best-effort refund notifications (fire-and-forget). Reuse the
-    // seller-reject buyer notice + the refund seller notice — rail-aware copy so
-    // the buyer is told to add bank details when the FNB batch can't pay them.
-    void this.tracking.recordInternal(transactionId, 'SELLER_REJECTED', {
-      occurredAt: declinedAt,
-      message: trimmedReason
-        ? `Outfitter declined the booking: ${trimmedReason}`
-        : 'Outfitter declined the booking',
-    });
-    void this.notifications.resolveByEntity('transaction', transactionId);
-    void this.notifications
-      .saleRejectedBuyer({
-        buyerEmail: tx.buyer.email,
-        buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
-        buyerPhone: tx.buyer.phone,
-        listingTitle: tx.listing.title,
-        listingId: tx.listingId,
-        transactionId: tx.id,
-        buyerTotal: tx.buyerTotal,
-        reason: trimmedReason ?? 'The outfitter could not honour this booking.',
-        manualEft: PAYMENT_MODE === 'manual',
-        needsBankDetails:
-          PAYMENT_MODE === 'manual' &&
-          !(
-            tx.buyer.bankAccountHolder &&
-            tx.buyer.bankAccountNumber &&
-            tx.buyer.bankBranchCode
-          ),
-      })
-      .catch((err) =>
-        this.logger.warn(
-          `declineExperienceBooking buyer-notify failed for ${transactionId}: ${(err as Error).message}`,
-        ),
-      );
-
-    this.logger.log(
-      `Experience booking ${transactionId} DECLINED by outfitter ${seller.id} — buyer fully refunded (${tx.buyerTotal}c), listing relisted`,
-    );
-    return (
-      (await this.prisma.transaction.findUnique({
-        where: { id: transactionId },
-      })) ?? tx
-    );
-  }
-
-  // ==================================================================
-  // Hunting Packages / Experiences (EXP-E3) — CPA-s17 cancellation engine
-  // ==================================================================
-  // The MOST intricate money phase: a buyer-initiated cancel splits buyerTotal
-  // three ways — refund to the buyer, release to the outfitter (their held-date
-  // loss, minus GG's band commission), and GG's retained commission — with the
-  // split maths done by the PURE computeCpaCancellation (cancellation-policy.ts)
-  // on `buyerTotal`, so it CONSERVES exactly (refund + outfitterRelease +
-  // ggRetained === buyerTotal). Execution reuses the EXISTING atomic primitives:
-  //   • full refund (exempt / >0-notice full)  ≙ declineExperienceBooking
-  //   • partial: the retained slice is RELEASED to the outfitter (HELD→RELEASED,
-  //     sellerPayout = outfitterReleaseCents) AND a synthetic REFUNDED child pays
-  //     the buyer refundCents — the SAME child mechanic AdminService.refundTransaction
-  //     uses for a partial refund. GG keeps ggRetained implicitly.
-  //   • 100% forfeit: HELD→RELEASED, no refund child, listing NOT reactivated.
-  // Every parent flip is a single atomic CAS on {id, paymentStatus:'HELD'};
-  // count===0 aborts (blocks concurrent release/dispute/double-cancel).
-
-  // Read the optional operator/attorney tier-schedule override from the
-  // `experienceCancellationTiers` Setting (JSON: { tiers?: CancellationTier[],
-  // adminFeeCents?: number }). Read directly off prisma.setting (like
-  // SettingsService.get) so no new constructor injection is needed — additive.
-  // Fails OPEN to the baked-in defaults on any read/parse error so a bad Setting
-  // row can never break a cancellation.
-  private async loadCancellationConfig(): Promise<{
-    tiers: CancellationTier[];
-    adminFeeCents: number;
-  }> {
-    const fallback = {
-      tiers: DEFAULT_CANCELLATION_TIERS,
-      adminFeeCents: CPA_ADMIN_FEE_CENTS,
-    };
-    try {
-      const row = await this.prisma.setting.findUnique({
-        where: { key: 'experienceCancellationTiers' },
-      });
-      if (!row?.value) return fallback;
-      const parsed = JSON.parse(row.value) as {
-        tiers?: CancellationTier[];
-        adminFeeCents?: number;
-      };
-      const tiers =
-        Array.isArray(parsed.tiers) &&
-        parsed.tiers.length > 0 &&
-        parsed.tiers.every(
-          (t) =>
-            t &&
-            typeof t.minDaysBefore === 'number' &&
-            typeof t.forfeitPct === 'number' &&
-            typeof t.label === 'string',
-        )
-          ? parsed.tiers
-          : DEFAULT_CANCELLATION_TIERS;
-      const adminFeeCents =
-        typeof parsed.adminFeeCents === 'number' && parsed.adminFeeCents >= 0
-          ? Math.round(parsed.adminFeeCents)
-          : CPA_ADMIN_FEE_CENTS;
-      return { tiers, adminFeeCents };
-    } catch (err) {
-      this.logger.warn(
-        `experienceCancellationTiers Setting read failed — using defaults: ${(err as Error).message}`,
-      );
-      return fallback;
-    }
-  }
-
-  // Shared cancel-eligibility read + guards + split compute (NO writes). Used by
-  // both the preview (getExperienceCancelQuote) and the executing buyer/outfitter
-  // cancel methods, so the guards + maths can never drift between preview and
-  // action. Returns the loaded tx (with the joins the executors need) + the
-  // computed split. Throws the same guard exceptions the executors would.
-  private async prepareExperienceCancellation(opts: {
-    transactionId: string;
-    initiator: 'BUYER' | 'OUTFITTER';
-    exemptReason?: CancellationExemptReason;
-    // BUYER cancel is buyer-authorised; OUTFITTER cancel is seller-authorised.
-    // The caller passes the acting user's clerkId; we resolve + authorise here.
-    actorClerkId: string;
-    // preview mode relaxes the PAYMENT_MODE gate (a quote is safe to show even
-    // if refunds aren't currently on the manual rail); the executors enforce it.
-    forExecution: boolean;
-  }) {
-    const tx = await this.prisma.transaction.findUnique({
-      where: { id: opts.transactionId },
-      include: {
-        listing: {
-          select: {
-            id: true,
-            title: true,
-            trackInventory: true,
-            listingType: true,
-          },
-        },
-        buyer: {
-          select: {
-            id: true,
-            clerkId: true,
-            email: true,
-            firstName: true,
-            phone: true,
-            username: true,
-            bankAccountHolder: true,
-            bankAccountNumber: true,
-            bankBranchCode: true,
-          },
-        },
-        seller: {
-          select: {
-            id: true,
-            clerkId: true,
-            email: true,
-            firstName: true,
-            phone: true,
-            username: true,
-            sellerTier: true,
-          },
-        },
-      },
-    });
-    if (!tx) throw new NotFoundException('Transaction not found');
-
-    // Authorise the actor for their role.
-    if (opts.initiator === 'BUYER') {
-      if (tx.buyer.clerkId !== opts.actorClerkId) {
-        throw new ForbiddenException('Only the buyer can cancel this booking');
-      }
-    } else {
-      if (tx.seller.clerkId !== opts.actorClerkId) {
-        throw new ForbiddenException(
-          'Only the outfitter can cancel this booking',
-        );
-      }
-    }
-
-    // Experience-only.
-    if (tx.shippingMethod !== ShippingMethod.ON_SITE_SERVICE) {
-      throw new BadRequestException(
-        'This is not an experience booking — the cancellation policy does not apply.',
-      );
-    }
-    if (!tx.paidAt) {
-      throw new BadRequestException('Payment not confirmed yet');
-    }
-    // Only a HELD booking is cancellable. A DISPUTED / RELEASED / REFUNDED row
-    // is refused (an admin dispute resolution or a completed release must not be
-    // undercut, and money must never move twice).
-    if (tx.paymentStatus !== 'HELD') {
-      throw new BadRequestException(
-        'This booking can no longer be cancelled — it may be under dispute, already refunded, or already settled. Contact support if something is wrong.',
-      );
-    }
-    // Idempotency: a cancel already applied stamps cpaCancelTier (buyer) or
-    // bookingDeclinedAt (outfitter reuses the decline path). Refuse a repeat.
-    if (tx.cpaCancelTier) {
-      throw new BadRequestException('This booking has already been cancelled.');
-    }
-    if (!tx.eventDate) {
-      throw new BadRequestException(
-        'This booking has no event date on record — contact support.',
-      );
-    }
-    // Can't "cancel" after the event has started — that's a dispute / no-show
-    // path, not a cancellation. (A buyer no-show is charged 100% via the tier
-    // engine only while now < eventDate; once the event has passed the buyer
-    // must confirm-completed or dispute.)
-    const now = new Date();
-    if (now.getTime() >= tx.eventDate.getTime()) {
-      throw new BadRequestException(
-        'The event date has passed — this booking can no longer be cancelled. If the experience did not happen as agreed, raise a dispute.',
-      );
-    }
-    // Refunds settle on the manual EFT rail only (the FNB batch pays the
-    // synthetic refund child). Under a live card gateway the reversal happens on
-    // the card, so fail loudly rather than silently mis-refunding. Enforced for
-    // EXECUTION only — a quote is safe to preview regardless.
-    if (opts.forExecution && PAYMENT_MODE !== 'manual') {
-      throw new BadRequestException(
-        'Experience cancellation refunds are currently available via EFT only.',
-      );
-    }
-
-    const isTopSeller = tx.seller.sellerTier === 'TOP_SELLER';
-    const { tiers, adminFeeCents } = await this.loadCancellationConfig();
-    const split = computeCpaCancellation({
-      buyerTotalCents: tx.buyerTotal,
-      isTopSeller,
-      eventDate: tx.eventDate,
-      now,
-      initiator: opts.initiator,
-      exemptReason: opts.exemptReason,
-      calculateCommission: (retained, top) =>
-        this.fees.calculateCommission(retained, top),
-      tiers,
-      adminFeeCents,
-    });
-
-    return { tx, split, now };
-  }
-
-  // ------------------------------------------------------------------
-  // GET preview — the buyer's cancellation quote (EXP-E3). NO WRITES.
-  // ------------------------------------------------------------------
-  // Returns the computed split + tier label + human copy so the buyer sees
-  // exactly what they'll be refunded / forfeit BEFORE confirming the cancel.
-  // Uses the same guards + maths as the executor (prepareExperienceCancellation)
-  // so the preview can never disagree with what the action does.
-  async getExperienceCancelQuote(
-    transactionId: string,
-    actorClerkId: string,
-    exemptReason?: string,
-  ) {
-    // Only the buyer-supplied statutory reasons are previewable on the buyer
-    // route (SUPPLIER_FAILURE is the outfitter path — it must not let a buyer
-    // preview a free full refund the buyer-cancel action would then reject).
-    const reason =
-      exemptReason &&
-      isExemptReason(exemptReason) &&
-      exemptReason !== 'SUPPLIER_FAILURE'
-        ? exemptReason
-        : undefined;
-    const { tx, split } = await this.prepareExperienceCancellation({
-      transactionId,
-      initiator: 'BUYER',
-      exemptReason: reason,
-      actorClerkId,
-      forExecution: false,
-    });
-    const rands = (c: number) => `R${(c / 100).toFixed(2)}`;
-    return {
-      transactionId: tx.id,
-      buyerTotalCents: tx.buyerTotal,
-      eventDate: tx.eventDate,
-      tierLabel: split.tierLabel,
-      refundCents: split.refundCents,
-      retainedCents: split.retainedCents,
-      outfitterReleaseCents: split.outfitterReleaseCents,
-      ggRetainedCents: split.ggRetainedCents,
-      adminFeeCents: split.adminFeeCents,
-      exemptReason: reason ?? null,
-      // Buyer-facing copy. Never say "escrow"; use "held" / "refund".
-      summary: split.isTopTier
-        ? `If you cancel now, ${rands(split.refundCents)} of your ${rands(
-            tx.buyerTotal,
-          )} will be refunded — a ${rands(
-            split.adminFeeCents,
-          )} admin fee is retained.`
-        : split.refundCents === tx.buyerTotal
-          ? `You will be fully refunded ${rands(tx.buyerTotal)}.`
-          : split.refundCents === 0
-            ? `This close to the event no refund is due — the full ${rands(
-                tx.buyerTotal,
-              )} is forfeited under the cancellation policy (${split.tierLabel}).`
-            : `If you cancel now, ${rands(
-                split.refundCents,
-              )} of your ${rands(
-                tx.buyerTotal,
-              )} will be refunded and ${rands(
-                split.retainedCents,
-              )} is retained under the cancellation policy (${split.tierLabel}).`,
-    };
-  }
-
-  // ------------------------------------------------------------------
-  // BUYER cancels the booking (EXP-E3) — the tiered split money-out
-  // ------------------------------------------------------------------
-  // Buyer-only. Applies the CPA-s17 tiered split atomically. Three branches off
-  // the computed refundCents (all guarded by a single HELD-CAS):
-  //   • refund == buyerTotal → behaves EXACTLY like declineExperienceBooking:
-  //     parent HELD→REFUNDED + a full-value REFUNDED child; seller NEVER paid;
-  //     listing reactivated. (exempt reason, or a full-refund tier.)
-  //   • refund == 0 (100% forfeit) → parent HELD→RELEASED, sellerPayout =
-  //     outfitterReleaseCents; Zoho commission invoice; NO refund child; NO
-  //     totalSales++ (no service rendered); listing NOT reactivated (the date
-  //     was consumed as a forfeit — treat like a completed sale, stays SOLD).
-  //   • 0 < refund < buyerTotal (partial) → the combined case: parent
-  //     HELD→RELEASED with sellerPayout = outfitterReleaseCents AND a synthetic
-  //     REFUNDED child paying the buyer refundCents. GG keeps ggRetained
-  //     implicitly. Listing reactivated (the date is freed).
-  async cancelExperienceByBuyer(
-    transactionId: string,
-    buyerClerkId: string,
-    exemptReason?: string,
-  ) {
-    // Validate the exempt reason if supplied. DEATH/HOSPITALISATION are
-    // buyer-supplied here (admin verifies out of band — we just record it);
-    // SUPPLIER_FAILURE is not a buyer-cancel reason (that's the outfitter path),
-    // so reject it on the buyer route.
-    let reason: CancellationExemptReason | undefined;
-    if (exemptReason != null && exemptReason !== '') {
-      if (!isExemptReason(exemptReason)) {
-        throw new BadRequestException(
-          'Invalid cancellation reason. Allowed statutory reasons are DEATH or HOSPITALISATION.',
-        );
-      }
-      if (exemptReason === 'SUPPLIER_FAILURE') {
-        throw new BadRequestException(
-          'Supplier failure is not a buyer cancellation reason — if the outfitter cannot honour the booking, the outfitter cancels it (full refund).',
-        );
-      }
-      reason = exemptReason;
-    }
-
-    const { tx, split, now } = await this.prepareExperienceCancellation({
-      transactionId,
-      initiator: 'BUYER',
-      exemptReason: reason,
-      actorClerkId: buyerClerkId,
-      forExecution: true,
-    });
-
-    // Conservation invariant — defence in depth. The pure calc guarantees this,
-    // but assert before moving money: a bug here must never over-refund or
-    // over-release. refund + outfitterRelease + ggRetained === buyerTotal.
-    const sum =
-      split.refundCents + split.outfitterReleaseCents + split.ggRetainedCents;
-    if (
-      sum !== tx.buyerTotal ||
-      split.refundCents < 0 ||
-      split.outfitterReleaseCents < 0 ||
-      split.ggRetainedCents < 0
-    ) {
-      this.logger.error(
-        `cancelExperienceByBuyer ${transactionId}: split does not conserve (refund ${split.refundCents} + release ${split.outfitterReleaseCents} + ggRetained ${split.ggRetainedCents} != buyerTotal ${tx.buyerTotal}) — refusing`,
-      );
-      throw new BadRequestException(
-        'Cancellation could not be processed — the refund split failed an internal check. Support has not moved any money; please contact support.',
-      );
-    }
-
-    const fullRefund = split.refundCents === tx.buyerTotal; // retained == 0
-    const noRefund = split.refundCents === 0; // 100% forfeit
-
-    // ── FULL REFUND branch — identical mechanics to declineExperienceBooking.
-    // Parent HELD→REFUNDED + a full-value synthetic REFUNDED child; seller
-    // never paid; listing reactivated.
-    if (fullRefund) {
-      const res = await this.prisma.$transaction(async (txc) => {
-        const claim = await txc.transaction.updateMany({
-          where: { id: transactionId, paymentStatus: 'HELD' },
-          data: {
-            paymentStatus: 'REFUNDED',
-            cancelledByBuyerAt: now,
-            cancelledReason: reason
-              ? `Buyer cancellation (${reason})`
-              : 'Buyer cancellation — full refund',
-            cpaCancelTier: split.tierLabel,
-            cpaAdminFeeCents: 0,
-            refundedAmount: tx.buyerTotal,
-            lastRefundAt: now,
-            releasedAt: null,
-          },
-        });
-        if (claim.count === 0) return { count: 0 };
-        await txc.transaction.create({
-          data: {
-            refundOfId: transactionId,
-            listingId: tx.listingId,
-            buyerId: tx.buyerId,
-            sellerId: tx.sellerId,
-            quantity: 1,
-            listingPrice: 0,
-            commissionZar: 0,
-            processingFee: 0,
-            shippingCost: 0,
-            passFeeToBuyer: false,
-            buyerTotal: tx.buyerTotal, // full-value refund slice the FNB batch pays
-            sellerPayout: 0,
-            refundedAmount: tx.buyerTotal,
-            paymentStatus: 'REFUNDED',
-            orderReference: `${tx.orderReference ?? tx.id}-R${tx.buyerTotal}`,
-          },
-        });
-        return { count: claim.count };
-      });
-      if (res.count === 0) {
-        throw new BadRequestException(
-          'This booking could not be cancelled — its state just changed. Reload and try again.',
-        );
-      }
-      // Reactivate the listing (the date is freed).
-      await this.prisma.listing
-        .update({
-          where: { id: tx.listingId },
-          data: reversalListingData(
-            tx.listing.trackInventory ?? false,
-            tx.quantity ?? 1,
-            tx.listing.listingType,
-          ),
-        })
-        .catch(() => undefined);
-
-      void this.tracking.recordInternal(transactionId, 'BUYER_CANCELLED', {
-        occurredAt: now,
-        message: `Buyer cancelled (${split.tierLabel}) — full refund ${tx.buyerTotal}c`,
-      });
-      void this.notifications.resolveByEntity('transaction', transactionId);
-      void this.notifications
-        .saleRejectedBuyer({
-          buyerEmail: tx.buyer.email,
-          buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
-          buyerPhone: tx.buyer.phone,
-          listingTitle: tx.listing.title,
-          listingId: tx.listingId,
-          transactionId: tx.id,
-          buyerTotal: tx.buyerTotal,
-          reason: `Your booking was cancelled — ${split.tierLabel}.`,
-          manualEft: PAYMENT_MODE === 'manual',
-          needsBankDetails:
-            PAYMENT_MODE === 'manual' &&
-            !(
-              tx.buyer.bankAccountHolder &&
-              tx.buyer.bankAccountNumber &&
-              tx.buyer.bankBranchCode
-            ),
-        })
-        .catch((err) =>
-          this.logger.warn(
-            `cancelExperienceByBuyer full-refund notify failed for ${transactionId}: ${(err as Error).message}`,
-          ),
-        );
-      this.logger.log(
-        `Experience ${transactionId} cancelled by buyer — FULL refund ${tx.buyerTotal}c (${split.tierLabel})`,
-      );
-      return {
-        cancelled: true,
-        outcome: 'FULL_REFUND' as const,
-        refundCents: split.refundCents,
-        outfitterReleaseCents: 0,
-        ggRetainedCents: 0,
-        tierLabel: split.tierLabel,
-      };
-    }
-
-    // ── FORFEIT / PARTIAL branch — parent HELD→RELEASED with sellerPayout =
-    // outfitterReleaseCents; a refund child is minted ONLY when there is a
-    // refund slice (partial). GG keeps ggRetained implicitly (buyerTotal −
-    // outfitterRelease − refund). Single HELD-CAS is the lock.
-    const res = await this.prisma.$transaction(async (txc) => {
-      const claim = await txc.transaction.updateMany({
-        where: { id: transactionId, paymentStatus: 'HELD' },
-        data: {
-          paymentStatus: 'RELEASED',
-          releasedAt: now,
-          // Recompute the money-moved fields on the RETAINED value: the
-          // outfitter nets outfitterReleaseCents, GG keeps the commission.
-          //
-          // CRITICAL — the FNB payout batch pays the seller
-          // `sellerPayout − Σ(refund children)` (manual-payments.service.ts
-          // ~L973: it DOCKS the buyer's refund slices out of the seller's
-          // payout). On a PARTIAL cancel we mint a refund child of
-          // `refundCents`, so `sellerPayout` must be the GROSS pre-dock figure
-          // `outfitterRelease + refund` (= buyerTotal − ggRetained); after the
-          // batch docks the child the outfitter nets exactly outfitterRelease.
-          // On a 100% forfeit refund=0 so this is just outfitterRelease.
-          // Setting it to outfitterRelease directly would short the outfitter
-          // by the refund amount (GG silently over-retaining it).
-          sellerPayout: split.outfitterReleaseCents + split.refundCents,
-          commissionZar: split.ggRetainedCents,
-          cpaCancelTier: split.tierLabel,
-          cpaAdminFeeCents: split.adminFeeCents,
-          // Record the buyer-cancel evidence + refunded slice (0 on a full
-          // forfeit). A partial keeps the row RELEASED (its refund is the child).
-          cancelledByBuyerAt: now,
-          cancelledReason: `Buyer cancellation (${split.tierLabel})`,
-          refundedAmount: split.refundCents,
-          lastRefundAt: noRefund ? null : now,
-        },
-      });
-      if (claim.count === 0) return { count: 0 };
-      // Partial → mint the synthetic REFUNDED child that pays the buyer their
-      // refund slice (same child mechanic as AdminService.refundTransaction).
-      if (!noRefund) {
-        await txc.transaction.create({
-          data: {
-            refundOfId: transactionId,
-            listingId: tx.listingId,
-            buyerId: tx.buyerId,
-            sellerId: tx.sellerId,
-            quantity: 1,
-            listingPrice: 0,
-            commissionZar: 0,
-            processingFee: 0,
-            shippingCost: 0,
-            passFeeToBuyer: false,
-            buyerTotal: split.refundCents, // the slice the FNB batch pays the buyer
-            sellerPayout: 0,
-            refundedAmount: split.refundCents,
-            paymentStatus: 'REFUNDED',
-            orderReference: `${tx.orderReference ?? tx.id}-R${split.refundCents}`,
-          },
-        });
-      }
-      return { count: claim.count };
-    });
-    if (res.count === 0) {
-      throw new BadRequestException(
-        'This booking could not be cancelled — its state just changed (it may have been disputed or already settled). Reload and try again.',
-      );
-    }
-
-    // Fire the commission invoice on the retained commission — the outfitter is
-    // being paid outfitterReleaseCents, so GG's commissionZar is now earned.
-    // Idempotent + never throws (mirrors the release path). It reads the
-    // recomputed commissionZar/sellerPayout off the row.
-    void this.zohoBooks.createCommissionInvoice(transactionId);
-
-    // Listing state: a PARTIAL cancel frees the date → reactivate. A 100%
-    // FORFEIT consumed the date (treat like a completed sale) → leave it SOLD.
-    if (!noRefund) {
-      await this.prisma.listing
-        .update({
-          where: { id: tx.listingId },
-          data: reversalListingData(
-            tx.listing.trackInventory ?? false,
-            tx.quantity ?? 1,
-            tx.listing.listingType,
-          ),
-        })
-        .catch(() => undefined);
-    }
-
-    void this.tracking.recordInternal(transactionId, 'BUYER_CANCELLED', {
-      occurredAt: now,
-      message: noRefund
-        ? `Buyer cancelled (${split.tierLabel}) — 100% forfeit; outfitter released ${split.outfitterReleaseCents}c`
-        : `Buyer cancelled (${split.tierLabel}) — buyer refunded ${split.refundCents}c, outfitter released ${split.outfitterReleaseCents}c`,
-    });
-    void this.notifications.resolveByEntity('transaction', transactionId);
-    // Best-effort seller "you've been paid the retained portion" notice + buyer
-    // refund notice (partial only). Reuse the existing released/refund copy.
-    void this.sendReleasedNotification(transactionId);
-    if (!noRefund) {
-      void this.notifications
-        .saleRejectedBuyer({
-          buyerEmail: tx.buyer.email,
-          buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
-          buyerPhone: tx.buyer.phone,
-          listingTitle: tx.listing.title,
-          listingId: tx.listingId,
-          transactionId: tx.id,
-          buyerTotal: split.refundCents,
-          reason: `Your booking was cancelled — ${split.tierLabel}. A partial refund of R${(
-            split.refundCents / 100
-          ).toFixed(2)} is being processed; the rest is retained per the cancellation policy.`,
-          manualEft: PAYMENT_MODE === 'manual',
-          needsBankDetails:
-            PAYMENT_MODE === 'manual' &&
-            !(
-              tx.buyer.bankAccountHolder &&
-              tx.buyer.bankAccountNumber &&
-              tx.buyer.bankBranchCode
-            ),
-        })
-        .catch((err) =>
-          this.logger.warn(
-            `cancelExperienceByBuyer partial-refund notify failed for ${transactionId}: ${(err as Error).message}`,
-          ),
-        );
-    }
-
-    this.logger.log(
-      `Experience ${transactionId} cancelled by buyer — ${
-        noRefund ? '100% FORFEIT' : 'PARTIAL'
-      } (${split.tierLabel}): refund ${split.refundCents}c, outfitter ${split.outfitterReleaseCents}c, GG ${split.ggRetainedCents}c`,
-    );
-    return {
-      cancelled: true,
-      outcome: noRefund ? ('FORFEIT' as const) : ('PARTIAL' as const),
-      refundCents: split.refundCents,
-      outfitterReleaseCents: split.outfitterReleaseCents,
-      ggRetainedCents: split.ggRetainedCents,
-      tierLabel: split.tierLabel,
-    };
-  }
-
-  // ------------------------------------------------------------------
-  // OUTFITTER cancels the booking (EXP-E3) — always a full refund
-  // ------------------------------------------------------------------
-  // Seller-only. An outfitter cancel is ALWAYS a SUPPLIER_FAILURE full refund —
-  // never charge the consumer for the supplier's failure — even AFTER accept.
-  // Reuses declineExperienceBooking (the full-refund + relist primitive), which
-  // already: HELD-guards the flip, mints the full-value refund child, never pays
-  // the seller, and reactivates the listing. Recording the reason there.
-  async cancelExperienceByOutfitter(
-    transactionId: string,
-    sellerClerkId: string,
-    reason?: string,
-  ) {
-    return this.declineExperienceBooking(
-      transactionId,
-      sellerClerkId,
-      reason ?? 'Outfitter cancelled the booking',
-    );
-  }
-
-  // ------------------------------------------------------------------
-  // BUYER raises a dispute on an experience booking (EXP-E4)
-  // ------------------------------------------------------------------
-  // A thin analog of raiseDispute for a future-dated ON_SITE_SERVICE booking.
-  // An experience never dispatches (there's no parcel), so there is NO
-  // "must be dispatched first" gate — the carve-out COLLECTION / DEALER_TRANSFER
-  // already have. The dispute window is bounded to the event: it can only be
-  // raised while HELD + paid + now <= (eventEndDate ?? eventDate) +
-  // POST_EVENT_CONFIRM_WINDOW_DAYS (7d), so a buyer can't re-open a booking
-  // long after the event settled. Atomic CAS HELD→DISPUTED (count===0 aborts —
-  // a concurrent release/refund/decline won the row). Once DISPUTED, the CAS
-  // where-clauses in confirmExperienceCompleted (release) and
-  // cancelExperienceByBuyer / declineExperienceBooking (all require HELD) can
-  // never fire underneath it — the admin resolves via the existing
-  // resolveDisputeRelease / refundTransaction paths. Raises an urgent AdminAlert.
-  // NO money moves here.
-  async raiseExperienceDispute(
-    transactionId: string,
-    buyerClerkId: string,
-    reason?: string,
-  ) {
-    const tx = await this.prisma.transaction.findUnique({
-      where: { id: transactionId },
-      include: {
-        buyer: { select: { clerkId: true, username: true } },
-        listing: { select: { title: true } },
-      },
-    });
-    if (!tx) throw new NotFoundException('Transaction not found');
-    if (tx.buyer.clerkId !== buyerClerkId) {
-      throw new ForbiddenException('Only the buyer can raise a dispute');
-    }
-    if (tx.shippingMethod !== ShippingMethod.ON_SITE_SERVICE) {
-      throw new BadRequestException(
-        'This is not an experience — use the standard dispute flow.',
-      );
-    }
-    if (!tx.paidAt) {
-      throw new BadRequestException(
-        'This booking has not been paid yet, so there is nothing to dispute.',
-      );
-    }
-    if (tx.paymentStatus !== 'HELD') {
-      throw new BadRequestException(
-        'Disputes can only be raised while the payment is held. This booking is already ' +
-          tx.paymentStatus.toLowerCase().replace(/_/g, ' ') + '.',
-      );
-    }
-    // Event-bounded window: no "must be dispatched first" gate (experiences
-    // never dispatch). Allowed up to (eventEndDate ?? eventDate) + 7 days — the
-    // same POST_EVENT_CONFIRM_WINDOW_DAYS the SLA post-event alert uses. If
-    // there is no eventDate at all (shouldn't happen for a booked experience),
-    // fall through and allow the dispute (the buyer's only escape).
-    const EXPERIENCE_DISPUTE_WINDOW_DAYS = 7;
-    const effectiveEnd = tx.eventEndDate ?? tx.eventDate;
-    if (effectiveEnd) {
-      const windowCloses = new Date(
-        effectiveEnd.getTime() + EXPERIENCE_DISPUTE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-      );
-      if (new Date().getTime() > windowCloses.getTime()) {
-        throw new BadRequestException(
-          'The dispute window for this booking has closed (more than 7 days after the event). Please contact support.',
-        );
-      }
-    }
-
-    const trimmedReason = (reason ?? '').trim().slice(0, 500);
-    const note = `[BUYER EXPERIENCE DISPUTE] ${trimmedReason || '(no reason given)'}`;
-
-    // Atomic CAS HELD→DISPUTED — a concurrent confirmExperienceCompleted
-    // (release), cancel, or decline all require HELD, so exactly one of them
-    // wins the row. count===0 ⇒ the row already moved; abort with a clear error.
-    const claim = await this.prisma.transaction.updateMany({
-      where: {
-        id: transactionId,
-        paymentStatus: 'HELD',
-        shippingMethod: ShippingMethod.ON_SITE_SERVICE,
-      },
-      data: {
-        paymentStatus: 'DISPUTED',
-        adminNote: tx.adminNote ? `${tx.adminNote}\n\n${note}` : note,
-      },
-    });
-    if (claim.count === 0) {
-      throw new BadRequestException(
-        'This booking can no longer be disputed — it may have just been released, refunded, or cancelled.',
-      );
-    }
-
-    void this.tracking.recordInternal(transactionId, 'BUYER_RAISED_DISPUTE', {
-      occurredAt: new Date(),
-      message: 'Buyer raised a dispute on the experience booking',
-    });
-
-    void this.prisma.adminAlert
-      .create({
-        data: {
-          type: 'EXPERIENCE_DISPUTE_RAISED',
-          referenceId: transactionId,
-          urgent: true,
-          context:
-            `${tx.listing.title} — buyer @${tx.buyer.username ?? 'anon'} disputed the experience booking: ` +
-            `${trimmedReason.slice(0, 200) || '(no reason given)'}`,
-        },
-      })
-      .catch((err) => {
-        this.logger.warn(
-          `Admin alert insert failed for experience dispute on ${transactionId}: ${(err as Error).message}`,
-        );
-      });
-
-    this.logger.log(
-      `Experience booking ${transactionId} disputed by buyer`,
-    );
-    return { disputed: true };
-  }
-
   // confirmManualPayment (the single-item EFT reconciler-confirm) has been
   // removed with the manual-EFT rail. The shared markPaid() path it drove is
   // kept intact and rail-agnostic — a future card paygate calls markPaid
   // directly from its verify/webhook handler exactly as the gateway path does.
+
+  /**
+   * ONE confirmation for a whole basket, sent when its last line is paid.
+   *
+   * Every line of a cart is its own Transaction (its own seller, shipment and
+   * payout), but the buyer made ONE payment and wants ONE receipt of it. The
+   * per-line confirmation is suppressed for order children precisely so this
+   * can fire instead.
+   *
+   * ⚠️ CAS-GUARDED, BECAUSE THE LAST LINE IS A RACE. Peach's result page and
+   * its webhook both drive markPaid, and a multi-seller cart pays several
+   * lines that can land in any order and concurrently. Without an atomic
+   * claim, two callers could each see "all lines paid" and the buyer would be
+   * emailed twice for one order. `paidAt: null` in the predicate means
+   * exactly one caller can ever win; count === 0 is a successful no-op.
+   *
+   * ⚠️ NEVER THROWS. This runs after the money is already committed. A dead
+   * mail provider must not turn a paid order into a failed request — the
+   * caller is inside the post-payment notification block, and the same
+   * best-effort contract applies as everywhere else in it.
+   */
+  private async maybeConfirmWholeOrder(orderId: string): Promise<void> {
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          orderReference: true,
+          paidAt: true,
+          buyer: {
+            select: {
+              email: true,
+              phone: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          transactions: {
+            select: { id: true, paidAt: true, buyerTotal: true },
+          },
+        },
+      });
+      if (!order || order.paidAt) return;
+
+      // Still waiting on a line. Note this counts CHILD rows, not the order's
+      // own money snapshot — a line that was cancelled before payment would
+      // otherwise hold the basket open forever.
+      const lines = order.transactions;
+      if (!lines.length || lines.some((t) => t.paidAt === null)) return;
+
+      // ⚠️ Sum what was ACTUALLY paid, rather than trusting the Order's
+      // money snapshot: a line re-priced between reservation and payment
+      // (shipping re-quoted on a new address) would leave the snapshot stale,
+      // and the buyer's confirmation must state the figure that left their
+      // account.
+      const buyerTotal = lines.reduce((t, l) => t + l.buyerTotal, 0);
+
+      const claimed = await this.prisma.order.updateMany({
+        where: { id: orderId, paidAt: null },
+        data: { status: 'PAID', paidAt: new Date() },
+      });
+      if (claimed.count === 0) return; // another line's handler got there first
+
+      await this.notifications.orderConfirmedBuyerMulti({
+        buyerEmail: order.buyer.email,
+        buyerName:
+          [order.buyer.firstName, order.buyer.lastName]
+            .filter(Boolean)
+            .join(' ') || 'Buyer',
+        buyerPhone: order.buyer.phone,
+        orderId: order.id,
+        orderReference:
+          order.orderReference ?? order.id.slice(-8).toUpperCase(),
+        itemCount: lines.length,
+        buyerTotal,
+      });
+      this.logger.log(
+        `Order ${orderId} fully paid (${lines.length} lines, ${buyerTotal}c) — buyer confirmed`,
+      );
+
+      // ⚠️ RE-DRIVE THE LINES THAT WERE WAITING ON THIS CLAIM. A house-deal
+      // line in a cart refuses to auto-accept until the parent Order is paid
+      // (so the courier booking sees every sibling and cannot declare an
+      // under-weight parcel). That deferral used to be re-driven by
+      // confirmManualOrder, which no longer exists — leaving only the 5-minute
+      // reconcile sweep, so a paid basket sat undispatched until a cron
+      // noticed. Idempotent on acceptedAt and a no-op for non-deal rows, so
+      // firing it for every line is safe. Detached deliberately: a booking
+      // failure must not unwind the confirmation we just sent.
+      for (const l of lines) void this.maybeAutoAcceptHouseDeal(l.id);
+    } catch (err) {
+      this.logger.error(
+        `Could not confirm whole order ${orderId}: ${(err as Error).message}`,
+      );
+    }
+  }
 
   // ------------------------------------------------------------------
   // Private helpers
@@ -5079,6 +3925,25 @@ export class TransactionsService {
       });
       if (!tx) return;
 
+      // ─── The basket, once every line in it is paid for ────────────────
+      // ⚠️ MUST RUN BEFORE THE TWO BAIL-OUTS BELOW. PRIVATE_ARRANGE returns
+      // at the next guard and a Daily-Deals house line returns a little
+      // further down, and BOTH are legal cart lines — createOrderCheckout
+      // consolidates deal lines by supplier, and a firearm line routes to
+      // PRIVATE_ARRANGE. Placed after those returns (as it first was), the
+      // confirmer is simply never reached when either kind happens to be the
+      // LAST line paid, and the consequences compound:
+      //   · orderConfirmedBuyerMulti never fires — the exact silence this
+      //     whole change exists to close, left open for those baskets;
+      //   · Order.paidAt stays null and status stays AWAITING_PAYMENT
+      //     forever, because orderStatusRollupSweep only scans status PAID;
+      //   · worst, maybeAutoAcceptHouseDeal refuses to accept an order-linked
+      //     deal line until order.paidAt is set, so a cart deal line is never
+      //     accepted, never booked and never dispatched — the buyer has paid,
+      //     the funds sit HELD, and nothing ships.
+      // Safe this early: the method no-ops unless every sibling is paid.
+      if (tx.orderId) await this.maybeConfirmWholeOrder(tx.orderId);
+
       // FLOW-F4 (H22/M15/M24/M25) — PRIVATE_ARRANGE has NO accept/dispatch
       // step: maybeImmediatePayout releases the funds at payment and
       // sendPrivateArrangeContactReveal already notifies BOTH parties with
@@ -5120,6 +3985,9 @@ export class TransactionsService {
             buyerTotal: tx.buyerTotal,
             sellerPayout: tx.sellerPayout,
             passFeeToBuyer: tx.passFeeToBuyer,
+            feeModel: tx.feeModel,
+            shippingCost: tx.shippingCost,
+            shippingHandlingCents: tx.shippingHandlingCents,
             shippingMethod: tx.shippingMethod,
           });
         }
@@ -5169,6 +4037,9 @@ export class TransactionsService {
         buyerTotal: tx.buyerTotal,
         sellerPayout: tx.sellerPayout,
         passFeeToBuyer: tx.passFeeToBuyer,
+        feeModel: tx.feeModel,
+        shippingCost: tx.shippingCost,
+        shippingHandlingCents: tx.shippingHandlingCents,
         shippingMethod: tx.shippingMethod,
         // Optional — when set, the seller-facing SMS + email use this
         // /a/<token> URL for the "Accept this sale" call-to-action.
@@ -5176,10 +4047,19 @@ export class TransactionsService {
       };
       await Promise.all([
         // Buyer "order confirmed" — SKIPPED for multi-item order children
-        // (tx.orderId set). confirmManualOrder sends ONE consolidated buyer
-        // confirmation after every line of the cart is paid, so the buyer
-        // isn't emailed/SMSed N times for one order. Single-item sales
-        // (orderId null — every Phase 1–7 sale) keep the per-tx confirmation.
+        // (tx.orderId set), which instead get ONE consolidated confirmation
+        // from maybeConfirmWholeOrder (called above, before the PA and
+        // house-deal bail-outs), so the buyer isn't emailed and
+        // SMSed N times for one basket. Single-item sales (orderId null) keep
+        // the per-transaction confirmation.
+        //
+        // ⚠️ THIS SUPPRESSION USED TO LEAD NOWHERE. It deferred to
+        // confirmManualOrder, which was DELETED with the manual-EFT rail —
+        // and its replacement, NotificationsService.orderConfirmedBuyerMulti,
+        // had no caller anywhere in production (its only reference was a jest
+        // mock for a service file that no longer exists). So a multi-item cart
+        // buyer would have received no confirmation at all, by either route,
+        // the moment PAYMENTS_LIVE was switched on.
         tx.orderId
           ? Promise.resolve()
           : this.notifications.orderConfirmedBuyer(details),

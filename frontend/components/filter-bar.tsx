@@ -100,7 +100,6 @@ const LISTING_TYPE_LABELS: Record<string, string> = {
   BUY_NOW: 'Marketplace',
   AUCTION: 'Auction',
   TAKE_A_SHOT: 'Take a Shot',
-  SWOP: 'Swop / Trade',
 };
 
 // Active-filter chip pill (BIG-1). A chip is a real <button>: the WHOLE pill
@@ -595,42 +594,6 @@ export function FilterBar({
 
     return (
       <>
-        {/* Hunting Packages / Experiences (Phase E) — a one-tap "Experiences"
-            chip that scopes browse to the experience category. Only rendered
-            when an experience category exists in the taxonomy; toggles the
-            categoryId param on/off. */}
-        {(() => {
-          const experienceCat = categories.find((c) => c.isExperience);
-          if (!experienceCat) return null;
-          const active = currentParams.categoryId === experienceCat.id;
-          return (
-            <button
-              type="button"
-              aria-pressed={active}
-              onClick={() => {
-                setAttrFilters({});
-                setNumBuf({});
-                push({
-                  categoryId: active ? undefined : experienceCat.id,
-                  attrs: undefined,
-                });
-              }}
-              className={`text-[13px] px-3 py-[7px] rounded-[6px] ${FOCUS_RING}`}
-              style={{
-                background: active ? 'rgba(232,181,58,0.85)' : 'var(--bg-inset)',
-                color: active ? '#1a1206' : 'var(--text-secondary)',
-                border: `0.5px solid ${active ? 'rgba(232,181,58,0.85)' : 'var(--border)'}`,
-                fontWeight: active ? 600 : 400,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                ...(sheet ? { width: '100%', padding: '10px 12px' } : null),
-              }}
-            >
-              Experiences
-            </button>
-          );
-        })()}
-
         {field(
           'Category',
           <select

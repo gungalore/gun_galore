@@ -157,7 +157,7 @@ export function TrackingTimeline({ transactionId }: { transactionId: string }) {
                   width: 8,
                   height: 8,
                   background: active ? color : 'var(--text-tertiary)',
-                  boxShadow: active ? `0 0 0 3px ${color}22` : 'none',
+                  boxShadow: active ? `0 0 0 3px color-mix(in srgb, ${color} 13%, transparent)` : 'none',
                 }}
               />
               {idx < data.events.length - 1 && (

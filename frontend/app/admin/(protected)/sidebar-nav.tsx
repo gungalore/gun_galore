@@ -36,7 +36,6 @@ const GROUPS: NavGroup[] = [
       { href: '/admin/listings', label: 'Listings' },
       { href: '/admin/transactions', label: 'Transactions' },
       { href: '/admin/orders', label: 'Orders' },
-      { href: '/admin/swaps', label: 'Swaps' },
       { href: '/admin/users', label: 'Users' },
       // Renamed: the page is no longer read-only — the daily payout run
       // (preview + confirm-gated "Run payouts now") lives here.
@@ -60,22 +59,18 @@ const GROUPS: NavGroup[] = [
       { href: '/admin/categories', label: 'Categories' },
       { href: '/admin/dealers', label: 'Dealers' },
       { href: '/admin/suppliers', label: 'Suppliers' },
-      { href: '/admin/featured', label: 'Featured Slots' },
       { href: '/admin/deals', label: 'Daily Deals' },
-      { href: '/admin/raffle', label: 'Prize Draw' },
       { href: '/admin/campaigns', label: 'SMS Campaigns' },
       { href: '/admin/credits', label: 'Credits' },
     ],
   },
   {
-    key: 'askgg',
-    label: 'Ask Boet',
-    items: [
-      { href: '/admin/ask-gg/kb', label: 'Knowledge Base' },
-      { href: '/admin/ask-gg/guides', label: 'Page Guides' },
-      { href: '/admin/ask-gg/experts', label: 'Experts' },
-      { href: '/admin/reloading', label: 'Reloading Library' },
-    ],
+    // Was the "Ask Boet" group. The assistant was removed 2026-08-26 and its
+    // KB / Page Guides / Experts admin screens went with it; the reloading
+    // library survived because it is what Load Lab reads.
+    key: 'loadlab',
+    label: 'Load Lab',
+    items: [{ href: '/admin/reloading', label: 'Reloading Library' }],
   },
   {
     key: 'system',
@@ -322,9 +317,9 @@ function AlertPill({
       className={`text-[10px] leading-none px-1.5 py-0.5 rounded-full shrink-0 ${className ?? ''}`}
       title={`${count} unresolved alert${count === 1 ? '' : 's'}${urgent ? ' — some urgent' : ''}`}
       style={{
-        background: `${colour}20`,
+        background: `color-mix(in srgb, ${colour} 13%, transparent)`,
         color: colour,
-        border: `0.5px solid ${colour}55`,
+        border: `0.5px solid color-mix(in srgb, ${colour} 33%, transparent)`,
         fontWeight: 600,
       }}
     >

@@ -1,19 +1,14 @@
-import { Fragment } from 'react';
 import Link from 'next/link';
 import { BRAND_NAME } from '@/lib/brand';
 import { viewerFetch } from '@/lib/api-viewer';
 import { BrowseResponse, Category } from '@/lib/types';
-import { CARD_PHOTO_ASPECT, ListingCard } from '@/components/listing-card';
+import { ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
 import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
-import { FeaturedRail } from '@/components/featured-rail';
-import { FeaturedInFeedCard } from '@/components/featured-in-feed';
-import { FeaturedAvailabilityBar } from '@/components/featured-availability-bar';
 import { HomeInfoPanel } from '@/components/home-info-panel';
-import { DraggableMarquee } from '@/components/draggable-marquee';
 import { RecentlyViewedRail } from '@/components/recently-viewed-rail';
 import { CrossSellRow } from '@/components/cross-sell-row';
 import { Pagination } from '@/components/pagination';
@@ -140,8 +135,7 @@ export default async function HomePage({
   const isAuction = params.listingType === 'AUCTION';
   const isTakeAShot = params.listingType === 'TAKE_A_SHOT';
   const isMarketplace = params.listingType === 'BUY_NOW';
-  const isSwop = params.listingType === 'SWOP';
-  const hasBackground = isAuction || isTakeAShot || isMarketplace || isSwop;
+  const hasBackground = isAuction || isTakeAShot || isMarketplace;
 
   const qs = new URLSearchParams();
   if (params.q) qs.set('q', params.q);
@@ -160,14 +154,11 @@ export default async function HomePage({
   if (params.attrs) qs.set('attrs', params.attrs);
   qs.set('limit', '24');
 
-  // On the bare landing page (showHero) we replace the browse grid
-  // with the FEATURED grid. On every other surface we keep the
-  // standard browse. Both queries fire in parallel so the slower
-  // doesn't block the other.
+  // Multiple independent data fetches for this page — run them in
+  // parallel so the slowest doesn't block the others.
   const [
     browseRaw,
     categories,
-    featuredListings,
     brands,
     facetData,
   ] = await Promise.all([
@@ -179,21 +170,6 @@ export default async function HomePage({
     // viewer (members see the regulated trees), and Next's data cache is shared
     // across users — a cached member response would leak into anonymous pages.
     viewerFetch<Category[]>('/categories').catch(() => [] as Category[]),
-    showHero
-      ? viewerFetch<
-          {
-            slotNumber: number;
-            status: 'VACANT' | 'AUCTION_RUNNING' | 'BIND_WINDOW' | 'OCCUPIED';
-            listing: import('@/lib/types').Listing | null;
-          }[]
-        >('/featured/listings').catch(() => [])
-      : Promise.resolve(
-          [] as {
-            slotNumber: number;
-            status: 'VACANT' | 'AUCTION_RUNNING' | 'BIND_WINDOW' | 'OCCUPIED';
-            listing: import('@/lib/types').Listing | null;
-          }[],
-        ),
     // Brand/make facet values for the FilterBar (most-listed first).
     viewerFetch<string[]>('/listings/brands').catch(() => [] as string[]),
     // P4-polish — FilterBar facet counts ("Toyota (12)"). Only meaningful when
@@ -229,11 +205,6 @@ export default async function HomePage({
   // Drawn from the dominant category of the current results (or the active
   // category filter), narrowed by the search query for the calibre signal.
   const crossSellExcludeIds = browse.listings.map((l) => l.id).join(',');
-
-  // Featured slots with a real listing bound. Unsold slots COLLAPSE on the
-  // landing page — a wall of "Featured spot available" placeholders reads
-  // as a dead site to buyers; sellers get one compact bid link instead.
-  const occupiedFeatured = featuredListings.filter((s) => s.listing);
 
   const crossSellFromCategoryId =
     params.categoryId ??
@@ -291,154 +262,38 @@ export default async function HomePage({
       {isTakeAShot && (
         <PageBackground imageSrc="/take-a-shot.jpg" />
       )}
-      {isSwop && (
-        <PageBackground imageSrc="/swop.jpg" />
-      )}
 
       {/* Hero now carries the trust card on its right, so the competitive
           "why All Outdoor" proof lives inside <Hero /> — no separate banner. */}
       {showHero && <Hero />}
 
-      {/* ─── Bare landing page: featured-only grid, no rail, no filter ───
-          When the user lands on "/" with no filters, the main grid
-          shows the 10 featured listings (the same ones promoted in
-          the rail on every other surface). No FilterBar, no
-          pagination — the landing page is intentionally curated.
-          The FeaturedRail sidebar is dropped from this surface only;
-          it stays on Marketplace / Auctions / Take a Shot / listing
-          detail. */}
+      {/* ─── Bare landing page: no filter, no pagination ───
+          When the user lands on "/" with no filters, the page shows the
+          "Good to know" panel, the recently-viewed rail, then the 24
+          newest listings — intentionally curated, not a filtered browse. */}
       {showHero ? (
         <section
-          data-featured-home-section
           className="max-w-[var(--page-max)] mx-auto px-4 py-10"
         >
-          {/* Centered "Featured" header with red→gold gradient fill
-              + warm drop-shadow glow (matches the card glow). Hairline
-              gradient rules on either side give it a premium catalog
-              feel — they fade in toward the text from outer transparent
-              so the eye is drawn to the heading. The WHOLE Featured
-              block (header + marquee) collapses when no slot carries a
-              listing — see occupiedFeatured. */}
-          {occupiedFeatured.length > 0 && (<>
-          <div className="flex items-center justify-center gap-5 mb-6 mt-2">
-            <div
-              style={{
-                flex: '0 1 120px',
-                height: 1,
-                background:
-                  'linear-gradient(to right, transparent, rgba(232, 181, 58, 0.6))',
-              }}
-            />
-            <h2
-              className="text-4xl sm:text-5xl"
-              style={{
-                fontWeight: 600,
-                letterSpacing: '0.02em',
-                background:
-                  'linear-gradient(135deg, #C8102E 0%, #E8B53A 100%)',
-                WebkitBackgroundClip: 'text',
-                backgroundClip: 'text',
-                color: 'transparent',
-                WebkitTextFillColor: 'transparent',
-                filter:
-                  'drop-shadow(0 0 18px rgba(232, 181, 58, 0.40))' +
-                  ' drop-shadow(0 0 6px rgba(200, 16, 46, 0.30))',
-              }}
-            >
-              Featured
-            </h2>
-            <div
-              style={{
-                flex: '0 1 120px',
-                height: 1,
-                background:
-                  'linear-gradient(to right, rgba(232, 181, 58, 0.6), transparent)',
-              }}
-            />
-          </div>
-          {/* Continuously scrolling horizontal marquee — single row
-              of half-size cards drifting left. Doubled track + 50%
-              translateX gives a seamless loop; hover pauses. Side
-              mask gradient softens the left/right edges so cards
-              entering / leaving don't get hard-clipped (which would
-              also chop their glow). Each card gets a warm red→gold
-              glow shadow — no gradient outline, just pure glow. */}
-          <DraggableMarquee
-            axis="x"
-            speed={60}
-            className="featured-home-track"
-            style={{
-              position: 'relative',
-              marginTop: 24,
-              WebkitMaskImage:
-                'linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%)',
-              maskImage:
-                'linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%)',
-            }}
-            innerStyle={{
-              gap: 16,
-              // Padding so card glow has room to breathe at the
-              // track's top/bottom + left/right edges.
-              paddingTop: 28,
-              paddingBottom: 28,
-              paddingLeft: 12,
-              paddingRight: 12,
-            }}
-          >
-            {[...occupiedFeatured, ...occupiedFeatured].map((slot, i) => (
-                <div
-                  key={`${slot.slotNumber}-${i}`}
-                  style={{
-                    // ~50% of the previous 2-column card width.
-                    width: 280,
-                    flexShrink: 0,
-                    borderRadius: 8,
-                    overflow: 'hidden',
-                    background: 'var(--bg-card)',
-                    boxShadow:
-                      '0 0 28px rgba(232, 181, 58, 0.50),' +
-                      ' 0 0 10px rgba(200, 16, 46, 0.45)',
-                  }}
-                >
-                  {slot.listing ? (
-                    <ListingCard listing={slot.listing} />
-                  ) : (
-                    <EmptyFeaturedSlotCard slotNumber={slot.slotNumber} />
-                  )}
-                </div>
-              ))}
-          </DraggableMarquee>
-          </>)}
-          {/* Featured availability — "X of N spots open" + the bid entry.
-              Sits directly under the marquee it belongs to, and self-hides
-              when the summary can't load or no slots exist.
-
-              The seller pitch that used to live here (headline, paragraph,
-              two CTAs and a numbered three-step explainer) has moved to the
-              disclosure panel near the foot of the page — operator, 2026-08-16:
-              it pushed the paid featured placements down the page and made the
-              landing view read as a recruitment pitch instead of a storefront.
-              Nothing was dropped; see components/home-info-panel.tsx. */}
-          <FeaturedAvailabilityBar />
-
           {/* "Shop by category" curtain REMOVED (operator, 2026-08-15).
-              It was the fallback breadth entry while Featured was dark, but
-              the category tree already lives in the nav's Categories flyout
-              and the mobile drawer, and on the landing page the grid pushed
-              the sell-side content down while every tile led to an empty
-              shelf. Featured + the cold-start band own this stretch now.
-              The component (components/category-curtain.tsx) is kept for
-              reuse elsewhere; only the homepage stopped rendering it. */}
+              It was the fallback breadth entry, but the category tree
+              already lives in the nav's Categories flyout and the mobile
+              drawer, and on the landing page the grid pushed the
+              sell-side content down while every tile led to an empty
+              shelf. The component (components/category-curtain.tsx) is
+              kept for reuse elsewhere; only the homepage stopped
+              rendering it. */}
 
-          {/* Good to know — the selling / buying / fees / featured answers,
-              folded away behind disclosure rows so the page above stays a
+          {/* Good to know — the selling / buying / fees answers, folded
+              away behind disclosure rows so the page above stays a
               storefront. No JavaScript; native <details>. */}
           <HomeInfoPanel />
 
           {/* Recently viewed — self-hides if the user has < 2 entries
               on this device, so cold-start visitors don't see an empty
-              rail. Sits below the featured marquee so returning users
-              get a quick re-entry into things they were looking at. */}
+              rail. Sits below the "Good to know" panel so returning
+              users get a quick re-entry into things they were looking
+              at. */}
           <RecentlyViewedRail />
 
           {/* Latest listings — the landing page previously ended here with
@@ -492,83 +347,16 @@ export default async function HomePage({
                     'repeat(auto-fill, minmax(240px, 1fr))',
                 }}
               >
-                {browse.listings.map((l, i) => (
-                  <Fragment key={l.id}>
-                    <ListingCard listing={l} />
-                  {/* ⚠️ AFTER THE FIRST ROW, NOT BEFORE IT. A paid card in
-                      slot one reads as an advert wall; after four real
-                      results it reads as more stock, which is the whole
-                      reason in-feed beats a banner. Renders nothing when no
-                      slot is sold. */}
-                    {i === 3 && <FeaturedInFeedCard />}
-                  </Fragment>
+                {browse.listings.map((l) => (
+                  <ListingCard key={l.id} listing={l} />
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* Cold-start featured pitch: no slot is occupied, so the grid
-              above is collapsed and this is the only featured entry point
-              on the homepage. It is an ad aimed at SELLERS, so it sits
-              last — a first-time buyer has to be shown the categories and
-              the actual stock before being asked to bid for placement.
-              Gated on the store having stock at all: nobody buys a shop
-              window in an empty shop, and the pitch only makes the
-              emptiness louder. `browse.total`, not `listings.length` —
-              a deep ?page= still counts as showHero and would otherwise
-              hide the pitch on a well-stocked store.
-              Vibrant banner treatment (operator 2026-07-20 "easy to
-              miss"): shared .gg-bid-spot gold glow + star + red CTA pill. */}
-          {occupiedFeatured.length === 0 && browse.total > 0 && (
-            <div className="text-center mt-10" data-reveal>
-              <Link
-                href="/featured/bid"
-                className="gg-bid-spot inline-flex flex-wrap items-center justify-center gap-x-4 gap-y-2 rounded-[10px] px-6 py-4"
-                style={{
-                  background:
-                    'radial-gradient(130% 160% at 50% 0%, rgba(232, 181, 58, 0.16) 0%, transparent 70%), var(--bg-card)',
-                  textDecoration: 'none',
-                  maxWidth: 640,
-                }}
-              >
-                <svg
-                  width="26"
-                  height="26"
-                  viewBox="0 0 24 24"
-                  fill="#e8b53a"
-                  aria-hidden="true"
-                  style={{ filter: 'drop-shadow(0 0 8px rgba(232,181,58,0.55))', flexShrink: 0 }}
-                >
-                  <path d="M12 2l2.9 6.26L21.5 9.3l-4.9 4.46 1.3 6.74L12 17.2l-5.9 3.3 1.3-6.74L2.5 9.3l6.6-1.04Z" />
-                </svg>
-                <span className="text-left">
-                  <span
-                    className="block text-[11px] uppercase"
-                    style={{ color: '#e8b53a', letterSpacing: '0.12em', fontWeight: 700 }}
-                  >
-                    Featured spots open
-                  </span>
-                  <span
-                    className="block text-sm"
-                    style={{ color: 'var(--text-primary)', fontWeight: 600 }}
-                  >
-                    Sellers — put your listing right here, seen first by every visitor
-                  </span>
-                </span>
-                <span
-                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
-                  style={{ background: 'var(--red)', color: '#fff', fontWeight: 600, flexShrink: 0 }}
-                >
-                  <i className="gg-bid-dot" aria-hidden="true" />
-                  Bid or Buy Now →
-                </span>
-              </Link>
             </div>
           )}
         </section>
       ) : hasBackground ? (
         /* Filtered surfaces (marketplace/auctions/take-a-shot) keep
-           the rail + browse layout. */
+           this layout. */
         <PageReveal
           variant={
             isTakeAShot
@@ -578,19 +366,13 @@ export default async function HomePage({
                 : 'slide-up'
           }
         >
-          <div className="max-w-[var(--page-max)] mx-auto px-4 py-10 flex flex-col lg:flex-row gap-6">
-            <FeaturedRail />
-            <section className="flex-1 min-w-0">
-              {renderListingsBody()}
-            </section>
+          <div className="max-w-[var(--page-max)] mx-auto px-4 py-10">
+            <section>{renderListingsBody()}</section>
           </div>
         </PageReveal>
       ) : (
-        <div className="max-w-[var(--page-max)] mx-auto px-4 py-10 flex flex-col lg:flex-row gap-6">
-          <FeaturedRail />
-          <section className="flex-1 min-w-0">
-            {renderListingsBody()}
-          </section>
+        <div className="max-w-[var(--page-max)] mx-auto px-4 py-10">
+          <section>{renderListingsBody()}</section>
         </div>
       )}
     </main>
@@ -833,11 +615,8 @@ export default async function HomePage({
               data-reveal
               className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-4"
             >
-              {browse.listings.map((listing, i) => (
-                <Fragment key={listing.id}>
-                  <ListingCard listing={listing} />
-                  {i === 3 && <FeaturedInFeedCard />}
-                </Fragment>
+              {browse.listings.map((listing) => (
+                <ListingCard key={listing.id} listing={listing} />
               ))}
             </div>
 
@@ -864,74 +643,4 @@ export default async function HomePage({
       </>
     );
   }
-}
-
-// Placeholder shown in the homepage featured grid for any slot that
-// isn't currently bound to a listing (VACANT / AUCTION_RUNNING /
-// BIND_WINDOW). Same outer dimensions as a real ListingCard so the
-// 4-up grid stays aligned. Vibrant treatment (operator 2026-07-20 —
-// "easy to miss"): warm-gold pulsing glow + shine sweep (shared
-// .gg-bid-spot rig in globals.css), gold star, live-dot CTA pill.
-// These cards SELL a paid product — they must not whisper.
-function EmptyFeaturedSlotCard({ slotNumber }: { slotNumber: number }) {
-  return (
-    <a
-      href="/featured/bid"
-      className="gg-bid-spot rounded-[8px]"
-      style={{
-        display: 'block',
-        background:
-          'radial-gradient(120% 90% at 50% 0%, rgba(232, 181, 58, 0.18) 0%, rgba(232, 181, 58, 0.04) 55%, transparent 100%), var(--bg-card)',
-        textDecoration: 'none',
-        height: '100%',
-      }}
-    >
-      {/* Same photo box ListingCard uses (CARD_PHOTO_ASPECT) — keeps
-          the placeholder card the exact same height as a real one. */}
-      <div className="relative" style={{ paddingBottom: CARD_PHOTO_ASPECT }}>
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
-          {/* Gold star — the universal "featured" glyph */}
-          <svg
-            width="30"
-            height="30"
-            viewBox="0 0 24 24"
-            fill="#e8b53a"
-            aria-hidden="true"
-            style={{ filter: 'drop-shadow(0 0 8px rgba(232,181,58,0.55))' }}
-          >
-            <path d="M12 2l2.9 6.26L21.5 9.3l-4.9 4.46 1.3 6.74L12 17.2l-5.9 3.3 1.3-6.74L2.5 9.3l6.6-1.04Z" />
-          </svg>
-          <span
-            className="text-[11px] uppercase"
-            style={{
-              letterSpacing: '0.12em',
-              color: '#e8b53a',
-              fontWeight: 700,
-            }}
-          >
-            Spot #{slotNumber} open
-          </span>
-        </div>
-      </div>
-      <div className="p-3">
-        <p
-          className="text-sm leading-snug mb-2"
-          style={{ color: 'var(--text-primary)', fontWeight: 600 }}
-        >
-          Your listing here — seen first by every visitor
-        </p>
-        <span
-          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-full"
-          style={{
-            background: 'var(--red)',
-            color: '#fff',
-            fontWeight: 600,
-          }}
-        >
-          <i className="gg-bid-dot" aria-hidden="true" />
-          Bid or Buy Now →
-        </span>
-      </div>
-    </a>
-  );
 }

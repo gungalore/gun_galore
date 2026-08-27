@@ -49,17 +49,17 @@ export default function ModerationBanner({
   let title = '';
   let body = '';
   if (showPending) {
-    color = '#f59e0b';
+    color = 'var(--warning)';
     title = 'Pending review';
     body =
       'Your listing has been flagged for human review and will go live once an admin approves it. Editing it now will trigger a fresh moderation review and pause the current one.';
   } else if (showRejected) {
-    color = '#ef4444';
+    color = 'var(--danger)';
     title = 'Listing rejected';
     body =
       'This listing did not pass our content review. Fix the issues below and resubmit — editing re-runs the moderation check.';
   } else if (showAutoFix) {
-    color = '#3b82f6';
+    color = 'var(--info)';
     title = 'Description edited';
     body =
       'We removed contact details (phone, email, URLs, social handles) from your description so buyers always use the platform.';

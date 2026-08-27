@@ -54,7 +54,6 @@ function cueDate(iso: string | null | undefined): string | null {
  */
 function nextActionCue(tx: Transaction, now: number): OrderCue | null {
   const method = tx.shippingMethod;
-  const isExperience = !!tx.listing?.isExperience || method === 'ON_SITE_SERVICE';
 
   // ── Settled states ────────────────────────────────────────────────────
   // The pill already says "Payout released" / "Refunded". Only name a next
@@ -92,31 +91,6 @@ function nextActionCue(tx: Transaction, now: number): OrderCue | null {
   }
 
   // ── HELD from here ────────────────────────────────────────────────────
-  // Experiences run their own lifecycle (outfitter accept → attend → buyer
-  // confirms it happened); they never touch dispatch or delivery.
-  if (isExperience) {
-    if (tx.bookingDeclinedAt) return null;
-    if (!tx.bookingConfirmedAt) {
-      return { text: 'Waiting on the outfitter to confirm your booking', tone: 'pending' };
-    }
-    if (tx.eventCompletedConfirmedAt) {
-      return { text: 'Confirmed — payout is being released to the outfitter', tone: 'info' };
-    }
-    const eventPassed = !!tx.eventDate && new Date(tx.eventDate).getTime() <= now;
-    if (eventPassed) {
-      return {
-        text: 'Action needed: confirm the experience happened',
-        tone: 'pending',
-        action: true,
-        hint: "Confirming releases the outfitter's payment and is final.",
-      };
-    }
-    const when = cueDate(tx.eventDate);
-    return {
-      text: when ? `Booked for ${when} — confirm here afterwards` : 'Booking confirmed',
-      tone: 'info',
-    };
-  }
 
   // PRIVATE_ARRANGE releases on capture, so a HELD one is still settling —
   // the contact details aren't revealed yet and there's nothing to arrange.
@@ -367,7 +341,7 @@ export default async function MyOrdersPage() {
                     }
                     style={{
                       color,
-                      background: `${color}18`,
+                      background: `color-mix(in srgb, ${color} 9%, transparent)`,
                     }}
                   >
                     {status.label}

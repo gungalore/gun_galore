@@ -90,54 +90,6 @@ export function displayShippingCents(carrierRateCents: number): number {
   return rate + shippingHandlingCentsFor(rate);
 }
 
-// ── Swop / Trade (SWOP) service fees — ZAR cents ────────────────────────
-// A swap has no sale price, so GG earns a service fee per shipment leg
-// (two legs per swap = earned twice). Originally a flat R50/leg (operator
-// 2026-06-28); operator decision 2026-07-19: VALUE-BASED — a percentage of
-// the sender's DECLARED item value, clamped to [min, cap]. Without this,
-// two R50k rifles could swap for R100 total fees while GG carries KYC,
-// proof-of-possession, dealer routing and dispute handling — a commission
-// bypass for exactly the highest-value trades. The declared value is
-// self-policing: it is public during negotiation and caps the sender's
-// dispute compensation (over-declare = higher fee, under-declare = less
-// protection). The old flat amounts survive as the per-leg MINIMUMS.
-export const SWAP_SHIPPING_FEE_CENTS = 5_000; // R50 — courier-leg minimum
-// Firearm leg minimum is higher: covers SAPS-534 verification + dealer
-// coordination. Used from S6.
-export const SWAP_FIREARM_FEE_CENTS = 10_000; // R100 — firearm-leg minimum
-export const SWAP_VALUE_FEE_RATE = 0.015; // 1.5% of the declared value
-export const SWAP_VALUE_FEE_CAP_CENTS = 75_000; // R750 cap keeps swapping cheaper than sell+buy
-// PRO members get a discount on the swap service fee (applied after the
-// min/cap clamp, so a PRO courier leg can go below R50).
-export const SWAP_PRO_FEE_DISCOUNT = 0.25;
-
-// P0.5 — commission on the swap CASH component. cashAmount had no ceiling
-// and no fee beyond the flat legs, so any ordinary sale could be structured
-// as "cheap item + big cash top-up" and dodge the commission engine while
-// still consuming GG's payment risk. A cash top-up above the free allowance
-// is economically a sale: the standard bands apply to the EXCESS (no cliff
-// at the threshold), deducted from the cash the recipient is paid at
-// settlement — exactly how a seller pays commission out of proceeds.
-// Genuine balancing top-ups (≤ R1,000) stay free.
-export const SWAP_CASH_COMMISSION_FREE_CENTS = 100_000; // R1,000 allowance
-
-// What ONE party pays to fund their side of a swap. Each party funds the leg
-// they SEND: the live courier rate for their parcel (remitted to the carrier)
-// + the flat GG service fee + any cash top-up they owe. The 1.5% manual EFT
-// handling is ABSORBED by GG out of the flat fee (operator decision
-// 2026-06-29) — it is NOT added to what the member pays, so partyTotal is a
-// clean courier + fee + cash figure. processingFee is retained only as GG's
-// internal absorbed-cost figure (accounting / Zoho). Both parties must fund
-// for the swap to lock; if only one funds, that party is fully reimbursed.
-export interface SwapLegFeeBreakdown {
-  courierCost: number; // carrier rate for this party's outbound parcel (remitted)
-  serviceFee: number; // flat GG fee — margin (R50 courier / R100 firearm)
-  cashContribution: number; // cash top-up this party owes (0 unless cash payer)
-  subtotal: number; // courier + serviceFee + cashContribution
-  processingFee: number; // 1.5% EFT cost GG ABSORBS (not charged to the party)
-  partyTotal: number; // what this party actually pays = subtotal
-}
-
 export interface FeeBreakdown {
   listingPrice: number;   // ZAR cents
   shippingCost: number;   // ZAR cents — courier rate at checkout time (remitted to carrier)
@@ -147,16 +99,6 @@ export interface FeeBreakdown {
   buyerTotal: number;     // ZAR cents — what the buyer pays
   sellerPayout: number;   // ZAR cents — what the seller actually receives
 }
-
-// EXP-E1 — fee breakdown for a hunting-package / experience booking. An
-// experience is a future-dated ON-SITE service: no courier, no waybill, so
-// shipping AND the R15 handling margin are always ZERO. Commission uses the
-// SAME tiered bands as goods (breakdown()); the 1.5% manual processing fee
-// passes through on the package price. Full value is HELD. buyerTotal =
-// packagePrice + processingFee; sellerPayout = packagePrice − commission −
-// (processingFee if the outfitter absorbs it). Structurally identical to
-// FeeBreakdown so it flows through the same Transaction columns + Zoho.
-export interface ExperienceFeeBreakdown extends FeeBreakdown {}
 
 @Injectable()
 export class FeeCalculator {
@@ -379,131 +321,6 @@ export class FeeCalculator {
       processingFee,
       buyerTotal,
       sellerPayout: Math.max(0, sellerPayout),
-    };
-  }
-
-  /**
-   * What ONE party pays to fund their side of a swap (SWOP). A swap has no
-   * sale price; GG earns a flat fee per leg and recovers the courier cost in
-   * the same EFT. Each party funds the leg they SEND.
-   *
-   * - courierCostCents: live carrier rate for this party's outbound parcel
-   *   (Pudo/TCG quote). Zero for a firearm leg (dealer transfer — no courier).
-   * - cashContributionCents: cash top-up this party owes (0 unless they are
-   *   the agreed cash payer).
-   * - isFirearmLeg: swaps the flat fee from courier (R50) to firearm (R100).
-   * - mode: selects the rate for the absorbed-cost figure ('manual' = 1.5%).
-   *
-   * partyTotal = courier + fee + cash (the 1.5% EFT cost is ABSORBED by GG,
-   * not added). Independent + additive — leaves breakdown()/order math alone.
-   */
-  /**
-   * P0.5 — platform commission retained from a swap's cash top-up at
-   * settlement. Standard bands on the excess above the free allowance;
-   * zero for genuine balancing amounts (≤ R1,000). No Top Seller
-   * discount — a swap has no "seller". Deducted from the cash paid to
-   * the recipient, never charged on top of what the payer funds.
-   */
-  swapCashCommission(cashAmountCents: number): number {
-    const excess =
-      Math.max(0, Math.round(cashAmountCents)) - SWAP_CASH_COMMISSION_FREE_CENTS;
-    if (excess <= 0) return 0;
-    return this.calculateCommission(excess, false);
-  }
-
-  /**
-   * EXP-E1 — fee breakdown for a hunting-package / experience booking.
-   *
-   * An experience is a future-dated ON-SITE service: there is no courier and
-   * no waybill, so shipping AND the P6.4 R15 handling margin are ALWAYS zero.
-   * Everything else mirrors goods exactly — the standard tiered commission
-   * bands (NOT a flat experience rate) via the shared calculateCommission, and
-   * the mode-selected processing fee (manual = flat 1.5%). Full package value
-   * is held.
-   *
-   * This is a thin per-mode wrapper over breakdown() (the breakdownSwapLeg
-   * pattern): it pins shippingCost = 0 and handlingFee = 0 and delegates the
-   * band commission + processing-fee maths to the one shared implementation,
-   * so band parity with breakdown() for the same price is guaranteed by
-   * construction. passFeeToBuyer is honoured the same way it is for goods:
-   *   - passFeeToBuyer = true  → buyerTotal = price + processingFee,
-   *                              sellerPayout = price − commission
-   *   - passFeeToBuyer = false → buyerTotal = price,
-   *                              sellerPayout = price − commission − processingFee
-   * The returned shape is ExperienceFeeBreakdown (≡ FeeBreakdown with shipping
-   * + handling pinned to 0) so it flows through the same Transaction columns
-   * and Zoho commission-invoice path as an ordinary sale.
-   */
-  breakdownExperience(
-    packagePriceZarCents: number,
-    passFeeToBuyer: boolean,
-    isTopSeller: boolean,
-    mode: PaymentMode = 'manual',
-  ): ExperienceFeeBreakdown {
-    // No courier line + no waybill for an on-site service → shipping = 0 and
-    // handling = 0. Delegating to breakdown() reuses the exact band-commission
-    // + processing-fee logic (band parity guaranteed) rather than re-deriving.
-    return this.breakdown(
-      Math.max(0, Math.round(packagePriceZarCents)),
-      passFeeToBuyer,
-      isTopSeller,
-      0, // shippingCost — on-site service, no courier rate
-      mode,
-      0, // handlingFeeCents — no waybill, no R15 margin
-    );
-  }
-
-  /**
-   * Value-based swap service fee for ONE leg: rate × the sender's declared
-   * item value, clamped to [leg minimum, cap], then the PRO discount.
-   * declaredValueCents 0/absent falls back to the leg minimum (legacy
-   * listings created before the declared-value requirement).
-   */
-  swapServiceFee(
-    declaredValueCents: number,
-    isFirearmLeg = false,
-    isPro = false,
-  ): number {
-    const min = isFirearmLeg ? SWAP_FIREARM_FEE_CENTS : SWAP_SHIPPING_FEE_CENTS;
-    const raw = Math.round(
-      Math.max(0, Math.round(declaredValueCents)) * SWAP_VALUE_FEE_RATE,
-    );
-    const clamped = Math.min(Math.max(raw, min), SWAP_VALUE_FEE_CAP_CENTS);
-    return isPro
-      ? Math.round(clamped * (1 - SWAP_PRO_FEE_DISCOUNT))
-      : clamped;
-  }
-
-  breakdownSwapLeg(
-    courierCostCents: number,
-    cashContributionCents = 0,
-    isFirearmLeg = false,
-    mode: PaymentMode = 'manual',
-    // Operator 2026-07-19 — value-based fee inputs. Defaults keep every
-    // existing caller (and legacy zero-value listings) on the old flat fee.
-    declaredValueCents = 0,
-    isPro = false,
-  ): SwapLegFeeBreakdown {
-    const courierCost = isFirearmLeg
-      ? 0
-      : Math.max(0, Math.round(courierCostCents));
-    const serviceFee = this.swapServiceFee(
-      declaredValueCents,
-      isFirearmLeg,
-      isPro,
-    );
-    const cashContribution = Math.max(0, Math.round(cashContributionCents));
-    const subtotal = courierCost + serviceFee + cashContribution;
-    // GG absorbs the EFT handling out of the flat fee — computed for internal
-    // accounting only, NOT added to what the party pays.
-    const processingFee = this.calculateProcessingFee(subtotal, mode);
-    return {
-      courierCost,
-      serviceFee,
-      cashContribution,
-      subtotal,
-      processingFee,
-      partyTotal: subtotal,
     };
   }
 }

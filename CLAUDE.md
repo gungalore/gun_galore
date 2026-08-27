@@ -1861,6 +1861,43 @@ deploy with `prisma migrate deploy` and a backend rebuild.
 ⚠️ **`INK_AT` has still never met a real licence card.** Auto-capture has been
 live since `3de9ec1` and the threshold remains uncalibrated against real use.
 
+**Last deploy: 2026-08-26, commit `3de9ec1`.** No migrations pending.
+**FRONTEND ONLY** — the commit touches no `backend/` or `prisma/` file, so the
+backend was never rebuilt or reloaded and kept serving throughout. Frontend
+built on the box (`BUILD_ID` verified non-empty before the reload), reloaded,
+health checks doubled on :3000 and :3001, public 200 twice.
+
+Shipped in `3de9ec1`: **automatic capture, re-specified** — see the Document
+Scanner section. On by default with a toggle; the gate asks three questions
+about the FRAME (ink over the aim box, exposure, 1100ms stillness) and never
+consults the detector, because the detector demonstrably cannot see a licence
+card. `INK_AT = 0.10` is deliberately weak and NOT yet calibrated against real
+use — raise it if it fires on an empty desk, lower it if it sits still on a
+real document.
+
+> ⚠️ **TWO TRAPS FOUND IN THE REPO DURING THIS DEPLOY. Read before the next one.**
+>
+> 1. **Local `feat/takealot-ux-parity` was left at `0d7a137`** (the fee-model
+>    commit), NOT at what production runs. `infra/deploy/deploy.sh` does
+>    `git push origin feat/takealot-ux-parity` from the LOCAL branch of that
+>    name and then gates on `git rev-parse HEAD` — so running it from that
+>    state would have pushed the fee model **and its migration** to a live
+>    database, while reporting success. This deploy therefore bypassed the
+>    script and pulled `origin/feat/takealot-ux-parity` (`3de9ec1`) on the box
+>    directly. **Before using the script again, check
+>    `git rev-parse feat/takealot-ux-parity` against `origin/` and against what
+>    you actually intend to ship.**
+> 2. The working tree carried **uncommitted "Winkel" white-theme work**
+>    (`globals.css`, `layout.tsx` — `#0f0f0f` → `#F6F5F1`). It was not
+>    committed, not tested and not deployed; production is still the dark
+>    theme. Only `CLAUDE.md` was staged for the deploy record.
+
+**Not deployed, and deliberately so: the fee model (`0d7a137`).** It carries a
+29-line migration and reaches `transactions.service.ts`, `receipt.service.ts`,
+`zoho-books.service.ts` and `notifications.service.ts` — the live money path.
+It needs its own deploy with `prisma migrate deploy` and a backend rebuild.
+Keep it separate from a frontend-only ship.
+
 Shipped in `5faf095`: **the Document Centre stopped losing documents between
 batches.** `uploadFiles` assigned the review queue wholesale
 (`setQueue(added)`), and the add panel closes after every hand-off — so six

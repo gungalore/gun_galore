@@ -130,11 +130,6 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     false;
 
   // Hunting Packages / Experiences (Phase E) — a future-dated on-site
-  // booking. When true we hide every courier surface (like isCollection),
-  // force shippingMethod = 'ON_SITE_SERVICE', collect an eventDate (within
-  // the listing window) + partySize (≤ capacity) + the five required
-  // attestations, and skip the shipping quote entirely (R0 shipping).
-  const isExperience = listing.isExperience ?? false;
 
   // Allowed methods = intersection of (legal for this listing class) and
   // (what the seller offered in the Sell form). Legacy listings with an
@@ -157,15 +152,11 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // pick no longer curates what the buyer may choose.
   //
   // Firearms are untouched — their hand-over is a dealer route, not a courier
-  // one — and so are collection-only items and experiences, which have no
-  // courier leg at all.
-  const usesDeliveryPicker =
-    !isCollection && !isExperience && !listing.isFirearm;
+  // one — and so are collection-only items, which have no courier leg at all.
+  const usesDeliveryPicker = !isCollection && !listing.isFirearm;
 
   const [method, setMethod] = useState<ShippingMethod>(
-    isExperience
-      ? 'ON_SITE_SERVICE'
-      : isCollection
+    isCollection
       ? 'COLLECTION'
       : allowedMethods[0] ?? (listing.isFirearm ? 'DEALER_TRANSFER' : 'PUDO'),
   );
@@ -262,38 +253,6 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // listing class, so unlike the two above it is not gated on a listing flag.
   const [buyerTermsAck, setBuyerTermsAck] = useState(false);
 
-  // Hunting Packages / Experiences (Phase E) — booking date + party size +
-  // the five required attestations. The backend HARD-refuses an experience
-  // checkout unless the eventDate is inside the listing window, partySize is
-  // 1..capacitySlots, and all five booleans are true — so these gates are
-  // mirrored on Pay/isReady. Ignored entirely for non-experience checkouts.
-  const [eventDate, setEventDate] = useState('');
-  const [partySize, setPartySize] = useState(1);
-  const [expAtt, setExpAtt] = useState({
-    over18: false,
-    licenceOrSupervised: false,
-    intermediary: false,
-    cancellationPolicy: false,
-    risks: false,
-  });
-  const expAllAttested =
-    expAtt.over18 &&
-    expAtt.licenceOrSupervised &&
-    expAtt.intermediary &&
-    expAtt.cancellationPolicy &&
-    expAtt.risks;
-  // The date bounds the picker to the listing's window. eventStartDate is
-  // required for an experience; eventEndDate is optional (single-day = both
-  // min/max on the start date).
-  const eventMin = listing.eventStartDate
-    ? new Date(listing.eventStartDate).toISOString().slice(0, 10)
-    : undefined;
-  const eventMax = (listing.eventEndDate ?? listing.eventStartDate)
-    ? new Date(listing.eventEndDate ?? listing.eventStartDate!)
-        .toISOString()
-        .slice(0, 10)
-    : undefined;
-  const maxParty = listing.capacitySlots ?? 1;
 
   // "Ship to a different address" toggle. Off by default — the
   // delivering-to chip uses the profile values. When ON, we render the
@@ -549,23 +508,6 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     const papers = listing.requiresPapers
       ? { collectionPapersAccepted: collectionPapersAck }
       : {};
-    // Experience booking — the eventDate / partySize / five attestations.
-    // Only meaningful (and only accepted by the backend) for an experience
-    // listing; harmless to omit otherwise.
-    const experience = isExperience
-      ? {
-          eventDate: eventDate
-            ? new Date(eventDate).toISOString()
-            : undefined,
-          partySize,
-          experienceBuyerAttested18Plus: expAtt.over18,
-          experienceHuntingLicenceOrSupervisionAccepted:
-            expAtt.licenceOrSupervised,
-          experienceIntermediaryAcknowledged: expAtt.intermediary,
-          experienceCancellationPolicyAccepted: expAtt.cancellationPolicy,
-          experienceRisksAccepted: expAtt.risks,
-        }
-      : {};
     const base = {
       listingId: listing.id,
       shippingMethod: method,
@@ -577,10 +519,9 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
       ...(listing.trackInventory ? { quantity } : {}),
       ...attestation,
       ...papers,
-      ...experience,
     };
-    // Experience — on-site, no locker/address/quote. Base payload with
-    // shippingMethod = 'ON_SITE_SERVICE' + the experience fields above.
+    // ON_SITE_SERVICE is retained on the union for historic rows; nothing in
+    // this form can select it now that Hunting Packages are gone.
     if (method === 'ON_SITE_SERVICE') return base;
     // Collection — no locker, no address, no quote. Just the base payload
     // with shippingMethod = 'COLLECTION' (+ the papers ack when required).
@@ -671,16 +612,6 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
     // acknowledge the in-person collection + papers handover.
     if (listing.requiresPapers && !collectionPapersAck) return false;
 
-    // Experience — on-site booking. Needs a chosen date inside the window,
-    // a party size within capacity, and all five attestations ticked.
-    if (method === 'ON_SITE_SERVICE') {
-      const dateOk =
-        !!eventDate &&
-        (!eventMin || eventDate >= eventMin) &&
-        (!eventMax || eventDate <= eventMax);
-      const partyOk = partySize >= 1 && partySize <= maxParty;
-      return dateOk && partyOk && expAllAttested;
-    }
 
     // Collection — no locker, no address, no quote. Once the phone +
     // papers gates above pass, the buyer can pay.
@@ -725,16 +656,13 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
   // an auction win regardless of the listing's legacy passFeeToBuyer flag, so
   // we mirror that here rather than reading the flag.
   //
-  // EXPERIENCE: unchanged. An on-site booking still honours the listing's
-  // passFeeToBuyer, and the server tests isExperience BEFORE the buy-now
-  // branch — so this ternary is ordered the same way.
-  //
   // The page only routes two listing kinds into this form: an ACTIVE BUY_NOW,
   // or an AUCTION already flipped to PAYMENT_PENDING (i.e. this buyer won it).
+  // This was a three-way ternary while Hunting Packages existed (an on-site
+  // booking honoured the listing's own passFeeToBuyer); with those gone it is
+  // exactly the auction test it always was for the two surviving kinds.
   const isAuctionWin = listing.listingType === 'AUCTION';
-  const buyerPaysTransactionFee = isExperience
-    ? listing.passFeeToBuyer
-    : isAuctionWin;
+  const buyerPaysTransactionFee = isAuctionWin;
 
   // Live preview of what the buyer will pay. Mirrors the backend
   // FeeCalculator math (bands locked in lib/types-derived constants
@@ -993,128 +921,6 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
         />
       )}
 
-      {/* Hunting Packages / Experiences (Phase E) — on-site booking. Replaces
-          every courier surface. Buyer picks a date within the listing's
-          window + a party size (≤ capacity), then ticks the five required
-          attestations. The backend HARD-refuses without a valid date/party
-          + all five true, so Pay is gated via isReady(). */}
-      {isExperience && (
-        <>
-          <div
-            className="rounded-[6px] p-4 space-y-4"
-            style={{
-              background: 'var(--bg-card)',
-              border: '0.5px solid var(--border)',
-            }}
-          >
-            <p
-              className="text-xs uppercase"
-              style={{
-                color: 'var(--text-tertiary)',
-                letterSpacing: '0.05em',
-                fontWeight: 600,
-              }}
-            >
-              Your booking
-            </p>
-            <Field label="Event date">
-              <DateField
-                label="Event date"
-                value={eventDate}
-                onChange={setEventDate}
-                style={inputStyle}
-                min={eventMin}
-                max={eventMax}
-                focusYear={parseIso(eventMin)?.y ?? todayYmd().y}
-                required
-              />
-              {eventMin && (
-                <p
-                  className="text-xs mt-1.5"
-                  style={{ color: 'var(--text-tertiary)' }}
-                >
-                  {eventMax && eventMax !== eventMin
-                    ? `Pick a date between ${new Date(
-                        listing.eventStartDate!,
-                      ).toLocaleDateString('en-ZA', {
-                        day: 'numeric',
-                        month: 'short',
-                      })} and ${new Date(
-                        listing.eventEndDate!,
-                      ).toLocaleDateString('en-ZA', {
-                        day: 'numeric',
-                        month: 'short',
-                      })}.`
-                    : `This package runs on ${new Date(
-                        listing.eventStartDate!,
-                      ).toLocaleDateString('en-ZA', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })}.`}
-                </p>
-              )}
-            </Field>
-            <Field label="Party size">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setPartySize((p) => Math.max(1, p - 1))}
-                  disabled={partySize <= 1}
-                  className="w-9 h-9 rounded-[6px] text-base"
-                  style={{
-                    background: 'var(--bg-inset)',
-                    border: '0.5px solid var(--border)',
-                    color:
-                      partySize <= 1
-                        ? 'var(--text-tertiary)'
-                        : 'var(--text-primary)',
-                    cursor: partySize <= 1 ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  −
-                </button>
-                <span
-                  className="text-sm"
-                  style={{
-                    color: 'var(--text-primary)',
-                    minWidth: 24,
-                    textAlign: 'center',
-                  }}
-                >
-                  {partySize}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPartySize((p) => Math.min(maxParty, p + 1))
-                  }
-                  disabled={partySize >= maxParty}
-                  className="w-9 h-9 rounded-[6px] text-base"
-                  style={{
-                    background: 'var(--bg-inset)',
-                    border: '0.5px solid var(--border)',
-                    color:
-                      partySize >= maxParty
-                        ? 'var(--text-tertiary)'
-                        : 'var(--text-primary)',
-                    cursor: partySize >= maxParty ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  +
-                </button>
-                <span
-                  className="text-xs"
-                  style={{ color: 'var(--text-tertiary)' }}
-                >
-                  up to {maxParty} guest{maxParty === 1 ? '' : 's'}
-                </span>
-              </div>
-            </Field>
-          </div>
-          <ExperienceAttestations value={expAtt} onChange={setExpAtt} />
-        </>
-      )}
 
       {/* Firearm hand-over — the two dealer routes, as option cards. Goods
           don't come through here any more: their courier options are the
@@ -1522,7 +1328,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
                   carries our commission and the gateway fee, so the absence of
                   a fee line is the point — say so, rather than leaving the
                   buyer to wonder what we're taking. */}
-              {!isAuctionWin && !isExperience && (
+              {!isAuctionWin && (
                 <p
                   className="text-xs mt-2"
                   style={{ color: 'var(--text-tertiary)', lineHeight: 1.5 }}

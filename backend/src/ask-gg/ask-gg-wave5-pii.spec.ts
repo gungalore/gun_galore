@@ -220,39 +220,6 @@ function makeSvc() {
       },
     ]),
   };
-  const swapFunding = {
-    getMySwaps: jest.fn().mockResolvedValue({
-      bankDetails: {
-        accountNumber: POISON.bankAccount,
-        branchCode: POISON.branchCode,
-        bank: 'FNB',
-      },
-      swaps: [
-        {
-          swapId: 'sw1',
-          status: 'LOCKED',
-          side: 'INITIATOR',
-          fundingSetUp: true,
-          myFunded: true,
-          counterpartyFunded: false,
-          payByAt: new Date('2026-07-18'),
-          myAmountCents: 5_000,
-          myReference: POISON.eftReference,
-          giveProofCode: POISON.proofCode,
-          give: { title: 'Buck knife' },
-          get: { title: 'Binoculars' },
-          giveIsFirearm: false,
-          getIsFirearm: false,
-          giveTracking: { status: 'IN_TRANSIT', waybill: 'TCG777' },
-          getTracking: null,
-        },
-      ],
-    }),
-  };
-  const swapProposals = {
-    getMine: jest.fn().mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]),
-    getReceived: jest.fn().mockResolvedValue([{ id: 'p3' }]),
-  };
   const sellerTools = {
     payoutStatement: jest.fn().mockResolvedValue({
       period: { from: '2026-06-12', to: '2026-07-12' },
@@ -290,8 +257,6 @@ function makeSvc() {
     transactions as any,
     offers as any,
     auctions as any,
-    swapFunding as any,
-    swapProposals as any,
     sellerTools as any,
   );
   /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -394,13 +359,6 @@ describe('W5 PII gate — every tool output is clean under poisoned inputs', () 
     expect(s).toContain('buyer_bob');
   });
 
-  it('getMySwaps drops the banking block and EFT references entirely', async () => {
-    const { svc } = makeSvc();
-    const s = JSON.stringify(await svc.getMySwaps(ACCOUNT));
-    assertClean(s);
-    expect(s).toContain('Buck knife');
-    expect(s).not.toContain('FNB');
-  });
 
   it('getSellerEarnings surfaces blockers without any account numbers', async () => {
     const { svc } = makeSvc();

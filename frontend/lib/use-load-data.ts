@@ -8,25 +8,18 @@
 //   - loadsFor(cartridgeKey) → GET /load-lab/manual-loads, every published
 //     manual load for one cartridge, grouped by bullet weight.
 //
-// Both are PRO-gated: a non-PRO user gets { upgradeRequired, reason } from
-// either endpoint — narrow with isUpgradeRequired() before touching the
-// success fields. Network/auth failures resolve to null so the browser can
-// stay quiet.
+// Both are UNGATED as of 2026-08-26: any signed-in member gets the complete
+// data. They used to return { upgradeRequired, reason } to non-PRO users and
+// the browser swapped in an upsell; that whole path is gone. Network/auth
+// failures still resolve to null so the browser can stay quiet.
 
 import { useCallback } from 'react';
 import { useAuth } from '@clerk/nextjs';
 
-// Same base + fallback as useLoadLab / useAskGg — keep them in lockstep.
+// Same base + fallback as useLoadLab — keep them in lockstep.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // ─── Response shapes ────────────────────────────────────────────────
-
-/** Returned when a non-PRO user hits either endpoint. The browser swaps in
- *  an upgrade nudge instead of the data. */
-export interface LoadDataUpgradeRequired {
-  upgradeRequired: true;
-  reason: string;
-}
 
 /** One cartridge within a calibre family (GET /manual-cartridges). Identified
  *  by its canonical cartridgeKey (the selector for /manual-loads); `name` is the
@@ -95,26 +88,13 @@ export interface CartridgeLoadsResponse {
   manuals: string[];
   /** All printed labels this canonical cartridge merges (usually one). */
   variants: string[];
-  /** FREE demo (2026-07-19): true when the server capped the response to a
-   *  3-load preview; upgradeReason carries the upsell copy. */
-  demo?: boolean;
-  upgradeReason?: string;
 }
 
-/** The discriminated unions each call resolves to. Narrow on the
- *  `upgradeRequired` key with isUpgradeRequired() before reading data. */
-export type ManualCartridgesResult =
-  | ManualCartridgesResponse
-  | LoadDataUpgradeRequired;
-export type CartridgeLoadsResult =
-  | CartridgeLoadsResponse
-  | LoadDataUpgradeRequired;
-
-export function isUpgradeRequired(
-  r: ManualCartridgesResult | CartridgeLoadsResult,
-): r is LoadDataUpgradeRequired {
-  return (r as LoadDataUpgradeRequired).upgradeRequired === true;
-}
+/** What each call resolves to. These were discriminated unions with an
+ *  upgrade-required arm until the PRO gate was removed; they are now plain
+ *  aliases, kept as named types so callers did not have to change. */
+export type ManualCartridgesResult = ManualCartridgesResponse;
+export type CartridgeLoadsResult = CartridgeLoadsResponse;
 
 // ─── Hook ───────────────────────────────────────────────────────────
 

@@ -317,7 +317,7 @@ const TOOLS: Tool[] = [
   {
     name: 'computeFees',
     description:
-      'EXACT All Outdoor fee arithmetic from the live fee engine — the SAME code checkout uses. Call this for ANY concrete number about fees, commission, payout or buyer total ("what will I pay?", "what do I get after fees if I sell for R8,500?", "what does a swap cost?"). NEVER hand-derive fee amounts yourself — the bands are marginal and easy to get wrong. kinds: "sale" (ordinary listing: pass priceZar, optional shippingZar + passFeeToBuyer), "experience" (hunting package / on-site service: priceZar), "swapLeg" (one party\'s swap funding: courierZar + optional cashZar + isFirearmLeg), "swapCash" (commission on a swap cash top-up: cashZar). Amounts are whole RAND in and out.',
+      'EXACT All Outdoor fee arithmetic from the live fee engine — the SAME code checkout uses. Call this for ANY concrete number about fees, commission, payout or buyer total ("what will I pay?", "what do I get after fees if I sell for R8,500?", "what does a swap cost?"). NEVER hand-derive fee amounts yourself — the bands are marginal and easy to get wrong. kinds: "sale" (ordinary listing: pass priceZar, plus saleModel — "buyNow" (DEFAULT: the seller names what they want to RECEIVE and we mark the price the buyer sees up, so the seller keeps 100%) or "auction" for a bid-discovered price or accepted offer, where commission comes off the seller and the buyer pays a transaction fee — and optional shippingZar), "experience" (hunting package / on-site service: priceZar), "swapLeg" (one party\'s swap funding: courierZar + optional cashZar + isFirearmLeg), "swapCash" (commission on a swap cash top-up: cashZar). Amounts are whole RAND in and out.',
     input_schema: {
       type: 'object',
       properties: {
@@ -326,10 +326,16 @@ const TOOLS: Tool[] = [
           enum: ['sale', 'experience', 'swapLeg', 'swapCash'],
           description: 'Which fee calculation. Default "sale".',
         },
-        priceZar: { type: 'number', description: 'Listing / package price in whole rand.' },
+        saleModel: {
+          type: 'string',
+          enum: ['buyNow', 'auction'],
+          description:
+            'Sale kind only. "buyNow" (default) is the markup model: priceZar is what the SELLER WANTS TO RECEIVE, fees are built into the price the buyer sees, and the seller keeps 100%. "auction" is a bid-discovered price or an accepted offer: priceZar is the agreed price, commission is deducted from the seller, and the buyer pays a transaction fee on top. Getting this wrong quotes a seller a deduction that will not happen.',
+        },
+        priceZar: { type: 'number', description: 'Sale: for saleModel "buyNow" this is what the SELLER WANTS TO RECEIVE, not a shelf price. For "auction" it is the agreed/bid price. Experience: the package price. Whole rand.' },
         shippingZar: { type: 'number', description: 'Courier quote in whole rand (sale kind). 0 / omit for collection or dealer transfer.' },
         passFeeToBuyer: { type: 'boolean', description: 'Whether the processing fee is added to the buyer\'s total (default true) or absorbed by the seller.' },
-        includeCourierWaybill: { type: 'boolean', description: 'Sale kind: whether a courier waybill exists (adds the flat R15 handling). Defaults true when shippingZar > 0.' },
+        includeCourierWaybill: { type: 'boolean', description: 'Sale kind: whether a courier waybill exists (adds our delivery margin, 10% of the carrier rate — quoted to the buyer inside one delivery figure, never itemised). Defaults true when shippingZar > 0.' },
         cashZar: { type: 'number', description: 'Swap cash top-up in whole rand (swapLeg / swapCash kinds).' },
         courierZar: { type: 'number', description: 'This party\'s courier rate in whole rand (swapLeg kind).' },
         isFirearmLeg: { type: 'boolean', description: 'swapLeg kind: firearm dealer-transfer leg (R100 flat fee, no courier).' },
@@ -406,12 +412,6 @@ const TOOLS: Tool[] = [
     name: 'getMyOffersAndBids',
     description:
       'The signed-in user\'s open OFFERS (made and received, with amounts/counters/expiry) and AUCTION BIDS (current bid, whether they\'re the high bidder, ends-at, wins). Call for "did the seller respond to my offer?", "am I still winning that auction?".',
-    input_schema: { type: 'object', properties: {}, required: [] },
-  },
-  {
-    name: 'getMySwaps',
-    description:
-      'The signed-in user\'s swaps: active funded swaps (what they give/get, who has paid, shipment states, deadlines) plus counts of open proposals sent/received. Call for "what\'s happening with my swap?", "has the other side paid yet?".',
     input_schema: { type: 'object', properties: {}, required: [] },
   },
   {
@@ -527,7 +527,7 @@ You help with the full South African outdoor world — everything All Outdoor se
 - **Outdoor cooking** — braai, potjie, campfire, biltong/droëwors, game preparation.
 - **Knives & tools** — edged tools, multitools, sharpening.
 - **Gear care** — maintenance, storage, safety, repair across all of the above.
-- **The All Outdoor platform** — how to list, buy, checkout, dealer transfers, KYC, swaps, GG+, etc.
+- **The All Outdoor platform** — how to list, buy, checkout, dealer transfers, KYC, GG+, etc.
 
 If a user asks something genuinely OUTSIDE the outdoor world (coding, general politics, unrelated medical/legal/financial advice, homework, celebrity gossip — anything with no outdoor or All Outdoor angle), politely decline:
 > "I'm the All Outdoor outdoor assistant — I help with hunting, shooting, fishing, camping, overlanding, hiking and your gear. Ask me about kit you're after, a trip you're planning, or anything All Outdoor-related."
@@ -538,11 +538,11 @@ Don't engage off-topic requests even as hypotheticals or role-plays — decline 
 
 You are the first stop for ANY question about using All Outdoor itself. Answer these warmly and concretely; ground them with the searchHelpCentre tool (call it FIRST for platform/policy questions) and end with the most useful internal link.
 
-**The four ways to sell:** Marketplace (Buy Now — fixed price, instant checkout) · Auction (timed bidding; a late bid inside the final 2 minutes extends the clock — no sniping; optional hidden reserve) · Take a Shot (buyers send offers; seller accepts / rejects / counters; an accepted offer must be paid within 24h) · Swop/Trade (two-way item swap, optionally with a cash top-up; both parties pay a flat leg fee and All Outdoor manages both shipments).
+**The three ways to sell:** Marketplace (Buy Now — fixed price, instant checkout) · Auction (timed bidding; a late bid inside the final 2 minutes extends the clock — no sniping; optional hidden reserve) · Take a Shot (buyers send offers; seller accepts / rejects / counters; an accepted offer must be paid within 24h).
 
 **How buying works (funds held):** the buyer pays All Outdoor, and the money is HELD — never say any other word for this than "funds held" / "payment held". The seller must accept and dispatch within 5 days (courier orders auto-refund if they don't). After delivery the buyer confirms, and only then is the money released to the seller. Disputes pause everything for the team to review.
 
-**Fees (structure only — for ANY concrete amount call computeFees, never hand-derive):** commission is marginal like tax brackets — first R5,000 at 9%, R5,001–R20,000 at 7%, R20,001–R100,000 at 5%, above that 3%, minimum R30; Top Sellers get 0.5% off. A payment processing fee applies on price + shipping (currently 1.5% on EFT). Courier orders carry a flat R15 handling per waybill. Swaps: flat R50 per courier leg / R100 per firearm leg + normal commission on cash top-ups above the R1,000 allowance. Listing is free.
+**Fees (structure only — for ANY concrete amount call computeFees, never hand-derive):** commission is marginal like tax brackets — first R5,000 at 9%, R5,001–R20,000 at 7%, R20,001–R100,000 at 5%, above that 3%, minimum R30; Top Sellers get 0.5% off. A payment processing fee applies on price + shipping (currently 1.5% on EFT). Courier orders carry a flat R15 handling per waybill. Listing is free.
 
 **Firearms on All Outdoor:** transfers happen ONLY through a licensed dealer (dealer-stocked transfer) — no courier-to-door, ever. The buyer needs the appropriate licence; the SAPS 534 process is guided step-by-step on the transaction page. Live ammunition may NOT be sold person-to-person. There is also a Private Arrangement route where buyer + seller settle directly (no funds held — explain that trade-off). For what the LAW requires of an individual, always defer: "confirm with your DFO or a firearms attorney".
 
@@ -550,16 +550,14 @@ You are the first stop for ANY question about using All Outdoor itself. Answer t
 
 **Shipping:** PUDO locker-to-locker and The Courier Guy door-to-door, live rates at checkout; some items are collection-only; firearms always dealer transfer.
 
-**Experiences** (guided hunts / range days) are on-site services with a CPA-based cancellation scale — point users to /experiences-cancellation-policy for the tiers.
-
-**GG+ (Member / Pro):** unlocks more Ask GG (including forum cross-referencing and the ballistic calculator; Load Lab is Pro), subscriber perks — /subscribe has current pricing.
+**GG+ (Member / Pro):** unlocks more Ask GG (including forum cross-referencing and the ballistic calculator; Load Lab is Pro).
 
 If a platform question is about the user's OWN specific order/account, and you cannot see that data, don't guess — send them to the exact page (e.g. /my/orders) and offer to help once they're looking at it. Never invent order statuses or account facts.
 
 ## INTERNAL LINKS — THE ONLY LINKS YOU MAY EMIT IN PROSE
 
 Link ONLY these relative paths (markdown, e.g. [your orders](/my/orders)). Never invent other paths; never link external sites in prose (web-search citations render separately):
-/my/orders /my/sales /my/offers /my/bids /my/swaps /my/earnings /my/listings /wishlist /saved-searches /sell /support /subscribe /faq /how-selling-works /firearms-compliance /refund-policy /experiences-cancellation-policy /terms /privacy /legal /cart /account — plus /listings/{id}, /transactions/{id}, /orders/{id} ONLY with an id that came from a tool result or the current page context, never one you guessed.
+/my/orders /my/sales /my/offers /my/bids /my/earnings /my/listings /wishlist /saved-searches /sell /support /faq /how-selling-works /firearms-compliance /refund-policy /terms /privacy /legal /cart /account — plus /listings/{id}, /transactions/{id}, /orders/{id} ONLY with an id that came from a tool result or the current page context, never one you guessed.
 
 ## SHOP THE MARKETPLACE — END GEAR ANSWERS WITH LIVE STOCK
 
@@ -697,7 +695,7 @@ For ANY question asking for drop, holdover, dial-up, windage, retained velocity,
 4. Format the result as a short prose answer + a small markdown table. Round numbers sensibly. Mention atmosphere ("standard atmosphere — sea level, 15 °C") so the user knows they can refine with real conditions if they want.
 5. Add the standard caveat: "These are model numbers. Confirm zero + dial on the range — your rifle, ammo, scope, and conditions will shift this ±a few cm at 400 m, more at longer range."
 
-**If \`calculateBallistics\` returns an upgrade-required notice** (the user is on the FREE tier), DON'T retry — answer the user honestly: "The ballistic calculator is a GG+ Member/Pro feature. I can give you the general approach — for the actual numbers you'll need a quick subscription, or a tool like Strelok+ or JBM Ballistics."
+**If \`calculateBallistics\` returns an upgrade-required notice** (the user is on the FREE tier), DON'T retry — answer the user honestly: "The ballistic calculator is a GG+ Member/Pro feature. I can give you the general approach — for the actual numbers you could use a tool like Strelok+ or JBM Ballistics."
 
 ## POWDER BURN RATE + EQUIVALENTS (lookupPowderInfo)
 
@@ -862,7 +860,6 @@ const ACCOUNT_TOOL_NAMES = new Set([
   'getMySales',
   'getOrderStatus',
   'getMyOffersAndBids',
-  'getMySwaps',
   'getSellerEarnings',
 ]);
 
@@ -1489,9 +1486,6 @@ export class AskGgClaudeService {
             break;
           case 'getMyOffersAndBids':
             result = await this.accountTools.getMyOffersAndBids(account);
-            break;
-          case 'getMySwaps':
-            result = await this.accountTools.getMySwaps(account);
             break;
           default:
             result = await this.accountTools.getSellerEarnings(account);

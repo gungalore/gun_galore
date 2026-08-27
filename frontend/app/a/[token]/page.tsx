@@ -8,7 +8,6 @@ import {
   TransactionAcceptPage,
   type TransactionAcceptPayload,
 } from './transaction-accept';
-import { SwapDecisionPage, type SwapDecisionPayload } from './swap-decision';
 import { RunnerUpPage, type RunnerUpPayload } from './runner-up';
 
 /**
@@ -39,7 +38,6 @@ type ResolvedPayload =
   | CheckoutPayload
   | KycVerifyPayload
   | TransactionAcceptPayload
-  | SwapDecisionPayload
   | ScanHandoffPayload
   | RunnerUpPayload;
 
@@ -136,9 +134,6 @@ export default async function ActionTokenPage({
         <AuctionBidPage token={token} payload={payload} />
       ) : payload.kind === 'TRANSACTION_ACCEPT' ? (
         <TransactionAcceptPage token={token} payload={payload} />
-      ) : payload.kind === 'SWAP_PROPOSAL_DECISION' ||
-        payload.kind === 'SWAP_COUNTER_DECISION' ? (
-        <SwapDecisionPage token={token} payload={payload} />
       ) : payload.kind === 'AUCTION_RUNNER_UP' ? (
         <RunnerUpPage token={token} payload={payload} />
       ) : (
@@ -160,7 +155,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
     <div
       style={{
         minHeight: '100vh',
-        background: 'var(--bg-page)',
+        background: 'var(--bg)',
         padding: '20px 16px 32px',
       }}
     >
@@ -186,7 +181,7 @@ function LogoHeader() {
     <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={av('/logo-mark.svg')}
+        src={av('/logo-mark-dark.svg')}
         alt="All Outdoor"
         style={{ width: 56, height: 56, display: 'inline-block' }}
       />

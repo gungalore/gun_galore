@@ -45,6 +45,20 @@ export interface TransactionAcceptPayload {
     listPrice: number | null;
     primaryImageUrl: string | null;
   };
+  /**
+   * The seller's own money for this sale, built server-side. Optional so an
+   * older cached payload renders the legacy headline rather than throwing.
+   */
+  money?: {
+    grossLabel: string;
+    gross: number;
+    deductions: { label: string; cents: number }[];
+    netLabel: string;
+    net: number;
+    feesInPrice: boolean;
+    note: string;
+    balances: boolean;
+  };
   buyerUsername: string;
 }
 
@@ -312,13 +326,19 @@ export function TransactionAcceptPage({
             alignItems: 'baseline',
           }}
         >
+          {/* ⚠️ THE SELLER'S NUMBER, NOT THE BUYER'S. This headlined
+              listing.listPrice — the marked-up price the BUYER pays — under
+              the label "Sale price", with no payout anywhere on the screen.
+              On a Buy Now those differ by our entire margin, so the seller was
+              deciding whether to accept against a figure that was never
+              theirs. payload.money comes from the shared server builder. */}
           <span
             style={{
               fontSize: 14,
               color: 'var(--text-secondary)',
             }}
           >
-            Sale price
+            {payload.money ? payload.money.netLabel : 'Sale price'}
           </span>
           <span
             style={{
@@ -327,9 +347,11 @@ export function TransactionAcceptPage({
               color: 'var(--red)',
             }}
           >
-            {payload.listing.listPrice
-              ? formatRand(payload.listing.listPrice)
-              : '—'}
+            {payload.money
+              ? formatRand(payload.money.net)
+              : payload.listing.listPrice
+                ? formatRand(payload.listing.listPrice)
+                : '—'}
           </span>
         </div>
         <p

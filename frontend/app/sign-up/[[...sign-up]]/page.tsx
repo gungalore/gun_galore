@@ -24,7 +24,7 @@ export default function SignUpPage() {
       className="min-h-screen flex items-center justify-center px-4 py-12"
       style={{
         background:
-          'linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-page) 50%, var(--bg-deep) 100%)',
+          'linear-gradient(180deg, var(--bg-deep) 0%, var(--bg) 50%, var(--bg-deep) 100%)',
       }}
     >
       <SignUpForm />

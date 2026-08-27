@@ -19,10 +19,9 @@ import {
   ResolvedToken,
 } from './action-tokens.service';
 import { OffersService } from '../offers/offers.service';
-import { SwapProposalsService } from '../swaps/swap-proposals.service';
 import { AuctionsService } from '../auctions/auctions.service';
 import { TransactionsService } from '../payments/transactions.service';
-import { SwapRole } from '@prisma/client';
+import { sellerBreakdown } from '../payments/fee-presentation';
 
 /**
  * Public, token-gated endpoints powering the /a/<token> SMS-link
@@ -57,8 +56,6 @@ export class ActionTokensController {
     private readonly tokens: ActionTokensService,
     @Inject(forwardRef(() => OffersService))
     private readonly offers: OffersService,
-    @Inject(forwardRef(() => SwapProposalsService))
-    private readonly swaps: SwapProposalsService,
     @Inject(forwardRef(() => AuctionsService))
     private readonly auctions: AuctionsService,
     @Inject(forwardRef(() => TransactionsService))
@@ -112,7 +109,6 @@ export class ActionTokensController {
         return this.buildTransactionAcceptPayload(resolved, user);
       case 'SWAP_PROPOSAL_DECISION':
       case 'SWAP_COUNTER_DECISION':
-        return this.buildSwapProposalPayload(resolved, user);
       default:
         throw new BadRequestException(`Unknown token purpose: ${resolved.purpose}`);
     }
@@ -336,124 +332,6 @@ export class ActionTokensController {
     );
   }
 
-  // ─── Swop / Trade actions (SWOP S2) ──────────────────────────────
-  // Owner's one-tap decisions on a SWAP_PROPOSAL_DECISION token.
-
-  @Post(':token/accept-swap')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  acceptSwap(
-    @Param('token') token: string,
-    @Body() body: { firearmAttestation18Plus?: boolean },
-    @Req() req: Request,
-  ) {
-    return this.tokens.runAction(
-      token,
-      'SWAP_PROPOSAL_DECISION',
-      'swapProposal',
-      async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        // The owner accepts via SMS — carries the firearm 18+ attestation when
-        // the offered item (which they receive) is a firearm.
-        return this.swaps.acceptProposal(
-          clerkId,
-          targetId,
-          body?.firearmAttestation18Plus,
-        );
-      },
-      reqIp(req),
-      reqUa(req),
-    );
-  }
-
-  @Post(':token/reject-swap')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  rejectSwap(@Param('token') token: string, @Req() req: Request) {
-    return this.tokens.runAction(
-      token,
-      'SWAP_PROPOSAL_DECISION',
-      'swapProposal',
-      async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.swaps.reject(clerkId, targetId);
-      },
-      reqIp(req),
-      reqUa(req),
-    );
-  }
-
-  @Post(':token/counter-swap')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  counterSwap(
-    @Param('token') token: string,
-    @Body()
-    body: {
-      cashAmount?: number;
-      cashDirection?: string;
-      note?: string;
-      firearmAttestation18Plus?: boolean;
-    },
-    @Req() req: Request,
-  ) {
-    const cash = Number(body?.cashAmount);
-    if (!Number.isFinite(cash) || cash < 0) {
-      throw new BadRequestException('Counter cash amount required (cents, ≥ 0)');
-    }
-    const dir = body?.cashDirection;
-    if (dir !== SwapRole.INITIATOR_GIVES && dir !== SwapRole.OWNER_GIVES) {
-      throw new BadRequestException('Valid cash direction required');
-    }
-    return this.tokens.runAction(
-      token,
-      'SWAP_PROPOSAL_DECISION',
-      'swapProposal',
-      async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.swaps.counter(clerkId, targetId, {
-          counterCashAmount: Math.round(cash),
-          counterCashDirection: dir,
-          ownerNote: body?.note?.toString().slice(0, 1000),
-          firearmAttestation18Plus: body?.firearmAttestation18Plus,
-        });
-      },
-      reqIp(req),
-      reqUa(req),
-    );
-  }
-
-  // Proposer's one-tap decisions on a SWAP_COUNTER_DECISION token.
-
-  @Post(':token/accept-swap-counter')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  acceptSwapCounter(@Param('token') token: string, @Req() req: Request) {
-    return this.tokens.runAction(
-      token,
-      'SWAP_COUNTER_DECISION',
-      'swapProposal',
-      async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.swaps.acceptCounter(clerkId, targetId);
-      },
-      reqIp(req),
-      reqUa(req),
-    );
-  }
-
-  @Post(':token/reject-swap-counter')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  rejectSwapCounter(@Param('token') token: string, @Req() req: Request) {
-    return this.tokens.runAction(
-      token,
-      'SWAP_COUNTER_DECISION',
-      'swapProposal',
-      async ({ targetId, authorisedUserId }) => {
-        const clerkId = await this.clerkIdFor(authorisedUserId);
-        return this.swaps.rejectCounter(clerkId, targetId);
-      },
-      reqIp(req),
-      reqUa(req),
-    );
-  }
-
   // ─── Auction actions ─────────────────────────────────────────────
 
   @Post(':token/place-bid')
@@ -543,72 +421,6 @@ export class ActionTokensController {
         buyerUsername: offer.buyer?.username ?? 'a buyer',
         buyerNote: offer.buyerNote,
         sellerNote: offer.sellerNote,
-      },
-    };
-  }
-
-  private async buildSwapProposalPayload(
-    resolved: ResolvedToken,
-    user: { username: string | null; firstName: string | null },
-  ) {
-    const proposal = await this.prisma.swapProposal.findUnique({
-      where: { id: resolved.targetId },
-      include: {
-        listing: {
-          select: {
-            id: true,
-            title: true,
-            referenceNumber: true,
-            images: { where: { isPrimary: true }, take: 1, select: { url: true } },
-          },
-        },
-        offeredListing: {
-          select: {
-            id: true,
-            title: true,
-            isFirearm: true,
-            images: { where: { isPrimary: true }, take: 1, select: { url: true } },
-          },
-        },
-        proposer: { select: { username: true } },
-        owner: { select: { username: true } },
-      },
-    });
-    if (!proposal) throw new NotFoundException('Swap proposal no longer exists');
-
-    return {
-      kind: resolved.purpose,
-      expiresAt: resolved.expiresAt.toISOString(),
-      proposalExpiresAt: proposal.expiresAt?.toISOString() ?? null,
-      proposalStatus: proposal.status,
-      greeting: user.firstName ?? user.username ?? 'there',
-      // The listing the proposer WANTS (owner's item).
-      wanted: {
-        id: proposal.listing.id,
-        title: proposal.listing.title,
-        reference: proposal.listing.referenceNumber,
-        primaryImageUrl: proposal.listing.images[0]?.url ?? null,
-      },
-      // The listing the proposer OFFERS (their item). The OWNER receives it —
-      // isFirearm drives the SMS-page 18+ attestation requirement (S6).
-      offered: {
-        id: proposal.offeredListing.id,
-        title: proposal.offeredListing.title,
-        isFirearm: proposal.offeredListing.isFirearm,
-        primaryImageUrl: proposal.offeredListing.images[0]?.url ?? null,
-      },
-      proposal: {
-        id: proposal.id,
-        proposerUsername: proposal.proposer?.username ?? 'a member',
-        ownerUsername: proposal.owner?.username ?? 'the owner',
-        cashAmount: proposal.cashAmount,
-        // INITIATOR_GIVES = proposer pays the owner.
-        cashFromProposer: proposal.cashDirection === SwapRole.INITIATOR_GIVES,
-        counterCashAmount: proposal.counterCashAmount,
-        counterCashFromProposer:
-          proposal.counterCashDirection === SwapRole.INITIATOR_GIVES,
-        proposerNote: proposal.proposerNote,
-        ownerNote: proposal.ownerNote,
       },
     };
   }
@@ -753,6 +565,18 @@ export class ActionTokensController {
         rejectedAt: true,
         acceptDeadlineAt: true,
         shippingMethod: true,
+        // The seller's own money. Without these the accept screen headlined
+        // the BUYER's marked-up price as "Sale price" and showed no payout at
+        // all - on the one screen where the seller decides to take the sale.
+        listingPrice: true,
+        commissionZar: true,
+        processingFee: true,
+        shippingCost: true,
+        shippingHandlingCents: true,
+        buyerTotal: true,
+        sellerPayout: true,
+        passFeeToBuyer: true,
+        feeModel: true,
         listing: {
           select: {
             id: true,
@@ -790,6 +614,12 @@ export class ActionTokensController {
         listPrice: tx.listing.price,
         primaryImageUrl: tx.listing.images[0]?.url ?? null,
       },
+      // ⚠️ WHAT THE SELLER ACTUALLY GETS, from the one shared builder. This
+      // page used to headline listing.price — the marked-up number the BUYER
+      // pays — as though it were the seller's sale price, and showed no payout
+      // at all. Under the markup model those differ by our whole margin, so
+      // the figure the seller was deciding on was never theirs.
+      money: sellerBreakdown(tx),
       buyerUsername: tx.buyer?.username ?? 'the buyer',
     };
   }

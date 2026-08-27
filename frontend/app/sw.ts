@@ -193,7 +193,6 @@ const serwist = new Serwist({
             // live quota state). Falling through to /offline misleads
             // users into waiting instead of reconnecting. Error
             // visibly so the browser's "you're offline" UI shows.
-            !path.startsWith('/ask-gg') &&
             // M23 — KYC verify needs the camera + VerifyNow + the
             // KYC API endpoints. Same rationale as Ask Boet: serving
             // /offline here misleads sellers who DO have signal but

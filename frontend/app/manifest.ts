@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { av } from '@/lib/asset-version';
-import { PRO_NAME, SITE_URL } from '@/lib/brand';
+import { SITE_URL } from '@/lib/brand';
 
 // PWA manifest — served at /manifest.webmanifest by Next.js when this
 // file is present in the app dir. The combination of this manifest +
@@ -76,13 +76,6 @@ export default function manifest(): MetadataRoute.Manifest {
         short_name: 'Deals',
         description: 'Today’s limited-time deal',
         url: '/deals',
-        icons: [{ src: av('/icon-192.png'), sizes: '192x192', type: 'image/png' }],
-      },
-      {
-        name: 'Prize Draw',
-        short_name: 'Prize Draw',
-        description: `The ${PRO_NAME} members’ prize draw`,
-        url: '/raffle',
         icons: [{ src: av('/icon-192.png'), sizes: '192x192', type: 'image/png' }],
       },
     ],

@@ -13,7 +13,6 @@
 // 'use client' boundary — is what lets the server hub render it.
 
 import type { FC, ReactNode } from 'react';
-import { PRO_NAME } from './brand';
 
 export type IconC = FC;
 
@@ -128,12 +127,6 @@ export const LogoutIcon: IconC = () => (
     <path d="M15 12H4M11 8l-4 4 4 4M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
   </Svg>
 );
-const SwapIcon: IconC = () => (
-  <Svg>
-    <path d="M4 7h13M14 3l4 4-4 4" />
-    <path d="M20 17H7M10 21l-4-4 4-4" />
-  </Svg>
-);
 const WalletIcon: IconC = () => (
   <Svg>
     <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
@@ -145,12 +138,6 @@ const TruckIcon: IconC = () => (
     <path d="M3 6h11v9H3zM14 9h4l3 3v3h-7z" />
     <circle cx="7" cy="18" r="1.6" />
     <circle cx="17" cy="18" r="1.6" />
-  </Svg>
-);
-const CrownIcon: IconC = () => (
-  <Svg>
-    <path d="M4 17h16l1-9-5 3.5L12 6l-4 5.5L3 8l1 9z" />
-    <path d="M5 20h14" />
   </Svg>
 );
 const HelpIcon: IconC = () => (
@@ -169,6 +156,14 @@ const BookIcon: IconC = () => (
   <Svg>
     <path d="M12 6a4 4 0 0 0-4-3H4v15h5a3 3 0 0 1 3 2 3 3 0 0 1 3-2h5V3h-4a4 4 0 0 0-4 3z" />
     <path d="M12 6v14" />
+  </Svg>
+);
+
+const CartridgeIcon: IconC = () => (
+  <Svg>
+    <path d="M12 2.5c1.6 1.5 2.4 3.1 2.4 5v1.6H9.6V7.5c0-1.9.8-3.5 2.4-5z" />
+    <path d="M9.6 9.1h4.8V19H9.6z" />
+    <path d="M9 19h6" />
   </Svg>
 );
 
@@ -191,10 +186,6 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
       { href: '/my/offers', label: 'Offers made', Icon: TagIcon },
       { href: '/my/bids', label: 'Bids', Icon: GavelIcon },
       // Swaps live under Buying (both parties "shop" the other's item).
-      // Without this entry /my/swaps was only reachable from notification
-      // links — a member who cleared their inbox couldn't get back to a
-      // live swap.
-      { href: '/my/swaps', label: 'Swaps', Icon: SwapIcon },
       { href: '/wishlist', label: 'Wishlist', Icon: HeartIcon },
       { href: '/saved-searches', label: 'Saved searches', Icon: SearchAlertIcon },
     ],
@@ -231,6 +222,16 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     ],
   },
   {
+    // Load Lab moved here on 2026-08-26. It used to be a tab inside the Ask
+    // Boet page; when the assistant was removed the operator kept Load Lab and
+    // put it in the account beside the licence tools. Its own group rather
+    // than inside "Licences" because reloading data is not paperwork.
+    title: 'Tools',
+    items: [
+      { href: '/load-lab', label: 'Load Lab', Icon: CartridgeIcon },
+    ],
+  },
+  {
     title: 'Selling',
     items: [
       { href: '/my/listings', label: 'Listings', Icon: StoreIcon },
@@ -244,7 +245,6 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     items: [
       { href: '/dashboard', label: 'Dashboard', Icon: DashboardIcon },
       { href: '/profile', label: 'Profile', Icon: UserIcon },
-      { href: '/subscribe', label: PRO_NAME, Icon: CrownIcon },
       { href: '/settings', label: 'Settings', Icon: SettingsIcon },
       { href: '/notifications', label: 'Notifications', Icon: BellIcon },
     ],

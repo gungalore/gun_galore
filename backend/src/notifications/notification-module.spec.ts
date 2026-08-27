@@ -15,11 +15,6 @@ describe('moduleForNotification', () => {
     expect(moduleForNotification('auction_win_lapsed', 'BUYER')).toBe('/my/bids');
   });
 
-  it('routes swaps to /my/swaps', () => {
-    expect(moduleForNotification('swap_proposal_received', 'BUYER')).toBe('/my/swaps');
-    expect(moduleForNotification('swap_disputed', 'SELLER')).toBe('/my/swaps');
-  });
-
   it('routes seller sale lifecycle to /my/sales', () => {
     expect(moduleForNotification('new_sale', 'SELLER')).toBe('/my/sales');
     expect(moduleForNotification('sale_rejected', 'SELLER')).toBe('/my/sales');

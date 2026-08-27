@@ -190,9 +190,7 @@ export function CrossSellRow({
                     ? formatPrice(l.price)
                     : l.listingType === 'TAKE_A_SHOT'
                       ? 'Make offer'
-                      : l.listingType === 'SWOP'
-                        ? 'Swap'
-                        : '—'}
+                      : '—'}
                 </p>
               </div>
             </Link>

@@ -629,7 +629,7 @@ export default function EditListingPage() {
                       borderRadius: '50%',
                       background: 'var(--red)',
                       color: '#fff',
-                      border: '0.5px solid var(--bg-page)',
+                      border: '0.5px solid var(--bg)',
                       fontSize: 12,
                       lineHeight: '18px',
                       cursor: 'pointer',
@@ -912,27 +912,6 @@ export default function EditListingPage() {
           </Field>
         )}
 
-        {/* Swop declared value — the honest-value anchor: sets the swap
-            service fee (1.5%, min R50, cap R750), is shown to the
-            counterparty in negotiation, and caps dispute compensation. */}
-        {listing.listingType === 'SWOP' && (
-          <Field label="Declared value (R)">
-            <input
-              type="number"
-              min={1}
-              step="0.01"
-              value={form.declaredValue}
-              onChange={(e) => set('declaredValue', e.target.value)}
-              style={inputStyle}
-              placeholder="What the item is honestly worth"
-            />
-            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-              Shown to the other party while negotiating. Sets your swap
-              service fee (1.5%, min R50, max R750) and caps what you can
-              claim if the swap goes wrong — honest is best.
-            </p>
-          </Field>
-        )}
 
         {/* Specifications (P4.2) — per-category attributes, pre-filled from
             the listing. Only shown when the category has attribute defs. */}
