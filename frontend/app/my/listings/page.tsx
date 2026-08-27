@@ -193,8 +193,8 @@ export default async function MyListingsPage() {
                       title={status.hint ?? status.label}
                       style={{
                         color,
-                        background: `${color}18`,
-                        border: `0.5px solid ${color}40`,
+                        background: `color-mix(in srgb, ${color} 9%, transparent)`,
+                        border: `0.5px solid color-mix(in srgb, ${color} 25%, transparent)`,
                       }}
                     >
                       {status.label}

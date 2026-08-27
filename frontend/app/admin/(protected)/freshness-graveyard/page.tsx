@@ -187,7 +187,7 @@ export default function FreshnessGraveyardPage() {
                       style={{
                         background:
                           r.staleScore > 100000
-                            ? 'var(--red)18'
+                            ? 'var(--red-wash)'
                             : r.staleScore > 30000
                               ? '#f59e0b18'
                               : 'var(--bg-inset)',

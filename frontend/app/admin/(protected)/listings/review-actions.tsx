@@ -101,7 +101,7 @@ export default function ReviewActions({ listingId }: { listingId: string }) {
           onClick={() => setShowReject(true)}
           disabled={busy}
           className="px-2.5 py-1 rounded text-xs font-medium"
-          style={{ background: 'var(--red)18', color: 'var(--red)', border: '0.5px solid var(--red)40' }}
+          style={{ background: 'var(--red-wash)', color: 'var(--red)', border: '0.5px solid var(--red-line)' }}
         >
           Reject
         </button>

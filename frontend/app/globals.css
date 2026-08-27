@@ -56,6 +56,25 @@
   /* Brand */
   --red:         #C8102E;
   --red-hover:   #A00D24;
+  /* Diluted red, for the admin status chips and their keylines. Named to
+     match --gold-wash / --gold-line, which do the same job for gold.
+
+     ⚠️ THESE EXIST BECAUSE YOU CANNOT ALPHA-DILUTE A var() BY CONCATENATION.
+     The admin surfaces used to append a two-digit hex alpha straight onto the
+     token reference — the red equivalent of writing `#C8102E` + `18` — to mean
+     "--red at 9%". Custom-property substitution is TOKEN-based, not string-
+     based, so that expands to two separate tokens rather than one 8-digit
+     colour, the whole declaration is invalid at computed-value time, and the
+     property takes its INITIAL value. Every one of those chip fills rendered
+     `transparent`, and the matching 25% keylines rendered `currentColor` —
+     a solid near-black hairline instead of a faint red one. Nothing warns:
+     not tsc, not the build, not the console. Verified in-browser before and
+     after. Fixed 2026-08-27.
+
+     If you need a dilution these two don't cover, reach for
+     `color-mix(in srgb, var(--red) N%, transparent)`. Never concatenate. */
+  --red-wash:    rgba(200, 16, 46, 0.09);
+  --red-line:    rgba(200, 16, 46, 0.25);
   /* Links. Red at full strength vibrates against body text at reading
      size, so inline links get the deeper tone. */
   --link:        #B10E28;

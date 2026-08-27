@@ -312,7 +312,7 @@ export default function DossierActions({
           <>
             <span
               className="text-xs px-2 py-1 rounded-full self-center"
-              style={{ background: 'var(--red)18', color: 'var(--red)', fontWeight: 500 }}
+              style={{ background: 'var(--red-wash)', color: 'var(--red)', fontWeight: 500 }}
             >
               DISPUTED — resolve
             </span>
@@ -530,7 +530,7 @@ export default function DossierActions({
                   <label
                     className="flex items-start gap-2 mb-4 px-3 py-2 rounded"
                     style={{
-                      background: 'var(--red)18',
+                      background: 'var(--red-wash)',
                       border: '0.5px solid var(--red)',
                       cursor: 'pointer',
                     }}
@@ -563,7 +563,7 @@ export default function DossierActions({
                 className="mb-4 px-3 py-2 rounded"
                 style={{
                   background: failureResult.charged
-                    ? 'var(--red)18'
+                    ? 'var(--red-wash)'
                     : 'var(--bg-inset)',
                   border: `0.5px solid ${
                     failureResult.charged ? 'var(--red)' : 'var(--border)'
@@ -694,9 +694,9 @@ function ActionButton({
       onClick={onClick}
       className="px-3 py-1.5 rounded text-xs font-medium"
       style={{
-        background: `${color}18`,
+        background: `color-mix(in srgb, ${color} 9%, transparent)`,
         color,
-        border: `0.5px solid ${color}40`,
+        border: `0.5px solid color-mix(in srgb, ${color} 25%, transparent)`,
         cursor: 'pointer',
       }}
     >

@@ -80,7 +80,7 @@ export default async function MySalesPage() {
             }
             style={{
               color,
-              background: `${color}18`,
+              background: `color-mix(in srgb, ${color} 9%, transparent)`,
             }}
           >
             {status.label}

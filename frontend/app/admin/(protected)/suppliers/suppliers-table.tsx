@@ -106,9 +106,16 @@ export default function SuppliersTable({
                   </p>
                 </div>
                 {!s.active && (
+                  // Fill and ink are a PAIR here, and deliberately not the same
+                  // token. --text-tertiary is documented at exactly 4.5:1 on
+                  // white, so once this chip got its intended tint back (the
+                  // fill used to be a broken var()+alpha concatenation, i.e.
+                  // transparent) the label dropped to 4.24:1 — the tint ate the
+                  // entire contrast margin. The ink steps down to
+                  // --text-secondary, which clears it at 8.6:1.
                   <span
                     className="text-xs px-2 py-0.5 rounded-full"
-                    style={{ background: 'var(--text-tertiary)18', color: 'var(--text-tertiary)' }}
+                    style={{ background: 'color-mix(in srgb, var(--text-tertiary) 9%, transparent)', color: 'var(--text-secondary)' }}
                   >
                     INACTIVE
                   </span>

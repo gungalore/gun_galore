@@ -82,7 +82,7 @@ export default function CancelButton({ listingId }: { listingId: string }) {
       <button
         onClick={openConfirm}
         className="px-2.5 py-1 rounded text-xs"
-        style={{ color: 'var(--red)', border: '0.5px solid var(--red)40' }}
+        style={{ color: 'var(--red)', border: '0.5px solid var(--red-line)' }}
       >
         Cancel
       </button>

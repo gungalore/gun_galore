@@ -317,9 +317,9 @@ function AlertPill({
       className={`text-[10px] leading-none px-1.5 py-0.5 rounded-full shrink-0 ${className ?? ''}`}
       title={`${count} unresolved alert${count === 1 ? '' : 's'}${urgent ? ' — some urgent' : ''}`}
       style={{
-        background: `${colour}20`,
+        background: `color-mix(in srgb, ${colour} 13%, transparent)`,
         color: colour,
-        border: `0.5px solid ${colour}55`,
+        border: `0.5px solid color-mix(in srgb, ${colour} 33%, transparent)`,
         fontWeight: 600,
       }}
     >

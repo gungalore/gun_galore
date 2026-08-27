@@ -234,7 +234,7 @@ export function ListingPreviewModal({
             style={{
               width: 36,
               height: 36,
-              background: `${verdictColor}22`,
+              background: `color-mix(in srgb, ${verdictColor} 13%, transparent)`,
               border: `0.5px solid ${verdictColor}`,
               color: verdictColor,
               fontSize: 18,
@@ -324,7 +324,7 @@ export function ListingPreviewModal({
                       key={cat}
                       className="text-xs px-2.5 py-1 rounded-full"
                       style={{
-                        background: `${tone}22`,
+                        background: `color-mix(in srgb, ${tone} 13%, transparent)`,
                         color: tone,
                         border: `0.5px solid ${tone}`,
                         fontWeight: 500,

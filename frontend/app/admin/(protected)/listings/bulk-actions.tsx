@@ -131,9 +131,9 @@ export function BulkListingActionsBar({
           onClick={() => setAction('REJECT')}
           className="px-3 py-1.5 rounded text-xs font-medium"
           style={{
-            background: 'var(--red)18',
+            background: 'var(--red-wash)',
             color: 'var(--red)',
-            border: '0.5px solid var(--red)40',
+            border: '0.5px solid var(--red-line)',
             cursor: 'pointer',
           }}
         >

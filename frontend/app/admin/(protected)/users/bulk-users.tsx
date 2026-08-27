@@ -146,7 +146,7 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
                     background: isSelected
                       ? 'rgba(200,16,46,0.05)'
                       : u.isBanned
-                        ? 'var(--red)08'
+                        ? 'color-mix(in srgb, var(--red) 3%, transparent)'
                         : undefined,
                   }}
                 >
@@ -170,7 +170,7 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
                         {u.isBanned && (
                           <span
                             className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full"
-                            style={{ background: 'var(--red)20', color: 'var(--red)' }}
+                            style={{ background: 'var(--red-wash)', color: 'var(--red)' }}
                           >
                             banned
                           </span>
@@ -264,9 +264,9 @@ export default function BulkUsersTable({ users }: { users: User[] }) {
             onClick={() => setConfirmOpen(true)}
             className="px-3 py-1.5 rounded text-xs font-medium"
             style={{
-              background: 'var(--red)18',
+              background: 'var(--red-wash)',
               color: 'var(--red)',
-              border: '0.5px solid var(--red)40',
+              border: '0.5px solid var(--red-line)',
               cursor: 'pointer',
             }}
           >

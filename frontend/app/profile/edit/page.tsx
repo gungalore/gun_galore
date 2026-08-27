@@ -142,7 +142,7 @@ function StatusBanner({
     <div
       className="text-xs rounded-[6px] px-3 py-2"
       style={{
-        background: `${colour}14`,
+        background: `color-mix(in srgb, ${colour} 8%, transparent)`,
         border: `0.5px solid ${colour}`,
         color: colour,
       }}

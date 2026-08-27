@@ -312,7 +312,7 @@ export default async function ProfilePage() {
             <span
               className="text-xs px-2.5 py-1 rounded-full"
               style={{
-                background: `${kyc.colour}22`,
+                background: `color-mix(in srgb, ${kyc.colour} 13%, transparent)`,
                 color: kyc.colour,
                 border: `0.5px solid ${kyc.colour}`,
                 fontWeight: 500,

@@ -121,7 +121,7 @@ export default function DealerVerificationPanel({
           <div className="flex gap-2 items-center">
             <span
               className="text-xs px-2 py-0.5 rounded-full"
-              style={{ background: `${colour}18`, color: colour, fontWeight: 500 }}
+              style={{ background: `color-mix(in srgb, ${colour} 9%, transparent)`, color: colour, fontWeight: 500 }}
             >
               {status.replace(/_/g, ' ')}
             </span>
@@ -184,9 +184,9 @@ export default function DealerVerificationPanel({
             disabled={status === 'REJECTED'}
             className="flex-1 py-2 rounded text-xs font-medium"
             style={{
-              background: status === 'REJECTED' ? 'var(--bg-inset)' : 'var(--red)18',
+              background: status === 'REJECTED' ? 'var(--bg-inset)' : 'var(--red-wash)',
               color: status === 'REJECTED' ? 'var(--text-tertiary)' : 'var(--red)',
-              border: '0.5px solid var(--red)40',
+              border: '0.5px solid var(--red-line)',
               cursor: status === 'REJECTED' ? 'not-allowed' : 'pointer',
             }}
           >

@@ -158,7 +158,7 @@ export default function TrustSafetyPage() {
                     <td className="px-4 py-3 text-right">
                       <span
                         className="text-xs px-2 py-0.5 rounded-full"
-                        style={{ background: 'var(--red)18', color: 'var(--red)', fontWeight: 500 }}
+                        style={{ background: 'var(--red-wash)', color: 'var(--red)', fontWeight: 500 }}
                       >
                         {r.rejectionCount}
                       </span>
@@ -363,7 +363,7 @@ export default function TrustSafetyPage() {
                     <td className="px-4 py-3 text-right">
                       <span
                         className="text-xs px-2 py-0.5 rounded-full"
-                        style={{ background: 'var(--red)18', color: 'var(--red)' }}
+                        style={{ background: 'var(--red-wash)', color: 'var(--red)' }}
                       >
                         {q.reportedCount}
                       </span>

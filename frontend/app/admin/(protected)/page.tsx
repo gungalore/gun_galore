@@ -354,7 +354,7 @@ export default function AdminCommandCenterPage() {
                 <span
                   className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium"
                   style={{
-                    background: `${visual.color}20`,
+                    background: `color-mix(in srgb, ${visual.color} 13%, transparent)`,
                     color: visual.color,
                   }}
                 >

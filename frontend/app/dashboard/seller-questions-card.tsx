@@ -177,9 +177,9 @@ export function SellerQuestionsCard() {
                   <span
                     className="text-[10px] uppercase px-1.5 py-0.5 rounded-[3px]"
                     style={{
-                      background: `${badge.color}18`,
+                      background: `color-mix(in srgb, ${badge.color} 9%, transparent)`,
                       color: badge.color,
-                      border: `0.5px solid ${badge.color}40`,
+                      border: `0.5px solid color-mix(in srgb, ${badge.color} 25%, transparent)`,
                       letterSpacing: '0.05em',
                     }}
                   >

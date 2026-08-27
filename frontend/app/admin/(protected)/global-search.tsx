@@ -235,7 +235,7 @@ export default function GlobalSearch() {
                           title={`@${u.username ?? '(no username)'}`}
                           sub={u.email}
                           chip={u.isBanned ? 'BANNED' : u.sellerTier}
-                          chipColor={u.isBanned ? 'var(--red)' : 'var(--text-tertiary)'}
+                          chipColor={u.isBanned ? 'var(--red)' : 'var(--text-secondary)'}
                         />
                       );
                     })}
@@ -255,7 +255,7 @@ export default function GlobalSearch() {
                           title={l.title}
                           sub={`${l.referenceNumber ?? l.id.slice(0, 8)} · @${l.seller.username ?? 'anon'} · R${((l.price ?? 0) / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
                           chip={l.status}
-                          chipColor="var(--text-tertiary)"
+                          chipColor="var(--text-secondary)"
                         />
                       );
                     })}
@@ -275,7 +275,7 @@ export default function GlobalSearch() {
                           title={t.listing.title}
                           sub={`${t.listing.referenceNumber ?? t.id.slice(0, 8)} · R${(t.buyerTotal / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
                           chip={t.paymentStatus}
-                          chipColor="var(--text-tertiary)"
+                          chipColor="var(--text-secondary)"
                         />
                       );
                     })}
@@ -295,7 +295,7 @@ export default function GlobalSearch() {
                           title={o.orderReference ?? o.id.slice(0, 8)}
                           sub={`@${o.buyer.username ?? 'anon'} · ${o._count.transactions} line${o._count.transactions === 1 ? '' : 's'} · R${(o.buyerTotal / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
                           chip={o.status}
-                          chipColor="var(--text-tertiary)"
+                          chipColor="var(--text-secondary)"
                         />
                       );
                     })}
@@ -382,7 +382,7 @@ function ResultRow({
       </div>
       <span
         className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
-        style={{ background: `${chipColor}18`, color: chipColor }}
+        style={{ background: `color-mix(in srgb, ${chipColor} 9%, transparent)`, color: chipColor }}
       >
         {chip.replace(/_/g, ' ')}
       </span>
