@@ -23,6 +23,7 @@ import { usePathname } from 'next/navigation';
 import { BottomTabBar } from '@/components/bottom-tab-bar';
 import { ShellHeader } from '@/components/shell/shell-header';
 import { ShellScrollProvider } from '@/components/shell/shell-scroll';
+import { ShellStepProvider } from '@/components/shell/shell-step';
 import { hasShell } from '@/lib/shell-routes';
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -38,7 +39,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <ShellScrollProvider paneRef={paneRef}>
-      <div className="gg-shell">
+      <ShellStepProvider>
+        <div className="gg-shell">
         {/* No Suspense boundary here, on purpose — see the note in
             shell-header.tsx. The header reads no search params, so it must not
             be behind a boundary: one would make it absent from the prerendered
@@ -52,7 +54,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Suspense fallback={null}>
           <BottomTabBar />
         </Suspense>
-      </div>
+        </div>
+      </ShellStepProvider>
     </ShellScrollProvider>
   );
 }

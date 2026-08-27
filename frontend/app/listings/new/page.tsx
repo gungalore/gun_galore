@@ -11,6 +11,7 @@ import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
 import { PhotoDropzone } from '@/components/photo-dropzone';
 import { StepAccordion, StepStatus } from '@/components/step-accordion';
+import { useShellStep } from '@/components/shell/shell-step';
 import IdentifyFromPhotos from './identify-from-photos';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
@@ -1353,6 +1354,17 @@ export default function NewListingPage() {
   // stays on requiresPapers — batteries don't need registration papers.
   const effectiveCollectionOnly = collectionOnly || dgLithiumRestricted;
 
+  // Short names for the mobile step row. These mirror the four StepAccordion
+  // titles below; step 4's accordion title swaps between "Collection &
+  // address" and "Delivery & address", which is more than the row's single
+  // line can hold beside a "Step 4 of 4" counter, so it reads plainly here.
+  const SELL_STEP_LABELS = [
+    'Photos',
+    'About this item',
+    'How are you selling?',
+    'Delivery & address',
+  ] as const;
+
   // Render ONE "Courier delivery" tick instead of the per-carrier pills.
   // Firearms and collection-only categories are excluded outright — neither
   // is couriered (a firearm always moves through a licensed dealer), so
@@ -1772,6 +1784,29 @@ export default function NewListingPage() {
   // user header click does.
   const [expandedStep, setExpandedStep] = useState<1 | 2 | 3 | 4 | null>(1);
   const isOpen = (n: number) => expandedStep === n;
+
+  // Publish the open step to the mobile shell header, which draws it as a
+  // labelled progress row under the title (components/shell/shell-step.tsx).
+  // Desktop ignores it — the shell chrome is phone-and-installed-app only, and
+  // the accordion's own numbered headers already do this job on a wide screen.
+  //
+  // Null when every step is collapsed: the seller is looking at the whole form
+  // rather than working through one, so a "step 3 of 4" would be claiming a
+  // position they are not in.
+  //
+  // Gated on the form actually being on screen. The component returns null
+  // until Clerk resolves and the seller is signed in, and hooks run before that
+  // return — so without this the header would announce "Photos · Step 1 of 4"
+  // over an empty page for as long as auth took to settle.
+  useShellStep(
+    isLoaded && isSignedIn && expandedStep
+      ? {
+          label: SELL_STEP_LABELS[expandedStep - 1],
+          current: expandedStep,
+          total: SELL_STEP_LABELS.length,
+        }
+      : null,
+  );
 
   // `furthestStep` lives further up the file (next to the draft-persistence
   // block) so the draft-restore and Relist-prefill effects can re-open the
@@ -2590,7 +2625,7 @@ export default function NewListingPage() {
           style={{
             background: 'rgba(47, 158, 107, 0.12)',
             border: '0.5px solid rgba(47, 158, 107, 0.5)',
-            color: '#2f9e6b',
+            color: 'var(--success)',
             fontWeight: 600,
           }}
         >
@@ -2621,7 +2656,7 @@ export default function NewListingPage() {
           }}
         >
           <span>
-            <strong style={{ color: '#2f9e6b' }}>Draft restored</strong> —
+            <strong style={{ color: 'var(--success)' }}>Draft restored</strong> —
             your typed details are back, including specifications, quantity
             and anything you&apos;d ticked, and every step you&apos;d already
             worked through is open again. Uploads can&apos;t be saved on
@@ -2664,7 +2699,7 @@ export default function NewListingPage() {
             lineHeight: 1.5,
           }}
         >
-          <strong style={{ color: '#2f9e6b' }}>Details carried over</strong> —
+          <strong style={{ color: 'var(--success)' }}>Details carried over</strong> —
           {relistPriceCleared
             ? ' your previous listing’s description, specifications, selling type and delivery options are already filled in, so every step is open for review. Check each one, then add fresh photos before you publish.'
             : ' your previous listing’s description, specifications, selling type, price and delivery options are already filled in, so every step is open for review. Check each one, adjust your price if it didn’t sell last time, then add fresh photos before you publish.'}
@@ -3312,7 +3347,7 @@ export default function NewListingPage() {
                   </button>
                 </div>
                 {estimateError && (
-                  <p style={{ fontSize: 12, color: 'var(--danger, #c0392b)', marginTop: 8 }}>
+                  <p style={{ fontSize: 12, color: 'var(--danger)', marginTop: 8 }}>
                     {estimateError}
                   </p>
                 )}
@@ -3752,7 +3787,7 @@ export default function NewListingPage() {
                       lineHeight: 1.5,
                     }}
                   >
-                    <strong style={{ color: '#f59e0b' }}>Heads up —</strong>{' '}
+                    <strong style={{ color: 'var(--warning)' }}>Heads up —</strong>{' '}
                     offers at or above this price become binding
                     sales the moment the buyer hits send. You
                     won&apos;t review them. Leave blank if you want to
@@ -3891,7 +3926,7 @@ export default function NewListingPage() {
                   <p
                     className="text-xs mt-2"
                     style={{
-                      color: '#f59e0b',
+                      color: 'var(--warning)',
                       lineHeight: 1.55,
                     }}
                   >
@@ -3996,7 +4031,7 @@ export default function NewListingPage() {
                 <p
                   className="text-xs"
                   style={{
-                    color: papersAttested ? '#00a03c' : 'var(--text-tertiary)',
+                    color: papersAttested ? 'var(--success)' : 'var(--text-tertiary)',
                   }}
                 >
                   {papersAttested
@@ -4496,7 +4531,7 @@ export default function NewListingPage() {
                       background: disabled
                         ? 'var(--bg-inset)'
                         : issueCount > 0
-                          ? '#f59e0b'
+                          ? 'var(--warning)'
                           : 'var(--red)',
                       color: disabled ? 'var(--text-tertiary)' : '#fff',
                       fontWeight: 500,
@@ -4532,7 +4567,7 @@ export default function NewListingPage() {
                 {previousAttemptHashes.length > 0 && (
                   <p
                     className="text-xs mt-2 text-center"
-                    style={{ color: '#f59e0b' }}
+                    style={{ color: 'var(--warning)' }}
                   >
                     Attempt {previousAttemptHashes.length + 1} — make sure
                     you fixed the issues from your last review.

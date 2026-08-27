@@ -25,6 +25,7 @@ import { LiveSearch } from '@/components/live-search';
 import { useCart } from '@/lib/cart-store';
 import { useWishlist } from '@/lib/use-wishlist';
 import { pushTitleFor } from '@/lib/shell-routes';
+import { ShellStepRow } from '@/components/shell/shell-step';
 
 // Routes that get the ROOT header. Everything else gets PUSH.
 const ROOT_PATHS = new Set(['/', '/account']);
@@ -359,6 +360,9 @@ export function ShellHeader() {
         {isRoot ? <RootHeader /> : <PushHeader pathname={pathname} />}
       </div>
       {showSearch && <SearchRow />}
+      {/* Row two on a wizard. Renders only when the page below has published a
+          step (see shell-step.tsx), so every other screen pays nothing. */}
+      {!isRoot && <ShellStepRow />}
     </header>
   );
 }
