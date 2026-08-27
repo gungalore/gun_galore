@@ -6,6 +6,7 @@ import { ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
 import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
+import { ShopModeTiles } from '@/components/shop-mode-tiles';
 import { PageBackground } from '@/components/page-background';
 import { PageReveal } from '@/components/page-reveal';
 import { HomeInfoPanel } from '@/components/home-info-panel';
@@ -161,6 +162,7 @@ export default async function HomePage({
     categories,
     brands,
     facetData,
+    modeCounts,
   ] = await Promise.all([
     // Sentinel on failure (null) — a backend hiccup must NOT render the
     // genuine-empty "nothing listed yet" copy; the two states get
@@ -183,7 +185,24 @@ export default async function HomePage({
       : Promise.resolve({
           facets: {} as Record<string, Record<string, number>>,
         }),
+    // Counts for the two "Shop by mode" tiles. Two limit=1 calls wanted purely
+    // for their `total`, and only on the bare landing page where the tiles
+    // actually render — every other surface skips them entirely. A failure
+    // resolves null, which the tile reads as "say nothing" rather than "0".
+    showHero
+      ? Promise.all([
+          viewerFetch<BrowseResponse>(
+            '/listings?limit=1&listingType=BUY_NOW',
+          ).catch(() => null),
+          viewerFetch<BrowseResponse>(
+            '/listings?limit=1&listingType=AUCTION',
+          ).catch(() => null),
+        ])
+      : Promise.resolve([null, null] as [null, null]),
   ]);
+
+  const buyNowCount = modeCounts[0]?.total ?? null;
+  const auctionCount = modeCounts[1]?.total ?? null;
 
   // null = the listings API call FAILED (network/backend) — distinct from a
   // legitimately empty result set. Downstream consumers keep the empty shape
@@ -267,6 +286,14 @@ export default async function HomePage({
           "why All Outdoor" proof lives inside <Hero /> — no separate banner. */}
       {showHero && <Hero />}
 
+      {/* The storefront's primary fork, and the first thing under the hero.
+          Until this existed the landing page went hero → "Good to know" with
+          nothing shopping-shaped in between, which is most of why it read as a
+          help page with products underneath. */}
+      {showHero && (
+        <ShopModeTiles buyNowCount={buyNowCount} auctionCount={auctionCount} />
+      )}
+
       {/* ─── Bare landing page: no filter, no pagination ───
           When the user lands on "/" with no filters, the page shows the
           "Good to know" panel, the recently-viewed rail, then the 24
@@ -284,17 +311,6 @@ export default async function HomePage({
               kept for reuse elsewhere; only the homepage stopped
               rendering it. */}
 
-          {/* Good to know — the selling / buying / fees answers, folded
-              away behind disclosure rows so the page above stays a
-              storefront. No JavaScript; native <details>. */}
-          <HomeInfoPanel />
-
-          {/* Recently viewed — self-hides if the user has < 2 entries
-              on this device, so cold-start visitors don't see an empty
-              rail. Sits below the "Good to know" panel so returning
-              users get a quick re-entry into things they were looking
-              at. */}
-          <RecentlyViewedRail />
 
           {/* Latest listings — the landing page previously ended here with
               NO product grid at all: real ads were only reachable via the
@@ -353,6 +369,17 @@ export default async function HomePage({
               </div>
             </div>
           )}
+          {/* Good to know — the selling / buying / fees answers, folded
+              away behind disclosure rows so the page above stays a
+              storefront. No JavaScript; native <details>. */}
+          <HomeInfoPanel />
+
+          {/* Recently viewed — self-hides if the user has < 2 entries
+              on this device, so cold-start visitors don't see an empty
+              rail. Sits below the "Good to know" panel so returning
+              users get a quick re-entry into things they were looking
+              at. */}
+          <RecentlyViewedRail />
         </section>
       ) : hasBackground ? (
         /* Filtered surfaces (marketplace/auctions/take-a-shot) keep
