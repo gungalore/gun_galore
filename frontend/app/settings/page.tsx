@@ -80,6 +80,12 @@ export default function SettingsPage() {
   // flag decides whether anything actually goes out — and it carries shipping
   // updates only, which is why savePrefs never lets it satisfy the floor.
   const [whatsappOn, setWhatsappOn] = useState(true);
+  // Silences the Take a Shot offer ALERT only (default true) — the offer
+  // itself is still written and still shows up in the seller's Offers list
+  // either way. Not a delivery channel like the three above, so — same as
+  // WhatsApp — it never counts toward the Email/SMS reachability floor in
+  // savePrefs.
+  const [offersOn, setOffersOn] = useState(true);
   const [fallback, setFallback] = useState<FallbackChannel>('EMAIL');
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [form, setForm] = useState<AddrForm | null>(null);
@@ -128,6 +134,7 @@ export default function SettingsPage() {
       setEmailOn(me?.notifyEmailEnabled !== false);
       setSmsOn(me?.notifySmsEnabled !== false);
       setWhatsappOn(me?.notifyWhatsappEnabled !== false);
+      setOffersOn(me?.notifyOffersEnabled !== false);
       // Anything we don't recognise falls back to EMAIL, the column's own
       // default. A <select> whose value matches none of its options renders
       // blank, so never hand it a value straight off the wire.
@@ -158,17 +165,20 @@ export default function SettingsPage() {
     emailEnabled?: boolean;
     smsEnabled?: boolean;
     whatsappEnabled?: boolean;
+    offersEnabled?: boolean;
     fallbackChannel?: FallbackChannel;
   }) {
     // ⚠️ At least one of Email or SMS has to stay on, or we lose every way to
     // reach the user off-site. The server enforces this and answers 400, but
-    // we mirror it here so the switch never flicks off and back. NEITHER of
-    // the other two is counted: WhatsApp carries shipping updates only, so a
+    // we mirror it here so the switch never flicks off and back. NONE of the
+    // other three is counted: WhatsApp carries shipping updates only, so a
     // member left on it alone would never hear about an offer, a payment, a
-    // KYC step or a dealer hand-off, and the fallback only fires once a send
-    // has already failed — a retry, not a channel you're reachable on. That
-    // also means only a patch that TOUCHES the pair is checked, matching the
-    // server: a WhatsApp- or fallback-only change can't put the member out of
+    // KYC step or a dealer hand-off; offers mutes the Take a Shot ALERT only,
+    // not the offer itself, so muting it can't make the member unreachable —
+    // only quieter; and the fallback only fires once a send has already
+    // failed — a retry, not a channel you're reachable on. That also means
+    // only a patch that TOUCHES the pair is checked, matching the server: a
+    // WhatsApp-, offers- or fallback-only change can't put the member out of
     // reach, so it must not be refused by a floor it never moved — otherwise a
     // row that somehow has both halves off is frozen out of every other
     // setting on this card. Merge onto current state — `next` is a partial.
@@ -189,10 +199,12 @@ export default function SettingsPage() {
     const prevEmail = emailOn;
     const prevSms = smsOn;
     const prevWhatsapp = whatsappOn;
+    const prevOffers = offersOn;
     const prevFallback = fallback;
     if (next.emailEnabled !== undefined) setEmailOn(next.emailEnabled);
     if (next.smsEnabled !== undefined) setSmsOn(next.smsEnabled);
     if (next.whatsappEnabled !== undefined) setWhatsappOn(next.whatsappEnabled);
+    if (next.offersEnabled !== undefined) setOffersOn(next.offersEnabled);
     if (next.fallbackChannel !== undefined) setFallback(next.fallbackChannel);
     try {
       await authed('/users/me/notification-prefs', {
@@ -203,6 +215,7 @@ export default function SettingsPage() {
       setEmailOn(prevEmail);
       setSmsOn(prevSms);
       setWhatsappOn(prevWhatsapp);
+      setOffersOn(prevOffers);
       setFallback(prevFallback);
       setError(e instanceof Error ? e.message : 'Could not save preference');
     }
@@ -464,6 +477,34 @@ export default function SettingsPage() {
                 on={emailOn}
                 onClick={() => savePrefs({ emailEnabled: !emailOn })}
                 label="Email notifications"
+              />
+            </div>
+
+            {/* ⚠️ This mutes the ALERT only. Take a Shot is an option on every
+                Buy Now and Auction listing now, not a separate mode — so this
+                switch is NOT "turn offers off": an offer submitted to your
+                listing is still written and still shows up in your Offers
+                list either way, on every channel above. Only the "you got an
+                offer" notification itself goes quiet. Not a delivery channel,
+                so it sits with the channels above but is excluded from the
+                Email/SMS floor in savePrefs, same as WhatsApp. */}
+            <div
+              className="flex items-center justify-between py-2"
+              style={{ borderTop: '0.5px solid var(--border)' }}
+            >
+              <div>
+                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                  Take a Shot offers
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Mutes the alert only — offers on your listings still arrive
+                  and still show up in your Offers list.
+                </p>
+              </div>
+              <Toggle
+                on={offersOn}
+                onClick={() => savePrefs({ offersEnabled: !offersOn })}
+                label="Take a Shot offer notifications"
               />
             </div>
 

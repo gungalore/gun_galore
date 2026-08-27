@@ -82,9 +82,11 @@ const VAT_MULTIPLIER = 1.15;
 // through a dealer never gets one).
 const SHIPPING_HANDLING_FEE_CENTS = 1_500; // R15
 
-// The three ways to list — rendered as descriptive choice cards in Step 3
-// so sellers can compare and know where to list before picking. Copy mirrors
-// the /how-selling-works help page.
+// The two ways to list — rendered as descriptive choice cards in Step 3
+// so sellers can compare and know where to list before picking. Take a
+// Shot is no longer a mode of its own (operator decision 2026-08-27): it's
+// now the "Also accept offers" toggle available on either mode below, not
+// a third card here. Copy mirrors the /how-selling-works help page.
 const SELL_MODES: {
   value: 'BUY_NOW' | 'AUCTION' | 'TAKE_A_SHOT';
   name: string;
@@ -102,12 +104,6 @@ const SELL_MODES: {
     name: 'Auction',
     tagline: 'Let buyers compete and bid it up.',
     bestFor: ['Rare or in-demand', 'Unsure how high it’ll go', 'Hidden reserve protects you'],
-  },
-  {
-    value: 'TAKE_A_SHOT',
-    name: 'Take a Shot',
-    tagline: 'Buyers make offers; you decide.',
-    bestFor: ['Hard to price', 'Open to offers', 'Optional instant auto-accept'],
   },
 ];
 
@@ -673,6 +669,12 @@ export default function NewListingPage() {
     // off mid-form blanks the price so a stale value can't leak through.
     offerBuyNow: false,
     buyNowPrice: '',
+    // Take a Shot, promoted from a third mode to an "Also accept offers"
+    // toggle on Buy Now + Auction (operator decision 2026-08-27). Defaults
+    // ON to match the backend's Listing.acceptsOffers default — a seller
+    // who never opens Step 3's toggle still gets the same behaviour as one
+    // who explicitly ticked it.
+    acceptsOffers: true,
   });
 
   // Furthest step the seller has explicitly advanced to via the Continue
@@ -741,7 +743,10 @@ export default function NewListingPage() {
   const typeSeedRef = useRef(false);
   useEffect(() => {
     if (typeSeedRef.current || !typeParam || relistFromId) return;
-    const allowed = ['BUY_NOW', 'AUCTION', 'TAKE_A_SHOT'] as const;
+    // TAKE_A_SHOT excluded — it's no longer a pickable mode, so a stale
+    // ?type=TAKE_A_SHOT link now falls through as unknown (below) instead
+    // of pre-selecting a card the Step-3 picker no longer offers.
+    const allowed = ['BUY_NOW', 'AUCTION'] as const;
     const match = allowed.find((t) => t === typeParam.toUpperCase());
     if (!match) return;
     typeSeedRef.current = true;
@@ -2028,6 +2033,11 @@ export default function NewListingPage() {
       condition: form.condition,
       province,
       passFeeToBuyer: form.passFeeToBuyer,
+      // Whether buyers may send offers against this listing — the "Also
+      // accept offers" toggle in Step 3. Sent for every mode; a TAKE_A_SHOT
+      // listing (relisted from before this change) already accepts offers
+      // by definition, so the flag is harmless there too.
+      acceptsOffers: form.acceptsOffers,
       // De-dupe defensively so a stale state can't ever send the API a
       // duplicate (which would fail @ArrayMaxSize(2) on the DTO).
       shippingMethods: Array.from(new Set(shippingMethods)),
@@ -3204,7 +3214,7 @@ export default function NewListingPage() {
             <Field
               label="Listing type"
               required
-              tipTitle="Three ways to sell"
+              tipTitle="Two ways to sell"
               tip={
                 <>
                   <strong>Marketplace:</strong> fixed price, buyer hits Buy
@@ -3212,9 +3222,10 @@ export default function NewListingPage() {
                   <strong>Auction:</strong> timed bidding with snipe
                   protection. Best for items where value is uncertain.
                   <br />
-                  <strong>Take a Shot:</strong> buyers send offers; you
-                  accept, decline, or counter once. Good when you&apos;re
-                  open to negotiation.
+                  <br />
+                  Either way, you can also let buyers send offers below
+                  the price — see &ldquo;Also accept offers&rdquo; below
+                  once you&apos;ve picked a type.
                   <br />
                   <br />
                   Whichever you pick is locked once the listing publishes —
@@ -3766,6 +3777,49 @@ export default function NewListingPage() {
                   </Field>
                 )}
               </>
+            )}
+
+            {/* Also accept offers — Take a Shot, promoted from a third mode
+                to an option on both of the remaining ones (operator decision
+                2026-08-27). Sets acceptsOffers, which the backend now gates
+                the offer flow on (`if (!listing.acceptsOffers)`) instead of
+                requiring listingType === 'TAKE_A_SHOT'. Everything the offer
+                actually DOES once made — OfferPanel, reject reasons +
+                strikes, the 48-hour clock, counter-offers, the SMS decision
+                link — is unchanged; this only decides whether the listing is
+                reachable from an offer at all. Defaults ON to match the
+                backend default, so unticking is a deliberate opt-out. */}
+            {(form.listingType === 'BUY_NOW' ||
+              form.listingType === 'AUCTION') && (
+              <div className="mt-1">
+                <label
+                  className="flex items-start gap-2 cursor-pointer"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.acceptsOffers}
+                    onChange={(e) => set('acceptsOffers', e.target.checked)}
+                    style={{
+                      accentColor: 'var(--red)',
+                      marginTop: 3,
+                    }}
+                  />
+                  <span className="text-sm">
+                    Also accept offers
+                    <span
+                      className="block text-xs mt-0.5"
+                      style={{ color: 'var(--text-tertiary)' }}
+                    >
+                      Buyers can send an offer below the listed price
+                      (which already includes our fees, so the offer is
+                      against that price). You get 48 hours to accept,
+                      decline, or counter each one — nothing sells until
+                      you respond.
+                    </span>
+                  </span>
+                </label>
+              </div>
             )}
 
             {/* Take a Shot extras */}

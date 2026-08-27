@@ -129,6 +129,12 @@ export default async function ListingDetailPage({
   // appear — it's confusing UX and was triggering a 400 round-trip.
   const isOwnListing = !!userId && userId === listing.seller.clerkId;
 
+  // Take a Shot is an OPTION on every BUY_NOW / AUCTION listing now, not a
+  // third selling mode — the seller turns offers on or off per listing, and
+  // the backend offer guard enforces it. `?? true` matches the column default,
+  // so a payload cached from before the column existed still behaves.
+  const acceptsOffers = listing.acceptsOffers ?? true;
+
   // UX-1a — sellable units for the low-stock urgency chip beside the price.
   // Only inventory-tracked (multi-unit BUY_NOW) listings carry this; null
   // otherwise so the chip never renders for single-item / firearm / auction
@@ -775,6 +781,25 @@ export default async function ListingDetailPage({
               {listing.status === 'SOLD' ? 'Sold' : 'Not available'}
             </div>
           ) : null}
+
+          {/* Take a Shot — promoted from a third listing mode to an option
+              available on EVERY listing; the seller decides per listing via
+              acceptsOffers. Rendered as a SECONDARY affordance below the
+              primary action above (Buy Now / Place a bid) — `secondary`
+              keeps OfferPanel's fresh-offer entry point collapsed behind a
+              muted prompt so it never competes with the primary CTA for
+              attention. Skipped for legacy TAKE_A_SHOT listings, which
+              already render OfferPanel as their one (primary) action in the
+              branch above — rendering it twice would duplicate the form. */}
+          {listing.status === 'ACTIVE' &&
+            listing.listingType !== 'TAKE_A_SHOT' &&
+            acceptsOffers && (
+              <OfferPanel
+                listingId={listing.id}
+                sellerClerkId={listing.seller.clerkId}
+                secondary
+              />
+            )}
           </div>
 
           {/* UX-1d — trust bullets under the CTA, on every listing type.

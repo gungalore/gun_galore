@@ -57,9 +57,19 @@ function timeLeft(iso: string): { text: string; urgent: boolean } | null {
 export default function OfferPanel({
   listingId,
   sellerClerkId,
+  secondary = false,
 }: {
   listingId: string;
   sellerClerkId: string;
+  // True when this panel sits ALONGSIDE a primary CTA (Buy Now / Place a
+  // bid) rather than being the page's only action — i.e. any BUY_NOW or
+  // AUCTION listing with acceptsOffers on. Keeps the fresh, never-made-an-
+  // offer entry point collapsed behind a muted prompt instead of the
+  // full-size red form, so it reads as the lesser of the two. Once a real
+  // offer exists (pending/countered/accepted/closed) it always renders at
+  // full visibility regardless of this flag — that's the buyer's live
+  // position, not just an invitation.
+  secondary?: boolean;
 }) {
   const { user, isLoaded } = useUser();
   const { getToken } = useAuth();
@@ -89,6 +99,9 @@ export default function OfferPanel({
   // Buyer explicitly chose to re-offer after a closed attempt — bypasses the
   // closed-offer card so the form comes back.
   const [showForm, setShowForm] = useState(false);
+  // Collapsed teaser for the `secondary` placement — only gates the very
+  // first "no offer yet" render; one click reveals the same form below.
+  const [expanded, setExpanded] = useState(!secondary);
 
   const isOwner = isLoaded && user?.id === sellerClerkId;
 
@@ -188,12 +201,24 @@ export default function OfferPanel({
           <button
             type="button"
             className="w-full py-3 rounded-[6px] text-sm font-medium"
-            style={{
-              background: 'var(--red)',
-              color: '#fff',
-              border: 'none',
-              cursor: 'pointer',
-            }}
+            style={
+              // Muted alongside a primary CTA (secondary=true); full weight
+              // when this panel is the page's only action (legacy
+              // TAKE_A_SHOT listings).
+              secondary
+                ? {
+                    background: 'var(--bg-inset)',
+                    color: 'var(--text-secondary)',
+                    border: '0.5px solid var(--border)',
+                    cursor: 'pointer',
+                  }
+                : {
+                    background: 'var(--red)',
+                    color: '#fff',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }
+            }
           >
             Sign in to make an offer
           </button>
@@ -354,6 +379,30 @@ export default function OfferPanel({
             Make another offer
           </button>
         )}
+      </div>
+    );
+  }
+
+  // Secondary placement, fresh visit, never made an offer: collapse behind
+  // a muted prompt instead of the full form, so the primary CTA (Buy Now /
+  // Place a bid) above stays the obvious first click. One click reveals the
+  // exact same form rendered below.
+  if (secondary && !expanded && mine === null) {
+    return (
+      <div className="mb-5">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="w-full py-2.5 rounded-[6px] text-sm text-center"
+          style={{
+            background: 'var(--bg-inset)',
+            color: 'var(--text-secondary)',
+            border: '0.5px solid var(--border)',
+            cursor: 'pointer',
+          }}
+        >
+          Rather make an offer?
+        </button>
       </div>
     );
   }
