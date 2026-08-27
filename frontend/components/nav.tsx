@@ -148,7 +148,7 @@ export function Nav() {
           borderBottom: '0.5px solid var(--border)',
         }}
       >
-        <div className="max-w-[var(--page-max)] mx-auto px-4 h-14 flex items-center gap-3 sm:gap-6">
+        <div className="max-w-[var(--page-max)] mx-auto px-4 h-[var(--nav-h)] flex items-center gap-3 sm:gap-6">
           {/* Logo — the composed nav lockup, and the MARK ALONE on phones.
 
               The nav constrains by HEIGHT, so shape decides width. The
@@ -598,27 +598,23 @@ export function Nav() {
           </div>
         )}
 
-        {/* Second tier — the selling-mode links. Desktop only; keeps the
-            selling modes fully visible on their own slim strip instead of
-            crushing the search on the top row. Mobile reaches these via the
-            hamburger drawer's Shop section. */}
-        <div
-          className="hidden md:block"
-          style={{ borderTop: '0.5px solid var(--border)' }}
-        >
-          <div className="max-w-[var(--page-max)] mx-auto px-4 h-10 flex items-center gap-5 text-sm">
-            {SHOP_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                style={{ color: 'var(--text-secondary)' }}
-                className="hover:text-[var(--text-primary)] transition-colors"
-              >
-                {link.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+        {/* ⚠️ THE SECOND TIER IS GONE (2026-08-27). It carried the Buy Now /
+            Auctions links on their own slim desktop strip, and existed only
+            because the storefront had nowhere else to put the two modes. The
+            design pack's header — identical across nine desktop boards, each
+            carrying the authored note "lifted from OptionE so the chrome is
+            identical site-wide" — is a SINGLE 62px row with no such tier, and
+            the modes now live in the Shop-by-mode tiles under the hero.
+
+            THE TRADE-OFF, STATED PLAINLY: those tiles are on the homepage only,
+            so from a listing or cart page the two modes are now two clicks
+            (logo → home → tile) rather than one. That is what the design
+            specifies, consistently, on every board — but it is a real
+            reduction. If it bites, the fix is a mode entry in the Categories
+            flyout, not this strip back.
+
+            SHOP_LINKS survives: it still feeds the mobile drawer's Shop
+            section, which is how phones reach the modes. */}
       </nav>
 
       {/* ─── Mobile drawer ──────────────────────────────────────────────

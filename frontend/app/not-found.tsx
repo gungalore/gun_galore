@@ -13,7 +13,7 @@ export default function NotFound() {
   return (
     <main
       style={{
-        minHeight: 'calc(100vh - 91px)', // subtract nav + urgent strip
+        minHeight: 'calc(100vh - var(--nav-h))',
         background: 'var(--bg-deep)',
         display: 'flex',
         alignItems: 'center',

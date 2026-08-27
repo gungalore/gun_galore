@@ -540,7 +540,7 @@ export default async function ListingDetailPage({
           {/* CTA — wrapped so the sticky mobile buy bar (UX-28) has a stable
               in-page anchor to scroll to for the non-checkout listing types.
               scrollMarginTop clears the sticky top nav on landing. */}
-          <div id="buy-panel" style={{ scrollMarginTop: 88 }}>
+          <div id="buy-panel" style={{ scrollMarginTop: 'calc(var(--nav-h) + 8px)' }}>
           {listing.status === 'ACTIVE' && listing.listingType === 'BUY_NOW' ? (
             isOwnListing ? (
               // Self-buy guard. Backend rejects the purchase anyway,

@@ -22,6 +22,14 @@
      column over the old 1280. */
   --page-max: 1600px;
 
+  /* Height of the sticky site header. THE single source of truth: error.tsx and
+     not-found.tsx were both sizing themselves with a hardcoded
+     `calc(100vh - 91px)` commented "subtract nav + urgent strip", and the
+     listing page cleared the sticky nav with a magic scrollMarginTop of 88 —
+     three different guesses at one number, all of which went stale the moment
+     the header changed shape. The design's header is a single 62px row. */
+  --nav-h: 62px;
+
   /* ── Surfaces ─────────────────────────────────────────────────────
      Winkel: a white retail skin. The page is a warm off-white and cards
      sit ON it in pure white, so a card reads as raised without needing a
