@@ -152,10 +152,15 @@ export function ShopModeTiles({
     {
       href: '/?listingType=BUY_NOW',
       title: 'Buy Now',
-      // Take a Shot lives INSIDE the Buy Now listing page, so it belongs in
-      // this blurb rather than as a third tile. Neither line advertises
-      // funds-holding, and neither says escrow.
-      blurb: 'Fixed prices — buy instantly or take a shot with an offer.',
+      // ⚠️ THE PACK'S COPY HERE SAID "buy instantly or take a shot with an
+      // offer", and that is not true of a Buy Now listing. TAKE_A_SHOT is a
+      // SEPARATE listingType with its own OfferPanel — app/listings/[id]/
+      // page.tsx gates the offer flow on `listingType === 'TAKE_A_SHOT'`, and
+      // SELL_MODES still offers it as a third mode when listing. A Buy Now
+      // item accepts no offers at all, so the pack's line promised a flow that
+      // does not exist on the thing it describes.
+      // Neither line advertises funds-holding, and neither says escrow.
+      blurb: 'Fixed prices — pay the listed price and it is yours.',
       count: buyNowCount,
       noun: 'listing',
       accent: 'var(--red)',

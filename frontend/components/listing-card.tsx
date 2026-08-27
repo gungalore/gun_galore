@@ -46,21 +46,28 @@ export function ListingCard({ listing }: { listing: Listing }) {
       : null;
 
   return (
-    <Link href={`/listings/${listing.id}`} className="block group gg-press">
-      <div
-        className="rounded-[6px] overflow-hidden transition-colors"
-        style={{
-          background: 'var(--bg-card)',
-          border: '0.5px solid var(--border)',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-hover)';
-          (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card-hover)';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)';
-          (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card)';
-        }}
+    // ⚠️ NOT A LINK ANY MORE. The whole card used to be one <Link>; the
+    // action row below is itself a link, and an anchor inside an anchor is
+    // invalid HTML and a screen-reader trap. The card is a container now,
+    // the photo and text are the link, and the action is its sibling.
+    <div
+      className="rounded-[6px] overflow-hidden transition-colors flex flex-col h-full"
+      style={{
+        background: 'var(--bg-card)',
+        border: '0.5px solid var(--border)',
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-hover)';
+        (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card-hover)';
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)';
+        (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card)';
+      }}
+    >
+      <Link
+        href={`/listings/${listing.id}`}
+        className="block group gg-press flex-1"
       >
         {/* Photo — 4:3.
             ⚠️ IT WAS 52.5%, AND THAT WAS TOO SHORT TO BUY FROM. The squeeze
@@ -265,33 +272,66 @@ export function ListingCard({ listing }: { listing: Listing }) {
             </span>
           </div>
 
-          {/* Auction-specific meta — bid count + time remaining.
-              Snipe-protection extension means endTime can change, but
-              the card refreshes when the page re-fetches; we compute
-              "time remaining" relative to render and let the user click
-              into the listing for the live countdown. The chip turns
-              red when <1h so browsers can spot the urgent auctions
-              without expanding every card. */}
-          {listing.listingType === 'AUCTION' && (
-            <div
-              className="flex items-center justify-between text-xs mt-1"
-              style={{ color: 'var(--text-tertiary)' }}
-            >
-              <span>
-                {listing.bidCount > 0
-                  ? `${listing.bidCount} bid${listing.bidCount === 1 ? '' : 's'}`
-                  : 'Starting bid'}
-              </span>
-              <AuctionTimeChip endTime={listing.endTime} />
-            </div>
-          )}
-
           <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
             {listing.province.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
           </p>
         </div>
+      </Link>
+
+      {/* Action row — pinned to the foot of the card so every one across a
+          row lands on the same baseline (the title's min-height above does
+          the other half of that job).
+
+          Both controls are LINKS to the listing's buy panel, not buttons: a
+          card has no price lock, no quantity and no auth context, so
+          anything that looked like it committed you from here would be
+          lying about what it does. */}
+      <div className="px-3 pb-3 flex items-center justify-between gap-2">
+        <Link
+          href={`/listings/${listing.id}#buy-panel`}
+          className="gg-press inline-flex items-center shrink-0"
+          style={{
+            height: 28,
+            padding: '0 13px',
+            borderRadius: 5,
+            fontFamily: 'var(--font-head)',
+            fontWeight: 700,
+            fontSize: 12,
+            textDecoration: 'none',
+            ...(listing.listingType === 'AUCTION'
+              ? {
+                  border: '1px solid var(--gold)',
+                  color: 'var(--gold)',
+                }
+              : {
+                  background: 'var(--red)',
+                  color: '#fff',
+                }),
+          }}
+        >
+          {listing.listingType === 'AUCTION' ? 'Place bid' : 'Buy now'}
+        </Link>
+
+        {/* Auctions put their live state on this side — the pack's own
+            layout. Buy Now has nothing to say here: the pack shows a "Take
+            a shot" link, but that flow exists only on TAKE_A_SHOT
+            listings, so offering it on a Buy Now card would be a promise
+            the listing page cannot keep. */}
+        {listing.listingType === 'AUCTION' && (
+          <span
+            className="flex items-center gap-1.5 text-[11px] min-w-0"
+            style={{ color: 'var(--text-tertiary)' }}
+          >
+            <span className="truncate">
+              {listing.bidCount > 0
+                ? `${listing.bidCount} bid${listing.bidCount === 1 ? '' : 's'}`
+                : 'Starting bid'}
+            </span>
+            <AuctionTimeChip endTime={listing.endTime} />
+          </span>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }
 
