@@ -74,7 +74,14 @@ export function AuctionOdometer({
   const ended = !endTime || ms <= 0;
 
   const totalSeconds = Math.floor(ms / 1000);
-  const hh = Math.floor(totalSeconds / 3600);
+  // ⚠️ DAYS ARE A DEPARTURE FROM THE PACK, AND A NECESSARY ONE. Its rings are
+  // hrs/min/sec only, which silently assumes every auction closes inside a day.
+  // These do not — the listing cards already say things like "Ends in 2d". With
+  // three rings a three-day auction would have shown "72" hours, or worse, an
+  // hours ring capped at 24 that stopped moving. The days ring renders ONLY
+  // when there is at least one, so the common case is the design's three.
+  const dd = Math.floor(totalSeconds / 86400);
+  const hh = Math.floor((totalSeconds % 86400) / 3600);
   const mm = Math.floor((totalSeconds % 3600) / 60);
   const ss = totalSeconds % 60;
 
@@ -126,7 +133,13 @@ export function AuctionOdometer({
   const decorClass = decorate ? '' : 'odo-quiet';
 
   const rings: Array<{ label: string; value: number; span: number; colour: string }> = [
-    { label: 'hrs', value: Math.min(hh, 24), span: 24, colour: gold },
+    // A week is an arbitrary span for the days arc — days have no natural
+    // wrap — but it makes the ring read as "filling up" over a normal listing
+    // run rather than sitting at nothing.
+    ...(dd > 0
+      ? [{ label: 'days', value: Math.min(dd, 7), span: 7, colour: gold }]
+      : []),
+    { label: 'hrs', value: hh, span: 24, colour: gold },
     { label: 'min', value: mm, span: 60, colour: lastMinute ? hot : gold },
     { label: 'sec', value: ss, span: 60, colour: hot },
   ];
@@ -180,7 +193,7 @@ export function AuctionOdometer({
         <span className="sr-only">
           {ended
             ? 'Auction ended'
-            : `${hh} hours ${mm} minutes ${ss} seconds remaining`}
+            : `${dd > 0 ? `${dd} days ` : ''}${hh} hours ${mm} minutes ${ss} seconds remaining`}
         </span>
         {rings.map((r) => (
           <span className="odo-ring" key={r.label} aria-hidden>
@@ -222,7 +235,7 @@ export function AuctionOdometer({
               )}
             </svg>
             <span className={`odo-num ${lastMinute && r.label !== 'hrs' ? 'odo-urgent' : ''}`}>
-              {String(r.label === 'hrs' ? hh : r.label === 'min' ? mm : ss).padStart(2, '0')}
+              {String(r.value).padStart(2, '0')}
             </span>
             <span className="odo-lbl">{r.label}</span>
           </span>

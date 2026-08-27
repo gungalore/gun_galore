@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AuctionOdometer } from '@/components/auction-odometer';
 import Link from 'next/link';
 import { useUser, useAuth, SignInButton } from '@clerk/nextjs';
 import { HelpTip } from '@/components/help-tip';
@@ -84,10 +85,6 @@ function formatRemaining(endTime: string | null): {
     ended: false,
     closing: ms < 5 * 60 * 1000,
   };
-}
-
-function pad2(n: number): string {
-  return n.toString().padStart(2, '0');
 }
 
 export default function AuctionPanel({
@@ -415,7 +412,24 @@ export default function AuctionPanel({
         </div>
       )}
 
-      {/* Bid header — current/starting bid + reserve indicator. */}
+      {/* The live price and countdown, as one piece.
+          ⚠️ THIS REPLACED TWO BLOCKS, not one: a price card and a separate
+          four-column D/H/M/S countdown card further down. The odometer carries
+          both, and keeping either alongside it would have shown the same bid
+          and the same clock twice. The DATA is unchanged — the same 1Hz tick
+          and the same 5s poll feed it. */}
+      <AuctionOdometer
+        amountCents={state.currentBid ?? state.startingBid}
+        bidCount={state.bidCount}
+        endTime={auctionOver ? null : state.endTime}
+        footnote={
+          state.bidCount === 0 ? 'Starting bid — no bids yet' : undefined
+        }
+      />
+
+      {/* What the odometer does NOT carry. The pack modelled none of this and
+          all of it matters: who is winning, whether the hidden reserve is met,
+          and why a starting bid sits where it does. */}
       <div
         className="rounded-[6px] px-4 py-4"
         style={{
@@ -423,35 +437,21 @@ export default function AuctionPanel({
           border: '0.5px solid var(--border)',
         }}
       >
-        <div className="flex items-baseline justify-between mb-1">
+        {state.bidCount === 0 && state.hasReserve && (
           <span style={{ display: 'inline-flex', alignItems: 'center' }}>
             <span
               className="text-xs uppercase"
               style={{ color: 'var(--text-tertiary)', letterSpacing: '0.05em' }}
             >
-              {state.bidCount === 0 ? 'Starting bid' : 'Current bid'}
+              Starting bid
             </span>
-            {state.bidCount === 0 && state.hasReserve && (
-              <HelpTip title="Starting bid" side="bottom">
-                The starting bid is 30% below the seller&apos;s hidden
-                reserve price. Bidding can start low, but the auction
-                only closes a sale once the reserve is met.
-              </HelpTip>
-            )}
+            <HelpTip title="Starting bid" side="bottom">
+              The starting bid is 30% below the seller&apos;s hidden
+              reserve price. Bidding can start low, but the auction
+              only closes a sale once the reserve is met.
+            </HelpTip>
           </span>
-          <span
-            className="text-xs"
-            style={{ color: 'var(--text-tertiary)' }}
-          >
-            {state.bidCount} bid{state.bidCount === 1 ? '' : 's'}
-          </span>
-        </div>
-        <div
-          className="text-2xl"
-          style={{ color: 'var(--red)', fontWeight: 500 }}
-        >
-          {formatRand(state.currentBid ?? state.startingBid)}
-        </div>
+        )}
 
         {/* Current high bidder — surfaces the actual winner so the
             user doesn't have to infer from the bid history (where
@@ -509,68 +509,6 @@ export default function AuctionPanel({
               </p>
             )}
           </>
-        )}
-      </div>
-
-      {/* Big countdown card — dedicated block, four D/H/M/S columns.
-          Turns red in the last 5 minutes so the closing rush is
-          obvious. Replaces the small "Time remaining: 2h 14m" line
-          we had before — operator wanted the timer to feel like the
-          centrepiece of the page, not a footnote. */}
-      <div
-        className="rounded-[6px] px-4 py-5"
-        style={{
-          background: remaining.closing
-            ? 'rgba(200,16,46,0.10)'
-            : 'var(--bg-card)',
-          border: `0.5px solid ${
-            remaining.closing ? 'var(--red)' : 'var(--border)'
-          }`,
-        }}
-      >
-        <p
-          className="text-xs uppercase mb-3 text-center"
-          style={{
-            color: remaining.closing ? 'var(--red)' : 'var(--text-tertiary)',
-            letterSpacing: '0.08em',
-            fontWeight: 500,
-          }}
-        >
-          {auctionOver ? 'Auction ended' : 'Time remaining'}
-        </p>
-        {auctionOver ? (
-          <p
-            className="text-center text-lg"
-            style={{ color: 'var(--text-secondary)', fontWeight: 500 }}
-          >
-            Closed
-          </p>
-        ) : (
-          <div className="grid grid-cols-4 gap-2 text-center">
-            <TimerCell
-              value={remaining.days}
-              label="Days"
-              closing={remaining.closing}
-            />
-            <TimerCell
-              value={remaining.hours}
-              label="Hours"
-              closing={remaining.closing}
-              padded
-            />
-            <TimerCell
-              value={remaining.mins}
-              label="Mins"
-              closing={remaining.closing}
-              padded
-            />
-            <TimerCell
-              value={remaining.secs}
-              label="Secs"
-              closing={remaining.closing}
-              padded
-            />
-          </div>
         )}
       </div>
 
@@ -1032,50 +970,6 @@ function EndedAuctionNotice({
 // when it ticks from 10 → 9 (single digit vs double). Days is shown
 // unpadded because "01 Days" looks weird and we usually only see days
 // on multi-day auctions.
-function TimerCell({
-  value,
-  label,
-  closing,
-  padded = false,
-}: {
-  value: number;
-  label: string;
-  closing: boolean;
-  padded?: boolean;
-}) {
-  return (
-    <div
-      className="rounded-[4px] py-2"
-      style={{
-        background: closing ? 'rgba(200,16,46,0.08)' : 'var(--bg-inset)',
-        border: `0.5px solid ${
-          closing ? 'rgba(200,16,46,0.3)' : 'var(--border)'
-        }`,
-      }}
-    >
-      <div
-        className="text-2xl sm:text-3xl"
-        style={{
-          color: closing ? 'var(--red)' : 'var(--text-primary)',
-          fontWeight: 500,
-          fontVariantNumeric: 'tabular-nums',
-          lineHeight: 1,
-        }}
-      >
-        {padded ? pad2(value) : value}
-      </div>
-      <div
-        className="text-[10px] uppercase mt-1"
-        style={{
-          color: 'var(--text-tertiary)',
-          letterSpacing: '0.08em',
-        }}
-      >
-        {label}
-      </div>
-    </div>
-  );
-}
 
 // ─── Bid modals (Place Bid + Auto Bid) ──────────────────────────────
 // Both kinds share the same UI shape: a header, an explainer, the
