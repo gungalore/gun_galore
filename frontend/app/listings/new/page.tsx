@@ -330,8 +330,12 @@ function SmallNumberField({
         style={{
           width: '100%',
           boxSizing: 'border-box',
-          background: 'var(--bg-inset)',
-          border: '0.5px solid var(--border)',
+          // Matches inputStyle. PriceInput carries its own inline style rather
+          // than reading that constant, so when every other field went white it
+          // was left as the one grey well on the form — and it is the field the
+          // seller cares most about.
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-hover)',
           borderRadius: 6,
           padding: '8px 10px',
           fontSize: 13,
@@ -992,7 +996,24 @@ export default function NewListingPage() {
           values: normaliseAttrValues(d.attrValues),
         };
       }
-      if (d.form) setForm(d.form);
+      if (d.form) {
+        // ⚠️ A DRAFT SAVED BEFORE TAKE A SHOT STOPPED BEING A LISTING TYPE
+        // STILL HOLDS IT. Removing it from the picker was not enough on its
+        // own — a seller who started a listing days ago and came back would
+        // restore straight onto a mode that no longer exists, see it in the
+        // collapsed step-3 summary, and be able to publish it. Observed on the
+        // live site right after the picker change shipped.
+        //
+        // Their intent is carried over rather than discarded: the mode is
+        // cleared so they choose Buy Now or Auction, and offers are switched
+        // on, which is what Take a Shot now IS. Nothing else in the draft is
+        // touched.
+        const restored =
+          d.form.listingType === 'TAKE_A_SHOT'
+            ? { ...d.form, listingType: '', acceptsOffers: true }
+            : d.form;
+        setForm(restored);
+      }
       if (d.parcel) setParcel(d.parcel);
       if (d.pickupAddress) setPickupAddress(d.pickupAddress);
       if (d.pickupLat !== undefined) setPickupLat(d.pickupLat);

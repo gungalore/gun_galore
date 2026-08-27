@@ -161,8 +161,10 @@ export class LicenceCentreRemindersService {
             phoneVerified: true,
             // Their own switch. Ignoring it is how a reminder becomes spam.
             notifySmsEnabled: true,
+            // Read so the member's own email preference can gate the email,
+            // in place of the dead tier check below.
+            notifyEmailEnabled: true,
             firstName: true,
-            subscriptionTier: true,
           },
         },
       },
@@ -192,11 +194,18 @@ export class LicenceCentreRemindersService {
 
       sent += 1;
 
-      // PRICING MODEL C: storage and the in-app reminder are free for
-      // everyone; SMS and email automation are what AO Pro buys. The free
-      // member still sees the badge and the date — which is the moment the
-      // upgrade actually means something.
-      const isPro = c.user.subscriptionTier === 'PRO';
+      // ⚠️ THIS GATE USED TO BE `subscriptionTier === 'PRO'` AND IT REACHED
+      // NOBODY. It described "PRICING MODEL C" — storage and the in-app badge
+      // free, email and SMS reminders being what AO Pro buys. AO Pro was
+      // removed as a purchasable tier, the column defaults to FREE, and
+      // nothing in the application grants PRO except a manual admin toggle. So
+      // every ordinary member evaluated false and the module's entire promise
+      // fired for no one, silently, while the Document Centre went on telling
+      // them per document that reminders were On.
+      //
+      // A licence expiry is not the place to discover a dead paywall. Email is
+      // now gated on the member's own preference, which is what the settings
+      // screen has always implied it was.
 
       await this.notifications
         .credentialExpiring({
@@ -213,16 +222,19 @@ export class LicenceCentreRemindersService {
           // 29 days away", contradicting its own date.
           daysLeft: Math.max(0, daysUntil(c.expiresOn, startOfUtcDay(now))),
           stage: stage.stage,
-          // Verified, opted in, and on a tier that includes it. Any one of
-          // those missing means the in-app notification still lands — nothing
-          // is lost, only the text is withheld.
+          // Verified and opted in. Any one of those missing means the in-app
+          // notification still lands — nothing is lost, only the text is
+          // withheld. The tier check is gone from here too: SMS costs real
+          // money per message, but withholding a licence-expiry warning from
+          // someone who asked for it is not how to control that cost. If SMS
+          // volume needs a limit, limit it explicitly rather than by leaving a
+          // dead tier in the condition.
           smsEnabled:
             smsOn &&
-            isPro &&
             c.user.phoneVerified &&
             c.user.notifySmsEnabled &&
             Boolean(c.user.phone),
-          emailEnabled: isPro,
+          emailEnabled: c.user.notifyEmailEnabled !== false,
         })
         // One bad recipient must not reject the loop — the claim is already
         // stamped, so this is a message lost rather than a sweep lost.
