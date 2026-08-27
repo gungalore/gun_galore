@@ -405,7 +405,7 @@ export default function CartPage() {
   // ── Phase-1 payment gate — card payments aren't live yet ──
   if (comingSoon) {
     return (
-      <main className="max-w-xl mx-auto px-4 py-8">
+      <main className="max-w-[var(--content-max)] mx-auto px-4 py-8">
         <PaymentsComingSoon />
       </main>
     );
@@ -414,7 +414,7 @@ export default function CartPage() {
   // ── Empty cart ──
   if (items.length === 0) {
     return (
-      <main className="max-w-xl mx-auto px-4 py-16 text-center">
+      <main className="max-w-[var(--content-max)] mx-auto px-4 py-16 text-center">
         <h1 className="text-lg font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
           Your cart is empty
         </h1>
@@ -433,7 +433,7 @@ export default function CartPage() {
   }
 
   return (
-    <main className="max-w-xl mx-auto px-4 py-8">
+    <main className="max-w-[var(--content-max)] mx-auto px-4 py-8">
       <h1 className="text-lg font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
         Your cart
       </h1>

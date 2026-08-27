@@ -4,6 +4,7 @@ import { viewerFetch } from '@/lib/api-viewer';
 import { BrowseResponse, Category } from '@/lib/types';
 import { ListingCard } from '@/components/listing-card';
 import { FilterBar } from '@/components/filter-bar';
+import { LiveSearch } from '@/components/live-search';
 import { SaveSearchButton } from '@/components/save-search-button';
 import { Hero } from '@/components/hero';
 import { ShopModeTiles } from '@/components/shop-mode-tiles';
@@ -327,10 +328,14 @@ export default async function HomePage({
             <div className="mt-10">
               <div className="flex items-end justify-between mb-5 gap-4 flex-wrap">
                 <h2
-                  className="text-2xl sm:text-3xl m-0"
+                  className="m-0"
                   style={{
                     color: 'var(--text-primary)',
-                    fontWeight: 500,
+                    // Boards set section headings in the display face at
+                    // 700/20px — this was rendering in the body font at 500.
+                    fontFamily: 'var(--font-display), Archivo, sans-serif',
+                    fontWeight: 700,
+                    fontSize: 20,
                     letterSpacing: '-0.01em',
                   }}
                 >
@@ -344,13 +349,13 @@ export default async function HomePage({
                   Browse everything →
                 </Link>
               </div>
-              <div
-                className="grid gap-4"
-                style={{
-                  gridTemplateColumns:
-                    'repeat(auto-fill, minmax(240px, 1fr))',
-                }}
-              >
+              {/* Explicit column counts, matching the boards (2-up mobile,
+                  4-up desktop) and the same grid-cols-N pattern used below
+                  for the filtered surfaces — auto-fill(minmax(240px,…))
+                  was giving 1 col at 390px and 5 at 1440px instead. Gaps
+                  are the nearest Tailwind steps to the boards' 11px
+                  mobile / 13px desktop. */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 lg:gap-3.5">
                 {browse.listings.map((l) => (
                   <ListingCard key={l.id} listing={l} />
                 ))}
@@ -435,11 +440,32 @@ export default async function HomePage({
         </div>
 
         <div data-reveal>
+          {/* FilterBar's own search box was stacking under the app shell's
+              header search row (ShellHeader's SearchRow — .gg-shell-chrome
+              in globals.css) on a phone: two boxes, both "Search
+              listings…". hideSearch drops it from FilterBar outright
+              rather than hiding it responsively, so above md — where the
+              shell chrome is hidden (see globals.css) and nothing else on
+              this page offers one inline — this stands in for it, wired
+              the same way FilterBar's own box was (every active filter
+              preserved except q/page). */}
+          <div className="hidden md:block mb-2">
+            <LiveSearch
+              key={params.q ?? ''}
+              defaultValue={params.q}
+              preserveParams={Object.fromEntries(
+                Object.entries(params).filter(
+                  ([k, v]) => k !== 'q' && k !== 'page' && typeof v === 'string' && v,
+                ),
+              ) as Record<string, string>}
+            />
+          </div>
           <FilterBar
             categories={categories}
             currentParams={params}
             brands={brands}
             facets={facetData.facets}
+            hideSearch
           />
           {/* P5.1 — save the active filters to get alerted on new matches. */}
           <div className="mt-2">

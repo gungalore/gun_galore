@@ -82,7 +82,7 @@ export default function ReceivedOfferActions({
 
   function formatRand(cents: number | undefined) {
     if (cents === undefined) return '';
-    return `R${(cents / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
+    return `R ${(cents / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
   }
 
   async function call(endpoint: string, label: string, body?: object) {

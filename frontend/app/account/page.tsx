@@ -122,7 +122,7 @@ export default async function AccountPage() {
 
   return (
     <>
-      <main className="max-w-[1000px] mx-auto px-4 py-8">
+      <main className="max-w-[var(--content-max)] mx-auto px-4 py-8">
         {/* Identity header card */}
         <div
           className="rounded-[10px] p-5 mb-6 flex items-center gap-4 flex-wrap"

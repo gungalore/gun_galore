@@ -99,7 +99,14 @@ function typeColor(t: SearchHit['listingType']): string {
 }
 
 export function LiveSearch({
-  placeholder = 'Search listings…',
+  // Names real public root categories (Camping & Outdoor / Optics / Fishing —
+  // see backend/prisma/seed.ts `categories`) instead of a generic noun, so the
+  // box itself signals what the marketplace carries. Deliberately does NOT
+  // lead on firearms: the site is an outdoor marketplace with firearms as one
+  // gated category among many, and Firearms is membersOnly/not publicVisible
+  // in the seed — surfacing it in the FIRST thing a signed-out visitor reads
+  // is the advertising-platform risk the members-only gate exists to avoid.
+  placeholder = 'Search camping, optics, fishing gear…',
   className,
   style,
   variant,

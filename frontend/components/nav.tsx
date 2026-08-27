@@ -192,7 +192,6 @@ export function Nav() {
           >
             <CategoryMenu variant="search" />
             <LiveSearch
-              placeholder="Search listings…"
               variant="attached"
               className="flex-1"
             />
@@ -472,7 +471,6 @@ export function Nav() {
             style={{ borderTop: '0.5px solid var(--border)' }}
           >
             <LiveSearch
-              placeholder="Search listings…"
               autoFocus
               // Search pushes "/?q=…" — a query-only change usePathname()
               // never sees — so the panel has to be told to close.
@@ -567,8 +565,7 @@ export function Nav() {
             {/* Search */}
             <div className="px-4 py-4" style={{ borderBottom: '0.5px solid var(--border)' }}>
               <LiveSearch
-                placeholder="Search listings…"
-                onNavigate={() => setMobileOpen(false)}
+                  onNavigate={() => setMobileOpen(false)}
               />
             </div>
 

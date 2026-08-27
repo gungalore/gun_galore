@@ -257,7 +257,7 @@ export default function AdminListingsPage() {
                     </td>
                     <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-primary)' }}>
                       {l.price !== null
-                        ? `R${(l.price / 100).toLocaleString('en-ZA', {
+                        ? `R ${(l.price / 100).toLocaleString('en-ZA', {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}`

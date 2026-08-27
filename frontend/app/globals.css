@@ -22,6 +22,23 @@
      column over the old 1280. */
   --page-max: 1600px;
 
+  /* ── The account area's one width ─────────────────────────────────
+     ⚠️ THIS EXISTS BECAUSE FIVE PAGES DISAGREED. Measured in one session on
+     one screen: cart 576px, Motivation Centre 672px, Account 1000px, Orders
+     1600px, Document Centre 1600px. Each looked reasonable alone, which is
+     why it survived review for so long — it is only visible when you open
+     them one after another, and then it is the thing that makes the
+     signed-in half read as a different product from the storefront.
+
+     1280px is not a preference: it is the canvas every account-area design
+     board is drawn on (SellListing 1280x1000, MotivationCentre 1280x980,
+     DocumentCentre 1280x900), and it is wide enough for the Cart board's
+     two-pane content-plus-344px-summary.
+
+     --page-max (1600) stays what it is and keeps the browse surfaces. A
+     results grid wants every column it can get; a form does not. */
+  --content-max: 1280px;
+
   /* Height of the sticky site header. THE single source of truth: error.tsx and
      not-found.tsx were both sizing themselves with a hardcoded
      `calc(100vh - 91px)` commented "subtract nav + urgent strip", and the

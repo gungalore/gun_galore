@@ -187,7 +187,7 @@ export default function BulkListingsTable({
                     {l.category.name}
                   </td>
                   <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-primary)' }}>
-                    {l.price ? `R${(l.price / 100).toLocaleString('en-ZA')}` : '—'}
+                    {l.price ? `R ${(l.price / 100).toLocaleString('en-ZA')}` : '—'}
                   </td>
                   <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
                     {new Date(l.createdAt).toLocaleDateString('en-ZA')}

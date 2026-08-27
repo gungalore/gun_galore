@@ -54,9 +54,9 @@ interface ActivityEvent {
 
 function formatRand(cents: number): string {
   const r = cents / 100;
-  if (r >= 1_000_000) return `R${(r / 1_000_000).toFixed(2)}M`;
-  if (r >= 10_000) return `R${(r / 1_000).toFixed(1)}k`;
-  return `R${r.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
+  if (r >= 1_000_000) return `R ${(r / 1_000_000).toFixed(2)}M`;
+  if (r >= 10_000) return `R ${(r / 1_000).toFixed(1)}k`;
+  return `R ${r.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
 }
 
 function timeAgo(iso: string): string {

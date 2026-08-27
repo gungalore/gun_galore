@@ -173,7 +173,7 @@ interface TransactionDossier {
 
 function formatRand(cents: number | null | undefined): string {
   if (cents === null || cents === undefined) return '—';
-  return `R${(cents / 100).toLocaleString('en-ZA', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+  return `R ${(cents / 100).toLocaleString('en-ZA', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
 }
 
 function formatDateTime(iso: string | null): string {

@@ -52,7 +52,7 @@ interface MyBidState {
 }
 
 function formatRand(cents: number) {
-  return `R${(cents / 100).toLocaleString('en-ZA', {
+  return `R ${(cents / 100).toLocaleString('en-ZA', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })}`;

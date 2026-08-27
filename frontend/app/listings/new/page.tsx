@@ -197,7 +197,7 @@ function listPriceFromSellerAsk(
 }
 
 function formatRand(cents: number): string {
-  return `R${(cents / 100).toLocaleString('en-ZA', {
+  return `R ${(cents / 100).toLocaleString('en-ZA', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -3264,8 +3264,8 @@ export default function NewListingPage() {
                         ? // The collapsed summary has to agree with the
                           // breakdown: on Buy Now the typed number is the
                           // seller's take-home, not the shelf price.
-                          ` · R${form.price} to you · buyers see ${formatRand(buyNowQuote.listPrice)}`
-                        : ` · R${form.price}`
+                          ` · R ${form.price} to you · buyers see ${formatRand(buyNowQuote.listPrice)}`
+                        : ` · R ${form.price}`
                       : ''
                   }`
                 : undefined

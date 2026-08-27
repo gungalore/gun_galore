@@ -127,7 +127,7 @@ export default function MotivationsPage() {
 
   if (enabled === false) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-10">
+      <main className="mx-auto max-w-[var(--content-max)] px-4 py-10">
         <h1 className="text-2xl font-semibold">Motivation Centre</h1>
         <p className="mt-3 text-[var(--text-secondary)]">
           We are still putting this together. It will appear here when it opens.
@@ -137,7 +137,7 @@ export default function MotivationsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8">
+    <main className="mx-auto max-w-[var(--content-max)] px-4 py-8">
       {askConsent && userId && (
         <VaultConsentModal
           token={token}
