@@ -2202,6 +2202,19 @@ export class ListingsService {
    * before it reaches the filter string — see the per-branch notes. Returns the
    * AND-joinable parts; the caller joins with ' AND '.
    */
+  // Multi-select enum clause for listingType/condition/province — one value
+  // → the original `field = "X"` equality, two or more → Meilisearch's IN
+  // operator (`field IN ["X", "Y"]`) so either half of a checked pair
+  // matches. Values arrive pre-validated against a fixed Prisma enum by
+  // @IsEnum in the DTO, but each is still escaped the same way `make` is
+  // above — never trust a string reaching a filter string.
+  private meiliEnumFilter(field: string, values: string[]): string {
+    const escaped = values.map((v) => `"${v.replace(/(["\\])/g, '\\$1')}"`);
+    return escaped.length === 1
+      ? `${field} = ${escaped[0]}`
+      : `${field} IN [${escaped.join(', ')}]`;
+  }
+
   private buildActiveListingFilter(
     dto: BrowseListingsDto,
     parsedAttrs: Record<string, unknown> = {},
@@ -2238,9 +2251,14 @@ export class ListingsService {
       filterParts.push(
         `(categorySlug = "${categorySlug}" OR parentSlug = "${categorySlug}")`,
       );
-    if (listingType) filterParts.push(`listingType = "${listingType}"`);
-    if (condition) filterParts.push(`condition = "${condition}"`);
-    if (province) filterParts.push(`province = "${province}"`);
+    // Multi-select — a buyer can tick BUY_NOW *and* AUCTION, or two
+    // provinces, or two conditions. One value keeps the exact `field = "X"`
+    // clause this always produced; two or more switch to Meilisearch's IN
+    // operator. Mirrors the `in` clause browseViaPrisma below builds off the
+    // SAME dto fields — the two query paths must never disagree here.
+    if (listingType?.length) filterParts.push(this.meiliEnumFilter('listingType', listingType));
+    if (condition?.length) filterParts.push(this.meiliEnumFilter('condition', condition));
+    if (province?.length) filterParts.push(this.meiliEnumFilter('province', province));
     // Escape backslash + double-quote so a brand like 6.5" or O'Dell can't
     // break out of the Meilisearch filter string.
     if (make)
@@ -2507,9 +2525,13 @@ export class ListingsService {
       where.category = {
         OR: [{ slug: categorySlug }, { parent: { slug: categorySlug } }],
       };
-    if (listingType) where.listingType = listingType;
-    if (condition) where.condition = condition;
-    if (province) where.province = province;
+    // Multi-select — mirrors the Meilisearch IN filter built in
+    // buildActiveListingFilter off the SAME dto fields, so the two query
+    // paths never disagree. A one-element array behaves identically to the
+    // old equality check.
+    if (listingType?.length) where.listingType = { in: listingType };
+    if (condition?.length) where.condition = { in: condition };
+    if (province?.length) where.province = { in: province };
     // P5.7 — don't let an exact `make` param stomp the brandSlug fold's
     // `make IN (...)` clause set above (a request carrying BOTH would otherwise
     // silently drop every casing variant except the exact match). brandSlug is

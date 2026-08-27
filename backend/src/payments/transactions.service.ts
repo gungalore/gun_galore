@@ -3007,7 +3007,20 @@ export class TransactionsService {
         // that need the legal name query it directly, not via this list.
         buyer: { select: { username: true } },
         seller: { select: { username: true } },
-        dealer: { select: { id: true, name: true, city: true } },
+        // Orders-board "Dealer details" — buyer's list only ever exposed the
+        // opaque dealerId, so the list couldn't name the SAPS-licensed dealer
+        // a firearm order routes through. Dealer is a business/commercial
+        // entity, not a platform member, so POPIA's real-name rule doesn't
+        // apply — but the row also carries licenceNumber, email, precise
+        // lat/lng and internal provenance (source/isVerified/rawAddress/
+        // firstSeenAt/lastSeenAt) that this payload has no business showing a
+        // buyer. Select exactly the three fields the panel needs (id stays
+        // for keying/the "Dealer details" action) and nothing else — this
+        // list is shared by BOTH buyer and seller (role param below), and it
+        // was already handing name+city to both symmetrically, so adding
+        // phone here extends an existing shared field, not a new leak into a
+        // role that didn't have dealer info before.
+        dealer: { select: { id: true, name: true, city: true, phone: true } },
       },
       orderBy: { createdAt: 'desc' },
     });

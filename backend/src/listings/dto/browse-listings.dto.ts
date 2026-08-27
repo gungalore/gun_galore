@@ -1,6 +1,25 @@
 import { IsString, IsEnum, IsInt, IsOptional, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ListingType, Condition, Province } from '@prisma/client';
+
+// Multi-select filters — listingType / condition / province. A query value
+// may be a single enum member ("BUY_NOW") or several comma-joined
+// ("BUY_NOW,AUCTION"), so a buyer can tick both Buy Now AND Auctions, two
+// provinces, or two conditions at once. This turns either shape (and the
+// array Nest hands us for a repeated `?listingType=A&listingType=B` query)
+// into a flat string[] BEFORE @IsEnum(..., { each: true }) validates every
+// element individually — one bad value in the list still 400s the whole
+// request rather than being silently dropped. Blank entries (stray commas,
+// an empty string) are dropped; if nothing is left we return undefined so
+// @IsOptional continues to treat "no filter" as before.
+function splitCsv(value: unknown): string[] | undefined {
+  const raw = Array.isArray(value) ? value : [value];
+  const parts = raw
+    .flatMap((v) => (typeof v === 'string' ? v.split(',') : []))
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0);
+  return parts.length > 0 ? parts : undefined;
+}
 
 export class BrowseListingsDto {
   @IsOptional()
@@ -15,17 +34,27 @@ export class BrowseListingsDto {
   @IsString()
   categorySlug?: string;
 
+  // Comma-separated: `?listingType=BUY_NOW,AUCTION`. A bare single value
+  // (`?listingType=BUY_NOW`) still works exactly as before — it becomes a
+  // one-element array, which both browseViaPrisma's `in` clause and
+  // browseViaSearch's Meilisearch filter treat identically to the old
+  // equality check.
   @IsOptional()
-  @IsEnum(ListingType)
-  listingType?: ListingType;
+  @Transform(({ value }) => splitCsv(value))
+  @IsEnum(ListingType, { each: true })
+  listingType?: ListingType[];
 
+  // Comma-separated: `?condition=NEW,LIKE_NEW`. See listingType above.
   @IsOptional()
-  @IsEnum(Condition)
-  condition?: Condition;
+  @Transform(({ value }) => splitCsv(value))
+  @IsEnum(Condition, { each: true })
+  condition?: Condition[];
 
+  // Comma-separated: `?province=GAUTENG,WESTERN_CAPE`. See listingType above.
   @IsOptional()
-  @IsEnum(Province)
-  province?: Province;
+  @Transform(({ value }) => splitCsv(value))
+  @IsEnum(Province, { each: true })
+  province?: Province[];
 
   // Brand / manufacturer facet (e.g. "Glock", "CZ"). Matched exactly against
   // Listing.make — values come from GET /listings/brands so they line up.
