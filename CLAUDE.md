@@ -1800,8 +1800,66 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-08-25, commit `5faf095`.** No migrations pending.
-Backend + frontend reloaded, health checks doubled, public 200.
+**Last deploy: 2026-08-27, commit `22dcedb`.** No migrations pending.
+**FRONTEND ONLY** (`deploy.sh --frontend-only`) — the delta is nine frontend
+files and no `backend/` or `prisma/` file, so the backend was never rebuilt or
+reloaded and kept serving throughout (35h uptime across the deploy). Build
+verified, `BUILD_ID` non-empty before the reload, health doubled, public 200
+twice. The changed chunk was then fetched from the public site and checked for
+the new code rather than trusting the build log.
+
+Shipped in `22dcedb`: **the scanner, kept working now the site around it is
+white.** The Winkel rebuild touched 207 files and not one was a scan file, so
+the scanner went into a white-theme site exactly as it left a dark one.
+
+> **THE PRIME SUSPECT WAS WRONG, AND THAT IS THE USEFUL PART.** The theme
+> inversion does NOT make the camera overlay illegible. Every screen the camera
+> draws on is a hardcoded `background: '#000'` with `color: '#fff'`,
+> `DocumentScanner` portals to `document.body` so no theme context reaches it
+> even in principle, and `aim-frame.tsx` uses no CSS variables at all. **Do not
+> go looking for invisible text in the scanner — there is none.**
+
+What actually broke, and what changed:
+
+- **`--warning` came with the theme.** Retuned `#d49a3a` → `#8F6E0F` so it would
+  carry on a white card — right for a card, wrong on the viewfinder's fixed
+  black, where contrast drops ~8.5:1 → ~4.4:1 and the accent whose only job is
+  to flag "this photo is too dark to read" goes quiet exactly when needed. Now
+  `OVERLAY_WARNING` in `frontend/lib/scan/overlay.ts`, which also records the
+  rule: **painted over video means a constant, painted on a page means a token.**
+  On the dark theme production still runs the value is unchanged, so it shipped
+  as a visual no-op and is already correct for when the white theme lands.
+- **`/scan/handoff` passed `shape: 'any'`** when the hand-off named no kind. The
+  scanner derives "has the member chosen?" from `shape !== undefined`, so that
+  laundered "the computer did not say" into "the member said: Something else" —
+  pre-ticked, ring and all, carrying the weakest aim prior we have, on the one
+  screen where the member cannot see what the desktop knew. Two live callers
+  reach it that way. Now `undefined`.
+- **The Motivation Centre had independently grown the wholesale-replace bug**
+  that cost the Document Centre six licences (`setFiled([])` then
+  `setFiled(named)`). `mergeReviewQueue` is now generic over `{ id: string }` and
+  both queues use the one tested function. ⚠️ The test pins the generic at
+  compile time; it CANNOT catch a caller reverting to a wholesale set.
+- Three consistency fixes: a checklist row wanting three photographs opens ready
+  for three; the Document Centre names the document in the camera heading; and
+  `subtitle`/`skipChoose`/`staticAim` are plumbed through `ScanButton`, giving
+  the safe-photograph guidance somewhere to go — its comment said "there is
+  nowhere later to say it", and now it rides into the camera header.
+
+**The `deploy.sh` trap recorded on 2026-08-26 is DEFUSED.** Local
+`feat/takealot-ux-parity` was left at the fee-model commit `0d7a137`; it now
+matches `origin` and production. The script was used normally for this deploy.
+The check is still worth doing every time: `git rev-parse feat/takealot-ux-parity`
+against `origin/` and against what you actually intend to ship.
+
+**Still not deployed, deliberately: the fee model AND the whole Winkel rebuild.**
+Both live on `feat/winkel-rebuild` (pushed). Production tracks
+`feat/takealot-ux-parity`, so neither can reach the box until merged. The fee
+model carries a 29-line migration touching the live money path and needs its own
+deploy with `prisma migrate deploy` and a backend rebuild.
+
+⚠️ **`INK_AT` has still never met a real licence card.** Auto-capture has been
+live since `3de9ec1` and the threshold remains uncalibrated against real use.
 
 Shipped in `5faf095`: **the Document Centre stopped losing documents between
 batches.** `uploadFiles` assigned the review queue wholesale
