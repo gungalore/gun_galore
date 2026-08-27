@@ -862,7 +862,7 @@ function VerifyKycPageInner() {
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <Image
             // Nav mark — the full scene's wordmark is unreadable at 36px.
-            src={av('/logo-nav.svg')}
+            src={av('/logo-nav-dark.svg')}
             alt="All Outdoor"
             width={96}
             height={36}

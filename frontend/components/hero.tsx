@@ -1,94 +1,83 @@
-// Homepage hero. Cinematic full-width banner with an outdoor scene photo,
-// dark overlay so the headline reads, and two CTAs. Server component — no JS.
+// Homepage hero. Full-bleed moonlit overlanding scene with the store intro
+// set on it. Server component — no JS.
 // Focus: outdoor, hunting & sport recreation (firearms stay in the catalogue
 // + nav, just not the landing headline).
 
 import Link from 'next/link';
-import { TrustCard } from './trust-banner';
 import { av } from '@/lib/asset-version';
 
 export function Hero() {
   return (
     <section
       className="hero-section relative w-full overflow-hidden"
-      style={{ background: 'var(--bg-deep)' }}
+      style={{
+        // ⚠️ A DELIBERATELY DARK SURFACE — not `var(--bg-deep)`, and not a
+        // leftover from the pre-Winkel dark theme. See the --text-on-dark
+        // note in globals.css: the hero is one of the few places that stays
+        // dark whatever the page theme, because the copy is set ON a night
+        // photograph and has to stay light ink at every breakpoint.
+        //
+        // The value matches the plate's own foot (sampled: #0E0E0D at the
+        // bottom edge, #151514 inside the mobile crop window), so on phones —
+        // where the copy sits BELOW the picture rather than over it — the
+        // photograph fades into this panel with no visible seam.
+        //
+        // This used to be var(--bg-deep). That was correct while the theme
+        // was near-black; after the Winkel re-theme it resolved to #FFFFFF
+        // and the mobile copy — which is light ink — rendered white on white.
+        background: '#121211',
+      }}
     >
-      {/* The frame carries the plate's OWN aspect ratio, so the whole
-          photograph is always visible. It used to be a fixed band —
-          clamp(340px, 44vh, 460px) — with background-size: cover, which on a
-          desktop width cropped roughly 40% off the top and bottom of a 16:9
-          plate. (The old comment claiming "~5:1" described a previous
-          image; the current one is 1672x941.) */}
+      {/* The frame carries the plate's OWN aspect ratio on desktop, so the
+          whole photograph is visible: 2172x724, a 3:1 panorama. On a 1600px
+          page that is a 533px band — big without eating the fold.
+
+          Phones get a 4:3 window instead. A 3:1 band is only ~130px tall at
+          390px wide, which reads as a letterbox strip rather than a hero, so
+          the frame keeps its own ratio there and background-size: cover crops
+          the sides. Which slice you get is set by background-position below. */}
       <div className="hero-frame">
-      {/* Background image — WebP for modern browsers (~29 KB) with PNG
-          fallback (~1.2 MB) for ancient ones. Lighthouse mobile audit
-          flagged hero.png as the LCP-killer (9.9s). Switching to WebP
-          drops the LCP under 2.5s in repeat-visit conditions and well
-          under 4s on cold load. image-set() is the only way to do per-
-          browser format selection on a CSS background — `<picture>`
-          isn't an option because the hero uses a background-image to
-          combine with the gradient overlays below.
+        {/* Background plate — WebP for modern browsers (~22 KB) with a JPEG
+            fallback (~43 KB). image-set() is the only way to do per-browser
+            format selection on a CSS background; <picture> isn't an option
+            because the plate combines with the gradient overlay below.
 
-          Background position is responsive:
-            * desktop: `left center` — shows the bullet on the left
-              with the suppressor reveal trailing to the right
-            * mobile: `70% center` — shifts the brightest area (the
-              smoke + bullet) off-screen to the right so the text
-              area at the bottom-left sits over a near-uniformly-dark
-              section of the photo. Combined with the mobile vertical
-              gradient overlay below, this gets the subhead from
-              "grey on grey" (failed contrast) to "white on near-
-              black" (AAA contrast).
+            Preloaded in app/layout.tsx so the browser starts the fetch in
+            parallel with the JS bundle. This is the LCP element. */}
+        <div className="hero-bg absolute inset-0" aria-hidden />
 
-          Preloaded in app/layout.tsx so the browser kicks off the
-          fetch in parallel with the JS bundle. */}
-      <div className="hero-bg absolute inset-0" aria-hidden />
+        {/* Gradient overlay — viewport-aware. See the <style> block for what
+            each breakpoint does and why the desktop wash is so light. */}
+        <div className="hero-overlay absolute inset-0" aria-hidden />
 
-      {/* Gradient overlay — viewport-aware so the text always has a
-          high-contrast backdrop:
-            * desktop: horizontal fade — heavy on the LEFT where the
-              copy sits, transparent on the right so the bullet +
-              suppressor read clearly. Original tuning.
-            * mobile: vertical fade — soft on the top (image visible)
-              into near-black at the bottom where the headline +
-              subhead sit. The text always reads regardless of where
-              the smoke trail crops to.
-          The red brand-glow radial stays in both modes as a corner
-          accent. CSS class + media query live in the <style> block
-          below — inline styles can't express @media rules. */}
-      <div className="hero-overlay absolute inset-0" aria-hidden />
+        {/* Content slides in from the left immediately so the page feels
+            instant. Each child has its own `animation-delay` so the eyebrow,
+            headline, subhead and CTA arrive in sequence (~120 ms gap). Pure
+            CSS keyframe — no client JS. Honours `prefers-reduced-motion`.
 
-      {/* Content slides in from the left immediately so the page
-          feels instant — the old 1-second wait read as a stuck app.
-          Each child has its own `animation-delay` so the eyebrow,
-          headline, subhead and CTA arrive in sequence (~120 ms
-          gap). Pure CSS keyframe — no client JS. Honours
-          `prefers-reduced-motion: reduce` so motion-sensitive users
-          get the final state instantly.
-
-          ALSO inside this <style>: the viewport-aware background-
-          position + overlay-gradient rules. Default = desktop
-          (horizontal dark-left fade); @media (max-width: 768px)
-          overrides them with mobile-friendly values so the text
-          stops washing out into grey-on-grey when the image crops. */}
-      <style>{`
+            ALSO inside this <style>: the frame ratios, the viewport-aware
+            background-position, and the overlay gradients. Inline styles
+            can't express @media rules. */}
+        <style>{`
         .hero-bg {
-          /* Outdoor hero — operator-supplied brand scene, 2026-08-12: Table
-             Mountain at golden hour over the city bowl, with a kudu, a bakkie
-             and an acacia. WebP with a JPG fallback; the first url() is the
-             fallback for browsers without image-set.
+          /* Outdoor hero — operator-supplied brand scene, 2026-08-27: a
+             moonlit Karoo night, layered mountain ridges, a dirt two-track
+             running out of frame and a kitted bakkie with a rooftop tent and
+             a campfire on the right-hand rise.
 
-             This is the CLEAN plate. The operator also supplied the same scene
-             with "ALL Outdoor" set into the lower-left, and that version is
-             /og-default.jpg — a share card has no HTML around it, so brand in
-             the picture is right there. Here it would be wrong: the wordmark
-             would sit under the 92%-opaque gradient below and behind the <h1>,
-             ghosting through both. Keep the two plates in their own lanes.
+             REPLACED the golden-hour Table Mountain plate (kudu / bakkie /
+             acacia) that shipped 2026-08-12. That one was 1672x941; this is
+             2172x724, so the frame ratio below changed with it.
 
-             LCP ELEMENT, and preloaded in <head> on EVERY page, so it is
-             encoded tight: jpg q80 progressive (~290 KB), webp q76 (~190 KB).
-             Almost every browser takes the WebP. */
-          /* Versioned to match the <link rel=preload> in layout.tsx. These
+             ⚠️ THE PLATE IS ALREADY DARK — that is the whole reason the
+             overlay below is so light. Measured on the source: the desktop
+             copy column (left 38%) runs 12.3:1 against white at its
+             BRIGHTEST tile and 20.5:1 at its darkest, with no scrim at all.
+             The old 0.84 black wash existed to rescue white text off a lit
+             golden-hour sky; applied here it just crushes the mountains to
+             a black rectangle and buys no legibility.
+
+             Versioned to match the <link rel=preload> in layout.tsx. These
              used to be bare paths while the preload carried ?v= — two
              different URLs, so the LCP preload was fetching an image the
              page never requested. Cloudflare also holds /public for 30 days,
@@ -102,46 +91,56 @@ export function Hero() {
           background-size: cover;
           background-position: center center;
           background-repeat: no-repeat;
-          /* Real golden-hour photo — keep its warm colour (no grayscale).
-             A slight darken keeps the white headline crisp over the left of
-             the frame, where the overlay gradient below also sits. */
-          filter: brightness(0.95);
+          /* No brightness filter. The previous plate carried brightness(0.95)
+             to keep white type crisp over a lit sky; this one is a night
+             scene and any further darkening loses the ridge separation that
+             makes it read as a photograph at all. */
         }
         .hero-overlay {
-          /* Desktop default — horizontal fade with red corner glow. */
+          /* Desktop — a soft left-weighted wash, plus the red brand glow in
+             the bottom-left corner. The wash is for FOCUS, not contrast (see
+             the measurement note above): it settles the copy column and lets
+             the red CTA pop without flattening the moonlight. */
           background:
-            linear-gradient(90deg, rgba(10,10,10,0.84) 0%, rgba(10,10,10,0.56) 32%, rgba(10,10,10,0.12) 62%, rgba(10,10,10,0) 100%),
-            radial-gradient(circle at 0% 100%, rgba(200,16,46,0.18) 0%, transparent 45%);
+            linear-gradient(90deg, rgba(8,10,14,0.55) 0%, rgba(8,10,14,0.30) 34%, rgba(8,10,14,0.06) 62%, rgba(8,10,14,0) 100%),
+            radial-gradient(circle at 0% 100%, rgba(200,16,46,0.10) 0%, transparent 45%);
         }
-        @media (max-width: 768px) {
+        @media (max-width: 767.98px) {
           .hero-bg {
-            /* Keep the scene centred on mobile; the vertical gradient
-               below carries the text contrast. */
-            background-position: center center;
+            /* A 4:3 window shows only 44% of a 3:1 plate's width, so WHICH
+               44% is a real composition decision, not a default. 80% keeps
+               the whole story: the moon top-right, the bakkie, the tent and
+               its campfire on the rise, the ridges behind, and the two-track
+               leading in from the bottom-left.
+
+               Checked against the alternatives rather than guessed — centre
+               (50%) drops the camp off the right edge entirely, 72% clips the
+               bakkie, and 76% still cuts the tent in half. */
+            background-position: 80% center;
           }
           .hero-overlay {
-            /* Mobile: the copy now sits BELOW the picture, so this no longer
-               has to carry text contrast — it only needs to blend the foot
-               of the photograph into the page. Much lighter than the old
-               near-black wash, which existed to make an overlaid headline
-               legible and would now just be muddying the image for nothing. */
+            /* The copy sits BELOW the picture on phones, so this only has to
+               blend the foot of the photograph into the panel behind it. The
+               end stop is the section background exactly, so there is no
+               seam between plate and copy. */
             background:
-              linear-gradient(180deg, rgba(10,10,10,0) 55%, rgba(10,10,10,0.35) 85%, rgba(10,10,10,0.9) 100%);
+              linear-gradient(180deg, rgba(18,18,17,0) 45%, rgba(18,18,17,0.55) 80%, #121211 100%);
           }
         }
 
         /* ── Frame + content placement ───────────────────────────────
-           Mobile: the picture is a full-width band at its natural ratio
-           (~220px at 390px wide) and the copy sits BELOW it — there is no
-           way to legibly overlay a headline, subhead, CTA and trust card on
-           a band that short.
+           Mobile: the picture is a full-width 4:3 band and the copy sits
+           BELOW it, on the section's dark panel.
            Desktop: the copy is absolutely positioned over the frame, in the
-           empty left third of the photograph, which is what that negative
-           space is for. */
+           empty left third of the photograph — which is exactly what that
+           negative space is for on this plate. */
         .hero-frame {
           position: relative;
           width: 100%;
-          aspect-ratio: 1672 / 941;
+          aspect-ratio: 2172 / 724;
+        }
+        @media (max-width: 767.98px) {
+          .hero-frame { aspect-ratio: 4 / 3; }
         }
         @media (min-width: 768px) {
           .hero-section { position: relative; }
@@ -150,9 +149,8 @@ export function Hero() {
             inset: 0;
             z-index: 1;
           }
-          /* Very tall viewports would otherwise give the hero an absurd
-             height on ultrawide monitors; the frame is capped and the plate
-             fills it from the centre, losing only the outer edges. */
+          /* Guards against an absurd band on an ultrawide monitor; the plate
+             fills the cap from the centre, losing only the outer edges. */
           .hero-frame { max-height: 88vh; }
         }
 
@@ -173,25 +171,19 @@ export function Hero() {
           100% { opacity: 1; transform: translateX(0); }
         }
       `}</style>
-
       </div>
 
-      <div className="hero-content relative max-w-[var(--page-max)] mx-auto px-4 sm:px-6 py-10 sm:py-14 flex flex-col md:flex-row md:items-center md:justify-between gap-8 lg:gap-12">
+      {/* ⚠️ EVERY COLOUR IN HERE IS LIGHT INK, AT ALL BREAKPOINTS. On desktop
+          it sits over the photograph; on mobile it sits on the section's dark
+          panel. Do not reach for --text-primary/--text-secondary here — those
+          track the PAGE theme, which is light, and would vanish. */}
+      <div className="hero-content relative max-w-[var(--page-max)] mx-auto px-4 sm:px-6 py-10 sm:py-14 flex flex-col justify-center">
         <div className="max-w-[600px]">
-          {/* Eyebrow.
-
-              Was var(--red) (#C8102E). That worked while the desktop wash
-              was near-black, but once the gradient was softened to let the
-              golden hour through, the eyebrow ended up sitting on lit sky
-              at 1.85:1 — under the 4.5:1 WCAG needs for text this small,
-              and visibly muddy. No red passes there: the token is dark
-              enough that reaching 4.5:1 means a pink that isn't the brand.
-
-              So the eyebrow goes warm-white and the brand red stays where
-              it still has the contrast to carry: "outdoor gear" at display
-              size in the headline, and the CTA. Same text-shadow as the
-              headline, for the same reason — a crisp edge against whatever
-              part of the photograph crops behind it. */}
+          {/* Eyebrow. Warm-white rather than var(--red): the brand red is
+              dark enough that it cannot reach 4.5:1 at this size against the
+              plate without becoming a pink that isn't the brand. Red stays
+              where it still has the contrast to carry — "outdoor gear" at
+              display size, and the CTA. */}
           <p
             className="hero-reveal hero-reveal-1 text-xs uppercase mb-4"
             style={{
@@ -204,23 +196,13 @@ export function Hero() {
             South Africa&apos;s outdoor store
           </p>
 
-          {/* Headline. text-shadow gives the white letters a crisp
-              edge against any backdrop — essential when the photo's
-              brightest patch (the smoke trail) crops near the text on
-              mobile. Shadow is subtle on desktop where the overlay
-              already darkens the left, but it's the difference
-              between "readable" and "professional" on mobile. */}
-          {/* The old lockup hard-<br>'d after "trade", but at lg:text-6xl the
-              first line overflowed the 560px column, so "trade" wrapped onto
-              its own stranded line and the break made it a ragged 4-liner.
-              Now: no manual break, `text-wrap: balance` for even lines at
-              every viewport, a nowrap guard so "gear." can never orphan, and
-              one size notch down at lg so the balanced block breathes. */}
+          {/* Headline. No manual line break — `text-wrap: balance` evens the
+              lines at every viewport, and a nowrap guard stops "trip."
+              orphaning. text-shadow keeps a crisp edge wherever the plate
+              crops behind it. */}
           <h1
             className="hero-reveal hero-reveal-2 text-4xl sm:text-5xl lg:text-[3.4rem] leading-[1.12] mb-5"
             style={{
-              // Over the hero photo, never the page — the paired textShadow
-              // below only makes sense under light letters.
               color: 'var(--text-on-dark)',
               fontWeight: 500,
               letterSpacing: '-0.02em',
@@ -234,14 +216,6 @@ export function Hero() {
             <span style={{ whiteSpace: 'nowrap' }}>whole trip.</span>
           </h1>
 
-          {/* Subhead. The previous color (var(--text-secondary) =
-              #a0a0a0) washed out into grey-on-grey when the photo
-              cropped behind it on mobile (1.4:1 contrast — fail).
-              Lifted to near-white at 88% opacity so the headline
-              still reads as the dominant element (it's bigger + at
-              100%), but the subhead has enough contrast against any
-              backdrop (AAA on the post-gradient ~#222 background).
-              Same text-shadow as the headline for a crisp edge. */}
           <p
             className="hero-reveal hero-reveal-3 text-base sm:text-lg leading-relaxed mb-8 max-w-[520px]"
             style={{
@@ -275,12 +249,6 @@ export function Hero() {
           >
             Browse the store
           </Link>
-        </div>
-
-        {/* Trust proof card — right on desktop, stacked under the copy on
-            mobile. Points reveal one after another. */}
-        <div className="hero-reveal hero-reveal-4 w-full md:w-auto">
-          <TrustCard />
         </div>
       </div>
     </section>

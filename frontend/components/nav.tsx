@@ -169,7 +169,7 @@ export function Nav() {
             aria-label="All Outdoor"
           >
             <Image
-              src={av('/logo-mark.svg')}
+              src={av('/logo-mark-dark.svg')}
               alt="All Outdoor"
               width={36}
               height={36}
@@ -177,7 +177,7 @@ export function Nav() {
               className="h-9 w-auto object-contain sm:hidden"
             />
             <Image
-              src={av('/logo-nav.svg')}
+              src={av('/logo-nav-dark.svg')}
               alt="All Outdoor"
               width={264}
               height={44}
@@ -655,7 +655,7 @@ export function Nav() {
               style={{ borderBottom: '0.5px solid var(--border)' }}
             >
               <Image
-                src={av('/logo-nav.svg')}
+                src={av('/logo-nav-dark.svg')}
                 alt="All Outdoor"
                 width={96}
                 height={36}

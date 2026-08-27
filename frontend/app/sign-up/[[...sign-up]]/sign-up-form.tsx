@@ -384,7 +384,7 @@ export default function SignUpForm() {
       <div className="flex justify-center mb-6">
         <Link href="/" aria-label="All Outdoor">
           <img
-            src={av('/logo-nav.svg')}
+            src={av('/logo-nav-dark.svg')}
             alt="All Outdoor"
             style={{ height: 48, width: 'auto' }}
           />
@@ -797,7 +797,7 @@ function VerifyStep({
       <div className="flex justify-center mb-6">
         <Link href="/" aria-label="All Outdoor">
           <img
-            src={av('/logo-nav.svg')}
+            src={av('/logo-nav-dark.svg')}
             alt="All Outdoor"
             style={{ height: 48, width: 'auto' }}
           />

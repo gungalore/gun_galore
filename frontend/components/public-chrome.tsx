@@ -31,7 +31,7 @@ function CheckoutHeader() {
               36px tall it draws 58px wide and the wordmark becomes ~10px — an
               illegible smudge at the exact moment the buyer is handing over
               money. The nav lockup sets the same words beside the mark. */}
-          <Image src={av('/logo-nav.svg')} alt="All Outdoor" width={280} height={36} priority style={{ height: 36, width: 'auto' }} />
+          <Image src={av('/logo-nav-dark.svg')} alt="All Outdoor" width={280} height={36} priority style={{ height: 36, width: 'auto' }} />
         </Link>
         <span className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
           <span aria-hidden>🔒</span> Secure checkout

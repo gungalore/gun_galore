@@ -81,3 +81,25 @@ export const SUPPORT_EMAIL = 'support@alloutdoor.co.za';
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
   'https://alloutdoor.co.za';
+
+/**
+ * The payment reassurance line, held here until card payments go live.
+ *
+ * ⚠️ PHRASING IS FIXED BY OPERATOR RULE (2026-08-15) — say when the SELLER IS
+ * PAID. Never "we hold your payment", never the word "escrow", anywhere on a
+ * public surface. Marketing describes the payout trigger; only the in-flow
+ * and legal pages describe funds being held.
+ *
+ * NOT ON ANY PUBLIC SURFACE YET, and that is deliberate: checkout returns 503
+ * while PAYMENTS_LIVE is false, so this is a promise about a flow that does
+ * not run. It is the strongest line we have for the objection buyers actually
+ * arrive with ("what if I get scammed?"), so it goes up the day payments are
+ * switched on — and not a day before.
+ *
+ * It used to live in components/trust-banner.tsx alongside the homepage
+ * "Shop with confidence" card. That card was removed on 2026-08-27 (operator)
+ * and the file deleted; the constant moved here so the rule and the go-live
+ * instruction survive the card.
+ */
+export const PAYMENT_TRUST_POINT =
+  'Sellers are only paid once you confirm delivery';

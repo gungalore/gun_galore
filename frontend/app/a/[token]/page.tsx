@@ -181,7 +181,7 @@ function LogoHeader() {
     <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={av('/logo-mark.svg')}
+        src={av('/logo-mark-dark.svg')}
         alt="All Outdoor"
         style={{ width: 56, height: 56, display: 'inline-block' }}
       />
