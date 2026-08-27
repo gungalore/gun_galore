@@ -128,12 +128,18 @@ export function refileNeedsPanel(d: ReviewItem, to: CredentialKind): boolean {
  * De-duplicates by id, because the hand-off refresh and a desktop upload can
  * legitimately name the same row. The later arrival wins: it is the fresher
  * read of what the server made of the document.
+ *
+ * GENERIC OVER THE ROW, deliberately. The Motivation Centre keeps its own
+ * confirm-queue in a different shape to the Document Centre's ReviewItem, and
+ * it had independently grown the SAME wholesale-replace bug. Two copies of this
+ * would eventually disagree; one function keyed on `id` covers both and is
+ * pinned by the same tests.
  */
-export function mergeReviewQueue(
-  waiting: readonly ReviewItem[],
-  added: readonly ReviewItem[],
-): ReviewItem[] {
-  const byId = new Map<string, ReviewItem>();
+export function mergeReviewQueue<T extends { id: string }>(
+  waiting: readonly T[],
+  added: readonly T[],
+): T[] {
+  const byId = new Map<string, T>();
   for (const item of waiting) byId.set(item.id, item);
   for (const item of added) byId.set(item.id, item);
   return [...byId.values()];

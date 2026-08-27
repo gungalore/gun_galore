@@ -180,7 +180,19 @@ export default function ScanHandoffPage() {
     );
   }
 
-  const shape: DocShape = kind ? shapeForKind(kind) : 'any';
+  // ⚠️ undefined, NOT 'any', when the hand-off did not name a kind.
+  //
+  // DocumentScanner derives `picked` from `initialShape !== undefined`, so any
+  // concrete shape here arrives on the phone with that row already ticked and
+  // ringed in red. Passing 'any' therefore launders "the computer did not say"
+  // into "the member said: Something else" — and Something else carries the
+  // weakest aim prior we have, on the one screen where the member cannot see
+  // what the desktop knew.
+  //
+  // Two live callers reach this page with no kind: the motivation pack's
+  // "Photograph documents" button and the Document Centre's "Work it out for
+  // me". Both mean "I don't know yet", which is a question, not an answer.
+  const shape: DocShape | undefined = kind ? shapeForKind(kind) : undefined;
 
   return (
     <>
