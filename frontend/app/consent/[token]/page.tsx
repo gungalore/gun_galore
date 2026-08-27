@@ -302,7 +302,7 @@ export default function SellerConsentPage() {
 
       {/* What they are consenting to, before anything is asked of them. */}
       {state.firearm.length > 0 && (
-        <dl className="mt-4 rounded-[var(--radius)] border border-[var(--border)] p-3 text-sm">
+        <dl className="mt-4 rounded-[var(--r-md)] border border-[var(--border)] p-3 text-sm">
           {state.firearm.map((r) => (
             <div key={r.label} className="flex justify-between gap-3 py-0.5">
               <dt className="text-[var(--text-secondary)]">{r.label}</dt>
@@ -320,7 +320,7 @@ export default function SellerConsentPage() {
       <button
         type="button"
         onClick={() => setCapturing(true)}
-        className="mt-2 w-full rounded-[var(--radius)] bg-[var(--red)] px-4 py-3 text-sm font-semibold text-white"
+        className="mt-2 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-3 text-sm font-semibold text-white"
       >
         {photographed ? 'Retake the photographs' : 'Open the camera'}
       </button>
@@ -336,7 +336,7 @@ export default function SellerConsentPage() {
           their hand and fixes any misread — they are the owner, so they are the
           right person to catch an OCR slip on a document they sign. */}
       {Object.keys(cardFields).length > 0 && (
-        <div className="mt-4 rounded-[var(--radius)] border border-[var(--border)] p-3">
+        <div className="mt-4 rounded-[var(--r-md)] border border-[var(--border)] p-3">
           <p className="text-sm font-semibold">Check the firearm details</p>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
             We read these from your card. They are what the consent will state,
@@ -361,7 +361,7 @@ export default function SellerConsentPage() {
                 onChange={(e) =>
                   setCardFields((cur) => ({ ...cur, [key]: e.target.value }))
                 }
-                className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+                className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
               />
             </label>
           ))}
@@ -383,7 +383,7 @@ export default function SellerConsentPage() {
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           placeholder="As they appear on your identity document"
-          className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
       <label className="mt-3 block text-xs text-[var(--text-secondary)]">
@@ -393,7 +393,7 @@ export default function SellerConsentPage() {
           onChange={(e) => setIdNumber(e.target.value)}
           inputMode="numeric"
           placeholder="13 digits"
-          className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
 
@@ -405,7 +405,7 @@ export default function SellerConsentPage() {
           value={place}
           onChange={(e) => setPlace(e.target.value)}
           placeholder="Town or city"
-          className="mt-1 w-full rounded-[var(--radius)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
         />
       </label>
       <button
@@ -427,7 +427,7 @@ export default function SellerConsentPage() {
         type="button"
         onClick={submit}
         disabled={!ready || busy}
-        className="mt-5 w-full rounded-[var(--radius)] bg-[var(--red)] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+        className="mt-5 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
       >
         {busy ? 'Sending…' : 'Give my consent'}
       </button>

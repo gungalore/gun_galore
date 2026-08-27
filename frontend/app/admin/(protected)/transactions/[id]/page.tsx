@@ -502,7 +502,7 @@ export default function TransactionDossierPage() {
             payoutSettled={!!t.paidOutAt}
           />
           {(t.refundedAmount ?? 0) > 0 && t.paymentStatus !== 'REFUNDED' && (
-            <p className="text-xs mt-2" style={{ color: 'var(--amber, #f59e0b)' }}>
+            <p className="text-xs mt-2" style={{ color: 'var(--warning)' }}>
               Partially refunded: R{((t.refundedAmount ?? 0) / 100).toFixed(2)} of R
               {(t.buyerTotal / 100).toFixed(2)} returned to buyer.
             </p>

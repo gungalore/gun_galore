@@ -467,7 +467,7 @@ export default function MotivationCoverCropper({
           type="button"
           disabled={busy || !ready || tooSmall}
           onClick={apply}
-          className="rounded bg-[var(--brand,#1b3a2f)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
         >
           {busy ? 'Preparing…' : 'Use this crop'}
         </button>

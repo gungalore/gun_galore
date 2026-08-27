@@ -189,7 +189,7 @@ export default function MotivationWitnesses({
                   type="button"
                   disabled={busy === slot}
                   onClick={() => invite(slot)}
-                  className="mt-2 rounded bg-[var(--brand,#1b3a2f)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                  className="mt-2 rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
                 >
                   {busy === slot ? 'Sending…' : 'Send the link'}
                 </button>

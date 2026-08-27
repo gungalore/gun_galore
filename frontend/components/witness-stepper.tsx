@@ -44,7 +44,7 @@ export default function WitnessStepper({
               className={[
                 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
                 done || active
-                  ? 'bg-[var(--brand,#1b3a2f)] text-white'
+                  ? 'bg-[var(--red)] text-white'
                   : 'border border-[var(--border)] text-[var(--text-secondary)]',
               ].join(' ')}
             >

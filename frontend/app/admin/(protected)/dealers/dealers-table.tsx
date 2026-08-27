@@ -217,7 +217,7 @@ export default function DealersTable({
                   background: 'var(--bg-card)',
                   border: `0.5px solid ${
                     isPending
-                      ? 'var(--amber, #d97706)'
+                      ? 'var(--warning)'
                       : d.isActive
                         ? 'var(--border)'
                         : 'var(--text-tertiary)'

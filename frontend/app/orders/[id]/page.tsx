@@ -44,9 +44,9 @@ interface OrderDetail {
 
 const ORDER_STATUS_LABEL: Record<string, { label: string; tone: string }> = {
   AWAITING_PAYMENT: { label: 'Awaiting payment', tone: 'var(--warning, #f59e0b)' },
-  PAID: { label: 'Paid', tone: 'var(--green, #16a34a)' },
+  PAID: { label: 'Paid', tone: 'var(--success)' },
   PARTIALLY_FULFILLED: { label: 'Partially fulfilled', tone: 'var(--warning, #f59e0b)' },
-  COMPLETED: { label: 'Completed', tone: 'var(--green, #16a34a)' },
+  COMPLETED: { label: 'Completed', tone: 'var(--success)' },
   CANCELLED: { label: 'Cancelled', tone: 'var(--text-tertiary)' },
   REFUNDED: { label: 'Refunded', tone: 'var(--text-tertiary)' },
 };

@@ -172,7 +172,7 @@ export default function DossierActions({
     action?.kind === 'release' || action?.kind === 'dispute-release'
       ? '#22c55e'
       : isShipmentFailure && !pickedReason?.sellerPays
-        ? 'var(--amber, #f59e0b)'
+        ? 'var(--warning)'
         : 'var(--red)';
 
   // Shared by the overlay and the Cancel/Close button. Closing a recorded
@@ -687,7 +687,7 @@ function ActionButton({
     tone === 'success'
       ? '#22c55e'
       : tone === 'warn'
-        ? 'var(--amber, #f59e0b)'
+        ? 'var(--warning)'
         : 'var(--red)';
   return (
     <button
