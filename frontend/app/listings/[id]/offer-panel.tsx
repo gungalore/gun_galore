@@ -8,7 +8,7 @@ const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL 
 // Mirrors backend/src/offers/offers.service.ts MAX_OFFER_ATTEMPTS. Keep in
 // sync — the buyer-facing "N of 5" counter is worthless if it drifts from
 // the constant the submit endpoint actually enforces.
-const MAX_OFFER_ATTEMPTS = 5;
+const MAX_OFFER_ATTEMPTS = 1;
 
 // Only the fields this panel renders. Deliberately a local shape rather than
 // lib/types' Offer: that one has no attemptCount, which is the whole point of
@@ -355,8 +355,7 @@ export default function OfferPanel({
             </p>
           )}
           <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
-            You&apos;ve used {used} of {MAX_OFFER_ATTEMPTS} offers on this
-            listing.
+            That was your offer on this listing — each buyer gets one.
           </p>
         </div>
         {spent ? (
@@ -418,10 +417,9 @@ export default function OfferPanel({
             OFFER_TTL_HOURS = 48, COUNTER_TTL_HOURS = 24, and one counter per
             offer. Keep the numbers in sync if those constants change. */}
         <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Take a Shot</span>
-        {' '}— name your price. The seller has 48 hours to accept, decline, or
-        counter once (you then get 24 hours to answer the counter). You can
-        make up to {MAX_OFFER_ATTEMPTS} offers on this listing, so make each
-        one count.
+        {' '}— name your price. You get ONE offer on this listing, so make it
+        a reasonable one. The seller has 48 hours to accept, decline, or
+        counter once, and you then get 24 hours to answer that counter.
         {mine && (
           <>
             {' '}

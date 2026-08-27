@@ -3873,10 +3873,10 @@ export default function NewListingPage() {
                   <>
                     The lowball filter. Offers at or below this number
                     are declined automatically without notifying you,
-                    so time-wasters never reach your inbox. Buyers are
-                    limited to 5 offers per listing, so they can&apos;t
-                    fish for the threshold either. Must be below the
-                    auto-accept threshold if you set both.
+                    so time-wasters never reach your inbox. Each buyer
+                    gets one offer on a listing, so nobody can fish for
+                    the threshold either. Must be below the auto-accept
+                    threshold if you set both.
                   </>
                 }
               >

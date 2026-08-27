@@ -30,7 +30,17 @@ const COUNTER_TTL_HOURS = 24;
 const CHECKOUT_TTL_HOURS = 24;
 // eBay-style attempt cap — a buyer gets this many offers per listing
 // across the row's lifetime (re-offers re-use the row; see submit()).
-const MAX_OFFER_ATTEMPTS = 5;
+// ⚠️ ONE. Operator, 2026-08-27: "Buyer gets One chance to make a reasonable
+// offer and seller one counter."
+//
+// It was 5 — an eBay-style allowance that let a buyer walk a seller up in
+// increments and probe for the auto-accept threshold. One offer changes what
+// the buyer is doing: with a single shot they have to name the number they
+// actually mean, which is the point of asking them to make a reasonable one.
+//
+// The seller's side of the rule was already right — counter() has always
+// refused a second counter on the same offer.
+const MAX_OFFER_ATTEMPTS = 1;
 // Lazy getter — must NOT be a module-level constant. ES module imports
 // hoist before main.ts's dotenv.config() runs, so a top-level
 // `const APP_URL = process.env.FRONTEND_URL ?? 'http://localhost:3000'`
@@ -120,7 +130,7 @@ export class OffersService {
     }
     if (existing && existing.attemptCount >= MAX_OFFER_ATTEMPTS) {
       throw new BadRequestException(
-        `You've reached the limit of ${MAX_OFFER_ATTEMPTS} offers on this listing.`,
+        "You've already made your offer on this listing. Each buyer gets one.",
       );
     }
 
