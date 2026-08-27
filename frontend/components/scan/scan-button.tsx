@@ -59,6 +59,25 @@ export interface ScanButtonProps {
   onHandoffArrived?: (count: number) => void;
   /** Names the scanner to a screen reader. */
   title: string;
+  /**
+   * A second line under the title, inside the camera's own header.
+   *
+   * ⚠️ PLUMBED BECAUSE THE GUIDANCE HAD NOWHERE TO GO. DocumentScanner has
+   * carried `subtitle` since the seller-consent flow proved that anything
+   * anchored to the bottom of a full-screen camera fights the shutter for that
+   * space — but nothing routed through ScanButton could reach it, so a caller
+   * with something to say while the lens is open could only say it before.
+   * The Document Centre's safe-photograph guidance is exactly that case.
+   */
+  subtitle?: string;
+  /**
+   * Open straight into the camera, past the "what are you holding?" chooser.
+   * For flows where the caller already knows, and asking again is a question
+   * the member has already answered.
+   */
+  skipChoose?: boolean;
+  /** Keep the aim box green throughout instead of red-until-detected. */
+  staticAim?: boolean;
   onFiles: (files: File[]) => void | Promise<void>;
   /** The plain picker, rendered beside this and ALONE when there is no camera. */
   fallback: React.ReactNode;
@@ -106,6 +125,9 @@ export default function ScanButton({
   kind,
   onHandoffArrived,
   title,
+  subtitle,
+  skipChoose,
+  staticAim,
   onFiles,
   fallback,
   disabled = false,
@@ -287,6 +309,9 @@ export default function ScanButton({
           shape={shape}
           multiDefault={multiDefault}
           title={title}
+          subtitle={subtitle}
+          skipChoose={skipChoose}
+          staticAim={staticAim}
           onDone={onFiles}
           onClose={() => {
             setOpen(false);

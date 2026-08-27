@@ -33,6 +33,7 @@ import {
   holdProgress,
 } from '@/lib/scan/autocapture';
 import { inkiness } from '@/lib/scan/detect';
+import { OVERLAY_WARNING } from '@/lib/scan/overlay';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SCANNER.
@@ -2288,7 +2289,8 @@ function Review({
                 v.level === 'warn'
                   ? {
                       background: 'rgba(212,154,58,0.14)',
-                      borderLeft: '3px solid var(--warning)',
+                      // Constant, not var(--warning): this sits on the viewfinder's black.
+                      borderLeft: `3px solid ${OVERLAY_WARNING}`,
                       borderRadius: 6,
                       padding: '8px 10px',
                       color: '#fff',
@@ -2304,7 +2306,7 @@ function Review({
                       sentence. The word carries it instead. */}
                   <span
                     aria-hidden="true"
-                    style={{ color: 'var(--warning)', flex: '0 0 auto' }}
+                    style={{ color: OVERLAY_WARNING, flex: '0 0 auto' }}
                   >
                     &#9888;
                   </span>

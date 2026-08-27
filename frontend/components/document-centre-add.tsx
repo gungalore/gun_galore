@@ -259,7 +259,19 @@ export default function DocumentCentreAdd({
           : undefined
       }
       shape={chosen ? shapeForKind(chosen) : 'a4'}
-      title="Photograph the document"
+      /* Names the scanner to a screen reader AND titles the camera screen,
+         so it should say what the member actually chose. Every other consumer
+         is kind-specific; this was the one that stayed generic even though the
+         label map is right here. */
+      title={
+        chosen
+          ? `Photograph your ${(KIND_LABELS[chosen] ?? chosen).toLowerCase()}`
+          : 'Photograph the document'
+      }
+      /* The guidance said "there is nowhere later to say it" — there is now.
+         It rides into the camera header, where a member photographing their
+         safe can still read what the three shots are meant to show. */
+      subtitle={guidance}
       kind={chosen || undefined}
       handoff={{ dest: 'licence-centre' }}
       /* ⚠️ THIS DOES NOT ALSO CLOSE THE PANEL. PhoneHandoffDialog reports the

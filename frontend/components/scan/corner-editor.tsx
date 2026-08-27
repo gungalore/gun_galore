@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { OVERLAY_WARNING } from '@/lib/scan/overlay';
 import {
   Pt,
   Quad,
@@ -590,7 +591,8 @@ export default function CornerEditor({
             fontSize: 13,
             borderRadius: 6,
             background: 'rgba(212,154,58,0.14)',
-            borderLeft: '3px solid var(--warning)',
+            // Constant, not var(--warning): this sits on the viewfinder's black.
+            borderLeft: `3px solid ${OVERLAY_WARNING}`,
             color: '#fff',
           }}
         >

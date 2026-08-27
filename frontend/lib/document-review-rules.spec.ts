@@ -219,3 +219,33 @@ describe('mergeReviewQueue', () => {
     expect(waiting).toHaveLength(1);
   });
 });
+
+describe('mergeReviewQueue is shared with the Motivation Centre', () => {
+  // The Motivation Centre keeps its confirm-queue in a DIFFERENT shape to the
+  // Document Centre's ReviewItem, and had independently grown the same
+  // wholesale-replace bug. Making the merge generic is what lets one tested
+  // function protect both; this pins that, so nobody narrows it back.
+  type MotivationRow = { id: string; name: string; kind: string; confident: boolean };
+  const row = (id: string, name: string): MotivationRow => ({
+    id, name, kind: 'OTHER', confident: false,
+  });
+
+  it('⚠️ KEEPS THE FIRST BATCH WHEN A SECOND ONE ARRIVES', () => {
+    // Six documents added one at a time were six upload calls. Replacing the
+    // queue each time is how five of them lost the only screen that asks a
+    // human to confirm what they are.
+    const first = [row('a', 'competency.jpg'), row('b', 'licence.jpg')];
+    const second = [row('c', 'safe.jpg')];
+    const merged = mergeReviewQueue(first, second);
+    expect(merged.map((r) => r.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('lets the fresher read of the same document win', () => {
+    const before = [row('a', 'scan-0001.jpg')];
+    const after = [{ ...row('a', 'competency.jpg'), confident: true }];
+    const merged = mergeReviewQueue(before, after);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].name).toBe('competency.jpg');
+    expect(merged[0].confident).toBe(true);
+  });
+});

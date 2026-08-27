@@ -60,6 +60,7 @@ import {
   motivationsApi,
   visibleFields,
 } from '@/lib/motivations-api';
+import { mergeReviewQueue } from '@/lib/document-review-rules';
 
 // ────────────────────────────────────────────────────────────────────
 // The motivation wizard.
@@ -2065,6 +2066,11 @@ export default function MotivationWizardPage() {
                     <ScanButton
                       compact
                       shape={shapeForKind(k)}
+                      // Same question the FilePickerButton below already asks:
+                      // a row that wants three photographs should open ready to
+                      // take three. Without this, "Add 3 here" opened a scanner
+                      // set to one and the member had to find the checkbox.
+                      multiDefault={(r.minFiles ?? 1) > 1}
                       title={r.label}
                       kind={k}
                       handoff={{ dest: 'motivation', motivationId: id }}
@@ -3410,7 +3416,11 @@ function UploadPanel({
     if (!files.length) return;
     setBusy(true);
     setErr(null);
-    setFiled([]);
+    // ⚠️ NOT setFiled([]). This queue is the only screen that asks a human to
+    // confirm what each document is, and the add panel closes after every
+    // hand-off — so clearing here means a second batch wipes the first batch's
+    // unconfirmed rows off the screen. The Document Centre lost six licences
+    // this way; this page had grown the same bug independently.
     setProgress({ done: 0, total: files.length });
 
     // ONE AT A TIME, deliberately. Each upload writes an encrypted
@@ -3447,7 +3457,7 @@ function UploadPanel({
       setProgress({ done: i + 1, total: files.length });
     }
 
-    setFiled(named);
+    setFiled((cur) => mergeReviewQueue(cur, named));
     setErr(failed.length ? failed.join(' · ') : null);
     setBusy(false);
     setProgress(null);
