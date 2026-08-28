@@ -59,9 +59,14 @@ export default async function ReceivedOffersPage() {
             No offers yet
           </p>
           <p className="text-sm mb-5" style={{ color: 'var(--text-tertiary)' }}>
-            Offers arrive when buyers Take a Shot at your listings — list an
-            item with Take a Shot pricing to invite offers. You can accept,
-            counter once, or decline each one.
+            {/* ⚠️ THERE IS NO "Take a Shot pricing" TO PICK ANY MORE. This
+                told sellers to choose a listing type that was removed on
+                2026-08-27 — Take a Shot is now a switch on every Buy Now and
+                Auction listing, on by default. Found on the live site
+                2026-08-28. */}
+            Offers arrive when buyers Take a Shot at your listings. Every Buy
+            Now and Auction listing invites them unless you switch offers off.
+            You can accept, counter once, or decline each one.
           </p>
           <div className="flex gap-2 justify-center flex-wrap">
             <Link

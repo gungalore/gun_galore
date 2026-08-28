@@ -595,8 +595,14 @@ export default async function AccountPage() {
                 style={{
                   background: 'var(--bg-card)',
                   border: '0.5px solid var(--border)',
-                  marginTop: 16,
-                  maxWidth: 'calc(50% - 8px)',
+                  // ⚠️ NO maxWidth HERE. This is a cell in a
+                  // `repeat(auto-fit, minmax(240px, 1fr))` grid, so a
+                  // `calc(50% - 8px)` cap halved the CELL, not the row —
+                  // squeezing the tile to 140px, wrapping "Push
+                  // notifications" onto two lines and pushing its state
+                  // label clean outside the card. Measured on the live site
+                  // at 2026-08-28. A `marginTop: 16` went with it: on a grid
+                  // item it only dropped this one tile below its own row.
                 }}
               >
                 <p

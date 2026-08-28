@@ -274,6 +274,11 @@ export function PushToggleRow() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          // Wrap rather than overflow. This row is rendered in two very
+          // different widths — the tab bar's "More" sheet and an Account
+          // tile — and space-between with no wrap pushes the state label
+          // outside any container too narrow to hold both on one line.
+          flexWrap: 'wrap',
           gap: 8,
           padding: '13px 20px',
           background: 'transparent',
@@ -284,7 +289,7 @@ export function PushToggleRow() {
           cursor: push.busy ? 'wait' : 'pointer',
         }}
       >
-        <span>Push notifications</span>
+        <span style={{ minWidth: 0 }}>Push notifications</span>
         <span
           style={{
             fontSize: 12,

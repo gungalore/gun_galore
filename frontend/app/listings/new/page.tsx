@@ -10,7 +10,7 @@ import { CategoryPicker } from '@/components/category-picker';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
 import { PhotoDropzone } from '@/components/photo-dropzone';
-import { StepAccordion, StepStatus } from '@/components/step-accordion';
+import { FormSection } from '@/components/form-section';
 import { useShellStep } from '@/components/shell/shell-step';
 import { StepRail } from '@/components/step-rail';
 import IdentifyFromPhotos from './identify-from-photos';
@@ -695,15 +695,10 @@ export default function NewListingPage() {
   // Furthest step the seller has explicitly advanced to via the Continue
   // button (or Fill form / Continue inside the Step 1 AI helper). Header
   // clicks can navigate BACK to any earlier step, but never FORWARD — the
-  // only way to unlock a future step is the explicit Continue action.
-  // This is what the operator asked for: "Only the continue or fill form
-  // button can jump to the next box."
-  //
-  // Declared up here, above the accordion state it belongs with, because the
-  // two restore paths below (localStorage draft + Relist prefill) need to
-  // re-open the steps they just filled in. The rule still holds: a restored
-  // seller HAD clicked Continue — the page just forgot it.
-  const [furthestStep, setFurthestStep] = useState<1 | 2 | 3 | 4>(1);
+  // (The old forward-navigation lock lived here — `furthestStep`, the state
+  // that recorded how far the seller had explicitly Continue'd so every step
+  // beyond it could be drawn dim and refuse to open. There is nothing left to
+  // unlock: the whole form is on screen, so it went with the accordion.)
 
   // ─── Draft persistence ──────────────────────────────────────────
   // Multi-step accordion + photo upload + Claude moderation = the
@@ -936,11 +931,10 @@ export default function NewListingPage() {
               ? String(l.buyNowPrice / 100)
               : f.buyNowPrice,
         }));
-        // Steps 2-4 are now full of the seller's own answers — open their
-        // headers instead of making them click Continue three times through
-        // boxes they already filled in a previous listing. Publish is still
-        // gated on stepComplete (photos included), so nothing skips validation.
-        setFurthestStep(4);
+        // Steps 2-4 are now full of the seller's own answers. Nothing needs
+        // unlocking any more — the whole form is on screen — so this used to
+        // call setFurthestStep(4) and no longer has to. Publish is still gated
+        // on stepComplete (photos included), so nothing skips validation.
         setRelistPrefilled(true);
         if (relistType === 'BUY_NOW' && l.sellerAskCents == null) {
           setRelistPriceCleared(true);
@@ -983,8 +977,8 @@ export default function NewListingPage() {
         serialNumber?: string;
         paConsent?: boolean;
         papersAttested?: boolean;
-        // How far the seller had explicitly Continue'd. Without it every box
-        // below Step 1 came back locked and the restore felt broken.
+        // Written by builds before 2026-08-28, when steps could be locked.
+        // Still parsed so an old draft doesn't trip the type, never read.
         furthestStep?: number;
       };
       // Park the specs BEFORE setForm — see pendingAttrValuesRef. setForm
@@ -1047,22 +1041,10 @@ export default function NewListingPage() {
       if (typeof d.papersAttested === 'boolean') {
         setPapersAttested(d.papersAttested);
       }
-      // Re-open the steps the seller had already Continue'd through. The
-      // operator's "only Continue unlocks the next box" rule is intact — they
-      // DID click it last session, the draft just forgot. Without this the
-      // restore handed them four filled-in boxes with three of them locked and
-      // no way forward except clicking Continue through work already done.
-      // We deliberately do NOT restore which step was expanded: photos are the
-      // one thing a draft can never carry (File objects don't serialise), so
-      // Step 1 is always the real next action — and every step below it is now
-      // one header click away.
-      if (
-        typeof d.furthestStep === 'number' &&
-        d.furthestStep >= 1 &&
-        d.furthestStep <= 4
-      ) {
-        setFurthestStep(Math.floor(d.furthestStep) as 1 | 2 | 3 | 4);
-      }
+      // Nothing to re-open — a restored draft comes back as the whole form,
+      // the same as a fresh one. `d.furthestStep` from an older draft is
+      // ignored on purpose rather than deleted, so a seller mid-listing when
+      // this shipped doesn't lose the rest of their draft to a parse change.
       setDraftRestored(true);
     } catch {
       // Bad JSON / quota — ignore, start fresh.
@@ -1096,9 +1078,6 @@ export default function NewListingPage() {
           serialNumber,
           paConsent,
           papersAttested,
-          // Progress, not data — but losing it is what made a restore feel
-          // like starting over. See the restore branch above.
-          furthestStep,
         }),
       );
     } catch {
@@ -1119,7 +1098,6 @@ export default function NewListingPage() {
     serialNumber,
     paConsent,
     papersAttested,
-    furthestStep,
   ]);
 
   // Discard the draft (lets the seller force a clean slate).
@@ -1391,8 +1369,8 @@ export default function NewListingPage() {
   // stays on requiresPapers — batteries don't need registration papers.
   const effectiveCollectionOnly = collectionOnly || dgLithiumRestricted;
 
-  // Short names for the mobile step row. These mirror the four StepAccordion
-  // titles below; step 4's accordion title swaps between "Collection &
+  // Short names for the rail and the mobile step row. These mirror the four
+  // FormSection titles below; step 4's heading swaps between "Collection &
   // address" and "Delivery & address", which is more than the row's single
   // line can hold beside a "Step 4 of 4" counter, so it reads plainly here.
   const SELL_STEP_LABELS = [
@@ -1849,93 +1827,60 @@ export default function NewListingPage() {
     return () => URL.revokeObjectURL(url);
   }, [images]);
 
-  const [expandedStep, setExpandedStep] = useState<1 | 2 | 3 | 4 | null>(1);
-  const isOpen = (n: number) => expandedStep === n;
+  /** Anchor id for a step's section — the rail scrolls to these. */
+  const stepAnchor = (n: number) => `sell-step-${n}`;
 
-  // Publish the open step to the mobile shell header, which draws it as a
+  function scrollToStep(n: number) {
+    document
+      .getElementById(stepAnchor(n))
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Publish the current step to the mobile shell header, which draws it as a
   // labelled progress row under the title (components/shell/shell-step.tsx).
   // Desktop ignores it — the shell chrome is phone-and-installed-app only, and
-  // the accordion's own numbered headers already do this job on a wide screen.
+  // the rail at the top of the page does this job on a wide screen.
   //
-  // Null when every step is collapsed: the seller is looking at the whole form
-  // rather than working through one, so a "step 3 of 4" would be claiming a
-  // position they are not in.
+  // ⚠️ "Current" IS NOW THE FIRST INCOMPLETE STEP, NOT THE OPEN ONE. There is
+  // no open one: the whole form is on screen. `activeStep` is the honest
+  // reading of where the work is, and it advances on its own as the seller
+  // fills things in rather than on a click they no longer make.
   //
   // Gated on the form actually being on screen. The component returns null
   // until Clerk resolves and the seller is signed in, and hooks run before that
   // return — so without this the header would announce "Photos · Step 1 of 4"
   // over an empty page for as long as auth took to settle.
   useShellStep(
-    isLoaded && isSignedIn && expandedStep
+    isLoaded && isSignedIn
       ? {
-          label: SELL_STEP_LABELS[expandedStep - 1],
-          current: expandedStep,
+          label: SELL_STEP_LABELS[activeStep - 1],
+          current: activeStep,
           total: SELL_STEP_LABELS.length,
         }
       : null,
   );
 
-  // `furthestStep` lives further up the file (next to the draft-persistence
-  // block) so the draft-restore and Relist-prefill effects can re-open the
-  // steps they just filled in. Everything that reads it lives here.
-
-  // Both restore paths hand the seller a form full of their own answers with
-  // ONE unavoidable hole: the photos. File objects don't serialise into a
-  // draft and can't be carried across a relist, so Step 1 is guaranteed
-  // incomplete on those paths. statusFor uses this to stop that single gap
-  // from re-locking the steps behind it.
-  const stepsPreUnlocked = draftRestored || relistPrefilled;
-
-  function toggleStep(n: 1 | 2 | 3 | 4) {
-    // Hard gate: can't jump forward via header click. Have to use the
-    // Continue / Fill form button.
-    if (n > furthestStep) return;
-    if (statusFor(n) === 'locked') return;
-    setExpandedStep((prev) => (prev === n ? null : n));
-  }
-
-  function advanceFromStep(n: 1 | 2 | 3 | 4) {
-    if (!stepComplete[`step${n}` as keyof typeof stepComplete]) return;
-    const next = (n + 1) as 1 | 2 | 3 | 4 | 5;
-    if (next > 4) {
-      setExpandedStep(null);
-    } else {
-      setExpandedStep(next as 1 | 2 | 3 | 4);
-      // Bump the forward-navigation gate — this is the moment the
-      // seller has explicitly unlocked the next step's header.
-      setFurthestStep((prev) =>
-        Math.max(prev, next) as 1 | 2 | 3 | 4,
-      );
+  // The moderation audit used to be kicked by the Step-2 Continue click, which
+  // was the last moment before Preview when we knew the seller had finished
+  // writing. No Continue exists any more, so the trigger is the transition
+  // itself: the first render on which basics become complete. The ref makes it
+  // fire ONCE per completion rather than on every keystroke afterwards, and
+  // re-arms if the seller empties a required field and refills it.
+  //
+  // Preview still re-audits when the text changed after this ran (see the
+  // auditGeneration effect below) — this only warms the cache.
+  const auditKickedRef = useRef(false);
+  useEffect(() => {
+    if (!stepComplete.step2) {
+      auditKickedRef.current = false;
+      return;
     }
-    // Continuing past Step 2 (basics — the descriptive content) is
-    // the right moment to kick the moderation audit — fire-and-forget
-    // so the advance is instant for the seller. By the time they reach
-    // the Preview button, the result is usually already cached. (Step
-    // numbers were re-ordered: Photos is now Step 1, basics Step 2.)
-    if (n === 2) {
-      void runAudit();
-    }
-  }
-
-  function statusFor(n: 1 | 2 | 3 | 4): StepStatus {
-    // Forward-navigation gate: any step beyond `furthestStep` is
-    // visually locked even if its prerequisites are met. The user
-    // has to hit Continue (or Fill form on Step 1) to unlock it.
-    if (n > furthestStep) return 'locked';
-    const key = `step${n}` as keyof typeof stepComplete;
-    if (stepComplete[key]) return 'complete';
-    for (let i = 1; i < n; i++) {
-      // Exception for a restored draft / relist: the missing photos (see
-      // stepsPreUnlocked) would otherwise dim every step behind them, so the
-      // seller would be looking at three greyed-out boxes full of their own
-      // work with no way in — exactly the "feels broken" the restore is meant
-      // to fix. Preview / Publish still gates on stepComplete.step1, so a
-      // photo-less listing can't slip out this way.
-      if (i === 1 && stepsPreUnlocked) continue;
-      if (!stepComplete[`step${i}` as keyof typeof stepComplete]) return 'locked';
-    }
-    return 'active';
-  }
+    if (auditKickedRef.current) return;
+    auditKickedRef.current = true;
+    void runAudit();
+    // runAudit is redefined every render; depending on it would refire this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepComplete.step2]);
 
   const allComplete =
     stepComplete.step1 &&
@@ -2660,11 +2605,13 @@ export default function NewListingPage() {
     <main
       className="relative max-w-[var(--page-max)] mx-auto px-4 py-8 sm:py-12"
     >
-      {/* The house step rail. Desktop only — below md the shell header shows
-          the compact "Photos · Step 1 of 4" row instead, published by the
-          useShellStep call above. Tapping a step opens it, but only steps the
-          seller has already reached are offered: a link to a step they have
-          not got to is a link to an empty form. */}
+      {/* The house step rail, and — since 2026-08-28 — the ONLY step display
+          on this page. Desktop only; below md the shell header shows the
+          compact "Photos · Step 1 of 4" row instead, published by the
+          useShellStep call above. Tapping a step scrolls to it. Every step is
+          reachable: nothing is hidden or locked any more, so offering only
+          some of them would be refusing to scroll to a section already in
+          front of the seller. */}
       <StepRail
         steps={SELL_STEP_LABELS.map((label, i) => ({
           label,
@@ -2675,9 +2622,9 @@ export default function NewListingPage() {
             stepComplete.step4,
           ][i],
         }))}
-        current={expandedStep ?? activeStep}
+        current={activeStep}
         mobile="shell"
-        onJump={(n) => setExpandedStep(n as 1 | 2 | 3 | 4)}
+        onJump={scrollToStep}
         className="-mx-4 mb-8"
       />
 
@@ -2853,24 +2800,10 @@ export default function NewListingPage() {
           {/* Step 1 — Photos. Photos first so the AI "Help me describe
               this" button can pre-fill the other steps (title, category,
               condition, description) before the seller types anything. */}
-          <StepAccordion
-            number={1}
+          <FormSection
+            id={stepAnchor(1)}
             title="Photos"
             description="Buyers click photos first. Bright, sharp, every angle. 1–10 photos, drag to reorder."
-            status={statusFor(1)}
-            expanded={isOpen(1)}
-            onToggle={() => toggleStep(1)}
-            summary={
-              stepComplete.step1
-                ? `${images.length} photo${images.length === 1 ? '' : 's'} — cover: ${images[0]?.name ?? '—'}`
-                : undefined
-            }
-            // Continue appears as soon as the first photo lands.
-            // Hidden entirely on a fresh form so the empty step reads
-            // as just the dropzone, no chrome.
-            hideContinue={images.length === 0}
-            onContinue={() => advanceFromStep(1)}
-            continueDisabled={!stepComplete.step1}
           >
             <PhotoDropzone
               files={images}
@@ -2911,27 +2844,19 @@ export default function NewListingPage() {
                   categoryId: patch.categoryId ?? f.categoryId,
                 }));
               }}
-              // Unified advance — same gate as the Continue button so
-              // furthestStep bumps and the next header unlocks.
-              onAdvance={() => advanceFromStep(1)}
+              // The AI has just written a title and description into the
+              // section below. Scroll there so the seller reads what was put
+              // in their mouth before it goes on a listing with their name on
+              // it — this used to expand Step 2, and the intent is the same.
+              onAdvance={() => scrollToStep(2)}
             />
-          </StepAccordion>
+          </FormSection>
 
           {/* Step 2 — About this item (basics + condition + firearm details) */}
-          <StepAccordion
-            number={2}
+          <FormSection
+            id={stepAnchor(2)}
             title="About this item"
             description="Tell buyers what it is, what shape it's in, and what makes it interesting."
-            status={statusFor(2)}
-            expanded={isOpen(2)}
-            onToggle={() => toggleStep(2)}
-            summary={
-              stepComplete.step2
-                ? `${form.title.trim()} · ${selectedCategory?.name ?? ''} · ${CONDITION_LABELS[form.condition as keyof typeof CONDITION_LABELS]}`.slice(0, 100)
-                : undefined
-            }
-            onContinue={() => advanceFromStep(2)}
-            continueDisabled={!stepComplete.step2}
           >
             <Field label="Title" required>
               <input
@@ -3234,11 +3159,11 @@ export default function NewListingPage() {
                 </div>
               </div>
             )}
-          </StepAccordion>
+          </FormSection>
 
           {/* Step 3 — Listing type + pricing */}
-          <StepAccordion
-            number={3}
+          <FormSection
+            id={stepAnchor(3)}
             title="How are you selling?"
             // "You can always change later" was untrue and expensive: the
             // edit page locks the listing type (and auction duration) the
@@ -3247,31 +3172,6 @@ export default function NewListingPage() {
             // reassurance had to cancel — and eat the bidder-trust hit — to
             // change anything.
             description="Each option has different rules. The listing type is locked once published, so pick the one that fits."
-            status={statusFor(3)}
-            expanded={isOpen(3)}
-            onToggle={() => toggleStep(3)}
-            summary={
-              stepComplete.step3
-                ? `${
-                    form.listingType === 'BUY_NOW'
-                      ? 'Marketplace'
-                      : form.listingType === 'AUCTION'
-                        ? 'Auction'
-                        : 'Take a Shot'
-                  }${
-                    form.price
-                      ? form.listingType === 'BUY_NOW'
-                        ? // The collapsed summary has to agree with the
-                          // breakdown: on Buy Now the typed number is the
-                          // seller's take-home, not the shelf price.
-                          ` · R ${form.price} to you · buyers see ${formatRand(buyNowQuote.listPrice)}`
-                        : ` · R ${form.price}`
-                      : ''
-                  }`
-                : undefined
-            }
-            onContinue={() => advanceFromStep(3)}
-            continueDisabled={!stepComplete.step3}
           >
             <Field
               label="Listing type"
@@ -3962,11 +3862,11 @@ export default function NewListingPage() {
               </Field>
               </>
             )}
-          </StepAccordion>
+          </FormSection>
 
           {/* Step 4 — Delivery & address */}
-          <StepAccordion
-            number={4}
+          <FormSection
+            id={stepAnchor(4)}
             title={
               effectiveCollectionOnly ? 'Collection & address' : 'Delivery & address'
             }
@@ -3979,22 +3879,6 @@ export default function NewListingPage() {
                 ? 'Add the parcel size and the address a courier collects it from. Buyers choose door delivery or a collection point when they check out.'
                 : 'Pick which couriers you offer, then add the pickup address. We use it to suggest your nearest Pudo locker.'
             }
-            status={statusFor(4)}
-            expanded={isOpen(4)}
-            onToggle={() => toggleStep(4)}
-            summary={
-              stepComplete.step4
-                ? effectiveCollectionOnly
-                  ? `Collection only · ${pickupAddress.city || 'pickup set'}`
-                  : singleCourierOption
-                  ? // One option, stored as a pair — counting methods here
-                    // would read "2 methods" for a single tick.
-                    `${courierModel.label} · ${pickupAddress.city || 'pickup set'}`
-                  : `${shippingMethods.length} method${shippingMethods.length === 1 ? '' : 's'} · ${pickupAddress.city || 'pickup set'}`
-                : undefined
-            }
-            onContinue={() => advanceFromStep(4)}
-            continueDisabled={!stepComplete.step4}
           >
             {/* Parcel info — captured first so the delivery picker below
                 can disable PUDO if the parcel overshoots locker limits.
@@ -4621,7 +4505,7 @@ export default function NewListingPage() {
                 </p>
               )
             )}
-          </StepAccordion>
+          </FormSection>
 
           {/* Preview listing — enabled once every step is complete.
               The audit usually already ran in the background (on Step 1
