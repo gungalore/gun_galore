@@ -100,13 +100,28 @@
   --bg-inset:    #F4F2EC;
 
   /* Elevation. Warm-tinted (the ink, 26,22,19), never pure black — see the
-     .gg-tile block below. --elev-1 is the resting state, pitched at roughly
-     Tailwind's shadow-md. A first pass at half that (0.05 on both layers)
-     computed correctly and was invisible on screen — on a dense retail grid
-     the temptation is to go subtle, but subtle past a point is just the flat
-     card again with extra CSS. --elev-2 is hover only. */
-  --elev-1: 0 1px 2px rgba(26, 22, 19, 0.06), 0 4px 12px rgba(26, 22, 19, 0.08);
-  --elev-2: 0 2px 6px rgba(26, 22, 19, 0.08), 0 14px 30px rgba(26, 22, 19, 0.14);
+     .gg-tile block below.
+
+     ⚠️ THREE LAYERS, AND THE COUNT IS THE POINT — not the alpha. Operator
+     asked for "a bit of body for that 3D effect", and body is a question of
+     SHAPE: a tight contact shadow pins the tile to the page, a mid layer
+     gives it thickness, a wide ambient one gives it height. Two layers reads
+     as a flat sheet no matter how dark you make it, and darkening a
+     two-layer stack to compensate just produces a grubby flat sheet.
+
+     A first pass at 0.05 on two layers computed correctly and was invisible
+     on screen. On a dense retail grid the temptation is to go subtle, but
+     subtle past a point is the flat card again with extra CSS.
+
+     --elev-2 is hover only. */
+  --elev-1:
+    0 1px 2px   rgba(26, 22, 19, 0.07),
+    0 4px 8px   rgba(26, 22, 19, 0.07),
+    0 10px 24px rgba(26, 22, 19, 0.09);
+  --elev-2:
+    0 2px 4px   rgba(26, 22, 19, 0.08),
+    0 10px 20px rgba(26, 22, 19, 0.11),
+    0 22px 48px rgba(26, 22, 19, 0.16);
 
   /* Borders. --border-divider is SUBTLER than --border (it was darker on
      the dark theme for the same reason: closer to the surface it sits on). */
@@ -357,14 +372,35 @@ time[data-countdown] {
     border-color var(--dur-fast) var(--ease-out);
 }
 
-/* The lift. Only on devices that genuinely hover — without this gate a phone
-   fires :hover on tap and leaves the tile stuck raised after the finger
-   goes. transform, not margin/top, so nothing around it reflows. */
+/* The pop.
+
+   ⚠️ position + z-index ARE LOAD-BEARING, NOT TIDINESS. The tile scales up
+   on hover, so it grows INTO its neighbours in a grid; without a stacking
+   context to raise it, the tile to its right paints over the enlarged edge
+   and the pop looks clipped. Both sit on the resting rule, never on :hover —
+   changing `position` at hover time is a layout change and would jump.
+
+   Scoped to -lift rather than .gg-tile so static panels (Account groups, the
+   Sell form sections) keep their normal flow: they were checked first, and
+   every absolutely-positioned child in the lifting cards anchors to an inner
+   `.relative` photo wrapper, so nothing re-anchors to the card root.
+
+   Only on devices that genuinely hover — without the gate a phone fires
+   :hover on tap and leaves the tile stuck raised after the finger goes. */
+.gg-tile-lift {
+  position: relative;
+  z-index: 0;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .gg-tile-lift:hover,
   .gg-tile-lift:focus-within {
     box-shadow: var(--elev-2) !important;
-    transform: translateY(-2px);
+    /* translateY alone slides; the scale is what makes it read as coming
+       toward you. 1.5% — enough to feel, small enough that a card photo
+       does not visibly soften. */
+    transform: translateY(-4px) scale(1.015);
+    z-index: 2;
     border-color: var(--border-hover);
   }
 }
@@ -374,6 +410,10 @@ time[data-countdown] {
    a worse outcome than the thing the preference asks for. */
 @media (prefers-reduced-motion: reduce) {
   .gg-tile { transition: box-shadow var(--dur-fast) ease; }
+  /* Kills BOTH the raise and the scale — `transform: none` covers the whole
+     declaration, so there is no separate scale left behind. The deeper
+     shadow stays: dropping that too would leave these users with no hover
+     feedback at all, which is worse than the thing the preference asks for. */
   .gg-tile-lift:hover,
   .gg-tile-lift:focus-within { transform: none; }
 }
