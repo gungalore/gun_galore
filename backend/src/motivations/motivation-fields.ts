@@ -590,12 +590,88 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Serial number',
     kind: 'short',
     section: 'The firearm',
-    // The 271 has no single "serial number" box. It has barrel (1.7), frame
-    // (1.9) and receiver (1.11) serials, each with its own make, because the
-    // frame or receiver IS the firearm in law. One serial is what an applicant
-    // actually has, so we ask once and place it in the right box for the type.
+    // ⚠️ THE 271 HAS NO SINGLE "serial number" BOX — THE LICENCE CARD DOES.
+    // Section E has barrel (1.7), frame (1.9) and receiver (1.11) serials, each
+    // with its own make, because the frame or receiver IS the firearm in law.
+    // A card, by contrast, prints a headline "Serial Number" above those rows,
+    // and THAT is the number that identifies the firearm — operator,
+    // 2026-08-28: "even when the DFO asks what is the serial number of the
+    // firearm, that is the number you will give him."
+    //
+    // So this field is the headline number, asked once, and the three component
+    // rows below carry what the form needs. They match: on the operator's own
+    // card the headline MR90189D IS the receiver row, with barrel and frame
+    // reading NONE.
     help: 'If you already know which firearm it is. Leave blank if not — the dealer fills it in.',
     sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  // ── the three component rows, SAPS 271 section E 1.7–1.12 ────────────
+  //
+  // ⚠️ ALL SIX ARE OPTIONAL AND USUALLY BLANK, AND THAT IS CORRECT. A
+  // firearm carries its number on ONE component; the other two rows read NONE
+  // on a real card. Marking any of them required would block an application
+  // over a box the card itself leaves empty.
+  //
+  // They exist because the reader can now fill them (common/firearm-identity
+  // reads all four serials off any document) and because a 271 printed without
+  // them is a form with three empty boxes a DFO expects filled. Before this the
+  // registry could store less than the reader could read.
+  {
+    key: 'barrel_serial',
+    label: 'Barrel serial number',
+    kind: 'short',
+    section: 'The firearm',
+    help: 'From the licence card or the dealer’s paperwork. Often NONE — leave it blank if the barrel carries no number of its own.',
+    sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'barrel_make',
+    label: 'Barrel make',
+    kind: 'short',
+    section: 'The firearm',
+    help: 'Only where the card names a make against the barrel row specifically.',
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'frame_serial',
+    label: 'Frame serial number',
+    kind: 'short',
+    section: 'The firearm',
+    help: 'Often NONE. Leave blank unless the card shows a number against the frame row.',
+    sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'frame_make',
+    label: 'Frame make',
+    kind: 'short',
+    section: 'The firearm',
+    help: 'Only where the card names a make against the frame row specifically.',
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'receiver_serial',
+    label: 'Receiver serial number',
+    kind: 'short',
+    section: 'The firearm',
+    help: 'On many rifles this is the row that carries the firearm’s number — the receiver is the firearm in law.',
+    sensitive: true,
+    formOnly: true,
+    maxLength: 60,
+  },
+  {
+    key: 'receiver_make',
+    label: 'Receiver make',
+    kind: 'short',
+    section: 'The firearm',
+    help: 'Only where the card names a make against the receiver row specifically.',
     formOnly: true,
     maxLength: 60,
   },

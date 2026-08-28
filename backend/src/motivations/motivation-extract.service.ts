@@ -5,6 +5,10 @@ import { fieldsFor } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
+import {
+  firearmIdentityPrompt,
+  parseFirearmReading,
+} from '../common/firearm-identity';
 
 // ────────────────────────────────────────────────────────────────────
 // READING WHAT THE APPLICANT ALREADY HAS.
@@ -62,6 +66,68 @@ const MODEL_CLASSIFY =
   process.env.ANTHROPIC_MODEL_SIMPLE ?? 'claude-haiku-4-5';
 
 /** What each document kind can plausibly yield. Nothing else is accepted. */
+/**
+ * Upload kinds that plausibly DESCRIBE A FIREARM, and so are worth a second,
+ * kind-agnostic read.
+ *
+ * ⚠️ NOT EVERY KIND, DELIBERATELY. A safe photograph, an ID copy or a
+ * municipal bill has no firearm on it: a vision call would spend money to find
+ * nothing, and — the real risk — hand a model the opportunity to invent one
+ * from a stray number. OTHER is included because that is where a document
+ * lands when the classifier could not place it, which is exactly the
+ * "atleast something" case this reader exists for.
+ */
+const FIREARM_READABLE = new Set<string>([
+  'FIREARM_SOURCE_PROOF',
+  'SELLER_LICENCE',
+  'CURRENT_LICENCE',
+  'ASSOCIATION_ENDORSEMENT',
+  'OTHER',
+]);
+
+/**
+ * Where each firearm-identity key lands on the motivation form.
+ *
+ * ✅ EVERY FIELD NOW HAS SOMEWHERE TO GO. The component serials and their
+ * makes were read and thrown away for a while, because the registry had one
+ * serial field and forcing a component number into it would have put the wrong
+ * number on a signed application. The registry carries all six now (SAPS 271
+ * section E 1.7–1.12), so the map is one-to-one and nothing is discarded.
+ *
+ * ⚠️ THE NAMES MATCH ON BOTH SIDES, WHICH IS WHY THIS LOOKS REDUNDANT. It is
+ * still written out rather than assumed: the reader's keys are chosen to
+ * describe a page and the registry's are chosen to describe a form, and the
+ * day one of them is renamed this map is the thing that fails loudly instead
+ * of a value silently going nowhere.
+ */
+const FIREARM_KEY_MAP: Record<string, string> = {
+  firearm_make: 'firearm_make',
+  firearm_model: 'firearm_model',
+  firearm_calibre: 'firearm_calibre',
+  firearm_type: 'firearm_type',
+  firearm_action: 'firearm_action',
+  // ⚠️ THE HEADLINE SERIAL, NOT THE BARREL ROW. Operator, 2026-08-28:
+  // "Serial number is the number which will always be used to identify the
+  // firearm. Even when the DFO asks what is the serial number of the firearm,
+  // that is the number you will give him."
+  //
+  // This was briefly mapped from barrel_serial, on the understanding that the
+  // two always match. The operator's own card disproves it: Serial Number
+  // MR90189D, Barrel Serial No NONE, Receiver Serial No MR90189D. The headline
+  // number follows whichever component IS the firearm in law, so mapping from
+  // the barrel row would have written NONE — or nothing — into the one field
+  // a DFO actually asks about.
+  firearm_serial: 'firearm_serial',
+  // The three component rows. Each may legitimately be absent — a firearm
+  // carries its number on ONE component and the other rows read NONE.
+  barrel_serial: 'barrel_serial',
+  barrel_make: 'barrel_make',
+  frame_serial: 'frame_serial',
+  frame_make: 'frame_make',
+  receiver_serial: 'receiver_serial',
+  receiver_make: 'receiver_make',
+};
+
 const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
   IDENTITY_DOCUMENT: ['full_name', 'id_number'],
   // ⚠️ NO competency_expiry. A COMPETENCY CERTIFICATE DOES NOT CARRY ONE.
@@ -419,6 +485,81 @@ export class MotivationExtractService {
    * as "something else" is visibly unsorted, where a confident wrong guess
    * looks like a satisfied requirement.
    */
+  /** Is a second, firearm-only read worth making on this kind? */
+  static readsFirearm(kind: MotivationUploadKind): boolean {
+    return FIREARM_READABLE.has(kind);
+  }
+
+  /**
+   * Read the FIREARM off a document, whatever kind of document it is.
+   *
+   * ⚠️ NO CLASSIFICATION STEP, AND THAT IS THE FEATURE. extract() asks what a
+   * document of a KNOWN kind carries; this asks what firearm the page is
+   * about. A dealer invoice, a seller's licence card, a prefilled 271, a
+   * printed advert and a photograph of the box all answer it, and requiring a
+   * classifier to name the genre first turns every unrecognised one into a
+   * dead end — which is the applicant who has "atleast something".
+   *
+   * ⚠️ IT RETURNS ONLY WHAT THE MOTIVATION HAS A BOX FOR. The reader covers
+   * SAPS 271 section E, which is wider than our registry: the frame and
+   * receiver serials are real, separate numbers with nowhere to go yet, and
+   * forcing either into the one serial field would put the WRONG number on a
+   * signed application. They are dropped here rather than guessed.
+   *
+   * Fail-soft like every other model call in this file: no reader, no crash,
+   * the applicant types the fields.
+   */
+  async readFirearm(args: {
+    bytes: Buffer;
+    mimeType: string;
+  }): Promise<Record<string, string>> {
+    if (!this.client) return {};
+
+    const block = contentBlock(args.bytes, args.mimeType);
+    let text = '';
+    try {
+      const res = await this.client.messages.create({
+        model: MODEL,
+        max_tokens: 800,
+        system: firearmIdentityPrompt(),
+        messages: [
+          {
+            role: 'user',
+            content: [
+              block,
+              {
+                type: 'text',
+                text: 'Read the firearm off this document.',
+              },
+            ],
+          },
+        ],
+      });
+      const first = res.content.find((b) => b.type === 'text');
+      text = first && 'text' in first ? first.text.trim() : '';
+    } catch (err) {
+      this.logger.warn(`Firearm read failed: ${(err as Error).message}`);
+      return {};
+    }
+
+    // The model is asked for bare JSON and mostly obliges; a fenced or
+    // prefaced answer is common enough to be worth surviving.
+    const m = text.match(/\{[\s\S]*\}/);
+    const reading = parseFirearmReading(m ? m[0] : text);
+
+    const out: Record<string, string> = {};
+    for (const [from, to] of Object.entries(FIREARM_KEY_MAP)) {
+      const v = reading.values[from];
+      if (v) out[to] = v;
+    }
+    if (Object.keys(out).length) {
+      this.logger.log(
+        `Firearm read filled ${Object.keys(out).length} field(s): ${Object.keys(out).join(', ')}`,
+      );
+    }
+    return out;
+  }
+
   async classify(args: {
     bytes: Buffer;
     mimeType: string;
