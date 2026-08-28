@@ -118,6 +118,25 @@ export function cleanAlsoCovers(
 // motivation one. The two name the same values differently and the gap between
 // them was read as "unreadable document" for months; the spec pins the gap so
 // nobody derives a readability verdict from it again.
+/**
+ * Kinds where an `expires_on` coming back from vision must be THROWN AWAY.
+ *
+ * Not "kinds without an expiry column" — every credential has one. These
+ * are the documents where a date on the page is never an expiry: a
+ * competency card prints its issue date and nothing else, and a proficiency
+ * and an ID document do not run out at all.
+ *
+ * Keep this in step with defaultsToNeverExpires in credential-kinds.ts.
+ * They answer two halves of one question — what we STORE and what we SHOW —
+ * and a kind in one but not the other is a document that either displays an
+ * expiry nobody can confirm or asks for a date it will then discard.
+ */
+const NO_EXPIRY_ON_THE_PAGE: ReadonlySet<string> = new Set([
+  'COMPETENCY_CERTIFICATE',
+  'PROFICIENCY',
+  'IDENTITY_DOCUMENT',
+]);
+
 export const WANTED: Record<CredentialKind, string[]> = {
   FIREARM_LICENCE: [
     'licence_number',
@@ -485,7 +504,19 @@ export class LicenceCentreExtractService {
           // landing in issuedOn and overwriting the real date of issue. That
           // is the one date a competency certificate DOES print, and it is
           // what the five-year no-licence rule is counted from.
-          if (kind !== 'COMPETENCY_CERTIFICATE') out.expiresOn = value;
+          // ⚠️ THREE KINDS DROP A READ EXPIRY, NOT ONE. A competency prints
+          // an issue date and no expiry; a proficiency and an ID document do
+          // not expire at all (operator, 2026-08-28). For every one of them a
+          // date the model returns here is either a misread of some other
+          // number on the page or an expiry that does not exist — and storing
+          // it means the member confirms a date they cannot check against the
+          // card, and the reminder sweep then chases a deadline nobody set.
+          //
+          // Dropping is not the same as redirecting, and the difference was a
+          // real bug: the guard was once written so a rejected expiry fell
+          // into the `else` and overwrote issuedOn, destroying the one date a
+          // competency card DOES print.
+          if (!NO_EXPIRY_ON_THE_PAGE.has(kind)) out.expiresOn = value;
         } else {
           out.issuedOn = value;
         }

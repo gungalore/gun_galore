@@ -58,6 +58,35 @@ describe('a date read off a document', () => {
     expect(out.expiresOn).toBeNull();
   });
 
+  it('drops a read expiry on a proficiency and an ID — neither runs out', () => {
+    // Operator, 2026-08-28: "proficiencies never expires, only competencies"
+    // and "ID document also never expires".
+    //
+    // ⚠️ THE TICK ALONE WOULD NOT HAVE BEEN ENOUGH. A date reaches the row by
+    // TWO routes: the never-expires default, and whatever vision reads off the
+    // page. Vision is asked for expires_on on every kind it runs on, so
+    // without this drop a misread number still lands in Credential.expiresOn
+    // — and the member is then asked to confirm a date they cannot check
+    // against a card that does not print one.
+    //
+    // The issue date SURVIVES, which is the whole point of dropping rather
+    // than redirecting: see the competency bug above.
+    for (const kind of [
+      CredentialKind.PROFICIENCY,
+      CredentialKind.IDENTITY_DOCUMENT,
+    ]) {
+      const out = parse(
+        model([
+          { key: 'issued_on', value: '2021-03-04' },
+          { key: 'expires_on', value: '2031-03-04' },
+        ]),
+        kind,
+      );
+      expect(out.expiresOn).toBeNull();
+      expect(out.issuedOn).toBe('2021-03-04');
+    }
+  });
+
   it('still takes both dates off a firearm licence', () => {
     const out = parse(
       model([

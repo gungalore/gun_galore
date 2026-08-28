@@ -97,16 +97,42 @@ describe('when the never-expires box starts already ticked', () => {
     for (const k of NO_VISION_KINDS) expect(defaultsToNeverExpires(k)).toBe(true);
   });
 
-  it('NOT on an ID document, because a passport is one', () => {
-    // ⚠️ THE CASE THAT BROKE THE FIRST DESIGN. A green barcoded book does not
-    // expire; a passport does; both are IDENTITY_DOCUMENT. Pre-ticking would
-    // be us answering for them, and answering wrong half the time.
-    expect(defaultsToNeverExpires(CredentialKind.IDENTITY_DOCUMENT)).toBe(false);
+  it('ON an ID document and a proficiency — neither runs out', () => {
+    // Operator, 2026-08-28: "proficiencies never expires, only competencies"
+    // and "ID document also never expires".
+    //
+    // ⚠️ THIS REVERSES A TESTED, DEFENDED DECISION — READ BEFORE CHANGING IT
+    // BACK. The assertion here used to be `false`, and its comment called the
+    // ID "THE CASE THAT BROKE THE FIRST DESIGN": a green barcoded book does
+    // not expire, a passport does, and both are IDENTITY_DOCUMENT, so
+    // pre-ticking was "us answering for them, and answering wrong half the
+    // time."
+    //
+    // That reasoning is still sound and the edge is still real. What changed
+    // is whose call it is: the operator says the Centre's ID documents do not
+    // expire, and this is the SA ID book and card it actually collects. The
+    // tick remains EDITABLE and the confirm step still shows it, so somebody
+    // filing a passport unticks it in one tap — which is the escape hatch the
+    // original objection was really asking for.
+    expect(defaultsToNeverExpires(CredentialKind.IDENTITY_DOCUMENT)).toBe(true);
+    expect(defaultsToNeverExpires(CredentialKind.PROFICIENCY)).toBe(true);
+  });
+
+  it('NOT on a competency, which is the one thing that DOES lapse', () => {
+    // s10(2) of the Firearms Control Act: a competency certificate lapses.
+    // Everything else on this list is here because it does not.
+    expect(
+      defaultsToNeverExpires(CredentialKind.COMPETENCY_CERTIFICATE),
+    ).toBe(false);
   });
 
   it('NOT on anything else we actually read', () => {
+    const exempt = new Set<CredentialKind>([
+      CredentialKind.IDENTITY_DOCUMENT,
+      CredentialKind.PROFICIENCY,
+    ]);
     for (const k of Object.values(CredentialKind)) {
-      if (isPhotograph(k)) continue;
+      if (isPhotograph(k) || exempt.has(k)) continue;
       expect(defaultsToNeverExpires(k)).toBe(false);
     }
   });

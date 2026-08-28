@@ -67,21 +67,32 @@ export function isPhotograph(kind: CredentialKind): boolean {
 export const NO_VISION_KINDS = PHOTOGRAPH_KINDS;
 
 /**
- * Kinds where "Never expires" starts already ticked.
+ * Kinds that have no expiry to find, so the tick starts ON.
  *
- * ⚠️ THE SAME PHOTOGRAPHS, AND ONLY BECAUSE WE NEVER LOOKED. A pre-ticked box is us
- * answering on the member's behalf, which is exactly the mistake this file was
- * rewritten to undo — so it is limited to the case where there is provably
- * nothing to read: a photograph of a safe has no date on it in any sense.
+ * Two reasons a kind lands here, and they are different in strength:
  *
- * Everything else starts UNTICKED with whatever vision found in the box, even
- * where the kind usually has no date. An ID copy is the example that matters:
- * a green barcoded book does not expire and a passport does, and the member
- * settles it in one tap while looking at the thing itself.
+ *   PHOTOGRAPHS  — there is provably nothing printed to read.
+ *   PROFICIENCY, IDENTITY_DOCUMENT — the document is dated but does not RUN
+ *   OUT. Operator, 2026-08-28: "proficiencies never expires, only
+ *   competencies" and "ID document also never expires".
  *
- * The tick is never applied silently — the confirm step always shows it, and
- * confirmedAt is only stamped once they have pressed the button.
+ * ⚠️ A PRE-TICKED BOX IS STILL US ANSWERING ON THE MEMBER'S BEHALF, which is
+ * the mistake this file was rewritten to undo, so the list stays short and the
+ * tick stays editable. It is never applied silently: the confirm step shows it
+ * and confirmedAt is only stamped once the member has pressed the button.
+ *
+ * ⚠️ AND THE ID CASE HAS A KNOWN EDGE. The previous author left it off this
+ * list on purpose — "a green barcoded book does not expire and a passport
+ * does" — and that is still true, because a passport is an identity document.
+ * The default is now the SA ID book and card this Centre actually collects;
+ * somebody filing a passport unticks it in one tap.
  */
+const NEVER_EXPIRES: ReadonlySet<CredentialKind> = new Set<CredentialKind>([
+  ...PHOTOGRAPH_KINDS,
+  CredentialKind.PROFICIENCY,
+  CredentialKind.IDENTITY_DOCUMENT,
+]);
+
 export function defaultsToNeverExpires(kind: CredentialKind): boolean {
-  return PHOTOGRAPHS.has(kind);
+  return NEVER_EXPIRES.has(kind);
 }
