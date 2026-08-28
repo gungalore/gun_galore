@@ -50,6 +50,55 @@ const competency = (
 const TYPE = 'S16_DEDICATED_SPORT' as never;
 
 describe('what the Licence Centre offers a motivation', () => {
+  it('picks the longest-running certificate when several are held', () => {
+    // Operator, 2026-08-28, asked which of several competency certificates
+    // should win: "longest-running expiry wins."
+    //
+    // ⚠️ THE SHORTER ONE IS DELIBERATELY FIRST IN THE ARRAY. offer() is
+    // first-wins, so before the sort this test would have returned COMP-SHORT
+    // — and nothing on screen would have looked wrong, because both
+    // certificates are the member's own and both numbers are real.
+    const o = credentialOffer(
+      TYPE,
+      [
+        competency({
+          id: 'short',
+          expiresOn: '2027-01-01',
+          details: { competency_number: 'COMP-SHORT' },
+        }),
+        competency({
+          id: 'long',
+          expiresOn: '2033-01-01',
+          details: { competency_number: 'COMP-LONG' },
+        }),
+      ],
+      {},
+    );
+    expect(o.values.competency_number).toBe('COMP-LONG');
+  });
+
+  it('prefers a dated certificate over one whose expiry could not be read', () => {
+    // A blank date is not evidence of a long life. Sorting null first would
+    // let the least-known document beat a dated one.
+    const o = credentialOffer(
+      TYPE,
+      [
+        competency({
+          id: 'undated',
+          expiresOn: null,
+          details: { competency_number: 'COMP-UNDATED' },
+        }),
+        competency({
+          id: 'dated',
+          expiresOn: '2028-01-01',
+          details: { competency_number: 'COMP-DATED' },
+        }),
+      ],
+      {},
+    );
+    expect(o.values.competency_number).toBe('COMP-DATED');
+  });
+
   it('fills the competency number off the certificate', () => {
     const o = credentialOffer(TYPE, [competency()], {});
     expect(o.values.competency_number).toBe('COMP-999');
