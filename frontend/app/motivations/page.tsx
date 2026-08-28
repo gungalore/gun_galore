@@ -228,7 +228,7 @@ export default function MotivationsPage() {
               <button
                 type="button"
                 disabled={starting || !canStart}
-                className="w-full rounded border border-[var(--border)] bg-[var(--bg-card)] p-3 text-left hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="gg-tile gg-tile-lift w-full rounded border border-[var(--border)] bg-[var(--bg-card)] p-3 text-left hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={async () => {
                   setStarting(true);
                   setError(null);

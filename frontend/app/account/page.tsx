@@ -515,7 +515,7 @@ export default async function AccountPage() {
               {TILE_GROUPS.map((group) => (
                 <div
                   key={group.title}
-                  className="rounded-[10px] overflow-hidden"
+                  className="gg-tile rounded-[10px] overflow-hidden"
                   style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
                 >
                   <p
@@ -591,7 +591,7 @@ export default async function AccountPage() {
                   card grid with no card around it. Verified on the live site
                   before this wrapper existed. */}
               <div
-                className="rounded-[10px] overflow-hidden"
+                className="gg-tile rounded-[10px] overflow-hidden"
                 style={{
                   background: 'var(--bg-card)',
                   border: '0.5px solid var(--border)',

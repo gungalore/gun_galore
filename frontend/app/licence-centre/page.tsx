@@ -2329,7 +2329,7 @@ function DocStat({
   const lit = warn && value > 0;
   return (
     <div
-      className="rounded-[10px] border px-3.5 py-3"
+      className="gg-tile rounded-[10px] border px-3.5 py-3"
       style={{
         borderColor: lit ? tone.line : 'var(--border)',
         background: lit ? tone.wash : 'var(--bg-card)',

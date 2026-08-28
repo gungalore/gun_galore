@@ -52,7 +52,7 @@ export function ListingCard({ listing }: { listing: Listing }) {
     // invalid HTML and a screen-reader trap. The card is a container now,
     // the photo and text are the link, and the action is its sibling.
     <div
-      className="rounded-[6px] overflow-hidden transition-colors flex flex-col h-full"
+      className="gg-tile gg-tile-lift rounded-[6px] overflow-hidden flex flex-col h-full"
       style={{
         background: 'var(--bg-card)',
         border: '0.5px solid var(--border)',
