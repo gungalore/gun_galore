@@ -1757,8 +1757,10 @@ export class MotivationsService {
     const credentials = await this.credentialsFor(user.id, {
       includeUnconfirmed: true,
     });
-    // ⚠️ THE ONE-BUTTON FILL STAYS CONFIRMED-ONLY. It writes values without
-    // the member looking at each; the dropdown shows them what they picked.
+    // (This used to read "THE ONE-BUTTON FILL STAYS CONFIRMED-ONLY", drawing
+    // the line between showing a value and writing one. The line moved on
+    // 2026-08-28: credentialOffer gates per VALUE now, so both paths may take
+    // facts from an unconfirmed document and neither may take a date.)
     const offer = credentialOffer(
       row.licenceType,
       credentials.filter((c) => c.confirmed),
@@ -1918,7 +1920,19 @@ export class MotivationsService {
     const answers = this.readAnswers(row.answersEncrypted);
     const offer = credentialOffer(
       row.licenceType,
-      await this.credentialsFor(user.id),
+      // ⚠️ includeUnconfirmed, TO MATCH create(). These two fill the same
+      // fields from the same vault through the same pure function, and leaving
+      // them different meant a NEW application picked up the member's licences
+      // while pressing the button on an EXISTING one found nothing — with the
+      // operator's own five licences, all unconfirmed, that is the difference
+      // between working and looking broken.
+      //
+      // What used to make confirmed-only right here was that this path writes
+      // without the member seeing each value. That is still true, and it is
+      // now handled where it belongs: credentialOffer gates PER VALUE, so an
+      // unconfirmed document supplies facts and never a date. The reminder
+      // sweep reads Credential.expiresOn, which this path does not write.
+      await this.credentialsFor(user.id, { includeUnconfirmed: true }),
       answers,
     );
 
