@@ -14,7 +14,6 @@ import { FormSection } from '@/components/form-section';
 import { WizardFooter } from '@/components/wizard-footer';
 import { useShellStep } from '@/components/shell/shell-step';
 import { StepRail } from '@/components/step-rail';
-import IdentifyFromPhotos from './identify-from-photos';
 import { PageReveal } from '@/components/page-reveal';
 import {
   AddressAutocomplete,
@@ -2005,9 +2004,10 @@ export default function NewListingPage() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  // Ask Claude (Sonnet) to refine the seller's description AND research
-  // factory specs. Returns plain text formatted as two bullet sections;
-  // we render it in a preview box below the textarea so the seller can
+  // Ask Claude to tidy the seller's description — spelling, grammar, layout,
+  // ordering. It adds NOTHING: the researched-specs and read-the-photos
+  // sections were removed 2026-08-28. Returns bullets built only from facts
+  // the seller wrote, rendered in a preview box below the textarea so they
   // compare it against their own words before swapping.
   async function handleEnhance() {
     if (!form.description.trim() || enhancing) return;
@@ -2015,14 +2015,12 @@ export default function NewListingPage() {
     setEnhancing(true);
     try {
       const token = await getToken();
-      // Send the staged photos so the assistant can add a "From the photos"
-      // section — included accessories, a mounted optic, the case and papers.
-      // Capped at the service-side limit of 5 so we don't upload a sixth
-      // image the server will drop anyway; the cover photo goes first
-      // because that's the one the seller chose as most representative.
-      const encoded = await Promise.all(
-        images.slice(0, ENHANCE_PHOTO_LIMIT).map(fileToBase64),
-      );
+      // ⚠️ NO PHOTOS. They used to be sent so the assistant could add a
+      // "From the photos" section. That section is gone (operator: "Don't add
+      // anything to the users wording"), so sending images now would upload
+      // several megabytes of base64 to feed a prompt that is explicitly told
+      // to ignore them — slower for the seller and billed as vision tokens
+      // for nothing.
       const res = await fetch(`${API_URL}/listings/enhance-description`, {
         method: 'POST',
         headers: {
@@ -2034,7 +2032,6 @@ export default function NewListingPage() {
           title: form.title || undefined,
           categoryId: form.categoryId || undefined,
           condition: form.condition || undefined,
-          imagesBase64: encoded.length ? encoded : undefined,
         }),
       });
       const data = await res.json();
@@ -2976,29 +2973,14 @@ export default function NewListingPage() {
               from all sides mean fewer buyer questions and protect you if a
               buyer ever disputes the item.
             </p>
-            {/* Ask Boet "Help me describe this" — reads the photos and
-                proposes title / description / category / condition.
-                Pure helper: parent owns the form state via onApply.
-                Sits inside Step 1 so the seller can pre-fill Step 2
-                before typing anything. */}
-            <IdentifyFromPhotos
-              files={images}
-              currentCategoryId={form.categoryId}
-              categories={categories}
-              onApply={(patch) => {
-                setForm((f) => ({
-                  ...f,
-                  title: patch.title ?? f.title,
-                  description: patch.description ?? f.description,
-                  condition: patch.condition ?? f.condition,
-                  categoryId: patch.categoryId ?? f.categoryId,
-                }));
-              }}
-              // The AI has just written a title and description into step 2.
-              // Open it so the seller reads what was put in their mouth
-              // before it goes on a listing with their name on it.
-              onAdvance={() => goToStep(2)}
-            />
+            {/* (Ask Boet's "Help me describe this from the photos"
+                button stood here — removed by the operator 2026-08-28.
+                It read the staged photos and proposed a title,
+                description, category and condition. That is the assistant
+                writing the listing rather than the seller: the same
+                objection that took the researched specs out of the
+                wording tool on the same day. The seller writes the facts;
+                we tidy how they read.) */}
           </FormSection>
           )}
 
@@ -3120,7 +3102,7 @@ export default function NewListingPage() {
                   if (suggestion !== null) setSuggestion(null);
                 }}
                 style={{ ...inputStyle, resize: 'vertical' }}
-                placeholder="Describe the item honestly. Include wear, modifications, round count, included accessories, and anything else a serious buyer would ask about."
+                placeholder="Tell us as much as you can — wear, modifications, round count, what's included, anything a serious buyer would ask. Don't worry about how it reads; we'll tidy it up for you."
               />
 
               {/* AI tools row — only show the Refine button when there's
@@ -3158,22 +3140,19 @@ export default function NewListingPage() {
                     >
                       <path d="M10 1l1.6 4.4L16 7l-4.4 1.6L10 13l-1.6-4.4L4 7l4.4-1.6L10 1zM4 13l.8 2.2L7 16l-2.2.8L4 19l-.8-2.2L1 16l2.2-.8L4 13zM16 12l.5 1.5L18 14l-1.5.5L16 16l-.5-1.5L14 14l1.5-.5L16 12z" />
                     </svg>
-                    {enhancing
-                      ? 'Researching…'
-                      : 'Polish + add specs'}
+                    {enhancing ? 'Tidying…' : 'Tidy up my wording'}
                   </button>
-                  {/* Say plainly that the photos get read — a seller who
-                      knows that will upload the case and the box before
-                      pressing it, which is exactly what we want. */}
+                  {/* ⚠️ SAYS WHAT IT DOES AND WHAT IT DOES NOT. This line
+                      used to promise researched specs and photo-reading, and
+                      a seller who believed it would leave detail out expecting
+                      the tool to supply it — which it no longer does, and the
+                      gap would land in a live listing under their name. */}
                   <span
                     className="text-xs"
                     style={{ color: 'var(--text-tertiary)' }}
                   >
-                    {images.length > 0
-                      ? `Tidies your wording, researches the specs, and reads your ${
-                          images.length === 1 ? 'photo' : 'photos'
-                        }.`
-                      : 'Tidies your wording and researches the specs. Add photos first and it can list what it sees.'}
+                    Fixes the spelling, grammar and layout of what you wrote.
+                    It never adds anything you didn&apos;t say.
                   </span>
                 </div>
               )}
@@ -3213,21 +3192,19 @@ export default function NewListingPage() {
                     >
                       Suggested wording
                     </p>
-                    {enhancePhotosUsed > 0 && (
-                      <p
-                        className="text-xs"
-                        style={{ color: 'var(--text-tertiary)' }}
-                      >
-                        Read {enhancePhotosUsed} photo
-                        {enhancePhotosUsed === 1 ? '' : 's'}
-                      </p>
-                    )}
+                    {/* (A "Read N photos" badge sat here. The form stopped
+                        sending photos to this endpoint on 2026-08-28, so
+                        enhancePhotosUsed is always 0 and it could only ever
+                        have been a claim we no longer make.) */}
                   </div>
                   <ListingDescription className="text-sm" text={suggestion} />
-                  {/* Said plainly at the moment of decision. The specs are
-                      researched from the model name, and a model name usually
-                      covers several variants — you are the one holding the
-                      item, and the listing goes out under your name. */}
+                  {/* The old warning here told the seller to check researched
+                      specs against their item. There are no researched specs
+                      any more — nothing in this box came from anywhere but
+                      their own draft — so the warning would now be describing
+                      a risk that does not exist, which teaches them to ignore
+                      the next one that does. Replaced with what actually
+                      happened. */}
                   <p
                     className="text-xs mt-3"
                     style={{
@@ -3235,8 +3212,8 @@ export default function NewListingPage() {
                       lineHeight: 1.5,
                     }}
                   >
-                    Check the specs before you use this — they&rsquo;re
-                    researched from the make and model, not from your item.
+                    Same facts you wrote, tidied up. Nothing has been added —
+                    read it over and make sure it still says what you meant.
                   </p>
                   <div className="flex gap-2 mt-3">
                     <button
