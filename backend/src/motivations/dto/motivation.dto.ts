@@ -82,6 +82,24 @@ export class AnswerFollowUpDto {
 }
 
 /**
+ * The member's own name for this application, e.g. "Home defence" against a
+ * Section 13 draft. Operator, board review 2026-08-27: "User must be able to
+ * rename the motivation."
+ *
+ * ⚠️ NOT AN ANSWER. This never reaches answersEncrypted, the generated
+ * document, or the Registrar — see motivations.service.ts#rename. Optional
+ * so an empty body is a no-op rather than a validation error; the service
+ * itself trims and turns an all-whitespace string into null, the same
+ * "empty means unnamed" rule applicationRef already follows above.
+ */
+export class RenameMotivationDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80, { message: 'Keep the name under 80 characters.' })
+  label?: string;
+}
+
+/**
  * The template the applicant picked in the carousel.
  *
  * ⚠️ VALIDATED AS A MEMBER OF THE LIST, not as "a string". These values are

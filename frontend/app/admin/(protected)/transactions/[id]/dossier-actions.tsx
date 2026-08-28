@@ -401,7 +401,7 @@ export default function DossierActions({
                   step="0.01"
                   value={amountRands}
                   onChange={(e) => setAmountRands(e.target.value)}
-                  placeholder={`Full balance: R${(remainingCents / 100).toFixed(2)}`}
+                  placeholder={`Full balance: R ${(remainingCents / 100).toFixed(2)}`}
                   className="w-full px-3 py-2 rounded text-sm outline-none"
                   style={{
                     background: 'var(--bg-inset)',
@@ -411,8 +411,8 @@ export default function DossierActions({
                 />
                 <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
                   {refundedAmount > 0
-                    ? `Already refunded R${(refundedAmount / 100).toFixed(2)} of R${(buyerTotal / 100).toFixed(2)}. Remaining R${(remainingCents / 100).toFixed(2)}.`
-                    : `Order total R${(buyerTotal / 100).toFixed(2)}. Min R1.00; partial refunds keep the order open.`}
+                    ? `Already refunded R ${(refundedAmount / 100).toFixed(2)} of R ${(buyerTotal / 100).toFixed(2)}. Remaining R ${(remainingCents / 100).toFixed(2)}.`
+                    : `Order total R ${(buyerTotal / 100).toFixed(2)}. Min R1.00; partial refunds keep the order open.`}
                   {!amountValid && ' — amount must be between R1.00 and the remaining balance.'}
                 </p>
               </div>
@@ -575,7 +575,7 @@ export default function DossierActions({
                   style={{ color: 'var(--text-primary)', fontWeight: 500 }}
                 >
                   {failureResult.charged
-                    ? `Recorded — seller charged R${(failureResult.chargeCents / 100).toFixed(2)}`
+                    ? `Recorded — seller charged R ${(failureResult.chargeCents / 100).toFixed(2)}`
                     : 'Recorded — no seller charge'}
                 </p>
                 <p
@@ -583,7 +583,7 @@ export default function DossierActions({
                   style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
                 >
                   {failureResult.charged
-                    ? `R${(failureResult.chargeCents / 100).toFixed(2)} for the wasted courier booking is deducted from this seller's payout for this sale. The agreed sale figures are unchanged — the deduction shows as its own line.`
+                    ? `R ${(failureResult.chargeCents / 100).toFixed(2)} for the wasted courier booking is deducted from this seller's payout for this sale. The agreed sale figures are unchanged — the deduction shows as its own line.`
                     : 'The failure is on the transaction record. Nothing is deducted from the seller.'}
                 </p>
               </div>

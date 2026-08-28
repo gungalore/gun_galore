@@ -8,10 +8,10 @@ import { ReactNode } from 'react';
 
 function formatRand(cents: number, compact = false): string {
   const rand = cents / 100;
-  if (compact && rand >= 1_000_000) return `R${(rand / 1_000_000).toFixed(1)}M`;
-  if (compact && rand >= 10_000) return `R${(rand / 1_000).toFixed(0)}k`;
-  if (compact && rand >= 1_000) return `R${(rand / 1_000).toFixed(1)}k`;
-  return `R${rand.toLocaleString('en-ZA', {
+  if (compact && rand >= 1_000_000) return `R ${(rand / 1_000_000).toFixed(1)}M`;
+  if (compact && rand >= 10_000) return `R ${(rand / 1_000).toFixed(0)}k`;
+  if (compact && rand >= 1_000) return `R ${(rand / 1_000).toFixed(1)}k`;
+  return `R ${rand.toLocaleString('en-ZA', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   })}`;

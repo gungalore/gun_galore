@@ -68,6 +68,9 @@ const PUSH_TITLES: Array<[string, string]> = [
   ['/checkout', 'Checkout'],
   ['/cart', 'Cart'],
   ['/documents', 'Document Centre'],
+  // The list only — see PUSH_TITLE_INDEX_ONLY below. A specific motivation
+  // shows its own name (its label if the member set one, otherwise its
+  // section), not this fixed title.
   ['/motivations', 'Motivation Centre'],
   ['/load-lab', 'Load Lab'],
   ['/licence-centre', 'Licence Centre'],
@@ -89,16 +92,30 @@ const PUSH_TITLES: Array<[string, string]> = [
   ['/scan', 'Scan'],
 ];
 
+/**
+ * Prefixes whose mapped title covers the index ONLY, never its subtree — the
+ * opposite of every other row in PUSH_TITLES, where a whole subtree shares one
+ * title (Checkout, the two Centres). A specific motivation is not a screen
+ * inside "Motivation Centre", it is its own application with its own name, and
+ * a member running several at once (a Section 13 and two Section 16s) needs
+ * the header to say which one they are looking at. Falling out of this set
+ * sends pushTitleFor back to null for '/motivations/:id', which lets
+ * PushHeader's own fallback take over — see app/motivations/[id]/page.tsx,
+ * which sets document.title from the motivation's label or section for
+ * exactly this.
+ */
+const PUSH_TITLE_INDEX_ONLY = new Set(['/motivations']);
+
 /** The push header's title for a route, or null to show the back button alone. */
 export function pushTitleFor(pathname: string | null): string | null {
   if (!pathname) return null;
   let best: string | null = null;
   let bestLen = -1;
   for (const [prefix, title] of PUSH_TITLES) {
-    if (
-      (pathname === prefix || pathname.startsWith(`${prefix}/`)) &&
-      prefix.length > bestLen
-    ) {
+    const matches = PUSH_TITLE_INDEX_ONLY.has(prefix)
+      ? pathname === prefix
+      : pathname === prefix || pathname.startsWith(`${prefix}/`);
+    if (matches && prefix.length > bestLen) {
       best = title;
       bestLen = prefix.length;
     }

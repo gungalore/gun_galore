@@ -254,8 +254,15 @@ function StepperButton({
       onPointerUp={onRelease}
       onPointerLeave={onRelease}
       onPointerCancel={onRelease}
+      // Board review — the tappable area was 32px wide with no explicit
+      // height (it just inherited the input's line-height), well under the
+      // 44px touch minimum. w-11/h-11 (44px) on mobile hits that; sm: steps
+      // it back down to the original 32px once a mouse, not a thumb, is the
+      // likely pointer. The wrapping stepper stretches (align-items:
+      // stretch) to match, so the input grows with it — no dead space.
+      className="w-11 h-11 sm:w-8 sm:h-8"
       style={{
-        width: 32,
+        flexShrink: 0,
         background: 'transparent',
         border: 'none',
         borderLeft:

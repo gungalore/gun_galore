@@ -21,7 +21,7 @@ interface Row {
 
 function formatRand(cents: number | null): string {
   if (cents === null) return '—';
-  return `R${(cents / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
+  return `R ${(cents / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
 }
 
 export default function FreshnessGraveyardPage() {

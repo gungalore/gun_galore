@@ -104,7 +104,7 @@ interface RunPayoutsResult {
 }
 
 function rand(cents: number) {
-  return `R${(cents / 100).toFixed(2)}`;
+  return `R ${(cents / 100).toFixed(2)}`;
 }
 
 // Peach payouts have a hard R10 floor (runDuePayouts skips anything below

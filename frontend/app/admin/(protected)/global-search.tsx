@@ -253,7 +253,7 @@ export default function GlobalSearch() {
                           onClick={() => navigate(`/admin/listings/${l.id}`)}
                           onMouseEnter={((i) => () => setActiveIndex(i))(idx)}
                           title={l.title}
-                          sub={`${l.referenceNumber ?? l.id.slice(0, 8)} · @${l.seller.username ?? 'anon'} · R${((l.price ?? 0) / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
+                          sub={`${l.referenceNumber ?? l.id.slice(0, 8)} · @${l.seller.username ?? 'anon'} · R ${((l.price ?? 0) / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
                           chip={l.status}
                           chipColor="var(--text-secondary)"
                         />
@@ -273,7 +273,7 @@ export default function GlobalSearch() {
                           onClick={() => navigate(`/admin/transactions/${t.id}`)}
                           onMouseEnter={((i) => () => setActiveIndex(i))(idx)}
                           title={t.listing.title}
-                          sub={`${t.listing.referenceNumber ?? t.id.slice(0, 8)} · R${(t.buyerTotal / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
+                          sub={`${t.listing.referenceNumber ?? t.id.slice(0, 8)} · R ${(t.buyerTotal / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
                           chip={t.paymentStatus}
                           chipColor="var(--text-secondary)"
                         />
@@ -293,7 +293,7 @@ export default function GlobalSearch() {
                           onClick={() => navigate(`/admin/orders/${o.id}`)}
                           onMouseEnter={((i) => () => setActiveIndex(i))(idx)}
                           title={o.orderReference ?? o.id.slice(0, 8)}
-                          sub={`@${o.buyer.username ?? 'anon'} · ${o._count.transactions} line${o._count.transactions === 1 ? '' : 's'} · R${(o.buyerTotal / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
+                          sub={`@${o.buyer.username ?? 'anon'} · ${o._count.transactions} line${o._count.transactions === 1 ? '' : 's'} · R ${(o.buyerTotal / 100).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`}
                           chip={o.status}
                           chipColor="var(--text-secondary)"
                         />

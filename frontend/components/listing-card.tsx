@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Listing } from '@/lib/types';
 import { formatPrice, CONDITION_LABELS, TIER_LABELS, discountPercent } from '@/lib/utils';
+import { vicinityLabel } from '@/lib/vicinity';
 import { WishlistButton } from './wishlist-button';
 import { useCountdown, formatCountdown } from '@/lib/use-countdown';
 import { UserBadges } from './user-badges';
@@ -272,8 +273,12 @@ export function ListingCard({ listing }: { listing: Listing }) {
             </span>
           </div>
 
+          {/* Town, not province — matches listing detail, cart and checkout,
+              which all read this through the same vicinityLabel() helper.
+              It falls back to province (or "the seller's area") on its own,
+              so this line is never blank. */}
           <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
-            {listing.province.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+            {vicinityLabel(listing)}
           </p>
         </div>
       </Link>

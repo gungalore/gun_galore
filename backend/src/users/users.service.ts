@@ -1828,6 +1828,158 @@ export class UsersService {
 
     return { notifications };
   }
+
+  // ─────────────────── Account summary (Account board) ────────────────
+  // GET /users/me/account-summary — the one aggregate that feeds every
+  // stat line on the Account hub ("3 active · 1 draft", "2 offers need
+  // your answer", "1 parcel in transit", "R 12,650 paid out"). Distinct
+  // from getUrgentSummary above: that one surfaces "act NOW" notification
+  // pills, this one is the passive counts/totals row. Five independent
+  // reads, batched via $transaction([...]) (same pattern as
+  // NotificationsFeedController.activeCount) so the hot Account-hub visit
+  // costs one round trip to Postgres, not five sequential ones.
+  //
+  // ⚠️ PAYOUT FIGURE: summed straight off Transaction.sellerPayout — the
+  // column fee-presentation.ts itself reads as "what seller receives after
+  // deductions" (FeeFacts.sellerPayout) and the same column
+  // seller-tools.service.ts#analytics sums for its netPayoutCents KPI.
+  // PaymentStatus.RELEASED already means "payout sent to seller" (see the
+  // enum comment), so no separate paidOutAt filter is needed. No per-line
+  // breakdown is rendered here (fee-presentation.ts's job is a receipt with
+  // labelled lines) — this is one total, and a stored column summed by
+  // Postgres is more honest than reconstructing it. swapId: null mirrors
+  // the analytics query: swap legs carry zeroed money fields by design, so
+  // this is defensive parity with existing code, not a fix for a real bug.
+  //
+  // Returns zeros throughout for a user with no activity (or no DB row at
+  // all — a lazy-provisioning race) so the frontend never has to branch on
+  // undefined.
+  async getAccountSummary(clerkId: string): Promise<{
+    listings: {
+      active: number;
+      draft: number;
+      pendingReview: number;
+      paymentPending: number;
+      sold: number;
+      cancelled: number;
+      expired: number;
+    };
+    pendingOffersAsSeller: number;
+    pendingBidsAsBuyer: number;
+    parcelsInTransit: number;
+    totalPayoutReleasedCents: number;
+  }> {
+    const zero = {
+      listings: {
+        active: 0,
+        draft: 0,
+        pendingReview: 0,
+        paymentPending: 0,
+        sold: 0,
+        cancelled: 0,
+        expired: 0,
+      },
+      pendingOffersAsSeller: 0,
+      pendingBidsAsBuyer: 0,
+      parcelsInTransit: 0,
+      totalPayoutReleasedCents: 0,
+    };
+
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { id: true },
+    });
+    if (!user) return zero; // no row yet — nothing to summarise
+
+    // groupBy is kept out of the $transaction([...]) tuple below on purpose:
+    // batched alongside plain count()/aggregate() calls there, TS's groupBy
+    // overload resolution stops narrowing `_count` to the literal shape we
+    // passed (it widens to `true | GroupByAggregateInput`, i.e. `_all`
+    // becomes unreachable) — a Prisma/TS inference gap, not a behaviour
+    // difference. Run concurrently via Promise.all instead: still one round
+    // trip for the four batched counts plus one more alongside it, not four
+    // (or six) sequential ones.
+    const [listingGroups, [pendingOffersAsSeller, pendingBidsAsBuyer, parcelsInTransit, payoutAgg]] =
+      await Promise.all([
+        // Listing counts by status, this user as seller.
+        this.prisma.listing.groupBy({
+          by: ['status'],
+          where: { sellerId: user.id },
+          _count: { _all: true },
+          orderBy: { status: 'asc' },
+        }),
+        this.prisma.$transaction([
+          // Offers on THEIR listings still awaiting THEIR response.
+          // COUNTERED is excluded on purpose — that status means the seller
+          // already acted and it's the buyer's move next (OfferStatus enum).
+          this.prisma.offer.count({
+            where: { status: 'PENDING', listing: { sellerId: user.id } },
+          }),
+          // Distinct auctions they've bid on that haven't ended yet — the
+          // outcome is still pending. Bid has no status column of its own
+          // (isWinner is only ever set by the end-auctions cron once the
+          // auction closes), so "pending" is read off the listing.
+          this.prisma.listing.count({
+            where: {
+              listingType: 'AUCTION',
+              status: 'ACTIVE',
+              bids: { some: { bidderId: user.id } },
+            },
+          }),
+          // Parcels in transit as buyer: dispatched, but not yet delivered
+          // (carrier-confirmed) OR confirmed (buyer-confirmed) — the two
+          // independent "done" signals on Transaction.
+          this.prisma.transaction.count({
+            where: {
+              buyerId: user.id,
+              dispatchedAt: { not: null },
+              deliveredAt: null,
+              confirmedDeliveryAt: null,
+            },
+          }),
+          this.prisma.transaction.aggregate({
+            where: { sellerId: user.id, paymentStatus: 'RELEASED', swapId: null },
+            _sum: { sellerPayout: true },
+          }),
+        ]),
+      ]);
+
+    const listings = { ...zero.listings };
+    for (const g of listingGroups) {
+      const n = g._count._all;
+      switch (g.status) {
+        case 'ACTIVE':
+          listings.active = n;
+          break;
+        case 'DRAFT':
+          listings.draft = n;
+          break;
+        case 'PENDING_REVIEW':
+          listings.pendingReview = n;
+          break;
+        case 'PAYMENT_PENDING':
+          listings.paymentPending = n;
+          break;
+        case 'SOLD':
+          listings.sold = n;
+          break;
+        case 'CANCELLED':
+          listings.cancelled = n;
+          break;
+        case 'EXPIRED':
+          listings.expired = n;
+          break;
+      }
+    }
+
+    return {
+      listings,
+      pendingOffersAsSeller,
+      pendingBidsAsBuyer,
+      parcelsInTransit,
+      totalPayoutReleasedCents: payoutAgg._sum.sellerPayout ?? 0,
+    };
+  }
 }
 
 // ─────────────────── Urgent summary helpers ──────────────────────────

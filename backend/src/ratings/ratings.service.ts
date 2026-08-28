@@ -270,12 +270,21 @@ export class RatingsService {
       },
     });
 
+    // Total ratings the cached averageRating is computed over — recentRatings
+    // is capped at 10, so callers ("4.8 from 11 buyers") need this to say how
+    // many the average is actually based on instead of falling back to
+    // recentRatings.length (wrong for any seller with more than 10 reviews).
+    const totalRatings = await this.prisma.rating.count({
+      where: { ratedId: user.id },
+    });
+
     return {
       trustScore: score,
       sellerTier: user.sellerTier,
       totalSales: user.totalSales,
       averageRating: user.averageRating,
       recentRatings,
+      totalRatings,
     };
   }
 

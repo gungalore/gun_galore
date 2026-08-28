@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth, SignInButton } from '@clerk/nextjs';
 import {
   useCart,
   removeFromCart,
@@ -15,6 +15,7 @@ import { PaymentsComingSoon } from '@/components/payments-coming-soon';
 import { PaymentMethodSection } from '@/components/payment-method-section';
 import { BuyerTermsAck } from '@/components/buyer-terms-ack';
 import { vicinityLabel } from '@/lib/vicinity';
+import { useWishlist } from '@/lib/use-wishlist';
 import {
   CartDeliveryPicker,
   type CartDeliveryOption,
@@ -32,7 +33,14 @@ import {
 } from '@/components/firearm-consents';
 import { TrustBullets } from '@/components/trust-bullets';
 import { SavedAddressPicker } from '@/components/saved-address-picker';
+import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 import type { Address } from '@/lib/types';
+
+// Two-crumb trail — Breadcrumbs renders nothing for fewer than two, so this
+// is the shortest trail that still shows. Same on every state below (empty,
+// payments-coming-soon, populated): the page's place in the site doesn't
+// change with what's in the cart.
+const CART_TRAIL: Crumb[] = [{ label: 'Home', href: '/' }, { label: 'Cart' }];
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
@@ -59,11 +67,20 @@ interface LineStock {
   sellable: number;
   /** Town + province, kept from the stock read we were already making. */
   vicinity?: string;
+  // Board review — seller-group header avatar. Piggybacks on this SAME
+  // per-line /listings/:id read below (no extra request). PUBLIC_LISTING_SELECT's
+  // seller sub-select (backend/src/listings/listings.service.ts) carries
+  // avatarUrl but NOT kycStatus, so a "verified" pill can't be built from
+  // this payload — see the group header render for why it's omitted.
+  sellerAvatarUrl?: string | null;
 }
 
 export default function CartPage() {
   const items = useCart();
   const { getToken } = useAuth();
+  // Save-for-later reads/writes the SAME wishlist store the heart icon uses
+  // everywhere else (lib/use-wishlist.tsx) — no second "saved items" path.
+  const wishlist = useWishlist();
 
   // What the buyer chose, per parcel the cart will ship as. The groups are
   // the server's — a cart consolidates, and every Daily Deal shares the house
@@ -88,10 +105,32 @@ export default function CartPage() {
   // pass through '' or an over-max number) doesn't fight the controlled input.
   // Cleared on blur so the field always settles back on the stored quantity.
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
+  // In-flight listingId for "Save for later" — disables only that row's
+  // button for the duration of its own request.
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   // cart-store's read() already normalises quantity to a whole number >= 1, so
   // this is belt-and-braces for the optional TYPE rather than a real case.
   const qtyOf = (q?: number) => q ?? 1;
+
+  // Save for later — adds the line to the wishlist, then removes it from the
+  // cart. Guards against re-toggling an already-wishlisted line: `toggle`
+  // FLIPS state, so calling it on something already saved would un-save it.
+  async function saveForLater(listingId: string) {
+    if (savingId) return;
+    setSavingId(listingId);
+    try {
+      if (!wishlist.isSaved(listingId)) {
+        await wishlist.toggle(listingId);
+      }
+      removeFromCart(listingId);
+    } catch {
+      // Wishlist write failed — leave the line in the cart rather than
+      // losing it silently; the buyer can retry.
+    } finally {
+      setSavingId(null);
+    }
+  }
 
   // UX-M24 — fetch live stock for every line whenever the SET of listings
   // changes (not on every quantity tick — `ids` is a stable sorted key, so
@@ -122,6 +161,7 @@ export default function CartPage() {
                 // item's town, so the buyer cannot tick "I've seen where these
                 // items are" against nothing.
                 vicinity: vicinityLabel(l),
+                sellerAvatarUrl: l?.seller?.avatarUrl ?? null,
                 sellable: trackInventory
                   ? Math.max(
                       0,
@@ -405,7 +445,8 @@ export default function CartPage() {
   // ── Phase-1 payment gate — card payments aren't live yet ──
   if (comingSoon) {
     return (
-      <main className="max-w-xl mx-auto px-4 py-8">
+      <main className="max-w-[var(--content-max)] mx-auto px-4 py-8">
+        <Breadcrumbs trail={CART_TRAIL} className="mb-6" />
         <PaymentsComingSoon />
       </main>
     );
@@ -414,7 +455,8 @@ export default function CartPage() {
   // ── Empty cart ──
   if (items.length === 0) {
     return (
-      <main className="max-w-xl mx-auto px-4 py-16 text-center">
+      <main className="max-w-[var(--content-max)] mx-auto px-4 py-16 text-center">
+        <Breadcrumbs trail={CART_TRAIL} className="mb-6 justify-center" />
         <h1 className="text-lg font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
           Your cart is empty
         </h1>
@@ -433,7 +475,8 @@ export default function CartPage() {
   }
 
   return (
-    <main className="max-w-xl mx-auto px-4 py-8">
+    <main className="max-w-[var(--content-max)] mx-auto px-4 py-8">
+      <Breadcrumbs trail={CART_TRAIL} className="mb-6" />
       <h1 className="text-lg font-medium mb-1" style={{ color: 'var(--text-primary)' }}>
         Your cart
       </h1>
@@ -451,6 +494,14 @@ export default function CartPage() {
           firearm&apos;s details below before you can continue.</>
         )}
       </p>
+
+      {/* Board — two-pane layout: content takes the remaining width, order
+          summary is a 344px sidebar that sticks as you scroll (see the
+          sidebar div below, opened right before Totals). Unwinds to one
+          column below lg — same pattern app/checkout/[listingId]/page.tsx
+          uses. --content-max (globals.css) is sized to fit this exact split. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_344px] gap-5 items-start">
+      <div className="min-w-0">
 
       {/* Items — grouped by seller (Phase 8d) */}
       {groups.map((g) => {
@@ -474,10 +525,31 @@ export default function CartPage() {
         >
           {groups.length > 1 && (
             <div
-              className="px-3 py-2 text-xs"
-              style={{ background: 'var(--bg-inset)', color: 'var(--text-tertiary)', fontWeight: 500 }}
+              className="px-3 py-2 flex items-center gap-2 text-xs"
+              style={{ background: 'var(--bg-inset)', color: 'var(--text-tertiary)' }}
             >
-              {g.name}
+              {g.items[0] && stock[g.items[0].listingId]?.sellerAvatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={stock[g.items[0].listingId]!.sellerAvatarUrl!}
+                  alt=""
+                  className="w-6 h-6 rounded-full object-cover flex-shrink-0"
+                  style={{ background: 'var(--bg-card)' }}
+                />
+              ) : (
+                <div
+                  className="w-6 h-6 rounded-full flex-shrink-0"
+                  style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
+                />
+              )}
+              <span style={{ fontWeight: 500 }}>{g.name}</span>
+              {/* Board review also asked for a verified pill here, keyed on
+                  kycStatus. PUBLIC_LISTING_SELECT's seller sub-select (the
+                  same /listings/:id read the avatar above comes from) does
+                  NOT select kycStatus — only Me / admin projections do.
+                  Rendering a pill from data we don't have would risk showing
+                  an unverified seller as verified (or vice versa), so it's
+                  left off until that field is added to the public payload. */}
             </div>
           )}
           {g.items.map((i) => {
@@ -549,7 +621,10 @@ export default function CartPage() {
                       })
                     }
                   >
-                    <div style={{ width: 108 }}>
+                    {/* Wider on mobile: number-stepper.tsx's +/− buttons grow
+                        to a 44px tap target below sm, so the row needs the
+                        extra width to fit them without squeezing the input. */}
+                    <div className="w-[136px] sm:w-[108px]">
                       <NumberStepper
                         value={qtyDraft[i.listingId] ?? String(units)}
                         min={1}
@@ -595,15 +670,49 @@ export default function CartPage() {
                   </span>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => removeFromCart(i.listingId)}
-                aria-label={`Remove ${i.title}`}
-                className="text-xs px-2 py-1 rounded-[4px]"
-                style={{ border: '0.5px solid var(--border)', color: 'var(--text-tertiary)' }}
-              >
-                Remove
-              </button>
+              <div className="flex flex-col items-end gap-1.5">
+                {/* Save for later — moves the line into the wishlist rather
+                    than discarding it. Signed-out matches WishlistButton's
+                    own gate (components/wishlist-button.tsx): a modal
+                    sign-in prompt, not a silent no-op. */}
+                {wishlist.isSignedIn ? (
+                  <button
+                    type="button"
+                    onClick={() => saveForLater(i.listingId)}
+                    disabled={savingId === i.listingId}
+                    aria-label={`Save ${i.title} for later`}
+                    className="text-xs px-2 py-1 rounded-[4px]"
+                    style={{
+                      border: '0.5px solid var(--border)',
+                      color: 'var(--text-secondary)',
+                      opacity: savingId === i.listingId ? 0.5 : 1,
+                      cursor: savingId === i.listingId ? 'wait' : 'pointer',
+                    }}
+                  >
+                    {savingId === i.listingId ? 'Saving…' : 'Save for later'}
+                  </button>
+                ) : (
+                  <SignInButton mode="modal">
+                    <button
+                      type="button"
+                      aria-label={`Sign in to save ${i.title} for later`}
+                      className="text-xs px-2 py-1 rounded-[4px]"
+                      style={{ border: '0.5px solid var(--border)', color: 'var(--text-secondary)' }}
+                    >
+                      Save for later
+                    </button>
+                  </SignInButton>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeFromCart(i.listingId)}
+                  aria-label={`Remove ${i.title}`}
+                  className="text-xs px-2 py-1 rounded-[4px]"
+                  style={{ border: '0.5px solid var(--border)', color: 'var(--text-tertiary)' }}
+                >
+                  Remove
+                </button>
+              </div>
             </div>
             );
           })}
@@ -793,6 +902,13 @@ export default function CartPage() {
       {/* UX-8 — payment-method section shell (EFT active today; card seam). */}
       <PaymentMethodSection />
 
+      </div>
+
+      {/* Order-summary sidebar — totals, terms ack, CTA, trust bullets.
+          lg:sticky only engages at lg+, where the two-column grid exists;
+          below that it sits in normal flow under the content column. */}
+      <div className="lg:sticky lg:top-20 min-w-0">
+
       {/* Totals */}
       <div
         className="rounded-[8px] p-4 mb-4"
@@ -884,6 +1000,9 @@ export default function CartPage() {
         style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
       >
         <TrustBullets isFirearm={items.some((i) => i.isFirearm)} />
+      </div>
+
+      </div>
       </div>
     </main>
   );

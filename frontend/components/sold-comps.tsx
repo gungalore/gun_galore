@@ -6,7 +6,7 @@ import type { SoldComps } from '@/lib/types';
 // back. Renders nothing below the server's min-comps gate (price fields absent).
 
 function rand(cents: number): string {
-  return `R${Math.round(cents / 100).toLocaleString('en-ZA')}`;
+  return `R ${Math.round(cents / 100).toLocaleString('en-ZA')}`;
 }
 
 export function SoldCompsStrip({

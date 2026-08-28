@@ -4311,6 +4311,21 @@ model Motivation {
 
   licenceType MotivationLicenceType
 
+  /// The member's own name for this application on their list — e.g. "Home
+  /// defence" against a Section 13 draft, so it can be told apart from two
+  /// Section 16 dedicated-hunter drafts running at the same time. Operator,
+  /// board review 2026-08-27: "User must be able to rename the motivation."
+  ///
+  /// ⚠️ PURELY ORGANISATIONAL. Distinct from applicationRef below (the
+  /// throttle key) and never read into answersEncrypted, documentTextEncrypted
+  /// or the rendered PDF — the Registrar never sees it. NULLABLE WITH NO
+  /// DEFAULT: null means unnamed, and the UI falls back to the section
+  /// (LICENCE_TYPE_LABELS), never to an empty string. Trimmed and capped at
+  /// the API boundary — see RenameMotivationDto and
+  /// motivations.service.ts#rename; an all-whitespace name is stored as null,
+  /// not as spaces.
+  label String? @db.VarChar(80)
+
   // THE THROTTLE KEY — one motivation per type per application.
   // NOT nullable, and defaulted to "", deliberately: Postgres treats NULLs as
   // DISTINCT, so a nullable column would let @@unique pass every time and the

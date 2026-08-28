@@ -177,6 +177,20 @@ export class UsersController {
     return this.users.getUrgentSummary(clerkId);
   }
 
+  // ─────────────────── Account summary (Account board) ───────────────
+  // Powers every stat line on the Account hub in one call — listing
+  // counts by status, offers/bids awaiting an outcome, parcels in
+  // transit, total released payout. Clerk-only (unlike GET /me, this is
+  // never reachable via a checkout action token — it surfaces the
+  // seller's payout total, which is exactly the kind of banking-adjacent
+  // figure the token-bearer strip in `me` above exists to withhold).
+  // See UsersService.getAccountSummary for the query + the payout note.
+  @Get('me/account-summary')
+  @UseGuards(ClerkGuard)
+  async accountSummary(@CurrentUser() clerkId: string) {
+    return this.users.getAccountSummary(clerkId);
+  }
+
   // ─────────────────── Edit /users/me ────────────────────────────────
   // Patch any of: firstName, lastName, username, address fields.
   // Email + avatar + password live on Clerk; phone goes through its own

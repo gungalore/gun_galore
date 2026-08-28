@@ -205,7 +205,7 @@ interface ComplaintRow {
 function formatRand(cents: number | null): string {
   if (cents === null) return '—';
   const r = cents / 100;
-  return `R${r.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
+  return `R ${r.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`;
 }
 
 function formatDate(iso: string | null): string {

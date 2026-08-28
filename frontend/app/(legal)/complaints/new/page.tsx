@@ -112,7 +112,7 @@ export default function NewComplaintPage() {
                 ? t.seller?.username ?? 'seller'
                 : t.buyer?.username ?? 'buyer',
             date: new Date(t.createdAt).toLocaleDateString('en-ZA'),
-            amount: `R${(t.buyerTotal / 100).toFixed(0)}`,
+            amount: `R ${(t.buyerTotal / 100).toFixed(0)}`,
             group,
           }));
         const all = [...fmt(buys, 'Purchases'), ...fmt(sales, 'Sales')];

@@ -53,6 +53,37 @@ export function bidIncrement(currentAmount: number): number {
   return DEFAULT_INCREMENT;
 }
 
+// Masks a bidder's username for the PUBLIC auction payload
+// (GET /auctions/:listingId). A full username is a searchable handle,
+// and here it's attached to a live bid on a firearm — showing it in
+// full is worse than not showing a name at all. Must run server-side:
+// a client-side mask is bypassed by anyone calling the API directly.
+// (GET /auctions/:listingId/me — the signed-in bidder's own view of
+// their own bid — intentionally does NOT call this.)
+//
+// Keeps the first character, and the last character too IF there's an
+// actual middle to hide, joined by a FIXED-length run of asterisks —
+// fixed rather than proportional to the real length, so the mask
+// doesn't itself leak how long the username is (design boards:
+// "r***b", "KloofM***").
+//   - null/empty username → the caller's fallback (bidder may not
+//     have set a username at all)
+//   - 1-2 characters       → first char + '***'. A 2-char name has no
+//     middle: first-and-last together would just print the whole
+//     username back out, so only the first character survives.
+//   - 3+ characters        → first char + '***' + last char, e.g.
+//     "robert" → "r***t", "KM" → "K***", "Bo" → "B***".
+export function maskBidderUsername(
+  username: string | null | undefined,
+  fallback = 'Anonymous bidder',
+): string {
+  if (!username) return fallback;
+  const first = username[0];
+  if (username.length <= 2) return `${first}***`;
+  const last = username[username.length - 1];
+  return `${first}***${last}`;
+}
+
 // Thrown inside the bid transaction when the compare-and-swap on the
 // listing snapshot fails — i.e. a concurrent bid (or the end-of-auction
 // sweep) changed the auction between our read and our write. Aborting
@@ -130,7 +161,9 @@ export class AuctionsService {
 
     // Use the bidder's chosen username for the auction surface — never
     // first/last name. Real identity stays inside KYC / transaction
-    // records only.
+    // records only. Masked (see maskBidderUsername) because this is the
+    // PUBLIC endpoint — a full username is a lookup handle, and people
+    // are bidding against each other here.
     let currentBidderName: string | null = null;
     if (listing.currentBidderId) {
       const bidder = await this.prisma.user.findUnique({
@@ -138,9 +171,7 @@ export class AuctionsService {
         select: { username: true },
       });
       if (bidder) {
-        currentBidderName = bidder.username
-          ? bidder.username
-          : 'Anonymous bidder';
+        currentBidderName = maskBidderUsername(bidder.username);
       }
     }
 
@@ -163,7 +194,10 @@ export class AuctionsService {
       recentBids: recentBids.map((b) => ({
         id: b.id,
         amount: b.amount,
-        bidderName: b.bidder.username ? b.bidder.username : 'Anonymous',
+        // Masked — same reason as currentBidderName above (this is the
+        // PUBLIC payload). Fallback text kept as-is ('Anonymous', not
+        // 'Anonymous bidder') to match this field's pre-existing copy.
+        bidderName: maskBidderUsername(b.bidder.username, 'Anonymous'),
         // Legacy data only — new bids write the proxy counter as its
         // own row attributed to the proxy holder, so wasCountered is
         // false for any bid placed after this change. Historic rows
@@ -641,6 +675,158 @@ export class AuctionsService {
         sellerId: listing.sellerId,
       };
     });
+  }
+
+  // --- Buy Now (auction) --------------------------------------------------
+
+  // FIX-11 follow-up. buyNow() ends a bid-free auction immediately in the
+  // caller's favour, landing the listing in EXACTLY the state
+  // finalizeAuction's Case A leaves a normal win in: ACTIVE → PAYMENT_PENDING,
+  // endedAt stamped, currentBidderId/currentBid set, a fresh 24h pay window.
+  // transactions.service's checkout (reserveAndCreateLine, AUCTION branch)
+  // only reads those fields to recognise "this buyer won this auction" — it
+  // cannot tell a Buy Now close from a clock-run-out close apart, which is
+  // exactly the point: per operator 2026-08-15 (schema.prisma comment on
+  // Listing.buyNowPrice), Buy Now on an auction follows the AUCTION fee
+  // rules — commission out of the seller, buyer pays the gateway fee — not
+  // the marked-up BUY_NOW ones. So this method does NOT build a second
+  // "reserve the listing" path; it IS the win path, just reached without
+  // waiting for the clock or a bid.
+  //
+  // ⚠️ Only honoured while bidCount === 0 (same schema.prisma comment) —
+  // once a real bid lands the seller is in genuine price discovery, and
+  // letting a later arrival buy under a bidder who is actually winning it
+  // would undercut them. The CAS below re-checks bidCount AT WRITE TIME,
+  // not just at read time, so a bid landing in the gap between our read and
+  // this write fails the claim instead of being silently overwritten —
+  // same principle as every other CAS in this file.
+  async buyNow(clerkId: string, listingId: string) {
+    const buyer = await this.prisma.user.findUnique({ where: { clerkId } });
+    if (!buyer) throw new ForbiddenException('User not synced');
+    // Same standing checks as placeBid — a Buy Now purchase carries the
+    // identical pay-within-24h obligation a winning bid does.
+    assertAccountNotClosed(buyer);
+    if (buyer.isBanned) throw new ForbiddenException('Account suspended');
+    if (buyer.auctionStrikes >= 3) {
+      throw new ForbiddenException('Bidding suspended — three strikes for non-payment');
+    }
+
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const listing = await tx.listing.findUnique({
+        where: { id: listingId },
+        select: {
+          id: true,
+          sellerId: true,
+          listingType: true,
+          status: true,
+          endedAt: true,
+          endTime: true,
+          buyNowPrice: true,
+          bidCount: true,
+        },
+      });
+      if (!listing) throw new NotFoundException('Listing not found');
+      if (listing.listingType !== 'AUCTION') {
+        throw new BadRequestException('Not an auction');
+      }
+      if (listing.sellerId === buyer.id) {
+        throw new ForbiddenException('Cannot buy your own auction');
+      }
+      if (!listing.buyNowPrice || listing.buyNowPrice <= 0) {
+        throw new BadRequestException('Buy Now is not available on this auction');
+      }
+      if (listing.status !== 'ACTIVE' || listing.endedAt) {
+        throw new BadRequestException('Auction is not active');
+      }
+      const now = new Date();
+      if (!listing.endTime || now >= listing.endTime) {
+        throw new BadRequestException('Auction has ended');
+      }
+      // See the guard note above the method — Buy Now is a fresh-listing
+      // shortcut, not a way to jump a live bidding war.
+      if (listing.bidCount > 0) {
+        throw new BadRequestException(
+          'Buy Now is no longer available — this auction already has bids',
+        );
+      }
+
+      // Buyer has 24h to pay — same pay-window field finalizeAuction and
+      // offerToRunnerUp stamp on every other path into PAYMENT_PENDING.
+      const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+      // Same base guard finalizeAuction's Case A CAS uses (status ACTIVE,
+      // endedAt null); bidCount: 0 is Buy Now's own extra clause of it —
+      // see the method-level note on why that field is load-bearing here.
+      const claim = await tx.listing.updateMany({
+        where: {
+          id: listingId,
+          status: 'ACTIVE',
+          endedAt: null,
+          bidCount: 0,
+        },
+        data: {
+          status: 'PAYMENT_PENDING',
+          endedAt: now,
+          currentBidderId: buyer.id,
+          currentBid: listing.buyNowPrice,
+          // Buy Now is the seller's own named sell-immediately price, which
+          // by definition satisfies any hidden reserve they also set.
+          reserveMet: true,
+          bidCount: { increment: 1 },
+          expiresAt,
+        },
+      });
+      if (claim.count === 0) {
+        // The CAS lost — a bid landed, another buyer claimed Buy Now first,
+        // or the end-sweep finalized it, all in the gap since our read.
+        // Unlike placeBid's conflict there is nothing to re-resolve and
+        // retry: once bidCount > 0 or the listing has moved on, Buy Now is
+        // permanently unavailable, so this is a terminal error, not a race
+        // worth spinning on.
+        throw new ConflictException(
+          'This auction just moved on — Buy Now is no longer available.',
+        );
+      }
+
+      // Record the purchase as the winning bid — same isWinner semantics
+      // finalizeAuction stamps on a normal win, so bid history, /me/bids
+      // and the admin views (admin.service.ts, users.service.ts) all read
+      // a Buy Now exactly like any other win. bidCount was just-verified 0,
+      // so there is no earlier bidder to resolve/notify as a loser here.
+      await tx.bid.create({
+        data: {
+          listingId,
+          bidderId: buyer.id,
+          amount: listing.buyNowPrice,
+          maxAmount: listing.buyNowPrice,
+          isWinner: true,
+        },
+      });
+
+      return {
+        sellerId: listing.sellerId,
+        amount: listing.buyNowPrice,
+        expiresAt,
+      };
+    });
+
+    // Notifications fire only after the transaction has committed — same
+    // ordering placeBid and finalizeAuction follow. Reuses the exact
+    // auction-win machinery (CHECKOUT token + email/SMS) so the buyer's
+    // experience from here is indistinguishable from winning on the clock.
+    void this.notifyAuctionWon(buyer.id, listingId, outcome.amount);
+    void this.notifyAuctionEndedSeller(
+      outcome.sellerId,
+      listingId,
+      'WON',
+      outcome.amount,
+    );
+
+    return {
+      status: 'PAYMENT_PENDING' as const,
+      currentBid: outcome.amount,
+      expiresAt: outcome.expiresAt,
+    };
   }
 
   // --- Buyer's own bids -------------------------------------------------

@@ -969,7 +969,6 @@ export function FilterBar({
             // key, removing the "Search: …" chip would strip q from the URL
             // and still leave the old term sitting in the box.
             key={currentParams.q ?? ''}
-            placeholder="Search listings…"
             // `min-w-0` below sm lets the box shrink next to the Filters
             // button on a 375px phone; the ≥sm floor is unchanged at 200px.
             className="flex-1 min-w-0 sm:min-w-[200px]"

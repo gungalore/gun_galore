@@ -29,7 +29,7 @@ export function bidIncrement(currentAmount: number): number {
  * looks settled; R1,000 → R1000.00 → R1,010 looks janky).
  */
 export function formatRandStrict(cents: number): string {
-  return `R${(cents / 100).toLocaleString('en-ZA', {
+  return `R ${(cents / 100).toLocaleString('en-ZA', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;

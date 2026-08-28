@@ -1,5 +1,7 @@
 export function formatPrice(cents: number): string {
-  return `R${(cents / 100).toLocaleString('en-ZA', {
+  // Space after "R" matches the approved design boards (all 23 write "R 8,500"
+  // not "R8,500") — display-only, nothing parses this string back into a number.
+  return `R ${(cents / 100).toLocaleString('en-ZA', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   })}`;

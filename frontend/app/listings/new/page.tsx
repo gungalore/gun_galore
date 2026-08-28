@@ -197,7 +197,7 @@ function listPriceFromSellerAsk(
 }
 
 function formatRand(cents: number): string {
-  return `R${(cents / 100).toLocaleString('en-ZA', {
+  return `R ${(cents / 100).toLocaleString('en-ZA', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
@@ -330,8 +330,12 @@ function SmallNumberField({
         style={{
           width: '100%',
           boxSizing: 'border-box',
-          background: 'var(--bg-inset)',
-          border: '0.5px solid var(--border)',
+          // Matches inputStyle. PriceInput carries its own inline style rather
+          // than reading that constant, so when every other field went white it
+          // was left as the one grey well on the form — and it is the field the
+          // seller cares most about.
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-hover)',
           borderRadius: 6,
           padding: '8px 10px',
           fontSize: 13,
@@ -992,7 +996,24 @@ export default function NewListingPage() {
           values: normaliseAttrValues(d.attrValues),
         };
       }
-      if (d.form) setForm(d.form);
+      if (d.form) {
+        // ⚠️ A DRAFT SAVED BEFORE TAKE A SHOT STOPPED BEING A LISTING TYPE
+        // STILL HOLDS IT. Removing it from the picker was not enough on its
+        // own — a seller who started a listing days ago and came back would
+        // restore straight onto a mode that no longer exists, see it in the
+        // collapsed step-3 summary, and be able to publish it. Observed on the
+        // live site right after the picker change shipped.
+        //
+        // Their intent is carried over rather than discarded: the mode is
+        // cleared so they choose Buy Now or Auction, and offers are switched
+        // on, which is what Take a Shot now IS. Nothing else in the draft is
+        // touched.
+        const restored =
+          d.form.listingType === 'TAKE_A_SHOT'
+            ? { ...d.form, listingType: '', acceptsOffers: true }
+            : d.form;
+        setForm(restored);
+      }
       if (d.parcel) setParcel(d.parcel);
       if (d.pickupAddress) setPickupAddress(d.pickupAddress);
       if (d.pickupLat !== undefined) setPickupLat(d.pickupLat);
@@ -2835,7 +2856,7 @@ export default function NewListingPage() {
           <StepAccordion
             number={1}
             title="Photos"
-            description="Buyers click photos first. Bright, sharp, every angle. 1–6 photos, drag to reorder."
+            description="Buyers click photos first. Bright, sharp, every angle. 1–10 photos, drag to reorder."
             status={statusFor(1)}
             expanded={isOpen(1)}
             onToggle={() => toggleStep(1)}
@@ -2855,7 +2876,7 @@ export default function NewListingPage() {
               files={images}
               onChange={setImages}
               minFiles={1}
-              maxFiles={6}
+              maxFiles={10}
             />
             {/* Multi-angle nudge — the single biggest thing a seller can do
                 to avoid "not as described" disputes later. */}
@@ -3243,8 +3264,8 @@ export default function NewListingPage() {
                         ? // The collapsed summary has to agree with the
                           // breakdown: on Buy Now the typed number is the
                           // seller's take-home, not the shelf price.
-                          ` · R${form.price} to you · buyers see ${formatRand(buyNowQuote.listPrice)}`
-                        : ` · R${form.price}`
+                          ` · R ${form.price} to you · buyers see ${formatRand(buyNowQuote.listPrice)}`
+                        : ` · R ${form.price}`
                       : ''
                   }`
                 : undefined
@@ -3298,7 +3319,7 @@ export default function NewListingPage() {
                       className="text-left rounded-[8px] p-3"
                       style={{
                         background: selected
-                          ? 'rgba(200,16,46,0.06)'
+                          ? 'rgba(200,16,46,0.03)'
                           : 'var(--bg-card)',
                         border: `1px solid ${selected ? 'var(--red)' : 'var(--border)'}`,
                         cursor: 'pointer',

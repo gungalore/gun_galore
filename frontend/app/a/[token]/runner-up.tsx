@@ -56,7 +56,7 @@ type ViewState =
 
 function rand(cents: number | null): string {
   if (cents === null) return '—';
-  return `R${(cents / 100).toLocaleString('en-ZA', {
+  return `R ${(cents / 100).toLocaleString('en-ZA', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   })}`;

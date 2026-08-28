@@ -85,7 +85,7 @@ function formatRand(cents: number, compact = false): string {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     });
-  return `${neg ? '−' : ''}R${body}`;
+  return `${neg ? '−' : ''}R ${body}`;
 }
 const profitColor = (cents: number) => (cents >= 0 ? '#22c55e' : 'var(--red)');
 const formatPct = (n: number) => `${n < 0 ? '−' : ''}${Math.abs(n)}%`;

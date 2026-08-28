@@ -79,7 +79,16 @@ function ModeTile({ mode }: { mode: Mode }) {
   return (
     <Link
       href={href}
-      className="gg-mode-tile gg-press flex items-center gap-[14px] flex-1 min-w-0"
+      // Row at every width (see the nav below), but the INTERNAL layout still
+      // has to flip: icon-left/text-right only has room once the tile is
+      // wide enough for icon + text + chevron side by side (sm+). Below that
+      // the board stacks icon chip, then title+count, then blurb — so this
+      // is flex-col until sm, not flex-row throughout. `items-center` and
+      // `gap-[14px]` are unprefixed because they're correct for BOTH axes:
+      // items-center centers the column horizontally on mobile and the row
+      // vertically at sm+, and a single `gap` value covers row-gap/column-gap
+      // for whichever axis is active.
+      className="gg-mode-tile gg-press flex flex-col items-center text-center gap-[14px] sm:flex-row sm:text-left flex-1 min-w-0"
       style={{
         background: 'var(--bg-card)',
         border: `1px solid color-mix(in srgb, ${accent} 42%, transparent)`,
@@ -105,7 +114,12 @@ function ModeTile({ mode }: { mode: Mode }) {
         )}
       </span>
 
-      <span className="flex-1 min-w-0 flex flex-col gap-[3px]">
+      {/* w-full so blurb's `truncate` has a bound to ellipsize against on the
+          stacked mobile layout (a flex item with no flex-grow shrinks to
+          content width, which defeats truncate); sm:flex-1/sm:w-auto hand
+          growth back to the row layout once icon + text + chevron sit
+          side by side. */}
+      <span className="w-full min-w-0 flex flex-col items-center sm:items-start sm:flex-1 sm:w-auto gap-[3px]">
         <span className="flex items-baseline gap-[10px]">
           <span
             style={{
@@ -136,7 +150,13 @@ function ModeTile({ mode }: { mode: Mode }) {
         </span>
       </span>
 
-      <Chevron colour={ink} />
+      {/* Board's mobile tile is three stacked rows (icon / title+count /
+          blurb) with no chevron drawn — there's no fourth row for it in that
+          layout. It returns once the tile is wide enough to lay out
+          horizontally (sm+). */}
+      <span className="hidden sm:block shrink-0">
+        <Chevron colour={ink} />
+      </span>
     </Link>
   );
 }
@@ -181,7 +201,13 @@ export function ShopModeTiles({
     <>
       <nav
         aria-label="Ways to buy"
-        className="max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] flex flex-col sm:flex-row gap-[14px]"
+        // Row at EVERY width, not just sm+ — flex-col here was the mobile
+        // bug: the board draws Buy Now / Auctions side by side even at
+        // 390px (11px gap, each tile flex:1). Stacking them full-width was
+        // never the design; it just went unnoticed because the tile's own
+        // internal layout (see ModeTile) hadn't been built to survive a
+        // ~180px-wide tile either, so the fix is both changes together.
+        className="max-w-[var(--page-max)] mx-auto px-4 sm:px-6 pt-[18px] flex flex-row gap-[11px] sm:gap-[14px]"
       >
         {modes.map((m) => (
           <ModeTile key={m.title} mode={m} />

@@ -10,6 +10,7 @@ import { AvatarCompletionRing } from '@/components/avatar-completion-ring';
 import { LiveSearch } from '@/components/live-search';
 import { UrgentBell } from '@/components/urgent-bell';
 import { CartButton } from '@/components/cart-button';
+import { useWishlist } from '@/lib/use-wishlist';
 import { installPlatform, useInstallPrompt } from '@/lib/use-install-prompt';
 import { trackInstall } from '@/lib/activity-beacon';
 import { AccountMenuList, LogoutIcon } from '@/lib/account-menu';
@@ -18,6 +19,62 @@ import { CategoryMenu } from '@/components/category-menu';
 // The nav is a singleton, so a fixed id is safe and keeps aria-controls on
 // the search button pointing at the panel without threading a useId through.
 const MOBILE_SEARCH_PANEL_ID = 'nav-mobile-search-panel';
+
+// Desktop wishlist icon — same TapTarget-style badge approach as
+// shell-header.tsx's RootHeader wishlist icon (link to /wishlist, badge
+// shows the saved count from useWishlist), redrawn at CartButton's visual
+// weight (44x44, unbordered, 20px glyph) since the two now sit side by side
+// in the icon cluster. Desktop-only (hidden md:inline-flex): mobile-web's
+// row is already at capacity with Sell/bell/cart/hamburger, and the board
+// this reorder follows only models the desktop cluster.
+function WishlistNavButton() {
+  const { count } = useWishlist();
+  return (
+    <Link
+      href="/wishlist"
+      aria-label={count > 0 ? `Wishlist, ${count} saved` : 'Wishlist'}
+      className="relative hidden md:inline-flex items-center justify-center"
+      style={{ width: 44, height: 44 }}
+    >
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ color: 'var(--text-secondary)' }}
+        aria-hidden="true"
+      >
+        <path d="M12 20.3 C7 15.9 3.5 12.9 3.5 9.3 A4.3 4.3 0 0 1 12 6.6 4.3 4.3 0 0 1 20.5 9.3 C20.5 12.9 17 15.9 12 20.3 Z" />
+      </svg>
+      {count > 0 && (
+        <span
+          className="absolute"
+          style={{
+            top: 2,
+            right: 2,
+            minWidth: 16,
+            height: 16,
+            borderRadius: 8,
+            background: 'var(--red)',
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 4px',
+          }}
+        >
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </Link>
+  );
+}
 
 export function Nav() {
   const { isSignedIn, isLoaded, user } = useUser();
@@ -192,7 +249,6 @@ export function Nav() {
           >
             <CategoryMenu variant="search" />
             <LiveSearch
-              placeholder="Search listings…"
               variant="attached"
               className="flex-1"
             />
@@ -262,28 +318,13 @@ export function Nav() {
           {isLoaded && (
             <div className="flex items-center gap-2 sm:gap-3 ml-auto md:ml-0 shrink-0">
 
-              <Link
-                href="/listings/new"
-                className="text-sm px-3 rounded-[6px] transition-colors inline-flex items-center justify-center"
-                // py-1.5 left this 32px tall. Height comes from minHeight now
-                // so it matches the 44px cart and menu beside it — a row of
-                // controls at three different heights also just looks untidy.
-                style={{
-                  background: 'var(--red)',
-                  color: '#fff',
-                  fontWeight: 500,
-                  minHeight: 44,
-                }}
-              >
-                Sell
-              </Link>
-
-              {/* Urgent-notifications bell — shows a red count badge only
-                  when there are must-act items (replaces the old always-on
-                  sticky strip). Visible on desktop + mobile-web; the
-                  installed-PWA bottom tab bar has its own bell. Self-gates
-                  to signed-in users. */}
-              <UrgentBell />
+              {/* Icons-first ordering (board review, 2026-08-27): wishlist →
+                  cart → bell → avatar → Sell, Sell last as the one CTA in the
+                  cluster. Wishlist is desktop-only (see WishlistNavButton);
+                  the rest were already shared across breakpoints and just
+                  moved position, so mobile-web keeps its bell/cart/Sell/
+                  hamburger row unchanged in substance. */}
+              <WishlistNavButton />
 
               {/* Cart (Phase 8b) — single-seller multi-item basket. Always
                   rendered (only the count badge is conditional) so the cart is
@@ -291,6 +332,15 @@ export function Nav() {
                   this whole nav is display:none in the installed PWA, which
                   gets its cart from TopCartButton instead. */}
               <CartButton />
+
+              {/* Urgent-notifications bell — shows a red count badge only
+                  when there are must-act items (replaces the old always-on
+                  sticky strip). Visible on desktop + mobile-web; the
+                  installed-PWA bottom tab bar has its own bell. Self-gates
+                  to signed-in users. The board's cluster doesn't model
+                  notifications at all, so this stays put among the icons
+                  rather than being dropped — desktop's only entry point. */}
+              <UrgentBell />
 
               {/* Desktop sign-in / account chip. Mobile uses hamburger. */}
               <div className="hidden md:flex items-center gap-3">
@@ -416,6 +466,42 @@ export function Nav() {
                 )}
               </div>
 
+              {/* Sell — last in the cluster (board review, 2026-08-27): icons
+                  and the account tile read first, the one CTA reads last.
+                  Two renders, not one: the board's 38px / Archivo 700 /
+                  13.5px / "Sell your gear" spec is drawn for the desktop
+                  cluster only, and this codebase treats 44px as the phone
+                  tap-target floor (see CartButton, the hamburger below) —
+                  so mobile keeps the original 44px / weight-500 "Sell"
+                  rather than shrinking a primary CTA under that floor. */}
+              <Link
+                href="/listings/new"
+                className="md:hidden text-sm px-3 rounded-[6px] transition-colors inline-flex items-center justify-center"
+                style={{
+                  background: 'var(--red)',
+                  color: '#fff',
+                  fontWeight: 500,
+                  minHeight: 44,
+                }}
+              >
+                Sell
+              </Link>
+              <Link
+                href="/listings/new"
+                className="hidden md:inline-flex items-center justify-center rounded-[6px] transition-colors"
+                style={{
+                  background: 'var(--red)',
+                  color: '#fff',
+                  fontFamily: 'var(--font-display), Archivo, sans-serif',
+                  fontWeight: 700,
+                  fontSize: 13.5,
+                  height: 38,
+                  padding: '0 14px',
+                }}
+              >
+                Sell your gear
+              </Link>
+
               {/* Mobile hamburger — opens the drawer below. md:hidden so it
                   only shows on phones / narrow tablets where the page links
                   + search + sign-in have all been pushed into the drawer. */}
@@ -472,7 +558,6 @@ export function Nav() {
             style={{ borderTop: '0.5px solid var(--border)' }}
           >
             <LiveSearch
-              placeholder="Search listings…"
               autoFocus
               // Search pushes "/?q=…" — a query-only change usePathname()
               // never sees — so the panel has to be told to close.
@@ -567,8 +652,7 @@ export function Nav() {
             {/* Search */}
             <div className="px-4 py-4" style={{ borderBottom: '0.5px solid var(--border)' }}>
               <LiveSearch
-                placeholder="Search listings…"
-                onNavigate={() => setMobileOpen(false)}
+                  onNavigate={() => setMobileOpen(false)}
               />
             </div>
 

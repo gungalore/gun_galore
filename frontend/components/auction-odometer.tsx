@@ -88,7 +88,9 @@ export function AuctionOdometer({
   // The pack's threshold: under a minute the SECONDS ring is always hot, the
   // MINUTES ring joins it, and the hours ring never changes at all.
   const lastMinute = !ended && totalSeconds < 60;
-  const hot = 'var(--hot)';
+  // --red, not --hot: the panel is white now, and #F07087 is 2.9:1 against
+  // it. The pack's escalation is unchanged, only the pigment carrying it.
+  const hot = 'var(--red)';
   const gold = 'var(--gold)';
 
   const formatted = new Intl.NumberFormat('en-ZA').format(
@@ -203,7 +205,7 @@ export function AuctionOdometer({
                 cy="22"
                 r="19"
                 fill="none"
-                stroke="rgba(244,241,237,0.13)"
+                stroke="var(--border)"
                 strokeWidth="3"
               />
               <circle
@@ -244,11 +246,11 @@ export function AuctionOdometer({
 
       <style>{`
         .odo-panel {
-          background: linear-gradient(160deg, #1E1A16, #141110);
-          border: 1px solid rgba(244,241,237,0.11);
+          background: var(--bg-card);
+          border: 1px solid var(--border);
           border-radius: var(--r-md);
           padding: 16px 18px;
-          color: var(--text-on-dark);
+          color: var(--text-primary);
           display: flex;
           flex-direction: column;
           gap: 12px;
@@ -257,18 +259,18 @@ export function AuctionOdometer({
           display: flex; align-items: center; justify-content: space-between;
           font-family: var(--font-head); font-size: 10.5px;
           letter-spacing: 1.2px; text-transform: uppercase;
-          color: rgba(244,241,237,0.55);
+          color: var(--text-tertiary);
         }
         .odo-livewrap { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
         .odo-live {
           width: 7px; height: 7px; border-radius: 999px;
-          background: var(--hot); display: inline-block;
+          background: var(--red); display: inline-block;
         }
         .odo-priceline { position: relative; display: flex; align-items: baseline; gap: 10px; }
         .odo-price {
           font-family: var(--font-head); font-weight: 700;
           font-size: 34px; letter-spacing: -0.5px;
-          color: var(--text-on-dark);
+          color: var(--text-primary);
           font-variant-numeric: tabular-nums;
           display: inline-flex; align-items: baseline;
         }
@@ -281,9 +283,9 @@ export function AuctionOdometer({
         .odo-ghost {
           position: absolute; left: 0; top: -2px;
           font-family: var(--font-head); font-size: 15px;
-          color: rgba(244,241,237,0.45); pointer-events: none;
+          color: var(--text-faint); pointer-events: none;
         }
-        .odo-step { font-size: 12.5px; color: rgba(244,241,237,0.7); }
+        .odo-step { font-size: 12.5px; color: var(--text-secondary); }
         .odo-count { font-variant-numeric: tabular-nums; }
         .odo-rings { display: flex; gap: 14px; }
         .odo-ring {
@@ -297,7 +299,7 @@ export function AuctionOdometer({
         }
         .odo-lbl {
           margin-top: 2px; font-size: 9px; letter-spacing: 1px;
-          text-transform: uppercase; color: rgba(244,241,237,0.4);
+          text-transform: uppercase; color: var(--text-tertiary);
         }
 
         .odo-arc { transition: stroke-dashoffset 900ms linear; }
@@ -317,16 +319,16 @@ export function AuctionOdometer({
            once. See the component doc-block. */
         @keyframes rollA { from { transform: translateY(0); } to { transform: translateY(-50%); } }
         @keyframes rollB { from { transform: translateY(0); } to { transform: translateY(-50%); } }
-        @keyframes flashA { 0% { color: var(--gold-tag-fill); } 55% { color: var(--gold-tag-fill); } 100% { color: var(--text-on-dark); } }
-        @keyframes flashB { 0% { color: var(--gold-tag-fill); } 55% { color: var(--gold-tag-fill); } 100% { color: var(--text-on-dark); } }
+        @keyframes flashA { 0% { color: var(--gold-tag-fill); } 55% { color: var(--gold-tag-fill); } 100% { color: var(--text-primary); } }
+        @keyframes flashB { 0% { color: var(--gold-tag-fill); } 55% { color: var(--gold-tag-fill); } 100% { color: var(--text-primary); } }
         @keyframes ghostA { 0% { opacity: 0; transform: translateY(6px); } 22% { opacity: 1; transform: translateY(0); } 72% { opacity: 1; } 100% { opacity: 0; transform: translateY(-5px); } }
         @keyframes ghostB { 0% { opacity: 0; transform: translateY(6px); } 22% { opacity: 1; transform: translateY(0); } 72% { opacity: 1; } 100% { opacity: 0; transform: translateY(-5px); } }
-        @keyframes edgeA { 0% { border-color: var(--gold-tag-fill); } 100% { border-color: rgba(244,241,237,0.11); } }
-        @keyframes edgeB { 0% { border-color: var(--gold-tag-fill); } 100% { border-color: rgba(244,241,237,0.11); } }
+        @keyframes edgeA { 0% { border-color: var(--gold-tag-fill); } 100% { border-color: var(--border); } }
+        @keyframes edgeB { 0% { border-color: var(--gold-tag-fill); } 100% { border-color: var(--border); } }
         @keyframes stepA { 0% { transform: translateY(7px); opacity: 0.2; } 100% { transform: translateY(0); opacity: 1; } }
         @keyframes stepB { 0% { transform: translateY(7px); opacity: 0.2; } 100% { transform: translateY(0); opacity: 1; } }
-        @keyframes countA { 0% { transform: scale(1.35); color: var(--gold-tag-fill); } 100% { transform: scale(1); color: rgba(244,241,237,0.55); } }
-        @keyframes countB { 0% { transform: scale(1.35); color: var(--gold-tag-fill); } 100% { transform: scale(1); color: rgba(244,241,237,0.55); } }
+        @keyframes countA { 0% { transform: scale(1.35); color: var(--gold-tag-fill); } 100% { transform: scale(1); color: var(--text-tertiary); } }
+        @keyframes countB { 0% { transform: scale(1.35); color: var(--gold-tag-fill); } 100% { transform: scale(1); color: var(--text-tertiary); } }
 
         .rollA .odo-col   { animation: rollA 600ms var(--ease-odo) both; }
         .rollB .odo-col   { animation: rollB 600ms var(--ease-odo) both; }
