@@ -133,7 +133,33 @@ export function credentialOffer(
   };
 
   // ── the competency number ────────────────────────────────────────
-  for (const c of credentials) {
+  // ⚠️ LONGEST-RUNNING EXPIRY WINS, AND THE SORT IS WHAT DECIDES IT.
+  // Operator, 2026-08-28, asked directly which of several competency
+  // certificates should be chosen: "longest-running expiry wins."
+  //
+  // offer() is FIRST-WINS by design — "first document to claim a slot keeps
+  // it" — so before this the winner was whichever certificate happened to sit
+  // earliest in the array. That is not a rule, it is an accident of query
+  // order, and it was invisible: both certificates are the member's own and
+  // both numbers look right, so a wrong pick reaches an application unnoticed.
+  // Ordering the candidates makes first-wins express the operator's rule
+  // instead of the database's.
+  //
+  // ⚠️ A NULL EXPIRY SORTS LAST, NOT FIRST. A certificate whose date we could
+  // not read is not evidence of a long life, and treating a blank as "runs
+  // forever" would let the least-known document beat a dated one.
+  const byLongestExpiry = credentials
+    .filter((c) => COMPETENCY_KINDS.has(c.kind))
+    .sort((a, b) => {
+      // yyyy-mm-dd compares correctly as a string — which is why the vault
+      // stores it that way. No Date parsing, no timezone to get wrong.
+      if (a.expiresOn === b.expiresOn) return 0;
+      if (!a.expiresOn) return 1;
+      if (!b.expiresOn) return -1;
+      return a.expiresOn < b.expiresOn ? 1 : -1;
+    });
+
+  for (const c of byLongestExpiry) {
     if (!COMPETENCY_KINDS.has(c.kind)) continue;
     const number = first(c.details, 'competency_number', 'certificate_number');
     if (!number) {
