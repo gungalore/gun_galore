@@ -87,6 +87,7 @@ import {
   SOURCE_PRIVATE,
   fieldByKey,
   fieldsFor,
+  isVisible,
   missingRequired,
   sanitiseAnswers,
   SAPS271_FILL,
@@ -2209,6 +2210,72 @@ export class MotivationsService {
         } catch (err) {
           this.logger.warn(
             `Motivation ${row.id}: extraction failed for upload ${created.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+
+      // ── the firearm, off whatever this document is ──────────────────
+      //
+      // Operator, 2026-08-28: "Can we write the ai to accepts any kind of
+      // document and process the information on it? As we need the firearm
+      // details and not the details of the owner for this part."
+      //
+      // ⚠️ A SECOND READ, NOT A REPLACEMENT. extract() above answers "what does
+      // a document of this KIND carry" and is right for an ID or a proof of
+      // address. This answers "what firearm is this about", which no
+      // classifier needs to have recognised the genre to do — and the genre is
+      // exactly what an applicant holding "atleast something" cannot promise.
+      //
+      // ⚠️ ONLY ON KINDS THAT COULD DESCRIBE A FIREARM. A second vision call on
+      // a safe photograph or a municipal bill would spend money to find
+      // nothing, and give a model the chance to invent a firearm from a stray
+      // number on the page.
+      //
+      // ⚠️ AND IT NEVER OVERWRITES THE KIND EXTRACTOR. Those suggestions came
+      // from a document we had identified; these came from one we had not. On
+      // a key both produced, the identified read wins.
+      if (
+        !opts.skipExtraction &&
+        MotivationExtractService.readsFirearm(resolved)
+      ) {
+        try {
+          const firearm = await this.extract.readFirearm({
+            bytes: file.buffer,
+            mimeType: file.mimetype,
+          });
+          const already = new Set(suggestions.map((f) => f.key));
+          // ⚠️ ONLY FIELDS THE APPLICANT CAN ACTUALLY SEE. Six of the firearm
+          // fields (the barrel / frame / receiver rows and their makes) are
+          // formOnly, so they exist only once somebody has opted into having
+          // the SAPS 271 filled. Offering a value for a box that is not on
+          // screen produces a "we read 7 things" panel listing fields the
+          // applicant cannot find, which reads as the feature being broken.
+          //
+          // isVisible also covers the conditional fields generally, so this
+          // stays correct if any firearm field later hangs off a showIf.
+          const answersNow = this.readAnswers(row.answersEncrypted);
+          const visible = new Set(
+            fieldsFor(row.licenceType)
+              .filter((f) => isVisible(f, answersNow))
+              .map((f) => f.key),
+          );
+          for (const [key, value] of Object.entries(firearm)) {
+            if (already.has(key) || !visible.has(key)) continue;
+            suggestions.push({
+              key,
+              value,
+              // Read without knowing what the document is, so it is offered
+              // for confirmation like everything else here rather than
+              // trusted outright.
+              trusted: false,
+              note: 'Read off the document you uploaded — check it against the paperwork.',
+            } as (typeof suggestions)[number]);
+          }
+        } catch (err) {
+          // Same rule as above: a failed read costs the convenience, never
+          // the upload.
+          this.logger.warn(
+            `Motivation ${row.id}: firearm read failed for upload ${created.id}: ${(err as Error).message}`,
           );
         }
       }
