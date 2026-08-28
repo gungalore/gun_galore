@@ -69,11 +69,13 @@ describe('a section that does not repeat', () => {
 });
 
 describe('the header of a collapsed item', () => {
-  it('names a firearm by its make and summarises by calibre', () => {
+  it('names a firearm by its make and summarises by calibre ALONE', () => {
+    // Operator, 2026-08-28: "Just the calibre and make as it is in the licence
+    // centre." The make is the title, so the summary carries the calibre and
+    // stops — `type` is one of the details behind the expansion.
     expect(nameKeyFor(OWNED_SECTION, '2')).toBe('existing_firearm_2_make');
     expect(summaryKeysFor(OWNED_SECTION, '2')).toEqual([
       'existing_firearm_2_calibre',
-      'existing_firearm_2_type',
     ]);
   });
 

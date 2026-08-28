@@ -502,8 +502,51 @@ export class MotivationsService {
       // licence number came off the document itself.
       seed,
     );
+
+    // ✅ AND SO DOES THE VAULT. Operator, 2026-08-28: "The licenses already
+    // captured needs to pull though into any new application as firearms I
+    // already own... Automation and prefill is what we must get 100% correct
+    // with these two centres."
+    //
+    // This is the SAME work useLicenceCentre() has always done — it just did
+    // it behind a button the member had to find and press, on a form that had
+    // already asked them for values we were holding. Every firearm licence in
+    // the Licence Centre fills an owned-firearm row here, so a new application
+    // opens already knowing what they own.
+    //
+    // ⚠️ PRECEDENCE IS DELIBERATE AND THE ORDER IS LOAD-BEARING: profile,
+    // then vault, then seed. The vault beats the profile because it was read
+    // off the member's own documents; the seed beats both because a renewal's
+    // licence number came off the very licence being renewed. Getting this
+    // backwards would let a stale profile value overwrite a document.
+    //
+    // ⚠️ AND IT IS PASSED THE PROFILE'S ANSWERS, not an empty object.
+    // credentialOffer skips what is already answered, so handing it {} would
+    // re-offer every field the profile just filled and the later spread would
+    // silently prefer the vault's copy of a value the member maintains.
+    //
+    // ⚠️ A VAULT FAILURE COSTS THE PREFILL, NOT THE APPLICATION. This is the
+    // module's own established rule — "An unreadable blob costs the autofill,
+    // not the attachment" — and create() is the one path where breaking it
+    // would be worst: a member who cannot reach their vault would be unable to
+    // START an application at all, which is a far heavier failure than opening
+    // one with empty firearm rows they can fill by hand.
+    let vaultValues: Record<string, string> = {};
+    try {
+      vaultValues = credentialOffer(
+        licenceType,
+        await this.credentialsFor(user.id),
+        { ...prefill.values, ...seed },
+      ).values;
+    } catch (err) {
+      this.logger.warn(
+        `Motivation create: Licence Centre prefill skipped — ${(err as Error).message}`,
+      );
+    }
+
     const { answers: seeded } = sanitiseAnswers(licenceType, {
       ...prefill.values,
+      ...vaultValues,
       ...seed,
     });
 

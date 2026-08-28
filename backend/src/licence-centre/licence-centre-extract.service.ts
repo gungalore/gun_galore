@@ -133,6 +133,13 @@ export const WANTED: Record<CredentialKind, string[]> = {
     'competency_number',
     'holder_name',
     'covers',
+    // ⚠️ THE DATE THE WHOLE EXPIRY DERIVATION RUNS ON. A competency card
+    // prints an issue date and no expiry, and deriveExpiry needs the issue
+    // date for every branch it has — the muzzle-loader ten years, and the
+    // no-licence fallback. The vault was not asking for it, so a certificate
+    // read here arrived at the motivation (which DOES ask, as
+    // `competency_issued`) with nothing to carry. See common/document-fields.
+    'competency_issued',
   ],
   // ⚠️ THE UNION OF THE FOUR KINDS THIS REPLACED, because WANTED is both the
   // question and the filter: a key not listed here is never asked for AND is
@@ -217,7 +224,17 @@ export const WANTED: Record<CredentialKind, string[]> = {
   // carries a vault reading across on an exact key-name match with
   // wantedFor(uploadKind); a near-miss here is silently dropped and the amber
   // comes straight back. library-readability.spec.ts pins the agreement.
-  IDENTITY_DOCUMENT: ['full_name', 'id_number'],
+  // ⚠️ issue_date ADDED 2026-08-28. Operator: "The ID document I just
+  // uploaded did not recognize the issue date." It never could: WANTED is both
+  // the question put to the model AND the filter applied to its answer, so a
+  // key that is not listed here is never asked for and is discarded if the
+  // model volunteers it anyway. Nothing was misread — nothing was requested.
+  //
+  // ⚠️ AND IT MUST NEVER BECOME AN expiresOn. Same rule as the address
+  // document below: a confirmed expiry arms the reminder sweep, and an SA ID
+  // card does not expire. The CHECK constraint forbids it; this comment is so
+  // nobody tries.
+  IDENTITY_DOCUMENT: ['full_name', 'id_number', 'issue_date'],
   // ⚠️ IT DOES CARRY A DATE, and the date decides whether a DFO accepts it.
   // But that date must never become an expiresOn — the CHECK constraint
   // forbids it, because a confirmed one would start SMSing AO Pro members

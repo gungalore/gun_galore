@@ -421,7 +421,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     docSourced: 'COMPETENCY_CERTIFICATE',
     label: 'Competency certificate number',
     kind: 'short',
-    section: 'About you',
+    section: 'Your competency',
     // ⚠’️ THE DEAD END NEEDED AN ONWARD PATH, NOT JUST A GATE. This field is
     // required, so an applicant without a certificate hits an unfillable box
     // and stops — and the old help text told them why they were stuck without
@@ -444,7 +444,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     docSourced: 'COMPETENCY_CERTIFICATE',
     label: 'What your competency covers',
     kind: 'multi',
-    section: 'About you',
+    section: 'Your competency',
     // Item 1.4 lets you mark more than one, and it must match the firearm you
     // are applying for — a handgun application on a rifle-only competency is a
     // refusal waiting to happen, and it is visible on the form.
@@ -469,7 +469,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     docSourced: 'COMPETENCY_CERTIFICATE',
     label: 'Competency issued on',
     kind: 'date',
-    section: 'About you',
+    section: 'Your competency',
     // ⚠️ formOnly REMOVED — see competency_for. The date belongs in the
     // sentence, not only in a box on the 271.
     focusOffsetYears: -2,
@@ -490,7 +490,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // category holds no licence. See common/sa-competency deriveExpiry.
     label: 'Competency expires on',
     kind: 'date',
-    section: 'About you',
+    section: 'Your competency',
     help: 'Your certificate does not print this. It follows your longest-running licence in the same firearm type — leave it blank if you are not sure.',
     // ⚠️ formOnly REMOVED — see competency_for. A competency with years left
     // on it is worth saying; one close to expiry is worth the writer knowing

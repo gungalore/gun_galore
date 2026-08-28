@@ -146,7 +146,13 @@ const STEP_PLAN: StepDef[] = [
     key: 'you',
     label: 'You & firearm',
     title: 'You and the firearm',
-    sections: ['About you', 'The firearm'],
+    // ⚠️ ORDER IS THE FEATURE. Operator, 2026-08-28: capture the firearm
+    // "before the competency, that way the system can see which firearm it
+    // is and link the correct competency and proficiency certificates".
+    // Competency was part of 'About you' and therefore came first; it has
+    // its own section now purely so it can sit on the far side of the
+    // firearm without dragging name, ID and address along with it.
+    sections: ['About you', 'The firearm', 'Your competency'],
   },
   {
     key: 'owned',
@@ -2474,12 +2480,19 @@ export default function MotivationWizardPage() {
               <h3 className="mb-3 font-medium">{sec.section}</h3>
             )}
             <div className="space-y-4">
-              {/* WHAT THEY HAVE ALREADY TOLD US. Only in the two sections the
-                  vault can actually answer: the competency number lives in
-                  "About you", and the firearms already licensed to them live
-                  in their own section. Anywhere else it would be noise. */}
+              {/* WHAT THEY HAVE ALREADY TOLD US. Only in the sections the
+                  vault can actually answer: the competency, the firearms
+                  already licensed to them, and dedicated status. Anywhere else
+                  it would be noise. */}
               {(isOwned ||
                 sec.section === 'About you' ||
+                // ⚠️ MOVED WITH THE FIELDS, 2026-08-28. The competency number
+                // used to live in "About you", which is why this mount named
+                // that section. The fields are in 'Your competency' now, and
+                // leaving this list alone would have reproduced the exact bug
+                // the note below describes — values computed, shipped, then
+                // filtered out against a section that cannot contain them.
+                sec.section === 'Your competency' ||
                 // ⚠️ THE DEDICATED-STATUS HALF NEVER RENDERED. The panel was
                 // mounted on "About you" and handed the key prefix
                 // `association_` — but those fields live in their own

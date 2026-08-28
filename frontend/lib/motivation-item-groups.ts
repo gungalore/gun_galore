@@ -63,10 +63,16 @@ export function nameKeyFor(section: string, slot: string): string | null {
 /** The keys making up an item's one-line summary, in order, per slot. */
 export function summaryKeysFor(section: string, slot: string): string[] {
   if (section === OWNED_SECTION) {
-    return [
-      `existing_firearm_${slot}_calibre`,
-      `existing_firearm_${slot}_type`,
-    ];
+    // ⚠️ MAKE AND CALIBRE, AND NOTHING ELSE. Operator, 2026-08-28, on
+    // licences pulled through from the Licence Centre: "Just the calibre and
+    // make as it is in the licence centre. When clicked upon it can expand and
+    // show all the firearm details."
+    //
+    // The make is the row's TITLE (see nameKeyFor), so listing it here too
+    // would print it twice. `type` came out: it is one of the details the
+    // expansion shows, and on a collapsed line "Rifle" mostly repeats what the
+    // calibre already implies to anyone reading this list.
+    return [`existing_firearm_${slot}_calibre`];
   }
   if (section === ASSOCIATION_SECTION) {
     return [
