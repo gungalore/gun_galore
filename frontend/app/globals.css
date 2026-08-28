@@ -99,6 +99,15 @@
   --bg-card-hover: #FAF9F5;
   --bg-inset:    #F4F2EC;
 
+  /* Elevation. Warm-tinted (the ink, 26,22,19), never pure black — see the
+     .gg-tile block below. --elev-1 is the resting state, pitched at roughly
+     Tailwind's shadow-md. A first pass at half that (0.05 on both layers)
+     computed correctly and was invisible on screen — on a dense retail grid
+     the temptation is to go subtle, but subtle past a point is just the flat
+     card again with extra CSS. --elev-2 is hover only. */
+  --elev-1: 0 1px 2px rgba(26, 22, 19, 0.06), 0 4px 12px rgba(26, 22, 19, 0.08);
+  --elev-2: 0 2px 6px rgba(26, 22, 19, 0.08), 0 14px 30px rgba(26, 22, 19, 0.14);
+
   /* Borders. --border-divider is SUBTLER than --border (it was darker on
      the dark theme for the same reason: closer to the surface it sits on). */
   --border:      #DDD8CC;
@@ -302,9 +311,71 @@ time[data-countdown] {
   font-feature-settings: 'tnum' 1;
 }
 
-/* No gradients, no drop shadows, no glow — per CLAUDE.md */
+/* No gradients, no drop shadows, no glow — per CLAUDE.md.
+   ...EXCEPT the opt-in .gg-tile elevation below, added 2026-08-28.
+
+   ⚠️ THIS RULE STAYS. Operator: "all the tiles on the website looks stale
+   and boring, can we give them like a shade or small 3D effect" — and the
+   obvious move, deleting this rule, is a trap. Thirty box-shadows are already
+   written across the app, authored over months by people who knew none of
+   them could render: `0 30px 80px -20px rgba(0,0,0,.7)`, a
+   `0 10px 30px rgba(0,0,0,0.55)` sized for the old DARK theme, and a
+   `ggw-pulse` keyframe that throbs a red glow. Deleting this line switches
+   every one of them on at once, on a white site. So the kill switch stays and
+   elevation is opt-in: a class beats the universal selector on specificity,
+   both being !important, and nothing gets a shadow unless it asks. */
 * {
   box-shadow: none !important;
+}
+
+/* ── Tile elevation ──────────────────────────────────────────
+
+   Why now: the page canvas went white the same day. A card used to be held
+   apart from the page by its white fill against a beige ground; on white that
+   cue is gone and only a 1px border is left, which is what "stale and boring"
+   is describing.
+
+   ⚠️ THE SHADOW IS WARM, NOT BLACK. rgba(0,0,0,…) over a warm neutral
+   palette goes visibly grey and dirties everything under it. These are built
+   from the ink colour (#1A1613 → 26,22,19), so the shade reads as the same
+   family as the text and borders around it.
+
+   Two layers each, which is what makes it read as depth rather than a blur:
+   a tight contact shadow that anchors the tile to the page, and a wider
+   ambient one that gives it height. */
+.gg-tile {
+  box-shadow: var(--elev-1) !important;
+  /* ⚠️ background-color AND border-color BELONG IN THIS LIST even though the
+     shadow is the point. globals.css loads after `@tailwind utilities`, so
+     this declaration beats the `transition-colors` utility the cards already
+     carry — leaving it out silently un-animates the hover tint and border
+     those cards have always had, and the swap starts snapping. */
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+/* The lift. Only on devices that genuinely hover — without this gate a phone
+   fires :hover on tap and leaves the tile stuck raised after the finger
+   goes. transform, not margin/top, so nothing around it reflows. */
+@media (hover: hover) and (pointer: fine) {
+  .gg-tile-lift:hover,
+  .gg-tile-lift:focus-within {
+    box-shadow: var(--elev-2) !important;
+    transform: translateY(-2px);
+    border-color: var(--border-hover);
+  }
+}
+
+/* Reduced motion keeps the DEPTH and drops the MOVEMENT. Removing the shadow
+   change too would leave those users with no hover feedback at all, which is
+   a worse outcome than the thing the preference asks for. */
+@media (prefers-reduced-motion: reduce) {
+  .gg-tile { transition: box-shadow var(--dur-fast) ease; }
+  .gg-tile-lift:hover,
+  .gg-tile-lift:focus-within { transform: none; }
 }
 
 /* Kill the browser default spinner arrows on <input type="number">.

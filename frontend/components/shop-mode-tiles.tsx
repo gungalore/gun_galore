@@ -88,7 +88,7 @@ function ModeTile({ mode }: { mode: Mode }) {
       // items-center centers the column horizontally on mobile and the row
       // vertically at sm+, and a single `gap` value covers row-gap/column-gap
       // for whichever axis is active.
-      className="gg-mode-tile gg-press flex flex-col items-center text-center gap-[14px] sm:flex-row sm:text-left flex-1 min-w-0"
+      className="gg-mode-tile gg-tile gg-tile-lift gg-press flex flex-col items-center text-center gap-[14px] sm:flex-row sm:text-left flex-1 min-w-0"
       style={{
         background: 'var(--bg-card)',
         border: `1px solid color-mix(in srgb, ${accent} 42%, transparent)`,

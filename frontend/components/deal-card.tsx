@@ -25,7 +25,7 @@ export function DealCard({ deal }: { deal: DealPublic }) {
   return (
     <Link href={`/deals/${deal.id}`} className="block group">
       <div
-        className="rounded-[6px] overflow-hidden transition-colors"
+        className="gg-tile gg-tile-lift rounded-[6px] overflow-hidden"
         style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
         onMouseEnter={(e) => {
           (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-hover)';

@@ -31,7 +31,7 @@ export function FormSection({ id, title, description, children }: Props) {
   return (
     <section
       id={id}
-      className="rounded-[8px] px-5 sm:px-6 py-5 sm:py-6"
+      className="gg-tile rounded-[8px] px-5 sm:px-6 py-5 sm:py-6"
       style={{
         background: 'var(--bg-card)',
         border: '1px solid var(--border)',

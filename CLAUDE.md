@@ -539,18 +539,39 @@ handoff; mirror into `/docs/design/`):
 - **Status:** success `#2f9e6b`, warning `#d49a3a`.
 - **Type:** system font stack. Weights **400 and 500 ONLY** — never
   600/700. Letter-spacing −0.01em body.
-- **No gradients. No drop shadows. No glow.**
+- **No gradients. No glow. No drop shadows BY DEFAULT** — but tiles
+  opt in via `.gg-tile` (2026-08-28, operator: "all the tiles on the
+  website looks stale and boring, can we give them like a shade or
+  small 3D effect"). The page canvas went white the same week, which
+  removed the fill contrast that used to separate a card from the page
+  and left a 1px border doing the whole job. See the gotcha below.
 - **Border-radius max 8px** (cards/buttons/inputs 6px; photo badges
   4px; tiny tags / verified pill 3px; sell CTA banner 8px).
 - **Mobile-first**, ~390px base; content max-width 1280px.
 
 **CSS gotchas that fail SILENTLY — both have already produced dead code:**
 
-- `* { box-shadow: none !important }` sits at the top of `globals.css`
-  (it enforces "no drop shadows" above). It is unscoped, so **every**
-  `box-shadow` anywhere in the app — inline styles and keyframes
-  included — is dead. Do not write one expecting it to render; use a
-  0.5px border instead.
+- `* { box-shadow: none !important }` sits at the top of `globals.css`.
+  It is unscoped, so **every** `box-shadow` anywhere in the app — inline
+  styles and keyframes included — is dead **unless the element carries
+  `.gg-tile`**. Do not write a raw `box-shadow` expecting it to render.
+  To give a surface depth, add `.gg-tile` (resting elevation) and
+  `.gg-tile-lift` (hover raise); both use `--elev-1` / `--elev-2`, which
+  are warm-tinted from the ink rather than black — `rgba(0,0,0,…)` goes
+  visibly grey over these neutrals.
+
+  **Do NOT "fix" this by deleting the kill switch.** Thirty `box-shadow`
+  declarations are already written across the app by people who knew none
+  of them could render, including `0 30px 80px -20px rgba(0,0,0,.7)`, a
+  `rgba(0,0,0,0.55)` drop sized for the retired dark theme, and a
+  `ggw-pulse` keyframe that throbs a red glow. Removing the line switches
+  all of them on at once, on a white site.
+
+  Note also that `.gg-tile` declares its own `transition`, and
+  `globals.css` loads after `@tailwind utilities` — so it BEATS a
+  `transition-colors` utility on the same element. Any card gaining
+  `.gg-tile` must have `transition-colors` removed, or its existing hover
+  tint silently stops animating.
 - A `body:has(...)` rule scores only **(0,1,1)** and therefore loses to
   `html:not([data-standalone='true']) body` in `globals.css`, which is
   (0,1,2) and matches on every browser-mode page. Source order does not
