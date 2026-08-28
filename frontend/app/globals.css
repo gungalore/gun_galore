@@ -81,7 +81,19 @@
      until 2026-08-27. Nothing warns: not tsc, not the build, not the browser
      console. It went unnoticed only because the ground behind happened to be
      light too. If you want the page colour in a component, write var(--bg). */
-  --bg:          #F6F5F1;
+  /* ⚠️ THE PAGE CANVAS IS WHITE. Operator, 2026-08-27: "remove all the
+     backgrounds, white back ground only on the whole website". It was
+     #F6F5F1 — a warm off-white that read plainly as beige on every screen,
+     and it was still doing so on the live site a day later because the
+     earlier pass only took out the decorative image and panel fills.
+
+     ⚠️ AND THAT IS WHY --border MOVED WITH IT. A card was separated from the
+     page by TWO weak cues: its white fill against the beige (1.09:1) and its
+     border (1.20:1). Take the beige away and the border is the only cue
+     left, at 1.30:1 on white — fainter than the edge GitHub draws (1.45:1),
+     which is where "the cards dissolved" would have come from. #DDD8CC puts
+     it back to 1.42:1 while keeping the warm hue. Measured, not eyeballed. */
+  --bg:          #FFFFFF;
   --bg-deep:     #FFFFFF;
   --bg-card:     #FFFFFF;
   --bg-card-hover: #FAF9F5;
@@ -89,7 +101,7 @@
 
   /* Borders. --border-divider is SUBTLER than --border (it was darker on
      the dark theme for the same reason: closer to the surface it sits on). */
-  --border:      #E5E1D8;
+  --border:      #DDD8CC;
   --border-hover: #D5CFC2;
   --border-divider: #EDEAE1;
 
