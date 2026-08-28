@@ -35,15 +35,21 @@ export type Tier = 'required' | 'expected' | 'strengthens' | 'extra';
 /**
  * The groups, in the order they are shown.
  *
- * ⚠️ THE WORDING CARRIES THE DISTINCTION THE BADGES USED TO. "SAPS will not
- * process without these" is a statement about the Act; "your DFO will ask for
- * these" is a statement about practice, and the endorsement lives there
- * precisely because it has no statute behind it.
+ * ⚠️ THESE HEADINGS DO NOT SAY WHO WANTS THE DOCUMENT, AND MUST NOT.
+ * They used to: "SAPS will not process the application without these" and
+ * "Your DFO will ask for these". Operator, 2026-08-28: "remove the who will
+ * require what prompts, they are wrong."
+ *
+ * The tiers still rank the list — how much a document helps THIS application
+ * is ours to say, and it is what the member needs in order to decide what to
+ * photograph first. What an authority will or will not accept is not ours to
+ * state, it varies by office, and getting it wrong sends someone to a police
+ * station with the wrong pack.
  */
 const GROUPS: { tier: Tier; title: string }[] = [
-  { tier: 'required', title: 'SAPS will not process the application without these' },
-  { tier: 'expected', title: 'Your DFO will ask for these' },
-  { tier: 'strengthens', title: 'Not asked for — but they make the case' },
+  { tier: 'required', title: 'Essential' },
+  { tier: 'expected', title: 'Strongly recommended' },
+  { tier: 'strengthens', title: 'Strengthens your application' },
   { tier: 'extra', title: 'Anything else' },
 ];
 
@@ -85,21 +91,36 @@ export default function DocumentChecklist({
     <div
       role="radiogroup"
       aria-label="Which document are you adding?"
-      className="rounded border border-[var(--border)]"
+      className="space-y-4"
     >
       {/* ⚠️ ONE HEADING PER GROUP, INSTEAD OF A BADGE PER ROW. Five of seven
-          rows carried "SAPS needs this", which is a label that has stopped
-          labelling anything. The same fact stated once over the group it
-          applies to is shorter AND clearer. */}
+          rows carried the same badge, which is a label that has stopped
+          labelling anything. Stated once over the group it applies to is
+          shorter AND clearer. See GROUPS for why they no longer name an
+          authority. */}
       {GROUPS.map((g) => {
         const mine = rows.filter((r) => r.tier === g.tier);
         if (mine.length === 0) return null;
         return (
           <div key={g.tier}>
-            <p className="border-b border-[var(--border-divider)] bg-[var(--bg-inset)] px-3 py-1.5 text-xs text-[var(--text-secondary)]">
+            <p
+              className="mb-2 text-xs uppercase"
+              style={{
+                color: 'var(--text-tertiary)',
+                letterSpacing: '0.1em',
+                fontWeight: 600,
+              }}
+            >
               {g.title}
             </p>
-            <ul className="divide-y divide-[var(--border-divider)]">
+            {/* ⚠️ SPACING, NOT A DIVIDER. This was `divide-y` in
+                --border-divider (#EDEAE1), which measures 1.20:1 on white —
+                and note that is not a regression from the white canvas, it was
+                1.10:1 on the old beige page. The hairline was simply never
+                enough on its own, and it was the ONLY thing separating seven
+                upload targets: the rows had no fill of their own, so they read
+                as one block of text. Every row is its own card below. */}
+            <ul className="space-y-2">
               {mine.map((r) => (
                 <Row
                   key={r.kind}
@@ -162,14 +183,27 @@ function Row({
 
   return (
     <li
-      className="p-3"
+      className="gg-tile rounded-[8px] p-3"
       style={{
+        // The state wash still wins where there is one — a finished line
+        // should read as finished at a glance — but an untouched row is now a
+        // white card rather than nothing at all.
         background:
           state === 'done'
             ? 'rgba(47,158,107,0.08)'
             : state === 'suspect'
               ? 'var(--gold-wash)'
-              : undefined,
+              : 'var(--bg-card)',
+        // The selected row is the one the camera and file picker belong to,
+        // so it gets the brand edge. Without this the toolbar appeared to
+        // belong to the whole list.
+        border: checked
+          ? '1px solid var(--red)'
+          : state === 'done'
+            ? '1px solid color-mix(in srgb, var(--success) 35%, transparent)'
+            : state === 'suspect'
+              ? '1px solid var(--gold-line)'
+              : '1px solid var(--border)',
       }}
     >
       <label className="flex cursor-pointer gap-3">
