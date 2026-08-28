@@ -1966,18 +1966,34 @@ export default function NewListingPage() {
   //
   // Preview still re-audits when the text changed after this ran (see the
   // auditGeneration effect below) — this only warms the cache.
+  //
+  // ⚠️ GATED ON ALL FOUR STEPS, NOT ON BASICS. The audit endpoint validates
+  // the WHOLE listing DTO, so a warm-up fired when step 2 completes cannot
+  // succeed — the seller has not reached delivery yet, and every call 400s on
+  // shippingMethods. It was not merely wasted: until runAudit learned to stay
+  // silent, each failure parked a red alert on the form naming a field two
+  // steps ahead of where the seller was standing.
+  //
+  // `allComplete` says the same thing but is declared below this effect, and
+  // naming it in the dep array would read it during render, inside its own
+  // temporal dead zone. stepComplete is already in scope.
+  const auditReady =
+    stepComplete.step1 &&
+    stepComplete.step2 &&
+    stepComplete.step3 &&
+    stepComplete.step4;
   const auditKickedRef = useRef(false);
   useEffect(() => {
-    if (!stepComplete.step2) {
+    if (!auditReady) {
       auditKickedRef.current = false;
       return;
     }
     if (auditKickedRef.current) return;
     auditKickedRef.current = true;
-    void runAudit();
+    void runAudit(true);
     // runAudit is redefined every render; depending on it would refire this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepComplete.step2]);
+  }, [auditReady]);
 
   const allComplete =
     stepComplete.step1 &&
@@ -2289,7 +2305,23 @@ export default function NewListingPage() {
   //   - they upload, remove, or reorder photos (vision audit)
   // The Preview button below just shows whatever's already in
   // auditResult so the modal opens instantly.
-  async function runAudit(): Promise<PreviewResult | null> {
+  /**
+   * @param silent Warm-up call, not a seller action — swallow failures.
+   *
+   * ⚠️ A BACKGROUND AUDIT MUST NEVER RAISE THE ERROR BANNER. This runs
+   * fire-and-forget the moment basics are complete, and the audit endpoint
+   * validates the WHOLE listing DTO — which cannot pass yet, because the
+   * seller is on step 2 and has not reached delivery. Without this flag the
+   * warm-up parked a red "nothing has been published. Try Preview again"
+   * alert at the top of the form, on a form nobody had submitted, naming a
+   * field two steps ahead of where they were standing. Observed live
+   * 2026-08-28 as "shippingMethods must contain at least 1 elements".
+   *
+   * The banner still exists and still matters: it was added because a failed
+   * Preview click did NOTHING visible, which was the terminal dead end on
+   * this form. It just belongs to the click, not to the warm-up.
+   */
+  async function runAudit(silent = false): Promise<PreviewResult | null> {
     if (auditing) return null;
     // Step 2 (basics) must be complete before there's anything
     // meaningful to audit — the moderator reads title + description.
@@ -2336,7 +2368,7 @@ export default function NewListingPage() {
       }
       return result;
     } catch (err) {
-      setAuditError(humaniseApiError(err));
+      if (!silent) setAuditError(humaniseApiError(err));
       return null;
     } finally {
       setAuditing(false);
@@ -2661,9 +2693,18 @@ export default function NewListingPage() {
   // there's nothing useful to moderate before the seller has typed
   // the description.
   useEffect(() => {
-    if (!stepComplete.step2) return;
+    // Same gate as the completion warm-up above: before every step is done
+    // this request can only 400.
+    if (
+      !stepComplete.step1 ||
+      !stepComplete.step2 ||
+      !stepComplete.step3 ||
+      !stepComplete.step4
+    ) {
+      return;
+    }
     const t = setTimeout(() => {
-      void runAudit();
+      void runAudit(true);
     }, 900);
     return () => clearTimeout(t);
     // We intentionally ONLY depend on `images` here, not on stepComplete
