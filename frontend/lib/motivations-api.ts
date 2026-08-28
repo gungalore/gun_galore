@@ -491,6 +491,16 @@ export interface DocumentNeed {
    * separate menu entries used to do for free.
    */
   minFilesNote?: string;
+  /**
+   * Offer the seller-consent flow on this row.
+   *
+   * ⚠️ SERVED, LIKE EVERYTHING ELSE ABOUT A ROW. True only on the private
+   * route; a dealer purchase uploads the dealer's invoice on this same row and
+   * has nobody to send a consent link to. The wizard must not test the source
+   * answer itself — it hardcodes no route value anywhere, which is why
+   * retiring the estate route cost no client change at all.
+   */
+  sellerConsent?: true;
 }
 
 /**

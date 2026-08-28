@@ -89,11 +89,23 @@ function build(
     },
     motivationMessage: {
       create: jest.fn(async (_a?: any): Promise<any> => ({})),
+      // Additive, for answerFollowUp: how many questions are still open once
+      // this one is answered.
+      count: jest.fn(async (_a?: any): Promise<number> => 0),
       // Empty history: no question is open, so every gap may be asked. The
       // dedupe test overrides this per case.
       findMany: jest.fn(async (_a?: any): Promise<any[]> => []),
     },
     adminAlert: { create: jest.fn(async (_a?: any): Promise<any> => ({})) },
+    // Additive, for the pack payload's "who are we waiting on" read. Default
+    // is no consent row at all, which is the ordinary case.
+    motivationSellerConsent: {
+      findUnique: jest.fn(async (_a?: any): Promise<any> => null),
+    },
+    // Additive, for answerFollowUp — the only path under test that pairs a
+    // message insert with the answers write. Runs the operations rather than
+    // simulating a transaction; each is already a jest.fn.
+    $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
   };
   const quota = {
     assertEnabled: jest.fn(async () => {
@@ -206,6 +218,10 @@ function build(
       { sheetFor: jest.fn(async () => null) } as never,
       // The 271 renderer — nothing in these tests opts into the form.
       { build: jest.fn(async () => ({ pdf: Buffer.from('%PDF-'), leftBlank: [] })) } as never,
+      // Section F comes off the seller's signed consent. Null here: no test in
+      // this file has a seller, and a stub that invented one would put a
+      // stranger's particulars into every rendered form.
+      { sectionF: jest.fn(async () => null) } as never,
       // Cover photographs. `find` returns null so no test depends on a file
       // being on disk, and `fetchAndStore` is stubbed so no test reaches
       // Wikimedia — a unit suite that makes an outbound request is a unit
@@ -1431,5 +1447,647 @@ describe('a document picked from the Document Centre', () => {
     // failure of OUR call does not unsay that.
     expect(row.extractionOk).toBe(true);
     expect(row.extractedFields).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// PROVENANCE — WHERE EACH PREFILLED ANSWER CAME FROM.
+//
+// The pure rules are covered in common/answer-provenance.spec.ts. What is
+// tested HERE is the wiring, because the two ways this feature fails are both
+// silent and neither is visible to that suite:
+//
+//  1. A write path forgets `answerProvenance: true` in its select. The read
+//     comes back undefined, parseProvenance turns it into {} by design, the
+//     write looks perfectly correct — and every earlier entry, MEMBER ones
+//     included, is discarded.
+//  2. saveAnswers stamps MEMBER on the payload's keys instead of the keys
+//     whose value actually changed. The wizard resends a whole step on every
+//     save, so the first bare Continue would flip that step to MEMBER — and
+//     MEMBER is absorbing, so nothing could ever prefill those fields again.
+//
+// Both compile. Both pass a suite that does not look for them.
+// ────────────────────────────────────────────────────────────────────
+
+describe('provenance', () => {
+  /** A vault licence the offer can actually take values off. */
+  const licence = (over: Record<string, unknown> = {}) => ({
+    id: 'cred-1',
+    kind: 'FIREARM_LICENCE',
+    title: 'My .308 licence',
+    detailsEncrypted: encryptJson({
+      make: 'CZ 550',
+      calibre: '.308 Winchester',
+      licence_number: '4009117823',
+    }),
+    expiresOn: new Date('2035-01-01T00:00:00Z'),
+    issuedOn: new Date('2025-01-01T00:00:00Z'),
+    confirmedAt: null,
+    extractionOk: true,
+    ...over,
+  });
+
+  const written = (prisma: any) =>
+    prisma.motivation.create.mock.calls[0][0].data.answerProvenance ?? {};
+  const updated = (prisma: any) =>
+    prisma.motivation.update.mock.calls[0][0].data.answerProvenance ?? {};
+
+  describe('create', () => {
+    it('attributes what the profile filled, in the profile own words', async () => {
+      const { svc, prisma } = build();
+      await svc.create('c1', MotivationLicenceType.S16_DEDICATED_SPORT);
+
+      const map = written(prisma);
+      const entries = Object.values(map) as any[];
+      expect(entries.length).toBeGreaterThan(0);
+      for (const e of entries) {
+        expect(e.source).toBe('PROFILE');
+        // Not a placeholder — the offer's own sentence, which is what the
+        // chip shows the member.
+        expect(typeof e.from).toBe('string');
+        expect(e.from.length).toBeGreaterThan(0);
+        expect(e.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      }
+    });
+
+    it('attributes a vault value to the document it came off, by id', async () => {
+      const { svc, prisma } = build();
+      prisma.credential.findMany.mockResolvedValueOnce([licence()]);
+      await svc.create('c1', MotivationLicenceType.S16_DEDICATED_SPORT);
+
+      const map = written(prisma);
+      expect(map.existing_firearm_1_make).toEqual({
+        source: 'VAULT',
+        sourceId: 'cred-1',
+        from: 'My .308 licence',
+        at: expect.any(String),
+      });
+      expect(map.existing_firearm_1_calibre.sourceId).toBe('cred-1');
+    });
+
+    it('stamps nothing for a value that never reached the database', async () => {
+      // sanitiseAnswers can drop a key even from a trusted offer. Provenance
+      // for a value that was not written puts a "From your Document Centre"
+      // chip on a blank field.
+      const { svc, prisma } = build();
+      prisma.credential.findMany.mockResolvedValueOnce([licence()]);
+      await svc.create('c1', MotivationLicenceType.S16_DEDICATED_SPORT);
+
+      const data = prisma.motivation.create.mock.calls[0][0].data;
+      const answers = decryptJson<Record<string, string>>(data.answersEncrypted);
+      for (const key of Object.keys(written(prisma))) {
+        expect(answers[key] ?? '').not.toBe('');
+      }
+    });
+
+    it('records nothing from the vault when the vault cannot be read', async () => {
+      // The fail-soft catch has hidden an untested feature in this file once
+      // already. A vault failure must cost the vault's provenance and nothing
+      // else — the profile's entries still stand, and create() still returns.
+      const { svc, prisma } = build();
+      prisma.credential.findMany.mockRejectedValueOnce(new Error('vault down'));
+      await expect(
+        svc.create('c1', MotivationLicenceType.S16_DEDICATED_SPORT),
+      ).resolves.toBeDefined();
+
+      const sources = (Object.values(written(prisma)) as any[]).map((e) => e.source);
+      expect(sources).not.toContain('VAULT');
+      expect(sources).toContain('PROFILE');
+    });
+  });
+
+  describe('saveAnswers', () => {
+    const draft = (answers: Record<string, string>, provenance: unknown) => ({
+      id: 'mo-1',
+      licenceType: MotivationLicenceType.S16_DEDICATED_SPORT,
+      status: MotivationStatus.DRAFT,
+      answersEncrypted: encryptJson(answers),
+      answerProvenance: provenance,
+    });
+
+    const prefilled = {
+      firearm_make: {
+        source: 'VAULT',
+        sourceId: 'cred-1',
+        from: 'My .308 licence',
+        at: '2026-08-01T00:00:00.000Z',
+      },
+      firearm_calibre: {
+        source: 'VAULT',
+        sourceId: 'cred-1',
+        from: 'My .308 licence',
+        at: '2026-08-01T00:00:00.000Z',
+      },
+    };
+
+    it('does NOT flip a step to MEMBER when nothing was actually edited', async () => {
+      // THE BUG THIS FEATURE WOULD OTHERWISE SHIP WITH. The wizard resends
+      // the whole step on every save. If MEMBER were stamped on the payload's
+      // keys, one bare Continue would claim the member typed values we filled
+      // in for them — and MEMBER is absorbing, so no later vault sync could
+      // ever fill those fields again.
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(
+        draft({ firearm_make: 'CZ 550', firearm_calibre: '.308 Winchester' }, prefilled),
+      );
+
+      await svc.saveAnswers('c1', 'mo-1', {
+        firearm_make: 'CZ 550',
+        firearm_calibre: '.308 Winchester',
+      });
+
+      const map = updated(prisma);
+      expect(map.firearm_make.source).toBe('VAULT');
+      expect(map.firearm_calibre.source).toBe('VAULT');
+      expect(map.firearm_make.sourceId).toBe('cred-1');
+    });
+
+    it('flips only the field whose value actually changed', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(
+        draft({ firearm_make: 'CZ 550', firearm_calibre: '.308 Winchester' }, prefilled),
+      );
+
+      await svc.saveAnswers('c1', 'mo-1', {
+        firearm_make: 'CZ 550',
+        firearm_calibre: '.308 Win',
+      });
+
+      const map = updated(prisma);
+      expect(map.firearm_calibre.source).toBe('MEMBER');
+      expect(map.firearm_make.source).toBe('VAULT');
+    });
+
+    it('treats clearing a prefilled value as the member decision', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(
+        draft({ firearm_make: 'CZ 550' }, prefilled),
+      );
+      await svc.saveAnswers('c1', 'mo-1', { firearm_make: '' });
+      expect(updated(prisma).firearm_make.source).toBe('MEMBER');
+    });
+
+    it('carries every earlier entry through a save that touched one field', async () => {
+      // Catches a missing `answerProvenance: true` in the select: the write
+      // would still look correct and would silently drop everything else.
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(
+        draft({ firearm_make: 'CZ 550', firearm_calibre: '.308 Winchester' }, prefilled),
+      );
+      await svc.saveAnswers('c1', 'mo-1', { firearm_make: 'Brno' });
+
+      expect(Object.keys(updated(prisma)).sort()).toEqual([
+        'firearm_calibre',
+        'firearm_make',
+      ]);
+    });
+
+    it('survives an application that predates the column', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(
+        draft({ firearm_make: 'CZ 550' }, null),
+      );
+      await expect(
+        svc.saveAnswers('c1', 'mo-1', { firearm_make: 'Brno' }),
+      ).resolves.toBeDefined();
+      expect(updated(prisma).firearm_make.source).toBe('MEMBER');
+    });
+  });
+
+  describe('the later automatic passes', () => {
+    const row = (answers: Record<string, string>, provenance: unknown) => ({
+      id: 'mo-1',
+      licenceType: MotivationLicenceType.S16_DEDICATED_SPORT,
+      status: MotivationStatus.DRAFT,
+      answersEncrypted: encryptJson(answers),
+      answerProvenance: provenance,
+    });
+
+    it('useLicenceCentre names the document each value came off', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(row({}, null));
+      prisma.credential.findMany.mockResolvedValueOnce([licence()]);
+
+      await svc.useLicenceCentre('c1', 'mo-1');
+
+      const map = updated(prisma);
+      expect(map.existing_firearm_1_make).toMatchObject({
+        source: 'VAULT',
+        sourceId: 'cred-1',
+        from: 'My .308 licence',
+      });
+    });
+
+    it('useProfile records PROFILE and never a sourceId', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(row({}, null));
+
+      await svc.useProfile('c1', 'mo-1');
+
+      const entries = Object.values(updated(prisma)) as any[];
+      expect(entries.length).toBeGreaterThan(0);
+      for (const e of entries) {
+        expect(e.source).toBe('PROFILE');
+        expect('sourceId' in e).toBe(false);
+      }
+    });
+
+    it('applyExtraction records READ', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(row({}, null));
+
+      await svc.applyExtraction('c1', 'mo-1', { firearm_make: 'Marlin' });
+
+      expect(updated(prisma).firearm_make).toMatchObject({ source: 'READ' });
+    });
+
+    it('CANNOT overwrite a field the member corrected by hand', async () => {
+      // The whole point. A member fixes a make the extractor misread; a later
+      // vault sync must not put the misread value back.
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(
+        row(
+          { existing_firearm_1_make: 'Brno' },
+          {
+            existing_firearm_1_make: {
+              source: 'MEMBER',
+              from: 'You entered this',
+              at: '2026-08-02T00:00:00.000Z',
+            },
+          },
+        ),
+      );
+      prisma.credential.findMany.mockResolvedValueOnce([licence()]);
+
+      await svc.useLicenceCentre('c1', 'mo-1');
+
+      expect(updated(prisma).existing_firearm_1_make).toEqual({
+        source: 'MEMBER',
+        from: 'You entered this',
+        at: '2026-08-02T00:00:00.000Z',
+      });
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// EVERY READ-THEN-WRITE PATH MUST SELECT THE COLUMN IT IS ABOUT TO WRITE.
+//
+// ⚠️ THIS IS A SHAPE ASSERTION ON PURPOSE, and it is the only kind that can
+// catch this. Omitting `answerProvenance` from a select is a data-destroying
+// bug that is invisible everywhere else: the read comes back undefined,
+// parseProvenance turns undefined into {} by design, the write succeeds, and
+// every earlier entry — MEMBER stamps included — is silently discarded. It
+// cannot be caught behaviourally here because the Prisma mock returns whatever
+// the test hands it regardless of the select, so a mutation removing the line
+// leaves every other test in this file green. Verified by doing exactly that.
+//
+// If a seventh writer of answersEncrypted is added, add it here too.
+// ────────────────────────────────────────────────────────────────────
+
+describe('provenance is read before it is written', () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: 'mo-1',
+    licenceType: MotivationLicenceType.S16_DEDICATED_SPORT,
+    status: MotivationStatus.DRAFT,
+    answersEncrypted: encryptJson({}),
+    answerProvenance: null,
+    ...over,
+  });
+
+  const selectOf = (prisma: any) =>
+    prisma.motivation.findFirst.mock.calls[0][0].select;
+
+  it('saveAnswers selects it', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(row());
+    await svc.saveAnswers('c1', 'mo-1', { firearm_make: 'CZ' });
+    expect(selectOf(prisma).answerProvenance).toBe(true);
+  });
+
+  it('useLicenceCentre selects it', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(row());
+    await svc.useLicenceCentre('c1', 'mo-1');
+    expect(selectOf(prisma).answerProvenance).toBe(true);
+  });
+
+  it('useProfile selects it', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(row());
+    await svc.useProfile('c1', 'mo-1');
+    expect(selectOf(prisma).answerProvenance).toBe(true);
+  });
+
+  it('applyExtraction selects it', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(row());
+    await svc.applyExtraction('c1', 'mo-1', { firearm_make: 'Marlin' });
+    expect(selectOf(prisma).answerProvenance).toBe(true);
+  });
+
+  it('answerFollowUp selects it', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(
+      row({ messages: [{ id: 'msg-1', fieldKey: 'firearm_make' }] }),
+    );
+    await svc.answerFollowUp('c1', 'mo-1', 'msg-1', 'A Marlin, .45-70.');
+    expect(selectOf(prisma).answerProvenance).toBe(true);
+  });
+
+  it('answerFollowUp marks the field the applicant wrote into as theirs', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(
+      row({ messages: [{ id: 'msg-1', fieldKey: 'firearm_make' }] }),
+    );
+    await svc.answerFollowUp('c1', 'mo-1', 'msg-1', 'A Marlin, .45-70.');
+
+    // The write rides inside $transaction, so it is the transaction's second
+    // operation rather than a bare update call.
+    const ops = prisma.$transaction.mock.calls[0][0];
+    const data = prisma.motivation.update.mock.calls[0][0].data;
+    expect(ops).toHaveLength(2);
+    expect(data.answerProvenance.firearm_make.source).toBe('MEMBER');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// B5 — GET :id/pack, and the one place that decides who we are waiting on.
+//
+// The failure this suite exists to prevent is divergence. checklist() and
+// pack() render the same rows on the same screen; if they compute
+// "waiting on someone" separately, one says "waiting on Piet" and the other
+// says "not started" about the same line, and both look correct in isolation.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the pack payload', () => {
+  const S16 = MotivationLicenceType.S16_DEDICATED_SPORT;
+
+  const motivation = (over: Record<string, unknown> = {}) => ({
+    id: 'mo-1',
+    referenceNumber: 'MO000042',
+    licenceType: S16,
+    status: MotivationStatus.DRAFT,
+    answersEncrypted: encryptJson({ firearm_make: 'Marlin' }),
+    answerProvenance: {
+      firearm_make: {
+        source: 'VAULT',
+        sourceId: 'cred-1',
+        from: 'My .308 licence',
+        at: '2026-08-28T00:00:00.000Z',
+      },
+    },
+    uploads: [],
+    ...over,
+  });
+
+  const items = (checklist: any) =>
+    checklist.sections.flatMap((s: any) => s.items);
+  const rowFor = (checklist: any, key: string) =>
+    items(checklist).find((i: any) => i.key === key);
+
+  describe('who we are waiting on', () => {
+    it('names the seller on the row his consent closes', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(motivation());
+      prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce({
+        status: 'INVITED',
+        invitedName: 'Piet Malan',
+        openedAt: null,
+      });
+
+      const out = await svc.pack('c1', 'mo-1');
+      const row = rowFor(out.checklist, 'upload_firearm_source_proof');
+      expect(row.state).toBe('waiting-on-someone');
+      expect(row.closer).toContain('Piet Malan');
+      // And it tells the applicant they have nothing to upload themselves.
+      expect(row.closer).toMatch(/you upload nothing/i);
+    });
+
+    it('says he has it open, once he has opened it', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(motivation());
+      prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce({
+        status: 'INVITED',
+        invitedName: 'Piet Malan',
+        openedAt: new Date('2026-08-28T00:00:00Z'),
+      });
+
+      const out = await svc.pack('c1', 'mo-1');
+      expect(rowFor(out.checklist, 'upload_firearm_source_proof').closer).toMatch(
+        /opened the link/i,
+      );
+    });
+
+    it('names the other route when he declines, rather than waiting for ever', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(motivation());
+      prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce({
+        status: 'DECLINED',
+        invitedName: 'Piet Malan',
+        openedAt: new Date('2026-08-28T00:00:00Z'),
+      });
+
+      const out = await svc.pack('c1', 'mo-1');
+      const row = rowFor(out.checklist, 'upload_firearm_source_proof');
+      expect(row.closer).toMatch(/declined/i);
+      expect(row.closer).toMatch(/upload a certified copy/i);
+    });
+
+    it('leaves the row plainly not started when nobody has been asked', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(motivation());
+      prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce(null);
+
+      const out = await svc.pack('c1', 'mo-1');
+      expect(rowFor(out.checklist, 'upload_firearm_source_proof').state).toBe(
+        'not-started',
+      );
+    });
+
+    it('still returns a checklist when the consent row cannot be read', async () => {
+      // A status we cannot read costs the sentence, not the screen.
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(motivation());
+      prisma.motivationSellerConsent.findUnique.mockRejectedValueOnce(
+        new Error('column missing'),
+      );
+
+      const out = await svc.pack('c1', 'mo-1');
+      expect(items(out.checklist).length).toBeGreaterThan(0);
+      expect(rowFor(out.checklist, 'upload_firearm_source_proof').state).toBe(
+        'not-started',
+      );
+    });
+
+    it('only ever names rows that actually exist on the checklist', async () => {
+      // ⚠️ THE GUARD. A sentence keyed to a row the checklist does not build
+      // attaches to nothing and looks alive while doing nothing — which is
+      // exactly what a character-reference entry did before it was removed
+      // (CHARACTER_REFERENCE is in no RECOMMENDED list, so there is no row).
+      // Every key waitingOn can emit must match a real one.
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(motivation());
+      prisma.motivationSellerConsent.findUnique.mockResolvedValue({
+        status: 'INVITED',
+        invitedName: 'Piet Malan',
+        openedAt: null,
+      });
+
+      const out = await svc.pack('c1', 'mo-1');
+      const keys = new Set(items(out.checklist).map((i: any) => i.key));
+      const waiting = items(out.checklist).filter(
+        (i: any) => i.state === 'waiting-on-someone',
+      );
+      expect(waiting.length).toBeGreaterThan(0);
+      for (const item of waiting) expect(keys.has(item.key)).toBe(true);
+    });
+  });
+
+  describe('the payload itself', () => {
+    it('returns the checklist, the provenance and the prefill count together', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(motivation());
+      prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce(null);
+
+      const out = await svc.pack('c1', 'mo-1');
+      expect(out.referenceNumber).toBe('MO000042');
+      expect(out.checklist.sections).toHaveLength(2);
+      expect(out.provenance.firearm_make.source).toBe('VAULT');
+      expect(out.prefill).toEqual({ filled: 1, sources: ['VAULT'] });
+    });
+
+    it('does not count a prefilled answer the member has since cleared', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(
+        motivation({ answersEncrypted: encryptJson({ firearm_make: '' }) }),
+      );
+      prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce(null);
+
+      const out = await svc.pack('c1', 'mo-1');
+      expect(out.prefill.filled).toBe(0);
+    });
+
+    it('carries no answer values in the provenance', async () => {
+      // Provenance is a source name, a row id, a timestamp and the member's
+      // own title for their own document. Never the answer.
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(motivation());
+      prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce(null);
+
+      const out = await svc.pack('c1', 'mo-1');
+      expect(JSON.stringify(out.provenance)).not.toContain('Marlin');
+      expect(Object.keys(out.provenance.firearm_make).sort()).toEqual([
+        'at',
+        'from',
+        'source',
+        'sourceId',
+      ]);
+    });
+
+    it('reads an application that predates provenance without complaint', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(
+        motivation({ answerProvenance: null }),
+      );
+      prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce(null);
+
+      const out = await svc.pack('c1', 'mo-1');
+      expect(out.provenance).toEqual({});
+      expect(out.prefill).toEqual({ filled: 0, sources: [] });
+    });
+
+    it('refuses somebody else’s application', async () => {
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValueOnce(null);
+      await expect(svc.pack('c1', 'mo-1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  it('agrees with GET :id/checklist about the same row', async () => {
+    // ⚠️ THE DIVERGENCE TEST. These two render the same rows on the same
+    // screen. If they ever compute "waiting on someone" separately, one says
+    // "waiting on Piet" and the other says "not started" about the same line,
+    // and both look correct on their own.
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValue(motivation());
+    prisma.motivationSellerConsent.findUnique.mockResolvedValue({
+      status: 'INVITED',
+      invitedName: 'Piet Malan',
+      openedAt: null,
+    });
+
+    const fromPack = await svc.pack('c1', 'mo-1');
+    const fromChecklist = await svc.checklist('c1', 'mo-1');
+
+    expect(fromChecklist).toEqual(fromPack.checklist);
+  });
+});
+
+describe('the pack payload carries the section meter', () => {
+  const S16 = MotivationLicenceType.S16_DEDICATED_SPORT;
+
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: 'mo-1',
+    referenceNumber: 'MO000042',
+    licenceType: S16,
+    status: MotivationStatus.DRAFT,
+    answersEncrypted: encryptJson({
+      firearm_make: 'Marlin',
+      existing_firearm_1_make: 'CZ 550',
+      existing_firearm_1_calibre: '.308 Winchester',
+    }),
+    answerProvenance: null,
+    uploads: [],
+    ...over,
+  });
+
+  it('returns per-section percentages beside the checklist', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValue(row());
+    prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce(null);
+
+    const out = await svc.pack('c1', 'mo-1');
+    expect(out.coverage.sections.length).toBeGreaterThan(3);
+    expect(out.coverage.percent).toBeGreaterThan(0);
+    // Counted in questions, not in the 144 boxes of the form.
+    expect(out.coverage.applicable).toBeLessThan(100);
+    const owned = out.coverage.sections.find((s: any) => s.id === 'G2')!;
+    expect(owned.note).toBe('1 firearm listed.');
+  });
+
+  it('reads the seller once and tells the checklist and the meter the same thing', async () => {
+    // ⚠️ ONE READ, TWO CONSUMERS. If the row and the section panel decided
+    // separately, one could say "waiting on Piet" while the other scored him.
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValue(row());
+    prisma.motivationSellerConsent.findUnique.mockResolvedValue({
+      status: 'INVITED',
+      invitedName: 'Piet Malan',
+      openedAt: null,
+    });
+
+    const out = await svc.pack('c1', 'mo-1');
+    const item = out.checklist.sections
+      .flatMap((s: any) => s.items)
+      .find((i: any) => i.key === 'upload_firearm_source_proof');
+    const f = out.coverage.sections.find((s: any) => s.id === 'F')!;
+
+    expect(item.state).toBe('waiting-on-someone');
+    expect(item.closer).toContain('Piet Malan');
+    expect(f.status).toBe('theirs');
+    expect(f.note).toContain('Piet Malan');
+    // ⚠️ AND HIS SECTION IS NOT SCORED AGAINST THE APPLICANT.
+    expect(f.percent).toBeNull();
+    expect(prisma.motivationSellerConsent.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the meter out of nobody’s reach when there is no seller', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValue(row());
+    prisma.motivationSellerConsent.findUnique.mockResolvedValueOnce(null);
+
+    const out = await svc.pack('c1', 'mo-1');
+    expect(out.coverage.sections.find((s: any) => s.id === 'F')).toBeUndefined();
   });
 });

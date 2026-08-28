@@ -1,5 +1,6 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
+  allowedValues,
   factPackFields,
   fieldsFor,
   isVisible,
@@ -788,12 +789,14 @@ describe('where the firearm is coming from', () => {
     const f = fieldsFor(MotivationLicenceType.S13_SELF_DEFENCE).find(
       (x) => x.key === FIREARM_SOURCE_KEY,
     )!;
-    expect(f.choices).toEqual([
-      SOURCE_DEALER,
-      SOURCE_PRIVATE,
-      SOURCE_ESTATE,
-      SOURCE_UNDECIDED,
-    ]);
+    // ⚠️ THREE OFFERED, FOUR ACCEPTED. Operator, 2026-08-28: "lets keep the
+    // options between Individual and dealer for now." The estate route is
+    // RETIRED, not deleted — see retiredChoices, and the tests below that
+    // prove an application which already chose it still saves.
+    expect(f.choices).toEqual([SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_UNDECIDED]);
+    expect(f.choices).not.toContain(SOURCE_ESTATE);
+    expect(f.retiredChoices).toEqual([SOURCE_ESTATE]);
+    expect(allowedValues(f)).toContain(SOURCE_ESTATE);
     // ⚠️ NOT REQUIRED. Plenty of applications are written before the firearm
     // is found — the motivation is what the dealer or seller gets shown.
     // Forcing a choice makes somebody guess, and a guess here silently

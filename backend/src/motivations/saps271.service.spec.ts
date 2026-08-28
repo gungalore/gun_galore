@@ -160,7 +160,9 @@ describe('a filled SAPS 271', () => {
 
   it('derives date of birth and age from the ID rather than asking', () => {
     const v = map();
-    expect(v.text.g_date_of_birth).toBe('01011980');
+    // ⚠️ YYYYMMDD. The form's date rows are FOUR cells, separator, two,
+    // separator, two — dddd-dd-dd — so this printed 0101-19-80 for years.
+    expect(v.text.g_date_of_birth).toBe('19800101');
     expect(v.text.g_age).toBe('46');
     expect(v.text.g_id_number).toBe('8001015009087');
   });
@@ -194,11 +196,16 @@ describe('a filled SAPS 271', () => {
   });
 
   it('converts a date into the digits the cells expect', () => {
+    // ⚠️ YYYYMMDD, AND IT USED TO BE DDMMYYYY. Every date row on this form is
+    // laid out dddd-dd-dd — four cells, the form's own separator, two, another
+    // separator, two — so a day-first string printed 1503-20-24 and read as a
+    // different date entirely. Operator, 2026-08-28: "G. Privat person - Date
+    // of birth is wrong."
     expect(map({ competency_issued: '2024-03-15' }).text.g_competency_issued).toBe(
-      '15032024',
+      '20240315',
     );
     expect(map({ competency_issued: '15/03/2024' }).text.g_competency_issued).toBe(
-      '15032024',
+      '20240315',
     );
     // Anything it cannot read is left alone rather than written into the wrong
     // cells, where it would read as a different date entirely.

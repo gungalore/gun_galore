@@ -24,6 +24,15 @@ import {
   decryptJson,
   tryDecryptText,
 } from '../common/blob-crypto';
+import {
+  ProvenanceMap,
+  automaticCount,
+  automaticSources,
+  changedKeys,
+  markMember,
+  parseProvenance,
+  stamp,
+} from '../common/answer-provenance';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { CipSheetService } from './cip-sheet.service';
 import { asLayout } from './motivation-pdf-layouts';
@@ -63,6 +72,8 @@ import {
   annexureByKind,
   type AnnexureEntry,
 } from './motivation-checklist';
+import { saps271Coverage } from './saps271-coverage';
+import { MotivationSellerConsentService } from './motivation-seller-consent.service';
 import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { buildCompletedStatement } from './motivation-character-statement';
 import { WITNESS_FORM_VERSION } from './motivation-witness-form';
@@ -385,6 +396,10 @@ export class MotivationsService {
     private readonly extract: MotivationExtractService,
     private readonly cip: CipSheetService,
     private readonly saps271: Saps271Service,
+    // ⚠️ NO CYCLE: the consent service depends on Prisma, SMS, storage,
+    // tokens and notifications, and on nothing in here. Injected so section F
+    // is read through the one place that knows how to decrypt it.
+    private readonly sellerConsent: MotivationSellerConsentService,
     private readonly firearmImages: FirearmImageService,
     private readonly witnesses: MotivationWitnessService,
     // @Global — see the note in motivations.module.ts. Importing
@@ -532,9 +547,16 @@ export class MotivationsService {
     // would be worst: a member who cannot reach their vault would be unable to
     // START an application at all, which is a far heavier failure than opening
     // one with empty firearm rows they can fill by hand.
+    //
+    // ⚠️ THE OFFER IS CAPTURED WHOLE, not `.values`. `items` is the only place
+    // credentialOffer says WHICH vault document each value came from, and
+    // chaining `.values` off the call — which is what this did — discarded it
+    // at the call site. The empty default has to live in the same catch as the
+    // values default or a vault failure desyncs the two.
     let vaultValues: Record<string, string> = {};
+    let vaultItems: { key: string; from: string; credentialId: string }[] = [];
     try {
-      vaultValues = credentialOffer(
+      const vaultOffer = credentialOffer(
         licenceType,
         // ⚠️ includeUnconfirmed, AND WITHOUT IT THIS FILLS NOTHING. The default
         // is confirmed-only, and the operator's vault holds five firearm
@@ -549,7 +571,9 @@ export class MotivationsService {
         // — it reads Credential.expiresOn, which this path never writes.
         await this.credentialsFor(user.id, { includeUnconfirmed: true }),
         { ...prefill.values, ...seed },
-      ).values;
+      );
+      vaultValues = vaultOffer.values;
+      vaultItems = vaultOffer.items;
     } catch (err) {
       this.logger.warn(
         `Motivation create: Licence Centre prefill skipped — ${(err as Error).message}`,
@@ -562,6 +586,35 @@ export class MotivationsService {
       ...seed,
     });
 
+    // ── where every one of those values came from ──────────────────
+    //
+    // ⚠️ STAMPED IN THE SAME PRECEDENCE ORDER AS THE VALUES, so the last
+    // writer of a value is also the last writer of its provenance. Reversing
+    // the order here would put a "From your profile" chip on a value the vault
+    // supplied.
+    //
+    // ⚠️ AND ONLY FOR KEYS THAT SURVIVED sanitiseAnswers. It can reject a key
+    // even from a trusted offer, and a provenance entry for a value that was
+    // never written is a chip on an empty field.
+    const provenance = this.stampOffers(
+      {},
+      seeded,
+      prefill.from,
+      vaultItems,
+      // The renewal path seeds from the licence being renewed. We know it came
+      // out of the Licence Centre; we do not get told which credential, so the
+      // entry carries a source and no id. Better than no entry at all, which
+      // would understate the count for the flow that starts best-informed.
+      seed,
+    );
+
+    if (Object.keys(seeded).length) {
+      this.logger.log(
+        `Motivation create: prefilled ${Object.keys(seeded).length} field(s) — ` +
+          `${Object.keys(provenance).length} attributed`,
+      );
+    }
+
     try {
       return await this.prisma.motivation.create({
         data: {
@@ -569,6 +622,7 @@ export class MotivationsService {
           ...(Object.keys(seeded).length
             ? {
                 answersEncrypted: encryptJson(seeded),
+                answerProvenance: provenance as unknown as object,
                 profileConsentAt: new Date(),
               }
             : {}),
@@ -728,7 +782,13 @@ export class MotivationsService {
 
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
-      select: { id: true, licenceType: true, status: true, answersEncrypted: true },
+      select: {
+        id: true,
+        licenceType: true,
+        status: true,
+        answersEncrypted: true,
+        answerProvenance: true,
+      },
     });
     if (!row) throw new NotFoundException('Motivation not found');
     if (!EDITABLE.includes(row.status)) {
@@ -741,13 +801,31 @@ export class MotivationsService {
       row.licenceType,
       patch,
     );
-    const merged = { ...this.readAnswers(row.answersEncrypted), ...clean };
+    // ⚠️ THE PREVIOUS ANSWERS ARE HELD, NOT INLINED INTO THE SPREAD. The next
+    // three lines are the whole of "MEMBER always wins" and they need
+    // something to compare against.
+    const before = this.readAnswers(row.answersEncrypted);
+    const merged = { ...before, ...clean };
+
+    // ⚠️ changedKeys, NOT Object.keys(clean). THIS IS THE BUG THIS FEATURE
+    // WOULD OTHERWISE SHIP WITH. The wizard sends a whole step back on every
+    // save, so stamping the payload's keys would flip every prefilled field on
+    // the step to MEMBER the first time somebody pressed Continue without
+    // touching anything — silently, on a write that looks perfectly correct.
+    // And MEMBER is absorbing: from that moment no vault re-sync or profile
+    // re-consent could ever fill those fields again. Only a value that
+    // actually differs is the member's doing.
+    const provenance = markMember(
+      parseProvenance(row.answerProvenance),
+      changedKeys(before, merged),
+    );
 
     await this.prisma.motivation.update({
       where: { id: row.id },
       data: {
         answersEncrypted: encryptJson(merged),
         answersSchemaVersion: FIELD_REGISTRY_VERSION,
+        answerProvenance: provenance as unknown as object,
       },
     });
 
@@ -1911,6 +1989,7 @@ export class MotivationsService {
         licenceType: true,
         status: true,
         answersEncrypted: true,
+        answerProvenance: true,
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -1943,11 +2022,20 @@ export class MotivationsService {
     const { answers: clean } = sanitiseAnswers(row.licenceType, offer.values);
     const merged = { ...answers, ...clean };
 
+    // offer.items is where credentialOffer says WHICH document each value came
+    // from. It has always been computed here and never read.
+    const provenance = this.stampVault(
+      parseProvenance(row.answerProvenance),
+      clean,
+      offer.items,
+    );
+
     await this.prisma.motivation.update({
       where: { id: row.id },
       data: {
         answersEncrypted: encryptJson(merged),
         answersSchemaVersion: FIELD_REGISTRY_VERSION,
+        answerProvenance: provenance as unknown as object,
       },
     });
 
@@ -2013,6 +2101,7 @@ export class MotivationsService {
         licenceType: true,
         status: true,
         answersEncrypted: true,
+        answerProvenance: true,
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -2032,11 +2121,21 @@ export class MotivationsService {
     const { answers: clean } = sanitiseAnswers(row.licenceType, offer.values);
     const merged = { ...answers, ...clean };
 
+    // offer.from is the plain-English source per field — "your account name",
+    // "the ID number from your identity check". Computed here since the offer
+    // was written and, until now, read only by the preview endpoint.
+    const provenance = this.stampProfile(
+      parseProvenance(row.answerProvenance),
+      clean,
+      offer.from,
+    );
+
     await this.prisma.motivation.update({
       where: { id: row.id },
       data: {
         answersEncrypted: encryptJson(merged),
         answersSchemaVersion: FIELD_REGISTRY_VERSION,
+        answerProvenance: provenance as unknown as object,
         profileConsentAt: new Date(),
       },
     });
@@ -2360,6 +2459,7 @@ export class MotivationsService {
         licenceType: true,
         status: true,
         answersEncrypted: true,
+        answerProvenance: true,
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -2377,11 +2477,28 @@ export class MotivationsService {
     const { answers: clean } = sanitiseAnswers(row.licenceType, fresh);
     const merged = { ...answers, ...clean };
 
+    // READ: these values came off a document uploaded to THIS application.
+    //
+    // ⚠️ NO sourceId YET, AND THAT IS A KNOWN GAP RATHER THAN AN OVERSIGHT.
+    // The route (`POST :id/uploads/apply`) reuses SaveAnswersDto and carries no
+    // uploadId — not in the DTO, not in the frontend caller. Wiring one is a
+    // DTO plus frontend change, which belongs with the screen that renders the
+    // chip. Until then the entry is honest about the source and silent about
+    // which document, which beats inventing an id.
+    let provenance = parseProvenance(row.answerProvenance);
+    for (const key of Object.keys(clean)) {
+      provenance = stamp(provenance, [key], {
+        source: 'READ',
+        from: 'a document you uploaded',
+      });
+    }
+
     await this.prisma.motivation.update({
       where: { id: row.id },
       data: {
         answersEncrypted: encryptJson(merged),
         answersSchemaVersion: FIELD_REGISTRY_VERSION,
+        answerProvenance: provenance as unknown as object,
       },
     });
 
@@ -2640,6 +2757,7 @@ export class MotivationsService {
         licenceType: true,
         status: true,
         answersEncrypted: true,
+        answerProvenance: true,
         messages: {
           where: { id: messageId, role: 'assistant' },
           select: { id: true, fieldKey: true },
@@ -2659,6 +2777,7 @@ export class MotivationsService {
 
     const answers = this.readAnswers(row.answersEncrypted);
     let merged = answers;
+    let provenance = parseProvenance(row.answerProvenance);
 
     if (question.fieldKey) {
       const field = fieldByKey(row.licenceType, question.fieldKey);
@@ -2672,6 +2791,14 @@ export class MotivationsService {
           [question.fieldKey]: combined,
         });
         merged = { ...answers, ...clean };
+
+        // ⚠️ MEMBER FOR THE WHOLE FIELD, even though the value is now part
+        // ours and part theirs. They typed the sentence that changed it, and
+        // MEMBER is absorbing by design: a field somebody has written into in
+        // their own words is not one we may quietly refill later.
+        if (question.fieldKey in clean) {
+          provenance = markMember(provenance, [question.fieldKey]);
+        }
       }
     }
 
@@ -2689,6 +2816,7 @@ export class MotivationsService {
         data: {
           answersEncrypted: encryptJson(merged),
           answersSchemaVersion: FIELD_REGISTRY_VERSION,
+          answerProvenance: provenance as unknown as object,
           // Back to a state that can generate. The gate moved it to
           // NEEDS_MORE_INFO; answering is what moves it back.
           ...(row.status === MotivationStatus.NEEDS_MORE_INFO
@@ -4324,6 +4452,7 @@ export class MotivationsService {
         referenceNumber: true,
         licenceType: true,
         answersEncrypted: true,
+        uploads: { select: { kind: true } },
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
@@ -4341,11 +4470,37 @@ export class MotivationsService {
     });
 
     try {
+      // ⚠️ THE LETTER, NOT A GUESS AT IT. Items 68.1 and 69.1 are answered by
+      // citing the photographs of the safe, so the citation has to carry the
+      // letter this pack's index actually gives them — which moves with what
+      // else was uploaded. annexureByKind rather than a find() over the
+      // entries, because the safe kinds collapse onto one letter and a lookup
+      // by member kind misses every member but the group's representative.
+      const safeAnnexureLetter = annexureByKind(
+        buildAnnexures((row.uploads ?? []).map((u) => u.kind)),
+      ).get(MotivationUploadKind.SAFE_PHOTOGRAPHS)?.letter;
+
+      // ⚠️ SECTION F, AT LAST. Twenty-two boxes were mapped, tested and
+      // UNREACHABLE: this call never passed a seller, so the current owner's
+      // half of the form went to every DFO blank while the coverage panel
+      // told the applicant it was done. Operator, 2026-08-28: "F should be
+      // filled, type A."
+      //
+      // ⚠️ NULL ON EVERY ROUTE BUT A SIGNED PRIVATE SALE, and that is the
+      // point: sectionF() returns nothing until the seller has actually
+      // completed and signed, and saps271-map refuses to fill the block
+      // unless the applicant said the route was private. Two independent
+      // gates, because printing one person's particulars under another
+      // person's declaration is the failure this section can produce.
+      const seller = (await this.sellerConsent.sectionF(row.id)) ?? undefined;
+
       const { pdf, leftBlank } = await this.saps271.build({
         licenceType: row.licenceType,
         answers,
         email: account?.email ?? undefined,
         motivationReference: row.referenceNumber,
+        safeAnnexureLetter,
+        seller,
       });
       return {
         pdf,
@@ -4373,6 +4528,7 @@ export class MotivationsService {
     const row = await this.prisma.motivation.findFirst({
       where: { id, userId: user.id },
       select: {
+        id: true,
         licenceType: true,
         status: true,
         uploads: { select: { kind: true } },
@@ -4384,7 +4540,76 @@ export class MotivationsService {
       row.licenceType,
       (row.uploads ?? []).map((u) => u.kind),
       row.status === MotivationStatus.COMPLETED,
+      { waitingOn: this.waitingOn(await this.sellerState(row.id)) },
     );
+  }
+
+  /**
+   * THE WHOLE LEFT COLUMN, IN ONE CALL.
+   *
+   * The screen used to assemble itself from several endpoints — the checklist
+   * here, the offers there, the answers somewhere else — which is how two
+   * parts of one page end up disagreeing about the same row while both are
+   * "correct". This is one read, one answer.
+   *
+   * ⚠️ THE SAME waitingOn() AS checklist(), NOT A SECOND COPY. If these two
+   * ever compute it differently, the row that says "waiting on Piet" on one
+   * screen says "not started" on the next.
+   *
+   * ⚠️ NO ANSWER VALUES IN THE PROVENANCE. It carries a source name, a row id,
+   * a timestamp and the member's own title for their own document — checked
+   * by parseProvenance, which drops anything else. The answers themselves are
+   * returned by findOne, which is where they belong and where they are already
+   * ownership-scoped.
+   */
+  async pack(clerkId: string, id: string) {
+    await this.quota.assertEnabled();
+    const user = await this.requireUser(clerkId);
+
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        referenceNumber: true,
+        licenceType: true,
+        status: true,
+        answersEncrypted: true,
+        answerProvenance: true,
+        uploads: { select: { kind: true } },
+      },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    const answers = this.readAnswers(row.answersEncrypted);
+    const provenance = parseProvenance(row.answerProvenance);
+    const seller = await this.sellerState(row.id);
+
+    return {
+      id: row.id,
+      referenceNumber: row.referenceNumber,
+      licenceType: row.licenceType,
+      status: row.status,
+      checklist: buildChecklist(
+        row.licenceType,
+        (row.uploads ?? []).map((u) => u.kind),
+        row.status === MotivationStatus.COMPLETED,
+        { waitingOn: this.waitingOn(seller) },
+      ),
+      // Section-by-section completeness, counted in QUESTIONS rather than in
+      // form boxes — saps271-coverage.ts explains why the unit matters.
+      coverage: saps271Coverage(row.licenceType, answers, {
+        seller: { status: seller.status, name: seller.name },
+      }),
+      provenance,
+      prefill: {
+        // ⚠️ COUNTED AGAINST THE ANSWERS, not against the map. A field we
+        // filled and the member then cleared is not something we filled for
+        // them, and a banner claiming credit for work that is not on the
+        // screen is worse than no banner.
+        filled: automaticCount(provenance, answers),
+        sources: automaticSources(provenance),
+      },
+    };
   }
 
   /**
@@ -4584,6 +4809,175 @@ export class MotivationsService {
     });
     if (claim.count === 0) throw new NotFoundException('Document not found');
     return { kind };
+  }
+
+  // ────────────────────────────────────────────────────────────────────
+  // WHO WE ARE WAITING ON.
+  //
+  // ⚠️ ONE PLACE, BECAUSE TWO WOULD DIVERGE. buildChecklist is pure and cannot
+  // reach a witness or a seller's consent, so the status has to be injected —
+  // and both callers (checklist() and pack()) must inject the SAME thing or
+  // the two endpoints will disagree about the same row on the same screen.
+  // This method is that one place; neither caller computes it itself.
+  //
+  // A row nobody is waiting on is simply absent from the map. Absence is the
+  // ordinary case and reads as "not started", which is correct.
+  /**
+   * The seller's half of a private sale, as a plain status.
+   *
+   * ⚠️ READ ONCE, USED TWICE. Both the checklist row and the 271 section panel
+   * need to know where he stands. Reading it separately for each would be two
+   * queries and, worse, two chances to interpret one status differently on one
+   * screen.
+   *
+   * Read straight off the row rather than through the consent service: this
+   * needs one nullable status and none of that service's behaviour, and
+   * injecting it here would mean touching the module wiring and every
+   * construction of MotivationsService for a single string.
+   */
+  private async sellerState(motivationId: string): Promise<{
+    status: 'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED';
+    name?: string;
+    openedAt: Date | null;
+  }> {
+    try {
+      const consent = await this.prisma.motivationSellerConsent.findUnique({
+        where: { motivationId },
+        select: { status: true, invitedName: true, openedAt: true },
+      });
+      if (!consent) return { status: 'NONE', openedAt: null };
+      return {
+        status: consent.status as 'INVITED' | 'COMPLETED' | 'DECLINED',
+        name: (consent.invitedName ?? '').trim() || undefined,
+        openedAt: consent.openedAt,
+      };
+    } catch (err) {
+      // A status we cannot read costs the sentence, not the screen.
+      this.logger.warn(
+        `Motivation ${motivationId}: seller consent status unreadable — ${(err as Error).message}`,
+      );
+      return { status: 'NONE', openedAt: null };
+    }
+  }
+
+  private waitingOn(seller: {
+    status: string;
+    name?: string;
+    openedAt: Date | null;
+  }): Record<string, string> {
+    const out: Record<string, string> = {};
+    const who = seller.name || 'the seller';
+
+    if (seller.status === 'INVITED') {
+      out.upload_firearm_source_proof = seller.openedAt
+        ? `${who} has opened the link and is busy with it. Nothing for you to do.`
+        : `Sent to ${who}. He photographs his licence on his own phone — you upload nothing.`;
+    }
+    if (seller.status === 'DECLINED') {
+      // ⚠️ NOT "WAITING", AND DELIBERATELY NOT SILENT EITHER. A declined
+      // seller is a dead end for that route and the applicant has to be told
+      // so, with the other route named — otherwise the row sits amber for
+      // ever and looks like a system that has forgotten about them.
+      out.upload_firearm_source_proof = `${seller.name || 'The seller'} declined. Upload a certified copy of his licence yourself instead.`;
+    }
+
+    // ⚠️ NO WITNESS ENTRY HERE, AND THAT IS A FINDING RATHER THAN AN OVERSIGHT.
+    //
+    // Character references are the other thing an applicant waits on somebody
+    // else for, the witness engine is built, and the invited-but-unsigned
+    // state is exactly what 'waiting-on-someone' was added for. But
+    // CHARACTER_REFERENCE is not in RECOMMENDED for ANY licence type, so the
+    // checklist has no row for it — a sentence keyed to
+    // `upload_character_reference` would attach to nothing and look alive
+    // while doing nothing at all.
+    //
+    // Making it a row changes oursTotal for every licence type and moves the
+    // progress ring an existing screen already renders, which is a product
+    // decision and not a refactor. The guard test below is what stops this
+    // being written again by mistake.
+
+    return out;
+  }
+
+  // ────────────────────────────────────────────────────────────────────
+  // PROVENANCE — recording where a prefilled answer came from.
+  //
+  // These exist so the six write paths cannot each invent their own version.
+  // Two rules run through all of them and both are easy to get wrong once:
+  //
+  //  1. STAMP ONLY WHAT WAS WRITTEN. sanitiseAnswers can drop a key even from
+  //     a trusted offer. Provenance for a value that was never stored puts a
+  //     "From your Document Centre" chip on a blank field.
+  //  2. ONE stamp() CALL PER KEY, never one for the batch. Both offers carry
+  //     PER-KEY source text, and credentialOffer carries a per-key credential
+  //     id — a single bulk call has no correct `from` to pass.
+  //
+  // stamp() itself is what refuses to overwrite a MEMBER entry, so every one
+  // of these is safe to call over an application the member has edited.
+  // ────────────────────────────────────────────────────────────────────
+
+  /** Stamp the profile's contribution. PROFILE never carries a sourceId. */
+  private stampProfile(
+    map: ProvenanceMap,
+    written: Record<string, string>,
+    from: Record<string, string>,
+  ): ProvenanceMap {
+    let out = map;
+    for (const [key, source] of Object.entries(from ?? {})) {
+      if (!(key in written)) continue;
+      out = stamp(out, [key], { source: 'PROFILE', from: source });
+    }
+    return out;
+  }
+
+  /** Stamp the vault's contribution, one entry per offered value. */
+  private stampVault(
+    map: ProvenanceMap,
+    written: Record<string, string>,
+    items: readonly { key: string; from: string; credentialId: string }[],
+  ): ProvenanceMap {
+    let out = map;
+    for (const item of items ?? []) {
+      if (!(item.key in written)) continue;
+      out = stamp(out, [item.key], {
+        source: 'VAULT',
+        sourceId: item.credentialId,
+        from: item.from,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * create()'s three contributors, stamped in the same precedence order the
+   * values were merged in: profile, then vault, then seed.
+   *
+   * ⚠️ THE ORDER IS THE POINT. Values spread profile → vault → seed, so the
+   * last writer wins. Stamping in any other order would attribute a value to
+   * whoever was overruled.
+   */
+  private stampOffers(
+    map: ProvenanceMap,
+    written: Record<string, string>,
+    profileFrom: Record<string, string>,
+    vaultItems: readonly { key: string; from: string; credentialId: string }[],
+    seed: Record<string, string>,
+  ): ProvenanceMap {
+    let out = this.stampProfile(map, written, profileFrom);
+    out = this.stampVault(out, written, vaultItems);
+
+    // The only non-empty seed today is a renewal, built by licence-renewal.ts
+    // from the licence being renewed — so VAULT is truthful. It carries no
+    // credential id because RenewalPlan does not pass one through; wiring that
+    // is a Licence Centre change, not a Phase 1 one.
+    for (const key of Object.keys(seed ?? {})) {
+      if (!(key in written)) continue;
+      out = stamp(out, [key], {
+        source: 'VAULT',
+        from: 'the licence you are renewing',
+      });
+    }
+    return out;
   }
 
   private readAnswers(encrypted: string | null): Record<string, string> {

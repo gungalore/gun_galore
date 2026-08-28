@@ -39,13 +39,79 @@ import { SAFE_PHOTO_MIN } from './motivation-documents';
 /** Who is responsible for producing the item. */
 export type ChecklistOwner = 'us' | 'applicant';
 
+/**
+ * Where a row stands, in three states rather than two.
+ *
+ * ⚠️ 'waiting-on-someone' MUST NOT COLLAPSE INTO 'not-started'. A witness who
+ * has been invited and a witness who has never been asked look identical
+ * through a boolean, and they are not remotely the same thing: the applicant
+ * has already done their part on the first one and has nothing left to do but
+ * wait. Telling them it is "not started" is telling them to redo work.
+ */
+export type ChecklistState = 'done' | 'waiting-on-someone' | 'not-started';
+
+/**
+ * The only two ways evidence gets onto a row. Anywhere. On any surface.
+ *
+ * Operator, 2026-08-28: "we do not use webcams for upload. Only Open scanner
+ * with QR, Upload." A third member is not a feature request, it is a bug.
+ */
+export type CaptureRoute = 'qr' | 'upload';
+
+/**
+ * What the pure builder cannot know by itself.
+ *
+ * ⚠️ THE THIRD-PARTY STATUS HAS TO BE INJECTED, and that is deliberate.
+ * buildChecklist is pure — no Prisma, no clock — and whether a seller has
+ * opened his link lives in two services. Passing it in keeps the builder
+ * testable and keeps every caller honest, because a caller that forgets it
+ * gets 'not-started' rather than something plausible and wrong.
+ */
+export interface ChecklistContext {
+  /**
+   * Item key → the one sentence to show for a row we are waiting on somebody
+   * else for. The sentence names WHO, because "waiting" without a name is
+   * indistinguishable from stuck.
+   */
+  waitingOn?: Record<string, string>;
+}
+
 export interface ChecklistItem {
-  /** Stable key so the UI can persist a hand-tick against it. */
+  /**
+   * Stable key so the UI can persist a hand-tick against it.
+   *
+   * ⚠️ NEVER RENAME ONE. The frontend stores hand-ticks under this key; a
+   * rename silently orphans every tick a member has already made, and they
+   * see work they did come back undone.
+   */
   key: string;
   label: string;
   owner: ChecklistOwner;
-  /** True only for `owner: 'us'` items we can actually confirm. */
+  /**
+   * True only for `owner: 'us'` items we can actually confirm.
+   *
+   * ⚠️ ITS MEANING IS UNCHANGED BY `state` BELOW, and must stay that way.
+   * `state === 'done'` implies `done`, but not the reverse. Folding a
+   * third-party signal into `done` would move `oursDone`/`oursTotal` — the
+   * progress ring an existing screen already renders — with no type error to
+   * catch it.
+   */
   done: boolean;
+  /** Richer read of the same row. Derived; never contradicts `done`. */
+  state: ChecklistState;
+  /**
+   * One sentence: who closes this row, and how.
+   *
+   * ⚠️ DERIVED, NOT AUTHORED PER ROW. The 'theirs' copy in this module
+   * carries live regulation citations and operator-verified specifics, some
+   * of it flagged verifyBeforeUse. Writing nineteen fresh bespoke sentences
+   * beside it is how a legally reviewed list acquires an unreviewed
+   * paraphrase that contradicts it. So this is computed from what the row IS,
+   * and the section intro keeps carrying the detail.
+   */
+  closer: string;
+  /** Offered when the row expands. Omitted where nothing can be captured. */
+  captureRoutes?: CaptureRoute[];
   /** Annexure letter, where this is one of ours. */
   annexure?: string;
   /** Shown smaller under the label. */
@@ -548,7 +614,7 @@ const RECOMMENDED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
  * ⚠️ Items marked verifyBeforeUse carry a number or a form reference that can
  * go stale without notice. Confirm before the flag is flipped.
  */
-const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
+const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[] = [
   {
     key: 'saps_form',
     label: 'The SAPS application form for this licence',
@@ -742,7 +808,7 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
  * Section 16 is the one type where a third party — the accredited association
  * — has to have signed something, and the pack is not a pack without it.
  */
-const S16_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
+const S16_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[] = [
   {
     key: 's16_good_standing',
     label: "Your association's letter of good standing",
@@ -789,7 +855,7 @@ const S16_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
  * ⚠️ DO NOT IMPORT THE CONSTANT FROM licence-centre.
  * licence-centre.module.spec.ts asserts the dependency runs one way only.
  */
-const S24_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner'>[] = [
+const S24_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[] = [
   {
     key: 's24_ninety_days',
     label: 'Lodge at least 90 days before the expiry date',
@@ -825,7 +891,17 @@ export function buildChecklist(
   licenceType: MotivationLicenceType,
   haveKinds: MotivationUploadKind[],
   documentReady = false,
+  context: ChecklistContext = {},
 ): ChecklistProgress {
+  const waitingOn = context.waitingOn ?? {};
+
+  /**
+   * The three states, derived from `done` and who we are waiting on — never
+   * decided independently, so `state` cannot drift from `done`.
+   */
+  const stateOf = (key: string, done: boolean): ChecklistState =>
+    done ? 'done' : waitingOn[key] ? 'waiting-on-someone' : 'not-started';
+
   const annexures = buildAnnexures(haveKinds);
   const counts = new Map<MotivationUploadKind, number>();
   for (const k of haveKinds) counts.set(k, (counts.get(k) ?? 0) + 1);
@@ -839,6 +915,10 @@ export function buildChecklist(
       label: 'Your motivation',
       owner: 'us',
       done: documentReady,
+      state: stateOf('motivation', documentReady),
+      closer: documentReady
+        ? 'We have written this from your answers.'
+        : 'We write this for you, once the questions are answered.',
       note: documentReady ? undefined : 'Finish the questions and we will prepare it.',
     },
     {
@@ -846,6 +926,8 @@ export function buildChecklist(
       label: 'Request for prior notice before refusal (PAJA)',
       owner: 'us',
       done: documentReady,
+      state: stateOf('paja', documentReady),
+      closer: 'We prepare this and it is lodged with the application.',
       note: 'Lodged together with the application.',
     },
   ];
@@ -854,11 +936,24 @@ export function buildChecklist(
   // item is visible rather than silently absent.
   for (const kind of RECOMMENDED[licenceType]) {
     const entry = byKind.get(kind);
+    const key = `upload_${kind.toLowerCase()}`;
+    const have = enough(kind);
     const item: ChecklistItem = {
-      key: `upload_${kind.toLowerCase()}`,
+      key,
       label: UPLOAD_KIND_LABELS[kind],
       owner: 'us',
-      done: enough(kind),
+      done: have,
+      state: stateOf(key, have),
+      // A row somebody else is finishing says so, in their words. Otherwise
+      // it names the two doors — and only ever those two.
+      closer:
+        waitingOn[key] ??
+        (have
+          ? 'We hold this. Send another and it replaces it.'
+          : 'Scan it with your phone, or upload it.'),
+      // ⚠️ OFFERED EVEN WHEN THE ROW IS DONE. A member who photographed the
+      // wrong page needs a way to replace it without deleting first.
+      captureRoutes: ['qr', 'upload'],
       annexure: entry?.letter,
     };
     // ⚠️ THE ROW COLLAPSED; THE INSTRUCTION MUST NOT. One line now takes every
@@ -901,6 +996,12 @@ export function buildChecklist(
     ...i,
     owner: 'applicant' as const,
     done: false,
+    state: stateOf(i.key, false),
+    // ⚠️ ONE UNIFORM SENTENCE, AND NO captureRoutes. These are certified
+    // copies, passport photographs, fingerprints and a fee — things we do not
+    // hold and must never imply we could take an upload of. The section intro
+    // carries the regulation detail; this line only answers "so what do I do".
+    closer: waitingOn[i.key] ?? 'You bring this with you to the counter.',
   }));
 
   const oursDone = ours.filter((i) => i.done).length;

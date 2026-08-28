@@ -480,3 +480,72 @@ describe('the acquisition route', () => {
     }
   });
 });
+
+
+// -------------------------------------------------------------------
+// THE TWO ROUTES WANT TWO DIFFERENT PAPERS.
+//
+// Operator, 2026-08-28: "with the private with the consent form and the dealer
+// with an upload of an ivoice or something."
+//
+// Both are served from ONE row - "Where this firearm is coming from" - and the
+// row changes shape with the answer. The consent flow is offered only where
+// there is somebody to send it to.
+//
+// The flag is SERVED rather than tested in the wizard on purpose: the frontend
+// hardcodes no route value anywhere, which is why retiring the estate route
+// cost no client change at all.
+// -------------------------------------------------------------------
+
+describe('the source-proof row, per route', () => {
+  const row = (firearm_source: string) =>
+    documentStatus(
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      [],
+      { firearm_source },
+    ).needs.find((n) => n.kind === 'FIREARM_SOURCE_PROOF');
+
+  it('offers the consent flow on a private sale', () => {
+    const r = row('From a private owner');
+    expect(r?.sellerConsent).toBe(true);
+    expect(r?.why).toContain('consent link');
+  });
+
+  it('does NOT offer it on a dealer purchase - the dealer sends an invoice', () => {
+    const r = row('From a dealer');
+    expect(r?.sellerConsent).toBeUndefined();
+    expect(r?.why).toContain('invoice');
+  });
+
+  it('does not offer it before the route has been answered', () => {
+    // Same rule as the form's own item 1.2 tick: nothing is inferred. The
+    // guidance on the row describes both routes until they say which.
+    for (const firearm_source of ['', 'Not decided yet']) {
+      expect(row(firearm_source)?.sellerConsent).toBeUndefined();
+    }
+    expect(row('')?.why).toContain('invoice');
+    expect(row('')?.why).toContain('agree');
+  });
+
+  it('does not offer it on a stored estate answer', () => {
+    // Retired as a choice, still stored on older applications. An executor is
+    // not a private seller and does not sign that consent form.
+    const r = row('Inherited from a deceased estate');
+    expect(r?.sellerConsent).toBeUndefined();
+    expect(r?.why).toContain('executor');
+  });
+
+  it('keeps the row itself on every route', () => {
+    // It only ever ADDS - the row is expected on all four routes and the
+    // change here is which controls hang off it.
+    for (const firearm_source of [
+      'From a private owner',
+      'From a dealer',
+      'Inherited from a deceased estate',
+      'Not decided yet',
+      '',
+    ]) {
+      expect(row(firearm_source)).toBeDefined();
+    }
+  });
+});

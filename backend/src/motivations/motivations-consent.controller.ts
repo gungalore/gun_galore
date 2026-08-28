@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -13,6 +14,7 @@ import type { Request } from 'express';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import {
+  ConsentSectionF,
   MotivationSellerConsentService,
   type FirearmSnapshot,
 } from './motivation-seller-consent.service';
@@ -171,6 +173,55 @@ export class SellerConsentPublicController {
     };
   }
 
+  // ────────────────────────────────────────────────────────────────────
+  // WHAT HE HAS SENT — added one at a time, listed, and withdrawable.
+  //
+  // Operator, 2026-08-28: "as soon as he uploads or captures it must send it
+  // to us and display what he sent with a delete option next to each."
+  //
+  // ⚠️ EVERY ROUTE RESOLVES THE TOKEN FIRST AND PASSES row.id, NEVER A
+  // CONSENT ID FROM THE BODY OR THE PATH. The token is the only thing that
+  // says which consent the caller is allowed to touch; accepting an id would
+  // let anyone holding any link reach any other seller's documents.
+  // ────────────────────────────────────────────────────────────────────
+
+  /** One document, stored the moment he chooses or scans it. */
+  @Post(':token/documents')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async addDocument(
+    @Param('token') token: string,
+    @Body()
+    body: { file?: string; mimeType?: string; role?: string; source?: string },
+  ) {
+    const row = await this.consent.resolve(token);
+    return this.consent.addDocument({
+      consentId: row.id,
+      bytes: decodeDocument(body?.file ?? ''),
+      mimeType: (body?.mimeType ?? '').trim(),
+      role: body?.role,
+      source: body?.source === 'SCAN' ? 'SCAN' : 'UPLOAD',
+    });
+  }
+
+  /** Everything he has sent and not withdrawn. Metadata only, never bytes. */
+  @Get(':token/documents')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async listDocuments(@Param('token') token: string) {
+    const row = await this.consent.resolve(token);
+    return this.consent.listDocuments(row.id);
+  }
+
+  /** He photographed the wrong page. */
+  @Delete(':token/documents/:documentId')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async deleteDocument(
+    @Param('token') token: string,
+    @Param('documentId') documentId: string,
+  ) {
+    const row = await this.consent.resolve(token);
+    return this.consent.deleteDocument(row.id, documentId);
+  }
+
   @Post(':token/submit')
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
   async submit(
@@ -183,6 +234,13 @@ export class SellerConsentPublicController {
       // The seller's confirmed reading of their own card — becomes the firearm
       // of record on the signed consent. See MotivationSellerConsentService.
       firearm?: Record<string, unknown>;
+      // His half of section F on the SAPS 271 — see ConsentSectionF. Every
+      // box optional; the service trims and never invents.
+      sectionF?: Record<string, unknown>;
+      // Item 81's two declarations. Read as strict booleans: a missing field,
+      // a string, or anything else is NOT a declaration, and submit() refuses.
+      consentGiven?: unknown;
+      declaredTrue?: unknown;
       signature?: string;
       front?: string;
       back?: string;
@@ -195,6 +253,13 @@ export class SellerConsentPublicController {
       answers: {
         fullName: body?.fullName ?? '',
         idNumber: body?.idNumber ?? '',
+      },
+      sectionF: (body?.sectionF ?? {}) as ConsentSectionF,
+      declarations: {
+        // ⚠️ `=== true`, NOT TRUTHINESS. A declaration is a thing somebody
+        // did, and the string "false" is truthy.
+        consentGiven: body?.consentGiven === true,
+        declaredTrue: body?.declaredTrue === true,
       },
       firearm: body?.firearm,
       signature: decodeSignature(body?.signature ?? ''),
@@ -241,6 +306,21 @@ function decodeSignature(dataUrl: string): Buffer {
  * nothing else, so anything that got past this would be stored, listed, and
  * then silently missing from the printed pack.
  */
+/**
+ * Any document he sends: a photograph or a PDF.
+ *
+ * ⚠️ WIDER THAN decodePhoto BELOW, ON PURPOSE. That one takes the licence-card
+ * photograph the OCR reads and is deliberately narrow. This takes "any
+ * documents" (operator, 2026-08-28) — so a scan of a certified copy arriving as
+ * a PDF must get through. The MIME is checked again in the service against the
+ * one shared allowlist; this only has to get the bytes out.
+ */
+function decodeDocument(dataUrl: string): Buffer {
+  const m = /^data:[^;,]+;base64,([A-Za-z0-9+/=]+)$/.exec((dataUrl ?? '').trim());
+  if (!m) throw new BadRequestException('That file did not come through.');
+  return Buffer.from(m[1], 'base64');
+}
+
 function decodePhoto(dataUrl: string): Buffer {
   const m = /^data:image\/(jpeg|png);base64,([A-Za-z0-9+/=]+)$/.exec(
     (dataUrl ?? '').trim(),

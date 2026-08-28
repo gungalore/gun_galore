@@ -35,21 +35,51 @@ function make(over: { user?: unknown; owns?: unknown; mint?: jest.Mock; sms?: je
     user: { findUnique: jest.fn(async () => ('user' in over ? over.user : { id: USER_ID })) },
     motivation: { findFirst: jest.fn(async () => ('owns' in over ? over.owns : { id: 'mo-1' })) },
     motivationSellerConsent: {
-      findUnique: jest.fn(async () => null),
-      create: jest.fn(async () => consentRow),
-      update: jest.fn(async () => consentRow),
+      findUnique: jest.fn(async (_a?: any): Promise<any> => null),
+      create: jest.fn(async (_a?: any): Promise<any> => consentRow),
+      update: jest.fn(async (_a?: any): Promise<any> => consentRow),
       delete: del,
+    },
+    // Added with B9 — the seller's own working set of documents. Its own
+    // table, so the applicant's delete route cannot reach it.
+    motivationSellerConsentDocument: {
+      count: jest.fn(async (_a?: any): Promise<number> => 0),
+      create: jest.fn(async ({ data }: any): Promise<any> => ({
+        id: 'doc-1',
+        role: data.role,
+        source: data.source,
+        mimeType: data.mimeType,
+        byteSize: data.byteSize,
+        createdAt: new Date(0),
+      })),
+      findMany: jest.fn(async (_a?: any): Promise<any[]> => []),
+      findFirst: jest.fn(async (_a?: any): Promise<any> => null),
+      update: jest.fn(async (_a?: any): Promise<any> => ({})),
+      delete: jest.fn(async (_a?: any): Promise<any> => ({})),
     },
   };
   const mint = over.mint ?? jest.fn(async () => 'tok_abc');
   const sms = over.sms ?? jest.fn(async () => ({ success: true }));
+  // The encrypted store. Real bytes never go anywhere in these tests; what
+  // matters is that a failed insert puts them back.
+  const files = {
+    write: jest.fn(async (_ns: string, buf: Buffer): Promise<any> => ({
+      storageKey: 'motivations/2026/08/x.enc',
+      sha256: 'sha-' + buf.length,
+      byteSize: buf.length,
+    })),
+    read: jest.fn(async () => Buffer.from('')),
+    remove: jest.fn(async () => undefined),
+  };
+  const notifications = { sellerConsentInvite: jest.fn(async (): Promise<any> => undefined) };
   const svc = new MotivationSellerConsentService(
     prisma as never,
     { sendSms: sms } as never,
-    {} as never,
+    files as never,
     { mint } as never,
+    notifications as never,
   );
-  return { svc, prisma, mint, sms, del };
+  return { svc, prisma, mint, sms, del, files, notifications };
 }
 
 const ARGS = {
@@ -58,6 +88,8 @@ const ARGS = {
   applicantName: 'Gerhard Fourie',
   name: 'Piet Seller',
   phone: '0743039999',
+  // ⚠️ REQUIRED SINCE B9. The email carries the link; the SMS is the nudge.
+  email: 'piet@example.co.za',
   firearm: { make: 'CZ', serial: 'A12345' },
   baseUrl: 'https://alloutdoor.co.za',
 };
@@ -398,6 +430,7 @@ describe('submit replaces the firearm with the card, keeps the applicant', () =>
       { sendSms: jest.fn() } as never,
       files as never,
       { mint: jest.fn() } as never,
+      { sellerConsentInvite: jest.fn(async () => undefined) } as never,
     );
     return { svc, get: () => updated };
   }
@@ -405,12 +438,162 @@ describe('submit replaces the firearm with the card, keeps the applicant', () =>
   const base = {
     consentId: 'consent-1',
     answers: { fullName: 'Piet Seller', idNumber: '8001015009087' },
+    // Item 81 carries two declarations and submit() refuses without both.
+    // Stated in every fixture rather than defaulted, because a pre-ticked
+    // declaration is us declaring on somebody else's behalf.
+    declarations: { consentGiven: true, declaredTrue: true },
     signature: Buffer.from('\x89PNG signature'),
     signatureMime: 'image/png',
     licenceFront: Buffer.from('jpegfront'),
     licenceBack: Buffer.from('jpegback'),
     licenceMime: 'image/jpeg',
   };
+
+  // ────────────────────────────────────────────────────────────────────
+  // SECTION F IS THE SELLER'S HALF, AND HE FILLS IT.
+  //
+  // Operator, 2026-08-28: "F should be filled, type A - the consent form should
+  // ask these details along the details of the firearm and with the consent tick
+  // and the information provided is the truth tick."
+  //
+  // Twenty-two boxes were mapped and tested months before anything could reach
+  // them: renderSaps271 passed no seller, so the current owner's half of every
+  // rendered form was blank while the coverage panel told the applicant it was
+  // done. This is the collection end of closing that.
+  //
+  // ⚠️ NOTHING HERE MAY EVER BE DEFAULTED FROM THE APPLICANT. Section F exists
+  // to tell two people apart, and a value borrowed from the buyer is a false
+  // statement about the seller on a document signed under section 120(9)(f).
+  // ────────────────────────────────────────────────────────────────────
+
+  describe('section F, as the current owner gives it', () => {
+    describe('the two declarations on item 81', () => {
+      // ⚠️ TWO STATEMENTS, NOT ONE. Item 81's printed text makes two claims: he
+      // proposes to supply the firearm once the licence comes through (the
+      // CONSENT), and the particulars are correct and accurate under section
+      // 120(9)(f) (the TRUTH). A DFO reads them as two and so do we.
+
+      it('refuses a submission with no consent declaration', async () => {
+        const { svc } = submitHarness({ make: 'CZ' });
+        await expect(
+          svc.submit({
+            ...base,
+            declarations: { consentGiven: false, declaredTrue: true },
+          } as never),
+        ).rejects.toThrow(/agree to supply/i);
+      });
+
+      it('refuses a submission with no truth declaration', async () => {
+        const { svc } = submitHarness({ make: 'CZ' });
+        await expect(
+          svc.submit({
+            ...base,
+            declarations: { consentGiven: true, declaredTrue: false },
+          } as never),
+        ).rejects.toThrow(/true and correct/i);
+      });
+
+      it('refuses when the declarations are missing entirely', async () => {
+        // A client that forgets to send them must not be treated as a seller
+        // who ticked them.
+        const { svc } = submitHarness({ make: 'CZ' });
+        const { declarations: _drop, ...noDecl } = base as Record<string, unknown>;
+        await expect(svc.submit({ ...noDecl } as never)).rejects.toThrow(
+          /agree to supply/i,
+        );
+      });
+
+      it('refuses BEFORE the signature is even looked at', async () => {
+        // ⚠️ A SIGNATURE UNDER AN UNTICKED DECLARATION IS A SIGNATURE UNDER
+        // NOTHING. Order matters: the declaration message has to be the one he
+        // sees, not "please sign".
+        const { svc, get } = submitHarness({ make: 'CZ' });
+        await expect(
+          svc.submit({
+            ...base,
+            signature: Buffer.alloc(0),
+            declarations: { consentGiven: false, declaredTrue: false },
+          } as never),
+        ).rejects.toThrow(/agree to supply/i);
+        // And nothing was written AT ALL — no update call, so not even a
+        // half-completed row or an orphaned blob.
+        expect(get()).toBeNull();
+      });
+    });
+
+    describe('what he typed', () => {
+      it('keeps every box he filled, trimmed', async () => {
+        const { svc, get } = submitHarness({ make: 'CZ' });
+        await svc.submit({
+          ...base,
+          sectionF: {
+            surname: '  Malan ',
+            initials: 'P J',
+            residentialAddress: '12  Kerkstraat,   Bothaville',
+            residentialPostalCode: '9660',
+            homeTelephone: '0561234567',
+            cellphone: '0821112222',
+            email: 'piet@example.co.za',
+            firearmAddress: '12 Kerkstraat, Bothaville',
+            firearmPostalCode: '9660',
+            designation: 'Owner',
+            additionalHolders: false,
+          },
+        } as never);
+        const f = JSON.parse(
+          tryDecryptText(get()!.sectionFEncrypted as string)!,
+        );
+        expect(f.surname).toBe('Malan');
+        // Runs of whitespace collapse; the value is not otherwise touched.
+        expect(f.residentialAddress).toBe('12 Kerkstraat, Bothaville');
+        expect(f.designation).toBe('Owner');
+        expect(f.additionalHolders).toBe(false);
+        // The declarations are stored with it — what he agreed to, beside what
+        // he said.
+        expect(f.consentGiven).toBe(true);
+        expect(f.declaredTrue).toBe(true);
+      });
+
+      it('leaves an empty box undefined rather than inventing one', async () => {
+        // ⚠️ A BLANK THE APPLICANT COMPLETES WITH A PEN IS A NUISANCE. A value
+        // we made up is a false statement about somebody's address.
+        const { svc, get } = submitHarness({ make: 'CZ' });
+        await svc.submit({
+          ...base,
+          sectionF: { surname: 'Malan', residentialAddress: '   ', email: '' },
+        } as never);
+        const f = JSON.parse(
+          tryDecryptText(get()!.sectionFEncrypted as string)!,
+        );
+        expect(f.surname).toBe('Malan');
+        expect('residentialAddress' in f).toBe(false);
+        expect('email' in f).toBe(false);
+      });
+
+      it('keeps "not asked" apart from "no" on item 15', async () => {
+        // Three states, two boxes. An unanswered question ticks neither, and a
+        // "no" we invented would be a statement about his household.
+        const { svc, get } = submitHarness({ make: 'CZ' });
+        await svc.submit({ ...base, sectionF: {} } as never);
+        const f = JSON.parse(
+          tryDecryptText(get()!.sectionFEncrypted as string)!,
+        );
+        expect('additionalHolders' in f).toBe(false);
+      });
+
+      it('submits fine when he fills in none of it', async () => {
+        // ⚠️ EVERY BOX IS OPTIONAL EXCEPT THE DECLARATIONS. A consent link that
+        // refused because a seller has no landline is a dead consent link, and
+        // the whole private route dies with it.
+        const { svc, get } = submitHarness({ make: 'CZ' });
+        await expect(svc.submit({ ...base } as never)).resolves.toEqual({
+          ok: true,
+        });
+        expect(get()!.status).toBe('COMPLETED');
+      });
+    });
+  });
+
 
   it('⚠️ the stored snapshot is the CARD, not the buyer guess', async () => {
     const { svc, get } = submitHarness({
@@ -504,6 +687,7 @@ describe('submit replaces the firearm with the card, keeps the applicant', () =>
         { sendSms: jest.fn() } as never,
         files as never,
         { mint: jest.fn() } as never,
+        { sellerConsentInvite: jest.fn(async () => undefined) } as never,
       );
       await expect(
         svc.submit({ ...base, firearm: {} } as never),
@@ -543,6 +727,7 @@ describe('statusFor — the buyer can see the result and collect the card firear
       {} as never,
       {} as never,
       {} as never,
+      { sellerConsentInvite: jest.fn(async () => undefined) } as never,
     );
     return { svc, prisma };
   }
@@ -590,5 +775,306 @@ describe('statusFor — the buyer can see the result and collect the card firear
   it('refuses a motivation the caller does not own', async () => {
     const { svc } = statusHarness({ owns: null });
     await expect(svc.statusFor('user_abc', 'mo-1')).rejects.toThrow(/not found/i);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// B9 — HIS EMAIL, AND THE DOCUMENTS HE SENDS ONE AT A TIME.
+//
+// Operator, 2026-08-28: "we need to get the sellers email address and cell
+// number... as soon as he uploads or captures it must send it to us and
+// display what he sent with a delete option next to each."
+//
+// The two things worth protecting: a file already delivered is never lost, and
+// one party can never reach another's documents.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the invitation now needs both channels', () => {
+  it('refuses an invite with no email address', async () => {
+    const { svc } = make();
+    await expect(
+      svc.invite({ ...ARGS, email: undefined } as never),
+    ).rejects.toThrow(/email address/i);
+  });
+
+  it('refuses an address that is not one', async () => {
+    const { svc } = make();
+    for (const email of ['piet', 'piet@', '@example.co.za', 'piet example.co.za']) {
+      await expect(svc.invite({ ...ARGS, email } as never)).rejects.toThrow(
+        /email address/i,
+      );
+    }
+  });
+
+  it('still refuses a bad number — the email does not replace it', async () => {
+    // Both, not either. The email carries the link; the number makes him look.
+    const { svc } = make();
+    await expect(svc.invite({ ...ARGS, phone: '12' } as never)).rejects.toThrow(
+      /mobile number/i,
+    );
+  });
+
+  it('stores the address on the consent row', async () => {
+    const { svc, prisma } = make();
+    await svc.invite(ARGS as never);
+    const written = (prisma.motivationSellerConsent.create.mock.calls[0]?.[0] ??
+      prisma.motivationSellerConsent.update.mock.calls[0]?.[0]) as any;
+    expect(written.data.invitedEmail).toBe('piet@example.co.za');
+    expect(written.data.invitedPhone).toBe('0743039999');
+  });
+});
+
+describe('the documents he sends', () => {
+  const OPEN = { id: 'con-1', status: 'INVITED' };
+  const FILE = Buffer.from('a-real-enough-file');
+
+  const openConsent = (prisma: any, row: unknown = OPEN) =>
+    prisma.motivationSellerConsent.findUnique.mockResolvedValue(row);
+
+  it('stores a file the moment it arrives, without waiting for submit', async () => {
+    // ⚠️ THE POINT OF THE WHOLE CHANGE. A seller who photographs his card and
+    // then closes the tab has still delivered it.
+    const { svc, prisma } = make();
+    openConsent(prisma);
+
+    const out = await svc.addDocument({
+      consentId: 'con-1',
+      bytes: FILE,
+      mimeType: 'image/png',
+      role: 'LICENCE_FRONT',
+      source: 'SCAN',
+    });
+
+    expect(out.role).toBe('LICENCE_FRONT');
+    const data = prisma.motivationSellerConsentDocument.create.mock.calls[0][0].data;
+    expect(data.consentId).toBe('con-1');
+    expect(data.source).toBe('SCAN');
+    expect(data.storageKey).toBeTruthy();
+  });
+
+  it('files an unknown role as OTHER rather than storing what it was handed', async () => {
+    const { svc, prisma } = make();
+    openConsent(prisma);
+    await svc.addDocument({
+      consentId: 'con-1',
+      bytes: FILE,
+      mimeType: 'image/png',
+      role: 'SOMETHING_INVENTED',
+    });
+    expect(
+      prisma.motivationSellerConsentDocument.create.mock.calls[0][0].data.role,
+    ).toBe('OTHER');
+  });
+
+  it('refuses a file type we cannot read', async () => {
+    const { svc, prisma } = make();
+    openConsent(prisma);
+    await expect(
+      svc.addDocument({ consentId: 'con-1', bytes: FILE, mimeType: 'application/zip' }),
+    ).rejects.toThrow(/photograph or a PDF/i);
+  });
+
+  it('accepts a PDF — a certified copy usually arrives as one', async () => {
+    const { svc, prisma } = make();
+    openConsent(prisma);
+    await expect(
+      svc.addDocument({ consentId: 'con-1', bytes: FILE, mimeType: 'application/pdf' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('refuses an empty file and an oversized one', async () => {
+    const { svc, prisma } = make();
+    openConsent(prisma);
+    await expect(
+      svc.addDocument({ consentId: 'con-1', bytes: Buffer.alloc(0), mimeType: 'image/png' }),
+    ).rejects.toThrow(/empty/i);
+    await expect(
+      svc.addDocument({
+        consentId: 'con-1',
+        bytes: Buffer.alloc(11 * 1024 * 1024),
+        mimeType: 'image/png',
+      }),
+    ).rejects.toThrow(/too large/i);
+  });
+
+  it('caps how many one stranger link may hold', async () => {
+    // The token belongs to a stranger for 48 hours. A cap is what stops it
+    // being a way to fill the store.
+    const { svc, prisma } = make();
+    openConsent(prisma);
+    prisma.motivationSellerConsentDocument.count.mockResolvedValueOnce(20);
+    await expect(
+      svc.addDocument({ consentId: 'con-1', bytes: FILE, mimeType: 'image/png' }),
+    ).rejects.toThrow(/as many documents/i);
+  });
+
+  it('puts the bytes back if the row will not insert', async () => {
+    // ⚠️ OTHERWISE AN ENCRYPTED FILE IS LEFT THAT NOTHING POINTS AT AND
+    // NOTHING WILL EVER COLLECT.
+    const { svc, prisma, files } = make();
+    openConsent(prisma);
+    prisma.motivationSellerConsentDocument.create.mockRejectedValueOnce(
+      new Error('constraint'),
+    );
+    await expect(
+      svc.addDocument({ consentId: 'con-1', bytes: FILE, mimeType: 'image/png' }),
+    ).rejects.toThrow('constraint');
+    expect(files.remove).toHaveBeenCalled();
+  });
+
+  it('lists only what he has not withdrawn', async () => {
+    const { svc, prisma } = make();
+    await svc.listDocuments('con-1');
+    const where = prisma.motivationSellerConsentDocument.findMany.mock.calls[0][0].where;
+    expect(where).toEqual({ consentId: 'con-1', deletedAt: null });
+  });
+
+  it('never returns the bytes, only what the file is', async () => {
+    const { svc, prisma } = make();
+    await svc.listDocuments('con-1');
+    const select = prisma.motivationSellerConsentDocument.findMany.mock.calls[0][0].select;
+    expect(select.storageKey).toBeUndefined();
+    expect(Object.keys(select).sort()).toEqual([
+      'byteSize',
+      'createdAt',
+      'id',
+      'mimeType',
+      'role',
+      'source',
+    ]);
+  });
+});
+
+describe('withdrawing one', () => {
+  const OPEN = { id: 'con-1', status: 'INVITED' };
+  const DOC = { id: 'doc-1', storageKey: 'motivations/2026/08/x.enc' };
+
+  it('keeps the row and destroys the bytes', async () => {
+    // Soft, so there is still a record that a document was sent and withdrawn.
+    const { svc, prisma, files } = make();
+    prisma.motivationSellerConsent.findUnique.mockResolvedValue(OPEN);
+    prisma.motivationSellerConsentDocument.findFirst.mockResolvedValueOnce(DOC);
+
+    await svc.deleteDocument('con-1', 'doc-1');
+
+    const data = prisma.motivationSellerConsentDocument.update.mock.calls[0][0].data;
+    expect(data.deletedAt).toBeInstanceOf(Date);
+    expect(data.storageKey).toBeNull();
+    expect(files.remove).toHaveBeenCalledWith('motivations/2026/08/x.enc');
+    expect(prisma.motivationSellerConsentDocument.delete).not.toHaveBeenCalled();
+  });
+
+  it('scopes the lookup to HIS consent, not to the document id alone', async () => {
+    // ⚠️ The id alone would be enough to try. The consentId in the WHERE
+    // clause is what makes one seller's token unable to reach another's
+    // documents — and it is the reason these rows are their own table rather
+    // than a flag on the applicant's uploads.
+    const { svc, prisma } = make();
+    prisma.motivationSellerConsent.findUnique.mockResolvedValue(OPEN);
+    prisma.motivationSellerConsentDocument.findFirst.mockResolvedValueOnce(DOC);
+
+    await svc.deleteDocument('con-1', 'doc-1');
+
+    expect(
+      prisma.motivationSellerConsentDocument.findFirst.mock.calls[0][0].where,
+    ).toEqual({ id: 'doc-1', consentId: 'con-1', deletedAt: null });
+  });
+
+  it('says it is not there rather than that it is not yours', async () => {
+    const { svc, prisma } = make();
+    prisma.motivationSellerConsent.findUnique.mockResolvedValue(OPEN);
+    prisma.motivationSellerConsentDocument.findFirst.mockResolvedValueOnce(null);
+    await expect(svc.deleteDocument('con-1', 'doc-9')).rejects.toThrow(/not here/i);
+  });
+});
+
+describe('once he has signed', () => {
+  it('refuses to add or remove anything', async () => {
+    // ⚠️ THE EVIDENCE BEHIND A SIGNED DECLARATION IS FIXED. He declared under
+    // section 120(9)(f) that the particulars are correct; the documents behind
+    // that must not change underneath it.
+    const { svc, prisma } = make();
+    prisma.motivationSellerConsent.findUnique.mockResolvedValue({
+      id: 'con-1',
+      status: 'COMPLETED',
+    });
+    await expect(
+      svc.addDocument({ consentId: 'con-1', bytes: Buffer.from('x'), mimeType: 'image/png' }),
+    ).rejects.toThrow(/already signed/i);
+    await expect(svc.deleteDocument('con-1', 'doc-1')).rejects.toThrow(/already signed/i);
+  });
+
+  it('refuses after he declined', async () => {
+    const { svc, prisma } = make();
+    prisma.motivationSellerConsent.findUnique.mockResolvedValue({
+      id: 'con-1',
+      status: 'DECLINED',
+    });
+    await expect(
+      svc.addDocument({ consentId: 'con-1', bytes: Buffer.from('x'), mimeType: 'image/png' }),
+    ).rejects.toThrow(/declined/i);
+  });
+});
+
+describe('the link goes out on both channels', () => {
+  /** Reaches into make()'s notifications stub, whichever construction it was. */
+  const notifierOf = (svc: unknown) =>
+    (svc as { notifications: { sellerConsentInvite: jest.Mock } }).notifications;
+
+  it('emails him the link as well as texting it', async () => {
+    const { svc } = make();
+    await svc.invite(ARGS as never);
+
+    const email = notifierOf(svc).sellerConsentInvite;
+    expect(email).toHaveBeenCalledTimes(1);
+    const sent = email.mock.calls[0][0];
+    expect(sent.email).toBe('piet@example.co.za');
+    expect(sent.sellerName).toBe('Piet Seller');
+    expect(sent.applicantName).toBe('Gerhard Fourie');
+    // The same link, on both channels.
+    expect(sent.url).toContain('tok_abc');
+    expect(sent.expiresInHours).toBe(48);
+  });
+
+  it('names the firearm, so it does not read as phishing', async () => {
+    // A stranger getting a link about a firearm transfer has to know who it is
+    // from and what it concerns BEFORE opening anything. A seller who deletes
+    // it as spam is a stalled application nobody can explain.
+    const { svc } = make();
+    await svc.invite(ARGS as never);
+    const sent = notifierOf(svc).sellerConsentInvite.mock.calls[0][0];
+    expect(sent.firearmLine).toBeTruthy();
+    expect(sent.firearmLine.toLowerCase()).toContain('cz');
+  });
+
+  it('⚠️ does not fail the invitation when only the email fails', async () => {
+    // The SMS is the gate: a bad number is a typo the applicant can fix in the
+    // moment. A bounced email is discovered later and there is nothing useful
+    // to say about it here — and NotificationsService already parks a failed
+    // send in the outbox and retries. Throwing would undo an invitation that
+    // has, in fact, gone out.
+    const { svc, prisma } = make();
+    notifierOf(svc).sellerConsentInvite.mockRejectedValueOnce(new Error('resend down'));
+
+    await expect(svc.invite(ARGS as never)).resolves.toMatchObject({
+      status: 'INVITED',
+    });
+    // And the row it created survives.
+    expect(prisma.motivationSellerConsent.delete).not.toHaveBeenCalled();
+  });
+
+  it('still fails the invitation when the SMS will not send', async () => {
+    // Unchanged behaviour, asserted here so adding the email cannot quietly
+    // demote the channel that was already a gate.
+    const { svc } = make({ sms: jest.fn(async () => ({ success: false })) });
+    await expect(svc.invite(ARGS as never)).rejects.toThrow(/Could not send the SMS/i);
+  });
+
+  it('does not email when the invitation was refused before sending', async () => {
+    const { svc } = make();
+    await expect(
+      svc.invite({ ...ARGS, email: 'not-an-address' } as never),
+    ).rejects.toThrow(/email address/i);
+    expect(notifierOf(svc).sellerConsentInvite).not.toHaveBeenCalled();
   });
 });

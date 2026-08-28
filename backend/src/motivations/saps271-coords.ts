@@ -11,7 +11,7 @@
 // Coordinates are PDF user space: origin BOTTOM-LEFT, points, A4 596x842.
 // `y` is the bottom of the row, so a caller adds its own baseline padding.
 //
-// 144 of 144 fields resolved.
+// 188 of 188 fields resolved.
 // The rest are listed in UNRESOLVED below and are left BLANK on the form: a box
 // the applicant completes by hand is a nuisance, a guessed coordinate is a
 // wrong answer on a signed firearm licence application.
@@ -145,41 +145,145 @@ export const SAPS271_COORDS = {
   "e_calibre": {
     "page": 2,
     "kind": "text",
-    "x": 155,
+    "x": 197.5,
     "y": 266.6,
-    "w": 211.7,
+    "w": 169.2,
     "h": 19.1
   },
   "e_make": {
     "page": 2,
     "kind": "text",
-    "x": 155,
+    "x": 197.5,
     "y": 248.5,
-    "w": 406.4,
+    "w": 363.9,
     "h": 18.1
   },
   "e_model": {
     "page": 2,
     "kind": "text",
-    "x": 155,
+    "x": 197.5,
     "y": 230.3,
-    "w": 406.4,
+    "w": 363.9,
     "h": 18.2
   },
   "e_frame_serial": {
     "page": 2,
     "kind": "text",
-    "x": 155,
+    "x": 197.5,
     "y": 176.9,
-    "w": 276.8,
+    "w": 234.3,
     "h": 17.2
   },
   "e_receiver_serial": {
     "page": 2,
     "kind": "text",
-    "x": 155,
+    "x": 197.5,
     "y": 158.8,
-    "w": 277.6,
+    "w": 235.1,
+    "h": 18.1
+  },
+  "e_barrel_serial": {
+    "page": 2,
+    "kind": "text",
+    "x": 197.5,
+    "y": 194.1,
+    "w": 236.8,
+    "h": 18.1
+  },
+  "e_barrel_make": {
+    "page": 2,
+    "kind": "text",
+    "x": 478.2,
+    "y": 194.1,
+    "w": 83.2,
+    "h": 18.1
+  },
+  "e_frame_make": {
+    "page": 2,
+    "kind": "text",
+    "x": 478.2,
+    "y": 176.9,
+    "w": 83.2,
+    "h": 17.2
+  },
+  "e_receiver_make": {
+    "page": 2,
+    "kind": "text",
+    "x": 478.2,
+    "y": 158.8,
+    "w": 83.2,
+    "h": 18.1
+  },
+  "f_additional_holders_yes": {
+    "page": 3,
+    "kind": "tick",
+    "x": 451.1,
+    "y": 589.6,
+    "w": 19.8,
+    "h": 17.1
+  },
+  "f_additional_holders_no": {
+    "page": 3,
+    "kind": "tick",
+    "x": 550.3,
+    "y": 589.6,
+    "w": 20.1,
+    "h": 17.1
+  },
+  "g_competency_type_a": {
+    "page": 5,
+    "kind": "tick",
+    "x": 386.4,
+    "y": 493.6,
+    "w": 18.9,
+    "h": 18.1
+  },
+  "g_competency_type_b": {
+    "page": 5,
+    "kind": "tick",
+    "x": 386.4,
+    "y": 475.5,
+    "w": 18.9,
+    "h": 18.1
+  },
+  "g_competency_type_c": {
+    "page": 5,
+    "kind": "tick",
+    "x": 386.4,
+    "y": 457.4,
+    "w": 18.9,
+    "h": 18.1
+  },
+  "g_competency_type_d": {
+    "page": 5,
+    "kind": "tick",
+    "x": 386.4,
+    "y": 439.2,
+    "w": 18.9,
+    "h": 18.2
+  },
+  "g_competency_for_handgun": {
+    "page": 5,
+    "kind": "tick",
+    "x": 177.3,
+    "y": 421.1,
+    "w": 3.1,
+    "h": 18.1
+  },
+  "g_competency_for_rifle": {
+    "page": 5,
+    "kind": "tick",
+    "x": 291.9,
+    "y": 421.1,
+    "w": 17,
+    "h": 18.1
+  },
+  "g_competency_for_shotgun": {
+    "page": 5,
+    "kind": "tick",
+    "x": 386.4,
+    "y": 421.1,
+    "w": 18.9,
     "h": 18.1
   },
   "g_competency_number": {
@@ -692,6 +796,454 @@ export const SAPS271_COORDS = {
     "w": 403.8,
     "h": 17.2
   },
+  "f_owner_type_a": {
+    "page": 2,
+    "kind": "tick",
+    "x": 169.3,
+    "y": 76.1,
+    "w": 19.1,
+    "h": 26.4
+  },
+  "f_owner_type_b": {
+    "page": 2,
+    "kind": "tick",
+    "x": 264.7,
+    "y": 76.1,
+    "w": 19.1,
+    "h": 26.4
+  },
+  "f_owner_type_c": {
+    "page": 2,
+    "kind": "tick",
+    "x": 360.1,
+    "y": 76.1,
+    "w": 19.1,
+    "h": 26.4
+  },
+  "f_owner_type_d": {
+    "page": 2,
+    "kind": "tick",
+    "x": 455.5,
+    "y": 76.1,
+    "w": 19.1,
+    "h": 26.4
+  },
+  "f_owner_type_e": {
+    "page": 2,
+    "kind": "tick",
+    "x": 550.8,
+    "y": 76.1,
+    "w": 19,
+    "h": 26.4
+  },
+  "f_surname": {
+    "page": 3,
+    "kind": "text",
+    "x": 123.6,
+    "y": 761.2,
+    "w": 294.3,
+    "h": 18.1
+  },
+  "f_initials": {
+    "page": 3,
+    "kind": "chars",
+    "y": 761.2,
+    "h": 18.1,
+    "cells": [
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 512.7,
+        "sep": null
+      },
+      {
+        "x": 531.8,
+        "sep": null
+      },
+      {
+        "x": 550.8,
+        "sep": null
+      }
+    ]
+  },
+  "f_full_names": {
+    "page": 3,
+    "kind": "text",
+    "x": 123.6,
+    "y": 743.1,
+    "w": 437.5,
+    "h": 18.1
+  },
+  "f_id_number": {
+    "page": 3,
+    "kind": "chars",
+    "y": 725,
+    "h": 18.1,
+    "cells": [
+      {
+        "x": 264.7,
+        "sep": null
+      },
+      {
+        "x": 283.8,
+        "sep": null
+      },
+      {
+        "x": 302.9,
+        "sep": null
+      },
+      {
+        "x": 321.9,
+        "sep": null
+      },
+      {
+        "x": 341,
+        "sep": null
+      },
+      {
+        "x": 360.1,
+        "sep": null
+      },
+      {
+        "x": 379.2,
+        "sep": "-"
+      },
+      {
+        "x": 398.3,
+        "sep": null
+      },
+      {
+        "x": 417.6,
+        "sep": null
+      },
+      {
+        "x": 436.7,
+        "sep": null
+      },
+      {
+        "x": 455.5,
+        "sep": null
+      },
+      {
+        "x": 474.6,
+        "sep": "-"
+      },
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 512.7,
+        "sep": null
+      },
+      {
+        "x": 531.8,
+        "sep": "-"
+      },
+      {
+        "x": 550.8,
+        "sep": null
+      }
+    ]
+  },
+  "f_residential_address": {
+    "page": 3,
+    "kind": "text",
+    "x": 161.7,
+    "y": 706.9,
+    "w": 399.4,
+    "h": 18.1
+  },
+  "f_residential_postal_code": {
+    "page": 3,
+    "kind": "chars",
+    "y": 688.7,
+    "h": 18.2,
+    "cells": [
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 512.7,
+        "sep": null
+      },
+      {
+        "x": 531.8,
+        "sep": null
+      },
+      {
+        "x": 550.8,
+        "sep": null
+      }
+    ]
+  },
+  "f_postal_address": {
+    "page": 3,
+    "kind": "text",
+    "x": 161.7,
+    "y": 670.6,
+    "w": 399.4,
+    "h": 18.1
+  },
+  "f_postal_postal_code": {
+    "page": 3,
+    "kind": "chars",
+    "y": 653.5,
+    "h": 17.1,
+    "cells": [
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 512.7,
+        "sep": null
+      },
+      {
+        "x": 531.8,
+        "sep": null
+      },
+      {
+        "x": 550.8,
+        "sep": null
+      }
+    ]
+  },
+  "f_home_dialling_code": {
+    "page": 3,
+    "kind": "text",
+    "x": 233.1,
+    "y": 634.4,
+    "w": 20.8,
+    "h": 19.1
+  },
+  "f_home_telephone": {
+    "page": 3,
+    "kind": "text",
+    "x": 258.6,
+    "y": 634.4,
+    "w": 101.4,
+    "h": 19.1
+  },
+  "f_work_dialling_code": {
+    "page": 3,
+    "kind": "text",
+    "x": 437.1,
+    "y": 634.4,
+    "w": 20.7,
+    "h": 19.1
+  },
+  "f_work_telephone": {
+    "page": 3,
+    "kind": "text",
+    "x": 462.5,
+    "y": 634.4,
+    "w": 95.8,
+    "h": 19.1
+  },
+  "f_cellphone": {
+    "page": 3,
+    "kind": "text",
+    "x": 166,
+    "y": 616.3,
+    "w": 200,
+    "h": 18.1
+  },
+  "f_email": {
+    "page": 3,
+    "kind": "text",
+    "x": 166,
+    "y": 598.1,
+    "w": 395.1,
+    "h": 18.2
+  },
+  "f_firearm_address": {
+    "page": 5,
+    "kind": "text",
+    "x": 218.8,
+    "y": 798.9,
+    "w": 342.2,
+    "h": 18.1
+  },
+  "f_firearm_address_2": {
+    "page": 5,
+    "kind": "text",
+    "x": 46.3,
+    "y": 781.7,
+    "w": 370,
+    "h": 17.2
+  },
+  "f_firearm_postal_code": {
+    "page": 5,
+    "kind": "chars",
+    "y": 781.7,
+    "h": 17.2,
+    "cells": [
+      {
+        "x": 493.5,
+        "sep": null
+      },
+      {
+        "x": 512.6,
+        "sep": null
+      },
+      {
+        "x": 531.7,
+        "sep": null
+      },
+      {
+        "x": 550.8,
+        "sep": null
+      }
+    ]
+  },
+  "f_owner_name": {
+    "page": 5,
+    "kind": "text",
+    "x": 258.4,
+    "y": 670,
+    "w": 302.6,
+    "h": 17.2
+  },
+  "f_owner_id": {
+    "page": 5,
+    "kind": "chars",
+    "y": 642.7,
+    "h": 27.3,
+    "cells": [
+      {
+        "x": 265.3,
+        "sep": null
+      },
+      {
+        "x": 283.8,
+        "sep": null
+      },
+      {
+        "x": 302.9,
+        "sep": null
+      },
+      {
+        "x": 321.9,
+        "sep": null
+      },
+      {
+        "x": 341,
+        "sep": null
+      },
+      {
+        "x": 360.1,
+        "sep": null
+      },
+      {
+        "x": 379.2,
+        "sep": "-"
+      },
+      {
+        "x": 398.3,
+        "sep": null
+      },
+      {
+        "x": 417.3,
+        "sep": null
+      },
+      {
+        "x": 436.4,
+        "sep": null
+      },
+      {
+        "x": 455.5,
+        "sep": null
+      },
+      {
+        "x": 474.6,
+        "sep": "-"
+      },
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 512.7,
+        "sep": null
+      },
+      {
+        "x": 531.8,
+        "sep": "-"
+      },
+      {
+        "x": 550.8,
+        "sep": null
+      }
+    ]
+  },
+  "f_designation": {
+    "page": 5,
+    "kind": "text",
+    "x": 104.5,
+    "y": 614.3,
+    "w": 212.2,
+    "h": 18.2
+  },
+  "f_declaration_date": {
+    "page": 5,
+    "kind": "chars",
+    "y": 614.3,
+    "h": 18.2,
+    "cells": [
+      {
+        "x": 379.2,
+        "sep": null
+      },
+      {
+        "x": 398.3,
+        "sep": null
+      },
+      {
+        "x": 417.3,
+        "sep": null
+      },
+      {
+        "x": 436.4,
+        "sep": null
+      },
+      {
+        "x": 455.5,
+        "sep": "-"
+      },
+      {
+        "x": 474.6,
+        "sep": null
+      },
+      {
+        "x": 493.7,
+        "sep": null
+      },
+      {
+        "x": 512.7,
+        "sep": "-"
+      },
+      {
+        "x": 531.8,
+        "sep": null
+      },
+      {
+        "x": 550.8,
+        "sep": null
+      }
+    ]
+  },
+  "f_place": {
+    "page": 5,
+    "kind": "text",
+    "x": 371.6,
+    "y": 579.1,
+    "w": 189.5,
+    "h": 17.1
+  },
   "d_holder_main": {
     "page": 2,
     "kind": "tick",
@@ -1114,10 +1666,6 @@ export const SAPS271_COORDS = {
     "y": 699.7,
     "h": 18.1,
     "cells": [
-      {
-        "x": 203.8,
-        "sep": null
-      },
       {
         "x": 261.8,
         "sep": null
@@ -1770,6 +2318,38 @@ export const SAPS271_COORDS = {
     "x": 227.7,
     "y": 596,
     "w": 18.9,
+    "h": 17.5
+  },
+  "safe_detail_handgun_rifle": {
+    "page": 9,
+    "kind": "text",
+    "x": 349.6,
+    "y": 696.4,
+    "w": 211.8,
+    "h": 18.1
+  },
+  "safe_detail_strongroom": {
+    "page": 9,
+    "kind": "text",
+    "x": 139.9,
+    "y": 678.3,
+    "w": 421.5,
+    "h": 18.1
+  },
+  "safe_detail_device": {
+    "page": 9,
+    "kind": "text",
+    "x": 139.9,
+    "y": 660.2,
+    "w": 421.4,
+    "h": 18.1
+  },
+  "safe_detail_mounted": {
+    "page": 9,
+    "kind": "text",
+    "x": 239.1,
+    "y": 587.2,
+    "w": 322.3,
     "h": 17.5
   }
 } as const satisfies Record<string, Saps271Field>;

@@ -174,10 +174,34 @@ function textBox(pageNo, labelText, occurrence = 0) {
   const c = ctx(pageNo, labelText, occurrence);
   if (c.error) return c;
   const labRight = c.lab.x + c.lab.w;
-  const x = c.verts.find((v) => v > labRight - 0.5);
-  if (x === undefined) return { error: `no cell edge right of "${labelText}" p${pageNo}` };
-  const others = c.items.filter((i) => i !== c.lab && i.x > x + 2);
+  const first = c.verts.find((v) => v > labRight - 0.5);
+  if (first === undefined) return { error: `no cell edge right of "${labelText}" p${pageNo}` };
+  const others = c.items.filter((i) => i !== c.lab && i.x > first + 2);
   const right = others.length ? Math.min(...others.map((o) => o.x)) - 2 : c.tableRight;
+
+  // ⚠️ SKIP A NARROW EMPTY SPACER COLUMN. Several rows put a thin empty column
+  // between the label and the box a value actually goes in — items 1.5 to 1.11
+  // on page 2 have a 42pt spacer at x=153 before the real 231pt box at x=195.5.
+  // Taking the first edge after the label put the make, the model and two
+  // serial numbers 41 points left of where the form wants them, printed across
+  // a ruling line instead of inside a box.
+  //
+  // The operator's own fillable template settled it: its widget rectangles for
+  // those rows start at x≈196, not 153. Nothing else could — both columns are
+  // empty and neither looks wrong on a blank page.
+  //
+  // ⚠️ DELIBERATELY NARROW: a spacer is under 60pt AND the box after it is at
+  // least three times wider. An earlier attempt simply took the widest cell in
+  // the row and moved `g_full_names` 300 points to the right, into a box that
+  // was not its own. One conservative hop, never a search.
+  let x = first;
+  const after = c.verts.filter((v) => v > first + 0.5 && v < right);
+  if (after.length) {
+    const spacerWidth = after[0] - first;
+    const nextWidth = (after[1] ?? right) - after[0];
+    if (spacerWidth < 60 && nextWidth > spacerWidth * 3) x = after[0];
+  }
+
   const w = right - x - 2;
   if (w < 8) return { error: `value box after "${labelText}" p${pageNo} is only ${r1(w)}pt wide` };
   return { page: pageNo, kind: 'text', x: r1(x + 2), y: r1(c.bottom), w: r1(w), h: r1(c.top - c.bottom) };
@@ -215,6 +239,31 @@ function tickCell(pageNo, optionText, occurrence = 0) {
   // knows this position is only safe when a real field covers it: setting a
   // field paints inside its own box, drawing would put an X over printed text.
   return centreOf(c.cells[idx], true);
+}
+
+/**
+ * The empty cell to the LEFT of a label — a box with no caption of its own.
+ *
+ * ⚠️ SOME BOXES ARE CONTINUATIONS. Item 79's "Physical address where
+ * firearm(s) is kept" runs onto a second line, and that second line is a wide
+ * empty box sharing a row with the "Postal Code" caption for item 80. It has
+ * no label, so every other resolver here is blind to it — and the fill service
+ * silently DROPS any value too wide for its box, so a long address was
+ * disappearing off the form altogether rather than wrapping.
+ */
+function leftOfLabel(pageNo, labelText, occurrence = 0) {
+  const c = ctx(pageNo, labelText, occurrence);
+  if (c.error) return c;
+  const idx = c.cells.findIndex((cell) => cell.text.includes(labelText.trim()));
+  if (idx < 1) return { error: `nothing left of "${labelText}" p${pageNo}` };
+  const cell = c.cells[idx - 1];
+  if (cell.text) {
+    return { error: `the cell left of "${labelText}" p${pageNo} prints "${cell.text}"` };
+  }
+  return {
+    page: pageNo, kind: 'text',
+    x: r1(cell.a + 2), y: r1(c.bottom), w: r1(cell.b - cell.a - 4), h: r1(c.top - c.bottom),
+  };
 }
 
 /** The LAST cell of a row — the "X" column on the section-D table. */
@@ -354,7 +403,32 @@ function charCells(pageNo, labelText, occurrence = 0) {
     (i) => i !== c.lab && i.x > labRight + 2 && !isSeparator(i.s),
   );
   const stop = others.length ? Math.min(...others.map((o) => o.x)) : Infinity;
-  const cells = c.cells.filter((cell) => cell.a > labRight - 0.5 && cell.b <= stop + 1);
+  let cells = c.cells.filter((cell) => cell.a > labRight - 0.5 && cell.b <= stop + 1);
+
+  // ⚠️ DROP A SPACER BOX AT EITHER END. Some rows put a wide, undivided box
+  // between the label and the start of the character grid — page 3's
+  // "Identity number" is one — and it is a ruled cell like any other, so it was
+  // taken as the first CHARACTER cell.
+  //
+  // The damage is silent and total: the writer fills cells in order, so one
+  // spurious leading cell pushes every digit one box early, the real last box
+  // is left empty, and the row reads as a different identity number. Nothing
+  // catches it, because the count check is `chars > cells` and an extra cell
+  // makes that MORE false, not less. It shipped as a 13-digit ID drawn across
+  // 14 boxes starting in a box that is not part of the grid.
+  //
+  // A character cell is one glyph wide, so the row's own median width is the
+  // discriminator: a spacer is several times it. Trimmed from both ends and
+  // never from the middle, where the form's printed separators legitimately
+  // sit in cells of their own.
+  const widthOf = (cell) => cell.b - cell.a;
+  const median = [...cells].map(widthOf).sort((a, b) => a - b)[
+    Math.floor(cells.length / 2)
+  ];
+  const spacer = (cell) => widthOf(cell) > median * 1.6;
+  while (cells.length > 3 && spacer(cells[0])) cells = cells.slice(1);
+  while (cells.length > 3 && spacer(cells[cells.length - 1])) cells = cells.slice(0, -1);
+
   if (cells.length < 3) return { error: `"${labelText}" p${pageNo} has only ${cells.length} character cells` };
   return {
     page: pageNo, kind: 'chars', y: r1(c.bottom), h: r1(c.top - c.bottom),
@@ -385,6 +459,48 @@ const SPEC = {
   e_model: ['text', 2, 'Model'],
   e_frame_serial: ['text', 2, 'Frame serial number'],
   e_receiver_serial: ['text', 2, 'Receiver serial number'],
+
+  // ⚠️ ITEMS 1.7-1.12 ARE THREE SERIALS, EACH WITH ITS OWN MAKE, and only two
+  // of the six were mapped. A real licence card carries all of them and they
+  // genuinely differ — one reads barrel CZ, receiver NONE, frame NONE; another
+  // reads barrel NONE, receiver MARLIN. The vault reads all six today and four
+  // had nowhere to print.
+  //
+  // The four "Make" boxes are found by OCCURRENCE, because the form prints the
+  // same word four times down page 2: 1.5 the firearm's make, then 1.8, 1.10
+  // and 1.12 beside each serial. ctx() sorts its hits top-to-bottom, so the
+  // order is the form's own reading order.
+  e_barrel_serial: ['text', 2, 'Barrel serial number'],
+  e_barrel_make: ['text', 2, 'Make', 1],
+  e_frame_make: ['text', 2, 'Make', 2],
+  e_receiver_make: ['text', 2, 'Make', 3],
+
+  // ── Section F, type A item 15 ────────────────────────────────────
+  //
+  // "Are there any additional firearm licence holders for this firearm?" It is
+  // the current owner's answer, not the applicant's, and it had no box mapped
+  // so it went in blank on every form.
+  f_additional_holders_yes: ['tick', 3, 'YES'],
+  f_additional_holders_no: ['tick', 3, 'NO'],
+
+  // ── Section G.1 — WHICH competency, and for what ──────────────────
+  //
+  // ⚠️ THE WHOLE OF ITEM 1 WENT IN BLANK. Only the certificate NUMBER and its
+  // two dates were mapped; the four boxes that say which KIND of competency it
+  // is, and the three that say which firearms it covers, had no coordinates at
+  // all. A DFO reading it saw a certificate number against an unmarked list.
+  //
+  // motivation-fields.ts has carried `competency_for` for this exact box the
+  // whole time — its own comment reads "Item 1.4 lets you mark more than one,
+  // and it must match the firearm you are applying for". The answer existed
+  // and the box did not.
+  g_competency_type_a: ['rowEnd', 5, 'Competency certificate to trade in firearms'],
+  g_competency_type_b: ['rowEnd', 5, 'Competency certificate to manufacture firearms'],
+  g_competency_type_c: ['rowEnd', 5, 'Competency certificate to conduct business as a gunsmith'],
+  g_competency_type_d: ['rowEnd', 5, 'Competency certificate to possess a firearm'],
+  g_competency_for_handgun: ['tick', 5, 'Handgun'],
+  g_competency_for_rifle: ['tick', 5, 'Rifle'],
+  g_competency_for_shotgun: ['tick', 5, 'Shotgun'],
 
   // Section G.1 — the competency certificate.
   g_competency_number: ['text', 5, 'Competency certificate number'],
@@ -427,6 +543,83 @@ const SPEC = {
   g_spouse_id_number: ['chars', 7, 'Identity number of spouse'],
   g_spouse_name: ['text', 7, 'Name and surname'],
 
+
+  // ── Section F — PARTICULARS OF THE CURRENT OWNER ──────────────────
+  //
+  // ⚠️ NONE OF THIS WAS MAPPED, AND IT IS THE HALF SOMEBODY ELSE FILLS IN.
+  // Section F is the current owner's: his name, his identity number, his
+  // address, and his signed declaration that the firearm is lawfully his and
+  // that he intends to sell it once the licence issues. It is the part
+  // applicants most often get sent back for, and until now we could collect
+  // every answer from him and still have nowhere on the form to print it.
+  //
+  // ⚠️ TYPE A ONLY, DELIBERATELY. The form offers five kinds of current owner
+  // — A private owner, B firearm dealer, C company, D imported firearm,
+  // E estate — and each has its own block of boxes. This maps the PRIVATE
+  // SALE, which is the route the product supports. A dealer or an estate is a
+  // different flow with different documents, and half-mapping them would print
+  // a partly-filled block that reads as complete.
+  // ── ITEM 1.2 — WHICH OF THE FIVE OWNER BLOCKS THIS APPLICATION USES ──
+  //
+  // ⚠️ ONLY "A" WAS EVER MEASURED, AND THE FILL TICKED IT UNCONDITIONALLY.
+  // Every application that carried a current owner at all printed "A. Private
+  // owner", because the presence of a seller object was mistaken for the
+  // answer to this question. A dealer purchase would have printed "private
+  // owner" on a form signed under section 120(9)(f).
+  //
+  // All five are measured. The platform offers two routes today — private and
+  // dealer — so C, D and E are never ticked by anything, and each says so
+  // where the fill logic decides it. They are measured anyway because the day
+  // one of them is built the geometry must already be derived from the form,
+  // never guessed at under deadline.
+  //
+  // The row is one label cell plus a 19.1pt empty tick cell per option, which
+  // is exactly the shape tickCell resolves.
+  f_owner_type_a: ['tick', 2, 'Private owner'],
+  f_owner_type_b: ['tick', 2, 'Firearm dealer'],
+  f_owner_type_c: ['tick', 2, 'Company'],
+  f_owner_type_d: ['tick', 2, 'Imported firearm'],
+  f_owner_type_e: ['tick', 2, 'Estate'],
+
+  // Type A, items 4-15 on page 3.
+  f_surname: ['text', 3, 'Surname'],
+  f_initials: ['chars', 3, 'Initials'],
+  f_full_names: ['text', 3, 'Full names'],
+  f_id_number: ['chars', 3, 'Identity number'],
+  f_residential_address: ['text', 3, 'Residential address'],
+  // ⚠️ 'chars', NOT 'text'. A postal code on this form is FOUR PRINTED BOXES,
+  // one digit each — exactly as the applicant's own postal codes below are
+  // already mapped. Declared as text, all four digits are drawn as one string
+  // in the left of the first box and the other three sit empty: it reads as a
+  // number written outside the lines rather than a postal code, and it is the
+  // kind of thing a DFO hands straight back.
+  f_residential_postal_code: ['chars', 3, 'Postal Code', 0],
+  f_postal_address: ['text', 3, 'Postal address'],
+  f_postal_postal_code: ['chars', 3, 'Postal Code', 1],
+  f_home_dialling_code: ['phone', 3, 'Home', 'code'],
+  f_home_telephone: ['phone', 3, 'Home', 'number'],
+  f_work_dialling_code: ['phone', 3, 'Work', 'code'],
+  f_work_telephone: ['phone', 3, 'Work', 'number'],
+  f_cellphone: ['text', 3, 'Cellphone number'],
+  f_email: ['text', 3, 'E-mail address'],
+
+  // ── Section F, the declaration — items 79-87 at the top of page 5 ──
+  //
+  // Box 81 is the sentence he signs: that the firearm is legally in his
+  // possession, that he proposes to sell it once the licence is issued, and
+  // that he knows a false statement here is an offence under section 120(9)(f)
+  // of the Firearms Control Act. We print it; he signs it in ink at a counter.
+  f_firearm_address: ['text', 5, 'Physical address where firearm(s) is kept'],
+  // ⚠️ ITEM 79 IS TWO LINES. The second has no caption — it shares its row
+  // with item 80's "Postal Code" label — so it is found by its position rather
+  // than its name.
+  f_firearm_address_2: ['leftOf', 5, 'Postal Code', 0],
+  f_firearm_postal_code: ['chars', 5, 'Postal Code', 0],
+  f_owner_name: ['text', 5, 'Name and surname of current owner/authorized person'],
+  f_owner_id: ['chars', 5, 'Identification number of current owner/authorized'],
+  f_designation: ['text', 5, 'Designation'],
+  f_declaration_date: ['chars', 5, 'Date'],
+  f_place: ['text', 5, 'Place'],
 
   // ── Section D.1 — which kind of holder ────────────────────────────
   d_holder_main: ['tick', 2, 'Main firearm licence holder'],
@@ -577,6 +770,28 @@ const SPEC = {
   safe_mounted_no: ['tick', 9, 'NO', 1],
   safe_mounted_wall: ['tick', 9, 'Wall'],
   safe_mounted_floor: ['tick', 9, 'Floor'],
+
+  // ── ITEMS 68.1 AND 69.1 — "SUBMIT FULL DETAILS" ──────────────────
+  //
+  // Both items print IF YES, SUBMIT FULL DETAILS, and 68.1 adds "with short
+  // description" in as many words. Nothing was ever written into either: the
+  // ticks answered "which kind" and "mounted to what", and the form's own
+  // request for the details went back to the DFO blank.
+  //
+  // ⚠️ THE BAND BELONGS TO THE ROW, NOT TO THE ITEM. 68.1 is three rows —
+  // Handgun and Rifle share one, Strongroom has its own, Device has its own —
+  // and each row carries its own empty band to the right of the tick boxes
+  // (212.9pt on the shared row, 422.6pt on the other two). The description
+  // goes beside the type it describes, so which band is written depends on
+  // which type was ticked.
+  //
+  // All four resolve through the plain text resolver: the label is the last
+  // printed word on the row, and the narrow-spacer hop steps over the 16pt
+  // tick column to land in the band itself.
+  safe_detail_handgun_rifle: ['text', 9, 'Rifle'],
+  safe_detail_strongroom: ['text', 9, 'Strongroom'],
+  safe_detail_device: ['text', 9, 'Device'],
+  safe_detail_mounted: ['text', 9, 'Floor'],
 };
 
 // ── bind each measured box to a field in the fillable template ──────
@@ -704,6 +919,7 @@ const RESOLVERS = {
   tick: tickCell,
   chars: charCells,
   rowEnd: rowEndTick,
+  leftOf: leftOfLabel,
   block: blockBelow,
   table: tableCell,
   phone: phonePart,

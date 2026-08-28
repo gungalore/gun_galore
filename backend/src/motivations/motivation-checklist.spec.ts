@@ -1,5 +1,6 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
+  ChecklistProgress,
   annexureByKind,
   buildAnnexures,
   buildChecklist,
@@ -506,5 +507,126 @@ describe('resolving an upload to its annexure', () => {
     expect(annexureByKind(buildAnnexures([], ['PRIOR_NOTICE_REQUEST'])).size).toBe(
       0,
     );
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// B4 — THE RICHER ROW: state, closer, captureRoutes.
+//
+// Three things are being protected here:
+//
+//  1. `done` and `oursDone` must mean exactly what they meant before. The new
+//     `state` sits beside them and never feeds them; folding a third-party
+//     signal into `done` would move the progress ring an existing screen
+//     already renders, with no type error to catch it.
+//  2. 'waiting-on-someone' must never collapse into 'not-started'. An invited
+//     seller and a seller nobody has asked look identical through a boolean,
+//     and telling an applicant "not started" is telling them to redo work they
+//     already did.
+//  3. Only two capture routes exist, and rows we do not hold must offer none.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the richer checklist row', () => {
+  const S16 = 'S16_DEDICATED_SPORT' as MotivationLicenceType;
+  const every = (p: ChecklistProgress) => p.sections.flatMap((s) => s.items);
+  const row = (p: ChecklistProgress, key: string) =>
+    every(p).find((i) => i.key === key)!;
+
+  it('gives every row a closer sentence — no row is left as a bare requirement', () => {
+    const p = buildChecklist(S16, []);
+    for (const item of every(p)) {
+      expect(typeof item.closer).toBe('string');
+      expect(item.closer.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('never contradicts done: state==="done" implies done', () => {
+    for (const kinds of [[], ['IDENTITY_DOCUMENT'], ['IDENTITY_DOCUMENT', 'SAFE_PHOTOGRAPHS']]) {
+      const p = buildChecklist(S16, kinds as MotivationUploadKind[], true);
+      for (const item of every(p)) {
+        if (item.state === 'done') expect(item.done).toBe(true);
+        if (item.done) expect(item.state).toBe('done');
+      }
+    }
+  });
+
+  it('leaves done and oursDone exactly where they were', () => {
+    // The regression guard. Adding state must not make anything "more done".
+    const bare = buildChecklist(S16, []);
+    expect(bare.oursDone).toBe(0);
+
+    const withId = buildChecklist(S16, ['IDENTITY_DOCUMENT'] as MotivationUploadKind[]);
+    expect(withId.oursDone).toBe(1);
+    expect(row(withId, 'upload_identity_document').done).toBe(true);
+    expect(row(withId, 'upload_identity_document').state).toBe('done');
+
+    // And a row somebody else is finishing is still NOT done.
+    const waiting = buildChecklist(S16, [], false, {
+      waitingOn: { upload_firearm_source_proof: 'Sent to Piet Malan.' },
+    });
+    expect(waiting.oursDone).toBe(0);
+    expect(row(waiting, 'upload_firearm_source_proof').done).toBe(false);
+  });
+
+  it('distinguishes waiting on someone from never started', () => {
+    const p = buildChecklist(S16, [], false, {
+      waitingOn: { upload_firearm_source_proof: 'Sent to Piet Malan.' },
+    });
+    expect(row(p, 'upload_firearm_source_proof').state).toBe('waiting-on-someone');
+    expect(row(p, 'upload_firearm_source_proof').closer).toBe('Sent to Piet Malan.');
+    // Its neighbour, which nobody was asked for, stays plainly not started.
+    expect(row(p, 'upload_identity_document').state).toBe('not-started');
+  });
+
+  it('prefers done over waiting — a signed document is not still pending', () => {
+    const p = buildChecklist(S16, ['FIREARM_SOURCE_PROOF'] as MotivationUploadKind[], false, {
+      waitingOn: { upload_firearm_source_proof: 'Sent to Piet Malan.' },
+    });
+    expect(row(p, 'upload_firearm_source_proof').state).toBe('done');
+  });
+
+  it('offers exactly two capture routes, and only on rows we can hold', () => {
+    const p = buildChecklist(S16, ['IDENTITY_DOCUMENT'] as MotivationUploadKind[], true);
+    for (const item of every(p)) {
+      if (!item.captureRoutes) continue;
+      expect(item.captureRoutes).toEqual(['qr', 'upload']);
+    }
+    // Uploadable rows offer them, done or not — a wrong page must be replaceable.
+    expect(row(p, 'upload_identity_document').captureRoutes).toEqual(['qr', 'upload']);
+    expect(row(p, 'upload_address_confirmation').captureRoutes).toEqual(['qr', 'upload']);
+    // Things we generate cannot be uploaded to.
+    expect(row(p, 'motivation').captureRoutes).toBeUndefined();
+    expect(row(p, 'paja').captureRoutes).toBeUndefined();
+  });
+
+  it('never offers a capture route on something the applicant brings by hand', () => {
+    // These are certified copies, passport photographs, fingerprints and a
+    // fee. Offering an upload would imply we could hold them, which we cannot.
+    const p = buildChecklist(S16, []);
+    const theirs = p.sections.find((s) => s.key === 'theirs')!;
+    expect(theirs.items.length).toBeGreaterThan(0);
+    for (const item of theirs.items) {
+      expect(item.captureRoutes).toBeUndefined();
+      expect(item.owner).toBe('applicant');
+      expect(item.closer).toBe('You bring this with you to the counter.');
+    }
+  });
+
+  it('says who writes the motivation, and changes its mind once it is written', () => {
+    expect(row(buildChecklist(S16, [], false), 'motivation').closer).toMatch(/we write this/i);
+    expect(row(buildChecklist(S16, [], true), 'motivation').closer).toMatch(/we have written/i);
+  });
+
+  it('keeps every item key stable — a rename orphans a member’s hand-ticks', () => {
+    // Not exhaustive by design; these are the keys most likely to be touched
+    // while editing this module.
+    const keys = every(buildChecklist(S16, [])).map((i) => i.key);
+    expect(keys).toEqual(expect.arrayContaining([
+      'motivation',
+      'paja',
+      'upload_identity_document',
+      'upload_competency_certificate',
+      'upload_firearm_source_proof',
+    ]));
   });
 });
