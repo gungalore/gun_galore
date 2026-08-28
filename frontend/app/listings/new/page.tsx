@@ -11,6 +11,7 @@ import { useViewerFetch } from '@/lib/use-viewer-fetch';
 import { PillGroup, MultiSelectPillGroup } from '@/components/pill';
 import { PhotoDropzone } from '@/components/photo-dropzone';
 import { FormSection } from '@/components/form-section';
+import { WizardFooter } from '@/components/wizard-footer';
 import { useShellStep } from '@/components/shell/shell-step';
 import { StepRail } from '@/components/step-rail';
 import IdentifyFromPhotos from './identify-from-photos';
@@ -1659,50 +1660,71 @@ export default function NewListingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveCollectionOnly, form.listingType]);
 
-  // ─────────────────── Step completion (drives the accordion) ───────────
-  // Each step's `isComplete` is a pure function of the form state.
-  // Four steps total: photos → basics → selling → delivery+address.
-  // Photos moved to first so the AI "Help me describe this" button
-  // can pre-fill basics from the photos before the seller types.
-  const stepComplete = useMemo(() => {
+  // ─────────────────── Step completion ──────────────────────────────────
+  // Each step is a LIST OF WHAT IS STILL MISSING, in words the seller can act
+  // on. Completeness is `length === 0`, so `stepComplete` below is derived
+  // from these and the two can never disagree.
+  //
+  // ⚠️ ADD A BLOCKING CONDITION? ADD IT HERE, WITH A LABEL. A condition that
+  // gates Continue without pushing a string is invisible: the button greys and
+  // the panel says nothing is wrong. That is the whole reason this is a list
+  // of strings rather than a chain of &&.
+  //
+  // Four steps: photos → basics → selling → delivery+address. Photos are first
+  // so the AI "Help me describe this" button can pre-fill basics from them
+  // before the seller types.
+  const stepMissing = useMemo(() => {
     // Step 1 — at least 1 photo.
-    const step1 = images.length >= 1;
+    const step1: string[] = [];
+    if (images.length < 1) step1.push('At least one photo');
 
     // Step 2 — basics: title, category, condition, description.
     // Often pre-filled by the Step 1 AI helper, but the seller can
     // always override / fill manually.
-    const step2 =
-      form.title.trim().length >= 5 &&
-      // RESOLVED category, not merely a truthy id. `form.categoryId` is a
-      // plain string that can outlive the row it points at — restored from a
-      // draft, seeded by relist, or left behind when a category is
-      // deactivated. When it doesn't resolve, `selectedCategory` is undefined
-      // and isFirearm / collectionOnly / requiresPapers all
-      // collapse to false via `?? false`, silently switching OFF the
-      // compliance UI those flags exist to switch ON. Gating on the id alone
-      // let a seller walk through Step 2 with no serial field, no dealer
-      // transfer and no licence attestation on what is actually a firearm.
-      !!selectedCategory &&
-      !!form.condition &&
-      form.description.trim().length >= 10 &&
-      // Required per-category attributes (P4.2) live in this step's
-      // Specifications sub-section — block Continue until they're filled.
-      missingRequiredAttrs.length === 0;
+    const step2: string[] = [];
+    if (form.title.trim().length < 5) {
+      step2.push('Title — at least 5 characters');
+    }
+    // RESOLVED category, not merely a truthy id. `form.categoryId` is a plain
+    // string that can outlive the row it points at — restored from a draft,
+    // seeded by relist, or left behind when a category is deactivated. When it
+    // doesn't resolve, `selectedCategory` is undefined and isFirearm /
+    // collectionOnly / requiresPapers all collapse to false via `?? false`,
+    // silently switching OFF the compliance UI those flags exist to switch ON.
+    // Gating on the id alone let a seller walk through Step 2 with no serial
+    // field, no dealer transfer and no licence attestation on what is actually
+    // a firearm.
+    if (!selectedCategory) step2.push('Category');
+    if (!form.condition) step2.push('Condition');
+    if (form.description.trim().length < 10) {
+      step2.push('Description — at least 10 characters');
+    }
+    // Required per-category attributes (P4.2) live in this step's
+    // Specifications sub-section. Named individually rather than as
+    // "specifications" so the seller knows which box to open.
+    for (const label of missingRequiredAttrs) step2.push(label);
 
     const hasPrice = parseFloat(form.price || '0') > 0;
     const hasReserve = parseFloat(form.reservePrice || '0') > 0;
-    // Step 3 — listing type + price. Blocked until the seller picks
-    // a listing type AND satisfies that type's price requirement.
-    // The empty-string default for listingType (see useState above)
-    // means Step 3 shows "Up next" until the seller actively chooses.
-    const step3 =
-      !form.listingType
-        ? false
-        : form.listingType === 'TAKE_A_SHOT'
-          ? true // no price required — buyer names a price
-          : form.listingType === 'AUCTION'
-            ? (hasPrice || hasReserve) && !!form.durationDays
-            : hasPrice;
+    // Step 3 — listing type + price. Blocked until the seller picks a listing
+    // type AND satisfies that type's price requirement. The empty-string
+    // default for listingType (see useState above) means nothing is assumed
+    // until the seller actively chooses.
+    const step3: string[] = [];
+    if (!form.listingType) {
+      step3.push('How you want to sell it — Buy Now or Auction');
+    } else if (form.listingType === 'AUCTION') {
+      // Either a starting bid or a reserve satisfies an auction; say so
+      // rather than naming one field the seller may have deliberately left
+      // blank in favour of the other.
+      if (!hasPrice && !hasReserve) {
+        step3.push('A starting bid or a reserve price');
+      }
+      if (!form.durationDays) step3.push('How long the auction runs');
+    } else if (form.listingType !== 'TAKE_A_SHOT') {
+      // TAKE_A_SHOT needs no price — the buyer names one.
+      if (!hasPrice) step3.push('Your price');
+    }
 
     // Step 4 — delivery + address. The seller picks ≥1 shipping method
     // and fills the pickup address. NO locker selection here — for PUDO,
@@ -1712,51 +1734,65 @@ export default function NewListingPage() {
     // The address is required on EVERY path and must stay that way: under the
     // single-option courier model it's the address a courier is dispatched
     // to, so "locker-only, no address" cannot be a listable state.
-    const addressFilled =
-      pickupAddress.street.trim().length > 0 &&
-      pickupAddress.suburb.trim().length > 0 &&
-      pickupAddress.city.trim().length > 0 &&
-      pickupAddress.postalCode.trim().length > 0 &&
-      pickupAddress.province.length > 0;
+    const step4: string[] = [];
+    if (shippingMethods.length === 0) {
+      step4.push(
+        effectiveCollectionOnly
+          ? 'How the buyer collects it'
+          : 'At least one delivery option',
+      );
+    }
+    // Named field by field. "Pickup address" as one line sends the seller
+    // back to scan five inputs for the one they skipped — usually the
+    // postal code.
+    if (!pickupAddress.street.trim()) step4.push('Pickup address — street');
+    if (!pickupAddress.suburb.trim()) step4.push('Pickup address — suburb');
+    if (!pickupAddress.city.trim()) step4.push('Pickup address — city');
+    if (!pickupAddress.postalCode.trim()) {
+      step4.push('Pickup address — postal code');
+    }
+    if (!pickupAddress.province) step4.push('Pickup address — province');
     // Parcel weight + dims required for non-firearm so the courier API
     // has something to quote against. Firearms skip this — DEALER_TRANSFER
     // and PRIVATE_ARRANGE don't use Pudo/TCG. Collection-only listings
     // also skip it — there's no courier, so no parcel to quote.
-    const parcelFilled =
-      isFirearm ||
-      effectiveCollectionOnly ||
-      (parsedParcel.weightKg != null &&
-        parsedParcel.lengthCm != null &&
-        parsedParcel.widthCm != null &&
-        parsedParcel.heightCm != null);
+    // Parcel weight + dims are required for non-firearm so the courier API has
+    // something to quote against. Firearms skip this — DEALER_TRANSFER and
+    // PRIVATE_ARRANGE don't use Pudo/TCG. Collection-only listings skip it
+    // too: there's no courier, so no parcel to quote.
+    if (!isFirearm && !effectiveCollectionOnly) {
+      if (parsedParcel.weightKg == null) step4.push('Parcel weight');
+      if (
+        parsedParcel.lengthCm == null ||
+        parsedParcel.widthCm == null ||
+        parsedParcel.heightCm == null
+      ) {
+        step4.push('Parcel size — length, width and height');
+      }
+    }
     // Collection papers attestation — required checkbox for requiresPapers
-    // categories (trailers / caravans). Publish is blocked until ticked.
-    const papersOk = !requiresPapers || papersAttested;
+    // categories (trailers / caravans).
+    if (requiresPapers && !papersAttested) {
+      step4.push('Confirm the registration papers hand over with the item');
+    }
     // Firearm/barrel dealer-lock — dealer name + province + area are all
     // mandatory before publish (2026-07-13). Non-firearm listings skip it.
-    const plannedDealerOk =
-      !isFirearm ||
-      (plannedDealerName.trim().length > 0 &&
-        plannedDealerProvince.length > 0 &&
-        plannedDealerArea.trim().length > 0);
-    // Firearm compliance docs — serial number + serial photo + licence photo
-    // all live in Step 4; without gating here a seller could sail through to
-    // Publish and only fail at the very last click (handlePublish's guard).
-    const firearmDocsOk =
-      !isFirearm ||
-      (serialNumber.trim().length > 0 && !!serialPhoto && !!licencePhoto);
+    if (isFirearm) {
+      if (!plannedDealerName.trim()) step4.push('Dealer for the transfer');
+      if (!plannedDealerProvince) step4.push('Dealer province');
+      if (!plannedDealerArea.trim()) step4.push('Dealer area');
+      // Serial + photos live in this step; without gating here a seller could
+      // sail to Publish and only fail at the very last click (handlePublish's
+      // guard), having filled in everything else first.
+      if (!serialNumber.trim()) step4.push('Serial number');
+      if (!serialPhoto) step4.push('Photo of the serial number');
+      if (!licencePhoto) step4.push('Photo of your licence');
+    }
     // Private-arrangement contact-sharing consent — same late-failure class:
-    // the checkbox is in Step 4 but publish rejects without it.
-    const paConsentOk =
-      !shippingMethods.includes('PRIVATE_ARRANGE') || paConsent;
-    const step4 =
-      shippingMethods.length > 0 &&
-      addressFilled &&
-      parcelFilled &&
-      papersOk &&
-      plannedDealerOk &&
-      firearmDocsOk &&
-      paConsentOk;
+    // the checkbox is in this step but publish rejects without it.
+    if (shippingMethods.includes('PRIVATE_ARRANGE') && !paConsent) {
+      step4.push('Agree to share your contact details for a private hand-over');
+    }
 
     return { step1, step2, step3, step4 };
   }, [
@@ -1780,23 +1816,23 @@ export default function NewListingPage() {
     paConsent,
   ]);
 
-  // Which step is "up next" — the first incomplete one. Drives the red
-  // "Up next" pill, NOT auto-expansion. Completing fields just unlocks
-  // the Continue button; the user has to click Continue to advance.
-  const activeStep: 1 | 2 | 3 | 4 = !stepComplete.step1
-    ? 1
-    : !stepComplete.step2
-      ? 2
-      : !stepComplete.step3
-        ? 3
-        : !stepComplete.step4
-          ? 4
-          : 4; // all done — leave step 4 active so seller can still edit photos
+  // Derived, never written by hand — see the note on stepMissing.
+  const stepComplete = useMemo(
+    () => ({
+      step1: stepMissing.step1.length === 0,
+      step2: stepMissing.step2.length === 0,
+      step3: stepMissing.step3.length === 0,
+      step4: stepMissing.step4.length === 0,
+    }),
+    [stepMissing],
+  );
 
-  // Single source of truth for which step is currently expanded. Only one
-  // step is open at a time (classic accordion). Defaults to step 1.
-  // Filling out a step does NOT change this — only a Continue click or a
-  // user header click does.
+  // (`activeStep` — "the first incomplete step" — lived here. The rail tracks
+  // the OPEN panel now, and nothing else read it. Deleted rather than left in
+  // place: a dead helper carrying a confident comment is worse than none,
+  // because the next person wires something to it and inherits a meaning that
+  // stopped being true.)
+
   // Values the "How it will look" preview reads. The price is the BUYER-FACING
   // one — listPriceFromSellerAsk is the same mirror of the fee calculator the
   // rest of the form uses, so the preview can never disagree with the fee
@@ -1827,24 +1863,58 @@ export default function NewListingPage() {
     return () => URL.revokeObjectURL(url);
   }, [images]);
 
-  /** Anchor id for a step's section — the rail scrolls to these. */
+  /** Anchor id for a step's section. */
   const stepAnchor = (n: number) => `sell-step-${n}`;
 
-  function scrollToStep(n: number) {
-    document
-      .getElementById(stepAnchor(n))
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Which step's panel is on screen. Exactly one is rendered at a time
+  // (operator: "display only the content of the part of the rail that is
+  // active"), and the rail above is how you move between them.
+  const [activePanel, setActivePanel] = useState<1 | 2 | 3 | 4>(1);
+
+  function goToStep(n: number) {
+    const step = Math.min(4, Math.max(1, Math.round(n))) as 1 | 2 | 3 | 4;
+    setActivePanel(step);
+    // The rail sits above the panel, and swapping a tall panel for a short one
+    // can leave the seller looking at the middle of a form with the rail
+    // scrolled off. Put them back at the top of the step they just opened.
+    requestAnimationFrame(() => {
+      document
+        .getElementById(stepAnchor(step))
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
+
+  // What the footer lists under the CURRENT panel.
+  //
+  // ⚠️ THE LAST STEP HAS TO ANSWER FOR THE WHOLE FORM. Publish is gated on
+  // all four steps, so a seller standing on a finished step 4 with an
+  // unfinished step 2 would otherwise get a grey Publish button above an
+  // empty list — the exact dead end this feature exists to remove. On step 4
+  // the list carries every outstanding item, and anything belonging to
+  // another step says which one, so it is one click away on the rail.
+  const footerMissing = useMemo(() => {
+    const own = stepMissing[`step${activePanel}` as keyof typeof stepMissing];
+    if (activePanel !== 4) return own;
+    const elsewhere: string[] = [];
+    ([1, 2, 3] as const).forEach((n) => {
+      for (const item of stepMissing[`step${n}` as keyof typeof stepMissing]) {
+        elsewhere.push(`Step ${n} · ${SELL_STEP_LABELS[n - 1]} — ${item}`);
+      }
+    });
+    // Own items first: they are the ones in front of the seller right now.
+    return [...own, ...elsewhere];
+  }, [stepMissing, activePanel, SELL_STEP_LABELS]);
 
   // Publish the current step to the mobile shell header, which draws it as a
   // labelled progress row under the title (components/shell/shell-step.tsx).
   // Desktop ignores it — the shell chrome is phone-and-installed-app only, and
   // the rail at the top of the page does this job on a wide screen.
   //
-  // ⚠️ "Current" IS NOW THE FIRST INCOMPLETE STEP, NOT THE OPEN ONE. There is
-  // no open one: the whole form is on screen. `activeStep` is the honest
-  // reading of where the work is, and it advances on its own as the seller
-  // fills things in rather than on a click they no longer make.
+  // ⚠️ THIS FOLLOWS THE OPEN PANEL, NOT THE FIRST INCOMPLETE STEP. There is
+  // exactly one panel on screen, so "Step 2 of 4" has to name the one the
+  // seller is looking at. Reporting the first incomplete step instead would
+  // announce step 1 while they were editing step 3 — which is what it did
+  // briefly while the whole form was visible and nothing was "open".
   //
   // Gated on the form actually being on screen. The component returns null
   // until Clerk resolves and the seller is signed in, and hooks run before that
@@ -1853,8 +1923,8 @@ export default function NewListingPage() {
   useShellStep(
     isLoaded && isSignedIn
       ? {
-          label: SELL_STEP_LABELS[activeStep - 1],
-          current: activeStep,
+          label: SELL_STEP_LABELS[activePanel - 1],
+          current: activePanel,
           total: SELL_STEP_LABELS.length,
         }
       : null,
@@ -2608,10 +2678,14 @@ export default function NewListingPage() {
       {/* The house step rail, and — since 2026-08-28 — the ONLY step display
           on this page. Desktop only; below md the shell header shows the
           compact "Photos · Step 1 of 4" row instead, published by the
-          useShellStep call above. Tapping a step scrolls to it. Every step is
-          reachable: nothing is hidden or locked any more, so offering only
-          some of them would be refusing to scroll to a section already in
-          front of the seller. */}
+          useShellStep call above.
+
+          Tapping a step OPENS it — this rail is the form's navigation now,
+          not a progress readout. Every step stays reachable rather than
+          locking the ones ahead: the seller who wants to check what the
+          delivery step asks for before writing a description is not doing
+          anything wrong, and Publish is gated on all four being complete
+          regardless of the order they were filled in. */}
       <StepRail
         steps={SELL_STEP_LABELS.map((label, i) => ({
           label,
@@ -2622,9 +2696,9 @@ export default function NewListingPage() {
             stepComplete.step4,
           ][i],
         }))}
-        current={activeStep}
+        current={activePanel}
         mobile="shell"
-        onJump={scrollToStep}
+        onJump={goToStep}
         className="-mx-4 mb-8"
       />
 
@@ -2693,8 +2767,8 @@ export default function NewListingPage() {
           <span>
             <strong style={{ color: 'var(--success)' }}>Draft restored</strong> —
             your typed details are back, including specifications, quantity
-            and anything you&apos;d ticked, and every step you&apos;d already
-            worked through is open again. Uploads can&apos;t be saved on
+            and anything you&apos;d ticked, and every step is where you
+            left it. Uploads can&apos;t be saved on
             this device, so re-select your photos
             {isFirearm ? ' and your serial and licence photos' : ''} before
             you publish.
@@ -2800,6 +2874,7 @@ export default function NewListingPage() {
           {/* Step 1 — Photos. Photos first so the AI "Help me describe
               this" button can pre-fill the other steps (title, category,
               condition, description) before the seller types anything. */}
+          {activePanel === 1 && (
           <FormSection
             id={stepAnchor(1)}
             title="Photos"
@@ -2844,15 +2919,16 @@ export default function NewListingPage() {
                   categoryId: patch.categoryId ?? f.categoryId,
                 }));
               }}
-              // The AI has just written a title and description into the
-              // section below. Scroll there so the seller reads what was put
-              // in their mouth before it goes on a listing with their name on
-              // it — this used to expand Step 2, and the intent is the same.
-              onAdvance={() => scrollToStep(2)}
+              // The AI has just written a title and description into step 2.
+              // Open it so the seller reads what was put in their mouth
+              // before it goes on a listing with their name on it.
+              onAdvance={() => goToStep(2)}
             />
           </FormSection>
+          )}
 
           {/* Step 2 — About this item (basics + condition + firearm details) */}
+          {activePanel === 2 && (
           <FormSection
             id={stepAnchor(2)}
             title="About this item"
@@ -3160,8 +3236,10 @@ export default function NewListingPage() {
               </div>
             )}
           </FormSection>
+          )}
 
           {/* Step 3 — Listing type + pricing */}
+          {activePanel === 3 && (
           <FormSection
             id={stepAnchor(3)}
             title="How are you selling?"
@@ -3863,8 +3941,10 @@ export default function NewListingPage() {
               </>
             )}
           </FormSection>
+          )}
 
           {/* Step 4 — Delivery & address */}
+          {activePanel === 4 && (
           <FormSection
             id={stepAnchor(4)}
             title={
@@ -4506,12 +4586,27 @@ export default function NewListingPage() {
               )
             )}
           </FormSection>
+          )}
+
+          {/* What is still outstanding in THIS step, then Back / Continue.
+              The button is grey until the step is genuinely finished and red
+              the moment it is (operator: "it needs to be completed before the
+              continue turns red"). `missing` comes from stepMissing, the same
+              source stepComplete is derived from, so the list can never be
+              empty while the button is grey. */}
+          <WizardFooter
+            missing={footerMissing}
+            stepNumber={activePanel}
+            totalSteps={4}
+            onBack={() => goToStep(activePanel - 1)}
+            onContinue={() => goToStep(activePanel + 1)}
+          />
 
           {/* Preview listing — enabled once every step is complete.
               The audit usually already ran in the background (on Step 1
               Continue + on photo change), so clicking this just opens
               the modal with the cached verdict. */}
-          {(() => {
+          {activePanel === 4 && (() => {
             const disabled =
               previewLoading || submitting || auditing || !allComplete;
             const completedCount = [
@@ -4576,8 +4671,8 @@ export default function NewListingPage() {
                     className="text-xs mt-2 text-center"
                     style={{ color: 'var(--text-tertiary)' }}
                   >
-                    Fill out all four steps above to enable review. We&apos;ll
-                    check your listing before it goes live.
+                    Finish all four steps on the rail above to enable
+                    review. We&apos;ll check your listing before it goes live.
                   </p>
                 )}
                 {previousAttemptHashes.length > 0 && (
