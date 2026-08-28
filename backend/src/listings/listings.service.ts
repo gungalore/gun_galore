@@ -3326,12 +3326,15 @@ export class ListingsService {
         listingId: listing.id,
       });
     }
-    // ⚠️ KEYED ON THE OFFER FLAG, NOT THE OLD LISTING TYPE. This lock exists
-    // because editing a listing out from under a live offer changes what the
-    // buyer offered on. That is now possible on ANY listing, since Buy Now and
-    // Auction listings take offers too — so checking the type would have left
-    // every one of them editable mid-offer.
-    if (listing.acceptsOffers) {
+    // ⚠️ UNCONDITIONAL. This lock exists because editing a listing out from
+    // under a live offer changes what the buyer offered on. It was keyed on
+    // `listing.acceptsOffers`, which was right while that flag gated the offer
+    // flow — but offers are on for every listing now (operator 2026-08-28) and
+    // the flag is no longer read anywhere else. Leaving the condition would
+    // have meant a row still carrying false from the day the toggle shipped
+    // could take an offer (the offers service ignores the flag) and then be
+    // edited mid-negotiation, which is exactly what this guard prevents.
+    {
       const activeOffer = await this.prisma.offer.findFirst({
         where: {
           listingId: listing.id,

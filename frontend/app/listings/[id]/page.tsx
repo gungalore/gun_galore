@@ -156,7 +156,8 @@ export default async function ListingDetailPage({
   // third selling mode — the seller turns offers on or off per listing, and
   // the backend offer guard enforces it. `?? true` matches the column default,
   // so a payload cached from before the column existed still behaves.
-  const acceptsOffers = listing.acceptsOffers ?? true;
+  // (`acceptsOffers` was read here to decide whether to show the offer
+  // panel. Offers are unconditional now — see the OfferPanel block below.)
 
   // UX-1a — sellable units for the low-stock urgency chip beside the price.
   // Only inventory-tracked (multi-unit BUY_NOW) listings carry this; null
@@ -853,6 +854,7 @@ export default async function ListingDetailPage({
           ) : listing.status === 'ACTIVE' && listing.listingType === 'TAKE_A_SHOT' ? (
             <OfferPanel
               listingId={listing.id}
+              listingPrice={listing.price}
               sellerClerkId={listing.seller.clerkId}
             />
           ) : listing.listingType === 'AUCTION' ? (
@@ -873,20 +875,24 @@ export default async function ListingDetailPage({
             </div>
           ) : null}
 
-          {/* Take a Shot — promoted from a third listing mode to an option
-              available on EVERY listing; the seller decides per listing via
-              acceptsOffers. Rendered as a SECONDARY affordance below the
-              primary action above (Buy Now / Place a bid) — `secondary`
-              keeps OfferPanel's fresh-offer entry point collapsed behind a
-              muted prompt so it never competes with the primary CTA for
-              attention. Skipped for legacy TAKE_A_SHOT listings, which
-              already render OfferPanel as their one (primary) action in the
-              branch above — rendering it twice would duplicate the form. */}
+          {/* Take a Shot — on EVERY active listing, unconditionally.
+              Operator, 2026-08-28: "Take a shot is always on by default and
+              visible on the listing. The seller only has the option to
+              silence it's notifications." So there is no acceptsOffers test
+              here any more; the seller's lever is the alert toggle in
+              Settings, which mutes the notification without closing the door.
+
+              Rendered as a SECONDARY affordance below the primary action
+              (Buy Now / Place a bid) — `secondary` keeps the fresh-offer
+              entry point collapsed behind a muted prompt so it never competes
+              with the primary CTA. Still skipped for legacy TAKE_A_SHOT
+              listings, which render OfferPanel as their one primary action in
+              the branch above; rendering it twice would duplicate the form. */}
           {listing.status === 'ACTIVE' &&
-            listing.listingType !== 'TAKE_A_SHOT' &&
-            acceptsOffers && (
+            listing.listingType !== 'TAKE_A_SHOT' && (
               <OfferPanel
                 listingId={listing.id}
+                listingPrice={listing.price}
                 sellerClerkId={listing.seller.clerkId}
                 secondary
               />

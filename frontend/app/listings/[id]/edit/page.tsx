@@ -730,21 +730,13 @@ export default function EditListingPage() {
           </Field>
         </div>
 
-        {/* UX-7 — optional compare-at / "was" price (BUY_NOW only). Display
-            only; accountable to the seller (CPA s41). Must exceed the price. */}
-        {listing?.listingType === 'BUY_NOW' && (
-          <Field label="Original / retail price (R) — optional">
-            <input
-              type="number"
-              min={1}
-              step="0.01"
-              value={form.compareAtPriceZarCents}
-              onChange={(e) => set('compareAtPriceZarCents', e.target.value)}
-              style={inputStyle}
-              placeholder="Shown as a strikethrough discount — must exceed your price"
-            />
-          </Field>
-        )}
+        {/* (The optional compare-at / "was" price input stood here — removed
+            2026-08-28 with the one on the sell form. It was a CPA s41 claim
+            the seller carried for a strikethrough almost nobody set. The value
+            is still LOADED and still SAVED, so a listing that already has one
+            keeps it; only the way to set a new one is gone. Its whole
+            `listingType === 'BUY_NOW'` wrapper went too — a conditional whose
+            body is just a comment is `{}`, which is not a ReactNode.) */}
 
         <Field label="Province">
           <select value={form.province} onChange={(e) => set('province', e.target.value)} style={inputStyle}>

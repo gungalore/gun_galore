@@ -453,6 +453,38 @@ function AttributeField({
 
 // ─────────────────────────── Page ───────────────────────────────────
 
+/**
+ * Turn an API error into something a seller can act on.
+ *
+ * ⚠️ class-validator MESSAGES MUST NEVER REACH THE PAGE. NestJS joins a
+ * failed DTO's violations into one string and our fetch wrapper surfaced it
+ * verbatim, so a seller once read:
+ *
+ *   "listingType must be one of the following values: BUY_NOW, TAKE_A_SHOT,
+ *    AUCTION, SWOP, shippingMethods must contain at least 1 elements"
+ *
+ * Three things wrong with that at once: it names columns rather than the
+ * fields on screen, it leaks SWOP and TAKE_A_SHOT — two modes this form no
+ * longer offers — and it tells the seller nothing about what to do. The
+ * wizard's own gating should stop the request being made at all; this is the
+ * net under it.
+ *
+ * Anything that does NOT look like a validator dump is passed through
+ * unchanged: those are our own written messages ("Listing is no longer
+ * available"), and they are better than the generic line.
+ */
+function humaniseApiError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : '';
+  if (!raw) return 'Review check failed';
+  // class-validator's house phrasing. Deliberately narrow — matching loosely
+  // would swallow our own copy and replace it with something vaguer.
+  const validatorish =
+    /must (be|contain|not be|match|be a|be an|be one of)/i.test(raw) ||
+    /should not be empty/i.test(raw);
+  if (!validatorish) return raw;
+  return "Some of the listing details didn't pass our checks. Step back through the four steps above — each one lists anything still missing — then try Preview again";
+}
+
 export default function NewListingPage() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
   // Viewer-aware fetch for the category tree. See the effect below for WHY
@@ -685,12 +717,6 @@ export default function NewListingPage() {
     // off mid-form blanks the price so a stale value can't leak through.
     offerBuyNow: false,
     buyNowPrice: '',
-    // Take a Shot, promoted from a third mode to an "Also accept offers"
-    // toggle on Buy Now + Auction (operator decision 2026-08-27). Defaults
-    // ON to match the backend's Listing.acceptsOffers default — a seller
-    // who never opens Step 3's toggle still gets the same behaviour as one
-    // who explicitly ticked it.
-    acceptsOffers: true,
   });
 
   // Furthest step the seller has explicitly advanced to via the Continue
@@ -1000,12 +1026,13 @@ export default function NewListingPage() {
         // live site right after the picker change shipped.
         //
         // Their intent is carried over rather than discarded: the mode is
-        // cleared so they choose Buy Now or Auction, and offers are switched
-        // on, which is what Take a Shot now IS. Nothing else in the draft is
-        // touched.
+        // cleared so they choose Buy Now or Auction. Nothing else is touched.
+        // (This used to also set acceptsOffers: true. Unnecessary since
+        // 2026-08-28 — every listing takes offers, and the form no longer
+        // carries the field.)
         const restored =
           d.form.listingType === 'TAKE_A_SHOT'
-            ? { ...d.form, listingType: '', acceptsOffers: true }
+            ? { ...d.form, listingType: '' }
             : d.form;
         setForm(restored);
       }
@@ -2114,7 +2141,6 @@ export default function NewListingPage() {
       // accept offers" toggle in Step 3. Sent for every mode; a TAKE_A_SHOT
       // listing (relisted from before this change) already accepts offers
       // by definition, so the flag is harmless there too.
-      acceptsOffers: form.acceptsOffers,
       // De-dupe defensively so a stale state can't ever send the API a
       // duplicate (which would fail @ArrayMaxSize(2) on the DTO).
       shippingMethods: Array.from(new Set(shippingMethods)),
@@ -2191,6 +2217,10 @@ export default function NewListingPage() {
     }
     // UX-7 — optional compare-at ("was") price, BUY_NOW only. Display-only;
     // the backend validates it (> price, ≤ 4× price) and never uses it in fees.
+    // Nothing sets this on a new listing any more (the field is gone), but
+    // the branch stays: a restored draft written before 2026-08-28 can still
+    // carry a value, and silently dropping it would change a listing the
+    // seller had already priced.
     if (form.listingType === 'BUY_NOW' && form.compareAtPriceZarCents) {
       body.compareAtPriceZarCents = Math.round(
         parseFloat(form.compareAtPriceZarCents) * 100,
@@ -2306,9 +2336,7 @@ export default function NewListingPage() {
       }
       return result;
     } catch (err) {
-      setAuditError(
-        err instanceof Error ? err.message : 'Review check failed',
-      );
+      setAuditError(humaniseApiError(err));
       return null;
     } finally {
       setAuditing(false);
@@ -2681,11 +2709,17 @@ export default function NewListingPage() {
           useShellStep call above.
 
           Tapping a step OPENS it — this rail is the form's navigation now,
-          not a progress readout. Every step stays reachable rather than
-          locking the ones ahead: the seller who wants to check what the
-          delivery step asks for before writing a description is not doing
-          anything wrong, and Publish is gated on all four being complete
-          regardless of the order they were filled in. */}
+          not a progress readout.
+
+          ⚠️ BUT NOT EVERY STEP IS TAPPABLE, AND THAT IS StepRail'S CALL, NOT
+          THIS PAGE'S. It computes `reachable = Boolean(onJump) && (isComplete
+          || isCurrent)`, so a step the seller has not got to renders as plain
+          text rather than a button — "a step they have not reached is not a
+          link to a shortcut, it is a link to an empty form". Forward movement
+          is therefore Continue only, which is exactly the gate the operator
+          asked for; the rail is for going BACK to finished steps. Passing
+          onJump does not override that, so do not read this handler as making
+          all four clickable. */}
       <StepRail
         steps={SELL_STEP_LABELS.map((label, i) => ({
           label,
@@ -3554,46 +3588,12 @@ export default function NewListingPage() {
               </Field>
             )}
 
-            {/* UX-7 — optional compare-at / "was" price (BUY_NOW only).
-                The backend validates this against the price the BUYER sees
-                (> listed price, ≤ 4×), not the ask the seller typed — so the
-                hint quotes the live listed price rather than "your price",
-                which under the markup model is a different, smaller number
-                and would get the seller rejected on publish. */}
-            {form.listingType === 'BUY_NOW' && (
-              <Field
-                label="Original / retail price (optional)"
-                hint={
-                  buyNowQuote.listPrice > 0
-                    ? `Only if truthful — you're accountable for this claim (CPA s41). Shown to buyers as a strikethrough discount. Must be higher than the ${formatRand(buyNowQuote.listPrice)} buyers see.`
-                    : "Only if truthful — you're accountable for this claim (CPA s41). Shown to buyers as a strikethrough discount. Must be higher than the price buyers see."
-                }
-              >
-                <div style={{ position: 'relative' }}>
-                  <span
-                    style={{
-                      position: 'absolute',
-                      left: 12,
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      color: 'var(--text-tertiary)',
-                      fontSize: 14,
-                    }}
-                  >
-                    R
-                  </span>
-                  <input
-                    type="number"
-                    min={1}
-                    step="0.01"
-                    value={form.compareAtPriceZarCents}
-                    onChange={(e) => set('compareAtPriceZarCents', e.target.value)}
-                    style={{ ...inputStyle, paddingLeft: 26 }}
-                    placeholder="Optional — the 'was' price"
-                  />
-                </div>
-              </Field>
-            )}
+            {/* (The optional compare-at / "was" price lived here — removed by
+                the operator 2026-08-28. It was a CPA s41 liability the seller
+                carried for a strikethrough almost nobody filled in. The
+                backend still accepts compareAtPriceZarCents and the edit page
+                still round-trips an existing value, so listings that already
+                carry one keep it; there is just no way to set a new one.) */}
 
             {/* Quantity — right under the Buy-Now price so it's part of the
                 pricing decision, not buried in the delivery step. Only
@@ -3819,48 +3819,13 @@ export default function NewListingPage() {
               </>
             )}
 
-            {/* Also accept offers — Take a Shot, promoted from a third mode
-                to an option on both of the remaining ones (operator decision
-                2026-08-27). Sets acceptsOffers, which the backend now gates
-                the offer flow on (`if (!listing.acceptsOffers)`) instead of
-                requiring listingType === 'TAKE_A_SHOT'. Everything the offer
-                actually DOES once made — OfferPanel, reject reasons +
-                strikes, the 48-hour clock, counter-offers, the SMS decision
-                link — is unchanged; this only decides whether the listing is
-                reachable from an offer at all. Defaults ON to match the
-                backend default, so unticking is a deliberate opt-out. */}
-            {(form.listingType === 'BUY_NOW' ||
-              form.listingType === 'AUCTION') && (
-              <div className="mt-1">
-                <label
-                  className="flex items-start gap-2 cursor-pointer"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={form.acceptsOffers}
-                    onChange={(e) => set('acceptsOffers', e.target.checked)}
-                    style={{
-                      accentColor: 'var(--red)',
-                      marginTop: 3,
-                    }}
-                  />
-                  <span className="text-sm">
-                    Also accept offers
-                    <span
-                      className="block text-xs mt-0.5"
-                      style={{ color: 'var(--text-tertiary)' }}
-                    >
-                      Buyers can send an offer below the listed price
-                      (which already includes our fees, so the offer is
-                      against that price). You get 48 hours to accept,
-                      decline, or counter each one — nothing sells until
-                      you respond.
-                    </span>
-                  </span>
-                </label>
-              </div>
-            )}
+            {/* (The "Also accept offers" tick stood here for one day.
+                Operator, 2026-08-28: "Take a shot is always on by default and
+                visible on the listing. The seller only has the option to
+                silence it's notifications." There is nothing to decide at
+                listing time any more — every listing takes offers, and the
+                seller's lever is the Take a Shot alert toggle in Settings,
+                which silences the notification without closing the door.) */}
 
             {/* Take a Shot extras */}
             {form.listingType === 'TAKE_A_SHOT' && (
