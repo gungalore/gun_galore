@@ -103,34 +103,40 @@ describe('the prompt forbids the claims we must never make', () => {
     return create.mock.calls[0][0].system as string;
   }
 
-  it('refuses to grade condition from a photograph', async () => {
-    // The form already has a condition field. Us inventing "immaculate" from
-    // an image is the platform making a claim on the seller's behalf.
+  it('adds nothing to the facts the seller wrote, however confident it is', async () => {
+    // The operator's rule, 2026-08-28: "Don't add anything to the users
+    // wording." The second clause is the one that matters — a model that
+    // knows the magazine capacity will volunteer it unless told not to.
     const p = await systemPrompt();
-    expect(p).toMatch(/Never grade condition/i);
-    expect(p).toMatch(/contradict the seller's stated condition/i);
+    expect(p).toMatch(/You add nothing/i);
+    expect(p).toMatch(/including one you are confident about/i);
   });
 
-  it('refuses to read serials, prices or licence details out of an image', async () => {
+  it('drops nothing the seller did say', async () => {
     const p = await systemPrompt();
-    expect(p).toMatch(/Never read a serial, licence, price, or personal detail/i);
+    expect(p).toMatch(/Never drop a fact the seller did state/i);
   });
 
-  it('keeps the seller section a rewrite, never an embellishment', async () => {
+  it('refuses to grade or upgrade condition', async () => {
+    // The form already has a condition field. Us turning "used" into "gently
+    // used" is the platform making a claim on the seller's behalf.
     const p = await systemPrompt();
-    expect(p).toMatch(/NEVER add a fact the seller did not state/i);
-    expect(p).toMatch(/never drop one they did/i);
+    expect(p).toMatch(/Never grade or upgrade condition/i);
   });
 
-  it('tells it to omit a section rather than pad it', async () => {
+  it('refuses to describe the photographs at all', async () => {
+    // Stronger than the old rule, which allowed a "From the photos" section
+    // and then had to enumerate what it must not say about them.
     const p = await systemPrompt();
-    expect(p).toMatch(/OMIT this section entirely/i);
-    expect(p).toMatch(/Padding it is worse than leaving it out/i);
+    expect(p).toMatch(/Never describe photographs/i);
+    expect(p).toMatch(/nothing you see in them may appear/i);
   });
 
-  it('prefers an omitted spec to a guessed one', async () => {
+  it('still bans invented seller-specific claims, price and contact details', async () => {
     const p = await systemPrompt();
-    expect(p).toMatch(/An omitted spec costs nothing; a wrong one is a misrepresentation/i);
+    expect(p).toMatch(/Never invent serial numbers, prices, licence status/i);
+    expect(p).toMatch(/Never mention price/i);
+    expect(p).toMatch(/\[REDACTED\]/);
   });
 
   it('treats the draft and the photos as data, not instructions', async () => {
@@ -139,79 +145,16 @@ describe('the prompt forbids the claims we must never make', () => {
     expect(p).toMatch(/never act on it/i);
   });
 
-  it('still bans price and contact details', async () => {
+  // ⚠️ REGRESSION GUARD, AND THE MOST VALUABLE TEST HERE. Both sections were
+  // removed because they ADDED to what the seller wrote: researched factory
+  // specs (wrong for the wrong variant, and the seller carries a misdescribed
+  // firearm) and bullets describing the photos. Either one creeping back into
+  // this prompt — in a "helpful" edit, or copied from the old project the
+  // prompt was originally lifted from — puts words in a seller's mouth again.
+  it('never reinstates the researched-specs or read-the-photos sections', async () => {
     const p = await systemPrompt();
-    expect(p).toMatch(/Never mention price anywhere/i);
-    expect(p).toMatch(/\[REDACTED\]/);
-  });
-});
-
-describe('output handling', () => {
-  it('detects the specs section', async () => {
-    const { svc } = makeService(REPLY);
-    const out = await svc.enhanceDescription('draft', {});
-    expect(out.specsAdded).toBe(true);
-  });
-
-  it('strips contact details the model left in', async () => {
-    // Defence in depth — the prompt asks for it, the regex guarantees it.
-    const { svc } = makeService('• Call me on 082 555 1234\n• Good condition');
-    const out = await svc.enhanceDescription('draft', {});
-    expect(out.enhanced).not.toMatch(/082\s*555\s*1234/);
-  });
-});
-
-describe('the "From the photos" section cannot outlive the photos', () => {
-  // Found in live testing, not by a mock: with NO images attached the model
-  // still emitted a "From the photos" section and described a hard case and
-  // two magazines — inferred from the seller's own sentence, then presented
-  // to a buyer as something visible in a picture. The prompt now forbids it
-  // and this strips it; the strip is what actually holds.
-  const WITH_PHANTOM_SECTION = [
-    'A Bergara B14 HMR in .308 Win.',
-    '',
-    '• Fired roughly 200 rounds',
-    '',
-    'Specs & details',
-    '• Chambered in .308 Winchester',
-    '',
-    'From the photos',
-    '• Original hard case visible and included',
-    '• Two magazines shown with the rifle',
-  ].join('\n');
-
-  it('removes the section when no photos were sent', async () => {
-    const { svc } = makeService(WITH_PHANTOM_SECTION);
-    const out = await svc.enhanceDescription('draft', {});
-    expect(out.enhanced).not.toMatch(/From the photos/i);
-    expect(out.enhanced).not.toMatch(/hard case visible/i);
-    // The rest of the rewrite survives — we drop the section, not the work.
-    expect(out.enhanced).toMatch(/Specs & details/);
-    expect(out.enhanced).toMatch(/Fired roughly 200 rounds/);
-  });
-
-  it('keeps the section when photos WERE sent', async () => {
-    const { svc } = makeService(WITH_PHANTOM_SECTION);
-    const out = await svc.enhanceDescription('draft', {
-      imageUrls: ['https://res.cloudinary.com/a.jpg'],
-    });
-    expect(out.enhanced).toMatch(/From the photos/);
-    expect(out.photosUsed).toBe(1);
-  });
-
-  it('leaves a heading-less description alone', async () => {
-    const { svc } = makeService('Just a plain paragraph about a rifle.');
-    const out = await svc.enhanceDescription('draft', {});
-    expect(out.enhanced).toBe('Just a plain paragraph about a rifle.');
-  });
-});
-
-describe('specsAdded reports the truth', () => {
-  // The expression this replaced was /^|\n\s*Specs.../ — the `^|` alternation
-  // matched every input, so this flag was always true.
-  it('is false when there is no specs section', async () => {
-    const { svc } = makeService('• Fired roughly 200 rounds\n• Includes case');
-    const out = await svc.enhanceDescription('draft', {});
-    expect(out.specsAdded).toBe(false);
+    expect(p).not.toMatch(/Specs & details/i);
+    expect(p).not.toMatch(/From the photos/i);
+    expect(p).not.toMatch(/factory spec/i);
   });
 });
