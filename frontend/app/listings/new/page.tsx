@@ -2681,11 +2681,17 @@ export default function NewListingPage() {
           useShellStep call above.
 
           Tapping a step OPENS it — this rail is the form's navigation now,
-          not a progress readout. Every step stays reachable rather than
-          locking the ones ahead: the seller who wants to check what the
-          delivery step asks for before writing a description is not doing
-          anything wrong, and Publish is gated on all four being complete
-          regardless of the order they were filled in. */}
+          not a progress readout.
+
+          ⚠️ BUT NOT EVERY STEP IS TAPPABLE, AND THAT IS StepRail'S CALL, NOT
+          THIS PAGE'S. It computes `reachable = Boolean(onJump) && (isComplete
+          || isCurrent)`, so a step the seller has not got to renders as plain
+          text rather than a button — "a step they have not reached is not a
+          link to a shortcut, it is a link to an empty form". Forward movement
+          is therefore Continue only, which is exactly the gate the operator
+          asked for; the rail is for going BACK to finished steps. Passing
+          onJump does not override that, so do not read this handler as making
+          all four clickable. */}
       <StepRail
         steps={SELL_STEP_LABELS.map((label, i) => ({
           label,
