@@ -119,6 +119,52 @@ function tasListing(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe('submit — the 30% floor', () => {
+  // Operator, 2026-08-28: "offers can only go below 30% of the value."
+  // R 100.00 listed → R 70.00 is the least we take.
+  const priced = () => tasListing({ price: 10_000 });
+
+  it('refuses an offer more than 30% below the price, and writes nothing', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue(priced());
+    await expect(
+      service.submit('clerk-b', { listingId: 'L1', offerAmount: 6_999 }),
+    ).rejects.toThrow(/at most 30% below/i);
+    // Refused outright: no row, so no attempt is consumed and the buyer can
+    // simply offer again at a real number.
+    expect(prisma.offer.create).not.toHaveBeenCalled();
+    expect(prisma.offer.update).not.toHaveBeenCalled();
+  });
+
+  it('accepts an offer exactly at the floor', async () => {
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue(priced());
+    await service.submit('clerk-b', { listingId: 'L1', offerAmount: 7_000 });
+    expect(prisma.offer.create).toHaveBeenCalled();
+  });
+
+  it('skips the floor when the listing has no price at all', async () => {
+    // Legacy TAKE_A_SHOT: the buyer names the price, so there is nothing to
+    // take 30% of. Measuring from zero would refuse every offer on them.
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue(tasListing({ price: null }));
+    await service.submit('clerk-b', { listingId: 'L1', offerAmount: 100 });
+    expect(prisma.offer.create).toHaveBeenCalled();
+  });
+
+  it('still applies the floor when acceptsOffers is false', async () => {
+    // The flag is no longer read — every listing takes offers — but the floor
+    // is not a consequence of the flag and must not travel with it.
+    const { service, prisma } = makeMocks();
+    prisma.listing.findUnique.mockResolvedValue(
+      tasListing({ price: 10_000, acceptsOffers: false }),
+    );
+    await expect(
+      service.submit('clerk-b', { listingId: 'L1', offerAmount: 5_000 }),
+    ).rejects.toThrow(/at most 30% below/i);
+  });
+});
+
 describe('submit — gates', () => {
   // ⚠️ CLOSED IS NOT BANNED. A member who closed their own account and came
   // back to a stale tab used to fall through the ban gate and be told they

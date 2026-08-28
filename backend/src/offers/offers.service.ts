@@ -40,6 +40,14 @@ const CHECKOUT_TTL_HOURS = 24;
 //
 // The seller's side of the rule was already right — counter() has always
 // refused a second counter on the same offer.
+/**
+ * The lowest an offer may go, as a fraction of the listing price.
+ *
+ * Operator, 2026-08-28: "offers can only go below 30% of the value" — so an
+ * offer may be at most 30% under the ask, i.e. no less than 70% of it.
+ */
+const MIN_OFFER_RATIO = 0.7;
+
 const MAX_OFFER_ATTEMPTS = 1;
 // Lazy getter — must NOT be a module-level constant. ES module imports
 // hoist before main.ts's dotenv.config() runs, so a top-level
@@ -90,14 +98,51 @@ export class OffersService {
     });
     if (!listing) throw new NotFoundException('Listing not found');
     if (listing.status !== 'ACTIVE') throw new BadRequestException('Listing is no longer available');
-    // ⚠️ THIS USED TO BE `listingType !== 'TAKE_A_SHOT'`. Offers are no longer
-    // a listing TYPE — they are a flag any Buy Now or Auction listing can
-    // carry (operator, 2026-08-27), so the gate is the seller's own choice on
-    // this listing rather than which of three modes they picked at creation.
-    if (!listing.acceptsOffers) {
-      throw new BadRequestException('This listing is not accepting offers.');
-    }
+    // ⚠️ NO acceptsOffers GATE. It was `listingType !== 'TAKE_A_SHOT'`, then
+    // briefly the seller's per-listing toggle. Operator, 2026-08-28: "Take a
+    // shot is always on by default and visible on the listing. The seller only
+    // has the option to silence it's notifications." So every ACTIVE listing
+    // takes offers, and the seller's only lever is User.notifyOffersEnabled,
+    // which silences the alert without closing the door.
+    //
+    // The column still exists and still defaults true — deliberately NOT read
+    // here. Rows written while the toggle shipped can carry false, and gating
+    // on it would leave those listings silently refusing offers while the
+    // buyer's page invites them.
     if (listing.sellerId === buyer.id) throw new BadRequestException('Sellers cannot offer on their own listings');
+
+    // ── The floor. Operator: "offers can only go below 30% of the value."
+    // An offer may be at most 30% under the asking price, so the least we
+    // accept is 70% of it. Enforced HERE and not only in the browser: the
+    // endpoint is reachable with a hand-rolled request, and a lowball that
+    // gets past the client still burns the buyer's single attempt and
+    // notifies the seller.
+    //
+    // Distinct from autoDeclineThreshold below, which is the seller's own
+    // optional filter and REJECTS a recorded offer. This one refuses the
+    // offer outright — nothing is stored, no attempt is consumed, and the
+    // buyer is told the number so they can simply offer again.
+    //
+    // `price` is nullable and that is not defensive padding: a legacy
+    // TAKE_A_SHOT listing has no price at all (the buyer names one), so there
+    // is nothing to take 30% of. Those skip the floor rather than measuring it
+    // from zero, which would have refused every offer ever made on them.
+    //
+    // ⚠️ `typeof === 'number'`, NOT `!== null`. Both mean the same thing to
+    // Prisma, which returns null for a null column — but `undefined !== null`
+    // is TRUE, so a row without the field selected computes
+    // Math.ceil(undefined * 0.7) = NaN, every comparison against NaN is false,
+    // and the floor silently disappears. That is precisely how this guard
+    // first passed its own tests: the fixture had no price.
+    const minOffer =
+      typeof listing.price === 'number' && listing.price > 0
+        ? Math.ceil(listing.price * MIN_OFFER_RATIO)
+        : 0;
+    if (minOffer > 0 && dto.offerAmount < minOffer) {
+      throw new BadRequestException(
+        `Offers can be at most 30% below the asking price. The lowest offer on this listing is R ${(minOffer / 100).toFixed(2)}.`,
+      );
+    }
     // Listing-banned seller (3 reject strikes): their ACTIVE listings were
     // cancelled at ban time, so this gate is defence-in-depth for any
     // listing that raced the ban. Buyer-facing copy stays neutral.

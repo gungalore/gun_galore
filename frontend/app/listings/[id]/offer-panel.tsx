@@ -56,10 +56,20 @@ function timeLeft(iso: string): { text: string; urgent: boolean } | null {
 
 export default function OfferPanel({
   listingId,
+  listingPrice,
   sellerClerkId,
   secondary = false,
 }: {
   listingId: string;
+  /**
+   * The buyer-facing list price in cents — what the floor is measured from.
+   *
+   * Nullable because it genuinely is: a legacy TAKE_A_SHOT listing carries no
+   * price (the buyer names one), and there is nothing to take 30% of. Those
+   * fall back to the R 1.00 minimum rather than to a floor computed from zero,
+   * which would have refused every offer on them.
+   */
+  listingPrice: number | null;
   sellerClerkId: string;
   // True when this panel sits ALONGSIDE a primary CTA (Buy Now / Place a
   // bid) rather than being the page's only action — i.e. any BUY_NOW or
@@ -74,6 +84,12 @@ export default function OfferPanel({
   const { user, isLoaded } = useUser();
   const { getToken } = useAuth();
   const [amount, setAmount] = useState('');
+
+  // The lowest offer this listing will take: 30% under the asking price.
+  // Math.ceil matches the server's rounding exactly — a half-cent of drift
+  // between them would show the buyer a number the API then refuses.
+  // 100 (R 1.00) when there is no price to measure from; see the prop's note.
+  const minOffer = listingPrice ? Math.ceil(listingPrice * 0.7) : 100;
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -164,7 +180,18 @@ export default function OfferPanel({
     e.preventDefault();
     const cents = Math.round(parseFloat(amount) * 100);
     if (!cents || cents < 100) {
-      setError('Minimum offer is R1.00');
+      setError('Minimum offer is R 1.00');
+      return;
+    }
+    // ⚠️ MIRRORS THE SERVER, DOES NOT REPLACE IT. offers.service.ts refuses
+    // anything under MIN_OFFER_RATIO of the price; checking here as well is
+    // purely so the buyer finds out before spending their one attempt on a
+    // round-trip. Keep the two in step — the same 0.7 and the same
+    // Math.ceil, so a number this accepts is never one the server rejects.
+    if (cents < minOffer) {
+      setError(
+        `Offers can be at most 30% below the asking price — the lowest here is ${rand(minOffer)}.`,
+      );
       return;
     }
     setSubmitting(true);
@@ -452,12 +479,23 @@ export default function OfferPanel({
             placeholder="0.00"
             className="w-full pl-7 pr-3 py-2.5 rounded-[6px] text-sm"
             style={{
-              background: 'var(--bg-inset)',
-              border: '0.5px solid var(--border)',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
               color: 'var(--text-primary)',
             }}
           />
         </div>
+        {/* Say the floor BEFORE they type it. The submit handler refuses a
+            lowball and so does the server, but a buyer gets ONE offer on a
+            listing — finding out the rule from a rejection is finding out too
+            late. Hidden when there is no price to measure from (legacy
+            TAKE_A_SHOT), where any amount is fair game. */}
+        {listingPrice ? (
+          <p className="text-xs mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
+            Lowest we&apos;ll take is {rand(minOffer)} — offers can go up to 30%
+            below the asking price.
+          </p>
+        ) : null}
       </div>
 
       <div>
