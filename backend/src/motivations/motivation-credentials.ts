@@ -85,6 +85,20 @@ export function toIsoDay(d: Date): string {
   return `${d.getUTCFullYear()}-${mm}-${dd}`;
 }
 
+/**
+ * Does this answer key hold a DATE?
+ *
+ * ⚠️ SUFFIX-MATCHED ON PURPOSE, and deliberately wider than what this file
+ * writes today. The only date credentialOffer currently fills is "Member
+ * since" — a past date that arms nothing — but the rule it enforces is
+ * "unconfirmed documents do not supply dates", and a rule that has to be
+ * remembered every time somebody adds an offer() call is a rule that will be
+ * forgotten. Anything that looks like a date is treated as one.
+ */
+export function isDateKey(key: string): boolean {
+  return /(_since|_issued|_expiry|_expires|_date|_on)$/.test(key);
+}
+
 function first(details: Record<string, string>, ...keys: string[]): string {
   for (const k of keys) {
     const v = (details[k] ?? '').trim();
@@ -104,13 +118,28 @@ export function credentialOffer(
   credentials: CredentialSource[],
   answered: Record<string, string>,
 ): CredentialOffer {
-  // ⚠️ THE CONTRACT ON CredentialSource.confirmed, ENFORCED. It was
-  // documented as "FALSE MEANS DO NOT OFFER IT" and never checked — safe only
-  // while every caller happened to pre-filter. The moment unconfirmed rows
-  // started flowing to the sibling choices path, one refactor away from here,
-  // this became a silent way to fill a signed application with values nobody
-  // ever looked at. The pure function now keeps its own promise.
-  credentials = credentials.filter((c) => c.confirmed);
+  // ⚠️ THE CONFIRMED GATE IS PER-VALUE NOW, NOT PER-DOCUMENT, AND THE
+  // DIFFERENCE IS WHY "What you own" WAS EMPTY. Operator, 2026-08-28: "what
+  // you own still is empty on the step 3 and there are a bunch of firearm
+  // licenses that is in the vault." They were right, and the vault proved it:
+  // five FIREARM_LICENCE rows, ZERO confirmed. A blanket
+  // `filter(c => c.confirmed)` therefore threw away every licence before any
+  // of them could fill a row, on every application, new or old.
+  //
+  // The gate's purpose is the one this module already states in
+  // credentialsFor: "THE CONFIRMATION GATE PROTECTS DATES, NOT NUMBERS.
+  // confirmedAt exists so the reminder sweep never acts on an expiry nobody
+  // has checked." That still holds absolutely — and it is untouched here,
+  // because the sweep reads Credential.expiresOn and this function has never
+  // written an expiry to anything. What it writes is a make, a calibre, two
+  // serials, a licence number, a competency number.
+  //
+  // So an unconfirmed document may fill a value that is not a date, and may
+  // not fill one that is. The member sees where every value came from and can
+  // edit all of them, which is the answer to the original worry about
+  // "filling a signed application with values nobody ever looked at": they
+  // are looking at it, labelled, in the wizard.
+  const confirmedById = new Map(credentials.map((c) => [c.id, c.confirmed]));
 
   const keys = new Set(fieldsFor(licenceType).map((f) => f.key));
   const values: Record<string, string> = {};
@@ -126,6 +155,9 @@ export function credentialOffer(
   ) => {
     const v = (value ?? '').trim();
     if (!v || !keys.has(key)) return;
+    // See the note above: a document nobody has confirmed may fill a fact,
+    // never a date.
+    if (!confirmedById.get(credentialId) && isDateKey(key)) return;
     if ((answered[key] ?? '').trim()) return; // theirs wins, always
     if (values[key]) return; // first document to claim a slot keeps it
     values[key] = v;

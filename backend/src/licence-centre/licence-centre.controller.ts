@@ -28,16 +28,21 @@ import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 import { VaultConsentService } from '../users/vault-consent.service';
 import { KycIdAdoptionService } from './kyc-id-adoption.service';
 import { VaultAdoptionService } from '../motivations/vault-adoption.service';
+// ⚠️ SHARED, NOT DECLARED HERE. Both doors into the Centre must accept
+// exactly the same files — see upload-limits.ts for why a second copy of these
+// was a silent divergence waiting to happen.
+import {
+  UPLOAD_INTERCEPTOR_MAX,
+  UPLOAD_MAX_BYTES,
+  UPLOAD_MIME,
+} from './upload-limits';
 
 // Behind the login, like everything in this area. middleware.ts's isPublicRoute
 // is an allow-list with default deny, so the frontend route is authenticated by
 // having no entry there — nothing to add and nothing to forget to add.
 
-const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
-const UPLOAD_INTERCEPTOR_MAX = UPLOAD_MAX_BYTES + 512 * 1024;
-// ⚠️ NO HEIC. It was accepted platform-wide and reverted after full-resolution
-// iPhone HEICs produced 413s at the proxy.
-const UPLOAD_MIME = /^(image\/(jpeg|png|webp)|application\/pdf)$/;
+
+
 
 @Controller('licence-centre')
 @UseGuards(ClerkGuard)
