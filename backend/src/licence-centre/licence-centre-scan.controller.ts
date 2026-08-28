@@ -17,6 +17,14 @@ import { Throttle } from '@nestjs/throttler';
 import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { LicenceCentreService } from './licence-centre.service';
+// ⚠️ SHARED, NOT DECLARED HERE. Both doors into the Centre must accept
+// exactly the same files — see upload-limits.ts for why a second copy of these
+// was a silent divergence waiting to happen.
+import {
+  UPLOAD_INTERCEPTOR_MAX,
+  UPLOAD_MAX_BYTES,
+  UPLOAD_MIME,
+} from './upload-limits';
 
 // ────────────────────────────────────────────────────────────────────
 // THE PHONE'S DOOR INTO THE LICENCE CENTRE.
@@ -32,9 +40,8 @@ import { LicenceCentreService } from './licence-centre.service';
 // the same member; only the way they proved it is different.
 // ────────────────────────────────────────────────────────────────────
 
-const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
-const UPLOAD_INTERCEPTOR_MAX = UPLOAD_MAX_BYTES + 512 * 1024;
-const UPLOAD_MIME = /^(image\/(jpeg|png|webp)|application\/pdf)$/;
+
+
 
 @Controller('licence-centre/scan')
 @UseGuards(ScanHandoffGuard)

@@ -434,14 +434,44 @@ describe('validLongEnough', () => {
   });
 });
 
-describe('the confirmed contract, enforced', () => {
-  it('⚠️ NEVER OFFERS A VALUE OFF AN UNCONFIRMED DOCUMENT', () => {
-    // "FALSE MEANS DO NOT OFFER IT" was documented on CredentialSource and
-    // never checked — safe only while every caller pre-filtered. The offer is
-    // the ONE-BUTTON fill: values written without the member looking at each,
-    // onto a document they sign. The choices dropdown may show unconfirmed
-    // documents, because there the member is looking at the value; this path
-    // must not.
+describe('the confirmed contract, enforced PER VALUE', () => {
+  // ⚠️ THIS CONTRACT CHANGED ON 2026-08-28, AND THE OLD ONE HAD A COST.
+  // It read "NEVER OFFERS A VALUE OFF AN UNCONFIRMED DOCUMENT", enforced by a
+  // blanket filter. Operator: "what you own still is empty on the step 3 and
+  // there are a bunch of firearm licenses that is in the vault." The vault
+  // held five FIREARM_LICENCE rows and ZERO confirmed ones — phone uploads
+  // arrive unconfirmed and the confirm prompt only ever ran on the desktop
+  // path — so the blanket filter emptied "What you own" for everybody.
+  //
+  // The gate is now per VALUE, on the rule this module already stated
+  // elsewhere: "THE CONFIRMATION GATE PROTECTS DATES, NOT NUMBERS." An
+  // unconfirmed document supplies facts and not dates.
+  it('fills a make and a serial off an unconfirmed licence', () => {
+    const offer = credentialOffer(
+      'S16_DEDICATED_SPORT',
+      [
+        {
+          id: 'a',
+          kind: 'FIREARM_LICENCE',
+          title: 'Fresh off the phone',
+          expiresOn: null,
+          confirmed: false,
+          details: {
+            make: 'CZ',
+            calibre: '.308',
+            frame_serial: 'F-1',
+            licence_number: 'L-1',
+          },
+        },
+      ],
+      {},
+    );
+    expect(offer.values.existing_firearm_1_make).toBe('CZ');
+    expect(offer.values.existing_firearm_1_calibre).toBe('.308');
+    expect(offer.values.existing_firearm_1_frame_serial).toBe('F-1');
+  });
+
+  it('fills a competency NUMBER off an unconfirmed certificate', () => {
     const offer = credentialOffer(
       'S16_DEDICATED_SPORT',
       [
@@ -456,8 +486,48 @@ describe('the confirmed contract, enforced', () => {
       ],
       {},
     );
-    expect(offer.values.competency_number).toBeUndefined();
-    expect(offer.items).toHaveLength(0);
+    expect(offer.values.competency_number).toBe('C-999');
+  });
+
+  it('⚠️ STILL REFUSES A DATE OFF AN UNCONFIRMED DOCUMENT', () => {
+    // The half of the old contract that must never be relaxed. A date nobody
+    // has checked is the one thing the confirmation gate exists for.
+    const offer = credentialOffer(
+      'S16_DEDICATED_SPORT',
+      [
+        {
+          id: 'a',
+          kind: 'DEDICATED_DISCIPLINE',
+          title: 'Fresh off the phone',
+          expiresOn: null,
+          confirmed: false,
+          details: { association: 'SA Hunters', joined_on: '2019-04-01' },
+        },
+      ],
+      {},
+    );
+    // The association NAME carries — it is a fact.
+    expect(Object.values(offer.values)).toContain('SA Hunters');
+    // The joining DATE does not.
+    expect(Object.values(offer.values)).not.toContain('2019-04-01');
+  });
+
+  it('a confirmed document may supply dates as before', () => {
+    const offer = credentialOffer(
+      'S16_DEDICATED_SPORT',
+      [
+        {
+          id: 'a',
+          kind: 'DEDICATED_DISCIPLINE',
+          title: 'Checked by the member',
+          expiresOn: null,
+          confirmed: true,
+          details: { association: 'SA Hunters', joined_on: '2019-04-01' },
+        },
+      ],
+      {},
+    );
+    expect(Object.values(offer.values)).toContain('2019-04-01');
   });
 });
 

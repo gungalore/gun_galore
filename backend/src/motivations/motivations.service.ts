@@ -535,7 +535,18 @@ export class MotivationsService {
     try {
       vaultValues = credentialOffer(
         licenceType,
-        await this.credentialsFor(user.id),
+        // ⚠️ includeUnconfirmed, AND WITHOUT IT THIS FILLS NOTHING. The default
+        // is confirmed-only, and the operator's vault holds five firearm
+        // licences of which ZERO are confirmed — phone uploads arrive
+        // unconfirmed and the confirm prompt only ever ran on the desktop
+        // upload path. That is the normal state, not a corner case, so the
+        // default here meant "What you own" was empty for everybody.
+        //
+        // Safe because credentialOffer now gates PER VALUE rather than per
+        // document: an unconfirmed row may supply a make, a calibre or a
+        // serial, and may not supply a date. The reminder sweep is untouched
+        // — it reads Credential.expiresOn, which this path never writes.
+        await this.credentialsFor(user.id, { includeUnconfirmed: true }),
         { ...prefill.values, ...seed },
       ).values;
     } catch (err) {
