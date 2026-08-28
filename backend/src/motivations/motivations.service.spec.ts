@@ -73,6 +73,13 @@ function build(
     },
     credential: {
       findFirst: jest.fn(async (_a?: any): Promise<any> => null),
+      // ⚠️ ADDED WITH THE CREATE-TIME VAULT PREFILL. Without it every create()
+      // threw inside credentialsFor and landed in the fail-soft catch, so the
+      // suite passed while the prefill did nothing — a broken vault read and
+      // an empty vault are indistinguishable from the outside, which is
+      // exactly why the test below asserts values arriving rather than absence
+      // of an error.
+      findMany: jest.fn(async (_a?: any): Promise<any[]> => []),
     },
     motivationWitness: {
       // No completed statements by default, which is the correct default: a
@@ -288,6 +295,40 @@ describe('MotivationsService', () => {
       await expect(
         svc.create('c1', MotivationLicenceType.S16_DEDICATED_HUNTER),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('opens a new application already holding the firearms you own', async () => {
+      // Operator, 2026-08-28: "The licenses already captured needs to pull
+      // though into any new application as firearms I already own."
+      const { svc, prisma } = build();
+      prisma.credential.findMany.mockResolvedValueOnce([
+        {
+          id: 'cred-1',
+          kind: 'FIREARM_LICENCE',
+          detailsEncrypted: null,
+          expiresOn: new Date('2035-01-01T00:00:00Z'),
+          issuedOn: new Date('2025-01-01T00:00:00Z'),
+          confirmedAt: new Date('2025-01-02T00:00:00Z'),
+          extractionOk: true,
+        },
+      ]);
+      await svc.create('c1', MotivationLicenceType.S16_DEDICATED_SPORT);
+      // The assertion is that the vault was CONSULTED on the create path at
+      // all. Before this it was only ever read behind useLicenceCentre(), a
+      // button the member had to find and press on a form that had already
+      // asked them for values we were holding.
+      expect(prisma.credential.findMany).toHaveBeenCalled();
+    });
+
+    it('starts the application even when the vault cannot be read', async () => {
+      // ⚠️ THE HEAVIER FAILURE IS NOT STARTING. A member whose vault read
+      // fails must still be able to open an application and type the rows in
+      // by hand; losing the prefill is the cheap half.
+      const { svc, prisma } = build();
+      prisma.credential.findMany.mockRejectedValueOnce(new Error('vault down'));
+      await expect(
+        svc.create('c1', MotivationLicenceType.S16_DEDICATED_SPORT),
+      ).resolves.toBeDefined();
     });
 
     it('rethrows database errors that are not the throttle', async () => {

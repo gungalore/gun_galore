@@ -2704,6 +2704,21 @@ function CredentialCard({
           off" marker beside it describes a reminder that could never have
           fired. Say what is true instead. */}
       <div className="mt-4 flex flex-col gap-2.5 border-t border-[var(--border-divider)] pt-4">
+        {/* ⚠️ THE SECTION WAS READ AND NEVER SHOWN. Operator, 2026-08-28:
+            "when user scans a license in the OCR must add the section type of
+            the license." It was already in WANTED and already doing real work
+            — credential-auto-date cross-checks the expiry against
+            LICENCE_YEARS[section] and REFUSES to arm a reminder without it
+            ("no issue date or section to check the term against"). What it had
+            no way of being was CORRECTED: a misread section silently disabled
+            the reminder and the member could not see why. Now it is on the
+            card, above the dates it governs. */}
+        {row.details.section && (
+          <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
+            <span className="text-[var(--text-tertiary-on-card)]">Section</span>
+            <span className="font-medium">{row.details.section}</span>
+          </div>
+        )}
         {row.issuedOn && (
           <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
             <span className="text-[var(--text-tertiary-on-card)]">Issued</span>

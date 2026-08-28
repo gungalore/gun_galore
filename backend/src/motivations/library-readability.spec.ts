@@ -21,6 +21,15 @@ import { WANTED } from '../licence-centre/licence-centre-extract.service';
 // symptom before anybody noticed the intersection was empty.
 //
 // These tests pin the two facts that would have caught it immediately.
+// ✅ THERE IS A SUPPORTED WAY ACROSS NOW — common/document-fields.ts, added
+// 2026-08-28 on the operator's "it must update on both documents and pull
+// through on both". These tests stay, and still pass, because the thing they
+// assert is still TRUE: the two sides really do use different key names, and
+// renaming either would orphan rows already stored under the old ones (the
+// vault's details are encrypted; the motivation's keys are in saved answer
+// blobs). What changed is that the gap is now BRIDGED rather than merely
+// documented. If you need a value to carry, add it to FIELD_ALIASES; do not
+// reach for the intersection, which is what this file exists to stop.
 describe('the two key registries genuinely do not line up', () => {
   // This is the DOCUMENTED, DELIBERATE state of the world, not an aspiration.
   // It is asserted so that anybody who later makes `extraction.ok` depend on
