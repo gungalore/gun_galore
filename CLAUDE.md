@@ -130,7 +130,7 @@ exactly what failed, and wait for the user's instruction.
 | | |
 |---|---|
 | ✅ **`ssh alloutdoor`** | **LIVE** — alloutdoor.co.za. Deploy here. |
-| ❌ `ssh gungalore` | RETIRED pre-replatform box, dozens of commits behind. Deploying here applies a replaced migration baseline over a live DB. |
+| ❌ `ssh gungalore` | **ALIAS DELETED 2026-08-29.** Was the RETIRED pre-replatform box. Deploying there applies a replaced migration baseline over a live DB. The command now fails to resolve — that is the intent. Do not recreate it. |
 
 **Check every single time**, before touching anything:
 
@@ -329,7 +329,16 @@ section described the retired one as if it were live.
   `feat/takealot-ux-parity`. Serves **alloutdoor.co.za**.
 - ❌ **RETIRED: `ssh gungalore`** — the pre-replatform box, dozens of commits
   behind. Deploying to it applies a REPLACED migration baseline over a live
-  database. It still answers SSH, which is exactly what makes it dangerous.
+  database.
+  **The alias was DELETED from `~/.ssh/config` on 2026-08-29**, at the
+  operator's instruction: the host had stopped answering, and an alias that
+  quietly succeeds against the wrong machine is worse than one that fails.
+  `ssh gungalore` now falls through to a hostname that does not resolve.
+  **Do not recreate it.** `infra/deploy/deploy.sh` hardcodes `HOST=alloutdoor`
+  and refuses anything else.
+  ⚠️ The KEY is still `~/.ssh/gungalore_deploy` and is STILL IN USE — the
+  `alloutdoor` block authenticates with it. Never delete it while tidying up
+  "gungalore" references.
 - Always use the alias form (`ssh alloutdoor "..."`). `ssh user@<IP>` bypasses
   the operator's local key config and prompts for a password they don't have.
 - Encrypted identity documents live at `/var/lib/alloutdoor/secure-uploads`
@@ -1653,7 +1662,7 @@ when production needs the canonical category tree (14 parents +
 ~110 sub-categories) refreshed:
 
 ```
-ssh gungalore "cd ~/app/backend && node scripts/seed-categories.mjs"
+ssh alloutdoor "cd /home/alloutdoor/app/backend && node scripts/seed-categories.mjs"
 ```
 
 - Idempotent — upserts by slug. Safe to re-run when the tree changes.
@@ -1797,8 +1806,10 @@ they survive any future memory wipe:
 - **Never expose real names to other users** — username only on
   public surfaces, no `@` prefix.
 - **Production server is Vultr, NOT Hetzner** (<ORIGIN_IP — see password manager>).
-- **SSH via the `gungalore` alias** only — never
-  `gungalore@<ORIGIN_IP — see password manager>` (bypasses the alias config).
+- **SSH via the `alloutdoor` alias** only — never
+  `alloutdoor@<ORIGIN_IP — see password manager>` (bypasses the alias config).
+  The `gungalore` alias was deleted 2026-08-29; see the retired-box warning
+  above.
 - **Ballistic Calculator is its own app** at
   `ballistics.gungalore.co.za` (own DB, pm2 services, nginx block,
   lives at `~/ballistics-app/`).
