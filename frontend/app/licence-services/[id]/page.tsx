@@ -44,11 +44,15 @@ import {
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
 import WizardRail, { WIZARD_STEPS } from '@/components/licence-pack/wizard-rail';
 import { visibleFields } from '@/lib/motivations-api';
+import FieldInput from '@/components/motivation-field-input';
 import PackGroup from '@/components/licence-pack/pack-group';
 import PrefillBanner from '@/components/licence-pack/prefill-banner';
 import Saps271Meter from '@/components/licence-pack/saps271-meter';
 import CaptureCards from '@/components/licence-pack/capture-cards';
 import ReadResult from '@/components/licence-pack/read-result';
+import FieldGrid from '@/components/licence-pack/field-grid';
+import YesNoPills from '@/components/licence-pack/yes-no-pills';
+import PackSection from '@/components/licence-pack/pack-section';
 
 export default function LicenceServicesWizardPage() {
   const { getToken } = useAuth();
@@ -288,7 +292,7 @@ export default function LicenceServicesWizardPage() {
 
           <StepBody
             stepKey={current.key}
-            section={current.section}
+            sections={current.sections}
             documents={current.documents}
             motivationId={id}
             busyKind={busyKind}
@@ -324,7 +328,7 @@ export default function LicenceServicesWizardPage() {
               mockup's HINTS array is nine written lines because it is a
               picture; on a real application the only honest hint is what this
               member still has outstanding. */}
-          {hintFor(current.section, fields, missing)}
+          {hintFor(current.sections, fields, missing)}
         </div>
         <button
           type="button"
@@ -345,7 +349,7 @@ export default function LicenceServicesWizardPage() {
 /** What each step actually asks. */
 function StepBody({
   stepKey,
-  section,
+  sections,
   documents,
   motivationId,
   busyKind,
@@ -359,7 +363,7 @@ function StepBody({
   onToggleRow,
 }: {
   stepKey: string;
-  section?: string;
+  sections?: string[];
   documents?: { kind: string; title: string; subtitle?: string }[];
   motivationId: string;
   busyKind: string | null;
@@ -427,16 +431,13 @@ function StepBody({
     );
   }
 
-  const stepFields = section
-    ? visibleFields(fields, answers).filter((f) => f.section === section)
-    : [];
+  const stepFields = (sections ?? []).flatMap((sec) =>
+    visibleFields(fields, answers).filter((f) => f.section === sec),
+  );
 
   return (
     <div className="max-w-[800px] space-y-4">
-      {/* ⚠️ CAPTURE COMES FIRST, AT THE TOP OF THE STEP. The design puts the
-          two doors above everything because photographing the document is what
-          fills the rest of the page — asking somebody to type first and offering
-          the scanner underneath inverts the whole point. */}
+      {/* Capture first — photographing the document is what fills the page. */}
       {documents?.map((d) => (
         <CaptureCards
           key={d.kind}
@@ -450,18 +451,73 @@ function StepBody({
         />
       ))}
 
-      {/* Then what we made of it, line by line, with where each value came
-          from — and every line editable in place. */}
-      {stepFields.length > 0 && (
-        <ReadResult
-          section={section as string}
+      {/* ⚠️ EACH STEP GETS THE ARTBOARD'S OWN BLOCK, NOT ONE GENERIC PANEL.
+          The design uses a different shape per step for a reason: a document
+          being read is a review with confidence pills; a settled list of
+          facts is a two-column grid; six questions nobody can prefill are
+          six visible yes/no pairs; owned firearms are collapsible cards. One
+          panel for all of them is the thing that made the live screen look
+          nothing like the design. */}
+      {stepKey === 'owned' ? (
+        // Collapsible per-firearm cards, and the row rule that shows the LAST
+        // row in use rather than a count of how many — see
+        // lib/owned-firearm-rows.ts and the bug its spec records.
+        <PackSection
+          title=""
+          section="Firearms you already own"
+          fields={fields}
+          answers={answers}
+          missing={missing}
+          onChange={onChange}
+        />
+      ) : stepKey === 'declarations' ? (
+        // ⚠️ VISIBLE PILL PAIRS, AND NOTHING PRE-SELECTED. The artboard draws
+        // all six answered "No" because it is a picture of a finished
+        // application; shipping that would put words about somebody's
+        // criminal record in their mouth, on a form signed under s 120(9)(f).
+        <div className="divide-y divide-[var(--border-divider)]">
+          {stepFields.map((f) =>
+            f.kind === 'yesno' ? (
+              <YesNoPills
+                key={f.key}
+                field={f}
+                value={answers[f.key] ?? ''}
+                missing={missing.has(f.key)}
+                onChange={(v) => onChange(f.key, v)}
+              />
+            ) : (
+              <div key={f.key} className="py-2.5">
+                <FieldInput
+                  field={f}
+                  value={answers[f.key] ?? ''}
+                  missing={missing.has(f.key)}
+                  onChange={(v) => onChange(f.key, v)}
+                />
+              </div>
+            ),
+          )}
+        </div>
+      ) : stepKey === 'about' || stepKey === 'case' ? (
+        // A settled list of facts, two columns, sensitive values masked while
+        // collapsed and shown while being corrected.
+        <FieldGrid
           fields={stepFields}
           answers={answers}
           provenance={pack.provenance}
           missing={missing}
           onChange={onChange}
         />
-      )}
+      ) : stepFields.length > 0 ? (
+        // A document being read: every line with where its value came from.
+        <ReadResult
+          section={(sections ?? [])[0] ?? ''}
+          fields={stepFields}
+          answers={answers}
+          provenance={pack.provenance}
+          missing={missing}
+          onChange={onChange}
+        />
+      ) : null}
     </div>
   );
 }
@@ -474,12 +530,14 @@ function StepBody({
  * that actually decides whether a pack can be produced.
  */
 function hintFor(
-  section: string | undefined,
+  sections: string[] | undefined,
   fields: MotivationField[],
   missing: Set<string>,
 ): string {
-  if (!section) return '';
-  const mine = fields.filter((f) => f.section === section && missing.has(f.key));
+  if (!sections?.length) return '';
+  const mine = fields.filter(
+    (f) => sections.includes(f.section) && missing.has(f.key),
+  );
   if (!mine.length) return 'Nothing outstanding here.';
   return mine.length === 1
     ? 'One answer still needed.'

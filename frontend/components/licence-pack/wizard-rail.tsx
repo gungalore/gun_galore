@@ -32,7 +32,17 @@ export interface WizardStep {
    * Absent on the steps that are not a form section: the first, which only
    * restates what was chosen, and the last, which is the pack.
    */
-  section?: string;
+  /**
+   * The registry sections this step asks, where it asks any.
+   *
+   * ⚠️ AN ARRAY, BECAUSE THE ARTBOARD IS ONE LICENCE TYPE AND THE REGISTRY IS
+   * FIVE. It was drawn for a section 16 dedicated sport shooter, so it never
+   * shows the self-defence threat case, the renewal's existing-licence
+   * details, or the hunting record — and a wizard built literally from it
+   * asks none of them. `wizard-rail.spec.ts` fails if any registry section
+   * for any licence type has no step.
+   */
+  sections?: string[];
   /**
    * Documents this step collects, in the order they are asked for.
    *
@@ -76,7 +86,7 @@ export const WIZARD_STEPS: WizardStep[] = [
     title: "Start with the firearm itself",
     blurb:
       "Everything after this depends on it. The type tells us which competency to pull from your Document Centre, which endorsement your association has to give, and whether the seller is a dealer or a private owner.",
-    section: "The firearm",
+    sections: ["The firearm", "The SAPS 271 form"],
     // ⚠️ THE STEP THE MOCKUP LEADS WITH, AND IT LEADS WITH CAPTURE. Its own
     // words: "Give us anything that shows it — a licence card, a dealer
     // invoice, an advert, a half-filled 271." Section E is make, model,
@@ -110,7 +120,7 @@ export const WIZARD_STEPS: WizardStep[] = [
     title: "Your competency",
     blurb:
       "Without competency for this type of firearm, SAPS cannot process the application at all. Most of this comes off the certificate already in your Document Centre.",
-    section: "Your competency",
+    sections: ["Your competency"],
     documents: [
       {
         kind: "COMPETENCY_CERTIFICATE",
@@ -127,7 +137,7 @@ export const WIZARD_STEPS: WizardStep[] = [
     title: "The firearms you already hold",
     blurb:
       "Most of these come from your Document Centre. Check them against your licence cards — what SAPS holds is what the form must say.",
-    section: "Firearms you already own",
+    sections: ["Firearms you already own"],
     documents: [
       {
         kind: "CURRENT_LICENCE",
@@ -144,7 +154,7 @@ export const WIZARD_STEPS: WizardStep[] = [
     title: "About you",
     blurb:
       "Your details as SAPS holds them. Anything we filled in came from a document you gave us, and all of it is yours to correct.",
-    section: "About you",
+    sections: ["About you"],
     documents: [
       {
         kind: "IDENTITY_DOCUMENT",
@@ -165,7 +175,7 @@ export const WIZARD_STEPS: WizardStep[] = [
     title: "Your association and your status",
     blurb:
       "A section 16 application rests on this: an accredited association, your membership, and a letter saying you are in good standing.",
-    section: "Dedicated status",
+    sections: ["Dedicated status"],
     documents: [
       {
         kind: "ASSOCIATION_CARD",
@@ -180,13 +190,28 @@ export const WIZARD_STEPS: WizardStep[] = [
     ],
   },
   {
+    key: "case",
+    name: "Your case",
+    fills: "fills section G item 61",
+    title: "Why you need this firearm",
+    blurb:
+      "The part only you can write, and the part a DFO actually reads. What you do with a firearm, where, and how often — we turn it into the motivation.",
+    // ⚠️ THREE SECTIONS, ONE STEP, AND WHICH ONE APPEARS DEPENDS ON THE
+    // LICENCE TYPE. Self-defence asks about the threat; a hunter or sport
+    // shooter about what they hunt and shoot; a renewal about the licence
+    // being renewed. `visibleFields` and the registry's own per-type lists
+    // decide — this step just has to have a home for all three, and before
+    // this step existed it had none for any of them.
+    sections: ["Your circumstances", "Experience", "The existing licence"],
+  },
+  {
     key: "storage",
     name: "Storage",
     fills: "fills the storage boxes",
     title: "Where it will be kept",
     blurb:
       "The form asks what the safe is and how it is fixed; the DFO asks to see it. Photographs of the safe go in your pack as one annexure.",
-    section: "Storage and safety",
+    sections: ["Storage and safety"],
     documents: [
       {
         kind: "SAFE_PHOTOGRAPHS",
@@ -203,7 +228,7 @@ export const WIZARD_STEPS: WizardStep[] = [
     title: "The questions only you can answer",
     blurb:
       "Nothing in your Document Centre can answer these and we will never guess at one. They are near the end on purpose — they are quick, and they should not be the first thing you meet.",
-    section: "History",
+    sections: ["History"],
   },
   {
     key: "pack",

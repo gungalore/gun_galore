@@ -1,0 +1,54 @@
+{
+  "S13_SELF_DEFENCE": [
+    "The SAPS 271 form",
+    "About you",
+    "Your competency",
+    "The firearm",
+    "Storage and safety",
+    "History",
+    "Firearms you already own",
+    "Your circumstances"
+  ],
+  "S15_OCCASIONAL_HUNTER": [
+    "The SAPS 271 form",
+    "About you",
+    "Your competency",
+    "The firearm",
+    "Storage and safety",
+    "History",
+    "Firearms you already own",
+    "Experience"
+  ],
+  "S16_DEDICATED_HUNTER": [
+    "The SAPS 271 form",
+    "About you",
+    "Your competency",
+    "The firearm",
+    "Storage and safety",
+    "History",
+    "Firearms you already own",
+    "Dedicated status",
+    "Experience"
+  ],
+  "S16_DEDICATED_SPORT": [
+    "The SAPS 271 form",
+    "About you",
+    "Your competency",
+    "The firearm",
+    "Storage and safety",
+    "History",
+    "Firearms you already own",
+    "Dedicated status",
+    "Experience"
+  ],
+  "S24_RENEWAL": [
+    "The SAPS 271 form",
+    "About you",
+    "Your competency",
+    "The firearm",
+    "Storage and safety",
+    "History",
+    "Firearms you already own",
+    "The existing licence"
+  ]
+}
