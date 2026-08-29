@@ -165,11 +165,11 @@ export default function LicenceServicesPackPage() {
           }}
         >
           <p className="text-[13px] text-[var(--text-primary)]">
-            <span className="font-semibold">Preview.</span> This is the new pack
-            screen, still being built. It cannot yet ask about the firearms you
-            already own, your declarations or your safe — the classic view
-            below does all of that, and everything you type here is saved to
-            the same application.
+            <span className="font-semibold">Preview.</span> This is the new
+            pack screen, still being built. You cannot upload or scan documents
+            from here yet, and the SAPS 271 questions only appear once you have
+            asked us to fill that form in — the classic view below does both.
+            Everything you type here is saved to the same application.
           </p>
         </div>
       )}
@@ -328,10 +328,10 @@ function PackSummary({
   const { oursDone, oursTotal, theirsTotal } = pack.checklist;
   return (
     <section>
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
-          Your pack
-        </h2>
+      {/* ⚠️ NO HEADING OF OUR OWN HERE. The server's first section is itself
+          titled "Your pack", so an h2 above it rendered the words twice — seen
+          on the live screen, not in a review. The counts stand alone. */}
+      <div className="flex items-baseline justify-end gap-3">
         <p className="text-[13px] text-[var(--text-secondary)]">
           {oursDone} of {oursTotal} done
           {/* ⚠️ COUNTED SEPARATELY, NEVER FOLDED INTO THE TOTAL. Rows waiting
