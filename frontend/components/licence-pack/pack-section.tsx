@@ -63,9 +63,14 @@ export default function PackSection({
 
   return (
     <section>
-      <h3 className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
-        {title}
-      </h3>
+      {/* The wizard supplies its own step heading, so this one is optional —
+          two headings stacked on one panel is the duplicate the flat screen
+          shipped with. */}
+      {title && (
+        <h3 className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
+          {title}
+        </h3>
+      )}
       {intro && (
         <p className="mt-1 text-[13px] leading-snug text-[var(--text-secondary)]">
           {intro}

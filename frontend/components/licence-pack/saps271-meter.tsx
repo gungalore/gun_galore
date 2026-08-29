@@ -1,18 +1,25 @@
 'use client';
 
 // ────────────────────────────────────────────────────────────────────
-// THE SAPS 271, COMPLETING BESIDE THE PACK.
+// THE SAPS 271, ON EVERY STEP. Built to the design mockup's own spec.
 //
-// ⚠️ COUNTED IN QUESTIONS, NOT IN FORM BOXES. The server settled this
-// (saps271-coverage.ts, and the operator on 2026-08-28: "it needs to map per
-// question, not per applicable box"). One question can fill six boxes; scoring
-// boxes would tell a member they are 40% done when they have answered
-// everything they were asked.
+// The numbers and shapes here are the mockup's, read off Main.dc.html rather
+// than approximated: 33px Archivo headline, a monospace section letter in a
+// 22px column, a 6px pill bar indented 30px to clear it, an 11px note under
+// the bar, and an explanation of the counting rule at the foot.
+//
+// ⚠️ COUNTED IN QUESTIONS, NOT IN FORM BOXES, and the mockup agrees with the
+// server on the substance even though it says "boxes": its own footnote is
+// "a section counts only the boxes that apply to you — answering no to a
+// history question closes its four follow-ups; an owned-firearm row you never
+// use is not an empty box". That is what saps271-coverage.ts computes.
+// Counting everything would peg an honest applicant near 40% forever.
 //
 // ⚠️ `percent: null` IS UNSCORED AND IS NOT ZERO. Section F is the current
-// owner's half of the form. Rendering null as an empty bar tells a member they
-// are 0% done on work that was never theirs to do, which is the single most
-// discouraging thing this panel could say.
+// owner's half. The mockup renders it gold with the word "waiting" and a token
+// 8% sliver so the row does not read as empty — kept, because a bar at 0% and
+// a bar that is absent both say "you are behind" about work that was never
+// the member's to do.
 // ────────────────────────────────────────────────────────────────────
 
 import type { Saps271Coverage, CoverageSection } from '@/lib/motivations-api';
@@ -23,94 +30,96 @@ export default function Saps271Meter({
   coverage: Saps271Coverage;
 }) {
   return (
-    <aside className="rounded-[var(--r-lg)] border border-[var(--border)] bg-[var(--bg-card)] p-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
-        Your SAPS 271
-      </h3>
+    <aside className="lg:border-l lg:border-[var(--border)] lg:pl-6">
+      <div className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
+        SAPS 271 — what is filled
+      </div>
 
-      <p className="mt-2 text-[15px] text-[var(--text-primary)]">
-        <span className="font-semibold">{coverage.percent}%</span> complete
-      </p>
-      <p className="text-[13px] text-[var(--text-secondary)]">
-        {coverage.answered} of {coverage.applicable} questions answered
-      </p>
+      <div className="mt-[9px] flex items-baseline gap-2">
+        <span className="font-[family-name:var(--font-head)] text-[33px] font-bold leading-none tabular-nums text-[var(--text-primary)]">
+          {coverage.percent}%
+        </span>
+        <span className="text-[12.5px] text-[var(--text-tertiary)]">
+          of the boxes that apply to you
+        </span>
+      </div>
 
-      <Bar percent={coverage.percent} />
-
-      <ul className="mt-4 space-y-2">
+      <div className="mt-[18px] flex flex-col gap-[11px]">
         {coverage.sections.map((s) => (
-          <li key={s.id}>
-            <SectionRow section={s} />
-          </li>
+          <SectionRow key={s.id} section={s} />
         ))}
-      </ul>
+      </div>
+
+      <p className="mt-[18px] border-t border-[var(--border-divider)] pt-3.5 text-[12px] leading-normal text-[var(--text-tertiary)]">
+        A section counts only the boxes that apply to you. Answering
+        &ldquo;no&rdquo; to a history question closes its follow-ups; an
+        owned-firearm row you never use is not an empty box.
+      </p>
     </aside>
   );
 }
 
 function SectionRow({ section }: { section: CoverageSection }) {
-  // `theirs` and a null percent travel together, but they are separate facts
-  // and the panel checks the one it is actually about.
-  const unscored = section.percent === null;
+  // Somebody else's half of the form. Gold, and the word rather than a number.
+  const waiting = section.percent === null;
+  const pct = section.percent ?? 0;
+
+  // The mockup's own ladder: gold while waiting, green at 100, red while in
+  // progress, and the plain border colour at zero so an untouched section
+  // reads as "not yet" rather than as a failure.
+  const fill = waiting
+    ? 'var(--gold)'
+    : pct === 100
+      ? 'var(--success)'
+      : pct > 0
+        ? 'var(--red)'
+        : 'var(--border)';
+
+  const ink = waiting
+    ? 'var(--gold-strong)'
+    : pct === 100
+      ? 'var(--success)'
+      : pct > 0
+        ? 'var(--text-primary)'
+        : 'var(--text-tertiary)';
 
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[13px] text-[var(--text-primary)]">
+      <div className="mb-1 flex items-baseline gap-2">
+        {/* The letter the form itself uses, so the panel and the paper agree. */}
+        <span className="w-[22px] shrink-0 font-mono text-[11px] text-[var(--text-tertiary)]">
+          {section.id}
+        </span>
+        <span className="min-w-0 flex-1 text-[12.5px] text-[var(--text-primary)]">
           {section.label}
         </span>
         <span
-          className="shrink-0 text-[12px]"
-          style={{
-            color: unscored
-              ? 'var(--gold-strong)'
-              : section.status === 'complete'
-                ? 'var(--success)'
-                : 'var(--text-tertiary)',
-          }}
+          className="text-[11.5px] font-bold tabular-nums"
+          style={{ color: ink }}
         >
-          {unscored ? 'Not yours' : `${section.percent}%`}
+          {waiting ? 'waiting' : `${pct}%`}
         </span>
       </div>
 
-      {/* No bar at all for an unscored section — an empty track reads as zero. */}
-      {!unscored && <Bar percent={section.percent ?? 0} thin />}
+      <div className="ml-[30px] h-[6px] overflow-hidden rounded-full bg-[var(--bg-inset)]">
+        <div
+          className="h-full rounded-full"
+          style={{
+            // A token sliver while waiting: a bar at 0 reads as failure, and
+            // this row is not the member's to fail.
+            width: `${waiting ? 8 : Math.max(0, Math.min(100, pct))}%`,
+            background: fill,
+            transition: 'width .5s var(--ease-out)',
+          }}
+        />
+      </div>
 
-      {section.note && (
-        <p className="mt-0.5 text-[12px] leading-snug text-[var(--text-tertiary)]">
-          {section.note}
-        </p>
+      {(section.note || section.missingRequired > 0) && (
+        <div className="ml-[30px] mt-1 text-[11px] text-[var(--text-tertiary)]">
+          {section.note ??
+            `${section.missingRequired} still needed`}
+        </div>
       )}
-
-      {/* ⚠️ ONLY WHERE SOMETHING IS ACTUALLY MISSING. A "0 still needed" line
-          on every finished section is noise that makes the real ones invisible. */}
-      {section.missingRequired > 0 && (
-        <p className="mt-0.5 text-[12px] text-[var(--text-secondary)]">
-          {section.missingRequired} still needed
-        </p>
-      )}
-    </div>
-  );
-}
-
-function Bar({ percent, thin = false }: { percent: number; thin?: boolean }) {
-  // Clamped: a percentage outside 0–100 is a server bug, and a bar wider than
-  // its track is a layout bug on top of it.
-  const width = Math.max(0, Math.min(100, percent));
-  return (
-    <div
-      className={`mt-1.5 w-full overflow-hidden rounded-full bg-[var(--bg-inset)] ${
-        thin ? 'h-1' : 'h-2'
-      }`}
-      role="progressbar"
-      aria-valuenow={width}
-      aria-valuemin={0}
-      aria-valuemax={100}
-    >
-      <div
-        className="h-full rounded-full bg-[var(--success)] transition-[width] duration-[var(--dur-fast)] ease-[var(--ease-out)]"
-        style={{ width: `${width}%` }}
-      />
     </div>
   );
 }

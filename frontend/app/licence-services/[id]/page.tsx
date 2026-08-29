@@ -1,30 +1,27 @@
 'use client';
 
 // ────────────────────────────────────────────────────────────────────
-// THE PACK SCREEN. Phase 2 of the licence-application rebuild.
+// THE LICENCE APPLICATION WIZARD. Built to the design mockup.
 //
-// The wizard at /motivations/[id] asks questions, then asks for documents,
-// then generates a pack. This inverts that: it starts from what the member
-// already holds and only asks for what is genuinely missing. The pack is the
-// object, not the form.
+// ⚠️ THIS REPLACED A FLAT PACK SCREEN ON 2026-08-29, AND THE REASON IS WORTH
+// KEEPING. The build plan contradicts itself: §3.0c says "the design is now a
+// ten-step wizard rather than a single pack screen", and §8's Phase 2 still
+// describes the pack screen it superseded. The first version of this route
+// followed §8, which was the stale half — nobody compared it against the
+// artboard until the operator asked how the two matched, and the answer was
+// that they were different information architectures.
 //
-// ⚠️ BEHIND A FLAG, AND THE FLAG IS OFF. NEXT_PUBLIC_LICENCE_SERVICES_ENABLED
-// must be exactly 'true' or this route sends the member back to the wizard.
-// Nothing about this screen is finished enough to be somebody's only way in.
+// The mechanics here are the mockup's, read off Main.dc.html rather than
+// approximated: one panel visible at a time, a clickable rail of numbered
+// dots, a fixed 340px SAPS 271 column on every step, and a Back / hint /
+// Continue footer. Operator, 2026-08-29: "I want to match the mechanics of how
+// it works and visually appears with styling and flow. Not word for word the
+// same."
 //
-// ⚠️ READ-ONLY, ON PURPOSE, UNTIL PHASE 2b. There is no editing here yet, and
-// three whole areas of the application — the firearms the member already owns,
-// the six declaration questions, and the safe details — have no home on this
-// screen at all. That is why the classic-view link below is not a courtesy: it
-// is the only way to answer those questions, and it stays above the fold in
-// every state of this page including the error one. The build plan says it in
-// as many words: do not ship Phase 2 without 2b. This is Phase 2 landing
-// first, flagged off, so 2b has something to land on.
+// ⚠️ TEN STEPS, NOT THE ARTBOARD'S NINE — the licence section leads. Operator:
+// "I added the Section list as it is already there and obvious to have."
 //
-// ⚠️ ONE CALL. GET :id/pack returns the checklist, the 271 coverage, the
-// provenance map and the prefill count together. The wizard assembles itself
-// from eight separate endpoints, which is how two halves of one screen end up
-// disagreeing about the same row while both are "correct".
+// ⚠️ BEHIND A FLAG, AND THE FLAG IS OFF. See lib/licence-services-preview.ts.
 // ────────────────────────────────────────────────────────────────────
 
 import { useAuth } from '@clerk/nextjs';
@@ -38,49 +35,37 @@ import {
   type MotivationPack,
 } from '@/lib/motivations-api';
 import { readDraft } from '@/lib/motivation-draft';
+import { licenceLabel, LICENCE_SECTION } from '@/lib/licence-labels';
 import {
   PACK_SCREEN_SHIPPED,
   canOpenPackScreen,
   clearPreviewOptIn,
 } from '@/lib/licence-services-preview';
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
+import WizardRail, { WIZARD_STEPS } from '@/components/licence-pack/wizard-rail';
 import PackSection from '@/components/licence-pack/pack-section';
-import { licenceLabel } from '@/lib/licence-labels';
 import PackGroup from '@/components/licence-pack/pack-group';
 import PrefillBanner from '@/components/licence-pack/prefill-banner';
 import Saps271Meter from '@/components/licence-pack/saps271-meter';
 
-// ⚠️ RESOLVED IN AN EFFECT, NOT AT MODULE SCOPE. The build-time half of this
-// is a constant, but the preview half reads sessionStorage, which does not
-// exist while the page is rendered on the server — reading it up here is a
-// hydration mismatch and a crash.
-
-export default function LicenceServicesPackPage() {
+export default function LicenceServicesWizardPage() {
   const { getToken } = useAuth();
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const id = params.id;
 
-  // null = not decided yet. Nothing renders and nothing redirects until it is
-  // resolved, so a member never sees a flash of the wrong screen.
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [pack, setPack] = useState<MotivationPack | null>(null);
   const [fields, setFields] = useState<MotivationField[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [missingRequired, setMissingRequired] = useState<string[]>([]);
-  const [draftKeys, setDraftKeys] = useState(0);
-  // One row open at a time. A pack with every note expanded is a wall of text
-  // and loses the scannability the whole design is for.
-  const [openRow, setOpenRow] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
+  const [openRow, setOpenRow] = useState<string | null>(null);
 
   const token = useCallback(async () => getToken(), [getToken]);
 
-  // ⚠️ THE REDIRECT RUNS IN AN EFFECT, NOT DURING RENDER. Calling
-  // router.replace() in the render body of a client component fires during
-  // hydration and React warns about updating another component while
-  // rendering. An effect that runs once is the boring, correct shape.
   useEffect(() => {
     const ok = canOpenPackScreen(window.location.search);
     setAllowed(ok);
@@ -92,27 +77,18 @@ export default function LicenceServicesPackPage() {
     let alive = true;
     (async () => {
       try {
-        // In parallel: two independent reads, and the pack is the slower.
         const [p, d] = await Promise.all([
           motivationsApi.pack(token, id),
           motivationsApi.get(token, id),
         ]);
-        // Sequential, because the registry is keyed on the licence type and
-        // only the detail knows it.
         const f = await motivationsApi.fields(token, d.licenceType);
         if (!alive) return;
         setPack(p);
         setFields(f.fields);
         setMissingRequired(d.missingRequired ?? []);
-
-        // ⚠️ THE LOCAL DRAFT WINS OVER THE SERVER'S COPY, because it is
-        // NEWER: it holds whatever was typed inside the last debounce window,
-        // or after a save that failed. Same key and same rule as the wizard —
-        // see lib/motivation-draft.ts — so a member can move between the two
-        // screens mid-sentence without losing a word.
-        const draft = readDraft(id);
-        setDraftKeys(Object.keys(draft).length);
-        setAnswers({ ...(d.answers ?? {}), ...draft });
+        // The local draft wins: it is newer than the server's copy by exactly
+        // the debounce window. Same key as the wizard at /motivations/[id].
+        setAnswers({ ...(d.answers ?? {}), ...readDraft(id) });
       } catch (ex) {
         if (!alive) return;
         setError(
@@ -134,7 +110,7 @@ export default function LicenceServicesPackPage() {
     token,
     answers,
     ready: Boolean(pack),
-    onSaved: (res) => setMissingRequired(res.missingRequired ?? []),
+    onResponse: (res) => setMissingRequired(res.missingRequired ?? []),
   });
 
   const setAnswer = useCallback(
@@ -146,243 +122,282 @@ export default function LicenceServicesPackPage() {
   );
 
   const missing = useMemo(() => new Set(missingRequired), [missingRequired]);
+  const steps = WIZARD_STEPS;
+  const current = steps[Math.min(step, steps.length - 1)];
+  const last = step === steps.length - 1;
 
-  // Nothing to paint until the gate is resolved, or while the effect above is
-  // bouncing them to the wizard.
   if (!allowed) return null;
 
+  if (loading) {
+    return (
+      <main className="px-4 py-8 sm:px-6">
+        <p className="text-sm text-[var(--text-secondary)]">
+          Opening your application…
+        </p>
+      </main>
+    );
+  }
+
+  if (error || !pack) {
+    return (
+      <main className="px-4 py-8 sm:px-6">
+        <div className="rounded-[var(--r-md)] border border-[var(--border)] p-4">
+          <p className="text-sm text-[var(--text-primary)]">
+            {error ?? 'We could not open this application.'}
+          </p>
+          <p className="mt-2 text-xs text-[var(--text-secondary)]">
+            Your answers are safe.{' '}
+            <Link href={`/motivations/${id}`} className="underline">
+              Open the classic view
+            </Link>{' '}
+            to carry on.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main className="mx-auto w-full max-w-[var(--page-max)] px-4 py-6">
-      {/* ⚠️ SAY IT IS A PREVIEW, LOUDLY. Somebody who opted in three pages ago
-          and forgot must not mistake an unfinished screen for the real one and
-          conclude their application has lost three sections. */}
+    <div className="flex min-h-screen flex-col">
+      {/* ── the chrome bar ─────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-3.5 border-b border-[var(--border)] px-4 py-3 sm:px-6">
+        <div className="text-[12.5px] text-[var(--text-tertiary)]">
+          Licence services /{' '}
+          <span className="font-medium text-[var(--text-secondary)]">
+            {pack.referenceNumber} — {LICENCE_SECTION[pack.licenceType] ?? ''},{' '}
+            {licenceLabel(pack.licenceType).toLowerCase()}
+          </span>
+        </div>
+        <div className="ml-auto text-[12px] text-[var(--text-tertiary)]">
+          <SaveState state={autosave.state} refused={autosave.refused} />
+        </div>
+      </div>
+
+      <WizardRail steps={steps} current={step} onGo={setStep} />
+
       {!PACK_SCREEN_SHIPPED && (
         <div
-          className="mb-4 rounded-[var(--r-md)] border px-3 py-2"
+          className="border-b px-4 py-2 sm:px-6"
           style={{
             borderColor: 'var(--gold-line)',
             background: 'var(--gold-wash)',
           }}
         >
-          <p className="text-[13px] text-[var(--text-primary)]">
-            <span className="font-semibold">Preview.</span> This is the new
-            pack screen, still being built. You cannot upload or scan documents
-            from here yet, and the SAPS 271 questions only appear once you have
-            asked us to fill that form in — the classic view below does both.
-            Everything you type here is saved to the same application.
+          <p className="text-[12.5px] text-[var(--text-primary)]">
+            <span className="font-semibold">Preview.</span> Still being built —
+            you cannot upload or scan documents from here yet.{' '}
+            <Link href={`/motivations/${id}`} className="underline">
+              Classic view
+            </Link>{' '}
+            ·{' '}
+            <button
+              type="button"
+              onClick={() => {
+                clearPreviewOptIn();
+                window.location.href = `/motivations/${id}`;
+              }}
+              className="underline"
+            >
+              Leave preview
+            </button>
           </p>
         </div>
       )}
 
-      {/* ⚠️ ABOVE THE FOLD, IN EVERY STATE, INCLUDING THE ERROR ONE. */}
-      <ClassicViewLink id={id} />
-
-      <SaveState state={autosave.state} refused={autosave.refused} />
-
-      {loading && (
-        <p className="mt-6 text-sm text-[var(--text-secondary)]">
-          Opening your pack…
-        </p>
-      )}
-
-      {error && !loading && (
-        <div className="mt-6 rounded-[var(--r-md)] border border-[var(--border)] p-4">
-          <p className="text-sm text-[var(--text-primary)]">{error}</p>
-          <p className="mt-2 text-xs text-[var(--text-secondary)]">
-            Your answers are safe. Open the classic view above to carry on.
-          </p>
-        </div>
-      )}
-
-      {pack && !loading && (
-        <>
-          <header className="mt-5">
-            <p className="text-xs uppercase tracking-[.11em] text-[var(--text-tertiary)]">
-              {pack.referenceNumber}
-            </p>
-            <h1 className="mt-1 text-xl font-semibold text-[var(--text-primary)]">
-              {licenceLabel(pack.licenceType)}
+      {/* ── body: the step, and the 271 beside it on every step ── */}
+      <div className="grid flex-1 grid-cols-1 gap-[26px] px-4 pt-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="flex flex-col gap-4">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
+              Step {step + 1} of {steps.length} · {current.fills}
+            </div>
+            <h1 className="mb-1.5 mt-1.5 text-[26px] font-bold tracking-[-.02em] text-[var(--text-primary)]">
+              {current.title}
             </h1>
-          </header>
+            <p className="max-w-[78ch] text-[14.5px] text-[var(--text-secondary)]">
+              {current.blurb}
+            </p>
+          </div>
 
-          <div className="mt-4">
+          {step === 0 && (
             <PrefillBanner
               prefill={pack.prefill}
               provenance={pack.provenance}
             />
-          </div>
-
-          {draftKeys > 0 && (
-            <p className="mt-3 text-xs text-[var(--text-secondary)]">
-              You have unsaved changes from the classic view. Open it above to
-              keep working on them.
-            </p>
           )}
 
-          <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px] lg:items-start">
-            <div className="space-y-8">
-              <PackSummary
-                pack={pack}
-              openRow={openRow}
-                onToggle={(key) =>
-                  setOpenRow((cur) => (cur === key ? null : key))
-                }
-              />
+          <StepBody
+            stepKey={current.key}
+            section={current.section}
+            pack={pack}
+            fields={fields}
+            answers={answers}
+            missing={missing}
+            onChange={setAnswer}
+            openRow={openRow}
+            onToggleRow={(k) => setOpenRow((cur) => (cur === k ? null : k))}
+          />
+        </div>
 
-              {/* ── PHASE 2b: THE THREE AREAS THE PACK HAD NO HOME FOR ────
-                  Without these the screen looks finished and is not. Each is a
-                  registry section the server already groups; the visibility
-                  rule is `visibleFields`, which mirrors the server's own
-                  isVisible(). */}
-              <PackSection
-                title="Firearms you already own"
-                intro="Most of these come from your Document Centre. Check them against your licence cards — what SAPS holds is what the form must say."
-                section="Firearms you already own"
-                fields={fields}
-                answers={answers}
-                missing={missing}
-                onChange={setAnswer}
-              />
+        <Saps271Meter coverage={pack.coverage} />
+      </div>
 
-              <PackSection
-                title="Storage and safety"
-                intro="Where the firearm will be kept, and the safe it will be kept in."
-                section="Storage and safety"
-                fields={fields}
-                answers={answers}
-                missing={missing}
-                onChange={setAnswer}
-              />
-
-              {/* ⚠️ LAST, AND NOT BY ACCIDENT. Meeting six questions about
-                  convictions on the first screen makes an application feel
-                  like a charge sheet. Nothing can help with them and nothing
-                  ever prefills them — they are the applicant's own statements
-                  under section 120(9)(f). */}
-              <PackSection
-                title="Declarations"
-                intro="Only you can answer these. We never fill them in, and nothing you have uploaded changes them."
-                section="History"
-                fields={fields}
-                answers={answers}
-                missing={missing}
-                onChange={setAnswer}
-              />
-            </div>
-
-            <Saps271Meter coverage={pack.coverage} />
-          </div>
-        </>
-      )}
-    </main>
-  );
-}
-
-/**
- * The way back to the screen that can actually answer everything.
- *
- * ⚠️ NOT A COURTESY LINK. Until Phase 2b lands, the firearms a member already
- * owns, the six declaration questions and the safe details have no home on
- * this screen. A member who cannot find their way back to the wizard cannot
- * finish their application at all.
- */
-function ClassicViewLink({ id }: { id: string }) {
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Link
-        href={`/motivations/${id}`}
-        className="inline-flex items-center gap-1 text-sm text-[var(--text-secondary)] underline"
-      >
-        Continue in classic view
-      </Link>
-
-      {/* ⚠️ A WAY OUT OF THE PREVIEW, NOT JUST A WAY BACK TO THE OTHER SCREEN.
-          Without this, opting in is a one-way door for the rest of the tab —
-          every later visit lands here again and the member has no idea why. */}
-      {!PACK_SCREEN_SHIPPED && (
+      {/* ── footer ──────────────────────────────────────────────── */}
+      <div className="mt-6 flex items-center gap-3.5 border-t border-[var(--border)] bg-[var(--bg-card)] px-4 py-[15px] sm:px-6">
         <button
           type="button"
-          onClick={() => {
-            clearPreviewOptIn();
-            window.location.href = `/motivations/${id}`;
-          }}
-          className="text-xs text-[var(--text-tertiary)] underline"
+          onClick={() => setStep((n) => Math.max(0, n - 1))}
+          disabled={step === 0}
+          className="rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-5 py-[11px] text-[13.5px] font-medium text-[var(--text-secondary)] disabled:opacity-40"
         >
-          Leave preview
+          Back
         </button>
-      )}
+        <div className="flex-1 text-[12.5px] text-[var(--text-tertiary)]">
+          {/* ⚠️ THE HINT IS DERIVED, NEVER A HARDCODED SENTENCE PER STEP. The
+              mockup's HINTS array is nine written lines because it is a
+              picture; on a real application the only honest hint is what this
+              member still has outstanding. */}
+          {hintFor(current.section, fields, missing)}
+        </div>
+        <button
+          type="button"
+          onClick={() =>
+            last
+              ? router.push(`/motivations/${id}`)
+              : setStep((n) => Math.min(steps.length - 1, n + 1))
+          }
+          className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-6 py-[11px] text-[13.5px] font-semibold text-white"
+        >
+          {last ? 'Open your pack' : 'Continue'}
+        </button>
+      </div>
     </div>
   );
 }
 
-/** The left column: the pack itself, group by group. */
-function PackSummary({
+/** What each step actually asks. */
+function StepBody({
+  stepKey,
+  section,
   pack,
+  fields,
+  answers,
+  missing,
+  onChange,
   openRow,
-  onToggle,
+  onToggleRow,
 }: {
+  stepKey: string;
+  section?: string;
   pack: MotivationPack;
+  fields: MotivationField[];
+  answers: Record<string, string>;
+  missing: Set<string>;
+  onChange: (key: string, value: string) => void;
   openRow: string | null;
-  onToggle: (key: string) => void;
+  onToggleRow: (key: string) => void;
 }) {
-  const { oursDone, oursTotal, theirsTotal } = pack.checklist;
-  return (
-    <section>
-      {/* ⚠️ NO HEADING OF OUR OWN HERE. The server's first section is itself
-          titled "Your pack", so an h2 above it rendered the words twice — seen
-          on the live screen, not in a review. The counts stand alone. */}
-      <div className="flex items-baseline justify-end gap-3">
-        <p className="text-[13px] text-[var(--text-secondary)]">
-          {oursDone} of {oursTotal} done
-          {/* ⚠️ COUNTED SEPARATELY, NEVER FOLDED INTO THE TOTAL. Rows waiting
-              on somebody else are not the member's to finish, and rolling them
-              into one score makes them look behind on work they cannot do. */}
-          {theirsTotal > 0 && ` · ${theirsTotal} with someone else`}
+  // The first step restates what was chosen when the application was started.
+  // ⚠️ READ-ONLY, DELIBERATELY. Changing the section changes which documents
+  // are required and which questions are asked; it is not a field to flip
+  // halfway through, it is a new application.
+  if (stepKey === 'section') {
+    return (
+      <div className="gg-tile max-w-[820px] rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[17px] py-[15px]">
+        <div className="text-[12.5px] text-[var(--text-tertiary)]">
+          You are applying under
+        </div>
+        <div className="mt-1 text-[18px] font-bold text-[var(--text-primary)]">
+          {LICENCE_SECTION[pack.licenceType] ?? ''} —{' '}
+          {licenceLabel(pack.licenceType).toLowerCase()}
+        </div>
+        <p className="mt-2 text-[13px] text-[var(--text-secondary)]">
+          Chosen when you started this application. To apply under a different
+          section, start a new one — the documents and the questions are not the
+          same.
         </p>
       </div>
+    );
+  }
 
-      <div className="mt-4 space-y-6">
-        {pack.checklist.sections.map((section) => (
+  // The last step is the pack itself: what we produce, what you gather, and
+  // what somebody else has to send.
+  if (stepKey === 'pack') {
+    return (
+      <div className="max-w-[820px] space-y-6">
+        {pack.checklist.sections.map((s) => (
           <PackGroup
-            key={section.key}
-            section={section}
+            key={s.key}
+            section={s}
             expandedKey={openRow}
-            onToggle={onToggle}
+            onToggle={onToggleRow}
           />
         ))}
       </div>
-    </section>
+    );
+  }
+
+  // "Where it is from" has no registry section of its own — the routing
+  // question lives in "The firearm" and the seller's half is his to complete.
+  if (stepKey === 'source') {
+    return (
+      <div className="gg-tile max-w-[820px] rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[17px] py-[15px]">
+        <p className="text-[13.5px] text-[var(--text-secondary)]">
+          You answered this on the previous step. On a private sale we send the
+          current owner a link to complete his own half of the form — his
+          details, his licence card, and the declaration he signs. Send it from
+          the classic view for now.
+        </p>
+      </div>
+    );
+  }
+
+  if (!section) return null;
+
+  return (
+    <div className="max-w-[820px]">
+      <PackSection
+        title=""
+        section={section}
+        fields={fields}
+        answers={answers}
+        missing={missing}
+        onChange={onChange}
+      />
+    </div>
   );
 }
 
 /**
- * What happened to the last save.
+ * What is still outstanding on this step, counted rather than written.
  *
- * ⚠️ A REFUSAL IS OUR FAULT AND SAYS SO. The server refuses a REGISTERED
- * field's value when the form and the validator disagree — never because the
- * member typed something wrong — and the wizard's own banner has said so in
- * those words since it was written. Telling somebody to fix an answer that is
- * not wrong sends them round a loop with no exit.
+ * ⚠️ COUNTS ONLY WHAT IS REQUIRED AND STILL EMPTY, from the server's own
+ * missingRequired. A hint invented on the client would drift from the gate
+ * that actually decides whether a pack can be produced.
  */
+function hintFor(
+  section: string | undefined,
+  fields: MotivationField[],
+  missing: Set<string>,
+): string {
+  if (!section) return '';
+  const mine = fields.filter((f) => f.section === section && missing.has(f.key));
+  if (!mine.length) return 'Nothing outstanding here.';
+  return mine.length === 1
+    ? 'One answer still needed.'
+    : `${mine.length} answers still needed.`;
+}
+
 function SaveState({ state, refused }: { state: string; refused: string[] }) {
   if (refused.length > 0) {
     return (
-      <p className="mt-3 rounded-[var(--r-sm)] border border-[var(--warning)] px-3 py-2 text-[13px] text-[var(--text-primary)]">
-        We could not store{' '}
-        {refused.length === 1 ? 'one of your answers' : 'some of your answers'}.
-        This is a fault on our side, not something you typed wrong — please tell
-        support. What you typed is still on this device.
-      </p>
+      <span className="text-[var(--warning)]">
+        Not saved — please tell support
+      </span>
     );
   }
-  if (state === 'idle') return null;
-  return (
-    <p className="mt-3 text-[12px] text-[var(--text-tertiary)]">
-      {state === 'saving'
-        ? 'Saving…'
-        : state === 'saved'
-          ? 'Saved'
-          : 'Not saved'}
-    </p>
-  );
+  if (state === 'saving') return <span>Saving…</span>;
+  if (state === 'saved') return <span>Saved a moment ago</span>;
+  if (state === 'error') return <span>Not saved</span>;
+  return null;
 }
