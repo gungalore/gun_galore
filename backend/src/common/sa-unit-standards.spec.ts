@@ -88,16 +88,72 @@ describe('parseUnitStandards', () => {
   });
 
   it('⚠️ WILL NOT PULL SIX DIGITS OUT OF A LONGER NUMBER', () => {
-    // An ID number, a certificate number and a date all live on this page. An
-    // unbounded match would file somebody's statement under a firearm they
-    // never trained on.
+    // An ID number, a certificate number and a date all live on this page.
     expect(parseUnitStandards('ID 9001010001088')).toEqual([]);
     expect(parseUnitStandards('Cert 1234567')).toEqual([]);
     expect(parseUnitStandards('20260630')).toEqual([]);
   });
 
-  it('reads a bare six-digit token where one genuinely stands alone', () => {
-    expect(parseUnitStandards('Unit standard: 119651')).toEqual(['119651']);
+  // ── THE THREE PHANTOMS THE OPERATOR'S OWN DOCUMENTS PRODUCED ──────
+  //
+  // A bare six-digit scan found all three on the real set. Each would have
+  // filed a statement under a firearm the holder never trained on, or reported
+  // a company registration number as an unknown unit standard.
+
+  it('⚠️ does not read the SCV number as a code', () => {
+    // 2021 statement, North West Guns.
+    expect(parseUnitStandards('SCV Number: K/10358 -K919835')).toEqual([]);
+  });
+
+  it('⚠️ does not read a print-header URL as a code', () => {
+    // The 2021 statement was printed from a browser and carries its own URL.
+    expect(
+      parseUnitStandards(
+        'https://pftcdms.co.za/client/upload-list/certificate/673334',
+      ),
+    ).toEqual([]);
+  });
+
+  it('⚠️ does not read a company registration number as a code', () => {
+    // 2025 certificate footer.
+    expect(
+      parseUnitStandards('Reg.No. 2017/510807/07 Jacobus Burger 2'),
+    ).toEqual([]);
+  });
+
+  it('⚠️ AND STILL FINDS THE ROW TWO LINES BELOW THE SCV NUMBER', () => {
+    // The case that broke a looser window: 919835 found "Handle and Use"
+    // further down the page and was reported as a code.
+    expect(
+      parseUnitStandards(
+        'SCV Number: K/10358 -K919835\nSAQA ID Unit Standards Title\n' +
+          '119651 Handle and Use a Manually Operated Rifle or Carbine',
+      ),
+    ).toEqual(['119651']);
+  });
+
+  it('reads a code from a certificate, where an en-dash separates it', () => {
+    // The provider's own certificate carries the code too, punctuated
+    // differently: "119650 – Handle and Use a Self-loading rifle or carbine".
+    expect(
+      parseUnitStandards(
+        '119650 – Handle and Use a Self-loading rifle or carbine',
+      ),
+    ).toEqual(['119650']);
+  });
+
+  it('learns a code it has never seen, when a title stands beside it', () => {
+    // ⚠️ THE SECOND ARM. Without it a genuinely new SAQA unit — dealer,
+    // instructor, security officer — is dropped silently and the document
+    // looks like it proved less than it did.
+    expect(parseUnitStandards('998877 Handle and use a crossbow')).toEqual([
+      '998877',
+    ]);
+  });
+
+  it('accepts a known code with no title, as a stored answer has none', () => {
+    // competency_for holds bare values, not table rows.
+    expect(parseUnitStandards('competency_for: 119649')).toEqual(['119649']);
   });
 
   it('returns nothing for a page with no codes', () => {
@@ -109,6 +165,23 @@ describe('parseUnitStandards', () => {
 });
 
 describe('readStatementOfResults', () => {
+  it('reads the operator own 2014 handgun statement, two rows on one page', () => {
+    // ⚠️ THE CASE THAT DEFINES THE RULE. Operator, 2026-08-29: "I did my
+    // 117705 with my handgun. but i have to supply that statement of results
+    // along with the rifle statement of results if I apply for a rifle."
+    // One page, two rows, eleven years before the rifle application.
+    const r = readStatementOfResults(
+      'SAQAID Description US Completed On\n' +
+        '117705 Knowledge of the Firearms Control Act, 2000 (Act No 60 of 2000) 2014/01/23\n' +
+        '119649 Handle and use a Handgun 2014/01/23',
+    );
+    expect(r.known).toEqual(['117705', '119649']);
+    expect(r.hasMandatoryKnowledge).toBe(true);
+    // ⚠️ ONE endorsement, not two. 117705 proves knowledge of the Act, not
+    // the handling of any firearm.
+    expect(r.endorsements).toEqual(['handgun']);
+  });
+
   it('reads a full statement: several codes, one page', () => {
     // ⚠️ ONE STATEMENT OFTEN CARRIES SEVERAL. Operator: "some statement of
     // results will have multiple codes for people that did all at once with
@@ -139,10 +212,25 @@ describe('readStatementOfResults', () => {
   it('surfaces a code it does not recognise rather than dropping it', () => {
     // ⚠️ A DROPPED CODE MAKES A DOCUMENT LOOK LIKE IT PROVED LESS THAN IT DID.
     // Providers list dealer, instructor and security-officer units too.
-    const r = readStatementOfResults('117705 119649 123456');
+    //
+    // ⚠️ AND IT NEEDS ITS TITLE. An unknown number with nothing beside it is
+    // noise, not a unit standard — that is exactly what the SCV number and the
+    // company registration number are. Written as a real row.
+    const r = readStatementOfResults(
+      '117705 Knowledge of the Firearms Control Act\n' +
+        '119649 Handle and use a Handgun\n' +
+        '123456 Handle and use a dealer stock register',
+    );
     expect(r.unknown).toEqual(['123456']);
     expect(r.known).toEqual(['117705', '119649']);
     expect(r.endorsements).toEqual(['handgun']);
+  });
+
+  it('⚠️ treats an unknown number with NO title as noise, not a code', () => {
+    // The whole point of the second arm's anchor.
+    const r = readStatementOfResults('117705 Knowledge of the Act, ref 123456');
+    expect(r.unknown).toEqual([]);
+    expect(r.known).toEqual(['117705']);
   });
 
   it('flags a business-purposes statement for a human to look at', () => {

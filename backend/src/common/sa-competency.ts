@@ -359,27 +359,74 @@ export function endorsementFromUnitStandard(
 }
 
 /**
+ * What a unit-standard TITLE looks like, so a number can be told from a code.
+ *
+ * Read off the operator's own documents, which span three template variants
+ * and eleven years: "Handle and Use a Shotgun", "Handle and use a Handgun",
+ * "Handle and Use a Manually Operated Rifle or Carbine", "Handle and Use a
+ * Self-loading rifle or carbine", "Knowledge of the Firearms Control Act, 2000
+ * (Act No 60 of 2000)", and SAQA's own "Demonstrate knowledge of...".
+ */
+/**
+ * ⚠️ ANCHORED AT THE START, WITH ONLY A SEPARATOR BETWEEN. A real row reads
+ * "117705 Knowledge of the...", "119649 Handle and use a Handgun" or
+ * "119650 – Handle and Use a Self-loading rifle" — the title sits immediately
+ * beside its code.
+ *
+ * A loose window instead of this anchor was still wrong on the operator's own
+ * 2021 statement: the SCV number K/10358 -K919835 sits two lines above the
+ * table, so "919835" found "Handle and Use" further down and was reported as a
+ * code. The separator class is what stops that — the text after 919835 begins
+ * with a newline and "SAQA", and "S" is not a separator.
+ */
+const UNIT_TITLE =
+  /^[\s\-–—:|.]{0,4}(handle\s+and\s+use|demonstrate\s+knowledge|knowledge\s+of\s+the\s+firearms\s+control\s+act)/i;
+
+/** How far after a number to look. Enough for the separator and the title. */
+const TITLE_WINDOW = 60;
+
+/**
  * Every unit-standard code in a block of OCR'd text, in the order they appear.
  *
- * ⚠️ SIX DIGITS, BOUNDED, AND DEDUPED. A statement of results is a table, so
- * the same code can appear twice — once in a row and once in a summary — and a
- * naive scan would report a duplicate endorsement. The boundaries matter as
- * much: an unbounded six-digit match would pull digits out of an ID number, a
- * certificate number or a date and file somebody's statement under a firearm
- * they never trained on.
+ * ⚠️ A BARE SIX-DIGIT SCAN IS WRONG, AND THE OPERATOR'S OWN DOCUMENTS PROVE
+ * IT. Run against the real set it produced three phantom codes:
  *
- * ⚠️ UNKNOWN CODES ARE RETURNED, NOT DROPPED. A provider may list a dealer,
- * instructor or security-officer unit we do not recognise. The caller decides
- * what to do with it; silently discarding it would make a document look like it
- * proved less than it does.
+ *   SCV Number: K/10358 -K919835              -> 919835
+ *   .../client/upload-list/certificate/673334 -> 673334
+ *   Reg.No. 2017/510807/07                    -> 510807
+ *
+ * Each would have filed a statement under a firearm the holder never trained
+ * on, or reported an "unknown unit standard" that is a company registration
+ * number. So a candidate counts only when one of two things is true:
+ *
+ *   it is a code we already know — the table is the authority; or
+ *   a unit-standard TITLE follows it, which is what a real row looks like
+ *   on every one of the three template variants seen.
+ *
+ * The second arm is what keeps a genuinely new SAQA code — a dealer,
+ * instructor or security-officer unit we have not met — from being dropped
+ * silently. Both arms are needed: the first alone cannot learn, the second
+ * alone misses a code whose title the OCR mangled.
+ *
+ * ⚠️ AND THE ID NUMBER IS SAFE BY CONSTRUCTION. A 13-digit SA identity number
+ * contains many six-digit runs; the boundaries stop every one of them.
  */
 export function parseUnitStandards(raw: string): string[] {
   const text = (raw ?? '').toString();
   const out: string[] = [];
   const seen = new Set<string>();
+
   for (const m of text.matchAll(/(?<!\d)(\d{6})(?!\d)/g)) {
     const code = m[1];
     if (seen.has(code)) continue;
+
+    const known = BY_CODE.has(code);
+    const after = text.slice(
+      (m.index ?? 0) + code.length,
+      (m.index ?? 0) + code.length + TITLE_WINDOW,
+    );
+    if (!known && !UNIT_TITLE.test(after)) continue;
+
     seen.add(code);
     out.push(code);
   }
