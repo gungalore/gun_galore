@@ -1942,6 +1942,49 @@ describe('the pack payload', () => {
       expect(waiting.length).toBeGreaterThan(0);
       for (const item of waiting) expect(keys.has(item.key)).toBe(true);
     });
+
+    it('⚠️ SAYS SO WHEN THE SELLER HAS SIGNED', async () => {
+      // COMPLETED had no branch at all, so the one outcome the applicant is
+      // hoping for fell through to the generic "we hold this" copy — a row
+      // indistinguishable from one nobody had answered. The seller had
+      // signed; the screen would not say so.
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(motivation());
+      prisma.motivationSellerConsent.findUnique.mockResolvedValue({
+        status: 'COMPLETED',
+        invitedName: 'Piet Malan',
+        openedAt: new Date('2026-08-20T09:00:00.000Z'),
+      });
+
+      const out = await svc.pack('c1', 'mo-1');
+      const row = items(out.checklist).find(
+        (i: any) => i.key === 'upload_firearm_source_proof',
+      );
+      // ⚠️ `closer`, NOT `note`. waitingOn text replaces the row's closing
+      // sentence — the one that otherwise reads "Scan it with your phone".
+      expect(row?.closer ?? '').toMatch(/completed and signed/i);
+      expect(row?.closer ?? '').toContain('Piet Malan');
+    });
+
+    it('⚠️ AND DOES NOT CALL A FINISHED THING "WAITING"', async () => {
+      // Every other entry here reports something outstanding. This one
+      // reports something done, and must not be phrased or coloured as a
+      // thing the applicant is still waiting on.
+      const { svc, prisma } = build();
+      prisma.motivation.findFirst.mockResolvedValue(motivation());
+      prisma.motivationSellerConsent.findUnique.mockResolvedValue({
+        status: 'COMPLETED',
+        invitedName: 'Piet Malan',
+        openedAt: null,
+      });
+
+      const out = await svc.pack('c1', 'mo-1');
+      const row = items(out.checklist).find(
+        (i: any) => i.key === 'upload_firearm_source_proof',
+      );
+      expect(row?.closer ?? '').not.toMatch(/scan it with your phone/i);
+      expect(row?.closer ?? '').toMatch(/nothing more for you to do/i);
+    });
   });
 
   describe('the payload itself', () => {

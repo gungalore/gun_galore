@@ -41,6 +41,7 @@ import {
   TokenGetter,
   SAPS271_OPT_KEY,
   SAPS271_FILL,
+  DocumentStatus,
 } from '@/lib/motivations-api';
 import { readDraft } from '@/lib/motivation-draft';
 import { licenceLabel, LICENCE_SECTION } from '@/lib/licence-labels';
@@ -54,6 +55,7 @@ import LibraryPicker from '@/components/library-picker';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
 import BulkCapture from '@/components/licence-pack/bulk-capture';
+import MotivationSellerConsent from '@/components/motivation-seller-consent';
 import PackFinish from '@/components/licence-pack/pack-finish';
 import { VAULT_PREFIXES } from './vault-prefixes';
 import AttachedDocuments from '@/components/licence-pack/attached-documents';
@@ -97,6 +99,15 @@ export default function LicenceServicesWizardPage() {
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [keeping, setKeeping] = useState<boolean | undefined>(undefined);
   const [autolinked, setAutolinked] = useState<{ kind: string; title: string }[]>([]);
+  /**
+   * May we invite the seller from here?
+   *
+   * ⚠️ NOT A NEW ENDPOINT. The server already sets `sellerConsent` on the
+   * FIREARM_SOURCE_PROOF need whenever the route is a private sale, and it
+   * rides on the uploads response this page has fetched since M2 — so folding
+   * it into pack() as well would be a second source of one truth.
+   */
+  const [sellerInvite, setSellerInvite] = useState(false);
 
   const token = useCallback(async () => getToken(), [getToken]);
 
@@ -122,6 +133,7 @@ export default function LicenceServicesWizardPage() {
         const up = await motivationsApi.uploads(token, id);
         setUploads(up.files);
         setPickable(up.kinds ?? []);
+        setSellerInvite(sellerConsentOffered(up.documents));
         if (!alive) return;
         setPack(p);
         setFields(f.fields);
@@ -222,6 +234,7 @@ export default function LicenceServicesWizardPage() {
         const up = await motivationsApi.uploads(token, id);
         setUploads(up.files);
         setPickable(up.kinds ?? []);
+        setSellerInvite(sellerConsentOffered(up.documents));
       } catch (ex) {
         setUploadErr(
           ex instanceof MotivationApiError
@@ -295,6 +308,7 @@ export default function LicenceServicesWizardPage() {
     setPack(p);
     setUploads(up.files);
     setPickable(up.kinds ?? []);
+    setSellerInvite(sellerConsentOffered(up.documents));
     // ⚠️ NOT a separate proficiency state here. This page reads the 117705
     // cover off pack.proficiency, which the refetch above already updated —
     // a second copy would be the stale-alert bug the old page had.
@@ -653,6 +667,7 @@ export default function LicenceServicesWizardPage() {
             keeping={keeping}
             token={token}
             onPickFromLibrary={attachFromLibrary}
+            sellerInvite={sellerInvite}
             outstanding={missingRequired}
             saps271Filled={(answers[SAPS271_OPT_KEY] ?? '') === SAPS271_FILL}
             onGenerated={(st) => {
@@ -724,6 +739,20 @@ export default function LicenceServicesWizardPage() {
 }
 
 
+/**
+ * Does the pack offer to invite the seller?
+ *
+ * The server decides this — it sets the flag on the source-proof row only on
+ * a private sale — and reading it rather than re-deriving from the answer
+ * means the wizard and the checklist cannot disagree about which route
+ * somebody is on.
+ */
+function sellerConsentOffered(d: DocumentStatus | undefined): boolean {
+  return (d?.needs ?? []).some(
+    (n) => n.kind === 'FIREARM_SOURCE_PROOF' && n.sellerConsent === true,
+  );
+}
+
 /** What each step actually asks. */
 function StepBody({
   stepKey,
@@ -742,6 +771,7 @@ function StepBody({
   outstanding,
   saps271Filled,
   onGenerated,
+  sellerInvite,
   onView,
   onRemove,
   onReread,
@@ -773,6 +803,7 @@ function StepBody({
   outstanding: string[];
   saps271Filled: boolean;
   onGenerated: (status: string) => void;
+  sellerInvite: boolean;
   onView: (id: string) => void;
   onRemove: (id: string) => void;
   onReread: (id: string) => void;
@@ -857,14 +888,42 @@ function StepBody({
   // "Where it is from" has no registry section of its own — the routing
   // question lives in "The firearm" and the seller's half is his to complete.
   if (stepKey === 'source') {
+    // ⚠️ THIS STEP USED TO BE A PARAGRAPH SAYING "send it from the classic
+    // view for now" — an explicit handoff to the page we are deleting, on the
+    // one step whose entire job is to reach somebody else. The module was
+    // built, worked end to end, and simply had no mount here.
+    if (!sellerInvite) {
+      return (
+        <div className="gg-tile max-w-[820px] rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[17px] py-[15px]">
+          <p className="text-[13.5px] text-[var(--text-secondary)]">
+            You told us this firearm is coming from a dealer, so there is
+            nothing to send. Your dealer completes his own part of the
+            paperwork at the counter and holds the firearm until your licence
+            is granted.
+          </p>
+        </div>
+      );
+    }
     return (
-      <div className="gg-tile max-w-[820px] rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[17px] py-[15px]">
-        <p className="text-[13.5px] text-[var(--text-secondary)]">
-          You answered this on the previous step. On a private sale we send the
-          current owner a link to complete his own half of the form — his
-          details, his licence card, and the declaration he signs. Send it from
-          the classic view for now.
-        </p>
+      <div className="max-w-[820px]">
+        <MotivationSellerConsent
+          motivationId={motivationId}
+          applicantName={answers.full_name ?? ''}
+          firearm={{
+            firearm_type: answers.firearm_type,
+            firearm_make: answers.firearm_make,
+            firearm_model: answers.firearm_model,
+            firearm_calibre: answers.firearm_calibre,
+            firearm_serial: answers.firearm_serial,
+          }}
+          // ⚠️ THROUGH THE PAGE'S OWN ANSWERS, NEVER A DIRECT API WRITE. The
+          // wizard autosaves what it holds in memory, so a value written to
+          // the server behind its back is overwritten by the very next save.
+          // The component's own prop doc says so; this is the honouring of it.
+          onAdopt={(fields) => {
+            for (const [k, v] of Object.entries(fields)) onChange(k, v);
+          }}
+        />
       </div>
     );
   }

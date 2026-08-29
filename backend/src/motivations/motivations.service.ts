@@ -5024,6 +5024,16 @@ export class MotivationsService {
         ? `${who} has opened the link and is busy with it. Nothing for you to do.`
         : `Sent to ${who}. He photographs his licence on his own phone — you upload nothing.`;
     }
+    // ⚠️ COMPLETED HAD NO BRANCH AT ALL, so the one outcome the applicant is
+    // hoping for fell through to the generic "we hold this" copy — a row that
+    // looked no different from one nobody had answered. The seller had signed;
+    // the screen would not say so.
+    //
+    // Not phrased as waiting, because nothing is: it is the only entry here
+    // that reports a thing finished rather than a thing outstanding.
+    if (seller.status === 'COMPLETED') {
+      out.upload_firearm_source_proof = `${who} has completed and signed his half. Nothing more for you to do here.`;
+    }
     if (seller.status === 'DECLINED') {
       // ⚠️ NOT "WAITING", AND DELIBERATELY NOT SILENT EITHER. A declined
       // seller is a dead end for that route and the applicant has to be told
@@ -5032,15 +5042,20 @@ export class MotivationsService {
       out.upload_firearm_source_proof = `${seller.name || 'The seller'} declined. Upload a certified copy of his licence yourself instead.`;
     }
 
-    // ⚠️ NO WITNESS ENTRY HERE, AND THAT IS A FINDING RATHER THAN AN OVERSIGHT.
+    // ⚠️ NO WITNESS ENTRY HERE, AND IT IS NOW SETTLED RATHER THAN PENDING.
     //
-    // Character references are the other thing an applicant waits on somebody
-    // else for, the witness engine is built, and the invited-but-unsigned
-    // state is exactly what 'waiting-on-someone' was added for. But
-    // CHARACTER_REFERENCE is not in RECOMMENDED for ANY licence type, so the
-    // checklist has no row for it — a sentence keyed to
-    // `upload_character_reference` would attach to nothing and look alive
-    // while doing nothing at all.
+    // This note used to read as a finding awaiting a decision: the witness
+    // engine is built, and invited-but-unsigned is exactly what
+    // 'waiting-on-someone' exists for — but CHARACTER_REFERENCE was in no
+    // licence type's RECOMMENDED list, so a sentence keyed to
+    // `upload_character_reference` would attach to nothing.
+    //
+    // Operator, 2026-08-29: "lets take out the character reference out of the
+    // motivations. It serves no purpose. Only time someone needs these is for
+    // the application for a competency." So there is no row because there is
+    // no requirement, and there will not be one. A reference speaks to
+    // whether a person is FIT to hold a firearm — the section 9 enquiry — not
+    // to why this firearm is needed for this purpose.
     //
     // Making it a row changes oursTotal for every licence type and moves the
     // progress ring an existing screen already renders, which is a product
