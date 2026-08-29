@@ -2221,6 +2221,25 @@ export class MotivationsService {
       );
     }
 
+    // READ THE PAGE ONCE. Operator, 2026-08-29: "is it possible to OCR all
+    // documents and keep the raw files".
+    //
+    // ⚠️ THE SAME IMAGE WAS GOING TO GOOGLE TWICE ON EVERY AUTO-FILED UPLOAD.
+    // classify() read the bytes to look for a marker and extract() read them
+    // again for the model, each billing separately for the identical string,
+    // and both discarded it when the request ended. One read now, handed to
+    // both, and stored on the row — so re-running the marker library over a
+    // document uploaded last month costs nothing, and a member can be shown
+    // what we actually read rather than only what we concluded.
+    //
+    // Null for a PDF and whenever Vision is unavailable, which includes every
+    // local run: the key is IP-restricted to the live box BY DESIGN. Both
+    // consumers already treat null as "nothing to add", so this degrades to
+    // exactly the previous behaviour rather than to a broken upload.
+    const ocrText = await this.extract
+      .ocr(file.buffer, file.mimetype)
+      .catch(() => null);
+
     // NAME IT, if they did not. Before the row, because the kind is a column
     // on it — and fail-soft: an unsortable document becomes OTHER, which reads
     // as unsorted rather than as a satisfied requirement.
@@ -2229,7 +2248,7 @@ export class MotivationsService {
     let confident = false;
     if (!kind) {
       const guess = await this.extract
-        .classify({ bytes: file.buffer, mimeType: file.mimetype })
+        .classify({ bytes: file.buffer, mimeType: file.mimetype, ocrText })
         .catch(() => null);
       autoFiled = true;
       if (guess) {
@@ -2265,6 +2284,12 @@ export class MotivationsService {
           mimeType: file.mimetype,
           byteSize: stored.byteSize,
           sha256: stored.sha256,
+          // ⚠️ ENCRYPTED. This is the whole page — an ID number, an address,
+          // every serial on it — and more sensitive than the fields we asked
+          // for. ocrChars is the only part safe in the clear, and it is what
+          // separates "read, and the page was blank" from "not read".
+          ocrTextEncrypted: ocrText ? encryptJson({ text: ocrText }) : null,
+          ocrChars: ocrText === null ? null : ocrText.length,
         },
         select: { id: true, kind: true, byteSize: true, createdAt: true },
       });
@@ -2291,6 +2316,8 @@ export class MotivationsService {
             // Without it every licence lands on row 1 and the second upload
             // overwrites the first.
             answers: this.readAnswers(row.answersEncrypted),
+            // Already read above — this is what saves the second call.
+            ocrText,
           });
           await this.prisma.motivationUpload.update({
             where: { id: created.id },

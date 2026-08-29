@@ -288,7 +288,21 @@ export class MotivationRetentionService {
         }
         await this.prisma.motivationUpload.update({
           where: { id: up.id },
-          data: { storageKey: null, purgedAt: new Date() },
+          data: {
+            storageKey: null,
+            purgedAt: new Date(),
+            // ⚠️ THE TRANSCRIPT GOES WITH THE IMAGE, OR THE PURGE PURGES
+            // NOTHING. ocrTextEncrypted holds the FULL text Vision read off
+            // the page — the holder's name, identity number, address and
+            // every serial on it. Deleting the photograph and keeping a
+            // verbatim copy of everything printed on it would be a retention
+            // sweep that retains the sensitive half.
+            //
+            // ocrChars stays: a count is not content, and it records that
+            // this document had in fact been read, which purgedAt alone does
+            // not say. Same reasoning as extractedFields beside it.
+            ocrTextEncrypted: null,
+          },
         });
         purged++;
         progressed = true;

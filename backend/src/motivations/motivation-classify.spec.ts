@@ -109,3 +109,73 @@ describe('naming a document from its contents', () => {
     });
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// READING THE PAGE ONCE.
+//
+// ⚠️ THE SAME IMAGE WAS GOING TO GOOGLE TWICE ON EVERY AUTO-FILED UPLOAD.
+// classify() read the bytes looking for a marker and extract() read them again
+// for the model — two billed calls returning the identical string, both
+// discarded when the request ended. The caller now reads once and hands the
+// text to both, which is also what makes it storable.
+//
+// The distinction the whole thing turns on is undefined vs null: "nobody has
+// read this yet, read it" against "somebody read it and there was nothing".
+// Defaulting the parameter would collapse the two and quietly restore the
+// second call.
+// ────────────────────────────────────────────────────────────────────
+
+describe('reading the page once', () => {
+  const withVision = (text: string | null) => {
+    const vision = { text: jest.fn().mockResolvedValue(text) };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const svc = new MotivationExtractService(vision as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (svc as any).client = client('{"kind":"OTHER","confidence":"low"}');
+    return { svc, vision };
+  };
+
+  it('reads the bytes when nobody has read them yet', async () => {
+    const { svc, vision } = withVision('SAPS 524 COMPETENCY CERTIFICATE');
+    await expect(svc.classify(png)).resolves.toEqual({
+      kind: 'COMPETENCY_CERTIFICATE',
+      confident: true,
+    });
+    expect(vision.text).toHaveBeenCalledTimes(1);
+  });
+
+  it('⚠️ DOES NOT READ THEM AGAIN WHEN GIVEN THE TEXT', async () => {
+    const { svc, vision } = withVision('SAPS 524 COMPETENCY CERTIFICATE');
+    await expect(
+      svc.classify({ ...png, ocrText: 'SAPS 524 COMPETENCY CERTIFICATE' }),
+    ).resolves.toEqual({ kind: 'COMPETENCY_CERTIFICATE', confident: true });
+    // Not "called with the right thing" — not called AT ALL. That is the
+    // saving, and it is invisible in the return value.
+    expect(vision.text).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ TREATS null AS ALREADY-READ, NOT AS NOT-READ', async () => {
+    // A page Vision could not read is still a page that has been read. Taking
+    // null as "go and read it" would put the second call straight back for
+    // exactly the documents that cost the most attempts.
+    const { svc, vision } = withVision('SAPS 524 COMPETENCY CERTIFICATE');
+    await svc.classify({ ...png, ocrText: null });
+    expect(vision.text).not.toHaveBeenCalled();
+  });
+
+  it('hands a PDF to the model without pretending to OCR it', async () => {
+    // Vision's images:annotate takes images. A PDF has no marker pass at all
+    // — it goes to the model, which is the honest outcome rather than a
+    // silent empty read.
+    const { svc, vision } = withVision('SAPS 524');
+    await svc.ocr(Buffer.from('%PDF'), 'application/pdf');
+    expect(vision.text).not.toHaveBeenCalled();
+  });
+
+  it('survives a Vision outage without failing the upload', async () => {
+    const vision = { text: jest.fn().mockRejectedValue(new Error('403')) };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const svc = new MotivationExtractService(vision as any);
+    await expect(svc.ocr(Buffer.from('x'), 'image/png')).resolves.toBeNull();
+  });
+});

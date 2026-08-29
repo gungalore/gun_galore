@@ -303,6 +303,25 @@ export class MotivationExtractService {
    * outage, a malformed reply. The upload still exists and the applicant types
    * the values themselves, which is exactly what they would have done anyway.
    */
+  /**
+   * Read a document's text once, so it can be read once.
+   *
+   * ⚠️ THE SAME IMAGE WAS GOING TO GOOGLE TWICE. An auto-filed upload calls
+   * classify() and then extract(), and each read the bytes itself — two
+   * billed calls returning the identical string, both thrown away when the
+   * request ended. Operator, 2026-08-29: "is it possible to OCR all documents
+   * and keep the raw files".
+   *
+   * So the caller reads once, hands the text to both, and stores it. Null
+   * where there is nothing to read — a PDF (Vision's images:annotate takes
+   * images), no key configured, or a failed call. Every consumer already
+   * treats null as "Vision had nothing to add".
+   */
+  async ocr(bytes: Buffer, mimeType: string): Promise<string | null> {
+    if (!this.vision || !mimeType.startsWith('image/')) return null;
+    return this.vision.text(bytes).catch(() => null);
+  }
+
   async extract(args: {
     kind: MotivationUploadKind;
     licenceType: MotivationLicenceType;
@@ -310,6 +329,13 @@ export class MotivationExtractService {
     mimeType: string;
     /** What is already answered — decides which owned-firearm row to fill. */
     answers?: Record<string, string>;
+    /**
+     * Text already read off these bytes, to save reading them again.
+     *
+     * Undefined means "not read yet, read it here"; null means "read, and
+     * there was nothing" — which is why this is not defaulted.
+     */
+    ocrText?: string | null;
   }): Promise<ExtractedField[]> {
     let wanted = EXTRACTABLE[args.kind] ?? [];
     if (!wanted.length || !this.client) return [];
@@ -367,10 +393,12 @@ export class MotivationExtractService {
     //
     // A PDF is skipped: Vision's images:annotate takes images, and the block
     // above only produces an image type for image mime types.
+    // undefined means the caller has not read these bytes; null means it
+    // read them and Vision had nothing. Only the first re-reads.
     const ocrText =
-      this.vision && args.mimeType.startsWith('image/')
-        ? await this.vision.text(args.bytes).catch(() => null)
-        : null;
+      args.ocrText !== undefined
+        ? args.ocrText
+        : await this.ocr(args.bytes, args.mimeType);
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const found = await this.attemptRead(block, asked, args.kind, ocrText);
@@ -564,6 +592,8 @@ export class MotivationExtractService {
   async classify(args: {
     bytes: Buffer;
     mimeType: string;
+    /** Text already read off these bytes. See ocr() — undefined ≠ null. */
+    ocrText?: string | null;
   }): Promise<{ kind: MotivationUploadKind; confident: boolean } | null> {
     // ── MARKERS FIRST, THE MODEL FOR WHAT NEEDS JUDGEMENT ──────────
     //
@@ -579,10 +609,12 @@ export class MotivationExtractService {
     // documents and decide what they are". Those carry no marker by nature,
     // fall through here, and the model below is the right tool rather than a
     // consolation prize. See MODEL_ONLY_KINDS.
+    // undefined means the caller has not read these bytes; null means it
+    // read them and Vision had nothing. Only the first re-reads.
     const ocr =
-      this.vision && args.mimeType.startsWith('image/')
-        ? await this.vision.text(args.bytes).catch(() => null)
-        : null;
+      args.ocrText !== undefined
+        ? args.ocrText
+        : await this.ocr(args.bytes, args.mimeType);
 
     if (ocr) {
       const verdict = readMarkers(ocr);

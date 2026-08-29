@@ -314,7 +314,7 @@ model User {
   // Date of birth EXACTLY as the seller typed it ('YYYY-MM-DD'). Deliberately
   // NOT validated against the ID number at capture — the silent mismatch is
   // the faker catch-out, applied only at verdict time.
-  dateOfBirth       String?
+  dateOfBirth      String?
   // ⚠️ LEGACY CLOUDINARY URLS — WORLD-READABLE, AND BEING MIGRATED OFF.
   //
   // Retained post-verification by operator decision 2026-07-17 (FICA-style
@@ -331,8 +331,8 @@ model User {
   // states work while the move runs.
   //
   // ⚠️ DO NOT WRITE TO THESE. They exist to be emptied.
-  kycIdDocumentUrl  String?
-  kycSelfieUrl      String?
+  kycIdDocumentUrl String?
+  kycSelfieUrl     String?
 
   /// AES-GCM in the `kyc` namespace of SecureFileStorageService — the same
   /// store, key and posture as every other document a member gives us, behind
@@ -342,25 +342,25 @@ model User {
   /// file extension. The download route serves whatever this says and the
   /// Claude verdict sends it as the media_type, so a wrong value is a document
   /// that will not open and a scan that will not run.
-  kycIdMimeType       String?  @db.VarChar(64)
+  kycIdMimeType       String?   @db.VarChar(64)
   kycSelfieStorageKey String?
   // Full Claude findings JSON (+ merged crossCheck hard/soft fails) so the
   // admin dossier can re-render the reasoning without another vision call.
-  kycClaudeFindings Json?
+  kycClaudeFindings   Json?
   // SA ID (Basic) result persisted at the Details step so the verdict step
   // can cross-check names/DOB without burning a second VerifyNow credit.
-  kycHaCheckJson    Json?
+  kycHaCheckJson      Json?
   // Which pipeline verified/attempted this user: 'VERIFYNOW' | 'CLAUDE'.
-  kycMethod         String?
+  kycMethod           String?
   // 'STANDARD' (< anchored threshold) | 'ANCHORED' (official DHA photo was
   // pulled and matched). Resolved server-side by max listing/sale value —
   // invisible to the seller. Silent upgrade re-runs anchored scan on the
   // stored selfie when a VERIFIED STANDARD seller crosses the threshold.
-  kycTier           String?
+  kycTier             String?
   // Human decision on UNDER_REVIEW (admin dossier Approve/Reject).
-  kycReviewedById   String?
-  kycReviewedAt     DateTime?
-  kycReviewNote     String?
+  kycReviewedById     String?
+  kycReviewedAt       DateTime?
+  kycReviewNote       String?
 
   // ── Sign-up consent (POPIA accountability) ─────────────────────────
   // Captured at account creation (email + OAuth paths) and recorded via
@@ -402,9 +402,9 @@ model User {
   /// attached before agreeing. The backfill walks their uploads newest-first
   /// and only ever looks at rows OLDER than this, so deleting a document from
   /// the Centre can never bring it back on a later batch.
-  documentVaultBackfillCursor     DateTime?
+  documentVaultBackfillCursor DateTime?
   /// The backfill reached the end. It never runs again.
-  documentVaultBackfilledAt       DateTime?
+  documentVaultBackfilledAt   DateTime?
 
   totalSales Int       @default(0)
   isBanned   Boolean   @default(false)
@@ -529,21 +529,21 @@ model User {
   // SMS are enforced centrally in NotificationsService.send / sendSms.
   // The in-app inbox is always written; web-push opt-out is per-device
   // via PushSubscription.category.
-  notifyEmailEnabled    Boolean @default(true)
-  notifySmsEnabled      Boolean @default(true)
+  notifyEmailEnabled    Boolean               @default(true)
+  notifySmsEnabled      Boolean               @default(true)
   // Offers specifically. A seller who lists twenty items and is happy to
   // receive offers on all of them may still not want a ping for each one —
   // operator, 2026-08-27. This silences the notification only: the offer is
   // still made, still recorded, and still shown in the seller's own lists.
   // Muting a channel must never quietly discard someone's offer.
-  notifyOffersEnabled   Boolean @default(true)
+  notifyOffersEnabled   Boolean               @default(true)
   // ⚠️ Default TRUE on purpose — and the default is NOT what keeps this
   // channel quiet. The toggle ships greyed out ("coming soon") while we
   // build sender trust with Meta on shipping messages alone, so a member
   // who defaulted to false could never switch themselves back on. The
   // global `whatsapp_enabled` Setting (default false) is the kill switch;
   // flip this default and everyone is silently muted the day it is thrown.
-  notifyWhatsappEnabled Boolean @default(true)
+  notifyWhatsappEnabled Boolean               @default(true)
   // The channel to retry on when a send on an ENABLED channel fails —
   // and only then. It is not a second-choice channel for normal traffic
   // (every enabled channel already gets everything it is eligible for),
@@ -1506,13 +1506,13 @@ model Transaction {
   // PRIVATE_ARRANGE don't use the courier API). Stored separately from
   // buyerTotal so we can show the breakdown later + remit to the
   // courier without re-computing.
-  shippingCost             Int     @default(0)
+  shippingCost             Int      @default(0)
   // P6.4 — flat GG handling margin per waybill created (R15). Buyer-paid,
   // GG-RETAINED (never remitted to the carrier), stored SEPARATELY from
   // shippingCost so the carrier remittance stays the pure rate. Zero for
   // firearm (DEALER_TRANSFER / PRIVATE_ARRANGE), collection, and consolidated
   // sibling lines — none of those create their own waybill.
-  shippingHandlingCents    Int     @default(0)
+  shippingHandlingCents    Int      @default(0)
   // Service level snapshot — "L2LXS - ECO" / "D2DM - ECO" etc. Comes
   // straight from Pudo's response so we can pass it back into the
   // shipment-create call without re-fetching the quote.
@@ -4362,7 +4362,7 @@ model Motivation {
   /// {} — no chips, counts zero. Defaulting those to MEMBER would be the
   /// system asserting the member entered values it filled in itself, and would
   /// permanently block them from future prefill (MEMBER always wins).
-  answerProvenance     Json?
+  answerProvenance Json?
 
   // The generated motivation body, encrypted for the same reason. The PDF
   // itself is NOT stored — it is re-rendered deterministically from this text
@@ -4496,9 +4496,9 @@ model Motivation {
   // the row and its stored files past this date.
   retentionPurgeAt DateTime?
 
-  messages  MotivationMessage[]
-  uploads   MotivationUpload[]
-  witnesses MotivationWitness[]
+  messages      MotivationMessage[]
+  uploads       MotivationUpload[]
+  witnesses     MotivationWitness[]
   /// At most one — see the model. A private transfer has one current owner.
   sellerConsent MotivationSellerConsent?
 
@@ -4629,7 +4629,6 @@ model MotivationWitness {
   @@unique([motivationId, slot])
   @@index([motivationId])
 }
-
 
 /// THE PREVIOUS OWNER'S CONSENT, for a private transfer.
 ///
@@ -4813,14 +4812,13 @@ model MotivationSellerConsentDocument {
   /// seller who deleted a blurred photograph and re-sent a better copy of the
   /// identical file. Duplicate detection is an application check against
   /// undeleted rows, and the worst case is a duplicate row he can remove.
-  sha256 String @db.VarChar(64)
+  sha256     String  @db.VarChar(64)
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
 
   @@index([consentId])
 }
-
 
 model MotivationUpload {
   id           String               @id @default(cuid())
@@ -4859,6 +4857,31 @@ model MotivationUpload {
   // Field KEYS the extraction proposed — safe in the clear, drives the
   // "we found 6 fields, confirm them" card without decrypting anything.
   extractedFields     String[]
+
+  /// THE RAW TEXT VISION READ OFF THE DOCUMENT, ENCRYPTED.
+  ///
+  /// Operator, 2026-08-29: "is it possible to OCR all documents and keep the
+  /// raw files". Kept for three reasons, all of which need it AFTER the
+  /// request that read it has ended:
+  ///   · re-running the marker library over documents already uploaded,
+  ///     without paying Google to read the same page a second time;
+  ///   · showing a member what we actually read off their document, so a
+  ///     wrong reading is arguable rather than mysterious;
+  ///   · proving, later, why a document was filed where it was.
+  ///
+  /// ⚠️ ENCRYPTED, AND NOT OPTIONALLY. This is the FULL TEXT of an identity
+  /// document or a licence — the holder's name, identity number, address and
+  /// every serial number on the page. It is strictly more sensitive than
+  /// extractionEncrypted, which holds only the fields we asked for.
+  ///
+  /// ⚠️ AND IT IS PURGED WITH THE BYTES. A retention purge that removed the
+  /// image and left the transcript would delete nothing that matters. See
+  /// MotivationRetentionService — nulled in the same update as storageKey.
+  ocrTextEncrypted String?
+  /// How many characters were read — safe in the clear, and the difference
+  /// between "we could not read this" and "we have not read this yet"
+  /// without decrypting anything to find out.
+  ocrChars         Int?
 
   createdAt DateTime  @default(now())
   // Set when the bytes are deleted (retention purge or user erasure) while the
@@ -4924,11 +4947,11 @@ model AccountClosure {
   /// keys on exactly these fields. They sit in the clear on User today, so
   /// moving them to an admin-only table is a net improvement rather than a new
   /// exposure. The protection is access control, not encryption.
-  closedUsername  String?
-  closedEmail     String
-  closedPhone     String?
-  closedFirstName String?
-  closedLastName  String?
+  closedUsername    String?
+  closedEmail       String
+  closedPhone       String?
+  closedFirstName   String?
+  closedLastName    String?
   /// A NON-UNIQUE copy of User.kycIdHash. The live hash stays on the User row
   /// and moves onto the new account at re-registration; this copy is what
   /// keeps "this identity has been here before" true afterwards.
@@ -4955,7 +4978,6 @@ model AccountClosure {
   @@index([kycIdHashArchived])
   @@index([closedUsername])
 }
-
 
 // ────────────────────────────────────────────────────────────────────
 // THE LICENCE & COMPETENCY CENTRE.
@@ -5182,10 +5204,10 @@ model Credential {
   ///             assumption: that figure is a DFO operating rule, the
   ///             reference forbids presenting it as the legal position, and a
   ///             reminder is the loudest way to present something.
-  dateSource     String? @db.VarChar(16)
+  dateSource        String? @db.VarChar(16)
   /// The sentence shown on the card, saying where the date came from. Written
   /// with dateSource and cleared with it.
-  dateSourceNote String?
+  dateSourceNote    String?
   /// The extractor was sure about the date it read.
   ///
   /// ⚠️ THE MODEL'S DOUBT USED TO BE DISCARDED. The date branch of the parser

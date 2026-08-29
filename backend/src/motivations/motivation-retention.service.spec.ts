@@ -70,6 +70,31 @@ describe('what it deletes', () => {
     })();
   });
 
+  it('⚠️ DELETES THE TRANSCRIPT WITH THE IMAGE', () => {
+    // ocrTextEncrypted holds the FULL text Vision read off the page — name,
+    // identity number, address, every serial on it. A sweep that removed the
+    // photograph and kept a verbatim copy of everything printed on it would
+    // retain precisely the half that carries the exposure, and would look
+    // like a working purge from every angle: the bytes are gone, the row is
+    // marked, the count of purged rows is right.
+    return (async () => {
+      const { svc, updated } = build({ pages: [[upload(1)], []] });
+      await svc.purge();
+      expect(updated[0].data.ocrTextEncrypted).toBeNull();
+    })();
+  });
+
+  it('keeps the character count, which is not content', () => {
+    // It records that the document HAD been read — something purgedAt alone
+    // does not say — and it is a number, not a name. Same reasoning as
+    // extractedFields, which also survives the sweep.
+    return (async () => {
+      const { svc, updated } = build({ pages: [[upload(1)], []] });
+      await svc.purge();
+      expect('ocrChars' in (updated[0].data as object)).toBe(false);
+    })();
+  });
+
   it('looks for rows past their retention date AND rows that never got one', () => {
     return (async () => {
       const { svc, queries } = build({ pages: [[], []] });
