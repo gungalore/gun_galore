@@ -11,6 +11,8 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { encryptText, tryDecryptText } from '../common/blob-crypto';
 import { selfLoadingFromText } from '../common/sa-competency';
+import { UPLOAD_MAX_BYTES, UPLOAD_MIME } from '../licence-centre/upload-limits';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // ────────────────────────────────────────────────────────────────────
 // THE PREVIOUS OWNER'S CONSENT.
@@ -71,6 +73,73 @@ const LICENCE_PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 export interface ConsentAnswers {
   fullName: string;
   idNumber: string;
+}
+
+/**
+ * SECTION F OF THE SAPS 271, AS THE CURRENT OWNER GIVES IT.
+ *
+ * ⚠️ HE ANSWERS IT, NOT THE APPLICANT. Section F is his half of the form —
+ * his name, his address, his telephone numbers, his declaration — and not one
+ * box in it may ever be defaulted from the buyer's own details. They are two
+ * different people and the section exists to tell them apart. This is the only
+ * place those values are collected.
+ *
+ * Operator, 2026-08-28: "F should be filled, type A - the consent form should
+ * ask these details along the details of the firearm and with the consent tick
+ * and the information provided is the truth tick."
+ *
+ * Everything here is OPTIONAL except the two declarations. A section F with
+ * gaps is a nuisance the applicant can fix with a pen; a section F that
+ * refused to be submitted because a seller has no landline is a dead consent
+ * link, and the whole route dies with it.
+ */
+export interface ConsentSectionF {
+  /** Item 4. Only if he gives it separately — we never split a full name. */
+  surname?: string;
+  /** Item 5. */
+  initials?: string;
+  /** Items 8 and 9. */
+  residentialAddress?: string;
+  residentialPostalCode?: string;
+  /** Items 10 and 11. */
+  postalAddress?: string;
+  postalPostalCode?: string;
+  /** Items 12.1 and 12.2 — the two landline boxes. */
+  homeTelephone?: string;
+  workTelephone?: string;
+  /** Item 12.3. */
+  cellphone?: string;
+  /** Item 14. */
+  email?: string;
+  /** Item 15 — is anyone else licensed to hold this firearm? */
+  additionalHolders?: boolean;
+  /** Items 79 and 80 — where the firearm is kept while this runs. */
+  firearmAddress?: string;
+  firearmPostalCode?: string;
+  /** Item 84 — "owner", "authorised person". */
+  designation?: string;
+}
+
+/**
+ * The two ticks on the declaration, and why they are not one.
+ *
+ * ⚠️ THEY ARE DIFFERENT STATEMENTS AND A DFO READS THEM AS TWO. Item 81 is
+ * headed DECLARATION BY PERSON WHO IS LAWFULLY IN POSSESSION OF THE
+ * FIREARM(S), and its printed text makes two claims at once: that the firearm
+ * is legally in his possession AND that he proposes to supply it to the
+ * applicant once the licence comes through — that is the CONSENT — and,
+ * separately, that the particulars are correct and accurate, under section
+ * 120(9)(f), which is an offence to get wrong — that is the TRUTH.
+ *
+ * ⚠️ AND NEITHER MAY EVER DEFAULT TO TRUE. A pre-ticked box is not a
+ * declaration; it is us declaring on somebody else's behalf on a document
+ * that carries a criminal penalty for a false statement.
+ */
+export interface ConsentDeclarations {
+  /** He agrees to supply the firearm once the licence is granted. */
+  consentGiven: boolean;
+  /** The particulars he has given are true and correct. */
+  declaredTrue: boolean;
 }
 
 /**
@@ -232,6 +301,54 @@ export function cardRowsFor(
 
 export const CONSENT_FORM_VERSION = 1;
 
+/** Longest value we keep for any one section F box. */
+const SECTION_F_MAX = 200;
+
+/**
+ * Trim what the seller typed to what the form can hold.
+ *
+ * ⚠️ TRIM, NEVER INVENT. An empty box comes back undefined and stays
+ * undefined all the way to the PDF, where it prints as a blank the applicant
+ * completes with a pen. Substituting a default here would put a claim about
+ * somebody's address on a form they sign under section 120(9)(f).
+ */
+export function sanitiseSectionF(
+  raw: ConsentSectionF | undefined,
+): ConsentSectionF {
+  const out: ConsentSectionF = {};
+  if (!raw) return out;
+  const text = (v: unknown) => {
+    const t = typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '';
+    return t ? t.slice(0, SECTION_F_MAX) : undefined;
+  };
+  const keys: (keyof ConsentSectionF)[] = [
+    'surname',
+    'initials',
+    'residentialAddress',
+    'residentialPostalCode',
+    'postalAddress',
+    'postalPostalCode',
+    'homeTelephone',
+    'workTelephone',
+    'cellphone',
+    'email',
+    'firearmAddress',
+    'firearmPostalCode',
+    'designation',
+  ];
+  for (const k of keys) {
+    const v = text(raw[k as keyof ConsentSectionF]);
+    if (v) (out as Record<string, unknown>)[k] = v;
+  }
+  // ⚠️ TRUE/FALSE/UNASKED ARE THREE STATES. Item 15 has a YES box and a NO
+  // box, and an unanswered question ticks neither — a "no" we invented would
+  // be a statement about somebody else's household.
+  if (typeof raw.additionalHolders === 'boolean') {
+    out.additionalHolders = raw.additionalHolders;
+  }
+  return out;
+}
+
 // ────────────────────────────────────────────────────────────────────
 // THE CARD IS THE SOURCE OF TRUTH FOR THE FIREARM.
 //
@@ -376,6 +493,8 @@ export class MotivationSellerConsentService {
     private readonly sms: SmsService,
     private readonly files: SecureFileStorageService,
     private readonly tokens: ActionTokensService,
+    // @Global, so nothing has to change in motivations.module.ts to reach it.
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -400,6 +519,17 @@ export class MotivationSellerConsentService {
     applicantName: string;
     name: string;
     phone: string;
+    /**
+     * Where the link is emailed. The SMS becomes the nudge.
+     *
+     * Operator, 2026-08-28: "Email so we can send him an email with the link
+     * to open a form he can fill out."
+     *
+     * Optional in the TYPE and required in the CHECK below, so a resend of a
+     * row created before this existed fails with a sentence rather than a
+     * type error nobody sees until deploy.
+     */
+    email?: string;
     firearm: FirearmSnapshot;
     baseUrl: string;
   }) {
@@ -430,9 +560,22 @@ export class MotivationSellerConsentService {
 
     const name = args.name.trim();
     const phone = args.phone.trim();
+    const email = (args.email ?? '').trim();
     if (name.length < 2) throw new BadRequestException('Enter their name.');
     if (!/^\+?\d[\d\s-]{7,}$/.test(phone)) {
       throw new BadRequestException('Enter a valid mobile number.');
+    }
+    // ⚠️ BOTH, NOT EITHER. The email carries the link — it survives being
+    // read on a desktop, it can hold an explanation, and it does not cost an
+    // SMS credit to resend. The number is the nudge that makes him look.
+    // Asking for one and not the other means the flow works right up until
+    // the seller does not check that channel.
+    //
+    // Deliberately forgiving: anything with an @ between two non-spaces. A
+    // stricter pattern here rejects real addresses and the only cost of a
+    // wrong one is a bounce we can see.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new BadRequestException('Enter a valid email address for them.');
     }
 
     // ⚠️ ENOUGH TO NAME THE FIREARM IN AN SMS. NOT ENOUGH TO DESCRIBE IT — the
@@ -495,6 +638,7 @@ export class MotivationSellerConsentService {
           data: {
             invitedName: name,
             invitedPhone: phone,
+            invitedEmail: email,
             status: 'INVITED',
             firearmSnapshotEncrypted: snapshot,
             // A fresh invitation is a fresh start.
@@ -508,6 +652,7 @@ export class MotivationSellerConsentService {
             motivationId: args.motivationId,
             invitedName: name,
             invitedPhone: phone,
+            invitedEmail: email,
             firearmSnapshotEncrypted: snapshot,
           },
         });
@@ -540,6 +685,31 @@ export class MotivationSellerConsentService {
       if (!sent.success) {
         throw new BadRequestException(
           'Could not send the SMS. Check the number and try again.',
+        );
+      }
+
+      // ⚠️ THE EMAIL IS SENT AFTER THE SMS AND IS NOT ALLOWED TO FAIL THE
+      // INVITE. The SMS is the gate because a bad number is a typo the
+      // applicant can fix in the moment; a bounced email is discovered later
+      // and there is nothing useful to say about it here. NotificationsService
+      // already parks a failed send in the outbox and retries it, so throwing
+      // on top of that would undo an invitation that has, in fact, gone out.
+      //
+      // The two channels carry the same link on purpose: the email holds the
+      // explanation and survives being read on a desktop, the SMS is what
+      // makes him look at his inbox.
+      try {
+        await this.notifications.sellerConsentInvite({
+          email,
+          sellerName: name,
+          applicantName: args.applicantName,
+          firearmLine: label,
+          url: link,
+          expiresInHours: Math.round(CONSENT_TOKEN_TTL_MS / 3_600_000),
+        });
+      } catch (err) {
+        this.logger.error(
+          `Seller consent ${row.id}: the SMS went but the email did not — ${(err as Error).message}`,
         );
       }
     } catch (err) {
@@ -663,6 +833,10 @@ export class MotivationSellerConsentService {
   async submit(args: {
     consentId: string;
     answers: ConsentAnswers;
+    /** His half of section F — see ConsentSectionF. */
+    sectionF?: ConsentSectionF;
+    /** Item 81's two declarations. Both must be true; see the interface. */
+    declarations?: ConsentDeclarations;
     /**
      * The firearm as the SELLER confirmed it off their own card — the OCR's
      * proposal, reviewed and corrected on screen. This BECOMES the firearm of
@@ -709,6 +883,22 @@ export class MotivationSellerConsentService {
     if (!/^\d{13}$/.test(idNumber)) {
       throw new BadRequestException(
         'Enter your 13-digit South African identity number.',
+      );
+    }
+
+    // ⚠️ BOTH DECLARATIONS, BEFORE THE SIGNATURE IS EVEN LOOKED AT. A
+    // signature under an unticked declaration is a signature under nothing,
+    // and item 81 carries a section 120(9)(f) penalty for a false statement.
+    // The messages say which box, because "please complete the form" on a
+    // page with two checkboxes is not an instruction.
+    if (!args.declarations?.consentGiven) {
+      throw new BadRequestException(
+        'Please confirm that you agree to supply this firearm to the applicant once their licence is granted.',
+      );
+    }
+    if (!args.declarations?.declaredTrue) {
+      throw new BadRequestException(
+        'Please confirm that the details you have given are true and correct.',
       );
     }
 
@@ -858,6 +1048,18 @@ export class MotivationSellerConsentService {
           }),
         ),
         firearmSnapshotEncrypted: rebuiltSnapshot,
+        // His half of the form, kept apart from `answersEncrypted` so that
+        // what identifies him and what the SAPS 271 needs from him stay two
+        // separate reads. The column has existed since the consent-documents
+        // migration and nothing wrote it until now.
+        sectionFEncrypted: encryptText(
+          JSON.stringify({
+            ...sanitiseSectionF(args.sectionF),
+            consentGiven: true,
+            declaredTrue: true,
+            _version: CONSENT_FORM_VERSION,
+          }),
+        ),
         signatureKey: signature.storageKey,
         signatureMime: args.signatureMime,
         licenceFrontKey: written[0] ?? null,
@@ -872,6 +1074,69 @@ export class MotivationSellerConsentService {
 
     this.logger.log(`Seller consent ${row.id} signed`);
     return { ok: true as const };
+  }
+
+  /**
+   * SECTION F OF THE SAPS 271, READY TO PRINT — or null if nobody has signed.
+   *
+   * ⚠️ ONLY FROM A COMPLETED CONSENT. A half-finished form is a set of boxes
+   * somebody was still typing into; printing it onto a signed application
+   * would attribute a statement to a person who never made it.
+   *
+   * ⚠️ AND NOTHING IS BORROWED FROM THE APPLICANT. Every value here came off
+   * the seller's own submission. See the note on ConsentSectionF.
+   */
+  async sectionF(motivationId: string): Promise<
+    (ConsentSectionF & {
+      fullName?: string;
+      idNumber?: string;
+      place?: string;
+      signedOn?: string;
+    }) | null
+  > {
+    const row = await this.prisma.motivationSellerConsent.findUnique({
+      where: { motivationId },
+      select: {
+        status: true,
+        answersEncrypted: true,
+        sectionFEncrypted: true,
+        signedPlace: true,
+        signedAt: true,
+      },
+    });
+    if (!row || row.status !== 'COMPLETED') return null;
+
+    // ⚠️ FAIL SOFT, NEVER FAIL SHUT. An unreadable blob costs section F, not
+    // the whole PDF — the applicant gets a form with boxes to complete rather
+    // than an error page and no form at all.
+    const read = (blob: string | null): Record<string, unknown> => {
+      if (!blob) return {};
+      try {
+        const raw = tryDecryptText(blob);
+        return raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      } catch (err) {
+        this.logger.warn(
+          `Seller consent for motivation ${motivationId}: unreadable — ${(err as Error).message}`,
+        );
+        return {};
+      }
+    };
+
+    const identity = read(row.answersEncrypted);
+    const f = sanitiseSectionF(read(row.sectionFEncrypted) as ConsentSectionF);
+    const str = (v: unknown) =>
+      typeof v === 'string' && v.trim() ? v.trim() : undefined;
+
+    return {
+      ...f,
+      fullName: str(identity.fullName),
+      idNumber: str(identity.idNumber),
+      place: str(row.signedPlace),
+      // Item 85 is the date HE signed, not the date we printed.
+      signedOn: row.signedAt
+        ? row.signedAt.toISOString().slice(0, 10)
+        : undefined,
+    };
   }
 
   /**
@@ -980,6 +1245,168 @@ export class MotivationSellerConsentService {
   }
 
   /** The signature bytes, for the printed consent. */
+  // ────────────────────────────────────────────────────────────────────
+  // WHAT HE HAS SENT US, AND HOW HE TAKES IT BACK.
+  //
+  // Operator, 2026-08-28: "as soon as he uploads or captures it must send it
+  // to us and display what he sent with a delete option next to each."
+  //
+  // ⚠️ EACH FILE LANDS THE MOMENT IT IS CHOSEN, not on submit. A seller who
+  // photographs his card and then closes the tab has still delivered it, and
+  // when he comes back he sees it there rather than starting again. That is
+  // the whole reason these rows exist rather than a batch of Buffers arriving
+  // at the end.
+  //
+  // ⚠️ AND THIS IS HIS WORKING SET, NOT THE APPLICANT'S PACK. submit() copies
+  // the licence photographs across into MotivationUpload as SELLER_LICENCE
+  // annexures — those belong to the application from that moment and he can no
+  // longer remove them, which is correct: they are the evidence behind a
+  // declaration he signed. Everything here stays his until then.
+  // ────────────────────────────────────────────────────────────────────
+
+  /** Roles a document may claim. Anything else is filed as OTHER. */
+  private static readonly ROLES = new Set([
+    'LICENCE_FRONT',
+    'LICENCE_BACK',
+    'IDENTITY',
+    'OTHER',
+  ]);
+
+  /**
+   * How many documents one consent may hold at once.
+   *
+   * ⚠️ A CAP, BECAUSE THE TOKEN IS A STRANGER'S. Anybody holding the link can
+   * post to these routes for 48 hours. Deleted rows do not count — he can
+   * always replace a bad photograph.
+   */
+  private static readonly MAX_DOCUMENTS = 20;
+
+  /** Refuses once he has signed: the evidence behind a declaration is fixed. */
+  private async openConsent(consentId: string) {
+    const row = await this.prisma.motivationSellerConsent.findUnique({
+      where: { id: consentId },
+      select: { id: true, status: true },
+    });
+    if (!row) throw new NotFoundException('This link is not valid.');
+    if (row.status === 'COMPLETED') {
+      throw new BadRequestException(
+        'You have already signed. Ask the buyer to send a new link if something needs changing.',
+      );
+    }
+    if (row.status === 'DECLINED') {
+      throw new BadRequestException('This consent was declined.');
+    }
+    return row;
+  }
+
+  /** One file, stored the moment it arrives. */
+  async addDocument(args: {
+    consentId: string;
+    bytes: Buffer;
+    mimeType: string;
+    role?: string;
+    source?: 'UPLOAD' | 'SCAN';
+  }) {
+    await this.openConsent(args.consentId);
+
+    if (!UPLOAD_MIME.test(args.mimeType)) {
+      throw new BadRequestException(
+        'Send a photograph or a PDF — JPEG, PNG, WebP or PDF.',
+      );
+    }
+    if (!args.bytes?.length) throw new BadRequestException('That file is empty.');
+    if (args.bytes.length > UPLOAD_MAX_BYTES) {
+      throw new BadRequestException('That file is too large. 10 MB is the limit.');
+    }
+
+    const live = await this.prisma.motivationSellerConsentDocument.count({
+      where: { consentId: args.consentId, deletedAt: null },
+    });
+    if (live >= MotivationSellerConsentService.MAX_DOCUMENTS) {
+      throw new BadRequestException(
+        'That is as many documents as we can hold for one consent. Remove one you no longer need first.',
+      );
+    }
+
+    const stored = await this.files.write('motivations', args.bytes, new Date());
+    try {
+      const row = await this.prisma.motivationSellerConsentDocument.create({
+        data: {
+          consentId: args.consentId,
+          source: args.source === 'SCAN' ? 'SCAN' : 'UPLOAD',
+          role: MotivationSellerConsentService.ROLES.has(args.role ?? '')
+            ? (args.role as string)
+            : 'OTHER',
+          storageKey: stored.storageKey,
+          mimeType: args.mimeType,
+          byteSize: stored.byteSize,
+          sha256: stored.sha256,
+        },
+        select: {
+          id: true,
+          role: true,
+          source: true,
+          mimeType: true,
+          byteSize: true,
+          createdAt: true,
+        },
+      });
+      return row;
+    } catch (err) {
+      // ⚠️ THE BYTES GO BACK IF THE ROW DOES NOT LAND. Otherwise a failed
+      // insert leaves an encrypted file nothing points at and nothing will
+      // ever collect.
+      await this.files.remove(stored.storageKey).catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /** Everything he has sent and not withdrawn. Never the bytes. */
+  async listDocuments(consentId: string) {
+    return this.prisma.motivationSellerConsentDocument.findMany({
+      where: { consentId, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        role: true,
+        source: true,
+        mimeType: true,
+        byteSize: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  /**
+   * He removes one he sent by mistake.
+   *
+   * ⚠️ SOFT, AND SCOPED BY HIS OWN CONSENT. The row stays so there is still a
+   * record that a document was sent and withdrawn; the bytes go immediately.
+   * The consentId in the WHERE clause is what makes it impossible for one
+   * seller's token to reach another consent's documents — the id alone would
+   * be enough to try.
+   */
+  async deleteDocument(consentId: string, documentId: string) {
+    await this.openConsent(consentId);
+
+    const row = await this.prisma.motivationSellerConsentDocument.findFirst({
+      where: { id: documentId, consentId, deletedAt: null },
+      select: { id: true, storageKey: true },
+    });
+    if (!row) throw new NotFoundException('That document is not here.');
+
+    await this.prisma.motivationSellerConsentDocument.update({
+      where: { id: row.id },
+      data: { deletedAt: new Date(), storageKey: null },
+    });
+    // After the row, so a storage failure cannot leave a live row pointing at
+    // bytes that are gone.
+    if (row.storageKey) {
+      await this.files.remove(row.storageKey).catch(() => undefined);
+    }
+    return { ok: true as const };
+  }
+
   async signature(consentId: string): Promise<Buffer | null> {
     const row = await this.prisma.motivationSellerConsent.findUnique({
       where: { id: consentId },

@@ -425,6 +425,20 @@ export class MotivationsController {
     return this.motivations.checklist(clerkId, id);
   }
 
+  /**
+   * The whole left column of the application screen, in one call: the
+   * checklist, where every prefilled answer came from, and how much we filled
+   * before the applicant typed anything.
+   *
+   * Replaces the several calls the screen used to make. Read-only, and
+   * ownership is enforced in the service's WHERE clause like every other
+   * ':id/...' route here.
+   */
+  @Get(':id/pack')
+  pack(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.motivations.pack(clerkId, id);
+  }
+
   // ── the profile, with permission ──────────────────────────────────
 
   /**

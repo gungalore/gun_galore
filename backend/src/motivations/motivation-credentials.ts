@@ -68,6 +68,7 @@ const LICENCE_KINDS = new Set(['FIREARM_LICENCE']);
 /** Kinds that carry a competency number. */
 const COMPETENCY_KINDS = new Set(['COMPETENCY_CERTIFICATE']);
 
+
 /** How many `existing_firearm_N_*` rows the registry carries. */
 export const OWNED_ROWS = 6;
 
@@ -369,6 +370,36 @@ export function credentialOffer(
         c.title,
         c.id,
       );
+      // ── ITEM 60 — THE MEMBERSHIP'S "VALID UNTIL" DATE ──────────
+      //
+      // Operator, 2026-08-28: "Expiry dat of accredited associasian should
+      // also be inserted from the letter of good standing date. that should
+      // have a valid until date."
+      //
+      // ⚠️ FROM expiresOn, NOT FROM details. It is the column the vault
+      // writes off the page and the renewal sweep already reads; the details
+      // blob does not carry it.
+      //
+      // ⚠️ AND FROM *THIS* DOCUMENT, WHICH IS WHY IT LIVES IN THIS LOOP AND
+      // NOT IN A SWEEP OF ITS OWN. A member may hold a discipline document
+      // from each of three bodies — the schema says so in as many words, and
+      // it is the normal case. Picking the longest-running expiry across all
+      // of them would print body A's name in item 56 beside body B's date in
+      // item 60: two true facts making one false statement, on a form signed
+      // under section 120(9)(f).
+      //
+      // Only the first slot: the 271 prints one expiry box, for the
+      // association in items 56-59. Associations two and three have name,
+      // number and joined date on the form and no expiry to put anywhere.
+      if (slot === 0) {
+        offer(
+          'association_expiry',
+          'Association membership valid until',
+          c.expiresOn ?? '',
+          c.title,
+          c.id,
+        );
+      }
       if (body) seenBodies.add(body.toUpperCase());
       slot++;
     }

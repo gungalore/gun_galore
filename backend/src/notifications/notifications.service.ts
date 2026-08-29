@@ -4468,6 +4468,60 @@ export class NotificationsService {
   // Resolves the recipient by address and fails OPEN — a lookup error must
   // never silently swallow a notification. Anonymous recipients (no
   // matching user, e.g. a checkout email before sign-up) are always sent.
+  // ---------------------------------------------------------------
+  // THE SELLER'S CONSENT LINK, BY EMAIL.
+  //
+  // Operator, 2026-08-28: "Email so we can send him an email with the link to
+  // open a form he can fill out with an upload and Scan QR method to get any
+  // documents to us."
+  //
+  // ⚠️ HE IS NOT OUR USER AND NEVER WILL BE. So this cannot go through
+  // persistByEmail — that resolves an address to a User row and silently does
+  // nothing when there is not one, which is every seller. It sends directly,
+  // the same way sap534ForSeller already emails a seller who has no account.
+  //
+  // ⚠️ AND IT NAMES THE FIREARM AND THE BUYER IN THE SUBJECT. A stranger
+  // receiving a link about a firearm transfer needs to know, before opening
+  // anything, who it is from and what it concerns. Anything vaguer reads as
+  // phishing, and a seller who deletes it as phishing is a stalled
+  // application nobody can explain.
+  // ---------------------------------------------------------------
+  async sellerConsentInvite(d: {
+    email: string;
+    sellerName: string;
+    applicantName: string;
+    firearmLine: string;
+    url: string;
+    /** Hours the link stays live, so the mail can say it rather than imply it. */
+    expiresInHours: number;
+  }) {
+    const html = this.email({
+      status: { tone: 'pending', label: 'Consent needed' },
+      headline: 'Confirm a firearm you are selling',
+      body:
+        `Hi ${b(d.sellerName)}, ${b(d.applicantName)} is applying to the SAPS for a licence ` +
+        `over a firearm they are buying from you — ${b(d.firearmLine)}.<br><br>` +
+        'Before that application can be lodged, the current owner has to confirm the ' +
+        'firearm is lawfully theirs and sign one section of the form. That is you, and ' +
+        'it takes about two minutes on your phone.<br><br>' +
+        'You will be asked to photograph or upload your licence card and your ID, and to ' +
+        'sign a short declaration. <b>Each document is saved the moment you send it</b>, ' +
+        'so you can stop and come back, and you can remove anything you sent by mistake.',
+      rows: [
+        { label: 'Firearm', value: d.firearmLine },
+        { label: 'Applicant', value: d.applicantName },
+        { label: 'Link valid for', value: `${d.expiresInHours} hours` },
+      ],
+      cta: { label: 'Open the form', url: d.url },
+      preheader: `${d.applicantName} needs your consent for ${d.firearmLine}`,
+    });
+    await this.send(
+      d.email,
+      `${d.applicantName} needs your consent — ${d.firearmLine}`,
+      html,
+    );
+  }
+
   private async emailMuted(to: string): Promise<boolean> {
     try {
       const u = await this.prisma.user.findUnique({

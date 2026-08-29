@@ -76,6 +76,38 @@ export default function SellerConsentPage() {
   const [fullName, setFullName] = useState('');
   const [idNumber, setIdNumber] = useState('');
   const [place, setPlace] = useState('');
+
+  /**
+   * SECTION F OF THE SAPS 271 — HIS HALF OF THE BUYER'S FORM.
+   *
+   * ⚠️ HE TYPES IT, NOBODY ELSE. Not one of these may ever be defaulted from
+   * the buyer's own answers: section F exists to tell two people apart, and a
+   * borrowed value is a false statement about the seller on a form signed
+   * under section 120(9)(f).
+   *
+   * ⚠️ AND EVERY ONE IS OPTIONAL. A blank the buyer completes with a pen is a
+   * nuisance; a consent link that refuses to submit because this man has no
+   * landline is a dead link, and the whole private route dies with it. Only
+   * the two declarations below are required.
+   */
+  const [sectionF, setSectionF] = useState<Record<string, string>>({});
+  const setF = (k: string, v: string) =>
+    setSectionF((prev) => ({ ...prev, [k]: v }));
+
+  /**
+   * The two ticks on item 81, which is headed DECLARATION BY PERSON WHO IS
+   * LAWFULLY IN POSSESSION OF THE FIREARM(S).
+   *
+   * ⚠️ TWO STATEMENTS, NEVER ONE BOX. Its printed text makes two claims: that
+   * he proposes to supply the firearm once the licence comes through — the
+   * CONSENT — and that the particulars are correct and accurate, which under
+   * section 120(9)(f) is an offence to get wrong — the TRUTH. A DFO reads them
+   * as two, and one combined tick would be us deciding he meant both.
+   *
+   * ⚠️ AND NEITHER STARTS TICKED. A pre-ticked box is not a declaration.
+   */
+  const [consentGiven, setConsentGiven] = useState(false);
+  const [declaredTrue, setDeclaredTrue] = useState(false);
   const [locating, setLocating] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -204,6 +236,9 @@ export default function SellerConsentPage() {
           // What the consent will declare the firearm to be — the card, as the
           // seller confirmed it.
           firearm: cardFields,
+          sectionF,
+          consentGiven,
+          declaredTrue,
           signature,
           front,
           back,
@@ -288,6 +323,8 @@ export default function SellerConsentPage() {
     photographed &&
     fullName.trim().length >= 3 &&
     /^\d{13}$/.test(idNumber.replace(/\s/g, '')) &&
+    consentGiven &&
+    declaredTrue &&
     !!signature;
 
   return (
@@ -397,8 +434,68 @@ export default function SellerConsentPage() {
         />
       </label>
 
-      {/* ── 3. Where and the signature ─────────────────────────────── */}
-      <h2 className="mt-6 text-sm font-semibold">3. Sign</h2>
+      {/* ── 2b. His half of the buyer's SAPS 271 ───────────────────── */}
+      <h2 className="mt-6 text-sm font-semibold">
+        3. Your details{' '}
+        <span className="font-normal text-[var(--text-tertiary)]">
+          (optional)
+        </span>
+      </h2>
+      <p className="mt-1 text-xs text-[var(--text-secondary)]">
+        SAPS asks the current owner for these on the buyer&rsquo;s form. Fill in
+        what you are happy to give and we will type it in for them — anything
+        you leave out they will write in by hand.
+      </p>
+      {SECTION_F_FIELDS.map((f) => (
+        <label
+          key={f.key}
+          className="mt-3 block text-xs text-[var(--text-secondary)]"
+        >
+          {f.label}
+          <input
+            value={sectionF[f.key] ?? ''}
+            onChange={(e) => setF(f.key, e.target.value)}
+            inputMode={f.numeric ? 'numeric' : undefined}
+            placeholder={f.placeholder}
+            className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+          />
+        </label>
+      ))}
+
+      {/* ── 4. The declaration, then the signature ─────────────────── */}
+      <h2 className="mt-6 text-sm font-semibold">4. Sign</h2>
+
+      {/* ⚠️ THE DECLARATION IS SHOWN, NOT SUMMARISED. He is about to sign it,
+          and it carries a criminal penalty for a false statement — so the two
+          ticks sit under the words they refer to, in the form's own terms. */}
+      <div className="mt-2 rounded-[var(--r-md)] border border-[var(--border)] p-3">
+        <label className="flex gap-2 text-xs text-[var(--text-primary)]">
+          <input
+            type="checkbox"
+            checked={consentGiven}
+            onChange={(e) => setConsentGiven(e.target.checked)}
+            className="mt-0.5 shrink-0"
+          />
+          <span>
+            The firearm above is legally in my possession, and I agree to
+            supply it to {state.applicantName ?? 'the applicant'} once their
+            licence has been granted.
+          </span>
+        </label>
+        <label className="mt-3 flex gap-2 text-xs text-[var(--text-primary)]">
+          <input
+            type="checkbox"
+            checked={declaredTrue}
+            onChange={(e) => setDeclaredTrue(e.target.checked)}
+            className="mt-0.5 shrink-0"
+          />
+          <span>
+            The details I have given are true and correct. I understand that
+            it is an offence under section 120(9)(f) of the Firearms Control
+            Act to make a false statement in this application.
+          </span>
+        </label>
+      </div>
       <label className="mt-2 block text-xs text-[var(--text-secondary)]">
         Where you are signing
         <input
@@ -435,7 +532,9 @@ export default function SellerConsentPage() {
         <p className="mt-2 text-xs text-[var(--text-secondary)]">
           {!photographed
             ? 'Photograph both sides of your licence to continue.'
-            : 'Fill in your names and identity number, and sign above.'}
+            : !consentGiven || !declaredTrue
+              ? 'Tick both declarations above to continue.'
+              : 'Fill in your names and identity number, and sign above.'}
         </p>
       )}
 
@@ -462,6 +561,41 @@ export default function SellerConsentPage() {
     </Shell>
   );
 }
+
+/**
+ * The section F boxes the seller can fill, in the order the form prints them.
+ *
+ * Deliberately short of the full section: his surname and initials are asked
+ * for separately by the form and we will not split a name to get them, and
+ * item 15 is a yes/no we do not put to him here. What is left is what a person
+ * can type on a phone without resenting it.
+ */
+const SECTION_F_FIELDS: {
+  key: string;
+  label: string;
+  placeholder?: string;
+  numeric?: true;
+}[] = [
+  {
+    key: 'residentialAddress',
+    label: 'Your residential address',
+    placeholder: 'Street, suburb, town',
+  },
+  { key: 'residentialPostalCode', label: 'Postal code', numeric: true },
+  {
+    key: 'cellphone',
+    label: 'Your cellphone number',
+    numeric: true,
+  },
+  { key: 'email', label: 'Your email address' },
+];
+
+// ⚠️ WE DO NOT ASK WHERE THE FIREARM IS KEPT. Items 79 and 80 belong to the
+// form's ESTATE block — operator, 2026-08-28: on a private sale "the license
+// will be in a living persons name and they will need to have it in a safe at
+// their house of residence according to law. So no need to declare you are
+// keeping it safe." A question whose answer the law already settles is noise
+// on a form somebody opened from an SMS.
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (

@@ -746,3 +746,114 @@ describe('CREDENTIAL_TO_UPLOAD is exhaustive over the enum', () => {
     expect(primaryUploadKind('NOT_A_KIND')).toBeUndefined();
   });
 });
+
+
+// -------------------------------------------------------------------
+// ITEM 60 - THE ASSOCIATION'S "VALID UNTIL" DATE.
+//
+// Operator, 2026-08-28: "Expiry dat of accredited associasian should also be
+// inserted from the letter of good standing date. that should have a valid
+// until date."
+//
+// The vault already read it. DEDICATED_DISCIPLINE is in neither
+// NO_EXPIRY_ON_THE_PAGE nor NEVER_EXPIRES, so Credential.expiresOn has held
+// the date off the page all along - and nothing carried it to the form, so
+// item 60 went to the DFO blank while the answer sat in the applicant's own
+// vault.
+//
+// GOOD_STANDING as a CredentialKind is RETIRED and its rows were migrated to
+// DEDICATED_DISCIPLINE, so a set keyed on it would match nothing in the live
+// vault. The upload kind GOOD_STANDING_LETTER is a different enum and is
+// still current - that is what the field's docSourced points at.
+// -------------------------------------------------------------------
+
+const dedicated = (
+  over: Partial<CredentialSource> = {},
+): CredentialSource => ({
+  id: 'g1',
+  kind: 'DEDICATED_DISCIPLINE' as CredentialKind,
+  title: 'SAHGCA good standing 2026',
+  expiresOn: '2027-03-31',
+  confirmed: true,
+  details: {
+    association: 'SAHGCA',
+    membership_number: '108828',
+    joined_on: '2019-04-01',
+  },
+  ...over,
+});
+
+describe('the association expiry, item 60', () => {
+  const expiry = (o: ReturnType<typeof credentialOffer>) =>
+    o.items.find((i) => i.key === 'association_expiry');
+
+  it('offers the valid-until date off the letter of good standing', () => {
+    const o = credentialOffer(TYPE, [dedicated()], {});
+    expect(o.values.association_expiry).toBe('2027-03-31');
+    expect(expiry(o)?.from).toBe('SAHGCA good standing 2026');
+  });
+
+  it('takes the date from the SAME document that named the association', () => {
+    // ⚠️ THE WHOLE REASON THIS LIVES IN THE PER-ASSOCIATION LOOP. A member
+    // holding a document from each of three bodies is the normal case. Taking
+    // the longest-running expiry across all of them would print one body's
+    // name in item 56 beside another body's date in item 60 - two true facts
+    // making one false statement.
+    const o = credentialOffer(
+      TYPE,
+      [
+        dedicated({ id: 'a', details: { association: 'SAHGCA', joined_on: '2019-04-01' }, expiresOn: '2027-03-31' }),
+        dedicated({ id: 'b', details: { association: 'NARFO', joined_on: '2020-01-01' }, expiresOn: '2099-01-01' }),
+      ],
+      {},
+    );
+    expect(o.values.association_name).toBe('SAHGCA');
+    expect(o.values.association_expiry).toBe('2027-03-31');
+    expect(expiry(o)?.credentialId).toBe('a');
+    // The second body still gets its own slot; it just has no expiry box.
+    expect(o.values.association_2_name).toBe('NARFO');
+    expect(o.values.association_2_expiry).toBeUndefined();
+  });
+
+  it('never offers a date off a document nobody has checked', () => {
+    // The per-value confirmed gate. A date that reaches a signed form has to
+    // have been read by someone. The association's NAME still comes through.
+    const o = credentialOffer(TYPE, [dedicated({ confirmed: false })], {});
+    expect(o.values.association_name).toBe('SAHGCA');
+    expect(o.values.association_expiry).toBeUndefined();
+  });
+
+  it('offers nothing where the letter carries no validity window', () => {
+    const o = credentialOffer(TYPE, [dedicated({ expiresOn: null })], {});
+    expect(o.values.association_expiry).toBeUndefined();
+  });
+
+  it('never dates a hand-typed association from another body’s document', () => {
+    // ⚠️ THE slot === 0 GUARD, AND IT IS NOT REDUNDANT. The applicant typed
+    // SAHGCA into item 56 themselves, so the vault's SAHGCA paper is skipped
+    // and the NARFO one takes slot 2. Without the guard NARFO's expiry would
+    // land in item 60 — the only expiry box on the form — and date the
+    // applicant's SAHGCA membership off another association's letter.
+    const o = credentialOffer(
+      TYPE,
+      [
+        dedicated({
+          id: 'b',
+          details: { association: 'NARFO', joined_on: '2020-01-01' },
+          expiresOn: '2099-01-01',
+        }),
+      ],
+      { association_name: 'SAHGCA' },
+    );
+    expect(o.values.association_2_name).toBe('NARFO');
+    expect(o.values.association_expiry).toBeUndefined();
+  });
+
+  it('never overwrites a date the applicant typed themselves', () => {
+    const o = credentialOffer(TYPE, [dedicated()], {
+      association_expiry: '2026-12-31',
+    });
+    expect(o.values.association_expiry).toBeUndefined();
+    expect(expiry(o)).toBeUndefined();
+  });
+});

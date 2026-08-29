@@ -111,6 +111,25 @@ export interface MotivationField {
   help?: string;
   choices?: readonly string[];
   /**
+   * Values that are still ACCEPTED but no longer OFFERED.
+   *
+   * ⚠️ DELISTING A CHOICE IS NOT THE SAME AS DELETING IT, AND TREATING IT AS
+   * THE SAME BREAKS EVERY APPLICATION THAT ALREADY PICKED IT. The wizard
+   * resends the WHOLE answers blob on every autosave — see the note on
+   * saveAnswers — so a stored value that is no longer in `choices` fails
+   * sanitiseAnswers on every keystroke anywhere in the form. The row survives
+   * in Postgres (a refusal drops the key rather than blanking it), but the
+   * member is shown a banner reading "we could not store your answer... please
+   * tell support", forever, and the log fills with an error that reads exactly
+   * like real registry drift.
+   *
+   * So a retired value stays valid. It is simply never put in front of anyone
+   * again. This is the same shape as `allowOther` below, and the same
+   * discipline the Prisma enums use for retired kinds: Postgres cannot drop an
+   * enum value and we cannot drop an answer somebody already gave.
+   */
+  retiredChoices?: readonly string[];
+  /**
    * The options come from a data module rather than from `choices`.
    *
    * A list of fifty-nine shooting disciplines, each with a paragraph of
@@ -568,7 +587,14 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     label: 'Where is this firearm coming from?',
     kind: 'choice',
     section: 'The firearm',
-    choices: [SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_ESTATE, SOURCE_UNDECIDED],
+    // ⚠️ TWO ROUTES, NOT FIVE. Operator, 2026-08-28: "lets keep the options
+    // between Individual and dealer for now."
+    choices: [SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_UNDECIDED],
+    // Still accepted, never offered again: an application written before that
+    // decision carries this answer, and it routes a whole document list
+    // (EXECUTOR_APPOINTMENT), a custody sentence and the form's own item 1.2.
+    // Refusing it would break every save those members make.
+    retiredChoices: [SOURCE_ESTATE],
     help: 'A dealer sale and a private transfer need different paperwork at the counter. Telling us which lets us ask for the right documents instead of all of them.',
     // ⚠️ NOT formOnly, DELIBERATELY, AND IT IS THE WHOLE POINT. formOnly hangs
     // a field off the SAPS 271 opt-in, so a member whose dealer fills the form
@@ -1646,6 +1672,20 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     choices: ['Main firearm licence holder', 'Additional firearm licence holder'],
     help: 'Additional applies where the firearm is licensed to someone else in the household and you are applying to possess it too.',
     formOnly: true,
+    // ⚠️ REQUIRED, BECAUSE THE FORM ASKS IT AND WE MUST NOT ANSWER IT FOR THEM.
+    //
+    // Section D of the 271 has two boxes — main holder, additional holder —
+    // and neither was being ticked on any application, because this question
+    // was optional and nobody ever reached it. The form then went to a DFO
+    // with the question blank.
+    //
+    // Defaulting to "main" would tick the box for the overwhelming majority
+    // and be a false statement for the rest. An additional licence under
+    // section 12(1) of the Act is issued to somebody living at the same
+    // premises as the holder — a real, specific status the applicant knows
+    // about and we cannot infer. This module's rule holds: a missing answer
+    // leaves a box empty, and section 120(9)(f) makes a wrong one an offence.
+    required: true,
   },
   {
     key: 'spouse_id_type',
@@ -1771,6 +1811,26 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // the nineties, so this one gets the decade strip.
       focusOffsetYears: -10,
       reach: 'far',
+    },
+    {
+      key: 'association_expiry',
+      docSourced: 'GOOD_STANDING_LETTER',
+      // ⚠️ ITEM 60 ON THE 271, AND IT COMES OFF THE LETTER OF GOOD STANDING.
+      // Operator, 2026-08-28: "Expiry dat of accredited associasian should
+      // also be inserted from the letter of good standing date. that should
+      // have a valid until date." The vault already reads and stores it —
+      // GOOD_STANDING sits in neither NO_EXPIRY_ON_THE_PAGE nor NEVER_EXPIRES,
+      // so Credential.expiresOn holds the date off the page — and nothing
+      // carried it to the form. credentialOffer offers it from there.
+      //
+      // NOT required: a letter of good standing that carries no validity
+      // window is a real document, and demanding a date the applicant does not
+      // have would stall the application over a box the form leaves to them.
+      label: 'Your association membership is valid until',
+      kind: 'date',
+      section: 'Dedicated status',
+      help: 'The "valid until" date on your letter of good standing. Photograph the letter and we will read it for you.',
+      focusOffsetYears: 1,
     },
     // ── association 2 ─────────────────────────────────────────────
     //
@@ -1928,6 +1988,26 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // the nineties, so this one gets the decade strip.
       focusOffsetYears: -10,
       reach: 'far',
+    },
+    {
+      key: 'association_expiry',
+      docSourced: 'GOOD_STANDING_LETTER',
+      // ⚠️ ITEM 60 ON THE 271, AND IT COMES OFF THE LETTER OF GOOD STANDING.
+      // Operator, 2026-08-28: "Expiry dat of accredited associasian should
+      // also be inserted from the letter of good standing date. that should
+      // have a valid until date." The vault already reads and stores it —
+      // GOOD_STANDING sits in neither NO_EXPIRY_ON_THE_PAGE nor NEVER_EXPIRES,
+      // so Credential.expiresOn holds the date off the page — and nothing
+      // carried it to the form. credentialOffer offers it from there.
+      //
+      // NOT required: a letter of good standing that carries no validity
+      // window is a real document, and demanding a date the applicant does not
+      // have would stall the application over a box the form leaves to them.
+      label: 'Your association membership is valid until',
+      kind: 'date',
+      section: 'Dedicated status',
+      help: 'The "valid until" date on your letter of good standing. Photograph the letter and we will read it for you.',
+      focusOffsetYears: 1,
     },
     // ── association 2 ─────────────────────────────────────────────
     //
@@ -2332,7 +2412,11 @@ export function allowedValues(field: MotivationField): readonly string[] {
     // hangs off it via showIf — so it has to be accepted, not just offered.
     return field.allowOther ? [...values, DISCIPLINE_OTHER] : values;
   }
-  return field.choices ?? YES_NO;
+  // ⚠️ RETIRED VALUES ARE ALLOWED, NEVER OFFERED. See retiredChoices.
+  const offered = field.choices ?? YES_NO;
+  return field.retiredChoices?.length
+    ? [...offered, ...field.retiredChoices]
+    : offered;
 }
 
 /**

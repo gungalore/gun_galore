@@ -1,0 +1,25 @@
+-- WHERE EACH PREFILLED ANSWER CAME FROM.
+--
+-- Answer key -> { source, sourceId?, from, at, inferred? }, keyed by the same
+-- field keys as the encrypted answers blob. See
+-- backend/src/common/answer-provenance.ts for the shape and the reader that
+-- enforces it.
+--
+-- ⚠️ JSONB AND NOT ENCRYPTED, ON PURPOSE. The neighbouring answersEncrypted
+-- column is an AES-GCM blob because it holds an ID number, a home address and
+-- firearm serials. This column holds a source name, a row id and a timestamp
+-- and never a value — the reader in answer-provenance.ts drops any entry
+-- carrying one. Keeping it in the clear is the whole point: the wizard can
+-- paint a "From your Document Centre" chip and count what was prefilled
+-- without decrypting the answers on every render.
+--
+-- JSONB rather than JSON, matching structurePlan and qualityFindings on the
+-- same table.
+--
+-- NULLABLE, NO DEFAULT, NO BACKFILL. Every existing application reads back
+-- NULL, which parseProvenance() turns into {} — no chips, counts zero. That is
+-- UNKNOWN and it must stay distinguishable from "the member typed it": a
+-- default of MEMBER would assert that a member entered values the system
+-- filled in itself, and MEMBER is absorbing, so it would permanently block
+-- those fields from ever being prefilled again.
+ALTER TABLE "Motivation" ADD COLUMN "answerProvenance" JSONB;

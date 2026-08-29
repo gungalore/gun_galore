@@ -4347,6 +4347,23 @@ model Motivation {
   // later registry change can migrate old blobs rather than guess.
   answersSchemaVersion String? @db.VarChar(40)
 
+  /// WHERE EACH ANSWER CAME FROM. Answer key → { source, sourceId?, from, at }.
+  ///
+  /// ⚠️ DELIBERATELY NOT INSIDE answersEncrypted, and deliberately not
+  /// encrypted itself. It holds a SOURCE NAME, a ROW ID and a timestamp, and
+  /// never a value — see common/answer-provenance.ts, whose reader drops any
+  /// entry carrying anything else. Keeping it in the clear is what lets the
+  /// wizard paint a "From your Document Centre" chip and count "we filled 23
+  /// things before you typed anything" without decrypting the whole answers
+  /// blob on every render.
+  ///
+  /// ⚠️ NULL MEANS UNKNOWN, NOT "THE MEMBER TYPED IT". Every application that
+  /// predates this column reads back null, which parseProvenance turns into
+  /// {} — no chips, counts zero. Defaulting those to MEMBER would be the
+  /// system asserting the member entered values it filled in itself, and would
+  /// permanently block them from future prefill (MEMBER always wins).
+  answerProvenance     Json?
+
   // The generated motivation body, encrypted for the same reason. The PDF
   // itself is NOT stored — it is re-rendered deterministically from this text
   // on every download, the same posture as ReceiptService.
@@ -4649,6 +4666,31 @@ model MotivationSellerConsent {
   /// The number the link and the code are sent to.
   invitedPhone String
 
+  /// Where the LINK is sent. The SMS becomes the nudge.
+  ///
+  /// Operator, 2026-08-28: "we need to get the sellers email address and cell
+  /// number. Email so we can send him an email with the link to open a form he
+  /// can fill out."
+  ///
+  /// ⚠️ NULLABLE THOUGH invite() NOW REQUIRES IT. Rows created before this
+  /// column have no email and there is nothing honest to backfill them with.
+  /// NULL means "never captured", not "invalid" — a resend of an old row has
+  /// to ask for one.
+  invitedEmail String? @db.VarChar(200)
+
+  /// His answers to section F beyond name and identity number: his addresses,
+  /// his contact details, where the firearm is kept today, his designation and
+  /// the place he signs. Encrypted for the same reason answersEncrypted is —
+  /// this is a named person's home address and identity number.
+  ///
+  /// ⚠️ HIS, AND ONLY EVER HIS. Nothing in here may be defaulted from the
+  /// applicant. They are two different people and section F exists to tell
+  /// them apart.
+  sectionFEncrypted String? @db.Text
+
+  /// Everything he has sent through the two capture doors.
+  documents MotivationSellerConsentDocument[]
+
   /// INVITED · COMPLETED · DECLINED. No enum: a new state costs no migration.
   status String @default("INVITED")
 
@@ -4723,6 +4765,62 @@ model MotivationSellerConsent {
 
   @@index([motivationId])
 }
+
+// ────────────────────────────────────────────────────────────────────
+// A DOCUMENT THE SELLER SENT, one row per file.
+//
+// Operator, 2026-08-28: "as soon as he uploads or captures it must send it to
+// us and display what he sent with a delete option next to each."
+//
+// ⚠️ ITS OWN TABLE, NOT A FLAG ON MotivationUpload, AND THAT IS THE POINT.
+// The applicant's own delete route is scoped by motivationId and an upload id.
+// If the seller's files were MotivationUpload rows on the same motivation that
+// route could reach them, and the only thing stopping it would be a guard
+// somebody has to remember to write. Two tables make "the applicant can never
+// delete the seller's documents, and he can never delete theirs" true by
+// construction rather than by vigilance.
+//
+// ⚠️ SOFT DELETE ONLY. Never call .delete() on this model. A delete nulls
+// storageKey, removes the bytes and stamps deletedAt — the row survives, so
+// there is still a record that a document was sent and withdrawn. Same posture
+// as MotivationUpload.purgedAt.
+model MotivationSellerConsentDocument {
+  id        String                  @id @default(cuid())
+  consentId String
+  consent   MotivationSellerConsent @relation(fields: [consentId], references: [id], onDelete: Cascade)
+
+  /// 'UPLOAD' | 'SCAN' — which of the two doors it came through. There is no
+  /// third value: no webcam, on any surface (operator, 2026-08-28).
+  source String @default("UPLOAD") @db.VarChar(16)
+
+  /// 'LICENCE_FRONT' | 'LICENCE_BACK' | 'IDENTITY' | 'OTHER'.
+  ///
+  /// A plain string rather than an enum, matching `status` on the parent row
+  /// and for the same reason: adding a role is then a deploy and not a one-way
+  /// ALTER TYPE. Every read validates.
+  role String @default("OTHER") @db.VarChar(24)
+
+  /// Opaque key into SecureFileStorageService. Nulled when the file is
+  /// deleted, in the same write that stamps deletedAt.
+  storageKey String? @db.VarChar(120)
+  mimeType   String  @db.VarChar(80)
+  byteSize   Int
+  /// SHA-256 of the plaintext bytes.
+  ///
+  /// ⚠️ NOT UNIQUE, UNLIKE MotivationUpload's @@unique([motivationId, sha256]).
+  /// That constraint works there because deletes are hard and free the slot.
+  /// Here they are soft, so the same constraint would permanently refuse a
+  /// seller who deleted a blurred photograph and re-sent a better copy of the
+  /// identical file. Duplicate detection is an application check against
+  /// undeleted rows, and the worst case is a duplicate row he can remove.
+  sha256 String @db.VarChar(64)
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@index([consentId])
+}
+
 
 model MotivationUpload {
   id           String               @id @default(cuid())

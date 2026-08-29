@@ -94,6 +94,23 @@ export interface DocumentNeed {
    * most easily lost by collapsing them.
    */
   minFilesNote?: string;
+  /**
+   * Offer the seller-consent flow on this row.
+   *
+   * ⚠️ THE PRIVATE ROUTE ONLY, AND IT IS SERVED RATHER THAN GUESSED. Operator,
+   * 2026-08-28: "with the private with the consent form and the dealer with an
+   * upload of an ivoice or something." The two routes want two different
+   * papers, and there is nobody to send a consent link to on a dealer
+   * purchase — the dealer completes their own half of the SAPS 271 and hands
+   * over an invoice.
+   *
+   * ⚠️ AND IT IS DECIDED HERE, NOT IN THE WIZARD. The frontend hardcodes
+   * nothing about routes — no choice value, no label, no document rule — which
+   * is why retiring a route needed no client change at all. A `firearm_source
+   * === 'From a private owner'` test in a component would be the first crack
+   * in that, and the copy on this very row already moves with the answer.
+   */
+  sellerConsent?: true;
 }
 
 /**
@@ -537,6 +554,9 @@ export function documentStatus(
             ? sourceProofWhy(source)
             : (WHY[kind] ?? ''),
       have: satisfied(kind),
+      ...(kind === 'FIREARM_SOURCE_PROOF' && source === SOURCE_PRIVATE
+        ? { sellerConsent: true as const }
+        : {}),
       ...(min > 1
         ? { minFiles: min, minFilesNote: SAFE_SHOTS_NOTE }
         : {}),

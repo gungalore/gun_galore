@@ -2344,8 +2344,18 @@ export default function MotivationWizardPage() {
                       character-reference row's pattern — replace everything,
                       because there is no paper — does not apply here. Both
                       routes are served from one row.
+
+                      ⚠️ AND ONLY ON THE PRIVATE ROUTE — off the SERVED
+                      `sellerConsent` flag, never off the source answer, which
+                      this file deliberately knows nothing about. Operator,
+                      2026-08-28: "with the private with the consent form and
+                      the dealer with an upload of an ivoice or something."
+                      There is nobody to send a consent link to on a dealer
+                      purchase: the dealer completes their own half of the SAPS
+                      271 and hands over an invoice.
                     */}
-                    {k === 'FIREARM_SOURCE_PROOF' && (
+                    {documents?.needs.find((n) => n.kind === k)
+                      ?.sellerConsent && (
                       <MotivationSellerConsent
                         motivationId={id}
                         applicantName={(answers.full_name ?? '').trim()}
