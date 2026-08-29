@@ -43,11 +43,12 @@ import {
 } from '@/lib/licence-services-preview';
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
 import WizardRail, { WIZARD_STEPS } from '@/components/licence-pack/wizard-rail';
-import PackSection from '@/components/licence-pack/pack-section';
+import { visibleFields } from '@/lib/motivations-api';
 import PackGroup from '@/components/licence-pack/pack-group';
 import PrefillBanner from '@/components/licence-pack/prefill-banner';
 import Saps271Meter from '@/components/licence-pack/saps271-meter';
-import CaptureRoutes from '@/components/licence-pack/capture-routes';
+import CaptureCards from '@/components/licence-pack/capture-cards';
+import ReadResult from '@/components/licence-pack/read-result';
 
 export default function LicenceServicesWizardPage() {
   const { getToken } = useAuth();
@@ -426,47 +427,41 @@ function StepBody({
     );
   }
 
+  const stepFields = section
+    ? visibleFields(fields, answers).filter((f) => f.section === section)
+    : [];
+
   return (
-    <div className="max-w-[820px] space-y-5">
-      {section && (
-        <PackSection
-          title=""
-          section={section}
-          fields={fields}
+    <div className="max-w-[800px] space-y-4">
+      {/* ⚠️ CAPTURE COMES FIRST, AT THE TOP OF THE STEP. The design puts the
+          two doors above everything because photographing the document is what
+          fills the rest of the page — asking somebody to type first and offering
+          the scanner underneath inverts the whole point. */}
+      {documents?.map((d) => (
+        <CaptureCards
+          key={d.kind}
+          motivationId={motivationId}
+          kind={d.kind}
+          title={d.title}
+          subtitle={d.subtitle}
+          busy={busyKind !== null}
+          onFiles={(files) => onFiles(d.kind, files)}
+          onArrived={() => onFiles(d.kind, [])}
+        />
+      ))}
+
+      {/* Then what we made of it, line by line, with where each value came
+          from — and every line editable in place. */}
+      {stepFields.length > 0 && (
+        <ReadResult
+          section={section as string}
+          fields={stepFields}
           answers={answers}
+          provenance={pack.provenance}
           missing={missing}
           onChange={onChange}
         />
       )}
-
-      {documents?.map((d) => (
-        <div
-          key={d.kind}
-          className="rounded-[var(--r-md)] border px-[17px] py-[15px]"
-          style={{
-            borderColor: 'var(--gold-line)',
-            background: 'var(--gold-wash)',
-          }}
-        >
-          <div className="text-[14px] font-semibold text-[var(--gold-strong)]">
-            {d.title}
-          </div>
-          {d.subtitle && (
-            <p className="mt-1 text-[13.5px] text-[var(--text-secondary)]">
-              {d.subtitle}
-            </p>
-          )}
-          <CaptureRoutes
-            motivationId={motivationId}
-            kind={d.kind}
-            title={d.title}
-            subtitle={d.subtitle}
-            busy={busyKind !== null}
-            onFiles={(files) => onFiles(d.kind, files)}
-            onArrived={() => onFiles(d.kind, [])}
-          />
-        </div>
-      ))}
     </div>
   );
 }
