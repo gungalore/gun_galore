@@ -77,6 +77,23 @@ export const WIZARD_STEPS: WizardStep[] = [
     blurb:
       "Everything after this depends on it. The type tells us which competency to pull from your Document Centre, which endorsement your association has to give, and whether the seller is a dealer or a private owner.",
     section: "The firearm",
+    // ⚠️ THE STEP THE MOCKUP LEADS WITH, AND IT LEADS WITH CAPTURE. Its own
+    // words: "Give us anything that shows it — a licence card, a dealer
+    // invoice, an advert, a half-filled 271." Section E is make, model,
+    // calibre and three serials, and every one of them is printed on
+    // something the member already has. Typing them is the fallback.
+    //
+    // ⚠️ AND IT IS THE SAME KIND THE SOURCE STEP USED TO CARRY, MOVED RATHER
+    // THAN COPIED. Two capture cards for one document kind on two steps is
+    // two places to upload the same page and two rows in the pack.
+    documents: [
+      {
+        kind: "FIREARM_SOURCE_PROOF",
+        title: "Anything that identifies this firearm",
+        subtitle:
+          "A licence card, a dealer invoice, an advert — we read the make, calibre and serials off it.",
+      },
+    ],
   },
   {
     key: "source",
@@ -85,15 +102,7 @@ export const WIZARD_STEPS: WizardStep[] = [
     title: "Where this firearm is coming from",
     blurb:
       "A dealer sale and a private transfer need different paperwork at the counter. On a private sale we send the current owner his own half of the form, and it runs while you carry on here.",
-    documents: [
-      {
-        kind: "FIREARM_SOURCE_PROOF",
-        title: "Where the firearm is coming from",
-        subtitle:
-          "A dealer invoice or quote, or the current owner’s permission letter.",
       },
-    ],
-  },
   {
     key: "competency",
     name: "Competency",
