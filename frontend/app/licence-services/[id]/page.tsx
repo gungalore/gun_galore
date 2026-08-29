@@ -28,15 +28,18 @@
 // ────────────────────────────────────────────────────────────────────
 
 import { useAuth } from '@clerk/nextjs';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   motivationsApi,
   MotivationApiError,
+  type MotivationField,
   type MotivationPack,
 } from '@/lib/motivations-api';
 import { readDraft } from '@/lib/motivation-draft';
+import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
+import PackSection from '@/components/licence-pack/pack-section';
 import { licenceLabel } from '@/lib/licence-labels';
 import PackGroup from '@/components/licence-pack/pack-group';
 import PrefillBanner from '@/components/licence-pack/prefill-banner';
@@ -51,6 +54,9 @@ export default function LicenceServicesPackPage() {
   const id = params.id;
 
   const [pack, setPack] = useState<MotivationPack | null>(null);
+  const [fields, setFields] = useState<MotivationField[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [missingRequired, setMissingRequired] = useState<string[]>([]);
   const [draftKeys, setDraftKeys] = useState(0);
   // One row open at a time. A pack with every note expanded is a wall of text
   // and loses the scannability the whole design is for.
@@ -73,18 +79,27 @@ export default function LicenceServicesPackPage() {
     let alive = true;
     (async () => {
       try {
-        // ⚠️ ONE REQUEST, NOT TWO. The wizard also calls `get()` for the
-        // answers, and this screen will need them the moment it can edit —
-        // but it cannot yet, and a request whose response nothing reads is a
-        // request that only costs the member a slower page.
-        const p = await motivationsApi.pack(token, id);
+        // In parallel: two independent reads, and the pack is the slower.
+        const [p, d] = await Promise.all([
+          motivationsApi.pack(token, id),
+          motivationsApi.get(token, id),
+        ]);
+        // Sequential, because the registry is keyed on the licence type and
+        // only the detail knows it.
+        const f = await motivationsApi.fields(token, d.licenceType);
         if (!alive) return;
         setPack(p);
-        // The unsent draft is the wizard's, and it is the same draft — see
-        // lib/motivation-draft.ts. Counted rather than merged for now,
-        // because this screen cannot edit yet and silently showing an answer
-        // the server has never seen would be worse than saying so.
-        setDraftKeys(Object.keys(readDraft(id)).length);
+        setFields(f.fields);
+        setMissingRequired(d.missingRequired ?? []);
+
+        // ⚠️ THE LOCAL DRAFT WINS OVER THE SERVER'S COPY, because it is
+        // NEWER: it holds whatever was typed inside the last debounce window,
+        // or after a save that failed. Same key and same rule as the wizard —
+        // see lib/motivation-draft.ts — so a member can move between the two
+        // screens mid-sentence without losing a word.
+        const draft = readDraft(id);
+        setDraftKeys(Object.keys(draft).length);
+        setAnswers({ ...(d.answers ?? {}), ...draft });
       } catch (ex) {
         if (!alive) return;
         setError(
@@ -101,6 +116,24 @@ export default function LicenceServicesPackPage() {
     };
   }, [id, token]);
 
+  const autosave = useMotivationAutosave({
+    id,
+    token,
+    answers,
+    ready: Boolean(pack),
+    onSaved: (res) => setMissingRequired(res.missingRequired ?? []),
+  });
+
+  const setAnswer = useCallback(
+    (key: string, value: string) => {
+      autosave.markDirty();
+      setAnswers((cur) => ({ ...cur, [key]: value }));
+    },
+    [autosave],
+  );
+
+  const missing = useMemo(() => new Set(missingRequired), [missingRequired]);
+
   // Nothing to paint while the effect above is bouncing them to the wizard.
   if (!FLAG_ON) return null;
 
@@ -108,6 +141,8 @@ export default function LicenceServicesPackPage() {
     <main className="mx-auto w-full max-w-[var(--page-max)] px-4 py-6">
       {/* ⚠️ ABOVE THE FOLD, IN EVERY STATE, INCLUDING THE ERROR ONE. */}
       <ClassicViewLink id={id} />
+
+      <SaveState state={autosave.state} refused={autosave.refused} />
 
       {loading && (
         <p className="mt-6 text-sm text-[var(--text-secondary)]">
@@ -150,13 +185,56 @@ export default function LicenceServicesPackPage() {
           )}
 
           <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px] lg:items-start">
-            <PackSummary
-              pack={pack}
+            <div className="space-y-8">
+              <PackSummary
+                pack={pack}
               openRow={openRow}
-              onToggle={(key) =>
-                setOpenRow((cur) => (cur === key ? null : key))
-              }
-            />
+                onToggle={(key) =>
+                  setOpenRow((cur) => (cur === key ? null : key))
+                }
+              />
+
+              {/* ── PHASE 2b: THE THREE AREAS THE PACK HAD NO HOME FOR ────
+                  Without these the screen looks finished and is not. Each is a
+                  registry section the server already groups; the visibility
+                  rule is `visibleFields`, which mirrors the server's own
+                  isVisible(). */}
+              <PackSection
+                title="Firearms you already own"
+                intro="Most of these come from your Document Centre. Check them against your licence cards — what SAPS holds is what the form must say."
+                section="Firearms you already own"
+                fields={fields}
+                answers={answers}
+                missing={missing}
+                onChange={setAnswer}
+              />
+
+              <PackSection
+                title="Storage and safety"
+                intro="Where the firearm will be kept, and the safe it will be kept in."
+                section="Storage and safety"
+                fields={fields}
+                answers={answers}
+                missing={missing}
+                onChange={setAnswer}
+              />
+
+              {/* ⚠️ LAST, AND NOT BY ACCIDENT. Meeting six questions about
+                  convictions on the first screen makes an application feel
+                  like a charge sheet. Nothing can help with them and nothing
+                  ever prefills them — they are the applicant's own statements
+                  under section 120(9)(f). */}
+              <PackSection
+                title="Declarations"
+                intro="Only you can answer these. We never fill them in, and nothing you have uploaded changes them."
+                section="History"
+                fields={fields}
+                answers={answers}
+                missing={missing}
+                onChange={setAnswer}
+              />
+            </div>
+
             <Saps271Meter coverage={pack.coverage} />
           </div>
         </>
@@ -221,5 +299,37 @@ function PackSummary({
         ))}
       </div>
     </section>
+  );
+}
+
+/**
+ * What happened to the last save.
+ *
+ * ⚠️ A REFUSAL IS OUR FAULT AND SAYS SO. The server refuses a REGISTERED
+ * field's value when the form and the validator disagree — never because the
+ * member typed something wrong — and the wizard's own banner has said so in
+ * those words since it was written. Telling somebody to fix an answer that is
+ * not wrong sends them round a loop with no exit.
+ */
+function SaveState({ state, refused }: { state: string; refused: string[] }) {
+  if (refused.length > 0) {
+    return (
+      <p className="mt-3 rounded-[var(--r-sm)] border border-[var(--warning)] px-3 py-2 text-[13px] text-[var(--text-primary)]">
+        We could not store{' '}
+        {refused.length === 1 ? 'one of your answers' : 'some of your answers'}.
+        This is a fault on our side, not something you typed wrong — please tell
+        support. What you typed is still on this device.
+      </p>
+    );
+  }
+  if (state === 'idle') return null;
+  return (
+    <p className="mt-3 text-[12px] text-[var(--text-tertiary)]">
+      {state === 'saving'
+        ? 'Saving…'
+        : state === 'saved'
+          ? 'Saved'
+          : 'Not saved'}
+    </p>
   );
 }

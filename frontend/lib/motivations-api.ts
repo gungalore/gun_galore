@@ -680,6 +680,21 @@ export interface MotivationPack {
 }
 
 
+/**
+ * What a save comes back with.
+ *
+ * ⚠️ `refused` IS THE FIELD THAT MATTERS AND IT IS OPTIONAL. It names
+ * REGISTERED fields whose value the server would not store — a validator and a
+ * form that disagree — and treating a 200 with a non-empty `refused` as a save
+ * is how an answer is lost silently. `ignored` is the harmless cousin: keys
+ * that are not registered fields at all.
+ */
+export interface SaveAnswersResult {
+  missingRequired: string[];
+  ignored?: string[];
+  refused?: string[];
+}
+
 export const motivationsApi = {
   /**
    * Whether the module is open, and whether a new one can be started.
@@ -727,11 +742,7 @@ export const motivationsApi = {
    * ever match is indistinguishable from a check nobody wrote.)
    */
   saveAnswers: (t: TokenGetter, id: string, answers: Record<string, string>) =>
-    request<{
-      missingRequired: string[];
-      ignored?: string[];
-      refused?: string[];
-    }>(
+    request<SaveAnswersResult>(
       t,
       `/${id}/answers`,
       { method: 'PATCH', body: JSON.stringify({ answers }) },
