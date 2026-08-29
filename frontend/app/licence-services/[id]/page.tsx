@@ -25,7 +25,7 @@
 // ────────────────────────────────────────────────────────────────────
 
 import { useAuth } from '@clerk/nextjs';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -37,6 +37,8 @@ import {
   UploadRow,
   PickableKind,
   AddedUpload,
+  LibraryItem,
+  TokenGetter,
 } from '@/lib/motivations-api';
 import { readDraft } from '@/lib/motivation-draft';
 import { licenceLabel, LICENCE_SECTION } from '@/lib/licence-labels';
@@ -46,7 +48,11 @@ import {
   clearPreviewOptIn,
 } from '@/lib/licence-services-preview';
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
+import LibraryPicker from '@/components/library-picker';
+import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
+import { licenceCentreApi } from '@/lib/licence-centre-api';
 import BulkCapture from '@/components/licence-pack/bulk-capture';
+import { VAULT_PREFIXES } from './vault-prefixes';
 import AttachedDocuments from '@/components/licence-pack/attached-documents';
 import ExtractionReview from '@/components/licence-pack/extraction-review';
 import { mergeReads } from '@/lib/extraction-review-rules';
@@ -85,6 +91,9 @@ export default function LicenceServicesWizardPage() {
   const [pickable, setPickable] = useState<PickableKind[]>([]);
   /** The one document a lifecycle action is working on, so its row can grey. */
   const [docBusy, setDocBusy] = useState<string | null>(null);
+  const [library, setLibrary] = useState<LibraryItem[]>([]);
+  const [keeping, setKeeping] = useState<boolean | undefined>(undefined);
+  const [autolinked, setAutolinked] = useState<{ kind: string; title: string }[]>([]);
 
   const token = useCallback(async () => getToken(), [getToken]);
 
@@ -249,6 +258,32 @@ export default function LicenceServicesWizardPage() {
     [id, token],
   );
 
+  /**
+   * What this member already has on file, and whether we are keeping it.
+   *
+   * Lifted from the old page. Two independent try/catches on purpose: a
+   * library we cannot read costs a shortcut, not the ability to upload, and a
+   * failed consent lookup costs the extra control, not the page.
+   *
+   * ⚠️ `keeping === false` IS NOT AN EMPTY LIBRARY. Telling somebody holding
+   * twelve documents "nothing saved to reuse yet" — because they once told us
+   * not to keep them — is simply untrue, which is why LibraryPicker takes the
+   * flag rather than inferring it from the list being empty.
+   */
+  const loadLibrary = useCallback(async () => {
+    try {
+      const r = await motivationsApi.library(token, id);
+      setLibrary(r.items);
+    } catch {
+      /* a shortcut, not the page */
+    }
+    try {
+      setKeeping((await licenceCentreApi.consent(token)).keeping);
+    } catch {
+      /* same rule */
+    }
+  }, [token, id]);
+
   const refreshDocs = useCallback(async () => {
     const [p, up] = await Promise.all([
       motivationsApi.pack(token, id),
@@ -363,6 +398,69 @@ export default function LicenceServicesWizardPage() {
     },
     [id, token],
   );
+
+  /**
+   * Reuse a document already on file.
+   *
+   * ⚠️ NEVER OVER AN ANSWER THEY TYPED. Lifted verbatim from the old page,
+   * including the reason: unlike a per-field camera — where pressing
+   * "photograph my competency certificate" IS the request to replace what is
+   * in that box — this attaches a whole document and may carry half a dozen
+   * values with it. Overwriting on that basis would quietly undo work they
+   * did by hand.
+   */
+  const attachFromLibrary = useCallback(
+    async (item: LibraryItem, placeConfirmed = false) => {
+      const row = await motivationsApi.addFromLibrary(
+        token,
+        id,
+        item.source,
+        item.sourceId,
+        placeConfirmed,
+      );
+      setAnswers((cur) => {
+        const next = { ...cur };
+        for (const sg of row.suggestions ?? []) {
+          if (!(next[sg.key] ?? '').trim() && sg.value) next[sg.key] = sg.value;
+        }
+        return next;
+      });
+      await Promise.all([
+        refreshDocs().catch(() => undefined),
+        loadLibrary().catch(() => undefined),
+      ]);
+    },
+    [token, id, refreshDocs, loadLibrary],
+  );
+
+  /**
+   * Attach what the Document Centre already holds, once, without being asked.
+   *
+   * ⚠️ THE REF IS THE POINT. Effects re-run; a second autolink would attach
+   * nothing (the server skips kinds already present) but would still cost a
+   * round trip on every dependency change. Lifted from the old page.
+   */
+  const autolinkRan = useRef(false);
+  useEffect(() => {
+    if (autolinkRan.current || !allowed) return;
+    autolinkRan.current = true;
+    void (async () => {
+      try {
+        const res = await motivationsApi.autolink(token, id);
+        if (!res.attached.length) return;
+        setAutolinked(res.attached);
+        // Everything downstream reads from these, so refresh rather than
+        // patching the lists by hand and risking a disagreement.
+        await refreshDocs();
+      } catch {
+        // Never costs the page. The member attaches by hand, as before.
+      }
+    })();
+  }, [token, id, allowed, refreshDocs]);
+
+  useEffect(() => {
+    if (allowed) void loadLibrary();
+  }, [allowed, loadLibrary]);
 
   const missing = useMemo(() => new Set(missingRequired), [missingRequired]);
   const steps = WIZARD_STEPS;
@@ -480,6 +578,37 @@ export default function LicenceServicesWizardPage() {
               a member had to guess that accepting meant navigating back. What
               disagrees with what they typed has to be answerable wherever
               they are standing. */}
+          {/* ⚠️ SAY WHAT WE TOOK, AND THAT IT CAN BE REMOVED. Attaching
+              documents without being asked is only acceptable if the member
+              is told which ones — silence would be us adding things to a pack
+              they sign, out of sight. */}
+          {autolinked.length > 0 && (
+            <div
+              className="gg-tile rounded-[10px] border px-4 py-3"
+              style={{
+                borderColor: 'var(--success-line)',
+                background: 'var(--success-wash)',
+              }}
+            >
+              <p className="text-[13px] font-semibold">
+                We added {autolinked.length}{' '}
+                {autolinked.length === 1 ? 'document' : 'documents'} from your
+                Document Centre
+              </p>
+              <p className="mt-1 text-[12.5px] text-[var(--text-secondary)]">
+                {autolinked.map((a) => a.title).join(', ')}. Remove any of them
+                on the step that asks for it.
+              </p>
+              <button
+                type="button"
+                onClick={() => setAutolinked([])}
+                className="mt-1.5 text-[12px] underline underline-offset-2"
+              >
+                Got it
+              </button>
+            </div>
+          )}
+
           <ExtractionReview
             suggestions={suggestions}
             busy={busyKind !== null}
@@ -517,6 +646,17 @@ export default function LicenceServicesWizardPage() {
               )
             }
             onAdd={addOne}
+            library={library}
+            keeping={keeping}
+            token={token}
+            onPickFromLibrary={attachFromLibrary}
+            onVaultApplied={(filled, missingNow) => {
+              // ⚠️ THE APPLICANT'S OWN EDITS WIN over what arrives, the same
+              // rule the document reading follows. A vault value must never
+              // overwrite something they typed and corrected.
+              setAnswers((cur) => ({ ...filled, ...cur }));
+              setMissingRequired(missingNow);
+            }}
             motivationId={id}
             busyKind={busyKind}
             onFiles={addFiles}
@@ -569,6 +709,7 @@ export default function LicenceServicesWizardPage() {
   );
 }
 
+
 /** What each step actually asks. */
 function StepBody({
   stepKey,
@@ -579,6 +720,11 @@ function StepBody({
   uploads,
   pickable,
   docBusy,
+  library,
+  keeping,
+  token,
+  onPickFromLibrary,
+  onVaultApplied,
   onView,
   onRemove,
   onReread,
@@ -602,6 +748,11 @@ function StepBody({
   uploads: UploadRow[];
   pickable: PickableKind[];
   docBusy: string | null;
+  library: LibraryItem[];
+  keeping: boolean | undefined;
+  token: TokenGetter;
+  onPickFromLibrary: (item: LibraryItem, placeConfirmed?: boolean) => Promise<void>;
+  onVaultApplied: (filled: Record<string, string>, missing: string[]) => void;
   onView: (id: string) => void;
   onRemove: (id: string) => void;
   onReread: (id: string) => void;
@@ -699,6 +850,24 @@ function StepBody({
         <ProficiencyAlert cover={pack.proficiency} />
       )}
 
+      {/* ⚠️ WHAT THE DOCUMENT CENTRE COULD FILL, ON THE STEP THAT ASKS IT.
+          Prefixes lifted from the old page along with what they cost to get
+          wrong: the dedicated-status half never rendered for months because
+          the panel was mounted on "About you" and handed `association_`,
+          while those fields live in their own section — so the offer computed
+          the values, shipped them to the browser, and filtered every one out
+          against a section that could not contain them. Silent since the day
+          it was written. Here the step OWNS its prefixes, so the two cannot
+          drift apart. */}
+      {VAULT_PREFIXES[stepKey] && (
+        <LicenceCentreOfferPanel
+          token={token}
+          motivationId={motivationId}
+          keyPrefixes={VAULT_PREFIXES[stepKey]!}
+          onApplied={onVaultApplied}
+        />
+      )}
+
       {/* ⚠️ WHAT THEY ALREADY GAVE US, BEFORE THE CAMERA. A member arriving
           at a step they have half-finished should see the document sitting
           there, not an empty camera implying nothing was attached — and the
@@ -725,6 +894,21 @@ function StepBody({
           busy={busyKind !== null}
           onFiles={(files) => onFiles(d.kind, files)}
           onArrived={() => onFiles(d.kind, [])}
+        />
+      ))}
+
+      {/* ⚠️ "USE ONE I ALREADY HAVE" — the reuse half of the Document Centre,
+          which the rebuilt wizard could not reach at all. One picker per
+          document this step asks for, narrowed to that kind: a member should
+          never be shown their ID as an option under "your proof of address".
+          It renders even when empty, disabled and saying so — returning null
+          is invisible, and invisible is indistinguishable from never built. */}
+      {(documents ?? []).map((d) => (
+        <LibraryPicker
+          key={`lib-${d.kind}`}
+          items={library.filter((i) => i.kind === d.kind)}
+          keeping={keeping}
+          onPick={onPickFromLibrary}
         />
       ))}
 

@@ -1,0 +1,2684 @@
+{
+  "S13_SELF_DEFENCE": [
+    {
+      "key": "fill_saps271",
+      "section": "The SAPS 271 form"
+    },
+    {
+      "key": "full_name",
+      "section": "About you"
+    },
+    {
+      "key": "id_number",
+      "section": "About you"
+    },
+    {
+      "key": "residential_address",
+      "section": "About you"
+    },
+    {
+      "key": "occupation",
+      "section": "About you"
+    },
+    {
+      "key": "postal_address",
+      "section": "About you"
+    },
+    {
+      "key": "residence_type",
+      "section": "About you"
+    },
+    {
+      "key": "home_telephone",
+      "section": "About you"
+    },
+    {
+      "key": "work_telephone",
+      "section": "About you"
+    },
+    {
+      "key": "employer_name",
+      "section": "About you"
+    },
+    {
+      "key": "employer_address",
+      "section": "About you"
+    },
+    {
+      "key": "marital_status",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_name",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_id_number",
+      "section": "About you"
+    },
+    {
+      "key": "competency_number",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_for",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_issued",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_expiry",
+      "section": "Your competency"
+    },
+    {
+      "key": "firearm_type",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_action",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_model",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_source",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_calibre",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "frame_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "frame_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "receiver_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "receiver_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_length",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_fit_reason",
+      "section": "The firearm"
+    },
+    {
+      "key": "safe_storage_detail",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_present",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_type",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_mounted",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_mounted_to",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "history_conviction",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_station",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_outcome",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_station",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_station",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_circumstances",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_firearm",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_station",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_outcome",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_station",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_period",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_station",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_circumstances",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_outcome",
+      "section": "History"
+    },
+    {
+      "key": "existing_firearm_1_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "overlap_justification",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "residential_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "postal_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "employer_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "home_dialling_code",
+      "section": "About you"
+    },
+    {
+      "key": "work_dialling_code",
+      "section": "About you"
+    },
+    {
+      "key": "cellphone",
+      "section": "About you"
+    },
+    {
+      "key": "licence_holder_type",
+      "section": "The firearm"
+    },
+    {
+      "key": "spouse_id_type",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_passport_number",
+      "section": "About you"
+    },
+    {
+      "key": "prior_refusals",
+      "section": "History"
+    },
+    {
+      "key": "threat_circumstances",
+      "section": "Your circumstances"
+    },
+    {
+      "key": "daily_movements",
+      "section": "Your circumstances"
+    },
+    {
+      "key": "alternatives_considered",
+      "section": "Your circumstances"
+    }
+  ],
+  "S15_OCCASIONAL_HUNTER": [
+    {
+      "key": "fill_saps271",
+      "section": "The SAPS 271 form"
+    },
+    {
+      "key": "full_name",
+      "section": "About you"
+    },
+    {
+      "key": "id_number",
+      "section": "About you"
+    },
+    {
+      "key": "residential_address",
+      "section": "About you"
+    },
+    {
+      "key": "occupation",
+      "section": "About you"
+    },
+    {
+      "key": "postal_address",
+      "section": "About you"
+    },
+    {
+      "key": "residence_type",
+      "section": "About you"
+    },
+    {
+      "key": "home_telephone",
+      "section": "About you"
+    },
+    {
+      "key": "work_telephone",
+      "section": "About you"
+    },
+    {
+      "key": "employer_name",
+      "section": "About you"
+    },
+    {
+      "key": "employer_address",
+      "section": "About you"
+    },
+    {
+      "key": "marital_status",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_name",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_id_number",
+      "section": "About you"
+    },
+    {
+      "key": "competency_number",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_for",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_issued",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_expiry",
+      "section": "Your competency"
+    },
+    {
+      "key": "firearm_type",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_action",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_model",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_source",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_calibre",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "frame_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "frame_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "receiver_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "receiver_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_length",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_fit_reason",
+      "section": "The firearm"
+    },
+    {
+      "key": "safe_storage_detail",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_present",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_type",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_mounted",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_mounted_to",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "history_conviction",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_station",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_outcome",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_station",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_station",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_circumstances",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_firearm",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_station",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_outcome",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_station",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_period",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_station",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_circumstances",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_outcome",
+      "section": "History"
+    },
+    {
+      "key": "existing_firearm_1_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "overlap_justification",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "residential_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "postal_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "employer_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "home_dialling_code",
+      "section": "About you"
+    },
+    {
+      "key": "work_dialling_code",
+      "section": "About you"
+    },
+    {
+      "key": "cellphone",
+      "section": "About you"
+    },
+    {
+      "key": "licence_holder_type",
+      "section": "The firearm"
+    },
+    {
+      "key": "spouse_id_type",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_passport_number",
+      "section": "About you"
+    },
+    {
+      "key": "prior_refusals",
+      "section": "History"
+    },
+    {
+      "key": "hunting_history",
+      "section": "Experience"
+    },
+    {
+      "key": "intended_quarry",
+      "section": "Experience"
+    },
+    {
+      "key": "hunting_locations",
+      "section": "Experience"
+    }
+  ],
+  "S16_DEDICATED_HUNTER": [
+    {
+      "key": "fill_saps271",
+      "section": "The SAPS 271 form"
+    },
+    {
+      "key": "full_name",
+      "section": "About you"
+    },
+    {
+      "key": "id_number",
+      "section": "About you"
+    },
+    {
+      "key": "residential_address",
+      "section": "About you"
+    },
+    {
+      "key": "occupation",
+      "section": "About you"
+    },
+    {
+      "key": "postal_address",
+      "section": "About you"
+    },
+    {
+      "key": "residence_type",
+      "section": "About you"
+    },
+    {
+      "key": "home_telephone",
+      "section": "About you"
+    },
+    {
+      "key": "work_telephone",
+      "section": "About you"
+    },
+    {
+      "key": "employer_name",
+      "section": "About you"
+    },
+    {
+      "key": "employer_address",
+      "section": "About you"
+    },
+    {
+      "key": "marital_status",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_name",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_id_number",
+      "section": "About you"
+    },
+    {
+      "key": "competency_number",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_for",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_issued",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_expiry",
+      "section": "Your competency"
+    },
+    {
+      "key": "firearm_type",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_action",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_model",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_source",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_calibre",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "frame_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "frame_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "receiver_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "receiver_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_length",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_fit_reason",
+      "section": "The firearm"
+    },
+    {
+      "key": "safe_storage_detail",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_present",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_type",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_mounted",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_mounted_to",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "history_conviction",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_station",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_outcome",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_station",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_station",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_circumstances",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_firearm",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_station",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_outcome",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_station",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_period",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_station",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_circumstances",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_outcome",
+      "section": "History"
+    },
+    {
+      "key": "existing_firearm_1_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "overlap_justification",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "residential_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "postal_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "employer_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "home_dialling_code",
+      "section": "About you"
+    },
+    {
+      "key": "work_dialling_code",
+      "section": "About you"
+    },
+    {
+      "key": "cellphone",
+      "section": "About you"
+    },
+    {
+      "key": "licence_holder_type",
+      "section": "The firearm"
+    },
+    {
+      "key": "spouse_id_type",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_passport_number",
+      "section": "About you"
+    },
+    {
+      "key": "prior_refusals",
+      "section": "History"
+    },
+    {
+      "key": "association_name",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_number",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "dedicated_since",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_expiry",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_2_name",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_2_number",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_2_joined",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_3_name",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_3_number",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_3_joined",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "hunting_history",
+      "section": "Experience"
+    },
+    {
+      "key": "discipline",
+      "section": "Experience"
+    },
+    {
+      "key": "discipline_other",
+      "section": "Experience"
+    },
+    {
+      "key": "discipline_requirement",
+      "section": "Experience"
+    },
+    {
+      "key": "activity_record",
+      "section": "Experience"
+    }
+  ],
+  "S16_DEDICATED_SPORT": [
+    {
+      "key": "fill_saps271",
+      "section": "The SAPS 271 form"
+    },
+    {
+      "key": "full_name",
+      "section": "About you"
+    },
+    {
+      "key": "id_number",
+      "section": "About you"
+    },
+    {
+      "key": "residential_address",
+      "section": "About you"
+    },
+    {
+      "key": "occupation",
+      "section": "About you"
+    },
+    {
+      "key": "postal_address",
+      "section": "About you"
+    },
+    {
+      "key": "residence_type",
+      "section": "About you"
+    },
+    {
+      "key": "home_telephone",
+      "section": "About you"
+    },
+    {
+      "key": "work_telephone",
+      "section": "About you"
+    },
+    {
+      "key": "employer_name",
+      "section": "About you"
+    },
+    {
+      "key": "employer_address",
+      "section": "About you"
+    },
+    {
+      "key": "marital_status",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_name",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_id_number",
+      "section": "About you"
+    },
+    {
+      "key": "competency_number",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_for",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_issued",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_expiry",
+      "section": "Your competency"
+    },
+    {
+      "key": "firearm_type",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_action",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_model",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_source",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_calibre",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "frame_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "frame_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "receiver_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "receiver_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_length",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_fit_reason",
+      "section": "The firearm"
+    },
+    {
+      "key": "safe_storage_detail",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_present",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_type",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_mounted",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_mounted_to",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "history_conviction",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_station",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_outcome",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_station",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_station",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_circumstances",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_firearm",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_station",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_outcome",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_station",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_period",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_station",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_circumstances",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_outcome",
+      "section": "History"
+    },
+    {
+      "key": "existing_firearm_1_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "overlap_justification",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "residential_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "postal_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "employer_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "home_dialling_code",
+      "section": "About you"
+    },
+    {
+      "key": "work_dialling_code",
+      "section": "About you"
+    },
+    {
+      "key": "cellphone",
+      "section": "About you"
+    },
+    {
+      "key": "licence_holder_type",
+      "section": "The firearm"
+    },
+    {
+      "key": "spouse_id_type",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_passport_number",
+      "section": "About you"
+    },
+    {
+      "key": "prior_refusals",
+      "section": "History"
+    },
+    {
+      "key": "association_name",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_number",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "dedicated_since",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_expiry",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_2_name",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_2_number",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_2_joined",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_3_name",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_3_number",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "association_3_joined",
+      "section": "Dedicated status"
+    },
+    {
+      "key": "discipline",
+      "section": "Experience"
+    },
+    {
+      "key": "discipline_other",
+      "section": "Experience"
+    },
+    {
+      "key": "competition_record",
+      "section": "Experience"
+    },
+    {
+      "key": "discipline_requirement",
+      "section": "Experience"
+    }
+  ],
+  "S24_RENEWAL": [
+    {
+      "key": "fill_saps271",
+      "section": "The SAPS 271 form"
+    },
+    {
+      "key": "full_name",
+      "section": "About you"
+    },
+    {
+      "key": "id_number",
+      "section": "About you"
+    },
+    {
+      "key": "residential_address",
+      "section": "About you"
+    },
+    {
+      "key": "occupation",
+      "section": "About you"
+    },
+    {
+      "key": "postal_address",
+      "section": "About you"
+    },
+    {
+      "key": "residence_type",
+      "section": "About you"
+    },
+    {
+      "key": "home_telephone",
+      "section": "About you"
+    },
+    {
+      "key": "work_telephone",
+      "section": "About you"
+    },
+    {
+      "key": "employer_name",
+      "section": "About you"
+    },
+    {
+      "key": "employer_address",
+      "section": "About you"
+    },
+    {
+      "key": "marital_status",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_name",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_id_number",
+      "section": "About you"
+    },
+    {
+      "key": "competency_number",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_for",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_issued",
+      "section": "Your competency"
+    },
+    {
+      "key": "competency_expiry",
+      "section": "Your competency"
+    },
+    {
+      "key": "firearm_type",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_action",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_model",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_source",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_calibre",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "frame_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "frame_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "receiver_serial",
+      "section": "The firearm"
+    },
+    {
+      "key": "receiver_make",
+      "section": "The firearm"
+    },
+    {
+      "key": "barrel_length",
+      "section": "The firearm"
+    },
+    {
+      "key": "firearm_fit_reason",
+      "section": "The firearm"
+    },
+    {
+      "key": "safe_storage_detail",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_present",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_type",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_mounted",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "safe_mounted_to",
+      "section": "Storage and safety"
+    },
+    {
+      "key": "history_conviction",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_detail",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_station",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_conviction_outcome",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_station",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_pending_case_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_station",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_circumstances",
+      "section": "History"
+    },
+    {
+      "key": "history_lost_stolen_firearm",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_station",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_negligence_outcome",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_station",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_charge",
+      "section": "History"
+    },
+    {
+      "key": "history_declared_unfit_period",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_station",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_case_number",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_circumstances",
+      "section": "History"
+    },
+    {
+      "key": "history_confiscated_outcome",
+      "section": "History"
+    },
+    {
+      "key": "existing_firearm_1_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_1_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_2_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_3_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_4_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_5_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_type",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_calibre",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_make",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_use",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_barrel_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_frame_serial",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "existing_firearm_6_licence_no",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "overlap_justification",
+      "section": "Firearms you already own"
+    },
+    {
+      "key": "residential_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "postal_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "employer_postal_code",
+      "section": "About you"
+    },
+    {
+      "key": "home_dialling_code",
+      "section": "About you"
+    },
+    {
+      "key": "work_dialling_code",
+      "section": "About you"
+    },
+    {
+      "key": "cellphone",
+      "section": "About you"
+    },
+    {
+      "key": "licence_holder_type",
+      "section": "The firearm"
+    },
+    {
+      "key": "spouse_id_type",
+      "section": "About you"
+    },
+    {
+      "key": "spouse_passport_number",
+      "section": "About you"
+    },
+    {
+      "key": "prior_refusals",
+      "section": "History"
+    },
+    {
+      "key": "existing_licence_number",
+      "section": "The existing licence"
+    },
+    {
+      "key": "licence_expiry",
+      "section": "The existing licence"
+    },
+    {
+      "key": "continued_use",
+      "section": "The existing licence"
+    }
+  ]
+}
