@@ -24,12 +24,11 @@
 import { useMemo, useState } from 'react';
 import FieldInput from '@/components/motivation-field-input';
 import { visibleFields, type MotivationField } from '@/lib/motivations-api';
-
-/** `existing_firearm_3_make` → 3. Null for anything that is not a row field. */
-function rowIndex(key: string): number | null {
-  const m = /^existing_firearm_(\d+)_/.exec(key);
-  return m ? Number(m[1]) : null;
-}
+import {
+  groupRows,
+  rowIndex,
+  rowsToShow,
+} from '@/lib/owned-firearm-rows';
 
 export default function PackSection({
   title,
@@ -56,17 +55,7 @@ export default function PackSection({
     [fields, answers, section],
   );
 
-  const rows = useMemo(() => {
-    const byRow = new Map<number, MotivationField[]>();
-    for (const f of mine) {
-      const n = rowIndex(f.key);
-      if (n === null) continue;
-      const list = byRow.get(n) ?? [];
-      list.push(f);
-      byRow.set(n, list);
-    }
-    return [...byRow.entries()].sort((a, b) => a[0] - b[0]);
-  }, [mine]);
+  const rows = useMemo(() => groupRows(mine), [mine]);
 
   const plain = mine.filter((f) => rowIndex(f.key) === null);
 
@@ -130,13 +119,13 @@ function RepeatingRows({
   missing: Set<string>;
   onChange: (key: string, value: string) => void;
 }) {
-  const used = rows.filter(([, fs]) =>
-    fs.some((f) => (answers[f.key] ?? '').trim()),
-  );
-  // One empty row beyond what is in use, so there is always somewhere to type.
+  // ⚠️ THE RULE IS TESTED, NOT INLINE. It was inline and it was WRONG: it
+  // counted HOW MANY rows were in use rather than which was the LAST, so a
+  // member whose vault had filled rows 1 and 4 was shown three rows and row 4
+  // — carrying their own data — silently disappeared. See
+  // lib/owned-firearm-rows.ts and its spec.
   const [extra, setExtra] = useState(0);
-  const showCount = Math.min(rows.length, used.length + 1 + extra);
-  const shown = rows.slice(0, Math.max(showCount, 1));
+  const shown = rowsToShow(rows, answers, extra);
   const canAdd = shown.length < rows.length;
 
   const [open, setOpen] = useState<number | null>(null);
