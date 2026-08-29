@@ -47,6 +47,7 @@ import PackSection from '@/components/licence-pack/pack-section';
 import PackGroup from '@/components/licence-pack/pack-group';
 import PrefillBanner from '@/components/licence-pack/prefill-banner';
 import Saps271Meter from '@/components/licence-pack/saps271-meter';
+import CaptureRoutes from '@/components/licence-pack/capture-routes';
 
 export default function LicenceServicesWizardPage() {
   const { getToken } = useAuth();
@@ -63,6 +64,8 @@ export default function LicenceServicesWizardPage() {
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [openRow, setOpenRow] = useState<string | null>(null);
+  const [busyKind, setBusyKind] = useState<string | null>(null);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
 
   const token = useCallback(async () => getToken(), [getToken]);
 
@@ -119,6 +122,58 @@ export default function LicenceServicesWizardPage() {
       setAnswers((cur) => ({ ...cur, [key]: value }));
     },
     [autosave],
+  );
+
+  /**
+   * ONE UPLOAD, ONE CODE PATH — the same discipline the wizard's own
+   * addOneUpload keeps, and for the same reason: every door on this screen
+   * funnels through here so they cannot drift on what happens after a file
+   * lands.
+   *
+   * ⚠️ SEQUENTIAL, NOT Promise.all. Each upload counts the rows already on the
+   * application against the cap and writes a new one; firing them together
+   * would let three reads see the same count.
+   *
+   * ⚠️ AND THE PACK IS RE-READ AFTERWARDS. A document can satisfy a checklist
+   * row and fill several answers, so the coverage rail and the pack list are
+   * both stale the moment one lands. Re-reading is what makes the 271 meter
+   * move while somebody watches.
+   */
+  const addFiles = useCallback(
+    async (kind: string, files: File[]) => {
+      setBusyKind(kind);
+      setUploadErr(null);
+      try {
+        for (const file of files) {
+          await motivationsApi.addUpload(token, id, kind, file);
+        }
+        const [p, d] = await Promise.all([
+          motivationsApi.pack(token, id),
+          motivationsApi.get(token, id),
+        ]);
+        setPack(p);
+        setMissingRequired(d.missingRequired ?? []);
+        // ⚠️ ONLY WHAT IS STILL EMPTY. A document that reads a serial must not
+        // overwrite one the member typed and corrected — MEMBER always wins,
+        // the same rule the provenance spine enforces server-side.
+        setAnswers((cur) => {
+          const next = { ...cur };
+          for (const [k, v] of Object.entries(d.answers ?? {})) {
+            if (!(next[k] ?? '').trim() && v) next[k] = v;
+          }
+          return next;
+        });
+      } catch (ex) {
+        setUploadErr(
+          ex instanceof MotivationApiError
+            ? ex.message
+            : 'That upload did not work.',
+        );
+      } finally {
+        setBusyKind(null);
+      }
+    },
+    [id, token],
   );
 
   const missing = useMemo(() => new Set(missingRequired), [missingRequired]);
@@ -226,9 +281,17 @@ export default function LicenceServicesWizardPage() {
             />
           )}
 
+          {uploadErr && (
+            <p className="text-[13px] text-[var(--red)]">{uploadErr}</p>
+          )}
+
           <StepBody
             stepKey={current.key}
             section={current.section}
+            documents={current.documents}
+            motivationId={id}
+            busyKind={busyKind}
+            onFiles={addFiles}
             pack={pack}
             fields={fields}
             answers={answers}
@@ -243,7 +306,10 @@ export default function LicenceServicesWizardPage() {
       </div>
 
       {/* ── footer ──────────────────────────────────────────────── */}
-      <div className="mt-6 flex items-center gap-3.5 border-t border-[var(--border)] bg-[var(--bg-card)] px-4 py-[15px] sm:px-6">
+      {/* ⚠️ STICKY, NOT STATIC. The mockup pins this bar because its frame is a
+          fixed 1080px with overflow:hidden; a real page scrolls, and a Continue
+          button that scrolls away is a wizard somebody gets stuck in. */}
+      <div className="sticky bottom-0 z-10 mt-6 flex items-center gap-3.5 border-t border-[var(--border)] bg-[var(--bg-card)] px-4 py-[15px] sm:px-6">
         <button
           type="button"
           onClick={() => setStep((n) => Math.max(0, n - 1))}
@@ -279,6 +345,10 @@ export default function LicenceServicesWizardPage() {
 function StepBody({
   stepKey,
   section,
+  documents,
+  motivationId,
+  busyKind,
+  onFiles,
   pack,
   fields,
   answers,
@@ -289,6 +359,10 @@ function StepBody({
 }: {
   stepKey: string;
   section?: string;
+  documents?: { kind: string; title: string; subtitle?: string }[];
+  motivationId: string;
+  busyKind: string | null;
+  onFiles: (kind: string, files: File[]) => void;
   pack: MotivationPack;
   fields: MotivationField[];
   answers: Record<string, string>;
@@ -352,18 +426,47 @@ function StepBody({
     );
   }
 
-  if (!section) return null;
-
   return (
-    <div className="max-w-[820px]">
-      <PackSection
-        title=""
-        section={section}
-        fields={fields}
-        answers={answers}
-        missing={missing}
-        onChange={onChange}
-      />
+    <div className="max-w-[820px] space-y-5">
+      {section && (
+        <PackSection
+          title=""
+          section={section}
+          fields={fields}
+          answers={answers}
+          missing={missing}
+          onChange={onChange}
+        />
+      )}
+
+      {documents?.map((d) => (
+        <div
+          key={d.kind}
+          className="rounded-[var(--r-md)] border px-[17px] py-[15px]"
+          style={{
+            borderColor: 'var(--gold-line)',
+            background: 'var(--gold-wash)',
+          }}
+        >
+          <div className="text-[14px] font-semibold text-[var(--gold-strong)]">
+            {d.title}
+          </div>
+          {d.subtitle && (
+            <p className="mt-1 text-[13.5px] text-[var(--text-secondary)]">
+              {d.subtitle}
+            </p>
+          )}
+          <CaptureRoutes
+            motivationId={motivationId}
+            kind={d.kind}
+            title={d.title}
+            subtitle={d.subtitle}
+            busy={busyKind !== null}
+            onFiles={(files) => onFiles(d.kind, files)}
+            onArrived={() => onFiles(d.kind, [])}
+          />
+        </div>
+      ))}
     </div>
   );
 }

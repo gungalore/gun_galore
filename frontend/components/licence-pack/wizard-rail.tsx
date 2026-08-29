@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 // ────────────────────────────────────────────────────────────────────
 // THE STEP RAIL, AND THE STEPS THEMSELVES.
@@ -33,6 +33,14 @@ export interface WizardStep {
    * restates what was chosen, and the last, which is the pack.
    */
   section?: string;
+  /**
+   * Documents this step collects, in the order they are asked for.
+   *
+   * ⚠️ UPLOAD KINDS, not labels — they are the server's enum and the pack's
+   * annexure lettering keys off them. The label beside each door comes from
+   * the checklist so the two screens cannot describe one document differently.
+   */
+  documents?: { kind: string; title: string; subtitle?: string }[];
 }
 
 /**
@@ -54,91 +62,147 @@ export interface WizardStep {
  */
 export const WIZARD_STEPS: WizardStep[] = [
   {
-    key: 'section',
-    name: 'Section',
-    fills: 'fills section D',
-    title: 'What you are applying for',
+    key: "section",
+    name: "Section",
+    fills: "fills section D",
+    title: "What you are applying for",
     blurb:
-      'Everything else is checked against this — which documents SAPS asks for, which questions the form puts to you, and how many firearms you may hold under it.',
+      "Everything else is checked against this — which documents SAPS asks for, which questions the form puts to you, and how many firearms you may hold under it.",
   },
   {
-    key: 'firearm',
-    name: 'The firearm',
-    fills: 'fills section E',
-    title: 'Start with the firearm itself',
+    key: "firearm",
+    name: "The firearm",
+    fills: "fills section E",
+    title: "Start with the firearm itself",
     blurb:
-      'Everything after this depends on it. The type tells us which competency to pull from your Document Centre, which endorsement your association has to give, and whether the seller is a dealer or a private owner.',
-    section: 'The firearm',
+      "Everything after this depends on it. The type tells us which competency to pull from your Document Centre, which endorsement your association has to give, and whether the seller is a dealer or a private owner.",
+    section: "The firearm",
   },
   {
-    key: 'source',
-    name: 'Where it is from',
-    fills: 'fills section F',
-    title: 'Where this firearm is coming from',
+    key: "source",
+    name: "Where it is from",
+    fills: "fills section F",
+    title: "Where this firearm is coming from",
     blurb:
-      'A dealer sale and a private transfer need different paperwork at the counter. On a private sale we send the current owner his own half of the form, and it runs while you carry on here.',
+      "A dealer sale and a private transfer need different paperwork at the counter. On a private sale we send the current owner his own half of the form, and it runs while you carry on here.",
+    documents: [
+      {
+        kind: "FIREARM_SOURCE_PROOF",
+        title: "Where the firearm is coming from",
+        subtitle:
+          "A dealer invoice or quote, or the current owner’s permission letter.",
+      },
+    ],
   },
   {
-    key: 'competency',
-    name: 'Competency',
-    fills: 'fills G 1.5 – 1.7',
-    title: 'Your competency',
+    key: "competency",
+    name: "Competency",
+    fills: "fills G 1.5 – 1.7",
+    title: "Your competency",
     blurb:
-      'Without competency for this type of firearm, SAPS cannot process the application at all. Most of this comes off the certificate already in your Document Centre.',
-    section: 'Your competency',
+      "Without competency for this type of firearm, SAPS cannot process the application at all. Most of this comes off the certificate already in your Document Centre.",
+    section: "Your competency",
+    documents: [
+      {
+        kind: "COMPETENCY_CERTIFICATE",
+        title: "Your competency certificate",
+        subtitle:
+          "The SAPS card, or the CFR printout — whichever you were issued.",
+      },
+    ],
   },
   {
-    key: 'owned',
-    name: 'What you own',
-    fills: 'fills G item 2',
-    title: 'The firearms you already hold',
+    key: "owned",
+    name: "What you own",
+    fills: "fills G item 2",
+    title: "The firearms you already hold",
     blurb:
-      'Most of these come from your Document Centre. Check them against your licence cards — what SAPS holds is what the form must say.',
-    section: 'Firearms you already own',
+      "Most of these come from your Document Centre. Check them against your licence cards — what SAPS holds is what the form must say.",
+    section: "Firearms you already own",
+    documents: [
+      {
+        kind: "CURRENT_LICENCE",
+        title: "A firearm licence you already hold",
+        subtitle:
+          "Both sides of the card. We read the make, calibre and serials off it.",
+      },
+    ],
   },
   {
-    key: 'about',
-    name: 'About you',
-    fills: 'fills G items 3 – 27',
-    title: 'About you',
+    key: "about",
+    name: "About you",
+    fills: "fills G items 3 – 27",
+    title: "About you",
     blurb:
-      'Your details as SAPS holds them. Anything we filled in came from a document you gave us, and all of it is yours to correct.',
-    section: 'About you',
+      "Your details as SAPS holds them. Anything we filled in came from a document you gave us, and all of it is yours to correct.",
+    section: "About you",
+    documents: [
+      {
+        kind: "IDENTITY_DOCUMENT",
+        title: "Your identity document",
+        subtitle: "The page with your photograph.",
+      },
+      {
+        kind: "ADDRESS_CONFIRMATION",
+        title: "Proof of your address",
+        subtitle: "Not older than three months, in your own name.",
+      },
+    ],
   },
   {
-    key: 'dedicated',
-    name: 'Dedicated status',
-    fills: 'fills G items 55 – 60',
-    title: 'Your association and your status',
+    key: "dedicated",
+    name: "Dedicated status",
+    fills: "fills G items 55 – 60",
+    title: "Your association and your status",
     blurb:
-      'A section 16 application rests on this: an accredited association, your membership, and a letter saying you are in good standing.',
-    section: 'Dedicated status',
+      "A section 16 application rests on this: an accredited association, your membership, and a letter saying you are in good standing.",
+    section: "Dedicated status",
+    documents: [
+      {
+        kind: "ASSOCIATION_CARD",
+        title: "Your association membership",
+        subtitle: "The card or certificate.",
+      },
+      {
+        kind: "GOOD_STANDING_LETTER",
+        title: "Your letter of good standing",
+        subtitle: "We read the valid-until date off it.",
+      },
+    ],
   },
   {
-    key: 'storage',
-    name: 'Storage',
-    fills: 'fills the storage boxes',
-    title: 'Where it will be kept',
+    key: "storage",
+    name: "Storage",
+    fills: "fills the storage boxes",
+    title: "Where it will be kept",
     blurb:
-      'The form asks what the safe is and how it is fixed; the DFO asks to see it. Photographs of the safe go in your pack as one annexure.',
-    section: 'Storage and safety',
+      "The form asks what the safe is and how it is fixed; the DFO asks to see it. Photographs of the safe go in your pack as one annexure.",
+    section: "Storage and safety",
+    documents: [
+      {
+        kind: "SAFE_PHOTOGRAPHS",
+        title: "Photographs of your safe",
+        subtitle:
+          "Three: closed with the key out, half open with the key in the door, and the bolts holding it to the wall.",
+      },
+    ],
   },
   {
-    key: 'declarations',
-    name: 'Declarations',
-    fills: 'fills section H',
-    title: 'The questions only you can answer',
+    key: "declarations",
+    name: "Declarations",
+    fills: "fills section H",
+    title: "The questions only you can answer",
     blurb:
-      'Nothing in your Document Centre can answer these and we will never guess at one. They are near the end on purpose — they are quick, and they should not be the first thing you meet.',
-    section: 'History',
+      "Nothing in your Document Centre can answer these and we will never guess at one. They are near the end on purpose — they are quick, and they should not be the first thing you meet.",
+    section: "History",
   },
   {
-    key: 'pack',
-    name: 'Your pack',
-    fills: 'what you take to the counter',
-    title: 'Your pack',
+    key: "pack",
+    name: "Your pack",
+    fills: "what you take to the counter",
+    title: "Your pack",
     blurb:
-      'What we produce, what you gather, and what somebody else has to send. Everything stays here until you print it.',
+      "What we produce, what you gather, and what somebody else has to send. Everything stays here until you print it.",
   },
 ];
 
@@ -165,36 +229,36 @@ export default function WizardRail({
             key={step.key}
             type="button"
             onClick={() => onGo(i)}
-            aria-current={now ? 'step' : undefined}
+            aria-current={now ? "step" : undefined}
             className="flex shrink-0 items-center gap-[7px] rounded-md border-0 px-2 py-1"
             style={{
-              background: now ? 'rgba(200,16,46,.05)' : 'none',
+              background: now ? "rgba(200,16,46,.05)" : "none",
             }}
           >
             <span
               className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
               style={
                 done
-                  ? { background: 'var(--success)', color: '#fff' }
+                  ? { background: "var(--success)", color: "#fff" }
                   : now
-                    ? { background: 'var(--red)', color: '#fff' }
+                    ? { background: "var(--red)", color: "#fff" }
                     : {
-                        border: '1px solid var(--border-hover)',
-                        color: 'var(--text-tertiary)',
-                        background: 'var(--bg-card)',
+                        border: "1px solid var(--border-hover)",
+                        color: "var(--text-tertiary)",
+                        background: "var(--bg-card)",
                       }
               }
             >
-              {done ? '✓' : i + 1}
+              {done ? "✓" : i + 1}
             </span>
             <span
               className="whitespace-nowrap text-[12px]"
               style={
                 now
-                  ? { fontWeight: 700, color: 'var(--text-primary)' }
+                  ? { fontWeight: 700, color: "var(--text-primary)" }
                   : done
-                    ? { fontWeight: 600, color: 'var(--text-secondary)' }
-                    : { color: 'var(--text-tertiary)' }
+                    ? { fontWeight: 600, color: "var(--text-secondary)" }
+                    : { color: "var(--text-tertiary)" }
               }
             >
               {step.name}
