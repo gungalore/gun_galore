@@ -42,6 +42,7 @@ import {
   clearPreviewOptIn,
 } from '@/lib/licence-services-preview';
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
+import ProficiencyAlert from '@/components/licence-pack/proficiency-alert';
 import WizardRail, { WIZARD_STEPS } from '@/components/licence-pack/wizard-rail';
 import { visibleFields } from '@/lib/motivations-api';
 import FieldInput from '@/components/motivation-field-input';
@@ -437,6 +438,15 @@ function StepBody({
 
   return (
     <div className="max-w-[800px] space-y-4">
+      {/* SURFACE TWO OF TWO. Operator, asked where the 117705 alert belongs:
+          "alert appears on both." Here it sits ABOVE the capture cards, so a
+          member who is about to photograph one certificate is told, before
+          they start, that the pack also needs the page from their first
+          course. Below the cards it would be advice arriving after the act. */}
+      {stepKey === 'competency' && (
+        <ProficiencyAlert cover={pack.proficiency} />
+      )}
+
       {/* Capture first — photographing the document is what fills the page. */}
       {documents?.map((d) => (
         <CaptureCards

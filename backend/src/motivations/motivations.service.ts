@@ -109,6 +109,7 @@ import {
   ExtractedField,
   MotivationExtractService,
 } from './motivation-extract.service';
+import { proficiencyCover } from '../common/sa-proficiency-cover';
 import {
   FOLLOW_UP_BATCH,
   fallbackQuestion,
@@ -2564,6 +2565,8 @@ export class MotivationsService {
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
+    const proficiency = await this.proficiencyFor(user.id);
+
     const annexures = buildAnnexures(row.uploads.map((u) => u.kind));
     const letterFor = new Map(annexures.map((a) => [a.kind, a.letter]));
 
@@ -2617,6 +2620,11 @@ export class MotivationsService {
         // for every firearm they have told us they already own.
         answers,
       ),
+      // ⚠️ SERVED, NOT DERIVED ON THE CLIENT. The same object feeds the
+      // checklist banner and the competency step, because two surfaces
+      // computing this separately is how they come to disagree about whether
+      // somebody's paperwork is complete.
+      proficiency,
       // The choices in the wizard's "document type" menu, ordered so the next
       // thing to photograph is the next thing in the list. Served rather than
       // hard-coded in the frontend: the two lists had already drifted apart,
@@ -4589,6 +4597,43 @@ export class MotivationsService {
    * returned by findOne, which is where they belong and where they are already
    * ownership-scoped.
    */
+  /**
+   * Does this member hold unit standard 117705, anywhere?
+   *
+   * Operator, 2026-08-28: "the 117705 must always be requested by the system
+   * and alerted if it's missing."
+   *
+   * ⚠️ EVERY MOTIVATION THEY HAVE EVER MADE, NOT ONE. "I did my 117705 with my
+   * handgun. but i have to supply that statement of results along with the
+   * rifle statement of results if I apply for a rifle." The knowledge unit is
+   * on a 2014 handgun statement; the rifle unit is on a 2021 one. Reading only
+   * the statements attached to THIS application would alert a member who has
+   * held 117705 for eleven years, and would look identical to one who never
+   * did the course. Scoped to the USER, so a second application inherits what
+   * the first one proved.
+   *
+   * ⚠️ ONE METHOD, BECAUSE TWO SURFACES SHOW IT. The checklist and the
+   * competency step both render this, from two different endpoints. Computing
+   * it twice is how they come to disagree, and a member told the pack is
+   * complete on one screen and short on the next stops believing either.
+   */
+  private async proficiencyFor(userId: string) {
+    const statements = await this.prisma.motivationUpload.findMany({
+      where: {
+        motivation: { userId },
+        kind: 'PROFICIENCY_CERTIFICATE',
+        ocrTextEncrypted: { not: null },
+      },
+      select: { ocrTextEncrypted: true },
+    });
+    return proficiencyCover(
+      statements.map(
+        (u) =>
+          decryptJson<{ text?: string }>(u.ocrTextEncrypted ?? '')?.text ?? null,
+      ),
+    );
+  }
+
   async pack(clerkId: string, id: string) {
     await this.quota.assertEnabled();
     const user = await this.requireUser(clerkId);
@@ -4610,9 +4655,13 @@ export class MotivationsService {
     const answers = this.readAnswers(row.answersEncrypted);
     const provenance = parseProvenance(row.answerProvenance);
     const seller = await this.sellerState(row.id);
+    // The wizard's competency step renders this; the document checklist
+    // renders the same value off /uploads. Same method, so they cannot drift.
+    const proficiency = await this.proficiencyFor(user.id);
 
     return {
       id: row.id,
+      proficiency,
       referenceNumber: row.referenceNumber,
       licenceType: row.licenceType,
       status: row.status,

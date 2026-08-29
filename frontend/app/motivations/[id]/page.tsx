@@ -10,6 +10,7 @@ import { licenceCentreApi } from '@/lib/licence-centre-api';
 import { clearDraft, readDraft } from '@/lib/motivation-draft';
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
 import FieldInput from '@/components/motivation-field-input';
+import ProficiencyAlert from '@/components/licence-pack/proficiency-alert';
 import DocumentChecklist, {
   ChecklistRow,
 } from '@/components/document-checklist';
@@ -48,6 +49,7 @@ import {
   MotivationDetail,
   MotivationField,
   DocumentStatus,
+  ProficiencyCover,
   LibraryItem,
   LicenceCentreOffer,
   PickableKind,
@@ -285,6 +287,24 @@ export default function MotivationWizardPage() {
   const [offer, setOffer] = useState<ProfileOffer | null>(null);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [documents, setDocuments] = useState<DocumentStatus | null>(null);
+  const [proficiency, setProficiency] = useState<ProficiencyCover | null>(null);
+
+  /**
+   * Take an uploads response.
+   *
+   * ⚠️ ONE SETTER, BECAUSE THERE ARE SIX CALL SITES. Every one of them used to
+   * write `setDocuments(up.documents)` on its own, and a second piece of state
+   * set beside it in five places out of six is a stale 117705 alert that
+   * survives the very upload that fixed it — visible only to the member, who
+   * would be told a document is missing while looking at it in the list.
+   */
+  const applyUploads = useCallback(
+    (up: { documents: DocumentStatus; proficiency?: ProficiencyCover }) => {
+      applyUploads(up);
+      setProficiency(up.proficiency ?? null);
+    },
+    [],
+  );
   const [uploadKinds, setUploadKinds] = useState<PickableKind[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [messages, setMessages] = useState<FollowUp[]>([]);
@@ -385,7 +405,7 @@ export default function MotivationWizardPage() {
         setAnswers(merged);
         const up = await motivationsApi.uploads(token, id);
         setUploads(up.files);
-        setDocuments(up.documents);
+        applyUploads(up);
         setUploadKinds(up.kinds ?? []);
         setMessages(await motivationsApi.messages(token, id));
         try {
@@ -579,7 +599,7 @@ export default function MotivationWizardPage() {
     motivationsApi
       .uploads(token, id)
       .then((up) => {
-        setDocuments(up.documents);
+        applyUploads(up);
         setUploadKinds(up.kinds ?? []);
       })
       .catch(() => undefined);
@@ -812,7 +832,7 @@ export default function MotivationWizardPage() {
         // patching the lists by hand and risking a disagreement.
         const up = await motivationsApi.uploads(token, id);
         setUploads(up.files);
-        setDocuments(up.documents);
+        applyUploads(up);
         setUploadKinds(up.kinds ?? []);
       } catch {
         // Never costs the page. The member attaches by hand, as before.
@@ -854,7 +874,7 @@ export default function MotivationWizardPage() {
   const refreshUploads = useCallback(async () => {
     const up = await motivationsApi.uploads(token, id);
     setUploads(up.files);
-    setDocuments(up.documents);
+    applyUploads(up);
     setUploadKinds(up.kinds ?? []);
   }, [token, id]);
 
@@ -1047,7 +1067,7 @@ export default function MotivationWizardPage() {
     motivationsApi
       .uploads(token, id)
       .then((up) => {
-        setDocuments(up.documents);
+        applyUploads(up);
         setUploadKinds(up.kinds ?? []);
       })
       .catch(() => undefined);
@@ -2202,6 +2222,16 @@ export default function MotivationWizardPage() {
 
         {documents && documents.needs.length > 0 && (
           <div className="mt-3">
+            {/*
+              SURFACE ONE OF TWO. Operator, asked where the 117705 alert should
+              appear: "alert appears on both." Above the counter, because the
+              counter can read "7 of 7 required documents" while the pack is
+              still short the one unit standard SAPS asks for on every
+              application — 117705 is not a document ROW, it is a code that has
+              to be present on one of them.
+            */}
+            <ProficiencyAlert cover={proficiency ?? undefined} className="mb-3" />
+
             <div className="mb-2 flex items-center justify-between gap-3">
               <span className="text-sm font-medium">
                 {documents.missingRequired.length === 0
@@ -2384,7 +2414,7 @@ export default function MotivationWizardPage() {
             await motivationsApi.refileUpload(token, id, uploadId, nextKind);
             const up = await motivationsApi.uploads(token, id);
             setUploads(up.files);
-            setDocuments(up.documents);
+            applyUploads(up);
             setUploadKinds(up.kinds ?? []);
           }}
           onAdd={addOneUpload}

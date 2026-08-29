@@ -128,6 +128,20 @@ export const WIZARD_STEPS: WizardStep[] = [
         subtitle:
           "The SAPS card, or the CFR printout — whichever you were issued.",
       },
+      // ⚠️ THE STATEMENT OF RESULTS, WHICH THE STEP NEVER ASKED FOR.
+      // Operator, 2026-08-28: "proficiency certificates come with codes on
+      // their statement of result. That is the page we are looking for, not
+      // the certificate itself." The competency certificate proves SAPS
+      // issued competency; the statement of results is what carries 117705
+      // and the code for the firearm type, and the step had no line for it —
+      // so the alert beside it could name a document the member was never
+      // given anywhere to attach.
+      {
+        kind: "PROFICIENCY_CERTIFICATE",
+        title: "Your statements of results",
+        subtitle:
+          "The page listing the unit standard codes — 117705 plus the one for this firearm type. Add every statement you have; the codes are read off all of them together.",
+      },
     ],
   },
   {

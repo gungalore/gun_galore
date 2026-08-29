@@ -79,6 +79,29 @@ export const VAULTABLE: ReadonlySet<MotivationUploadKind> = new Set([
   MotivationUploadKind.GOOD_STANDING_LETTER,
   MotivationUploadKind.COMPETENCY_CERTIFICATE,
   MotivationUploadKind.ASSOCIATION_CARD,
+  // ⚠️ ADDED 2026-08-29, AND THE SAME PULL-BUT-NEVER-SAVE BUG AS THE FOUR
+  // ABOVE. Operator: "we need to keep the documents for future use if the
+  // applicant has other motivations they would need to do."
+  //
+  // CREDENTIAL_TO_UPLOAD has mapped PROFICIENCY and FIREARM_LICENCE into a
+  // motivation since the module was written, so both could always be PULLED
+  // out of the Centre — and neither could ever be SAVED to it. A statement of
+  // results photographed on an application lived on that application's
+  // two-year retention clock and then vanished.
+  //
+  // A statement of results is the WORST document to lose. It never expires,
+  // and every future application needs it again: the operator holds 117705 on
+  // a 2014 handgun statement and must file that same page alongside a rifle
+  // statement to apply for a rifle. Losing it means going back to a training
+  // provider for a reprint of a course passed a decade ago.
+  MotivationUploadKind.PROFICIENCY_CERTIFICATE,
+  // ⚠️ CURRENT_LICENCE IS DELIBERATELY NOT HERE, AND IT WAS TRIED. A firearm
+  // licence is pullable from the Centre and looks like the same omission, but
+  // the spec below already ruled on it: it is tied to one firearm, and the
+  // Licence Centre is the route by which a member's own licences reach the
+  // vault — adopting them from an application as well would file a second row
+  // for a licence the Centre already holds. Left to the operator to decide,
+  // not overruled here.
 ]);
 
 /**
@@ -116,6 +139,13 @@ const VAULT_KIND: Partial<Record<MotivationUploadKind, CredentialKind>> = {
   // note above this map describes.
   [MotivationUploadKind.GOOD_STANDING_LETTER]: CredentialKind.DEDICATED_DISCIPLINE,
   [MotivationUploadKind.ASSOCIATION_CARD]: CredentialKind.DEDICATED_DISCIPLINE,
+  // ⚠️ REQUIRED IN THE SAME BREATH AS THE TWO VAULTABLE ENTRIES ABOVE.
+  // CredentialKind has no PROFICIENCY_CERTIFICATE and no CURRENT_LICENCE — it
+  // calls them PROFICIENCY and FIREARM_LICENCE — so without these two lines
+  // vaultKindFor's cast fallback hands Prisma a value its enum does not
+  // contain, the create rejects, and the swallowed caller never says so.
+  // Adopted into a hole, exactly as the note above this map warns.
+  [MotivationUploadKind.PROFICIENCY_CERTIFICATE]: CredentialKind.PROFICIENCY,
 };
 
 /**

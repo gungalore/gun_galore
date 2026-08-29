@@ -450,6 +450,23 @@ export interface AddedUpload extends UploadRow {
   confident?: boolean;
 }
 
+/**
+ * Whether this member holds unit standard 117705, across every document.
+ *
+ * ⚠️ SERVED, NEVER DERIVED HERE. The answer spans every motivation they have
+ * ever made — 117705 is usually on the statement from their FIRST course — so
+ * the client cannot compute it from the documents on this application, and a
+ * client that tried would alert on a member who has held it for a decade.
+ */
+export interface ProficiencyCover {
+  state: 'CONFIRMED' | 'MISSING' | 'UNREAD';
+  held: string[];
+  endorsements: string[];
+  unknown: string[];
+  unreadable: number;
+  alert: string | null;
+}
+
 export interface UploadRow {
   id: string;
   kind: string;
@@ -666,6 +683,13 @@ export interface MotivationPack {
   status: string;
   checklist: ChecklistProgress;
   coverage: Saps271Coverage;
+  /**
+   * Whether they hold 117705, across every application they have made.
+   *
+   * Optional so an older cached response, or a server not yet carrying the
+   * field, renders nothing rather than an alert built from undefined.
+   */
+  proficiency?: ProficiencyCover;
   provenance: ProvenanceMap;
   prefill: {
     /**
@@ -840,6 +864,7 @@ export const motivationsApi = {
       files: UploadRow[];
       documents: DocumentStatus;
       kinds: PickableKind[];
+      proficiency: ProficiencyCover;
     }>(
       t,
       `/${id}/uploads`,
@@ -854,6 +879,19 @@ export const motivationsApi = {
           requiredHave: 0,
         },
         kinds: [],
+        // ⚠️ THE FALLBACK IS SILENT, NOT ACCUSING. `request` uses this when the
+        // call fails, and a network error must never render as "SAPS wants a
+        // certificate you have not given us". UNREAD with no alert says
+        // nothing, which is the only honest thing to say about a response we
+        // never received.
+        proficiency: {
+          state: 'UNREAD',
+          held: [],
+          endorsements: [],
+          unknown: [],
+          unreadable: 0,
+          alert: null,
+        },
       },
     ),
 
