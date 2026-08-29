@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@clerk/nextjs';
+import { PACK_SCREEN_SHIPPED } from '@/lib/licence-services-preview';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -84,6 +85,18 @@ export default function MotivationsPage() {
    * still rendered five enabled buttons that could not work.
    */
   const [canStart, setCanStart] = useState(true);
+
+  /**
+   * Where opening an application goes.
+   *
+   * ⚠️ THE BUILD FLAG ALONE WAS NOT ENOUGH, AND THAT IS WHY THE REBUILT
+   * DESIGN SHIPPED INVISIBLE. NEXT_PUBLIC_LICENCE_SERVICES_ENABLED only
+   * decides whether /licence-services/[id] will OPEN; this Centre still
+   * pushed everybody to /motivations/[id] regardless, so turning the flag on
+   * would have changed nothing anybody could see. One switch now drives both.
+   */
+  const packHref = (mid: string) =>
+    PACK_SCREEN_SHIPPED ? `/licence-services/${mid}` : `/motivations/${mid}`;
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // ── MAY WE KEEP YOUR DOCUMENTS? ─────────────────────────────────────
@@ -173,7 +186,7 @@ export default function MotivationsPage() {
                 <button
                   type="button"
                   className="flex w-full items-center justify-between gap-4 p-3 text-left text-sm hover:bg-[var(--bg-card-hover)]"
-                  onClick={() => router.push(`/motivations/${r.id}`)}
+                  onClick={() => router.push(packHref(r.id))}
                 >
                   <span>
                     <span className="font-medium">{r.referenceNumber}</span>
@@ -234,7 +247,7 @@ export default function MotivationsPage() {
                   setError(null);
                   try {
                     const created = await motivationsApi.create(token, t.value);
-                    router.push(`/motivations/${created.id}`);
+                    router.push(packHref(created.id));
                   } catch (e) {
                     setError(
                       e instanceof MotivationApiError
