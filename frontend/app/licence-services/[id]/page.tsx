@@ -34,6 +34,9 @@ import {
   type MotivationField,
   type MotivationPack,
   Suggestion,
+  UploadRow,
+  PickableKind,
+  AddedUpload,
 } from '@/lib/motivations-api';
 import { readDraft } from '@/lib/motivation-draft';
 import { licenceLabel, LICENCE_SECTION } from '@/lib/licence-labels';
@@ -43,6 +46,8 @@ import {
   clearPreviewOptIn,
 } from '@/lib/licence-services-preview';
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
+import BulkCapture from '@/components/licence-pack/bulk-capture';
+import AttachedDocuments from '@/components/licence-pack/attached-documents';
 import ExtractionReview from '@/components/licence-pack/extraction-review';
 import { mergeReads } from '@/lib/extraction-review-rules';
 import ProficiencyAlert from '@/components/licence-pack/proficiency-alert';
@@ -76,6 +81,10 @@ export default function LicenceServicesWizardPage() {
   const [busyKind, setBusyKind] = useState<string | null>(null);
   const [uploadErr, setUploadErr] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [uploads, setUploads] = useState<UploadRow[]>([]);
+  const [pickable, setPickable] = useState<PickableKind[]>([]);
+  /** The one document a lifecycle action is working on, so its row can grey. */
+  const [docBusy, setDocBusy] = useState<string | null>(null);
 
   const token = useCallback(async () => getToken(), [getToken]);
 
@@ -95,6 +104,12 @@ export default function LicenceServicesWizardPage() {
           motivationsApi.get(token, id),
         ]);
         const f = await motivationsApi.fields(token, d.licenceType);
+        // The upload list is what makes the attached documents visible and
+        // actionable — without it the wizard can add a document and never
+        // show it again.
+        const up = await motivationsApi.uploads(token, id);
+        setUploads(up.files);
+        setPickable(up.kinds ?? []);
         if (!alive) return;
         setPack(p);
         setFields(f.fields);
@@ -192,6 +207,9 @@ export default function LicenceServicesWizardPage() {
         // must not do is overwrite silently, which is why nothing here
         // touches `answers`.
         if (read.length) setSuggestions(read);
+        const up = await motivationsApi.uploads(token, id);
+        setUploads(up.files);
+        setPickable(up.kinds ?? []);
       } catch (ex) {
         setUploadErr(
           ex instanceof MotivationApiError
@@ -203,6 +221,110 @@ export default function LicenceServicesWizardPage() {
       }
     },
     [id, token],
+  );
+
+  /**
+   * Re-read everything a document action can change.
+   *
+   * ⚠️ THE PACK AND THE UPLOAD LIST GO TOGETHER. Removing a document changes
+   * the checklist, the annexure lettering and the SAPS 271 meter, and a list
+   * that refreshed on its own would leave the member looking at a coverage
+   * figure for a pack that no longer exists.
+   */
+  /**
+   * Add one file and hand back what the server made of it.
+   *
+   * ⚠️ RETURNS THE ROW, unlike addFiles which only needs the suggestions. The
+   * bulk door has to know what each file was FILED AS to offer a correction —
+   * that is the whole review queue — so it needs the AddedUpload itself.
+   */
+  const addOne = useCallback(
+    async (kind: string, file: File) => {
+      const added = await motivationsApi.addUpload(token, id, kind, file);
+      if (added.suggestions?.length) {
+        setSuggestions((cur) => mergeReads(cur, added.suggestions ?? []));
+      }
+      return added;
+    },
+    [id, token],
+  );
+
+  const refreshDocs = useCallback(async () => {
+    const [p, up] = await Promise.all([
+      motivationsApi.pack(token, id),
+      motivationsApi.uploads(token, id),
+    ]);
+    setPack(p);
+    setUploads(up.files);
+    setPickable(up.kinds ?? []);
+    // ⚠️ NOT a separate proficiency state here. This page reads the 117705
+    // cover off pack.proficiency, which the refetch above already updated —
+    // a second copy would be the stale-alert bug the old page had.
+  }, [id, token]);
+
+  /**
+   * Run one document action, then refresh.
+   *
+   * Every action shares the same shape — grey the row, do the thing, re-read,
+   * report — so they share the runner rather than four near-identical copies
+   * that drift the first time one of them learns something.
+   */
+  const docAction = useCallback(
+    async (uploadId: string, run: () => Promise<unknown>, failed: string) => {
+      setDocBusy(uploadId);
+      setUploadErr(null);
+      try {
+        await run();
+        await refreshDocs();
+      } catch (ex) {
+        setUploadErr(ex instanceof MotivationApiError ? ex.message : failed);
+      } finally {
+        setDocBusy(null);
+      }
+    },
+    [refreshDocs],
+  );
+
+  /**
+   * Open one document, so "attached" can be checked rather than believed.
+   *
+   * ⚠️ NO 'noopener', AND THAT IS DELIBERATE — lifted verbatim from the old
+   * page, which learned it the hard way. Per spec, window.open with noopener
+   * returns NULL: the flag exists precisely to sever the handle. So the tab
+   * opened blank and was never filled, and the fallback then navigated the
+   * CURRENT window out from under the member. Safe to drop here in a way it
+   * would not be for a foreign URL: this is a same-origin blob we mint
+   * ourselves a line later, and `opener` is nulled anyway.
+   */
+  const viewUpload = useCallback(
+    async (uploadId: string) => {
+      const tab = window.open('', '_blank');
+      if (tab) tab.opener = null;
+      try {
+        const url = await motivationsApi.uploadBlobUrl(token, id, uploadId);
+        if (tab) {
+          tab.location.href = url;
+        } else {
+          // Genuinely blocked. Hand it over rather than lose it — a download
+          // beats replacing the page they are working in.
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'document';
+          a.click();
+        }
+        // Long enough for the tab to have loaded it; the blob is pinned until
+        // then and leaked for the life of the tab if we never let go.
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (e) {
+        tab?.close();
+        setUploadErr(
+          e instanceof MotivationApiError
+            ? e.message
+            : 'We could not open that document.',
+        );
+      }
+    },
+    [token, id],
   );
 
   /**
@@ -369,6 +491,32 @@ export default function LicenceServicesWizardPage() {
             stepKey={current.key}
             sections={current.sections}
             documents={current.documents}
+            uploads={uploads}
+            pickable={pickable}
+            docBusy={docBusy}
+            onView={viewUpload}
+            onRemove={(uid) =>
+              docAction(
+                uid,
+                () => motivationsApi.removeUpload(token, id, uid),
+                'We could not remove that document.',
+              )
+            }
+            onReread={(uid) =>
+              docAction(
+                uid,
+                () => motivationsApi.rereadUpload(token, id, uid),
+                'We could not read that document again.',
+              )
+            }
+            onRefile={(uid, kind) =>
+              docAction(
+                uid,
+                () => motivationsApi.refileUpload(token, id, uid, kind),
+                'We could not change that document type.',
+              )
+            }
+            onAdd={addOne}
             motivationId={id}
             busyKind={busyKind}
             onFiles={addFiles}
@@ -428,6 +576,14 @@ function StepBody({
   documents,
   motivationId,
   busyKind,
+  uploads,
+  pickable,
+  docBusy,
+  onView,
+  onRemove,
+  onReread,
+  onRefile,
+  onAdd,
   onFiles,
   pack,
   fields,
@@ -443,6 +599,14 @@ function StepBody({
   motivationId: string;
   busyKind: string | null;
   onFiles: (kind: string, files: File[]) => void;
+  uploads: UploadRow[];
+  pickable: PickableKind[];
+  docBusy: string | null;
+  onView: (id: string) => void;
+  onRemove: (id: string) => void;
+  onReread: (id: string) => void;
+  onRefile: (id: string, kind: string) => Promise<void>;
+  onAdd: (kind: string, file: File) => Promise<AddedUpload | undefined>;
   pack: MotivationPack;
   fields: MotivationField[];
   answers: Record<string, string>;
@@ -470,7 +634,21 @@ function StepBody({
           section, start a new one — the documents and the questions are not the
           same.
         </p>
-      </div>
+      
+        {/* ⚠️ THE ONE DOOR THAT DOES NOT ASK WHICH DOCUMENT IT IS. Every
+            capture card in the wizard is bound to a single kind, so a member
+            has to know what each scan is before they can hand it over. This
+            is on step one because somebody with a folder ready should be able
+            to give us the folder and answer questions afterwards, which is
+            the whole point of reading documents at all. */}
+        <div className="pt-2">
+          <BulkCapture
+            pickable={pickable}
+            onAdd={onAdd}
+            onRefile={onRefile}
+          />
+        </div>
+</div>
     );
   }
 
@@ -520,6 +698,21 @@ function StepBody({
       {stepKey === 'competency' && (
         <ProficiencyAlert cover={pack.proficiency} />
       )}
+
+      {/* ⚠️ WHAT THEY ALREADY GAVE US, BEFORE THE CAMERA. A member arriving
+          at a step they have half-finished should see the document sitting
+          there, not an empty camera implying nothing was attached — and the
+          only way to correct a wrong file is to be shown it. */}
+      <AttachedDocuments
+        documents={uploads}
+        kinds={(documents ?? []).map((d) => d.kind)}
+        pickable={pickable}
+        busyId={docBusy}
+        onView={onView}
+        onRemove={onRemove}
+        onReread={onReread}
+        onRefile={onRefile}
+      />
 
       {/* Capture first — photographing the document is what fills the page. */}
       {documents?.map((d) => (
