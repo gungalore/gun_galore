@@ -5,6 +5,7 @@ import { fieldsFor } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
+import { readMarkers } from '../common/document-markers';
 import {
   firearmIdentityPrompt,
   parseFirearmReading,
@@ -564,6 +565,39 @@ export class MotivationExtractService {
     bytes: Buffer;
     mimeType: string;
   }): Promise<{ kind: MotivationUploadKind; confident: boolean } | null> {
+    // ── MARKERS FIRST, THE MODEL FOR WHAT NEEDS JUDGEMENT ──────────
+    //
+    // ⚠️ THE MODEL WAS CLASSIFYING DOCUMENTS THAT SAY WHAT THEY ARE. A PFTC
+    // statement of results prints the council's name and a registered unit
+    // standard; a competency certificate prints SAPS 524. Paying a vision
+    // model to read a form number is spending money to be less certain — the
+    // marker is free, instant, and cannot hallucinate.
+    //
+    // ⚠️ AND A MISS IS NOT A FAILURE. Operator, 2026-08-29: proof of address,
+    // a letter of good standing and a dedicated-status certificate "will
+    // always differ from person to person... I need the AI to interpret these
+    // documents and decide what they are". Those carry no marker by nature,
+    // fall through here, and the model below is the right tool rather than a
+    // consolation prize. See MODEL_ONLY_KINDS.
+    const ocr =
+      this.vision && args.mimeType.startsWith('image/')
+        ? await this.vision.text(args.bytes).catch(() => null)
+        : null;
+
+    if (ocr) {
+      const verdict = readMarkers(ocr);
+      if (verdict) {
+        this.logger.log(
+          `Classified ${verdict.kind} by ${verdict.strength} marker, no model call`,
+        );
+        // ⚠️ `confident` ONLY ON A DEFINITIVE MARKER. A form number is the
+        // document; a unit-standard code beside its title is strong evidence
+        // and still worth a member's glance, and `confident: false` is what
+        // puts the correction dropdown in front of them.
+        return { kind: verdict.kind, confident: verdict.strength === 'definitive' };
+      }
+    }
+
     if (!this.client) return null;
 
     const block = contentBlock(args.bytes, args.mimeType);
