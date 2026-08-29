@@ -300,7 +300,14 @@ export default function MotivationWizardPage() {
    */
   const applyUploads = useCallback(
     (up: { documents: DocumentStatus; proficiency?: ProficiencyCover }) => {
-      applyUploads(up);
+      // ⚠️ setDocuments, NOT applyUploads. This line read `applyUploads(up)`
+      // for one deploy and took the whole page down: a blanket rewrite of
+      // `setDocuments(up.documents)` into `applyUploads(up)` hit SEVEN call
+      // sites, and the seventh was this one — the body of the function doing
+      // the replacing. Infinite recursion, a stack overflow swallowed by the
+      // loader's catch, and every application reading "We could not open this
+      // application." with no console error and every API call returning 200.
+      setDocuments(up.documents);
       setProficiency(up.proficiency ?? null);
     },
     [],
