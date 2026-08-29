@@ -39,6 +39,8 @@ import {
   AddedUpload,
   LibraryItem,
   TokenGetter,
+  SAPS271_OPT_KEY,
+  SAPS271_FILL,
 } from '@/lib/motivations-api';
 import { readDraft } from '@/lib/motivation-draft';
 import { licenceLabel, LICENCE_SECTION } from '@/lib/licence-labels';
@@ -52,6 +54,7 @@ import LibraryPicker from '@/components/library-picker';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
 import BulkCapture from '@/components/licence-pack/bulk-capture';
+import PackFinish from '@/components/licence-pack/pack-finish';
 import { VAULT_PREFIXES } from './vault-prefixes';
 import AttachedDocuments from '@/components/licence-pack/attached-documents';
 import ExtractionReview from '@/components/licence-pack/extraction-review';
@@ -650,6 +653,14 @@ export default function LicenceServicesWizardPage() {
             keeping={keeping}
             token={token}
             onPickFromLibrary={attachFromLibrary}
+            outstanding={missingRequired}
+            saps271Filled={(answers[SAPS271_OPT_KEY] ?? '') === SAPS271_FILL}
+            onGenerated={(st) => {
+              // The pack step re-reads everything: a finished document changes
+              // the checklist, the coverage meter and the status chip at once.
+              setPack((cur) => (cur ? { ...cur, status: st } : cur));
+              void refreshDocs();
+            }}
             onVaultApplied={(filled, missingNow) => {
               // ⚠️ THE APPLICANT'S OWN EDITS WIN over what arrives, the same
               // rule the document reading follows. A vault value must never
@@ -696,13 +707,16 @@ export default function LicenceServicesWizardPage() {
         <button
           type="button"
           onClick={() =>
-            last
-              ? router.push(`/motivations/${id}`)
-              : setStep((n) => Math.min(steps.length - 1, n + 1))
+            // ⚠️ THE LAST STEP IS A DESTINATION, NOT A HANDOFF. This read
+            // `router.push('/motivations/${id}')` — the single clearest proof
+            // the rebuilt wizard could not stand alone. The pack step now
+            // finishes the document itself; the button simply stops.
+            last ? undefined : setStep((n) => Math.min(steps.length - 1, n + 1))
           }
+          disabled={last}
           className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-6 py-[11px] text-[13.5px] font-semibold text-white"
         >
-          {last ? 'Open your pack' : 'Continue'}
+          {last ? 'Your pack' : 'Continue'}
         </button>
       </div>
     </div>
@@ -725,6 +739,9 @@ function StepBody({
   token,
   onPickFromLibrary,
   onVaultApplied,
+  outstanding,
+  saps271Filled,
+  onGenerated,
   onView,
   onRemove,
   onReread,
@@ -753,6 +770,9 @@ function StepBody({
   token: TokenGetter;
   onPickFromLibrary: (item: LibraryItem, placeConfirmed?: boolean) => Promise<void>;
   onVaultApplied: (filled: Record<string, string>, missing: string[]) => void;
+  outstanding: string[];
+  saps271Filled: boolean;
+  onGenerated: (status: string) => void;
   onView: (id: string) => void;
   onRemove: (id: string) => void;
   onReread: (id: string) => void;
@@ -808,6 +828,20 @@ function StepBody({
   if (stepKey === 'pack') {
     return (
       <div className="max-w-[820px] space-y-6">
+        {/* ⚠️ THE WIZARD FINISHES HERE NOW. This step used to be a read-only
+            checklist whose only action was a button that navigated to the old
+            page — a member walked eleven steps in the new design and was
+            handed back to the old one to actually get their document. */}
+        <PackFinish
+          token={token}
+          motivationId={motivationId}
+          reference={pack.referenceNumber}
+          status={pack.status}
+          outstanding={outstanding}
+          saps271Filled={saps271Filled}
+          onStatus={onGenerated}
+        />
+
         {pack.checklist.sections.map((s) => (
           <PackGroup
             key={s.key}

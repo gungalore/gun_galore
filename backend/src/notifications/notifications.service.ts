@@ -4249,7 +4249,19 @@ export class NotificationsService {
      */
     outcome: 'ready' | 'held' | 'failed';
   }) {
-    const path = `/motivations/${d.motivationId}`;
+    // ⚠️ THE REBUILT WIZARD, NOT THE OLD PAGE — AND IT IS SAFE IN BOTH STATES.
+    //
+    // This notification is sent after every generation, so its link is the one
+    // that outlives the cutover: every SMS and email already delivered carries
+    // whatever path was hardcoded when it was sent, and none of them can be
+    // recalled. Pointing it at the page we are retiring would mean every
+    // member who generates from the new wizard is sent back to the old one.
+    //
+    // It does NOT need the build flag. /licence-services/[id] redirects to
+    // /motivations/[id] whenever the flag is off, so this path resolves
+    // correctly in both directions — which is exactly the property a link
+    // sitting in somebody's inbox for a year needs.
+    const path = `/licence-services/${d.motivationId}`;
     const url = `${this.appUrl}${path}`;
     const ready = d.outcome === 'ready';
     const failed = d.outcome === 'failed';

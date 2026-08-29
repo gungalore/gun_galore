@@ -76,10 +76,16 @@ describe('motivationFinished copy', () => {
       const { svc, sent } = makeService();
       await svc.motivationFinished({ ...BASE, outcome: 'ready' });
       expect(sent.sms[0]).toMatch(/is ready/);
+      // ⚠️ THE REBUILT WIZARD, NOT THE OLD PAGE. This link outlives the
+      // cutover — every SMS already delivered carries whatever path was
+      // hardcoded when it was sent, and none of them can be recalled. It
+      // needs no build flag: /licence-services/[id] redirects to
+      // /motivations/[id] whenever the flag is off, so it resolves in both
+      // directions.
       expect(sent.sms[0]).toContain(
-        `https://alloutdoor.co.za/motivations/${BASE.motivationId}`,
+        `https://alloutdoor.co.za/licence-services/${BASE.motivationId}`,
       );
-      expect(sent.inbox[0].url).toBe(`/motivations/${BASE.motivationId}`);
+      expect(sent.inbox[0].url).toBe(`/licence-services/${BASE.motivationId}`);
     });
 
     it('promises NOTHING about the outcome at SAPS', async () => {
