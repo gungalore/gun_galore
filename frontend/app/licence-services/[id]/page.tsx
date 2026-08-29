@@ -38,6 +38,11 @@ import {
   type MotivationPack,
 } from '@/lib/motivations-api';
 import { readDraft } from '@/lib/motivation-draft';
+import {
+  PACK_SCREEN_SHIPPED,
+  canOpenPackScreen,
+  clearPreviewOptIn,
+} from '@/lib/licence-services-preview';
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
 import PackSection from '@/components/licence-pack/pack-section';
 import { licenceLabel } from '@/lib/licence-labels';
@@ -45,7 +50,10 @@ import PackGroup from '@/components/licence-pack/pack-group';
 import PrefillBanner from '@/components/licence-pack/prefill-banner';
 import Saps271Meter from '@/components/licence-pack/saps271-meter';
 
-const FLAG_ON = process.env.NEXT_PUBLIC_LICENCE_SERVICES_ENABLED === 'true';
+// ⚠️ RESOLVED IN AN EFFECT, NOT AT MODULE SCOPE. The build-time half of this
+// is a constant, but the preview half reads sessionStorage, which does not
+// exist while the page is rendered on the server — reading it up here is a
+// hydration mismatch and a crash.
 
 export default function LicenceServicesPackPage() {
   const { getToken } = useAuth();
@@ -53,6 +61,9 @@ export default function LicenceServicesPackPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
 
+  // null = not decided yet. Nothing renders and nothing redirects until it is
+  // resolved, so a member never sees a flash of the wrong screen.
+  const [allowed, setAllowed] = useState<boolean | null>(null);
   const [pack, setPack] = useState<MotivationPack | null>(null);
   const [fields, setFields] = useState<MotivationField[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -66,16 +77,18 @@ export default function LicenceServicesPackPage() {
 
   const token = useCallback(async () => getToken(), [getToken]);
 
-  // ⚠️ THE FLAG REDIRECT RUNS IN AN EFFECT, NOT DURING RENDER. Calling
+  // ⚠️ THE REDIRECT RUNS IN AN EFFECT, NOT DURING RENDER. Calling
   // router.replace() in the render body of a client component fires during
   // hydration and React warns about updating another component while
   // rendering. An effect that runs once is the boring, correct shape.
   useEffect(() => {
-    if (!FLAG_ON) router.replace(`/motivations/${id}`);
+    const ok = canOpenPackScreen(window.location.search);
+    setAllowed(ok);
+    if (!ok) router.replace(`/motivations/${id}`);
   }, [id, router]);
 
   useEffect(() => {
-    if (!FLAG_ON) return;
+    if (!allowed) return;
     let alive = true;
     (async () => {
       try {
@@ -114,7 +127,7 @@ export default function LicenceServicesPackPage() {
     return () => {
       alive = false;
     };
-  }, [id, token]);
+  }, [allowed, id, token]);
 
   const autosave = useMotivationAutosave({
     id,
@@ -134,11 +147,33 @@ export default function LicenceServicesPackPage() {
 
   const missing = useMemo(() => new Set(missingRequired), [missingRequired]);
 
-  // Nothing to paint while the effect above is bouncing them to the wizard.
-  if (!FLAG_ON) return null;
+  // Nothing to paint until the gate is resolved, or while the effect above is
+  // bouncing them to the wizard.
+  if (!allowed) return null;
 
   return (
     <main className="mx-auto w-full max-w-[var(--page-max)] px-4 py-6">
+      {/* ⚠️ SAY IT IS A PREVIEW, LOUDLY. Somebody who opted in three pages ago
+          and forgot must not mistake an unfinished screen for the real one and
+          conclude their application has lost three sections. */}
+      {!PACK_SCREEN_SHIPPED && (
+        <div
+          className="mb-4 rounded-[var(--r-md)] border px-3 py-2"
+          style={{
+            borderColor: 'var(--gold-line)',
+            background: 'var(--gold-wash)',
+          }}
+        >
+          <p className="text-[13px] text-[var(--text-primary)]">
+            <span className="font-semibold">Preview.</span> This is the new pack
+            screen, still being built. It cannot yet ask about the firearms you
+            already own, your declarations or your safe — the classic view
+            below does all of that, and everything you type here is saved to
+            the same application.
+          </p>
+        </div>
+      )}
+
       {/* ⚠️ ABOVE THE FOLD, IN EVERY STATE, INCLUDING THE ERROR ONE. */}
       <ClassicViewLink id={id} />
 
@@ -253,12 +288,30 @@ export default function LicenceServicesPackPage() {
  */
 function ClassicViewLink({ id }: { id: string }) {
   return (
-    <Link
-      href={`/motivations/${id}`}
-      className="inline-flex items-center gap-1 text-sm text-[var(--text-secondary)] underline"
-    >
-      Continue in classic view
-    </Link>
+    <div className="flex flex-wrap items-center gap-3">
+      <Link
+        href={`/motivations/${id}`}
+        className="inline-flex items-center gap-1 text-sm text-[var(--text-secondary)] underline"
+      >
+        Continue in classic view
+      </Link>
+
+      {/* ⚠️ A WAY OUT OF THE PREVIEW, NOT JUST A WAY BACK TO THE OTHER SCREEN.
+          Without this, opting in is a one-way door for the rest of the tab —
+          every later visit lands here again and the member has no idea why. */}
+      {!PACK_SCREEN_SHIPPED && (
+        <button
+          type="button"
+          onClick={() => {
+            clearPreviewOptIn();
+            window.location.href = `/motivations/${id}`;
+          }}
+          className="text-xs text-[var(--text-tertiary)] underline"
+        >
+          Leave preview
+        </button>
+      )}
+    </div>
   );
 }
 
