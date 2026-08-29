@@ -227,7 +227,12 @@ export const WIZARD_STEPS: WizardStep[] = [
     // decide — this step just has to have a home for all three, and before
     // this step existed it had none for any of them.
     sections: ["Your circumstances", "Experience", "The existing licence"],
-    // ⚠️ THREE DOCUMENTS THAT ONLY EVER ARRIVE IF SOMEBODY ASKS. Nobody
+    // ⚠️ TWO DOCUMENTS THAT ONLY EVER ARRIVE IF SOMEBODY ASKS.
+    // (A character reference was a third until 2026-08-29. Operator: "It
+    // serves no purpose. Only time someone needs these is for the application
+    // for a competency" — which is right: a reference speaks to whether a
+    // person is FIT to hold a firearm, the section 9 enquiry, not to why THIS
+    // firearm is needed for THIS purpose.) Nobody
     // attaches a shooting log or a character reference unprompted, and they
     // are exactly what separates a thin application from a good one. All
     // three were on the pack's checklist with no capture card anywhere in the
@@ -245,12 +250,6 @@ export const WIZARD_STEPS: WizardStep[] = [
         title: "An incident report or SAPS case number",
         subtitle:
           "Only if something has actually happened. Never invent one — an unsupported claim is worse than no claim.",
-      },
-      {
-        kind: "CHARACTER_REFERENCE",
-        title: "A character reference",
-        subtitle:
-          "Someone who will vouch for you. You can upload a signed letter here, or invite them to complete one.",
       },
     ],
   },

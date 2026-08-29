@@ -19,7 +19,6 @@ import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
 import MotivationTemplatePicker from '@/components/motivation-template-picker';
 import MotivationCoverPhoto from '@/components/motivation-cover-photo';
-import MotivationWitnesses from '@/components/motivation-witnesses';
 import MotivationSellerConsent from '@/components/motivation-seller-consent';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
@@ -2262,21 +2261,21 @@ export default function MotivationWizardPage() {
               renderControls={(r) => {
                 const k = uploadKindFor(r);
 
-                // ⚠️ THE CHARACTER REFERENCE ROW HAS NO UPLOAD AT ALL, and
-                // that is the point of it now. Witnesses complete and sign
-                // from a link — there is no paper to photograph, nothing in a
-                // library to reuse and no file to attach, so a camera button
-                // and a paperclip on this row are three ways to start a task
-                // that does not exist. Operator, 2026-08-21: "Move the two
-                // invites to [this row] and remove the upload function from it
-                // completely."
-                if (k === 'CHARACTER_REFERENCE') {
-                  return (
-                    <span className="block w-full">
-                      <MotivationWitnesses motivationId={id} />
-                    </span>
-                  );
-                }
+                // ⚠️ THE CHARACTER REFERENCE ROW IS GONE, AND SO IS THE
+                // WITNESS INVITE THAT HUNG OFF IT. Operator, 2026-08-29:
+                // "lets take out the character reference out of the
+                // motivations. It serves no purpose. Only time someone needs
+                // these is for the application for a competency."
+                //
+                // No licence type asks for the kind any more, so this branch
+                // could never be reached — a row that does not exist cannot
+                // render its controls. Removed rather than left as reachable-
+                // looking dead code.
+                //
+                // The witness MODULE is untouched and still works end to end
+                // (backend service, controller, and the public /witness/[token]
+                // form). It is simply unreachable from a motivation now, and
+                // is the obvious foundation for a competency application.
 
                 // ⚠️ SEVERAL FILES, ONE AFTER ANOTHER. This took files[0] and
                 // dropped the rest, which was harmless while every row wanted

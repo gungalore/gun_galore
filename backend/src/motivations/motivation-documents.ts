@@ -235,27 +235,32 @@ const EXPECTED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   S24_RENEWAL: [],
 };
 
-/** Not demanded, but this is what makes a motivation land. */
+/**
+ * Not demanded, but this is what makes a motivation land.
+ *
+ * ⚠️ NO CHARACTER REFERENCE, BY DECISION. Operator, 2026-08-29: "lets take
+ * out the character reference out of the motivations. It serves no purpose.
+ * Only time someone needs these is for the application for a competency."
+ *
+ * That is the right reading of the Act: a character reference speaks to
+ * whether a person is FIT to hold a firearm, which is the section 9
+ * competency enquiry — the SAPS 517 application. A motivation argues why THIS
+ * firearm is needed for THIS purpose under section 13/15/16/24, and a letter
+ * from a friend says nothing about that. Asking for one was asking a member
+ * to go and get a document that could not help them.
+ *
+ * The kind survives in the enum with its label, so an upload attached before
+ * this decision still renders and still prints as an annexure. Nothing asks
+ * for it, and no step offers a door.
+ */
 const STRENGTHENS: Record<MotivationLicenceType, MotivationUploadKind[]> = {
-  S13_SELF_DEFENCE: ['INCIDENT_REPORT', 'CHARACTER_REFERENCE'],
+  S13_SELF_DEFENCE: ['INCIDENT_REPORT'],
   // The shooting log is the difference between saying you hunt and showing
   // it. Nothing in the Act asks for one; the packs that get taken seriously
   // all carry one.
-  S15_OCCASIONAL_HUNTER: [
-    'PROFICIENCY_CERTIFICATE',
-    'SHOOTING_ACTIVITY_LOG',
-    'CHARACTER_REFERENCE',
-  ],
-  S16_DEDICATED_HUNTER: [
-    'PROFICIENCY_CERTIFICATE',
-    'SHOOTING_ACTIVITY_LOG',
-    'CHARACTER_REFERENCE',
-  ],
-  S16_DEDICATED_SPORT: [
-    'PROFICIENCY_CERTIFICATE',
-    'SHOOTING_ACTIVITY_LOG',
-    'CHARACTER_REFERENCE',
-  ],
+  S15_OCCASIONAL_HUNTER: ['PROFICIENCY_CERTIFICATE', 'SHOOTING_ACTIVITY_LOG'],
+  S16_DEDICATED_HUNTER: ['PROFICIENCY_CERTIFICATE', 'SHOOTING_ACTIVITY_LOG'],
+  S16_DEDICATED_SPORT: ['PROFICIENCY_CERTIFICATE', 'SHOOTING_ACTIVITY_LOG'],
   S24_RENEWAL: ['PROFICIENCY_CERTIFICATE', 'SHOOTING_ACTIVITY_LOG'],
 };
 

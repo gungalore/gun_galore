@@ -29,11 +29,6 @@
       "kind": "INCIDENT_REPORT",
       "tier": "strengthens",
       "label": "An incident report or SAPS case number"
-    },
-    {
-      "kind": "CHARACTER_REFERENCE",
-      "tier": "strengthens",
-      "label": "A character reference"
     }
   ],
   "S15_OCCASIONAL_HUNTER": [
@@ -71,11 +66,6 @@
       "kind": "SHOOTING_ACTIVITY_LOG",
       "tier": "strengthens",
       "label": "Your record of hunts or competitions"
-    },
-    {
-      "kind": "CHARACTER_REFERENCE",
-      "tier": "strengthens",
-      "label": "A character reference"
     }
   ],
   "S16_DEDICATED_HUNTER": [
@@ -128,11 +118,6 @@
       "kind": "SHOOTING_ACTIVITY_LOG",
       "tier": "strengthens",
       "label": "Your record of hunts or competitions"
-    },
-    {
-      "kind": "CHARACTER_REFERENCE",
-      "tier": "strengthens",
-      "label": "A character reference"
     }
   ],
   "S16_DEDICATED_SPORT": [
@@ -185,11 +170,6 @@
       "kind": "SHOOTING_ACTIVITY_LOG",
       "tier": "strengthens",
       "label": "Your record of hunts or competitions"
-    },
-    {
-      "kind": "CHARACTER_REFERENCE",
-      "tier": "strengthens",
-      "label": "A character reference"
     }
   ],
   "S24_RENEWAL": [

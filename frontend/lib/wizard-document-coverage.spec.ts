@@ -90,18 +90,19 @@ describe('every document the pack asks for has a capture card', () => {
     expect(spurious).toEqual([]);
   });
 
-  it('⚠️ KEEPS A DOOR FOR THE TWO MODULES THAT ARE NOT UPLOADS', () => {
-    // The character reference arrives through the witness module and the
-    // seller's licence through the consent module — neither is a file the
-    // applicant photographs. They still need a door, because the checklist
-    // lists them and a member who cannot find one assumes the pack is broken.
-    // This asserts the kind is reachable SOMEWHERE in the rail, whether the
-    // step offers a capture card or mounts a module.
-    for (const kind of ['CHARACTER_REFERENCE']) {
-      expect({ kind, reachable: offered.has(kind) }).toEqual({
-        kind,
-        reachable: true,
-      });
+  it('⚠️ ASKS FOR NO CHARACTER REFERENCE, ON ANY LICENCE TYPE', () => {
+    // Operator, 2026-08-29: "It serves no purpose. Only time someone needs
+    // these is for the application for a competency." A reference speaks to
+    // whether a person is FIT to hold a firearm — the section 9 enquiry
+    // behind SAPS 517 — not to why THIS firearm is needed for THIS purpose.
+    // Asking for one sent a member to fetch a document that could not help.
+    //
+    // The kind survives in the enum so an upload attached before the decision
+    // still renders; nothing asks for it and no step offers a door.
+    for (const t of TYPES) {
+      const asked = needs(t).filter((n) => n.kind === 'CHARACTER_REFERENCE');
+      expect({ type: t, asked }).toEqual({ type: t, asked: [] });
     }
+    expect(offered.has('CHARACTER_REFERENCE')).toBe(false);
   });
 });
