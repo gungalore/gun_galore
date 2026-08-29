@@ -42,6 +42,7 @@ import {
   SAPS271_OPT_KEY,
   SAPS271_FILL,
   DocumentStatus,
+  FollowUp,
 } from '@/lib/motivations-api';
 import { readDraft } from '@/lib/motivation-draft';
 import { licenceLabel, LICENCE_SECTION } from '@/lib/licence-labels';
@@ -56,6 +57,7 @@ import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
 import BulkCapture from '@/components/licence-pack/bulk-capture';
 import MotivationSellerConsent from '@/components/motivation-seller-consent';
+import FollowUpThread from '@/components/licence-pack/follow-up-thread';
 import PackFinish from '@/components/licence-pack/pack-finish';
 import { VAULT_PREFIXES } from './vault-prefixes';
 import AttachedDocuments from '@/components/licence-pack/attached-documents';
@@ -108,6 +110,7 @@ export default function LicenceServicesWizardPage() {
    * it into pack() as well would be a second source of one truth.
    */
   const [sellerInvite, setSellerInvite] = useState(false);
+  const [messages, setMessages] = useState<FollowUp[]>([]);
 
   const token = useCallback(async () => getToken(), [getToken]);
 
@@ -134,6 +137,11 @@ export default function LicenceServicesWizardPage() {
         setUploads(up.files);
         setPickable(up.kinds ?? []);
         setSellerInvite(sellerConsentOffered(up.documents));
+        // ⚠️ THE ONE GAP THAT LEAVES SOMEBODY STUCK RATHER THAN
+        // INCONVENIENCED. An unanswered follow-up holds the application at
+        // NEEDS_MORE_INFO; without these on screen the pack simply refuses to
+        // finish, with no reason given and nothing to do.
+        setMessages(await motivationsApi.messages(token, id));
         if (!alive) return;
         setPack(p);
         setFields(f.fields);
@@ -479,6 +487,37 @@ export default function LicenceServicesWizardPage() {
     if (allowed) void loadLibrary();
   }, [allowed, loadLibrary]);
 
+  /**
+   * Answer one of Boet's questions.
+   *
+   * The reply is merged server-side into the answers under the question's own
+   * fieldKey, so the local answers have to be re-read rather than patched —
+   * and the status moves back off NEEDS_MORE_INFO once nothing is outstanding.
+   */
+  const answerFollowUp = useCallback(
+    async (messageId: string, text: string) => {
+      try {
+        await motivationsApi.answerFollowUp(token, id, messageId, text);
+        const [d, m, p] = await Promise.all([
+          motivationsApi.get(token, id),
+          motivationsApi.messages(token, id),
+          motivationsApi.pack(token, id),
+        ]);
+        setAnswers((cur) => ({ ...cur, ...(d.answers ?? {}) }));
+        setMissingRequired(d.missingRequired ?? []);
+        setMessages(m);
+        setPack(p);
+      } catch (ex) {
+        setUploadErr(
+          ex instanceof MotivationApiError
+            ? ex.message
+            : 'We could not save that answer.',
+        );
+      }
+    },
+    [id, token],
+  );
+
   const missing = useMemo(() => new Set(missingRequired), [missingRequired]);
   const steps = WIZARD_STEPS;
   const current = steps[Math.min(step, steps.length - 1)];
@@ -625,6 +664,11 @@ export default function LicenceServicesWizardPage() {
               </button>
             </div>
           )}
+
+          {/* Above the step body with the other things that block progress:
+              a question holding the document back must be answerable from
+              wherever the member happens to be standing. */}
+          <FollowUpThread messages={messages} onAnswer={answerFollowUp} />
 
           <ExtractionReview
             suggestions={suggestions}
