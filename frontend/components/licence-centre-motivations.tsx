@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { LICENCE_LABEL } from '@/lib/licence-labels';
 import Link from 'next/link';
 import {
   motivationsApi,
@@ -135,11 +136,3 @@ export default function LicenceCentreMotivations({
     </section>
   );
 }
-
-const LICENCE_LABEL: Record<string, string> = {
-  S13_SELF_DEFENCE: 'Self-defence',
-  S15_OCCASIONAL_HUNTER: 'Occasional hunting or sport-shooting',
-  S16_DEDICATED_HUNTER: 'Dedicated hunter',
-  S16_DEDICATED_SPORT: 'Dedicated sports shooter',
-  S24_RENEWAL: 'Renewal',
-};

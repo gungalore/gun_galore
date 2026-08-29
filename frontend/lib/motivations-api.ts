@@ -539,6 +539,147 @@ export interface FollowUp {
 
 // ── calls ───────────────────────────────────────────────────────────
 
+// ────────────────────────────────────────────────────────────────────
+// THE PACK — ONE CALL FOR THE WHOLE LEFT COLUMN AND THE RIGHT RAIL.
+//
+// ⚠️ EVERY TYPE BELOW IS A MIRROR, NOT A DEFINITION. The server owns these
+// shapes: backend/src/motivations/motivation-checklist.ts,
+// saps271-coverage.ts and common/answer-provenance.ts. When one of them
+// changes, this changes to match — it never leads.
+//
+// The screen used to assemble itself from several endpoints, which is how two
+// parts of one page end up disagreeing about the same row while both are
+// "correct". This is one read, one answer.
+// ────────────────────────────────────────────────────────────────────
+
+/** Who can close a row. */
+export type ChecklistOwner = 'us' | 'applicant';
+
+/**
+ * ⚠️ THREE STATES, NOT TWO. "Not started" and "waiting on someone" look the
+ * same to a `done: boolean` and are completely different to a member: one is
+ * work they have to do, the other is work they cannot do and should stop
+ * worrying about. The gold treatment belongs to the second — never red, since
+ * a row waiting on a third party is not an error.
+ */
+export type ChecklistState = 'done' | 'waiting-on-someone' | 'not-started';
+
+/**
+ * ⚠️ TWO DOORS. NOT FOUR, AND NEVER A WEBCAM.
+ *
+ * The design pack drew four and the handoff spec still says "the four doors";
+ * both are stale. The operator settled it on 2026-08-28: scan by QR, or
+ * upload, on any surface. Do not add a camera-only button back.
+ */
+export type CaptureRoute = 'qr' | 'upload';
+
+export interface ChecklistItem {
+  key: string;
+  label: string;
+  owner: ChecklistOwner;
+  done: boolean;
+  state: ChecklistState;
+  /** Who closes this row and how, in the member's words. Always present. */
+  closer: string;
+  captureRoutes?: CaptureRoute[];
+  annexure?: string;
+  note?: string;
+  verifyBeforeUse?: true;
+}
+
+export interface ChecklistSection {
+  key: string;
+  title: string;
+  intro?: string;
+  items: ChecklistItem[];
+}
+
+export interface ChecklistProgress {
+  sections: ChecklistSection[];
+  oursDone: number;
+  oursTotal: number;
+  theirsTotal: number;
+}
+
+/** `theirs` is never scored against the applicant. */
+export type CoverageStatus =
+  | 'complete'
+  | 'in-progress'
+  | 'not-started'
+  | 'theirs';
+
+export interface CoverageSection {
+  /** The letter the SAPS 271 uses, so the panel and the form agree. */
+  id: string;
+  label: string;
+  applicable: number;
+  answered: number;
+  /**
+   * ⚠️ NULL IS A REAL VALUE AND MEANS UNSCORED, NOT ZERO. Section F is
+   * somebody else's half of the form; rendering `null` as an empty progress
+   * bar tells the member they are 0% done on work that is not theirs.
+   */
+  percent: number | null;
+  missingRequired: number;
+  status: CoverageStatus;
+  note?: string;
+}
+
+export interface Saps271Coverage {
+  sections: CoverageSection[];
+  applicable: number;
+  answered: number;
+  percent: number;
+}
+
+export type ProvenanceSource =
+  | 'PROFILE'
+  | 'VAULT'
+  | 'READ'
+  | 'SELLER'
+  | 'ASSOCIATION'
+  | 'MEMBER';
+
+/**
+ * Where one answer came from. ⚠️ NEVER carries the answer itself.
+ *
+ * ⚠️ RENDER `from`, NEVER A LOCAL LABEL TABLE. The server keeps the chip text
+ * (SOURCE_LABELS in common/answer-provenance.ts) precisely so the API, the
+ * printed pack and the screen cannot drift — the same words appear in all
+ * three. A copy here would be the drift it exists to prevent.
+ */
+export interface AnswerProvenance {
+  source: ProvenanceSource;
+  sourceId?: string;
+  /** The chip text, already in the member's language. */
+  from: string;
+  at: string;
+  inferred?: boolean;
+}
+
+export type ProvenanceMap = Record<string, AnswerProvenance>;
+
+export interface MotivationPack {
+  id: string;
+  referenceNumber: string;
+  licenceType: string;
+  status: string;
+  checklist: ChecklistProgress;
+  coverage: Saps271Coverage;
+  provenance: ProvenanceMap;
+  prefill: {
+    /**
+     * ⚠️ COUNTED AGAINST THE ANSWERS, not against the provenance map. A field
+     * we filled and the member then cleared is not something we filled for
+     * them, and a banner claiming credit for work that is not on the screen is
+     * worse than no banner. The server does this; do not recount here.
+     */
+    filled: number;
+    sources: ProvenanceSource[];
+  };
+}
+
+
 export const motivationsApi = {
   /**
    * Whether the module is open, and whether a new one can be started.
@@ -1052,6 +1193,20 @@ export const motivationsApi = {
     request<{ status: string; score?: number }>(t, `/${id}/generate`, {
       method: 'POST',
     }),
+
+  /**
+   * THE WHOLE LEFT COLUMN AND THE RIGHT RAIL, IN ONE CALL.
+   *
+   * ⚠️ NO FALLBACK ARGUMENT, DELIBERATELY. A pack that failed to load has no
+   * safe empty state: an empty checklist reads as "nothing left to do" and a
+   * zeroed coverage reads as "you have answered nothing". Both are lies a
+   * member would act on. Let it throw and show the error.
+   *
+   * ⚠️ NOT A REPLACEMENT FOR `checklist` BELOW. That one is narrower, still
+   * correct for its single caller, and left alone on purpose.
+   */
+  pack: (t: TokenGetter, id: string) =>
+    request<MotivationPack>(t, `/${id}/pack`),
 
   checklist: (t: TokenGetter, id: string) =>
     request<{

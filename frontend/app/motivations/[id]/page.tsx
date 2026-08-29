@@ -7,6 +7,7 @@ import ScanButton from '@/components/scan/scan-button';
 import LibraryPicker from '@/components/library-picker';
 import VaultConsentModal from '@/components/vault-consent';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
+import { AUTOSAVE_MS, DRAFT_KEY } from '@/lib/motivation-draft';
 import DocumentChecklist, {
   ChecklistRow,
 } from '@/components/document-checklist';
@@ -93,8 +94,10 @@ import { safeJson } from '@/lib/safe-json';
 // structure and completeness, never odds.
 // ────────────────────────────────────────────────────────────────────
 
-const AUTOSAVE_MS = 1200;
-const DRAFT_KEY = (id: string) => `motivation-draft:${id}`;
+// ⚠️ IMPORTED, NOT DECLARED. `/licence-services/[id]` reads and writes the same
+// draft for the same application; two copies of a cache key are one refactor
+// away from silently dropping somebody's unsaved answers.
+// See lib/motivation-draft.ts.
 
 // ────────────────────────────────────────────────────────────────────
 // THE SIX STEPS.

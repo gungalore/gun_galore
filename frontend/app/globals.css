@@ -212,6 +212,19 @@
   --gold-tag-fill: #E8B53A;
   --gold-tag-ink:  #1A1614;
 
+  /* Diluted success, for the "done" rows and the prefill banner on the pack
+     screen. Named and derived exactly like --gold-wash / --gold-line above,
+     and for the same reason: you CANNOT alpha-dilute a var() by appending hex
+     digits — custom-property substitution is token-based, not string-based, so
+     `var(--success)18` expands to a token that does not exist and the element
+     renders TRANSPARENT, which on a white card looks like nothing at all
+     rather than like a bug. Write the rgba() out once, here.
+
+     --success is #1F7A50, 5.1:1 on white — safe for small ink as well as for
+     borders, unlike --gold. */
+  --success-line:  rgba(31, 122, 80, 0.35);
+  --success-wash:  rgba(31, 122, 80, 0.08);
+
   /* Typefaces. The *-var values are set by next/font on <html>; the
      fallback chain matters because it is what renders for the ~100ms
      before the woff2 lands. See app/fonts.ts. */
