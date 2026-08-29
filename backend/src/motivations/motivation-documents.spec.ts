@@ -529,10 +529,14 @@ describe('the source-proof row, per route', () => {
 
   it('does not offer it on a stored estate answer', () => {
     // Retired as a choice, still stored on older applications. An executor is
-    // not a private seller and does not sign that consent form.
+    // not a private seller and does not sign that consent form — that half is
+    // unchanged and is the one that matters.
     const r = row('Inherited from a deceased estate');
     expect(r?.sellerConsent).toBeUndefined();
-    expect(r?.why).toContain('executor');
+    // ⚠️ AND THE GUIDANCE NO LONGER MENTIONS AN EXECUTOR. Operator,
+    // 2026-08-29: the route is not supported, so nothing may describe a
+    // document we have stopped asking for.
+    expect(r?.why ?? '').not.toMatch(/executor/i);
   });
 
   it('keeps the row itself on every route', () => {

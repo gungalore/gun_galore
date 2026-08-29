@@ -1,0 +1,232 @@
+{
+  "S13_SELF_DEFENCE": [
+    {
+      "kind": "IDENTITY_DOCUMENT",
+      "tier": "required",
+      "label": "A copy of your ID"
+    },
+    {
+      "kind": "COMPETENCY_CERTIFICATE",
+      "tier": "required",
+      "label": "Your SAPS competency certificate or printout"
+    },
+    {
+      "kind": "ADDRESS_CONFIRMATION",
+      "tier": "required",
+      "label": "Proof of your address"
+    },
+    {
+      "kind": "SAFE_PHOTOGRAPHS",
+      "tier": "required",
+      "label": "Photographs of your safe"
+    },
+    {
+      "kind": "FIREARM_SOURCE_PROOF",
+      "tier": "expected",
+      "label": "Where this firearm is coming from"
+    },
+    {
+      "kind": "INCIDENT_REPORT",
+      "tier": "strengthens",
+      "label": "An incident report or SAPS case number"
+    },
+    {
+      "kind": "CHARACTER_REFERENCE",
+      "tier": "strengthens",
+      "label": "A character reference"
+    }
+  ],
+  "S15_OCCASIONAL_HUNTER": [
+    {
+      "kind": "IDENTITY_DOCUMENT",
+      "tier": "required",
+      "label": "A copy of your ID"
+    },
+    {
+      "kind": "COMPETENCY_CERTIFICATE",
+      "tier": "required",
+      "label": "Your SAPS competency certificate or printout"
+    },
+    {
+      "kind": "ADDRESS_CONFIRMATION",
+      "tier": "required",
+      "label": "Proof of your address"
+    },
+    {
+      "kind": "SAFE_PHOTOGRAPHS",
+      "tier": "required",
+      "label": "Photographs of your safe"
+    },
+    {
+      "kind": "FIREARM_SOURCE_PROOF",
+      "tier": "expected",
+      "label": "Where this firearm is coming from"
+    },
+    {
+      "kind": "PROFICIENCY_CERTIFICATE",
+      "tier": "strengthens",
+      "label": "Your proficiency or training certificate"
+    },
+    {
+      "kind": "SHOOTING_ACTIVITY_LOG",
+      "tier": "strengthens",
+      "label": "Your record of hunts or competitions"
+    },
+    {
+      "kind": "CHARACTER_REFERENCE",
+      "tier": "strengthens",
+      "label": "A character reference"
+    }
+  ],
+  "S16_DEDICATED_HUNTER": [
+    {
+      "kind": "IDENTITY_DOCUMENT",
+      "tier": "required",
+      "label": "A copy of your ID"
+    },
+    {
+      "kind": "COMPETENCY_CERTIFICATE",
+      "tier": "required",
+      "label": "Your SAPS competency certificate or printout"
+    },
+    {
+      "kind": "ADDRESS_CONFIRMATION",
+      "tier": "required",
+      "label": "Proof of your address"
+    },
+    {
+      "kind": "SAFE_PHOTOGRAPHS",
+      "tier": "required",
+      "label": "Photographs of your safe"
+    },
+    {
+      "kind": "ASSOCIATION_CARD",
+      "tier": "required",
+      "label": "Your dedicated status certificate"
+    },
+    {
+      "kind": "GOOD_STANDING_LETTER",
+      "tier": "required",
+      "label": "Your letter of good standing"
+    },
+    {
+      "kind": "ASSOCIATION_ENDORSEMENT",
+      "tier": "expected",
+      "label": "The association's endorsement for this firearm"
+    },
+    {
+      "kind": "FIREARM_SOURCE_PROOF",
+      "tier": "expected",
+      "label": "Where this firearm is coming from"
+    },
+    {
+      "kind": "PROFICIENCY_CERTIFICATE",
+      "tier": "strengthens",
+      "label": "Your proficiency or training certificate"
+    },
+    {
+      "kind": "SHOOTING_ACTIVITY_LOG",
+      "tier": "strengthens",
+      "label": "Your record of hunts or competitions"
+    },
+    {
+      "kind": "CHARACTER_REFERENCE",
+      "tier": "strengthens",
+      "label": "A character reference"
+    }
+  ],
+  "S16_DEDICATED_SPORT": [
+    {
+      "kind": "IDENTITY_DOCUMENT",
+      "tier": "required",
+      "label": "A copy of your ID"
+    },
+    {
+      "kind": "COMPETENCY_CERTIFICATE",
+      "tier": "required",
+      "label": "Your SAPS competency certificate or printout"
+    },
+    {
+      "kind": "ADDRESS_CONFIRMATION",
+      "tier": "required",
+      "label": "Proof of your address"
+    },
+    {
+      "kind": "SAFE_PHOTOGRAPHS",
+      "tier": "required",
+      "label": "Photographs of your safe"
+    },
+    {
+      "kind": "ASSOCIATION_CARD",
+      "tier": "required",
+      "label": "Your dedicated status certificate"
+    },
+    {
+      "kind": "GOOD_STANDING_LETTER",
+      "tier": "required",
+      "label": "Your letter of good standing"
+    },
+    {
+      "kind": "ASSOCIATION_ENDORSEMENT",
+      "tier": "expected",
+      "label": "The association's endorsement for this firearm"
+    },
+    {
+      "kind": "FIREARM_SOURCE_PROOF",
+      "tier": "expected",
+      "label": "Where this firearm is coming from"
+    },
+    {
+      "kind": "PROFICIENCY_CERTIFICATE",
+      "tier": "strengthens",
+      "label": "Your proficiency or training certificate"
+    },
+    {
+      "kind": "SHOOTING_ACTIVITY_LOG",
+      "tier": "strengthens",
+      "label": "Your record of hunts or competitions"
+    },
+    {
+      "kind": "CHARACTER_REFERENCE",
+      "tier": "strengthens",
+      "label": "A character reference"
+    }
+  ],
+  "S24_RENEWAL": [
+    {
+      "kind": "IDENTITY_DOCUMENT",
+      "tier": "required",
+      "label": "A copy of your ID"
+    },
+    {
+      "kind": "COMPETENCY_CERTIFICATE",
+      "tier": "required",
+      "label": "Your SAPS competency certificate or printout"
+    },
+    {
+      "kind": "CURRENT_LICENCE",
+      "tier": "required",
+      "label": "A firearm licence you already hold"
+    },
+    {
+      "kind": "ADDRESS_CONFIRMATION",
+      "tier": "required",
+      "label": "Proof of your address"
+    },
+    {
+      "kind": "SAFE_PHOTOGRAPHS",
+      "tier": "required",
+      "label": "Photographs of your safe"
+    },
+    {
+      "kind": "PROFICIENCY_CERTIFICATE",
+      "tier": "strengthens",
+      "label": "Your proficiency or training certificate"
+    },
+    {
+      "kind": "SHOOTING_ACTIVITY_LOG",
+      "tier": "strengthens",
+      "label": "Your record of hunts or competitions"
+    }
+  ]
+}

@@ -594,16 +594,21 @@ describe('item 1.2 — the owner-type tick', () => {
     expect(said?.because).toContain('not required');
   });
 
-  it('routes a stored estate answer to E, not to A', () => {
-    // "Inherited from a deceased estate" is retired as a CHOICE, but an
-    // application written before that decision still carries it — and under
-    // the old rule it printed "private owner".
+  it('⚠️ TICKS NOTHING FOR A STORED ESTATE ANSWER — AND NEVER A', () => {
+    // Operator, 2026-08-29: "Only Type A and B from the 271 are what we will
+    // process." So the estate route is not merely unofferable, it is
+    // unprocessable, and Type E is no longer ticked at all.
+    //
+    // ⚠️ THE HALF THAT STILL MATTERS IS THE SECOND ASSERTION. An application
+    // written before the route was retired still carries the answer, and
+    // under the original rule it printed "private owner" — a false statement
+    // about who is transferring the firearm, on a form signed under
+    // s120(9)(f). Leaving the row blank is a form a DFO queries; ticking A is
+    // a form that goes in wrong.
     const out = withSource('Inherited from a deceased estate');
-    expect(ownerTicks(out)).toEqual(['f_owner_type_e']);
+    expect(ownerTicks(out)).toEqual([]);
+    expect(ownerTicks(out)).not.toContain('f_owner_type_a');
     expect(out.text.f_full_names).toBeUndefined();
-    expect(
-      out.leftBlank.find((b) => b.field === 'firearm_source')?.because,
-    ).toContain('executor');
   });
 
   it('infers NOTHING from merely holding a seller', () => {

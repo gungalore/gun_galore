@@ -610,11 +610,13 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
   const ownerTypeTick: Record<string, Saps271FieldName> = {
     [SOURCE_PRIVATE]: 'f_owner_type_a',
     [SOURCE_DEALER]: 'f_owner_type_b',
-    // Retired as a CHOICE — operator, 2026-08-28: "lets keep the options
-    // between Individual and dealer for now" — but still read, because an
-    // application written before that decision carries the answer and would
-    // otherwise be routed to the wrong block entirely.
-    [SOURCE_ESTATE]: 'f_owner_type_e',
+    // ⚠️ TYPE E IS NO LONGER TICKED, BY DECISION. Operator, 2026-08-29: "Only
+    // Type A and B from the 271 are what we will process." The estate route is
+    // not merely unofferable now, it is unprocessable — so an application that
+    // still carries the retired answer must NOT be routed into a block we do
+    // not support. It leaves the owner-type row blank, which is the honest
+    // outcome: a form that says nothing is one a DFO queries, and a form
+    // ticked into a route we cannot complete is one that goes in wrong.
   };
 
   // ⚠️ NO TICK FOR C AND D. The platform offers neither the company route nor

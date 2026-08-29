@@ -780,7 +780,7 @@ describe('where the firearm is coming from', () => {
     }
   });
 
-  it('offers exactly the four routes, and does not force one', () => {
+  it('offers exactly two routes, and still accepts the retired ones', () => {
     // ⚠️ PINNED ON PURPOSE. Each route drives a different required document
     // and a different custody statement, so a route added without its routing
     // is a dead option and a route removed silently strands whoever picked it.
@@ -789,14 +789,16 @@ describe('where the firearm is coming from', () => {
     const f = fieldsFor(MotivationLicenceType.S13_SELF_DEFENCE).find(
       (x) => x.key === FIREARM_SOURCE_KEY,
     )!;
-    // ⚠️ THREE OFFERED, FOUR ACCEPTED. Operator, 2026-08-28: "lets keep the
-    // options between Individual and dealer for now." The estate route is
-    // RETIRED, not deleted — see retiredChoices, and the tests below that
-    // prove an application which already chose it still saves.
-    expect(f.choices).toEqual([SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_UNDECIDED]);
+    // ⚠️ TWO OFFERED, FOUR ACCEPTED. Operator, 2026-08-29: "The form must
+    // only give two options, Private seller or Dealer." Both the estate route
+    // and "Not decided yet" are RETIRED, not deleted — the field is required,
+    // so refusing a stored value would be a wizard its owner cannot get past.
+    expect(f.choices).toEqual([SOURCE_DEALER, SOURCE_PRIVATE]);
     expect(f.choices).not.toContain(SOURCE_ESTATE);
-    expect(f.retiredChoices).toEqual([SOURCE_ESTATE]);
+    expect(f.choices).not.toContain(SOURCE_UNDECIDED);
+    expect(f.retiredChoices).toEqual([SOURCE_ESTATE, SOURCE_UNDECIDED]);
     expect(allowedValues(f)).toContain(SOURCE_ESTATE);
+    expect(allowedValues(f)).toContain(SOURCE_UNDECIDED);
     // ⚠️ NOT REQUIRED. Plenty of applications are written before the firearm
     // is found — the motivation is what the dealer or seller gets shown.
     // Forcing a choice makes somebody guess, and a guess here silently

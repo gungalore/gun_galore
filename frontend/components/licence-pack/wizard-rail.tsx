@@ -201,6 +201,16 @@ export const WIZARD_STEPS: WizardStep[] = [
         title: "Your letter of good standing",
         subtitle: "We read the valid-until date off it.",
       },
+      // ⚠️ EXPECTED ON BOTH SECTION 16 PATHS AND IT HAD NO DOOR. The pack
+      // listed it on the final checklist and no step ever asked for it, so a
+      // member was told the application wants an association endorsement and
+      // given nowhere to attach one.
+      {
+        kind: "ASSOCIATION_ENDORSEMENT",
+        title: "Your association's endorsement",
+        subtitle:
+          "The endorsement for THIS firearm — the sworn statement from the chairperson that section 16(2) asks for.",
+      },
     ],
   },
   {
@@ -217,6 +227,32 @@ export const WIZARD_STEPS: WizardStep[] = [
     // decide — this step just has to have a home for all three, and before
     // this step existed it had none for any of them.
     sections: ["Your circumstances", "Experience", "The existing licence"],
+    // ⚠️ THREE DOCUMENTS THAT ONLY EVER ARRIVE IF SOMEBODY ASKS. Nobody
+    // attaches a shooting log or a character reference unprompted, and they
+    // are exactly what separates a thin application from a good one. All
+    // three were on the pack's checklist with no capture card anywhere in the
+    // rail — the documents-side twin of the nineteen orphaned questions this
+    // step was created to house.
+    documents: [
+      {
+        kind: "SHOOTING_ACTIVITY_LOG",
+        title: "Your record of hunts or competitions",
+        subtitle:
+          "Whatever you keep — a club printout, a logbook page, a score sheet. It is the evidence behind what you have just told us.",
+      },
+      {
+        kind: "INCIDENT_REPORT",
+        title: "An incident report or SAPS case number",
+        subtitle:
+          "Only if something has actually happened. Never invent one — an unsupported claim is worse than no claim.",
+      },
+      {
+        kind: "CHARACTER_REFERENCE",
+        title: "A character reference",
+        subtitle:
+          "Someone who will vouch for you. You can upload a signed letter here, or invite them to complete one.",
+      },
+    ],
   },
   {
     key: "storage",

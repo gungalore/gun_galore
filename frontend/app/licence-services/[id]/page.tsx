@@ -33,6 +33,7 @@ import {
   MotivationApiError,
   type MotivationField,
   type MotivationPack,
+  Suggestion,
 } from '@/lib/motivations-api';
 import { readDraft } from '@/lib/motivation-draft';
 import { licenceLabel, LICENCE_SECTION } from '@/lib/licence-labels';
@@ -42,6 +43,8 @@ import {
   clearPreviewOptIn,
 } from '@/lib/licence-services-preview';
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
+import ExtractionReview from '@/components/licence-pack/extraction-review';
+import { mergeReads } from '@/lib/extraction-review-rules';
 import ProficiencyAlert from '@/components/licence-pack/proficiency-alert';
 import WizardRail, { WIZARD_STEPS } from '@/components/licence-pack/wizard-rail';
 import { visibleFields } from '@/lib/motivations-api';
@@ -72,6 +75,7 @@ export default function LicenceServicesWizardPage() {
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [busyKind, setBusyKind] = useState<string | null>(null);
   const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
 
   const token = useCallback(async () => getToken(), [getToken]);
 
@@ -150,8 +154,19 @@ export default function LicenceServicesWizardPage() {
       setBusyKind(kind);
       setUploadErr(null);
       try {
+        // ⚠️ THE RETURN VALUE IS THE POINT. This line read
+        // `await motivationsApi.addUpload(...)` with no assignment, so every
+        // reading we paid Vision and Claude for was discarded before it
+        // reached anybody. The server will not write suggestions into answers
+        // itself — deliberately, because a misread digit would become a false
+        // statement on a signed form — so if the client drops them, the
+        // extraction never happened as far as the member is concerned.
+        let read: Suggestion[] = [];
         for (const file of files) {
-          await motivationsApi.addUpload(token, id, kind, file);
+          const added = await motivationsApi.addUpload(token, id, kind, file);
+          // mergeReads: one line per field, last read wins — two photographs
+          // of the same card must not offer two contradictory lines.
+          read = mergeReads(read, added.suggestions ?? []);
         }
         const [p, d] = await Promise.all([
           motivationsApi.pack(token, id),
@@ -169,11 +184,56 @@ export default function LicenceServicesWizardPage() {
           }
           return next;
         });
+
+        // ⚠️ OFFERED, NEVER APPLIED. Everything read off the document goes to
+        // ExtractionReview for the member to tick — including values for
+        // boxes they have already filled, because a document disagreeing with
+        // what somebody typed is exactly the case worth showing them. What we
+        // must not do is overwrite silently, which is why nothing here
+        // touches `answers`.
+        if (read.length) setSuggestions(read);
       } catch (ex) {
         setUploadErr(
           ex instanceof MotivationApiError
             ? ex.message
             : 'That upload did not work.',
+        );
+      } finally {
+        setBusyKind(null);
+      }
+    },
+    [id, token],
+  );
+
+  /**
+   * Accept the lines the member ticked, and only those.
+   *
+   * applyExtraction is what actually writes them — it runs the same
+   * provenance spine the rest of the pipeline does, so an accepted value
+   * arrives marked as read off a document rather than typed, and the
+   * ReadResult pills downstream say so.
+   */
+  const acceptRead = useCallback(
+    async (accepted: Record<string, string>) => {
+      setBusyKind('__apply__');
+      try {
+        await motivationsApi.applyExtraction(token, id, accepted);
+        const [p, d] = await Promise.all([
+          motivationsApi.pack(token, id),
+          motivationsApi.get(token, id),
+        ]);
+        setPack(p);
+        setMissingRequired(d.missingRequired ?? []);
+        // ⚠️ THE ACCEPTED VALUES WIN OVER THE RE-FETCH. The member said yes a
+        // moment ago; a stale read of `answers` must not put the old value
+        // back on screen and make the tick look like it did nothing.
+        setAnswers((cur) => ({ ...cur, ...(d.answers ?? {}), ...accepted }));
+        setSuggestions([]);
+      } catch (ex) {
+        setUploadErr(
+          ex instanceof MotivationApiError
+            ? ex.message
+            : 'We could not save those just now.',
         );
       } finally {
         setBusyKind(null);
@@ -290,6 +350,20 @@ export default function LicenceServicesWizardPage() {
           {uploadErr && (
             <p className="text-[13px] text-[var(--red)]">{uploadErr}</p>
           )}
+
+          {/* ⚠️ ABOVE THE STEP BODY, NOT INSIDE A STEP. A licence
+              photographed from "Firearms you already own" can read a value
+              that belongs to "The firearm" — and the old page learned this
+              the hard way, having put the panel inside the documents step so
+              a member had to guess that accepting meant navigating back. What
+              disagrees with what they typed has to be answerable wherever
+              they are standing. */}
+          <ExtractionReview
+            suggestions={suggestions}
+            busy={busyKind !== null}
+            onAccept={acceptRead}
+            onDismiss={() => setSuggestions([])}
+          />
 
           <StepBody
             stepKey={current.key}

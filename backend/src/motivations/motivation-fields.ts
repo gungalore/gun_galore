@@ -589,12 +589,22 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'The firearm',
     // ⚠️ TWO ROUTES, NOT FIVE. Operator, 2026-08-28: "lets keep the options
     // between Individual and dealer for now."
-    choices: [SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_UNDECIDED],
-    // Still accepted, never offered again: an application written before that
-    // decision carries this answer, and it routes a whole document list
-    // (EXECUTOR_APPOINTMENT), a custody sentence and the form's own item 1.2.
-    // Refusing it would break every save those members make.
-    retiredChoices: [SOURCE_ESTATE],
+    // ⚠️ EXACTLY TWO. Operator, 2026-08-29: "The form must only give two
+    // options, Private seller or Dealer. Those are the only two we are going
+    // to support, the rest we will build at a later stage."
+    choices: [SOURCE_DEALER, SOURCE_PRIVATE],
+    // Still ACCEPTED on a save, never offered again. An application written
+    // before this decision carries one of these answers, and refusing it would
+    // break every save those members make — the field is required, so a
+    // rejected value is a wizard they cannot get past.
+    //
+    // ⚠️ "Not decided yet" WENT WITH THE ESTATE ROUTE, and it cost something
+    // real: on a REQUIRED field it was the one answer that satisfied the
+    // requirement without answering the question, so somebody who had not yet
+    // found a firearm could get to the end of the wizard with a document list
+    // built for nobody. They now have to say which route they are on, and can
+    // change it whenever the answer changes.
+    retiredChoices: [SOURCE_ESTATE, SOURCE_UNDECIDED],
     help: 'A dealer sale and a private transfer need different paperwork at the counter. Telling us which lets us ask for the right documents instead of all of them.',
     // ⚠️ NOT formOnly, DELIBERATELY, AND IT IS THE WHOLE POINT. formOnly hangs
     // a field off the SAPS 271 opt-in, so a member whose dealer fills the form

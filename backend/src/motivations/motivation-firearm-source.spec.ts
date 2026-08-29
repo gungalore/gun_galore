@@ -215,13 +215,20 @@ describe('inheriting a firearm', () => {
       firearm_source: source,
     } as Record<string, string>);
 
-  it('⚠️ REQUIRES the executor letter — not "expected", not "helpful"', () => {
-    // It is not a document that strengthens a case; it establishes that the
-    // applicant may deal with the firearm at all.
-    const row = status(SOURCE_ESTATE).needs.find(
-      (n) => n.kind === 'EXECUTOR_APPOINTMENT',
-    );
-    expect(row?.tier).toBe('required');
+  it('⚠️ NEVER ASKS FOR THE EXECUTOR LETTER, ON ANY ROUTE', () => {
+    // Operator, 2026-08-29: "the EXECUTOR_APPOINTMENT must go."
+    //
+    // It used to be REQUIRED on the estate route. Asking for it now would be
+    // worse than not asking: the SAPS 271's Type E block is no longer ticked
+    // at all, so the pack it belongs to cannot be completed — and demanding
+    // it would send an heir to fetch a letter of executorship for an
+    // application we have decided not to process yet.
+    for (const s of [SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_UNDECIDED, SOURCE_ESTATE, '']) {
+      expect({
+        source: s || '(unanswered)',
+        asked: status(s).needs.some((n) => n.kind === 'EXECUTOR_APPOINTMENT'),
+      }).toEqual({ source: s || '(unanswered)', asked: false });
+    }
   });
 
   it('does not ask any other route for it', () => {
@@ -241,10 +248,10 @@ describe('inheriting a firearm', () => {
     ).toBe(false);
   });
 
-  it('asks for it in words that say why it is required', () => {
-    const why = sourceProofWhy(SOURCE_ESTATE);
-    expect(why).toMatch(/executor/i);
-    expect(why).toMatch(/cannot be licensed without it/i);
+  it('says nothing about executors to a retired estate answer', () => {
+    // The guidance went with the route. What is left must not still describe
+    // a document nothing asks for.
+    expect(sourceProofWhy(SOURCE_ESTATE)).not.toMatch(/executor/i);
   });
 
   it('⚠️ states custody WITHOUT implying the heir already holds it', () => {

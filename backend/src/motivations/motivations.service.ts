@@ -110,6 +110,7 @@ import {
   MotivationExtractService,
 } from './motivation-extract.service';
 import { proficiencyCover } from '../common/sa-proficiency-cover';
+import { CARRIES_FORWARD, priorReadings } from './prior-readings';
 import {
   FOLLOW_UP_BATCH,
   fallbackQuestion,
@@ -554,6 +555,27 @@ export class MotivationsService {
     // chaining `.values` off the call — which is what this did — discarded it
     // at the call site. The empty default has to live in the same catch as the
     // values default or a vault failure desyncs the two.
+    // ⚠️ AND SO DOES WHAT WE ALREADY READ, LAST TIME. Operator, 2026-08-29:
+    // "Nothing that is scanned and OCR'd is ever discarded. We will use the
+    // information to fill out forms an future applications."
+    //
+    // Third source, and it slots BETWEEN profile and vault. A reading beats a
+    // profile field the member may have typed years ago and never revisited;
+    // it loses to the vault, whose documents have been curated in the Centre
+    // and carry a confirmed date. Same fail-soft rule as the vault below: a
+    // member who cannot reach their history must still be able to start.
+    let priorValues: Record<string, string> = {};
+    let priorFrom: Record<string, MotivationUploadKind> = {};
+    try {
+      const prior = await this.priorReadingsFor(user.id);
+      priorValues = prior.values;
+      priorFrom = prior.from;
+    } catch (err) {
+      this.logger.warn(
+        `Motivation create: prior-reading prefill skipped — ${(err as Error).message}`,
+      );
+    }
+
     let vaultValues: Record<string, string> = {};
     let vaultItems: { key: string; from: string; credentialId: string }[] = [];
     try {
@@ -571,7 +593,10 @@ export class MotivationsService {
         // serial, and may not supply a date. The reminder sweep is untouched
         // — it reads Credential.expiresOn, which this path never writes.
         await this.credentialsFor(user.id, { includeUnconfirmed: true }),
-        { ...prefill.values, ...seed },
+        // credentialOffer skips what is already answered, so it must see the
+        // prior readings too — otherwise it re-offers a field they just
+        // filled and the spread below silently prefers the vault's copy.
+        { ...prefill.values, ...priorValues, ...seed },
       );
       vaultValues = vaultOffer.values;
       vaultItems = vaultOffer.items;
@@ -583,6 +608,9 @@ export class MotivationsService {
 
     const { answers: seeded } = sanitiseAnswers(licenceType, {
       ...prefill.values,
+      // Profile, then what we read last time, then the vault, then the seed.
+      // See the note above priorValues for why a reading sits here.
+      ...priorValues,
       ...vaultValues,
       ...seed,
     });
@@ -607,6 +635,7 @@ export class MotivationsService {
       // entry carries a source and no id. Better than no entry at all, which
       // would understate the count for the flow that starts best-informed.
       seed,
+      priorFrom,
     );
 
     if (Object.keys(seeded).length) {
@@ -1900,6 +1929,52 @@ export class MotivationsService {
    * extraction actually yielded the field becomes a choice named after the
    * document it fills.
    */
+  /**
+   * What this member's earlier documents already told us.
+   *
+   * Operator, 2026-08-29: "Nothing that is scanned and OCR'd is ever
+   * discarded. We will use the information to fill out forms an future
+   * applications."
+   *
+   * ⚠️ THE QUERY IS choicesFor's, DELIBERATELY. Same scope
+   * (`motivation: { userId }` — every application this member has made), same
+   * `extractionOk`/`purgedAt` filters, same decrypt-inside-a-try. That method
+   * has been reading extractions across applications since it was written;
+   * there was no reason to invent a second way of doing it, and two ways to
+   * ask the same question is how they drift.
+   *
+   * Which kinds carry forward, and why the firearm and the case do not, is
+   * prior-readings.ts.
+   */
+  private async priorReadingsFor(userId: string) {
+    const rows = await this.prisma.motivationUpload.findMany({
+      where: {
+        motivation: { userId },
+        kind: { in: [...CARRIES_FORWARD] },
+        extractionOk: true,
+        purgedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { kind: true, createdAt: true, extractionEncrypted: true },
+    });
+
+    return priorReadings(
+      rows.map((r) => {
+        let values: Record<string, string> | null = null;
+        try {
+          values = r.extractionEncrypted
+            ? (decryptJson<Record<string, string>>(r.extractionEncrypted) ?? null)
+            : null;
+        } catch {
+          // An unreadable blob costs the prefill, not the application — the
+          // module's established rule.
+          values = null;
+        }
+        return { kind: r.kind, createdAt: r.createdAt, values };
+      }),
+    );
+  }
+
   private async choicesFor(
     userId: string,
     credentials: CredentialSource[],
@@ -5038,8 +5113,29 @@ export class MotivationsService {
     profileFrom: Record<string, string>,
     vaultItems: readonly { key: string; from: string; credentialId: string }[],
     seed: Record<string, string>,
+    /** Which document kind each carried-forward reading came off. */
+    priorFrom: Record<string, MotivationUploadKind> = {},
   ): ProvenanceMap {
     let out = this.stampProfile(map, written, profileFrom);
+
+    // ⚠️ BETWEEN PROFILE AND VAULT, MATCHING THE VALUE PRECEDENCE EXACTLY. If
+    // these two lines were swapped, a field the vault supplied would carry a
+    // chip naming a document from an old application.
+    //
+    // ⚠️ AND THE CHIP SAYS "from an earlier application". Without that a
+    // member opening a brand-new application sees "your competency
+    // certificate" against a field on a form where they have uploaded
+    // nothing, and reasonably concludes we have muddled them up with somebody
+    // else. READ is the honest source: it was read off a document, just not
+    // this one.
+    for (const [key, kind] of Object.entries(priorFrom)) {
+      if (!(key in written)) continue;
+      out = stamp(out, [key], {
+        source: 'READ',
+        from: `${documentLabel(kind)}, from an earlier application`,
+      });
+    }
+
     out = this.stampVault(out, written, vaultItems);
 
     // The only non-empty seed today is a renewal, built by licence-renewal.ts

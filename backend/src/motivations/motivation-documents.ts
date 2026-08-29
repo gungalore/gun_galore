@@ -333,14 +333,6 @@ export function sourceProofWhy(source: string): string {
       'your licence is granted.'
     );
   }
-  if (source === SOURCE_ESTATE) {
-    return (
-      'The letter of appointment as executor, plus anything the estate has ' +
-      'given you about the firearm. SAPS asks for the letter by name and an ' +
-      'estate firearm cannot be licensed without it, so this one is required ' +
-      'rather than helpful. It is printed into your pack as an annexure.'
-    );
-  }
   if (source === SOURCE_PRIVATE) {
     return (
       'A letter from the person who currently owns the firearm saying they agree ' +
@@ -502,17 +494,17 @@ export function documentStatus(
   // application written before the firearm is found is normal — the motivation
   // is what the dealer or the seller gets shown.
   const source = (answers[FIREARM_SOURCE_KEY] ?? '').trim();
-  // ⚠️ AN ESTATE FIREARM CANNOT BE LICENSED WITHOUT THE LETTER OF
-  // APPOINTMENT, and until now nothing asked for it: EXECUTOR_APPOINTMENT had
-  // a label and guidance and sat in no tier of any licence type. REQUIRED
-  // rather than expected, because this is not a document that strengthens a
-  // case — it is the document that establishes the applicant may deal with the
-  // firearm at all. Routing spec §5.4 D.
-  if (source === SOURCE_ESTATE && licenceType !== 'S24_RENEWAL') {
-    if (!required.includes('EXECUTOR_APPOINTMENT')) {
-      required.push('EXECUTOR_APPOINTMENT');
-    }
-  }
+  // ⚠️ THE ESTATE ROUTE IS GONE, AND SO IS ITS DOCUMENT. Operator, 2026-08-29:
+  // "Those are the only two we are going to support, the rest we will build at
+  // a later stage. So the EXECUTOR_APPOINTMENT must go."
+  //
+  // It used to be pushed into `required` whenever the source answer was the
+  // estate route. Asking for it now would be worse than not asking: we cannot
+  // process the application it belongs to — the SAPS 271's Type E block is no
+  // longer ticked at all — so demanding the one document that route needs
+  // would send somebody to fetch a letter of executorship for a pack that
+  // cannot be completed. The kind survives in the enum and keeps its label and
+  // guidance, so a legacy upload still renders; nothing asks for it.
 
   if (source === SOURCE_PRIVATE && licenceType !== 'S24_RENEWAL') {
     // The seller's licence proves the person consenting is entitled to
