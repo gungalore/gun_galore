@@ -37,8 +37,17 @@
 //      not an edit, and a save on load would stamp MEMBER provenance over
 //      every value the system filled in itself.
 //
-// The caller supplies what is ITS business — the wizard re-reads the overlap
-// verdict, the pack screen does not — through `onSaved`.
+// The caller supplies what is ITS business through two callbacks, and the
+// difference between them matters:
+//
+//   onResponse — EVERY 200, refused or not. For anything derived from the
+//                server's own view of the application, like missingRequired:
+//                a refusal is still a true answer about what is outstanding,
+//                and throwing it away leaves a stale list on screen.
+//
+//   onSaved    — only a CLEAN save. For work that is only correct once the
+//                answers actually landed, like the wizard re-reading the
+//                overlap verdict after a calibre changed.
 // ────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -69,6 +78,7 @@ export function useMotivationAutosave({
   token,
   answers,
   ready,
+  onResponse,
   onSaved,
 }: {
   id: string;
@@ -80,6 +90,9 @@ export function useMotivationAutosave({
    * over everything.
    */
   ready: boolean;
+  /** Every 200, refused or not. See the header. */
+  onResponse?: (res: SaveAnswersResult) => void;
+  /** Only a clean save. See the header. */
   onSaved?: (res: SaveAnswersResult) => void | Promise<void>;
 }): AutosaveResult {
   const [state, setState] = useState<SaveState>('idle');
@@ -91,6 +104,8 @@ export function useMotivationAutosave({
   // every keystroke and thereby prevent the save from ever firing.
   const saved = useRef(onSaved);
   saved.current = onSaved;
+  const responded = useRef(onResponse);
+  responded.current = onResponse;
 
   const markDirty = useCallback(() => {
     dirty.current = true;
@@ -106,6 +121,11 @@ export function useMotivationAutosave({
     const t = setTimeout(async () => {
       try {
         const res = await motivationsApi.saveAnswers(token, id, answers);
+
+        // ⚠️ BEFORE THE REFUSAL BRANCH, DELIBERATELY. What the server says is
+        // still outstanding is true whether or not it stored every value, and
+        // dropping it on a refusal leaves a stale list in front of somebody.
+        responded.current?.(res);
 
         // Rule 2. Reported by name, and the draft below is NOT cleared.
         if (res.refused?.length) {

@@ -7,7 +7,8 @@ import ScanButton from '@/components/scan/scan-button';
 import LibraryPicker from '@/components/library-picker';
 import VaultConsentModal from '@/components/vault-consent';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
-import { AUTOSAVE_MS, DRAFT_KEY } from '@/lib/motivation-draft';
+import { clearDraft, readDraft } from '@/lib/motivation-draft';
+import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
 import FieldInput from '@/components/motivation-field-input';
 import DocumentChecklist, {
   ChecklistRow,
@@ -290,10 +291,7 @@ export default function MotivationWizardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /** Registered fields the server would not store. See the autosave effect. */
-  const [refused, setRefused] = useState<string[]>([]);
-  const [saving, setSaving] = useState<'idle' | 'saving' | 'saved' | 'error'>(
-    'idle',
-  );
+
   // 1-based step on screen. Was "which accordion is open"; it is now "which
   // step the rail is pointing at", and unlike the old accordion it is never 0 —
   // there is always a step showing.
@@ -372,12 +370,10 @@ export default function MotivationWizardPage() {
         let merged = d.answers ?? {};
         if (!restored.current) {
           restored.current = true;
-          try {
-            const raw = localStorage.getItem(DRAFT_KEY(id));
-            if (raw) merged = { ...merged, ...(JSON.parse(raw) as object) };
-          } catch {
-            /* a corrupt draft is not worth failing the page over */
-          }
+          // readDraft never throws and drops anything that is not a string —
+          // localStorage throws on ACCESS in a private window, and this is a
+          // page load. See lib/motivation-draft.ts.
+          merged = { ...merged, ...readDraft(id) };
         }
 
         setDetail(d);
@@ -531,51 +527,39 @@ export default function MotivationWizardPage() {
     [id, token],
   );
 
-  // Debounced autosave. The timer is keyed on the answers object, so a burst of
-  // typing collapses into one request once they pause.
-  const dirty = useRef(false);
-  useEffect(() => {
-    if (!dirty.current || !detail) return;
-    localStorage.setItem(DRAFT_KEY(id), JSON.stringify(answers));
-    setSaving('saving');
-    const t = setTimeout(async () => {
+  // ── AUTOSAVE ────────────────────────────────────────────────────
+  //
+  // ⚠️ THE FOUR RULES LIVE IN THE HOOK NOW, NOT HERE. Draft written before the
+  // request; a 200 with a non-empty `refused` is not a save; the draft is
+  // cleared only after a clean one; nothing sends until something is dirty.
+  // The pack screen at /licence-services/[id] runs the same rules, and two
+  // copies of them would be two answers to "did that save?".
+  //
+  // What stays here is what is genuinely this screen's: the overlap verdict,
+  // which only this screen asks about.
+  const autosave = useMotivationAutosave({
+    id,
+    token,
+    answers,
+    ready: Boolean(detail),
+    // Every 200, refused or not — what is outstanding is true either way.
+    onResponse: (res) =>
+      setDetail((d) => (d ? { ...d, missingRequired: res.missingRequired } : d)),
+    // Only a clean save. The overlap check is computed server-side from the
+    // calibres, so a change to any of them can turn the question on or off.
+    onSaved: async () => {
+      if (!overlapDirty.current) return;
+      overlapDirty.current = false;
       try {
-        const res = await motivationsApi.saveAnswers(token, id, answers);
-        setDetail((d) => (d ? { ...d, missingRequired: res.missingRequired } : d));
-        // ⚠️ A 200 IS NOT A SAVE. The server returns the registered fields
-        // whose value it would not store, and saying "Saved" over that is how
-        // an applicant loses an answer without ever being told: the box keeps
-        // the text until the page reloads, then quietly comes back empty.
-        // Reported by name, and the local draft is deliberately NOT cleared.
-        if (res.refused?.length) {
-          setRefused(res.refused);
-          setSaving('error');
-          return;
-        }
-        setRefused([]);
-        // The overlap check is computed server-side from the calibres, so a
-        // change to any of them can turn the question on or off. Re-read it
-        // rather than leave a stale answer on screen.
-        if (overlapDirty.current) {
-          overlapDirty.current = false;
-          try {
-            const fresh = await motivationsApi.get(token, id);
-            setDetail((d) => (d ? { ...d, overlap: fresh.overlap } : fresh));
-          } catch {
-            /* the question is a courtesy; never break the save over it */
-          }
-        }
-        // Cleared only once the server has it. Clearing on send would lose the
-        // draft precisely when the request failed.
-        localStorage.removeItem(DRAFT_KEY(id));
-        dirty.current = false;
-        setSaving('saved');
+        const fresh = await motivationsApi.get(token, id);
+        setDetail((d) => (d ? { ...d, overlap: fresh.overlap } : fresh));
       } catch {
-        setSaving('error');
+        /* the question is a courtesy; never break the save over it */
       }
-    }, AUTOSAVE_MS);
-    return () => clearTimeout(t);
-  }, [answers, detail, id, token]);
+    },
+  });
+  const saving = autosave.state;
+  const refused = autosave.refused;
 
   // Set when an edit could change the overlap verdict, so the next save
   // re-reads it instead of leaving a stale question on screen.
@@ -1074,7 +1058,7 @@ export default function MotivationWizardPage() {
     value: string,
     opts: { onlyIfEmpty?: boolean; fromDocument?: boolean } = {},
   ) => {
-    dirty.current = true;
+    autosave.markDirty();
     if (key === 'firearm_calibre' || /^existing_firearm_\d+_calibre$/.test(key)) {
       overlapDirty.current = true;
     }
@@ -3071,7 +3055,7 @@ export default function MotivationWizardPage() {
               await motivationsApi.erase(token, id);
               // The local draft would otherwise resurrect the answers on a
               // new application with the same id — belt and braces.
-              localStorage.removeItem(DRAFT_KEY(id));
+              clearDraft(id);
               router.push('/motivations');
             } catch (e) {
               setError(
