@@ -226,6 +226,216 @@ export const ENDORSEMENTS: readonly EndorsementSpec[] = [
 ];
 
 /**
+ * ── THE STATEMENT OF RESULTS, AND THE CODES ON IT ──────────────────
+ *
+ * A training provider does not issue "a proficiency certificate" with a type
+ * written on it. It issues a STATEMENT OF RESULTS listing the SAQA unit
+ * standards the candidate passed, by number. Operator, 2026-08-29: "that is
+ * the page we are looking for, not the certificate itself."
+ *
+ * ⚠️ ONE STATEMENT OFTEN CARRIES SEVERAL CODES. Somebody who trained for
+ * handgun, shotgun and rifle in one course has one page with all of them, so
+ * nothing here may assume a document maps to a single endorsement.
+ *
+ * ⚠️ AND UNTIL NOW A CODE RESOLVED TO NOTHING. document-fields.ts already
+ * routes the extractor's `unit_standard` into the motivation's
+ * `competency_for`, and that answer is read as LABELS: parseEndorsements()
+ * returned [] for "119649". Per the note on LEGACY_LABELS below, an answer
+ * that resolves to nothing does not raise an error — it reads as "we have not
+ * seen the certificate yet", so the eligibility check turns itself off with no
+ * log line and nothing on screen. Reading the codes closes that.
+ */
+
+/**
+ * The legal-knowledge standard EVERY competency applicant must hold.
+ *
+ * ⚠️ ALWAYS REQUIRED, AND ITS ABSENCE IS WORTH SAYING OUT LOUD. It satisfies
+ * s 9(2)(q) of the Firearms Control Act — "the prescribed test on knowledge of
+ * this Act" — and no practical unit substitutes for it. Operator, 2026-08-29:
+ * "the 117705 must always be requested by the system and alerted if it's
+ * missing."
+ *
+ * ⚠️ ITS LAST-ENROLMENT DATE, 30 JUNE 2026, HAS PASSED and SAQA records state
+ * it is not replaced by any other unit standard. That does not affect reading a
+ * statement somebody already holds; it does mean nobody should be told they can
+ * still enrol without checking with the PFTC first. See §3.3 of
+ * sa-competency-reference.md, which flags the status as unverified.
+ */
+export const MANDATORY_UNIT_STANDARD = '117705';
+
+/** What a code on a statement of results means. */
+export interface UnitStandardSpec {
+  code: string;
+  title: string;
+  /** The endorsement it proves, where it proves one. */
+  endorsement?: Endorsement;
+  /**
+   * ⚠️ BUSINESS-PURPOSE UNITS ARE NOT PRIVATE-POSSESSION UNITS. The 1235xx
+   * series is s 9(2)(s) — dealers, security officers, people who use a firearm
+   * in the course of business — at NQF 4. Filing one as though it were the
+   * private unit for the same firearm overstates what the holder has done.
+   */
+  businessPurposes?: true;
+}
+
+/**
+ * Every code we recognise on a statement of results.
+ *
+ * ⚠️ VERIFIED AGAINST THE SAQA REGISTER, and three of these were WRONG in the
+ * reference's v2 — see the note on ENDORSEMENTS above. 123515 in particular is
+ * a BUSINESS HANDGUN standard and was once mapped to "self-loading shotgun".
+ *
+ * ⚠️ HANDGUN AND SHOTGUN EACH HAVE EXACTLY ONE CODE. Operator, 2026-08-29:
+ * "handgun is handgun. whether its a semi auto pistol or revolver, they all
+ * fall under the same code" and "the same is applicable for shotgun, one code
+ * for manual and semi auto". The only action split with a training basis is
+ * rifle/carbine: 119651 manual, 119650 self-loading.
+ */
+export const UNIT_STANDARDS: readonly UnitStandardSpec[] = [
+  {
+    code: MANDATORY_UNIT_STANDARD,
+    title:
+      'Demonstrate knowledge of the Firearms Control Act applicable to possessing a firearm',
+  },
+  { code: '119649', title: 'Handle and use a handgun', endorsement: 'handgun' },
+  {
+    code: '119650',
+    title: 'Handle and use a self-loading rifle or carbine',
+    endorsement: 'rifle-sl',
+  },
+  {
+    code: '119651',
+    title: 'Handle and use a manually operated rifle or carbine',
+    endorsement: 'rifle-mo',
+  },
+  { code: '119652', title: 'Handle and use a shotgun', endorsement: 'shotgun' },
+  {
+    code: '243200',
+    title: 'Handle and use a muzzle-loading firearm',
+    endorsement: 'muzzle-loader',
+  },
+
+  // ── s 9(2)(s), business purposes. NQF 4. ──
+  {
+    code: '123515',
+    title: 'Handle and use a handgun for business purposes',
+    endorsement: 'handgun',
+    businessPurposes: true,
+  },
+  {
+    code: '123514',
+    title: 'Handle and use a shotgun for business purposes',
+    endorsement: 'shotgun',
+    businessPurposes: true,
+  },
+  {
+    code: '123511',
+    title:
+      'Handle and use a self-loading rifle or carbine for business purposes',
+    endorsement: 'rifle-sl',
+    businessPurposes: true,
+  },
+  {
+    code: '123519',
+    title:
+      'Handle and use a manually operated rifle or carbine for business purposes',
+    endorsement: 'rifle-mo',
+    businessPurposes: true,
+  },
+];
+
+const BY_CODE = new Map(UNIT_STANDARDS.map((u) => [u.code, u]));
+
+/** One code, if we know it. */
+export function unitStandardSpec(code: string): UnitStandardSpec | undefined {
+  return BY_CODE.get((code ?? '').trim());
+}
+
+/** The endorsement a code proves, if it proves one. */
+export function endorsementFromUnitStandard(
+  code: string,
+): Endorsement | undefined {
+  return unitStandardSpec(code)?.endorsement;
+}
+
+/**
+ * Every unit-standard code in a block of OCR'd text, in the order they appear.
+ *
+ * ⚠️ SIX DIGITS, BOUNDED, AND DEDUPED. A statement of results is a table, so
+ * the same code can appear twice — once in a row and once in a summary — and a
+ * naive scan would report a duplicate endorsement. The boundaries matter as
+ * much: an unbounded six-digit match would pull digits out of an ID number, a
+ * certificate number or a date and file somebody's statement under a firearm
+ * they never trained on.
+ *
+ * ⚠️ UNKNOWN CODES ARE RETURNED, NOT DROPPED. A provider may list a dealer,
+ * instructor or security-officer unit we do not recognise. The caller decides
+ * what to do with it; silently discarding it would make a document look like it
+ * proved less than it does.
+ */
+export function parseUnitStandards(raw: string): string[] {
+  const text = (raw ?? '').toString();
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const m of text.matchAll(/(?<!\d)(\d{6})(?!\d)/g)) {
+    const code = m[1];
+    if (seen.has(code)) continue;
+    seen.add(code);
+    out.push(code);
+  }
+  return out;
+}
+
+/** What a statement of results proves, read off its codes. */
+export interface StatementOfResults {
+  /** Endorsements proved, deduped, in ENDORSEMENTS order. */
+  endorsements: Endorsement[];
+  /** ⚠️ s 9(2)(q). Its absence is reported, never inferred away. */
+  hasMandatoryKnowledge: boolean;
+  /** Codes present that we recognise. */
+  known: string[];
+  /** Codes present that we do not. Surfaced, never dropped. */
+  unknown: string[];
+  /**
+   * True where any code is from the 1235xx business series.
+   *
+   * A private-possession application resting on a business unit is not
+   * automatically wrong — the holder did the harder course — but it is worth a
+   * human looking, because the two are different licence categories.
+   */
+  businessPurposes: boolean;
+}
+
+export function readStatementOfResults(raw: string): StatementOfResults {
+  const codes = parseUnitStandards(raw);
+  const known: string[] = [];
+  const unknown: string[] = [];
+  const found = new Set<Endorsement>();
+  let businessPurposes = false;
+
+  for (const code of codes) {
+    const spec = unitStandardSpec(code);
+    if (!spec) {
+      unknown.push(code);
+      continue;
+    }
+    known.push(code);
+    if (spec.endorsement) found.add(spec.endorsement);
+    if (spec.businessPurposes) businessPurposes = true;
+  }
+
+  return {
+    // ENDORSEMENTS order, not the order they happened to be printed in, so two
+    // statements listing the same units read identically.
+    endorsements: ENDORSEMENTS.map((e) => e.value).filter((v) => found.has(v)),
+    hasMandatoryKnowledge: known.includes(MANDATORY_UNIT_STANDARD),
+    known,
+    unknown,
+    businessPurposes,
+  };
+}
+
+/**
  * v2 wording, and every other spelling seen on a card, onto current labels.
  *
  * ⚠️ WITHOUT THIS THE SAFETY CHECK TURNS ITSELF OFF, SILENTLY. A stored
@@ -424,6 +634,20 @@ export function parseEndorsements(raw: string): Endorsement[] {
   const text = (raw ?? '').trim();
   if (!text) return [];
   const found = new Set<Endorsement>();
+
+  // ⚠️ CODES FIRST, AND THIS CLOSES A SILENT FAILURE. document-fields.ts routes
+  // the extractor's `unit_standard` straight into this answer, so a statement
+  // of results read by OCR arrives here as "117705, 119649, 119652" — digits,
+  // no words. Every branch below matches TYPE WORDS, so that string resolved to
+  // [] and, per the note on LEGACY_LABELS, an empty resolution reads as "we
+  // have not seen the certificate yet" rather than as an error: the eligibility
+  // check turned itself off with nothing logged and nothing on screen.
+  //
+  // Verified before the fix: parseEndorsements('119649') returned [].
+  for (const code of parseUnitStandards(text)) {
+    const e = endorsementFromUnitStandard(code);
+    if (e) found.add(e);
+  }
 
   // ⚠️ A COMMA DOES NOT ALWAYS SEPARATE TWO ENDORSEMENTS. §2.1's own table
   // writes each one as "Handgun, self-loading" — type first, action after the
