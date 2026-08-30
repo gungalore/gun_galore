@@ -26,6 +26,27 @@ function ctx2d(w: number, h: number): CanvasRenderingContext2D {
   c.height = h;
   const g = c.getContext('2d', { willReadFrequently: true });
   if (!g) throw new Error('This browser will not give us a canvas.');
+  // ⚠️ ASK FOR A REAL RESAMPLE, NOT THE DEFAULT.
+  //
+  // The default imageSmoothingQuality is 'low' — a narrow bilinear tap. That
+  // is fine at 1:1 and wrong at 6.75:1, which is what frameToGray does every
+  // frame: a 2160-wide track into a 320-wide detect buffer. A narrow kernel
+  // samples a slice of each destination pixel's ~45-source-pixel footprint
+  // instead of integrating it, so shifting the sampling phase by a fraction of
+  // a source pixel lands on different content and the reading jumps. On dense
+  // periodic texture — a woven carpet, say — that is most of the signal.
+  //
+  // detect.ts already knows this and already guards against it, halving
+  // progressively with a real 2x2 box average rather than jumping straight
+  // down: "HALVE UNTIL THE PRINT IS GONE, not just once." This draw is the one
+  // downscale in the pipeline that skipped the same precaution.
+  //
+  // ⚠️ AND IT COSTS TIME, WHICH THIS LOOP HAS LITTLE OF. The scanner already
+  // measures 62ms a frame on the operator's phone and drops the detector at
+  // 90ms, so if 'high' pushes it over, the diagnostic panel's ms/frame will
+  // say so and this comes straight back out.
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
   return g;
 }
 

@@ -75,6 +75,45 @@ export function rectQuad(r: BufferRect) {
 }
 
 /**
+ * Every `stride`-th pixel inside a region, as a flat sample.
+ *
+ * ⚠️ THE MOTION READING WAS THE ONLY ONE MEASURED OVER THE WHOLE FRAME, and it
+ * was the only one failing. On the operator's phone: ink 0.286 PASS, glare 0
+ * PASS, luma 189 PASS, motion 22.31 against a limit of 4 — never once below it
+ * across 400 frames, on a phone held deliberately still.
+ *
+ * The document sat on a WOVEN CARPET. Dense near-periodic texture is the
+ * worst case for the 6.75x downscale that feeds this buffer, and every pixel
+ * of that carpet — all of it OUTSIDE the aim box — was being counted as
+ * evidence about whether the member's hand was moving.
+ *
+ * ⚠️ THIS IS THE MEASUREMENT, NOT A GUESS AT THE FIX. Scoping the reading to
+ * the box is right on its own terms (the same rect already answers ink, glare
+ * and luma), and it also tells us what the background was contributing: the
+ * scanner now reports the boxed and whole-frame numbers side by side, so one
+ * run says whether the carpet was the whole story or only part of it.
+ */
+export function sampleRegion(
+  gray: Gray,
+  r: BufferRect,
+  stride = 2,
+): Uint8Array {
+  const x0 = Math.max(0, Math.floor(r.x0));
+  const y0 = Math.max(0, Math.floor(r.y0));
+  const x1 = Math.min(gray.width, Math.ceil(r.x1));
+  const y1 = Math.min(gray.height, Math.ceil(r.y1));
+  const cols = Math.max(0, Math.ceil((x1 - x0) / stride));
+  const rows = Math.max(0, Math.ceil((y1 - y0) / stride));
+  const out = new Uint8Array(cols * rows);
+  let p = 0;
+  for (let y = y0; y < y1; y += stride) {
+    const row = y * gray.width;
+    for (let x = x0; x < x1; x += stride) out[p++] = gray.data[row + x];
+  }
+  return out;
+}
+
+/**
  * Mean frame-to-frame movement, with a uniform brightness shift removed.
  *
  * ⚠️ THE SUBTRACTION IS THE WHOLE POINT. This was a plain mean of

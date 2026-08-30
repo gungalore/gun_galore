@@ -70,6 +70,7 @@ export default function ScanDiagnostics({
   reading,
   held,
   frameMs,
+  frameMotion,
   detectorOff,
   device,
   trail,
@@ -78,6 +79,8 @@ export default function ScanDiagnostics({
   reading: { ink: number; motion: number; glare: number; luma: number };
   held: number;
   frameMs: number;
+  /** Whole-frame movement, for comparison against the boxed reading. */
+  frameMotion?: number;
   detectorOff: boolean;
   device: DeviceContext | null;
   trail: readonly FrameSnapshot[];
@@ -189,6 +192,15 @@ export default function ScanDiagnostics({
         ready at least once: {s.everReady ? 'yes' : 'NO'} · frames {s.frames} ·{' '}
         {s.medianFrameMs}ms/frame
         {detectorOff ? ' · DETECTOR DROPPED (slow device)' : ''}
+      </div>
+      {/* ⚠️ THE COMPARISON THAT SETTLES IT. The left number is what the
+          shutter gates on, scoped to the aim box like every other reading.
+          The right is the same measure over the whole frame — what it used to
+          be. A big gap means the background was the problem; both high means
+          the downscale under it still is. */}
+      <div style={{ opacity: 0.9 }}>
+        motion in box {Math.round(reading.motion * 100) / 100} · whole frame{' '}
+        {frameMotion === undefined ? '—' : Math.round(frameMotion * 100) / 100}
       </div>
       {device && (
         <div style={{ opacity: 0.9 }}>

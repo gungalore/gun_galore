@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Gray } from './detect';
-import { mapToBuffer, motionOf, rectQuad, regionExposure } from './frame-stats';
+import {
+  mapToBuffer,
+  motionOf,
+  rectQuad,
+  regionExposure,
+  sampleRegion,
+} from './frame-stats';
 import { autoBlocker, MOTION_STILL } from './autocapture';
 import { GLARE_AT } from './exposure';
 
@@ -161,5 +167,63 @@ describe('⚠️ exposure is judged on the aim box only', () => {
     const r = regionExposure(g, { x0: 100, y0: 100, x1: 120, y1: 120 }, 1);
     expect(r.luma).toBe(128);
     expect(autoBlocker(true, { ink: 0.5, motion: 0, glare: r.glare, luma: r.luma })).toBeNull();
+  });
+});
+
+describe('⚠️ movement is read inside the box, not across the room', () => {
+  /** A still document in the box, with a busy background churning outside it. */
+  function scene(bg: number): Gray {
+    const g = gray(100, 100, 30);
+    for (let y = 0; y < 100; y++)
+      for (let x = 0; x < 100; x++) {
+        const inBox = x >= 30 && x < 70 && y >= 30 && y < 70;
+        // The document is identical in both frames; the carpet is not.
+        g.data[y * g.width + x] = inBox ? 200 : (x * 7 + y * 13 + bg) % 256;
+      }
+    return g;
+  }
+  const box = { x0: 30, y0: 30, x1: 70, y1: 70 };
+
+  it('reads still when only the background changed', () => {
+    const a = sampleRegion(scene(0), box, 1);
+    const b = sampleRegion(scene(120), box, 1);
+    expect(motionOf(a, b)).toBe(0);
+    expect(
+      autoBlocker(true, { ink: 0.5, motion: motionOf(a, b), glare: 0, luma: 128 }),
+    ).toBeNull();
+  });
+
+  it('⚠️ WHOLE-FRAME, THE SAME PAIR LOOKS VIOLENTLY IN MOTION', () => {
+    // This is the shape of the operator's 22.31: a stationary document, a
+    // textured surround, and a reading taken over both.
+    const whole = { x0: 0, y0: 0, x1: 100, y1: 100 };
+    const a = sampleRegion(scene(0), whole, 1);
+    const b = sampleRegion(scene(120), whole, 1);
+    const m = motionOf(a, b);
+    expect(m).toBeGreaterThan(MOTION_STILL);
+    expect(autoBlocker(true, { ink: 0.5, motion: m, glare: 0, luma: 128 })).toBe('steady');
+  });
+
+  it('still sees the document itself move', () => {
+    // Scoping must not make it blind — a document that shifts inside the box
+    // has to register.
+    const a = sampleRegion(scene(0), box, 1);
+    const moved = scene(0);
+    for (let y = 30; y < 50; y++)
+      for (let x = 30; x < 70; x++) moved.data[y * moved.width + x] = 60;
+    expect(motionOf(a, sampleRegion(moved, box, 1))).toBeGreaterThan(MOTION_STILL);
+  });
+
+  it('samples a stable count so consecutive frames can be compared', () => {
+    const g = gray(100, 100);
+    expect(sampleRegion(g, box, 2).length).toBe(sampleRegion(g, box, 2).length);
+    expect(sampleRegion(g, box, 2).length).toBe(20 * 20);
+  });
+
+  it('clamps a box hanging off the buffer instead of reading rubbish', () => {
+    const g = gray(50, 50, 77);
+    const s = sampleRegion(g, { x0: -10, y0: -10, x1: 999, y1: 999 }, 1);
+    expect(s.length).toBe(2500);
+    expect([...new Set(s)]).toEqual([77]);
   });
 });

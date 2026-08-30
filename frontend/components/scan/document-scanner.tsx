@@ -39,6 +39,7 @@ import {
   motionOf,
   rectQuad,
   regionExposure,
+  sampleRegion,
 } from '@/lib/scan/frame-stats';
 import {
   deviceContext,
@@ -549,7 +550,10 @@ export default function DocumentScanner({
 
     /** Every 8th luma of the previous frame, for the motion measure. */
     let prevSample: Uint8Array | null = null;
+    /** Whole-frame sample, diagnostic only — nothing gates on it. */
+    let prevWide: Uint8Array | null = null;
     let motion = 255;
+    let frameMotion = 255;
     /** When the phone last started being still, or 0 while it is moving. */
     let steadySince = 0;
     /**
@@ -606,17 +610,16 @@ export default function DocumentScanner({
           // plain mean cannot tell that from a hand. MOTION_STILL is 4 on a
           // 0-255 scale; a hunt of a few levels pinned the reading above it
           // and 'steady' never cleared.
+          // Whole-frame, kept ONLY as a diagnostic so the two readings can be
+          // compared in one run. Nothing gates on it.
           const n8 = Math.ceil(gray.data.length / 8);
-          const sample = new Uint8Array(n8);
+          const wide = new Uint8Array(n8);
           for (let i = 0, j = 0; i < gray.data.length; i += 8, j++) {
-            sample[j] = gray.data[i];
+            wide[j] = gray.data[i];
           }
-          if (!prevSample || prevSample.length !== n8) {
-            motion = 255; // first frame: unknown, treat as moving
-          } else {
-            motion = motionOf(sample, prevSample);
-          }
-          prevSample = sample;
+          frameMotion =
+            prevWide && prevWide.length === n8 ? motionOf(wide, prevWide) : 255;
+          prevWide = wide;
 
           // ── everything else is asked about the AIM BOX ────────────
           //
@@ -649,6 +652,21 @@ export default function DocumentScanner({
               gray,
             );
             inkRef.current = inkiness(gray, [...rectQuad(rect)] as Quad);
+
+            // ── the reading the shutter actually gates on ──────────────
+            //
+            // ⚠️ THE AIM BOX, LIKE EVERY OTHER READING. This was measured over
+            // the whole frame while ink, glare and luma were correctly scoped
+            // here — so a woven carpet the member was not even pointing at
+            // counted, at full weight, as evidence that their hand was moving.
+            // On the operator's phone that pinned motion at 22.31 against a
+            // limit of 4 and it never once dropped below it in 400 frames.
+            const boxed = sampleRegion(gray, rect);
+            motion =
+              prevSample && prevSample.length === boxed.length
+                ? motionOf(boxed, prevSample)
+                : 255; // first frame, or the box resized: treat as moving
+            prevSample = boxed;
 
             const { glare: frac, luma: mean } = regionExposure(gray, rect);
             lumaRef.current = mean;
@@ -802,6 +820,7 @@ export default function DocumentScanner({
           blocker: why,
           held: steadySince ? now - steadySince : 0,
           ms: Math.round(rolling),
+          frameMotion,
           detectorOff,
         });
         const elBoxNow = video.getBoundingClientRect();
@@ -1319,6 +1338,9 @@ export default function DocumentScanner({
                 held={trailRef.current[trailRef.current.length - 1]?.held ?? 0}
                 frameMs={
                   trailRef.current[trailRef.current.length - 1]?.ms ?? 0
+                }
+                frameMotion={
+                  trailRef.current[trailRef.current.length - 1]?.frameMotion
                 }
                 detectorOff={
                   trailRef.current[trailRef.current.length - 1]?.detectorOff ??

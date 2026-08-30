@@ -47,6 +47,17 @@ export interface FrameSnapshot extends FrameReading {
   held: number;
   /** What this frame cost to measure, in ms. */
   ms: number;
+  /**
+   * The same movement measure taken over the WHOLE frame instead of the aim
+   * box. Diagnostic only — the shutter never sees it.
+   *
+   * ⚠️ CARRIED SO ONE TEST RUN SETTLES AN ARGUMENT. Motion was measured
+   * whole-frame while every other reading was scoped to the box, and on a
+   * document lying on a woven carpet it pinned at 22.31 against a limit of 4.
+   * Scoping it to the box is right regardless; printing both is what says how
+   * much of that 22 was the carpet and how much was the downscale underneath.
+   */
+  frameMotion?: number;
   /** Had the device been judged too slow to run the detector? */
   detectorOff: boolean;
 }

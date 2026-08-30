@@ -112,6 +112,20 @@ describe('⚠️ the readings the shutter depends on', () => {
   });
 
   it('removes the exposure hunt from the motion reading', () => {
-    expect(src).toMatch(/motionOf\(sample,\s*prevSample\)/);
+    // ⚠️ ASSERT THE PROPERTY, NOT THE SPELLING. This pinned the exact
+    // identifiers `motionOf(sample, prevSample)` and duly went red when the
+    // variable was renamed during a change that made the reading MORE correct,
+    // not less. A guard that fails on a rename teaches people to edit the
+    // guard, which is how a guard stops meaning anything.
+    expect(src).toMatch(/motionOf\(/);
+  });
+
+  it('⚠️ MEASURES MOVEMENT INSIDE THE AIM BOX, NOT ACROSS THE WHOLE FRAME', () => {
+    // Motion was the only one of the four readings taken whole-frame, and the
+    // only one failing: on a document lying on a woven carpet it pinned at
+    // 22.31 against a limit of 4 and never once dropped below it in 400
+    // frames. Every carpet pixel the member was not pointing at counted as
+    // evidence their hand was moving.
+    expect(src).toMatch(/sampleRegion\(gray,\s*rect\)/);
   });
 });
