@@ -108,12 +108,20 @@ export const MOTION_STILL = 4;
 /**
  * How long the phone must be still before the shutter fires.
  *
- * ⚠️ 1100ms, NOT 700. The operator's verdict on the first version was "super
- * sensitive", and he was right: at 700ms it fired while the phone was still
- * being positioned. A shutter that goes off early costs a retake AND the
- * member's trust in it; one that waits a beat too long costs a beat.
+ * ⚠️ 750ms, AND THE HISTORY MATTERS. It was 700, the operator called it "super
+ * sensitive" because it fired while the phone was still being positioned, and
+ * it went to 1100. Then 1100 was "way too long... the average user will never
+ * even bother holding it so still for so long".
+ *
+ * Both verdicts were true, and neither was really about this number: the
+ * MOTION READING underneath it was broken the whole time. A stationary phone
+ * measured 22-31 against a limit of 4, so the clock either never started or
+ * restarted constantly, and 1100ms of UNBROKEN stillness was a far longer wait
+ * than 1100ms. With the reading fixed — coarsened, and matched for gain as
+ * well as offset — the hold means what it says, and 750 is the operator's own
+ * call against numbers that are finally honest.
  */
-export const HOLD_MS = 1100;
+export const HOLD_MS = 750;
 
 /**
  * What the frame looks like right now, as far as this decision cares.

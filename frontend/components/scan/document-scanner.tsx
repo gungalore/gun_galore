@@ -1227,6 +1227,21 @@ export default function DocumentScanner({
       // focus() can reach it while Tab never lands on it again.
       tabIndex={-1}
       data-blocking-overlay="true"
+      // ⚠️ dvh, BECAUSE THIS ONE LIVES INSIDE BROWSER CHROME.
+      //
+      // `position: fixed; inset: 0` covers the LARGE viewport — the one with
+      // the toolbars collapsed. Chrome for iOS shows a bottom toolbar, so the
+      // foot of this dialog sat behind it: the corner editor's instruction
+      // line was cut off mid-sentence and its Cancel / Reset / Apply row was
+      // entirely off-screen. The member could drag the corners and had no way
+      // to accept them.
+      //
+      // This is the exact opposite of what the standalone shell wants, and
+      // deliberately so — see the note on .gg-shell in globals.css. Installed,
+      // there is no chrome and vh is right; in a browser tab there is, and dvh
+      // is the one that tracks it. The class carries a vh fallback for engines
+      // without dvh.
+      className="gg-scan-root"
       style={{
         position: 'fixed',
         inset: 0,

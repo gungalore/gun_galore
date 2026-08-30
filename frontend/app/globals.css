@@ -1566,3 +1566,22 @@ html[data-standalone='true'] [data-shell-tabs] {
      who has asked for no motion must not get the slide regardless. */
   .gg-datesheet { animation: none !important; }
 }
+
+/* ── the scanner fills the visible viewport, not the collapsed one ──
+   `position: fixed; inset: 0` covers the LARGE viewport — the one measured
+   with the browser's toolbars hidden. Chrome for iOS keeps a bottom toolbar,
+   so the foot of the scanner sat behind it: the corner editor's instructions
+   were cut off mid-sentence and its Cancel / Reset / Apply row was entirely
+   off-screen, leaving a member able to drag the corners and unable to accept
+   them.
+
+   ⚠️ dvh HERE, vh ON .gg-shell, AND THE DIFFERENCE IS THE POINT. The shell is
+   the installed app, where there is no browser chrome and the dynamic
+   viewport under-measures — that is what painted a white bar under the tab
+   bar. This is a dialog inside a browser tab, where chrome is present and the
+   dynamic viewport is the only one that tracks it. Same family of bug,
+   opposite answer, because the two live in different places. */
+.gg-scan-root {
+  height: 100vh;
+  height: 100dvh;
+}
