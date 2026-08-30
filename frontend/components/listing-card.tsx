@@ -291,7 +291,17 @@ export function ListingCard({ listing }: { listing: Listing }) {
           card has no price lock, no quantity and no auth context, so
           anything that looked like it committed you from here would be
           lying about what it does. */}
-      <div className="px-3 pb-3 flex items-center justify-between gap-2">
+      {/* ⚠️ WRAPS, BECAUSE ON A PHONE THESE DO NOT FIT ON ONE LINE. Two cards
+          across a 393px screen leaves each about 146px of content width.
+          "Place bid" is shrink-0 and takes ~100px of it; the countdown chip
+          needs ~80px before it will stop breaking. They cannot share a row, and
+          without wrapping the chip shattered into three stacked lines inside
+          its own border while the bid count truncated to "St…".
+
+          Wrapping puts the button on its own line and the auction's live state
+          under it, which is also the right reading order. Buy Now cards have no
+          second child here at all, so nothing about them changes. */}
+      <div className="px-3 pb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
         <Link
           href={`/listings/${listing.id}#buy-panel`}
           className="gg-press inline-flex items-center shrink-0"
@@ -352,7 +362,11 @@ function AuctionTimeChip({ endTime }: { endTime: string | null | undefined }) {
   const urgent = ms < 3600_000; // <1h
   return (
     <span
-      className="px-1.5 py-0.5 rounded-[3px]"
+      // ⚠️ nowrap AND shrink-0. "Ends in 2h 31m" is one fact and breaking it
+      // across lines inside its own bordered chip reads as a rendering fault,
+      // which is exactly how it looked on the operator's phone. Let the bid
+      // count beside it give way instead — it already truncates.
+      className="px-1.5 py-0.5 rounded-[3px] whitespace-nowrap shrink-0"
       style={{
         background: urgent ? 'rgba(200,16,46,0.10)' : 'var(--bg-inset)',
         color: urgent ? 'var(--red)' : 'var(--text-secondary)',
