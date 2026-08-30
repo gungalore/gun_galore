@@ -131,19 +131,41 @@ describe('loupeSize', () => {
   });
 
   it('still fits inside the frame and stays out of the hand at every width', () => {
+    // ⚠️ ONE ASSERTION, NOT FOUR PER POINT. This swept six widths by every
+    // fifth pixel in both axes and called expect() four times at each one —
+    // roughly a quarter of a million assertions, each carrying vitest's own
+    // per-call overhead. Alone it finished in about two seconds; under the
+    // full suite it crossed the default 5s testTimeout and the run went red
+    // with "Test timed out", which reads exactly like a broken loupe and is
+    // not one. A suite that fails at random is a suite people stop believing.
+    //
+    // The sweep is unchanged — same widths, same step, same four invariants.
+    // Only the reporting moved: collect the offenders, assert once, and name
+    // the first one so a real failure is still diagnosable at a glance rather
+    // than being a bare "expected 0 to be >= 0".
+    const bad: string[] = [];
     for (const width of WIDTHS) {
       const frame = { width, height: Math.round(width * 1.7) };
       const loupe = loupeSize(frame);
+      const floor = noGoTop(frame);
       for (let x = 0; x <= frame.width; x += 5) {
         for (let y = 0; y <= frame.height; y += 5) {
           const at = magnifierSpot({ x, y }, frame, loupe);
-          expect(at.x).toBeGreaterThanOrEqual(0);
-          expect(at.y).toBeGreaterThanOrEqual(0);
-          expect(at.x + loupe.width).toBeLessThanOrEqual(frame.width);
-          expect(at.y + loupe.height).toBeLessThanOrEqual(noGoTop(frame));
+          if (
+            at.x < 0 ||
+            at.y < 0 ||
+            at.x + loupe.width > frame.width ||
+            at.y + loupe.height > floor
+          ) {
+            bad.push(
+              `${width}px frame, dot (${x},${y}): loupe at (${at.x},${at.y}) ` +
+                `size ${loupe.width}×${loupe.height}, frame ${frame.width}×${frame.height}, floor ${floor}`,
+            );
+          }
         }
       }
     }
+    expect(bad.slice(0, 3), `${bad.length} placements escaped the frame`).toEqual([]);
   });
 
   it('does not shrink the loupe on phones that can carry a full one', () => {
