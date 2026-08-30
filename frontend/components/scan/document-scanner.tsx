@@ -35,6 +35,7 @@ import {
   holdProgress,
 } from '@/lib/scan/autocapture';
 import { inkiness } from '@/lib/scan/detect';
+import { LIVE_DOC_CONFIDENCE, seededCorners } from '@/lib/scan/edges';
 import {
   mapToBuffer,
   motionOf,
@@ -261,6 +262,9 @@ export default function DocumentScanner({
   // ⚠️ OFF UNLESS ?diag=1, AND IT COSTS NOTHING WHEN OFF. The trail is only
   // written and the tick only fired while `diag` is true, so a member who
   // never asks for it runs exactly the loop they ran before.
+  /** Did the seeded search find a document in the box on the last frame? */
+  const docRef = useRef(false);
+  const docConfRef = useRef(0);
   const [diag, setDiag] = useState(false);
   const diagRef = useRef(false);
   diagRef.current = diag;
@@ -732,6 +736,14 @@ export default function DocumentScanner({
                 : 255;
             prevSample = flat;
 
+            // ⚠️ IS THERE ACTUALLY A DOCUMENT HERE? The one question the three
+            // gates could never answer — see FrameReading.document. Four 1-D
+            // band scans, far cheaper than the detectQuad already running
+            // beside it, and unlike inkiness it declines on bare carpet.
+            const seen = seededCorners(gray, [...rectQuad(rect)] as Quad);
+            docRef.current = seen.corners !== null && seen.confidence >= LIVE_DOC_CONFIDENCE;
+            docConfRef.current = seen.confidence;
+
             const { glare: frac, luma: mean } = regionExposure(gray, rect);
             lumaRef.current = mean;
             // A couple of levels of drift is not news. Re-rendering on every
@@ -852,6 +864,7 @@ export default function DocumentScanner({
       // lib/scan/autocapture.ts for why it is three and why they are these.
       const now = performance.now();
       const why = autoBlocker(autoRef.current, {
+        document: detectorOff ? undefined : docRef.current,
         ink: inkRef.current,
         motion,
         glare: glareRef.current,

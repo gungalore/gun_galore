@@ -172,6 +172,29 @@ export const ARM_MS = 1200;
  * call to an existing pure function away.
  */
 export interface FrameReading {
+  /**
+   * Did a document-shaped thing get found in the box?
+   *
+   * ⚠️ THE GATE THIS MODULE WAS WRITTEN WITHOUT, AND SAID SO. Its own note on
+   * INK_AT records four measures tried against eighteen real photographs and
+   * every one failing to separate a document from the surface under it —
+   * "what it cannot do is refuse to photograph a tablecloth". So the shutter
+   * asked "is something inky here, is the light usable, is the phone still",
+   * got yes three times pointed at a carpet, and fired. Operator: "why does
+   * the auto scan just fire off for fucking nothing?" That is the answer.
+   *
+   * The seeded corner search can answer what inkiness could not, because it
+   * asks a structural question rather than a statistical one: are there four
+   * edges around this box that meet in a convex quad of plausible size.
+   * Measured on synthetic woven carpet at three different seeds it returns
+   * 0.000 every time, and 0.996 the moment a page is laid on it.
+   *
+   * ⚠️ undefined MEANS "NOT ASKED", NOT "NOT THERE". Where the detector has
+   * been dropped for slowness there is no verdict to act on, and refusing to
+   * fire at all would be a worse failure than the one this fixes — so ink
+   * decides on its own, exactly as before.
+   */
+  document?: boolean;
   /** inkiness() over the AIM BOX — not over anything the detector found. */
   ink: number;
   /** Mean frame-to-frame luma change, 0-255. */
@@ -208,7 +231,10 @@ export type AutoBlocker =
  */
 export function autoBlocker(on: boolean, r: FrameReading): AutoBlocker | null {
   if (!on) return 'off';
-  if (r.ink < INK_AT) return 'empty';
+  // A verdict from the detector outranks ink, which cannot tell a page from
+  // the tablecloth under it. No verdict falls back to ink rather than to no.
+  if (r.document === false) return 'empty';
+  if (r.document === undefined && r.ink < INK_AT) return 'empty';
   // ⚠️ THE SAME CALL THE ALERT ON SCREEN MAKES. Two copies of these thresholds
   // would eventually disagree, and a scanner that shows a warning and then
   // fires anyway — or shows nothing and refuses to fire — reads as broken in a

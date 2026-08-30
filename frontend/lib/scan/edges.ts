@@ -71,6 +71,17 @@ export interface SeededResult {
  */
 const OUTER_SHARE = 0.55;
 
+/**
+ * How sure the live search must be before the shutter believes a document is
+ * in the box.
+ *
+ * ⚠️ LOWER THAN THE ONE THAT REPLACES THE CROP, DELIBERATELY. Being wrong here
+ * costs a capture the member cancels; being wrong about the CROP costs them a
+ * document with its edges cut off. This gate only has to beat bare carpet,
+ * which measures 0.000.
+ */
+export const LIVE_DOC_CONFIDENCE = 0.3;
+
 export interface SeededOptions {
   /** How far outside the box to look, as a fraction of the buffer's dimension. */
   bandFrac?: number;

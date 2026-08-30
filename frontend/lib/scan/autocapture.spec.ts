@@ -135,3 +135,39 @@ describe('autoHint', () => {
     expect(autoHint('off', 'card')).toContain('take the photo');
   });
 });
+
+describe('⚠️ the shutter will not fire at a surface with no document on it', () => {
+  // Operator: "why does the auto scan just fire off for fucking nothing?"
+  // Because none of the three original gates could answer it. INK_AT's own
+  // note admits as much — "what it cannot do is refuse to photograph a
+  // tablecloth" — and his panel showed `empty 2%`, meaning ink passed on
+  // essentially every frame while the phone was pointed at a woven carpet.
+  const still = { motion: 1, glare: 0, luma: 150 };
+
+  it('refuses when the detector says there is no document, however inky', () => {
+    // A patterned surface scores high on ink and is still not a document.
+    expect(autoBlocker(true, { ...still, ink: 0.9, document: false })).toBe('empty');
+  });
+
+  it('fires when the detector says there is', () => {
+    expect(autoBlocker(true, { ...still, ink: 0.5, document: true })).toBeNull();
+  });
+
+  it('⚠️ A DETECTOR VERDICT OUTRANKS INK IN BOTH DIRECTIONS', () => {
+    // Low ink with a found document still fires: inkiness measures local
+    // texture, so a sparse page reads low while being unmistakably a page.
+    expect(autoBlocker(true, { ...still, ink: 0.01, document: true })).toBeNull();
+  });
+
+  it('⚠️ FALLS BACK TO INK WHEN THERE IS NO VERDICT, NOT TO REFUSING', () => {
+    // The detector is dropped on a device too slow to run it. Refusing to fire
+    // at all there would be a worse failure than the one this gate fixes.
+    expect(autoBlocker(true, { ...still, ink: 0.5, document: undefined })).toBeNull();
+    expect(autoBlocker(true, { ...still, ink: 0.01, document: undefined })).toBe('empty');
+  });
+
+  it('still checks light and stillness after the document is found', () => {
+    expect(autoBlocker(true, { ...still, ink: 0.5, document: true, glare: 0.9 })).toBe('light');
+    expect(autoBlocker(true, { ...still, motion: 99, ink: 0.5, document: true })).toBe('steady');
+  });
+});
