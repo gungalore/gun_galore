@@ -244,3 +244,59 @@ describe('⚠️ an unknown shape must not cut a known one', () => {
     }
   });
 });
+
+describe('⚠️ the aim box is scale-invariant, only its aspect matters', () => {
+  // The property the capture path now leans on. The box used to be computed
+  // against the video ELEMENT and then applied to the captured RASTER, with a
+  // React re-render and an await between the two measurements — so when the
+  // browser toolbar moved in that gap, the crop came out at a different aspect
+  // from the box the member had aimed into. Measured on a Samsung S23: aim box
+  // aspect 0.707, file that reached the server 1646x1969 = 0.836.
+  //
+  // Computing it against the raster instead is only correct because aimBox
+  // depends on nothing but the view's aspect. That is asserted here rather
+  // than assumed, because the whole fix rests on it.
+  it('gives the same relative rectangle at any scale', () => {
+    for (const s of SHAPE_ORDER) {
+      const small = aimBox(s, { width: 384, height: 574 });
+      const large = aimBox(s, { width: 2160, height: 3229 }); // same aspect
+      const k = 2160 / 384;
+      expect(large.width / k).toBeCloseTo(small.width, 0);
+      expect(large.height / k).toBeCloseTo(small.height, 0);
+      expect(large.width / large.height).toBeCloseTo(
+        small.width / small.height,
+        3,
+      );
+    }
+  });
+
+  it('⚠️ AND A DIFFERENT ASPECT GIVES DIFFERENT FRACTIONS — which is why one measurement must serve both', () => {
+    // The two element heights straddling the await on the operator's phone:
+    // 486 at grab time, 574 by the time the old code read the rect.
+    const atGrab = aimBox('a4', { width: 384, height: 486 });
+    const afterwards = aimBox('a4', { width: 384, height: 574 });
+
+    // At 486 the box is HEIGHT-limited; at 574 it is width-limited. Both are
+    // correctly A4, and they are not the same rectangle.
+    expect(atGrab.width / atGrab.height).toBeCloseTo(0.707, 2);
+    expect(afterwards.width / afterwards.height).toBeCloseTo(0.707, 2);
+    expect(atGrab.width).not.toBeCloseTo(afterwards.width, 0);
+
+    // The fractions are what got sent, and mixing them is what broke the crop.
+    // Take the LATER fractions and apply them to the EARLIER raster, exactly
+    // as the old code did:
+    const raster = { w: 2160, h: 2160 / (384 / 486) }; // grab-time aspect
+    const cropW = (afterwards.width / 384) * raster.w;
+    const cropH = (afterwards.height / 574) * raster.h;
+    // 0.834 — and the file that actually reached the server was 1646x1969,
+    // which is 0.836. That is the bug reproduced from first principles.
+    expect(cropW / cropH).toBeCloseTo(0.836, 2);
+    expect(cropW / cropH).not.toBeCloseTo(0.707, 2);
+
+    // Using ONE measurement for both, the way the capture path now does,
+    // returns the aspect the member aimed at.
+    const consistentW = (atGrab.width / 384) * raster.w;
+    const consistentH = (atGrab.height / 486) * raster.h;
+    expect(consistentW / consistentH).toBeCloseTo(0.707, 2);
+  });
+});

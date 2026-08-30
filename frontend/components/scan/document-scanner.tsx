@@ -1030,17 +1030,42 @@ export default function DocumentScanner({
       // processCapture's own decode shrinks anything over 3000px, so on a 4K
       // phone the crop came out over-scaled and low: the card lost its top
       // edge and gained a hand's width of carpet.
-      const el = video.getBoundingClientRect();
-      const box = aimBox(shape, { width: el.width, height: el.height });
+      // ⚠️ MEASURED FROM THE PHOTOGRAPH, NOT FROM THE ELEMENT — AND THAT IS
+      // THE WHOLE FIX.
+      //
+      // This read `video.getBoundingClientRect()` here, AFTER `setPhase`
+      // and AFTER `await grabVisible(...)`. Two separate measurements with a
+      // React re-render and an await between them: the raster came from the
+      // element's size at grab time, and the fractions were computed from its
+      // size some milliseconds later. When the browser's toolbar moved in that
+      // gap the two disagreed, and the crop came out at a different aspect
+      // from the box the member had aimed into.
+      //
+      // Measured on the operator's Samsung: the panel reported the aim box at
+      // aspect 0.707, exactly A4 — and the file that reached the server was
+      // 1646x1969, aspect 0.836. A page framed inside a correct box, cropped
+      // to the wrong one, losing about 20mm off each end.
+      //
+      // `grabVisible` returns the dimensions of the region it actually
+      // captured, and `visibleRect` guarantees that region has the element's
+      // aspect at that instant. `aimBox` depends only on aspect — it is
+      // otherwise proportional — so computing it against the raster gives the
+      // same rectangle the member was aiming at, expressed in the photograph's
+      // own pixels. The element never enters the mapping, so nothing it does
+      // afterwards can distort it.
+      const box = aimBox(shape, {
+        width: grabbed.width,
+        height: grabbed.height,
+      });
       const res = await processCapture(blob, {
         expectAspect: expectAspectFor(shape),
         aimBox:
-          el.width > 0 && el.height > 0
+          grabbed.width > 0 && grabbed.height > 0
             ? {
-                x: box.x / el.width,
-                y: box.y / el.height,
-                width: box.width / el.width,
-                height: box.height / el.height,
+                x: box.x / grabbed.width,
+                y: box.y / grabbed.height,
+                width: box.width / grabbed.width,
+                height: box.height / grabbed.height,
               }
             : undefined,
       });
