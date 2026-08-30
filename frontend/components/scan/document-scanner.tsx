@@ -34,6 +34,12 @@ import {
   holdProgress,
 } from '@/lib/scan/autocapture';
 import { inkiness } from '@/lib/scan/detect';
+import {
+  mapToBuffer,
+  motionOf,
+  rectQuad,
+  regionExposure,
+} from '@/lib/scan/frame-stats';
 import { OVERLAY_WARNING } from '@/lib/scan/overlay';
 
 // ────────────────────────────────────────────────────────────────────
@@ -517,6 +523,14 @@ export default function DocumentScanner({
     let motion = 255;
     /** When the phone last started being still, or 0 while it is moving. */
     let steadySince = 0;
+    /**
+     * Has this device proved too slow to run the detector every frame?
+     *
+     * Latches once. Only the green corners are lost — the frame measurements
+     * that arm the shutter are cheap and carry on. See the note where it is
+     * set for what this replaced.
+     */
+    let detectorOff = false;
 
     // ⚠️ THE DETECTOR DOES NOT HOLD THE TRIGGER. It turns the aim box green
     // and it supplies nothing else — the crop is the aim box and the fire
@@ -544,8 +558,6 @@ export default function DocumentScanner({
       try {
         const gray = frameToGray(video, scratch);
         if (gray) {
-          let blown = 0;
-          let sum = 0;
           // ── motion, measured on the IMAGE ─────────────────────────
           //
           // ⚠️ NOT ON THE DETECTED QUAD. Stillness used to be quad drift
@@ -555,76 +567,79 @@ export default function DocumentScanner({
           // perfectly still; the DETECTOR was fidgeting; and the member is the
           // one the clock is supposed to be about. Comparing the sampled
           // pixels of consecutive frames measures the hand and only the hand.
+          //
+          // ⚠️ AND WITH A UNIFORM BRIGHTNESS SHIFT REMOVED — see motionOf.
+          // This was a plain mean of abs(cur - prev), and we never lock
+          // exposure or white balance (only focusMode is applied; the other
+          // two constraints are unreliable across iOS and Android and locking
+          // them risks freezing at a bad exposure). So the phone's AE hunts
+          // for the life of the stream, moving every pixel together, and a
+          // plain mean cannot tell that from a hand. MOTION_STILL is 4 on a
+          // 0-255 scale; a hunt of a few levels pinned the reading above it
+          // and 'steady' never cleared.
           const n8 = Math.ceil(gray.data.length / 8);
+          const sample = new Uint8Array(n8);
+          for (let i = 0, j = 0; i < gray.data.length; i += 8, j++) {
+            sample[j] = gray.data[i];
+          }
           if (!prevSample || prevSample.length !== n8) {
-            prevSample = new Uint8Array(n8);
             motion = 255; // first frame: unknown, treat as moving
           } else {
-            let diff = 0;
-            for (let i = 0, j = 0; i < gray.data.length; i += 8, j++) {
-              diff += Math.abs(gray.data[i] - prevSample[j]);
-            }
-            motion = diff / n8;
+            motion = motionOf(sample, prevSample);
           }
-          for (let i = 0, j = 0; i < gray.data.length; i += 8, j++) {
-            prevSample[j] = gray.data[i];
-          }
-          // Every eighth pixel is plenty for a percentage, and keeps this off
-          // the detection budget.
-          for (let i = 0; i < gray.data.length; i += 8) {
-            if (gray.data[i] > 250) blown++;
-            sum += gray.data[i];
-          }
-          const n = gray.data.length / 8;
-          const mean = sum / n;
-          lumaRef.current = mean;
-          // A couple of levels of drift is not news. Re-rendering on every
-          // frame would be.
-          if (Math.abs(mean - lumaShownRef.current) > 3) {
-            lumaShownRef.current = mean;
-            setLuma(mean);
-          }
-          const frac = blown / n;
-          glareRef.current = frac;
-          if (Math.abs(frac - glareShownRef.current) > 0.01) {
-            glareShownRef.current = frac;
-            setGlare(frac);
-          }
+          prevSample = sample;
 
-          // ── is there a document in the box? ──────────────────────
+          // ── everything else is asked about the AIM BOX ────────────
           //
-          // ⚠️ MEASURED ON THE AIM BOX, NOT ON ANYTHING THE DETECTOR FOUND,
-          // and computed OUTSIDE the detection branch below so it is answered
-          // on every frame even when detection finds nothing at all. That is
-          // the entire fix for "it never captured": the old gate could only
-          // speak when the detector did, and on a real licence card the
-          // detector never sees the card.
+          // ⚠️ ONE RECT, THREE READINGS. `ink` was always measured here and
+          // glare and luma were measured across the WHOLE camera view, which
+          // is the third fault that stopped a phone capturing: GLARE_AT is
+          // 0.02 and glare outranks every other exposure check, so two per
+          // cent of ANYTHING in view being blown refused the shutter — a
+          // window, a lamp, a white wall behind the desk. A phone is held
+          // closer and sees more of the room than a laptop webcam, so it
+          // tripped on scenery the member was not pointing at, and the hint
+          // read "fix the lighting" about light nowhere near the document.
           //
-          // The gray buffer is sized to the VISIBLE region (makeScratch above)
-          // and the aim box is drawn over exactly that region, so the two
-          // share a coordinate space up to one uniform scale.
+          // Scoping to the box sharpens the check rather than weakening it:
+          // the glare that matters is the reflection ON the document, and
+          // that is inside the box and still caught.
+          //
+          // ⚠️ AND THE MAPPING IS PER AXIS — see mapToBuffer. A single
+          // width-derived scale was applied to y as well, which is only
+          // correct while the buffer and the video's CSS box share an aspect
+          // ratio. `scratch` is built once and `elBox` is read live, so on a
+          // phone the collapsing address bar drifts them apart within
+          // seconds; the y mapping then walked off the buffer, inkiness
+          // returned exactly 0, and 'empty' latched for ever.
           const elBox = video.getBoundingClientRect();
-          if (elBox.width > 0) {
-            const b = aimBox(shape, {
-              width: elBox.width,
-              height: elBox.height,
-            });
-            const k = gray.width / elBox.width;
-            const x0 = b.x * k;
-            const y0 = b.y * k;
-            const x1 = (b.x + b.width) * k;
-            const y1 = (b.y + b.height) * k;
-            inkRef.current = inkiness(gray, [
-              { x: x0, y: y0 },
-              { x: x1, y: y0 },
-              { x: x1, y: y1 },
-              { x: x0, y: y1 },
-            ]);
+          if (elBox.width > 0 && elBox.height > 0) {
+            const rect = mapToBuffer(
+              aimBox(shape, { width: elBox.width, height: elBox.height }),
+              { x: 0, y: 0, width: elBox.width, height: elBox.height },
+              gray,
+            );
+            inkRef.current = inkiness(gray, [...rectQuad(rect)] as Quad);
+
+            const { glare: frac, luma: mean } = regionExposure(gray, rect);
+            lumaRef.current = mean;
+            // A couple of levels of drift is not news. Re-rendering on every
+            // frame would be.
+            if (Math.abs(mean - lumaShownRef.current) > 3) {
+              lumaShownRef.current = mean;
+              setLuma(mean);
+            }
+            glareRef.current = frac;
+            if (Math.abs(frac - glareShownRef.current) > 0.01) {
+              glareShownRef.current = frac;
+              setGlare(frac);
+            }
           }
         }
-        const found = gray
-          ? detectQuad(gray, { expectAspect: expectAspectFor(shape) })
-          : null;
+        const found =
+          gray && !detectorOff
+            ? detectQuad(gray, { expectAspect: expectAspectFor(shape) })
+            : null;
         if (found) {
           // Into visible-frame pixels. The overlay and the shutter share that
           // coordinate space now, so a marker cannot disagree with the crop.
@@ -769,13 +784,28 @@ export default function DocumentScanner({
 
       const ms = now - t0;
       rolling = rolling * 0.8 + ms * 0.2;
-      // A phone that cannot keep up slows down, then stops trying. The
-      // capture-time detection still runs either way.
+      // ⚠️ A SLOW PHONE DROPS THE DETECTOR, IT NEVER STOPS MEASURING.
+      //
+      // This read `if (rolling > 90) { alive = false; ...; return; }` — placed
+      // above the only line that re-arms the next tick, so once the rolling
+      // frame cost crossed 90ms the loop stopped for the rest of the session.
+      // autoBlocker is only ever evaluated inside this function, so ink,
+      // motion, glare and luma froze and the shutter could never arm again.
+      // The overlay went with it. Nothing on screen said so: a camera doing
+      // nothing is indistinguishable from a camera that is broken, which is
+      // exactly the report that came back from the phone.
+      //
+      // The right degradation was already implied by this module's own
+      // design — "THE DETECTOR DOES NOT HOLD THE TRIGGER". detectQuad is the
+      // expensive part and it only draws the green corners; the three
+      // measurements that decide the capture are cheap. So a phone that
+      // cannot keep up loses the markers and keeps the automatic shutter,
+      // rather than losing both.
       if (rolling > 45 && rate < RATES.length - 1) rate++;
-      if (rolling > 90) {
-        alive = false;
+      if (rolling > 90 && !detectorOff) {
+        detectorOff = true;
         quadRef.current = null;
-        return;
+        setAimed(false);
       }
       timer = window.setTimeout(detectOnce, RATES[rate]);
     };
