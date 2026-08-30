@@ -81,6 +81,7 @@ import ReadResult from '@/components/licence-pack/read-result';
 import FieldGrid from '@/components/licence-pack/field-grid';
 import YesNoPills from '@/components/licence-pack/yes-no-pills';
 import PackSection from '@/components/licence-pack/pack-section';
+import DeleteApplication from '@/components/licence-pack/delete-application';
 
 export default function LicenceServicesWizardPage() {
   const { getToken } = useAuth();
@@ -577,8 +578,19 @@ export default function LicenceServicesWizardPage() {
             {licenceLabel(pack.licenceType).toLowerCase()}
           </span>
         </div>
-        <div className="ml-auto text-[12px] text-[var(--text-tertiary)]">
+        <div className="ml-auto flex items-center gap-4 text-[12px] text-[var(--text-tertiary)]">
           <SaveState state={autosave.state} refused={autosave.refused} />
+          {/* ⚠️ IN THE CHROME BAR BECAUSE THE CHROME BAR IS THE ONLY THING ON
+              EVERY STEP. Operator: "put a visible option that is visible
+              everywhere for user to delete the application." The old page put
+              it under a divider at the bottom of a very long scroll and the
+              rebuilt one had it nowhere at all — somebody who started an
+              application by mistake could not get rid of it. */}
+          <DeleteApplication
+            token={token}
+            motivationId={id}
+            reference={pack.referenceNumber}
+          />
         </div>
       </div>
 

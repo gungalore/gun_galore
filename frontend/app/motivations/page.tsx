@@ -8,6 +8,7 @@ import { MotivationSummary, motivationsApi } from '@/lib/motivations-api';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
 import { licenceLabel, LICENCE_SECTION } from '@/lib/licence-labels';
 import VaultConsentModal, { snoozed } from '@/components/vault-consent';
+import DeleteApplication from '@/components/licence-pack/delete-application';
 import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 
 // The way in. Lists what someone has started and lets them begin another.
@@ -194,11 +195,19 @@ export default function MotivationsPage() {
 
         {rows && rows.length > 0 ? (
           <ul className="mt-2 divide-y divide-[var(--border-divider)] rounded border border-[var(--border)]">
+            {/* ⚠️ THE ROW IS NO LONGER ONE BUTTON. It used to be a single
+                <button> wrapping the whole row, and a button cannot contain a
+                button — so making delete reachable from here meant splitting
+                the open action off rather than nesting a control inside it and
+                shipping invalid markup that swallows its own clicks. */}
             {rows.map((r) => (
-              <li key={r.id}>
+              <li
+                key={r.id}
+                className="flex items-center gap-3 p-3 hover:bg-[var(--bg-card-hover)]"
+              >
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between gap-4 p-3 text-left text-sm hover:bg-[var(--bg-card-hover)]"
+                  className="flex flex-1 items-center justify-between gap-4 text-left text-sm"
                   onClick={() => router.push(packHref(r.id))}
                 >
                   <span>
@@ -218,6 +227,19 @@ export default function MotivationsPage() {
                     {STATUS_COPY[r.status] ?? r.status}
                   </span>
                 </button>
+                {/* ⚠️ DROPS THE ROW RATHER THAN NAVIGATING. The component's
+                    default is to push to the Centre, which is where we
+                    already are — a push here would look like nothing
+                    happened while the row it deleted sat on screen until the
+                    next load. */}
+                <DeleteApplication
+                  token={token}
+                  motivationId={r.id}
+                  reference={r.referenceNumber}
+                  onDeleted={() =>
+                    setRows((cur) => (cur ?? []).filter((x) => x.id !== r.id))
+                  }
+                />
               </li>
             ))}
           </ul>
