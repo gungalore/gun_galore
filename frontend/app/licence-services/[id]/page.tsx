@@ -862,9 +862,19 @@ function StepBody({
   onToggleRow: (key: string) => void;
 }) {
   // The first step restates what was chosen when the application was started.
-  // ⚠️ READ-ONLY, DELIBERATELY. Changing the section changes which documents
-  // are required and which questions are asked; it is not a field to flip
-  // halfway through, it is a new application.
+  //
+  // ⚠️ READ-ONLY, DELIBERATELY, AND THE CHOOSING NOW HAPPENS ON THIS SAME STEP
+  // ONE SCREEN BEFORE — at /licence-services/new. Changing the section changes
+  // which documents are required and which questions are asked; it is not a
+  // field to flip halfway through, it is a new application.
+  //
+  // That is not a UI preference. `Motivation.licenceType` is written exactly
+  // once, by create(), and no route can change it afterwards: the field
+  // registry, the checklist, the 271 box mapping, the eligibility blockers and
+  // the generator's legal framing are each a pure function of it, and every
+  // saved answer was already filtered through `sanitiseAnswers(licenceType)`.
+  // A selector here would not be a harder version of this screen — it would be
+  // a silent data-loss bug wearing a dropdown.
   if (stepKey === 'section') {
     return (
       <div className="gg-tile max-w-[820px] rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[17px] py-[15px]">
@@ -877,8 +887,14 @@ function StepBody({
         </div>
         <p className="mt-2 text-[13px] text-[var(--text-secondary)]">
           Chosen when you started this application. To apply under a different
-          section, start a new one — the documents and the questions are not the
-          same.
+          section,{' '}
+          <Link
+            href="/licence-services/new"
+            className="underline underline-offset-2"
+          >
+            start a new one
+          </Link>{' '}
+          — the documents and the questions are not the same.
         </p>
       
         {/* ⚠️ THE ONE DOOR THAT DOES NOT ASK WHICH DOCUMENT IT IS. Every

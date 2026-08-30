@@ -293,11 +293,26 @@ export default function WizardRail({
   steps,
   current,
   onGo,
+  interactive = true,
 }: {
   steps: WizardStep[];
   /** Zero-based. */
   current: number;
   onGo: (index: number) => void;
+  /**
+   * Whether the rail can be navigated.
+   *
+   * ⚠️ FALSE ON THE CHOOSER AT /licence-services/new, WHERE THERE IS NO
+   * APPLICATION TO NAVIGATE. The rail is drawn there so somebody choosing a
+   * section can see they are at the start of eleven steps rather than in a
+   * menu — but every step beyond the first belongs to a row that does not
+   * exist yet. Rendering the buttons live would put ten controls on screen
+   * that silently do nothing, which is worse than not drawing the rail at all.
+   *
+   * `disabled` rather than a no-op handler, so the browser and a screen reader
+   * both say so instead of only the mouse finding out.
+   */
+  interactive?: boolean;
 }) {
   return (
     <nav
@@ -312,8 +327,9 @@ export default function WizardRail({
             key={step.key}
             type="button"
             onClick={() => onGo(i)}
+            disabled={!interactive}
             aria-current={now ? "step" : undefined}
-            className="flex shrink-0 items-center gap-[7px] rounded-md border-0 px-2 py-1"
+            className="flex shrink-0 items-center gap-[7px] rounded-md border-0 px-2 py-1 disabled:cursor-default"
             style={{
               background: now ? "rgba(200,16,46,.05)" : "none",
             }}

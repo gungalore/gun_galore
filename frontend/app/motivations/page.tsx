@@ -4,12 +4,9 @@ import { useAuth } from '@clerk/nextjs';
 import { PACK_SCREEN_SHIPPED } from '@/lib/licence-services-preview';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import {
-  MotivationApiError,
-  MotivationSummary,
-  motivationsApi,
-} from '@/lib/motivations-api';
+import { MotivationSummary, motivationsApi } from '@/lib/motivations-api';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
+import { licenceLabel, LICENCE_SECTION } from '@/lib/licence-labels';
 import VaultConsentModal, { snoozed } from '@/components/vault-consent';
 import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 
@@ -22,39 +19,18 @@ import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 //
 // ⚠️ NO OUTCOME LANGUAGE anywhere on this page. We sell structure and
 // completeness, never odds.
-
-const LICENCE_TYPES = [
-  {
-    value: 'S13_SELF_DEFENCE',
-    label: 'Self-defence',
-    section: 'Section 13',
-    blurb: 'One firearm — a handgun or a shotgun that is not fully automatic.',
-  },
-  {
-    value: 'S15_OCCASIONAL_HUNTER',
-    label: 'Occasional hunting or sport-shooting',
-    section: 'Section 15',
-    blurb: 'For someone who hunts or shoots, without dedicated status.',
-  },
-  {
-    value: 'S16_DEDICATED_HUNTER',
-    label: 'Dedicated hunter',
-    section: 'Section 16',
-    blurb: 'Endorsed by an accredited hunting association.',
-  },
-  {
-    value: 'S16_DEDICATED_SPORT',
-    label: 'Dedicated sports shooter',
-    section: 'Section 16',
-    blurb: 'Endorsed by an accredited sport-shooting association.',
-  },
-  {
-    value: 'S24_RENEWAL',
-    label: 'Renewing an existing licence',
-    section: 'Section 24',
-    blurb: 'The purpose has not changed — you are renewing what you hold.',
-  },
-];
+//
+// ⚠️ THE FIVE SECTION CARDS USED TO LIVE HERE AND THEY DO NOT ANY MORE.
+// Operator, 2026-08-29: "Motivation centre landing page and Section 1 of an
+// application is basically the same thing, why not incorporate them into one?"
+// — and they were: this page asked which section, created the row, and step
+// one of the wizard then restated the answer back at the member. One question
+// and its own echo, on two screens.
+//
+// "On motivation centre just have start a new application and the current
+// pending applications." So: what is in flight, and one door. The choosing
+// happens at /licence-services/new, drawn as step one of eleven, because that
+// is what it is.
 
 const MOTIVATIONS_TRAIL: Crumb[] = [
   { label: 'Home', href: '/' },
@@ -87,18 +63,20 @@ export default function MotivationsPage() {
   const [canStart, setCanStart] = useState(true);
 
   /**
-   * Where opening an application goes.
+   * Where opening an EXISTING application goes.
    *
    * ⚠️ THE BUILD FLAG ALONE WAS NOT ENOUGH, AND THAT IS WHY THE REBUILT
    * DESIGN SHIPPED INVISIBLE. NEXT_PUBLIC_LICENCE_SERVICES_ENABLED only
    * decides whether /licence-services/[id] will OPEN; this Centre still
    * pushed everybody to /motivations/[id] regardless, so turning the flag on
    * would have changed nothing anybody could see. One switch now drives both.
+   *
+   * The NEW-application half of this rule moved to /licence-services/new,
+   * which decides where a freshly created row opens. It is the same rule; it
+   * just belongs beside the create() call rather than here.
    */
   const packHref = (mid: string) =>
     PACK_SCREEN_SHIPPED ? `/licence-services/${mid}` : `/motivations/${mid}`;
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // ── MAY WE KEEP YOUR DOCUMENTS? ─────────────────────────────────────
   //
   // Operator, 2026-08-22: "we also need to launch a window asking the user for
@@ -175,11 +153,46 @@ export default function MotivationsPage() {
         everything to take to the police station.
       </p>
 
-      {rows && rows.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--text-tertiary-on-card)]">
-            Your applications
-          </h2>
+      {/* ⚠️ THE DOOR COMES FIRST NOW, ABOVE THE LIST. With five cards it
+          belonged under "your applications" — a menu you scrolled past what
+          you already had to reach. As one button it is the page's only action,
+          and a member arriving to start something should not have to read a
+          list of what they started before to find it. */}
+      <section className="mt-8">
+        {canStart ? (
+          <button
+            type="button"
+            onClick={() => router.push('/licence-services/new')}
+            className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-5 py-[11px] text-[14px] font-semibold text-white"
+          >
+            Start a new application
+          </button>
+        ) : (
+          /* ⚠️ SAY IT INSTEAD OF THE BUTTON, NOT UNDER IT. The server refuses
+             with a perfectly clear 409 and this page used to render that
+             message below five enabled cards, well under the fold — so
+             clicking looked like nothing happening at all. A door that cannot
+             open is not a door; it is a sentence. */
+          <p
+            role="status"
+            className="rounded-[var(--r-sm)] border p-3 text-[13.5px]"
+            style={{
+              borderColor: 'var(--gold-line)',
+              background: 'var(--gold-wash)',
+            }}
+          >
+            The free beta is full, and paid applications are not open yet. You
+            can still finish and download any application listed below.
+          </p>
+        )}
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--text-tertiary-on-card)]">
+          Your applications
+        </h2>
+
+        {rows && rows.length > 0 ? (
           <ul className="mt-2 divide-y divide-[var(--border-divider)] rounded border border-[var(--border)]">
             {rows.map((r) => (
               <li key={r.id}>
@@ -191,8 +204,14 @@ export default function MotivationsPage() {
                   <span>
                     <span className="font-medium">{r.referenceNumber}</span>
                     <span className="block text-xs text-[var(--text-tertiary-on-card)]">
-                      {LICENCE_TYPES.find((t) => t.value === r.licenceType)
-                        ?.label ?? r.licenceType}
+                      {/* ⚠️ THE SHARED MAP, NOT A LOCAL COPY. This page carried
+                          its own list of the five types and lib/licence-labels
+                          carried two more, hand-synced by a comment. They had
+                          already drifted once. */}
+                      {LICENCE_SECTION[r.licenceType]
+                        ? `${LICENCE_SECTION[r.licenceType]} — `
+                        : ''}
+                      {licenceLabel(r.licenceType)}
                     </span>
                   </span>
                   <span className="text-xs text-[var(--text-secondary)]">
@@ -202,71 +221,18 @@ export default function MotivationsPage() {
               </li>
             ))}
           </ul>
-        </section>
-      )}
-
-      <section className="mt-8">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--text-tertiary-on-card)]">
-          Start a new one
-        </h2>
-
-        {/* ⚠️ SAY IT BEFORE THEY CLICK, NOT AFTER. The server refuses with a
-            perfectly clear 409 — "The free beta is full for now" — and the
-            page rendered that message BELOW five cards, 83px under the fold
-            on a 855px viewport. Clicking the top card therefore looked like
-            nothing happening at all, and the explanation was somewhere the
-            member never scrolled to.
-            Stated up front, and the buttons that cannot work are disabled. */}
-        {!canStart && (
-          <p
-            role="status"
-            className="mt-2 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-sm"
-          >
-            The free beta is full, and paid motivations are not open yet. You
-            can still finish and download any application already listed above.
-          </p>
+        ) : (
+          /* ⚠️ AN EMPTY LIST IS NOT NOTHING. `rows === null` is still loading
+             and says so by staying quiet; an empty array is a member who has
+             never started one, and hiding the heading from them made the page
+             look broken rather than new. */
+          rows !== null && (
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">
+              Nothing started yet. Whatever you begin appears here, and you can
+              leave it and come back to it as often as you like.
+            </p>
+          )
         )}
-
-        {/* The error lives ABOVE the list. Wherever they clicked, it is the
-            next thing they see rather than the last. */}
-        {error && (
-          <p role="alert" className="mt-2 text-sm text-[var(--red)]">
-            {error}
-          </p>
-        )}
-
-        <ul className="mt-2 space-y-2">
-          {LICENCE_TYPES.map((t) => (
-            <li key={t.value}>
-              <button
-                type="button"
-                disabled={starting || !canStart}
-                className="gg-tile gg-tile-lift w-full rounded border border-[var(--border)] bg-[var(--bg-card)] p-3 text-left hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={async () => {
-                  setStarting(true);
-                  setError(null);
-                  try {
-                    const created = await motivationsApi.create(token, t.value);
-                    router.push(packHref(created.id));
-                  } catch (e) {
-                    setError(
-                      e instanceof MotivationApiError
-                        ? e.message
-                        : 'We could not start that just now.',
-                    );
-                    setStarting(false);
-                  }
-                }}
-              >
-                <span className="text-xs uppercase tracking-wide text-[var(--text-tertiary-on-card)]">
-                  {t.section}
-                </span>
-                <span className="block font-medium">{t.label}</span>
-                <span className="block text-sm text-[var(--text-secondary)]">{t.blurb}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
       </section>
 
       <p className="mt-8 text-xs text-[var(--text-tertiary-on-card)]">
