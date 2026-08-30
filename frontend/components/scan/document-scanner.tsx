@@ -263,6 +263,8 @@ export default function DocumentScanner({
   const [diag, setDiag] = useState(false);
   const diagRef = useRef(false);
   diagRef.current = diag;
+  /** Read inside the detect loop, which must not close over React state. */
+  const editingRef = useRef(false);
   const trailRef = useRef<FrameSnapshot[]>([]);
   const deviceRef = useRef<DeviceContext | null>(null);
   const lastCaptureRef = useRef<ScanReport['lastCapture']>(undefined);
@@ -309,6 +311,7 @@ export default function DocumentScanner({
   const [shot, setShot] = useState<ScanResult | null>(null);
   const [pages, setPages] = useState<File[]>([]);
   const [editing, setEditing] = useState(false);
+  editingRef.current = editing;
   /**
    * A re-cut from the corner editor is in flight.
    *
@@ -892,8 +895,11 @@ export default function DocumentScanner({
           element: { w: elBoxNow.width, h: elBoxNow.height },
           buffer: { w: scratch.canvas.width, h: scratch.canvas.height },
         });
-        // Repaint the panel a few times a second, never per frame.
-        if (now - diagPaintedRef.current > 300) {
+        // Repaint the panel a few times a second, never per frame — and not
+        // at all while it is hidden, which is the whole live phase. The panel
+        // reads the refs and the trail when it renders, so it opens current
+        // without having been kept warm.
+        if (editingRef.current && now - diagPaintedRef.current > 300) {
           diagPaintedRef.current = now;
           setDiagTick((n) => n + 1);
         }
