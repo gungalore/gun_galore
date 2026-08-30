@@ -60,6 +60,17 @@ export interface SeededResult {
   edges: Record<EdgeName, EdgeFit>;
 }
 
+/**
+ * How strong an outer transition must be, against the best on its scanline,
+ * to be preferred over it.
+ *
+ * ⚠️ NOT ZERO, OR CARPET WINS. Outermost-takes-it with no floor hands the edge
+ * to whatever texture happens to sit at the far side of the band. 0.55 keeps a
+ * paper edge that is genuinely weaker than the printed border inside it, while
+ * refusing a wisp of weave that is merely further out.
+ */
+const OUTER_SHARE = 0.55;
+
 export interface SeededOptions {
   /** Half-width of the search band, as a fraction of the buffer's dimension. */
   bandFrac?: number;
@@ -105,13 +116,24 @@ export function blur3(g: Gray): Gray {
  * `orientation` names the edge's own direction: a 'horizontal' edge runs left
  * to right, so we walk columns and look for the y of greatest vertical change.
  *
- * ⚠️ THE STRONGEST TRANSITION IS NOT ALWAYS THE RIGHT ONE, so it is scored
- * against distance from the prior rather than on gradient alone. The
- * operator's certificate sits on a dark mount board AND carries a printed
- * black border inside its own paper edge — three parallel strong transitions
- * within a few millimetres of each other. Gradient alone picks whichever
- * happens to be sharpest under that light. Weighting towards where the member
- * said the edge was is the entire reason for seeding the search at all.
+ * ⚠️ THE OUTERMOST TRANSITION, NOT THE STRONGEST — MEASURED, NOT ASSUMED.
+ *
+ * This scored gradient against distance from the prior, which was too weak to
+ * survive a real document. The operator's certificate carries a printed black
+ * border about a centimetre inside its own paper edge, and black-on-white is a
+ * far stronger transition than white paper against brown carpet. On his iPhone
+ * the detector found four beautifully straight lines — residuals 0.3 to 0.7 of
+ * a pixel — all four of them on the PRINTED BORDER, with the paper's margin
+ * left outside the crop. On the Samsung the same competition showed up as a
+ * residual of 6.3 on the top edge: points jumping between two parallel lines a
+ * few pixels apart, which is what a fit does when it cannot decide.
+ *
+ * The rule that separates them is not about strength at all. A document's
+ * boundary is the LAST transition before the background; anything printed on
+ * it is by definition inside. So among candidates that clear the floor, take
+ * the outermost — `outward` says which way that is — and require it to be
+ * within a fraction of the strongest, so a wisp of carpet texture cannot
+ * outrank a real edge simply by being further out.
  *
  * ⚠️ AND THE THRESHOLD IS RELATIVE, NOT ABSOLUTE. A fixed floor of 8 levels
  * finds nothing at all for white paper on a pale desk — which is precisely
@@ -126,6 +148,8 @@ export function findEdgeLine(
   from: number,
   to: number,
   step = 4,
+  /** Which way is away from the document: -1 towards 0, +1 towards the far side. */
+  outward: -1 | 1 = -1,
 ): EdgeFit {
   const { width: w, height: h, data } = g;
   const horizontal = orientation === 'horizontal';
@@ -154,21 +178,26 @@ export function findEdgeLine(
 
   for (let t = t0; t <= t1; t += step) {
     scanlines++;
-    let bestU = -1;
-    let bestScore = 0;
+    // Two passes over the band: find the strongest real transition on this
+    // scanline, then take the OUTERMOST one that is a decent fraction of it.
+    let peak = 0;
     for (let u = lo; u <= hi; u++) {
       const gr = horizontal
         ? Math.abs(data[(u + 1) * w + t] - data[(u - 1) * w + t])
         : Math.abs(data[t * w + (u + 1)] - data[t * w + (u - 1)]);
-      if (gr < floor) continue;
-      // Falls off to half weight at the band's edge — enough to break a tie
-      // towards the prior, not enough to ignore a genuinely stronger edge.
-      const away = band > 0 ? Math.abs(u - pos) / band : 0;
-      const score = gr * (1 - 0.5 * Math.min(1, away));
-      if (score > bestScore) {
-        bestScore = score;
-        bestU = u;
-      }
+      if (gr > peak) peak = gr;
+    }
+    if (peak < floor) continue;
+    const keep = peak * OUTER_SHARE;
+    let bestU = -1;
+    for (let u = lo; u <= hi; u++) {
+      const gr = horizontal
+        ? Math.abs(data[(u + 1) * w + t] - data[(u - 1) * w + t])
+        : Math.abs(data[t * w + (u + 1)] - data[t * w + (u - 1)]);
+      if (gr < keep) continue;
+      // Outermost wins: for a top or left edge that is the smallest index,
+      // for a bottom or right edge the largest.
+      if (bestU < 0 || (outward < 0 ? u < bestU : u > bestU)) bestU = u;
     }
     if (bestU >= 0) hits.push({ t, u: bestU });
   }
@@ -241,10 +270,10 @@ export function seededCorners(
   const bandY = Math.max(2, Math.round(g.height * bandFrac));
 
   const edges: Record<EdgeName, EdgeFit> = {
-    top: findEdgeLine(g, 'horizontal', y0, bandY, x0, x1, step),
-    bottom: findEdgeLine(g, 'horizontal', y1, bandY, x0, x1, step),
-    left: findEdgeLine(g, 'vertical', x0, bandX, y0, y1, step),
-    right: findEdgeLine(g, 'vertical', x1, bandX, y0, y1, step),
+    top: findEdgeLine(g, 'horizontal', y0, bandY, x0, x1, step, -1),
+    bottom: findEdgeLine(g, 'horizontal', y1, bandY, x0, x1, step, 1),
+    left: findEdgeLine(g, 'vertical', x0, bandX, y0, y1, step, -1),
+    right: findEdgeLine(g, 'vertical', x1, bandX, y0, y1, step, 1),
   };
 
   const tl = intersect(edges.top.line, edges.left.line);

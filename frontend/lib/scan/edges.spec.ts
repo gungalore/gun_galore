@@ -203,3 +203,71 @@ describe('corner snapping', () => {
     expect(out.y).toBeLessThan(80);
   });
 });
+
+describe('⚠️ a printed border must not be mistaken for the paper edge', () => {
+  // The failure the operator photographed. His certificate carries a printed
+  // black rectangle about a centimetre inside its own paper edge, and
+  // black-on-white is a far stronger transition than white paper against brown
+  // carpet. On his iPhone the detector returned four lines with residuals of
+  // 0.3-0.7px — beautifully straight, and all four on the BORDER, leaving the
+  // paper's margin outside the crop. On his Samsung the same competition read
+  // as a residual of 6.3 on the top edge: a fit that could not decide.
+  function certificate(): Gray {
+    const w = 320;
+    const h = 440;
+    const d = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++)
+        d[y * w + x] = 70 + (((x >> 1) + (y >> 1)) % 2 ? 20 : -20); // carpet
+    const p = { x0: 60, y0: 70, x1: 260, y1: 370 }; // the paper
+    for (let y = p.y0; y <= p.y1; y++)
+      for (let x = p.x0; x <= p.x1; x++) d[y * w + x] = 205;
+    // A printed border 12px inside the paper, far stronger than paper/carpet.
+    for (let y = p.y0 + 12; y <= p.y1 - 12; y++)
+      for (let x = p.x0 + 12; x <= p.x1 - 12; x++) {
+        const onBorder =
+          y <= p.y0 + 14 || y >= p.y1 - 14 || x <= p.x0 + 14 || x >= p.x1 - 14;
+        if (onBorder) d[y * w + x] = 15;
+      }
+    return { data: d, width: w, height: h };
+  }
+
+  it('takes the paper edge, not the stronger line printed on it', () => {
+    const g = blur3(certificate());
+    const r = seededCorners(g, quadOf(62, 72, 258, 368));
+    expect(r.corners).not.toBeNull();
+    const c = r.corners!;
+    // The paper is at 60/70; the printed border at 72/82. Landing on the
+    // border would put every corner ~12px in.
+    expect(c[0].x).toBeLessThan(66);
+    expect(c[0].y).toBeLessThan(76);
+    expect(c[2].x).toBeGreaterThan(254);
+    expect(c[2].y).toBeGreaterThan(364);
+  });
+
+  it('⚠️ AND STRONGEST-WINS WOULD HAVE TAKEN THE BORDER', () => {
+    // The rule this replaced, reconstructed: pick the largest gradient in the
+    // band and the printed line wins on every scanline.
+    const g = blur3(certificate());
+    const band = 30;
+    let strongestAt = -1;
+    let peak = 0;
+    for (let u = 70 - band; u <= 70 + band; u++) {
+      const gr = Math.abs(g.data[(u + 1) * g.width + 160] - g.data[(u - 1) * g.width + 160]);
+      if (gr > peak) {
+        peak = gr;
+        strongestAt = u;
+      }
+    }
+    // The strongest transition on that column really is the printed border.
+    expect(strongestAt).toBeGreaterThan(76);
+  });
+
+  it('still refuses when there is no paper at all, only printing', () => {
+    const w = 200;
+    const h = 200;
+    const d = new Uint8Array(w * h).fill(200);
+    const g = blur3({ data: d, width: w, height: h });
+    expect(seededCorners(g, quadOf(50, 50, 150, 150)).corners).toBeNull();
+  });
+});

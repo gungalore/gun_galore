@@ -148,6 +148,24 @@ export const MOTION_STILL = 10;
 export const HOLD_MS = 300;
 
 /**
+ * How long after the viewfinder opens before the shutter may fire at all.
+ *
+ * ⚠️ THE HOLD CANNOT DO THIS JOB, WHICH IS WHY IT KEPT FAILING AT IT. Operator,
+ * on a Samsung S23: "way too fast to take a picture, cant even aim then it
+ * snaps." His panel explains it — motion 6.1 against a limit of 10, ready on
+ * 48% of frames. The phone is genuinely steady while it is being carried
+ * towards the document, so a stillness gate says yes before the member has
+ * framed anything, and the only thing standing between them and a photograph
+ * of the carpet is 300ms.
+ *
+ * Raising the hold would buy the same second back and take it from everybody,
+ * including the member who is already lined up. This costs nothing after the
+ * first shot of a session: the camera opens, the member gets a moment to aim,
+ * and from then on the hold alone governs.
+ */
+export const ARM_MS = 1200;
+
+/**
  * What the frame looks like right now, as far as this decision cares.
  *
  * Everything here is already computed by the scanner's detect loop, or is one

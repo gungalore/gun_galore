@@ -26,6 +26,7 @@ import { useScrollLock } from '@/lib/use-scroll-lock';
 import { aimAgreement, aimBox } from '@/lib/scan/aim';
 import { exposureProblem } from '@/lib/scan/exposure';
 import {
+  ARM_MS,
   AutoBlocker,
   MOTION_STILL,
   autoBlocker,
@@ -905,7 +906,12 @@ export default function DocumentScanner({
         }
       }
 
-      if (why === null) {
+      // ⚠️ NOT ARMED YET. See ARM_MS — a phone being carried towards a
+      // document is steady, so the gates open long before there is anything
+      // framed to photograph.
+      const armed = now - startedAt >= ARM_MS;
+
+      if (why === null && armed) {
         if (!steadySince) steadySince = now;
         const held = now - steadySince;
         const pct = holdProgress(held);
