@@ -4,6 +4,16 @@ import { DETECT_WIDTH, Gray, detectQuad, inkiness, toLuma } from './detect';
 import { EnhanceReport, enhance, inspect } from './enhance';
 import { Quad, Rect, frameQuad, outputSize, scaleQuad } from './geometry';
 import { Raster, rectify } from './warp';
+import { blur3, seededCorners } from './edges';
+
+/**
+ * How sure the seeded detector must be before its corners replace the box.
+ *
+ * ⚠️ DELIBERATELY HIGH. Being wrong here costs the member the thing the aim
+ * box guaranteed — a starting position that never moves and never has to be
+ * checked. Declining costs them nothing they were not already paying.
+ */
+const SEED_CONFIDENCE = 0.55;
 
 // ────────────────────────────────────────────────────────────────────
 // THE BROWSER HALF.
@@ -302,6 +312,39 @@ export async function processCapture(
       // Detection still runs live for the green corners; it has no say here.
       quad = rectToQuad(aim);
       from = 'aim';
+
+      // ⚠️ THE BOX IS THE FALLBACK NOW, NOT THE ANSWER.
+      //
+      // "THE BOX. EXACTLY THE BOX. NOTHING ELSE" was settled because every
+      // detector tried before it produced guesses that were nearly right, and
+      // a nearly-right guess still has to be checked on all four sides — which
+      // costs more than dragging from a position that never moves.
+      //
+      // That objection was about guesses that could not say how sure they
+      // were. `seededCorners` searches only a band around each edge OF THIS
+      // BOX, fits a line per edge and reports how well each one fitted, so it
+      // can decline. Below the threshold the member gets exactly what they got
+      // before; above it they get corners already on the document and a single
+      // tap instead of four drags.
+      //
+      // ⚠️ AND IT CAN REACH OUTSIDE THE BOX, which is the other half. The
+      // operator's certificate was framed slightly larger than the box and the
+      // crop cut about 20mm off each end, permanently, because the crop IS the
+      // file. Bands extend past the prior, so an overflowing page is found
+      // rather than trimmed.
+      const seed = shrinkForDetect(raster);
+      const inSmall = quad.map((p) => ({
+        x: p.x * seed.scale,
+        y: p.y * seed.scale,
+      })) as Quad;
+      const found = seededCorners(blur3(seed.gray), inSmall);
+      if (found.corners && found.confidence >= SEED_CONFIDENCE) {
+        quad = found.corners.map((p) => ({
+          x: p.x / seed.scale,
+          y: p.y / seed.scale,
+        })) as Quad;
+        from = 'detected';
+      }
     } else {
       // No box means a caller outside the scanner. Detect, or use the frame.
       const small = shrinkForDetect(raster);
