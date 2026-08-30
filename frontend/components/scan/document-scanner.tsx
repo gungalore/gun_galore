@@ -40,6 +40,8 @@ import {
   rectQuad,
   regionExposure,
   sampleRegion,
+  regionGray,
+  coarsen,
 } from '@/lib/scan/frame-stats';
 import {
   deviceContext,
@@ -552,8 +554,12 @@ export default function DocumentScanner({
     let prevSample: Uint8Array | null = null;
     /** Whole-frame sample, diagnostic only — nothing gates on it. */
     let prevWide: Uint8Array | null = null;
+    /** Coarsened aim box from the previous frame — what the gate compares. */
+    let prevCoarse: Uint8Array | null = null;
     let motion = 255;
     let frameMotion = 255;
+    /** The pre-coarsening measure, diagnostic only. */
+    let rawMotion = 255;
     /** When the phone last started being still, or 0 while it is moving. */
     let steadySince = 0;
     /**
@@ -661,12 +667,33 @@ export default function DocumentScanner({
             // counted, at full weight, as evidence that their hand was moving.
             // On the operator's phone that pinned motion at 22.31 against a
             // limit of 4 and it never once dropped below it in 400 frames.
-            const boxed = sampleRegion(gray, rect);
+            // ⚠️ BOX-AVERAGED DOWN BEFORE COMPARING. Scoping to the box was
+            // not enough on its own: measured afterwards the boxed figure was
+            // 30.92 and the whole frame 30.18 — the same number, so the
+            // background was never the difference. The certificate is covered
+            // in printed text, which aliases under a 6.75x downscale exactly
+            // as the carpet weave does, and asking the canvas for
+            // `imageSmoothingQuality: 'high'` changed nothing because WebKit
+            // does not honour it the way Chromium does.
+            //
+            // `coarsen` averages that detail away with our own arithmetic, so
+            // what is compared is the gross shape of the scene — which is all
+            // "has the phone moved" ever meant.
+            const coarse = coarsen(regionGray(gray, rect));
             motion =
-              prevSample && prevSample.length === boxed.length
-                ? motionOf(boxed, prevSample)
+              prevCoarse && prevCoarse.length === coarse.data.length
+                ? motionOf(coarse.data, prevCoarse)
                 : 255; // first frame, or the box resized: treat as moving
-            prevSample = boxed;
+            prevCoarse = coarse.data;
+
+            // The previous measure, kept beside it so one run says whether
+            // coarsening is what did it. Diagnostic only — nothing gates here.
+            const flat = sampleRegion(gray, rect);
+            rawMotion =
+              prevSample && prevSample.length === flat.length
+                ? motionOf(flat, prevSample)
+                : 255;
+            prevSample = flat;
 
             const { glare: frac, luma: mean } = regionExposure(gray, rect);
             lumaRef.current = mean;
@@ -821,6 +848,7 @@ export default function DocumentScanner({
           held: steadySince ? now - steadySince : 0,
           ms: Math.round(rolling),
           frameMotion,
+          rawMotion,
           detectorOff,
         });
         const elBoxNow = video.getBoundingClientRect();
@@ -1341,6 +1369,9 @@ export default function DocumentScanner({
                 }
                 frameMotion={
                   trailRef.current[trailRef.current.length - 1]?.frameMotion
+                }
+                rawMotion={
+                  trailRef.current[trailRef.current.length - 1]?.rawMotion
                 }
                 detectorOff={
                   trailRef.current[trailRef.current.length - 1]?.detectorOff ??

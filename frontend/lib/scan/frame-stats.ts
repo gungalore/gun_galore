@@ -1,4 +1,4 @@
-import type { Gray } from './detect';
+import { halveGray, type Gray } from './detect';
 
 // ────────────────────────────────────────────────────────────────────
 // THE THREE MEASUREMENTS AUTO-CAPTURE DECIDES ON, MADE PURE.
@@ -135,12 +135,81 @@ export function sampleRegion(
 export function motionOf(cur: Uint8Array, prev: Uint8Array): number {
   const n = Math.min(cur.length, prev.length);
   if (n === 0) return 0;
-  let sum = 0;
-  for (let i = 0; i < n; i++) sum += cur[i] - prev[i];
-  const shift = sum / n;
+
+  // ⚠️ OFFSET *AND* GAIN, NOT JUST OFFSET. The first version subtracted the
+  // mean delta, which cancels a uniform brightening — an auto-exposure step.
+  // It does not cancel a change of CONTRAST, and iOS retunes its tone curve
+  // continuously: dark pixels and bright pixels then move by different
+  // amounts, which survives a mean subtraction untouched and reads as
+  // movement. Matching prev onto cur affinely — same mean, same spread —
+  // cancels the whole family of intensity remaps that are not actually the
+  // document going anywhere.
+  let sc = 0;
+  let sp = 0;
+  for (let i = 0; i < n; i++) {
+    sc += cur[i];
+    sp += prev[i];
+  }
+  const mc = sc / n;
+  const mp = sp / n;
+  let vc = 0;
+  let vp = 0;
+  for (let i = 0; i < n; i++) {
+    vc += (cur[i] - mc) ** 2;
+    vp += (prev[i] - mp) ** 2;
+  }
+  const sdc = Math.sqrt(vc / n);
+  const sdp = Math.sqrt(vp / n);
+  // A flat frame has no structure to match on; fall back to offset-only
+  // rather than dividing by ~0 and inventing a gain of thousands.
+  const gain = sdp > 1 && sdc > 1 ? sdc / sdp : 1;
+
   let diff = 0;
-  for (let i = 0; i < n; i++) diff += Math.abs(cur[i] - prev[i] - shift);
+  for (let i = 0; i < n; i++) {
+    diff += Math.abs(cur[i] - ((prev[i] - mp) * gain + mc));
+  }
   return diff / n;
+}
+
+/** One region of a luma buffer as a buffer in its own right. */
+export function regionGray(g: Gray, r: BufferRect): Gray {
+  const x0 = Math.max(0, Math.floor(r.x0));
+  const y0 = Math.max(0, Math.floor(r.y0));
+  const x1 = Math.max(x0, Math.min(g.width, Math.ceil(r.x1)));
+  const y1 = Math.max(y0, Math.min(g.height, Math.ceil(r.y1)));
+  const w = Math.max(1, x1 - x0);
+  const h = Math.max(1, y1 - y0);
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const src = (y0 + y) * g.width + x0;
+    out.set(g.data.subarray(src, src + w), y * w);
+  }
+  return { data: out, width: w, height: h };
+}
+
+/**
+ * Box-average down until the fine detail is gone.
+ *
+ * ⚠️ THIS IS THE ANTI-ALIAS THE BROWSER WOULD NOT DO. The detect buffer is a
+ * 2160-wide track squeezed into 320 — 6.75x — and asking the canvas for
+ * `imageSmoothingQuality: 'high'` did not help: measured on the phone
+ * afterwards, motion in the box read 30.92 against a limit of 4, with the
+ * whole-frame figure at 30.18 beside it. Same number, so neither the
+ * background nor the hint made any difference. WebKit's resampler is far
+ * weaker than Chromium's, and Chrome on iOS is WebKit.
+ *
+ * So do it here, where it is our own arithmetic and testable: halve with a
+ * real 2x2 box average — detect.ts's `halveGray`, already used for exactly
+ * this reason — until the print and the carpet weave have averaged into flat
+ * tone. What is left at ~40px across is the gross shape of the scene, which
+ * is the only thing "has the phone moved" was ever asking about.
+ */
+export function coarsen(g: Gray, targetWidth = 40): Gray {
+  let out = g;
+  while (out.width > targetWidth && out.width > 8 && out.height > 8) {
+    out = halveGray(out);
+  }
+  return out;
 }
 
 /**

@@ -58,6 +58,16 @@ export interface FrameSnapshot extends FrameReading {
    * much of that 22 was the carpet and how much was the downscale underneath.
    */
   frameMotion?: number;
+  /**
+   * The boxed movement measure BEFORE coarsening — the previous method.
+   *
+   * ⚠️ CARRIED SO THE NEXT RUN IS NOT ANOTHER GUESS. Scoping to the box read
+   * 30.92 against a whole-frame 30.18: identical, so the background was never
+   * it. Coarsening is the third attempt at this number, and printing the
+   * before and after side by side is what turns "still broken" into "the
+   * averaging is what mattered" or "it is neither, look elsewhere".
+   */
+  rawMotion?: number;
   /** Had the device been judged too slow to run the detector? */
   detectorOff: boolean;
 }

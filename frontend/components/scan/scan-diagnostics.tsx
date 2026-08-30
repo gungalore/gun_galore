@@ -71,6 +71,7 @@ export default function ScanDiagnostics({
   held,
   frameMs,
   frameMotion,
+  rawMotion,
   detectorOff,
   device,
   trail,
@@ -81,6 +82,8 @@ export default function ScanDiagnostics({
   frameMs: number;
   /** Whole-frame movement, for comparison against the boxed reading. */
   frameMotion?: number;
+  /** The boxed measure before coarsening — the previous method. */
+  rawMotion?: number;
   detectorOff: boolean;
   device: DeviceContext | null;
   trail: readonly FrameSnapshot[];
@@ -199,7 +202,9 @@ export default function ScanDiagnostics({
           be. A big gap means the background was the problem; both high means
           the downscale under it still is. */}
       <div style={{ opacity: 0.9 }}>
-        motion in box {Math.round(reading.motion * 100) / 100} · whole frame{' '}
+        motion {Math.round(reading.motion * 100) / 100} · before coarsening{' '}
+        {rawMotion === undefined ? '—' : Math.round(rawMotion * 100) / 100} ·
+        whole frame{' '}
         {frameMotion === undefined ? '—' : Math.round(frameMotion * 100) / 100}
       </div>
       {device && (

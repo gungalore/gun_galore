@@ -6,6 +6,8 @@ import {
   rectQuad,
   regionExposure,
   sampleRegion,
+  regionGray,
+  coarsen,
 } from './frame-stats';
 import { autoBlocker, MOTION_STILL } from './autocapture';
 import { GLARE_AT } from './exposure';
@@ -225,5 +227,105 @@ describe('⚠️ movement is read inside the box, not across the room', () => {
     const s = sampleRegion(g, { x0: -10, y0: -10, x1: 999, y1: 999 }, 1);
     expect(s.length).toBe(2500);
     expect([...new Set(s)]).toEqual([77]);
+  });
+});
+
+describe('⚠️ motion survives a contrast change, not just a brightness one', () => {
+  const prev = Uint8Array.from({ length: 900 }, (_, i) => 60 + ((i * 37) % 140));
+
+  it('reads ~zero when the tone curve stretches', () => {
+    // iOS retunes its tone curve continuously. Dark and bright pixels then
+    // move by DIFFERENT amounts, so subtracting the mean delta — which is all
+    // the previous version did — leaves most of it behind.
+    const mean = prev.reduce((a, b) => a + b, 0) / prev.length;
+    const cur = prev.map((v) => Math.round((v - mean) * 1.25 + mean + 8));
+    expect(motionOf(cur, prev)).toBeLessThan(MOTION_STILL);
+  });
+
+  it('⚠️ OFFSET-ONLY REMOVAL WOULD HAVE CALLED THAT MOVEMENT', () => {
+    const mean = prev.reduce((a, b) => a + b, 0) / prev.length;
+    const cur = prev.map((v) => Math.round((v - mean) * 1.25 + mean + 8));
+    let sum = 0;
+    for (let i = 0; i < prev.length; i++) sum += cur[i] - prev[i];
+    const shift = sum / prev.length;
+    let offsetOnly = 0;
+    for (let i = 0; i < prev.length; i++)
+      offsetOnly += Math.abs(cur[i] - prev[i] - shift);
+    offsetOnly /= prev.length;
+    expect(offsetOnly).toBeGreaterThan(MOTION_STILL);
+  });
+
+  it('still sees the scene actually change', () => {
+    const cur = Uint8Array.from({ length: 900 }, (_, i) => (i % 3 ? 20 : 230));
+    expect(motionOf(cur, prev)).toBeGreaterThan(MOTION_STILL);
+  });
+
+  it('does not divide by a flat frame', () => {
+    const flat = new Uint8Array(100).fill(120);
+    expect(Number.isFinite(motionOf(flat, flat))).toBe(true);
+    expect(motionOf(flat, new Uint8Array(100).fill(130))).toBeLessThan(MOTION_STILL);
+  });
+});
+
+describe('⚠️ coarsening averages the fine detail away', () => {
+  /** Printed text / carpet weave: high-frequency, alternating pixels. */
+  function textured(w: number, h: number, phase: number): Gray {
+    const d = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) d[y * w + x] = (x + y + phase) % 2 ? 235 : 25;
+    return { data: d, width: w, height: h };
+  }
+
+  it('a one-pixel phase shift of fine texture stops reading as movement', () => {
+    // This is the aliasing signature: sub-pixel sampling drift on dense
+    // texture flipping every sampled pixel between light and dark.
+    const a = textured(64, 64, 0);
+    const b = textured(64, 64, 1);
+    expect(motionOf(a.data, b.data)).toBeGreaterThan(MOTION_STILL); // before
+    expect(
+      motionOf(coarsen(a, 8).data, coarsen(b, 8).data),
+    ).toBeLessThan(MOTION_STILL); // after
+  });
+
+  it('halves down to about the target and no further', () => {
+    const c = coarsen({ data: new Uint8Array(320 * 371), width: 320, height: 371 }, 40);
+    expect(c.width).toBeLessThanOrEqual(40);
+    expect(c.width).toBeGreaterThan(20);
+  });
+
+  /** A big pale block on a dark ground — coarse structure, like a page. */
+  function block(w: number, h: number, atX: number): Gray {
+    const d = new Uint8Array(w * h).fill(30);
+    for (let y = h >> 2; y < h - (h >> 2); y++)
+      for (let x = atX; x < Math.min(w, atX + (w >> 1)); x++) d[y * w + x] = 220;
+    return { data: d, width: w, height: h };
+  }
+
+  it('⚠️ STILL SEES THE DOCUMENT ITSELF MOVE', () => {
+    // Coarsening must not make it blind. Structure at a scale that survives
+    // averaging — a page sliding across the box — must still register.
+    const a = coarsen(block(64, 64, 8), 8);
+    const b = coarsen(block(64, 64, 24), 8);
+    expect(motionOf(a.data, b.data)).toBeGreaterThan(MOTION_STILL);
+  });
+
+  it('⚠️ AND IS DELIBERATELY BLIND TO THE SCENE MERELY DIMMING', () => {
+    // A flat frame going darker is an exposure change, not movement — the
+    // affine match is supposed to cancel it, and a test that expected
+    // otherwise was asserting the wrong thing.
+    const lit: Gray = { data: new Uint8Array(64 * 64).fill(200), width: 64, height: 64 };
+    const dim: Gray = { data: new Uint8Array(64 * 64).fill(40), width: 64, height: 64 };
+    expect(motionOf(coarsen(lit, 8).data, coarsen(dim, 8).data)).toBeLessThan(
+      MOTION_STILL,
+    );
+  });
+
+  it('regionGray lifts exactly the rect', () => {
+    const g = gray(10, 10, 5);
+    g.data[3 * 10 + 3] = 99;
+    const r = regionGray(g, { x0: 3, y0: 3, x1: 6, y1: 6 });
+    expect(r.width).toBe(3);
+    expect(r.height).toBe(3);
+    expect(r.data[0]).toBe(99);
   });
 });
