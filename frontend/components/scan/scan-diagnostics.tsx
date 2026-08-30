@@ -37,6 +37,8 @@ import {
 } from '@/lib/scan/diagnostics';
 import { clearDiagnostics } from '@/lib/scan/diag-flag';
 import { HOLD_MS } from '@/lib/scan/autocapture';
+import { aimBox } from '@/lib/scan/aim';
+import { type DocShape, guideAspect } from '@/lib/scan/shapes';
 
 const OK = '#3ddc84';
 const BAD = '#ff6b6b';
@@ -72,6 +74,7 @@ export default function ScanDiagnostics({
   frameMs,
   frameMotion,
   rawMotion,
+  shape,
   detectorOff,
   device,
   trail,
@@ -84,6 +87,8 @@ export default function ScanDiagnostics({
   frameMotion?: number;
   /** The boxed measure before coarsening — the previous method. */
   rawMotion?: number;
+  /** Which document shape the aim box is drawn for. */
+  shape: DocShape;
   detectorOff: boolean;
   device: DeviceContext | null;
   trail: readonly FrameSnapshot[];
@@ -218,6 +223,28 @@ export default function ScanDiagnostics({
           </span>
         </div>
       )}
+      {/* ⚠️ THE AIM BOX, SAID OUT LOUD. The operator's A4 certificate kept
+          coming back with its top and bottom cut off on one phone and not the
+          other, and reading box dimensions off a scaled screenshot cannot tell
+          "the fix is not in your browser yet" from "the fix does not work".
+          The box's own aspect against the document's settles both at a glance:
+          if they match, the box can hold the page and the fault is elsewhere;
+          if the box is wider than the document, it will cut it. */}
+      {device && device.element.w > 0 && (() => {
+        const b = aimBox(shape, { width: device.element.w, height: device.element.h });
+        const boxA = b.height ? b.width / b.height : 0;
+        const docA = guideAspect(shape);
+        const cuts = docA !== null && boxA > docA + 0.01;
+        return (
+          <div style={{ opacity: 0.9 }}>
+            shape <strong>{shape}</strong> · box {Math.round(b.width)}×
+            {Math.round(b.height)} · aspect{' '}
+            <span style={{ color: cuts ? BAD : OK }}>{boxA.toFixed(3)}</span> ·
+            doc {docA === null ? 'unknown' : docA.toFixed(3)}
+            {cuts && <span style={{ color: BAD }}> — BOX CUTS THIS DOC</span>}
+          </div>
+        );
+      })()}
       {lastCapture && (
         <div style={{ opacity: 0.9 }}>
           last crop: <strong>{lastCapture.source}</strong>

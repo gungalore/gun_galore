@@ -1442,6 +1442,7 @@ export default function DocumentScanner({
                 rawMotion={
                   trailRef.current[trailRef.current.length - 1]?.rawMotion
                 }
+                shape={shape}
                 detectorOff={
                   trailRef.current[trailRef.current.length - 1]?.detectorOff ??
                   false
