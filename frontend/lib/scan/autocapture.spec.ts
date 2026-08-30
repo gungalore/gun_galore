@@ -100,10 +100,27 @@ describe('the hold', () => {
     expect(holdProgress(HOLD_MS * 10)).toBe(1);
   });
 
-  it('⚠️ DOES NOT FIRE EARLY — 700ms was "super sensitive"', () => {
-    expect(holdComplete(700)).toBe(false);
+  it('fires at the hold and not a millisecond before', () => {
     expect(holdComplete(HOLD_MS - 1)).toBe(false);
     expect(holdComplete(HOLD_MS)).toBe(true);
+  });
+
+  it('⚠️ IS LONG ENOUGH TO TELL A PAUSE FROM A STOP', () => {
+    // This asserted `holdComplete(700) === false`, pinning the era when the
+    // hold was 1100 because 700 had been "super sensitive". That verdict was
+    // real but it was never about this number — the MOTION READING underneath
+    // was broken, so the gate could not tell positioning from stillness and
+    // the wait was effectively random. With the reading honest the operator
+    // moved it to 750 and then to 300, against numbers that finally mean
+    // something.
+    //
+    // So the old literal is gone: a test that pins a superseded decision goes
+    // red on the correct change, which teaches people to edit tests. What
+    // survives is the reason the hold exists at all — below roughly a quarter
+    // of a second it stops distinguishing a hand that paused on its way
+    // somewhere from a hand that arrived, and the failure that prevents costs
+    // a retake and the member's trust in the next shot.
+    expect(HOLD_MS).toBeGreaterThanOrEqual(250);
   });
 });
 

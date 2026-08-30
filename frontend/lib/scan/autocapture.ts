@@ -108,20 +108,28 @@ export const MOTION_STILL = 4;
 /**
  * How long the phone must be still before the shutter fires.
  *
- * ⚠️ 750ms, AND THE HISTORY MATTERS. It was 700, the operator called it "super
- * sensitive" because it fired while the phone was still being positioned, and
- * it went to 1100. Then 1100 was "way too long... the average user will never
- * even bother holding it so still for so long".
+ * ⚠️ 300ms, AND THE HISTORY IS WHY THAT IS SAFE NOW WHEN 700 WAS NOT.
  *
- * Both verdicts were true, and neither was really about this number: the
- * MOTION READING underneath it was broken the whole time. A stationary phone
- * measured 22-31 against a limit of 4, so the clock either never started or
- * restarted constantly, and 1100ms of UNBROKEN stillness was a far longer wait
- * than 1100ms. With the reading fixed — coarsened, and matched for gain as
- * well as offset — the hold means what it says, and 750 is the operator's own
- * call against numbers that are finally honest.
+ * It was 700, the operator called it "super sensitive" because it fired while
+ * the phone was still being positioned, and it went to 1100. Then 1100 was
+ * "way too long... the average user will never even bother holding it so still
+ * for so long". Both verdicts were true, and neither was really about this
+ * number: the MOTION READING underneath it was broken the whole time. A
+ * stationary phone measured 22-31 against a limit of 4, so the clock either
+ * never started or restarted constantly.
+ *
+ * That is also why 700 misfired back then. The gate could not tell positioning
+ * from stillness, so the wait was effectively random and sometimes elapsed
+ * mid-movement. With the reading honest — coarsened, and matched for gain as
+ * well as offset — "still" now means still, and the hold is only there to rule
+ * out the instant a hand pauses on its way somewhere. 300ms does that.
+ *
+ * ⚠️ IT IS THE SHORTEST THIS SHOULD GO WITHOUT NEW EVIDENCE. Below about a
+ * quarter of a second the hold stops distinguishing a pause from a stop, and
+ * the failure it prevents — a photograph taken while the phone is still
+ * arriving — costs a retake and the member's confidence in the next one.
  */
-export const HOLD_MS = 750;
+export const HOLD_MS = 300;
 
 /**
  * What the frame looks like right now, as far as this decision cares.
