@@ -273,6 +273,39 @@ export default function DocumentScanner({
   useEffect(() => {
     setDiag(diagnosticsOn(window.location.search));
   }, []);
+
+  /**
+   * The height actually visible right now.
+   *
+   * ⚠️ MEASURED, BECAUSE dvh LIED. `position: fixed; inset: 0` covers the
+   * LARGE viewport, so on Chrome for iOS the foot of this dialog sat behind
+   * the browser's bottom toolbar and the corner editor's Apply button was off
+   * the screen. Setting `height: 100dvh` was the obvious answer and it did not
+   * hold: the operator's two screenshots, same phone and same minute, show it
+   * wrong on arrival and right after minimising and restoring the browser.
+   *
+   * That is the signature of a unit resolved once against a stale chrome state
+   * and never re-evaluated — iOS does not reliably re-resolve dvh for a fixed
+   * element when the toolbars move. visualViewport is the API that exists to
+   * answer this question and it fires an event when the answer changes, so we
+   * ask it instead of guessing.
+   *
+   * The dvh in .gg-scan-root stays as the pre-hydration fallback.
+   */
+  const [viewportH, setViewportH] = useState<number | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const read = () => setViewportH(vv?.height ?? window.innerHeight);
+    read();
+    vv?.addEventListener('resize', read);
+    vv?.addEventListener('scroll', read);
+    window.addEventListener('orientationchange', read);
+    return () => {
+      vv?.removeEventListener('resize', read);
+      vv?.removeEventListener('scroll', read);
+      window.removeEventListener('orientationchange', read);
+    };
+  }, []);
   const [shot, setShot] = useState<ScanResult | null>(null);
   const [pages, setPages] = useState<File[]>([]);
   const [editing, setEditing] = useState(false);
@@ -1245,6 +1278,8 @@ export default function DocumentScanner({
       style={{
         position: 'fixed',
         inset: 0,
+        // Overrides the class's dvh once we have measured for real.
+        ...(viewportH ? { height: viewportH } : null),
         zIndex: Z,
         background: '#000',
         color: '#fff',
@@ -1359,9 +1394,28 @@ export default function DocumentScanner({
                 pointerEvents: 'none',
               }}
             />
+            {/* ⚠️ GREEN MEANS "I CAN SEE A DOCUMENT", NOT "THE DETECTOR
+                LATCHED". It was wired to `aimed` — the live detector's lock —
+                and the detector has not held the trigger since auto-capture
+                was re-specified around the three frame gates. So the colour
+                was reporting on something with no bearing on whether the
+                shutter would fire: the operator's Samsung S23 showed red the
+                entire time while capturing perfectly, and his iPhone 15 showed
+                green, on the same page with the same props.
+
+                This component's own note already argues the case — "a box
+                that stays red while they are doing everything right reads as
+                'this is not working', and there is nobody to ask".
+
+                Now it follows the gates the shutter actually reads: red only
+                for `empty` and `light`, which are the two a member can DO
+                something about, and green once the document is in the box and
+                readable. Steadiness is not in it, deliberately — that is the
+                hold ring's job, and a frame flickering with every tremor would
+                be noise rather than signal. */}
             <AimFrame
               shape={shape}
-              locked={aimed}
+              locked={blocker === null || blocker === 'steady'}
               alwaysGreen={staticAim}
             />
             <ExposureAlert glare={glare} luma={luma} torchOn={torchOn} />
@@ -1447,7 +1501,14 @@ export default function DocumentScanner({
                   ? 'Fix the lighting above first.'
                   : aimed
                     ? 'Got it — take the photo.'
-                    : `Put the ${SHAPES[shape].label.toLowerCase()} inside the ${staticAim ? 'green' : 'red'} corners.`}
+                    : /* ⚠️ DO NOT NAME THE COLOUR. This read "inside the red
+                          corners", which was only ever true while the frame's
+                          colour tracked the detector — it now tracks the gates,
+                          so by the time somebody reads this sentence the
+                          corners may well be green. A caption that describes
+                          the screen wrongly is worse than one that describes
+                          less of it. */
+                      `Put the ${SHAPES[shape].label.toLowerCase()} inside the corners.`}
             </span>
           </p>
         )}
