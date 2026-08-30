@@ -251,6 +251,18 @@ export default function ScanDiagnostics({
           {lastCapture.source === 'aim' && (
             <span style={{ color: BAD }}> (corners never moved — no dewarp)</span>
           )}
+          {/* ⚠️ WHY IT DECLINED, NOT JUST THAT IT DID. Both phones reported
+              "aim" every time, and a refusal with no numbers beside it cannot
+              be told apart from a detector that never ran. hits is the share
+              of scanlines that found an edge, per side — a single low one
+              names which edge of the document the search could not see. */}
+          {lastCapture.seed && (
+            <span style={{ display: 'block', opacity: 0.85 }}>
+              seed conf {lastCapture.seed.confidence} · hits{' '}
+              {lastCapture.seed.hits.join('/')} · resid{' '}
+              {lastCapture.seed.residuals.join('/')}
+            </span>
+          )}
         </div>
       )}
 

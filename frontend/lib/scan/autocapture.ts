@@ -96,14 +96,30 @@ export const INK_AT = 0.1;
 export const LOWEST_MEASURED_DOCUMENT_INK = 0.173;
 
 /**
- * Mean frame-to-frame luma change below which the phone counts as still, on a
- * 0-255 scale. A hand at rest measures 1-3; deliberate movement is 8 and up;
- * the gap between them is wide. Carried over unchanged — this measure was the
- * one part of the old auto-capture that was demonstrably right, after being
- * moved off quad drift (which a patterned carpet could stall for ever) onto
- * the frame's own pixels.
+ * Frame-to-frame movement below which the phone counts as still.
+ *
+ * ⚠️ RE-DERIVED FOR THE MEASURE IT NOW GUARDS, NOT INHERITED. This was 4,
+ * chosen when `motion` was a plain mean of |cur - prev| over the WHOLE frame:
+ * on that scale a hand at rest read 1-3 and movement 8 and up.
+ *
+ * The reading is a different quantity now — scoped to the aim box, box-averaged
+ * down before comparing, and affine-matched so an exposure or tone shift
+ * cancels. Keeping the old threshold against a new scale is how a gate ends up
+ * measuring the right thing and judging it by the wrong yardstick.
+ *
+ * Measured on two stationary phones, both held deliberately still, both
+ * reported by the diagnostic panel: Samsung S23 3.93, iPhone 15 7.36 — one
+ * just under the old limit and one comfortably over it, which is exactly the
+ * "works on his phone, not on mine" the operator hit. 10 clears both with room
+ * and still sits far below what deliberate movement produces.
+ *
+ * ⚠️ THE UPPER HALF OF THIS IS UNMEASURED. What a hand actually reads while
+ * POSITIONING has never been captured on either device — the panel shows it
+ * live, so it is one observation away. Until then this number is chosen to
+ * stop refusing a still phone, not proven to catch a moving one, and the
+ * 300ms hold is doing the real work of ruling out a hand in transit.
  */
-export const MOTION_STILL = 4;
+export const MOTION_STILL = 10;
 
 /**
  * How long the phone must be still before the shutter fires.

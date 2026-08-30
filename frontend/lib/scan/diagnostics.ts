@@ -264,7 +264,14 @@ export interface ScanReport {
    * says whether it was ever corrected, which is the first thing to know and
    * is otherwise unknowable after the fact.
    */
-  lastCapture?: { source: string; glare: number; sharpness: number; meanLuma: number };
+  lastCapture?: {
+    source: string;
+    glare: number;
+    sharpness: number;
+    meanLuma: number;
+    /** The seeded corner search's own verdict, when it ran. */
+    seed?: { confidence: number; hits: number[]; residuals: number[] };
+  };
 }
 
 /** The whole thing as pasteable JSON. Numbers only — safe to send anywhere. */

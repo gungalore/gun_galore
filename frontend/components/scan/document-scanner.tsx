@@ -1080,6 +1080,7 @@ export default function DocumentScanner({
         glare: res.report.glare,
         sharpness: res.report.sharpness,
         meanLuma: res.report.meanLuma,
+        seed: res.seed,
       };
       setShot(res);
       setPhase('review');

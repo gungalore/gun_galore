@@ -82,17 +82,19 @@ describe('⚠️ motion ignores a uniform brightness shift', () => {
     expect(motionOf(cur, prev)).toBeCloseTo(0, 6);
   });
 
-  it('⚠️ THE OLD PLAIN MEAN WOULD HAVE BLOCKED THE SHUTTER FOR EVER', () => {
+  it('⚠️ THE OLD PLAIN MEAN CALLED THAT MOVEMENT', () => {
+    // ⚠️ COMPARED AGAINST THE OLD ARITHMETIC, NOT AGAINST MOTION_STILL. This
+    // asserted `plain > MOTION_STILL`, which quietly made the demonstration
+    // depend on the threshold — so re-deriving the threshold for the new
+    // measure broke a test about the measure. The property here has nothing to
+    // do with where the gate sits: removing the shift removes the false
+    // reading, whatever the limit happens to be.
     const cur = prev.map((v) => v + 6);
     let plain = 0;
     for (let i = 0; i < prev.length; i++) plain += Math.abs(cur[i] - prev[i]);
     plain /= prev.length;
-    expect(plain).toBeGreaterThan(MOTION_STILL);
-    expect(autoBlocker(true, { ink: 0.5, motion: plain, glare: 0, luma: 128 })).toBe('steady');
-    // And with the shift removed, the same frame pair is allowed to fire.
-    expect(
-      autoBlocker(true, { ink: 0.5, motion: motionOf(cur, prev), glare: 0, luma: 128 }),
-    ).toBeNull();
+    expect(plain).toBeCloseTo(6, 1); // the whole shift, reported as movement
+    expect(motionOf(cur, prev)).toBeLessThan(plain / 10);
   });
 
   it('still sees a hand move', () => {
@@ -252,7 +254,10 @@ describe('⚠️ motion survives a contrast change, not just a brightness one', 
     for (let i = 0; i < prev.length; i++)
       offsetOnly += Math.abs(cur[i] - prev[i] - shift);
     offsetOnly /= prev.length;
-    expect(offsetOnly).toBeGreaterThan(MOTION_STILL);
+    // Again against the previous arithmetic rather than the live threshold:
+    // a contrast change leaves most of itself behind when only the mean is
+    // removed, and the affine match takes it out.
+    expect(motionOf(cur, prev)).toBeLessThan(offsetOnly / 5);
   });
 
   it('still sees the scene actually change', () => {

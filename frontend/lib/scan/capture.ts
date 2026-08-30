@@ -217,6 +217,16 @@ export interface ScanResult {
    * with it — see the note in processCapture.
    */
   source: 'detected' | 'frame' | 'manual' | 'aim';
+  /**
+   * What the seeded corner search made of it, when there was an aim box to
+   * seed from. Present even when it declined — that is the interesting case.
+   */
+  seed?: {
+    confidence: number;
+    /** top, bottom, left, right. */
+    hits: number[];
+    residuals: number[];
+  };
   report: EnhanceReport;
   snapped: string | null;
   /** Long edge of the frame this came from, in pixels. */
@@ -280,6 +290,11 @@ export async function processCapture(
 
   let quad = opts.manualQuad ?? null;
   let from: ScanResult['source'] = opts.manualQuad ? 'manual' : 'frame';
+  // ⚠️ REPORTED EVEN WHEN IT DECLINES — ESPECIALLY WHEN IT DECLINES. Both of
+  // the operator's phones came back "last crop: aim", meaning the detector
+  // refused every time, and a refusal with no numbers beside it is
+  // indistinguishable from a detector that never ran.
+  let seedReport: ScanResult['seed'] = undefined;
 
   // Fractions into this raster's own pixels, once, here — so everything below
   // is talking about the same image.
@@ -338,6 +353,13 @@ export async function processCapture(
         y: p.y * seed.scale,
       })) as Quad;
       const found = seededCorners(blur3(seed.gray), inSmall);
+      seedReport = {
+        confidence: Math.round(found.confidence * 100) / 100,
+        hits: [found.edges.top, found.edges.bottom, found.edges.left, found.edges.right]
+          .map((e) => Math.round(e.hitFrac * 100) / 100),
+        residuals: [found.edges.top, found.edges.bottom, found.edges.left, found.edges.right]
+          .map((e) => Math.round(e.residual * 10) / 10),
+      };
       if (found.corners && found.confidence >= SEED_CONFIDENCE) {
         quad = found.corners.map((p) => ({
           x: p.x / seed.scale,
@@ -385,6 +407,7 @@ export async function processCapture(
   );
 
   return {
+    seed: seedReport,
     file: await toFile(better, opts.name ?? `scan-${Date.now()}.jpg`),
     preview: await previewUrl(better),
     quad,
