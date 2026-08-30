@@ -136,3 +136,61 @@ describe('holdHint', () => {
     expect(holdHint('any')).toBeNull();
   });
 });
+
+describe('⚠️ an unknown shape must not cut a known one', () => {
+  // The operator photographed an A4 certificate through the
+  // FIREARM_SOURCE_PROOF door — which matches nothing in shapeForKind and so
+  // lands on 'any' — and got it back with the top and bottom edges gone. The
+  // 'any' box was ratio 0.8; an A4 page is 0.707, so the page overflowed a box
+  // the capture then cropped to exactly.
+  //
+  // Swept across real viewfinder aspects rather than one, because the failure
+  // depended on the aspect: it did not show on the iPhone and did on the S23.
+  const VIEWS = [
+    { width: 390, height: 700 }, // 0.557 — the original test phone
+    { width: 393, height: 574 }, // 0.684 — Samsung S23, chrome visible
+    { width: 393, height: 456 }, // 0.862 — iPhone 15, chrome visible
+    { width: 430, height: 900 }, // 0.478 — a tall viewfinder
+  ];
+
+  it('holds every known document shape inside the unknown box', () => {
+    for (const view of VIEWS) {
+      const any = aimBox('any', view);
+      for (const s of SHAPE_ORDER) {
+        const a = guideAspect(s);
+        if (a === null) continue;
+        // Fit that document into the unknown box the way a member would —
+        // as large as it goes — and check it does not need to spill out.
+        const w = Math.min(any.width, any.height * a);
+        const h = w / a;
+        expect(
+          h,
+          `${s} overflows the 'any' box on a ${view.width}x${view.height} view`,
+        ).toBeLessThanOrEqual(any.height + 0.001);
+        expect(w).toBeLessThanOrEqual(any.width + 0.001);
+      }
+    }
+  });
+
+  it('⚠️ THE OLD 1.25 BOX CUT AN A4, WHICH IS WHY THIS SUITE EXISTS', () => {
+    const view = { width: 393, height: 574 };
+    const maxW = view.width * 0.82;
+    const maxH = view.height * 0.82;
+    const oldH = Math.min(maxH, maxW * 1.25);
+    const a4 = guideAspect('a4')!;
+    // A page fitted to that box's width needed more height than it had.
+    expect(maxW / a4).toBeGreaterThan(oldH);
+    // And the box in force now holds it.
+    expect(maxW / a4).toBeLessThanOrEqual(aimBox('any', view).height + 0.001);
+  });
+
+  it('stays inside the viewfinder on every one of them', () => {
+    for (const view of VIEWS) {
+      const b = aimBox('any', view);
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.y).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width).toBeLessThanOrEqual(view.width);
+      expect(b.y + b.height).toBeLessThanOrEqual(view.height);
+    }
+  });
+});

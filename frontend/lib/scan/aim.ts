@@ -1,5 +1,5 @@
 import { Rect, rectIoU } from './geometry';
-import { DocShape, guideAspect } from './shapes';
+import { DocShape, SHAPE_ORDER, guideAspect } from './shapes';
 
 // ────────────────────────────────────────────────────────────────────
 // THE BOX THE MEMBER AIMS INTO.
@@ -35,12 +35,38 @@ export function aimBox(shape: DocShape, view: { width: number; height: number })
   const maxW = view.width * FILL;
   const maxH = view.height * FILL;
 
-  // No fixed size: a loose box, still smaller than the frame so there is
-  // somewhere for the document's edges to sit. A box at the frame's own edge
-  // would be asking for a photograph with no border, and the detector needs
-  // a border to find an edge against.
+  // ⚠️ AN UNKNOWN SHAPE GETS THE TALLEST KNOWN ONE, NOT A ROUND NUMBER.
+  //
+  // This was `min(maxH, maxW * 1.25)` — a box of ratio 0.8 chosen for nothing
+  // in particular. An A4 page is 0.707, so fitting a page to that box's WIDTH
+  // needs more height than the box has, and the capture crops exactly the box:
+  // the operator photographed an A4 certificate on a Samsung S23 and got it
+  // back with the top and bottom edges cut off. `FIREARM_SOURCE_PROOF` is
+  // where this bites, because it is described to the member as "a licence
+  // card, a dealer invoice, an advert" and matches nothing in shapeForKind, so
+  // it lands on 'any'.
+  //
+  // The asymmetry decides it. A TALL box CONTAINS a card — the card just does
+  // not fill it, which costs a little resolution and nothing else. A SHORT box
+  // CUTS a page, and what it cuts is gone: the crop is the file we keep. So
+  // when we do not know the shape, take the one that cuts nothing, which is
+  // the tallest we support.
+  //
+  // Still bounded by maxH on the same contain rule as everything else, so a
+  // very tall viewfinder does not produce a sliver.
   if (aspect === null) {
-    return centred(maxW, Math.min(maxH, maxW * 1.25), view);
+    const tallest = Math.min(
+      ...([...SHAPE_ORDER]
+        .map(guideAspect)
+        .filter((a): a is number => a !== null)),
+    );
+    let w = maxW;
+    let h = w / tallest;
+    if (h > maxH) {
+      h = maxH;
+      w = h * tallest;
+    }
+    return centred(w, h, view);
   }
 
   // Fit the aspect inside both limits. Whichever runs out first wins — the
