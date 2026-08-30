@@ -289,11 +289,61 @@ export const WIZARD_STEPS: WizardStep[] = [
   },
 ];
 
+// ────────────────────────────────────────────────────────────────────
+// ELEVEN STEPS ON SCREEN, TEN AN APPLICATION WALKS.
+//
+// Operator, 2026-08-30: "make it a 10 step process, remove step1 out of the
+// process and make it the form selection as it was but still keep the visuals
+// a 11 step process… essentially Step2 on the frontend is step 1 in the
+// backend."
+//
+// The section is chosen at /licence-services/new, BEFORE the application
+// exists — see the note on that page for why it cannot be otherwise. Which
+// left the first step of the real wizard restating a choice already printed in
+// the chrome bar on every step, under the heading "Step 1 of 11" that the
+// chooser had just used. Two screens, one number, nothing gained.
+//
+// So the rail keeps all eleven, because the member should see the whole
+// journey and see that the first part of it is behind them. The application
+// walks the other ten.
+//
+// ⚠️ THE TWO INDEXES ARE NOT INTERCHANGEABLE AND NOTHING IN THE TYPES SAYS SO
+// — they are both `number`. Convert with the two functions below rather than
+// adding or subtracting 1 at a call site: an off-by-one here does not throw,
+// it silently renders the wrong step's questions under the right step's
+// heading.
+// ────────────────────────────────────────────────────────────────────
+
+/** The steps an application actually walks. The section is not one of them. */
+export const APPLICATION_STEPS: WizardStep[] = WIZARD_STEPS.slice(1);
+
+/** How many display steps sit before the first one an application walks. */
+export const DISPLAY_OFFSET = WIZARD_STEPS.length - APPLICATION_STEPS.length;
+
+/** Where a walked step sits on the rail. */
+export function toDisplayIndex(walked: number): number {
+  return walked + DISPLAY_OFFSET;
+}
+
+/**
+ * Which walked step a rail position means, or `null` for one that is not
+ * walked at all.
+ *
+ * ⚠️ null RATHER THAN A CLAMP TO ZERO. Clamping would make a click on the
+ * section step quietly select the firearm step — a control that appears to do
+ * nothing, which is the failure this whole change exists to remove.
+ */
+export function toWalkedIndex(display: number): number | null {
+  const n = display - DISPLAY_OFFSET;
+  return n < 0 ? null : n;
+}
+
 export default function WizardRail({
   steps,
   current,
   onGo,
   interactive = true,
+  lockedBefore = 0,
 }: {
   steps: WizardStep[];
   /** Zero-based. */
@@ -313,6 +363,16 @@ export default function WizardRail({
    * both say so instead of only the mouse finding out.
    */
   interactive?: boolean;
+  /**
+   * Display steps before this index are shown but cannot be gone to.
+   *
+   * ⚠️ THE SECTION STEP, ON A REAL APPLICATION. It is drawn — ticked, so the
+   * member can see the journey started before this screen and that part of it
+   * is done — but there is nothing to return to: the choice it recorded cannot
+   * be changed, and the panel that used to restate it said only what the chrome
+   * bar already says on every step.
+   */
+  lockedBefore?: number;
 }) {
   return (
     <nav
@@ -327,7 +387,7 @@ export default function WizardRail({
             key={step.key}
             type="button"
             onClick={() => onGo(i)}
-            disabled={!interactive}
+            disabled={!interactive || i < lockedBefore}
             aria-current={now ? "step" : undefined}
             className="flex shrink-0 items-center gap-[7px] rounded-md border-0 px-2 py-1 disabled:cursor-default"
             style={{

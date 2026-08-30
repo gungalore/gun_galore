@@ -64,7 +64,13 @@ import AttachedDocuments from '@/components/licence-pack/attached-documents';
 import ExtractionReview from '@/components/licence-pack/extraction-review';
 import { mergeReads } from '@/lib/extraction-review-rules';
 import ProficiencyAlert from '@/components/licence-pack/proficiency-alert';
-import WizardRail, { WIZARD_STEPS } from '@/components/licence-pack/wizard-rail';
+import WizardRail, {
+  APPLICATION_STEPS,
+  DISPLAY_OFFSET,
+  toDisplayIndex,
+  toWalkedIndex,
+  WIZARD_STEPS,
+} from '@/components/licence-pack/wizard-rail';
 import { visibleFields } from '@/lib/motivations-api';
 import FieldInput from '@/components/motivation-field-input';
 import PackGroup from '@/components/licence-pack/pack-group';
@@ -519,7 +525,13 @@ export default function LicenceServicesWizardPage() {
   );
 
   const missing = useMemo(() => new Set(missingRequired), [missingRequired]);
-  const steps = WIZARD_STEPS;
+  // ⚠️ `step` INDEXES THE WALK, NOT THE RAIL. An application walks ten steps;
+  // the rail draws eleven, because the section was chosen on a screen before
+  // this one existed. Everything the member SEES is a display index and goes
+  // through toDisplayIndex; everything that picks a question or a document is
+  // a walked index. See wizard-rail.tsx — both are `number` and nothing in the
+  // types will catch a swap.
+  const steps = APPLICATION_STEPS;
   const current = steps[Math.min(step, steps.length - 1)];
   const last = step === steps.length - 1;
 
@@ -570,7 +582,18 @@ export default function LicenceServicesWizardPage() {
         </div>
       </div>
 
-      <WizardRail steps={steps} current={step} onGo={setStep} />
+      {/* The whole journey, including the part that happened before this
+          screen — ticked, and not a way back: the choice it recorded cannot be
+          changed, and the chrome bar above already restates it. */}
+      <WizardRail
+        steps={WIZARD_STEPS}
+        current={toDisplayIndex(step)}
+        lockedBefore={DISPLAY_OFFSET}
+        onGo={(i) => {
+          const walked = toWalkedIndex(i);
+          if (walked !== null) setStep(walked);
+        }}
+      />
 
       {!PACK_SCREEN_SHIPPED && (
         <div
@@ -606,7 +629,13 @@ export default function LicenceServicesWizardPage() {
         <div className="flex flex-col gap-4">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
-              Step {step + 1} of {steps.length} · {current.fills}
+              {/* ⚠️ THE DISPLAY NUMBER, NOT THE WALKED ONE. The firearm is the
+                  first step an application walks and the SECOND the member
+                  counts — they chose a section to get here, and telling them
+                  that was step nothing would be a lie about their own
+                  progress. */}
+              Step {toDisplayIndex(step) + 1} of {WIZARD_STEPS.length} ·{' '}
+              {current.fills}
             </div>
             <h1 className="mb-1.5 mt-1.5 text-[26px] font-bold tracking-[-.02em] text-[var(--text-primary)]">
               {current.title}
@@ -679,6 +708,7 @@ export default function LicenceServicesWizardPage() {
 
           <StepBody
             stepKey={current.key}
+            first={step === 0}
             sections={current.sections}
             documents={current.documents}
             uploads={uploads}
@@ -800,6 +830,7 @@ function sellerConsentOffered(d: DocumentStatus | undefined): boolean {
 /** What each step actually asks. */
 function StepBody({
   stepKey,
+  first,
   sections,
   documents,
   motivationId,
@@ -831,6 +862,8 @@ function StepBody({
   onToggleRow,
 }: {
   stepKey: string;
+  /** Is this the first step the application walks? Carries the bulk door. */
+  first: boolean;
   sections?: string[];
   documents?: { kind: string; title: string; subtitle?: string }[];
   motivationId: string;
@@ -861,58 +894,21 @@ function StepBody({
   openRow: string | null;
   onToggleRow: (key: string) => void;
 }) {
-  // The first step restates what was chosen when the application was started.
+  // ⚠️ THERE IS NO 'section' BRANCH ANY MORE, AND ITS ABSENCE IS THE POINT.
   //
-  // ⚠️ READ-ONLY, DELIBERATELY, AND THE CHOOSING NOW HAPPENS ON THIS SAME STEP
-  // ONE SCREEN BEFORE — at /licence-services/new. Changing the section changes
-  // which documents are required and which questions are asked; it is not a
-  // field to flip halfway through, it is a new application.
+  // It restated the licence type under the heading "Step 1 of 11" — the same
+  // number the chooser at /licence-services/new had just used, saying what the
+  // chrome bar says on every single step. Operator, 2026-08-30: "remove step1
+  // out of the process… essentially Step2 on the frontend is step 1 in the
+  // backend." APPLICATION_STEPS is that ten; the rail still draws eleven.
   //
-  // That is not a UI preference. `Motivation.licenceType` is written exactly
-  // once, by create(), and no route can change it afterwards: the field
+  // The choice itself remains unchangeable — `Motivation.licenceType` is
+  // written exactly once, by create(), and no route can change it. The field
   // registry, the checklist, the 271 box mapping, the eligibility blockers and
   // the generator's legal framing are each a pure function of it, and every
   // saved answer was already filtered through `sanitiseAnswers(licenceType)`.
-  // A selector here would not be a harder version of this screen — it would be
-  // a silent data-loss bug wearing a dropdown.
-  if (stepKey === 'section') {
-    return (
-      <div className="gg-tile max-w-[820px] rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] px-[17px] py-[15px]">
-        <div className="text-[12.5px] text-[var(--text-tertiary)]">
-          You are applying under
-        </div>
-        <div className="mt-1 text-[18px] font-bold text-[var(--text-primary)]">
-          {LICENCE_SECTION[pack.licenceType] ?? ''} —{' '}
-          {licenceLabel(pack.licenceType).toLowerCase()}
-        </div>
-        <p className="mt-2 text-[13px] text-[var(--text-secondary)]">
-          Chosen when you started this application. To apply under a different
-          section,{' '}
-          <Link
-            href="/licence-services/new"
-            className="underline underline-offset-2"
-          >
-            start a new one
-          </Link>{' '}
-          — the documents and the questions are not the same.
-        </p>
-      
-        {/* ⚠️ THE ONE DOOR THAT DOES NOT ASK WHICH DOCUMENT IT IS. Every
-            capture card in the wizard is bound to a single kind, so a member
-            has to know what each scan is before they can hand it over. This
-            is on step one because somebody with a folder ready should be able
-            to give us the folder and answer questions afterwards, which is
-            the whole point of reading documents at all. */}
-        <div className="pt-2">
-          <BulkCapture
-            pickable={pickable}
-            onAdd={onAdd}
-            onRefile={onRefile}
-          />
-        </div>
-</div>
-    );
-  }
+  // A selector here would not be a harder version of that panel; it would be a
+  // silent data-loss bug wearing a dropdown.
 
   // The last step is the pack itself: what we produce, what you gather, and
   // what somebody else has to send.
@@ -994,6 +990,22 @@ function StepBody({
 
   return (
     <div className="max-w-[800px] space-y-4">
+      {/* ⚠️ THE ONE DOOR THAT DOES NOT ASK WHICH DOCUMENT IT IS, AND IT HAS TO
+          BE THE FIRST THING ON THE FIRST STEP. Every capture card in the
+          wizard is bound to a single kind, so a member has to know what each
+          scan is before they can hand it over. This is the way out of that:
+          somebody with a folder ready gives us the folder and answers
+          questions afterwards, which is the whole point of reading documents
+          at all.
+
+          It used to sit on the section step. That step is gone, so it moved
+          here rather than being lost — `first`, not `stepKey === 'firearm'`,
+          so reordering the wizard cannot strand it behind a step nobody
+          reaches until they have already been asked for everything by hand. */}
+      {first && (
+        <BulkCapture pickable={pickable} onAdd={onAdd} onRefile={onRefile} />
+      )}
+
       {/* SURFACE TWO OF TWO. Operator, asked where the 117705 alert belongs:
           "alert appears on both." Here it sits ABOVE the capture cards, so a
           member who is about to photograph one certificate is told, before
