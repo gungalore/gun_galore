@@ -70,7 +70,7 @@ describe('⚠️ blur3 does not blacken the outside columns', () => {
 describe('finding one edge', () => {
   it('lands on a straight edge to within a pixel', () => {
     const g = blur3(scene(200, 200, { x0: 40, y0: 60, x1: 160, y1: 150 }));
-    const fit = findEdgeLine(g, 'horizontal', 62, 20, 50, 150);
+    const fit = findEdgeLine(g, 'horizontal', 62, 20, 20, 50, 150);
     // y = m*x + c, and the edge is flat at y = 60.
     expect(fit.line.d).toBeGreaterThan(58);
     expect(fit.line.d).toBeLessThan(62);
@@ -83,14 +83,14 @@ describe('finding one edge', () => {
     // loop's real iteration count, which inflates every confidence built on it.
     const g = blur3(scene(200, 200, { x0: 40, y0: 60, x1: 160, y1: 150 }));
     for (const step of [1, 3, 4, 7]) {
-      const fit = findEdgeLine(g, 'horizontal', 62, 20, 50, 150, step);
+      const fit = findEdgeLine(g, 'horizontal', 62, 20, 20, 50, 150, step);
       expect(fit.hitFrac, `step ${step}`).toBeLessThanOrEqual(1);
     }
   });
 
   it('reports no confidence on a blank band rather than inventing a line', () => {
     const blank: Gray = { data: new Uint8Array(100 * 100).fill(90), width: 100, height: 100 };
-    const fit = findEdgeLine(blank, 'horizontal', 50, 15, 10, 90);
+    const fit = findEdgeLine(blank, 'horizontal', 50, 15, 15, 10, 90);
     expect(fit.hitFrac).toBe(0);
     expect(fit.residual).toBeGreaterThan(10);
   });
@@ -108,7 +108,7 @@ describe('finding one edge', () => {
     }
     const g = blur3({ data: d, width: w, height: h });
     // Prior says the top edge is near 70; the mount's edge at 40 is stronger.
-    const fit = findEdgeLine(g, 'horizontal', 70, 45, 50, 150);
+    const fit = findEdgeLine(g, 'horizontal', 70, 45, 45, 50, 150);
     expect(fit.line.d).toBeGreaterThan(64);
     expect(fit.line.d).toBeLessThan(76);
   });

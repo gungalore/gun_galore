@@ -72,8 +72,18 @@ export interface SeededResult {
 const OUTER_SHARE = 0.55;
 
 export interface SeededOptions {
-  /** Half-width of the search band, as a fraction of the buffer's dimension. */
+  /** How far outside the box to look, as a fraction of the buffer's dimension. */
   bandFrac?: number;
+  /**
+   * How far INSIDE the box to look, as a fraction of the box's own dimension.
+   *
+   * ⚠️ MEASURED AGAINST THE BOX, NOT THE FRAME, because what it has to stay
+   * clear of scales with the document rather than the screen. An A4 page's
+   * printed border sits about 10mm inside its edge — 3.4% of the height, 4.8%
+   * of the width — so 2% of the box keeps the search outside it at any framing
+   * distance, on any phone.
+   */
+  innerFrac?: number;
   /** Sample every Nth scanline. 4 is plenty for a straight line. */
   step?: number;
 }
@@ -144,7 +154,10 @@ export function findEdgeLine(
   g: Gray,
   orientation: 'horizontal' | 'vertical',
   pos: number,
-  band: number,
+  /** How far the search may reach AWAY from the document. */
+  bandOut: number,
+  /** How far it may reach INTO it. Deliberately much smaller. */
+  bandIn: number,
   from: number,
   to: number,
   step = 4,
@@ -155,8 +168,24 @@ export function findEdgeLine(
   const horizontal = orientation === 'horizontal';
   const acrossMax = (horizontal ? h : w) - 2;
   const alongMax = (horizontal ? w : h) - 1;
-  const lo = Math.max(1, Math.round(pos - band));
-  const hi = Math.min(acrossMax, Math.round(pos + band));
+  // ⚠️ WIDE FIRST, TIGHT SECOND — AND THE ORDER IS THE WHOLE POINT.
+  //
+  // Operator's sketch asks for a search that reaches outside the aim box and
+  // barely inside it, so everything printed ON the document falls outside the
+  // search rather than competing within it. Right idea; applying it to the
+  // FIRST pass is what breaks. A leaning edge drifts inward along its own
+  // length, so a narrow inner limit measured from the FLAT prior throws away
+  // the far end of it — measured, an 8.5-degree page fell from 0.50 confidence
+  // to 0.33, and no amount of later refinement recovers scanlines that were
+  // never collected.
+  //
+  // So this pass stays wide in both directions and leans on the outermost rule
+  // to prefer the paper over anything printed on it. The narrow window arrives
+  // below, centred on the line this pass finds, which is where "just inside
+  // the edge" can be applied to a tilted document as faithfully as to a
+  // straight one. bandIn sizes that window rather than this one.
+  const lo = Math.max(1, Math.round(pos - bandOut));
+  const hi = Math.min(acrossMax, Math.round(pos + bandOut));
 
   const t0 = Math.max(0, Math.round(from));
   const t1 = Math.min(alongMax, Math.round(to));
@@ -207,6 +236,53 @@ export function findEdgeLine(
   }
 
   let { m, c } = medianFit(hits);
+
+  // ⚠️ SECOND PASS, WITH THE BAND FOLLOWING THE EDGE RATHER THAN THE PRIOR.
+  //
+  // The operator's sketch asks for a search that reaches outside the aim box
+  // and barely inside it, so everything printed ON the document is excluded by
+  // geometry instead of out-scored. That is right, and applied against the
+  // FLAT prior it costs tilt: an edge that leans drifts inward along its own
+  // length, so a narrow inner limit throws away the far end of it. Measured —
+  // an 8.5-degree page fell from 0.50 confidence to 0.33.
+  //
+  // Both are had by tightening around the edge we have just found instead of
+  // around where the box said it would be. The first pass locates it to within
+  // a few pixels even when it leans; this one re-picks each scanline inside a
+  // narrow window centred on that line, so a printed border a centimetre away
+  // is out of the window at every point along a tilted edge just as it is
+  // along a straight one.
+  const refine = Math.max(3, Math.round(bandIn));
+  const tracked: { t: number; u: number }[] = [];
+  for (const p of hits) {
+    const predicted = m * p.t + c;
+    const rlo = Math.max(1, Math.round(predicted - refine));
+    const rhi = Math.min(acrossMax, Math.round(predicted + refine));
+    let peak = 0;
+    for (let u = rlo; u <= rhi; u++) {
+      const gr = horizontal
+        ? Math.abs(data[(u + 1) * w + p.t] - data[(u - 1) * w + p.t])
+        : Math.abs(data[p.t * w + (u + 1)] - data[p.t * w + (u - 1)]);
+      if (gr > peak) peak = gr;
+    }
+    if (peak < floor) continue;
+    const keep = peak * OUTER_SHARE;
+    let bestU = -1;
+    for (let u = rlo; u <= rhi; u++) {
+      const gr = horizontal
+        ? Math.abs(data[(u + 1) * w + p.t] - data[(u - 1) * w + p.t])
+        : Math.abs(data[p.t * w + (u + 1)] - data[p.t * w + (u - 1)]);
+      if (gr < keep) continue;
+      if (bestU < 0 || (outward < 0 ? u < bestU : u > bestU)) bestU = u;
+    }
+    tracked.push({ t: p.t, u: bestU >= 0 ? bestU : p.u });
+  }
+  if (tracked.length >= 4) {
+    hits.length = 0;
+    hits.push(...tracked);
+    ({ m, c } = medianFit(hits));
+  }
+
   const resid = hits.map((p) => Math.abs(p.u - (m * p.t + c)));
   const medR = median(resid);
   const inliers = hits.filter(
@@ -259,6 +335,7 @@ export function seededCorners(
   opts: SeededOptions = {},
 ): SeededResult {
   const bandFrac = opts.bandFrac ?? 0.12;
+  const innerFrac = opts.innerFrac ?? 0.02;
   const step = opts.step ?? 4;
   const xs = aim.map((p) => p.x);
   const ys = aim.map((p) => p.y);
@@ -268,12 +345,14 @@ export function seededCorners(
   const y1 = Math.max(...ys);
   const bandX = Math.max(2, Math.round(g.width * bandFrac));
   const bandY = Math.max(2, Math.round(g.height * bandFrac));
+  const inX = Math.max(2, Math.round((x1 - x0) * innerFrac));
+  const inY = Math.max(2, Math.round((y1 - y0) * innerFrac));
 
   const edges: Record<EdgeName, EdgeFit> = {
-    top: findEdgeLine(g, 'horizontal', y0, bandY, x0, x1, step, -1),
-    bottom: findEdgeLine(g, 'horizontal', y1, bandY, x0, x1, step, 1),
-    left: findEdgeLine(g, 'vertical', x0, bandX, y0, y1, step, -1),
-    right: findEdgeLine(g, 'vertical', x1, bandX, y0, y1, step, 1),
+    top: findEdgeLine(g, 'horizontal', y0, bandY, inY, x0, x1, step, -1),
+    bottom: findEdgeLine(g, 'horizontal', y1, bandY, inY, x0, x1, step, 1),
+    left: findEdgeLine(g, 'vertical', x0, bandX, inX, y0, y1, step, -1),
+    right: findEdgeLine(g, 'vertical', x1, bandX, inX, y0, y1, step, 1),
   };
 
   const tl = intersect(edges.top.line, edges.left.line);
