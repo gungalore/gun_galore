@@ -1,5 +1,11 @@
 import { Rect, rectIoU } from './geometry';
-import { DocShape, SHAPE_ORDER, guideAspect } from './shapes';
+import {
+  DocShape,
+  FULL_FRAME_DISTANCE_RATIO,
+  SHAPE_ORDER,
+  acrossMm,
+  guideAspect,
+} from './shapes';
 
 // ────────────────────────────────────────────────────────────────────
 // THE BOX THE MEMBER AIMS INTO.
@@ -15,14 +21,55 @@ import { DocShape, SHAPE_ORDER, guideAspect } from './shapes';
 // they would keep moving closer, run past the lens's near focus, and end up
 // with a blurred photograph and the feeling that the scanner is broken.
 //
-// FILL is the fraction of the viewfinder's shorter axis the box may take.
-// At 0.82 a card comes out around 24% of the frame's area and an A4 page
-// around 53% — both inside the range the operator's own hands produced.
+// FILL is the CEILING on the fraction of the viewfinder's shorter axis the
+// box may take. A page reaches it; a card no longer does, because the same
+// fill is a fixed ANGLE rather than a fixed distance and a small document at
+// a large angle means a phone held closer than it can focus. See
+// NEAR_LIMIT_MM below, which is what actually sizes the small shapes now.
 // ────────────────────────────────────────────────────────────────────
 
 const FILL = 0.82;
 
+/**
+ * The closest we will ask anybody to hold the phone, in mm.
+ *
+ * ⚠️ A BOX THE CAMERA CANNOT FOCUS ON IS A BOX NOBODY CAN FILL. Operator, on
+ * a Samsung S23: "i am holding the samsung to close for it to focus when the
+ * card fits in the box." His iPhone was fine with the same box, because field
+ * of view differs between phones and a fixed fill is a fixed ANGLE, not a
+ * fixed distance.
+ *
+ * At FILL, using the measured ratio below, a card sits 19cm from the lens and
+ * an A4 page sits 47cm. So the card box was asking somebody to get two and a
+ * half times closer than the page box does, and on one of two phones that was
+ * past what its camera would focus at.
+ *
+ * 300mm is chosen to clear the near limit of any phone with room to spare —
+ * holdHint's own note puts the floor at "roughly 100mm" and that is a best
+ * case, not a typical one.
+ *
+ * ⚠️ AND IT COSTS ALMOST NOTHING TO GIVE UP. On the operator's measured
+ * 2160-wide track a card fills 1771px at 0.82 and 1145px at the capped fill —
+ * 526 DPI against 340. Both are far past what reading a licence number needs,
+ * and 300 DPI is the print standard. Detail was never the binding constraint
+ * here; focus was.
+ */
+export const NEAR_LIMIT_MM = 300;
+
 export type { Rect };
+
+/**
+ * The largest fraction of the frame this document may be asked to fill without
+ * pulling the phone inside NEAR_LIMIT_MM.
+ *
+ * Falls back to FILL for a shape whose size we do not know — there is nothing
+ * to compute a distance from, and 'any' is already the tallest box we draw.
+ */
+function fillFor(shape: DocShape): number {
+  const across = acrossMm(shape);
+  if (across === null) return FILL;
+  return Math.min(FILL, (across * FULL_FRAME_DISTANCE_RATIO) / NEAR_LIMIT_MM);
+}
 
 /**
  * Where the aim box goes inside a viewfinder.
@@ -32,8 +79,9 @@ export type { Rect };
  */
 export function aimBox(shape: DocShape, view: { width: number; height: number }): Rect {
   const aspect = guideAspect(shape);
-  const maxW = view.width * FILL;
-  const maxH = view.height * FILL;
+  const fill = fillFor(shape);
+  const maxW = view.width * fill;
+  const maxH = view.height * fill;
 
   // ⚠️ AN UNKNOWN SHAPE GETS THE TALLEST KNOWN ONE, NOT A ROUND NUMBER.
   //

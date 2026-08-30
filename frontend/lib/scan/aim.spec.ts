@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { Rect, aimAgreement, aimBox } from './aim';
-import { DocShape, SHAPE_ORDER, guideAspect, holdHint } from './shapes';
+import { NEAR_LIMIT_MM, Rect, aimAgreement, aimBox } from './aim';
+import {
+  DocShape,
+  FULL_FRAME_DISTANCE_RATIO,
+  SHAPE_ORDER,
+  acrossMm,
+  guideAspect,
+  holdHint,
+} from './shapes';
 
 const PHONE = { width: 390, height: 700 };
 
@@ -15,9 +22,52 @@ describe('aimBox', () => {
     // never more — the lens's near focus stops you getting closer. A box
     // nobody can fill is a box that teaches people the scanner is broken.
     for (const s of SHAPE_ORDER) {
-      const f = areaFraction(aimBox(s, PHONE), PHONE);
-      expect(f).toBeGreaterThan(0.15);
-      expect(f).toBeLessThanOrEqual(0.62);
+      expect(areaFraction(aimBox(s, PHONE), PHONE)).toBeLessThanOrEqual(0.62);
+    }
+  });
+
+  it('⚠️ AND NO CLOSER THAN A PHONE CAN FOCUS', () => {
+    // The other half of the same constraint, and the half that was missing.
+    // A fill is a fixed ANGLE, so the same fraction puts a small document much
+    // nearer the lens than a large one: at 0.82 a card sat 19cm out and an A4
+    // page 47cm. Operator, on a Samsung S23 — "i am holding the samsung to
+    // close for it to focus when the card fits in the box" — while the same
+    // box was fine on his iPhone, because field of view differs per phone.
+    for (const s of SHAPE_ORDER) {
+      const across = acrossMm(s);
+      if (across === null) continue;
+      const fill = aimBox(s, PHONE).width / PHONE.width;
+      const distanceMm = (across * FULL_FRAME_DISTANCE_RATIO) / fill;
+      expect(
+        distanceMm,
+        `${s} asks for the phone at ${(distanceMm / 10).toFixed(1)}cm`,
+      ).toBeGreaterThanOrEqual(NEAR_LIMIT_MM - 0.001);
+    }
+  });
+
+  it('⚠️ WHILE STILL YIELDING ENOUGH DETAIL TO READ', () => {
+    // This replaces an area floor of 0.15, which described what the operator's
+    // photographs happened to show rather than anything required. The real
+    // lower bound is legibility, so assert that instead — and it is what makes
+    // backing off the card safe: detail was never the binding constraint here.
+    //
+    // ⚠️ 200 DPI, NOT 300, AND THE DIFFERENCE IS THE POINT. 300 is the PRINT
+    // standard; ~200 is what OCR of printed text needs. Written at 300 first,
+    // this test failed on A4 at 214 DPI — a value my change did not touch and
+    // which has always been the case, because a page is large and a phone
+    // frame is finite. Worth knowing rather than hiding: the capture is
+    // comfortably readable and NOT print-quality, which is exactly why the
+    // print profile plan calls for keeping the original and re-rendering
+    // rather than upscaling this.
+    //
+    // Card sits near 340 DPI after the change, down from 526.
+    const TRACK_SHORT_PX = 2160; // the operator's measured track, 2160x3840
+    for (const s of SHAPE_ORDER) {
+      const across = acrossMm(s);
+      if (across === null) continue;
+      const fill = aimBox(s, PHONE).width / PHONE.width;
+      const dpi = (TRACK_SHORT_PX * fill) / (across / 25.4);
+      expect(dpi, `${s} lands at ${Math.round(dpi)} DPI`).toBeGreaterThan(200);
     }
   });
 

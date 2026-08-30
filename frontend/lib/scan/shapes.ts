@@ -130,11 +130,25 @@ export function expectAspect(shape: DocShape): number | undefined {
  * 100 mm, so the card is clamped there — telling somebody to hold a card 7 cm
  * away would be telling them to take a blurred photograph.
  */
-export function holdHint(shape: DocShape): string | null {
+export const FULL_FRAME_DISTANCE_RATIO = 1.85;
+
+/**
+ * The document's width across the frame's short axis, in mm.
+ *
+ * A card is photographed landscape, so its LONG edge spans the frame; a page
+ * is photographed upright, so its short edge does. Null for a shape we do not
+ * know the size of.
+ */
+export function acrossMm(shape: DocShape): number | null {
   const s = SHAPES[shape];
   if (s.shortMm === null || s.longMm === null) return null;
-  const acrossMm = s.portrait ? s.shortMm : s.longMm;
-  const mm = Math.max(110, acrossMm * 1.85);
+  return s.portrait ? s.shortMm : s.longMm;
+}
+
+export function holdHint(shape: DocShape): string | null {
+  const across = acrossMm(shape);
+  if (across === null) return null;
+  const mm = Math.max(110, across * FULL_FRAME_DISTANCE_RATIO);
   return `about ${Math.round(mm / 10)} cm away`;
 }
 
