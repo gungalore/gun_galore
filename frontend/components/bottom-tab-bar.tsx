@@ -746,7 +746,21 @@ export function BottomTabBar() {
           borderTop: '1px solid var(--border)',
           // Pad below the home indicator so the tappable row sits above it.
           // The design draws no device chrome at all, so this is ours.
-          paddingBottom: 'env(safe-area-inset-bottom)',
+          //
+          // ⚠️ CLAMPED, BECAUSE env() IS NOT ALWAYS THE HOME INDICATOR.
+          // Operator, 2026-08-30, on an iPhone running Chrome: a white bar
+          // roughly twice the height of the home indicator sat below this row.
+          // The inset is meant to be the ~34pt indicator; Chrome for iOS keeps
+          // its own auto-hiding bottom toolbar even where the app reads as
+          // standalone, and the space it reserves lands in this padding — on a
+          // nav whose background is --bg-card, so it paints as a white slab.
+          //
+          // min() is safe in both directions rather than a guess about one
+          // browser: on Safari and Android the inset is at or under the
+          // indicator height and nothing changes at all, and anywhere it comes
+          // back inflated it is capped instead of believed. A UA sniff for
+          // CriOS would have been the alternative and it would rot.
+          paddingBottom: 'min(env(safe-area-inset-bottom), 34px)',
         }}
       >
         <ul

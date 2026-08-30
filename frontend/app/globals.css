@@ -463,10 +463,24 @@ input[type='number'] {
 
 /* Stop iOS rubber-band overscroll bouncing the entire page. Individual
    scroll containers that genuinely need their own scroll physics can
-   set `overscroll-behavior: auto` to opt back in. */
+   set `overscroll-behavior: auto` to opt back in.
+
+   ⚠️ BOTH AXES. This said `-y` only, and the comment above it has always
+   claimed to stop "the entire page" — so sideways rubber-band was never
+   blocked, and the operator's report was "the display shifts around with my
+   finger" on an iPhone. Any residual horizontal overflow, from a sub-pixel
+   rounding to a genuinely oversized child, was free to pan the whole document.
+
+   ⚠️ AND DELIBERATELY *NOT* `overflow-x: hidden` ON html/body. That is the
+   usual reflex and it would be a bad trade here: `overflow` on the root
+   creates a scroll container, which breaks `position: sticky` — and this
+   codebase has fifty sticky elements, starting with the site header whose
+   height is a documented single source of truth. Blocking the bounce is the
+   part that was missing; the overflow that caused it gets fixed where it is
+   produced. */
 html,
 body {
-  overscroll-behavior-y: none;
+  overscroll-behavior: none;
 }
 
 /* In standalone mode, block pinch-zoom + double-tap-zoom gestures at

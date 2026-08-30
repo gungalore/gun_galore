@@ -142,8 +142,24 @@ function ModeTile({ mode }: { mode: Mode }) {
             </span>
           )}
         </span>
+        {/* ⚠️ `w-full` BELONGS HERE, ON THE TRUNCATING ELEMENT ITSELF — AND IT
+            WAS ON THE PARENT INSTEAD, WHICH DOES NOTHING FOR IT.
+
+            `truncate` is `overflow:hidden; text-overflow:ellipsis;
+            white-space:nowrap`. The nowrap is the dangerous half: with nothing
+            bounding its width, this span's intrinsic width becomes the full
+            unwrapped sentence, and `overflow:hidden` clips nothing because the
+            span IS the oversized box.
+
+            The parent is `flex flex-col items-center` on mobile. `items-center`
+            is not `items-stretch`, so a child with no width of its own is
+            sized to its content rather than to the parent's 100% — the
+            parent's `w-full` never reaches it. On a 390px phone both blurbs
+            rendered at full sentence width and hung out of their cards, one off
+            the left edge of the screen and one off the right, which also made
+            the whole page pannable sideways. */}
         <span
-          className="truncate"
+          className="truncate w-full"
           style={{ fontSize: '12.5px', color: 'var(--text-tertiary)' }}
         >
           {blurb}
