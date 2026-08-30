@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { av } from '@/lib/asset-version';
 import { apiFetch } from '@/lib/api';
+import { withDiagnostics } from '@/lib/scan/diag-flag';
 import { ActionTokenError } from './error-screen';
 import { OfferDecisionPage, type OfferDecisionPayload } from './offer-decision';
 import { AuctionBidPage, type AuctionBidPayload } from './auction-bid';
@@ -75,10 +76,27 @@ interface ScanHandoffPayload {
 
 export default async function ActionTokenPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  /**
+   * ⚠️ READ ONLY SO ONE FLAG SURVIVES THE REDIRECT, AND IT IS THE ONLY ONE.
+   *
+   * This page took no searchParams at all and redirects to a `redirectTo`
+   * the SERVER built, which knows nothing about the incoming query — so
+   * anything on the short link was silently dropped here. That made the
+   * scanner's `?diag=1` opt-in useless over the hand-off, which is the one
+   * route it exists for: the phone opens the scanner by pointing a camera at
+   * a QR code, so the query string on that code is the only way in.
+   *
+   * Nothing else is forwarded. A landing page reached from an SMS is exactly
+   * where you do not want arbitrary caller-supplied query parameters riding
+   * through onto an authorised URL.
+   */
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { token } = await params;
+  const diag = (await searchParams)?.diag === '1';
 
   // Server-side fetch + catch the friendly-error responses from the
   // backend (404 / 410 / 403). On any other failure we show a generic
@@ -122,7 +140,14 @@ export default async function ActionTokenPage({
     // in the room could have done that.
     payload.kind === 'SCAN_HANDOFF'
   ) {
-    redirect(payload.redirectTo);
+    // ⚠️ ONLY the scanner's diagnostic flag rides along, and only onto the
+    // scanner. Checkout and KYC have no use for it and no business carrying a
+    // query parameter that arrived from outside.
+    redirect(
+      payload.kind === 'SCAN_HANDOFF'
+        ? withDiagnostics(payload.redirectTo, diag)
+        : payload.redirectTo,
+    );
   }
 
   return (
