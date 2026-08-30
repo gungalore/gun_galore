@@ -120,8 +120,19 @@ function ModeTile({ mode }: { mode: Mode }) {
           growth back to the row layout once icon + text + chevron sit
           side by side. */}
       <span className="w-full min-w-0 flex flex-col items-center sm:items-start sm:flex-1 sm:w-auto gap-[3px]">
-        <span className="flex items-baseline gap-[10px]">
+        {/* ⚠️ WRAPS AS TWO WHOLE PHRASES, NEVER MID-PHRASE. With the blurb's
+            overflow fixed, this row became the next thing too wide for a
+            170px tile: "Buy Now" and "1 live listing" together need about
+            150px of a 146px box, so each broke INSIDE itself — "Buy" over
+            "Now", "1 live" over "listing" — while "Auctions" happened to fit
+            and stayed on one line. Two tiles side by side, one broken and one
+            not, which is what "text on tiles looks off" looks like.
+
+            flex-wrap lets the count drop to its own line as a unit, and
+            nowrap on both parts stops either being split down the middle. */}
+        <span className="flex flex-wrap items-baseline justify-center sm:justify-start gap-x-[10px]">
           <span
+            className="whitespace-nowrap"
             style={{
               fontFamily: 'var(--font-head)',
               fontWeight: 700,
@@ -136,7 +147,10 @@ function ModeTile({ mode }: { mode: Mode }) {
               today, and an empty shelf that says so twice is worse than one
               that simply doesn't mention it. */}
           {count !== null && count > 0 && (
-            <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+            <span
+              className="whitespace-nowrap"
+              style={{ fontSize: 12, color: 'var(--text-faint)' }}
+            >
               {count.toLocaleString('en-ZA')} live {noun}
               {count === 1 ? '' : 's'}
             </span>

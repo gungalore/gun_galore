@@ -1171,11 +1171,29 @@ html[data-standalone='true'] .gg-shell-chrome {
 html[data-standalone='true'] .gg-shell {
   display: flex;
   flex-direction: column;
-  /* 100vh first as the fallback, then 100dvh where supported. On mobile
-     browsers dvh tracks the collapsing toolbars; in standalone there are none,
-     so the two agree — the fallback matters for older engines only. */
+  /* ⚠️ 100vh, AND *NOT* 100dvh. THIS IS THE WHITE BAR.
+
+     This used to set 100vh and then override it with 100dvh, on the reasoning
+     that "in standalone there are none [no collapsing toolbars], so the two
+     agree — the fallback matters for older engines only". That is true of
+     Safari's standalone, which is genuinely chromeless. It is not true of
+     Chrome for iOS, which keeps its own bottom toolbar RESERVED even where the
+     app reads as standalone.
+
+     dvh is the *dynamic* viewport — the small one, measured with that toolbar
+     accounted for. So the shell came out shorter than the screen, its last
+     flex child (the tab bar) landed above the bottom edge, and the strip below
+     it was left painting --bg: the "big white bar on the bottom" the operator
+     reported from an iPhone, twice, across two deploys.
+
+     vh is the *large* viewport and ignores collapsible chrome, which is what a
+     locked full-screen shell actually wants. Where a browser really is
+     chromeless the two are identical, so Safari standalone and installed
+     Android are unaffected; where one lies, this is the one that fills the
+     screen. The tab bar's own safe-area padding is what now keeps the row
+     clear of the home indicator, which is why it is clamped rather than
+     removed. */
   height: 100vh;
-  height: 100dvh;
   overflow: hidden;
   background: var(--bg);
 }
