@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useViewerFetch } from '@/lib/use-viewer-fetch';
+import { diagnosticsOn, withDiagnostics } from '@/lib/scan/diag-flag';
 
 // ────────────────────────────────────────────────────────────────────
 // "USE MY PHONE CAMERA."
@@ -101,7 +102,15 @@ export default function PhoneHandoffDialog({
         }
         const data = (await res.json()) as { url: string; handoffId: string };
         if (!alive) return;
-        setUrl(data.url);
+        // ⚠️ CARRY THE DIAGNOSTIC OPT-IN ACROSS TO THE PHONE. The scanner that
+        // most needs explaining is the one on the phone, and it is opened by
+        // scanning a QR code — nobody is typing a query string into it. So if
+        // this desktop tab is running with ?diag=1, the link it mints gets it
+        // too, and the readout is already on when the camera opens.
+        //
+        // Nothing else changes: without the opt-in this is `data.url`
+        // untouched, so a member's hand-off is exactly what it always was.
+        setUrl(withDiagnostics(data.url, diagnosticsOn(window.location.search)));
         setHandoffId(data.handoffId);
       } catch (e) {
         if (alive) setErr((e as Error).message);

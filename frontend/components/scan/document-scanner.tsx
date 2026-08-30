@@ -40,6 +40,15 @@ import {
   rectQuad,
   regionExposure,
 } from '@/lib/scan/frame-stats';
+import {
+  deviceContext,
+  pushFrame,
+  type DeviceContext,
+  type FrameSnapshot,
+  type ScanReport,
+} from '@/lib/scan/diagnostics';
+import { diagnosticsOn } from '@/lib/scan/diag-flag';
+import ScanDiagnostics from './scan-diagnostics';
 import { OVERLAY_WARNING } from '@/lib/scan/overlay';
 
 // ────────────────────────────────────────────────────────────────────
@@ -243,6 +252,24 @@ export default function DocumentScanner({
   const [err, setErr] = useState<string | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
+  // ── the diagnostic readout ──────────────────────────────────────────
+  //
+  // ⚠️ OFF UNLESS ?diag=1, AND IT COSTS NOTHING WHEN OFF. The trail is only
+  // written and the tick only fired while `diag` is true, so a member who
+  // never asks for it runs exactly the loop they ran before.
+  const [diag, setDiag] = useState(false);
+  const diagRef = useRef(false);
+  diagRef.current = diag;
+  const trailRef = useRef<FrameSnapshot[]>([]);
+  const deviceRef = useRef<DeviceContext | null>(null);
+  const lastCaptureRef = useRef<ScanReport['lastCapture']>(undefined);
+  /** Bumped on a throttle so the panel repaints without re-rendering per frame. */
+  const [diagTick, setDiagTick] = useState(0);
+  const diagPaintedRef = useRef(0);
+
+  useEffect(() => {
+    setDiag(diagnosticsOn(window.location.search));
+  }, []);
   const [shot, setShot] = useState<ScanResult | null>(null);
   const [pages, setPages] = useState<File[]>([]);
   const [editing, setEditing] = useState(false);
@@ -513,6 +540,8 @@ export default function DocumentScanner({
 
     let raf = 0;
     let timer = 0;
+    /** Clock the diagnostic trail is measured from. */
+    const startedAt = performance.now();
     let scratch: CanvasRenderingContext2D | null = null;
     let rate = 0;
     let rolling = 0;
@@ -757,6 +786,39 @@ export default function DocumentScanner({
         setBlocker(why);
       }
 
+      // ── the witness ─────────────────────────────────────────────────
+      //
+      // Written here rather than anywhere earlier because this is the only
+      // point where all four readings AND the verdict on them exist together
+      // — which is exactly what makes the difference between "it does
+      // nothing" and "ink never reached 0.1".
+      if (diagRef.current) {
+        pushFrame(trailRef.current, {
+          t: Math.round(now - startedAt),
+          ink: inkRef.current,
+          motion,
+          glare: glareRef.current,
+          luma: lumaRef.current,
+          blocker: why,
+          held: steadySince ? now - steadySince : 0,
+          ms: Math.round(rolling),
+          detectorOff,
+        });
+        const elBoxNow = video.getBoundingClientRect();
+        deviceRef.current = deviceContext({
+          ua: navigator.userAgent,
+          dpr: window.devicePixelRatio || 1,
+          video: { w: video.videoWidth, h: video.videoHeight },
+          element: { w: elBoxNow.width, h: elBoxNow.height },
+          buffer: { w: scratch.canvas.width, h: scratch.canvas.height },
+        });
+        // Repaint the panel a few times a second, never per frame.
+        if (now - diagPaintedRef.current > 300) {
+          diagPaintedRef.current = now;
+          setDiagTick((n) => n + 1);
+        }
+      }
+
       if (why === null) {
         if (!steadySince) steadySince = now;
         const held = now - steadySince;
@@ -902,6 +964,18 @@ export default function DocumentScanner({
               }
             : undefined,
       });
+      // ⚠️ `source` IS THE SKEW ANSWER, AND IT IS ONLY KNOWABLE HERE. 'aim'
+      // means the crop was the aim-box rectangle — and warping a rectangle to
+      // a rectangle corrects no perspective at all. The dewarp happens on the
+      // SECOND pass, from the corners dragged in the editor. So a capture that
+      // comes back skew is a capture whose corners were never moved, and after
+      // the fact nothing else records that.
+      lastCaptureRef.current = {
+        source: res.source,
+        glare: res.report.glare,
+        sharpness: res.report.sharpness,
+        meanLuma: res.report.meanLuma,
+      };
       setShot(res);
       setPhase('review');
       // ⚠️ STRAIGHT INTO THE CORNER EDITOR, not the enhanced preview. The
@@ -1229,6 +1303,32 @@ export default function DocumentScanner({
               alwaysGreen={staticAim}
             />
             <ExposureAlert glare={glare} luma={luma} torchOn={torchOn} />
+            {/* ⚠️ ONLY UNDER ?diag=1. Absent entirely for everybody else —
+                this is the scanner explaining itself to whoever is debugging
+                it, not a member-facing surface. */}
+            {diag && (
+              <ScanDiagnostics
+                key={diagTick}
+                reading={{
+                  ink: inkRef.current,
+                  motion:
+                    trailRef.current[trailRef.current.length - 1]?.motion ?? 255,
+                  glare: glareRef.current,
+                  luma: lumaRef.current,
+                }}
+                held={trailRef.current[trailRef.current.length - 1]?.held ?? 0}
+                frameMs={
+                  trailRef.current[trailRef.current.length - 1]?.ms ?? 0
+                }
+                detectorOff={
+                  trailRef.current[trailRef.current.length - 1]?.detectorOff ??
+                  false
+                }
+                device={deviceRef.current}
+                trail={trailRef.current}
+                lastCapture={lastCaptureRef.current}
+              />
+            )}
         {phase === 'live' && (
           <p
             style={{
@@ -2073,28 +2173,9 @@ function Controls({
       }}
     >
       <div style={{ width: 88 }}>
-        {hasTorch && (
-          <button
-            type="button"
-            onClick={onTorch}
-            aria-pressed={torchOn}
-            // ⚠️ "For dark rooms" is not decoration. A torch at close range on
-            // a laminated licence card produces exactly the blown highlight
-            // that cannot be recovered from.
-            aria-label={torchOn ? 'Turn the light off' : 'Light, for dark rooms'}
-            style={{
-              minHeight: 44,
-              padding: '0 12px',
-              borderRadius: 8,
-              border: '1px solid rgba(255,255,255,0.3)',
-              background: torchOn ? 'rgba(232,181,58,0.25)' : 'transparent',
-              color: '#fff',
-              fontSize: 13,
-            }}
-          >
-            {torchOn ? 'Light on' : 'Light'}
-          </button>
-        )}
+        {/* ⚠️ THE LIGHT MOVED OUT OF HERE, to sit beside the auto toggle —
+            operator, 2026-08-30. This slot stays as a spacer so the shutter
+            remains centred on the screen rather than sliding left. */}
       </div>
 
       <div style={{ position: 'relative', width: 72, height: 72 }}>
@@ -2135,7 +2216,72 @@ function Controls({
         />
       </div>
 
-      <div style={{ width: 88, textAlign: 'right' }}>
+      <div
+        style={{
+          width: 104,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-end',
+          gap: 8,
+        }}
+      >
+        {/* ⚠️ THE LIGHT SITS WITH AUTO NOW, not across the shutter from it —
+            operator, 2026-08-30. The two are the only settings on this screen
+            and they belong together; the left slot is kept as a spacer so the
+            shutter stays centred.
+
+            The colours were already chosen for this: the auto chip uses MARK
+            and the light uses gold, deliberately different, because two
+            neighbouring toggles that read alike are two toggles nobody can
+            tell apart at a glance.
+
+            ⚠️ AND IT IS STILL `hasTorch &&`. Torch is a Chrome-on-Android
+            capability; iOS Safari does not expose it at all, so on an iPhone
+            this simply is not there. That is not a bug to chase — it is the
+            platform, and rendering a dead button would be worse. */}
+        {hasTorch && (
+          <button
+            type="button"
+            onClick={onTorch}
+            aria-pressed={torchOn}
+            // ⚠️ "For dark rooms" is not decoration. A torch at close range on
+            // a laminated licence card produces exactly the blown highlight
+            // that cannot be recovered from.
+            aria-label={torchOn ? 'Turn the light off' : 'Light, for dark rooms'}
+            style={{
+              minHeight: 44,
+              padding: '0 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(255,255,255,0.3)',
+              background: 'transparent',
+              color: '#fff',
+              fontSize: 13,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+            }}
+          >
+            <span>Light</span>
+            <span
+              style={{
+                fontSize: 11,
+                letterSpacing: '0.06em',
+                padding: '2px 6px',
+                borderRadius: 6,
+                textShadow: 'none',
+                background: torchOn ? '#e8b53a' : 'transparent',
+                color: torchOn ? '#0f0f0f' : '#fff',
+                border: torchOn
+                  ? '1px solid transparent'
+                  : '1px solid rgba(255,255,255,0.55)',
+                fontWeight: 600,
+              }}
+            >
+              {torchOn ? 'ON' : 'OFF'}
+            </span>
+          </button>
+        )}
         {/* ⚠️ A NAME AND A STATE, NOT A SENTENCE. "Auto off" reads equally as
             "auto is off" and "tap to turn auto off". The torch button beside
             it gets this right — "Light on" / "Light", never "Light off". The
@@ -2159,7 +2305,8 @@ function Controls({
             background: 'transparent',
             color: '#fff',
             fontSize: 13,
-            marginBottom: onDone ? 8 : 0,
+            // Spacing is the column's `gap` now that the light shares it —
+            // a margin here as well would double it.
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
