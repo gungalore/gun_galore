@@ -1381,6 +1381,47 @@ export default function DocumentScanner({
           }}
         />
 
+        {/* ⚠️ ONLY UNDER ?diag=1, AND AT THE ROOT SO IT OUTLIVES THE SHUTTER.
+            This sat inside the live overlay, so it vanished the instant a
+            capture happened — and with the hold at 300ms a capture happens
+            almost immediately, leaving no moment to photograph it. The
+            question it was built to answer is 'why did that come out wrong',
+            which is only ever asked once the wrong thing is on screen. It
+            carries a hide button and is absent entirely without the flag. */}
+            {/* ⚠️ ONLY UNDER ?diag=1. Absent entirely for everybody else —
+            this is the scanner explaining itself to whoever is debugging
+            it, not a member-facing surface. */}
+        {diag && (
+          <ScanDiagnostics
+            key={diagTick}
+            reading={{
+              ink: inkRef.current,
+              motion:
+                trailRef.current[trailRef.current.length - 1]?.motion ?? 255,
+              glare: glareRef.current,
+              luma: lumaRef.current,
+            }}
+            held={trailRef.current[trailRef.current.length - 1]?.held ?? 0}
+            frameMs={
+              trailRef.current[trailRef.current.length - 1]?.ms ?? 0
+            }
+            frameMotion={
+              trailRef.current[trailRef.current.length - 1]?.frameMotion
+            }
+            rawMotion={
+              trailRef.current[trailRef.current.length - 1]?.rawMotion
+            }
+            shape={shape}
+            detectorOff={
+              trailRef.current[trailRef.current.length - 1]?.detectorOff ??
+              false
+            }
+            device={deviceRef.current}
+            trail={trailRef.current}
+            lastCapture={lastCaptureRef.current}
+          />
+        )}
+
         {(phase === 'starting' || phase === 'live' || phase === 'working') && (
           <>
             <canvas
@@ -1419,39 +1460,6 @@ export default function DocumentScanner({
               alwaysGreen={staticAim}
             />
             <ExposureAlert glare={glare} luma={luma} torchOn={torchOn} />
-            {/* ⚠️ ONLY UNDER ?diag=1. Absent entirely for everybody else —
-                this is the scanner explaining itself to whoever is debugging
-                it, not a member-facing surface. */}
-            {diag && (
-              <ScanDiagnostics
-                key={diagTick}
-                reading={{
-                  ink: inkRef.current,
-                  motion:
-                    trailRef.current[trailRef.current.length - 1]?.motion ?? 255,
-                  glare: glareRef.current,
-                  luma: lumaRef.current,
-                }}
-                held={trailRef.current[trailRef.current.length - 1]?.held ?? 0}
-                frameMs={
-                  trailRef.current[trailRef.current.length - 1]?.ms ?? 0
-                }
-                frameMotion={
-                  trailRef.current[trailRef.current.length - 1]?.frameMotion
-                }
-                rawMotion={
-                  trailRef.current[trailRef.current.length - 1]?.rawMotion
-                }
-                shape={shape}
-                detectorOff={
-                  trailRef.current[trailRef.current.length - 1]?.detectorOff ??
-                  false
-                }
-                device={deviceRef.current}
-                trail={trailRef.current}
-                lastCapture={lastCaptureRef.current}
-              />
-            )}
         {phase === 'live' && (
           <p
             style={{
