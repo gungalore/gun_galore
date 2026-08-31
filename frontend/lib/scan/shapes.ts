@@ -24,7 +24,7 @@
 // here, once.
 // ────────────────────────────────────────────────────────────────────
 
-export type DocShape = 'card' | 'a4' | 'id-book' | 'any';
+export type DocShape = 'card' | 'a4' | 'id-book' | 'licence-disc';
 
 export interface ShapeSpec {
   key: DocShape;
@@ -32,9 +32,18 @@ export interface ShapeSpec {
   label: string;
   /** The documents this covers, in the member's words. */
   examples: string;
-  /** Long edge in millimetres, or null when there is no fixed size. */
+  /**
+   * Long edge in millimetres.
+   *
+   * ⚠️ NULLABLE IN THE TYPE, NEVER NULL IN PRACTICE — AND THAT IS DELIBERATE.
+   * 'Something else' was removed because a shape with no known size cannot be
+   * measured: dpi is pixels over KNOWN millimetres, so the 200 dpi floor was
+   * silently inert on every scan taken through it. The nullability stays so
+   * that adding a sizeless shape has to be a decision someone makes against a
+   * type error, rather than something that quietly disables the quality gate.
+   */
   longMm: number | null;
-  /** Short edge in millimetres. */
+  /** Short edge in millimetres. See the note on longMm. */
   shortMm: number | null;
   /** Is the document usually held with its long edge upright? */
   portrait: boolean;
@@ -91,20 +100,29 @@ export const SHAPES: Record<DocShape, ShapeSpec> = {
     multi: true,
     multiLabel: 'More than one — more pages, or other documents',
   },
-  any: {
-    key: 'any',
-    label: 'Something else',
-    examples: 'A safe, a permit, anything without a standard size',
-    longMm: null,
-    shortMm: null,
+  'licence-disc': {
+    key: 'licence-disc',
+    label: 'Vehicle licence disc',
+    examples: 'The disc from your windscreen, or the sheet it came on',
+    // ⚠️ NOT MEASURED, UNLIKE EVERY OTHER NUMBER IN THIS FILE — see the note
+    // at the top. 90 mm is the printed disc's approximate width and it is a
+    // placeholder, not a measurement. Photograph one beside a 150 mm ruler,
+    // both flat on the same surface, and replace these two numbers the way
+    // the card and the ID book were done.
+    //
+    // What it affects while it is wrong: the dpi readout and the hold hint,
+    // both proportionally. What it does NOT affect: detection, which works
+    // off the aspect, and the aspect of a square is 1 whatever the size.
+    longMm: 90,
+    shortMm: 90,
     portrait: true,
     multi: true,
-    multiLabel: 'More than one — more photos, or other documents',
+    multiLabel: 'More than one — more discs, or other documents',
   },
 };
 
 /** In the order they are offered. */
-export const SHAPE_ORDER: DocShape[] = ['card', 'a4', 'id-book', 'any'];
+export const SHAPE_ORDER: DocShape[] = ['card', 'a4', 'id-book', 'licence-disc'];
 
 /** Width / height of the aim box, or null when the shape is unknown. */
 export function guideAspect(shape: DocShape): number | null {
@@ -192,5 +210,17 @@ export function shapeForKind(kind: string): DocShape {
   ) {
     return 'a4';
   }
-  return 'any';
+  if (k.includes('VEHICLE') || k.includes('DISC') || k.includes('DISK')) {
+    return 'licence-disc';
+  }
+  // ⚠️ A4 IS THE FALLBACK NOW THAT 'SOMETHING ELSE' IS GONE, AND A FALLBACK IS
+  // NOT AN ANSWER. This only preselects a chooser the member must still
+  // confirm, so a wrong guess costs one tap. What it must never do is let an
+  // unconfirmed guess reach the scanner: `picked` carries that distinction and
+  // the chooser will not open the camera without it.
+  //
+  // A4 rather than the card because a wrong A4 guess is the cheaper error —
+  // an A4 box around a card still contains the card, where a card box around
+  // an A4 crops a statutory document.
+  return 'a4';
 }

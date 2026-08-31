@@ -259,7 +259,7 @@ describe('the 200 dpi quality floor', () => {
   const ok = { occupancy: 0.6, locked: true, still: true };
 
   it('passes when no document type was chosen and dpi cannot be known', () => {
-    // shape 'any' has no known millimetres, so there is no dpi to gate on.
+    // Before the first measurement there is no dpi yet, so the gate passes.
     expect(guidanceFor({ ...ok, dpi: null })).toBe('ready');
     expect(guidanceFor({ ...ok })).toBe('ready');
   });

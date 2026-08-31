@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SHAPES, acrossMm } from './shapes';
+import { SHAPES, acrossMm, SHAPE_ORDER } from './shapes';
 import {
   AIM_MARGIN,
   FLOOR_DPI,
@@ -92,10 +92,16 @@ describe('framingPlan — the box follows the camera', () => {
     expect(dpiOf(docFill * 2160, CARD_MM)).toBeCloseTo(plan.dpi, 3);
   });
 
-  it('keeps the old constant for a shape whose size we do not know', () => {
-    const plan = framingPlan({ width: 3840, height: 2160 }, 'any', 0.82);
-    expect(plan.fill).toBe(0.82);
-    expect(plan.verdict).toBe('relaxed');
+  it('plans a real box for every shape, none of them fixed constants', () => {
+    // The fallback-to-0.82 path was reachable only through 'Something else',
+    // whose size was unknown. With that shape gone, every plan is computed
+    // from real millimetres against the real stream — which is what makes the
+    // dpi readout mean anything.
+    for (const shape of SHAPE_ORDER) {
+      const plan = framingPlan({ width: 3840, height: 2160 }, shape, 0.82);
+      expect(plan.dpi, `${shape} planned no dpi`).toBeGreaterThanOrEqual(FLOOR_DPI);
+      expect(plan.verdict).not.toBe('relaxed');
+    }
   });
 
   it('survives a camera that reports nothing', () => {

@@ -178,7 +178,7 @@ export interface FramingPlan {
  * Tries TARGET_DPI first, falls back to FLOOR_DPI, and refuses rather than
  * drawing a box that would demand an unfocusable distance.
  *
- * A shape with no known size ('any') cannot be reasoned about — there is no
+ * A shape with no known size cannot be reasoned about — there is no
  * millimetre figure to convert pixels against — so it keeps the old constant
  * box and reports 'relaxed', which is honest: we do not know what it will be
  * worth.

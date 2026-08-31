@@ -13,7 +13,9 @@ import {
 } from '@/lib/scan/capture';
 import { detectQuad } from '@/lib/scan/detect';
 import { Pt, Quad, quadDrift, smoothQuad } from '@/lib/scan/geometry';
+import { av } from '@/lib/asset-version';
 import CornerEditor from './corner-editor';
+import Zoomable from './zoomable';
 import {
   DocShape,
   SHAPES,
@@ -280,15 +282,20 @@ export default function DocumentScanner({
   // ⚠️ STILL NON-NULL. `shape` is dereferenced without a guard in five places
   // (SHAPES[shape].label, SHAPES[shape].multiLabel, aimBox, AimFrame,
   // expectAspectFor), so a null here blows up on the chooser's own first paint.
-  // 'any' remains the working value; `picked` is what the chooser reads to
-  // decide whether anyone has actually chosen it.
-  const [shape, setShape] = useState<DocShape>(initialShape ?? 'any');
+  // 'a4' is the harmless working value; `picked` is what says whether anyone
+  // has actually chosen, and the camera will not open until they have.
+  const [shape, setShape] = useState<DocShape>(initialShape ?? 'a4');
   /**
    * Has a shape been chosen — by the member, or by a caller that knows?
    *
-   * A caller passing `shape` IS an answer: shapeForKind returns 'any'
-   * deliberately for SAFE_PHOTOGRAPHS and OTHER, and there it is the right
-   * answer and should show as ticked.
+   * ⚠️ NOW A GATE, NOT A DECORATION. It used to drive only the tick, because
+   * 'Something else' meant an unanswered chooser could still produce a working
+   * scan. With that option removed there is no sizeless shape to fall through
+   * to, and an unconfirmed guess would silently scan a card as an A4. So the
+   * button that opens the camera is disabled until this is true.
+   *
+   * A caller passing `shape` still counts as an answer — it knows what door
+   * the member came through.
    */
   const [picked, setPicked] = useState(initialShape !== undefined);
   /**
@@ -2063,8 +2070,47 @@ export default function DocumentScanner({
         )}
 
         {phase === 'working' && (
-          <div style={overlayCentre}>
-            <p style={{ fontSize: 15 }}>Straightening it up…</p>
+          <div style={{ ...overlayCentre, gap: 18 }}>
+            {/* ⚠️ THE MARK, NOT THE FULL LOCKUP. /logo.svg is the horizontal
+                wordmark and it would run edge to edge on a phone held
+                portrait; the mark is square and reads at any size. Dark
+                variant because this sits on the black capture overlay, which
+                is not theme-aware — it is black on every device. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={av('/logo-mark-dark.svg')}
+              alt=""
+              aria-hidden="true"
+              width={64}
+              height={64}
+              style={{ opacity: 0.95 }}
+            />
+            <p style={{ fontSize: 15, margin: 0 }}>Processing…</p>
+            {/* An indeterminate bar, because we genuinely cannot say how far
+                along it is — rectifying is one synchronous step. A fake
+                percentage would be a lie the member could time. */}
+            <div
+              aria-hidden="true"
+              style={{
+                width: 132,
+                height: 3,
+                borderRadius: 2,
+                overflow: 'hidden',
+                background: 'rgba(255,255,255,0.18)',
+              }}
+            >
+              <div
+                style={{
+                  width: '40%',
+                  height: '100%',
+                  borderRadius: 2,
+                  background: '#fff',
+                  animation: 'gg-scan-sweep 1.1s ease-in-out infinite',
+                }}
+              />
+            </div>
+            <style>{`@keyframes gg-scan-sweep{0%{transform:translateX(-100%)}100%{transform:translateX(330%)}}
+@media (prefers-reduced-motion:reduce){@keyframes gg-scan-sweep{0%,100%{transform:none;opacity:.5}}}`}</style>
           </div>
         )}
 
@@ -2513,8 +2559,13 @@ function Chooser({
       <h2 style={{ margin: '4px 0 4px', fontSize: 18 }}>
         What are you photographing?
       </h2>
-      <p style={{ margin: '0 0 14px', fontSize: 13, opacity: 0.75 }}>
-        We will draw a frame the right shape to line it up in.
+      <p
+        id="gg-scan-pick-first"
+        style={{ margin: '0 0 14px', fontSize: 13, opacity: 0.75 }}
+      >
+        {picked
+          ? 'We will draw a frame the right shape to line it up in.'
+          : 'Pick one so we can check the photo is sharp enough to read.'}
       </p>
 
       <div role="radiogroup" aria-label="What are you photographing?">
@@ -2604,10 +2655,24 @@ function Chooser({
           </button>
         )}
         <div style={{ flex: 1 }} />
+        {/* ⚠️ DISABLED UNTIL SOMETHING IS CHOSEN. 'Something else' used to make
+            an unanswered chooser harmless — it scanned with no size and no dpi
+            gate. There is no sizeless shape now, so an unanswered chooser would
+            scan whatever `shape` happened to default to, and a card measured as
+            an A4 reports a quarter of its true resolution and passes a floor it
+            should have failed. One tap is a small price for a measurement that
+            means something. */}
         <button
           type="button"
           onClick={onStart}
-          style={{ ...secondaryBtn, background: 'var(--red)', border: 'none' }}
+          disabled={!picked}
+          aria-describedby={picked ? undefined : 'gg-scan-pick-first'}
+          style={{
+            ...secondaryBtn,
+            background: picked ? 'var(--red)' : 'rgba(255,255,255,0.16)',
+            border: 'none',
+            opacity: picked ? 1 : 0.65,
+          }}
         >
           {pages > 0 ? 'Scan another' : 'Open the camera'}
         </button>
@@ -2880,6 +2945,18 @@ function Controls({
             />
           </svg>
         )}
+        {/* ⚠️ FILLED, NOT AN 18%-ALPHA RING. Operator: "make the scan button
+            live again". It was never disabled — onShutter has always called
+            capture() with no guidance veto on it — but a near-transparent
+            outline over a dark camera view reads as a disabled control, and a
+            control that looks dead is dead: nobody presses it to find out.
+            Every phone camera in existence draws this as a solid white disc,
+            so this is also the shape the member already knows.
+
+            The veto belongs on AUTOMATIC capture only, and that is where it
+            is. A member pressing the shutter has looked at the screen and
+            decided; overruling them would be telling somebody holding their
+            own document that we know better. */}
         <button
           type="button"
           onClick={onShutter}
@@ -2888,8 +2965,10 @@ function Controls({
             width: 72,
             height: 72,
             borderRadius: '50%',
-            border: '4px solid #fff',
-            background: 'rgba(255,255,255,0.18)',
+            border: '3px solid rgba(255,255,255,0.9)',
+            background: '#fff',
+            boxShadow: 'inset 0 0 0 3px #000',
+            cursor: 'pointer',
           }}
         />
       </div>
@@ -2960,54 +3039,60 @@ function Controls({
             </span>
           </button>
         )}
-        {/* ⚠️ A NAME AND A STATE, NOT A SENTENCE. "Auto off" reads equally as
-            "auto is off" and "tap to turn auto off". The torch button beside
-            it gets this right — "Light on" / "Light", never "Light off". The
-            ON chip reuses MARK, the same accent as the hold ring, so "auto is
-            armed" is one colour wherever it appears; deliberately NOT the gold
-            the torch uses, or two neighbouring toggles would read alike. */}
-        <button
-          type="button"
-          onClick={onAuto}
-          aria-pressed={auto}
-          aria-label={
-            auto
-              ? 'Automatic capture is on. Turn it off.'
-              : 'Automatic capture is off. Turn it on.'
-          }
+        {/* ⚠️ A MODE, NOT A TOGGLE — operator asked for "a manual/auto mode".
+            The toggle said "Auto ON"/"Auto OFF", which names one option and
+            leaves the member to infer the other; several rounds of testing
+            went by with somebody unsure whether the scanner was waiting for
+            them or they were waiting for it. Two labelled segments, one lit,
+            answers "what is it doing right now" without being tapped.
+
+            Both segments are always live — this changes what the SCANNER does
+            on its own, never whether the shutter works. Auto still fires only
+            through the guidance gate; Manual simply stops it firing at all and
+            leaves the disc as the only trigger.
+
+            The lit segment reuses MARK, the same accent as the hold ring, so
+            "armed" is one colour wherever it appears — deliberately not the
+            gold the torch uses, or two neighbouring controls read alike. */}
+        <div
+          role="radiogroup"
+          aria-label="When to take the photo"
           style={{
-            minHeight: 44,
-            padding: '0 10px',
-            borderRadius: 8,
-            border: '1px solid rgba(255,255,255,0.3)',
-            background: 'transparent',
-            color: '#fff',
-            fontSize: 13,
-            // Spacing is the column's `gap` now that the light shares it —
-            // a margin here as well would double it.
             display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+            minHeight: 44,
+            borderRadius: 8,
+            overflow: 'hidden',
+            border: '1px solid rgba(255,255,255,0.3)',
           }}
         >
-          <span>Auto</span>
-          <span
-            style={{
-              fontSize: 11,
-              letterSpacing: '0.06em',
-              padding: '2px 6px',
-              borderRadius: 6,
-              textShadow: 'none',
-              background: auto ? MARK : 'transparent',
-              color: auto ? '#0f0f0f' : '#fff',
-              border: auto ? '1px solid transparent' : '1px solid rgba(255,255,255,0.55)',
-              fontWeight: 600,
-            }}
-          >
-            {auto ? 'ON' : 'OFF'}
-          </span>
-        </button>
+          {([false, true] as const).map((wantAuto) => {
+            const on = auto === wantAuto;
+            return (
+              <button
+                key={String(wantAuto)}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => {
+                  if (auto !== wantAuto) onAuto();
+                }}
+                style={{
+                  padding: '0 10px',
+                  border: 'none',
+                  background: on ? 'var(--mark)' : 'transparent',
+                  color: on ? '#0f0f0f' : '#fff',
+                  fontSize: 12,
+                  fontWeight: on ? 700 : 500,
+                  letterSpacing: '0.02em',
+                  textShadow: on ? 'none' : '0 1px 3px rgba(0,0,0,0.8)',
+                  cursor: 'pointer',
+                }}
+              >
+                {wantAuto ? 'Auto' : 'Manual'}
+              </button>
+            );
+          })}
+        </div>
         {onDone && (
           <button
             type="button"
@@ -3109,11 +3194,9 @@ function Review({
           minHeight: 0,
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <Zoomable
           src={shot.preview}
           alt="The document as it will be saved"
-          style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
         />
       </div>
 

@@ -181,21 +181,34 @@ describe('holdHint', () => {
     expect(holdHint('id-book')).toContain('16 cm');
   });
 
-  it('puts an A4 page at arm-ish length and says nothing about a mystery', () => {
+  it('puts an A4 page at arm-ish length', () => {
     expect(holdHint('a4')).toContain('39 cm');
-    expect(holdHint('any')).toBeNull();
+  });
+
+  it('has a distance for EVERY shape, because there is no sizeless one left', () => {
+    // The point of removing 'Something else'. holdHint returned null for it,
+    // and so did dpi — a member could scan a statutory document through a door
+    // where the quality floor was structurally unable to apply.
+    for (const s of SHAPE_ORDER) expect(holdHint(s)).not.toBeNull();
   });
 });
 
-describe('⚠️ an unknown shape must not cut a known one', () => {
-  // The operator photographed an A4 certificate through the
-  // FIREARM_SOURCE_PROOF door — which matches nothing in shapeForKind and so
-  // lands on 'any' — and got it back with the top and bottom edges gone. The
-  // 'any' box was ratio 0.8; an A4 page is 0.707, so the page overflowed a box
-  // the capture then cropped to exactly.
+describe('⚠️ an aim box must not cut the document it frames', () => {
+  // ⚠️ THIS SUITE OUTLIVED THE BUG THAT CAUSED IT, DELIBERATELY. It was
+  // written when 'Something else' existed: the operator photographed an A4
+  // certificate through a door that matched nothing in shapeForKind, landed on
+  // the 'any' box at ratio 0.8, and got the page back with its top and bottom
+  // gone — 0.8 against A4's 0.707. That shape is now removed, so that exact
+  // failure cannot recur.
   //
-  // Swept across real viewfinder aspects rather than one, because the failure
-  // depended on the aspect: it did not show on the iPhone and did on the S23.
+  // What remains is the general rule it was a special case of: a box drawn for
+  // a shape must hold that shape, at every viewfinder aspect. A member trusts
+  // the frame over their own eyes, and a frame the capture then crops to
+  // exactly will take whatever the frame left out.
+  //
+  // Swept across real viewfinder aspects rather than one, because the original
+  // failure depended on the aspect: it did not show on the iPhone and did on
+  // the S23.
   const VIEWS = [
     { width: 390, height: 700 }, // 0.557 — the original test phone
     { width: 393, height: 574 }, // 0.684 — Samsung S23, chrome visible
@@ -203,21 +216,21 @@ describe('⚠️ an unknown shape must not cut a known one', () => {
     { width: 430, height: 900 }, // 0.478 — a tall viewfinder
   ];
 
-  it('holds every known document shape inside the unknown box', () => {
+  it('holds each document inside its own box, on every viewfinder', () => {
     for (const view of VIEWS) {
-      const any = aimBox('any', view);
       for (const s of SHAPE_ORDER) {
         const a = guideAspect(s);
-        if (a === null) continue;
-        // Fit that document into the unknown box the way a member would —
-        // as large as it goes — and check it does not need to spill out.
-        const w = Math.min(any.width, any.height * a);
-        const h = w / a;
+        expect(a, `${s} has no aspect`).not.toBeNull();
+        const box = aimBox(s, view);
+        // Fit the document into its box the way a member would — as large as
+        // it goes — and check it does not need to spill out.
+        const w = Math.min(box.width, box.height * a!);
+        const h = w / a!;
         expect(
           h,
-          `${s} overflows the 'any' box on a ${view.width}x${view.height} view`,
-        ).toBeLessThanOrEqual(any.height + 0.001);
-        expect(w).toBeLessThanOrEqual(any.width + 0.001);
+          `${s} overflows its box on a ${view.width}x${view.height} view`,
+        ).toBeLessThanOrEqual(box.height + 0.001);
+        expect(w).toBeLessThanOrEqual(box.width + 0.001);
       }
     }
   });
@@ -231,12 +244,12 @@ describe('⚠️ an unknown shape must not cut a known one', () => {
     // A page fitted to that box's width needed more height than it had.
     expect(maxW / a4).toBeGreaterThan(oldH);
     // And the box in force now holds it.
-    expect(maxW / a4).toBeLessThanOrEqual(aimBox('any', view).height + 0.001);
+    expect(maxW / a4).toBeLessThanOrEqual(aimBox('a4', view).height + 0.001);
   });
 
   it('stays inside the viewfinder on every one of them', () => {
     for (const view of VIEWS) {
-      const b = aimBox('any', view);
+      const b = aimBox('a4', view);
       expect(b.x).toBeGreaterThanOrEqual(0);
       expect(b.y).toBeGreaterThanOrEqual(0);
       expect(b.x + b.width).toBeLessThanOrEqual(view.width);

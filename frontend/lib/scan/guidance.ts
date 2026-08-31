@@ -194,9 +194,11 @@ export function guidanceFor(input: {
   /**
    * Measured resolution on the document, or null when it cannot be known.
    *
-   * Null whenever no document type was chosen: dpi is pixels divided by KNOWN
-   * millimetres, and with shape 'any' there are no known millimetres. A gate
-   * on a number we do not have is not a gate, so it passes.
+   * ⚠️ EVERY OFFERED SHAPE NOW HAS A SIZE, so in the product this is never
+   * null — that is precisely why 'Something else' was removed. The nullable
+   * path stays because dpi is also unavailable before the first quad is
+   * measured, and because a gate on a number we do not have is not a gate. It
+   * must never become an escape hatch: see shapes-mandatory.spec.ts.
    */
   dpi?: number | null;
   /** The tracked quad, for the squareness check. Omit to skip it. */
