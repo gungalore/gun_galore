@@ -20,6 +20,22 @@ import { refineEdges } from './refine-edges';
  */
 const SEED_CONFIDENCE = 0.55;
 
+/**
+ * How much edge support a MASK-derived quad must show before it may crop.
+ *
+ * Measured against the synthetic scenes in quad-score.spec.ts: a quad sitting
+ * on real document edges scores above 0.9 on its worst side, a quad with one
+ * side running through open page scores below 0.3, and a quad over empty desk
+ * below 0.15. 0.5 sits in the gap with room either way.
+ *
+ * ⚠️ STILL NOT MEASURED ON REAL CAPTURES. This is a reasoned floor placed in a
+ * gap that synthetic fixtures showed, not a threshold earned the way
+ * DETECT_ACCEPT was. It is deliberately conservative: too high costs the mask
+ * rung some wins and falls back to the behaviour that shipped before it, which
+ * is a known-good outcome rather than a new failure.
+ */
+const MASK_MIN_SUPPORT = 0.5;
+
 // ────────────────────────────────────────────────────────────────────
 // THE BROWSER HALF.
 //
@@ -445,11 +461,23 @@ export async function processCapture(
       if (m.quad) candidates.push({ quad: m.quad, from: 'mask' });
     }
 
-    if (candidates.length === 1) {
-      quad = candidates[0].quad;
-      from = 'detected';
-      pickedBy = candidates[0].from;
-    } else if (candidates.length > 1) {
+    // ⚠️ EVERY CANDIDATE IS SCORED, INCLUDING A LONE ONE. The first version of
+    // this took `candidates.length === 1` straight through with no scoring at
+    // all, and that is a regression the operator found within an hour: when the
+    // corner heads DECLINE — below DETECT_ACCEPT — the mask became the only
+    // candidate and won unvalidated, bypassing the aim-box path that used to
+    // handle exactly that case.
+    //
+    // It broke by document type, which is what made it confusing: a licence
+    // card's corners score 0.83-0.95 so there were always two candidates and
+    // arbitration ran, while an A4 and an ID book decline more often and got
+    // the unchecked mask. "Auto capture fucked on ID and A4" is that sentence
+    // in the operator's words.
+    //
+    // The arbitration built to make the mask rung safe only ran when there was
+    // something to arbitrate. Scoring is not a tie-break; it is the admission
+    // test.
+    if (candidates.length > 0) {
       const small = shrinkForDetect(raster);
       const pick = bestCandidate(
         small.gray,
@@ -464,14 +492,29 @@ export async function processCapture(
         { x0: 0, y0: 0, x1: small.gray.width, y1: small.gray.height },
       );
       const chosen = pick ? candidates.find((c) => c.from === pick.pick.from) : null;
-      if (chosen) {
-        quad = chosen.quad;
-        from = 'detected';
-        pickedBy = chosen.from;
+      if (pick && chosen) {
         arbitration = {
-          worstSide: Math.round((pick as NonNullable<typeof pick>).score.worstSide * 100) / 100,
-          support: Math.round((pick as NonNullable<typeof pick>).score.support * 100) / 100,
+          worstSide: Math.round(pick.score.worstSide * 100) / 100,
+          support: Math.round(pick.score.support * 100) / 100,
         };
+        // ⚠️ THE FLOOR APPLIES TO THE MASK RUNG ONLY. The corner path has
+        // earned its threshold: DETECT_ACCEPT was set from fifteen photographs
+        // where the weakest corner scored 0.06-0.43 on failures and 0.83-0.95
+        // on successes, with nothing in between. Putting a second, unmeasured
+        // gate in front of it would be re-deciding a settled question with
+        // worse evidence.
+        //
+        // The mask rung has no such history, so it must show that a real
+        // intensity step runs along its weakest side before it may crop a
+        // statutory document. Below the floor, nothing is chosen and the
+        // ladder falls through to the aim box exactly as it did before this
+        // rung existed.
+        const needsProof = chosen.from === 'mask';
+        if (!needsProof || pick.score.worstSide >= MASK_MIN_SUPPORT) {
+          quad = chosen.quad;
+          from = 'detected';
+          pickedBy = chosen.from;
+        }
       }
     }
   }

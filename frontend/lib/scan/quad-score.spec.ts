@@ -133,3 +133,36 @@ describe('bestCandidate', () => {
     expect(bestCandidate(scene(), [])).toBeNull();
   });
 });
+
+describe('⚠️ a lone candidate is still scored — the regression that shipped', () => {
+  // The bug, in one sentence: `candidates.length === 1` took the quad straight
+  // through with no scoring, so when the corner heads declined the mask won
+  // unvalidated. It broke by document type — cards have confident corners and
+  // always had two candidates, so arbitration ran and hid the fault; A4 and ID
+  // books decline more often and got the unchecked mask.
+  //
+  // Scoring is the admission test, not a tie-break.
+  it('scores a single candidate rather than waving it through', () => {
+    const g = scene();
+    const onlyBad = [{ quad: quadOf(150, 80, 240, 330), from: 'mask' }];
+    const r = bestCandidate(g, onlyBad);
+    expect(r).not.toBeNull();
+    // A lone candidate is still returned — the CALLER decides whether the
+    // score clears its floor — but the score must be present and must be low.
+    expect(r!.score.worstSide).toBeLessThan(0.3);
+  });
+
+  it('gives a lone good candidate a score that clears any sane floor', () => {
+    const r = bestCandidate(scene(), [{ quad: quadOf(60, 80, 240, 330), from: 'mask' }]);
+    expect(r!.score.worstSide).toBeGreaterThan(0.8);
+  });
+
+  it('separates a real quad from a spine-straddler by more than a whisker', () => {
+    // The gap the floor sits in. If these ever converge, the floor is
+    // arbitrary and needs measuring on real captures instead.
+    const g = scene();
+    const good = bestCandidate(g, [{ quad: quadOf(60, 80, 240, 330), from: 'a' }])!;
+    const bad = bestCandidate(g, [{ quad: quadOf(150, 80, 240, 330), from: 'b' }])!;
+    expect(good.score.worstSide - bad.score.worstSide).toBeGreaterThan(0.5);
+  });
+});
