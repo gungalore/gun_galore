@@ -2162,12 +2162,17 @@ export default function DocumentScanner({
           <div style={{ ...overlayCentre, gap: 18 }}>
             {/* ⚠️ THE MARK, NOT THE FULL LOCKUP. /logo.svg is the horizontal
                 wordmark and it would run edge to edge on a phone held
-                portrait; the mark is square and reads at any size. Dark
-                variant because this sits on the black capture overlay, which
-                is not theme-aware — it is black on every device. */}
+                portrait; the mark is square and reads at any size.
+
+                ⚠️ AND logo-mark.svg, NOT logo-mark-dark.svg. The suffix names
+                the INK, not the ground it goes on: -dark is the #111111 ink
+                for LIGHT surfaces, and the plain file is the #F5F5F5 ink for
+                dark ones. This overlay is black on every device, so the dark
+                variant rendered as an invisible monogram with a floating red
+                road where the logo should be. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={av('/logo-mark-dark.svg')}
+              src={av('/logo-mark.svg')}
               alt=""
               aria-hidden="true"
               width={64}
