@@ -965,14 +965,28 @@ export default function DocumentScanner({
               ? detectQuad(gray, { expectAspect: expectAspectFor(shape) })
               : null;
         if (found) {
-          // Into visible-frame pixels. The overlay and the shutter share that
-          // coordinate space now, so a marker cannot disagree with the crop.
+          // ⚠️ TWO DETECTORS, TWO COORDINATE SPACES, AND ONLY ONE NEEDS
+          // SCALING. detectQuad answers in the DETECTION BUFFER's pixels
+          // (~320 across), so its quad is multiplied up to visible-frame
+          // pixels here. The model already answers in visible-frame
+          // fractions — multiplied by vis.sw/sh a few lines above — so
+          // scaling it again multiplies it by roughly 9.5 and puts every
+          // corner far off screen.
+          //
+          // That is exactly what happened: the panel read "on-device
+          // tracking · 111ms median" on one phone and 163ms on the other,
+          // the model was genuinely running and genuinely finding the
+          // document, and NO QUAD EVER APPEARED because it was being drawn
+          // several thousand pixels outside the canvas.
           const vis = visibleRect(video);
           const k = (vis ? vis.sw : video.videoWidth) / scratch.canvas.width;
-          const scaled = found.quad.map((p) => ({
-            x: p.x * k,
-            y: p.y * k,
-          })) as Quad;
+          const scaled =
+            modelQuad !== null
+              ? found.quad
+              : (found.quad.map((p) => ({
+                  x: p.x * k,
+                  y: p.y * k,
+                })) as Quad);
           // ⚠️ CONSISTENCY BEFORE CONFIDENCE. The first version counted ANY
           // detection towards the lock — so when successive frames found two
           // DIFFERENT rectangles (the card, then the table edge, then the
