@@ -69,32 +69,41 @@ function alpha(cutoff: number, dt: number): number {
   return 1 / (1 + tau / dt);
 }
 
-/** One scalar channel of the filter. */
+/**
+ * One scalar channel of the filter.
+ *
+ * ⚠️ THE CUTOFF IS SUPPLIED, NOT COMPUTED HERE. Each channel used to derive
+ * its own speed and therefore its own cutoff, which let the four corners move
+ * at four different rates — the quad stopped being rigid and started to swim,
+ * one corner easing while its neighbour snapped. A rectangle that deforms
+ * while it tracks reads as a worse bug than the jitter the filter removes.
+ */
 class Channel {
   private x: number | null = null;
-  private dx = 0;
 
   reset(): void {
     this.x = null;
-    this.dx = 0;
   }
 
   set(value: number): void {
     this.x = value;
-    this.dx = 0;
   }
 
-  filter(value: number, dt: number): number {
+  get value(): number | null {
+    return this.x;
+  }
+
+  /** Speed of this channel, for the shared estimate. Null before the first. */
+  speed(value: number, dt: number): number | null {
+    return this.x === null ? null : Math.abs(value - this.x) / dt;
+  }
+
+  filter(value: number, a: number): number {
     if (this.x === null) {
       this.x = value;
       return value;
     }
-    // Speed, itself low-passed — an unfiltered derivative of a noisy signal is
-    // noisier than the signal, and it would drive the cutoff at random.
-    const rawDx = (value - this.x) / dt;
-    this.dx = this.dx + alpha(D_CUTOFF, dt) * (rawDx - this.dx);
-    const cutoff = MIN_CUTOFF + BETA * Math.abs(this.dx);
-    this.x = this.x + alpha(cutoff, dt) * (value - this.x);
+    this.x = this.x + a * (value - this.x);
     return this.x;
   }
 }
@@ -110,10 +119,13 @@ class Channel {
 export class QuadSmoother {
   private channels = Array.from({ length: 8 }, () => new Channel());
   private last: Quad | null = null;
+  /** The quad's shared, low-passed speed. One number, not eight. */
+  private dx = 0;
 
   reset(): void {
     for (const c of this.channels) c.reset();
     this.last = null;
+    this.dx = 0;
   }
 
   /** What is currently being shown, or null before the first quad. */
@@ -153,9 +165,35 @@ export class QuadSmoother {
       }
     }
 
+    // ⚠️ ONE SPEED FOR THE WHOLE QUAD, AND THEREFORE ONE CUTOFF. This is what
+    // keeps the rectangle rigid. Per-channel speed let a corner over a
+    // high-contrast edge track tightly while its neighbour over a soft edge
+    // lagged, and the quad visibly sheared between them.
+    //
+    // The MEAN rather than the max: a single noisy corner should not unlock
+    // the damping for the other three, which is precisely how one bad corner
+    // used to make the whole box twitch.
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < 4; i++) {
+      for (const [c, v] of [
+        [this.channels[i * 2], target[i].x],
+        [this.channels[i * 2 + 1], target[i].y],
+      ] as const) {
+        const sp = c.speed(v, step);
+        if (sp !== null) {
+          sum += sp;
+          n++;
+        }
+      }
+    }
+    const speed = n ? sum / n : 0;
+    this.dx = this.dx + alpha(D_CUTOFF, step) * (speed - this.dx);
+    const a = alpha(MIN_CUTOFF + BETA * this.dx, step);
+
     const out = target.map((p, i) => ({
-      x: this.channels[i * 2].filter(p.x, step),
-      y: this.channels[i * 2 + 1].filter(p.y, step),
+      x: this.channels[i * 2].filter(p.x, a),
+      y: this.channels[i * 2 + 1].filter(p.y, a),
     })) as Quad;
     this.last = out;
     return out;

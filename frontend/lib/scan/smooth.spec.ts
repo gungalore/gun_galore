@@ -125,3 +125,53 @@ describe('QuadSmoother', () => {
     expect(s.push(q, DT, FRAME)).toEqual(q);
   });
 });
+
+describe('⚠️ the quad stays RIGID while it tracks', () => {
+  // The defect this guards: eight independent filters, each deriving its own
+  // speed and therefore its own cutoff, let one corner ease while its
+  // neighbour snapped. The rectangle sheared between them — "swimming" — which
+  // reads as a worse bug than the jitter the filter exists to remove.
+  it('moves all four corners by the same amount under pure translation', () => {
+    const s = new QuadSmoother();
+    settle(s, quad(200, 200), 30);
+    // Translate rigidly. Every corner moves by exactly (30, 20).
+    const shown = s.push(quad(230, 220), DT, FRAME);
+    const before = quad(200, 200);
+    const moves = shown.map((p, i) =>
+      Math.hypot(p.x - before[i].x, p.y - before[i].y),
+    );
+    const spread = Math.max(...moves) - Math.min(...moves);
+    expect(spread, `corners moved by different amounts: ${moves}`).toBeLessThan(1e-9);
+  });
+
+  it('does not let one noisy corner unlock the damping for the other three', () => {
+    // The MEAN speed, not the max. A single corner jittering must not make the
+    // whole box responsive — that is how one bad corner used to twitch it.
+    const s = new QuadSmoother();
+    const base = quad(300, 300);
+    settle(s, base, 30);
+
+    let worst = 0;
+    for (let i = 0; i < 40; i++) {
+      const noisy = base.map((p) => ({ x: p.x, y: p.y })) as Quad;
+      noisy[1].x += ((i * 7919) % 13) - 6; // one corner only
+      const shown = s.push(noisy, DT, FRAME);
+      // The three quiet corners must stay put.
+      for (const k of [0, 2, 3]) {
+        worst = Math.max(worst, Math.hypot(shown[k].x - base[k].x, shown[k].y - base[k].y));
+      }
+    }
+    expect(worst).toBeLessThan(0.5);
+  });
+
+  it('preserves shape through a settled move — no shear', () => {
+    const s = new QuadSmoother();
+    settle(s, quad(100, 100, 300, 400), 30);
+    let shown = quad(100, 100, 300, 400);
+    for (let i = 1; i <= 40; i++) shown = s.push(quad(100 + i * 2, 100, 300, 400), DT, FRAME);
+    // Opposite edges must remain equal length, as they are in the target.
+    const top = Math.hypot(shown[1].x - shown[0].x, shown[1].y - shown[0].y);
+    const bottom = Math.hypot(shown[2].x - shown[3].x, shown[2].y - shown[3].y);
+    expect(Math.abs(top - bottom)).toBeLessThan(0.01);
+  });
+});
