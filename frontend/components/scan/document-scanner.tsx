@@ -31,6 +31,13 @@ import {
   readCameraFacts,
 } from '@/lib/scan/framing';
 import {
+  type CameraOption,
+  bestCamera,
+  matchPref,
+  probeCameras,
+  readCameraPref,
+} from '@/lib/scan/cameras';
+import {
   ARM_MS,
   AutoBlocker,
   MOTION_STILL,
@@ -297,6 +304,8 @@ export default function DocumentScanner({
   // honoured decides whether an A4 page is scannable at all on this
   // device (a page needs 2.45x a card's pixels for the same legibility).
   const cameraRef = useRef<CameraFacts | null>(null);
+  /** Rear lenses this phone offers, for the picker and the diagnostics panel. */
+  const [cameras, setCameras] = useState<CameraOption[]>([]);
   const lastCaptureRef = useRef<ScanReport['lastCapture']>(undefined);
   /** Bumped on a throttle so the panel repaints without re-rendering per frame. */
   const [diagTick, setDiagTick] = useState(0);
@@ -485,7 +494,7 @@ export default function DocumentScanner({
         return;
       }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        let stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: 'environment' },
             // ⚠️ ASK FOR EVERYTHING THE PHONE WILL GIVE. A browser cannot
@@ -518,7 +527,58 @@ export default function DocumentScanner({
           return;
         }
         streamRef.current = stream;
-        const track = stream.getVideoTracks()[0];
+        let track = stream.getVideoTracks()[0];
+
+        // ⚠️ THE BROWSER PICKS THE WRONG LENS AND WE HAVE NEVER ARGUED.
+        // facingMode:'environment' hands back the main wide camera on every
+        // multi-lens phone — the one with the WORST minimum focus distance —
+        // which is the operator's Samsung complaint in full: "seems like I
+        // have to hold the phone to close for it to be able to focus". He was
+        // not holding it wrong; we put him on the wrong lens.
+        //
+        // The probe is SILENT. It opens each rear candidate, reads its
+        // capabilities and stops the track without ever attaching it to a
+        // video element, so nothing appears on screen. (The OS privacy
+        // indicator still flickers — that is enforced below the browser and
+        // cannot be suppressed. Worth knowing, not worth hiding.)
+        //
+        // ⚠️ AND IT RUNS AFTER THE GRANT, NEVER BEFORE. enumerateDevices()
+        // returns empty labels and empty deviceIds until a getUserMedia grant
+        // exists, which is why most attempts at this "find" one camera on a
+        // phone that has three.
+        try {
+          const cams = await probeCameras(track, { openToProbe: false });
+          const want =
+            matchPref(cams, readCameraPref()) ?? bestCamera(cams);
+          const onId = track.getSettings?.().deviceId;
+          if (want && want.deviceId && want.deviceId !== onId) {
+            const better = await navigator.mediaDevices.getUserMedia({
+              video: {
+                deviceId: { exact: want.deviceId },
+                width: { ideal: 4032 },
+                height: { ideal: 3024 },
+              },
+              audio: false,
+            });
+            if (cancelled) {
+              better.getTracks().forEach((t) => t.stop());
+              stream.getTracks().forEach((t) => t.stop());
+              return;
+            }
+            // Only now let the old one go — if the switch had failed we would
+            // still be holding a working camera rather than none.
+            stream.getTracks().forEach((t) => t.stop());
+            streamRef.current = better;
+            track = better.getVideoTracks()[0];
+            stream = better;
+          }
+          setCameras(cams);
+        } catch {
+          // A phone that will not enumerate, or a lens it will list but not
+          // open, must not cost the member their scanner. Stay on whatever
+          // facingMode gave us — which is exactly what shipped before.
+        }
+
         // Read back what we were actually given, before touching anything —
         // applyConstraints below can change it, and the honest baseline is
         // what the browser chose when asked for 4K.
@@ -1522,6 +1582,7 @@ export default function DocumentScanner({
             }
             device={deviceRef.current}
             camera={cameraRef.current}
+            cameras={cameras}
             trail={trailRef.current}
             lastCapture={lastCaptureRef.current}
           />

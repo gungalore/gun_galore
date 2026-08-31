@@ -83,6 +83,7 @@ export default function ScanDiagnostics({
   detectorOff,
   device,
   camera,
+  cameras,
   trail,
   lastCapture,
 }: {
@@ -98,6 +99,7 @@ export default function ScanDiagnostics({
   detectorOff: boolean;
   device: DeviceContext | null;
   camera: CameraFacts | null;
+  cameras?: Array<{ deviceId: string; label: string; kind: string; minFocusM: number | null }>;
   trail: readonly FrameSnapshot[];
   lastCapture?: ScanReport['lastCapture'];
 }) {
@@ -261,6 +263,23 @@ export default function ScanDiagnostics({
           </div>
         );
       })()}
+
+      {/* Which lenses this phone offers, and which one we are on. The
+          browser hands back the main wide camera by default — the one with
+          the worst near-focus — so this is the line that shows whether the
+          switch to a closer-focusing lens actually happened. */}
+      {cameras && cameras.length > 0 && (
+        <div style={{ marginTop: 6, opacity: 0.9 }}>
+          <span style={{ fontWeight: 700 }}>lenses</span>{' '}
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{cameras.length} rear</span>
+          {cameras.map((c) => (
+            <span key={c.deviceId || c.label} style={{ display: 'block', fontSize: 10, opacity: 0.8 }}>
+              {c.label || '(unlabelled)'} · {c.kind}
+              {c.minFocusM !== null ? ` · min focus ${(c.minFocusM * 1000).toFixed(0)}mm` : ' · focus unknown'}
+            </span>
+          ))}
+        </div>
+      )}
 
       {device && (
         <div style={{ opacity: 0.9 }}>
