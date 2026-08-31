@@ -202,3 +202,62 @@ export function rankByFov<T extends { sample: FovSample }>(items: readonly T[]):
   }
   return out;
 }
+
+/**
+ * How much fine detail a sample carries, as a fraction of its own contrast.
+ *
+ * ⚠️ THIS EXISTS TO TELL A REAL CAMERA FROM A DEPTH SENSOR. Ranking lenses by
+ * field of view answers "which sees widest" and nothing else, and a budget
+ * Android's rear array routinely enumerates a 2 MP depth or macro sensor
+ * alongside the real ones. Those produce a recognisable scene — wide, so they
+ * rank well — that is mush at any distance a document is held at. Picking one
+ * loses the scan with no error anywhere.
+ *
+ * Mean absolute Laplacian is the standard cheap measure of high-frequency
+ * energy. Dividing by the sample's own standard deviation is what makes it
+ * comparable ACROSS lenses: two cameras on one phone meter and white-balance
+ * independently, so a raw Laplacian ranks them partly by exposure. The ratio
+ * is a contrast-invariant statement about how much of the structure present
+ * is fine rather than coarse.
+ *
+ * ⚠️ NOT A FOCUS MEASURE, AND MUST NOT BE USED AS ONE. A sharp lens pointed
+ * at a blank wall scores near zero. It only separates lenses looking at THE
+ * SAME SCENE at the same moment, which is exactly the probe's situation and
+ * nothing else.
+ */
+export function detailOf(s: FovSample): number {
+  const { data, size } = s;
+  if (size < 3) return 0;
+  let sum = 0;
+  let sumSq = 0;
+  for (let i = 0; i < data.length; i++) {
+    sum += data[i];
+    sumSq += data[i] * data[i];
+  }
+  const n = data.length;
+  const sd = Math.sqrt(Math.max(0, sumSq / n - (sum / n) ** 2));
+  if (sd < 1) return 0; // Flat sample: no structure to be fine or coarse.
+
+  let lap = 0;
+  let count = 0;
+  for (let y = 1; y < size - 1; y++) {
+    for (let x = 1; x < size - 1; x++) {
+      const i = y * size + x;
+      lap += Math.abs(
+        4 * data[i] - data[i - 1] - data[i + 1] - data[i - size] - data[i + size],
+      );
+      count++;
+    }
+  }
+  return count ? lap / count / sd : 0;
+}
+
+/**
+ * How far below the best a lens may score before we refuse to use it.
+ *
+ * A depth or macro sensor sits far below a real camera on the same scene —
+ * not marginally, by a factor. Half the best is a wide berth: it clears
+ * ordinary lens-to-lens variation (an ultra-wide is softer than a main, but
+ * not by half) and still excludes the sensors this is here to exclude.
+ */
+export const DETAIL_FLOOR_RATIO = 0.5;

@@ -52,6 +52,24 @@ export const LIVE_DRAW_ACCEPT = 0.5;
 /** How many slow inferences before we give up on this device. */
 const SLOW_STRIKES = 3;
 
+/**
+ * The fastest the tracked quad is allowed to refresh, on any device.
+ *
+ * ⚠️ A CEILING, NOT A TARGET — IT CANNOT MAKE A SLOW PHONE FASTER. Inference
+ * is ~100ms on both of the operator's phones, so both already run at about
+ * 10fps and this cap never bites on either. What it does is stop a FASTER
+ * device pulling ahead, and that is the point: the lock needs two agreeing
+ * detections, so a phone running at 30fps locks in 66ms and one running at
+ * 10fps takes 200ms. Same code, same thresholds, visibly different feel —
+ * which is precisely the divergence the parity rule exists to prevent. The
+ * cap makes the fast one wait rather than making the slow one hurry.
+ *
+ * 15 is comfortably above what smoothing needs and comfortably below what a
+ * flagship would otherwise do.
+ */
+export const LIVE_FPS = 15;
+export const LIVE_MIN_INTERVAL_MS = 1000 / LIVE_FPS;
+
 export type LiveStatus =
   | { state: 'loading' }
   | { state: 'running'; medianMs: number }
@@ -61,6 +79,7 @@ export type LiveStatus =
 export class LiveDetector {
   private worker: Worker | null = null;
   private busy = false;
+  private lastStart = 0;
   private nextId = 1;
   private pending = new Map<number, (r: LiveReading | null) => void>();
   private times: number[] = [];
@@ -179,6 +198,11 @@ export class LiveDetector {
     src?: { sx: number; sy: number; sw: number; sh: number },
   ): Promise<LiveReading | null> {
     if (!this.worker || this.busy) return null;
+    // The frame-rate ceiling. Checked before any pixel work: letterboxing and
+    // getImageData cost real milliseconds on the main thread, and skipping a
+    // frame we would only have throttled is the whole saving.
+    const now = typeof performance !== 'undefined' ? performance.now() : 0;
+    if (now && now - this.lastStart < LIVE_MIN_INTERVAL_MS) return null;
     const w = src ? src.sw : video.videoWidth;
     const h = src ? src.sh : video.videoHeight;
     if (!w || !h) return null;
@@ -214,6 +238,7 @@ export class LiveDetector {
     const rgba = g.getImageData(0, 0, MODEL_SIZE, MODEL_SIZE).data;
     const id = this.nextId++;
     this.busy = true;
+    this.lastStart = now;
     const buf = rgba.buffer.slice(0) as ArrayBuffer;
     return new Promise<LiveReading | null>((resolve) => {
       this.pending.set(id, resolve);

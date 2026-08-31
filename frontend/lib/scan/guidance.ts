@@ -1,3 +1,4 @@
+import { FLOOR_DPI } from './framing';
 import type { Quad } from './geometry';
 
 // ────────────────────────────────────────────────────────────────────
@@ -69,6 +70,25 @@ export const TOO_BIG = 0.7;
 // gets switched off.
 export const SQUARE_MIN = 88;
 export const SQUARE_MAX = 92;
+
+/**
+ * How long the phone must be still before the shutter may fire.
+ *
+ * ⚠️ THIS IS WHAT MAKES "HOLD STILL" APPEAR AT ALL. `still` used to be an
+ * INSTANTANEOUS reading — motion under the threshold on this one frame — so
+ * the moment a member stopped moving, guidance went straight from "Move
+ * closer" to ready and the shutter fired. 'steady' was occupied for a single
+ * frame, far too briefly to render, let alone read. Operator: "when the
+ * conditions are met there is no Hold Still instruction given." The state was
+ * never missing; it had no duration.
+ *
+ * Giving stillness a clock fixes both halves at once. The member gets a
+ * readable half-second of "Hold still…" telling them the scan is coming, and
+ * the capture lands on a phone that has demonstrably settled rather than one
+ * caught at the instant it crossed the motion threshold — which is also when
+ * it is most likely to still be drifting.
+ */
+export const STEADY_MS = 500;
 
 export type Guidance =
   /** Nothing found. */
@@ -163,14 +183,36 @@ export function guidanceFor(input: {
   occupancy: number | null;
   /** Has the quad been stable for long enough to trust? */
   locked: boolean;
-  /** Is the phone still? */
+  /**
+   * Has the phone been still for STEADY_MS?
+   *
+   * ⚠️ A DURATION, NOT AN INSTANT — see STEADY_MS. Passing "motion is low
+   * right now" collapses 'steady' to a single frame and the member never sees
+   * the instruction.
+   */
   still: boolean;
+  /**
+   * Measured resolution on the document, or null when it cannot be known.
+   *
+   * Null whenever no document type was chosen: dpi is pixels divided by KNOWN
+   * millimetres, and with shape 'any' there are no known millimetres. A gate
+   * on a number we do not have is not a gate, so it passes.
+   */
+  dpi?: number | null;
   /** The tracked quad, for the squareness check. Omit to skip it. */
   quad?: Quad;
 }): Guidance {
   if (input.occupancy === null || !input.locked) return 'point';
   if (input.occupancy < TOO_SMALL) return 'closer';
   if (input.occupancy > TOO_BIG) return 'further';
+  // ⚠️ THE REAL QUALITY FLOOR, AND IT OUTRANKS THE BRACKET. Occupancy is a
+  // proxy for resolution; dpi IS resolution, measured off this quad on this
+  // lens at this distance. Where the two disagree the measurement wins, and
+  // "move closer" is the correct instruction because more frame is exactly
+  // what more dpi costs. Operator: "we set the quality floor at 200dpi".
+  if (input.dpi !== null && input.dpi !== undefined && input.dpi < FLOOR_DPI) {
+    return 'closer';
+  }
   // ⚠️ SIZE FIRST, THEN SQUARENESS. Asking somebody to level the phone while
   // the document is still half a frame away wastes the instruction — moving
   // closer changes the geometry anyway, and two corrections at once is one

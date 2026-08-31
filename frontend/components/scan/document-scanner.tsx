@@ -35,6 +35,7 @@ import {
 import { DETECT_ACCEPT, lastDetectFailure } from '@/lib/scan/detect-client';
 import {
   type Guidance,
+  STEADY_MS,
   guidanceFor,
   mayCapture,
   squareness,
@@ -816,6 +817,17 @@ export default function DocumentScanner({
     /** When the phone last started being still, or 0 while it is moving. */
     let steadySince = 0;
     /**
+     * The same, for the GUIDANCE — deliberately a separate clock.
+     *
+     * ⚠️ NOT steadySince. That one starts only once the autocapture gates
+     * (ink, light, glare) have all passed, so it answers "how long has this
+     * been capturable". Guidance needs "how long has the phone been still",
+     * which is true earlier and for different reasons — a member holding
+     * steady over a badly lit document is still holding steady, and telling
+     * them to hold still while they already are is the instruction working.
+     */
+    let stillSince = 0;
+    /**
      * Has this device proved too slow to run the detector every frame?
      *
      * Latches once. Only the green corners are lost — the frame measurements
@@ -1265,6 +1277,19 @@ export default function DocumentScanner({
             const vr = visibleRect(video);
             const kx = vr ? cv.width / vr.sw : 1;
             const ky = vr ? cv.height / vr.sh : 1;
+            // Its own clock read: this block runs from the detector's
+            // callback, not the frame function, so the frame's `now` is a
+            // different closure and reaching for it would be reading a
+            // timestamp from whichever frame happened to be last.
+            const tNow = performance.now();
+            const motionNow =
+              trailRef.current[trailRef.current.length - 1]?.motion ?? 255;
+            if (motionNow <= MOTION_STILL) {
+              if (!stillSince) stillSince = tNow;
+            } else {
+              stillSince = 0;
+            }
+            const stillMs = stillSince ? tNow - stillSince : 0;
             const occ =
               q && lockRef.current >= 2 && cv.width > 0
                 ? occupancy(
@@ -1273,12 +1298,28 @@ export default function DocumentScanner({
                     cv.height,
                   )
                 : null;
+            // ⚠️ MEASURED BEFORE THE GATE, BECAUSE THE GATE NEEDS IT. dpi is
+            // computed below for the readout either way; the floor check
+            // wants the same number, so it is worked out once here rather
+            // than twice from two slightly different quads.
+            const acrossNow = acrossMm(shape);
+            const dpiNow =
+              q && acrossNow && cv.width > 0
+                ? dpiOf(
+                    Math.max(
+                      Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y),
+                      Math.hypot(q[2].x - q[3].x, q[2].y - q[3].y),
+                    ),
+                    acrossNow,
+                  )
+                : null;
             const next = guidanceFor({
               occupancy: occ,
               locked: lockRef.current >= 2,
-              still:
-                (trailRef.current[trailRef.current.length - 1]?.motion ?? 255) <=
-                MOTION_STILL,
+              // A DURATION. See STEADY_MS — an instantaneous reading made
+              // 'steady' last one frame and the member never saw it.
+              still: stillMs >= STEADY_MS,
+              dpi: dpiNow,
               // Any consistent space works for the angles — they are ratios of
               // edge directions, not absolute positions — so the visible-frame
               // quad is fine as-is.
@@ -1290,23 +1331,21 @@ export default function DocumentScanner({
             // measured pixel span, so this is the real resolution on the real
             // lens at the real distance. It is the number that decides
             // whether a serial number will be readable.
-            const acrossMmNow = acrossMm(shape);
+            // ⚠️ THE SAME dpiNow THE GATE USED, NOT A SECOND MEASUREMENT.
+            // Two derivations of one number drift the moment either is
+            // touched, and a readout that disagrees with the gate deciding
+            // the capture is worse than no readout — it is the panel lying
+            // about why the shutter did or did not fire.
+            //
+            // ⚠️ AND IT IS MEASURED IN SOURCE PIXELS, NEVER DISPLAY PIXELS.
+            // The quad arrives in visible-frame source space, which is what
+            // the capture crops from and therefore what lands in the file.
+            // Scaling by kx first would answer in on-screen CSS pixels —
+            // roughly an eighth as many — and report a 300 dpi scan as 40.
             const q0 = q;
             qualityRef.current =
               q0 && occ !== null
-                ? {
-                    occupancy: occ,
-                    tilt: squareness(q0),
-                    dpi: acrossMmNow
-                      ? dpiOf(
-                          Math.max(
-                            Math.hypot(q0[1].x - q0[0].x, q0[1].y - q0[0].y),
-                            Math.hypot(q0[2].x - q0[3].x, q0[2].y - q0[3].y),
-                          ),
-                          acrossMmNow,
-                        )
-                      : null,
-                  }
+                ? { occupancy: occ, tilt: squareness(q0), dpi: dpiNow }
                 : null;
             if (next !== guideRef.current) {
               guideRef.current = next;

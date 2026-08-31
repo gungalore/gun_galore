@@ -254,3 +254,34 @@ describe("squareness — the operator's 87/93 corner check", () => {
     for (const a of cornerAngles(collapsed)) expect(Number.isFinite(a)).toBe(true);
   });
 });
+
+describe('the 200 dpi quality floor', () => {
+  const ok = { occupancy: 0.6, locked: true, still: true };
+
+  it('passes when no document type was chosen and dpi cannot be known', () => {
+    // shape 'any' has no known millimetres, so there is no dpi to gate on.
+    expect(guidanceFor({ ...ok, dpi: null })).toBe('ready');
+    expect(guidanceFor({ ...ok })).toBe('ready');
+  });
+
+  it('asks for closer below 200 dpi even when the bracket is satisfied', () => {
+    expect(guidanceFor({ ...ok, dpi: 150 })).toBe('closer');
+  });
+
+  it('allows capture at and above 200 dpi', () => {
+    expect(guidanceFor({ ...ok, dpi: 200 })).toBe('ready');
+    expect(guidanceFor({ ...ok, dpi: 320 })).toBe('ready');
+  });
+
+  it('still refuses a document crowding the frame, however sharp', () => {
+    // The frame-edge cliff is absolute; resolution cannot buy past it.
+    expect(guidanceFor({ occupancy: 0.9, locked: true, still: true, dpi: 600 })).toBe(
+      'further',
+    );
+  });
+
+  it('shows "Hold still" rather than firing when the phone has not settled', () => {
+    expect(guidanceFor({ ...ok, still: false, dpi: 300 })).toBe('steady');
+    expect(mayCapture('steady')).toBe(false);
+  });
+});

@@ -33,10 +33,19 @@ import { acrossMm } from './shapes';
 /**
  * What a scan of a document is supposed to be worth reading at.
  *
- * 300 is the ordinary document-scanning standard and what an official would
- * expect of a submitted copy. It is a target, not a gate.
+ * ⚠️ 200, LOWERED FROM 300 ON 2026-08-31, AND THE TWO NUMBERS NOW MEET. 300
+ * is the ordinary document-scanning standard, but standing a member far
+ * enough back to be safe from the frame-edge cliff and close enough for 300
+ * dpi on an A4 are contradictory demands — see TOO_SMALL in guidance.ts for
+ * the arithmetic. One of them had to give and it was never going to be the
+ * cliff, which is measured and absolute.
+ *
+ * Operator: "we set the quality floor at 200dpi". With TARGET and FLOOR
+ * equal there is no slack band left, so `shortfall` now reports zero or a
+ * real deficit and nothing in between — which is the honest shape for a
+ * single bar.
  */
-export const TARGET_DPI = 300;
+export const TARGET_DPI = 200;
 
 /**
  * Below this, small print stops being reliable.

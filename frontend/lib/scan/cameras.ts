@@ -32,7 +32,13 @@
 // attempts at this "find" only one camera. Grant, then enumerate.
 // ────────────────────────────────────────────────────────────────────
 
-import { FOV_SAMPLE, type FovSample, rankByFov } from './fov';
+import {
+  DETAIL_FLOOR_RATIO,
+  FOV_SAMPLE,
+  type FovSample,
+  detailOf,
+  rankByFov,
+} from './fov';
 
 /** A rear-facing candidate we could scan with. */
 export interface CameraOption {
@@ -132,7 +138,55 @@ export function rankCameras(options: readonly CameraOption[]): CameraOption[] {
 export function bestCamera(options: readonly CameraOption[]): CameraOption | null {
   const rear = options.filter((o) => isRearLabel(o.label));
   if (rear.length < 2) return null;
-  return rankCameras(rear)[0] ?? null;
+  return mainCamera(rear) ?? rankCameras(rear)[0] ?? null;
+}
+
+/**
+ * The MAIN rear camera — the one to scan with.
+ *
+ * ⚠️ THIS REVERSES THE EARLIER CHOICE, AND THE EARLIER REASONING WAS HALF
+ * RIGHT. Ranking picked the WIDEST lens because on a phone the widest is the
+ * closest-focusing — short focal length gives both, which is why macro mode
+ * uses the ultra-wide. That physics is sound and it is why focus distance
+ * never had to be measured.
+ *
+ * What it optimised for was the wrong property. The ultra-wide is the softest
+ * sensor on the phone and it carries heavy barrel distortion, which BENDS
+ * STRAIGHT LINES. A document scanner's whole job is finding four straight
+ * edges and flattening the quad between them, and a perspective transform
+ * cannot undo a curve — it assumes the edges were straight to begin with. So
+ * the lens that made framing easiest was quietly corrupting the geometry the
+ * detector depends on. Operator, having compared them: "much better quality".
+ *
+ * The main camera is the SECOND-WIDEST: ultra-wide is widest, telephoto is
+ * narrowest, main sits between. That holds across every phone with three rear
+ * lenses and on the two-lens phones that pair an ultra-wide with a main.
+ *
+ * ⚠️ THE DETAIL FLOOR IS NOT OPTIONAL. Budget Androids enumerate 2 MP depth
+ * and macro sensors alongside the real cameras, and those rank perfectly well
+ * on field of view while producing mush. Without the floor, "second-widest"
+ * hands the scan to a depth sensor on exactly the phones least able to
+ * recover. See detailOf.
+ *
+ * Returns null when nothing was measured — the caller falls back to the FOV
+ * ranking, which falls back to enumeration order.
+ */
+export function mainCamera(options: readonly CameraOption[]): CameraOption | null {
+  const measured = options.filter((o) => o.sample);
+  if (measured.length < 2) return null;
+
+  const best = Math.max(...measured.map((o) => detailOf(o.sample as FovSample)));
+  // A scene with no structure anywhere scores zero for every lens; there is
+  // nothing to choose on and pretending otherwise is how a bad rule looks
+  // like a good one. Fall through to the FOV ranking instead.
+  if (best <= 0) return null;
+  const usable = measured.filter(
+    (o) => detailOf(o.sample as FovSample) >= best * DETAIL_FLOOR_RATIO,
+  );
+  if (!usable.length) return null;
+
+  const byWidth = rankCameras(usable);
+  return byWidth[1] ?? byWidth[0] ?? null;
 }
 
 /** Where the chosen lens is remembered between sessions. */

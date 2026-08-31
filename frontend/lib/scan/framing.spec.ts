@@ -56,13 +56,16 @@ describe('framingPlan — the box follows the camera', () => {
     expect(plan.distanceMm).toBeGreaterThan(MIN_FOCUS_MM);
   });
 
-  it('falls back to the legible floor on a 1080p stream rather than refusing', () => {
-    // 300 dpi over 85.6mm needs ~1011px, which is 94% of a 1080px short axis
-    // — no room for margin. The floor is reachable and is a perfectly good
-    // scan, so it is taken quietly.
+  it('reaches the 200 dpi bar on a 1080p stream with room to spare', () => {
+    // ⚠️ THIS TEST INVERTED WHEN TARGET_DPI DROPPED TO 200, AND THAT IS THE
+    // POINT OF THE CHANGE. At 300 a card needed ~1011px of a 1080px short
+    // axis — 94%, no room for margin — so 1080p always fell back to the
+    // floor. At 200 it needs ~674px, 62%, which clears the frame-edge cliff
+    // comfortably. The commonest stream a browser hands out now meets the
+    // bar outright instead of quietly conceding it.
     const plan = framingPlan({ width: 1920, height: 1080 }, 'card', 0.82);
-    expect(plan.verdict).toBe('relaxed');
-    expect(plan.dpi).toBe(FLOOR_DPI);
+    expect(plan.verdict).toBe('good');
+    expect(plan.dpi).toBe(TARGET_DPI);
     expect(plan.fill).toBeLessThanOrEqual(1);
     expect(plan.distanceMm).toBeGreaterThan(MIN_FOCUS_MM);
   });
@@ -110,19 +113,21 @@ describe('framingPlan — the box follows the camera', () => {
     expect(a.fill).toBeCloseTo(b.fill, 9);
   });
 
-  it('⚠️ CANNOT REACH 300 DPI ON AN A4 PAGE, EVEN AT 4K — AND SAYS SO', () => {
+  it('⚠️ A BIGGER DOCUMENT IS HARDER, AND A4 ONLY JUST CLEARS THE BAR', () => {
     // Counter-intuitive and worth pinning: a BIGGER document is HARDER, not
     // easier. A4 is 210mm across against a card's 85.6mm, so it needs 2.45x
-    // the pixels for the same dpi — 300 dpi would want ~2480px across a
-    // 2160px axis. Not reachable on any stream a browser hands out.
+    // the pixels for the same dpi. At the old 300 that meant ~2480px across a
+    // 2160px axis — not reachable on any stream a browser hands out, on any
+    // phone, ever. That impossibility is what forced the target down to 200,
+    // where A4 needs ~1654px of 2160 and fits.
     //
-    // That is fine, and it is why FLOOR_DPI exists. An A4 certificate's text
-    // is many times larger than a licence card's serial number, so 200 dpi
-    // reads perfectly. The point of the assertion is that the code reports
-    // the floor honestly rather than claiming a target it did not hit.
+    // "Fits" is the whole margin, though: 77% of the short axis before the
+    // aim margin, 85% of the box after it. A4 is the document this system is
+    // tightest on, so if a future change makes anything worse, this is where
+    // it shows up first.
     const plan = framingPlan({ width: 3840, height: 2160 }, 'a4', 0.82);
-    expect(plan.verdict).toBe('relaxed');
-    expect(plan.dpi).toBe(FLOOR_DPI);
+    expect(plan.verdict).toBe('good');
+    expect(plan.dpi).toBe(TARGET_DPI);
     expect(plan.fill).toBeLessThanOrEqual(1);
     expect(plan.distanceMm).toBeGreaterThan(MIN_FOCUS_MM);
     // And nothing is said to the member about it, because nothing is wrong.
@@ -161,15 +166,40 @@ describe('⚠️ the frame-edge cliff — measured 2026-08-31, not inferred', ()
     }
   });
 
-  it('⚠️ REFUSES 300 DPI ON 1080p RATHER THAN CROWDING THE EDGE FOR IT', () => {
-    // 300 dpi over an 85.6mm card needs ~1011px — 94% of a 1080px short axis,
-    // which is the 0/15 case. The boxFill > 1 guard is what forces the fall
-    // through to the 200 dpi floor. If this ever goes green at TARGET_DPI,
-    // somebody has clamped the box instead of rejecting it.
-    const plan = framingPlan({ width: 1920, height: 1080 }, 'card', 0.82);
-    expect(plan.dpi).toBe(FLOOR_DPI);
-    expect(plan.dpi).not.toBe(TARGET_DPI);
-    expect(docFill(plan)).toBeLessThan(0.7);
+  it('⚠️ NEVER CLAMPS THE BOX PAST THE FRAME TO BUY DPI', () => {
+    // The invariant the old 300-dpi version of this test was really
+    // protecting, stated directly instead of through one example. A plan may
+    // concede resolution; it may never concede the frame-edge margin, because
+    // the cliff is measured (0/15 flush, 11/15 one step off) and resolution
+    // is a gradient. If a fill above 1 ever comes back green, somebody has
+    // clamped the box rather than rejecting it.
+    for (const stream of [
+      { width: 1280, height: 720 },
+      { width: 1920, height: 1080 },
+      { width: 3840, height: 2160 },
+    ]) {
+      for (const shape of ['card', 'a4'] as const) {
+        const plan = framingPlan(stream, shape, 0.82);
+        if (plan.verdict === 'impossible') continue;
+        expect(plan.fill).toBeLessThanOrEqual(1);
+        expect(docFill(plan)).toBeLessThan(0.9);
+      }
+    }
+  });
+
+  it('⚠️ THE RELAXED BAND IS EMPTY WHILE TARGET AND FLOOR ARE EQUAL', () => {
+    // Not dead code — a function of two constants. The operator set the bar
+    // at a single 200 dpi, so there is no gap between "hit the target" and
+    // "hit the floor" for a plan to land in, and every plan is now either
+    // good or impossible. Raise TARGET_DPI and the band comes back on its
+    // own. This is here so the absence reads as designed rather than broken.
+    expect(TARGET_DPI).toBe(FLOOR_DPI);
+    for (const w of [640, 1280, 1920, 2560, 3840]) {
+      for (const shape of ['card', 'a4'] as const) {
+        const plan = framingPlan({ width: w, height: (w * 9) / 16 }, shape, 0.82);
+        expect(plan.verdict).not.toBe('relaxed');
+      }
+    }
   });
 
   it('puts the document at a plausible size in frame, computed honestly', () => {
@@ -194,7 +224,13 @@ describe('⚠️ the frame-edge cliff — measured 2026-08-31, not inferred', ()
     // while the resolution this buys is real and the frame-edge margin it
     // preserves is the thing that actually matters. If someone later wants to
     // chase the band, the cost is working distance and the gain is marginal.
-    expect(areaFraction).toBeGreaterThan(0.04);
+    // ⚠️ THE LOWER BOUND MOVED WITH THE TARGET, 0.04 -> 0.03. Asking for 200
+    // dpi rather than 300 asks for two thirds of the pixels, which is a
+    // smaller document in frame and stands the member further back. That is
+    // the trade being made deliberately, not a regression: further back is
+    // the safe direction, since too close is a hard blur failure and too far
+    // is a linear loss.
+    expect(areaFraction).toBeGreaterThan(0.03);
     expect(areaFraction).toBeLessThan(0.25);
   });
 });
