@@ -39,6 +39,17 @@ import { clearDiagnostics } from '@/lib/scan/diag-flag';
 import { HOLD_MS } from '@/lib/scan/autocapture';
 import { aimBox } from '@/lib/scan/aim';
 import { LIVE_DRAW_ACCEPT } from '@/lib/scan/docquad-live';
+import { FLOOR_DPI } from '@/lib/scan/framing';
+import {
+  SQUARE_MAX,
+  SQUARE_MIN,
+  STEADY_MS,
+  TOO_BIG,
+  TOO_SMALL,
+} from '@/lib/scan/guidance';
+
+/** The same bound tiltAdvice uses, so the panel cannot disagree with the gate. */
+const TILT_MAX = Math.max(SQUARE_MAX - 90, 90 - SQUARE_MIN);
 import {
   type CameraFacts,
   framingPlan,
@@ -136,7 +147,12 @@ export default function ScanDiagnostics({
     ms: number;
     lock: number;
     guide: string;
-    quality: { occupancy: number; tilt: number; dpi: number | null } | null;
+    quality: {
+      occupancy: number;
+      tilt: number;
+      dpi: number | null;
+      stillMs: number;
+    } | null;
   } | null;
   trail: readonly FrameSnapshot[];
   lastCapture?: ScanReport['lastCapture'];
@@ -320,20 +336,30 @@ export default function ScanDiagnostics({
               style={{
                 display: 'block',
                 fontVariantNumeric: 'tabular-nums',
+                // ⚠️ DERIVED, NEVER TYPED. These read 65-85 and ≤1 as
+                // literals while the constants said 45-70 and ≤2, so the
+                // panel reported a build that was not running and the numbers
+                // it printed could not be used to tell one build from
+                // another — which is the one job a diagnostic readout has.
                 color:
-                  liveReading.quality.tilt <= 1 &&
-                  liveReading.quality.occupancy >= 0.65 &&
-                  liveReading.quality.occupancy <= 0.85
+                  liveReading.quality.tilt <= TILT_MAX &&
+                  liveReading.quality.occupancy >= TOO_SMALL &&
+                  liveReading.quality.occupancy <= TOO_BIG
                     ? OK
                     : BAD,
               }}
             >
-              fills {(liveReading.quality.occupancy * 100).toFixed(0)}% (want
-              65-85) · tilt {liveReading.quality.tilt.toFixed(1)}° (want
-              ≤1){' '}
+              fills {(liveReading.quality.occupancy * 100).toFixed(0)}% (want{' '}
+              {Math.round(TOO_SMALL * 100)}-{Math.round(TOO_BIG * 100)}) · tilt{' '}
+              {liveReading.quality.tilt.toFixed(1)}° (want ≤{TILT_MAX}){' '}
               {liveReading.quality.dpi !== null
-                ? `· ${Math.round(liveReading.quality.dpi)}dpi measured`
-                : ''}
+                ? `· ${Math.round(liveReading.quality.dpi)}dpi (floor ${FLOOR_DPI})`
+                : '· dpi needs a document type'}
+              {' · '}
+              {/* The gate that was stuck. Printed so the next report is a
+                  reading rather than a symptom. */}
+              still {(liveReading.quality.stillMs / 1000).toFixed(1)}s/
+              {(STEADY_MS / 1000).toFixed(1)}s
             </span>
           )}
         </div>

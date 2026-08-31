@@ -382,6 +382,8 @@ export default function DocumentScanner({
     occupancy: number;
     tilt: number;
     dpi: number | null;
+    /** How long the phone has been still, so a stuck gate is visible. */
+    stillMs: number;
   } | null>(null);
   const [guide, setGuide] = useState<Guidance>('point');
 
@@ -1307,13 +1309,31 @@ export default function DocumentScanner({
             const vr = visibleRect(video);
             const kx = vr ? cv.width / vr.sw : 1;
             const ky = vr ? cv.height / vr.sh : 1;
-            // Its own clock read: this block runs from the detector's
-            // callback, not the frame function, so the frame's `now` is a
-            // different closure and reaching for it would be reading a
-            // timestamp from whichever frame happened to be last.
+            // Its own clock read: draw() is the rAF loop and `now` belongs to
+            // detectOnce, a different closure — reaching for it would read a
+            // timestamp from whichever detection happened to be last.
             const tNow = performance.now();
-            const motionNow =
-              trailRef.current[trailRef.current.length - 1]?.motion ?? 255;
+            // ⚠️ READ THE MEASUREMENT, NEVER THE DIAGNOSTIC TRAIL. `motion` is
+            // maintained by detectOnce every cycle. trailRef is a MIRROR of it
+            // written under `if (diagRef.current)` — that is, only while the
+            // diagnostics panel is open.
+            //
+            // Guidance used to read the mirror, and the consequence was as bad
+            // as it sounds: with the panel closed the trail is empty, the
+            // `?? 255` fallback fires on every frame, the phone is never
+            // "still", and the shutter can NEVER fire. Every member outside
+            // this room had a scanner that tracked the document perfectly and
+            // then simply refused to take the picture.
+            //
+            // It hid because the failure was silent while `still` was an
+            // instantaneous reading — a false `still` just meant 'steady', and
+            // 'steady' was never on screen long enough to notice. Giving
+            // stillness a clock turned it into a permanent "Hold still", which
+            // is how it finally got reported. A feature that only works while
+            // it is being watched is the exact shape of bug the diagnostics
+            // panel exists to prevent, so it must not be the thing the product
+            // depends on.
+            const motionNow = motion;
             if (motionNow <= MOTION_STILL) {
               if (!stillSince) stillSince = tNow;
             } else {
@@ -1375,7 +1395,7 @@ export default function DocumentScanner({
             const q0 = q;
             qualityRef.current =
               q0 && occ !== null
-                ? { occupancy: occ, tilt: squareness(q0), dpi: dpiNow }
+                ? { occupancy: occ, tilt: squareness(q0), dpi: dpiNow, stillMs }
                 : null;
             if (next !== guideRef.current) {
               guideRef.current = next;
