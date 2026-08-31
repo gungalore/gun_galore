@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Quad } from './geometry';
 import {
+  cornerAngles,
+  squareness,
+  tiltAdvice,
   TOO_BIG,
   TOO_SMALL,
   guidanceFor,
@@ -86,5 +89,168 @@ describe('guidanceText', () => {
     expect(guidanceText('steady', 'card')).toContain('Hold still');
     // Nothing at 'ready' — it would be read after the shutter had already gone.
     expect(guidanceText('ready', 'card')).toBeNull();
+  });
+});
+
+describe('squareness — the operator\'s 87/93 corner check', () => {
+  const square: Quad = [
+    { x: 100, y: 100 }, { x: 500, y: 100 }, { x: 500, y: 700 }, { x: 100, y: 700 },
+  ];
+  /** Top edge shorter than bottom: the top of the document is further away. */
+  const topFar: Quad = [
+    { x: 180, y: 100 }, { x: 420, y: 100 }, { x: 500, y: 700 }, { x: 100, y: 700 },
+  ];
+  const leftFar: Quad = [
+    { x: 100, y: 180 }, { x: 500, y: 100 }, { x: 500, y: 700 }, { x: 100, y: 620 },
+  ];
+
+  it('reads 90 at every corner of a square-on rectangle', () => {
+    for (const a of cornerAngles(square)) expect(a).toBeCloseTo(90, 6);
+    expect(squareness(square)).toBeCloseTo(0, 6);
+  });
+
+  it('⚠️ IS UNCHANGED BY ROTATION — WHICH IS WHY "ROTATE" IS THE WRONG FIX', () => {
+    // Rolling the phone rotates the quad rigidly. Every corner stays at 90, so
+    // a corner-angle check can never detect roll and telling somebody to
+    // rotate can never correct what it does detect.
+    const t = (25 * Math.PI) / 180;
+    const spun = square.map((p) => ({
+      x: p.x * Math.cos(t) - p.y * Math.sin(t),
+      y: p.x * Math.sin(t) + p.y * Math.cos(t),
+    })) as Quad;
+    for (const a of cornerAngles(spun)) expect(a).toBeCloseTo(90, 6);
+    expect(tiltAdvice(spun)).toBeNull();
+  });
+
+  it('detects tilt and names the direction from the shorter edge', () => {
+    expect(squareness(topFar)).toBeGreaterThan(3);
+    // The short edge is the far one — perspective shrinks distance — so the
+    // phone leans towards it.
+    expect(tiltAdvice(topFar)).toBe('tilt-top');
+    expect(tiltAdvice(leftFar)).toBe('tilt-left');
+  });
+
+  it('leaves a nearly-square quad alone rather than nagging', () => {
+    const nearly: Quad = [
+      { x: 102, y: 100 }, { x: 498, y: 100 }, { x: 500, y: 700 }, { x: 100, y: 700 },
+    ];
+    expect(squareness(nearly)).toBeLessThan(3);
+    expect(tiltAdvice(nearly)).toBeNull();
+  });
+
+  it('⚠️ ASKS FOR SIZE BEFORE SQUARENESS', () => {
+    // Levelling the phone while the document is still half a frame away wastes
+    // the instruction — moving closer changes the geometry anyway, and two
+    // corrections at once is one too many.
+    expect(
+      guidanceFor({ occupancy: 0.3, locked: true, still: true, quad: topFar }),
+    ).toBe('closer');
+    expect(
+      guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: topFar }),
+    ).toBe('tilt-top');
+  });
+
+  it('will not fire while the phone is off parallel', () => {
+    expect(
+      mayCapture(guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: topFar })),
+    ).toBe(false);
+    expect(
+      mayCapture(guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: square })),
+    ).toBe(true);
+  });
+
+  it('gives each tilt an instruction that names a real movement', () => {
+    for (const g of ['tilt-top', 'tilt-bottom', 'tilt-left', 'tilt-right'] as const) {
+      expect(guidanceText(g, 'certificate')).toMatch(/^Tilt the (top|bottom|left|right) of the phone down$/);
+    }
+  });
+});
+
+describe("squareness — the operator's 87/93 corner check", () => {
+  const square: Quad = [
+    { x: 100, y: 100 }, { x: 500, y: 100 }, { x: 500, y: 700 }, { x: 100, y: 700 },
+  ];
+  /** Top edge shorter than bottom: the top of the document is further away. */
+  const topFar: Quad = [
+    { x: 180, y: 100 }, { x: 420, y: 100 }, { x: 500, y: 700 }, { x: 100, y: 700 },
+  ];
+  const leftFar: Quad = [
+    { x: 100, y: 180 }, { x: 500, y: 100 }, { x: 500, y: 700 }, { x: 100, y: 620 },
+  ];
+
+  it('reads 90 at every corner of a square-on rectangle', () => {
+    for (const a of cornerAngles(square)) expect(a).toBeCloseTo(90, 6);
+    expect(squareness(square)).toBeCloseTo(0, 6);
+  });
+
+  it('⚠️ IS UNCHANGED BY ROTATION — WHICH IS WHY "ROTATE" IS THE WRONG FIX', () => {
+    // Rolling the phone rotates the quad rigidly, so every corner stays at 90.
+    // A corner-angle check can never detect roll, and telling somebody to
+    // rotate can never correct what it does detect. This test is the reason
+    // the instruction says "tilt" rather than the "rotate" that was asked for.
+    const t = (25 * Math.PI) / 180;
+    const spun = square.map((p) => ({
+      x: p.x * Math.cos(t) - p.y * Math.sin(t),
+      y: p.x * Math.sin(t) + p.y * Math.cos(t),
+    })) as Quad;
+    for (const a of cornerAngles(spun)) expect(a).toBeCloseTo(90, 6);
+    expect(tiltAdvice(spun)).toBeNull();
+  });
+
+  it('detects tilt and names the direction from the shorter edge', () => {
+    expect(squareness(topFar)).toBeGreaterThan(3);
+    // The short edge is the FAR one — perspective shrinks distance — so the
+    // phone leans towards it.
+    expect(tiltAdvice(topFar)).toBe('tilt-top');
+    expect(tiltAdvice(leftFar)).toBe('tilt-left');
+  });
+
+  it('is symmetric — a far BOTTOM edge asks for the opposite lean', () => {
+    const bottomFar: Quad = [
+      { x: 100, y: 100 }, { x: 500, y: 100 }, { x: 420, y: 700 }, { x: 180, y: 700 },
+    ];
+    expect(tiltAdvice(bottomFar)).toBe('tilt-bottom');
+  });
+
+  it('leaves a nearly-square quad alone rather than nagging', () => {
+    const nearly: Quad = [
+      { x: 102, y: 100 }, { x: 498, y: 100 }, { x: 500, y: 700 }, { x: 100, y: 700 },
+    ];
+    expect(squareness(nearly)).toBeLessThan(3);
+    expect(tiltAdvice(nearly)).toBeNull();
+  });
+
+  it('⚠️ ASKS FOR SIZE BEFORE SQUARENESS', () => {
+    // Levelling the phone while the document is still half a frame away wastes
+    // the instruction — moving closer changes the geometry anyway, and two
+    // corrections at once is one too many.
+    expect(guidanceFor({ occupancy: 0.3, locked: true, still: true, quad: topFar })).toBe('closer');
+    expect(guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: topFar })).toBe('tilt-top');
+  });
+
+  it('⚠️ WILL NOT FIRE WHILE THE PHONE IS OFF PARALLEL', () => {
+    // A tilted capture loses resolution on the far edge, and that edge is
+    // where a serial number is as likely to sit as anywhere else.
+    expect(mayCapture(guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: topFar }))).toBe(false);
+    expect(mayCapture(guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: square }))).toBe(true);
+  });
+
+  it('skips the check entirely when no quad is supplied', () => {
+    expect(guidanceFor({ occupancy: 0.75, locked: true, still: true })).toBe('ready');
+  });
+
+  it('gives each tilt an instruction naming a real movement', () => {
+    for (const g of ['tilt-top', 'tilt-bottom', 'tilt-left', 'tilt-right'] as const) {
+      expect(guidanceText(g, 'certificate')).toMatch(
+        /^Tilt the (top|bottom|left|right) of the phone down$/,
+      );
+    }
+  });
+
+  it('survives a degenerate quad without emitting NaN', () => {
+    const collapsed: Quad = [
+      { x: 10, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 10 },
+    ];
+    for (const a of cornerAngles(collapsed)) expect(Number.isFinite(a)).toBe(true);
   });
 });

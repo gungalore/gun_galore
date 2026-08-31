@@ -1232,6 +1232,10 @@ export default function DocumentScanner({
               still:
                 (trailRef.current[trailRef.current.length - 1]?.motion ?? 255) <=
                 MOTION_STILL,
+              // Any consistent space works for the angles — they are ratios of
+              // edge directions, not absolute positions — so the visible-frame
+              // quad is fine as-is.
+              quad: q ?? undefined,
             });
             if (next !== guideRef.current) {
               guideRef.current = next;

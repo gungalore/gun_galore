@@ -34,6 +34,22 @@ export const TOO_SMALL = 0.65;
  */
 export const TOO_BIG = 0.85;
 
+/**
+ * How far a corner may sit from square before we say something.
+ *
+ * ⚠️ A CORNER ANGLE MEASURES TILT, NOT ROTATION. Rolling the phone rotates the
+ * quad rigidly and every corner stays at 90 degrees — angles are invariant
+ * under rotation. What opens a corner past 93 is the phone not being PARALLEL
+ * to the document: one edge sits further away, perspective shrinks it, and the
+ * corners at that end close while the near ones open.
+ *
+ * So the operator's thresholds are the right measure and "rotate the phone"
+ * would be the wrong instruction — it changes nothing about the angles. What
+ * fixes it is levelling the phone, and the edge lengths say which way.
+ */
+export const SQUARE_MIN = 87;
+export const SQUARE_MAX = 93;
+
 export type Guidance =
   /** Nothing found. */
   | 'point'
@@ -41,6 +57,11 @@ export type Guidance =
   | 'closer'
   /** Found, crowding the edges. */
   | 'further'
+  /** Found, well sized, but the phone is not parallel to the document. */
+  | 'tilt-top'
+  | 'tilt-bottom'
+  | 'tilt-left'
+  | 'tilt-right'
   /** Found, well sized, still moving. */
   | 'steady'
   /** Found, well sized, held still. Fire. */
@@ -65,6 +86,58 @@ export function occupancy(quad: Quad, frameW: number, frameH: number): number {
   return Math.min(1, Math.abs(a) / 2 / (frameW * frameH));
 }
 
+/**
+ * The four interior angles of the quad, in degrees, TL TR BR BL.
+ *
+ * A rectangle photographed square-on gives four 90s. Perspective pulls them
+ * apart in opposite pairs, which is what makes the deviation a usable measure
+ * of how far off parallel the phone is.
+ */
+export function cornerAngles(q: Quad): [number, number, number, number] {
+  const out: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const c = q[i];
+    const a = q[(i + 3) % 4];
+    const b = q[(i + 1) % 4];
+    const v1 = { x: a.x - c.x, y: a.y - c.y };
+    const v2 = { x: b.x - c.x, y: b.y - c.y };
+    const n1 = Math.hypot(v1.x, v1.y) || 1;
+    const n2 = Math.hypot(v2.x, v2.y) || 1;
+    const cos = Math.min(1, Math.max(-1, (v1.x * v2.x + v1.y * v2.y) / (n1 * n2)));
+    out.push((Math.acos(cos) * 180) / Math.PI);
+  }
+  return out as [number, number, number, number];
+}
+
+/** The worst corner's distance from square, in degrees. */
+export function squareness(q: Quad): number {
+  return Math.max(...cornerAngles(q).map((a) => Math.abs(a - 90)));
+}
+
+/**
+ * Which way the phone needs to lean, from the edge lengths.
+ *
+ * The SHORTER edge is the far one — perspective shrinks whatever is further
+ * away — so the phone should lean towards it. Returns null when the document
+ * is square enough to leave alone.
+ */
+export function tiltAdvice(
+  q: Quad,
+): 'tilt-top' | 'tilt-bottom' | 'tilt-left' | 'tilt-right' | null {
+  if (squareness(q) <= Math.max(SQUARE_MAX - 90, 90 - SQUARE_MIN)) return null;
+  const len = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(b.x - a.x, b.y - a.y);
+  const top = len(q[0], q[1]);
+  const bottom = len(q[3], q[2]);
+  const left = len(q[0], q[3]);
+  const right = len(q[1], q[2]);
+  // Whichever pair disagrees more is the axis that is off.
+  const hGap = Math.abs(top - bottom) / Math.max(top, bottom, 1);
+  const vGap = Math.abs(left - right) / Math.max(left, right, 1);
+  if (hGap >= vGap) return top < bottom ? 'tilt-top' : 'tilt-bottom';
+  return left < right ? 'tilt-left' : 'tilt-right';
+}
+
 export function guidanceFor(input: {
   /** Null when the detector has nothing. */
   occupancy: number | null;
@@ -72,10 +145,20 @@ export function guidanceFor(input: {
   locked: boolean;
   /** Is the phone still? */
   still: boolean;
+  /** The tracked quad, for the squareness check. Omit to skip it. */
+  quad?: Quad;
 }): Guidance {
   if (input.occupancy === null || !input.locked) return 'point';
   if (input.occupancy < TOO_SMALL) return 'closer';
   if (input.occupancy > TOO_BIG) return 'further';
+  // ⚠️ SIZE FIRST, THEN SQUARENESS. Asking somebody to level the phone while
+  // the document is still half a frame away wastes the instruction — moving
+  // closer changes the geometry anyway, and two corrections at once is one
+  // too many.
+  if (input.quad) {
+    const tilt = tiltAdvice(input.quad);
+    if (tilt) return tilt;
+  }
   return input.still ? 'ready' : 'steady';
 }
 
@@ -94,6 +177,14 @@ export function guidanceText(g: Guidance, doc: string): string | null {
       return 'Move closer';
     case 'further':
       return 'Move further away';
+    case 'tilt-top':
+      return 'Tilt the top of the phone down';
+    case 'tilt-bottom':
+      return 'Tilt the bottom of the phone down';
+    case 'tilt-left':
+      return 'Tilt the left of the phone down';
+    case 'tilt-right':
+      return 'Tilt the right of the phone down';
     case 'steady':
       return 'Hold still…';
     case 'ready':
