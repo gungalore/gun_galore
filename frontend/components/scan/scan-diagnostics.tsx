@@ -105,7 +105,8 @@ export default function ScanDiagnostics({
   activeCamera?: string | null;
   lastDetect?:
     | { outcome: 'accepted' | 'declined'; minConfidence: number; ms: number }
-    | { outcome: 'no-answer' | 'not-asked' }
+    | { outcome: 'no-answer'; why: string }
+    | { outcome: 'not-asked' }
     | null;
   trail: readonly FrameSnapshot[];
   lastCapture?: ScanReport['lastCapture'];
@@ -292,7 +293,7 @@ export default function ScanDiagnostics({
           ) : (
             <span style={{ color: BAD }}>
               {lastDetect.outcome === 'no-answer'
-                ? 'no answer — offline, timeout, or unavailable'
+                ? `no answer — ${lastDetect.why}`
                 : 'not asked — no detect prop on this mount'}
             </span>
           )}

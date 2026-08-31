@@ -58,6 +58,17 @@ export interface DetectedDocument {
   ms: number;
 }
 
+/**
+ * Why the last call came back with nothing.
+ *
+ * ⚠️ BECAUSE "no answer" COST A DIAGNOSIS CYCLE. Both phones reported the
+ * model never answering and the cause was a 401 — the wrong guard, and the
+ * token in the wrong place. An HTTP status in the panel would have said so
+ * immediately instead of leaving four possibilities open. Diagnostics only;
+ * nothing branches on it.
+ */
+export let lastDetectFailure: string | null = null;
+
 /** The raw shape the endpoint returns. Kept separate so the mapping is visible. */
 interface DetectResponse {
   found: boolean;
@@ -99,7 +110,14 @@ export function normaliseQuad(
  */
 export async function detectDocument(
   frame: Blob,
-  opts: { token?: string | null; signal?: AbortSignal; timeoutMs?: number } = {},
+  opts: {
+    /** A SCAN_HANDOFF action token — travels as ?t=, per ScanHandoffGuard. */
+    token?: string | null;
+    /** A Clerk session token — travels as a Bearer header. */
+    clerkToken?: string | null;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  } = {},
 ): Promise<DetectedDocument | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 15_000);
@@ -109,21 +127,41 @@ export async function detectDocument(
   try {
     const form = new FormData();
     form.append('frame', frame, 'frame.jpg');
-    const res = await fetch(`${API_URL}/scan/detect`, {
+    // ⚠️ THE ACTION TOKEN GOES IN ?t=, NOT IN A BEARER HEADER. ScanHandoffGuard
+    // tries Authorization as a CLERK session first and only then looks for the
+    // query parameter — so a scan-handoff token sent as a Bearer fails the
+    // Clerk check, finds no ?t=, and 401s. That is what shipped, and it is why
+    // both phones reported "model no answer".
+    //
+    // Bearer is still sent when we have a Clerk session, because the same
+    // guard accepts that on the first branch.
+    const url = new URL(`${API_URL}/scan/detect`);
+    if (opts.token) url.searchParams.set('t', opts.token);
+    const res = await fetch(url.toString(), {
       method: 'POST',
       body: form,
       // FormData sets its own multipart boundary; setting Content-Type by hand
       // produces a boundary-less header and multer parses nothing.
-      headers: opts.token ? { Authorization: `Bearer ${opts.token}` } : {},
+      headers: opts.clerkToken ? { Authorization: `Bearer ${opts.clerkToken}` } : {},
       signal: controller.signal,
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      lastDetectFailure = `HTTP ${res.status}`;
+      return null;
+    }
 
     const body = (await res.json()) as DetectResponse;
-    if (!body.found || !body.quad || !body.width || !body.height) return null;
+    if (!body.found || !body.quad || !body.width || !body.height) {
+      lastDetectFailure = body.found ? 'malformed response' : 'server found nothing';
+      return null;
+    }
 
     const quad = normaliseQuad(body.quad, body.width, body.height);
-    if (!quad) return null;
+    if (!quad) {
+      lastDetectFailure = 'unusable corners';
+      return null;
+    }
+    lastDetectFailure = null;
 
     const minConfidence = body.minConfidence ?? 0;
     return {
@@ -134,7 +172,9 @@ export async function detectDocument(
       maskCoverage: body.maskCoverage ?? 0,
       ms: body.ms ?? 0,
     };
-  } catch {
+  } catch (e) {
+    lastDetectFailure =
+      (e as Error)?.name === 'AbortError' ? 'timed out' : 'network error';
     return null;
   } finally {
     clearTimeout(timeout);

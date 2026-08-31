@@ -30,7 +30,7 @@ import {
   framingPlan,
   readCameraFacts,
 } from '@/lib/scan/framing';
-import { DETECT_ACCEPT } from '@/lib/scan/detect-client';
+import { DETECT_ACCEPT, lastDetectFailure } from '@/lib/scan/detect-client';
 import {
   type CameraOption,
   bestCamera,
@@ -323,7 +323,8 @@ export default function DocumentScanner({
    */
   const detectRef = useRef<
     | { outcome: 'accepted' | 'declined'; minConfidence: number; ms: number }
-    | { outcome: 'no-answer' | 'not-asked' }
+    | { outcome: 'no-answer'; why: string }
+    | { outcome: 'not-asked' }
     | null
   >(null);
   const lastCaptureRef = useRef<ScanReport['lastCapture']>(undefined);
@@ -1227,7 +1228,7 @@ export default function DocumentScanner({
       detectRef.current = !detect
         ? { outcome: 'not-asked' }
         : detected === null
-          ? { outcome: 'no-answer' }
+          ? { outcome: 'no-answer', why: lastDetectFailure ?? 'unknown' }
           : {
               outcome:
                 detected.minConfidence >= DETECT_ACCEPT ? 'accepted' : 'declined',

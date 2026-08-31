@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
-import { ClerkOrTokenGuard } from '../auth/clerk-or-token.guard';
+import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import {
   UPLOAD_INTERCEPTOR_MAX,
   UPLOAD_MIME,
@@ -43,7 +43,19 @@ export class ScanController {
    * screen.
    */
   @Post('detect')
-  @UseGuards(ClerkOrTokenGuard)
+  // ⚠️ ScanHandoffGuard, NOT ClerkOrTokenGuard. This shipped on the wrong one
+  // and every call 401'd, which is why the panel read "model no answer" on
+  // both phones and every capture fell back to the aim box.
+  //
+  // ClerkOrTokenGuard only accepts CHECKOUT-purpose tokens — and worse, it
+  // calls markInvalid() on a wrong-purpose token. Five of those kills the
+  // token for good, so each failed detect was counting down the member's own
+  // scanning session.
+  //
+  // ScanHandoffGuard accepts EITHER a Clerk session OR a SCAN_HANDOFF token,
+  // which is exactly this endpoint's audience: the phone that scanned the QR,
+  // and a signed-in desktop.
+  @UseGuards(ScanHandoffGuard)
   @Throttle({ default: UPLOAD_THROTTLE })
   @UseInterceptors(
     FileInterceptor('frame', { limits: { fileSize: UPLOAD_INTERCEPTOR_MAX } }),
