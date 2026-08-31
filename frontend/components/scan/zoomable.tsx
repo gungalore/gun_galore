@@ -67,6 +67,14 @@ export default function Zoomable({
   /** Told when zoom leaves or returns to 1, so a parent can hide chrome. */
   onZoomChange?: (zoomed: boolean) => void;
 }) {
+  // ⚠️ A VISIBLE BUTTON, NOT ONLY A GESTURE. This shipped as pinch and
+  // double-tap alone, with a caption saying so. Scanbot puts a magnifier
+  // button on the preview that opens a dedicated full-screen view with its own
+  // Close, and that is the better design for one reason: a member who does not
+  // think to pinch a photograph still finds it. A gesture nobody performs is a
+  // feature nobody has. The gestures stay — they are how anyone who DOES pinch
+  // expects it to behave — and the button is how everyone else gets there.
+  const [full, setFull] = useState(false);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
   const [tx, setTx] = useState(0);
@@ -216,23 +224,82 @@ export default function Zoomable({
           WebkitUserSelect: 'none',
         }}
       />
-      {!zoomed && (
-        <span
+      {!zoomed && !full && (
+        <button
+          type="button"
+          onClick={() => setFull(true)}
+          aria-label="Zoom in on the document"
           style={{
             position: 'absolute',
-            left: '50%',
-            bottom: 8,
-            transform: 'translateX(-50%)',
-            padding: '3px 10px',
-            borderRadius: 999,
-            fontSize: 11,
-            color: '#fff',
-            background: 'rgba(0,0,0,0.55)',
-            pointerEvents: 'none',
+            right: 10,
+            bottom: 10,
+            width: 44,
+            height: 44,
+            borderRadius: '50%',
+            border: 'none',
+            background: '#fff',
+            color: '#111',
+            fontSize: 20,
+            lineHeight: '44px',
+            cursor: 'pointer',
           }}
         >
-          Pinch or double-tap to zoom
-        </span>
+          <svg
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            aria-hidden="true"
+            style={{ verticalAlign: 'middle' }}
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.5-3.5M11 8v6M8 11h6" />
+          </svg>
+        </button>
+      )}
+
+      {full && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 70,
+            background: '#000',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              padding: 'max(8px, env(safe-area-inset-top)) 12px 8px',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setFull(false)}
+              style={{
+                minHeight: 44,
+                padding: '0 16px',
+                borderRadius: 8,
+                border: 'none',
+                background: '#fff',
+                color: '#111',
+                fontSize: 15,
+                fontWeight: 600,
+              }}
+            >
+              Close
+            </button>
+          </div>
+          {/* A second instance, so closing returns the small one to 1x rather
+              than to wherever the member left the large one. */}
+          <Zoomable src={src} alt={alt} />
+        </div>
       )}
     </div>
   );

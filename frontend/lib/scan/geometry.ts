@@ -252,6 +252,32 @@ export const SNAP_TOLERANCE = 0.06;
 export function outputSize(
   quad: Quad,
   maxEdge: number,
+  /**
+   * The document's TRUE long-over-short ratio, when it is known.
+   *
+   * ⚠️ THIS IS THE DIFFERENCE BETWEEN STRAIGHT AND CORRECT, AND THEY ARE NOT
+   * THE SAME THING. A homography will straighten any quad into any rectangle
+   * you name — the question it cannot answer is which rectangle. Measuring the
+   * quad's own edges answers it only when the photograph was taken nearly
+   * square-on, because perspective shortens whichever edge is further away.
+   *
+   * Worked on a real capture the operator sent: a certificate photographed at
+   * a strong angle gave a top edge of ~502px against a bottom of ~703, with
+   * sides near 750. Taking the longest of each pair gives 703 x 766 — a ratio
+   * of 1.09 for a page whose true ratio is 1.414. The output would be
+   * geometrically straight and about 30% squashed, and nothing downstream
+   * would notice, because a squashed rectangle is still a rectangle.
+   *
+   * The snap below cannot save that: 1.09 is 23% from A4, far outside any
+   * tolerance narrow enough to be safe.
+   *
+   * We can do better here than a scanner that does not ask. Scanbot has to
+   * recover the aspect from the homography itself — solvable, but it needs the
+   * camera's focal length and is sensitive to corner error. Since the chooser
+   * became mandatory we simply KNOW: an A4 is 297 over 210, and no amount of
+   * perspective changes that. Pass it and the estimate stops being a guess.
+   */
+  knownRatio?: number,
 ): { w: number; h: number; snapped: string | null } {
   const top = dist(quad[0], quad[1]);
   const bottom = dist(quad[3], quad[2]);
@@ -267,6 +293,24 @@ export function outputSize(
   const ratio = long / short;
 
   let snapped: string | null = null;
+
+  if (knownRatio && knownRatio > 0) {
+    // ⚠️ ORIENTATION FROM THE MEASUREMENT, PROPORTION FROM THE KNOWLEDGE. The
+    // shape tells us an A4 is 1.414 long-over-short; only the photograph can
+    // say whether this one is standing up or lying down, and a member may
+    // photograph a page either way.
+    //
+    // The LONGER measured side is kept and the shorter recomputed, so the
+    // correction only ever adds pixels. Shrinking to fit would throw away
+    // resolution we already have on the axis perspective happened to favour.
+    if (w >= h) {
+      h = w / knownRatio;
+    } else {
+      w = h / knownRatio;
+    }
+    return sizeAt(w, h, maxEdge, 'known');
+  }
+
   for (const k of KNOWN_ASPECTS) {
     if (Math.abs(ratio - k.ratio) / k.ratio <= SNAP_TOLERANCE) {
       const target = k.ratio;
@@ -277,8 +321,21 @@ export function outputSize(
     }
   }
 
-  // Cap the long edge. The crop has already thrown the desk away, so the
-  // document itself gets more pixels here than a full-frame photo gives it.
+  return sizeAt(w, h, maxEdge, snapped);
+}
+
+/**
+ * Cap the long edge and round.
+ *
+ * The crop has already thrown the desk away, so the document itself gets more
+ * pixels here than a full-frame photograph gives it.
+ */
+function sizeAt(
+  w: number,
+  h: number,
+  maxEdge: number,
+  snapped: string | null,
+): { w: number; h: number; snapped: string | null } {
   const scale = Math.min(1, maxEdge / Math.max(w, h));
   return {
     w: Math.max(1, Math.round(w * scale)),

@@ -220,9 +220,36 @@ export async function previewUrl(r: Raster, maxEdge = 900): Promise<string> {
   return dst.canvas.toDataURL('image/jpeg', 0.82);
 }
 
+/**
+ * Which cleanup ran. Named for what the member sees, not for the code path.
+ *
+ * ⚠️ 'shadow' IS enhance()'s `flatten`, WHICH HAS ALWAYS BEEN ON. Illumination
+ * division was built here long before anyone asked for a filter menu — what
+ * was missing was never the algorithm, only the choice. Exposing it costs an
+ * option and no new maths.
+ *
+ * The choice matters because flattening is not always wanted: it decides what
+ * counts as paper and lifts everything towards it, which is right for a
+ * shadowed page and wrong when somebody needs the original tones — a
+ * photograph on an ID, a coloured security print, anything where the question
+ * later is "what did this actually look like".
+ */
+export type ScanFilter = 'shadow' | 'none';
+
 export interface ScanResult {
   file: File;
   preview: string;
+  /**
+   * The rectified page BEFORE any cleanup, kept so the filter can be changed
+   * without photographing it again.
+   *
+   * ⚠️ FULL RESOLUTION, SO RELEASE IT. An A4 at scanning resolution is tens of
+   * megabytes as RGBA; holding several is how a phone browser gets killed. The
+   * scanner drops it when the page leaves review.
+   */
+  flat: Raster;
+  /** Which cleanup produced `file` and `preview`. */
+  filter: ScanFilter;
   quad: Quad;
   /** Did we find the edges, or fall back to the frame? */
   /**
@@ -445,7 +472,17 @@ export async function processCapture(
   const cropQuad = opts.manualQuad ? quad : scaleQuad(quad, 1.02);
 
 
-  const { w, h, snapped } = outputSize(cropQuad, OUTPUT_MAX_EDGE);
+  // ⚠️ THE KNOWN ASPECT DECIDES THE OUTPUT SHAPE. opts.expectAspect has been
+  // threaded in here all along and only ever reached the DETECTOR, where it
+  // biases which quad is chosen. It never reached the sizing, so a correctly
+  // detected quad was then rectified into whatever rectangle its own edge
+  // lengths suggested — which under perspective is the wrong one. See the note
+  // on outputSize for the worked example off a real capture.
+  const { w, h, snapped } = outputSize(
+    cropQuad,
+    OUTPUT_MAX_EDGE,
+    opts.expectAspect,
+  );
   const flat = rectify(raster, cropQuad, w, h);
   if (!flat) throw new Error('We could not straighten that one.');
 
@@ -460,6 +497,8 @@ export async function processCapture(
     seed: seedReport,
     file: await toFile(better, opts.name ?? `scan-${Date.now()}.jpg`),
     preview: await previewUrl(better),
+    flat,
+    filter: 'shadow',
     quad,
     source: from,
     report,
@@ -556,4 +595,27 @@ export function verdicts(r: ScanResult): Verdict[] {
     });
   }
   return out;
+}
+
+
+/**
+ * Re-run the cleanup on an already-rectified page.
+ *
+ * ⚠️ FROM `flat`, NEVER FROM THE ENHANCED OUTPUT. Enhancement is lossy in the
+ * direction that matters: flattening has already decided what was paper and
+ * pulled it to white, so a second pass over its own output cannot recover the
+ * tones it removed, and turning the filter OFF by re-processing the ON result
+ * would return something that is neither. The unfiltered page is kept for
+ * exactly this.
+ */
+export async function refilter(
+  flat: Raster,
+  filter: ScanFilter,
+  name: string,
+): Promise<{ file: File; preview: string }> {
+  const out =
+    filter === 'none'
+      ? flat
+      : enhance(flat, { flatten: true, localContrast: true, sharpen: true });
+  return { file: await toFile(out, name), preview: await previewUrl(out) };
 }

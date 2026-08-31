@@ -338,3 +338,77 @@ describe('helpers the live overlay leans on', () => {
     expect(quadDrift(a, b)).toBeCloseTo(7, 6);
   });
 });
+
+describe('⚠️ outputSize with a KNOWN aspect — straight is not the same as correct', () => {
+  // Measured off the operator's own Scanbot crop editor: a certificate
+  // photographed at a strong angle. Top edge ~502px, bottom ~703px, sides
+  // ~746 and ~766. This is the case that motivated the change.
+  const SKEWED: Quad = [
+    { x: 225, y: 693 },
+    { x: 727, y: 680 },
+    { x: 800, y: 1443 },
+    { x: 97, y: 1428 },
+  ];
+  const A4 = 297 / 210;
+
+  it('gets the proportions WRONG from the quad alone, as it must', () => {
+    // Not a defect in the estimator — perspective genuinely destroys this
+    // information. Pinned so nobody "fixes" the estimate and expects it to
+    // work: the fix is to stop estimating.
+    const { w, h } = outputSize(SKEWED, 4000);
+    const ratio = Math.max(w, h) / Math.min(w, h);
+    expect(Math.abs(ratio - A4) / A4).toBeGreaterThan(0.15);
+  });
+
+  it('gets them exactly right when told what the document is', () => {
+    const { w, h, snapped } = outputSize(SKEWED, 4000, A4);
+    expect(Math.max(w, h) / Math.min(w, h)).toBeCloseTo(A4, 2);
+    expect(snapped).toBe('known');
+  });
+
+  it('keeps the longer measured side, so the fix never costs resolution', () => {
+    const plain = outputSize(SKEWED, 4000);
+    const known = outputSize(SKEWED, 4000, A4);
+    expect(Math.max(known.w, known.h)).toBeGreaterThanOrEqual(
+      Math.max(plain.w, plain.h),
+    );
+  });
+
+  it('takes orientation from the photograph, not from the ratio', () => {
+    // A member may photograph a page either way up. The shape says 1.414; only
+    // the quad can say which axis is long.
+    const portrait = outputSize(SKEWED, 4000, A4);
+    expect(portrait.h).toBeGreaterThan(portrait.w);
+
+    // ⚠️ ROTATED, NOT TRANSPOSED. Swapping x and y mirrors the quad, which
+    // reverses its winding — so quad[0]..quad[1] stops being the top edge and
+    // the whole TL/TR/BR/BL convention this function relies on is broken. A
+    // real 90-degree rotation moves the corner that was bottom-left into the
+    // top-left slot, which is why the order is rotated too.
+    const rot = SKEWED.map((p) => ({ x: 1500 - p.y, y: p.x }));
+    const landscape = outputSize(
+      [rot[3], rot[0], rot[1], rot[2]] as Quad,
+      4000,
+      A4,
+    );
+    expect(landscape.w).toBeGreaterThan(landscape.h);
+  });
+
+  it('still respects the maximum edge', () => {
+    const { w, h } = outputSize(SKEWED, 500, A4);
+    expect(Math.max(w, h)).toBeLessThanOrEqual(500);
+    expect(Math.max(w, h) / Math.min(w, h)).toBeCloseTo(A4, 1);
+  });
+
+  it('falls back to snapping when no shape is known', () => {
+    // A near-square-on A4 still snaps the old way, so nothing regresses for
+    // callers that do not pass a ratio.
+    const square: Quad = [
+      { x: 0, y: 0 },
+      { x: 700, y: 0 },
+      { x: 700, y: 985 },
+      { x: 0, y: 985 },
+    ];
+    expect(outputSize(square, 4000).snapped).not.toBeNull();
+  });
+});

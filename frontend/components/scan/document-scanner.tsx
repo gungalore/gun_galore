@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  type ScanFilter,
   ScanResult,
+  refilter,
   frameToGray,
   grabVisible,
   makeScratch,
@@ -446,6 +448,10 @@ export default function DocumentScanner({
     };
   }, []);
   const [shot, setShot] = useState<ScanResult | null>(null);
+  // A ref copy so applyFilter does not have to be rebuilt on every shot —
+  // rebuilding it would re-render Review mid-filter.
+  const shotRef = useRef<ScanResult | null>(null);
+  shotRef.current = shot;
   const [pages, setPages] = useState<File[]>([]);
   const [editing, setEditing] = useState(false);
   editingRef.current = editing;
@@ -460,6 +466,34 @@ export default function DocumentScanner({
    * thing on screen while we work is the thing they were looking at.
    */
   const [recutting, setRecutting] = useState(false);
+  /**
+   * Swap the cleanup on the page already taken.
+   *
+   * ⚠️ RE-DERIVES BOTH THE PREVIEW AND THE FILE. Showing a filtered preview
+   * over an unfiltered file would be the worst kind of bug here — the member
+   * approves what they see and something else is stored, on a document they
+   * may never look at again.
+   */
+  const applyFilter = useCallback(
+    (next: ScanFilter) => {
+      const cur = shotRef.current;
+      if (!cur || recutting) return;
+      setRecutting(true);
+      void (async () => {
+        try {
+          const { file, preview } = await refilter(cur.flat, next, cur.file.name);
+          setShot((prev) =>
+            prev ? { ...prev, file, preview, filter: next } : prev,
+          );
+        } catch {
+          setErr('We could not change the filter on that one.');
+        } finally {
+          setRecutting(false);
+        }
+      })();
+    },
+    [recutting],
+  );
   /**
    * Asking before the exit that would eat what is already scanned.
    *
@@ -1461,10 +1495,19 @@ export default function DocumentScanner({
             // a cover transform. That is the whole point of visibleRect.
             const vis = visibleRect(video);
             const k = vis ? cv.width / vis.sw : 1;
-            drawCorners(
+            const onScreen = shownQuad.map((p) => ({
+              x: p.x * k,
+              y: p.y * k,
+            })) as Quad;
+            drawCorners(g, onScreen, lockRef.current >= 3);
+            // ⚠️ ON THE SMOOTHED QUAD, so the arrow travels with the box
+            // rather than snapping between the two. An indicator that
+            // disagrees with the outline it sits on reads as two overlays.
+            drawGuidance(
               g,
-              shownQuad.map((p) => ({ x: p.x * k, y: p.y * k })) as Quad,
-              lockRef.current >= 3,
+              onScreen,
+              guideRef.current,
+              lockRef.current >= 3 ? TRACK : SEEKING,
             );
           }
         }
@@ -2232,6 +2275,7 @@ export default function DocumentScanner({
             }}
             onUse={() => finish([...pages, shot.file])}
             multi={multi}
+            onFilter={applyFilter}
             onNextDocument={() => {
               setPages((p) => [...p, shot.file]);
               backToChooser();
@@ -2481,6 +2525,109 @@ const TRACK = '#3ddc84';
  * needs no translation.
  */
 const SEEKING = '#f5c518';
+
+/**
+ * The instruction, drawn ON the document rather than under it.
+ *
+ * ⚠️ THE OPERATOR DREW THIS, AND THE DRAWING FIXES A REAL PROBLEM. Guidance
+ * lived in a caption below the viewfinder, which asks the member to look away
+ * from the thing they are aiming at, read a sentence, translate it into a
+ * movement, and look back. Putting "MOVE CLOSER" inside the quad and a TILT
+ * arrow on the edge that is wrong means the instruction is already where the
+ * eye is, and the arrow says which edge without naming it.
+ *
+ * ⚠️ THE ARROW SITS ON THE SHORT EDGE AND POINTS OUTWARD, which is the reading
+ * that needs no explanation: push this edge out. It is also correct.
+ * Perspective shrinks whatever is furthest away, so the SHORT edge is the far
+ * one; levelling the phone towards it brings it closer and lengthens it. The
+ * arrow and the physics agree, which is why no words are needed.
+ */
+function drawGuidance(
+  g: CanvasRenderingContext2D,
+  q: Quad,
+  guide: Guidance,
+  ink: string,
+): void {
+  const cx = (q[0].x + q[1].x + q[2].x + q[3].x) / 4;
+  const cy = (q[0].y + q[1].y + q[2].y + q[3].y) / 4;
+  const span = Math.min(
+    Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y),
+    Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y),
+  );
+
+  g.save();
+  g.globalAlpha = 1;
+  g.fillStyle = ink;
+  g.strokeStyle = ink;
+  // A dark halo, because the document underneath is usually white paper and
+  // green-on-white at this size is unreadable in daylight.
+  g.shadowColor = 'rgba(0,0,0,0.85)';
+  g.shadowBlur = 6;
+
+  if (guide === 'closer' || guide === 'further') {
+    const size = Math.max(13, Math.min(26, span * 0.075));
+    g.font = `700 ${size}px system-ui, -apple-system, sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(guide === 'closer' ? 'MOVE CLOSER' : 'MOVE FURTHER', cx, cy);
+    g.restore();
+    return;
+  }
+
+  // Which edge, and which way is out. Edge midpoints come from the quad, so
+  // the arrow follows a tilted document instead of floating in screen space.
+  const mid = (a: number, b: number) => ({
+    x: (q[a].x + q[b].x) / 2,
+    y: (q[a].y + q[b].y) / 2,
+  });
+  const edge =
+    guide === 'tilt-top'
+      ? { at: mid(0, 1), dx: 0, dy: -1 }
+      : guide === 'tilt-bottom'
+        ? { at: mid(3, 2), dx: 0, dy: 1 }
+        : guide === 'tilt-left'
+          ? { at: mid(0, 3), dx: -1, dy: 0 }
+          : guide === 'tilt-right'
+            ? { at: mid(1, 2), dx: 1, dy: 0 }
+            : null;
+  if (!edge) {
+    g.restore();
+    return;
+  }
+
+  const len = Math.max(26, Math.min(64, span * 0.2));
+  const w = len * 0.32;
+  const head = len * 0.42;
+  const { at, dx, dy } = edge;
+  // Perpendicular, for the arrow's width.
+  const px = -dy;
+  const py = dx;
+  // Start just inside the edge so the head lands outside it.
+  const bx = at.x - dx * len * 0.35;
+  const by = at.y - dy * len * 0.35;
+  const tx = bx + dx * len;
+  const ty = by + dy * len;
+  const shaft = w * 0.42;
+
+  g.beginPath();
+  g.moveTo(tx, ty);
+  g.lineTo(tx - dx * head + px * w, ty - dy * head + py * w);
+  g.lineTo(tx - dx * head + px * shaft, ty - dy * head + py * shaft);
+  g.lineTo(bx + px * shaft, by + py * shaft);
+  g.lineTo(bx - px * shaft, by - py * shaft);
+  g.lineTo(tx - dx * head - px * shaft, ty - dy * head - py * shaft);
+  g.lineTo(tx - dx * head - px * w, ty - dy * head - py * w);
+  g.closePath();
+  g.fill();
+
+  const size = Math.max(11, Math.min(18, span * 0.055));
+  g.font = `700 ${size}px system-ui, -apple-system, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  // Beside the arrow, on the inward side, so it never leaves the frame.
+  g.fillText('TILT', bx - dx * size * 1.4, by - dy * size * 1.4);
+  g.restore();
+}
 
 function drawCorners(g: CanvasRenderingContext2D, q: Quad, locked: boolean) {
   const ink = locked ? TRACK : SEEKING;
@@ -3192,9 +3339,12 @@ function Review({
   onUse,
   onAddAnother,
   onNextDocument,
+  onFilter,
   multi,
 }: {
   shot: ScanResult;
+  /** Change the cleanup. Absent while the flat page is unavailable. */
+  onFilter?: (f: ScanFilter) => void;
   editing: boolean;
   /** A re-cut is in flight — the editor stays up, its buttons go quiet. */
   busy: boolean;
@@ -3262,6 +3412,57 @@ function Review({
           alt="The document as it will be saved"
         />
       </div>
+
+      {/* ⚠️ TWO OPTIONS, NOT SIX. Scanbot offers binarization, antialiased
+          binarization, grayscale, colour and colour-with-shadow-removal, and
+          the operator asked for "a shadow remove or no filter option" — which
+          is the right call for this product. Every extra filter is a decision
+          a member has to make about a statutory document they only want
+          stored, and five of the six answers are worse than the default for
+          that purpose. Binarization in particular destroys a signature's
+          pressure and any security tint, which is exactly the evidence a
+          firearm licence carries. */}
+      {onFilter && (
+        <div
+          role="radiogroup"
+          aria-label="Image cleanup"
+          style={{
+            display: 'flex',
+            gap: 8,
+            padding: '0 16px 8px',
+            justifyContent: 'center',
+          }}
+        >
+          {(['shadow', 'none'] as const).map((f) => {
+            const on = (shot.filter ?? 'shadow') === f;
+            return (
+              <button
+                key={f}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                disabled={busy}
+                onClick={() => onFilter(f)}
+                style={{
+                  minHeight: 40,
+                  padding: '0 14px',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: on ? 700 : 500,
+                  color: on ? '#0f0f0f' : '#fff',
+                  background: on ? 'var(--mark)' : 'transparent',
+                  border: on
+                    ? '1px solid transparent'
+                    : '1px solid rgba(255,255,255,0.35)',
+                  opacity: busy ? 0.5 : 1,
+                }}
+              >
+                {f === 'shadow' ? 'Remove shadows' : 'No filter'}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {notes.length > 0 && (
         <ul
