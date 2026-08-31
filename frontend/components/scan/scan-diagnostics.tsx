@@ -86,6 +86,7 @@ export default function ScanDiagnostics({
   camera,
   cameras,
   activeCamera,
+  onCycleCamera,
   lastDetect,
   live,
   liveReading,
@@ -106,6 +107,7 @@ export default function ScanDiagnostics({
   camera: CameraFacts | null;
   cameras?: Array<{ deviceId: string; label: string; kind: string; minFocusM: number | null }>;
   activeCamera?: string | null;
+  onCycleCamera?: () => void;
   lastDetect?:
     | { outcome: 'accepted' | 'declined'; minConfidence: number; ms: number }
     | { outcome: 'no-answer'; why: string }
@@ -380,6 +382,24 @@ export default function ScanDiagnostics({
         <div style={{ marginTop: 6, opacity: 0.9 }}>
           <span style={{ fontWeight: 700 }}>lenses</span>{' '}
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{cameras.length} rear</span>
+          {onCycleCamera && (
+            <button
+              type="button"
+              onClick={onCycleCamera}
+              style={{
+                marginLeft: 8,
+                padding: '1px 8px',
+                fontSize: 10,
+                fontFamily: 'inherit',
+                borderRadius: 4,
+                border: '1px solid rgba(255,255,255,0.4)',
+                background: 'transparent',
+                color: 'inherit',
+              }}
+            >
+              next lens
+            </button>
+          )}
           {cameras.map((c) => (
             <span key={c.deviceId || c.label} style={{ display: 'block', fontSize: 10, opacity: 0.8 }}>
               {c.label === activeCamera ? '✓ ' : '  '}

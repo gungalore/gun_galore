@@ -326,6 +326,7 @@ export default function DocumentScanner({
   const cameraRef = useRef<CameraFacts | null>(null);
   /** Rear lenses this phone offers, for the picker and the diagnostics panel. */
   const [cameras, setCameras] = useState<CameraOption[]>([]);
+  const camerasRef = useRef<CameraOption[]>([]);
   /** Which lens we actually ended up on, so the panel can say. */
   const activeCamRef = useRef<string | null>(null);
   /**
@@ -351,6 +352,30 @@ export default function DocumentScanner({
   const liveReadingRef = useRef<LiveReading | null>(null);
   /** What we are telling the member right now, derived from the tracked quad. */
   const guideRef = useRef<Guidance>('point');
+  /**
+   * Move to the next rear lens and remember it.
+   *
+   * ⚠️ A DIAGNOSTIC CONTROL, NOT A MEMBER-FACING ONE. The automatic choice
+   * ranks by measured field of view and is right on both test phones, but
+   * "right by measurement" and "right in the hand" are different claims and
+   * only one of them can be checked from here. This is how the operator
+   * checks the other.
+   *
+   * The preference is written before the stream reopens, so the camera effect
+   * picks it up on its own terms rather than this reaching into the stream.
+   */
+  const cycleCamera = useCallback(() => {
+    const rear = camerasRef.current;
+    if (rear.length < 2) return;
+    const at = rear.findIndex((c) => c.label === activeCamRef.current);
+    const next = rear[(at + 1) % rear.length];
+    if (!next?.label) return;
+    writeCameraPref(next.label);
+    // Tear the stream down; the effect keyed on `started` rebuilds it and
+    // matchPref() will now select the one just written.
+    setStarted(false);
+    setTimeout(() => setStarted(true), 60);
+  }, []);
   /** Live quality, measured off the tracked quad rather than predicted. */
   const qualityRef = useRef<{
     occupancy: number;
@@ -640,6 +665,7 @@ export default function DocumentScanner({
           activeCamRef.current =
             cams.find((c) => c.deviceId === track.getSettings?.().deviceId)
               ?.label ?? null;
+          camerasRef.current = cams;
           setCameras(cams);
         } catch {
           // A phone that will not enumerate, or a lens it will list but not
@@ -1800,6 +1826,7 @@ export default function DocumentScanner({
             device={deviceRef.current}
             camera={cameraRef.current}
             cameras={cameras}
+            onCycleCamera={cameras.length > 1 ? cycleCamera : undefined}
             activeCamera={activeCamRef.current}
             lastDetect={detectRef.current}
             live={liveStatusRef.current}

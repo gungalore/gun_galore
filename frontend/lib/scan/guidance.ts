@@ -19,8 +19,25 @@ import type { Quad } from './geometry';
 // as soon as it's in that bracket we ask hold still."
 // ────────────────────────────────────────────────────────────────────
 
-/** Below this fraction of the frame, the document is too small to read well. */
-export const TOO_SMALL = 0.65;
+/**
+ * Below this fraction of the frame, the document is too small to read well.
+ *
+ * ⚠️ 0.45, NOT THE 0.65 FIRST ASKED FOR, AND THE REASON IS GEOMETRY. An A4
+ * page is 0.707 wide-over-tall against a 0.75 frame, so a page whose height
+ * fills the frame already covers 94% of its AREA. 65% area put the document
+ * at roughly 82% of frame height — "almost fills the screen completely", in
+ * the operator's words, and close enough to the edge to sit on the measured
+ * cliff.
+ *
+ * There is a genuine tension here and it is worth stating: framing.ts wants
+ * the document to span 82% of the short axis to reach 300 dpi on A4, which is
+ * about 78% of area — essentially edge to edge. The cliff says a document
+ * approaching the frame edge scores 0/15. Both cannot hold, so the target
+ * gives way: 200 dpi on an A4 is entirely legible, because its type is many
+ * times larger than the serial numbers on a licence card that 300 dpi exists
+ * for. 45% area lands near 200 dpi at 4K with margin to spare.
+ */
+export const TOO_SMALL = 0.45;
 
 /**
  * Above this, it is crowding the frame edge.
@@ -32,7 +49,7 @@ export const TOO_SMALL = 0.65;
  * outside the frame is not a corner the detector can find or the crop can
  * keep.
  */
-export const TOO_BIG = 0.85;
+export const TOO_BIG = 0.7;
 
 /**
  * How far a corner may sit from square before we say something.
@@ -47,10 +64,11 @@ export const TOO_BIG = 0.85;
  * would be the wrong instruction — it changes nothing about the angles. What
  * fixes it is levelling the phone, and the edge lengths say which way.
  */
-// Operator, after seeing a tilted auto-capture: 'the tilt angle needs to be
-// 1 degree to every direction then alert to adjust'.
-export const SQUARE_MIN = 89;
-export const SQUARE_MAX = 91;
+// Asked for 1 degree, relaxed to 2 after holding a phone over a document by
+// hand and finding 1 never settles. A gate nobody can satisfy is a gate that
+// gets switched off.
+export const SQUARE_MIN = 88;
+export const SQUARE_MAX = 92;
 
 export type Guidance =
   /** Nothing found. */

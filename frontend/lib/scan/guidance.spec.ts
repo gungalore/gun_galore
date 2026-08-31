@@ -51,19 +51,19 @@ describe('guidanceFor', () => {
     // ⚠️ AN UNLOCKED QUAD IS NOT ADVICE. A detection that has not held for a
     // few frames is as likely to be a blanket seam, and "move closer" aimed at
     // a seam sends the member the wrong way.
-    expect(guidanceFor({ occupancy: 0.7, locked: false, still: true })).toBe('point');
+    expect(guidanceFor({ occupancy: 0.6, locked: false, still: true })).toBe('point');
   });
 
   it('⚠️ SAYS MOVE CLOSER BELOW THE BRACKET AND FURTHER ABOVE IT', () => {
-    expect(guidanceFor({ occupancy: 0.4, locked: true, still: true })).toBe('closer');
+    expect(guidanceFor({ occupancy: 0.2, locked: true, still: true })).toBe('closer');
     expect(guidanceFor({ occupancy: TOO_SMALL - 0.01, locked: true, still: true })).toBe('closer');
     expect(guidanceFor({ occupancy: TOO_BIG + 0.01, locked: true, still: true })).toBe('further');
-    expect(guidanceFor({ occupancy: 0.95, locked: true, still: true })).toBe('further');
+    expect(guidanceFor({ occupancy: 0.9, locked: true, still: true })).toBe('further');
   });
 
   it('asks for stillness inside the bracket, then fires', () => {
-    expect(guidanceFor({ occupancy: 0.75, locked: true, still: false })).toBe('steady');
-    expect(guidanceFor({ occupancy: 0.75, locked: true, still: true })).toBe('ready');
+    expect(guidanceFor({ occupancy: 0.6, locked: true, still: false })).toBe('steady');
+    expect(guidanceFor({ occupancy: 0.6, locked: true, still: true })).toBe('ready');
   });
 
   it('⚠️ ONLY "ready" MAY FIRE THE SHUTTER', () => {
@@ -146,16 +146,16 @@ describe('squareness — the operator\'s 87/93 corner check', () => {
       guidanceFor({ occupancy: 0.3, locked: true, still: true, quad: topFar }),
     ).toBe('closer');
     expect(
-      guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: topFar }),
+      guidanceFor({ occupancy: 0.6, locked: true, still: true, quad: topFar }),
     ).toBe('tilt-top');
   });
 
   it('will not fire while the phone is off parallel', () => {
     expect(
-      mayCapture(guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: topFar })),
+      mayCapture(guidanceFor({ occupancy: 0.6, locked: true, still: true, quad: topFar })),
     ).toBe(false);
     expect(
-      mayCapture(guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: square })),
+      mayCapture(guidanceFor({ occupancy: 0.6, locked: true, still: true, quad: square })),
     ).toBe(true);
   });
 
@@ -224,19 +224,19 @@ describe("squareness — the operator's 87/93 corner check", () => {
     // Levelling the phone while the document is still half a frame away wastes
     // the instruction — moving closer changes the geometry anyway, and two
     // corrections at once is one too many.
-    expect(guidanceFor({ occupancy: 0.3, locked: true, still: true, quad: topFar })).toBe('closer');
-    expect(guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: topFar })).toBe('tilt-top');
+    expect(guidanceFor({ occupancy: 0.2, locked: true, still: true, quad: topFar })).toBe('closer');
+    expect(guidanceFor({ occupancy: 0.6, locked: true, still: true, quad: topFar })).toBe('tilt-top');
   });
 
   it('⚠️ WILL NOT FIRE WHILE THE PHONE IS OFF PARALLEL', () => {
     // A tilted capture loses resolution on the far edge, and that edge is
     // where a serial number is as likely to sit as anywhere else.
-    expect(mayCapture(guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: topFar }))).toBe(false);
-    expect(mayCapture(guidanceFor({ occupancy: 0.75, locked: true, still: true, quad: square }))).toBe(true);
+    expect(mayCapture(guidanceFor({ occupancy: 0.6, locked: true, still: true, quad: topFar }))).toBe(false);
+    expect(mayCapture(guidanceFor({ occupancy: 0.6, locked: true, still: true, quad: square }))).toBe(true);
   });
 
   it('skips the check entirely when no quad is supplied', () => {
-    expect(guidanceFor({ occupancy: 0.75, locked: true, still: true })).toBe('ready');
+    expect(guidanceFor({ occupancy: 0.6, locked: true, still: true })).toBe('ready');
   });
 
   it('gives each tilt an instruction naming a real movement', () => {
