@@ -258,9 +258,18 @@ export default clerkMiddleware(async (auth, request) => {
   }
 });
 
+// ⚠️ wasm AND ort ARE IN THE EXCLUSION LIST FOR A REASON. Without them the
+// on-device model's runtime and weights go through Clerk's middleware, which
+// 307s an unauthenticated request to sign-in. ORT then receives an HTML
+// redirect body where it expected a binary and fails with
+// "expected magic word 00 61 73 6d, found 3c 21 44 4f" — that is `<!DO`, the
+// first bytes of the sign-in page. Both phones reported the detector as
+// unavailable and it read as a broken model rather than as a 307.
+//
+// Any future binary asset served from public/ needs its extension here too.
 export const config = {
   matcher: [
-    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|webmanifest)).*)',
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|webmanifest|wasm|ort)).*)',
     '/(api|trpc)(.*)',
   ],
 };

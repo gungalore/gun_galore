@@ -32,6 +32,12 @@ import {
 } from '@/lib/scan/framing';
 import { DETECT_ACCEPT, lastDetectFailure } from '@/lib/scan/detect-client';
 import {
+  type Guidance,
+  guidanceFor,
+  guidanceText,
+  occupancy,
+} from '@/lib/scan/guidance';
+import {
   LiveDetector,
   type LiveReading,
   type LiveStatus,
@@ -338,6 +344,9 @@ export default function DocumentScanner({
   const liveRef = useRef<LiveDetector | null>(null);
   const liveStatusRef = useRef<LiveStatus>({ state: 'loading' });
   const liveReadingRef = useRef<LiveReading | null>(null);
+  /** What we are telling the member right now, derived from the tracked quad. */
+  const guideRef = useRef<Guidance>('point');
+  const [guide, setGuide] = useState<Guidance>('point');
 
   const detectRef = useRef<
     | { outcome: 'accepted' | 'declined'; minConfidence: number; ms: number }
@@ -1185,6 +1194,36 @@ export default function DocumentScanner({
           // Drawn only once TWO consecutive detections have agreed. A single
           // unconfirmed candidate stays invisible — honest "still looking"
           // beats markers that flicker somewhere wrong for one frame.
+          // ⚠️ THE GUIDANCE COMES FROM THE QUAD NOW, NOT FROM A BOX.
+          // The aim box was the instruction and the member did the measuring.
+          // The detector finds the document itself, so we measure the thing we
+          // actually cared about — how much of the frame it fills — and say the
+          // one sentence that follows. Under 65% move closer, over 85% move
+          // further, in between hold still.
+          {
+            const vr = visibleRect(video);
+            const kx = vr ? cv.width / vr.sw : 1;
+            const ky = vr ? cv.height / vr.sh : 1;
+            const occ =
+              q && lockRef.current >= 2 && cv.width > 0
+                ? occupancy(
+                    q.map((p) => ({ x: p.x * kx, y: p.y * ky })) as Quad,
+                    cv.width,
+                    cv.height,
+                  )
+                : null;
+            const next = guidanceFor({
+              occupancy: occ,
+              locked: lockRef.current >= 2,
+              still:
+                (trailRef.current[trailRef.current.length - 1]?.motion ?? 255) <=
+                MOTION_STILL,
+            });
+            if (next !== guideRef.current) {
+              guideRef.current = next;
+              setGuide(next);
+            }
+          }
           if (q && lockRef.current >= 2) {
             // The quad is already in VISIBLE-frame pixels, and the canvas
             // covers exactly that region — so this is one uniform scale, not
@@ -1735,18 +1774,6 @@ export default function DocumentScanner({
                 readable. Steadiness is not in it, deliberately — that is the
                 hold ring's job, and a frame flickering with every tremor would
                 be noise rather than signal. */}
-            {/* ⚠️ THE AIM BOX STANDS DOWN ONCE THE MODEL HAS A LOCK. Two
-                boxes on screen — a fixed rectangle to line up against AND a
-                quad following the document — is a contradiction: the member
-                cannot satisfy both, and the tracked one is the truthful one.
-                It comes back the moment tracking is lost, so a phone where the
-                model cannot run behaves exactly as before. */}
-            <AimFrame
-              hidden={lockRef.current >= 2 && quadRef.current !== null}
-              shape={shape}
-              locked={blocker === null || blocker === 'steady'}
-              alwaysGreen={staticAim}
-            />
             <ExposureAlert glare={glare} luma={luma} torchOn={torchOn} />
         {phase === 'live' && (
           <p
@@ -1792,7 +1819,14 @@ export default function DocumentScanner({
                 background: 'rgba(0,0,0,0.70)',
               }}
             >
-              {auto
+              {/* ⚠️ THE TRACKED QUAD SPEAKS FIRST. Once the detector holds a
+                  document, what the member needs to hear is derived from it —
+                  how much of the frame it fills — not from the exposure gates,
+                  which are about a box that no longer exists. The gate hints
+                  stay underneath for the case where nothing is found at all. */}
+              {guide !== 'point'
+                ? guidanceText(guide, SHAPES[shape].label.toLowerCase())
+                : auto
                 ? autoHint(blocker, SHAPES[shape].label.toLowerCase())
                 : exposureProblem(glare, luma, torchOn)
                   ? 'Fix the lighting above first.'
