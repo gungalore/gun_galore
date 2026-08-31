@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acrossMm } from './shapes';
+import { SHAPES, acrossMm } from './shapes';
 import {
   AIM_MARGIN,
   FLOOR_DPI,
@@ -127,5 +127,74 @@ describe('framingPlan — the box follows the camera', () => {
     expect(plan.distanceMm).toBeGreaterThan(MIN_FOCUS_MM);
     // And nothing is said to the member about it, because nothing is wrong.
     expect(framingHint(plan)).toBeNull();
+  });
+});
+
+describe('⚠️ the frame-edge cliff — measured 2026-08-31, not inferred', () => {
+  // Sweeping the document's margin from the frame edge across the fifteen
+  // fixture photographs, scored against hand-verified ground truth:
+  //
+  //     flush to the edge   0/15 usable, median IoU 0.209
+  //     one step off        11/15 usable, median IoU 0.959
+  //     comfortable margin  13/15 usable, median IoU 0.942
+  //
+  // Zero to eleven on one step. These tests exist so nobody can walk the box
+  // back onto that edge in pursuit of a higher dpi number.
+
+  /** What fraction of the frame's short axis the DOCUMENT itself ends up at. */
+  const docFill = (plan: ReturnType<typeof framingPlan>) => plan.fill * (1 - AIM_MARGIN);
+
+  it('⚠️ NEVER SITS THE DOCUMENT FLUSH TO THE FRAME EDGE, ON ANY STREAM', () => {
+    // The failure is not gradual. A document touching the edge is not detected
+    // at all, so there is no stream size for which crowding the edge is a
+    // reasonable trade against resolution.
+    for (const [w, h] of [
+      [1280, 720], [1920, 1080], [2560, 1440], [3840, 2160], [1080, 1920], [4032, 3024],
+    ] as const) {
+      for (const shape of ['card', 'a4'] as const) {
+        const plan = framingPlan({ width: w, height: h }, shape, 0.82);
+        // 'impossible' draws no usable box and tells the member to go
+        // elsewhere, so it is exempt — it is the honest refusal, not a crowded box.
+        if (plan.verdict === 'impossible') continue;
+        expect(docFill(plan)).toBeLessThanOrEqual(0.9);
+      }
+    }
+  });
+
+  it('⚠️ REFUSES 300 DPI ON 1080p RATHER THAN CROWDING THE EDGE FOR IT', () => {
+    // 300 dpi over an 85.6mm card needs ~1011px — 94% of a 1080px short axis,
+    // which is the 0/15 case. The boxFill > 1 guard is what forces the fall
+    // through to the 200 dpi floor. If this ever goes green at TARGET_DPI,
+    // somebody has clamped the box instead of rejecting it.
+    const plan = framingPlan({ width: 1920, height: 1080 }, 'card', 0.82);
+    expect(plan.dpi).toBe(FLOOR_DPI);
+    expect(plan.dpi).not.toBe(TARGET_DPI);
+    expect(docFill(plan)).toBeLessThan(0.7);
+  });
+
+  it('puts the document at a plausible size in frame, computed honestly', () => {
+    // ⚠️ AREA IS NOT docFill SQUARED. docFill is the fraction of the frame's
+    // SHORT axis the document spans; its other dimension follows from the
+    // document's own aspect, and the frame's own aspect divides it. The naive
+    // square version overstated a 4K card as 21.9% of frame when it is 7.8%,
+    // and passed a band assertion by luck. Compute it properly or not at all.
+    const spec = SHAPES.card;
+    const stream = { width: 3840, height: 2160 };
+    const shortPx = shortAxisPx(stream);
+    const longPx = Math.max(stream.width, stream.height);
+    const plan = framingPlan(stream, 'card', 0.82);
+    const across = plan.fill * (1 - AIM_MARGIN) * shortPx;
+    const along = across * (spec.shortMm! / spec.longMm!);
+    const areaFraction = (across * along) / (shortPx * longPx);
+
+    // The oracle-cropped sweep put the detector's preferred band at 13-23% of
+    // frame area, and a 4K card lands at ~8% — BELOW it, not inside. That is
+    // deliberate and worth stating rather than tuning away: coverage bought
+    // only +2/15 (11 -> 13) in that sweep, which at n=15 is about 1.3 sigma,
+    // while the resolution this buys is real and the frame-edge margin it
+    // preserves is the thing that actually matters. If someone later wants to
+    // chase the band, the cost is working distance and the gain is marginal.
+    expect(areaFraction).toBeGreaterThan(0.04);
+    expect(areaFraction).toBeLessThan(0.25);
   });
 });

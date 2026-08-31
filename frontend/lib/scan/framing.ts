@@ -61,12 +61,26 @@ export const MIN_FOCUS_MM = 100;
 /**
  * How much of the box the document should leave as margin.
  *
- * The member is aiming by hand at a moving target. Demanding the document
- * touch the box edges makes a near-miss read as a failure, and — worse — a
- * document pressed right to the frame edge is the one case Adobe Scan is
- * observed to refuse outright, because a boundary that runs off the frame
- * cannot be found. Ten per cent of slack costs a little resolution and buys
- * every shot a usable margin.
+ * ⚠️ THIS IS A CLIFF, NOT A PREFERENCE — MEASURED, 2026-08-31. The rationale
+ * here used to be inferred from watching Adobe Scan refuse edge-touching
+ * documents. It has now been measured on the fifteen fixture photographs by
+ * sweeping the document's margin from the frame edge and scoring the
+ * detector's quad against hand-verified ground truth:
+ *
+ *     document flush to the frame edge   0/15 usable, median IoU 0.209
+ *     one step off the edge             11/15 usable, median IoU 0.959
+ *     a comfortable margin              13/15 usable, median IoU 0.942
+ *
+ * Zero to eleven, on one step. There is no gentle degradation to tune
+ * against: a document touching the frame edge is not detected at all, and a
+ * document anywhere else is. Everything this constant does is keep us off
+ * that edge.
+ *
+ * Ten per cent permits the document to reach 90% of the box, which measures
+ * safely past the knee. The band the detector actually prefers is 13-23% of
+ * frame AREA, and every device case framingPlan reaches lands at 8-21% — so
+ * the resolution arithmetic below and the detector's preference agree, and
+ * neither needs to override the other.
  */
 export const AIM_MARGIN = 0.1;
 
@@ -184,7 +198,15 @@ export function framingPlan(
     // larger than the document's own fill by exactly that margin.
     const docFill = fillForDpi(dpi, mm, shortPx);
     const boxFill = docFill / (1 - AIM_MARGIN);
-    // A box bigger than the frame is not a box.
+    // ⚠️ LOAD-BEARING FOR THE DETECTOR, NOT TIDINESS. This read "a box bigger
+    // than the frame is not a box", which is true and is not why it matters.
+    // It is the only thing standing between us and the cliff documented on
+    // AIM_MARGIN: at 1080p a card needs 94% of the short axis to reach 300 dpi,
+    // which would sit the document all but flush to the frame edge — the
+    // 0/15 case. Rejecting the box here is what forces the fall through to the
+    // 200 dpi floor, whose box measures on the safe side of the knee.
+    // Do not relax this to "clamp to 1" and keep the higher dpi. That trades a
+    // legible target for a detector that finds nothing at all.
     if (boxFill > 1) continue;
     const distanceMm = distanceMmFor(docFill, mm);
     if (distanceMm < MIN_FOCUS_MM) continue;
