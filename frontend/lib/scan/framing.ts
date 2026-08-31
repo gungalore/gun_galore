@@ -1,5 +1,6 @@
 import type { DocShape } from './shapes';
-import { acrossMm } from './shapes';
+import { TOO_SMALL } from './guidance';
+import { acrossMm, guideAspect } from './shapes';
 
 // ────────────────────────────────────────────────────────────────────
 // Framing — how big the aim box has to be, given what the camera
@@ -146,6 +147,41 @@ export function distanceMmFor(fill: number, mm: number): number {
   return (mm / fill) * 1.85;
 }
 
+/**
+ * The smallest fill at which the DETECTOR can still find the document.
+ *
+ * ⚠️ RESOLUTION IS NOT THE ONLY CONSTRAINT, AND FOR A SMALL DOCUMENT IT IS NOT
+ * THE BINDING ONE. distanceMmFor reduces to shortPx * 25.4 / dpi * 1.85 —
+ * independent of the document's size — so "stand where 200 dpi happens" gives
+ * the same 71 cm for an A4 and for an ID book. At 71 cm an A4 covers a third
+ * of the frame and an ID book covers five per cent, and five per cent is well
+ * under the detector's floor. The operator got told to hold a passport-sized
+ * booklet at arm's length and the box then refused to fire because it could
+ * not see it.
+ *
+ * So the box must satisfy BOTH: enough pixels to read, and enough frame to be
+ * found. This converts guidance.ts's TOO_SMALL — which is an AREA fraction —
+ * into the short-axis fill that produces it, for this document's aspect in
+ * this frame's aspect. The two constants have to agree or the member is given
+ * contradictory instructions by two parts of the same screen.
+ */
+export function fillForDetection(
+  shape: DocShape,
+  stream: { width: number; height: number },
+): number {
+  const a = guideAspect(shape);
+  if (!a) return 0;
+  const shortPx = Math.min(stream.width, stream.height);
+  const longPx = Math.max(stream.width, stream.height);
+  if (!(shortPx > 0) || !(longPx > 0)) return 0;
+  // A document spanning fill f of the short axis covers
+  //   area = f^2 * shortPx / (aspect * longPx)
+  // of the frame, where aspect is the document's own width-over-height.
+  const k = shortPx / (a * longPx);
+  if (!(k > 0)) return 0;
+  return Math.min(1, Math.sqrt(TOO_SMALL / k));
+}
+
 /** What the framing arithmetic concluded, in order of how good the news is. */
 export type FramingVerdict =
   /** 300 dpi at a distance the camera can focus. */
@@ -205,7 +241,15 @@ export function framingPlan(
   ] as const) {
     // The document has to fit inside the box with margin, so the BOX is
     // larger than the document's own fill by exactly that margin.
-    const docFill = fillForDpi(dpi, mm, shortPx);
+    // ⚠️ THE LARGER OF THE TWO DEMANDS, NEVER JUST THE RESOLUTION ONE. Enough
+    // pixels to READ and enough frame to be FOUND are separate requirements,
+    // and for a small document the second one binds. Taking the resolution
+    // fill alone is what put an ID book at 5% of frame and 71cm away, where
+    // the detector's own floor is 15%.
+    const docFill = Math.max(
+      fillForDpi(dpi, mm, shortPx),
+      fillForDetection(shape, stream),
+    );
     const boxFill = docFill / (1 - AIM_MARGIN);
     // ⚠️ LOAD-BEARING FOR THE DETECTOR, NOT TIDINESS. This read "a box bigger
     // than the frame is not a box", which is true and is not why it matters.
@@ -219,7 +263,14 @@ export function framingPlan(
     if (boxFill > 1) continue;
     const distanceMm = distanceMmFor(docFill, mm);
     if (distanceMm < MIN_FOCUS_MM) continue;
-    return { fill: boxFill, dpi, distanceMm, verdict };
+    // ⚠️ REPORT WHAT THE BOX ACHIEVES, NOT WHAT IT WAS AIMING FOR. Once the
+    // detection floor can raise docFill above the resolution demand, the two
+    // diverge — a card sized to be findable reaches ~500 dpi while the loop
+    // was only asking for 200. Reporting the target would put "200dpi" in the
+    // readout beside a box that delivers two and a half times that, and the
+    // dpi line is the number used to judge whether a scan is worth keeping.
+    const achieved = dpiOf(docFill * shortPx, mm);
+    return { fill: boxFill, dpi: Math.round(achieved), distanceMm, verdict };
   }
 
   // Nothing worked: the stream is too small to render this document legibly

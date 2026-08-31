@@ -40,19 +40,43 @@ describe('dpiOf — the measured resolution, not a predicted one', () => {
 });
 
 describe('framingPlan — the box follows the camera', () => {
-  it('⚠️ ASKS FOR A SMALLER BOX WHEN THE CAMERA GIVES MORE PIXELS', () => {
-    // The whole point. More resolution means the document can sit further
-    // away and still be legible, and further away is where focus lives.
+  it('⚠️ STOPS SHRINKING THE BOX ONCE THE DETECTOR BECOMES THE CONSTRAINT', () => {
+    // This test USED to assert the opposite — that more pixels always buy a
+    // smaller box and more working distance — and that was right while
+    // resolution was the only demand being made.
+    //
+    // It is not any more. More resolution cannot make a document easier to
+    // FIND, so below a certain size the detection floor takes over and the box
+    // stops shrinking however good the camera gets. That is the fix for the
+    // operator's "never held the phone 710mm away from the ID": sizing a card
+    // or an ID book for 200 dpi alone puts it at ~5% of frame and arm's
+    // length, where nothing can detect it.
     const hd = framingPlan({ width: 1920, height: 1080 }, 'card', 0.82);
     const uhd = framingPlan({ width: 3840, height: 2160 }, 'card', 0.82);
-    expect(uhd.fill).toBeLessThan(hd.fill);
-    expect(uhd.distanceMm).toBeGreaterThan(hd.distanceMm);
+    // Never LARGER on the better camera...
+    expect(uhd.fill).toBeLessThanOrEqual(hd.fill + 1e-9);
+    // ...and the extra pixels go into resolution rather than distance.
+    expect(uhd.dpi).toBeGreaterThan(hd.dpi);
+    expect(uhd.distanceMm).toBeLessThan(900);
+  });
+
+  it('⚠️ A4 IS STILL RESOLUTION-BOUND, so nothing changed for the big case', () => {
+    // fillForDetection must only bind where it is genuinely the constraint. An
+    // A4 needs 55% of the short axis for 200 dpi and only 38% to be found, so
+    // its box and distance are untouched by the floor.
+    const plan = framingPlan({ width: 3840, height: 2160 }, 'a4', 0.82);
+    expect(plan.dpi).toBeGreaterThanOrEqual(FLOOR_DPI);
+    expect(plan.dpi).toBeLessThan(260);
   });
 
   it('reaches full scanning quality on a 4K stream', () => {
     const plan = framingPlan({ width: 3840, height: 2160 }, 'card', 0.82);
     expect(plan.verdict).toBe('good');
-    expect(plan.dpi).toBe(TARGET_DPI);
+    // ⚠️ COMFORTABLY ABOVE THE TARGET, NOT EQUAL TO IT, AND THAT IS THE POINT
+    // OF fillForDetection. A card sized only for 200 dpi covers 5% of the
+    // frame and the detector cannot find it; sized to be FINDABLE it lands
+    // near 500 dpi as a side effect. plan.dpi reports what the box achieves.
+    expect(plan.dpi).toBeGreaterThanOrEqual(TARGET_DPI);
     expect(plan.distanceMm).toBeGreaterThan(MIN_FOCUS_MM);
   });
 
@@ -65,7 +89,7 @@ describe('framingPlan — the box follows the camera', () => {
     // bar outright instead of quietly conceding it.
     const plan = framingPlan({ width: 1920, height: 1080 }, 'card', 0.82);
     expect(plan.verdict).toBe('good');
-    expect(plan.dpi).toBe(TARGET_DPI);
+    expect(plan.dpi).toBeGreaterThanOrEqual(TARGET_DPI);
     expect(plan.fill).toBeLessThanOrEqual(1);
     expect(plan.distanceMm).toBeGreaterThan(MIN_FOCUS_MM);
   });
@@ -89,7 +113,8 @@ describe('framingPlan — the box follows the camera', () => {
     // The box is larger than the document's own fill by exactly the margin,
     // so a document filling the box lands at the dpi we planned for.
     const docFill = plan.fill * (1 - AIM_MARGIN);
-    expect(dpiOf(docFill * 2160, CARD_MM)).toBeCloseTo(plan.dpi, 3);
+    // Rounded to a whole dpi for display, so compare loosely.
+    expect(dpiOf(docFill * 2160, CARD_MM)).toBeCloseTo(plan.dpi, 0);
   });
 
   it('plans a real box for every shape, none of them fixed constants', () => {
