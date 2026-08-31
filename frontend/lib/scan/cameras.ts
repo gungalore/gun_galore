@@ -32,11 +32,26 @@
 // attempts at this "find" only one camera. Grant, then enumerate.
 // ────────────────────────────────────────────────────────────────────
 
+import { FOV_SAMPLE, type FovSample, rankByFov } from './fov';
+
 /** A rear-facing candidate we could scan with. */
 export interface CameraOption {
   deviceId: string;
   label: string;
-  /** Our guess at the physical lens, from the label alone. */
+  /**
+   * A grey sample of what this lens sees, for the field-of-view comparison.
+   *
+   * ⚠️ THIS, NOT THE LABEL, IS HOW LENSES ARE RANKED. See fov.ts.
+   */
+  sample?: FovSample;
+  /**
+   * A hint from the label, for the diagnostics panel only.
+   *
+   * ⚠️ NEVER USED TO CHOOSE. iOS names its lenses and Android does not, so a
+   * label-driven selector would be two different features wearing one name —
+   * and it breaks the day a vendor renames a camera, silently, with nothing
+   * erroring. It is displayed and ignored.
+   */
   kind: 'ultra-wide' | 'wide' | 'telephoto' | 'unknown';
   /**
    * Minimum focus distance in metres, if the browser will say.
@@ -81,42 +96,29 @@ export function isRearLabel(label: string): boolean {
 }
 
 /**
- * Rank the candidates, best first.
+ * Rank the candidates widest-first, from what they can see.
  *
- * The order of preference, and why:
+ * ⚠️ MEASURED, NOT NAMED. The previous version read the label — matching
+ * "Back Ultra Wide Camera" on iOS and falling back to Chrome's focusDistance
+ * on Android. That was two different mechanisms wearing one feature's name,
+ * which breaks the operator's rule that nothing ships for one platform and
+ * not the other, and it was hostage to a string: rename a lens and the
+ * scanner quietly reverts to the wrong one with nothing to show for it.
  *
- *  1. A measured `minFocusM`, smallest first. This is the actual property we
- *     care about — how close the lens will focus — reported by the browser
- *     rather than inferred. Where Chrome gives it, nothing else should argue.
- *  2. A label saying "ultra wide". On iOS this is all we get, and it is
- *     reliable: Apple names the lens.
- *  3. Anything not telephoto. A telephoto's minimum focus distance is the
- *     worst of the set and it is never the right choice for a document at
- *     arm's length.
+ * Field of view is measurable with canvas frame grabs alone, which both
+ * platforms have, and the widest lens is the closest-focusing one — that is
+ * the physical shortcut the whole approach rests on. See fov.ts.
  *
- * ⚠️ STABLE, NOT CLEVER. Equal candidates keep their enumeration order, so a
- * phone that reports nothing useful behaves exactly as it does today rather
- * than shuffling between sessions. A scanner that picks a different lens each
- * time it opens is worse than one that always picks the wrong lens.
+ * Candidates with no sample keep their enumeration order behind those that
+ * have one: an unmeasured lens is not a better guess than the browser's.
  */
 export function rankCameras(options: readonly CameraOption[]): CameraOption[] {
-  return [...options]
-    .map((o, i) => ({ o, i }))
-    .sort((a, b) => {
-      const am = a.o.minFocusM;
-      const bm = b.o.minFocusM;
-      if (am !== null && bm !== null && am !== bm) return am - bm;
-      if (am !== null && bm === null) return -1;
-      if (am === null && bm !== null) return 1;
-
-      const rank = (k: CameraOption['kind']) =>
-        k === 'ultra-wide' ? 0 : k === 'wide' ? 1 : k === 'unknown' ? 2 : 3;
-      const r = rank(a.o.kind) - rank(b.o.kind);
-      if (r !== 0) return r;
-
-      return a.i - b.i;
-    })
-    .map((x) => x.o);
+  const measured = options.filter((o) => o.sample);
+  const rest = options.filter((o) => !o.sample);
+  const ranked = rankByFov(
+    measured.map((o) => ({ o, sample: o.sample as FovSample })),
+  ).map((x) => x.o);
+  return [...ranked, ...rest];
 }
 
 /**
@@ -174,41 +176,65 @@ export function matchPref(
 
 // ────────────────────────────────────────────────────────────────────
 // The runtime probe
+//
+// ⚠️ SILENT. Each candidate is opened, one frame is read into a canvas, and
+// the track is stopped — nothing is ever attached to a visible element. The
+// OS privacy indicator still flickers; that is enforced below the browser and
+// is not something to hide.
+//
+// ⚠️ AND IT RUNS AFTER THE GRANT. enumerateDevices() returns empty labels and
+// empty deviceIds beforehand, which is why most attempts at this find one
+// camera on a phone that has three.
 // ────────────────────────────────────────────────────────────────────
 
-type CapsWithFocus = MediaTrackCapabilities & {
-  focusDistance?: { min?: number; max?: number };
-};
-
-function focusMinOf(track: MediaStreamTrack | null | undefined): number | null {
+/** Read one frame from a live track into a square grey sample. */
+async function sampleTrack(stream: MediaStream): Promise<FovSample | null> {
+  const video = document.createElement('video');
+  video.playsInline = true;
+  video.muted = true;
+  video.srcObject = stream;
   try {
-    const caps = track?.getCapabilities?.() as CapsWithFocus | undefined;
-    const m = caps?.focusDistance?.min;
-    return typeof m === 'number' && Number.isFinite(m) ? m : null;
+    await video.play();
+    // One frame is enough, but the first is often black while the sensor
+    // settles — wait for a couple of paints rather than grabbing immediately.
+    await new Promise((r) => setTimeout(r, 250));
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    if (!w || !h) return null;
+
+    // The CENTRE SQUARE, not the whole frame: two lenses have different
+    // aspect ratios, and comparing different shapes would measure the crop
+    // rather than the field of view.
+    const side = Math.min(w, h);
+    const cv = document.createElement('canvas');
+    cv.width = FOV_SAMPLE;
+    cv.height = FOV_SAMPLE;
+    const g = cv.getContext('2d', { willReadFrequently: true });
+    if (!g) return null;
+    g.drawImage(video, (w - side) / 2, (h - side) / 2, side, side, 0, 0, FOV_SAMPLE, FOV_SAMPLE);
+    const px = g.getImageData(0, 0, FOV_SAMPLE, FOV_SAMPLE).data;
+    const data = new Uint8Array(FOV_SAMPLE * FOV_SAMPLE);
+    for (let i = 0, j = 0; i < data.length; i++, j += 4) {
+      data[i] = (px[j] * 299 + px[j + 1] * 587 + px[j + 2] * 114) / 1000;
+    }
+    return { data, size: FOV_SAMPLE };
   } catch {
     return null;
+  } finally {
+    video.srcObject = null;
   }
 }
 
 /**
- * List the rear cameras, with a focus distance for any that will report one.
+ * List the rear cameras, sampling each so they can be ranked by field of view.
  *
- * ⚠️ CALL THIS ONLY AFTER A getUserMedia GRANT EXISTS. enumerateDevices()
- * returns entries with EMPTY labels and empty deviceIds beforehand — that is
- * the single most common reason an attempt at this appears to find one camera
- * on a phone that has three.
- *
- * `openToProbe` opens each candidate briefly to read its capabilities. That is
- * the only way to get focusDistance for a lens we are not currently on, and it
- * costs roughly 200-700ms per camera, so it belongs behind a one-time
- * "checking your cameras" step and its result belongs in storage. With it off,
- * only the already-open track contributes a real number and the rest are
- * ranked on their labels — which is the right trade on iOS, where labels are
- * meaningful and focusDistance is never exposed anyway.
+ * `sample` costs roughly 300-800ms per lens, so it belongs behind a one-time
+ * step and its result belongs in storage. With it off this returns the
+ * candidates unranked, which is exactly today's behaviour.
  */
 export async function probeCameras(
   current: MediaStreamTrack | null,
-  opts: { openToProbe?: boolean } = {},
+  opts: { sample?: boolean } = {},
 ): Promise<CameraOption[]> {
   if (!navigator.mediaDevices?.enumerateDevices) return [];
   let devices: MediaDeviceInfo[] = [];
@@ -218,35 +244,32 @@ export async function probeCameras(
     return [];
   }
 
-  const currentId = current?.getSettings?.().deviceId;
-  const currentMin = focusMinOf(current);
-
-  const rear = devices
+  const rear: CameraOption[] = devices
     .filter((d) => d.kind === 'videoinput' && isRearLabel(d.label))
     .map((d) => ({
       deviceId: d.deviceId,
       label: d.label,
       kind: kindFromLabel(d.label),
-      minFocusM: d.deviceId && d.deviceId === currentId ? currentMin : null,
+      minFocusM: null,
     }));
 
-  if (!opts.openToProbe || rear.length < 2) return rear;
+  if (!opts.sample || rear.length < 2) return rear;
 
   for (const cam of rear) {
-    if (cam.minFocusM !== null || !cam.deviceId) continue;
+    if (!cam.deviceId) continue;
     let stream: MediaStream | null = null;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { deviceId: { exact: cam.deviceId } },
       });
-      cam.minFocusM = focusMinOf(stream.getVideoTracks()[0]);
+      cam.sample = (await sampleTrack(stream)) ?? undefined;
     } catch {
       // A lens the browser will enumerate but not open is not a candidate we
-      // can use. Leave its focus unknown and let the ranking fall back to the
-      // label — never let one bad camera abort the whole probe.
+      // can use. Leave it unsampled and let it rank behind the measured ones —
+      // never let one bad camera abort the whole probe.
     } finally {
       // ⚠️ ALWAYS. A leaked probe stream keeps the camera light on and, on
-      // some Androids, prevents the real stream from opening at all.
+      // some Androids, stops the real stream opening at all.
       stream?.getTracks().forEach((t) => t.stop());
     }
   }

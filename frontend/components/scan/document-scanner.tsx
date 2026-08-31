@@ -37,6 +37,7 @@ import {
   matchPref,
   probeCameras,
   readCameraPref,
+  writeCameraPref,
 } from '@/lib/scan/cameras';
 import {
   ARM_MS,
@@ -566,9 +567,14 @@ export default function DocumentScanner({
         // exists, which is why most attempts at this "find" one camera on a
         // phone that has three.
         try {
-          const cams = await probeCameras(track, { openToProbe: false });
-          const want =
-            matchPref(cams, readCameraPref()) ?? bestCamera(cams);
+          // ⚠️ SAMPLE ONLY ONCE PER DEVICE. Opening every lens to read a
+          // frame costs 300-800ms each, which is a real pause in front of a
+          // member. So it runs when we have no remembered choice, and never
+          // again — the answer is a property of the handset, not of the
+          // session.
+          const remembered = readCameraPref();
+          const cams = await probeCameras(track, { sample: !remembered });
+          const want = matchPref(cams, remembered) ?? bestCamera(cams);
           const onId = track.getSettings?.().deviceId;
           if (want && want.deviceId && want.deviceId !== onId) {
             const better = await navigator.mediaDevices.getUserMedia({
@@ -591,6 +597,7 @@ export default function DocumentScanner({
             track = better.getVideoTracks()[0];
             stream = better;
           }
+          if (want?.label) writeCameraPref(want.label);
           activeCamRef.current =
             cams.find((c) => c.deviceId === track.getSettings?.().deviceId)
               ?.label ?? null;

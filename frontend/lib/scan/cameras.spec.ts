@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { FOV_SAMPLE, type FovSample, centreCrop } from './fov';
 import {
   type CameraOption,
   bestCamera,
@@ -65,40 +66,75 @@ describe('isRearLabel', () => {
   });
 });
 
-describe('picking the lens', () => {
-  it('⚠️ PICKS THE ULTRA WIDE ON THE IPHONE, NOT THE DEFAULT', () => {
-    // This is the operator's actual complaint, on his actual phone.
-    const best = bestCamera(IPHONE.map((l) => opt(l)));
-    expect(best?.label).toBe('Back Ultra Wide Camera');
+/** A deterministic textured scene, as any ordinary surface would give. */
+function scene(seed = 7): FovSample {
+  const size = FOV_SAMPLE;
+  const data = new Uint8Array(size * size);
+  const fx = 5 + (seed % 7);
+  const fy = 4 + (seed % 5);
+  let st = seed;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      st = (st * 1103515245 + 12345) & 0x7fffffff;
+      const base = 128 + 80 * Math.sin(x / fx) * Math.cos(y / fy);
+      data[y * size + x] = Math.max(0, Math.min(255, base + ((st >> 16) % 24) - 12));
+    }
+  }
+  return { data, size };
+}
+
+describe('picking the lens — by measurement, not by name', () => {
+  const WIDE = scene();
+
+  it('⚠️ RANKS BY WHAT THE LENS SEES, NOT BY WHAT IT IS CALLED', () => {
+    // The widest lens is the closest-focusing one, and field of view is
+    // measurable with canvas grabs on both platforms. Labels are not: iOS
+    // names its lenses, Android does not.
+    const best = bestCamera([
+      { ...opt('camera 0, facing back'), sample: centreCrop(WIDE, 0.4) },
+      { ...opt('camera 2, facing back'), sample: WIDE },
+    ]);
+    expect(best?.label).toBe('camera 2, facing back');
   });
 
-  it('⚠️ PREFERS A MEASURED FOCUS DISTANCE OVER ANY LABEL', () => {
-    // Chrome-Android reports focusDistance and Safari does not. Where we have
-    // the real number it settles the question — even against a label that
-    // says "ultra wide", because the number is the property we actually want.
+  it('⚠️ A LABEL SAYING "ULTRA WIDE" DOES NOT WIN AGAINST THE MEASUREMENT', () => {
+    // This is the future-proofing. If a vendor renames a lens, or ships a
+    // phone whose "Ultra Wide" is not the widest available, the name must not
+    // override what we can see. Nothing errors when a string changes — which
+    // is exactly why nothing may depend on one.
     const best = bestCamera([
-      opt('Back Ultra Wide Camera', 0.2),
-      opt('Back Camera', 0.05),
+      { ...opt('Back Ultra Wide Camera'), sample: centreCrop(WIDE, 0.4) },
+      { ...opt('Back Camera'), sample: WIDE },
     ]);
     expect(best?.label).toBe('Back Camera');
   });
 
-  it('falls back to enumeration order when the phone tells us nothing', () => {
-    // Samsung: two rear cameras, no useful labels, no focusDistance. Stable
-    // beats clever — a scanner that picks a different lens each session is
-    // worse than one that always picks the same wrong lens.
-    const best = bestCamera(SAMSUNG.map((l) => opt(l)));
-    expect(best?.label).toBe('camera 2, facing back');
+  it('puts unmeasured lenses behind measured ones', () => {
+    // A lens the browser would enumerate but not open tells us nothing. It is
+    // not a better guess than the one we actually looked through.
+    const ranked = rankCameras([
+      opt('camera 0, facing back'),
+      { ...opt('camera 2, facing back'), sample: WIDE },
+    ]);
+    expect(ranked[0].label).toBe('camera 2, facing back');
   });
 
-  it('never picks a telephoto, whose near limit is the worst of the set', () => {
+  it('⚠️ KEEPS ENUMERATION ORDER WHEN THE SCENE CANNOT SUPPORT A DECISION', () => {
+    // Pointed at a blank wall there is genuinely nothing to measure. A
+    // scanner that picks a different lens each time it opens is worse than
+    // one that always picks the same mediocre lens.
+    const flat: FovSample = {
+      data: new Uint8Array(FOV_SAMPLE * FOV_SAMPLE).fill(90),
+      size: FOV_SAMPLE,
+    };
     const ranked = rankCameras([
-      opt('Back Telephoto Camera'),
-      opt('Back Camera'),
-      opt('Back Ultra Wide Camera'),
+      { ...opt('camera 2, facing back'), sample: flat },
+      { ...opt('camera 0, facing back'), sample: flat },
     ]);
-    expect(ranked[0].label).toBe('Back Ultra Wide Camera');
-    expect(ranked[ranked.length - 1].label).toBe('Back Telephoto Camera');
+    expect(ranked.map((c) => c.label)).toEqual([
+      'camera 2, facing back',
+      'camera 0, facing back',
+    ]);
   });
 
   it('⚠️ DECLINES TO CHOOSE WHEN THERE IS ONLY ONE REAR CAMERA', () => {
