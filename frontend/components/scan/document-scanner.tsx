@@ -16,6 +16,7 @@ import { Pt, Quad, quadDrift, smoothQuad } from '@/lib/scan/geometry';
 import { av } from '@/lib/asset-version';
 import CornerEditor from './corner-editor';
 import Zoomable from './zoomable';
+import { QuadSmoother } from '@/lib/scan/smooth';
 import {
   DocShape,
   SHAPES,
@@ -847,6 +848,15 @@ export default function DocumentScanner({
      * set for what this replaced.
      */
     let detectorOff = false;
+    /**
+     * Smooths the DRAWN quad. See smooth.ts.
+     *
+     * ⚠️ THE DISPLAY COPY ONLY. quadRef stays the raw detection, because that
+     * is what crops the document and what every gate reads. This exists so the
+     * preview stops twitching, and a crop is not a preview.
+     */
+    const smoother = new QuadSmoother();
+    let lastDrawAt = 0;
 
     // ⚠️ THE DETECTOR DOES NOT HOLD THE TRIGGER. It turns the aim box green
     // and it supplies nothing else — the crop is the aim box and the fire
@@ -1306,6 +1316,21 @@ export default function DocumentScanner({
         if (g) {
           g.clearRect(0, 0, cv.width, cv.height);
           const q = quadRef.current;
+          // ⚠️ ADVANCED EVERY DRAWN FRAME, NOT ONLY ON DETECTION. That is the
+          // whole trick: inference lands ~10 times a second and the display
+          // refreshes 60, so drawing the raw quad shows the same rectangle for
+          // five frames then jumps. Feeding the smoother the same target on
+          // every frame lets it keep converging, which turns ten steps a
+          // second into continuous motion. Scanbot's box looks better than
+          // ours did with, as far as anyone can tell from the outside, a
+          // comparable detection rate.
+          const drawNow = performance.now();
+          const dt = lastDrawAt ? (drawNow - lastDrawAt) / 1000 : 1 / 60;
+          lastDrawAt = drawNow;
+          const shownQuad =
+            q && cv.width > 0
+              ? smoother.push(q, dt, Math.min(cv.width, cv.height))
+              : (smoother.reset(), null);
           // Drawn only once TWO consecutive detections have agreed. A single
           // unconfirmed candidate stays invisible — honest "still looking"
           // beats markers that flicker somewhere wrong for one frame.
@@ -1425,7 +1450,12 @@ export default function DocumentScanner({
               setGuide(next);
             }
           }
-          if (q && lockRef.current >= 2) {
+          if (shownQuad && lockRef.current >= 2) {
+            // ⚠️ THE SMOOTHED QUAD IS DRAWN; THE RAW ONE DECIDES. Everything
+            // above this line — occupancy, edge margin, dpi, tilt — reads the
+            // raw detection, because a gate must judge what was actually seen.
+            // Only the pixels on screen come from the filter.
+            //
             // The quad is already in VISIBLE-frame pixels, and the canvas
             // covers exactly that region — so this is one uniform scale, not
             // a cover transform. That is the whole point of visibleRect.
@@ -1433,7 +1463,7 @@ export default function DocumentScanner({
             const k = vis ? cv.width / vis.sw : 1;
             drawCorners(
               g,
-              q.map((p) => ({ x: p.x * k, y: p.y * k })) as Quad,
+              shownQuad.map((p) => ({ x: p.x * k, y: p.y * k })) as Quad,
               lockRef.current >= 3,
             );
           }
@@ -2436,7 +2466,24 @@ const MARK = '#4DA3FF';
  */
 const TRACK = '#3ddc84';
 
+/**
+ * Found, but not yet worth firing on.
+ *
+ * ⚠️ A HUE CHANGE, NOT AN ALPHA CHANGE. This used to be one green at two
+ * opacities, which is almost invisible over a live camera — the background
+ * moves, so the eye has no fixed reference to judge 10% against 18%. Scanbot
+ * draws its quad YELLOW while tracking and GREEN when it is about to capture,
+ * and in the operator's own screenshots the two states are unmistakable at a
+ * glance, from across the room, in a photograph of a phone.
+ *
+ * It also carries the whole instruction wordlessly. Scanbot shows no "Move
+ * closer", no "Hold still", no aim box — the colour IS the guidance, and it
+ * needs no translation.
+ */
+const SEEKING = '#f5c518';
+
 function drawCorners(g: CanvasRenderingContext2D, q: Quad, locked: boolean) {
+  const ink = locked ? TRACK : SEEKING;
   // ⚠️ THE WHOLE DOCUMENT, NOT FOUR BRACKETS. This drew corner marks with a
   // 22%-alpha join, which reads as "here are some corners" rather than "I have
   // found your document". Operator, having filmed Scanbot and Adobe Scan:
@@ -2456,13 +2503,13 @@ function drawCorners(g: CanvasRenderingContext2D, q: Quad, locked: boolean) {
   };
 
   // The fill goes first so the stroke sits crisply on top of it.
-  g.globalAlpha = locked ? 0.18 : 0.1;
-  g.fillStyle = TRACK;
+  g.globalAlpha = locked ? 0.18 : 0.12;
+  g.fillStyle = ink;
   path();
   g.fill();
 
-  g.globalAlpha = locked ? 1 : 0.75;
-  g.strokeStyle = TRACK;
+  g.globalAlpha = 1;
+  g.strokeStyle = ink;
   g.lineWidth = locked ? 3 : 2;
   g.lineJoin = 'round';
   path();
