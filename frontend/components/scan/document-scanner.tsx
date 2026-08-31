@@ -32,6 +32,11 @@ import {
 } from '@/lib/scan/framing';
 import { DETECT_ACCEPT, lastDetectFailure } from '@/lib/scan/detect-client';
 import {
+  LiveDetector,
+  type LiveReading,
+  type LiveStatus,
+} from '@/lib/scan/docquad-live';
+import {
   type CameraOption,
   bestCamera,
   matchPref,
@@ -321,6 +326,19 @@ export default function DocumentScanner({
    * was no way to tell which of the four had happened, so there was nothing
    * to act on. This records the answer itself.
    */
+  /**
+   * ⚠️ THE MODEL, ON THE PHONE, DRIVING THE LIVE BOX.
+   *
+   * The classical detector this replaces scores 0/4 on the operator's woven
+   * blanket and costs 142-163ms a frame on his Samsung — slow enough that the
+   * loop DROPS it entirely ("DETECTOR DROPPED (slow device)"), so on that
+   * phone there was no live box at all. The model finds the same documents at
+   * 0.81-0.87 and runs in a worker, off the frame budget.
+   */
+  const liveRef = useRef<LiveDetector | null>(null);
+  const liveStatusRef = useRef<LiveStatus>({ state: 'loading' });
+  const liveReadingRef = useRef<LiveReading | null>(null);
+
   const detectRef = useRef<
     | { outcome: 'accepted' | 'declined'; minConfidence: number; ms: number }
     | { outcome: 'no-answer'; why: string }
@@ -639,6 +657,16 @@ export default function DocumentScanner({
           videoRef.current.srcObject = stream;
           await videoRef.current.play().catch(() => undefined);
         }
+        // Start the on-device detector alongside the camera. It loads ~8MB
+        // once, cached by the service worker; every failure path inside it
+        // ends in status 'unavailable' and the scanner carries on exactly as
+        // it did before.
+        if (!liveRef.current) {
+          liveRef.current = new LiveDetector((st) => {
+            liveStatusRef.current = st;
+          });
+          liveRef.current.start();
+        }
         setPhase('live');
         say('Camera ready. Line the document up inside the red corners.');
       } catch (e) {
@@ -648,6 +676,8 @@ export default function DocumentScanner({
     })();
     return () => {
       cancelled = true;
+      liveRef.current?.stop();
+      liveRef.current = null;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
@@ -895,10 +925,36 @@ export default function DocumentScanner({
             }
           }
         }
-        const found =
-          gray && !detectorOff
-            ? detectQuad(gray, { expectAspect: expectAspectFor(shape) })
+        // ⚠️ THE MODEL FIRST, THE CLASSICAL DETECTOR ONLY AS FALLBACK.
+        //
+        // detect() returns null the instant an inference is already running —
+        // that is a DROPPED FRAME and it is deliberate. Inference is ~100ms
+        // and the camera produces a frame every 33ms; queueing them would make
+        // the box lag the scene by however deep the queue got, which is the
+        // one thing a tracking box must never do. The smoothing below covers
+        // the gaps.
+        const visNow = visibleRect(video);
+        if (liveRef.current && liveStatusRef.current.state !== 'unavailable') {
+          void liveRef.current
+            .detect(video, visNow ?? undefined)
+            .then((r) => {
+              if (r) liveReadingRef.current = r;
+            });
+        }
+        const live = liveReadingRef.current;
+        // Fractions of the VISIBLE region, which is the overlay's own space.
+        const lw = visNow ? visNow.sw : video.videoWidth;
+        const lh = visNow ? visNow.sh : video.videoHeight;
+        const modelQuad =
+          live && live.minConfidence >= DETECT_ACCEPT && lw > 0 && lh > 0
+            ? (live.quad.map((p) => ({ x: p.x * lw, y: p.y * lh })) as Quad)
             : null;
+        const found =
+          modelQuad !== null
+            ? { quad: modelQuad, score: live!.minConfidence, confident: true }
+            : gray && !detectorOff
+              ? detectQuad(gray, { expectAspect: expectAspectFor(shape) })
+              : null;
         if (found) {
           // Into visible-frame pixels. The overlay and the shutter share that
           // coordinate space now, so a marker cannot disagree with the crop.
