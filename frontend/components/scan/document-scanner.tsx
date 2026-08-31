@@ -1691,22 +1691,25 @@ export default function DocumentScanner({
             inset: 0,
             width: '100%',
             height: '100%',
-            // ⚠️ contain, NOT cover — MATCHING THE CORNER EDITOR.
+            // ⚠️ cover, AND IT MUST STAY cover. visibleRect() in capture.ts
+            // is COVER MATHS — `Math.max(cw/vw, ch/vh)` — and the entire
+            // coordinate chain runs through it: the detection buffer, the
+            // tracked quad, the occupancy the guidance is derived from, and
+            // grabVisible's crop at capture.
             //
-            // Operator: "that image zoom shit is still there when
-            // straightening the edges". Nothing was zooming: the preview was
-            // object-fit: cover (fills the screen, crops the edges away) and
-            // the editor is object-fit: contain (shows the whole photograph,
-            // letterboxed). Same picture, two different windows onto it, so at
-            // the moment of transition the document appeared to shrink and the
-            // box to jump.
+            // This was briefly switched to `contain` to kill the jump into the
+            // corner editor. It killed the scanner instead: on a 393x456
+            // element showing a 3024x4032 frame, cover maths under a contain
+            // layout reports the visible region as 3024x3508 when all 4032
+            // rows are on screen. Thirteen per cent out vertically, with a
+            // bogus offset, silently, everywhere — the guidance read "move
+            // closer" at a document filling the frame and the live quad was
+            // drawn where nobody could see it.
             //
-            // contain here costs some screen area and removes the jump
-            // entirely — and it removes a subtler trap with it: under cover,
-            // part of what the camera captures is off-screen, so a document
-            // that looked comfortably inside the frame could have a corner in
-            // the cropped-away region. What you aim at is now what you get.
-            objectFit: 'contain',
+            // The transition jump is real and worth fixing. It is cosmetic,
+            // and it is not worth fixing HERE. Fix it in the editor, or teach
+            // visibleRect both fits and pass it the mode.
+            objectFit: 'cover',
             background: '#000',
             visibility:
               phase === 'starting' || phase === 'live' || phase === 'working'

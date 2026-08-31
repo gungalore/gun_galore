@@ -82,8 +82,20 @@ export function visibleRect(video: HTMLVideoElement): VisibleRect | null {
   if (!vw || !vh) return null;
   const cw = video.clientWidth || vw;
   const ch = video.clientHeight || vh;
-  // object-fit: cover — the larger scale wins and the overflow is trimmed
-  // evenly on both sides.
+  // ⚠️ COVER MATHS, AND THE ELEMENT MUST ACTUALLY BE object-fit: cover.
+  // The larger scale wins and the overflow is trimmed evenly on both sides.
+  //
+  // This is not a preference, it is a contract. Everything downstream maps
+  // through this function — the detection buffer, the tracked quad, the
+  // occupancy the on-screen guidance is derived from, and the capture crop —
+  // so pointing it at a `contain` element does not merely misreport the
+  // region, it corrupts every coordinate in the scanner at once, without
+  // throwing. That happened: the preview was switched to contain for one
+  // deploy and the live box vanished while every number in the diagnostics
+  // panel still looked healthy.
+  //
+  // If the preview ever needs `contain`, this function takes a mode argument
+  // — it does not get inferred.
   const scale = Math.max(cw / vw, ch / vh);
   const sw = Math.min(vw, cw / scale);
   const sh = Math.min(vh, ch / scale);
