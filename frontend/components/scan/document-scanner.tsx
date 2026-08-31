@@ -494,8 +494,22 @@ export default function DocumentScanner({
             // modern iPhones and Androids will serve 4K here if asked. `ideal`
             // rather than `min`: a phone that cannot manage it must still get
             // a working scanner rather than a rejected constraint.
-            width: { ideal: 3840 },
-            height: { ideal: 2160 },
+            //
+            // ⚠️ 4:3, NOT 16:9 — WE WERE ASKING FOR A VIDEO SHAPE TO
+            // PHOTOGRAPH DOCUMENTS. This read 3840x2160 and the readout below
+            // caught what that costs. On the operator's iPhone the panel
+            // printed, in as many words:
+            //
+            //   asked 3840x2160 · max 4032x3024
+            //   device can do 4032x3024 — browser gave 3840x2160
+            //
+            // A document spans the frame's SHORT axis, and 16:9 held portrait
+            // gives it 2160 pixels while the same sensor's native 4:3 gives it
+            // 3024. That is 40% more resolution on the only axis that decides
+            // whether a serial number is readable, thrown away by asking for a
+            // cinema aspect. Sensors are 4:3; 16:9 is a crop of one.
+            width: { ideal: 4032 },
+            height: { ideal: 3024 },
           },
           audio: false,
         });
@@ -509,8 +523,8 @@ export default function DocumentScanner({
         // applyConstraints below can change it, and the honest baseline is
         // what the browser chose when asked for 4K.
         cameraRef.current = readCameraFacts(track, {
-          width: 3840,
-          height: 2160,
+          width: 4032,
+          height: 3024,
         });
         // Torch is Chrome-on-Android only. Never render a dead button.
         const caps = track.getCapabilities?.() as
