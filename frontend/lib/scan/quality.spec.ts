@@ -66,3 +66,16 @@ describe('gradeScan', () => {
     expect(gradeScan({ dpi: 300, tilt: TILT_OK + 0.1 }).grade).toBe('acceptable');
   });
 });
+
+describe('the badge label', () => {
+  it('carries the measured dpi beside the word', () => {
+    expect(gradeScan({ dpi: 283 }).dpiLabel).toBe(' — 283 dpi');
+  });
+
+  it('⚠️ SAYS NOTHING RATHER THAN ZERO WHEN THE SIZE IS UNKNOWN', () => {
+    // "Good — 0 dpi" is worse than "Good": a number invites trust that a
+    // placeholder has not earned.
+    expect(gradeScan({ dpi: null }).dpiLabel).toBe('');
+    expect(gradeScan({ dpi: Number.NaN }).dpiLabel).toBe('');
+  });
+});

@@ -43,6 +43,15 @@ export interface Quality {
   detail: string;
   /** Everything that pulled the grade down, worst first. */
   reasons: string[];
+  /**
+   * The measured resolution, ready to sit beside the label.
+   *
+   * ⚠️ EMPTY WHEN UNKNOWN, NEVER A ZERO OR A DASH. dpi needs known
+   * millimetres; a badge reading "Good — 0 dpi" would be worse than one
+   * reading "Good", because a number invites trust that a placeholder does not
+   * deserve.
+   */
+  dpiLabel: string;
 }
 
 /** Tilt beyond which a page reads as visibly skewed, in degrees. */
@@ -124,5 +133,14 @@ export function gradeScan(q: QualityInput): Quality {
         : 'Sharp and square. Nothing to fix.'
       : reasons[0];
 
-  return { grade, label, detail, reasons };
+  return {
+    grade,
+    label,
+    detail,
+    reasons,
+    dpiLabel:
+      q.dpi !== null && q.dpi !== undefined && Number.isFinite(q.dpi)
+        ? ` — ${Math.round(q.dpi)} dpi`
+        : '',
+  };
 }
