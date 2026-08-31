@@ -86,6 +86,7 @@ export default function ScanDiagnostics({
   cameras,
   activeCamera,
   lastDetect,
+  live,
   trail,
   lastCapture,
 }: {
@@ -108,6 +109,12 @@ export default function ScanDiagnostics({
     | { outcome: 'no-answer'; why: string }
     | { outcome: 'not-asked' }
     | null;
+  /** The ON-DEVICE detector's own state — separate from the capture-time call. */
+  live?:
+    | { state: 'loading' }
+    | { state: 'running'; medianMs: number }
+    | { state: 'unavailable'; why: string }
+    | { state: 'too-slow'; medianMs: number };
   trail: readonly FrameSnapshot[];
   lastCapture?: ScanReport['lastCapture'];
 }) {
@@ -271,6 +278,30 @@ export default function ScanDiagnostics({
           </div>
         );
       })()}
+
+      {/* The ON-DEVICE model, which drives the live box — distinct from the
+          capture-time call below it. "unavailable" means it never loaded;
+          "too slow" means this phone cannot keep up and we stopped rather
+          than show a box that lags the scene. */}
+      {live && (
+        <div style={{ marginTop: 6, opacity: 0.9 }}>
+          <span style={{ fontWeight: 700 }}>on-device</span>{' '}
+          <span
+            style={{
+              color: live.state === 'running' ? OK : live.state === 'loading' ? undefined : BAD,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {live.state === 'running'
+              ? `tracking · ${live.medianMs}ms median`
+              : live.state === 'too-slow'
+                ? `too slow · ${live.medianMs}ms — stopped`
+                : live.state === 'loading'
+                  ? 'loading model…'
+                  : `unavailable — ${live.why}`}
+          </span>
+        </div>
+      )}
 
       {/* ⚠️ WHY THE CROP IS WHAT IT IS. "last crop: aim" means the fallback
           ran, and it meant four different things at once — the model

@@ -1633,7 +1633,22 @@ export default function DocumentScanner({
             inset: 0,
             width: '100%',
             height: '100%',
-            objectFit: 'cover',
+            // ⚠️ contain, NOT cover — MATCHING THE CORNER EDITOR.
+            //
+            // Operator: "that image zoom shit is still there when
+            // straightening the edges". Nothing was zooming: the preview was
+            // object-fit: cover (fills the screen, crops the edges away) and
+            // the editor is object-fit: contain (shows the whole photograph,
+            // letterboxed). Same picture, two different windows onto it, so at
+            // the moment of transition the document appeared to shrink and the
+            // box to jump.
+            //
+            // contain here costs some screen area and removes the jump
+            // entirely — and it removes a subtler trap with it: under cover,
+            // part of what the camera captures is off-screen, so a document
+            // that looked comfortably inside the frame could have a corner in
+            // the cropped-away region. What you aim at is now what you get.
+            objectFit: 'contain',
             background: '#000',
             visibility:
               phase === 'starting' || phase === 'live' || phase === 'working'
@@ -1682,6 +1697,7 @@ export default function DocumentScanner({
             cameras={cameras}
             activeCamera={activeCamRef.current}
             lastDetect={detectRef.current}
+            live={liveStatusRef.current}
             trail={trailRef.current}
             lastCapture={lastCaptureRef.current}
           />
@@ -1719,7 +1735,14 @@ export default function DocumentScanner({
                 readable. Steadiness is not in it, deliberately — that is the
                 hold ring's job, and a frame flickering with every tremor would
                 be noise rather than signal. */}
+            {/* ⚠️ THE AIM BOX STANDS DOWN ONCE THE MODEL HAS A LOCK. Two
+                boxes on screen — a fixed rectangle to line up against AND a
+                quad following the document — is a contradiction: the member
+                cannot satisfy both, and the tracked one is the truthful one.
+                It comes back the moment tracking is lost, so a phone where the
+                model cannot run behaves exactly as before. */}
             <AimFrame
+              hidden={lockRef.current >= 2 && quadRef.current !== null}
               shape={shape}
               locked={blocker === null || blocker === 'steady'}
               alwaysGreen={staticAim}
@@ -2114,49 +2137,63 @@ export default function DocumentScanner({
 const MARK = '#4DA3FF';
 
 function drawCorners(g: CanvasRenderingContext2D, q: Quad, locked: boolean) {
-  g.strokeStyle = MARK;
-  g.lineWidth = locked ? 3 : 2;
-  g.globalAlpha = locked ? 1 : 0.6;
-  g.lineCap = 'round';
-  g.lineJoin = 'round';
-
-  const arm = Math.max(
-    14,
-    Math.min(38, Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) * 0.18),
-  );
-
-  for (let i = 0; i < 4; i++) {
-    const c = q[i];
-    const prev = q[(i + 3) % 4];
-    const next = q[(i + 1) % 4];
-    const towards = (p: Pt) => {
-      const dx = p.x - c.x;
-      const dy = p.y - c.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const d = Math.min(arm, len * 0.45);
-      return { x: c.x + (dx / len) * d, y: c.y + (dy / len) * d };
-    };
-    const a = towards(prev);
-    const b = towards(next);
-    g.beginPath();
-    g.moveTo(a.x, a.y);
-    g.lineTo(c.x, c.y);
-    g.lineTo(b.x, b.y);
-    g.stroke();
-  }
-
-  // A faint join between the brackets once locked, so it reads as one shape.
-  if (locked) {
-    g.globalAlpha = 0.22;
-    g.lineWidth = 1;
+  // ⚠️ THE WHOLE DOCUMENT, NOT FOUR BRACKETS. This drew corner marks with a
+  // 22%-alpha join, which reads as "here are some corners" rather than "I have
+  // found your document". Operator, having filmed Scanbot and Adobe Scan:
+  // "I want a live box that tracks the whole document like Scanbot and Adobe
+  // scan does."
+  //
+  // Both of those draw a semi-transparent FILLED REGION with a solid stroke,
+  // and the fill is what makes it read as one object at a glance — an outline
+  // alone still asks the eye to join it up. Verified in his own recordings:
+  // Adobe's overlay tints the document's interior, and the boundary is drawn
+  // raw rather than as four separate marks.
+  const path = () => {
     g.beginPath();
     g.moveTo(q[0].x, q[0].y);
     for (let i = 1; i < 4; i++) g.lineTo(q[i].x, q[i].y);
     g.closePath();
-    g.stroke();
+  };
+
+  // The fill goes first so the stroke sits crisply on top of it.
+  g.globalAlpha = locked ? 0.18 : 0.1;
+  g.fillStyle = MARK;
+  path();
+  g.fill();
+
+  g.globalAlpha = locked ? 1 : 0.75;
+  g.strokeStyle = MARK;
+  g.lineWidth = locked ? 3 : 2;
+  g.lineJoin = 'round';
+  path();
+  g.stroke();
+
+  // Corners still get a little weight — they are where the eye checks the fit,
+  // and they are what the member will drag in the editor a moment later.
+  if (locked) {
+    g.lineWidth = 5;
+    g.lineCap = 'round';
+    const arm = Math.max(
+      10,
+      Math.min(26, Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y) * 0.12),
+    );
+    for (let i = 0; i < 4; i++) {
+      const c = q[i];
+      for (const p of [q[(i + 3) % 4], q[(i + 1) % 4]]) {
+        const dx = p.x - c.x;
+        const dy = p.y - c.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const d = Math.min(arm, len * 0.4);
+        g.beginPath();
+        g.moveTo(c.x, c.y);
+        g.lineTo(c.x + (dx / len) * d, c.y + (dy / len) * d);
+        g.stroke();
+      }
+    }
   }
   g.globalAlpha = 1;
 }
+
 
 // ── chrome ──────────────────────────────────────────────────────────
 

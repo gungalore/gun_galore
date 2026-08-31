@@ -25,6 +25,13 @@ const GREEN = '#2F9E44';
 const STROKE = 5;
 
 export default function AimFrame({
+  /**
+   * Stand down — the live detector has the document and is drawing its own box.
+   *
+   * A fixed rectangle to aim at AND a quad tracking the document are
+   * contradictory instructions; the tracked one is the truthful one.
+   */
+  hidden = false,
   shape,
   /** Green once the detector agrees with the box — the only "good" signal. */
   locked = false,
@@ -46,6 +53,7 @@ export default function AimFrame({
    */
   alwaysGreen = false,
 }: {
+  hidden?: boolean;
   shape: DocShape;
   locked?: boolean;
   alwaysGreen?: boolean;
@@ -66,6 +74,7 @@ export default function AimFrame({
     return () => ro.disconnect();
   }, []);
 
+  if (hidden) return null;
   const box = view.width > 0 ? aimBox(shape, view) : null;
   // Arms long enough to read as a corner, short enough not to become a
   // rectangle. A sixth of the shorter side, with a floor for tiny screens.

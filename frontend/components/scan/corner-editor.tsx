@@ -348,7 +348,14 @@ export default function CornerEditor({
             <rect
               width={view.w}
               height={view.h}
-              fill="rgba(0,0,0,0.55)"
+              // ⚠️ NEARLY SOLID, NOT FULLY. Operator asked for everything
+              // outside the crop blacked out, and at 0.9 it reads as black on
+              // a phone. Not 1.0 on purpose: a member whose quad came back
+              // SMALLER than the document has to see the real edge in order to
+              // drag out to it, and a solid mask hides exactly the thing they
+              // are reaching for. Ten per cent is enough to make an edge
+              // findable and not enough to look like a preview.
+              fill="rgba(0,0,0,0.9)"
               mask="url(#gg-quad-mask)"
             />
             <polygon
