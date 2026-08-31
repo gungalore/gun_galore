@@ -88,14 +88,24 @@ export const SHAPES: Record<DocShape, ShapeSpec> = {
     key: 'id-book',
     label: 'Green ID book',
     examples: 'Open at the page with your photograph',
-    // The passport format (ID-3), 125 x 88 mm. MEASURED off IMG_4961 at a
-    // width-to-height of about 0.72 once the tilt is allowed for, which is
-    // the same page within the error of measuring a curved page held in a
-    // hand. ⚠️ NEARLY THE SAME SHAPE AS A4 — 0.704 against 0.707 — so the two
-    // aim boxes look alike on purpose. What separates them is the label and
-    // what the member is told to open.
-    longMm: 125,
-    shortMm: 88,
+    // ⚠️ 109 x 79, MEASURED WITH A RULER BY THE OPERATOR 2026-08-31. The
+    // previous 125 x 88 was ID-3, the passport standard, and it was wrong on
+    // both axes — 15% too tall and 11% too wide. Its own comment admitted the
+    // provenance: "MEASURED off IMG_4961", which is the fixture whose
+    // detection is a trapezoid straddling the spine. A number read off a bad
+    // crop is not a measurement, and the file's header rule is that the
+    // measurement wins over the specification.
+    //
+    // x is SEAM TO EDGE, which is the right convention: the visible page is
+    // what gets photographed, and the spine is where it stops. y is edge to
+    // edge.
+    //
+    // What the old numbers were costing: dpi under-reported by 11% (pixels
+    // divided by a width 9mm too large), the hold hint 17mm too far, and —
+    // since today's known-aspect fix — every ID book stretched to 1.420 when
+    // it should be 1.380.
+    longMm: 109,
+    shortMm: 79,
     portrait: true,
     multi: true,
     multiLabel: 'More than one — more pages, or other documents',

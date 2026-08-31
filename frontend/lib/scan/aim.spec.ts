@@ -178,7 +178,11 @@ describe('holdHint', () => {
     // "hold it 4 cm away" and hand back a blurred photograph.
     const narrow = 30 * 1.85; // a 30 mm document, were one added
     expect(narrow).toBeLessThan(110);
-    expect(holdHint('id-book')).toContain('16 cm');
+    // ⚠️ 15, NOT 16 — the ID book was re-measured with a ruler on
+    // 2026-08-31 and came out 109 x 79, not the ID-3 125 x 88 that had been
+    // inherited from the passport standard. A narrower page is held closer:
+    // 79mm * 1.85 is 146mm, which rounds to 15.
+    expect(holdHint('id-book')).toContain('15 cm');
   });
 
   it('puts an A4 page at arm-ish length', () => {

@@ -474,6 +474,53 @@ export default function DocumentScanner({
    * approves what they see and something else is stored, on a document they
    * may never look at again.
    */
+  /**
+   * Hand the processed page to the phone, for comparison work.
+   *
+   * ⚠️ A DIAGNOSTIC, BEHIND THE SAME FLAG AS THE READOUT PANEL. Members do not
+   * need this: their documents go to the Document Centre and are read from a
+   * computer. It exists because scans upload ENCRYPTED to secure-uploads, so
+   * nobody — including us — can get a scan back off a phone to compare against
+   * another scanner without decrypting production storage.
+   *
+   * ⚠️ SHARE FIRST, DOWNLOAD SECOND, AND BOTH BECAUSE OF PARITY. Chrome on
+   * Android honours <a download> and drops the file in Downloads. iOS Safari's
+   * support is patchy and version-dependent, but its share sheet takes a File
+   * and offers Files and Photos. navigator.share is present on both, so it is
+   * the path that behaves the same on each; the anchor is the fallback for
+   * whichever browser refuses.
+   */
+  const saveToPhone = useCallback(async () => {
+    const cur = shotRef.current;
+    if (!cur) return;
+    const file = cur.file;
+    try {
+      const nav = navigator as Navigator & {
+        canShare?: (d: { files?: File[] }) => boolean;
+        share?: (d: { files?: File[]; title?: string }) => Promise<void>;
+      };
+      if (nav.canShare?.({ files: [file] }) && nav.share) {
+        await nav.share({ files: [file], title: file.name });
+        return;
+      }
+    } catch {
+      // A cancelled share sheet throws. That is the member declining, not a
+      // failure, and falling through to a download would then save a file
+      // they just said no to.
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoke late: Safari has been known to abort a download whose blob URL
+    // was released in the same tick as the click.
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }, []);
+
   const applyFilter = useCallback(
     (next: ScanFilter) => {
       const cur = shotRef.current;
@@ -2281,6 +2328,7 @@ export default function DocumentScanner({
             onUse={() => finish([...pages, shot.file])}
             multi={multi}
             onFilter={applyFilter}
+            onSave={diag ? saveToPhone : undefined}
             onNextDocument={() => {
               setPages((p) => [...p, shot.file]);
               backToChooser();
@@ -3345,11 +3393,14 @@ function Review({
   onAddAnother,
   onNextDocument,
   onFilter,
+  onSave,
   multi,
 }: {
   shot: ScanResult;
   /** Change the cleanup. Absent while the flat page is unavailable. */
   onFilter?: (f: ScanFilter) => void;
+  /** Diagnostics only — hand the file to the phone. Absent for members. */
+  onSave?: () => void;
   editing: boolean;
   /** A re-cut is in flight — the editor stays up, its buttons go quiet. */
   busy: boolean;
@@ -3466,6 +3517,25 @@ function Review({
               </button>
             );
           })}
+          {onSave && (
+            <button
+              type="button"
+              onClick={onSave}
+              style={{
+                minHeight: 40,
+                padding: '0 12px',
+                borderRadius: 8,
+                border: '1px dashed rgba(26,22,19,0.35)',
+                background: 'transparent',
+                color: '#4A443C',
+                fontSize: 13,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              Save to phone
+            </button>
+          )}
         </div>
       )}
 
