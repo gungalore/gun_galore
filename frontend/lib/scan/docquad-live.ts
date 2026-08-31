@@ -18,6 +18,8 @@ export interface LiveReading {
   minConfidence: number;
   minSigma: number;
   maskCoverage: number;
+  /** The raw 64x64 mask plane, for mask-quad.ts. */
+  mask?: Float32Array;
   /** Inference time on this device, milliseconds. */
   ms: number;
 }
@@ -120,6 +122,7 @@ export class LiveDetector {
     minConfidence?: number;
     minSigma?: number;
     maskCoverage?: number;
+    mask?: ArrayBuffer;
     ms?: number;
     error?: string;
   }): void {
@@ -166,6 +169,7 @@ export class LiveDetector {
       minConfidence: r.minConfidence ?? 0,
       minSigma: r.minSigma ?? 0,
       maskCoverage: r.maskCoverage ?? 0,
+      mask: r.mask ? new Float32Array(r.mask) : undefined,
       ms: r.ms ?? 0,
     });
   }

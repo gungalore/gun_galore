@@ -86,6 +86,7 @@ export class ScanController {
       // top out at 4.47 against its 5.0 threshold while detecting correctly.
       minSigma: r.minSigma,
       maskCoverage: r.maskCoverage,
+      mask: r.mask,
       ms: r.ms,
     };
   }

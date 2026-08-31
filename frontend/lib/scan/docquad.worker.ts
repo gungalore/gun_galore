@@ -59,6 +59,19 @@ export interface DetectReply {
   minConfidence?: number;
   minSigma?: number;
   maskCoverage?: number;
+  /**
+   * The raw 64x64 mask plane.
+   *
+   * ⚠️ RETURNED NOW BECAUSE THE CORNERS CANNOT DO THIS JOB. The four corner
+   * heads always produce four peaks — there are four planes and each has a
+   * maximum — so they can never say "nothing here" or "not a document shape".
+   * mask-quad.ts fits four lines to this boundary and intersects them, which
+   * is also what finds the corner of a ROUNDED document: the true corner is
+   * where the straight edges would have met, and no peak sits there.
+   *
+   * Transferred, not copied — see the postMessage transfer list.
+   */
+  mask?: ArrayBuffer;
   ms?: number;
   error?: string;
 }
@@ -126,6 +139,12 @@ self.onmessage = async (e: MessageEvent<DetectRequest>) => {
     // has had in this area came from mixing two of those.
     const lb = letterboxFor(srcWidth, srcHeight);
     const r = readCorners(out.corner_heatmaps.data as Float32Array, lb);
+    // ⚠️ COPY BEFORE TRANSFERRING. The tensor's buffer belongs to the ORT
+    // session and is reused on the next run; handing it to the main thread
+    // would either detach memory the session still owns or ship a plane that
+    // the following inference overwrites underneath the reader.
+    const mask = out.mask_logits.data as Float32Array;
+    const maskCopy = mask.slice().buffer;
 
     self.postMessage({
       id,
@@ -133,9 +152,10 @@ self.onmessage = async (e: MessageEvent<DetectRequest>) => {
       quad: r.quad.map((p) => ({ x: p.x / srcWidth, y: p.y / srcHeight })),
       minConfidence: r.minConfidence,
       minSigma: r.minSigma,
-      maskCoverage: maskCoverage(out.mask_logits.data as Float32Array),
+      maskCoverage: maskCoverage(mask),
+      mask: maskCopy,
       ms: Math.round(performance.now() - t0),
-    } as DetectReply);
+    } as DetectReply, [maskCopy]);
   } catch (err) {
     self.postMessage({ id, ok: false, error: (err as Error).message } as DetectReply);
   }

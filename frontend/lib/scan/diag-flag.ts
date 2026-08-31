@@ -46,6 +46,51 @@ export function diagnosticsOn(search?: string): boolean {
   }
 }
 
+// ────────────────────────────────────────────────────────────────────
+// THE SAVE TOOL OUTLIVES THE READOUT, DELIBERATELY.
+//
+// ⚠️ A DEBUGGING AID THAT VANISHES MID-SESSION IS WORSE THAN NONE. The readout
+// is noise you want gone by next week, so sessionStorage is right for it. The
+// save button is a TOOL you are holding while working, and three ordinary
+// things end a phone session without warning: closing the tab, iOS evicting a
+// backgrounded one, and launching the PWA fresh from the home screen. The
+// operator lost it partway through scanning a set and could not get it back —
+// the button disappeared out of their hand between one document and the next.
+//
+// So this one is localStorage, and it has its own explicit way out rather than
+// relying on the session ending.
+// ────────────────────────────────────────────────────────────────────
+
+const SAVE_KEY = 'scan-save-to-phone';
+
+/** May the review screen offer the file to the phone? */
+export function saveToPhoneOn(search?: string): boolean {
+  try {
+    const q = search ? new URLSearchParams(search) : null;
+    // `diag=1` turns both on, so one URL still does what it always did.
+    if (q?.get('save') === '0') {
+      localStorage.removeItem(SAVE_KEY);
+      return false;
+    }
+    if (q?.get('diag') === '1' || q?.get('save') === '1') {
+      localStorage.setItem(SAVE_KEY, '1');
+      return true;
+    }
+    return localStorage.getItem(SAVE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Put it away. `?save=0` does the same from a URL. */
+export function clearSaveToPhone(): void {
+  try {
+    localStorage.removeItem(SAVE_KEY);
+  } catch {
+    /* see above */
+  }
+}
+
 /** Turn it off again, for the readout's own close button. */
 export function clearDiagnostics(): void {
   try {

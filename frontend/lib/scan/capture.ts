@@ -6,6 +6,10 @@ import { Quad, Rect, frameQuad, outputSize, scaleQuad } from './geometry';
 import { Raster, rectify } from './warp';
 import { blur3, seededCorners } from './edges';
 import { DETECT_ACCEPT } from './detect-client';
+import { letterboxFor } from './letterbox';
+import { analyseMask } from './mask-quad';
+import { bestCandidate } from './quad-score';
+import { refineEdges } from './refine-edges';
 
 /**
  * How sure the seeded detector must be before its corners replace the box.
@@ -250,6 +254,19 @@ export interface ScanResult {
   flat: Raster;
   /** Which cleanup produced `file` and `preview`. */
   filter: ScanFilter;
+  /** What the mask rung made of the frame. Absent when no mask was supplied. */
+  maskFit?: {
+    coverage: number;
+    aspect: number;
+    residual: number;
+    rectangularity: number;
+    reject?: string;
+  };
+  /** Which candidate the arbitration chose, and on what score. */
+  pickedBy?: 'corners' | 'mask';
+  arbitration?: { worstSide: number; support: number };
+  /** How far sub-pixel refinement moved the worst corner, and sides skipped. */
+  refined?: { moved: number; skipped: number };
   quad: Quad;
   /** Did we find the edges, or fall back to the frame? */
   /**
@@ -320,6 +337,13 @@ export async function processCapture(
     name?: string;
     expectAspect?: number;
     /**
+     * The model's 64x64 mask plane, when the detector returned one.
+     *
+     * Feeds the mask rung below. Absent on an older server, which simply means
+     * the ladder behaves exactly as it did before.
+     */
+    mask?: Float32Array;
+    /**
      * Where the member was asked to put the document, as FRACTIONS of the
      * image — x, y, width and height all 0 to 1.
      *
@@ -348,6 +372,10 @@ export async function processCapture(
   // refused every time, and a refusal with no numbers beside it is
   // indistinguishable from a detector that never ran.
   let seedReport: ScanResult['seed'] = undefined;
+  let maskReport: ScanResult['maskFit'] = undefined;
+  let pickedBy: 'corners' | 'mask' | undefined;
+  let arbitration: { worstSide: number; support: number } | undefined;
+  let refineReport: ScanResult['refined'] = undefined;
 
   // Fractions into this raster's own pixels, once, here — so everything below
   // is talking about the same image.
@@ -376,12 +404,76 @@ export async function processCapture(
   // of the network or the model, the member gets precisely what they got
   // before. The box did not lose its argument; it became the fallback for a
   // detector that knows when to shut up.
-  if (!quad && opts.detected && opts.detected.minConfidence >= DETECT_ACCEPT) {
-    quad = opts.detected.quad.map((p) => ({
-      x: p.x * raster.width,
-      y: p.y * raster.height,
-    })) as unknown as Quad;
-    from = 'detected';
+  // ── THE MODEL'S TWO ANSWERS, JUDGED AGAINST THE PHOTOGRAPH ─────────
+  //
+  // ⚠️ THE CORNER HEADS AND THE MASK ARE DIFFERENT CLAIMS, AND NEITHER IS
+  // AUTOMATICALLY RIGHT. The heads always emit four peaks — four planes, each
+  // with a maximum — so a confident quad is not evidence that a document is
+  // there, only that the argmax landed somewhere. The mask can be empty, and
+  // fitting lines to its boundary finds the corner of a ROUNDED document,
+  // which no peak ever sits on.
+  //
+  // So both are offered as CANDIDATES and arbitration picks on evidence in the
+  // source image: does a real intensity step actually run along each side. The
+  // worst side decides — three good edges and one running through open page is
+  // the spine-straddling failure, and it averages to a respectable score.
+  //
+  // This is why adding the mask rung is safe to ship before its own gates are
+  // measured: it can only WIN by out-scoring the corner path on the
+  // photograph, never by asserting itself.
+  if (!quad) {
+    const candidates: { quad: Quad; from: 'corners' | 'mask' }[] = [];
+    if (opts.detected && opts.detected.minConfidence >= DETECT_ACCEPT) {
+      candidates.push({
+        quad: opts.detected.quad.map((p) => ({
+          x: p.x * raster.width,
+          y: p.y * raster.height,
+        })) as unknown as Quad,
+        from: 'corners',
+      });
+    }
+    if (opts.mask) {
+      const lb = letterboxFor(raster.width, raster.height);
+      const m = analyseMask(opts.mask, lb);
+      maskReport = {
+        coverage: Math.round(m.coverage * 100) / 100,
+        aspect: Math.round(m.aspect * 100) / 100,
+        residual: Number.isFinite(m.residual) ? Math.round(m.residual * 10) / 10 : -1,
+        rectangularity: Math.round(m.rectangularity * 100) / 100,
+        reject: m.reject,
+      };
+      if (m.quad) candidates.push({ quad: m.quad, from: 'mask' });
+    }
+
+    if (candidates.length === 1) {
+      quad = candidates[0].quad;
+      from = 'detected';
+      pickedBy = candidates[0].from;
+    } else if (candidates.length > 1) {
+      const small = shrinkForDetect(raster);
+      const pick = bestCandidate(
+        small.gray,
+        candidates.map((c) => ({
+          ...c,
+          quad: c.quad.map((p) => ({
+            x: p.x * small.scale,
+            y: p.y * small.scale,
+          })) as Quad,
+        })),
+        undefined,
+        { x0: 0, y0: 0, x1: small.gray.width, y1: small.gray.height },
+      );
+      const chosen = pick ? candidates.find((c) => c.from === pick.pick.from) : null;
+      if (chosen) {
+        quad = chosen.quad;
+        from = 'detected';
+        pickedBy = chosen.from;
+        arbitration = {
+          worstSide: Math.round((pick as NonNullable<typeof pick>).score.worstSide * 100) / 100,
+          support: Math.round((pick as NonNullable<typeof pick>).score.support * 100) / 100,
+        };
+      }
+    }
   }
 
   if (!quad) {
@@ -469,6 +561,27 @@ export async function processCapture(
   // A sliver of desk around the edge costs a vision model nothing; a missing
   // line of text costs it the field. Skipped for a manual quad: if somebody
   // has dragged the corners themselves, those are the corners they meant.
+  // ⚠️ SUB-PIXEL REFINEMENT AT FULL RESOLUTION, BEFORE THE MARGIN. Every rung
+  // above works at reduced scale — the mask on 64x64 cells, the classical
+  // detector halved until print blurs away — so a half-cell becomes tens of
+  // pixels of misplaced crop once scaled back up. refineEdges walks each edge
+  // at full resolution and finds where the step actually is.
+  //
+  // ⚠️ NOT FOR A MANUAL QUAD. Those corners are where the member put them, and
+  // moving them afterwards would silently overrule a person who was looking at
+  // the document while they dragged.
+  if (!opts.manualQuad) {
+    const full = toLuma(raster.data, raster.width, raster.height);
+    const r = refineEdges(full, quad as Quad);
+    refineReport = {
+      moved: Math.round(Math.max(...r.moved) * 10) / 10,
+      skipped: r.skipped,
+    };
+    // A refinement that found nothing returns the input unchanged, so this is
+    // safe to take unconditionally.
+    quad = r.quad;
+  }
+
   const cropQuad = opts.manualQuad ? quad : scaleQuad(quad, 1.02);
 
 
@@ -495,6 +608,10 @@ export async function processCapture(
 
   return {
     seed: seedReport,
+    maskFit: maskReport,
+    pickedBy,
+    arbitration,
+    refined: refineReport,
     file: await toFile(better, opts.name ?? `scan-${Date.now()}.jpg`),
     preview: await previewUrl(better),
     flat,

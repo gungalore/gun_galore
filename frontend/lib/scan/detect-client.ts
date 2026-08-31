@@ -43,6 +43,22 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
  */
 export const DETECT_ACCEPT = 0.8;
 
+/** base64 Float32 -> plane, or undefined for anything malformed. */
+function decodeMask(b64?: string): Float32Array | undefined {
+  if (!b64) return undefined;
+  try {
+    const bin = atob(b64);
+    const buf = new ArrayBuffer(bin.length);
+    const view = new Uint8Array(buf);
+    for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
+    // 64*64 floats. Anything else is not the plane we asked for.
+    if (buf.byteLength !== 64 * 64 * 4) return undefined;
+    return new Float32Array(buf);
+  } catch {
+    return undefined;
+  }
+}
+
 export interface DetectedDocument {
   /** Corners as FRACTIONS of the image, 0..1, TL TR BR BL. */
   quad: Quad;
@@ -54,6 +70,8 @@ export interface DetectedDocument {
   minSigma: number;
   /** Fraction of the frame the model's mask calls document. */
   maskCoverage: number;
+  /** The raw 64x64 mask plane, for mask-quad.ts. Absent on older servers. */
+  mask?: Float32Array;
   /** Server-side round trip, milliseconds. */
   ms: number;
 }
@@ -78,6 +96,7 @@ interface DetectResponse {
   minConfidence?: number;
   minSigma?: number;
   maskCoverage?: number;
+  mask?: string;
   ms?: number;
 }
 
@@ -170,6 +189,11 @@ export async function detectDocument(
       confident: minConfidence >= DETECT_ACCEPT,
       minSigma: body.minSigma ?? 0,
       maskCoverage: body.maskCoverage ?? 0,
+      // ⚠️ OPTIONAL ON PURPOSE. A server that predates the mask response
+      // simply omits it, and every consumer must treat its absence as "no
+      // mask rung available" rather than as an error — a deploy where the
+      // frontend leads the backend by a few minutes must not break capture.
+      mask: decodeMask(body.mask),
       ms: body.ms ?? 0,
     };
   } catch (e) {

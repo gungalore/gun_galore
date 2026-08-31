@@ -52,6 +52,20 @@ const MAX_CONCURRENT = 2;
 export interface DetectResult extends DocQuadReading {
   /** Fraction of the frame the model's mask calls document. */
   maskCoverage: number;
+  /**
+   * The raw 64x64 mask plane, base64 Float32.
+   *
+   * ⚠️ RETURNED BECAUSE THE CORNER HEADS CANNOT DO THIS JOB. They always emit
+   * four peaks — four planes, each with a maximum — so they can never say
+   * "nothing here" or "not a document shape". Fitting four lines to this
+   * boundary and intersecting them says both, and is also what finds the
+   * corner of a ROUNDED document: the true corner is where the straight edges
+   * would have met, and no peak ever sits there.
+   *
+   * 64*64*4 bytes is 16 KiB, ~22 KiB base64 — trivial beside the JPEG that
+   * came the other way.
+   */
+  mask: string;
   /** Source frame dimensions the quad is expressed in. */
   width: number;
   height: number;
@@ -183,6 +197,9 @@ export class DocQuadService {
       return {
         ...reading,
         maskCoverage: maskCoverage(out.mask_logits.data as Float32Array),
+        mask: Buffer.from(
+          (out.mask_logits.data as Float32Array).slice().buffer,
+        ).toString('base64'),
         width,
         height,
         ms: Date.now() - t0,

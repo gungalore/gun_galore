@@ -19,6 +19,7 @@ import { av } from '@/lib/asset-version';
 import CornerEditor from './corner-editor';
 import Zoomable from './zoomable';
 import { QuadSmoother } from '@/lib/scan/smooth';
+import { QuadPresence, scaleAboutCentre } from '@/lib/scan/quad-presence';
 import {
   DocShape,
   SHAPES,
@@ -89,7 +90,7 @@ import {
   type FrameSnapshot,
   type ScanReport,
 } from '@/lib/scan/diagnostics';
-import { diagnosticsOn } from '@/lib/scan/diag-flag';
+import { diagnosticsOn, saveToPhoneOn } from '@/lib/scan/diag-flag';
 import ScanDiagnostics from './scan-diagnostics';
 import { OVERLAY_WARNING } from '@/lib/scan/overlay';
 
@@ -177,7 +178,13 @@ export interface DocumentScannerProps {
    */
   detect?: (
     frame: Blob,
-  ) => Promise<{ quad: Quad; minConfidence: number; ms?: number } | null>;
+  ) => Promise<{
+    quad: Quad;
+    minConfidence: number;
+    ms?: number;
+    /** The model's 64x64 mask plane, when the server returned one. */
+    mask?: Float32Array;
+  } | null>;
   /**
    * What the member is most likely holding. Sets the starting guide frame and
    * the detector's aspect hint — and only those. It is a suggestion the
@@ -325,6 +332,8 @@ export default function DocumentScanner({
   const docRef = useRef(false);
   const docConfRef = useRef(0);
   const [diag, setDiag] = useState(false);
+  /** Survives the tab ending — see saveToPhoneOn. */
+  const [canSave, setCanSave] = useState(false);
   const diagRef = useRef(false);
   diagRef.current = diag;
   /** Read inside the detect loop, which must not close over React state. */
@@ -413,6 +422,7 @@ export default function DocumentScanner({
 
   useEffect(() => {
     setDiag(diagnosticsOn(window.location.search));
+    setCanSave(saveToPhoneOn(window.location.search));
   }, []);
 
   /**
@@ -937,6 +947,14 @@ export default function DocumentScanner({
      * preview stops twitching, and a crop is not a preview.
      */
     const smoother = new QuadSmoother();
+    /**
+     * Whether the box is on screen, and how solidly.
+     *
+     * ⚠️ ONE DROPPED INFERENCE MUST NOT BLINK IT. Misses at ~10Hz are routine —
+     * a hand across the page, a moment of blur, a frame the model declines —
+     * and hiding on the first turns a working tracker into a strobe.
+     */
+    const presence = new QuadPresence();
     let lastDrawAt = 0;
 
     // ⚠️ THE DETECTOR DOES NOT HOLD THE TRIGGER. It turns the aim box green
@@ -1531,7 +1549,15 @@ export default function DocumentScanner({
               setGuide(next);
             }
           }
-          if (shownQuad && lockRef.current >= 2) {
+          // ⚠️ STEPPED EVERY DRAWN FRAME, whether or not there is a quad —
+          // the fades are animations and need the display's clock, and the
+          // grace window only counts down on frames that actually happened.
+          // `show`, not `vis` — visibleRect already owns that name below.
+          const show = presence.step(
+            !!shownQuad && lockRef.current >= 2,
+            dt * 1000,
+          );
+          if (shownQuad && show.opacity > 0) {
             // ⚠️ THE SMOOTHED QUAD IS DRAWN; THE RAW ONE DECIDES. Everything
             // above this line — occupancy, edge margin, dpi, tilt — reads the
             // raw detection, because a gate must judge what was actually seen.
@@ -1546,16 +1572,25 @@ export default function DocumentScanner({
               x: p.x * k,
               y: p.y * k,
             })) as Quad;
-            drawCorners(g, onScreen, lockRef.current >= 3);
+            // The entrance settles INWARD onto the document; growing outward
+            // reads as the detector still searching.
+            const entering =
+              show.scale !== 1
+                ? (scaleAboutCentre(onScreen, show.scale) as Quad)
+                : onScreen;
+            g.save();
+            g.globalAlpha = show.opacity;
+            drawCorners(g, entering, lockRef.current >= 3);
             // ⚠️ ON THE SMOOTHED QUAD, so the arrow travels with the box
             // rather than snapping between the two. An indicator that
             // disagrees with the outline it sits on reads as two overlays.
             drawGuidance(
               g,
-              onScreen,
+              entering,
               guideRef.current,
               lockRef.current >= 3 ? TRACK : SEEKING,
             );
+            g.restore();
           }
         }
       }
@@ -1653,6 +1688,9 @@ export default function DocumentScanner({
             };
       const res = await processCapture(blob, {
         detected: detected ?? undefined,
+        // The mask rung. Absent on an older server, in which case the ladder
+        // behaves exactly as it did before.
+        mask: detected?.mask,
         expectAspect: expectAspectFor(shape),
         aimBox:
           grabbed.width > 0 && grabbed.height > 0
@@ -2328,7 +2366,7 @@ export default function DocumentScanner({
             onUse={() => finish([...pages, shot.file])}
             multi={multi}
             onFilter={applyFilter}
-            onSave={diag ? saveToPhone : undefined}
+            onSave={canSave ? saveToPhone : undefined}
             onNextDocument={() => {
               setPages((p) => [...p, shot.file]);
               backToChooser();
