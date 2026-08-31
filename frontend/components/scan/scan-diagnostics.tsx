@@ -123,6 +123,7 @@ export default function ScanDiagnostics({
     ms: number;
     lock: number;
     guide: string;
+    quality: { occupancy: number; tilt: number; dpi: number | null } | null;
   } | null;
   trail: readonly FrameSnapshot[];
   lastCapture?: ScanReport['lastCapture'];
@@ -295,6 +296,27 @@ export default function ScanDiagnostics({
             {LIVE_DRAW_ACCEPT} · lock {liveReading.lock}/3 ·{' '}
             {liveReading.guide} · {liveReading.ms}ms
           </span>
+          {liveReading.quality && (
+            <span
+              style={{
+                display: 'block',
+                fontVariantNumeric: 'tabular-nums',
+                color:
+                  liveReading.quality.tilt <= 1 &&
+                  liveReading.quality.occupancy >= 0.65 &&
+                  liveReading.quality.occupancy <= 0.85
+                    ? OK
+                    : BAD,
+              }}
+            >
+              fills {(liveReading.quality.occupancy * 100).toFixed(0)}% (want
+              65-85) · tilt {liveReading.quality.tilt.toFixed(1)}° (want
+              ≤1){' '}
+              {liveReading.quality.dpi !== null
+                ? `· ${Math.round(liveReading.quality.dpi)}dpi measured`
+                : ''}
+            </span>
+          )}
         </div>
       )}
 

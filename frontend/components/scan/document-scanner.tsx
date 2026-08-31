@@ -18,6 +18,7 @@ import {
   DocShape,
   SHAPES,
   SHAPE_ORDER,
+  acrossMm,
   expectAspect as expectAspectFor,
   holdHint,
 } from '@/lib/scan/shapes';
@@ -27,6 +28,7 @@ import { aimAgreement, aimBox } from '@/lib/scan/aim';
 import { exposureProblem } from '@/lib/scan/exposure';
 import {
   type CameraFacts,
+  dpiOf,
   framingPlan,
   readCameraFacts,
 } from '@/lib/scan/framing';
@@ -34,6 +36,8 @@ import { DETECT_ACCEPT, lastDetectFailure } from '@/lib/scan/detect-client';
 import {
   type Guidance,
   guidanceFor,
+  mayCapture,
+  squareness,
   guidanceText,
   occupancy,
 } from '@/lib/scan/guidance';
@@ -347,6 +351,12 @@ export default function DocumentScanner({
   const liveReadingRef = useRef<LiveReading | null>(null);
   /** What we are telling the member right now, derived from the tracked quad. */
   const guideRef = useRef<Guidance>('point');
+  /** Live quality, measured off the tracked quad rather than predicted. */
+  const qualityRef = useRef<{
+    occupancy: number;
+    tilt: number;
+    dpi: number | null;
+  } | null>(null);
   const [guide, setGuide] = useState<Guidance>('point');
 
   const detectRef = useRef<
@@ -1149,7 +1159,17 @@ export default function DocumentScanner({
           holdShownRef.current = pct;
           setHoldPct(pct);
         }
-        if (holdComplete(held) && !capturingRef.current) {
+        // ⚠️ THE GUIDANCE HAS A VETO. Without this the shutter fires on the
+        // old ink/light/motion gates alone, which know nothing about how big
+        // the document is — the operator got an auto-capture with the
+        // certificate a fifth of the frame away while the screen was still
+        // saying "Move closer". Saying it and then firing anyway is worse
+        // than not saying it.
+        if (
+          holdComplete(held) &&
+          !capturingRef.current &&
+          mayCapture(guideRef.current)
+        ) {
           capturingRef.current = true;
           alive = false;
           holdShownRef.current = 0;
@@ -1238,6 +1258,30 @@ export default function DocumentScanner({
               // quad is fine as-is.
               quad: q ?? undefined,
             });
+            // ⚠️ THE QUALITY NUMBERS, MEASURED OFF THE QUAD ITSELF. Not
+            // predicted from a working distance or assumed from a box —
+            // dpiOf takes the document's KNOWN millimetres against its
+            // measured pixel span, so this is the real resolution on the real
+            // lens at the real distance. It is the number that decides
+            // whether a serial number will be readable.
+            const acrossMmNow = acrossMm(shape);
+            const q0 = q;
+            qualityRef.current =
+              q0 && occ !== null
+                ? {
+                    occupancy: occ,
+                    tilt: squareness(q0),
+                    dpi: acrossMmNow
+                      ? dpiOf(
+                          Math.max(
+                            Math.hypot(q0[1].x - q0[0].x, q0[1].y - q0[0].y),
+                            Math.hypot(q0[2].x - q0[3].x, q0[2].y - q0[3].y),
+                          ),
+                          acrossMmNow,
+                        )
+                      : null,
+                  }
+                : null;
             if (next !== guideRef.current) {
               guideRef.current = next;
               setGuide(next);
@@ -1766,6 +1810,7 @@ export default function DocumentScanner({
                     ms: liveReadingRef.current.ms,
                     lock: lockRef.current,
                     guide: guideRef.current,
+                    quality: qualityRef.current,
                   }
                 : null
             }
@@ -2202,6 +2247,16 @@ export default function DocumentScanner({
  */
 const MARK = '#4DA3FF';
 
+/**
+ * The live tracked quad.
+ *
+ * ⚠️ GREEN, NOT THE EDITOR'S BLUE. Two different quads appear in this flow —
+ * this one tracks live and is the detector's opinion, and the corner editor's
+ * is the crop the member is about to commit to. Sharing a colour made them
+ * indistinguishable in a screenshot and, worse, in the hand.
+ */
+const TRACK = '#3ddc84';
+
 function drawCorners(g: CanvasRenderingContext2D, q: Quad, locked: boolean) {
   // ⚠️ THE WHOLE DOCUMENT, NOT FOUR BRACKETS. This drew corner marks with a
   // 22%-alpha join, which reads as "here are some corners" rather than "I have
@@ -2223,12 +2278,12 @@ function drawCorners(g: CanvasRenderingContext2D, q: Quad, locked: boolean) {
 
   // The fill goes first so the stroke sits crisply on top of it.
   g.globalAlpha = locked ? 0.18 : 0.1;
-  g.fillStyle = MARK;
+  g.fillStyle = TRACK;
   path();
   g.fill();
 
   g.globalAlpha = locked ? 1 : 0.75;
-  g.strokeStyle = MARK;
+  g.strokeStyle = TRACK;
   g.lineWidth = locked ? 3 : 2;
   g.lineJoin = 'round';
   path();

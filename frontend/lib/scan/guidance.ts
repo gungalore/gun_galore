@@ -47,8 +47,10 @@ export const TOO_BIG = 0.85;
  * would be the wrong instruction — it changes nothing about the angles. What
  * fixes it is levelling the phone, and the edge lengths say which way.
  */
-export const SQUARE_MIN = 87;
-export const SQUARE_MAX = 93;
+// Operator, after seeing a tilted auto-capture: 'the tilt angle needs to be
+// 1 degree to every direction then alert to adjust'.
+export const SQUARE_MIN = 89;
+export const SQUARE_MAX = 91;
 
 export type Guidance =
   /** Nothing found. */
