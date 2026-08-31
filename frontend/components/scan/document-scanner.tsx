@@ -38,6 +38,7 @@ import {
   occupancy,
 } from '@/lib/scan/guidance';
 import {
+  LIVE_DRAW_ACCEPT,
   LiveDetector,
   type LiveReading,
   type LiveStatus,
@@ -1755,6 +1756,16 @@ export default function DocumentScanner({
             activeCamera={activeCamRef.current}
             lastDetect={detectRef.current}
             live={liveStatusRef.current}
+            liveReading={
+              liveReadingRef.current
+                ? {
+                    minConfidence: liveReadingRef.current.minConfidence,
+                    ms: liveReadingRef.current.ms,
+                    lock: lockRef.current,
+                    guide: guideRef.current,
+                  }
+                : null
+            }
             trail={trailRef.current}
             lastCapture={lastCaptureRef.current}
           />

@@ -38,6 +38,7 @@ import {
 import { clearDiagnostics } from '@/lib/scan/diag-flag';
 import { HOLD_MS } from '@/lib/scan/autocapture';
 import { aimBox } from '@/lib/scan/aim';
+import { LIVE_DRAW_ACCEPT } from '@/lib/scan/docquad-live';
 import {
   type CameraFacts,
   framingPlan,
@@ -87,6 +88,7 @@ export default function ScanDiagnostics({
   activeCamera,
   lastDetect,
   live,
+  liveReading,
   trail,
   lastCapture,
 }: {
@@ -115,6 +117,13 @@ export default function ScanDiagnostics({
     | { state: 'running'; medianMs: number }
     | { state: 'unavailable'; why: string }
     | { state: 'too-slow'; medianMs: number };
+  /** The most recent LIVE reading, and what the loop did with it. */
+  liveReading?: {
+    minConfidence: number;
+    ms: number;
+    lock: number;
+    guide: string;
+  } | null;
   trail: readonly FrameSnapshot[];
   lastCapture?: ScanReport['lastCapture'];
 }) {
@@ -278,6 +287,16 @@ export default function ScanDiagnostics({
           </div>
         );
       })()}
+
+      {liveReading && (
+        <div style={{ marginTop: 4, fontSize: 10, opacity: 0.85 }}>
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+            live conf {liveReading.minConfidence.toFixed(3)} · draws at{' '}
+            {LIVE_DRAW_ACCEPT} · lock {liveReading.lock}/3 ·{' '}
+            {liveReading.guide} · {liveReading.ms}ms
+          </span>
+        </div>
+      )}
 
       {/* The ON-DEVICE model, which drives the live box — distinct from the
           capture-time call below it. "unavailable" means it never loaded;

@@ -31,6 +31,24 @@ export interface LiveReading {
  */
 export const LIVE_TOO_SLOW_MS = 500;
 
+/**
+ * How sure the model must be before its quad is DRAWN.
+ *
+ * ⚠️ DELIBERATELY LOWER THAN THE CAPTURE GATE, BECAUSE THEY DECIDE DIFFERENT
+ * THINGS. DETECT_ACCEPT (0.80) decides whether a quad may CROP a statutory
+ * document unattended — a commitment, and the four fixtures it wrongly
+ * accepted would each have been a destroyed serial number. This decides
+ * whether to draw a box on a preview, which commits to nothing and which the
+ * member overrules simply by moving the phone.
+ *
+ * Sharing the capture threshold is what made the live box invisible: a preview
+ * frame is smaller, noisier and more motion-blurred than a still, so live
+ * confidence sits well under a bar tuned on stills. Every frame fell through
+ * to the classical detector — jumpy on the iPhone, dropped outright on the
+ * Samsung — which is exactly what the operator saw on each.
+ */
+export const LIVE_DRAW_ACCEPT = 0.5;
+
 /** How many slow inferences before we give up on this device. */
 const SLOW_STRIKES = 3;
 
