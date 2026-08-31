@@ -29,7 +29,19 @@ import { MODEL_SIZE, letterboxFor } from './letterbox';
 // depends on, and is out.
 // ────────────────────────────────────────────────────────────────────
 
-const MODEL_URL = '/scan/docquad.ort';
+// ⚠️ VERSIONED PATH, AND IT MUST CHANGE WHENEVER THESE FILES DO.
+//
+// The first release served these from /scan/ and the middleware matcher had no
+// `wasm` exclusion, so Clerk 307'd them to sign-in and ORT was handed the HTML
+// of the sign-in page — "expected magic word 00 61 73 6d, found 3c 21 44 4f",
+// which is `<!DO`. Fixing the middleware fixed the SERVER; every phone that had
+// already tried kept failing, because the service worker had cached the bad
+// response against those exact URLs.
+//
+// A query string is not enough — a cached entry can still match one. A new
+// PATH cannot. Bump v1 -> v2 rather than overwriting a file in place.
+const ASSET_BASE = '/scan/v1/';
+const MODEL_URL = ASSET_BASE + 'docquad.ort';
 
 /** Sent in: one letterboxed RGBA frame, plus the source size the quad maps back to. */
 export interface DetectRequest {
@@ -64,7 +76,7 @@ async function ensureSession(): Promise<ort.InferenceSession | null> {
       ort.env.wasm.simd = true;
       // Served from our own origin: the CSP blocks the CDN ORT would otherwise
       // reach for, and a scanner that only works online is not the point.
-      ort.env.wasm.wasmPaths = '/scan/';
+      ort.env.wasm.wasmPaths = ASSET_BASE;
       const s = await ort.InferenceSession.create(MODEL_URL, {
         executionProviders: ['wasm'],
         graphOptimizationLevel: 'all',
