@@ -84,6 +84,8 @@ export default function ScanDiagnostics({
   device,
   camera,
   cameras,
+  activeCamera,
+  lastDetect,
   trail,
   lastCapture,
 }: {
@@ -100,6 +102,11 @@ export default function ScanDiagnostics({
   device: DeviceContext | null;
   camera: CameraFacts | null;
   cameras?: Array<{ deviceId: string; label: string; kind: string; minFocusM: number | null }>;
+  activeCamera?: string | null;
+  lastDetect?:
+    | { outcome: 'accepted' | 'declined'; minConfidence: number; ms: number }
+    | { outcome: 'no-answer' | 'not-asked' }
+    | null;
   trail: readonly FrameSnapshot[];
   lastCapture?: ScanReport['lastCapture'];
 }) {
@@ -264,6 +271,34 @@ export default function ScanDiagnostics({
         );
       })()}
 
+      {/* ⚠️ WHY THE CROP IS WHAT IT IS. "last crop: aim" means the fallback
+          ran, and it meant four different things at once — the model
+          declined, errored, timed out, or was never asked. On the operator's
+          Samsung on a pink blanket that line said `aim` and there was nothing
+          to act on. This says which. */}
+      {lastDetect && (
+        <div style={{ marginTop: 6, opacity: 0.9 }}>
+          <span style={{ fontWeight: 700 }}>model</span>{' '}
+          {lastDetect.outcome === 'accepted' || lastDetect.outcome === 'declined' ? (
+            <span
+              style={{
+                color: lastDetect.outcome === 'accepted' ? OK : BAD,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {lastDetect.outcome} at {lastDetect.minConfidence.toFixed(3)} ·{' '}
+              {lastDetect.ms}ms
+            </span>
+          ) : (
+            <span style={{ color: BAD }}>
+              {lastDetect.outcome === 'no-answer'
+                ? 'no answer — offline, timeout, or unavailable'
+                : 'not asked — no detect prop on this mount'}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Which lenses this phone offers, and which one we are on. The
           browser hands back the main wide camera by default — the one with
           the worst near-focus — so this is the line that shows whether the
@@ -274,6 +309,7 @@ export default function ScanDiagnostics({
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{cameras.length} rear</span>
           {cameras.map((c) => (
             <span key={c.deviceId || c.label} style={{ display: 'block', fontSize: 10, opacity: 0.8 }}>
+              {c.label === activeCamera ? '✓ ' : '  '}
               {c.label || '(unlabelled)'} · {c.kind}
               {c.minFocusM !== null ? ` · min focus ${(c.minFocusM * 1000).toFixed(0)}mm` : ' · focus unknown'}
             </span>

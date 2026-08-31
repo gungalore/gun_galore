@@ -30,6 +30,7 @@ import {
   framingPlan,
   readCameraFacts,
 } from '@/lib/scan/framing';
+import { DETECT_ACCEPT } from '@/lib/scan/detect-client';
 import {
   type CameraOption,
   bestCamera,
@@ -150,7 +151,9 @@ export interface DocumentScannerProps {
    * Optional throughout. A parent that does not pass it gets exactly the
    * behaviour that shipped before: the corner editor opens on the aim box.
    */
-  detect?: (frame: Blob) => Promise<{ quad: Quad; minConfidence: number } | null>;
+  detect?: (
+    frame: Blob,
+  ) => Promise<{ quad: Quad; minConfidence: number; ms?: number } | null>;
   /**
    * What the member is most likely holding. Sets the starting guide frame and
    * the detector's aspect hint — and only those. It is a suggestion the
@@ -306,6 +309,22 @@ export default function DocumentScanner({
   const cameraRef = useRef<CameraFacts | null>(null);
   /** Rear lenses this phone offers, for the picker and the diagnostics panel. */
   const [cameras, setCameras] = useState<CameraOption[]>([]);
+  /** Which lens we actually ended up on, so the panel can say. */
+  const activeCamRef = useRef<string | null>(null);
+  /**
+   * ⚠️ WHAT THE MODEL SAID, AND WHY WE DID NOT USE IT.
+   *
+   * `last crop: aim` is overloaded four ways — the model declined, the model
+   * errored, the request timed out, or nothing ever asked it. On the
+   * operator's Samsung on a pink blanket the panel reported `aim` and there
+   * was no way to tell which of the four had happened, so there was nothing
+   * to act on. This records the answer itself.
+   */
+  const detectRef = useRef<
+    | { outcome: 'accepted' | 'declined'; minConfidence: number; ms: number }
+    | { outcome: 'no-answer' | 'not-asked' }
+    | null
+  >(null);
   const lastCaptureRef = useRef<ScanReport['lastCapture']>(undefined);
   /** Bumped on a throttle so the panel repaints without re-rendering per frame. */
   const [diagTick, setDiagTick] = useState(0);
@@ -572,6 +591,9 @@ export default function DocumentScanner({
             track = better.getVideoTracks()[0];
             stream = better;
           }
+          activeCamRef.current =
+            cams.find((c) => c.deviceId === track.getSettings?.().deviceId)
+              ?.label ?? null;
           setCameras(cams);
         } catch {
           // A phone that will not enumerate, or a lens it will list but not
@@ -1194,6 +1216,17 @@ export default function DocumentScanner({
       // is what happened before this existed. A member in a gun shop on one
       // bar must still be able to photograph their licence.
       const detected = detect ? await detect(blob) : null;
+      // Record WHICH of the four things happened, not just that we fell back.
+      detectRef.current = !detect
+        ? { outcome: 'not-asked' }
+        : detected === null
+          ? { outcome: 'no-answer' }
+          : {
+              outcome:
+                detected.minConfidence >= DETECT_ACCEPT ? 'accepted' : 'declined',
+              minConfidence: detected.minConfidence,
+              ms: detected.ms ?? 0,
+            };
       const res = await processCapture(blob, {
         detected: detected ?? undefined,
         expectAspect: expectAspectFor(shape),
@@ -1583,6 +1616,8 @@ export default function DocumentScanner({
             device={deviceRef.current}
             camera={cameraRef.current}
             cameras={cameras}
+            activeCamera={activeCamRef.current}
+            lastDetect={detectRef.current}
             trail={trailRef.current}
             lastCapture={lastCaptureRef.current}
           />
