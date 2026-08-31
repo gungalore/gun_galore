@@ -4,6 +4,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { PeachModule } from './payments/peach.module';
+import { ScanModule } from './scan/scan.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { SearchModule } from './search/search.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -69,6 +70,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
     ]),
     PrismaModule,
     PeachModule,
+    ScanModule,
     CloudinaryModule,
     SearchModule,
     NotificationsModule,
