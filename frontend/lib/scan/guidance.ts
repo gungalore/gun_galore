@@ -21,36 +21,58 @@ import type { Quad } from './geometry';
 // ────────────────────────────────────────────────────────────────────
 
 /**
- * Below this fraction of the frame, the document is too small to read well.
+ * Below this fraction of the frame, the detector starts struggling to find it.
  *
- * ⚠️ 0.45, NOT THE 0.65 FIRST ASKED FOR, AND THE REASON IS GEOMETRY. An A4
- * page is 0.707 wide-over-tall against a 0.75 frame, so a page whose height
- * fills the frame already covers 94% of its AREA. 65% area put the document
- * at roughly 82% of frame height — "almost fills the screen completely", in
- * the operator's words, and close enough to the edge to sit on the measured
- * cliff.
+ * ⚠️ THIS IS A DETECTION FLOOR, NOT A RESOLUTION ONE — AND CONFUSING THE TWO
+ * MADE THE FIREARM LICENCE UNCAPTURABLE. It was 0.45, chosen as a proxy for
+ * "big enough to read". Measured against what a document can actually reach in
+ * a phone viewfinder:
  *
- * There is a genuine tension here and it is worth stating: framing.ts wants
- * the document to span 82% of the short axis to reach 300 dpi on A4, which is
- * about 78% of area — essentially edge to edge. The cliff says a document
- * approaching the frame edge scores 0/15. Both cannot hold, so the target
- * gives way: 200 dpi on an A4 is entirely legible, because its type is many
- * times larger than the serial numbers on a licence card that 300 dpi exists
- * for. 45% area lands near 200 dpi at 4K with margin to spare.
+ *     max achievable occupancy      card    A4 / ID book
+ *     Samsung portrait               49%        91%
+ *     iPhone portrait                53%        84%
+ *     tall portrait viewfinder       30%        68%
+ *
+ * A card is landscape in a portrait frame, so it wastes the bands above and
+ * below it however well it is framed. At 0.45 the card had a four-point
+ * window on the Samsung — reachable only by touching both side edges, which
+ * is the measured cliff — and on a tall viewfinder it could not reach the
+ * bracket AT ALL. Auto-capture was impossible for the single most important
+ * document in the product, on a viewport aspect nobody had checked.
+ *
+ * Occupancy of the frame is not a property of the document. It is a property
+ * of the document AND the viewport, so it cannot carry a requirement that
+ * belongs to the document alone. Resolution is now MEASURED, in dpi, against
+ * known millimetres — so that is where the resolution bound lives, and this
+ * one keeps only the job it can actually do: keeping the document big enough
+ * for the detector to find.
+ *
+ * 0.15 sits at the bottom of the 13-23% band the oracle-cropped sweep found
+ * the detector preferring, and every shape can reach it on every viewport
+ * above.
  */
-export const TOO_SMALL = 0.45;
+export const TOO_SMALL = 0.15;
 
 /**
- * Above this, it is crowding the frame edge.
+ * How close a corner may come to the frame edge, as a fraction of the short
+ * axis.
  *
- * ⚠️ THE UPPER BOUND IS NOT FUSSINESS — IT IS THE MEASURED CLIFF. Sweeping a
- * document's margin from the frame edge across the fixture set: flush to the
- * edge scores 0/15 usable, one step off scores 11/15. A document filling the
- * frame is a document whose corners are about to leave it, and a corner
- * outside the frame is not a corner the detector can find or the crop can
- * keep.
+ * ⚠️ REPLACES AN AREA CAP, BECAUSE THE CLIFF WAS NEVER ABOUT AREA. Sweeping a
+ * document's margin from the frame edge across the fifteen fixtures:
+ *
+ *     document flush to the frame edge   0/15 usable, median IoU 0.209
+ *     one step off the edge             11/15 usable, median IoU 0.959
+ *     a comfortable margin              13/15 usable, median IoU 0.942
+ *
+ * Zero to eleven, on one step. But what that measures is a CORNER leaving the
+ * frame, and an area cap only approximates it — badly, and differently for
+ * every document shape and viewport aspect. A 70% area cap let a portrait A4
+ * sit closer to the edge than a landscape card at 45%, which is backwards.
+ *
+ * Measuring the margin directly says the thing the cliff is about, in one
+ * number, for every shape.
  */
-export const TOO_BIG = 0.7;
+export const EDGE_MARGIN = 0.04;
 
 /**
  * How far a corner may sit from square before we say something.
@@ -178,6 +200,24 @@ export function tiltAdvice(
   return left < right ? 'tilt-left' : 'tilt-right';
 }
 
+/**
+ * How close the nearest corner comes to the frame edge, as a fraction of the
+ * frame's SHORT axis. 0 means touching.
+ *
+ * Short axis rather than each corner's own axis, so one number means the same
+ * thing on a portrait and a landscape frame — a margin that is generous
+ * sideways and none at all vertically is not a margin.
+ */
+export function edgeMargin(quad: Quad, frameW: number, frameH: number): number {
+  if (!(frameW > 0) || !(frameH > 0)) return 0;
+  const shortAxis = Math.min(frameW, frameH);
+  let worst = Infinity;
+  for (const p of quad) {
+    worst = Math.min(worst, p.x, p.y, frameW - p.x, frameH - p.y);
+  }
+  return Math.max(0, worst) / shortAxis;
+}
+
 export function guidanceFor(input: {
   /** Null when the detector has nothing. */
   occupancy: number | null;
@@ -201,12 +241,25 @@ export function guidanceFor(input: {
    * must never become an escape hatch: see shapes-mandatory.spec.ts.
    */
   dpi?: number | null;
+  /**
+   * How close the nearest corner is to the frame edge, from edgeMargin().
+   *
+   * Omitted only where there is no frame to measure against — the tests that
+   * exercise the size and tilt rules alone. In the product it is always
+   * passed, because it is the check the frame-edge cliff actually needs.
+   */
+  edgeMargin?: number;
   /** The tracked quad, for the squareness check. Omit to skip it. */
   quad?: Quad;
 }): Guidance {
   if (input.occupancy === null || !input.locked) return 'point';
+  // ⚠️ THE EDGE CHECK COMES FIRST, because a corner leaving the frame is the
+  // one failure the detector cannot recover from — a corner it cannot see is
+  // a corner it invents. Everything below is a matter of degree; this is not.
+  if (input.edgeMargin !== undefined && input.edgeMargin < EDGE_MARGIN) {
+    return 'further';
+  }
   if (input.occupancy < TOO_SMALL) return 'closer';
-  if (input.occupancy > TOO_BIG) return 'further';
   // ⚠️ THE REAL QUALITY FLOOR, AND IT OUTRANKS THE BRACKET. Occupancy is a
   // proxy for resolution; dpi IS resolution, measured off this quad on this
   // lens at this distance. Where the two disagree the measurement wins, and

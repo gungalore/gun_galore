@@ -4,7 +4,6 @@ import {
   cornerAngles,
   squareness,
   tiltAdvice,
-  TOO_BIG,
   TOO_SMALL,
   guidanceFor,
   guidanceText,
@@ -55,10 +54,14 @@ describe('guidanceFor', () => {
   });
 
   it('⚠️ SAYS MOVE CLOSER BELOW THE BRACKET AND FURTHER ABOVE IT', () => {
-    expect(guidanceFor({ occupancy: 0.2, locked: true, still: true })).toBe('closer');
+    expect(guidanceFor({ occupancy: 0.1, locked: true, still: true })).toBe('closer');
     expect(guidanceFor({ occupancy: TOO_SMALL - 0.01, locked: true, still: true })).toBe('closer');
-    expect(guidanceFor({ occupancy: TOO_BIG + 0.01, locked: true, still: true })).toBe('further');
-    expect(guidanceFor({ occupancy: 0.9, locked: true, still: true })).toBe('further');
+    expect(
+      guidanceFor({ occupancy: 0.5, locked: true, still: true, edgeMargin: 0 }),
+    ).toBe('further');
+    expect(
+      guidanceFor({ occupancy: 0.9, locked: true, still: true, edgeMargin: 0.001 }),
+    ).toBe('further');
   });
 
   it('asks for stillness inside the bracket, then fires', () => {
@@ -77,7 +80,9 @@ describe('guidanceFor', () => {
 
   it('accepts the bracket edges rather than nagging on the boundary', () => {
     expect(guidanceFor({ occupancy: TOO_SMALL, locked: true, still: true })).toBe('ready');
-    expect(guidanceFor({ occupancy: TOO_BIG, locked: true, still: true })).toBe('ready');
+    expect(
+      guidanceFor({ occupancy: 0.5, locked: true, still: true, edgeMargin: 0.2 }),
+    ).toBe('ready');
   });
 });
 
@@ -143,7 +148,7 @@ describe('squareness — the operator\'s 87/93 corner check', () => {
     // the instruction — moving closer changes the geometry anyway, and two
     // corrections at once is one too many.
     expect(
-      guidanceFor({ occupancy: 0.3, locked: true, still: true, quad: topFar }),
+      guidanceFor({ occupancy: 0.1, locked: true, still: true, quad: topFar }),
     ).toBe('closer');
     expect(
       guidanceFor({ occupancy: 0.6, locked: true, still: true, quad: topFar }),
@@ -224,7 +229,7 @@ describe("squareness — the operator's 87/93 corner check", () => {
     // Levelling the phone while the document is still half a frame away wastes
     // the instruction — moving closer changes the geometry anyway, and two
     // corrections at once is one too many.
-    expect(guidanceFor({ occupancy: 0.2, locked: true, still: true, quad: topFar })).toBe('closer');
+    expect(guidanceFor({ occupancy: 0.1, locked: true, still: true, quad: topFar })).toBe('closer');
     expect(guidanceFor({ occupancy: 0.6, locked: true, still: true, quad: topFar })).toBe('tilt-top');
   });
 
@@ -275,7 +280,7 @@ describe('the 200 dpi quality floor', () => {
 
   it('still refuses a document crowding the frame, however sharp', () => {
     // The frame-edge cliff is absolute; resolution cannot buy past it.
-    expect(guidanceFor({ occupancy: 0.9, locked: true, still: true, dpi: 600 })).toBe(
+    expect(guidanceFor({ occupancy: 0.9, locked: true, still: true, dpi: 600, edgeMargin: 0 })).toBe(
       'further',
     );
   });

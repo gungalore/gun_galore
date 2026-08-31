@@ -58,7 +58,6 @@ describe('shapeForKind always lands on something measurable', () => {
       'FIREARM_LICENCE',
       'SAFE_PHOTOGRAPHS',
       'OTHER',
-      'VEHICLE_LICENCE_DISC',
       '',
       'something nobody has thought of',
     ]) {
@@ -68,8 +67,12 @@ describe('shapeForKind always lands on something measurable', () => {
     }
   });
 
-  it('sends the vehicle disc to its own shape', () => {
-    expect(shapeForKind('VEHICLE_LICENCE_DISC')).toBe('licence-disc');
+  it('sends a firearm licence to the card, which is what it is', () => {
+    // ID-1, the same 85.6 x 54 as a competency card. It needs no shape of its
+    // own and adding one would be three identical rectangles with three
+    // labels.
+    expect(shapeForKind('FIREARM_LICENCE')).toBe('card');
+    expect(shapeForKind('CURRENT_LICENCE')).toBe('card');
   });
 
   it('falls back to A4, the cheaper wrong answer', () => {

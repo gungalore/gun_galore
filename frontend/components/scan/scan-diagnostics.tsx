@@ -44,7 +44,7 @@ import {
   SQUARE_MAX,
   SQUARE_MIN,
   STEADY_MS,
-  TOO_BIG,
+  EDGE_MARGIN,
   TOO_SMALL,
 } from '@/lib/scan/guidance';
 
@@ -152,6 +152,7 @@ export default function ScanDiagnostics({
       tilt: number;
       dpi: number | null;
       stillMs: number;
+      edgeMargin: number;
     } | null;
   } | null;
   trail: readonly FrameSnapshot[];
@@ -344,13 +345,15 @@ export default function ScanDiagnostics({
                 color:
                   liveReading.quality.tilt <= TILT_MAX &&
                   liveReading.quality.occupancy >= TOO_SMALL &&
-                  liveReading.quality.occupancy <= TOO_BIG
+                  liveReading.quality.edgeMargin >= EDGE_MARGIN
                     ? OK
                     : BAD,
               }}
             >
-              fills {(liveReading.quality.occupancy * 100).toFixed(0)}% (want{' '}
-              {Math.round(TOO_SMALL * 100)}-{Math.round(TOO_BIG * 100)}) · tilt{' '}
+              fills {(liveReading.quality.occupancy * 100).toFixed(0)}% (min{' '}
+              {Math.round(TOO_SMALL * 100)}) · edge{' '}
+              {(liveReading.quality.edgeMargin * 100).toFixed(1)}% (min{' '}
+              {Math.round(EDGE_MARGIN * 100)}) · tilt{' '}
               {liveReading.quality.tilt.toFixed(1)}° (want ≤{TILT_MAX}){' '}
               {liveReading.quality.dpi !== null
                 ? `· ${Math.round(liveReading.quality.dpi)}dpi (floor ${FLOOR_DPI})`

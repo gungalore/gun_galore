@@ -38,6 +38,7 @@ import { DETECT_ACCEPT, lastDetectFailure } from '@/lib/scan/detect-client';
 import {
   type Guidance,
   STEADY_MS,
+  edgeMargin,
   guidanceFor,
   mayCapture,
   squareness,
@@ -391,6 +392,8 @@ export default function DocumentScanner({
     dpi: number | null;
     /** How long the phone has been still, so a stuck gate is visible. */
     stillMs: number;
+    /** Nearest corner's distance from the frame edge — the cliff check. */
+    edgeMargin: number;
   } | null>(null);
   const [guide, setGuide] = useState<Guidance>('point');
 
@@ -1347,14 +1350,20 @@ export default function DocumentScanner({
               stillSince = 0;
             }
             const stillMs = stillSince ? tNow - stillSince : 0;
-            const occ =
+            // ⚠️ ONE SCALED QUAD, USED BY BOTH. occupancy and edgeMargin must
+            // agree about which space they are in or they describe different
+            // documents — the exact class of bug that has cost the most time
+            // in this file.
+            const canvasQuad =
               q && lockRef.current >= 2 && cv.width > 0
-                ? occupancy(
-                    q.map((p) => ({ x: p.x * kx, y: p.y * ky })) as Quad,
-                    cv.width,
-                    cv.height,
-                  )
+                ? (q.map((p) => ({ x: p.x * kx, y: p.y * ky })) as Quad)
                 : null;
+            const occ = canvasQuad
+              ? occupancy(canvasQuad, cv.width, cv.height)
+              : null;
+            const edge = canvasQuad
+              ? edgeMargin(canvasQuad, cv.width, cv.height)
+              : 0;
             // ⚠️ MEASURED BEFORE THE GATE, BECAUSE THE GATE NEEDS IT. dpi is
             // computed below for the readout either way; the floor check
             // wants the same number, so it is worked out once here rather
@@ -1377,6 +1386,7 @@ export default function DocumentScanner({
               // 'steady' last one frame and the member never saw it.
               still: stillMs >= STEADY_MS,
               dpi: dpiNow,
+              edgeMargin: edge,
               // Any consistent space works for the angles — they are ratios of
               // edge directions, not absolute positions — so the visible-frame
               // quad is fine as-is.
@@ -1402,7 +1412,13 @@ export default function DocumentScanner({
             const q0 = q;
             qualityRef.current =
               q0 && occ !== null
-                ? { occupancy: occ, tilt: squareness(q0), dpi: dpiNow, stillMs }
+                ? {
+                    occupancy: occ,
+                    tilt: squareness(q0),
+                    dpi: dpiNow,
+                    stillMs,
+                    edgeMargin: edge,
+                  }
                 : null;
             if (next !== guideRef.current) {
               guideRef.current = next;
