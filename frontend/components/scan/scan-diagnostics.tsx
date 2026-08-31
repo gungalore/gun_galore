@@ -38,6 +38,11 @@ import {
 import { clearDiagnostics } from '@/lib/scan/diag-flag';
 import { HOLD_MS } from '@/lib/scan/autocapture';
 import { aimBox } from '@/lib/scan/aim';
+import {
+  type CameraFacts,
+  framingPlan,
+  shortfall,
+} from '@/lib/scan/framing';
 import { type DocShape, guideAspect } from '@/lib/scan/shapes';
 
 const OK = '#3ddc84';
@@ -77,6 +82,7 @@ export default function ScanDiagnostics({
   shape,
   detectorOff,
   device,
+  camera,
   trail,
   lastCapture,
 }: {
@@ -91,6 +97,7 @@ export default function ScanDiagnostics({
   shape: DocShape;
   detectorOff: boolean;
   device: DeviceContext | null;
+  camera: CameraFacts | null;
   trail: readonly FrameSnapshot[];
   lastCapture?: ScanReport['lastCapture'];
 }) {
@@ -212,6 +219,49 @@ export default function ScanDiagnostics({
         whole frame{' '}
         {frameMotion === undefined ? '—' : Math.round(frameMotion * 100) / 100}
       </div>
+      {/* ⚠️ THE NUMBER NOTHING HAS EVER READ. We ask for 3840x2160 `ideal`
+          and take whatever arrives. This line is the difference between "the
+          device caps here" and "the browser refused a 4K request the hardware
+          could have met", and it decides whether an A4 page is scannable at
+          all: a page is 210mm across against a card's 85.6mm, so it needs
+          2.45x the pixels for the same legibility. */}
+      {camera && (() => {
+        const d = camera.delivered;
+        const plan = d ? framingPlan(d, shape, 0.82) : null;
+        const short = shortfall(camera);
+        const tone =
+          plan?.verdict === 'good' ? OK : plan?.verdict === 'relaxed' ? undefined : BAD;
+        return (
+          <div style={{ marginTop: 6, opacity: 0.9 }}>
+            <span style={{ fontWeight: 700 }}>camera</span>{' '}
+            <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {d ? `${d.width}×${d.height}` : 'unreported'}
+              {camera.frameRate ? ` @${Math.round(camera.frameRate)}fps` : ''}
+            </span>
+            <span style={{ display: 'block', fontSize: 10, opacity: 0.8 }}>
+              asked {camera.requested.width}×{camera.requested.height}
+              {camera.capable
+                ? ` · max ${camera.capable.width}×${camera.capable.height}`
+                : ' · max unknown'}
+              {camera.focusModes.length
+                ? ` · focus ${camera.focusModes.join('/')}`
+                : ' · no focus control'}
+            </span>
+            {plan && (
+              <span style={{ display: 'block', fontSize: 10, color: tone }}>
+                {shape}: box {Math.round(plan.fill * 100)}% ·{' '}
+                {Math.round(plan.dpi)}dpi · hold ~{Math.round(plan.distanceMm)}mm
+                {' · '}
+                {plan.verdict}
+              </span>
+            )}
+            {short && (
+              <span style={{ display: 'block', fontSize: 10, color: BAD }}>{short}</span>
+            )}
+          </div>
+        );
+      })()}
+
       {device && (
         <div style={{ opacity: 0.9 }}>
           video {device.video.w}×{device.video.h} · el {Math.round(device.element.w)}×

@@ -26,6 +26,11 @@ import { useScrollLock } from '@/lib/use-scroll-lock';
 import { aimAgreement, aimBox } from '@/lib/scan/aim';
 import { exposureProblem } from '@/lib/scan/exposure';
 import {
+  type CameraFacts,
+  framingPlan,
+  readCameraFacts,
+} from '@/lib/scan/framing';
+import {
   ARM_MS,
   AutoBlocker,
   MOTION_STILL,
@@ -272,6 +277,11 @@ export default function DocumentScanner({
   const editingRef = useRef(false);
   const trailRef = useRef<FrameSnapshot[]>([]);
   const deviceRef = useRef<DeviceContext | null>(null);
+  // ⚠️ WHAT THE CAMERA ACTUALLY GAVE US, which nothing has ever read.
+  // The constraints below ask for 3840x2160 `ideal`; whether that is
+  // honoured decides whether an A4 page is scannable at all on this
+  // device (a page needs 2.45x a card's pixels for the same legibility).
+  const cameraRef = useRef<CameraFacts | null>(null);
   const lastCaptureRef = useRef<ScanReport['lastCapture']>(undefined);
   /** Bumped on a throttle so the panel repaints without re-rendering per frame. */
   const [diagTick, setDiagTick] = useState(0);
@@ -480,6 +490,13 @@ export default function DocumentScanner({
         }
         streamRef.current = stream;
         const track = stream.getVideoTracks()[0];
+        // Read back what we were actually given, before touching anything —
+        // applyConstraints below can change it, and the honest baseline is
+        // what the browser chose when asked for 4K.
+        cameraRef.current = readCameraFacts(track, {
+          width: 3840,
+          height: 2160,
+        });
         // Torch is Chrome-on-Android only. Never render a dead button.
         const caps = track.getCapabilities?.() as
           | (MediaTrackCapabilities & { torch?: boolean; focusMode?: string[] })
@@ -1468,6 +1485,7 @@ export default function DocumentScanner({
               false
             }
             device={deviceRef.current}
+            camera={cameraRef.current}
             trail={trailRef.current}
             lastCapture={lastCaptureRef.current}
           />
