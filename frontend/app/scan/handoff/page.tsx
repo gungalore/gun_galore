@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { detectDocument } from '@/lib/scan/detect-client';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DocShape, shapeForKind } from '@/lib/scan/shapes';
@@ -199,6 +200,12 @@ export default function ScanHandoffPage() {
       {open && (
         <DocumentScanner
           shape={shape}
+          // The ?t= action token is this phone's whole credential — it is what
+          // authorises the upload a moment later, so it authorises the detect
+          // call too. detectDocument never throws: on a phone with one bar in
+          // a gun shop it returns null and the corner editor opens on the aim
+          // box, exactly as it did before the model existed.
+          detect={(frame) => detectDocument(frame, { token })}
           // Not for the ID: the step wants one photograph, and starting with
           // "more than one" already ticked would be inviting a pack.
           multiDefault={!single}

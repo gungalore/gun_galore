@@ -131,6 +131,20 @@ const RATES = [100, 200] as const;
 
 export interface DocumentScannerProps {
   /**
+   * Ask the server where the document is, once, on capture.
+   *
+   * ⚠️ A PROP, NOT AN IMPORT, BECAUSE THIS COMPONENT HAS NO AUTH AND SHOULD
+   * NOT GAIN ANY. It is a pure UI piece: it produces a File and hands it to
+   * whoever mounted it, and the parent — which already holds either a Clerk
+   * session or a scan-handoff token — does the authed calls. Wiring fetch in
+   * here would give the scanner two ways to be signed in and neither of them
+   * tested.
+   *
+   * Optional throughout. A parent that does not pass it gets exactly the
+   * behaviour that shipped before: the corner editor opens on the aim box.
+   */
+  detect?: (frame: Blob) => Promise<{ quad: Quad; minConfidence: number } | null>;
+  /**
    * What the member is most likely holding. Sets the starting guide frame and
    * the detector's aspect hint — and only those. It is a suggestion the
    * member can change on screen, never a filter: a competency certificate
@@ -213,6 +227,7 @@ export default function DocumentScanner({
   subtitle,
   onDone,
   onClose,
+  detect,
 }: DocumentScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -1099,7 +1114,14 @@ export default function DocumentScanner({
         width: grabbed.width,
         height: grabbed.height,
       });
+      // ⚠️ ONE ROUND TRIP, AND IT MAY NOT BLOCK THE SCAN. detectDocument never
+      // throws — offline, timeout, a 500, the model missing on the box all
+      // arrive here as null, and null simply means the aim box is used, which
+      // is what happened before this existed. A member in a gun shop on one
+      // bar must still be able to photograph their licence.
+      const detected = detect ? await detect(blob) : null;
       const res = await processCapture(blob, {
+        detected: detected ?? undefined,
         expectAspect: expectAspectFor(shape),
         aimBox:
           grabbed.width > 0 && grabbed.height > 0

@@ -5,6 +5,7 @@ import { EnhanceReport, enhance, inspect } from './enhance';
 import { Quad, Rect, frameQuad, outputSize, scaleQuad } from './geometry';
 import { Raster, rectify } from './warp';
 import { blur3, seededCorners } from './edges';
+import { DETECT_ACCEPT } from './detect-client';
 
 /**
  * How sure the seeded detector must be before its corners replace the box.
@@ -264,6 +265,19 @@ export async function processCapture(
   source: Blob,
   opts: {
     manualQuad?: Quad;
+    /**
+     * What the server's model found, as FRACTIONS of the image, plus how sure
+     * it was. Optional and always safe to omit — offline, timed out, model
+     * unavailable, low confidence: all of them arrive here as `undefined` and
+     * the aim box takes over exactly as it did before this existed.
+     *
+     * ⚠️ FRACTIONS, for the same reason aimBox is. The server answers in the
+     * pixels of the image it was handed; `decode` below shrinks anything over
+     * 3000px on its long edge, so those two pixel counts are different numbers
+     * for the same corner on a 4K phone. detect-client normalises at the
+     * boundary; this multiplies back up against the raster we actually got.
+     */
+    detected?: { quad: Quad; minConfidence: number };
     name?: string;
     expectAspect?: number;
     /**
@@ -306,6 +320,30 @@ export async function processCapture(
         height: opts.aimBox.height * raster.height,
       }
     : null;
+
+  // ⚠️ A CONFIDENT MODEL OUTRANKS THE BOX. NOTHING ELSE DOES.
+  //
+  // The note below records why the box won every argument before this: every
+  // detector tried produced guesses that were nearly right, and a nearly-right
+  // guess still has to be checked on all four sides, which costs more than
+  // dragging from a position that never moves. That objection was exactly
+  // right, and it was about detectors that could not say how sure they were.
+  //
+  // This one can, and it was measured on fifteen photographs of the operator's
+  // own licence card: on the four it genuinely cannot do — a white card on
+  // white paper — its weakest corner scores 0.06 to 0.43, and on all eleven it
+  // gets right, 0.83 to 0.95. Nothing lands in between. So above the threshold
+  // the corners open already on the document; below it, and on every failure
+  // of the network or the model, the member gets precisely what they got
+  // before. The box did not lose its argument; it became the fallback for a
+  // detector that knows when to shut up.
+  if (!quad && opts.detected && opts.detected.minConfidence >= DETECT_ACCEPT) {
+    quad = opts.detected.quad.map((p) => ({
+      x: p.x * raster.width,
+      y: p.y * raster.height,
+    })) as unknown as Quad;
+    from = 'detected';
+  }
 
   if (!quad) {
     if (aim) {
