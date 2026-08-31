@@ -190,7 +190,20 @@ export function mainCamera(options: readonly CameraOption[]): CameraOption | nul
 }
 
 /** Where the chosen lens is remembered between sessions. */
-export const CAMERA_PREF_KEY = 'gg.scan.camera';
+/**
+ * ⚠️ VERSIONED, AND THE SUFFIX IS LOAD-BEARING. A stored preference outranks
+ * the automatic choice — that is the point of storing it — which means
+ * changing HOW the automatic choice is made reaches nobody who has ever
+ * picked a lens. When selection moved from widest-field to the main camera,
+ * every device carrying a saved ultra-wide kept using it, and the change
+ * would have looked like it silently did nothing on exactly the phones most
+ * likely to be testing it.
+ *
+ * Bumping the key retires those preferences. Bump it again on any future
+ * change to what `bestCamera` means; leave it alone for changes that only
+ * affect how a lens is opened.
+ */
+export const CAMERA_PREF_KEY = 'gg.scan.camera.v2';
 
 /**
  * Read the member's remembered lens.

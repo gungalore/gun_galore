@@ -26,7 +26,7 @@
 // that could identify a document."
 // ────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   gates,
   report,
@@ -87,6 +87,7 @@ export default function ScanDiagnostics({
   cameras,
   activeCamera,
   onCycleCamera,
+  collapseFor,
   lastDetect,
   live,
   liveReading,
@@ -108,6 +109,16 @@ export default function ScanDiagnostics({
   cameras?: Array<{ deviceId: string; label: string; kind: string; minFocusM: number | null }>;
   activeCamera?: string | null;
   onCycleCamera?: () => void;
+  /**
+   * A surface that needs the screen to itself. Non-null collapses the panel.
+   *
+   * ⚠️ THE CORNER EDITOR IS UNUSABLE WITH THIS PANEL OVER IT. The editor asks
+   * the member to drag four dots onto the document's corners, and the panel
+   * is an opaque block covering the middle of the document — they are being
+   * asked to aim at something they cannot see. Collapsing rather than hiding
+   * keeps the chip, so the readings are one tap away when they are wanted.
+   */
+  collapseFor?: string | null;
   lastDetect?:
     | { outcome: 'accepted' | 'declined'; minConfidence: number; ms: number }
     | { outcome: 'no-answer'; why: string }
@@ -132,6 +143,12 @@ export default function ScanDiagnostics({
 }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [open, setOpen] = useState(true);
+  // Keyed on the surface, not on a boolean, so re-entering the editor
+  // collapses again — a member who reopened the panel over one document
+  // should not have it reappear over the next.
+  useEffect(() => {
+    if (collapseFor) setOpen(false);
+  }, [collapseFor]);
 
   const g = gates(reading);
   const s = summarise(trail);

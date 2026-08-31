@@ -1243,10 +1243,40 @@ export default function DocumentScanner({
       // cannot keep up loses the markers and keeps the automatic shutter,
       // rather than losing both.
       if (rolling > 45 && rate < RATES.length - 1) rate++;
-      if (rolling > 90 && !detectorOff) {
-        detectorOff = true;
-        quadRef.current = null;
-        setAimed(false);
+      // ⚠️ THE ON-DEVICE DETECTOR IS NOT JUDGED BY THIS CLOCK, AND WAS BEING
+      // KILLED BY IT. `rolling` is an EMA of the frame function's own cost,
+      // and it was calibrated when that function did classical detection and
+      // nothing else. It now also letterboxes a frame and reads it back for
+      // the model, so a HEALTHY tracker sits right around this threshold —
+      // the operator's iPhone reported "95ms/frame · DETECTOR DROPPED (slow
+      // device)" on the same frame as "live conf 0.973 · model accepted at
+      // 0.965 · 94ms". The phone turned off a detector that was working, and
+      // it did so BECAUSE it was working, because running it is what made the
+      // loop cost 95ms. A gate that fires on the cost of success is not a
+      // health check.
+      //
+      // LiveDetector already judges this properly and on the right quantity:
+      // a rolling median of actual INFERENCE time against LIVE_TOO_SLOW_MS
+      // (500), needing three strikes. The iPhone's 94ms is nowhere near it.
+      // So while the live detector says it is running, its verdict governs
+      // and this one abstains.
+      //
+      // And it no longer latches. The original was permanent because a device
+      // that cannot keep up will not suddenly be able to — true of hardware,
+      // false of a transient (a backgrounded tab, a thermal dip, another app
+      // waking up), and a permanent kill on a transient is unrecoverable
+      // without reopening the camera.
+      const liveHealthy = liveStatusRef.current.state === 'running';
+      if (rolling > 90 && !liveHealthy) {
+        if (!detectorOff) {
+          detectorOff = true;
+          quadRef.current = null;
+          setAimed(false);
+        }
+      } else if (detectorOff && (liveHealthy || rolling < 60)) {
+        // Hysteresis on the way back, so a loop hovering at the threshold
+        // does not flicker the markers on and off.
+        detectorOff = false;
       }
       timer = window.setTimeout(detectOnce, RATES[rate]);
     };
@@ -1839,6 +1869,7 @@ export default function DocumentScanner({
             it, not a member-facing surface. */}
         {diag && (
           <ScanDiagnostics
+            collapseFor={editing ? 'editor' : null}
             key={diagTick}
             reading={{
               ink: inkRef.current,
