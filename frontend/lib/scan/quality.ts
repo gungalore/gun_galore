@@ -69,17 +69,22 @@ export const GLARE_BAD = 0.02;
 /**
  * Outside this band the page is too dark or too bright to read reliably.
  *
- * ⚠️ THE HIGH BOUND IS MEASURED ON AN ENHANCED PAGE, WHICH IS ALREADY BRIGHT ON
- * PURPOSE. enhance() divides the illumination out and lifts bare paper to 245,
- * so a perfectly exposed scan lands in the 200s by design. The old 215 fired on
- * essentially every good capture — the operator's competency certificate came
- * back "Acceptable" at 216 dpi for no reason anyone could see.
+ * ⚠️ MEASURED ON RAW PHOTOGRAPHS, WHICH IS NOW THE ONLY THING GRADED. This
+ * bound was briefly raised to 238 to stop it firing on every good capture —
+ * the operator's competency certificate came back "Acceptable" for being
+ * well lit. That was the right observation and the wrong fix: the number was
+ * never the problem, the IMAGE was. inspect() was being handed enhance()'s
+ * output, whose paper is deliberately lifted to WHITE=245, so no threshold
+ * placed below 245 could have survived. 238 did not even work — enhanced
+ * paper measures 242.
  *
- * 238 is close enough to the 245 white point that only a genuinely blown page
- * reaches it, and glare already catches blown HIGHLIGHTS separately.
+ * capture.ts now inspects `flat`, the rectified page before any cleanup, and
+ * against 94 real fixture photographs the original 215 is comfortably clear:
+ * the highest mean luma anywhere in the set is 206.6, and 0/94 trip it. So it
+ * is restored, and it means what it says again.
  */
 export const LUMA_LOW = 55;
-export const LUMA_HIGH = 238;
+export const LUMA_HIGH = 215;
 
 /**
  * Grade a finished capture.

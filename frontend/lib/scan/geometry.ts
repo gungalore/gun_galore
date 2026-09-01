@@ -278,7 +278,7 @@ export function outputSize(
    * perspective changes that. Pass it and the estimate stops being a guess.
    */
   knownRatio?: number,
-): { w: number; h: number; snapped: string | null } {
+): { w: number; h: number; snapped: string | null; wanted: number } {
   const top = dist(quad[0], quad[1]);
   const bottom = dist(quad[3], quad[2]);
   const left = dist(quad[0], quad[3]);
@@ -286,7 +286,7 @@ export function outputSize(
 
   let w = Math.max(top, bottom);
   let h = Math.max(left, right);
-  if (w < 1 || h < 1) return { w: 1, h: 1, snapped: null };
+  if (w < 1 || h < 1) return { w: 1, h: 1, snapped: null, wanted: 0 };
 
   const long = Math.max(w, h);
   const short = Math.min(w, h);
@@ -335,12 +335,17 @@ function sizeAt(
   h: number,
   maxEdge: number,
   snapped: string | null,
-): { w: number; h: number; snapped: string | null } {
+): { w: number; h: number; snapped: string | null; wanted: number } {
   const scale = Math.min(1, maxEdge / Math.max(w, h));
   return {
     w: Math.max(1, Math.round(w * scale)),
     h: Math.max(1, Math.round(h * scale)),
     snapped,
+    // ⚠️ WHAT THE CROP ASKED FOR, BEFORE THE CEILING. Without this there is no
+    // way to tell a capture the cap TRUNCATED from one that simply came out
+    // that size — and that ambiguity is exactly what let a pinned dpi survive
+    // two rounds of investigation. If `wanted` exceeds maxEdge, the cap bound.
+    wanted: Math.round(Math.max(w, h)),
   };
 }
 

@@ -1,3 +1,7 @@
+import { EDGE_MARGIN, TOO_SMALL } from './guidance';
+import { DECODE_MAX_EDGE, FLOOR_DPI, OUTPUT_MAX_EDGE } from './framing';
+import { MIN_COVERAGE } from './mask-quad';
+
 // ────────────────────────────────────────────────────────────────────
 // THE WHOLE STATE OF THE SCANNER, AS TEXT SOMEBODY CAN PASTE.
 //
@@ -111,6 +115,8 @@ export interface ReportInput {
     edgeMargin?: number;
     tilt?: number;
     dpi?: number | null;
+    /** What this shape will actually be SAVED at, once the output cap applies. */
+    savedDpi?: number | null;
     stillMs?: number;
     quadDrift?: number;
   };
@@ -119,6 +125,8 @@ export interface ReportInput {
 
   capture?: {
     source?: string;
+    /** Longest edge of the DECODED photograph — see DECODE_MAX_EDGE. */
+    sourceEdge?: number;
     pickedBy?: string;
     arbitration?: { worstSide: number; support: number };
     maskFit?: {
@@ -131,6 +139,7 @@ export interface ReportInput {
     refined?: { moved: number; skipped: number };
     seed?: { confidence: number; hits: number[] };
     detect?: { outcome: string; minConfidence?: number; ms?: number };
+    outputWanted?: number;
     outputW?: number;
     outputH?: number;
     snappedTo?: string | null;
@@ -201,12 +210,25 @@ export interface ReportInput {
   errors?: string[];
 }
 
+/**
+ * ⚠️ EVERY GATE BELOW IS IMPORTED, NEVER TYPED OUT. The old readout printed a
+ * hardcoded "want 65-85" next to the fill reading. The bracket had already
+ * been removed from the code, so the panel was asserting a rule that no longer
+ * existed — and it was used, twice, to reach a confident wrong conclusion
+ * about which build a phone was running. A threshold copied into a display is
+ * a threshold that will be wrong later.
+ */
+
 function line(label: string, value: unknown): string | null {
   if (value === undefined || value === null || value === '') return null;
   return `${label.padEnd(18)} ${value}`;
 }
 const n = (v?: number, d = 2) =>
   v === undefined || v === null || !Number.isFinite(v) ? undefined : v.toFixed(d);
+/** A measured value with the gate it is judged against, so neither travels alone. */
+const gated = (shown: string | undefined, gate: string) =>
+  shown === undefined ? undefined : `${shown}  (${gate})`;
+
 const pct = (v?: number) =>
   v === undefined || v === null || !Number.isFinite(v) ? undefined : `${Math.round(v * 100)}%`;
 const mb = (v?: number) =>
@@ -257,7 +279,12 @@ export function buildReport(r: ReportInput): string {
     out.push(line('frames', l.framesSeen !== undefined ? `${l.framesSeen} seen, ${l.framesDropped ?? 0} dropped` : undefined));
     out.push(line('confidence', n(l.lastConfidence, 3)));
     out.push(line('min sigma', n(l.minSigma, 2)));
-    out.push(line('mask coverage', pct(l.maskCoverage)));
+    out.push(
+      line(
+        'mask coverage',
+        gated(pct(l.maskCoverage), 'every cell over 0.5, of the padded model square'),
+      ),
+    );
     out.push(line('lock', l.lock !== undefined ? `${l.lock}/3` : undefined));
     out.push(line('guidance', l.guide));
     out.push(line('detector off', l.detectorOff ? 'YES (dropped)' : undefined));
@@ -266,10 +293,30 @@ export function buildReport(r: ReportInput): string {
   if (r.geometry) {
     const g = r.geometry;
     out.push('', '── geometry ──');
-    out.push(line('fills', pct(g.occupancy)));
-    out.push(line('edge margin', pct(g.edgeMargin)));
+    out.push(line('fills', gated(pct(g.occupancy), `min ${pct(TOO_SMALL)}`)));
+    out.push(line('edge margin', gated(pct(g.edgeMargin), `min ${pct(EDGE_MARGIN)}`)));
     out.push(line('tilt', n(g.tilt, 1) ? `${n(g.tilt, 1)}°` : undefined));
-    out.push(line('dpi', g.dpi === null ? 'no document type chosen' : g.dpi ? Math.round(g.dpi) : undefined));
+    // ⚠️ THE SAVED dpi IS SHOWN BESIDE THE MEASURED ONE, BECAUSE THEY DIFFER
+    // AND THE DIFFERENCE IS NOT A FAULT. This is the live optical resolution
+    // off the tracked quad; what lands in the file is capped by
+    // OUTPUT_MAX_EDGE. Printing only the first made the review badge look
+    // like it disagreed with the report.
+    out.push(
+      line(
+        'dpi',
+        g.dpi === null
+          ? 'no document type chosen'
+          : g.dpi
+            ? gated(
+                String(Math.round(g.dpi)),
+                `floor ${FLOOR_DPI}` +
+                  (g.savedDpi && Math.round(g.savedDpi) < Math.round(g.dpi)
+                    ? `; saved at ${Math.round(g.savedDpi)} — output capped at ${OUTPUT_MAX_EDGE}px`
+                    : ''),
+              )
+            : undefined,
+      ),
+    );
     out.push(line('held still', g.stillMs !== undefined ? `${Math.round(g.stillMs)}ms` : undefined));
     out.push(line('quad drift', n(g.quadDrift, 2)));
   }
@@ -314,7 +361,18 @@ export function buildReport(r: ReportInput): string {
     }
     if (c.maskFit) {
       const m = c.maskFit;
-      out.push(line('mask coverage', pct(m.coverage)));
+      // ⚠️ NOT THE SAME MEASUREMENT AS THE LIVE ONE ABOVE, DESPITE THE LABEL.
+      // Live counts every above-threshold cell; this counts only the largest
+      // connected blob, so this one is always the smaller of the two even at
+      // identical framing. Both are fractions of the PADDED model square, not
+      // of the picture — on a tall phone frame the padding alone is ~40%, so
+      // a document filling the whole screen still cannot reach 60% here.
+      out.push(
+        line(
+          'mask coverage',
+          gated(pct(m.coverage), `largest blob only; min ${pct(MIN_COVERAGE)}`),
+        ),
+      );
       out.push(line('mask aspect', n(m.aspect)));
       out.push(line('mask residual', n(m.residual, 1)));
       out.push(line('mask rect', n(m.rectangularity)));
@@ -328,7 +386,32 @@ export function buildReport(r: ReportInput): string {
     if (c.detect) {
       out.push(line('model', `${c.detect.outcome}${c.detect.minConfidence !== undefined ? ` at ${n(c.detect.minConfidence, 3)}` : ''}${c.detect.ms ? ` · ${c.detect.ms}ms` : ''}`));
     }
-    out.push(line('output', c.outputW ? `${c.outputW}x${c.outputH}` : undefined));
+    // ⚠️ THE SOURCE SIZE COMES FIRST, BECAUSE IT BOUNDS EVERYTHING BELOW IT.
+    // A capture that decoded at the cap threw away resolution before a single
+    // measurement was taken, and every dpi printed after this line inherits
+    // that loss without mentioning it.
+    out.push(
+      line(
+        'source raster',
+        c.sourceEdge
+          ? `${c.sourceEdge}px long edge` +
+            (c.sourceEdge >= DECODE_MAX_EDGE
+              ? `  (AT THE DECODE CAP of ${DECODE_MAX_EDGE}px — the photograph was downscaled before anything was measured)`
+              : '')
+          : undefined,
+      ),
+    );
+    out.push(
+      line(
+        'output',
+        c.outputW
+          ? `${c.outputW}x${c.outputH}` +
+            (c.outputWanted && c.outputWanted > Math.max(c.outputW, c.outputH ?? 0)
+              ? `  (WANTED ${c.outputWanted}px — TRUNCATED by the ${OUTPUT_MAX_EDGE}px output cap)`
+              : `  (wanted ${c.outputWanted ?? '?'}px — cap ${OUTPUT_MAX_EDGE}px did not bind)`)
+          : undefined,
+      ),
+    );
     out.push(line('aspect snap', c.snappedTo ?? undefined));
     out.push(line('crop edge margin', pct(c.edgeMargin)));
     out.push(

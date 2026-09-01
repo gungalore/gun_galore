@@ -39,6 +39,7 @@ import { aimAgreement, aimBox } from '@/lib/scan/aim';
 import { exposureProblem } from '@/lib/scan/exposure';
 import {
   type CameraFacts,
+  capDpiFor,
   dpiOf,
   readCameraFacts,
 } from '@/lib/scan/framing';
@@ -732,6 +733,7 @@ export default function DocumentScanner({
             edgeMargin: q.edgeMargin,
             tilt: q.tilt,
             dpi: q.dpi,
+            savedDpi: capDpiFor(shape),
             stillMs: q.stillMs,
           }
         : undefined,
@@ -756,6 +758,8 @@ export default function DocumentScanner({
             seed: cur.seed
               ? { confidence: cur.seed.confidence, hits: cur.seed.hits }
               : undefined,
+            sourceEdge: cur.sourceEdge,
+            outputWanted: cur.outputWanted,
             outputW: cur.outputWidth,
             outputH: cur.outputHeight,
             snappedTo: cur.snapped,

@@ -6,7 +6,7 @@ import { Quad, Rect, frameQuad, outputSize, scaleQuad } from './geometry';
 import { Raster, rectify } from './warp';
 import { blur3, seededCorners } from './edges';
 import { DETECT_ACCEPT } from './detect-client';
-import { OUTPUT_MAX_EDGE } from './framing';
+import { DECODE_MAX_EDGE, OUTPUT_MAX_EDGE } from './framing';
 import { edgeMargin } from './guidance';
 import { letterboxFor } from './letterbox';
 import { analyseMask } from './mask-quad';
@@ -56,8 +56,8 @@ const MASK_MIN_SUPPORT = 0.5;
 // next door where a test can reach it.
 // ────────────────────────────────────────────────────────────────────
 
-/** Longest edge of the rectified output. */
-export { OUTPUT_MAX_EDGE };
+/** Longest edge of the rectified output, and of the decoded source. */
+export { DECODE_MAX_EDGE, OUTPUT_MAX_EDGE };
 
 /** JPEG quality. High enough that the model is not reading our artefacts. */
 const JPEG_QUALITY = 0.88;
@@ -201,7 +201,7 @@ function rectToQuad(r: Rect): Quad {
 /** Decode a blob or file into raw pixels, capped so a 108MP phone cannot OOM us. */
 export async function decode(
   source: Blob,
-  maxEdge = 3000,
+  maxEdge = DECODE_MAX_EDGE,
 ): Promise<Raster> {
   const bitmap = await createImageBitmap(source);
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
@@ -289,6 +289,15 @@ export interface ScanResult {
    * tracked quad — the only way to know its resolution is the output size
    * against the document's known millimetres.
    */
+  /**
+   * The longest edge the crop ASKED for, before OUTPUT_MAX_EDGE clamped it.
+   *
+   * Above the cap means the cap truncated this page. Equal to the output means
+   * it did not. Without this pair there is no way to tell a capture that was
+   * cut down from one that simply came out that size — and that ambiguity is
+   * what let the A4 dpi sit pinned at a constant through two investigations.
+   */
+  outputWanted: number;
   outputWidth: number;
   outputHeight: number;
   /** What the mask rung made of the frame. Absent when no mask was supplied. */
@@ -695,7 +704,7 @@ export async function processCapture(
     return Math.max(w0, h0) / Math.max(1e-6, Math.min(w0, h0));
   })();
 
-  const { w, h, snapped } = outputSize(
+  const { w, h, snapped, wanted } = outputSize(
     cropQuad,
     OUTPUT_MAX_EDGE,
     opts.expectAspect,
@@ -704,10 +713,54 @@ export async function processCapture(
   if (!flat) throw new Error('We could not straighten that one.');
 
   const better = enhance(flat);
-  const report = inspect(better);
+  // ⚠️ INSPECTED ON `flat`, NEVER ON `better` — WE GRADE THE PHOTOGRAPH, NOT
+  // OUR OWN PROCESSING OF IT. Every consumer of this report is advice about
+  // how the picture was TAKEN — "tilting the phone will clear the glare",
+  // "holding still will read better", "more light will help" — and none of
+  // that is actionable against an artefact we introduced ourselves.
+  //
+  // Measured on a synthetic page whose brightest pixel is 215, so nothing in
+  // it is blown at all:
+  //
+  //     glare      raw 0.0000  ->  enhanced 0.0600   (GLARE_BAD is 0.02)
+  //     meanLuma   raw   191   ->  enhanced    242   (LUMA_HIGH is 238)
+  //     sharpness  raw  0.99   ->  enhanced   7.14   (soft warns under 3.5)
+  //
+  // All three are corrupted, in both directions. enhance() lifts paper to
+  // WHITE=245 so anything brighter clips, and the unsharp mask overshoots at
+  // every high-contrast edge — that is glare invented out of nothing. The
+  // same sharpening then HIDES a genuinely soft photograph (0.99 -> 7.14
+  // walks straight past the warning), and the lift hides a dark one. The
+  // false negatives are the worse half: a warning that never fires leaves
+  // nothing behind to notice.
+  //
+  // Measured across 94 real fixture photographs, every threshold here is
+  // correctly tuned for RAW input and none of them misfire on it:
+  //
+  //     glare > 0.02        8/94   — and those really are blown
+  //     meanLuma > 215      0/94   — the raw maximum across the set is 206.6
+  //     sharpness < 3.5     0/94
+  //
+  // So the constants were never wrong. Only the image they were pointed at.
+  //
+  // It also makes the grade FILTER-INDEPENDENT, which it has to be: refilter()
+  // re-runs the cleanup without recomputing this, so a report taken from the
+  // enhanced raster described an image the member stops looking at the moment
+  // they tap "No filter".
+  const report = inspect(flat);
+  // ⚠️ ALSO `flat`, FOR CONSISTENCY RATHER THAN FOR A BUG. Unlike glare and
+  // sharpness above, this one was NOT giving a wrong answer: measured on 18
+  // real rectified pages, ink runs 0.204-0.561 raw against 0.240-0.602
+  // sharpened, and the "looks blank" warning sits at 0.06 — an order of
+  // magnitude below both, 0/18 either way. Real print saturates the gradient
+  // test long before enhancement touches it.
+  //
+  // It moves regardless, because one report should describe one image. Leaving
+  // a single field measured on the enhanced raster is how the next person
+  // concludes the rule is "whichever image was handy".
   const ink = inkiness(
-    toLuma(better.data, better.width, better.height),
-    frameQuad(better.width, better.height, 0),
+    toLuma(flat.data, flat.width, flat.height),
+    frameQuad(flat.width, flat.height, 0),
   );
 
   return {
@@ -723,6 +776,7 @@ export async function processCapture(
     preview: await previewUrl(better),
     flat,
     filter: 'shadow',
+    outputWanted: wanted,
     outputWidth: better.width,
     outputHeight: better.height,
     quad,

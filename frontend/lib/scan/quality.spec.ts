@@ -122,17 +122,25 @@ describe('⚠️ a clipped page — the failure the aspect correction conceals',
   });
 });
 
-describe('⚠️ the luma bound is measured on an ENHANCED page', () => {
-  // enhance() divides the illumination out and lifts bare paper to 245, so a
-  // well-exposed scan sits in the 200s by design. The old 215 bound fired on
-  // essentially every good capture and reported "Acceptable" for no visible
-  // reason.
-  it('does not punish a page that enhancement made bright', () => {
-    expect(gradeScan({ dpi: 300, luma: 212 }).grade).toBe('good');
-    expect(gradeScan({ dpi: 300, luma: 230 }).grade).toBe('good');
+describe('⚠️ the exposure bounds are measured on the RAW photograph', () => {
+  // ⚠️ THIS DESCRIBE BLOCK USED TO SAY "on an ENHANCED page", AND THAT WAS THE
+  // BUG WEARING A TEST AS A DISGUISE. inspect() was being handed enhance()'s
+  // output, whose paper is deliberately lifted to WHITE=245, so the bound was
+  // raised 215 -> 238 to stop it firing on good captures. It did not even
+  // work: enhanced paper measures 242. capture.ts now inspects `flat`, the
+  // rectified page before any cleanup, so these bounds mean what they say.
+  //
+  // Measured across 94 real fixture photographs:
+  //     mean luma  p05 66.7   p50 155.0   p95 200.1   max 206.6
+  // Nothing in the set comes within 8 points of the bound.
+  it('passes every exposure a real photograph actually produces', () => {
+    // The top of the measured range, and then some.
+    expect(gradeScan({ dpi: 300, luma: 200 }).grade).toBe('good');
+    expect(gradeScan({ dpi: 300, luma: 207 }).grade).toBe('good');
   });
 
-  it('still catches a genuinely blown page', () => {
+  it('catches a genuinely blown page', () => {
+    expect(gradeScan({ dpi: 300, luma: 216 }).grade).toBe('acceptable');
     expect(gradeScan({ dpi: 300, luma: 244 }).grade).toBe('acceptable');
   });
 

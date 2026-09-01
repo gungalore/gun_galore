@@ -1,6 +1,6 @@
 import type { DocShape } from './shapes';
 import { TOO_SMALL } from './guidance';
-import { SHAPES, SHAPE_ORDER, acrossMm, guideAspect } from './shapes';
+import { SHAPES, acrossMm, guideAspect } from './shapes';
 
 // ────────────────────────────────────────────────────────────────────
 // Framing — how big the aim box has to be, given what the camera
@@ -183,40 +183,83 @@ export function fillForDetection(
 }
 
 /**
+ * The longest edge we will decode a photograph to, in pixels.
+ *
+ * ⚠️ THIS BINDS ON EVERY MODERN PHONE AND NOTHING SAID SO. It exists to stop a
+ * 108MP camera OOM-ing the tab, which is real — but a 12MP phone streaming
+ * 3024x4032 already exceeds it, so an ordinary capture is scaled by 0.744
+ * BEFORE the quad is refined, the ratio measured, or any dpi computed. A
+ * quarter of the linear resolution, spent silently, upstream of every
+ * measurement that then gets reported as if it were what the camera gave us.
+ *
+ * It is named and exported so the diagnostic report can print it beside
+ * `sourceEdge`, where a value sitting exactly on the cap is visible as a cap
+ * rather than looking like a measurement. That is the same mistake the output
+ * cap made twice — 171 dpi, then 230 — and it is only ever caught by showing
+ * the ceiling next to the number.
+ */
+export const DECODE_MAX_EDGE = 3000;
+
+/**
  * The longest edge a saved page may have, in pixels.
  *
- * ⚠️ DERIVED, BECAUSE A HARD-CODED 2000 MADE THE TARGET UNREACHABLE FOR A YEAR
- * AND NOBODY NOTICED. Both of the operator's phones reported exactly 171 dpi
- * on an A4 — the same number, on different cameras, because it was never a
- * measurement. 2000px on a 1.414 page is a 1414px short edge, and 1414 over
- * 210mm IS 171 dpi. Every A4 scan was being shrunk below our own floor on the
- * way out and then graded "Poor" for it.
+ * ⚠️ IT IS THE DECODE CAP, AND TYING THEM TOGETHER IS THE POINT. This has now
+ * pinned the A4 dpi to a constant twice — 171 under a hard-coded 2000, then
+ * 230 under a value derived from TARGET_DPI — and both times the tell was the
+ * same: two different phones reporting the identical number. A figure that
+ * does not move between cameras was never a measurement.
  *
- * So the cap is computed from the largest document we accept and the dpi we
- * aim for, with headroom so it never binds on a well-framed capture. Raise
- * TARGET_DPI or add a bigger document and this follows on its own.
+ * Deriving it from TARGET_DPI did not fix that, it only moved it, and for a
+ * reason worth naming: the cap was computed from the LARGEST shape we accept,
+ * which is the A4 — so for the A4 and nothing else it landed by construction a
+ * fixed 15% above the target and never budged. Card cleared it by 4x and the
+ * ID book by 3x, so neither ever showed a constant. The page always did.
  *
- * ⚠️ THE HEADROOM IS BOUNDED BY MEMORY, NOT BY FILE SIZE. The JPEG is trivial
- * either way — well inside the 10MB upload limit at any of these sizes. What
- * costs is `enhance`, which holds several Float32 planes of w*h at once for the
- * illumination field, CLAHE and the unsharp mask. Every extra pixel is
- * multiplied by all of them, on top of a source raster that is already ~48MB
- * on a 4K frame.
+ * The real fault was two caps in series with different bases. decode() already
+ * limits the SOURCE photograph to DECODE_MAX_EDGE, and outputSize() never
+ * upsamples — it takes the quad's measured edges and only ever clamps down. So
+ * a crop can never carry more than DECODE_MAX_EDGE pixels on its long edge,
+ * and any output cap BELOW that throws away detail the decode stage was
+ * careful to keep. One ceiling, enforced where the pixels enter, is enough.
  *
- *     headroom 1.0   2339px   200 dpi   ~15MB per plane
- *     headroom 1.15  2690px   230 dpi   ~20MB per plane
- *     headroom 1.3   3041px   260 dpi   ~26MB per plane
+ * Setting them equal means this constant stops binding on its own: the saved
+ * resolution goes back to being a property of the camera and the framing, and
+ * an A4 tops out near 257 dpi only when the page fills the entire frame.
  *
- * 1.15 clears the 200 dpi floor with room to spare and keeps the working set
- * where a mid-range phone can hold it. Peak resolution is not the goal here —
- * clearing the floor reliably is, and a scan that crashes the tab has no dpi
- * at all.
+ * ⚠️ AND THE MEMORY BUDGET THIS USED TO CITE WAS WRONG. The old note here
+ * blamed "several Float32 planes for the illumination field, CLAHE and the
+ * unsharp mask" — but enhance() never calls illuminationField(); it is dead
+ * code reachable only from its own test. The measured figure is 7 full-
+ * resolution planes per page, down from 8 since the unsharp blur started
+ * borrowing a buffer the pipeline had already finished with and `out` stopped
+ * being allocated before the stages that never touch it. That saved plane is
+ * what pays for the extra resolution here, and enhance()'s output is
+ * byte-identical across the change.
  */
-export const OUTPUT_MAX_EDGE = Math.ceil(
-  (Math.max(...SHAPE_ORDER.map((k) => SHAPES[k].longMm ?? 0)) / 25.4) *
-    TARGET_DPI *
-    1.15,
-);
+export const OUTPUT_MAX_EDGE = DECODE_MAX_EDGE;
+
+/**
+ * The best dpi this shape can ever be SAVED at, whatever the camera manages.
+ *
+ * ⚠️ A CEILING THAT SHOULD NO LONGER BIND, AND THE READOUT SAYS SO WHEN IT
+ * DOES. Now that the output cap is the decode cap, a crop cannot exceed it
+ * without the source having exceeded it first — so this is the resolution a
+ * page would reach only by filling the entire frame:
+ *
+ *     card      3000px over  85.6mm   890 dpi
+ *     a4        3000px over   297mm   257 dpi
+ *     id-book   3000px over   109mm   699 dpi
+ *
+ * It is reported beside the live measurement precisely so that a number
+ * sitting exactly on it is legible AS a ceiling. Both times this pinned the
+ * A4 — at 171, then at 230 — it was only caught because the operator noticed
+ * two different phones agreeing to the digit.
+ */
+export function capDpiFor(shape: DocShape): number | null {
+  const longMm = SHAPES[shape].longMm;
+  if (!longMm) return null;
+  return dpiOf(OUTPUT_MAX_EDGE, longMm);
+}
 
 /** What the framing arithmetic concluded, in order of how good the news is. */
 export type FramingVerdict =

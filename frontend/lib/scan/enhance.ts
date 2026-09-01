@@ -76,9 +76,24 @@ export function boxBlur(
   h: number,
   radius: number,
   passes = 3,
+  /**
+   * A dead full-resolution buffer to borrow instead of allocating one.
+   *
+   * ⚠️ THIS IS A MEMORY LEVER, NOT A SPEED ONE, AND IT PAYS FOR RESOLUTION.
+   * boxBlur allocates TWO planes the size of its input. On the downsampled
+   * calls inside paperField that is nothing — they run at 512px or less. On
+   * the unsharp call it runs at FULL resolution, at the exact moment `luma`
+   * and `lifted` are also live, which is where this function's peak actually
+   * is. Handing it a buffer the pipeline has already finished with removes one
+   * of the two, and the peak is what OUTPUT_MAX_EDGE was set to protect.
+   *
+   * Must be at least src.length. Its contents are overwritten.
+   */
+  scratch?: Float32Array,
 ): Float32Array {
   const a = Float32Array.from(src);
-  const b = new Float32Array(a.length);
+  const b =
+    scratch && scratch.length >= a.length ? scratch : new Float32Array(a.length);
   const r = Math.max(1, Math.round(radius));
 
   for (let p = 0; p < passes; p++) {
@@ -408,7 +423,11 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
   const w = r.width;
   const h = r.height;
   const luma = lumaPlane(r);
-  const out = new Uint8ClampedArray(r.data.length);
+  // ⚠️ `out` IS ALLOCATED AT THE BOTTOM, NOT HERE, AND THAT IS DELIBERATE. It
+  // used to be created on this line and then sat untouched — a full RGBA plane
+  // of reserved, idle memory — through flatten, CLAHE and the unsharp mask,
+  // every one of which is more memory-hungry than the loop that finally writes
+  // it. It cost a plane at exactly the moment we had least to spare.
 
   // (a) Divide the paper up to white. Illumination is MULTIPLICATIVE —
   // reflectance times illuminant — so this divides rather than subtracting.
@@ -463,7 +482,14 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
   // vision model reads ringing as noise.
   let finalL = lifted;
   if (o.sharpen) {
-    const blur = boxBlur(lifted, w, h, 1, 1);
+    // ⚠️ `corrected` IS DEAD BY HERE — CLAHE read it for the last time when it
+    // built `lifted`. Lending it to boxBlur is the difference between four and
+    // five full-resolution planes at this function's busiest moment. When
+    // localContrast is off, `lifted` IS `corrected` and it is very much alive,
+    // so the loan is only offered when they are genuinely different arrays.
+    const spare =
+      corrected !== lifted && corrected !== luma ? corrected : undefined;
+    const blur = boxBlur(lifted, w, h, 1, 1, spare);
     finalL = new Float32Array(lifted.length);
     for (let i = 0; i < lifted.length; i++) {
       finalL[i] = Math.max(0, Math.min(255, lifted[i] + 0.6 * (lifted[i] - blur[i])));
@@ -471,6 +497,7 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
   }
 
   // Re-apply as a per-pixel GAIN so hue survives.
+  const out = new Uint8ClampedArray(r.data.length);
   for (let i = 0, p = 0; p < finalL.length; i += 4, p++) {
     const before = luma[p];
     const gain = before > 1 ? finalL[p] / before : 1;
