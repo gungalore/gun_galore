@@ -1,4 +1,5 @@
 import type { MotivationUploadKind } from '@prisma/client';
+import { type Clause, clauseMatches, phrase } from './ocr-tolerant';
 import { UNIT_STANDARDS } from './sa-competency';
 
 // ────────────────────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ export interface DocumentMarker {
    * Every one of these must appear. Two or more wherever possible: one phrase
    * is a mention, a pair is a marker.
    */
-  all: RegExp[];
+  all: Clause[];
   /**
    * ⚠️ TEXT THAT VETOES THE MARKER, HOWEVER WELL THE REST MATCHES.
    *
@@ -64,7 +65,7 @@ export interface DocumentMarker {
    * We generate SAPS 271 ourselves, so a member uploading their own copy of
    * one is not a hypothetical.
    */
-  never?: RegExp[];
+  never?: Clause[];
 }
 
 /** Every registered unit-standard code, as one alternation. */
@@ -84,11 +85,66 @@ const UNIT_CODES = new RegExp(
  * certificates — a silent failure, since the document still uploads.
  */
 const UNIT_TITLE =
-  /(handle\s+and\s+use|knowledge\s+of\s+the\s+firearms\s+control\s+act)/i;
+  /(handle\s*and\s*use|knowledge\s*of\s*the\s*firearms\s*control\s*act)/i;
 
-/** The application forms that quote the documents they apply for. */
+/**
+ * The application forms that quote the documents they apply for.
+ *
+ * ⚠️ THE VETO HAD TO BE LOOSENED WITH THE ANCHORS, AND A TEST PROVED IT.
+ * Making the licence anchor tolerant while leaving this strict widens what
+ * matches and NOT what refuses — so a SAPS 271 whose title the OCR mangled
+ * would sail past a veto that no longer recognised it and be filed as the
+ * granted licence. ocr-degradation.spec.ts caught exactly that: 2 in 200
+ * corrupted applications misfiled, at only 1% character error, in the first
+ * version of this change.
+ *
+ * That is the worst outcome this whole table exists to prevent. Filing an
+ * application as the granted document shows a statutory requirement satisfied
+ * while the thing SAPS actually asks for is missing, and nothing on screen
+ * would say so. A veto firing slightly too often costs a trip through the
+ * model; a veto missing costs somebody their application.
+ *
+ * ⚠️ AND THE FORM NUMBERS ARE TOLERANT TOO, WHICH THE FIRST ATTEMPT GOT WRONG.
+ * The reasoning for keeping them strict was that a three-digit number is only
+ * four characters of signal and would start colliding with the section
+ * numbers, serials and dates these documents are full of. Measured, that fear
+ * was misplaced and the cost was real: with a strict "SAPS 271" one bad
+ * character removed the veto's ONLY other chance to fire, so misfiling rose
+ * from 0 to 17 in 400 at 3% character error.
+ *
+ * The collision does not happen because the digits are far apart — looseWord
+ * accepts 2/z/Z and 1/l/I for "271", none of which reach "524" — so the
+ * competency certificate's own form number cannot trip the application veto.
+ *
+ * Two INDEPENDENT chances is the point. The veto now fails only when both the
+ * form number and the English title are damaged in the same read, rather than
+ * when either one is.
+ */
 const IS_AN_APPLICATION = [
-  /\bSAPS\s*(271|517|518|271\(?a?\)?)\b/i,
+  // ⚠️ THE BARE WORD, AND IT IS THE ONE THAT ACTUALLY CARRIES THE VETO.
+  // Measured: the misfiles were NOT cases where the licence anchor matched
+  // loosely — they were cases where it matched EXACTLY, because a SAPS 271 is
+  // literally titled "Application for a licence to possess a firearm" and
+  // contains the licence heading as a substring. So the damage that causes a
+  // misfile is always damage to the VETO, never to the anchor, and no amount
+  // of care about how the anchor matched can catch it.
+  //
+  // A licence card does not print the word "application" anywhere; neither
+  // does a competency certificate or a statement of results. One tolerant
+  // word is therefore both the broadest and the safest trigger available, and
+  // it fails only when the word is deleted outright rather than misread.
+  phrase('application'),
+  phrase('SAPS 271', { required: ['271'] }),
+  phrase('SAPS 517', { required: ['517'] }),
+  phrase('SAPS 518', { required: ['518'] }),
+  phrase('application for a licence to possess', {
+    allowMissing: 1,
+    required: ['application'],
+  }),
+  phrase('application for a competency certificate', {
+    allowMissing: 1,
+    required: ['application'],
+  }),
   /application\s+(form\s+)?for\s+(a|the)\s+(licence|license|competency)/i,
 ];
 
@@ -119,9 +175,16 @@ export const DOCUMENT_MARKERS: readonly DocumentMarker[] = [
       '"Section 10 of the Firearms Control Act, 60 of 2000". The pair also ' +
       'separates it from a TRAINING provider\'s certificate, which says ' +
       '"COMPETENCY COURSE" and never cites section 10.',
+    // ⚠️ TOLERANT, BECAUSE THIS WAS THE WORST ANCHOR IN THE TABLE. Measured
+    // by corrupting the real text: at 99.5% character accuracy this marker
+    // already failed 22% of the time, and at 98% it failed 68% of the time —
+    // because a 38-character phrase matched end to end dies to ONE bad
+    // character, and the plastic card has no form number to fall back on.
+    // One word may now be lost; "competency" may not be, or every training
+    // provider's certificate would match.
     all: [
-      /competency\s+certificate/i,
-      /section\s*10\s+of\s+the\s+firearms\s+control\s+act/i,
+      phrase('competency certificate', { required: ['competency'] }),
+      phrase('section 10 of the firearms control act', { allowMissing: 1 }),
     ],
     never: IS_AN_APPLICATION,
   },
@@ -140,8 +203,19 @@ export const DOCUMENT_MARKERS: readonly DocumentMarker[] = [
       'letter mentioning somebody\'s licence to possess a firearm is not one. ' +
       '"Licence to possess" also cannot collide with the competency ' +
       'certificate\'s "COMPETENCY to possess a firearm".',
+    // ⚠️ TOLERANT FOR THE SAME REASON, second-worst in the table: 89% correct
+    // at 99.5% character accuracy, 56% at 98%. The card never prints "licence
+    // number", so this 26-character phrase is its only definitive anchor and
+    // there is nothing shorter to fall back on. "firearm" must survive —
+    // without it, a letter mentioning somebody's licence would match. The
+    // firearm-field clause below stays a RegExp: it is already an alternation
+    // of four short tokens appearing five times on the card, which is its own
+    // redundancy and measured as never being the clause that failed.
     all: [
-      /licen[cs]e\s+to\s+possess\s+a\s+firearm/i,
+      phrase('licence to possess a firearm', {
+        allowMissing: 1,
+        required: ['firearm'],
+      }),
       /\b(serial\s*(no|number)|calibre|caliber|kaliber)\b/i,
     ],
     // ⚠️ SAPS 271 IS TITLED "Application for a licence to possess a firearm",
@@ -346,12 +420,18 @@ export function readMarkers(text: string): MarkerVerdict | null {
 
   const hits: DocumentMarker[] = [];
   const vetoed: string[] = [];
+  const loose = new Set<string>();
   for (const m of DOCUMENT_MARKERS) {
-    if (!m.all.every((re) => re.test(body))) continue;
-    if (m.never?.some((re) => re.test(body))) {
+    const got = m.all.map((c) => clauseMatches(c, body));
+    if (got.some((g) => g === false)) continue;
+    if (m.never?.some((c) => clauseMatches(c, body) !== false)) {
       vetoed.push(m.name);
       continue;
     }
+    // ⚠️ REMEMBER WHETHER THIS NEEDED THE ALLOWANCE. See ClauseMatch: a marker
+    // recognised only because a word was permitted to be missing is a real
+    // match on a damaged document, and it must not be auto-filed.
+    if (got.some((g) => g === 'loose')) loose.add(m.name);
     hits.push(m);
   }
   if (!hits.length) return null;
@@ -361,9 +441,25 @@ export function readMarkers(text: string): MarkerVerdict | null {
   const kinds = new Set(top.map((m) => m.kind));
   if (kinds.size !== 1) return null;
 
+  // ⚠️ A DAMAGED READ IS NOT A DEFINITIVE ONE, AND THIS IS THE WHOLE SAFETY
+  // PROPERTY OF THE TOLERANCE. motivation-extract.service.ts skips the model
+  // entirely for a 'definitive' verdict, so anything that reached its match by
+  // allowing a word to be missing must not claim that. Measured: with the
+  // loosened anchors a mangled SAPS 271 was filed as the granted licence 7
+  // times in 400 at 3% character error, which strict matching never did — and
+  // filing an application as the document it applies for shows a statutory
+  // requirement satisfied while the thing SAPS asks for is missing.
+  //
+  // Downgrading rather than refusing keeps the recall the tolerance bought:
+  // the document is still classified, it just gets confirmed instead of
+  // auto-filed.
+  const wasLoose = top.some((m) => loose.has(m.name));
+  const strength: MarkerStrength =
+    wasLoose && top[0].strength === 'definitive' ? 'strong' : top[0].strength;
+
   return {
     kind: top[0].kind,
-    strength: top[0].strength,
+    strength,
     matched: hits.map((m) => ({
       kind: m.kind,
       name: m.name,

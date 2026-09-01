@@ -378,9 +378,20 @@ export function endorsementFromUnitStandard(
  * table, so "919835" found "Handle and Use" further down and was reported as a
  * code. The separator class is what stops that — the text after 919835 begins
  * with a newline and "SAQA", and "S" is not a separator.
+ *
+ * ⚠️ THE SPACES INSIDE THE TITLE ARE OPTIONAL, BECAUSE OCR LOSES THEM. The
+ * anchor and the separator class stay exactly as they were — they are what
+ * stops a serial number claiming a title — but `\s+` between the words was
+ * wrong. Read off a real One Shot proficiency certificate by PP-OCRv4:
+ *
+ *     119650-Handleand Usea Self-loadingrifleorcarbine
+ *
+ * Every word is legible and every space between them is gone, which is
+ * ordinary for a tight line of print. That one document was the only one of 37
+ * the classifier could not read, and this was the whole reason.
  */
 const UNIT_TITLE =
-  /^[\s\-–—:|.]{0,4}(handle\s+and\s+use|demonstrate\s+knowledge|knowledge\s+of\s+the\s+firearms\s+control\s+act)/i;
+  /^[\s\-–—:|.]{0,4}(handle\s*and\s*use|demonstrate\s*knowledge|knowledge\s*of\s*the\s*firearms\s*control\s*act)/i;
 
 /** How far after a number to look. Enough for the separator and the title. */
 const TITLE_WINDOW = 60;

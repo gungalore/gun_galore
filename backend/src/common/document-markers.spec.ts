@@ -3,6 +3,7 @@ import {
   MODEL_ONLY_KINDS,
   readMarkers,
 } from './document-markers';
+import { clauseText } from './ocr-tolerant';
 
 // ────────────────────────────────────────────────────────────────────
 // TELLING A DOCUMENT APART BY WHAT IS PRINTED ON IT.
@@ -359,7 +360,7 @@ describe('the shape of the library itself', () => {
       const singleton = m.all.length < 2;
       expect({
         name: m.name,
-        ok: !singleton || /SAPS/.test(m.all[0].source),
+        ok: !singleton || /SAPS/.test(clauseText(m.all[0])),
       }).toEqual({ name: m.name, ok: true });
     }
   });
