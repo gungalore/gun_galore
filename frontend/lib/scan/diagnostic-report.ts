@@ -310,8 +310,14 @@ export function buildReport(r: ReportInput): string {
             ? gated(
                 String(Math.round(g.dpi)),
                 `floor ${FLOOR_DPI}` +
+                  // ⚠️ "CEILING", NOT "SAVED", AND THE DIFFERENCE MATTERS. This
+                  // is what the output cap ALLOWS for this shape, not what the
+                  // file came out at — the crop is usually well under it. The
+                  // first wording said "saved at 257" beside a badge reading
+                  // 236, which is precisely the kind of two-numbers-one-name
+                  // confusion this whole section exists to stop.
                   (g.savedDpi && Math.round(g.savedDpi) < Math.round(g.dpi)
-                    ? `; saved at ${Math.round(g.savedDpi)} — output capped at ${OUTPUT_MAX_EDGE}px`
+                    ? `; ceiling ${Math.round(g.savedDpi)} for this shape at the ${OUTPUT_MAX_EDGE}px output cap`
                     : ''),
               )
             : undefined,
