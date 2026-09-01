@@ -23,11 +23,14 @@ TARGETS
 
 USAGE
     ffmpeg -i rec.mp4 -vsync 0 frames/f_%04d.png
-    python tools/quad_bench.py frames [--fps 60] [--colour yellow]
+    python tools/quad_bench.py frames [--fps 60] [--colour track]
 
-    The overlay must be a colour nothing else on screen shares. Check the
-    reported "frames with overlay" count before believing anything else: if it
-    is far below the total, the mask is picking up the wrong thing.
+    --colour track is the locked quad (#3ddc84), which is what a pan test is
+    measuring; --colour seeking is the unlocked one (#f5c518).
+
+    Check the reported "frames with overlay" count before believing anything
+    else: if it is far below the total, the mask is picking up the wrong thing
+    -- or the right thing in the wrong state.
 """
 
 import argparse
@@ -38,12 +41,20 @@ import sys
 import numpy as np
 from PIL import Image
 
-# Hue-ish boxes in plain RGB. Add one here rather than tweaking a shared range.
+# ⚠️ THESE ARE THE SCANNER'S ACTUAL OVERLAY COLOURS, NOT GENERIC HUE BOXES.
+# document-scanner.tsx draws the tracked quad in TRACK #3ddc84 and the unlocked
+# one in SEEKING #f5c518. The first draft of this table required blue < 130 for
+# "green" and #3ddc84 has blue = 132 — it would have found nothing in exactly
+# the locked state worth recording, and reported it as a total drop-out.
+#
+# "track" is the default because a lock is what the pan test is measuring.
 COLOURS = {
+    # TRACK #3ddc84 = (61, 220, 132)
+    "track": lambda im: (im[..., 0] < 140) & (im[..., 1] > 170) & (im[..., 2] > 90) & (im[..., 2] < 190),
+    # SEEKING #f5c518 = (245, 197, 24)
+    "seeking": lambda im: (im[..., 0] > 180) & (im[..., 1] > 150) & (im[..., 2] < 110),
     "yellow": lambda im: (im[..., 0] > 180) & (im[..., 1] > 180) & (im[..., 2] < 110),
     "red": lambda im: (im[..., 0] > 170) & (im[..., 1] < 90) & (im[..., 2] < 90),
-    "green": lambda im: (im[..., 0] < 110) & (im[..., 1] > 170) & (im[..., 2] < 130),
-    "cyan": lambda im: (im[..., 0] < 110) & (im[..., 1] > 170) & (im[..., 2] > 170),
 }
 
 
@@ -75,7 +86,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("frames", help="directory of f_0001.png ... extracted with ffmpeg")
     ap.add_argument("--fps", type=float, default=60.0)
-    ap.add_argument("--colour", default="yellow", choices=sorted(COLOURS))
+    ap.add_argument("--colour", default="track", choices=sorted(COLOURS))
     ap.add_argument(
         "--rest-below",
         type=float,
