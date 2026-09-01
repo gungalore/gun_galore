@@ -270,6 +270,16 @@ export interface ScanResult {
   flat: Raster;
   /** Which cleanup produced `file` and `preview`. */
   filter: ScanFilter;
+  /**
+   * The rectified page's pixel size.
+   *
+   * ⚠️ NEEDED TO MEASURE dpi AFTER THE FACT. The live readout computes dpi off
+   * the tracked quad, but a page that arrived from the gallery never had a
+   * tracked quad — the only way to know its resolution is the output size
+   * against the document's known millimetres.
+   */
+  outputWidth: number;
+  outputHeight: number;
   /** What the mask rung made of the frame. Absent when no mask was supplied. */
   maskFit?: {
     coverage: number;
@@ -659,6 +669,8 @@ export async function processCapture(
     preview: await previewUrl(better),
     flat,
     filter: 'shadow',
+    outputWidth: better.width,
+    outputHeight: better.height,
     quad,
     source: from,
     report,

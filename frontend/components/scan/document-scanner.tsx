@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   type ScanFilter,
@@ -10,32 +10,36 @@ import {
   grabVisible,
   makeScratch,
   processCapture,
-  verdicts,
   visibleRect,
 } from '@/lib/scan/capture';
 import { detectQuad } from '@/lib/scan/detect';
-import { Pt, Quad, quadDrift, smoothQuad } from '@/lib/scan/geometry';
+import { Quad, quadDrift, smoothQuad } from '@/lib/scan/geometry';
 import { av } from '@/lib/asset-version';
 import CornerEditor from './corner-editor';
-import Zoomable from './zoomable';
+import { type Grade, gradeScan } from '@/lib/scan/quality';
+import type { ReportInput } from '@/lib/scan/diagnostic-report';
+import AddDocument from './screens/add-document';
+import DocumentType from './screens/document-type';
+import PagesTray from './screens/pages-tray';
+import ReviewScreen from './screens/review-screen';
+import SavedScreen from './screens/saved';
+import DiagnosticsPanel from './screens/diagnostics-panel';
 import { QuadSmoother } from '@/lib/scan/smooth';
+import { LIVE_FPS } from '@/lib/scan/docquad-live';
+import { rotateResult } from '@/lib/scan/rotate';
 import { QuadPresence, scaleAboutCentre } from '@/lib/scan/quad-presence';
 import {
   DocShape,
   SHAPES,
-  SHAPE_ORDER,
   acrossMm,
   expectAspect as expectAspectFor,
-  holdHint,
 } from '@/lib/scan/shapes';
-import AimFrame from './aim-frame';
 import { useScrollLock } from '@/lib/use-scroll-lock';
 import { aimAgreement, aimBox } from '@/lib/scan/aim';
 import { exposureProblem } from '@/lib/scan/exposure';
 import {
   type CameraFacts,
   dpiOf,
-  framingPlan,
   readCameraFacts,
 } from '@/lib/scan/framing';
 import { DETECT_ACCEPT, lastDetectFailure } from '@/lib/scan/detect-client';
@@ -50,7 +54,6 @@ import {
   occupancy,
 } from '@/lib/scan/guidance';
 import {
-  LIVE_DRAW_ACCEPT,
   LiveDetector,
   type LiveReading,
   type LiveStatus,
@@ -92,7 +95,6 @@ import {
 } from '@/lib/scan/diagnostics';
 import { diagnosticsOn, saveToPhoneOn } from '@/lib/scan/diag-flag';
 import ScanDiagnostics from './scan-diagnostics';
-import { OVERLAY_WARNING } from '@/lib/scan/overlay';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SCANNER.
@@ -218,6 +220,15 @@ export interface DocumentScannerProps {
    * the box and shoot." See AimFrame's own note for why a verdict-coloured box
    * is wrong for a flow whose user is a stranger with nobody to ask.
    */
+  /**
+   * @deprecated The aim frame it controlled is gone.
+   *
+   * ⚠️ KEPT SO CALLERS DO NOT BREAK, AND DOES NOTHING. The redesign replaced
+   * the static aim box with the tracked quad — the box said "put it here" and
+   * the quad says "it is there", and two contradictory instructions on one
+   * screen is the thing the guidance work removed. Passing this is harmless;
+   * expecting a frame from it is not.
+   */
   staticAim?: boolean;
   title: string;
   /**
@@ -246,11 +257,25 @@ type Phase =
    * prompt arrives after they have committed to scanning something, which is
    * the moment they are most likely to grant it.
    */
+  /**
+   * The entry screen: photograph it, or choose a photo already on the phone.
+   *
+   * ⚠️ THE FIRST SCREEN NOW, AHEAD OF THE CHOOSER. The scanner used to open
+   * straight into "what are you photographing?", which assumes the member is
+   * about to point a camera at something. Plenty of them already have the
+   * picture — taken last week, sent by a dealer, saved from an email — and had
+   * no route in at all.
+   */
+  | 'add'
   | 'choose'
   | 'starting'
   | 'live'
   | 'working'
   | 'review'
+  /** Every page taken so far, with a grade on each. */
+  | 'pages'
+  /** Where it went. */
+  | 'saved'
   | 'denied'
   | 'nocamera';
 
@@ -263,7 +288,6 @@ export default function DocumentScanner({
   shape: initialShape,
   multiDefault = false,
   skipChoose = false,
-  staticAim = false,
   title,
   subtitle,
   onDone,
@@ -289,7 +313,17 @@ export default function DocumentScanner({
   // straight to 'live' would render a viewfinder over a stream that does not
   // exist yet. All skipChoose does is answer the "what are you holding"
   // question on the caller's behalf.
-  const [phase, setPhase] = useState<Phase>(skipChoose ? 'starting' : 'choose');
+  const [phase, setPhase] = useState<Phase>(skipChoose ? 'starting' : 'add');
+  /** Shown over everything when the member asks for the numbers. */
+  const [showDiag, setShowDiag] = useState(false);
+  /** What the member called this document. Empty until they type. */
+  const [docName, setDocName] = useState('');
+  /** Kept pages, with the grade each one earned. */
+  const [tray, setTray] = useState<
+    { id: string; file: File; preview: string; grade: Grade; dpi: number | null; note?: string }[]
+  >([]);
+  /** Quarter turns applied to the current page, 0-3. */
+  const [turns, setTurns] = useState(0);
   // ⚠️ STILL NON-NULL. `shape` is dereferenced without a guard in five places
   // (SHAPES[shape].label, SHAPES[shape].multiLabel, aimBox, AimFrame,
   // expectAspectFor), so a null here blows up on the chooser's own first paint.
@@ -462,7 +496,14 @@ export default function DocumentScanner({
   // rebuilding it would re-render Review mid-filter.
   const shotRef = useRef<ScanResult | null>(null);
   shotRef.current = shot;
-  const [pages, setPages] = useState<File[]>([]);
+  /**
+   * ⚠️ REPLACED BY `tray`, WHICH CARRIES A GRADE PER PAGE. Kept only as a
+   * derived view so the exit confirmation and the header count keep working —
+   * they ask "how much work would this throw away", and the answer is now the
+   * tray. A stale `pages` array would have answered zero and let the × discard
+   * a five-page pack without a word.
+   */
+  const pages = useMemo(() => tray.map((t) => t.file), [tray]);
   const [editing, setEditing] = useState(false);
   editingRef.current = editing;
   /**
@@ -530,6 +571,193 @@ export default function DocumentScanner({
     // was released in the same tick as the click.
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }, []);
+
+  /**
+   * Resolution of a finished page, from its output size and known millimetres.
+   *
+   * One place, because the review badge and the page tray must never disagree
+   * about how good the same scan is.
+   */
+  const shotDpi = useCallback((r: ScanResult, sh: DocShape): number | null => {
+    const across = acrossMm(sh);
+    if (!across || !r.outputWidth || !r.outputHeight) return null;
+    return dpiOf(Math.min(r.outputWidth, r.outputHeight), across);
+  }, []);
+
+  /** Put the page on the pile, with the grade it earned. */
+  const keepPage = useCallback(() => {
+    const cur = shotRef.current;
+    if (!cur) return;
+    const dpi = shotDpi(cur, shape);
+    const g = gradeScan({
+      dpi,
+      glare: cur.report?.glare,
+      luma: cur.report?.meanLuma,
+      source: cur.source,
+    });
+    setTray((t) => [
+      ...t,
+      {
+        id: `${Date.now()}-${t.length}`,
+        file: cur.file,
+        preview: cur.preview,
+        grade: g.grade,
+        dpi,
+        note: g.reasons[0],
+      },
+    ]);
+  }, [shape, shotDpi]);
+
+  /**
+   * Keep this page and hand everything over.
+   *
+   * ⚠️ MULTI-PAGE GOES TO THE TRAY, NOT STRAIGHT OUT. A member with more than
+   * one page should see what they are about to save — that screen is the whole
+   * reason the tray exists. A single page has nothing to review that the
+   * review screen has not already shown, so it saves directly.
+   */
+  const keepAndFinish = useCallback(async () => {
+    const cur = shotRef.current;
+    if (!cur) return;
+    if (multi || tray.length) {
+      keepPage();
+      setShot(null);
+      setPhase('pages');
+      return;
+    }
+    setSavedCount(1);
+    await finishRef.current?.([cur.file]);
+  }, [multi, tray.length, keepPage]);
+
+  /**
+   * Turn the page a quarter turn.
+   *
+   * ⚠️ RE-ENCODES RATHER THAN SETTING A CSS TRANSFORM. The file is what gets
+   * stored and read on a computer later; rotating only the preview would show
+   * the member an upright page and save a sideways one, which is the worst
+   * possible split between what was approved and what was kept.
+   */
+  const rotatePage = useCallback(async () => {
+    const cur = shotRef.current;
+    if (!cur || recutting) return;
+    setRecutting(true);
+    try {
+      const next = (turns + 1) % 4;
+      const out = await rotateResult(cur, 90);
+      setTurns(next);
+      setShot((prev) => (prev ? { ...prev, ...out } : prev));
+    } catch {
+      setErr('We could not turn that one.');
+    } finally {
+      setRecutting(false);
+    }
+  }, [recutting, turns]);
+
+  /**
+   * Everything the scanner knows, right now.
+   *
+   * ⚠️ BUILT ON DEMAND, NEVER HELD IN STATE. Half of this changes ten times a
+   * second, and a report assembled when a panel opened describes a moment the
+   * member has already moved past. It is cheap to build and expensive to keep
+   * fresh, so it is built at the instant it is read.
+   */
+  const collectReport = useCallback((): ReportInput => {
+    const last = trailRef.current[trailRef.current.length - 1];
+    const q = qualityRef.current;
+    const cur = shotRef.current;
+    const track = streamRef.current?.getVideoTracks()[0];
+    const st = track?.getSettings?.();
+    const caps = track?.getCapabilities?.() as
+      | { width?: { max?: number }; height?: { max?: number }; focusMode?: string[]; torch?: boolean }
+      | undefined;
+    return {
+      build: process.env.NEXT_PUBLIC_BUILD_ID,
+      shape,
+      phase,
+      camera: {
+        width: st?.width ?? 0,
+        height: st?.height ?? 0,
+        frameRate: st?.frameRate,
+        maxWidth: caps?.width?.max,
+        maxHeight: caps?.height?.max,
+        focusModes: caps?.focusMode,
+        torch: caps?.torch,
+        label: activeCamRef.current ?? undefined,
+        rearCount: camerasRef.current.length,
+        lenses: camerasRef.current.map((c) => c.label || 'unnamed'),
+      },
+      live: {
+        status: liveStatusRef.current.state,
+        medianMs:
+          liveStatusRef.current.state === 'running'
+            ? liveStatusRef.current.medianMs
+            : undefined,
+        lastConfidence: liveReadingRef.current?.minConfidence,
+        minSigma: liveReadingRef.current?.minSigma,
+        maskCoverage: liveReadingRef.current?.maskCoverage,
+        lock: lockRef.current,
+        guide: guideRef.current,
+        fpsCap: LIVE_FPS,
+        detectorOff: last?.detectorOff,
+      },
+      geometry: q
+        ? {
+            occupancy: q.occupancy,
+            edgeMargin: q.edgeMargin,
+            tilt: q.tilt,
+            dpi: q.dpi,
+            stillMs: q.stillMs,
+          }
+        : undefined,
+      frame: last
+        ? {
+            ink: last.ink,
+            motion: last.motion,
+            rawMotion: last.rawMotion,
+            glare: last.glare,
+            luma: last.luma,
+            heldMs: last.held,
+            blocker: last.blocker ?? null,
+          }
+        : undefined,
+      capture: cur
+        ? {
+            source: cur.source,
+            pickedBy: cur.pickedBy,
+            arbitration: cur.arbitration,
+            maskFit: cur.maskFit,
+            refined: cur.refined,
+            seed: cur.seed
+              ? { confidence: cur.seed.confidence, hits: cur.seed.hits }
+              : undefined,
+            outputW: cur.outputWidth,
+            outputH: cur.outputHeight,
+            snappedTo: cur.snapped,
+            filter: cur.filter,
+            grade: gradeScan({
+              dpi: shotDpi(cur, shape),
+              glare: cur.report?.glare,
+              luma: cur.report?.meanLuma,
+              source: cur.source,
+            }).label,
+          }
+        : undefined,
+      env: {
+        userAgent: typeof navigator === 'undefined' ? undefined : navigator.userAgent,
+        viewport:
+          typeof window === 'undefined'
+            ? undefined
+            : { width: window.innerWidth, height: window.innerHeight },
+        dpr: typeof window === 'undefined' ? undefined : window.devicePixelRatio,
+        standalone:
+          typeof window !== 'undefined' &&
+          window.matchMedia?.('(display-mode: standalone)').matches,
+        online: typeof navigator === 'undefined' ? undefined : navigator.onLine,
+        cores: typeof navigator === 'undefined' ? undefined : navigator.hardwareConcurrency,
+      },
+      errors: err ? [err] : undefined,
+    };
+  }, [shape, phase, err, shotDpi]);
 
   const applyFilter = useCallback(
     (next: ScanFilter) => {
@@ -1780,6 +2008,79 @@ export default function DocumentScanner({
    * does stop — a live stream behind a chooser is a hot lens and a flat
    * battery for no reason.
    */
+  /** How many pages the last save actually wrote, for the Saved screen. */
+  const [savedCount, setSavedCount] = useState(0);
+  /**
+   * finish(), reachable from helpers defined above it.
+   *
+   * ⚠️ A REF, NOT A REORDER. finish depends on half the component's state and
+   * moving it would drag its dependencies with it; a ref keeps the declaration
+   * order intact and costs one indirection.
+   */
+  const finishRef = useRef<((files: File[]) => void | Promise<void>) | null>(null);
+
+  /**
+   * Run pictures the member already had through the same pipeline.
+   *
+   * ⚠️ THE SAME processCapture AS THE CAMERA, DELIBERATELY. A photograph from
+   * the gallery needs the identical straightening, aspect correction and
+   * quality check — it is not a lesser input, it is the same input arriving by
+   * a different door. Giving it its own shortcut path is how two code paths
+   * start disagreeing about what a good scan is.
+   *
+   * ⚠️ NO AIM BOX, THOUGH. There was no viewfinder, so there is no box the
+   * member lined anything up against, and passing one would seed the corner
+   * search from a rectangle that means nothing here.
+   */
+  const importFiles = useCallback(
+    async (files: File[]) => {
+      if (!files.length) return;
+      setPhase('working');
+      setErr(null);
+      const added: typeof tray = [];
+      for (const f of files) {
+        try {
+          const res = await processCapture(f, {
+            expectAspect: expectAspectFor(shape),
+            name: f.name || `scan-${added.length + 1}.jpg`,
+          });
+          // dpi from the output size against known millimetres — a gallery
+          // page never had a tracked quad to measure off.
+          const across = acrossMm(shape);
+          const dpi = across
+            ? dpiOf(Math.min(res.outputWidth, res.outputHeight), across)
+            : null;
+          const g = gradeScan({
+            dpi,
+            glare: res.report?.glare,
+            luma: res.report?.meanLuma,
+            source: res.source,
+          });
+          added.push({
+            id: `${Date.now()}-${added.length}`,
+            file: res.file,
+            preview: res.preview,
+            grade: g.grade,
+            dpi,
+            note: g.reasons[0],
+          });
+        } catch {
+          // One bad picture must not lose the rest of the batch.
+          setErr('One of those pictures could not be straightened.');
+        }
+      }
+      if (!added.length) {
+        setPhase('add');
+        return;
+      }
+      setTray((t) => [...t, ...added]);
+      setPhase('pages');
+      say(`${added.length} added.`);
+    },
+    [say, shape],
+  );
+
+
   const backToChooser = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
@@ -1808,14 +2109,27 @@ export default function DocumentScanner({
     (extra: File[]) => {
       if (closedRef.current) return;
       closedRef.current = true;
+      // The camera is done with either way — holding it open behind a
+      // confirmation screen keeps the indicator lit for no reason.
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      onClose();
       // Deliberately not awaited: the parent owns this now, including its
       // errors, which it is far better placed to show than a closing modal.
       void onDone(extra);
+      // ⚠️ THE SCANNER NO LONGER CLOSES ITSELF HERE. It used to call onClose()
+      // on the same tick, so a member photographed a statutory document, the
+      // sheet vanished, and nothing ever confirmed that anything had been
+      // kept. On a document they may not open again for a year, "did that
+      // work?" is not a question to leave them holding.
+      //
+      // The Saved screen calls onClose when they are ready. Callers still get
+      // onDone at exactly the same moment they always did.
+      setSavedCount(extra.length);
+      setPhase('saved');
     },
-    [onDone, onClose],
+    [onDone],
   );
+  finishRef.current = finish;
+
 
   /**
    * The exit the × and Escape actually take.
@@ -1967,31 +2281,98 @@ export default function DocumentScanner({
         // obvious answer. They still change shape from the chooser if they
         // reach it any other way; they just are not sent there.
         onBack={
-          phase === 'choose' || skipChoose ? undefined : backToChooser
+          // ⚠️ THE NEW SCREENS CARRY THEIR OWN BACK. add, choose, pages and
+          // saved are full screens with their own headers and their own way
+          // out; a second arrow in the shared chrome would sit above their
+          // own and take a different route.
+          phase === 'add' ||
+          phase === 'choose' ||
+          phase === 'pages' ||
+          phase === 'saved' ||
+          skipChoose
+            ? undefined
+            : backToChooser
         }
         pages={pages.length}
       />
 
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+        {phase === 'add' && (
+          <AddDocument
+            onCamera={() => setPhase('choose')}
+            onFiles={(files) => void importFiles(files)}
+            onClose={requestClose}
+            existing={tray.length}
+            onUseExisting={tray.length ? () => setPhase('pages') : undefined}
+          />
+        )}
+
         {phase === 'choose' && (
-          <Chooser
+          <DocumentType
             shape={shape}
             picked={picked}
-            onShape={(s) => {
-              setShape(s);
+            onShape={(sel) => {
+              setShape(sel);
               setPicked(true);
             }}
             multi={multi}
             onMulti={setMulti}
-            pages={pages.length}
             onStart={() => {
               setPhase('starting');
               setStarted(true);
             }}
-            onCancel={onClose}
-            onUsePages={pages.length ? () => finish(pages) : undefined}
+            onBack={() => setPhase('add')}
           />
         )}
+
+        {phase === 'pages' && (
+          <PagesTray
+            pages={tray.map((t) => ({
+              id: t.id,
+              preview: t.preview,
+              grade: t.grade,
+              dpi: t.dpi,
+              note: t.note,
+            }))}
+            onAdd={() => {
+              setShot(null);
+              setEditing(false);
+              setErr(null);
+              setPhase(started ? 'live' : 'add');
+            }}
+            onRetake={(id) => {
+              setTray((t) => t.filter((x) => x.id !== id));
+              setShot(null);
+              setEditing(false);
+              setPhase(started ? 'live' : 'add');
+            }}
+            onRemove={(id) => {
+              setTray((t) => {
+                const next = t.filter((x) => x.id !== id);
+                if (!next.length) setPhase('add');
+                return next;
+              });
+            }}
+            onSave={() => void finish(tray.map((t) => t.file))}
+            onBack={() => setPhase(started ? 'live' : 'add')}
+          />
+        )}
+
+        {phase === 'saved' && (
+          <SavedScreen
+            count={savedCount}
+            name={docName.trim() || undefined}
+            onAnother={() => {
+              setTray([]);
+              setShot(null);
+              setDocName('');
+              setPicked(initialShape !== undefined);
+              setPhase('add');
+            }}
+            onDone={onClose}
+          />
+        )}
+
 
         {/*
           ⚠️ THE VIDEO IS MOUNTED FOR THE LIFE OF THE SCANNER, AND HIDDEN RATHER
@@ -2343,19 +2724,37 @@ export default function DocumentScanner({
           </div>
         )}
 
-        {phase === 'review' && shot && (
-          <Review
-            shot={shot}
-            editing={editing}
+        {phase === 'review' && shot && !editing && (
+          <ReviewScreen
+            preview={shot.preview}
+            quality={gradeScan({
+              dpi: shotDpi(shot, shape),
+              glare: shot.report?.glare,
+              luma: shot.report?.meanLuma,
+              source: shot.source,
+            })}
+            name={docName}
+            onName={setDocName}
+            filter={shot.filter ?? 'shadow'}
+            onFilter={applyFilter}
             busy={recutting}
-            sourceSrc={editorSrc}
-            onEdit={() => setEditing(true)}
-            // A cancel mid-recut would unmount the editor and flash the live
-            // camera back over the photograph — the very thing A1 removed.
-            onCancelEdit={() => {
-              if (!recutting) setEditing(false);
+            pageCount={tray.length + 1}
+            onDiscard={() => {
+              setShot(null);
+              setErr(null);
+              setPhase(tray.length ? 'pages' : started ? 'live' : 'add');
             }}
-            onQuad={reprocess}
+            onSave={() => void keepAndFinish()}
+            onAddPage={() => {
+              keepPage();
+              setShot(null);
+              setEditing(false);
+              setErr(null);
+              setPhase('live');
+              say('Saved. Ready for the next page.');
+            }}
+            onCorners={() => setEditing(true)}
+            onRotate={() => void rotatePage()}
             onRetake={() => {
               setShot(null);
               setEditing(false);
@@ -2363,24 +2762,23 @@ export default function DocumentScanner({
               setPhase('live');
               say('Ready for another go.');
             }}
-            onUse={() => finish([...pages, shot.file])}
-            multi={multi}
-            onFilter={applyFilter}
-            onSave={canSave ? saveToPhone : undefined}
-            onNextDocument={() => {
-              setPages((p) => [...p, shot.file]);
-              backToChooser();
-              say('Saved. What is the next one?');
-            }}
-            onAddAnother={() => {
-              setPages((p) => [...p, shot.file]);
-              setShot(null);
-              setEditing(false);
-              setErr(null);
-              setPhase('live');
-              say('Saved. Ready for the next page.');
-            }}
+            onSaveToPhone={canSave ? saveToPhone : undefined}
           />
+        )}
+
+        {phase === 'review' && shot && editing && (
+          <div style={{ position: 'absolute', inset: 0, background: '#000' }}>
+            <CornerEditor
+              src={editorSrc ?? shot.sourcePreview}
+              size={shot.sourceSize}
+              quad={shot.quad}
+              busy={recutting}
+              onCancel={() => {
+                if (!recutting) setEditing(false);
+              }}
+              onApply={reprocess}
+            />
+          </div>
         )}
 
         {/* ⚠️ THE ONLY SCREEN IN HERE THAT CAN LOSE WORK, SO IT SAYS SO IN
@@ -2557,6 +2955,42 @@ export default function DocumentScanner({
           onDone={pages.length ? () => finish(pages) : undefined}
           pages={pages.length}
         />
+      )}
+
+      {showDiag && (
+        <DiagnosticsPanel
+          report={collectReport()}
+          onCopyLive={collectReport}
+          onClose={() => setShowDiag(false)}
+        />
+      )}
+
+      {/* ⚠️ THE WAY IN IS SMALL AND ALWAYS THERE. It used to be a panel that
+          covered the viewfinder; now it is a chip that opens a screen. A
+          diagnostic tool nobody can reach when something goes wrong is not a
+          tool. */}
+      {diag && !showDiag && (
+        <button
+          type="button"
+          onClick={() => setShowDiag(true)}
+          style={{
+            position: 'absolute',
+            left: 10,
+            top: 'max(10px, env(safe-area-inset-top))',
+            zIndex: 55,
+            minHeight: 32,
+            padding: '0 10px',
+            borderRadius: 6,
+            border: '1px solid rgba(244,241,237,0.4)',
+            background: 'rgba(0,0,0,0.55)',
+            color: '#F4F1ED',
+            fontSize: 11,
+            fontFamily: 'ui-monospace, monospace',
+            cursor: 'pointer',
+          }}
+        >
+          diag
+        </button>
       )}
 
       <span
@@ -2809,221 +3243,7 @@ const secondaryBtn: React.CSSProperties = {
   fontSize: 15,
 };
 
-/**
- * WHAT ARE YOU PHOTOGRAPHING?
- *
- * The first screen, before the camera opens. It buys three things:
- *
- *   1. An aim box of the right shape and size, which is what the detector
- *      uses to tell the document from the desk it is lying on.
- *   2. The multi-page answer, asked once instead of after every shot.
- *   3. The camera permission prompt arriving AFTER the member has committed
- *      to scanning something, which is when they are most likely to say yes.
- *
- * ⚠️ EVERY OPTION SHOWS ITS REAL SIZE. The millimetres are not decoration —
- * they are how somebody holding a temporary authorisation works out that it
- * is the A4 option and not the card one, without us having to list every
- * document SAPS has ever issued.
- */
-function Chooser({
-  shape,
-  picked,
-  onShape,
-  multi,
-  onMulti,
-  pages,
-  onStart,
-  onCancel,
-  onUsePages,
-}: {
-  shape: DocShape;
-  /** Has anyone actually answered, or is `shape` just the working default? */
-  picked: boolean;
-  onShape: (s: DocShape) => void;
-  multi: boolean;
-  onMulti: (v: boolean) => void;
-  pages: number;
-  onStart: () => void;
-  onCancel: () => void;
-  /** Present only once something has been scanned. */
-  onUsePages?: () => void;
-}) {
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        overflowY: 'auto',
-        padding: '4px 16px max(16px, env(safe-area-inset-bottom))',
-      }}
-    >
-      <h2 style={{ margin: '4px 0 4px', fontSize: 18 }}>
-        What are you photographing?
-      </h2>
-      <p
-        id="gg-scan-pick-first"
-        style={{ margin: '0 0 14px', fontSize: 13, opacity: 0.75 }}
-      >
-        {picked
-          ? 'We will draw a frame the right shape to line it up in.'
-          : 'Pick one so we can check the photo is sharp enough to read.'}
-      </p>
 
-      <div role="radiogroup" aria-label="What are you photographing?">
-        {SHAPE_ORDER.map((k) => {
-          const spec = SHAPES[k];
-          // Nothing reads as chosen until somebody has chosen it — this drives
-          // both aria-checked and the red selected border.
-          const on = picked && shape === k;
-          return (
-            <button
-              key={k}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => onShape(k)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-                width: '100%',
-                minHeight: 64,
-                marginBottom: 8,
-                padding: '10px 12px',
-                textAlign: 'left',
-                borderRadius: 10,
-                color: '#fff',
-                border: on
-                  ? '2px solid var(--red)'
-                  : '1px solid rgba(255,255,255,0.25)',
-                // Keyed to the same token as the border above it. It used to be
-                // rgba(224,49,49,0.14) — the AIM FRAME's red, inside a
-                // var(--red) border, so the fill and its own outline were two
-                // different colours.
-                background: on
-                  ? 'color-mix(in srgb, var(--red) 14%, transparent)'
-                  : 'transparent',
-              }}
-            >
-              <ShapeGlyph shape={k} />
-              <span style={{ flex: 1 }}>
-                <span style={{ display: 'block', fontSize: 15, fontWeight: 600 }}>
-                  {spec.label}
-                </span>
-                <span style={{ display: 'block', fontSize: 12, opacity: 0.75 }}>
-                  {spec.examples}
-                </span>
-                {spec.longMm !== null && spec.shortMm !== null && (
-                  <span style={{ display: 'block', fontSize: 11, opacity: 0.55 }}>
-                    {spec.shortMm} &times; {spec.longMm} mm &middot;{' '}
-                    {holdHint(k)}
-                  </span>
-                )}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          minHeight: 44,
-          marginTop: 6,
-          fontSize: 14,
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={multi}
-          onChange={(e) => onMulti(e.target.checked)}
-          style={{ width: 20, height: 20 }}
-        />
-        {SHAPES[shape].multiLabel}
-      </label>
-
-      <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-        <button type="button" onClick={onCancel} style={secondaryBtn}>
-          Cancel
-        </button>
-        {/* Coming back to change the shape mid-job must not strand the pages
-            already taken. */}
-        {onUsePages && (
-          <button type="button" onClick={onUsePages} style={secondaryBtn}>
-            Use the {pages} I have
-          </button>
-        )}
-        <div style={{ flex: 1 }} />
-        {/* ⚠️ DISABLED UNTIL SOMETHING IS CHOSEN. 'Something else' used to make
-            an unanswered chooser harmless — it scanned with no size and no dpi
-            gate. There is no sizeless shape now, so an unanswered chooser would
-            scan whatever `shape` happened to default to, and a card measured as
-            an A4 reports a quarter of its true resolution and passes a floor it
-            should have failed. One tap is a small price for a measurement that
-            means something. */}
-        <button
-          type="button"
-          onClick={onStart}
-          disabled={!picked}
-          aria-describedby={picked ? undefined : 'gg-scan-pick-first'}
-          style={{
-            ...secondaryBtn,
-            background: picked ? 'var(--red)' : 'rgba(255,255,255,0.16)',
-            border: 'none',
-            opacity: picked ? 1 : 0.65,
-          }}
-        >
-          {pages > 0 ? 'Scan another' : 'Open the camera'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** A little outline at the option's real proportions. */
-function ShapeGlyph({ shape }: { shape: DocShape }) {
-  const spec = SHAPES[shape];
-  const box = 38;
-  let w = box;
-  let h = box * 0.78;
-  if (spec.longMm !== null && spec.shortMm !== null) {
-    const a = spec.portrait ? spec.shortMm / spec.longMm : spec.longMm / spec.shortMm;
-    if (a >= 1) {
-      w = box;
-      h = box / a;
-    } else {
-      h = box;
-      w = box * a;
-    }
-  }
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        width: box,
-        height: box,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flex: '0 0 auto',
-      }}
-    >
-      <span
-        style={{
-          width: w,
-          height: h,
-          borderRadius: 3,
-          border:
-            spec.longMm === null
-              ? '1.5px dashed rgba(255,255,255,0.6)'
-              : '1.5px solid rgba(255,255,255,0.8)',
-        }}
-      />
-    </span>
-  );
-}
 
 function Header({
   title,
@@ -3418,302 +3638,4 @@ function Controls({
 
 // ── review ──────────────────────────────────────────────────────────
 
-function Review({
-  shot,
-  editing,
-  busy,
-  sourceSrc,
-  onEdit,
-  onCancelEdit,
-  onQuad,
-  onRetake,
-  onUse,
-  onAddAnother,
-  onNextDocument,
-  onFilter,
-  onSave,
-  multi,
-}: {
-  shot: ScanResult;
-  /** Change the cleanup. Absent while the flat page is unavailable. */
-  onFilter?: (f: ScanFilter) => void;
-  /** Diagnostics only — hand the file to the phone. Absent for members. */
-  onSave?: () => void;
-  editing: boolean;
-  /** A re-cut is in flight — the editor stays up, its buttons go quiet. */
-  busy: boolean;
-  /**
-   * Full-resolution capture for the editor. Null for the frame or two before
-   * the object URL exists, which falls back to the 1200px preview — the same
-   * picture at lower resolution, so it reads as sharpening rather than as a
-   * flash.
-   */
-  sourceSrc: string | null;
-  onEdit: () => void;
-  onCancelEdit: () => void;
-  onQuad: (q: Quad) => void;
-  onRetake: () => void;
-  onUse: () => void;
-  onAddAnother: () => void;
-  /** Keep the page, but go back and say what the next one is. */
-  onNextDocument: () => void;
-  /** Did the member say up front that there is more than one? */
-  multi: boolean;
-}) {
-  const notes = verdicts(shot);
-
-  // ⚠️ THE EDITOR TAKES THE WHOLE SCREEN, and shows the ORIGINAL photograph.
-  // It used to be a strip under a 240px-tall thumbnail of the RECTIFIED
-  // output — so the one image on screen was the consequence of the corners
-  // being wrong, and the document's real edges were nowhere to be seen.
-  if (editing) {
-    return (
-      <div style={{ position: 'absolute', inset: 0, background: '#000' }}>
-        <CornerEditor
-          src={sourceSrc ?? shot.sourcePreview}
-          size={shot.sourceSize}
-          quad={shot.quad}
-          busy={busy}
-          onCancel={onCancelEdit}
-          onApply={onQuad}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        background: '#000',
-      }}
-    >
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 12,
-          minHeight: 0,
-        }}
-      >
-        <Zoomable
-          src={shot.preview}
-          alt="The document as it will be saved"
-        />
-      </div>
-
-      {/* ⚠️ TWO OPTIONS, NOT SIX. Scanbot offers binarization, antialiased
-          binarization, grayscale, colour and colour-with-shadow-removal, and
-          the operator asked for "a shadow remove or no filter option" — which
-          is the right call for this product. Every extra filter is a decision
-          a member has to make about a statutory document they only want
-          stored, and five of the six answers are worse than the default for
-          that purpose. Binarization in particular destroys a signature's
-          pressure and any security tint, which is exactly the evidence a
-          firearm licence carries. */}
-      {onFilter && (
-        <div
-          role="radiogroup"
-          aria-label="Image cleanup"
-          style={{
-            display: 'flex',
-            gap: 8,
-            padding: '0 16px 8px',
-            justifyContent: 'center',
-          }}
-        >
-          {(['shadow', 'none'] as const).map((f) => {
-            const on = (shot.filter ?? 'shadow') === f;
-            return (
-              <button
-                key={f}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                disabled={busy}
-                onClick={() => onFilter(f)}
-                style={{
-                  minHeight: 40,
-                  padding: '0 14px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: on ? 700 : 500,
-                  color: on ? '#0f0f0f' : '#fff',
-                  background: on ? 'var(--mark)' : 'transparent',
-                  border: on
-                    ? '1px solid transparent'
-                    : '1px solid rgba(255,255,255,0.35)',
-                  opacity: busy ? 0.5 : 1,
-                }}
-              >
-                {f === 'shadow' ? 'Remove shadows' : 'No filter'}
-              </button>
-            );
-          })}
-          {onSave && (
-            <button
-              type="button"
-              onClick={onSave}
-              style={{
-                minHeight: 40,
-                padding: '0 12px',
-                borderRadius: 8,
-                border: '1px dashed rgba(26,22,19,0.35)',
-                background: 'transparent',
-                color: '#4A443C',
-                fontSize: 13,
-                fontFamily: 'inherit',
-                cursor: 'pointer',
-              }}
-            >
-              Save to phone
-            </button>
-          )}
-        </div>
-      )}
-
-      {notes.length > 0 && (
-        <ul
-          style={{
-            margin: 0,
-            padding: '0 16px 6px',
-            fontSize: 13,
-            listStyle: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-          }}
-        >
-          {/* ⚠️ "IT IS A BIT DARK" AND "THIS MAY BE YOUR DESK, NOT YOUR
-              DOCUMENT" ARE NOT THE SAME SENTENCE. They used to render as
-              identical grey lines in one unlabelled list, immediately above a
-              red button saying "Use it" — and a member in a hurry reads the
-              picture, not the small print. A warn now sits on its own tinted
-              plate with a rule down the side.
-
-              ⚠️ THE opacity USED TO SIT ON THIS <ul>, so no child could reach
-              full opacity from inside it however it was styled. It moved to
-              the note rows, which are the only ones that should be quiet. */}
-          {notes.map((v) => (
-            <li
-              key={v.text}
-              style={
-                v.level === 'warn'
-                  ? {
-                      background: 'rgba(212,154,58,0.14)',
-                      // Constant, not var(--warning): this sits on the viewfinder's black.
-                      borderLeft: `3px solid ${OVERLAY_WARNING}`,
-                      borderRadius: 6,
-                      padding: '8px 10px',
-                      color: '#fff',
-                      display: 'flex',
-                      gap: 8,
-                    }
-                  : { opacity: 0.9 }
-              }
-            >
-              {v.level === 'warn' && (
-                <>
-                  {/* A bare glyph announces as "warning sign", which is not a
-                      sentence. The word carries it instead. */}
-                  <span
-                    aria-hidden="true"
-                    style={{ color: OVERLAY_WARNING, flex: '0 0 auto' }}
-                  >
-                    &#9888;
-                  </span>
-                  <span
-                    style={{
-                      position: 'absolute',
-                      width: 1,
-                      height: 1,
-                      overflow: 'hidden',
-                      clipPath: 'inset(50%)',
-                    }}
-                  >
-                    Warning:
-                  </span>
-                </>
-              )}
-              <span>{v.text}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/* ⚠️ THE PRIMARY ACTION SITS IN ONE PLACE, ALWAYS.
-          This was a single `flexWrap` row of five buttons. At 15px with the
-          38px chassis that is roughly 680px of buttons into 358px of usable
-          width, so it wrapped to THREE lines and the red primary landed alone
-          in the bottom-LEFT corner — the furthest point on the screen from a
-          right thumb, in a different place on every page of a six-page pack.
-
-          Now: one full-width primary on its own line, everything else in a
-          two-column grid beneath it. At 358px each column is 174px, which
-          clears the widest label ("Different document"). The primary still
-          follows what the member already told us — somebody who said "front
-          and back" gets "Next page", never "Use it". */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          padding: '10px 16px max(16px, env(safe-area-inset-bottom))',
-        }}
-      >
-        <button
-          type="button"
-          onClick={multi ? onAddAnother : onUse}
-          style={{
-            ...secondaryBtn,
-            width: '100%',
-            background: 'var(--red)',
-            border: 'none',
-            fontWeight: 600,
-          }}
-        >
-          {multi ? 'Next page' : 'Use it'}
-        </button>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <button type="button" onClick={onRetake} style={secondaryBtn}>
-            Take it again
-          </button>
-          <button type="button" onClick={onEdit} style={secondaryBtn}>
-            Fix the corners
-          </button>
-          {multi ? (
-            <>
-              {/* ⚠️ THE NEXT THING IS OFTEN A DIFFERENT SHAPE. Somebody
-                  working through a motivation pack photographs an A4
-                  competency certificate, then a licence card, then the page
-                  of an ID book. Sending them straight back to the camera with
-                  the previous document's aim box means the corners are wrong
-                  for everything after the first one. */}
-              <button type="button" onClick={onNextDocument} style={secondaryBtn}>
-                Different document
-              </button>
-              <button type="button" onClick={onUse} style={secondaryBtn}>
-                That is all
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={onAddAnother}
-              style={{ ...secondaryBtn, gridColumn: '1 / -1' }}
-            >
-              Add another
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
