@@ -111,3 +111,48 @@ describe('clauseMatches reports HOW well it matched, not just whether', () => {
     expect(clauseMatches(p, 'licence to p0ss3zz a firearm')).toBe('loose');
   });
 });
+
+describe('⚠️ A PHRASE IS NOT A BAG OF WORDS ANYWHERE ON THE PAGE', () => {
+  // Both faults below were found by running PP-OCRv5's server model over the
+  // operator's real scans: legitimate SAPS 524 competency certificates came
+  // back vetoed as SAPS 518 APPLICATIONS — the worst misclassification this
+  // table exists to prevent, caused by the tolerance meant to help.
+
+  it('will not join two words 465 characters apart', () => {
+    // The exact shape of the real failure: "SAPS" in the form number at the
+    // top of the page, and a "518"-lookalike deep in the body text.
+    const page =
+      'SAPS524\nCOMPETENCY CERTIFICATE\n' +
+      'x'.repeat(400) +
+      '\nIt is hereby certified that the above person has completed the prescribed training';
+    expect(hasPhrase(page, 'SAPS 518')).toBe(false);
+  });
+
+  it('still matches a real form number with ordinary spacing', () => {
+    expect(hasPhrase('form SAPS 518 rev 2', 'SAPS 518')).toBe(true);
+    expect(hasPhrase('SAPS518', 'SAPS 518')).toBe(true);
+    expect(hasPhrase('SAPS\n518', 'SAPS 518')).toBe(true);
+  });
+
+  it('⚠️ A NUMBER MAY NOT MATCH THE MIDDLE OF AN ENGLISH WORD', () => {
+    // looseWord('518') becomes [5sS][1lIi|][8bB], which matches the letters
+    // s-i-b — and "prescribed" contains exactly that. Digit tolerance has to
+    // survive an engine reading 518 as S18, without eating every word that
+    // happens to contain those letters.
+    expect(looseWord('518').test('prescribed')).toBe(false);
+    expect(looseWord('518').test('possible')).toBe(false);
+    expect(looseWord('518').test('S18')).toBe(true);
+    expect(looseWord('518').test('5l8')).toBe(true);
+    expect(looseWord('271').test('form 27l here')).toBe(true);
+  });
+
+  it('does not veto a competency certificate as an application', () => {
+    // End to end, on the shape that actually failed.
+    const saps524 =
+      'SAPS524\nSOUTHAFRICANPOLICESERVICE\nCOMPETENCYCERTIFICATE\n' +
+      'Section10oftheFirearmsControlAct,2000\n' +
+      'Itisherebycertifiedthatthepersonhascompletedtheprescribedtraining';
+    expect(hasPhrase(saps524, 'SAPS 518')).toBe(false);
+    expect(hasPhrase(saps524, 'SAPS 271')).toBe(false);
+  });
+});

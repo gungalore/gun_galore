@@ -95,8 +95,37 @@ function charPattern(ch: string): string {
  * happens: OCR tends to mangle a word rather than quietly shorten a phrase.
  */
 export function looseWord(word: string): RegExp {
-  return new RegExp([...word].map(charPattern).join(''), 'i');
+  const body = [...word].map(charPattern).join('');
+  // ⚠️ A NUMBER MAY NOT MATCH THE MIDDLE OF AN ENGLISH WORD. Digit tolerance
+  // has to run both ways — an engine reads "518" as "S18" or "5l8" and we must
+  // still recognise it — but the same character classes make "518" match the
+  // letters s-i-b, and "prescribed" contains exactly that.
+  //
+  // That is not hypothetical: it vetoed real SAPS 524 competency certificates
+  // as SAPS 518 APPLICATIONS, which is the single worst thing this table can
+  // do. Requiring a non-letter on each side costs a real form number nothing —
+  // they are always bounded by space or punctuation — and removes the whole
+  // class of accidental matches inside ordinary words.
+  if (/^\d+$/.test(word)) {
+    return new RegExp(`(?<![A-Za-z])${body}(?![A-Za-z])`, 'i');
+  }
+  return new RegExp(body, 'i');
 }
+
+/**
+ * How far apart two consecutive words of a phrase may sit, in characters.
+ *
+ * ⚠️ WITHOUT THIS A PHRASE IS NOT A PHRASE, IT IS A BAG OF WORDS ANYWHERE ON
+ * THE PAGE. Found by running PP-OCRv5's server model over the operator's real
+ * scans: "SAPS" matched at character 0 of a competency certificate and the
+ * "518" matched 465 CHARACTERS LATER, inside "pre-sib-ed". Two tokens half a
+ * page apart are not a form number.
+ *
+ * 48 characters is about a line of print — generous enough for a heading
+ * broken across lines or padded with OCR noise, far too small to bridge
+ * unrelated parts of a document.
+ */
+export const MAX_WORD_GAP = 48;
 
 export interface PhraseOptions {
   /**
@@ -163,7 +192,10 @@ export function matchPhrase(
     const re = looseWord(word);
     const rest = text.slice(from);
     const at = rest.search(re);
-    if (at < 0) {
+    // ⚠️ AND IT HAS TO BE NEARBY. See MAX_WORD_GAP — a match half a page away
+    // is not the next word of this phrase, it is a coincidence. Without this
+    // the matcher was a bag of words anywhere on the document.
+    if (at < 0 || (from > 0 && at > MAX_WORD_GAP)) {
       if (required.has(word.toLowerCase()) || ++missing > allowMissing)
         return false;
       continue;
