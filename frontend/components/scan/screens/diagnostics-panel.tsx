@@ -23,9 +23,23 @@ export default function DiagnosticsPanel({
   report,
   onClose,
   onCopyLive,
+  lenses,
+  onCycleLens,
 }: {
   report: ReportInput;
   onClose: () => void;
+  /**
+   * The rear lenses, and a way to move to the next one.
+   *
+   * ⚠️ THIS IS A TOOL, NOT A READOUT, AND IT BELONGS HERE. Lens ranking picks
+   * the second-widest and is right on both test phones — but "right by
+   * measurement" and "right in the hand" are different claims, and only one of
+   * them can be checked from a screen. It moved here when the old overlay was
+   * replaced; deleting it would have quietly removed the only way to test the
+   * ranking on a phone that disagrees with it.
+   */
+  lenses?: string[];
+  onCycleLens?: () => void;
   /**
    * Re-read the live values at the moment Copy is pressed.
    *
@@ -133,6 +147,23 @@ export default function DiagnosticsPanel({
           standard codes are kept — they identify a training course, not a
           person.
         </div>
+        {onCycleLens && (lenses?.length ?? 0) > 1 && (
+          <button
+            type="button"
+            onClick={onCycleLens}
+            style={{
+              ...quietBtn,
+              width: '100%',
+              background: 'transparent',
+              border: `1px solid ${T.onDarkLine}`,
+              color: T.onDark,
+              minHeight: 40,
+              fontSize: 13,
+            }}
+          >
+            Try the next lens ({lenses?.length} rear)
+          </button>
+        )}
         <div style={{ display: 'flex', gap: 10 }}>
           <button
             type="button"

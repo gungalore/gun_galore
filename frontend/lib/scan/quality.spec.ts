@@ -79,3 +79,64 @@ describe('the badge label', () => {
     expect(gradeScan({ dpi: Number.NaN }).dpiLabel).toBe('');
   });
 });
+
+describe('⚠️ a clipped page — the failure the aspect correction conceals', () => {
+  // The operator photographed an A4 touching the frame edge. The detector's
+  // quad was cut off at 1.087 where A4 is 1.414; the known-aspect forcing then
+  // narrowed it to exactly 1.4143 and the file came out perfectly
+  // proportioned, confidently graded, and missing part of the page.
+  it('fails a clipped scan outright, whatever its resolution', () => {
+    const q = gradeScan({ dpi: 400, clipped: true });
+    expect(q.grade).toBe('poor');
+  });
+
+  it('leads with the clipping, because it is the unfixable part', () => {
+    const q = gradeScan({ dpi: 120, clipped: true, tilt: 9 });
+    expect(q.detail).toMatch(/ran off|touching the edge/i);
+  });
+
+  it('says the shape is wrong when the ratio confirms it', () => {
+    const q = gradeScan({
+      dpi: 216,
+      clipped: true,
+      measuredRatio: 1.087,
+      expectedRatio: 1.414,
+    });
+    expect(q.detail).toMatch(/shape is wrong/i);
+    expect(q.detail).toMatch(/take it again/i);
+  });
+
+  it('is gentler when only the margin is tight', () => {
+    const q = gradeScan({
+      dpi: 300,
+      clipped: true,
+      measuredRatio: 1.41,
+      expectedRatio: 1.414,
+    });
+    expect(q.detail).toMatch(/move back a little/i);
+    expect(q.detail).not.toMatch(/shape is wrong/i);
+  });
+
+  it('says nothing about clipping when the page is inside the frame', () => {
+    expect(gradeScan({ dpi: 300, clipped: false }).reasons).toHaveLength(0);
+  });
+});
+
+describe('⚠️ the luma bound is measured on an ENHANCED page', () => {
+  // enhance() divides the illumination out and lifts bare paper to 245, so a
+  // well-exposed scan sits in the 200s by design. The old 215 bound fired on
+  // essentially every good capture and reported "Acceptable" for no visible
+  // reason.
+  it('does not punish a page that enhancement made bright', () => {
+    expect(gradeScan({ dpi: 300, luma: 212 }).grade).toBe('good');
+    expect(gradeScan({ dpi: 300, luma: 230 }).grade).toBe('good');
+  });
+
+  it('still catches a genuinely blown page', () => {
+    expect(gradeScan({ dpi: 300, luma: 244 }).grade).toBe('acceptable');
+  });
+
+  it('still catches a dark one', () => {
+    expect(gradeScan({ dpi: 300, luma: 40 }).grade).toBe('acceptable');
+  });
+});

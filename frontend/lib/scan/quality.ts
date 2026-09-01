@@ -33,6 +33,12 @@ export interface QualityInput {
   luma?: number;
   /** Was the crop the detector's, or a fallback? */
   source?: 'detected' | 'manual' | 'aim' | 'frame';
+  /** Did part of the document run off the edge of the photograph? */
+  clipped?: boolean;
+  /** The quad's long/short before aspect correction, for the message. */
+  measuredRatio?: number;
+  /** What the chosen document's ratio should be. */
+  expectedRatio?: number;
 }
 
 export interface Quality {
@@ -60,9 +66,20 @@ export const TILT_OK = Math.max(SQUARE_MAX - 90, 90 - SQUARE_MIN);
 /** Above this, a highlight has blown and cannot be recovered. */
 export const GLARE_BAD = 0.02;
 
-/** Outside this band the page is too dark or too bright to read reliably. */
+/**
+ * Outside this band the page is too dark or too bright to read reliably.
+ *
+ * ⚠️ THE HIGH BOUND IS MEASURED ON AN ENHANCED PAGE, WHICH IS ALREADY BRIGHT ON
+ * PURPOSE. enhance() divides the illumination out and lifts bare paper to 245,
+ * so a perfectly exposed scan lands in the 200s by design. The old 215 fired on
+ * essentially every good capture — the operator's competency certificate came
+ * back "Acceptable" at 216 dpi for no reason anyone could see.
+ *
+ * 238 is close enough to the 245 white point that only a genuinely blown page
+ * reaches it, and glare already catches blown HIGHLIGHTS separately.
+ */
 export const LUMA_LOW = 55;
-export const LUMA_HIGH = 215;
+export const LUMA_HIGH = 238;
 
 /**
  * Grade a finished capture.
@@ -92,6 +109,26 @@ export function gradeScan(q: QualityInput): Quality {
       reasons.push(`${Math.round(q.dpi)} dpi, just under the ${TARGET_DPI} we aim for.`);
       down('acceptable');
     }
+  }
+
+  // ⚠️ CLIPPING IS A 'POOR' ON ITS OWN, AND IT IS THE ONLY OTHER ONE. Missing
+  // resolution loses the small print; missing FRAME loses the part of the page
+  // that ran off the picture, and no processing recovers either. Worse, the
+  // aspect correction makes a clipped crop look right: forced to the
+  // document's known ratio it comes out A4 to four decimals, perfectly
+  // proportioned, and missing an inch of the page. The member has no way to
+  // see that from a thumbnail — which is exactly why it has to be said.
+  if (q.clipped) {
+    const off =
+      q.measuredRatio && q.expectedRatio
+        ? Math.abs(q.measuredRatio - q.expectedRatio) / q.expectedRatio
+        : 0;
+    reasons.unshift(
+      off > 0.1
+        ? 'Part of the page ran off the edge — the shape is wrong for this document. Move back and take it again.'
+        : 'The page is touching the edge of the picture. Move back a little so nothing is cut off.',
+    );
+    down('poor');
   }
 
   if (q.tilt !== undefined && q.tilt > TILT_OK) {

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { ScanFilter } from '@/lib/scan/capture';
 import type { Quality } from '@/lib/scan/quality';
 import Zoomable from '../zoomable';
-import { T, primaryBtn, quietBtn } from '../scan-theme';
+import { T, primaryBtn } from '../scan-theme';
 
 // ────────────────────────────────────────────────────────────────────
 // CHECK IT OVER.

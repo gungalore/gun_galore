@@ -1,4 +1,4 @@
-import type { ScanFilter, ScanResult } from './capture';
+import type { ScanResult } from './capture';
 import { previewUrl, toFile } from './capture';
 import type { Raster } from './warp';
 

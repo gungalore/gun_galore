@@ -7,6 +7,7 @@ import { Raster, rectify } from './warp';
 import { blur3, seededCorners } from './edges';
 import { DETECT_ACCEPT } from './detect-client';
 import { OUTPUT_MAX_EDGE } from './framing';
+import { edgeMargin } from './guidance';
 import { letterboxFor } from './letterbox';
 import { analyseMask } from './mask-quad';
 import { bestCandidate } from './quad-score';
@@ -20,6 +21,15 @@ import { refineEdges } from './refine-edges';
  * checked. Declining costs them nothing they were not already paying.
  */
 const SEED_CONFIDENCE = 0.55;
+
+/**
+ * Below this margin from the frame edge, the document has run out of picture.
+ *
+ * The same cliff the live guidance uses, and for the same measured reason: a
+ * document flush to the frame edge scored 0/15 usable against 11/15 one step
+ * off. Here it decides whether to TELL the member, not whether to detect.
+ */
+const CLIPPED_AT = 0.01;
 
 /**
  * How much edge support a MASK-derived quad must show before it may crop.
@@ -294,6 +304,35 @@ export interface ScanResult {
   arbitration?: { worstSide: number; support: number };
   /** How far sub-pixel refinement moved the worst corner, and sides skipped. */
   refined?: { moved: number; skipped: number };
+  /**
+   * Nearest corner's distance from the frame edge, as a fraction of the short
+   * axis. 0 means the crop is touching the edge of the photograph.
+   */
+  edgeMargin: number;
+  /**
+   * The quad's own long/short before any aspect correction.
+   *
+   * ⚠️ RECORDED BECAUSE THE CORRECTED NUMBER HIDES THE EVIDENCE. Once a quad is
+   * forced to the document's known ratio the output is A4 to four decimals
+   * whatever went in, so a diagnostic report cannot tell a good detection from
+   * a clipped one. This is the number that can.
+   */
+  measuredRatio: number;
+  /**
+   * Did part of the document run off the photograph?
+   *
+   * ⚠️ THIS IS WHAT THE ASPECT FORCING CANNOT FIX, AND USED TO CONCEAL. A quad
+   * clipped by the frame edge and a good quad flattened by perspective look
+   * IDENTICAL by ratio — the operator's clipped A4 measured 1.087 against a
+   * true 1.414, and so did a correctly detected certificate photographed at a
+   * steep angle. Forcing the ratio is right for the second and produces a
+   * confident, correctly-proportioned crop of the wrong region for the first.
+   *
+   * The ratio cannot separate them. The frame margin can: perspective does not
+   * push a document's corners onto the edge of the picture, and running out of
+   * frame does.
+   */
+  clipped: boolean;
   quad: Quad;
   /** Did we find the edges, or fall back to the frame? */
   /**
@@ -645,6 +684,17 @@ export async function processCapture(
   // detected quad was then rectified into whatever rectangle its own edge
   // lengths suggested — which under perspective is the wrong one. See the note
   // on outputSize for the worked example off a real capture.
+  // Measured BEFORE the aspect correction, and against the FULL frame — this
+  // is the evidence that survives the forcing.
+  const cropEdgeMargin = edgeMargin(cropQuad, raster.width, raster.height);
+  const measuredRatio = (() => {
+    const d = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.hypot(b.x - a.x, b.y - a.y);
+    const w0 = Math.max(d(cropQuad[0], cropQuad[1]), d(cropQuad[3], cropQuad[2]));
+    const h0 = Math.max(d(cropQuad[0], cropQuad[3]), d(cropQuad[1], cropQuad[2]));
+    return Math.max(w0, h0) / Math.max(1e-6, Math.min(w0, h0));
+  })();
+
   const { w, h, snapped } = outputSize(
     cropQuad,
     OUTPUT_MAX_EDGE,
@@ -663,6 +713,9 @@ export async function processCapture(
   return {
     seed: seedReport,
     maskFit: maskReport,
+    edgeMargin: cropEdgeMargin,
+    measuredRatio: measuredRatio,
+    clipped: cropEdgeMargin <= CLIPPED_AT,
     pickedBy,
     arbitration,
     refined: refineReport,

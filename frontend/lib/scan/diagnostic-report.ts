@@ -134,6 +134,17 @@ export interface ReportInput {
     outputW?: number;
     outputH?: number;
     snappedTo?: string | null;
+    /**
+     * ⚠️ THE EVIDENCE THE ASPECT FORCING ERASES. Once a quad is forced to the
+     * document's known ratio the output is A4 to four decimals whatever went
+     * in, so `output` alone cannot tell a good detection from one clipped by
+     * the frame. These three can, and they are the difference between "the
+     * detector did well" and "we saved a tidy crop of the wrong region".
+     */
+    edgeMargin?: number;
+    measuredRatio?: number;
+    expectedRatio?: number;
+    clipped?: boolean;
     filter?: string;
     grade?: string;
     reasons?: string[];
@@ -319,6 +330,16 @@ export function buildReport(r: ReportInput): string {
     }
     out.push(line('output', c.outputW ? `${c.outputW}x${c.outputH}` : undefined));
     out.push(line('aspect snap', c.snappedTo ?? undefined));
+    out.push(line('crop edge margin', pct(c.edgeMargin)));
+    out.push(
+      line(
+        'ratio',
+        c.measuredRatio
+          ? `measured ${n(c.measuredRatio)}${c.expectedRatio ? ` vs ${n(c.expectedRatio)} expected` : ''}`
+          : undefined,
+      ),
+    );
+    out.push(line('clipped', c.clipped === undefined ? undefined : c.clipped ? 'YES — page ran off the frame' : 'no'));
     out.push(line('filter', c.filter));
     out.push(line('grade', c.grade));
     if (c.reasons?.length) for (const x of c.reasons) out.push(`                   · ${x}`);

@@ -94,7 +94,6 @@ import {
   type ScanReport,
 } from '@/lib/scan/diagnostics';
 import { diagnosticsOn, saveToPhoneOn } from '@/lib/scan/diag-flag';
-import ScanDiagnostics from './scan-diagnostics';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SCANNER.
@@ -450,8 +449,12 @@ export default function DocumentScanner({
     | null
   >(null);
   const lastCaptureRef = useRef<ScanReport['lastCapture']>(undefined);
-  /** Bumped on a throttle so the panel repaints without re-rendering per frame. */
-  const [diagTick, setDiagTick] = useState(0);
+  /**
+   * Bumped on a throttle so the panel repaints without re-rendering per frame.
+   * The value is never read — the re-render IS the effect, because the panel
+   * rebuilds its text from the refs every time it renders.
+   */
+  const [, setDiagTick] = useState(0);
   const diagPaintedRef = useRef(0);
 
   useEffect(() => {
@@ -506,6 +509,15 @@ export default function DocumentScanner({
   const pages = useMemo(() => tray.map((t) => t.file), [tray]);
   const [editing, setEditing] = useState(false);
   editingRef.current = editing;
+  /**
+   * ⚠️ THE LIVE TICK MUST FOLLOW THE PANEL, NOT THE EDITOR. This gate used to
+   * read editingRef, because the old readout was an overlay drawn on top of
+   * the corner editor. The panel is its own screen now, so that condition was
+   * asking "is a screen the member is no longer on still open?" — which meant
+   * the numbers on the diagnostics screen were frozen at the moment it opened.
+   */
+  const showDiagRef = useRef(false);
+  showDiagRef.current = showDiag;
   /**
    * A re-cut from the corner editor is in flight.
    *
@@ -594,6 +606,9 @@ export default function DocumentScanner({
       glare: cur.report?.glare,
       luma: cur.report?.meanLuma,
       source: cur.source,
+      clipped: cur.clipped,
+      measuredRatio: cur.measuredRatio,
+      expectedRatio: expectAspectFor(shape),
     });
     setTray((t) => [
       ...t,
@@ -682,9 +697,20 @@ export default function DocumentScanner({
         maxHeight: caps?.height?.max,
         focusModes: caps?.focusMode,
         torch: caps?.torch,
-        label: activeCamRef.current ?? undefined,
-        rearCount: camerasRef.current.length,
-        lenses: camerasRef.current.map((c) => c.label || 'unnamed'),
+        // ⚠️ FALL BACK TO THE LIVE TRACK. camerasRef is filled by the lens
+        // probe, which lives inside a catch that deliberately swallows its
+        // reason — a phone that will not enumerate must not cost the member
+        // their scanner. The cost is that the report then said "rear lenses 0"
+        // and named no lens at all, which reads as a fault rather than as a
+        // probe that declined. The track always knows what it is running.
+        label:
+          activeCamRef.current ??
+          streamRef.current?.getVideoTracks()[0]?.label ??
+          undefined,
+        rearCount: camerasRef.current.length || undefined,
+        lenses: camerasRef.current.length
+          ? camerasRef.current.map((c) => c.label || 'unnamed')
+          : ['(lens probe did not report — using whatever facingMode gave us)'],
       },
       live: {
         status: liveStatusRef.current.state,
@@ -733,12 +759,19 @@ export default function DocumentScanner({
             outputW: cur.outputWidth,
             outputH: cur.outputHeight,
             snappedTo: cur.snapped,
+            edgeMargin: cur.edgeMargin,
+            measuredRatio: cur.measuredRatio,
+            expectedRatio: expectAspectFor(shape),
+            clipped: cur.clipped,
             filter: cur.filter,
             grade: gradeScan({
               dpi: shotDpi(cur, shape),
               glare: cur.report?.glare,
               luma: cur.report?.meanLuma,
               source: cur.source,
+              clipped: cur.clipped,
+              measuredRatio: cur.measuredRatio,
+              expectedRatio: expectAspectFor(shape),
             }).label,
           }
         : undefined,
@@ -1526,7 +1559,7 @@ export default function DocumentScanner({
         // at all while it is hidden, which is the whole live phase. The panel
         // reads the refs and the trail when it renders, so it opens current
         // without having been kept warm.
-        if (editingRef.current && now - diagPaintedRef.current > 300) {
+        if (showDiagRef.current && now - diagPaintedRef.current > 300) {
           diagPaintedRef.current = now;
           setDiagTick((n) => n + 1);
         }
@@ -1950,8 +1983,18 @@ export default function DocumentScanner({
       // editor opens with our best guess already drawn — a good guess is two
       // taps (Apply) from done, a bad one is caught BEFORE the member sees a
       // mangled crop and loses faith in the whole thing.
-      setEditing(true);
-      say('Check the corners, then apply.');
+      // ⚠️ STRAIGHT TO REVIEW NOW, NOT INTO THE CORNER EDITOR. Opening the
+      // editor on every shot predates the detector being trustworthy, and it
+      // had a consequence nobody intended: tapping Apply without touching
+      // anything re-ran the capture with the editor's starting quad as a
+      // MANUAL one. Every scan was then recorded as "crop from manual", so a
+      // diagnostic report said the member had dragged corners they had never
+      // touched — which is exactly how a clipped detection got mistaken for a
+      // bad drag.
+      //
+      // Corners is a choice on the review screen. A good crop costs no taps; a
+      // bad one costs the same two it always did.
+      say('Check it over.');
     } catch (e) {
       setErr((e instanceof Error && e.message) || 'That did not work. Try again.');
       setPhase('live');
@@ -1979,7 +2022,15 @@ export default function DocumentScanner({
       // back on screen — and told a screen reader it had worked.
       setRecutting(true);
       try {
-        const next = await processCapture(blob, { manualQuad: quad });
+        const next = await processCapture(blob, {
+          manualQuad: quad,
+          // ⚠️ THE KNOWN ASPECT APPLIES TO A DRAGGED QUAD TOO. Without this
+          // the corner editor silently fell back to the old snap heuristic —
+          // the report read "aspect snap: A-series page" instead of "known" —
+          // so every manually cropped document lost the proportions fix and
+          // got whatever its four dragged corners happened to imply.
+          expectAspect: expectAspectFor(shape),
+        });
         setShot(next);
         setEditing(false);
         say('Corners updated.');
@@ -2449,54 +2500,11 @@ export default function DocumentScanner({
             {/* ⚠️ ONLY UNDER ?diag=1. Absent entirely for everybody else —
             this is the scanner explaining itself to whoever is debugging
             it, not a member-facing surface. */}
-        {diag && (
-          <ScanDiagnostics
-            collapseFor={editing ? 'editor' : null}
-            key={diagTick}
-            reading={{
-              ink: inkRef.current,
-              motion:
-                trailRef.current[trailRef.current.length - 1]?.motion ?? 255,
-              glare: glareRef.current,
-              luma: lumaRef.current,
-            }}
-            held={trailRef.current[trailRef.current.length - 1]?.held ?? 0}
-            frameMs={
-              trailRef.current[trailRef.current.length - 1]?.ms ?? 0
-            }
-            frameMotion={
-              trailRef.current[trailRef.current.length - 1]?.frameMotion
-            }
-            rawMotion={
-              trailRef.current[trailRef.current.length - 1]?.rawMotion
-            }
-            shape={shape}
-            detectorOff={
-              trailRef.current[trailRef.current.length - 1]?.detectorOff ??
-              false
-            }
-            device={deviceRef.current}
-            camera={cameraRef.current}
-            cameras={cameras}
-            onCycleCamera={cameras.length > 1 ? cycleCamera : undefined}
-            activeCamera={activeCamRef.current}
-            lastDetect={detectRef.current}
-            live={liveStatusRef.current}
-            liveReading={
-              liveReadingRef.current
-                ? {
-                    minConfidence: liveReadingRef.current.minConfidence,
-                    ms: liveReadingRef.current.ms,
-                    lock: lockRef.current,
-                    guide: guideRef.current,
-                    quality: qualityRef.current,
-                  }
-                : null
-            }
-            trail={trailRef.current}
-            lastCapture={lastCaptureRef.current}
-          />
-        )}
+        {/* ⚠️ THE OLD READOUT IS GONE, NOT HIDDEN. It rendered its
+            own collapsed `diag` chip, so with the new panel there were TWO on
+            screen — one of them sitting on top of the back arrow. Its job is
+            done by screens/diagnostics-panel.tsx, which is a full screen
+            rather than an overlay across the corners the member is dragging. */}
 
         {(phase === 'starting' || phase === 'live' || phase === 'working') && (
           <>
@@ -2732,6 +2740,9 @@ export default function DocumentScanner({
               glare: shot.report?.glare,
               luma: shot.report?.meanLuma,
               source: shot.source,
+              clipped: shot.clipped,
+              measuredRatio: shot.measuredRatio,
+              expectedRatio: expectAspectFor(shape),
             })}
             name={docName}
             onName={setDocName}
@@ -2962,6 +2973,8 @@ export default function DocumentScanner({
           report={collectReport()}
           onCopyLive={collectReport}
           onClose={() => setShowDiag(false)}
+          lenses={cameras.map((c) => c.label || 'unnamed')}
+          onCycleLens={cameras.length > 1 ? cycleCamera : undefined}
         />
       )}
 
