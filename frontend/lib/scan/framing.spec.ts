@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SHAPES, acrossMm, SHAPE_ORDER } from './shapes';
+import { SHAPES, acrossMm, SHAPE_ORDER, guideAspect } from './shapes';
 import {
   AIM_MARGIN,
   FLOOR_DPI,
@@ -9,8 +9,7 @@ import {
   fillForDpi,
   framingHint,
   framingPlan,
-  shortAxisPx,
-} from './framing';
+  shortAxisPx, OUTPUT_MAX_EDGE } from './framing';
 
 // ────────────────────────────────────────────────────────────────────
 // The aim box used to be a constant, and the constant is what made the
@@ -263,5 +262,37 @@ describe('⚠️ the frame-edge cliff — measured 2026-08-31, not inferred', ()
     // is a linear loss.
     expect(areaFraction).toBeGreaterThan(0.03);
     expect(areaFraction).toBeLessThan(0.25);
+  });
+});
+
+describe('⚠️ the output cap must never make the target unreachable', () => {
+  // The bug this pins: OUTPUT_MAX_EDGE was hard-coded at 2000, which on a
+  // 1.414 page is a 1414px short edge — and 1414 over 210mm is exactly 171
+  // dpi. Both of the operator's phones reported precisely that, on different
+  // cameras, because it was never a measurement. Every A4 was shrunk below our
+  // own floor on the way out and then graded "Poor" for it.
+  it('lets the largest document we accept clear the floor', () => {
+    for (const shape of SHAPE_ORDER) {
+      const across = acrossMm(shape)!;
+      const a = guideAspect(shape)!; // width over height
+      // The output at the cap: long edge capped, short edge follows.
+      const shortPx = a >= 1 ? OUTPUT_MAX_EDGE * a : OUTPUT_MAX_EDGE * a;
+      const dpi = dpiOf(a >= 1 ? OUTPUT_MAX_EDGE : shortPx, across);
+      expect(dpi, `${shape} is capped below the floor`).toBeGreaterThanOrEqual(
+        FLOOR_DPI,
+      );
+    }
+  });
+
+  it('clears it with headroom, not by a hair', () => {
+    // A cap that lands exactly on the floor leaves a member who frames well
+    // no better off than one who does not.
+    const dpi = dpiOf(OUTPUT_MAX_EDGE / (297 / 210), 210);
+    expect(dpi).toBeGreaterThan(FLOOR_DPI * 1.1);
+  });
+
+  it('follows TARGET_DPI rather than sitting beside it', () => {
+    // Derived, so raising the target cannot leave the cap behind.
+    expect(OUTPUT_MAX_EDGE).toBeGreaterThan((297 / 25.4) * TARGET_DPI);
   });
 });

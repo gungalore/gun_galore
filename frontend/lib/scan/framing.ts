@@ -1,6 +1,6 @@
 import type { DocShape } from './shapes';
 import { TOO_SMALL } from './guidance';
-import { acrossMm, guideAspect } from './shapes';
+import { SHAPES, SHAPE_ORDER, acrossMm, guideAspect } from './shapes';
 
 // ────────────────────────────────────────────────────────────────────
 // Framing — how big the aim box has to be, given what the camera
@@ -181,6 +181,42 @@ export function fillForDetection(
   if (!(k > 0)) return 0;
   return Math.min(1, Math.sqrt(TOO_SMALL / k));
 }
+
+/**
+ * The longest edge a saved page may have, in pixels.
+ *
+ * ⚠️ DERIVED, BECAUSE A HARD-CODED 2000 MADE THE TARGET UNREACHABLE FOR A YEAR
+ * AND NOBODY NOTICED. Both of the operator's phones reported exactly 171 dpi
+ * on an A4 — the same number, on different cameras, because it was never a
+ * measurement. 2000px on a 1.414 page is a 1414px short edge, and 1414 over
+ * 210mm IS 171 dpi. Every A4 scan was being shrunk below our own floor on the
+ * way out and then graded "Poor" for it.
+ *
+ * So the cap is computed from the largest document we accept and the dpi we
+ * aim for, with headroom so it never binds on a well-framed capture. Raise
+ * TARGET_DPI or add a bigger document and this follows on its own.
+ *
+ * ⚠️ THE HEADROOM IS BOUNDED BY MEMORY, NOT BY FILE SIZE. The JPEG is trivial
+ * either way — well inside the 10MB upload limit at any of these sizes. What
+ * costs is `enhance`, which holds several Float32 planes of w*h at once for the
+ * illumination field, CLAHE and the unsharp mask. Every extra pixel is
+ * multiplied by all of them, on top of a source raster that is already ~48MB
+ * on a 4K frame.
+ *
+ *     headroom 1.0   2339px   200 dpi   ~15MB per plane
+ *     headroom 1.15  2690px   230 dpi   ~20MB per plane
+ *     headroom 1.3   3041px   260 dpi   ~26MB per plane
+ *
+ * 1.15 clears the 200 dpi floor with room to spare and keeps the working set
+ * where a mid-range phone can hold it. Peak resolution is not the goal here —
+ * clearing the floor reliably is, and a scan that crashes the tab has no dpi
+ * at all.
+ */
+export const OUTPUT_MAX_EDGE = Math.ceil(
+  (Math.max(...SHAPE_ORDER.map((k) => SHAPES[k].longMm ?? 0)) / 25.4) *
+    TARGET_DPI *
+    1.15,
+);
 
 /** What the framing arithmetic concluded, in order of how good the news is. */
 export type FramingVerdict =

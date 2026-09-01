@@ -6,6 +6,7 @@ import { Quad, Rect, frameQuad, outputSize, scaleQuad } from './geometry';
 import { Raster, rectify } from './warp';
 import { blur3, seededCorners } from './edges';
 import { DETECT_ACCEPT } from './detect-client';
+import { OUTPUT_MAX_EDGE } from './framing';
 import { letterboxFor } from './letterbox';
 import { analyseMask } from './mask-quad';
 import { bestCandidate } from './quad-score';
@@ -46,7 +47,7 @@ const MASK_MIN_SUPPORT = 0.5;
 // ────────────────────────────────────────────────────────────────────
 
 /** Longest edge of the rectified output. */
-export const OUTPUT_MAX_EDGE = 2000;
+export { OUTPUT_MAX_EDGE };
 
 /** JPEG quality. High enough that the model is not reading our artefacts. */
 const JPEG_QUALITY = 0.88;
