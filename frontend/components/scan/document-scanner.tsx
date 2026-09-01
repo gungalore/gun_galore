@@ -13,7 +13,7 @@ import {
   visibleRect,
 } from '@/lib/scan/capture';
 import { detectQuad } from '@/lib/scan/detect';
-import { Quad, quadDrift, smoothQuad } from '@/lib/scan/geometry';
+import { Quad } from '@/lib/scan/geometry';
 import { av } from '@/lib/asset-version';
 import CornerEditor from './corner-editor';
 import { type Grade, gradeScan } from '@/lib/scan/quality';
@@ -28,6 +28,7 @@ import { QuadSmoother } from '@/lib/scan/smooth';
 import { LIVE_FPS } from '@/lib/scan/docquad-live';
 import { rotateResult } from '@/lib/scan/rotate';
 import { QuadPresence, scaleAboutCentre } from '@/lib/scan/quad-presence';
+import { QuadTracker } from '@/lib/scan/quad-track';
 import {
   DocShape,
   SHAPES,
@@ -449,6 +450,15 @@ export default function DocumentScanner({
     | { outcome: 'not-asked' }
     | null
   >(null);
+  /**
+   * Which rectangle we are following, and how sure we are of it.
+   *
+   * ⚠️ THE OVERLAY'S BLINK LIVED HERE, NOT IN THE FILTER. See quad-track.ts —
+   * a detection that disagreed with the last one used to teleport the quad and
+   * reset the lock to 1, and the outline is only drawn at lock >= 2, so the
+   * markers vanished for a whole inference frame every time.
+   */
+  const trackerRef = useRef(new QuadTracker());
   const lastCaptureRef = useRef<ScanReport['lastCapture']>(undefined);
   /**
    * Bumped on a throttle so the panel repaints without re-rendering per frame.
@@ -1156,6 +1166,7 @@ export default function DocumentScanner({
     // that saves the crop.
     quadRef.current = null;
     lockRef.current = 0;
+    trackerRef.current.reset();
     confidentRef.current = false;
     aimedRef.current = false;
     aimMissRef.current = 3;
@@ -1431,14 +1442,9 @@ export default function DocumentScanner({
           // quad — within 8% of the frame — counts; a different rectangle
           // starts over, snapped rather than glided to, because gliding
           // across the frame between two candidates IS the jitter.
-          const prev = quadRef.current;
-          if (prev && quadDrift(prev, scaled) <= video.videoWidth * 0.08) {
-            quadRef.current = smoothQuad(prev, scaled, 0.35);
-            lockRef.current = Math.min(3, lockRef.current + 1);
-          } else {
-            quadRef.current = scaled;
-            lockRef.current = 1;
-          }
+          const tracked = trackerRef.current.push(scaled, video.videoWidth);
+          quadRef.current = tracked.quad;
+          lockRef.current = tracked.lock;
           confidentRef.current = found.confident;
 
           // ── does it sit in the box we asked for? ──────────────────
@@ -1492,9 +1498,10 @@ export default function DocumentScanner({
           // ⚠️ NEVER BLINK OFF. A single frame where a hand shadowed an edge
           // must not flash the markers away — it reads as a fault. Decay
           // instead, and only give up after several misses.
-          lockRef.current = Math.max(0, lockRef.current - 1);
+          const missed = trackerRef.current.push(null, video.videoWidth);
+          quadRef.current = missed.quad;
+          lockRef.current = missed.lock;
           if (lockRef.current === 0) {
-            quadRef.current = null;
             confidentRef.current = false;
             aimedRef.current = false;
             aimMissRef.current = 3;
@@ -1693,7 +1700,7 @@ export default function DocumentScanner({
           lastDrawAt = drawNow;
           const shownQuad =
             q && cv.width > 0
-              ? smoother.push(q, dt, Math.min(cv.width, cv.height))
+              ? smoother.push(q, dt)
               : (smoother.reset(), null);
           // Drawn only once TWO consecutive detections have agreed. A single
           // unconfirmed candidate stays invisible — honest "still looking"
@@ -3199,7 +3206,11 @@ function drawCorners(g: CanvasRenderingContext2D, q: Quad, locked: boolean) {
 
   g.globalAlpha = 1;
   g.strokeStyle = ink;
-  g.lineWidth = locked ? 3 : 2;
+  // ⚠️ THICK ON PURPOSE. A 2px line advertises every sub-pixel wobble the
+  // filter did not remove; a 5px one simply does not have the resolution to
+  // show it. Scanbot's overlay measures ~5px opaque stroke with no fill, and
+  // that choice is doing as much work as their filtering is.
+  g.lineWidth = locked ? 5 : 4;
   g.lineJoin = 'round';
   path();
   g.stroke();

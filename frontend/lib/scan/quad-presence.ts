@@ -34,13 +34,18 @@ export const FADE_OUT_MS = 180;
 export const GRACE_MS = 350;
 
 /**
- * How much of its final size the box starts at when it appears.
+ * How much larger the quad starts when it appears. 1 means it does not.
  *
- * A hair over 1: the box settles INWARD onto the document, which reads as
- * landing on it. Growing outward from smaller reads as the detector still
- * searching.
+ * ⚠️ 1, AND THAT IS DELIBERATE — THE POP IS GONE. A 3% scale-in reads as
+ * polish in a mockup and as a twitch on a phone, because acquisition is not a
+ * single clean event: the detector finds the document, loses it for a frame,
+ * finds it again, and every re-acquisition replayed the pop. Frame analysis of
+ * Scanbot's overlay shows a plain opacity fade with no scale at all.
+ *
+ * Kept as a named constant rather than deleted so the machinery stays in one
+ * piece and the decision is legible. Setting it above 1 restores the effect.
  */
-export const ENTER_SCALE = 1.03;
+export const ENTER_SCALE = 1;
 
 export type Presence = 'hidden' | 'entering' | 'shown' | 'leaving';
 

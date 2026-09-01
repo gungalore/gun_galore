@@ -30,39 +30,51 @@ import type { Quad } from './geometry';
 // ────────────────────────────────────────────────────────────────────
 
 /**
- * Smoothing at rest, in Hz. Lower is steadier and laggier.
+ * The cutoff at rest, in Hz. LOWER IS MORE DAMPED.
  *
- * 1.2 was chosen against the measured detection rate: at ~10Hz input a 1.2Hz
- * cutoff removes the pixel-scale disagreement between consecutive detections
- * without visibly softening a deliberate move.
+ * ⚠️ 0.25, DOWN FROM 1.2, AND THE DIRECTION IS THE EASY THING TO GET WRONG.
+ * A higher cutoff passes more of the signal, so raising it makes the overlay
+ * MORE twitchy, not less. Damping at rest means lowering this.
+ *
+ * Chosen by sweeping smooth-bench.spec.ts, not by looking at a phone — which
+ * is how the previous value survived three rounds of "still twitchy". The
+ * bench feeds a synthetic detection stream at the real 15Hz inference cadence
+ * into a 60Hz render loop and measures the drawn polygon's per-frame step.
+ * Against the operator's frame analysis of Scanbot's own Web SDK demo:
+ *
+ *   minCut  beta | rest med | noisy rest | slow-pan p95 | pan lag
+ *      1.2  0.02 |     0.36 |       1.18 |         6.83 |  31.5px   <- was
+ *      1.2 0.002 |     0.24 |       0.72 |         4.72 |  23.2px
+ *     0.25  0.02 |     0.28 |       1.11 |         6.58 |  31.1px
+ *     0.25 0.002 |     0.09 |       0.37 |         4.40 |  18.3px   <- is
+ *
+ * The pair is better on every column at once, so nothing was traded for this.
+ * The old value failed the noisy-rest target outright at 1.18px per frame,
+ * which is the twitch, and trailed by 31px, which is twice the lag Scanbot
+ * ships while still being less steady.
  */
-export const MIN_CUTOFF = 1.2;
+export const MIN_CUTOFF = 0.25;
 
 /**
- * How hard speed raises the cutoff.
+ * How much the cutoff opens up with speed.
  *
- * ⚠️ THE WHOLE POINT OF THE FILTER IS THIS TERM. At beta 0 it degrades to a
- * fixed low-pass and the box lags behind a moving document, which reads worse
- * than jitter because it looks like the detector has lost the page.
+ * ⚠️ 0.002, DOWN FROM 0.02, AND IT IMPROVED THE LAG RATHER THAN COSTING IT —
+ * which is the opposite of what the parameter's name suggests. Less
+ * speed-adaptation should mean a slower response, and at a fixed cutoff it
+ * would. What actually happened is that `dx` is driven by DETECTOR NOISE as
+ * much as by real motion, so a large beta made the cutoff oscillate frame to
+ * frame: the filter kept unlocking itself for movement that was not there.
+ * Steadier adaptation tracks a real pan better than jumpy adaptation does.
+ *
+ * ⚠️ IT MUST NOT GO TO ZERO. With no speed term the filter never opens up, and
+ * the bench shows lag exploding as the cutoff falls — 46px, 74px, 96px, 173px
+ * at minCutoff 0.4 down to 0.15. The overlay would be perfectly still and
+ * hopelessly behind.
  */
-export const BETA = 0.02;
+export const BETA = 0.002;
 
 /** Cutoff for the speed estimate itself. Standard value from the paper. */
 export const D_CUTOFF = 1.0;
-
-/**
- * How far a corner may move between detections before we stop easing and jump.
- *
- * ⚠️ WITHOUT THIS, RE-ACQUIRING LOOKS LIKE A BUG. When the member moves to a
- * new document — or the detector drops the page and finds it again somewhere
- * else — smoothing turns an instantaneous change into the box gliding across
- * the screen over half a second, passing over things that are not documents
- * on the way. A jump is honest; a glide is a lie about what was detected.
- *
- * As a fraction of the frame's short axis, so it means the same thing on
- * every device.
- */
-export const SNAP_DISTANCE = 0.18;
 
 function alpha(cutoff: number, dt: number): number {
   const tau = 1 / (2 * Math.PI * cutoff);
@@ -122,6 +134,25 @@ export class QuadSmoother {
   /** The quad's shared, low-passed speed. One number, not eight. */
   private dx = 0;
 
+  private readonly minCutoff: number;
+  private readonly beta: number;
+  private readonly dCutoff: number;
+
+  /**
+   * Overrides exist for the BENCH, not for callers.
+   *
+   * smooth-bench.spec.ts sweeps these to find the pair that meets the measured
+   * targets; the product always takes the module defaults. Every previous pass
+   * at this filter was judged by looking at it, which is how it survived three
+   * rounds of "still twitchy" — a constructor that can be swept is what turns
+   * the argument into numbers.
+   */
+  constructor(opts: { minCutoff?: number; beta?: number; dCutoff?: number } = {}) {
+    this.minCutoff = opts.minCutoff ?? MIN_CUTOFF;
+    this.beta = opts.beta ?? BETA;
+    this.dCutoff = opts.dCutoff ?? D_CUTOFF;
+  }
+
   reset(): void {
     for (const c of this.channels) c.reset();
     this.last = null;
@@ -141,29 +172,21 @@ export class QuadSmoother {
    * motion. Feeding the same target repeatedly is correct and expected: the
    * filter keeps converging on it.
    */
-  push(target: Quad, dt: number, shortAxis: number): Quad {
+  push(target: Quad, dt: number): Quad {
     // Guard the clock. A backgrounded tab returns with a dt of several
     // seconds, and alpha() at that dt is ~1 — which would snap anyway, but
     // through a divide that is better not to trust.
     const step = Math.min(0.1, Math.max(1 / 240, dt));
 
-    if (this.last && shortAxis > 0) {
-      let worst = 0;
-      for (let i = 0; i < 4; i++) {
-        worst = Math.max(
-          worst,
-          Math.hypot(target[i].x - this.last[i].x, target[i].y - this.last[i].y),
-        );
-      }
-      if (worst / shortAxis > SNAP_DISTANCE) {
-        for (let i = 0; i < 4; i++) {
-          this.channels[i * 2].set(target[i].x);
-          this.channels[i * 2 + 1].set(target[i].y);
-        }
-        this.last = target.map((p) => ({ x: p.x, y: p.y })) as Quad;
-        return this.last;
-      }
-    }
+    // ⚠️ THERE IS NO SNAP HERE ANY MORE, AND ITS REMOVAL IS THE POINT. A snap
+    // is a teleport, and a teleport is the single most visible thing an
+    // overlay can do — it is exactly what "the box twitches" describes. It was
+    // here to catch a large jump; large jumps now arrive filtered, because the
+    // decision about WHICH rectangle we are tracking moved upstream into
+    // quad-track.ts, where a newcomer has to be seen twice before it is
+    // believed. By the time a new target reaches this filter it has already
+    // been vouched for, so the right response is to glide to it over a few
+    // frames, not to jump.
 
     // ⚠️ ONE SPEED FOR THE WHOLE QUAD, AND THEREFORE ONE CUTOFF. This is what
     // keeps the rectangle rigid. Per-channel speed let a corner over a
@@ -188,8 +211,8 @@ export class QuadSmoother {
       }
     }
     const speed = n ? sum / n : 0;
-    this.dx = this.dx + alpha(D_CUTOFF, step) * (speed - this.dx);
-    const a = alpha(MIN_CUTOFF + BETA * this.dx, step);
+    this.dx = this.dx + alpha(this.dCutoff, step) * (speed - this.dx);
+    const a = alpha(this.minCutoff + this.beta * this.dx, step);
 
     const out = target.map((p, i) => ({
       x: this.channels[i * 2].filter(p.x, a),

@@ -22,14 +22,20 @@ describe('QuadPresence', () => {
     expect(new QuadPresence().state).toMatchObject({ phase: 'hidden', opacity: 0 });
   });
 
-  it('fades in and settles inward onto the document', () => {
+  it('fades in on opacity alone — no scale, no pop', () => {
+    // ⚠️ THIS USED TO ASSERT A SCALE-IN AND NOW ASSERTS ITS ABSENCE. A 3%
+    // settle-inward reads as polish in a mockup and as a twitch on a phone,
+    // because acquisition is not one clean event — the detector finds the
+    // page, drops it for a frame, finds it again, and every re-acquisition
+    // replayed the pop. Scanbot's overlay does a plain opacity fade.
     const p = new QuadPresence();
     const first = p.step(true, F);
     expect(first.phase).toBe('entering');
     expect(first.opacity).toBeLessThan(1);
-    // Settles INWARD — starts slightly larger, never smaller.
-    expect(first.scale).toBeGreaterThan(1);
+    // Never smaller than the document, and now never larger either.
+    expect(first.scale).toBeGreaterThanOrEqual(1);
     expect(first.scale).toBeLessThanOrEqual(ENTER_SCALE);
+    expect(ENTER_SCALE).toBe(1);
     const done = run(p, true, FADE_IN_MS + 3 * F);
     expect(done).toMatchObject({ phase: 'shown', opacity: 1, scale: 1 });
   });
