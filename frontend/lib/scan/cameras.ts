@@ -335,8 +335,26 @@ export async function probeCameras(
 
   if (!opts.sample || rear.length < 2) return rear;
 
+  // ⚠️ THE LENS ALREADY OPEN IS SAMPLED THROUGH THE STREAM WE ARE HOLDING.
+  // Every other candidate costs a getUserMedia — 300-800ms — and since the
+  // probe now runs on EVERY start-up rather than once per handset, that is a
+  // delay the member waits through each session. Reading the current track
+  // instead of closing and reopening it removes one of two or three opens for
+  // free, and it is the one most likely to be the answer anyway.
+  const onId = current?.getSettings?.().deviceId;
+  if (onId) {
+    const mine = rear.find((c) => c.deviceId === onId);
+    if (mine) {
+      try {
+        mine.sample = (await sampleTrack(new MediaStream([current!]))) ?? undefined;
+      } catch {
+        // Fall through and let the loop below open it like any other.
+      }
+    }
+  }
+
   for (const cam of rear) {
-    if (!cam.deviceId) continue;
+    if (!cam.deviceId || cam.sample) continue;
     let stream: MediaStream | null = null;
     try {
       stream = await navigator.mediaDevices.getUserMedia({

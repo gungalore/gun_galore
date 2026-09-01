@@ -1015,14 +1015,30 @@ export default function DocumentScanner({
         // exists, which is why most attempts at this "find" one camera on a
         // phone that has three.
         try {
-          // ⚠️ SAMPLE ONLY ONCE PER DEVICE. Opening every lens to read a
-          // frame costs 300-800ms each, which is a real pause in front of a
-          // member. So it runs when we have no remembered choice, and never
-          // again — the answer is a property of the handset, not of the
-          // session.
-          const remembered = readCameraPref();
-          const cams = await probeCameras(track, { sample: !remembered });
-          const want = matchPref(cams, remembered) ?? bestCamera(cams);
+          // ⚠️ MEASURED EVERY START-UP, AND THE AUTOMATIC CHOICE IS NEVER
+          // REMEMBERED. It used to sample only when there was no stored
+          // choice, and then store whatever it picked — so the FIRST launch
+          // decided the lens forever. That is fine when the first launch
+          // happened to measure well and permanent when it did not: a probe
+          // run against a blank wall or in poor light has nothing to rank on,
+          // the detail floor throws out the good lens, and the wrong answer is
+          // then frozen on that handset with no way to notice.
+          //
+          // Operator: "the setup just has to change to the lense with the
+          // longest focus everytime the app starts up... don't make it sticky
+          // so it always calls up the same lense it first detected."
+          //
+          // ⚠️ IT COSTS 300-800ms PER LENS AND THAT IS THE REAL TRADE. Two or
+          // three rear lenses is roughly one to two seconds before the member
+          // can aim, spent behind the starting-up screen. Correctness won:
+          // a scan taken on the wrong lens is wrong every time, and the delay
+          // is once per session.
+          //
+          // A MANUAL pick is still remembered — that is a deliberate override
+          // from the diagnostics panel, not something we detected, and it is
+          // the escape hatch if the ranking is wrong on some handset.
+          const cams = await probeCameras(track, { sample: true });
+          const want = matchPref(cams, readCameraPref()) ?? bestCamera(cams);
           const onId = track.getSettings?.().deviceId;
           if (want && want.deviceId && want.deviceId !== onId) {
             const better = await navigator.mediaDevices.getUserMedia({
@@ -1045,7 +1061,8 @@ export default function DocumentScanner({
             track = better.getVideoTracks()[0];
             stream = better;
           }
-          if (want?.label) writeCameraPref(want.label);
+          // ⚠️ NOTHING IS WRITTEN HERE. See above — persisting the automatic
+          // choice is exactly what froze the first detection.
           activeCamRef.current =
             cams.find((c) => c.deviceId === track.getSettings?.().deviceId)
               ?.label ?? null;
