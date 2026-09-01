@@ -268,6 +268,63 @@ export function matchPref(
 // ────────────────────────────────────────────────────────────────────
 
 /** Read one frame from a live track into a square grey sample. */
+/**
+ * How long one lens gets to open before we give up on it.
+ *
+ * ⚠️ A HANG IS NOT AN ERROR AND try/catch CANNOT SEE IT. Opening a second
+ * camera while the first is still held is refused on many Androids — and on
+ * some of them it is refused by never answering at all, rather than by
+ * throwing. An `await getUserMedia(...)` with nothing racing it then wedges
+ * start-up completely: the member sees a scanner stuck on "starting the
+ * camera" with no error anywhere, because nothing failed.
+ *
+ * That is exactly what happened. The probe used to run only when no lens was
+ * remembered, so a handset that had ever stored one never probed again and the
+ * fault stayed hidden; making the probe run every start-up turned it from
+ * once-per-phone into every time. iPhone was unaffected throughout.
+ */
+const PROBE_TIMEOUT_MS = 1500;
+
+/**
+ * Total time all probing may take before we settle for what we have.
+ *
+ * Per-lens timeouts alone are not a bound: four lenses that each hang costs
+ * six seconds of a member staring at nothing. Whatever has been sampled by
+ * this point ranks; anything unsampled falls behind it, which is already how
+ * rankCameras treats a lens it could not look through.
+ */
+const PROBE_BUDGET_MS = 3200;
+
+/**
+ * Open a lens, or give up.
+ *
+ * ⚠️ A LATE ARRIVAL IS STILL STOPPED. If the timeout wins and the camera opens
+ * a moment later anyway, that stream must not be left running — a leaked probe
+ * stream keeps the camera light on and, on some Androids, stops the real
+ * stream opening at all. Which is the very fault this function exists to
+ * survive, so abandoning a stream without releasing it would cause it.
+ */
+async function openBriefly(deviceId: string, ms: number): Promise<MediaStream | null> {
+  let timedOut = false;
+  const gum = navigator.mediaDevices
+    .getUserMedia({ video: { deviceId: { exact: deviceId } } })
+    .catch(() => null);
+  const guarded = gum.then((stream) => {
+    if (stream && timedOut) {
+      stream.getTracks().forEach((t) => t.stop());
+      return null;
+    }
+    return stream;
+  });
+  const timer = new Promise<null>((resolve) => {
+    setTimeout(() => {
+      timedOut = true;
+      resolve(null);
+    }, ms);
+  });
+  return Promise.race([guarded, timer]);
+}
+
 async function sampleTrack(stream: MediaStream): Promise<FovSample | null> {
   const video = document.createElement('video');
   video.playsInline = true;
@@ -353,14 +410,15 @@ export async function probeCameras(
     }
   }
 
+  const deadline = Date.now() + PROBE_BUDGET_MS;
   for (const cam of rear) {
     if (!cam.deviceId || cam.sample) continue;
+    // Out of time: whatever is sampled ranks, the rest fall behind it.
+    if (Date.now() >= deadline) break;
     let stream: MediaStream | null = null;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: cam.deviceId } },
-      });
-      cam.sample = (await sampleTrack(stream)) ?? undefined;
+      stream = await openBriefly(cam.deviceId, PROBE_TIMEOUT_MS);
+      if (stream) cam.sample = (await sampleTrack(stream)) ?? undefined;
     } catch {
       // A lens the browser will enumerate but not open is not a candidate we
       // can use. Leave it unsampled and let it rank behind the measured ones —

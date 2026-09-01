@@ -722,8 +722,19 @@ export default function DocumentScanner({
           streamRef.current?.getVideoTracks()[0]?.label ??
           undefined,
         rearCount: camerasRef.current.length || undefined,
+        // ⚠️ SAY WHICH LENSES WERE ACTUALLY LOOKED THROUGH. Ranking is by
+        // MEASURED field of view, so a lens that would not open in time is not
+        // a candidate — it falls behind every sampled one. On a phone where
+        // opening a second camera hangs (which wedged Samsung start-up until
+        // the probe was given a timeout), everything reads "not measured" and
+        // the choice silently falls back to enumeration order. Without this
+        // the report would show three lenses and give no hint that none of
+        // them were compared.
         lenses: camerasRef.current.length
-          ? camerasRef.current.map((c) => c.label || 'unnamed')
+          ? camerasRef.current.map(
+              (c) =>
+                `${c.label || 'unnamed'}${c.sample ? '' : '  (not measured — would not open in time)'}`,
+            )
           : ['(lens probe did not report — using whatever facingMode gave us)'],
       },
       live: {
