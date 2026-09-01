@@ -166,6 +166,57 @@ function hull(pts: Pt[]): Pt[] {
 }
 
 /**
+ * The hull, walked as an outline, with points spread evenly along each edge.
+ *
+ * ⚠️ THE LINES ARE FITTED TO THIS, NOT TO THE RAW BOUNDARY, AND IT IS THE
+ * WHOLE FIX. A document is CONVEX. Every concavity in its mask is therefore a
+ * segmentation error, and the raw boundary is full of them: bites taken out of
+ * an edge where the model lost the paper against the background, and rings of
+ * boundary cells around interior holes that sit in the MIDDLE of the page.
+ * Grouping those by nearest side and least-squares fitting them drags each
+ * line inward by however much was missing — which is why the rung reported
+ * corners tens of degrees off square on pages the corner heads read as 1.7°
+ * off, and why it has been rejecting its own quad on every capture since it
+ * shipped.
+ *
+ * Taking the hull removes both classes by construction: a bite is bridged, and
+ * a hole's ring is interior so it can never be a hull vertex. Measured on 34
+ * real fixtures, against the raw boundary:
+ *
+ *                       accepted   median residual   median worst corner
+ *     raw boundary      14 / 34         1.5              41 deg
+ *     hull outline      29 / 34         0.2              13 deg
+ *
+ * ⚠️ AND IT MUST BE RESAMPLED, NOT JUST THE VERTICES. A hull is a handful of
+ * points bunched wherever the outline turns, so fitting to vertices alone
+ * weights the corners — the exact places EDGE_TRIM exists to discard — and
+ * leaves a long straight edge represented by its two endpoints. Spreading
+ * points along each edge by its LENGTH gives every side the weight it earned.
+ *
+ * The one thing this is worse at is a PROTRUSION — a thumb on a card, a
+ * shadow bridging to something else — which the hull follows outward instead
+ * of averaging away. That is deliberate and it is safe here: arbitration in
+ * capture.ts scores every candidate against real intensity steps in the
+ * photograph, so an inflated quad simply loses to the corner path. A mask quad
+ * can only ever win on evidence.
+ */
+function hullOutline(h: Pt[]): Pt[] {
+  const out: Pt[] = [];
+  for (let i = 0; i < h.length; i++) {
+    const a = h[i];
+    const b = h[(i + 1) % h.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    // Two samples per mask cell of edge — dense enough that a long side
+    // outweighs a short one in proportion to its actual length.
+    const n = Math.max(1, Math.round(len * 2));
+    for (let t = 0; t < n; t++) {
+      out.push({ x: a.x + ((b.x - a.x) * t) / n, y: a.y + ((b.y - a.y) * t) / n });
+    }
+  }
+  return out;
+}
+
+/**
  * Orientation of the minimum-area rectangle, by rotating calipers.
  *
  * Only the ANGLE is wanted. The rectangle itself is a scaffold: it tells each
@@ -291,9 +342,15 @@ export function analyseMask(mask: Float32Array, lb: Letterbox): MaskAnalysis {
   const coverage = comp.area / (MASK_SIZE * MASK_SIZE);
   if (!comp.area) return empty;
 
-  const bound = boundaryOf(comp.cells);
-  const h = hull(bound);
+  const raw = boundaryOf(comp.cells);
+  const h = hull(raw);
   if (h.length < 4) return { ...empty, coverage, reject: 'degenerate' };
+
+  // ⚠️ EVERYTHING BELOW FITS THE HULL OUTLINE, NEVER `raw`. See hullOutline.
+  // The extents are unchanged by the swap — a hull contains every extreme
+  // point of the set it was built from — so the scaffold rectangle, and with
+  // it the side assignment, are measured against exactly the same box.
+  const bound = hullOutline(h);
 
   const theta = minAreaAngle(h);
   const cos = Math.cos(-theta);

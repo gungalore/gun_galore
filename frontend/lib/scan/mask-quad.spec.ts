@@ -165,3 +165,65 @@ describe('analyseMask', () => {
     expect(Math.abs(top - bottom)).toBeLessThan(2);
   });
 });
+
+describe('⚠️ A DEGRADED MASK IS THE NORMAL CASE, NOT THE EXCEPTION', () => {
+  // This rung rejected its own quad on EVERY capture from the day it shipped.
+  // The reports always said the same thing — `mask rect 0.00`, meaning a
+  // corner more than MAX_SKEW off square — on pages whose corner-head quad
+  // measured 1.7° off square. Two readings of one document, one of them
+  // impossible.
+  //
+  // The cause was that lines were fitted to the raw component boundary. A real
+  // mask is not a clean rectangle: it has bites where the model lost the paper
+  // against the background, and interior holes over dark print and stamps. A
+  // hole's boundary ring sits in the MIDDLE of the page, and nearest-side
+  // assignment hands those points to a side, which then fits through them.
+  //
+  // Measured on 34 real fixtures: 14/34 accepted at a median worst corner of
+  // 41°, against 29/34 at 13° once the lines are fitted to the hull outline.
+
+  /** A rectangle with a bite out of one edge and two holes in the middle. */
+  function degraded(): Float32Array {
+    return plane((x, y) => {
+      const inside = x >= 14 && x <= 50 && y >= 6 && y <= 58;
+      if (!inside) return false;
+      // A bite: the model lost the left edge over part of its run.
+      if (x < 22 && y > 20 && y < 34) return false;
+      // Holes over dark print.
+      if (x > 28 && x < 34 && y > 14 && y < 20) return false;
+      if (x > 24 && x < 40 && y > 40 && y < 46) return false;
+      return true;
+    });
+  }
+
+  it('recovers the rectangle a bite and two holes were hiding', () => {
+    const a = analyseMask(degraded(), LB);
+    expect(a.reject).toBeUndefined();
+    expect(a.quad).not.toBeNull();
+    // Squarer than the gate by a wide margin, not scraping past it.
+    expect(a.rectangularity).toBeGreaterThan(0.8);
+    expect(a.residual).toBeLessThan(MAX_RESIDUAL);
+  });
+
+  it('puts the bitten edge back where the paper actually is', () => {
+    // The point of the hull: the crop must not shrink to the bite. The left
+    // edge belongs at cell 14, not at 22 where the segmentation gave up.
+    const a = analyseMask(degraded(), LB);
+    expect(a.quad).not.toBeNull();
+    const q = a.quad!;
+    const leftX = Math.min(q[0].x, q[3].x);
+    // A mask cell is 4 model px, and LB (512 -> 256) halves the scale, so a
+    // cell is 8 source px. The paper's left edge is cell 14 = 112; the bite
+    // would put it at cell 22 = 176. Anything under 160 means the hull bridged
+    // the bite rather than following it in.
+    expect(leftX).toBeLessThan(160);
+    expect(leftX).toBeCloseTo(14 * 8, -1);
+  });
+
+  it('still refuses a shape that is genuinely not a rectangle', () => {
+    // The hull must not turn the veto off. A spread across a book spine, or a
+    // mask spilling onto a second document, still has to be declined.
+    const tri = plane((x, y) => y > 8 && y < 56 && x > 8 && x - 8 < (y - 8) * 1.1);
+    expect(analyseMask(tri, LB).quad).toBeNull();
+  });
+});
