@@ -32,6 +32,33 @@ const SEED_CONFIDENCE = 0.55;
 const CLIPPED_AT = 0.01;
 
 /**
+ * How far the crop is grown past the detected quad, as a scale about its centre.
+ *
+ * ⚠️ 1.0, DOWN FROM 1.02, AND THE 2% WAS COSTING A VISIBLE BORDER OF DESK ON
+ * EVERY SINGLE SCAN. Measured on the operator's saved A4, 1952x2761: the
+ * cardboard border came out 20px left, 18px right, 27px top, 28px bottom —
+ * against exactly the 20px horizontal and 28px vertical that a 1% grow per side
+ * predicts. It matched to the pixel, so this was never a detection error. The
+ * detection was perfect on that capture (worst side 1.00, edge support 1.00);
+ * we then deliberately pushed the crop off the page.
+ *
+ * 3.9% of the saved file was desk. Scanbot's output of the same document, side
+ * by side, is cropped to the paper.
+ *
+ * ⚠️ AND THE BORDER IS NOT ONLY UGLY, IT FEEDS BACK INTO THE ENHANCEMENT.
+ * enhance() estimates the illumination from the image it is given, so a dark
+ * frame around all four sides drags that estimate down at the edges and the
+ * flattening over-brightens to compensate — which is the mottling and the warm
+ * cast in the corners of the same file.
+ *
+ * There is no margin to restore: refineEdges() has already snapped each side to
+ * the strongest intensity step it can find, which IS the paper's edge. Growing
+ * past a measured edge does not buy safety, it just leaves the page.
+ */
+const CROP_GROW = 1;
+
+
+/**
  * How much edge support a MASK-derived quad must show before it may crop.
  *
  * Measured against the synthetic scenes in quad-score.spec.ts: a quad sitting
@@ -684,7 +711,7 @@ export async function processCapture(
     quad = r.quad;
   }
 
-  const cropQuad = opts.manualQuad ? quad : scaleQuad(quad, 1.02);
+  const cropQuad = opts.manualQuad ? quad : scaleQuad(quad, CROP_GROW);
 
 
   // ⚠️ THE KNOWN ASPECT DECIDES THE OUTPUT SHAPE. opts.expectAspect has been

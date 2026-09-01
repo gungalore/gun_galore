@@ -22,8 +22,13 @@ TARGETS
     accept being wrong by 2%; precision is capture's job.
 
 USAGE
-    ffmpeg -i rec.mp4 -vsync 0 frames/f_%04d.png
-    python tools/quad_bench.py frames [--fps 60] [--colour track]
+    python tools/quad_bench.py rec.mp4              # reads the video directly
+    python tools/quad_bench.py frames/              # or a directory of f_*.png
+
+    A directory needs ffmpeg first:
+        ffmpeg -i rec.mp4 -vsync 0 frames/f_%04d.png
+    Reading the video directly needs opencv (pip install opencv-python) and
+    picks the frame rate up from the file, so --fps is only for a directory.
 
     --colour track is the locked quad (#3ddc84), which is what a pan test is
     measuring; --colour seeking is the unlocked one (#f5c518).
@@ -58,6 +63,48 @@ COLOURS = {
 }
 
 
+def largest_blob(mask):
+    """Keep only the biggest connected run of matching pixels.
+
+    ⚠️ WITHOUT THIS THE STATUS BAR RUINS THE MEASUREMENT, AND IT DOES IT
+    QUIETLY. An iPhone screen recording carries a GREEN RECORDING DOT in the
+    status bar — 26 pixels, present in every single frame, inside the same
+    colour range as the tracked quad. It competes with the quad for the
+    "top-most" extreme point and the winner flips frame to frame, which
+    manufactured a p95 step of 139px on a clip whose overlay was in fact calm.
+    The frames-with-overlay count looked healthy at 88% throughout, so nothing
+    announced the problem.
+    """
+    n = int(mask.sum())
+    if n == 0:
+        return mask, 1, 1.0
+    lab = None
+    try:
+        import cv2
+
+        cnt, lab, stats, _ = cv2.connectedComponentsWithStats(
+            mask.astype("uint8"), connectivity=8
+        )
+        if cnt > 1:
+            big = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+            keep = lab == big
+            return keep, cnt - 1, float(keep.sum()) / n
+    except ImportError:
+        pass
+    if lab is None:
+        try:
+            from scipy import ndimage
+
+            lab, cnt = ndimage.label(mask)
+            if cnt > 1:
+                sizes = ndimage.sum(mask, lab, range(1, cnt + 1))
+                keep = lab == (1 + int(np.argmax(sizes)))
+                return keep, cnt, float(keep.sum()) / n
+        except ImportError:
+            return mask, -1, 1.0
+    return mask, 1, 1.0
+
+
 def shape_of(mask):
     """Four numbers that move when the quad moves, rotates OR changes shape.
 
@@ -82,9 +129,43 @@ def shape_of(mask):
     )
 
 
+def iter_pngs(files):
+    for f in files:
+        yield np.array(Image.open(f).convert("RGB")).astype(int)
+
+
+def iter_video(path):
+    """Read an .mp4 straight through, so no ffmpeg step is needed.
+
+    ⚠️ THE FRAME RATE COMES FROM THE FILE, NOT FROM --fps. A screen recording
+    off a phone is commonly 30fps even when the display runs at 60, and every
+    drop-out figure is milliseconds computed from that number. Guessing it
+    doubles or halves the answer.
+    """
+    try:
+        import cv2
+    except ImportError:
+        sys.exit("reading a video needs opencv: pip install opencv-python")
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        sys.exit(f"could not open {path}")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    def gen():
+        while True:
+            ok, fr = cap.read()
+            if not ok:
+                break
+            yield fr[:, :, ::-1].astype(int)  # BGR -> RGB
+        cap.release()
+
+    return gen(), fps, total
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("frames", help="directory of f_0001.png ... extracted with ffmpeg")
+    ap.add_argument("frames", help="an .mp4, or a directory of f_0001.png from ffmpeg")
     ap.add_argument("--fps", type=float, default=60.0)
     ap.add_argument("--colour", default="track", choices=sorted(COLOURS))
     ap.add_argument(
@@ -95,17 +176,26 @@ def main():
     )
     args = ap.parse_args()
 
-    files = sorted(glob.glob(os.path.join(args.frames, "f_*.png")))
-    if not files:
-        sys.exit(f"no f_*.png in {args.frames} - did ffmpeg write there?")
+    if os.path.isdir(args.frames):
+        files = sorted(glob.glob(os.path.join(args.frames, "f_*.png")))
+        if not files:
+            sys.exit(f"no f_*.png in {args.frames} - did ffmpeg write there?")
+        source, fps, total = iter_pngs(files), args.fps, len(files)
+    else:
+        source, fps, total = iter_video(args.frames)
+        print(f"reading {args.frames} at {fps:.1f}fps, {total} frames")
 
     test = COLOURS[args.colour]
     steps, gaps, present = [], [], 0
     prev, gap = None, 0
 
-    for f in files:
-        im = np.array(Image.open(f).convert("RGB")).astype(int)
-        pts = shape_of(test(im))
+    blob_share, comp_counts = [], []
+    for im in source:
+        m, ncomp, share = largest_blob(test(im))
+        if ncomp > 0:
+            comp_counts.append(ncomp)
+            blob_share.append(share)
+        pts = shape_of(m)
         if pts is None:
             gap += 1
             prev = None
@@ -122,7 +212,7 @@ def main():
 
     if not steps:
         sys.exit(
-            f"overlay never found in {len(files)} frames - wrong --colour, or the "
+            f"overlay never found in {total} frames - wrong --colour, or the "
             "overlay is not a unique colour in this recording"
         )
 
@@ -132,10 +222,22 @@ def main():
     # a number that meets neither definition. Split on how much the overlay is
     # actually moving.
     rest, pan = d[d < args.rest_below], d[d >= args.rest_below]
-    ms_per_frame = 1000.0 / args.fps
+    ms_per_frame = 1000.0 / fps
 
-    print(f"frames                {len(files)}   with overlay {present}")
+    print(f"frames                {total}   with overlay {present}")
     print(f"steps measured        {len(d)}")
+    if comp_counts:
+        stray = sum(1 for c in comp_counts if c > 1) / len(comp_counts)
+        print(
+            f"colour blobs/frame    median {int(np.median(comp_counts))}"
+            f"   largest holds {np.median(blob_share) * 100:.0f}% of matched px"
+        )
+        if stray > 0.2:
+            print("  NOTE: most frames carry more than one blob in this colour.")
+            print("        Something else on screen matches it - a status-bar dot,")
+            print("        a button. Only the largest blob is measured.")
+    elif comp_counts == [] and present:
+        print("colour blobs/frame    not checked (install opencv or scipy)")
     print()
     if len(rest):
         print(

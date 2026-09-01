@@ -96,6 +96,8 @@ export interface ReportInput {
     framesSeen?: number;
     framesDropped?: number;
     detectorOff?: boolean;
+    /** Why the last model quad was discarded as not-a-rectangle, if it was. */
+    rejectedQuad?: string | null;
   };
 
   frame?: {
@@ -288,6 +290,11 @@ export function buildReport(r: ReportInput): string {
     out.push(line('lock', l.lock !== undefined ? `${l.lock}/3` : undefined));
     out.push(line('guidance', l.guide));
     out.push(line('detector off', l.detectorOff ? 'YES (dropped)' : undefined));
+    // ⚠️ "FINDING NOTHING" AND "FINDING NONSENSE WE THREW AWAY" LOOK IDENTICAL
+    // FROM OUTSIDE, and they need opposite fixes. Measured at about 1 quad in
+    // 10 on real photographs, so seeing this occasionally is normal; seeing it
+    // constantly means the model is not agreeing with itself on this scene.
+    out.push(line('quad rejected', l.rejectedQuad ?? undefined));
   }
 
   if (r.geometry) {

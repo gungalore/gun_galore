@@ -120,10 +120,6 @@ export type Guidance =
   /** Found, crowding the edges. */
   | 'further'
   /** Found, well sized, but the phone is not parallel to the document. */
-  | 'tilt-top'
-  | 'tilt-bottom'
-  | 'tilt-left'
-  | 'tilt-right'
   /** Found, well sized, still moving. */
   | 'steady'
   /** Found, well sized, held still. Fire. */
@@ -176,29 +172,6 @@ export function squareness(q: Quad): number {
   return Math.max(...cornerAngles(q).map((a) => Math.abs(a - 90)));
 }
 
-/**
- * Which way the phone needs to lean, from the edge lengths.
- *
- * The SHORTER edge is the far one — perspective shrinks whatever is further
- * away — so the phone should lean towards it. Returns null when the document
- * is square enough to leave alone.
- */
-export function tiltAdvice(
-  q: Quad,
-): 'tilt-top' | 'tilt-bottom' | 'tilt-left' | 'tilt-right' | null {
-  if (squareness(q) <= Math.max(SQUARE_MAX - 90, 90 - SQUARE_MIN)) return null;
-  const len = (a: { x: number; y: number }, b: { x: number; y: number }) =>
-    Math.hypot(b.x - a.x, b.y - a.y);
-  const top = len(q[0], q[1]);
-  const bottom = len(q[3], q[2]);
-  const left = len(q[0], q[3]);
-  const right = len(q[1], q[2]);
-  // Whichever pair disagrees more is the axis that is off.
-  const hGap = Math.abs(top - bottom) / Math.max(top, bottom, 1);
-  const vGap = Math.abs(left - right) / Math.max(left, right, 1);
-  if (hGap >= vGap) return top < bottom ? 'tilt-top' : 'tilt-bottom';
-  return left < right ? 'tilt-left' : 'tilt-right';
-}
 
 /**
  * How close the nearest corner comes to the frame edge, as a fraction of the
@@ -268,14 +241,18 @@ export function guidanceFor(input: {
   if (input.dpi !== null && input.dpi !== undefined && input.dpi < FLOOR_DPI) {
     return 'closer';
   }
-  // ⚠️ SIZE FIRST, THEN SQUARENESS. Asking somebody to level the phone while
-  // the document is still half a frame away wastes the instruction — moving
-  // closer changes the geometry anyway, and two corrections at once is one
-  // too many.
-  if (input.quad) {
-    const tilt = tiltAdvice(input.quad);
-    if (tilt) return tilt;
-  }
+  // ⚠️ THERE IS NO TILT INSTRUCTION ANY MORE, AND ITS REMOVAL IS DELIBERATE.
+  // It used to name a specific edge and draw an arrow on it. Two problems, and
+  // the operator hit both: it competed with "move closer" for the same moment,
+  // so the two alternated frame to frame and neither could be acted on; and
+  // levelling a phone is a correction nobody is holding still enough to make
+  // while also being told to move. Operator: "lets lose the arrows and tilt
+  // text. just keep the move closer and further."
+  //
+  // Nothing is lost from the CAPTURE. Tilt is still measured — squareness()
+  // feeds the diagnostic readout, and the capture ladder still rectifies
+  // whatever angle the page was photographed at. What went is the instruction,
+  // not the correction.
   return input.still ? 'ready' : 'steady';
 }
 
@@ -294,14 +271,6 @@ export function guidanceText(g: Guidance, doc: string): string | null {
       return 'Move closer';
     case 'further':
       return 'Move further away';
-    case 'tilt-top':
-      return 'Tilt the top of the phone down';
-    case 'tilt-bottom':
-      return 'Tilt the bottom of the phone down';
-    case 'tilt-left':
-      return 'Tilt the left of the phone down';
-    case 'tilt-right':
-      return 'Tilt the right of the phone down';
     case 'steady':
       return 'Hold still…';
     case 'ready':

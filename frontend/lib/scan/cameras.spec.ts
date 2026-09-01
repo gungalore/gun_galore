@@ -109,6 +109,38 @@ describe('picking the lens — by measurement, not by name', () => {
     expect(best?.label).toBe('Back Camera');
   });
 
+  it('⚠️ ON A THREE-LENS PHONE IT TAKES THE NARROWEST, NOT THE MIDDLE ONE', () => {
+    // ⚠️ THE TESTS THAT EXISTED HERE COULD NOT SEE THIS CHOICE AT ALL. Every
+    // one of them used TWO cameras, where "second-widest" and "narrowest" are
+    // the same entry — so the selection rule was reversed and the whole file
+    // still passed. A three-lens phone is the only shape that pins it, and it
+    // is the shape the operator's iPhone actually is.
+    //
+    // Distortion falls as focal length rises, and a perspective transform
+    // cannot undo a curved edge. The narrowest lens that still resolves is
+    // therefore the one to scan with.
+    const best = bestCamera([
+      { ...opt('Back Ultra Wide Camera'), sample: WIDE },
+      { ...opt('Back Camera'), sample: centreCrop(WIDE, 0.75) },
+      { ...opt('Back Telephoto Camera'), sample: centreCrop(WIDE, 0.6) },
+    ]);
+    expect(best?.label).toBe('Back Telephoto Camera');
+  });
+
+  it('⚠️ BUT NEVER A DEPTH SENSOR, HOWEVER NARROW IT LOOKS', () => {
+    // Budget Androids enumerate 2 MP depth and macro sensors beside the real
+    // cameras. They rank perfectly well on field of view and produce mush, so
+    // "narrowest" without the detail floor hands the scan to one on exactly
+    // the phones least able to recover. The 0.35 crop is far enough down to
+    // fail detailOf's floor.
+    const best = bestCamera([
+      { ...opt('camera 0, facing back'), sample: WIDE },
+      { ...opt('camera 2, facing back'), sample: centreCrop(WIDE, 0.75) },
+      { ...opt('camera 4, facing back'), sample: centreCrop(WIDE, 0.35) },
+    ]);
+    expect(best?.label).toBe('camera 2, facing back');
+  });
+
   it('puts unmeasured lenses behind measured ones', () => {
     // A lens the browser would enumerate but not open tells us nothing. It is
     // not a better guess than the one we actually looked through.

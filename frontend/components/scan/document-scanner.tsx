@@ -29,6 +29,7 @@ import { LIVE_FPS } from '@/lib/scan/docquad-live';
 import { rotateResult } from '@/lib/scan/rotate';
 import { QuadPresence, scaleAboutCentre } from '@/lib/scan/quad-presence';
 import { QuadTracker } from '@/lib/scan/quad-track';
+import { implausibleWhy } from '@/lib/scan/quad-plausible';
 import {
   DocShape,
   SHAPES,
@@ -459,6 +460,8 @@ export default function DocumentScanner({
    * markers vanished for a whole inference frame every time.
    */
   const trackerRef = useRef(new QuadTracker());
+  /** Why the last model quad was thrown away, for the diagnostic report. */
+  const rejectedQuadRef = useRef<string | null>(null);
   const lastCaptureRef = useRef<ScanReport['lastCapture']>(undefined);
   /**
    * Bumped on a throttle so the panel repaints without re-rendering per frame.
@@ -736,6 +739,7 @@ export default function DocumentScanner({
         guide: guideRef.current,
         fpsCap: LIVE_FPS,
         detectorOff: last?.detectorOff,
+        rejectedQuad: rejectedQuadRef.current,
       },
       geometry: q
         ? {
@@ -1400,10 +1404,27 @@ export default function DocumentScanner({
         // Fractions of the VISIBLE region, which is the overlay's own space.
         const lw = visNow ? visNow.sw : video.videoWidth;
         const lh = visNow ? visNow.sh : video.videoHeight;
-        const modelQuad =
+        const modelRaw =
           live && live.minConfidence >= DETECT_ACCEPT && lw > 0 && lh > 0
             ? (live.quad.map((p) => ({ x: p.x * lw, y: p.y * lh })) as Quad)
             : null;
+        // ⚠️ THE MODEL'S QUAD IS CHECKED FOR BEING A RECTANGLE AT ALL, WHICH IT
+        // NEVER WAS. Its four corners come from four INDEPENDENT heatmap
+        // planes, so nothing ties them to each other, and measured over 30 real
+        // fixtures 3 of them were not the shape of a photographed rectangle —
+        // corners at 32° and 45°, one off the frame. Confidence cannot see it:
+        // that 45° case scored 0.546, four corners individually plausible and
+        // mutually impossible.
+        //
+        // A rejected quad falls through to exactly what happens when the model
+        // finds nothing: the classical detector gets the frame, and IT rejects
+        // its own output on the same two tests. So the fallback is a validated
+        // second opinion rather than a blank, and if that finds nothing either
+        // the tracker decays the lock and keeps drawing the last good quad —
+        // we have lost this frame, not the document.
+        const modelWhy = modelRaw ? implausibleWhy(modelRaw, lw, lh) : null;
+        if (modelWhy) rejectedQuadRef.current = modelWhy;
+        const modelQuad = modelWhy ? null : modelRaw;
         const found =
           modelQuad !== null
             ? { quad: modelQuad, score: live!.minConfidence, confident: true }
@@ -3113,68 +3134,26 @@ function drawGuidance(
   g.shadowColor = 'rgba(0,0,0,0.85)';
   g.shadowBlur = 6;
 
-  if (guide === 'closer' || guide === 'further') {
-    const size = Math.max(13, Math.min(26, span * 0.075));
-    g.font = `700 ${size}px system-ui, -apple-system, sans-serif`;
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText(guide === 'closer' ? 'MOVE CLOSER' : 'MOVE FURTHER', cx, cy);
+  // ⚠️ TWO WORDS, AND NOTHING ELSE. This drew a TILT arrow on whichever edge
+  // was furthest away, with the word TILT beside it. The reasoning was sound —
+  // an arrow on the wrong edge says which edge without naming it — and it
+  // still had to go, because the instruction it belonged to has gone: tilt and
+  // distance competed for the same moment and alternated frame to frame, so
+  // neither could be acted on. Operator: "lets lose the arrows and tilt text.
+  // just keep the move closer and further."
+  //
+  // Tilt is still MEASURED — squareness() feeds the diagnostic readout and the
+  // capture still rectifies whatever angle the page was held at. Only the
+  // instruction is gone.
+  if (guide !== 'closer' && guide !== 'further') {
     g.restore();
     return;
   }
-
-  // Which edge, and which way is out. Edge midpoints come from the quad, so
-  // the arrow follows a tilted document instead of floating in screen space.
-  const mid = (a: number, b: number) => ({
-    x: (q[a].x + q[b].x) / 2,
-    y: (q[a].y + q[b].y) / 2,
-  });
-  const edge =
-    guide === 'tilt-top'
-      ? { at: mid(0, 1), dx: 0, dy: -1 }
-      : guide === 'tilt-bottom'
-        ? { at: mid(3, 2), dx: 0, dy: 1 }
-        : guide === 'tilt-left'
-          ? { at: mid(0, 3), dx: -1, dy: 0 }
-          : guide === 'tilt-right'
-            ? { at: mid(1, 2), dx: 1, dy: 0 }
-            : null;
-  if (!edge) {
-    g.restore();
-    return;
-  }
-
-  const len = Math.max(26, Math.min(64, span * 0.2));
-  const w = len * 0.32;
-  const head = len * 0.42;
-  const { at, dx, dy } = edge;
-  // Perpendicular, for the arrow's width.
-  const px = -dy;
-  const py = dx;
-  // Start just inside the edge so the head lands outside it.
-  const bx = at.x - dx * len * 0.35;
-  const by = at.y - dy * len * 0.35;
-  const tx = bx + dx * len;
-  const ty = by + dy * len;
-  const shaft = w * 0.42;
-
-  g.beginPath();
-  g.moveTo(tx, ty);
-  g.lineTo(tx - dx * head + px * w, ty - dy * head + py * w);
-  g.lineTo(tx - dx * head + px * shaft, ty - dy * head + py * shaft);
-  g.lineTo(bx + px * shaft, by + py * shaft);
-  g.lineTo(bx - px * shaft, by - py * shaft);
-  g.lineTo(tx - dx * head - px * shaft, ty - dy * head - py * shaft);
-  g.lineTo(tx - dx * head - px * w, ty - dy * head - py * w);
-  g.closePath();
-  g.fill();
-
-  const size = Math.max(11, Math.min(18, span * 0.055));
+  const size = Math.max(13, Math.min(26, span * 0.075));
   g.font = `700 ${size}px system-ui, -apple-system, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  // Beside the arrow, on the inward side, so it never leaves the frame.
-  g.fillText('TILT', bx - dx * size * 1.4, by - dy * size * 1.4);
+  g.fillText(guide === 'closer' ? 'MOVE CLOSER' : 'MOVE FURTHER', cx, cy);
   g.restore();
 }
 

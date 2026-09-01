@@ -142,31 +142,37 @@ export function bestCamera(options: readonly CameraOption[]): CameraOption | nul
 }
 
 /**
- * The MAIN rear camera — the one to scan with.
+ * The rear camera to scan with: the LONGEST FOCAL LENGTH that still resolves.
  *
- * ⚠️ THIS REVERSES THE EARLIER CHOICE, AND THE EARLIER REASONING WAS HALF
- * RIGHT. Ranking picked the WIDEST lens because on a phone the widest is the
- * closest-focusing — short focal length gives both, which is why macro mode
- * uses the ultra-wide. That physics is sound and it is why focus distance
- * never had to be measured.
+ * ⚠️ THIS HAS MOVED TWICE AND THE DIRECTION OF TRAVEL IS THE POINT. It began
+ * as the WIDEST lens, because on a phone the widest is the closest-focusing —
+ * short focal length gives both, which is why macro mode uses the ultra-wide.
+ * That physics is sound; it was optimising the wrong property.
  *
- * What it optimised for was the wrong property. The ultra-wide is the softest
- * sensor on the phone and it carries heavy barrel distortion, which BENDS
- * STRAIGHT LINES. A document scanner's whole job is finding four straight
- * edges and flattening the quad between them, and a perspective transform
- * cannot undo a curve — it assumes the edges were straight to begin with. So
- * the lens that made framing easiest was quietly corrupting the geometry the
- * detector depends on. Operator, having compared them: "much better quality".
+ * The ultra-wide is the softest sensor on the phone and carries heavy barrel
+ * distortion, which BENDS STRAIGHT LINES. A document scanner's whole job is
+ * finding four straight edges and flattening the quad between them, and a
+ * perspective transform cannot undo a curve — it assumes the edges were
+ * straight to begin with. So it moved to the second-widest, the main camera.
  *
- * The main camera is the SECOND-WIDEST: ultra-wide is widest, telephoto is
- * narrowest, main sits between. That holds across every phone with three rear
- * lenses and on the two-lens phones that pair an ultra-wide with a main.
+ * ⚠️ NOW IT GOES ALL THE WAY: THE NARROWEST. Distortion falls as focal length
+ * rises, so the same argument that ruled out the ultra-wide keeps going past
+ * the main. Operator, comparing outputs against Scanbot: "we need a way to
+ * find the longest focus camera... seems like they give the best results".
  *
- * ⚠️ THE DETAIL FLOOR IS NOT OPTIONAL. Budget Androids enumerate 2 MP depth
- * and macro sensors alongside the real cameras, and those rank perfectly well
- * on field of view while producing mush. Without the floor, "second-widest"
- * hands the scan to a depth sensor on exactly the phones least able to
- * recover. See detailOf.
+ * Two things make this safe rather than merely longer:
+ *
+ *   1. The DETAIL FLOOR still applies, and it is doing more work than before.
+ *      Budget Androids enumerate 2 MP depth and macro sensors alongside the
+ *      real cameras, and those rank perfectly well on field of view while
+ *      producing mush. Picking the narrowest without the floor would hand the
+ *      scan to a depth sensor on exactly the phones least able to recover.
+ *
+ *   2. A narrower lens is EASIER to focus for this task, not harder, which is
+ *      the opposite of the usual worry about telephotos. The aim box is a
+ *      fraction of the frame, so a narrower field means the member stands
+ *      FURTHER back to fill it — away from the near-focus limit that made a
+ *      card unscannable on the Samsung, not toward it.
  *
  * Returns null when nothing was measured — the caller falls back to the FOV
  * ranking, which falls back to enumeration order.
@@ -185,8 +191,10 @@ export function mainCamera(options: readonly CameraOption[]): CameraOption | nul
   );
   if (!usable.length) return null;
 
+  // rankCameras is widest-first, so the last usable entry is the longest
+  // focal length that cleared the detail floor.
   const byWidth = rankCameras(usable);
-  return byWidth[1] ?? byWidth[0] ?? null;
+  return byWidth[byWidth.length - 1] ?? null;
 }
 
 /** Where the chosen lens is remembered between sessions. */
@@ -202,8 +210,13 @@ export function mainCamera(options: readonly CameraOption[]): CameraOption | nul
  * Bumping the key retires those preferences. Bump it again on any future
  * change to what `bestCamera` means; leave it alone for changes that only
  * affect how a lens is opened.
+ *
+ * v2 -> v3 when the choice moved from the second-widest to the narrowest
+ * usable lens. Without the bump every phone that has ever opened the scanner
+ * would have kept its stored main camera and the change would have looked
+ * like it did nothing.
  */
-export const CAMERA_PREF_KEY = 'gg.scan.camera.v2';
+export const CAMERA_PREF_KEY = 'gg.scan.camera.v3';
 
 /**
  * Read the member's remembered lens.
