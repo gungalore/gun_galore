@@ -18,6 +18,7 @@
 import type { CSSProperties } from 'react';
 import { useId } from 'react';
 import type { BenchBullet } from '@/lib/bench/api';
+import { CALIBRE_UNKNOWN_SHORT, formatCalibre } from '@/lib/bench/calibre';
 import { bulletKey, type BenchRailProps } from './contract';
 import { Chip, type BenchSize } from './primitives';
 
@@ -86,6 +87,10 @@ const CHIP_ROW: CSSProperties = {
  * "Hornady ELD Match" reads as the product; `category` ("HPBT") is the shape
  * family and is what bulletKey() is built from, so it is the fallback when a
  * bullet reached the bench without a product name.
+ *
+ * ⚠️ THE CALIBRE IS NOT IN HERE, AND THAT IS DELIBERATE — the chip renders it
+ * as its own leading span so it keeps tabular numerals and does not get folded
+ * into a product name. It is never optional on a chip; see the note there.
  */
 function bulletLabel(b: BenchBullet): string {
   return `${b.maker} ${b.type ?? b.category}`.trim();
@@ -152,10 +157,11 @@ export function BenchSections({
         <div style={{ ...CHIP_ROW, marginBottom: 14 }}>
           {bench.bullets.map((b) => {
             // The key that is rendered and the key that is toggled come from
-            // the same helper on purpose: two bullets can share a maker and a
-            // product name and differ only by weight, so an ad-hoc key here
-            // would switch off the wrong one.
+            // the same helper on purpose: two bullets can share a maker, a
+            // product name and a weight and differ only by calibre, so an
+            // ad-hoc key here would switch off the wrong one.
             const key = bulletKey(b);
+            const calibre = formatCalibre(b.calibreIn);
             return (
               <Chip
                 key={key}
@@ -163,6 +169,27 @@ export function BenchSections({
                 size={size}
                 onClick={() => onToggle('bullets', key)}
               >
+                {/*
+                  🚨 THE CALIBRE LEADS THE CHIP. "Hornady 150 gr" names four
+                  different projectiles — .277", .308", .311", .323" — and a
+                  member with a .270 and a .308 on the bench reading one chip
+                  cannot tell which of theirs it is. Written as it is on the
+                  box: `.308"`.
+
+                  No colour of its own: `.chip.off` dims the whole chip to
+                  --text-faint, and an inline colour here would leave the
+                  calibre lit on a chip the member had switched off.
+                */}
+                <span
+                  className={calibre ? 'num' : undefined}
+                  style={
+                    calibre
+                      ? { fontWeight: 600 }
+                      : { fontSize: 11, fontStyle: 'italic', opacity: 0.75 }
+                  }
+                >
+                  {calibre || CALIBRE_UNKNOWN_SHORT}
+                </span>
                 {bulletLabel(b)}
                 <span className="num" style={{ color: 'var(--text-tertiary)', fontSize: 11.5 }}>
                   {b.weightGr} gr

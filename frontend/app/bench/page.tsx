@@ -22,6 +22,7 @@ import {
   type LogEntry,
 } from '@/lib/bench/api';
 import type { Units } from '@/lib/bench/geometry';
+import { formatCalibre } from '@/lib/bench/calibre';
 import {
   EMPTY_OFF,
   type BenchBulletOption,
@@ -329,6 +330,13 @@ export default function BenchPage() {
    * ⚠️ EVERY ADD SENDS THE WHOLE BENCH. PUT /bench/me replaces rather than
    * merges, so a body that omits an axis clears it — adding a bullet with a
    * partial body would wipe the member's powders.
+   *
+   * 🚨 AND THE CALIBRE TRAVELS WITH THE BULLET. `calibreIn` is part of what a
+   * bullet IS — "Hornady 150gr SP" is a .277", a .308", a .311" and a .323"
+   * projectile, and they do not swap — so dropping it here would store the
+   * member's .308 bullet as a bare "Hornady 150 SP" that bulletKey() then
+   * matches against every other calibre of the same name, which is the whole
+   * bug. It is copied through verbatim, never re-derived.
    */
   const addBullet = useCallback(
     (b: BenchBulletOption) => {
@@ -338,14 +346,27 @@ export default function BenchPage() {
           powderIds: bench.powders.map((p) => p.id),
           bullets: [
             ...bench.bullets,
-            { maker: b.maker, weightGr: b.weightGr, category: b.category },
+            {
+              maker: b.maker,
+              weightGr: b.weightGr,
+              category: b.category,
+              calibreIn: b.calibreIn,
+            },
           ],
           cartridgeKeys: bench.cartridges.map((c) => c.key),
           units,
         })
         .then((next) => {
           setBench(next);
-          setToast(`${b.maker} ${b.weightGr}gr added to your bench`);
+          // Named the way the picker named it, calibre first: the member just
+          // chose between two rows that differed only there, and a toast that
+          // says "Hornady 150gr added" cannot confirm which one they got.
+          // filter() rather than a template: a bullet with no calibre would
+          // otherwise be toasted with a leading space where a figure belongs.
+          const named = [formatCalibre(b.calibreIn), b.maker, `${b.weightGr}gr`]
+            .filter(Boolean)
+            .join(' ');
+          setToast(`${named} added to your bench`);
         })
         .catch((e: Error) => setToast(e.message));
       setOverlay(null);

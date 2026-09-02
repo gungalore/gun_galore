@@ -69,6 +69,26 @@ export interface BenchBulletView {
   maker: string;
   weightGr: number;
   category: string;
+  /**
+   * Inches, from the cartridge's C.I.P. G1 — see bullet-calibre.ts.
+   *
+   * 🚨 A WEIGHT IS NOT A BULLET, AND THIS IS THE FIELD THAT SAYS WHICH ONE.
+   * "Hornady 150gr SP" names a .277", a .308", a .311" and a .323" projectile
+   * and they do not swap, so it travels with the bullet everywhere the bullet
+   * goes — onto the chip, and back into loads() through the controller's
+   * benchFor().
+   *
+   * ⚠️ DECLARED HERE OR IT IS INVISIBLE. UserBench.bullets is a Json column
+   * that getBench() casts straight through, so the VALUE reaches the client
+   * whether this line exists or not — but every server-side reader rebuilds a
+   * bullet field by field off this type, and a field the type does not mention
+   * is a field nobody copies. That is precisely how the calibre reached the
+   * rail and never reached the results query.
+   *
+   * ⚠️ OPTIONAL, AND IT STAYS OPTIONAL. Benches saved before calibres were
+   * recorded carry none; those bullets match any calibre, exactly as they did.
+   */
+  calibreIn?: number | null;
   type?: string;
 }
 

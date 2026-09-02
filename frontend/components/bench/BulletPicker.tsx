@@ -25,14 +25,24 @@
  * rather than vanishing from it. A member who searches for the bullet they
  * added a moment ago should find it sitting there, not an empty list.
  *
+ * 🚨 EVERY ROW LEADS WITH ITS CALIBRE, AND THAT IS THE POINT OF THE ROW. A
+ * weight is not a bullet: "Hornady 150gr SP" names a .277", a .308", a .311"
+ * and a .323" projectile, and they are not interchangeable — three thou over
+ * and the round will not chamber, or chambers and spikes pressure. When two
+ * rows read the same, the calibre is the ONLY thing the member is choosing
+ * between, so it goes first, in its own aligned column, not trailing after the
+ * load count where the eye arrives last.
+ *
  * ⚠️ COPY. Operator ruling 2026-09-02: nothing here may name where a figure
  * comes from. No "manual", no "CIP", no "SAAMI", no "published", and no source
  * counts — `loads` is a count of consolidated loads, which is the number the
- * member is choosing between. Bullet MAKER names (Hornady, Sierra, Barnes) are
- * product facts and stay; they are the first thing on every row.
+ * member is choosing between. That rule reaches the calibre too: a row without
+ * one says "Calibre unknown", never "not published". Bullet MAKER names
+ * (Hornady, Sierra, Barnes) are product facts and stay.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { CALIBRE_UNKNOWN, calibreSearchTokens, formatCalibre } from '@/lib/bench/calibre';
 import type { BenchBulletOption, BulletPickerProps } from './contract';
 import { bulletKey } from './contract';
 import { IconX, OverlayShell, usePhone } from './primitives';
@@ -41,7 +51,9 @@ import { IconX, OverlayShell, usePhone } from './primitives';
  * The input stays controlled — typing is never delayed — and only the list
  * waits. 160ms sits under --dur-fast, so the pause reads as the list settling
  * rather than as lag. It matters more here than on powders: this list is
- * roughly 1,139 rows against 305.
+ * roughly 1,139 rows against 305 — and MORE than that since the calibre
+ * split, because a (maker, weight, category) triple that appears across three
+ * calibres is now three rows rather than one.
  */
 const SEARCH_DEBOUNCE_MS = 160;
 
@@ -58,8 +70,8 @@ const SEARCH_DEBOUNCE_MS = 160;
  * set, the picker says exactly that, above the list, where it cannot be
  * missed — and narrowing the search brings the rest into reach.
  *
- * 200 is the ceiling on DOM cost: each row is a button and two spans, so the
- * full 1,139 is some 4,000 nodes to lay out on a phone before the first
+ * 200 is the ceiling on DOM cost: each row is a button and four spans, so the
+ * full list is several thousand nodes to lay out on a phone before the first
  * keystroke.
  */
 const DRAW_CAP = 200;
@@ -68,11 +80,17 @@ const DRAW_CAP = 200;
  * The one string a row is matched against.
  *
  * The weight goes in twice, bare and with its unit, so "150" and "150gr" both
- * land. Built once per list rather than per keystroke: lower-casing 1,139
+ * land, and the calibre goes in three ways — `.308"`, `308`, `0.308` — because
+ * a member types it with the dot, without it, and occasionally with the
+ * leading zero. Searching for the calibre is how someone with two 150 gr rows
+ * in front of them gets down to the one that fits their rifle, so it has to
+ * work on the digits alone.
+ *
+ * Built once per list rather than per keystroke: lower-casing a thousand-odd
  * strings on every debounce tick is work nobody asked for.
  */
-function haystack(b: BenchBulletOption): string {
-  return `${b.maker} ${b.weightGr} ${b.weightGr}gr ${b.category}`.toLowerCase();
+export function haystack(b: BenchBulletOption): string {
+  return `${calibreSearchTokens(b.calibreIn)} ${b.maker} ${b.weightGr} ${b.weightGr}gr ${b.category}`.toLowerCase();
 }
 
 /**
@@ -80,11 +98,11 @@ function haystack(b: BenchBulletOption): string {
  *
  * ⚠️ NOT ONE SUBSTRING OVER THE JOINED STRING, WHICH IS WHAT THE POWDER
  * PICKER CAN AFFORD. A powder is matched on two fields that are nearly always
- * typed in one order ("Hodgdon H4350"); a bullet is matched on three, and a
+ * typed in one order ("Hodgdon H4350"); a bullet is matched on four, and a
  * member types them in whichever order they think of them. "hornady 150" and
- * "150 sp" both have to work, and so does "sp 150".
+ * "150 sp" both have to work, and so do "sp 150" and "308 150".
  */
-function matches(hay: string, words: string[]): boolean {
+export function matches(hay: string, words: string[]): boolean {
   for (const w of words) if (!hay.includes(w)) return false;
   return true;
 }
@@ -225,14 +243,14 @@ export function BulletPicker({
       <div style={{ flex: 'none', padding: phone ? '0 16px 10px' : '0 20px 10px' }}>
         <div className="field">
           <label htmlFor={searchId} className="sr-only">
-            Search bullets by maker, weight or type
+            Search bullets by calibre, maker, weight or type
           </label>
           <input
             id={searchId}
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Maker, weight or type — try 150 sp"
+            placeholder="Calibre, maker, weight or type — try 308 150"
             autoComplete="off"
             spellCheck={false}
             // 44px is the §9 tap target; 16px is not a taste call either, iOS
@@ -316,30 +334,87 @@ export function BulletPicker({
             {bullets.length === 0
               ? 'No bullets are loaded yet.'
               : term.trim()
-                ? 'Nothing matches that maker, weight or type.'
+                ? 'Nothing matches that calibre, maker, weight or type.'
                 : 'No bullets to show.'}
           </div>
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {shown.map(({ b, key }) => {
               const added = onBenchKeys.has(key);
+              const calibre = formatCalibre(b.calibreIn);
 
-              // ⚠️ ALL THREE PARTS, ALWAYS. A bullet's identity IS maker +
-              // weight + category — that is literally what bulletKey() joins,
-              // and what the AND in the results query matches on. Two Hornady
-              // 150 gr bullets in different categories are different bullets,
-              // so a row that printed only "Hornady 150 gr" would draw the
-              // same line twice and leave the member picking blind.
+              // ⚠️ ALL FOUR PARTS, ALWAYS, AND THE CALIBRE FIRST. A bullet's
+              // identity IS calibre + maker + weight + category — that is
+              // literally what bulletKey() joins, and what the AND in the
+              // results query matches on. Two Hornady 150 gr bullets in
+              // different categories are different bullets, and so are two in
+              // different calibres: .277" for a .270 and .308" for a .308 are
+              // the same three words on the box and will not swap. A row that
+              // printed only "Hornady 150 gr · SP" drew the same line four
+              // times and left the member picking blind.
               const name = (
-                <span>
-                  {b.maker}
-                  <span className="num" style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
-                    {' '}
-                    · {b.weightGr} gr
-                  </span>
-                  <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
-                    {' '}
-                    · {b.category}
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'baseline',
+                    gap: 10,
+                    // A flex item inside `.pick`, which is space-between: the
+                    // name takes the room and the load count keeps its own.
+                    flex: '1 1 auto',
+                    minWidth: 0,
+                  }}
+                >
+                  {/*
+                    Written the way it is written on the box — .308", three
+                    digits, leading dot, trailing double-quote — and column
+                    aligned with tabular numerals so two rows differing only
+                    here can be told apart at a glance rather than by reading.
+                    The measure comes from the server; nothing is rounded here.
+                  */}
+                  {calibre ? (
+                    <span
+                      className="num"
+                      style={{
+                        flex: 'none',
+                        minWidth: 54,
+                        textAlign: 'center',
+                        padding: '2px 6px',
+                        border: '0.5px solid var(--border)',
+                        borderRadius: 'var(--r-sm)',
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      {calibre}
+                    </span>
+                  ) : (
+                    // Said, not left blank: an empty slot in the one column
+                    // the member is choosing between reads as "same as the row
+                    // above" rather than as "we do not know".
+                    <span
+                      style={{
+                        flex: 'none',
+                        minWidth: 54,
+                        fontSize: 11.5,
+                        fontStyle: 'italic',
+                        color: 'var(--text-tertiary)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {CALIBRE_UNKNOWN}
+                    </span>
+                  )}
+                  <span style={{ minWidth: 0 }}>
+                    {b.maker}
+                    <span className="num" style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+                      {' '}
+                      · {b.weightGr} gr
+                    </span>
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+                      {' '}
+                      · {b.category}
+                    </span>
                   </span>
                 </span>
               );
@@ -433,8 +508,9 @@ export function BulletPicker({
             color: 'var(--text-tertiary)',
           }}
         >
-          A bullet is its maker, weight and type together, so the same maker and weight can appear
-          more than once.
+          A bullet is its calibre, maker, weight and type together, so the same maker and weight
+          appears once per calibre — a 150 gr .308&quot; and a 150 gr .277&quot; are different
+          bullets and will not swap.
         </div>
       )}
 

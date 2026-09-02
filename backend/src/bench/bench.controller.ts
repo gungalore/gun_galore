@@ -147,6 +147,17 @@ export class BenchController {
    * It is a filter the caller supplies, so it decides what they are shown and
    * nothing else — it cannot name another member, and it is not written
    * anywhere.
+   *
+   * 🚨 EVERY FIELD OF A BULLET COMES THROUGH HERE OR IT DOES NOT EXIST. This
+   * is the ONLY path from a member's stored shelf into loads(), powders() and
+   * cartridge(), and it rebuilds each bullet field by field — so a field left
+   * out here is silently absent everywhere downstream, with nothing failing.
+   * That is exactly how the calibre axis shipped inert: loads() was taught to
+   * pin a bullet to its calibre, the picker was taught to show it and store
+   * it, and this map dropped it on the way back in, so every signed-in
+   * member's .308" 150 gr SP went on matching 8x57 loads it will not chamber
+   * in. The service's own spec could not catch it — it calls loads() directly
+   * and never comes through the controller.
    */
   private async benchFor(
     req: { clerkUserId?: string },
@@ -160,6 +171,7 @@ export class BenchController {
           maker: b.maker,
           weightGr: b.weightGr,
           category: b.category,
+          calibreIn: storedCalibre(b.calibreIn),
         })),
         cartridgeKeys: mine.cartridges.map((c) => c.key),
       };
@@ -167,14 +179,21 @@ export class BenchController {
     return {
       powderIds: split(q.powders),
       cartridgeKeys: split(q.cartridges),
-      // "maker|weight|category", the shape the spec names.
+      // "maker|weight|category" or "maker|weight|category|calibre" — the two
+      // shapes the client's bulletKey() emits, and it emits the second for
+      // every bullet added since calibres were recorded. Both are accepted:
+      // dropping the four-part form would make a guest's whole shelf parse to
+      // nothing, which reads as the page being broken.
       bullets: split(q.bullets)
         .map((s) => s.split('|'))
-        .filter((p) => p.length === 3)
-        .map(([maker, weight, category]) => ({
+        .filter((p) => p.length === 3 || p.length === 4)
+        .map(([maker, weight, category, calibre]) => ({
           maker,
           weightGr: Number(weight),
           category,
+          // An empty fourth part is how bulletKey() writes "no calibre", so it
+          // has to mean the same thing here as a missing one.
+          calibreIn: calibre ? storedCalibre(Number(calibre)) : null,
         }))
         .filter((b) => Number.isFinite(b.weightGr)),
     };
@@ -183,4 +202,26 @@ export class BenchController {
 
 function split(v: string | undefined): string[] {
   return v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [];
+}
+
+/**
+ * A stored bullet's calibre, in inches, or null.
+ *
+ * UserBench.bullets is a Json column, so nothing in the database enforces the
+ * shape and the value arriving here is whatever was written. Two cases both
+ * land on null, and they mean the same thing to loads():
+ *
+ *   — a bench saved before calibres were recorded, which has no field at all;
+ *   — a value that is not a finite number, which is a bench we cannot read.
+ *
+ * ⚠️ NULL MEANS "MATCHES ANY CALIBRE", WHICH IS THE PRE-CALIBRE BEHAVIOUR AND
+ * IS DELIBERATE. The alternative — treating an unreadable figure as a calibre
+ * of its own — matches no cartridge at all and empties a member's screen with
+ * nothing on it saying why, through no action of theirs. Nothing is rounded,
+ * bucketed or snapped here: a readable figure is passed through exactly as the
+ * picker stored it, because that is the only way it still equals the figure
+ * calibreFromG1() will compare it against.
+ */
+function storedCalibre(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
