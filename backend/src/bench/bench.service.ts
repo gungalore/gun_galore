@@ -17,6 +17,29 @@ export interface GuestBench {
   cartridgeKeys?: string[];
 }
 
+/**
+ * One row of the bullet picker.
+ *
+ * ⚠️ `loads` IS A COUNT OF CONSOLIDATED LOADS AND NOTHING ELSE. It says "this
+ * bullet appears in n loads you could look at", which is a fact about our own
+ * consolidated set. A count of the manuals behind those loads would be a fact
+ * about the manuals, and that is the line bench.leak.spec.ts guards.
+ */
+export interface BenchBulletOptionView {
+  maker: string;
+  weightGr: number;
+  /** FMJ | MONO | TIP | HP | CAST | SP | OTHER. */
+  category: string;
+  loads: number;
+}
+
+/** One row of the cartridge picker. `loads` reads exactly as above. */
+export interface BenchCartridgeOptionView {
+  key: string;
+  name: string;
+  loads: number;
+}
+
 @Injectable()
 export class BenchService {
   constructor(private readonly prisma: PrismaService) {}
@@ -63,13 +86,19 @@ export class BenchService {
       }),
     ]);
 
+    // ⚠️ REBUILT FIELD BY FIELD, NOT HANDED STRAIGHT BACK. The `select` above
+    // is the only thing keeping a Prisma row narrow, and a select widened to an
+    // include — or one more column added "just for the rail" — would ride
+    // through a pass-through unnoticed. BenchCartridge is the model that owns
+    // the `sources` relation, so this is the exact shape cartridgeList() is
+    // careful about, and the two paths now fail the same way.
     return {
-      powders,
+      powders: powders.map((p) => ({ id: p.id, name: p.name, maker: p.maker })),
       // Prisma types this column as JsonValue; the shape is ours to promise,
       // so the cast goes through unknown rather than pretending the two
       // types overlap. Array.isArray is the actual guard.
       bullets: Array.isArray(row.bullets) ? (row.bullets as unknown as BenchView['bullets']) : [],
-      cartridges,
+      cartridges: cartridges.map((c) => ({ key: c.key, name: c.name })),
       units: row.units,
     };
   }
@@ -223,17 +252,24 @@ export class BenchService {
   /* ── The powder picker ─────────────────────────────────────────────── */
 
   async powders(q: string | undefined, bench: GuestBench | null) {
-    const list = await this.prisma.benchPowder.findMany({
+    const rows = await this.prisma.benchPowder.findMany({
       where: q ? { name: { contains: q, mode: 'insensitive' } } : undefined,
       select: { id: true, name: true, maker: true },
       orderBy: { name: 'asc' },
-      // ⚠️ THE PICKER FILTERS THIS LIST CLIENT-SIDE, so whatever this cap
-      // omits is unreachable no matter what the member types — they get
-      // 'Nothing matches that name' for a powder that exists. At 300, with
-      // 305 powders imported, the last five were invisible. Kept generous
-      // rather than paged: the canonical list is small and rarely changes.
-      take: 1000,
+      // ⚠️ NO take, AND NONE MAY BE ADDED — same rule as bullets() below. The
+      // picker filters this list CLIENT-SIDE, so whatever a cap omits is
+      // unreachable no matter what the member types: they get 'Nothing matches
+      // that name' for a powder that exists, and nothing on screen says the
+      // list was shortened. At 300, with 305 imported, the last five were
+      // invisible. Raising the cap to 1000 only moved the trap one import
+      // away; the canonical list is a few hundred rows, so there is no cap
+      // worth paying for. A cap here is only ever acceptable if the picker
+      // TELLS the member the list was cut, the way BulletPicker's draw cap
+      // does.
     });
+    // Rebuilt field by field rather than handed back as Prisma returned it —
+    // see getBench(). The spread below is of OUR object, not of a Prisma row.
+    const list = rows.map((p) => ({ id: p.id, name: p.name, maker: p.maker }));
 
     // Without a bench there is nothing to count against, and a zero would
     // read as "this powder has no loads" rather than "you have no shelf".
@@ -253,6 +289,95 @@ export class BenchService {
     });
     const byId = new Map(counts.map((c) => [c.powderId, c._count._all]));
     return list.map((p) => ({ ...p, loadsForBench: byId.get(p.id) ?? 0 }));
+  }
+
+  /* ── The bullet picker ─────────────────────────────────────────────── */
+
+  /**
+   * Every bullet the consolidated set knows: the distinct maker + weight +
+   * category triples, each with how many loads use it.
+   *
+   * ⚠️ A groupBy, NOT a findMany. ~28 000 consolidated rows collapse to about
+   * 1 100 triples; distinct-ing them in node would drag the whole table across
+   * the wire to answer a question Postgres answers with one GROUP BY.
+   *
+   * This axis exists because the bench is an AND. A member with powders and
+   * cartridges but no bullet matches nothing, for ever — which is precisely
+   * what happened while all three Add buttons opened the powder picker.
+   */
+  async bullets(): Promise<BenchBulletOptionView[]> {
+    const groups = await this.prisma.benchLoad.groupBy({
+      by: ['bulletMaker', 'weightGr', 'bulletCategory'],
+      // A bullet nobody named cannot be picked off a shelf: the picker would
+      // draw a blank row that matches nothing a member types. Prisma types the
+      // column non-null, but the manual rows it is consolidated from allow a
+      // missing maker, so the guard belongs in SQL rather than in the types —
+      // and `<> ''` drops a NULL too, should the column ever be relaxed.
+      where: { bulletMaker: { not: '' } },
+      _count: { _all: true },
+    });
+
+    // ⚠️ NO take/skip ANYWHERE ON THIS PATH, AND NONE MAY BE ADDED. The picker
+    // filters this list in the browser, so whatever the server omits is
+    // unreachable no matter how the member spells it. Capping the powder list
+    // at 300 with 305 imported is exactly how five powders went invisible.
+    return groups
+      .map((g) => ({
+        maker: g.bulletMaker,
+        weightGr: g.weightGr,
+        category: g.bulletCategory,
+        // Consolidated loads. Never the number of manuals behind them.
+        loads: g._count._all,
+      }))
+      // Sorted here rather than in the GROUP BY: the aggregate has already
+      // collapsed the table to about a thousand rows, so ordering them in node
+      // costs nothing and the tie-breaks stay readable. Most loads first,
+      // because the top of a picker should be the part worth adding.
+      //
+      // ⚠️ THE TIE-BREAKS RUN ALL THE WAY TO category, WHICH IS NOT TIDINESS.
+      // A bullet's identity is maker + weight + category — that is what
+      // bulletKey() joins and what the results AND matches on — so two rows
+      // differing only by category are two different bullets. Stopping the
+      // tie-break at weight leaves them in whatever order Postgres's hash
+      // aggregate happened to emit, which is not stable between runs: the same
+      // two rows swap places between one opening of the picker and the next,
+      // in a list the member is scanning by eye.
+      .sort(
+        (a, b) =>
+          b.loads - a.loads ||
+          a.maker.localeCompare(b.maker) ||
+          a.weightGr - b.weightGr ||
+          a.category.localeCompare(b.category),
+      );
+  }
+
+  /* ── The cartridge picker ──────────────────────────────────────────── */
+
+  /**
+   * The cartridges a member can actually put on a bench.
+   *
+   * ⚠️ ONLY THE ONES THAT HAVE LOADS. The reference set carries far more
+   * cartridges than we hold load data for, and adding one of those narrows the
+   * AND to nothing — the member adds the cartridge they own, the screen stays
+   * empty, and the Bench looks broken rather than unstocked.
+   */
+  async cartridgeList(): Promise<BenchCartridgeOptionView[]> {
+    const counts = await this.prisma.benchLoad.groupBy({
+      by: ['cartridgeKey'],
+      _count: { _all: true },
+    });
+    const byKey = new Map(counts.map((c) => [c.cartridgeKey, c._count._all]));
+
+    const rows = await this.prisma.benchCartridge.findMany({
+      where: { key: { in: [...byKey.keys()] } },
+      select: { key: true, name: true },
+      orderBy: { name: 'asc' },
+      // No take, for the reason spelled out in bullets() above.
+    });
+
+    // Rebuilt field by field rather than spread. A spread would carry whatever
+    // a future `select` picks up, and this model is the one that owns `sources`.
+    return rows.map((c) => ({ key: c.key, name: c.name, loads: byKey.get(c.key) ?? 0 }));
   }
 
   /* ── The spec card ─────────────────────────────────────────────────── */
@@ -293,13 +418,32 @@ export class BenchService {
         : Promise.resolve(0),
     ]);
 
-    const { dims, ...rest } = cartridge;
+    // ⚠️ NAMED FIELD BY FIELD RATHER THAN `const { dims, ...rest }`. A rest
+    // spread republishes whatever the `select` above happens to hold, so the
+    // day somebody adds one column for the spec header — or swaps the select
+    // for an include to get `sources` — the new column ships to the client
+    // with it. This model is the one that owns the `sources` relation.
     return {
-      cartridge: rest,
+      cartridge: {
+        key: cartridge.key,
+        name: cartridge.name,
+        slug: cartridge.slug,
+        type: cartridge.type,
+        origin: cartridge.origin,
+        year: cartridge.year,
+        caseLengthMm: cartridge.caseLengthMm,
+        maxLengthMm: cartridge.maxLengthMm,
+        pmaxPsi: cartridge.pmaxPsi,
+        pmaxBar: cartridge.pmaxBar,
+      },
       // ⚠️ rawText is stripped. It is the sheet's own text block, kept for
       // audit, and it is the one field on this model that would put a
       // published page into a response.
-      dims: dims ? this.stripAudit(dims) : null,
+      // A denylist rather than a rebuild, and deliberately: BenchCipDimension
+      // is some sixty measurement columns whose whole point is that they are
+      // all published, so naming each one here would be a list to forget to
+      // extend. rawText is the single field on it that must not travel.
+      dims: cartridge.dims ? this.stripAudit(cartridge.dims) : null,
       stations: [],
       shellHolderGroup: [],
       loadCount,
@@ -316,10 +460,16 @@ export class BenchService {
 
   async log(clerkSub: string) {
     const userId = await this.resolveUserId(clerkSub);
+    // ⚠️ NO take. This is the member's OWN log, and logCsv() below is built
+    // from this method — a cap here silently short-changes the file they
+    // downloaded to keep, which is the one list on the module where a missing
+    // row is their record rather than our catalogue. Nothing in LogList or in
+    // the CSV says a cap was applied, so under the module's own rule there
+    // cannot be one. The table is per-member and indexed on [userId,
+    // createdAt]; a shelf log is tens of rows, not tens of thousands.
     const rows = await this.prisma.benchLogEntry.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
-      take: 500,
     });
 
     // The row stores only the key, and a key is not a thing to show someone —

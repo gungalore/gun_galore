@@ -15,6 +15,8 @@
  */
 import type {
   BenchView,
+  BenchBulletOption,
+  BenchCartridgeOption,
   BenchPowder,
   CartridgeSpec,
   LoadGroup,
@@ -117,6 +119,27 @@ export interface BenchSheetProps extends BenchRailProps {
   onClose: () => void;
 }
 
+/** The three axes a load needs, in the order the empty state offers them. */
+export type BenchAxis = 'powder' | 'bullet' | 'cartridge';
+
+export const BENCH_AXES: BenchAxis[] = ['powder', 'bullet', 'cartridge'];
+
+/**
+ * Which axes the bench has NOTHING on.
+ *
+ * ⚠️ THIS IS NOT "THE BENCH IS EMPTY", AND THE DIFFERENCE IS THE WHOLE POINT.
+ * Results are an AND across powder, bullet and cartridge, so one missing axis
+ * empties the screen while the other two may be full. A single boolean forced
+ * the empty state to guess, and it guessed "add a powder" — sending a member
+ * who owns six powders and no cartridge to the one axis they had already
+ * filled, where adding a seventh powder changes nothing. Naming the axis is
+ * what makes the empty state actionable.
+ *
+ * All three false means the bench can build something and the FILTER is what
+ * is too narrow — a different sentence and a different fix.
+ */
+export type BenchGaps = Record<BenchAxis, boolean>;
+
 export interface ResultsListProps extends UnitProps {
   result: LoadsResponse | null;
   loading: boolean;
@@ -124,9 +147,15 @@ export interface ResultsListProps extends UnitProps {
   onOpenLoad: (row: LoadRow, group: LoadGroup) => void;
   onOpenSpec: (cartridgeKey: string) => void;
   onRetry: () => void;
-  /** Shown by the empty state when the bench is empty rather than the filter too narrow. */
-  benchIsEmpty: boolean;
+  /** Which axes are bare. See BenchGaps — not a "bench is empty" flag. */
+  gaps: BenchGaps;
+  /**
+   * ⚠️ ALL THREE, NOT JUST THE POWDER ONE. The empty state opens the picker
+   * for the axis it just named; with only `onAddPowder` to hand it could not.
+   */
   onAddPowder: () => void;
+  onAddBullet: () => void;
+  onAddCartridge: () => void;
 }
 
 /* ── Load card ──────────────────────────────────────────────────────── */
@@ -229,3 +258,41 @@ export const SAFETY_LINE =
 
 /** Shown once on the results screen, not on each card. */
 export const VELOCITY_NOTE = 'Velocities are indicative only.';
+
+/* ── Bullet and cartridge pickers ───────────────────────────────────── */
+
+/**
+ * ⚠️ THESE TWO PICKERS EXIST BECAUSE THE BENCH IS AN *AND* ACROSS THREE AXES.
+ * A load shows only when the member has the powder AND a matching bullet AND
+ * the cartridge, so a bench with powders but no bullets and no cartridges
+ * returns nothing, for ever. The rail has always drawn three Add buttons; for
+ * a while all three opened the powder picker, which made the other two axes
+ * unreachable and the whole screen permanently empty.
+ *
+ * ⚠️ THE ROW SHAPES ARE RE-EXPORTED FROM lib/bench/api.ts, NOT REDECLARED.
+ * They are wire shapes, and this file's header says so: data shapes come from
+ * api.ts (which mirrors the backend) and nothing is redeclared here. They had
+ * drifted into two declarations — one here, one inline on benchApi.bullets —
+ * which is exactly how a field added at one end stops being read at the other.
+ */
+export type { BenchBulletOption, BenchCartridgeOption };
+
+export interface BulletPickerProps {
+  open: boolean;
+  bullets: BenchBulletOption[];
+  loading: boolean;
+  /** bulletKey() values already on the bench. */
+  onBench: string[];
+  onClose: () => void;
+  onAdd: (b: BenchBulletOption) => void;
+}
+
+export interface CartridgePickerProps {
+  open: boolean;
+  cartridges: BenchCartridgeOption[];
+  loading: boolean;
+  /** Cartridge keys already on the bench. */
+  onBench: string[];
+  onClose: () => void;
+  onAdd: (c: BenchCartridgeOption) => void;
+}

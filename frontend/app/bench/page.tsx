@@ -24,6 +24,8 @@ import {
 import type { Units } from '@/lib/bench/geometry';
 import {
   EMPTY_OFF,
+  type BenchBulletOption,
+  type BenchCartridgeOption,
   WEIGHT_BANDS,
   bulletKey,
   type LogDraft,
@@ -39,10 +41,12 @@ import { SpecCard } from '@/components/bench/SpecCard';
 import LogSheet from '@/components/bench/LogSheet';
 import LogList from '@/components/bench/LogList';
 import { PowderPicker } from '@/components/bench/PowderPicker';
+import { BulletPicker } from '@/components/bench/BulletPicker';
+import { CartridgePicker } from '@/components/bench/CartridgePicker';
 import { Toast } from '@/components/bench/Toast';
 
 /** Which overlay is on top. Only one at a time, except the log sheet, which sits over the load card. */
-type Overlay = null | 'load' | 'spec' | 'log' | 'logList' | 'powders';
+type Overlay = null | 'load' | 'spec' | 'log' | 'logList' | 'powders' | 'bullets' | 'cartridges';
 
 interface OpenLoad {
   row: LoadRow;
@@ -83,6 +87,10 @@ export default function BenchPage() {
 
   const [powders, setPowders] = useState<BenchPowder[]>([]);
   const [powdersLoading, setPowdersLoading] = useState(false);
+  const [bullets, setBullets] = useState<BenchBulletOption[]>([]);
+  const [bulletsLoading, setBulletsLoading] = useState(false);
+  const [cartridges, setCartridges] = useState<BenchCartridgeOption[]>([]);
+  const [cartridgesLoading, setCartridgesLoading] = useState(false);
 
   const [toast, setToast] = useState<string | null>(null);
 
@@ -164,8 +172,28 @@ export default function BenchPage() {
     [bench],
   );
 
-  const benchIsEmpty =
-    !!bench && bench.powders.length === 0 && bench.bullets.length === 0;
+  /**
+   * Which axes the shelf has nothing on.
+   *
+   * ⚠️ ONE FLAG PER AXIS, NOT ONE "IS IT EMPTY" BOOLEAN. Results are an AND
+   * across powder, bullet and cartridge, so a shelf missing any one axis
+   * returns nothing however full the other two are — and the empty state has
+   * to name and open the axis that is actually bare. Collapsed to a single
+   * boolean it could only ever offer "Add a powder", which is the wrong door
+   * for the member who already has six.
+   *
+   * Every gap is false until the bench has loaded: with nothing fetched yet we
+   * do not know what is missing, and guessing draws the wrong sentence for a
+   * frame.
+   */
+  const gaps = useMemo(
+    () => ({
+      powder: !!bench && bench.powders.length === 0,
+      bullet: !!bench && bench.bullets.length === 0,
+      cartridge: !!bench && bench.cartridges.length === 0,
+    }),
+    [bench],
+  );
 
   /* ── Units ─────────────────────────────────────────────────────────── */
 
@@ -251,6 +279,93 @@ export default function BenchPage() {
         .then((b) => {
           setBench(b);
           setToast(`${p.name} added to your bench`);
+        })
+        .catch((e: Error) => setToast(e.message));
+      setOverlay(null);
+    },
+    [bench, token, units],
+  );
+
+  /**
+   * ⚠️ A FAILED FETCH IS TOASTED, NOT SWALLOWED. Both pickers draw their empty
+   * state from an empty array, so a rejected request lands the member on "No
+   * bullets are loaded yet." / "No cartridges are loaded yet." — a statement
+   * about our catalogue made out of a network error, on the one screen whose
+   * whole job is to stop the bench being empty. The list props carry no error
+   * channel, so the truth is told on the toast rail, which sits at z-index 70
+   * and is therefore readable over the open overlay.
+   */
+  const openBullets = useCallback(() => {
+    setOverlay('bullets');
+    setBulletsLoading(true);
+    benchApi
+      .bullets(token)
+      .then((b) => {
+        setBullets(b);
+        setBulletsLoading(false);
+      })
+      .catch(() => {
+        setBulletsLoading(false);
+        setToast('The bullet list could not be loaded. Please try again.');
+      });
+  }, [token]);
+
+  const openCartridges = useCallback(() => {
+    setOverlay('cartridges');
+    setCartridgesLoading(true);
+    benchApi
+      .cartridgeList(token)
+      .then((c) => {
+        setCartridges(c);
+        setCartridgesLoading(false);
+      })
+      .catch(() => {
+        setCartridgesLoading(false);
+        setToast('The cartridge list could not be loaded. Please try again.');
+      });
+  }, [token]);
+
+  /**
+   * ⚠️ EVERY ADD SENDS THE WHOLE BENCH. PUT /bench/me replaces rather than
+   * merges, so a body that omits an axis clears it — adding a bullet with a
+   * partial body would wipe the member's powders.
+   */
+  const addBullet = useCallback(
+    (b: BenchBulletOption) => {
+      if (!bench) return;
+      benchApi
+        .saveBench(token, {
+          powderIds: bench.powders.map((p) => p.id),
+          bullets: [
+            ...bench.bullets,
+            { maker: b.maker, weightGr: b.weightGr, category: b.category },
+          ],
+          cartridgeKeys: bench.cartridges.map((c) => c.key),
+          units,
+        })
+        .then((next) => {
+          setBench(next);
+          setToast(`${b.maker} ${b.weightGr}gr added to your bench`);
+        })
+        .catch((e: Error) => setToast(e.message));
+      setOverlay(null);
+    },
+    [bench, token, units],
+  );
+
+  const addCartridge = useCallback(
+    (c: BenchCartridgeOption) => {
+      if (!bench) return;
+      benchApi
+        .saveBench(token, {
+          powderIds: bench.powders.map((p) => p.id),
+          bullets: bench.bullets,
+          cartridgeKeys: [...bench.cartridges.map((x) => x.key), c.key],
+          units,
+        })
+        .then((next) => {
+          setBench(next);
+          setToast(`${c.name} added to your bench`);
         })
         .catch((e: Error) => setToast(e.message));
       setOverlay(null);
@@ -370,8 +485,8 @@ export default function BenchPage() {
               off={off}
               onToggle={toggleOff}
               onAddPowder={openPowders}
-              onAddBullet={openPowders}
-              onAddCartridge={openPowders}
+              onAddBullet={openBullets}
+              onAddCartridge={openCartridges}
             />
           </div>
         )}
@@ -382,9 +497,11 @@ export default function BenchPage() {
             result={result}
             loading={loading}
             error={error}
-            benchIsEmpty={benchIsEmpty}
+            gaps={gaps}
             onRetry={search}
             onAddPowder={openPowders}
+            onAddBullet={openBullets}
+            onAddCartridge={openCartridges}
             onOpenSpec={openSpec}
             onOpenLoad={(row, group) => {
               const weightGr =
@@ -404,8 +521,8 @@ export default function BenchPage() {
           off={off}
           onToggle={toggleOff}
           onAddPowder={openPowders}
-          onAddBullet={openPowders}
-          onAddCartridge={openPowders}
+          onAddBullet={openBullets}
+          onAddCartridge={openCartridges}
         />
       )}
 
@@ -458,6 +575,24 @@ export default function BenchPage() {
           onDelete={deleteLog}
         />
       )}
+
+      <BulletPicker
+        open={overlay === 'bullets'}
+        bullets={bullets}
+        loading={bulletsLoading}
+        onBench={(bench?.bullets ?? []).map(bulletKey)}
+        onClose={() => setOverlay(null)}
+        onAdd={addBullet}
+      />
+
+      <CartridgePicker
+        open={overlay === 'cartridges'}
+        cartridges={cartridges}
+        loading={cartridgesLoading}
+        onBench={(bench?.cartridges ?? []).map((c) => c.key)}
+        onClose={() => setOverlay(null)}
+        onAdd={addCartridge}
+      />
 
       <PowderPicker
         open={overlay === 'powders'}
