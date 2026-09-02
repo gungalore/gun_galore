@@ -96,3 +96,44 @@ export function consolidate(rows: ConsolidationInput[]): ConsolidationResult {
 export function needsReview(result: ConsolidationResult): boolean {
   return result.maxGr - result.startGr > result.startGr * 0.1;
 }
+
+/**
+ * The name to SHOW for a powder, given every spelling the sources printed.
+ *
+ * ⚠️ NOT SIMPLY THE MOST COMMON ONE. 38% of the source rows print the powder
+ * in block capitals, which is how certain manuals typeset every name — not how
+ * the powder is branded. On a straight majority "Varget" (481 rows) loses to
+ * "VARGET" (625), and the shelf ends up shouting at the reloader.
+ *
+ * So a spelling containing a lowercase letter wins over one that does not, and
+ * frequency only breaks ties within that. Names that are legitimately all
+ * upper-case or numeric — H4350, N140, S365, AR2208 — have no lowercase
+ * variant to prefer, so they are unaffected.
+ */
+export function pickDisplayName(forms: Map<string, number>): string {
+  const entries = [...forms.entries()];
+  if (!entries.length) return '';
+
+  // Casing variants of ONE spelling are grouped first, and the winner between
+  // GROUPS is decided by total frequency. Preferring lowercase across groups
+  // would be wrong: "RL-16" and "Re-16" are different names, not two
+  // renderings of one, and the rarer spelling must not win just for having a
+  // lowercase letter in it.
+  const groups = new Map<string, { total: number; forms: [string, number][] }>();
+  for (const [name, n] of entries) {
+    const key = name.toUpperCase();
+    const g = groups.get(key) ?? { total: 0, forms: [] };
+    g.total += n;
+    g.forms.push([name, n]);
+    groups.set(key, g);
+  }
+
+  const best = [...groups.entries()].sort(
+    (a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]),
+  )[0][1];
+
+  // Within the winning spelling, the branded rendering beats the shouted one.
+  const mixed = best.forms.filter(([name]) => /[a-z]/.test(name));
+  const pool = mixed.length ? mixed : best.forms;
+  return pool.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
+}
