@@ -70,7 +70,15 @@ echo "box branch: $REMOTE_BRANCH"
 # fast-forward pull. Those edits are never wanted — the lockfile in the repo is
 # the intended one — so they are discarded rather than left to fail a deploy at
 # the worst moment.
-ssh "$HOST" "cd $APP && git checkout -- package-lock.json backend/package-lock.json frontend/package-lock.json 2>/dev/null; true"
+# ⚠️ ONE PATH AT A TIME. This used to name three lockfiles in a single
+# `git checkout --`, including a ROOT package-lock.json that does not exist in
+# this repo. git rejects the WHOLE pathspec list when one entry matches
+# nothing, so neither real lockfile was ever reset — and `2>/dev/null; true`
+# hid the failure, so the deploy died one step later at the pull instead,
+# blaming "local edits on the box". Reset each independently.
+for LOCK in backend/package-lock.json frontend/package-lock.json; do
+  ssh "$HOST" "cd $APP && git checkout -- $LOCK 2>/dev/null || true"
+done
 ssh "$HOST" "cd $APP && git pull --ff-only -q origin $BRANCH" || die "pull failed — check for local edits on the box"
 REMOTE=$(ssh "$HOST" "cd $APP && git rev-parse HEAD")
 [ "$REMOTE" = "$LOCAL" ] || die "box HEAD ${REMOTE:0:8} != local ${LOCAL:0:8}"
