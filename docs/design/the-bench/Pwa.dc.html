@@ -1,0 +1,663 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Archivo:wght@500;600;700;800&display=swap">
+  <style>
+    body { margin: 0; background: #FFFFFF; color: #1A1613; font-family: 'Public Sans', system-ui, 'Segoe UI', Roboto, sans-serif; font-weight: 400; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
+    a { color: #B10E28; text-decoration: none; } a:hover { color: #C8102E; }
+    * { box-sizing: border-box; }
+    .head { font-family: 'Archivo', 'Public Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.025em; }
+    .mono { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+    .num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+    .tag { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 3px; border: 0.5px solid #DDD8CC; background: #F4F2EC; font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 10.5px; color: #4A443C; white-space: nowrap; }
+    .tag.warn { color: #8F6E0F; border-color: rgba(168,123,20,0.38); background: rgba(168,123,20,0.10); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 44px; padding: 0 14px; border: 0.5px solid #DDD8CC; border-radius: 6px; background: #FFFFFF; font-size: 14px; font-weight: 500; color: #4A443C; cursor: pointer; white-space: nowrap; transition: background-color 200ms cubic-bezier(0.4,0,0.2,1), transform 120ms cubic-bezier(0.22,1,0.36,1); user-select: none; }
+    .btn:active { transform: scale(0.97); background: #FAF9F5; }
+    .btn.red { background: #C8102E; border-color: #C8102E; color: #FFFFFF; }
+    .btn.sm { height: 44px; font-size: 12.5px; padding: 0 10px; }
+    .seg { display: inline-flex; background: #F4F2EC; border: 0.5px solid #DDD8CC; border-radius: 999px; padding: 3px; gap: 3px; }
+    .seg > div { padding: 14px 14px; border-radius: 999px; font-size: 13px; font-weight: 500; color: #4A443C; cursor: pointer; white-space: nowrap; transition: background-color 200ms cubic-bezier(0.4,0,0.2,1), color 200ms; user-select: none; }
+    .seg > div.on { background: #C8102E; color: #FFFFFF; font-weight: 600; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px; border-radius: 999px; background: #F4F2EC; border: 0.5px solid #DDD8CC; font-size: 13px; color: #1A1613; white-space: nowrap; cursor: pointer; user-select: none; transition: background-color 200ms, border-color 200ms, color 200ms, transform 120ms cubic-bezier(0.22,1,0.36,1); }
+    .chip:active { transform: scale(0.96); }
+    .chip.off { background: #FFFFFF; border-style: dashed; color: #9C948A; }
+    .chip .dot { width: 6px; height: 6px; border-radius: 3px; background: #1F7A50; transition: background-color 200ms; }
+    .chip.off .dot { background: #DDD8CC; }
+    .chip.add { background: #FFFFFF; border-style: dashed; color: #7A7267; }
+    .grp { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 0.5px solid #DDD8CC; background: #FFFFFF; cursor: pointer; }
+    .grp:active { background: #FAF9F5; }
+    .wt { padding: 6px 12px; font-size: 12px; font-weight: 500; color: #4A443C; background: #F4F2EC; border-bottom: 0.5px solid #EDEAE1; }
+    .row { padding: 10px 12px; border-bottom: 0.5px solid #EDEAE1; cursor: pointer; animation: rise 300ms cubic-bezier(0.22,1,0.36,1) both; transition: background-color 200ms; }
+    .row:active { background: #FAF9F5; }
+    .backdrop { position: absolute; inset: 0; background: rgba(26,22,19,0.38); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); animation: fade 200ms cubic-bezier(0.4,0,0.2,1) both; z-index: 60; }
+    .sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 92%; background: #FFFFFF; border-top: 0.5px solid #DDD8CC; border-top-left-radius: 16px; border-top-right-radius: 16px; box-shadow: 0 2px 4px rgba(26,22,19,0.08), 0 10px 20px rgba(26,22,19,0.11), 0 22px 48px rgba(26,22,19,0.16); animation: sheetUp 420ms cubic-bezier(0.22,1,0.36,1) both; z-index: 61; display: flex; flex-direction: column; overflow: hidden; }
+    .sheet .body { overflow-y: auto; padding-bottom: 28px; }
+    .handle { width: 36px; height: 4px; border-radius: 2px; background: #DDD8CC; margin: 8px auto 4px; }
+    .push { position: absolute; inset: 0; background: #FFFFFF; animation: pushIn 420ms cubic-bezier(0.22,1,0.36,1) both; z-index: 61; display: flex; flex-direction: column; }
+    .toast { position: absolute; left: 50%; bottom: 100px; transform: translateX(-50%); background: #1A1613; color: #F4F1ED; font-size: 13px; padding: 10px 14px; border-radius: 6px; display: flex; gap: 8px; align-items: center; animation: up 300ms cubic-bezier(0.22,1,0.36,1) both; z-index: 70; white-space: nowrap; max-width: 360px; }
+    .x { width: 44px; height: 44px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #7A7267; cursor: pointer; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: #7A7267; }
+    .field input { height: 44px; padding: 0 12px; background: #F4F2EC; border: 0.5px solid #DDD8CC; border-radius: 6px; font: inherit; font-size: 16px; color: #1A1613; outline: none; transition: border-color 200ms, background-color 200ms; }
+    .field input:focus { border-color: #1A1613; background: #FFFFFF; }
+    .kv { display: flex; align-items: baseline; gap: 10px; padding: 10px 12px; border-bottom: 0.5px solid #EDEAE1; font-size: 13px; cursor: pointer; transition: background-color 200ms; }
+    .kv.hot { background: rgba(200,16,46,0.09); }
+    .kv.hot .k { color: #C8102E; }
+    .dim line, .dim path { transition: stroke 200ms; } .dim text { transition: fill 200ms; }
+    .pick { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 0.5px solid #EDEAE1; font-size: 14px; cursor: pointer; min-height: 48px; }
+    .pick:active { background: #FAF9F5; }
+    .draw { stroke-dasharray: 600; stroke-dashoffset: 600; animation: draw 700ms cubic-bezier(0.22,1,0.36,1) 250ms forwards; }
+    .late { opacity: 0; animation: fade 300ms cubic-bezier(0.4,0,0.2,1) 850ms forwards; }
+    .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; padding-top: 9px; font-size: 10px; color: #9C948A; }
+    .tab.on { color: #C8102E; font-weight: 600; }
+    .scroll { overflow-y: auto; scrollbar-width: none; }
+    .hscroll { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+    @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes pushIn { from { transform: translateX(100%); } to { transform: none; } }
+    @keyframes up { from { opacity: 0; transform: translateX(-50%) translateY(12px); } to { opacity: 1; transform: translateX(-50%); } }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(200,16,46,0.35); } 100% { box-shadow: 0 0 0 10px rgba(200,16,46,0); } }
+    .bump { animation: pulse 600ms cubic-bezier(0.22,1,0.36,1) 1; }
+    @media (prefers-reduced-motion: reduce) { .row, .sheet, .push, .backdrop, .toast, .draw, .late { animation-duration: 1ms !important; animation-delay: 0ms !important; } }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #FFFFFF; display: flex; flex-direction: column;">
+
+  <!-- Shell push header, from components/shell/shell-header.tsx -->
+  <div style="height: 54px; flex: none; background: #FFFFFF; border-bottom: 1px solid #DDD8CC; display: flex; align-items: center; gap: 4px; padding: 0 8px;">
+    <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #1A1613;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"></path></svg></div>
+    <span style="flex: 1; min-width: 0; font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">The Bench</span>
+    <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #1A1613;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 11.2a1.5 1.5 0 0 0 1.5 1.2h8.6a1.5 1.5 0 0 0 1.5-1.2L21 8H6.3"></path><circle cx="9.5" cy="20" r="1.2"></circle><circle cx="17" cy="20" r="1.2"></circle></svg></div>
+  </div>
+
+  <!-- Tool strip -->
+  <div style="flex: none; padding: 10px 12px 0; display: flex; flex-direction: column; gap: 10px;">
+    <div style="display: flex; gap: 8px;">
+      <div class="btn" style="flex: 1;" onClick="{{ openBench }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18"></path><path d="M5 9V5h14v4"></path><path d="M4 9v11h16V9"></path></svg>My bench <span class="num" style="color: #7A7267; font-weight: 400;">{{ ui.benchSummary }}</span></div>
+      <div class="btn {{ ui.logBtnCls }}" onClick="{{ openList }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M8 12h8"></path><path d="M8 16h8"></path></svg><span class="num" style="min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: {{ ui.logBadgeBg }}; color: {{ ui.logBadgeInk }}; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center;">{{ ui.logCount }}</span></div>
+      <div class="btn" style="width: 44px; padding: 0;" onClick="{{ copyLink }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"></path><path d="M12 15V3"></path><path d="M8 7l4-4 4 4"></path></svg></div>
+    </div>
+    <div class="hscroll" style="margin: 0 -12px; padding: 0 12px;">
+      <div class="seg">
+        <sc-for list="{{ cartFilters }}" as="f" hint-placeholder-count="4"><div class="{{ f.cls }}" onClick="{{ f.pick }}">{{ f.label }}</div></sc-for>
+      </div>
+      <div class="seg">
+        <sc-for list="{{ wtFilters }}" as="f" hint-placeholder-count="4"><div class="{{ f.cls }}" onClick="{{ f.pick }}">{{ f.label }}</div></sc-for>
+      </div>
+    </div>
+    <div style="display: flex; align-items: baseline; justify-content: space-between; font-size: 13px;"><div><span class="num" style="font-weight: 600;">{{ ui.count }}</span> loads from your bench</div><div style="font-size: 11.5px; color: #7A7267;">Velocities are indicative only.</div></div>
+  </div>
+
+  <!-- Results -->
+  <div class="scroll" style="flex: 1; min-height: 0; margin: 10px 12px 0; border: 0.5px solid #DDD8CC; border-radius: 8px; background: #FFFFFF;">
+    <sc-if value="{{ ui.empty }}" hint-placeholder-val="{{ false }}">
+      <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #7A7267; font-size: 13px; padding: 24px; text-align: center;">
+        <div class="head" style="font-size: 18px; color: #1A1613;">Nothing on the shelf builds this</div>
+        <div>Turn a chip back on, widen the weight range, or add a powder.</div>
+        <div class="btn" onClick="{{ resetFilters }}">Reset filters</div>
+      </div>
+    </sc-if>
+    <sc-for list="{{ groups }}" as="g" hint-placeholder-count="3">
+      <div class="grp" onClick="{{ g.openSpec }}">
+        <svg width="96" height="24" viewBox="{{ g.thumbBox }}" style="flex: none;"><path d="{{ g.casePath }}" fill="#D9BF7A" stroke="#8C7440" stroke-width="0.7"></path><path d="{{ g.bulletPath }}" fill="#B87333" stroke="#7A4A20" stroke-width="0.7"></path></svg>
+        <div style="flex: 1; min-width: 0;"><div class="head" style="font-size: 15px;">{{ g.name }}</div><div class="num" style="font-size: 11.5px; color: #7A7267; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ g.meta }}</div></div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9C948A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+      </div>
+      <sc-for list="{{ g.weights }}" as="w" hint-placeholder-count="1">
+        <div class="wt num">{{ w.label }}</div>
+        <sc-for list="{{ w.rows }}" as="r" hint-placeholder-count="3">
+          <div class="row" style="animation-delay: {{ r.delay }};" onClick="{{ r.open }}">
+            <div style="display: flex; align-items: baseline; gap: 8px;"><span style="font-size: 14px; font-weight: 500;">{{ r.powder }}</span><span style="font-size: 12px; color: #4A443C; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ r.bullet }}</span></div>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px;">
+              <div style="padding: 6px 8px; border-radius: 6px; background: #F4F2EC; border: 0.5px solid #DDD8CC;"><div style="font-size: 10px; color: #7A7267; text-transform: uppercase; letter-spacing: 0.03em;">Start</div><div class="num" style="font-size: 15px; font-weight: 500; margin-top: 1px;">{{ r.s }} <span style="font-size: 11px; color: #7A7267; font-weight: 400;">gr · {{ r.sv }}</span></div></div>
+              <div style="padding: 6px 8px; border-radius: 6px; background: #F4F2EC; border: 0.5px solid #DDD8CC;"><div style="font-size: 10px; color: #7A7267; text-transform: uppercase; letter-spacing: 0.03em;">Max</div><div class="num" style="font-size: 15px; font-weight: 600; margin-top: 1px;">{{ r.m }} <span style="font-size: 11px; color: #7A7267; font-weight: 400;">gr · {{ r.mv }}</span></div></div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11.5px; color: #7A7267;"><span class="num">COAL {{ r.coal }}</span><div style="margin-left: auto; display: flex; gap: 4px;"><sc-for list="{{ r.flags }}" as="f" hint-placeholder-count="0"><span class="{{ f.cls }}">{{ f.t }}</span></sc-for></div></div>
+          </div>
+        </sc-for>
+      </sc-for>
+    </sc-for>
+  </div>
+  <div style="flex: none; padding: 8px 12px 10px; font-size: 11px; color: #7A7267; line-height: 1.4;">Work every load up from the start charge while watching for pressure signs.</div>
+
+  <!-- Bottom tab bar, from components/bottom-tab-bar.tsx -->
+  <div style="flex: none; background: #FFFFFF; border-top: 1px solid #DDD8CC; padding-bottom: 20px;">
+    <div style="display: flex; align-items: flex-start; height: 62px;">
+      <div class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7v9H4z"></path><path d="M10 20v-6h4v6"></path></svg><span>Home</span></div>
+      <div class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="16.2" y1="16.2" x2="21" y2="21"></line></svg><span>Search</span></div>
+      <div class="tab" style="gap: 4px; padding-top: 4px; color: #7A7267;"><span style="width: 38px; height: 38px; border-radius: 19px; background: #C8102E; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg></span><span>Sell</span></div>
+      <div class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-4 9 4v9l-9 4-9-4z"></path><path d="M3 8l9 4 9-4"></path><path d="M12 12v9"></path></svg><span>Orders</span></div>
+      <div class="tab on"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 20a8 8 0 0 1 16 0"></path></svg><span>Account</span></div>
+    </div>
+  </div>
+
+  <!-- My bench sheet -->
+  <sc-if value="{{ ui.benchOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="backdrop" onClick="{{ closeAll }}"></div>
+    <div class="sheet">
+      <div class="handle"></div>
+      <div style="display: flex; align-items: center; padding: 4px 4px 4px 16px;"><div class="head" style="font-size: 18px; flex: 1;">My bench</div><div style="font-size: 11.5px; color: #1F7A50; display: flex; align-items: center; gap: 4px; margin-right: 8px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"></path></svg>Saved</div><div class="x" onClick="{{ closeAll }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></div></div>
+      <div class="body" style="padding: 0 16px 28px;">
+        <div style="font-size: 12px; color: #7A7267; margin-bottom: 12px;">Tap a chip to take it off the shelf for this search.</div>
+        <div style="font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: #7A7267; margin-bottom: 8px;">Powders · {{ bench.powderCount }}</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;">
+          <sc-for list="{{ bench.powders }}" as="p" hint-placeholder-count="5"><div class="{{ p.cls }}" onClick="{{ p.toggle }}"><span class="dot"></span>{{ p.name }}</div></sc-for>
+          <div class="chip add" onClick="{{ openPicker }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>Add</div>
+        </div>
+        <div style="font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: #7A7267; margin-bottom: 8px;">Bullets · {{ bench.bulletCount }}</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;">
+          <sc-for list="{{ bench.bullets }}" as="b" hint-placeholder-count="4"><div class="{{ b.cls }}" onClick="{{ b.toggle }}"><span class="dot"></span>{{ b.name }}<span style="color: #7A7267; font-size: 11.5px;">{{ b.sub }}</span></div></sc-for>
+        </div>
+        <div style="font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: #7A7267; margin-bottom: 8px;">Cartridges · {{ bench.cartCount }}</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px;">
+          <sc-for list="{{ bench.cartridges }}" as="c" hint-placeholder-count="3"><div class="{{ c.cls }}" onClick="{{ c.toggle }}"><span class="dot"></span>{{ c.name }}</div></sc-for>
+        </div>
+        <div style="font-size: 12px; color: #4A443C; line-height: 1.45; padding: 12px; border: 0.5px solid #DDD8CC; border-radius: 8px;">Where a Somchem powder has no load for a cartridge, a burn-rate neighbour can be shown for reference only. It is not a substitute, charge weights do not transfer, and you work up from a reduced start.</div>
+        <div class="btn red" style="width: 100%; margin-top: 14px;" onClick="{{ closeAll }}">Show {{ ui.count }} loads</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Load card sheet -->
+  <sc-if value="{{ ui.loadOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="backdrop" onClick="{{ closeAll }}"></div>
+    <div class="sheet">
+      <div class="handle"></div>
+      <div style="display: flex; align-items: flex-start; gap: 10px; padding: 4px 4px 10px 16px;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 12px; color: #7A7267;">{{ load.cart }} · {{ load.weight }}</div>
+          <div class="head" style="font-size: 18px; margin-top: 2px;">{{ load.powder }} <span style="color: #7A7267; font-weight: 500;">with</span> {{ load.bullet }}</div>
+          <div style="display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap;"><sc-for list="{{ load.flags }}" as="f" hint-placeholder-count="0"><span class="{{ f.cls }}">{{ f.t }}</span></sc-for></div>
+        </div>
+        <div class="x" onClick="{{ closeAll }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></div>
+      </div>
+      <div class="body" style="padding: 0 16px 28px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+          <div style="padding: 12px; border: 0.5px solid #DDD8CC; border-radius: 6px; background: #F4F2EC;"><div style="font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: #7A7267;">Start charge</div><div class="num head" style="font-size: 26px; margin-top: 4px; line-height: 1;">{{ load.s }} <span style="font-size: 13px; color: #7A7267; font-weight: 500;">gr</span></div><div class="num" style="font-size: 12px; color: #4A443C; margin-top: 6px;">{{ load.sv }}</div></div>
+          <div style="padding: 12px; border: 0.5px solid #DDD8CC; border-radius: 6px; background: #F4F2EC;"><div style="font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: #7A7267;">Max charge</div><div class="num head" style="font-size: 26px; margin-top: 4px; line-height: 1;">{{ load.m }} <span style="font-size: 13px; color: #7A7267; font-weight: 500;">gr</span></div><div class="num" style="font-size: 12px; color: #4A443C; margin-top: 6px;">{{ load.mv }}</div></div>
+        </div>
+        <div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: #7A7267; margin-bottom: 6px;"><span>COAL against the maximum</span><span class="num" style="text-transform: none; letter-spacing: 0;">max {{ load.l6 }} mm</span></div>
+          <div style="position: relative; height: 26px;">
+            <div style="position: absolute; left: 0; right: 0; top: 11px; height: 4px; border-radius: 2px; background: #EDEAE1;"></div>
+            <div style="position: absolute; right: 0; top: 11px; width: {{ load.coalZone }}; height: 4px; border-radius: 0 2px 2px 0; background: rgba(168,123,20,0.38);"></div>
+            <div style="position: absolute; right: -1px; top: 4px; width: 2px; height: 18px; background: #1A1613;"></div>
+            <div style="position: absolute; left: {{ load.coalPct }}; top: 7px; width: 12px; height: 12px; margin-left: -6px; border-radius: 6px; background: {{ load.coalInk }}; border: 2px solid #FFFFFF; box-shadow: 0 0 0 1px {{ load.coalInk }};"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: #4A443C;"><span class="num">{{ load.coalText }}</span><span class="num" style="color: {{ load.coalInk }}; font-weight: 500;">{{ load.coalVerdict }}</span></div>
+        </div>
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;"><div style="font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: #7A7267;">Charge vs velocity</div><div style="font-size: 10.5px; color: #9C948A;">start and max points only</div></div>
+          <svg viewBox="0 0 340 200" width="340" height="200" style="display: block; width: 100%; height: auto;">
+            <sc-for list="{{ ch.grid }}" as="gl" hint-placeholder-count="4"><line x1="{{ ch.l }}" x2="{{ ch.r }}" y1="{{ gl.y }}" y2="{{ gl.y }}" stroke="#EDEAE1" stroke-width="1"></line><text x="{{ ch.lt }}" y="{{ gl.ty }}" text-anchor="end" font-size="10.5" fill="#7A7267" font-family="Public Sans, system-ui, sans-serif">{{ gl.label }}</text></sc-for>
+            <sc-for list="{{ ch.xs }}" as="xl" hint-placeholder-count="4"><text x="{{ xl.x }}" y="{{ ch.xb }}" text-anchor="middle" font-size="10.5" fill="#7A7267" font-family="Public Sans, system-ui, sans-serif">{{ xl.label }}</text></sc-for>
+            <text x="{{ ch.r }}" y="196" text-anchor="end" font-size="10" fill="#9C948A" font-family="Public Sans, system-ui, sans-serif">charge, gr</text>
+            <text x="{{ ch.lt }}" y="12" text-anchor="end" font-size="10" fill="#9C948A" font-family="Public Sans, system-ui, sans-serif">m/s</text>
+            <line class="draw" x1="{{ ch.x0 }}" y1="{{ ch.y0 }}" x2="{{ ch.x1 }}" y2="{{ ch.y1 }}" stroke="#2a78d6" stroke-width="2" stroke-linecap="round"></line>
+            <circle class="late" cx="{{ ch.x0 }}" cy="{{ ch.y0 }}" r="4.5" fill="#2a78d6" stroke="#FFFFFF" stroke-width="2"></circle>
+            <circle class="late" cx="{{ ch.x1 }}" cy="{{ ch.y1 }}" r="4.5" fill="#2a78d6" stroke="#FFFFFF" stroke-width="2"></circle>
+            <text class="late" x="{{ ch.x0 }}" y="{{ ch.ly0 }}" text-anchor="middle" font-size="11" font-weight="500" fill="#4A443C" font-family="Public Sans, system-ui, sans-serif">start</text>
+            <text class="late" x="{{ ch.x1 }}" y="{{ ch.ly1 }}" text-anchor="middle" font-size="11" font-weight="500" fill="#4A443C" font-family="Public Sans, system-ui, sans-serif">max</text>
+          </svg>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <div class="btn red" style="flex: 1;" onClick="{{ openLog }}">Log this load</div>
+          <div class="btn" style="flex: 1;" onClick="{{ load.spec }}">Cartridge spec</div>
+        </div>
+        <div style="font-size: 11px; color: #7A7267; line-height: 1.4;">Work every load up from the start charge while watching for pressure signs.</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Spec card, pushed in from the right -->
+  <sc-if value="{{ ui.specOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="push">
+      <div style="height: 54px; flex: none; border-bottom: 1px solid #DDD8CC; display: flex; align-items: center; gap: 4px; padding: 0 8px;">
+        <div class="x" onClick="{{ closeSpec }}" style="color: #1A1613;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"></path></svg></div>
+        <span style="flex: 1; min-width: 0; font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ spec.name }}</span>
+        <div class="seg" style="margin-right: 4px;"><div class="{{ spec.mmCls }}" onClick="{{ setMm }}">mm</div><div class="{{ spec.inCls }}" onClick="{{ setIn }}">inch</div></div>
+      </div>
+      <div class="scroll" style="flex: 1; min-height: 0; padding-bottom: 24px;">
+        <div style="padding: 12px 12px 0;">
+          <div style="font-size: 12.5px; color: #4A443C;">{{ spec.meta }}</div>
+          <div class="hscroll" style="margin: 10px -12px 0; padding: 0 12px;"><div class="seg"><div class="{{ spec.v2 }}" onClick="{{ view2d }}">2D</div><div class="{{ spec.v3 }}" onClick="{{ view3d }}">3D lathe</div><div class="{{ spec.vh }}" onClick="{{ viewHalf }}">Half section</div></div></div>
+          <div style="margin-top: 10px; border: 0.5px solid #DDD8CC; border-radius: 8px; padding: 8px 6px 6px; background: #FFFFFF;">
+            <sc-if value="{{ spec.is3d }}" hint-placeholder-val="{{ false }}">
+              <canvas ref="{{ setCanvas }}" width="1080" height="640" style="display: block; width: 100%; height: auto; touch-action: none; border-radius: 6px; background: #FAF9F5;" onPointerDown="{{ pd }}" onPointerMove="{{ pm }}" onPointerUp="{{ pu }}" onPointerCancel="{{ pu }}"></canvas>
+              <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 0 4px;">
+                <input type="range" min="0" max="{{ spec.calMax }}" value="{{ spec.calRaw }}" onChange="{{ slideCal }}" onInput="{{ slideCal }}" style="flex: 1; height: 44px; accent-color: #C8102E;">
+                <div class="btn sm" onClick="{{ clearCal }}">Clear</div>
+              </div>
+              <div class="num" style="font-size: 12px; color: #7A7267; padding: 4px 6px 0;">{{ spec.calText }}</div>
+              <div style="display: flex; gap: 8px; margin-top: 8px; padding: 0 4px;">
+                <div class="btn sm" style="flex: 1; background: {{ spec.dimsBg }};" onClick="{{ toggleDims }}">Dimensions</div>
+                <div class="btn sm" style="flex: 1;" onClick="{{ showAll }}">Show all · snapshot</div>
+              </div>
+              <div style="font-size: 11px; color: #7A7267; line-height: 1.4; padding: 8px 6px 0;">Drag to spin, up or down to tilt. Slide the calliper along the axis; it snaps to each station and reads the diameter there. Half section shows the wall, the web and the seated bullet.</div>
+            </sc-if>
+            <sc-if value="{{ spec.is2d }}" hint-placeholder-val="{{ true }}">
+            <svg viewBox="0 0 560 250" width="560" height="250" style="display: block; width: 100%; height: auto;">
+              <defs><marker id="ar" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L6 3L0 6z" fill="#7A7267"></path></marker><marker id="arh" viewBox="0 0 6 6" refX="3" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L6 3L0 6z" fill="#C8102E"></path></marker></defs>
+              <path d="{{ spec.casePath }}" fill="#D9BF7A" stroke="#8C7440" stroke-width="0.7"></path>
+              <path d="{{ spec.bulletPath }}" fill="#B87333" stroke="#7A4A20" stroke-width="0.7"></path>
+              <line x1="{{ spec.ax0 }}" x2="{{ spec.ax1 }}" y1="{{ spec.ay }}" y2="{{ spec.ay }}" stroke="#9C948A" stroke-dasharray="8 3 1.5 3" stroke-width="0.7"></line>
+              <sc-for list="{{ spec.dims }}" as="d" hint-placeholder-count="9">
+                <g class="dim" onClick="{{ d.tap }}">
+                  <line x1="{{ d.e1x1 }}" y1="{{ d.e1y1 }}" x2="{{ d.e1x2 }}" y2="{{ d.e1y2 }}" stroke="{{ d.c }}" stroke-width="0.7" stroke-dasharray="2 2"></line>
+                  <line x1="{{ d.e2x1 }}" y1="{{ d.e2y1 }}" x2="{{ d.e2x2 }}" y2="{{ d.e2y2 }}" stroke="{{ d.c }}" stroke-width="0.7" stroke-dasharray="2 2"></line>
+                  <line x1="{{ d.mx1 }}" y1="{{ d.my1 }}" x2="{{ d.mx2 }}" y2="{{ d.my2 }}" stroke="{{ d.c }}" stroke-width="{{ d.w }}" marker-start="{{ d.mk }}" marker-end="{{ d.mk }}"></line>
+                  <text x="{{ d.tx }}" y="{{ d.ty }}" text-anchor="{{ d.ta }}" font-family="ui-monospace, Consolas, monospace" font-size="11" fill="{{ d.c }}" font-weight="{{ d.fw }}">{{ d.text }}</text>
+                </g>
+              </sc-for>
+              <g><path d="{{ spec.arc }}" fill="none" stroke="#7A7267" stroke-width="0.9"></path><text x="{{ spec.arcX }}" y="{{ spec.arcY }}" font-family="ui-monospace, Consolas, monospace" font-size="11" fill="#7A7267">{{ spec.alpha }}</text></g>
+            </svg>
+            <div style="font-size: 11px; color: #7A7267; line-height: 1.4; padding: 4px 6px 0;">{{ spec.drawNote }} Tap a dimension or a row to link them.</div>
+            </sc-if>
+          </div>
+        </div>
+        <div style="padding: 14px 12px 0;">
+          <div class="head" style="font-size: 15px; margin-bottom: 4px;">Dimensions</div>
+          <div style="border: 0.5px solid #DDD8CC; border-radius: 8px; overflow: hidden;">
+            <sc-for list="{{ spec.table }}" as="r" hint-placeholder-count="10">
+              <div class="{{ r.cls }}" onClick="{{ r.tap }}"><span class="mono k" style="width: 40px; flex: none; font-size: 12px; color: #4A443C;">{{ r.k }}</span><span style="flex: 1;">{{ r.label }}</span><span class="num" style="font-weight: 500; white-space: nowrap;">{{ r.v }}</span></div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="padding: 14px 12px 0;">
+          <div class="head" style="font-size: 15px; margin-bottom: 2px;">For the reloader</div>
+          <div style="font-size: 11.5px; color: #7A7267; margin-bottom: 6px;">The cartridge standard, not your rifle.</div>
+          <div style="border: 0.5px solid #DDD8CC; border-radius: 8px; overflow: hidden;">
+            <sc-for list="{{ spec.reloader }}" as="r" hint-placeholder-count="4"><div class="kv" style="cursor: default;"><span class="mono" style="width: 40px; flex: none; font-size: 12px; color: #4A443C;">{{ r.k }}</span><span style="flex: 1;">{{ r.label }}</span><span class="num" style="font-weight: 500; white-space: nowrap;">{{ r.v }}</span></div></sc-for>
+          </div>
+        </div>
+        <div style="padding: 14px 12px 0;">
+          <div style="border: 0.5px solid #DDD8CC; border-radius: 8px; padding: 14px;">
+            <div style="display: flex; align-items: baseline; gap: 10px;"><span class="num head" style="font-size: 26px; line-height: 1;">{{ spec.loads }}</span><span style="font-size: 12.5px; color: #7A7267;">loads · {{ spec.onBench }} from your bench</span></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0;"><sc-for list="{{ spec.shell }}" as="s" hint-placeholder-count="4"><span class="chip" style="height: 30px; font-size: 12.5px;">{{ s }}</span></sc-for></div>
+            <div style="font-size: 11.5px; color: #7A7267; margin-bottom: 12px;">Same shell holder as the cartridges above. No manufacturer's number is claimed.</div>
+            <div class="btn red" style="width: 100%;" onClick="{{ spec.filterHere }}">Show only {{ spec.name }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Log this load sheet -->
+  <sc-if value="{{ ui.logOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="backdrop" onClick="{{ closeLog }}"></div>
+    <div class="sheet">
+      <div class="handle"></div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 4px 4px 8px 16px;"><div style="flex: 1;"><div class="head" style="font-size: 18px;">Log this load</div><div style="font-size: 12px; color: #7A7267; margin-top: 2px;">Based on the {{ form.based }}. Your entry stays in your own log.</div></div><div class="x" onClick="{{ closeLog }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></div></div>
+      <div class="body" style="padding: 0 16px 28px;">
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+          <div class="field" style="grid-column: span 2;"><label>Load</label><input value="{{ form.title }}" readOnly="{{ true }}"></div>
+          <div class="field"><label>Charge, gr</label><input class="num" value="{{ form.charge }}" onChange="{{ setCharge }}" inputMode="decimal"></div>
+          <div class="field"><label>COAL, mm</label><input class="num" value="{{ form.coal }}" onChange="{{ setCoal }}" inputMode="decimal"></div>
+          <div class="field"><label>Primer</label><input value="{{ form.primer }}" onChange="{{ setPrimer }}" placeholder="e.g. CCI BR-2"></div>
+          <div class="field"><label>Case</label><input value="{{ form.case }}" onChange="{{ setCase }}" placeholder="e.g. Lapua, 3rd firing"></div>
+        </div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; min-height: 26px; margin-top: 10px;"><sc-for list="{{ form.flags }}" as="f" hint-placeholder-count="0"><span class="{{ f.cls }}">{{ f.t }}</span></sc-for></div>
+        <div class="btn red" style="width: 100%; margin-top: 6px;" onClick="{{ saveLog }}">Save to load log</div>
+        <div style="margin-top: 10px; font-size: 11.5px; color: #7A7267; text-align: center;">Results (velocity, group) are added after the range.</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Load log sheet -->
+  <sc-if value="{{ ui.listOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="backdrop" onClick="{{ closeAll }}"></div>
+    <div class="sheet">
+      <div class="handle"></div>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px 16px;"><div class="head" style="font-size: 18px; flex: 1;">Load log</div><div class="btn sm" onClick="{{ exportCsv }}">Export CSV</div><div class="x" onClick="{{ closeAll }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></div></div>
+      <div class="body">
+        <sc-if value="{{ ui.logEmpty }}" hint-placeholder-val="{{ true }}"><div style="padding: 36px 20px; text-align: center; color: #7A7267; font-size: 13px;">Nothing logged yet. Open a load and tap <span style="color: #1A1613; font-weight: 500;">Log this load</span>.</div></sc-if>
+        <sc-for list="{{ logRows }}" as="e" hint-placeholder-count="0">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 0.5px solid #EDEAE1; font-size: 13px; animation: rise 300ms cubic-bezier(0.22,1,0.36,1) both;">
+            <div style="flex: 1; min-width: 0;"><div style="font-weight: 500;">{{ e.title }}</div><div class="num" style="font-size: 11.5px; color: #7A7267;">{{ e.sub }}</div></div>
+            <div class="x" style="width: 36px; height: 36px;" onClick="{{ e.remove }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Add a powder sheet -->
+  <sc-if value="{{ ui.pickerOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="backdrop" onClick="{{ closePicker }}"></div>
+    <div class="sheet" style="height: 70%;">
+      <div class="handle"></div>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px 16px;"><div class="head" style="font-size: 18px; flex: 1;">Add a powder</div><div class="x" onClick="{{ closePicker }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"></path></svg></div></div>
+      <div style="padding: 0 16px 10px;"><div class="field"><input value="{{ pickerQ }}" onChange="{{ setPickerQ }}" placeholder="Search powders"></div></div>
+      <div class="body" style="border-top: 0.5px solid #EDEAE1;">
+        <sc-for list="{{ picks }}" as="p" hint-placeholder-count="6"><div class="pick" onClick="{{ p.add }}"><span>{{ p.name }} <span style="color: #7A7267; font-size: 12px;">· {{ p.maker }}</span></span><span class="num" style="font-size: 12px; color: #7A7267;">{{ p.hint }}</span></div></sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ui.toastOn }}" hint-placeholder-val="{{ false }}">
+    <div class="toast"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7CCB9B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"></path></svg><span style="overflow: hidden; text-overflow: ellipsis;">{{ ui.toast }}</span></div>
+  </sc-if>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"units":{"editor":"enum","options":["metric","imperial"],"default":"metric","section":"Display"},"$preview":{"width":390,"height":844}}'>
+var CARTS = {
+  '6,5 Creedmoor': { d:{R:1.37,R1:11.99,E:3.84,E1:10.39,P1:11.95,P2:11.74,L1:37.84,L2:41.52,L3:48.77,L6:71.76,H1:7.49,H2:7.49,G1:6.72,alpha:60}, pmaxBar:4350, pmaxPsi:63092, origin:'United States', year:2012, type:'Rimless', twist:'203 mm', twistIn:'1:8″', loads:127, shell:['308 Win.','260 Rem.','7 mm - 08 Rem.','243 Win.'] },
+  '308 Win.':      { d:{R:1.37,R1:12.01,E:3.84,E1:10.39,P1:11.96,P2:11.53,L1:39.62,L2:43.69,L3:51.18,L6:71.12,H1:8.72,H2:8.72,G1:7.85,alpha:40}, pmaxBar:4150, pmaxPsi:60191, origin:'United States', year:1984, type:'Rimless', twist:'305 mm', twistIn:'1:12″', loads:311, shell:['6,5 Creedmoor','260 Rem.','7 mm - 08 Rem.','243 Win.'] },
+  '223 Rem.':      { d:{R:1.14,R1:9.60,E:3.20,E1:8.43,P1:9.58,P2:9.00,L1:36.52,L2:39.55,L3:44.70,L6:57.40,H1:6.43,H2:6.43,G1:5.70,alpha:46}, pmaxBar:4300, pmaxPsi:62366, origin:'United States', year:1964, type:'Rimless', twist:'305 mm', twistIn:'1:12″', loads:264, shell:['222 Rem.','204 Ruger','5,56 x 45'] }
+};
+var LOADS = [
+  {id:1, cart:'6,5 Creedmoor', bullet:'Hornady ELD Match', w:140, powder:'H4350',      s:35.6, sv:2400, m:41.5, mv:2700, coal:71.12},
+  {id:2, cart:'6,5 Creedmoor', bullet:'Hornady ELD Match', w:140, powder:'Varget',     s:32.0, sv:2371, m:36.4, mv:2600, coal:71.12, coalHi:71.63},
+  {id:3, cart:'6,5 Creedmoor', bullet:'Hornady ELD Match', w:140, powder:'N160',       s:35.0, sv:2336, m:40.9, mv:2618, coal:71.10},
+  {id:4, cart:'6,5 Creedmoor', bullet:'Hornady ELD Match', w:140, powder:'Hybrid 100V',s:35.6, sv:2400, m:41.3, mv:2750, coal:71.12},
+  {id:5, cart:'6,5 Creedmoor', bullet:'Hornady ELD Match', w:140, powder:'IMR 4350',   s:36.1, sv:2400, m:42.0, mv:2750, coal:71.12},
+  {id:6, cart:'6,5 Creedmoor', bullet:'Hornady ELD Match', w:140, powder:'W760',       s:36.0, sv:2460, m:40.2, mv:2672, coal:71.63},
+  {id:7, cart:'6,5 Creedmoor', bullet:'Hornady ELD Match', w:140, powder:'IMR 4451',   s:36.6, sv:2400, m:41.3, mv:2650, coal:71.12},
+  {id:8, cart:'6,5 Creedmoor', bullet:'Hornady ELD Match', w:140, powder:'Superformance', s:38.2, sv:2400, m:44.7, mv:2800, coal:71.12},
+  {id:9, cart:'308 Win.',      bullet:'Sierra HPBT',       w:168, powder:'Varget',     s:42.0, sv:2520, m:46.0, mv:2731, coal:71.12},
+  {id:10,cart:'308 Win.',      bullet:'PMP SP',            w:168, powder:'S321',       s:37.8, sv:2372, m:42.0, mv:2648, coal:68.40},
+  {id:11,cart:'223 Rem.',      bullet:'Hornady V-MAX',     w:55,  powder:'H335',       s:20.8, sv:2800, m:23.2, mv:3100, coal:57.15}
+];
+var POWDER_LIB = [
+  {name:'Hybrid 100V', maker:'Hodgdon'}, {name:'IMR 4350', maker:'IMR'}, {name:'W760', maker:'Winchester'}, {name:'IMR 4451', maker:'IMR'},
+  {name:'Superformance', maker:'Hodgdon'}, {name:'S335', maker:'Somchem'}, {name:'S355', maker:'Somchem'}, {name:'S365', maker:'Somchem'},
+  {name:'H4831SC', maker:'Hodgdon'}, {name:'RL-16', maker:'Alliant'}, {name:'N150', maker:'Vihtavuori'}, {name:'N165', maker:'Vihtavuori'}, {name:'Benchmark', maker:'Hodgdon'}
+];
+var MS = 0.3048;
+function profile(D){
+  var p=[]; p.push([0,0],[0,D.R1/2],[D.R,D.R1/2]);
+  p.push([D.R,D.E1/2],[D.E-0.9,D.E1/2],[D.E,D.P1/2]);
+  p.push([D.L1,D.P2/2],[D.L2,D.H1/2],[D.L3,D.H2/2]);
+  p.push([D.L3,D.G1/2]);
+  var shank=D.L3+6; p.push([shank,D.G1/2]);
+  var n=14, len=D.L6-shank;
+  for(var i=1;i<=n;i++){var t=i/n; p.push([shank+len*t,(D.G1/2)*Math.sqrt(1-t*t)*(1-0.04*t)+0.35*(1-t)]);}
+  p[p.length-1]=[D.L6,0.55]; p.push([D.L6,0]); return p;
+}
+function paths(D, S, X0, Y0){
+  var P=profile(D); var px=function(x){return X0+x*S;}, py=function(r){return Y0-r*S;};
+  var path=function(pts){return pts.map(function(p,i){return (i?'L':'M')+px(p[0]).toFixed(2)+' '+py(p[1]).toFixed(2);}).join(' ');};
+  var mirror=function(pts){return pts.map(function(p){return [p[0],-p[1]];});};
+  var ci=-1; for(var i=0;i<P.length;i++){ if(P[i][0]===D.L3 && P[i][1]===D.G1/2){ci=i;break;} }
+  var cp=P.slice(0,ci+1), bp=P.slice(ci);
+  return { casePath: path(cp)+' '+path(mirror(cp).reverse()).replace('M','L'), bulletPath: path(bp)+' '+path(mirror(bp).reverse()).replace('M','L'), px:px, py:py };
+}
+function thumbOf(name){ var D=CARTS[name].d; var S=118/74; var r=paths(D,S,4,15); return {casePath:r.casePath+' Z', bulletPath:r.bulletPath+' Z', thumbBox:'0 0 128 30'}; }
+function fmtV(fps, units){ var ms=Math.round(fps*MS); return units==='imperial' ? (fps+' fps ('+ms+' m/s)') : (ms+' m/s ('+fps+' fps)'); }
+function today(){ var d=new Date(); var m=d.getMonth()+1, dd=d.getDate(); return d.getFullYear()+'-'+(m<10?'0':'')+m+'-'+(dd<10?'0':'')+dd; }
+function coalCheck(coal, l6){ var diff=Math.round((l6-coal)*100)/100; if(diff<0) return {t:'COAL OVER MAX', cls:'tag warn', bad:true, diff:diff}; if(diff<=0.5) return {t:'COAL −'+diff.toFixed(2)+' MAX', cls:'tag warn', bad:true, diff:diff}; return {t:'', cls:'', bad:false, diff:diff}; }
+
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    this.state = {
+      powders: ['H4350','Varget','S321','N160','H335'], off: {},
+      bullets: [{name:'Hornady ELD Match', w:140}, {name:'Sierra HPBT', w:168}, {name:'PMP SP', w:168}, {name:'Hornady V-MAX', w:55}],
+      carts: ['6,5 Creedmoor','308 Win.','223 Rem.'],
+      cartFilter: 'All', wt: 'All',
+      openId: null, specName: null, benchOpen: false, logOpen: false, listOpen: false, pickerOpen: false,
+      unit: 'mm', hot: null, view: '2d', dims3d: true, calTick: 0, pickerQ: '', form: null, log: [], toast: '', toastOn: false, gen: 0, bump: false
+    };
+  }
+  componentDidMount(){ var self=this; this._esc=function(e){ if(e.key==='Escape'){ self.closeTop(); } }; window.addEventListener('keydown', this._esc); }
+  componentWillUnmount(){ this.stopLoop(); window.removeEventListener('keydown', this._esc); if(this._t) clearTimeout(this._t); }
+  closeTop(){ var s=this.state; if(s.logOpen) this.setState({logOpen:false}); else if(s.pickerOpen) this.setState({pickerOpen:false}); else if(s.listOpen) this.setState({listOpen:false}); else if(s.benchOpen) this.setState({benchOpen:false}); else if(s.openId!==null) this.setState({openId:null}); else if(s.specName) this.setState({specName:null}); }
+  toast(msg){ var self=this; this.setState({toast:msg, toastOn:true}); if(this._t) clearTimeout(this._t); this._t=setTimeout(function(){ self.setState({toastOn:false}); }, 2200); }
+  isOn(kind, key){ return !this.state.off[kind+':'+key]; }
+  toggle(kind, key){ var off=Object.assign({}, this.state.off); var k=kind+':'+key; if(off[k]) delete off[k]; else off[k]=true; this.setState({off:off, gen:this.state.gen+1}); }
+  visibleLoads(){
+    var s=this.state, self=this;
+    var bulletsOn = s.bullets.filter(function(b){ return self.isOn('b', b.name+b.w); });
+    return LOADS.filter(function(l){
+      if(s.powders.indexOf(l.powder)<0 || !self.isOn('p', l.powder)) return false;
+      if(s.carts.indexOf(l.cart)<0 || !self.isOn('c', l.cart)) return false;
+      if(!bulletsOn.some(function(b){ return b.name===l.bullet && b.w===l.w; })) return false;
+      if(s.cartFilter!=='All' && l.cart!==s.cartFilter) return false;
+      if(s.wt==='≤ 100' && l.w>100) return false;
+      if(s.wt==='100–150' && (l.w<100 || l.w>150)) return false;
+      if(s.wt==='150 +' && l.w<150) return false;
+      return true;
+    });
+  }
+  flagsFor(l){ var f=[]; var c=coalCheck(l.coalHi||l.coal, CARTS[l.cart].d.L6); if(c.bad) f.push({t:c.t, cls:c.cls}); if(l.coalHi) f.push({t:'COAL RANGE', cls:'tag'}); return f; }
+  chartFor(l){
+    var W=340,H=200,L=44,R=14,T=18,B=28, pw=W-L-R, ph=H-T-B;
+    var units=this.props.units||'metric', imp=units==='imperial';
+    var y0=imp?l.sv:Math.round(l.sv*MS), y1=imp?l.mv:Math.round(l.mv*MS);
+    var step=imp?100:40; var ymin=Math.floor((Math.min(y0,y1)-step*0.6)/step)*step, ymax=Math.ceil((Math.max(y0,y1)+step*0.6)/step)*step;
+    var xmin=Math.floor(l.s-1), xmax=Math.ceil(l.m+1);
+    var X=function(x){return L+(x-xmin)/(xmax-xmin)*pw;}, Y=function(y){return T+(1-(y-ymin)/(ymax-ymin))*ph;};
+    var grid=[]; for(var y=ymin;y<=ymax;y+=step) grid.push({y:Y(y).toFixed(1), ty:(Y(y)+3.5).toFixed(1), label:String(y)});
+    var xs=[]; var xstep=(xmax-xmin)>8?2:1; for(var x=xmin;x<=xmax;x+=xstep) xs.push({x:X(x).toFixed(1), label:String(x)});
+    var px0=X(l.s), px1=X(l.m), py0=Y(y0), py1=Y(y1);
+    return { l:L, r:W-R, lt:L-8, xb:H-B+16, grid:grid, xs:xs, x0:px0.toFixed(1), y0:py0.toFixed(1), x1:px1.toFixed(1), y1:py1.toFixed(1), ly0:(py0+18).toFixed(1), ly1:(py1-12).toFixed(1) };
+  }
+  specFor(name){
+    var self=this, s=this.state, C=CARTS[name], D=C.d, inch=s.unit==='in';
+    var fmtShort=function(v){ return inch ? (v/25.4).toFixed(3)+'″' : v.toFixed(2)+' mm'; };
+    var fmt=function(v){ return inch ? (v/25.4).toFixed(3)+'″ ('+v.toFixed(2)+' mm)' : v.toFixed(2)+' mm ('+(v/25.4).toFixed(3)+'″)'; };
+    var S=6.2, X0=52, Y0=118; var r=paths(D,S,X0,Y0); var px=r.px, py=r.py;
+    var tap=function(k){ return function(){ self.setState({hot: s.hot===k ? null : k}); }; };
+    var dims=[];
+    [['L1',D.L1],['L2',D.L2],['L3',D.L3],['L6',D.L6]].forEach(function(kv,i){ var k=kv[0], v=kv[1], y=Y0+D.R1/2*S+30+i*17, hot=s.hot===k;
+      dims.push({e1x1:px(0).toFixed(1), e1y1:(py(-D.R1/2)+2).toFixed(1), e1x2:px(0).toFixed(1), e1y2:(y+4).toFixed(1), e2x1:px(v).toFixed(1), e2y1:(Y0+2).toFixed(1), e2x2:px(v).toFixed(1), e2y2:(y+4).toFixed(1), mx1:px(0).toFixed(1), my1:y.toFixed(1), mx2:px(v).toFixed(1), my2:y.toFixed(1), tx:px(v/2).toFixed(1), ty:(y-3).toFixed(1), ta:'middle', text:k+' = '+fmtShort(v), c:hot?'#C8102E':'#7A7267', w:hot?1.5:0.9, fw:hot?600:400, mk:hot?'url(#arh)':'url(#ar)', tap:tap(k)}); });
+    var V=[['R1',0.6,D.R1],['P1',D.E+3,D.P1],['P2',D.L1,D.P2],['H1',D.L2+3.5,D.H1],['G1',D.L3+3,D.G1]], lvl=[0,1,2,0,1];
+    V.forEach(function(kv,i){ var k=kv[0], x=kv[1], d=kv[2], xx=px(x), top=py(d/2), bot=py(-d/2), ty=py(D.R1/2)-14-lvl[i]*15, hot=s.hot===k;
+      dims.push({e1x1:xx.toFixed(1), e1y1:top.toFixed(1), e1x2:xx.toFixed(1), e1y2:(ty+3).toFixed(1), e2x1:xx.toFixed(1), e2y1:top.toFixed(1), e2x2:xx.toFixed(1), e2y2:top.toFixed(1), mx1:xx.toFixed(1), my1:top.toFixed(1), mx2:xx.toFixed(1), my2:bot.toFixed(1), tx:(xx+(i===0?3:0)).toFixed(1), ty:ty.toFixed(1), ta:i===0?'start':'middle', text:k+' = '+fmtShort(d), c:hot?'#C8102E':'#7A7267', w:hot?1.5:0.9, fw:hot?600:400, mk:hot?'url(#arh)':'url(#ar)', tap:tap(k)}); });
+    var meta=[['R1','Rim diameter',D.R1],['R','Rim thickness',D.R],['E1','Extractor groove diameter',D.E1],['E','Base to end of groove',D.E],['P1','Body diameter at base',D.P1],['P2','Body diameter at shoulder',D.P2],['L1','Base to shoulder',D.L1],['L2','Base to neck',D.L2],['L3','Case length',D.L3],['H1','Neck diameter at shoulder',D.H1],['H2','Neck diameter at mouth',D.H2],['G1','Bullet diameter',D.G1],['L6','Max cartridge length',D.L6]];
+    var table=meta.map(function(m){ var k=m[0]; return {k:k, label:m[1], v:fmt(m[2]), cls:'kv'+(s.hot===k?' hot':''), tap:tap(k)}; });
+    var onBench=this.visibleLoads().filter(function(l){ return l.cart===name; }).length;
+    var pm=inch ? C.pmaxPsi.toLocaleString('en-ZA')+' psi ('+C.pmaxBar.toLocaleString('en-ZA')+' bar)' : C.pmaxBar.toLocaleString('en-ZA')+' bar ('+C.pmaxPsi.toLocaleString('en-ZA')+' psi)';
+    return {
+      name:name, meta:C.type+' · '+C.origin+' · '+C.year, mmCls:inch?'':'on', inCls:inch?'on':'', is2d:s.view==='2d', is3d:s.view!=='2d', v2:s.view==='2d'?'on':'', v3:s.view==='3d'?'on':'', vh:s.view==='half'?'on':'', dimsCls:s.dims3d?'on':'', dimsBg:s.dims3d?'#F4F2EC':'#FFFFFF', dimsDot:s.dims3d?'#C8102E':'#FFFFFF', calMax:String(Math.round(D.L6*10)), calRaw:String(Math.round((self.v().cal===null?0:self.v().cal)*10)), calText:self.v().cal===null?'Slide to measure':((self.v().snap?self.v().snap+' · ':'')+self.v().cal.toFixed(1)+' mm from the head'),
+      casePath:r.casePath+' Z', bulletPath:r.bulletPath+' Z', ax0:px(-3).toFixed(1), ax1:px(D.L6+4).toFixed(1), ay:Y0,
+      dims:dims, arc:'M '+px(D.L1+8).toFixed(1)+' '+py(-D.P2/2-4).toFixed(1)+' A 16 16 0 0 1 '+px(D.L1+1.5).toFixed(1)+' '+py(-D.P2/2-0.8).toFixed(1), arcX:px(D.L1+10).toFixed(1), arcY:py(-D.P2/2-3).toFixed(1), alpha:'α = '+D.alpha+'°',
+      drawNote:'Drawn to scale. The bullet ogive is illustrative: only the bullet diameter G1 and the overall length L6 are fixed.',
+      table:table,
+      reloader:[ {k:'Pmax', label:'Maximum average pressure', v:pm}, {k:'u', label:'Proof-barrel twist', v:inch?C.twistIn+' ('+C.twist+')':C.twist+' ('+C.twistIn+')'}, {k:'L2', label:'Shoulder headspace band', v:'[chamber L2] vs '+fmtShort(D.L2)}, {k:'H1', label:'Neck clearance', v:'[chamber H1] vs '+fmtShort(D.H1)} ],
+      loads:C.loads, onBench:onBench, shell:C.shell,
+      filterHere:function(){ self.setState({specName:null, cartFilter:name, gen:s.gen+1}); }
+    };
+  }
+
+  // ── 3D lathe view (canvas) ──────────────────────────────────────────
+  setCanvas(el){ this._cv = el || null; if(el){ if(!this._raf) this.startLoop(); } else { this.stopLoop(); } }
+  startLoop(){ var self=this; var tick=function(){ if(!self._cv){ self._raf=null; return; } self._raf=requestAnimationFrame(tick); self.drawLathe(); }; this._raf=requestAnimationFrame(tick); }
+  stopLoop(){ if(this._raf){ cancelAnimationFrame(this._raf); this._raf=null; } }
+  v(){ if(!this._v){ var rm=false; try{ rm=window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){} this._v={psi:0.6, phi:0.28, auto:!rm, drag:null, lx:0, ly:0, cal:null, snap:null, vel:0.012}; } return this._v; }
+  stations(D){ return [ ['R1',0.7,'dia'],['E1',D.E-1.4,'dia'],['P1',D.E+3,'dia'],['P2',D.L1-0.8,'dia'],['H1',D.L2+3.5,'dia'],['H2',D.L3-0.6,'dia'],['G1',D.L3+3,'dia'],['L1',D.L1,'len'],['L2',D.L2,'len'],['L3',D.L3,'len'],['L6',D.L6,'len'] ]; }
+  radiusAt(P,x){ for(var i=1;i<P.length;i++){ if(P[i][0]>=x){ var x0=P[i-1][0],r0=P[i-1][1],x1=P[i][0],r1=P[i][1]; return x1===x0?Math.max(r0,r1):r0+(r1-r0)*(x-x0)/(x1-x0);} } return 0; }
+  innerProfile(D){
+    // Illustrative section: web, primer pocket, flash hole, a wall that thins
+    // toward the neck, and the bullet shank seated to the base of the neck.
+    var P=profile(D), web=D.E+4.2, seat=D.L3-7, pts=[];
+    pts.push([0,0],[0,2.7],[3.2,2.7],[3.2,0.95],[web,0.95]);
+    var n=18; for(var i=0;i<=n;i++){ var x=web+(seat-web)*i/n; var t=i/n; var wall=0.75-0.42*t; pts.push([x, Math.max(0.6, this.radiusAt(P,x)-wall)]); }
+    pts.push([seat, D.G1/2]);
+    return {pts:pts, seat:seat};
+  }
+  camera(D){ var v=this.v(), cv=this._cv, W=cv.width, H=cv.height, S=W/(D.L6*1.32), cx=W/2, cy=H*0.5, half=this.state.view==='half', psi=half?0:v.psi, phi=v.phi;
+    var cs=Math.cos(psi), sn=Math.sin(psi), ct=Math.cos(phi), st=Math.sin(phi), off=D.L6/2;
+    return { S:S, cx:cx, cy:cy, phi:phi, half:half,
+      p:function(x,y,z,spin){ var yy=y,zz=z; if(spin!==false){ yy=y*cs-z*sn; zz=y*sn+z*cs; } var xm=x-off; var X=xm*ct+zz*st, Z=-xm*st+zz*ct; var k=1/(1-Z/900); return [cx+X*S*k, cy-yy*S*k, Z]; },
+      n:function(nx,ny,nz,spin){ var yy=ny,zz=nz; if(spin!==false){ yy=ny*cs-nz*sn; zz=ny*sn+nz*cs; } return [nx*ct+zz*st, yy, -nx*st+zz*ct]; },
+      unx:function(X){ return (X-cx)/(S*ct)+off; } };
+  }
+  shade(base, k){ var r=parseInt(base.slice(1,3),16), g=parseInt(base.slice(3,5),16), b=parseInt(base.slice(5,7),16); return 'rgb('+Math.min(255,Math.round(r*k))+','+Math.min(255,Math.round(g*k))+','+Math.min(255,Math.round(b*k))+')'; }
+  lathe(ctx, cam, pts, colour, opts){
+    var N=opts.segs||44, quads=[], L=[-0.45,0.72,0.53], ll=Math.sqrt(L[0]*L[0]+L[1]*L[1]+L[2]*L[2]); L=[L[0]/ll,L[1]/ll,L[2]/ll];
+    var a0=opts.half?Math.PI:0, a1=opts.half?2*Math.PI:2*Math.PI, inside=opts.inside||false;
+    for(var i=1;i<pts.length;i++){ var x0=pts[i-1][0],r0=pts[i-1][1],x1=pts[i][0],r1=pts[i][1]; if(r0<0.001&&r1<0.001) continue;
+      var dx=x1-x0, dr=r1-r0, nl=Math.sqrt(dx*dx+dr*dr)||1, nx=-dr/nl, nr=dx/nl; if(inside){ nx=-nx; nr=-nr; }
+      for(var j=0;j<N;j++){ var t0=a0+(a1-a0)*j/N, t1=a0+(a1-a0)*(j+1)/N, c0=Math.cos(t0),s0=Math.sin(t0),c1=Math.cos(t1),s1=Math.sin(t1);
+        var A=cam.p(x0,r0*c0,r0*s0), B=cam.p(x1,r1*c0,r1*s0), C=cam.p(x1,r1*c1,r1*s1), Dq=cam.p(x0,r0*c1,r0*s1);
+        var tm=(t0+t1)/2, nn=cam.n(nx, nr*Math.cos(tm), nr*Math.sin(tm)); var lam=nn[0]*L[0]+nn[1]*L[1]+nn[2]*L[2]; if(inside) lam=-lam;
+        var k=0.42+0.62*Math.max(0,lam)+0.28*Math.pow(Math.max(0,lam),14)+(opts.brush?((j%2)?0.025:-0.025):0);
+        quads.push({z:(A[2]+B[2]+C[2]+Dq[2])/4, pts:[A,B,C,Dq], k:k}); } }
+    quads.sort(function(a,b){ return a.z-b.z; });
+    for(var q=0;q<quads.length;q++){ var Q=quads[q]; ctx.fillStyle=this.shade(colour,Q.k); ctx.strokeStyle=ctx.fillStyle; ctx.lineWidth=0.8; ctx.beginPath(); ctx.moveTo(Q.pts[0][0],Q.pts[0][1]); for(var m=1;m<4;m++) ctx.lineTo(Q.pts[m][0],Q.pts[m][1]); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  }
+  drawLathe(){
+    var cv=this._cv, s=this.state; if(!cv || !s.specName) return; var C=CARTS[s.specName]; if(!C) return; var D=C.d, v=this.v();
+    if(v.auto && !v.drag && s.view!=='half') v.psi+=v.vel;
+    var ctx=cv.getContext('2d'), W=cv.width, H=cv.height; ctx.clearRect(0,0,W,H);
+    var cam=this.camera(D), P=profile(D), ci=-1; for(var i=0;i<P.length;i++){ if(P[i][0]===D.L3 && P[i][1]===D.G1/2){ ci=i; break; } }
+    var cp=P.slice(0,ci+1), bp=P.slice(ci), half=cam.half, inch=s.unit==='in';
+    var fmt=function(mm){ return inch ? (mm/25.4).toFixed(3)+'\u2033' : mm.toFixed(2)+' mm'; };
+    // outer surfaces
+    this.lathe(ctx, cam, cp, '#D9BF7A', {half:half, brush:true});
+    this.lathe(ctx, cam, bp, '#B87333', {half:half, brush:true});
+    if(half){
+      var inn=this.innerProfile(D);
+      this.lathe(ctx, cam, inn.pts, '#B89A5A', {half:true, inside:true, segs:32});
+      // cap: the mirrored 2D profile drawn flat on the cut plane
+      var top=[], bot=[]; for(var a=0;a<cp.length;a++){ top.push(cam.p(cp[a][0],cp[a][1],0,false)); }
+      var ip=inn.pts.slice().reverse(); for(var b=0;b<ip.length;b++){ bot.push(cam.p(ip[b][0],ip[b][1],0,false)); }
+      var ring=top.concat(bot); var mir=[]; for(var c=0;c<cp.length;c++){ mir.push(cam.p(cp[c][0],-cp[c][1],0,false)); } var mib=[]; for(var d2=0;d2<ip.length;d2++){ mib.push(cam.p(ip[d2][0],-ip[d2][1],0,false)); }
+      var poly=function(pts,fill){ ctx.fillStyle=fill; ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]); for(var m=1;m<pts.length;m++) ctx.lineTo(pts[m][0],pts[m][1]); ctx.closePath(); ctx.fill(); ctx.strokeStyle='#7A6335'; ctx.lineWidth=1; ctx.stroke(); };
+      poly(ring,'#E4CE8F'); poly(mir.concat(mib),'#E4CE8F');
+      // bullet section: solid copper from the seat to the tip
+      var bs=[[inn.seat,0]].concat(bp.filter(function(p){ return p[0]>=inn.seat; })); bs.unshift([inn.seat,D.G1/2]); var bt=[]; for(var e=0;e<bs.length;e++) bt.push(cam.p(bs[e][0],bs[e][1],0,false)); var bb=[]; for(var f=bs.length-1;f>=0;f--) bb.push(cam.p(bs[f][0],-bs[f][1],0,false));
+      ctx.fillStyle='#C98A4B'; ctx.beginPath(); ctx.moveTo(bt[0][0],bt[0][1]); for(var g=1;g<bt.length;g++) ctx.lineTo(bt[g][0],bt[g][1]); for(var h=0;h<bb.length;h++) ctx.lineTo(bb[h][0],bb[h][1]); ctx.closePath(); ctx.fill(); ctx.strokeStyle='#7A4A20'; ctx.lineWidth=1; ctx.stroke();
+      // section hatch
+      ctx.save(); ctx.beginPath(); ctx.moveTo(ring[0][0],ring[0][1]); for(var m2=1;m2<ring.length;m2++) ctx.lineTo(ring[m2][0],ring[m2][1]); ctx.closePath(); ctx.moveTo(mir[0][0],mir[0][1]); var mm=mir.concat(mib); for(var m3=1;m3<mm.length;m3++) ctx.lineTo(mm[m3][0],mm[m3][1]); ctx.closePath(); ctx.clip();
+      ctx.strokeStyle='rgba(122,99,53,0.55)'; ctx.lineWidth=1; for(var hx=-H;hx<W+H;hx+=10){ ctx.beginPath(); ctx.moveTo(hx,0); ctx.lineTo(hx+H,H); ctx.stroke(); } ctx.restore();
+    }
+    // axis
+    var a0=cam.p(-4,0,0,false), a1=cam.p(D.L6+5,0,0,false); ctx.strokeStyle='#9C948A'; ctx.setLineDash([10,4,2,4]); ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(a0[0],a0[1]); ctx.lineTo(a1[0],a1[1]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font='500 15px ui-monospace, Consolas, monospace'; ctx.textBaseline='middle';
+    var hot=s.hot;
+    if(s.dims3d){
+      // lengths below, diameters above — all in the plane through the axis that faces the camera
+      var Hd=[['L1',D.L1],['L2',D.L2],['L3',D.L3],['L6',D.L6]];
+      for(var q=0;q<Hd.length;q++){ var k=Hd[q][0], val=Hd[q][1], yy=-(D.R1/2)-5-q*2.9, col=hot===k?'#C8102E':'#4A443C';
+        var p0=cam.p(0,yy,0,false), p1=cam.p(val,yy,0,false), e0=cam.p(0,-(D.R1/2)-0.4,0,false), e1=cam.p(val,-this.radiusAt(P,val)-0.4,0,false);
+        ctx.strokeStyle=col; ctx.lineWidth=hot===k?2:1; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(e0[0],e0[1]); ctx.lineTo(p0[0],p0[1]+6); ctx.moveTo(e1[0],e1[1]); ctx.lineTo(p1[0],p1[1]+6); ctx.stroke(); ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(p0[0],p0[1]); ctx.lineTo(p1[0],p1[1]); ctx.stroke(); this.arrow(ctx,p0,p1,col); this.arrow(ctx,p1,p0,col);
+        ctx.fillStyle=col; ctx.textAlign='center'; ctx.fillText(k+' = '+fmt(val),(p0[0]+p1[0])/2,p0[1]-10); }
+      var V=[['R1',0.7,D.R1],['P1',D.E+3,D.P1],['P2',D.L1,D.P2],['H1',D.L2+3.5,D.H1],['G1',D.L3+3,D.G1]], lvl=[0,1,2,0,1];
+      for(var r=0;r<V.length;r++){ var kk=V[r][0], x=V[r][1], dia=V[r][2], colr=hot===kk?'#C8102E':'#4A443C', yl=(D.R1/2)+2.4+lvl[r]*2.6;
+        var t0=cam.p(x,dia/2,0,false), t1=cam.p(x,-dia/2,0,false), tl=cam.p(x,yl,0,false);
+        ctx.strokeStyle=colr; ctx.lineWidth=hot===kk?2:1; ctx.beginPath(); ctx.moveTo(t0[0],t0[1]); ctx.lineTo(t1[0],t1[1]); ctx.stroke(); this.arrow(ctx,t0,t1,colr); this.arrow(ctx,t1,t0,colr);
+        ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(t0[0],t0[1]); ctx.lineTo(tl[0],tl[1]+8); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle=colr; ctx.textAlign=r===0?'left':'center'; ctx.fillText(kk+' = '+fmt(dia), tl[0]+(r===0?4:0), tl[1]); }
+    }
+    // station hotspots
+    var st=this.stations(D);
+    for(var u=0;u<st.length;u++){ if(st[u][2]!=='dia') continue; var sx=st[u][1], sp=cam.p(sx,this.radiusAt(P,sx),0,false); ctx.fillStyle=v.snap===st[u][0]?'#C8102E':'rgba(26,22,19,0.55)'; ctx.beginPath(); ctx.arc(sp[0],sp[1],3.5,0,Math.PI*2); ctx.fill(); }
+    // calliper ring
+    if(v.cal!==null){ var cx=v.cal, rr=this.radiusAt(P,cx)+0.35, segs=64; ctx.strokeStyle='#C8102E'; ctx.lineWidth=2.5; ctx.beginPath();
+      for(var w=0;w<=segs;w++){ var th=w/segs*Math.PI*2; var pp=cam.p(cx, rr*Math.cos(th), rr*Math.sin(th), false); if(w===0) ctx.moveTo(pp[0],pp[1]); else ctx.lineTo(pp[0],pp[1]); } ctx.stroke();
+      var lab=cam.p(cx, rr+1.2, 0, false), txt, sub;
+      if(v.snap){ var stn=null; for(var y2=0;y2<st.length;y2++){ if(st[y2][0]===v.snap) stn=st[y2]; } if(stn && stn[2]==='dia'){ txt=stn[0]+' = '+fmt(D[stn[0]]); sub=(cx).toFixed(1)+' mm from the head'; } else { txt=v.snap+' = '+fmt(cx); sub='from the head'; } }
+      else { txt='\u00D8 '+fmt(this.radiusAt(P,cx)*2); sub=cx.toFixed(1)+' mm from the head'; }
+      ctx.font='600 16px ui-monospace, Consolas, monospace'; var tw=Math.max(ctx.measureText(txt).width, ctx.measureText(sub).width)+20; var bx=Math.min(Math.max(lab[0]-tw/2,6),W-tw-6), by=Math.max(lab[1]-56,6);
+      ctx.fillStyle='rgba(255,255,255,0.96)'; ctx.strokeStyle='#DDD8CC'; ctx.lineWidth=1; this.rrect(ctx,bx,by,tw,46,6); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='#C8102E'; ctx.textAlign='left'; ctx.fillText(txt,bx+10,by+16); ctx.font='400 13px ui-monospace, Consolas, monospace'; ctx.fillStyle='#4A443C'; ctx.fillText(sub,bx+10,by+34); }
+    // hint
+    ctx.font='400 13px system-ui, sans-serif'; ctx.fillStyle='#9C948A'; ctx.textAlign='right'; ctx.fillText(half?'drag to tilt \u00B7 the cut always faces you':'drag to spin \u00B7 drag the ring to measure', W-12, H-14);
+  }
+  arrow(ctx,from,to,col){ var dx=to[0]-from[0], dy=to[1]-from[1], l=Math.sqrt(dx*dx+dy*dy)||1; dx/=l; dy/=l; ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(to[0],to[1]); ctx.lineTo(to[0]-dx*9-dy*3.5,to[1]-dy*9+dx*3.5); ctx.lineTo(to[0]-dx*9+dy*3.5,to[1]-dy*9-dx*3.5); ctx.closePath(); ctx.fill(); }
+  rrect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath(); }
+  canvasXY(e){ if(!this._cv) return [0,0]; var r=this._cv.getBoundingClientRect(); return [(e.clientX-r.left)*this._cv.width/r.width, (e.clientY-r.top)*this._cv.height/r.height]; }
+  setCal(mm){ var v=this.v(); if(mm===null || !this.state.specName){ v.cal=null; v.snap=null; if(this.state.hot) this.setState({hot:null}); return; } var D=CARTS[this.state.specName].d;
+    mm=Math.max(0,Math.min(D.L6,mm)); var st=this.stations(D), snap=null, best=1.3; for(var i=0;i<st.length;i++){ var d=Math.abs(st[i][1]-mm); if(d<best){ best=d; snap=st[i]; } }
+    if(snap){ mm=snap[1]; } v.cal=mm; var letter=snap?snap[0]:null; if(letter!==v.snap){ v.snap=letter; this.setState({hot:letter, calTick:(this.state.calTick||0)+1}); } else { this.setState({calTick:(this.state.calTick||0)+1}); } }
+  pointerDown(e){ if(!this._cv || !this.state.specName) return; var v=this.v(), xy=this.canvasXY(e); v.lx=xy[0]; v.ly=xy[1]; v.auto=true; var D=CARTS[this.state.specName].d, cam=this.camera(D);
+    if(v.cal!==null){ var rp=cam.p(v.cal,0,0,false); if(Math.abs(xy[0]-rp[0])<26){ v.drag='cal'; try{ e.target.setPointerCapture(e.pointerId); }catch(x){} return; } }
+    v.drag='spin'; try{ e.target.setPointerCapture(e.pointerId); }catch(x2){} }
+  pointerMove(e){ var v=this.v(); if(!v.drag || !this._cv || !this.state.specName) return; var xy=this.canvasXY(e), D=CARTS[this.state.specName].d, cam=this.camera(D);
+    if(v.drag==='cal'){ this.setCal(cam.unx(xy[0])); }
+    else { var dx=xy[0]-v.lx, dy=xy[1]-v.ly; if(this.state.view!=='half') v.psi+=dx*0.012; v.phi=Math.max(-0.5,Math.min(0.5,v.phi+dy*0.004)); v.vel=Math.max(-0.05,Math.min(0.05,dx*0.004)); }
+    v.lx=xy[0]; v.ly=xy[1]; }
+  pointerUp(){ var v=this.v(); if(v.drag==='spin'){ if(Math.abs(v.vel)<0.004) v.vel=0.012; } v.drag=null; }
+  showAll(){ var v=this.v(); v.phi=0; v.psi=0; v.auto=false; v.vel=0; v.cal=null; v.snap=null; this.setState({dims3d:true, hot:null}); this.toast('Snapshot ready \u00B7 side-on with every dimension'); }
+  renderVals(){
+    var self=this, s=this.state, units=this.props.units||'metric';
+    var loads=this.visibleLoads();
+    var groups=[];
+    s.carts.forEach(function(cart){
+      var ls=loads.filter(function(l){ return l.cart===cart; }); if(!ls.length) return;
+      var C=CARTS[cart], th=thumbOf(cart), ws={}, wkeys=[];
+      ls.forEach(function(l){ if(!ws[l.w]){ ws[l.w]=[]; wkeys.push(l.w);} ws[l.w].push(l); });
+      wkeys.sort(function(a,b){return a-b;});
+      var idx=0;
+      groups.push({ name:cart, meta:ls.length+' loads · max COAL '+C.d.L6.toFixed(2)+' mm',
+        casePath:th.casePath, bulletPath:th.bulletPath, thumbBox:th.thumbBox,
+        openSpec:function(){ self.setState({specName:cart, hot:null}); },
+        weights: wkeys.map(function(w){ return { label:w+' gr', rows: ws[w].map(function(l){ var i=idx++; return {
+          bullet:l.bullet+' '+l.w+' gr', powder:l.powder, s:l.s.toFixed(1), m:l.m.toFixed(1),
+          sv:units==='imperial'?l.sv+' fps':Math.round(l.sv*MS)+' m/s', mv:units==='imperial'?l.mv+' fps':Math.round(l.mv*MS)+' m/s',
+          coal:l.coalHi?(l.coal.toFixed(2)+'–'+l.coalHi.toFixed(2)+' mm'):(l.coal.toFixed(2)+' mm'),
+          flags:self.flagsFor(l), delay:(i*35)+'ms', open:function(){ self.setState({openId:l.id}); } }; }) }; }) });
+    });
+    var cartFilters=['All'].concat(s.carts).map(function(c){ return {label:c, cls:s.cartFilter===c?'on':'', pick:function(){ self.setState({cartFilter:c, gen:s.gen+1}); }}; });
+    var wtFilters=['All','≤ 100','100–150','150 +'].map(function(w){ return {label:w==='All'?'Any gr':w+' gr', cls:s.wt===w?'on':'', pick:function(){ self.setState({wt:w, gen:s.gen+1}); }}; });
+    var pc=s.powders.filter(function(p){return self.isOn('p',p);}).length, bc=s.bullets.filter(function(b){return self.isOn('b',b.name+b.w);}).length, cc=s.carts.filter(function(c){return self.isOn('c',c);}).length;
+    var bench={
+      powders:s.powders.map(function(p){ return {name:p, cls:'chip'+(self.isOn('p',p)?'':' off'), toggle:function(){ self.toggle('p',p); }}; }),
+      bullets:s.bullets.map(function(b){ return {name:b.name, sub:b.w+' gr', cls:'chip'+(self.isOn('b',b.name+b.w)?'':' off'), toggle:function(){ self.toggle('b',b.name+b.w); }}; }),
+      cartridges:s.carts.map(function(c){ return {name:c, cls:'chip'+(self.isOn('c',c)?'':' off'), toggle:function(){ self.toggle('c',c); }}; }),
+      powderCount:pc, bulletCount:bc, cartCount:cc
+    };
+    var open=null; if(s.openId!==null){ open=LOADS.filter(function(l){return l.id===s.openId;})[0]||null; }
+    var load=null, ch=null;
+    if(open){
+      var C=CARTS[open.cart], c=coalCheck(open.coalHi||open.coal, C.d.L6);
+      var span=4, hiCoal=open.coalHi||open.coal, pct=Math.max(0, Math.min(100, (1-(C.d.L6-hiCoal)/span)*100));
+      load={ cart:open.cart, weight:open.w+' gr', bullet:open.bullet, powder:open.powder, s:open.s.toFixed(1), m:open.m.toFixed(1), sv:fmtV(open.sv,units), mv:fmtV(open.mv,units),
+        flags:self.flagsFor(open), l6:C.d.L6.toFixed(2), coalZone:(0.5/span*100)+'%', coalPct:pct.toFixed(1)+'%', coalInk:c.bad?'#8F6E0F':'#1F7A50',
+        coalText:'COAL '+(open.coalHi?open.coal.toFixed(2)+'–'+open.coalHi.toFixed(2):open.coal.toFixed(2))+' mm', coalVerdict:c.diff<0?Math.abs(c.diff).toFixed(2)+' mm over the maximum':c.diff.toFixed(2)+' mm under the maximum'+(c.bad?' · check':''),
+        spec:function(){ self.setState({specName:open.cart, openId:null, hot:null}); } };
+      ch=this.chartFor(open);
+    }
+    var spec=s.specName?this.specFor(s.specName):null;
+    var f=s.form||{}; var formFlags=[];
+    if(s.form){ var L6=CARTS[f.cart].d.L6, cv=parseFloat(f.coal); if(!isNaN(cv)){ var k=coalCheck(cv,L6); if(k.bad) formFlags.push({t:k.t, cls:k.cls}); } var ch2=parseFloat(f.charge); if(!isNaN(ch2)){ if(ch2>f.max) formFlags.push({t:'ABOVE MAX '+f.max.toFixed(1), cls:'tag warn'}); else if(ch2<f.start) formFlags.push({t:'BELOW START '+f.start.toFixed(1), cls:'tag'}); } }
+    var form=Object.assign({flags:formFlags}, f);
+    var logRows=s.log.map(function(e,i){ return {title:e.cart+' · '+e.powder+' '+e.charge+' gr', sub:e.bullet+' · COAL '+e.coal+' mm · '+(e.primer||'no primer noted')+' · '+e.date, remove:function(){ var log=self.state.log.slice(); log.splice(i,1); self.setState({log:log}); }}; });
+    var q=s.pickerQ.toLowerCase();
+    var picks=POWDER_LIB.filter(function(p){ return s.powders.indexOf(p.name)<0 && (!q || (p.name+' '+p.maker).toLowerCase().indexOf(q)>=0); }).map(function(p){ var n=LOADS.filter(function(l){ return l.powder===p.name; }).length; return {name:p.name, maker:p.maker, hint:n?n+' load'+(n>1?'s':''):'no loads yet', add:function(){ self.setState({powders:self.state.powders.concat([p.name]), pickerOpen:false, gen:self.state.gen+1}); self.toast(p.name+' added to your bench'); }}; });
+    return {
+      ui:{ count:loads.length, empty:groups.length===0, benchSummary:pc+' · '+bc+' · '+cc, benchOpen:s.benchOpen, loadOpen:!!open, specOpen:!!spec, logOpen:s.logOpen, listOpen:s.listOpen, pickerOpen:s.pickerOpen, logCount:s.log.length, logEmpty:s.log.length===0,
+        logBtnCls:(s.log.length>0 && s.bump)?'bump':'', logBadgeBg:s.log.length?'#C8102E':'#F4F2EC', logBadgeInk:s.log.length?'#FFFFFF':'#7A7267', toast:s.toast, toastOn:s.toastOn },
+      cartFilters:cartFilters, wtFilters:wtFilters, bench:bench, groups:groups, load:load||{}, ch:ch||{grid:[],xs:[]}, spec:spec||{dims:[],table:[],reloader:[],shell:[]}, form:form, logRows:logRows, picks:picks, pickerQ:s.pickerQ,
+      resetFilters:function(){ self.setState({cartFilter:'All', wt:'All', off:{}, gen:s.gen+1}); },
+      copyLink:function(){ self.toast('Permalink copied'); },
+      openBench:function(){ self.setState({benchOpen:true}); },
+      openList:function(){ self.setState({listOpen:true, bump:false}); },
+      openPicker:function(){ self.setState({pickerOpen:true, pickerQ:''}); },
+      closePicker:function(){ self.setState({pickerOpen:false}); },
+      setPickerQ:function(e){ self.setState({pickerQ:e.target.value}); },
+      closeAll:function(){ self.setState({openId:null, benchOpen:false, listOpen:false, pickerOpen:false, hot:null}); },
+      closeSpec:function(){ self.setState({specName:null, hot:null}); },
+      setMm:function(){ self.setState({unit:'mm'}); }, setIn:function(){ self.setState({unit:'in'}); },
+      view2d:function(){ self.setState({view:'2d'}); }, view3d:function(){ self.v().auto=true; self.setState({view:'3d'}); }, viewHalf:function(){ self.setState({view:'half'}); },
+      toggleDims:function(){ self.setState({dims3d:!self.state.dims3d}); }, showAll:function(){ self.showAll(); },
+      setCanvas:function(el){ self.setCanvas(el); }, pd:function(e){ self.pointerDown(e); }, pm:function(e){ self.pointerMove(e); }, pu:function(){ self.pointerUp(); },
+      slideCal:function(e){ self.setCal(parseFloat(e.target.value)/10); }, clearCal:function(){ self.setCal(null); },
+      openLog:function(){ if(!open) return; self.setState({logOpen:true, form:{cart:open.cart, bullet:open.bullet+' '+open.w+' gr', powder:open.powder, title:open.cart+' · '+open.powder+' · '+open.bullet+' '+open.w+' gr', charge:open.s.toFixed(1), coal:open.coal.toFixed(2), primer:'', case:'', date:today(), start:open.s, max:open.m, based:'start charge of '+open.s.toFixed(1)+' gr'}}); },
+      closeLog:function(){ self.setState({logOpen:false}); },
+      setCharge:function(e){ self.setState({form:Object.assign({}, self.state.form, {charge:e.target.value})}); },
+      setCoal:function(e){ self.setState({form:Object.assign({}, self.state.form, {coal:e.target.value})}); },
+      setPrimer:function(e){ self.setState({form:Object.assign({}, self.state.form, {primer:e.target.value})}); },
+      setCase:function(e){ self.setState({form:Object.assign({}, self.state.form, {case:e.target.value})}); },
+      saveLog:function(){ if(!self.state.form) return; var e=self.state.form; self.setState({log:self.state.log.concat([{cart:e.cart, bullet:e.bullet, powder:e.powder, charge:e.charge, coal:e.coal, primer:e.primer, date:e.date}]), logOpen:false, openId:null, bump:true}); self.toast('Logged · '+e.powder+' '+e.charge+' gr'); },
+      exportCsv:function(){ self.toast('load-log.csv · '+s.log.length+' row'+(s.log.length===1?'':'s')); }
+    };
+  }
+}
+</script>
+</body>
+</html>

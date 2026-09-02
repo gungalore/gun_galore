@@ -31,6 +31,7 @@ Two rules before you read anything here:
 | Document | Read it when |
 |---|---|
 | [`docs/HUNTING-PILOT-PREP.md`](HUNTING-PILOT-PREP.md) | You are working on Experiences / Hunting Packages. The module (E0–E5) is deployed but not switched on in production, and this is the operator playbook for the manual concierge pilot that is supposed to run *before* the software is switched on: the deposit-holding model, the supplier and dispute shapes, and the brief for the attorney opinion that gates go-live. Forward-looking, still unexecuted. |
+| [`docs/design/the-bench/SPEC-BUILD.md`](design/the-bench/SPEC-BUILD.md) | You are building **The Bench**, the reverse load finder for reloaders. Handoff spec written 2026-09-02 from the working design canvas: data model, import and CIP-parse scripts, `/api/bench` endpoints, the one-screen UI with its pop-ups, the 3D lathe view, motion and a11y tables, and — read first — the paths a build may touch while other work shares this worktree. The two prototype files beside it are the pixel spec. |
 
 ---
 

@@ -1,0 +1,50 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "The Bench · desktop",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "expand": "fit",
+      "is_interactive": true
+    },
+    {
+      "file": "Pwa.dc.html",
+      "title": "The Bench · installed app",
+      "x": 1540,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "expand": "fit",
+      "is_interactive": true
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-theme",
+      "x": 0,
+      "y": -150,
+      "w": 420,
+      "text": "Two screens, both working. Desktop: a load opens as a card, a cartridge header opens its spec card as a slide-over, Log this load and the Load log are pop-ups. Installed app: the same things as bottom sheets, the spec card pushes in from the right like any app screen, My bench is a sheet behind the top button.\n\nWhite Winkel tokens; the app screen uses the real shell: 54px push header with back arrow, 62px tab bar with the raised Sell button."
+    },
+    {
+      "id": "note-data",
+      "x": 480,
+      "y": -150,
+      "w": 420,
+      "text": "Rows are consolidated: one per cartridge + bullet + weight + type + powder, lowest start, highest max, COAL alongside the max. Every figure is a real row from the data folder. Nothing on screen says where a number came from.\n\nTry: turn Varget off, add Hybrid 100V, open the W760 load (COAL flag), log a load and change its charge above the max."
+    },
+    {
+      "id": "note-somchem",
+      "x": 1540,
+      "y": -150,
+      "w": 390,
+      "text": "On the phone: tap a dimension line or a table row on the spec card to link them (no hover). Escape or the backdrop closes the top sheet. No fake status bar or keyboard is drawn; the real ones sit over this."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
