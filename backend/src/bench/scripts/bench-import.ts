@@ -134,6 +134,39 @@ const int = (v: string): number | null => {
   return n === null ? null : Math.round(n);
 };
 
+
+/**
+ * ⚠️ THE FAILURE THIS CATCHES LOOKS LIKE SUCCESS. The first run of this import
+ * used invented column names — `powder`, `start_grains`, `max_fps`, `L3` —
+ * none of which the CSVs carry. Every lookup returned undefined, every row was
+ * skipped by a guard, and the script printed a tidy report of zeros and exited
+ * 0. The tables were created, the deploy was green, and the Bench answered
+ * "Nothing matches that name" for every search.
+ *
+ * So the columns are asserted up front, by name, and a missing one stops the
+ * import instead of quietly importing nothing.
+ */
+function requireColumns(rows: Record<string, string>[], want: string[], file: string): void {
+  if (!rows.length) {
+    console.error(`
+${file} has no data rows.
+`);
+    process.exit(1);
+  }
+  const have = new Set(Object.keys(rows[0]));
+  const missing = want.filter((c) => !have.has(c));
+  if (missing.length) {
+    console.error(
+      `
+${file} is missing expected column(s): ${missing.join(', ')}
+` +
+        `  columns present: ${[...have].join(', ')}
+`,
+    );
+    process.exit(1);
+  }
+}
+
 /* ── Import ─────────────────────────────────────────────────────────── */
 
 interface Report {
@@ -171,6 +204,12 @@ async function main(): Promise<void> {
   /* 1 ─ Cartridges */
   console.log('1/6  cartridges');
   const refRows = parseCsv(await fs.readFile(refPath, 'utf8'));
+  requireColumns(
+    refRows,
+    ['cartridge_european', 'cartridge_as_printed', 'case_length_mm',
+     'max_cartridge_length_mm', 'max_pressure_psi', 'cartridge_type', 'origin', 'year'],
+    'cartridge_reference.csv',
+  );
   const byEuropean = new Map<string, Record<string, string>>();
   const aliasesFor = new Map<string, Set<string>>();
 
@@ -188,18 +227,18 @@ async function main(): Promise<void> {
 
   for (const [european, r] of byEuropean) {
     const key = cartridgeKey(european);
-    const psi = int(r.pmax_psi ?? '');
+    const psi = int(r.max_pressure_psi ?? '');
     await prisma.benchCartridge.upsert({
       where: { key },
       create: {
         key, name: european, slug: slugify(european),
         type: r.cartridge_type || null, origin: r.origin || null, year: int(r.year ?? ''),
-        caseLengthMm: num(r.L3 ?? ''), maxLengthMm: num(r.L6 ?? ''),
+        caseLengthMm: num(r.case_length_mm ?? ''), maxLengthMm: num(r.max_cartridge_length_mm ?? ''),
         pmaxPsi: psi, pmaxBar: psi === null ? null : Math.round(psi / 14.5038),
       },
       update: {
         name: european, slug: slugify(european),
-        caseLengthMm: num(r.L3 ?? ''), maxLengthMm: num(r.L6 ?? ''),
+        caseLengthMm: num(r.case_length_mm ?? ''), maxLengthMm: num(r.max_cartridge_length_mm ?? ''),
         pmaxPsi: psi, pmaxBar: psi === null ? null : Math.round(psi / 14.5038),
       },
     });
@@ -214,16 +253,28 @@ async function main(): Promise<void> {
   /* 2 ─ Source rows, powders and makers */
   console.log('2/6  reading loads');
   const loadRows = parseCsv(await fs.readFile(loadsPath, 'utf8'));
+  requireColumns(
+    loadRows,
+    ['cartridge_european', 'cartridge_as_printed', 'cartridge_name_source',
+     'bullet_weight_gr', 'bullet_manufacturer', 'bullet_type',
+     'powder_name', 'powder_manufacturer',
+     'start_charge_gr', 'start_velocity_fps', 'max_charge_gr', 'max_velocity_fps',
+     'coal_mm', 'source_manual', 'source_page'],
+    'consolidated_loads.csv',
+  );
   report.counts.sourceRowsRead = loadRows.length;
 
   console.log('3/6  powders');
   const powderIdByKey = new Map<string, string>();
   const printedCounts = new Map<string, Map<string, number>>();
+  const makerFor = new Map<string, string>();
   for (const r of loadRows) {
-    const printed = r.powder?.trim();
+    const printed = r.powder_name?.trim();
     if (!printed) continue;
     const k = powderKey(printed);
     if (!k) { report.unresolvedPowders.push(printed); continue; }
+    const mk = r.powder_manufacturer?.trim();
+    if (mk && !makerFor.has(k)) makerFor.set(k, mk);
     const forms = printedCounts.get(k) ?? new Map<string, number>();
     forms.set(printed, (forms.get(printed) ?? 0) + 1);
     printedCounts.set(k, forms);
@@ -267,14 +318,14 @@ async function main(): Promise<void> {
       }
       continue;
     }
-    const pKey = powderKey(r.powder ?? '');
+    const pKey = powderKey(r.powder_name ?? '');
     const powderId = powderIdByKey.get(pKey);
     if (!powderId) continue;
 
     const { maker, type } = splitMaker(r.bullet_manufacturer ?? '', r.bullet_type ?? '');
     const weightGr = num(r.bullet_weight_gr ?? '');
-    const startGr = num(r.start_grains ?? '');
-    const maxGr = num(r.max_grains ?? '');
+    const startGr = num(r.start_charge_gr ?? '');
+    const maxGr = num(r.max_charge_gr ?? '');
     if (weightGr === null || startGr === null || maxGr === null) continue;
 
     await prisma.benchSourceLoad.create({
@@ -283,8 +334,8 @@ async function main(): Promise<void> {
         nameVerified: (r.cartridge_name_source ?? '').trim() === 'verified',
         bulletMaker: maker, bulletType: type, bulletCategory: bulletCategory(type),
         weightGr, powderId,
-        startGr, startFps: int(r.start_fps ?? ''),
-        maxGr, maxFps: int(r.max_fps ?? ''),
+        startGr, startFps: int(r.start_velocity_fps ?? ''),
+        maxGr, maxFps: int(r.max_velocity_fps ?? ''),
         coalMm: num(r.coal_mm ?? ''),
         source: r.source_manual ?? '', sourcePage: int(r.source_page ?? ''),
         needsReview: r.needs_review || null,
@@ -385,6 +436,20 @@ async function main(): Promise<void> {
     path.join(dir, 'bench-import-report.json'), JSON.stringify(report, null, 2),
   );
   console.log(`\n  wrote ${path.join(dir, 'bench-import-report.json')}`);
+
+  // An import that read rows and wrote none has FAILED, whatever its exit
+  // code says. The first run of this script printed a tidy report of zeros
+  // and exited 0, so the deploy was green and the Bench answered 'Nothing
+  // matches that name' for every search. Never again silently.
+  if (report.counts.sourceRowsRead > 0 && report.counts.sourceRowsWritten === 0) {
+    console.error(
+      `
+  IMPORT WROTE NOTHING — read ${report.counts.sourceRowsRead} rows and ` +
+        `wrote 0. The cartridge or powder lookups are matching nothing.
+`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 main()
