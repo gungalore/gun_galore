@@ -24,7 +24,7 @@ import * as path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { cartridgeKey } from '../../common/cartridge-key';
-import { consolidate, needsReview } from '../consolidate';
+import { consolidate, needsReview, pickDisplayName } from '../consolidate';
 
 /**
  * ⚠️ CONSTRUCTED INSIDE main(), AFTER THE ARGUMENTS ARE CHECKED. At module
@@ -280,11 +280,16 @@ async function main(): Promise<void> {
     printedCounts.set(k, forms);
   }
   for (const [k, forms] of printedCounts) {
-    // Display name is the most common printed form, not the canonical key:
-    // the reloader reads "H4350" off a bottle, not a normalised token.
-    const display = [...forms.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    // Display name is the printed form, not the canonical key: the reloader
+    // reads "H4350" off a bottle, not a normalised token. pickDisplayName also
+    // keeps the branded casing — a straight majority elects "VARGET".
+    const display = pickDisplayName(forms);
+    // The maker rides along: "H4350" means little without "Hodgdon" beside it.
+    const maker = makerFor.get(k) ?? null;
     const row = await prisma.benchPowder.upsert({
-      where: { name: display }, create: { name: display }, update: {},
+      where: { name: display },
+      create: { name: display, maker },
+      update: maker ? { maker } : {},
     });
     powderIdByKey.set(k, row.id);
     for (const printed of forms.keys()) {

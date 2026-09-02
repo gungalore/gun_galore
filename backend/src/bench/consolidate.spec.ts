@@ -1,4 +1,9 @@
-import { consolidate, needsReview, type ConsolidationInput } from './consolidate';
+import {
+  consolidate,
+  needsReview,
+  pickDisplayName,
+  type ConsolidationInput,
+} from './consolidate';
 
 /**
  * THE BENCH — consolidation tests.
@@ -107,5 +112,39 @@ describe('needsReview', () => {
 
   it('leaves an ordinary window alone', () => {
     expect(needsReview(consolidate([row({ startGr: 38.0, maxGr: 41.0 })]))).toBe(false);
+  });
+});
+
+describe('pickDisplayName', () => {
+  const m = (o: Record<string, number>) => new Map(Object.entries(o));
+
+  it('prefers the branded spelling over the manual’s block capitals', () => {
+    // The real counts from consolidated_loads.csv.
+    expect(pickDisplayName(m({ VARGET: 625, Varget: 481 }))).toBe('Varget');
+  });
+
+  it('leaves a name that is legitimately upper-case alone', () => {
+    expect(pickDisplayName(m({ H4350: 900 }))).toBe('H4350');
+    expect(pickDisplayName(m({ N140: 12 }))).toBe('N140');
+    expect(pickDisplayName(m({ AR2208: 3 }))).toBe('AR2208');
+  });
+
+  it('does not let a rarer spelling win just for having a lowercase letter', () => {
+    // "RL-16" and "Re-16" are different names, not two renderings of one.
+    expect(pickDisplayName(m({ 'Re-16': 2, 'RL-16': 9 }))).toBe('RL-16');
+  });
+
+  it('prefers the branded casing only WITHIN one spelling', () => {
+    expect(pickDisplayName(m({ 'IMR 4350': 40, 'imr 4350': 3, 'H4350': 10 }))).toBe('imr 4350');
+  });
+
+  it('is deterministic when frequencies tie', () => {
+    const forms = m({ Bravo: 5, Alpha: 5 });
+    expect(pickDisplayName(forms)).toBe('Alpha');
+    expect(pickDisplayName(forms)).toBe('Alpha');
+  });
+
+  it('survives an empty set', () => {
+    expect(pickDisplayName(new Map())).toBe('');
   });
 });
