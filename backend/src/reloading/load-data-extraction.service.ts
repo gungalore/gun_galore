@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReloadingService } from './reloading.service';
-import { cartridgeKey } from '../load-lab/recommended-loads.service';
+import { cartridgeKey } from '../common/cartridge-key';
 
 /**
  * Load-data extraction — reads the ingested reloading-manual pages and pulls

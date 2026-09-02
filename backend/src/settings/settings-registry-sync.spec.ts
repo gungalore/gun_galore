@@ -46,7 +46,6 @@ const KNOWN_ADMIN_INVISIBLE = [
   'ask_gg_pro_msg_cap_per_hour',
   'ask_gg_support_msg_cap_per_day',
   'dealer_auto_register_enabled',
-  'house_seller_user_id',
   'pro_draw_enabled',
   'raffle_floor_cents',
   'raffle_frequency',

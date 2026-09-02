@@ -15,7 +15,6 @@ import { AdminAuditService } from '../admin/admin-audit.service';
 import { adminJwtSecret } from '../admin/admin-jwt-secret';
 import { ReloadingModule } from '../reloading/reloading.module';
 import { BallisticsModule } from '../ballistics/ballistics.module';
-import { LoadLabModule } from '../load-lab/load-lab.module';
 import { ListingsModule } from '../listings/listings.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { OffersModule } from '../offers/offers.module';
@@ -44,7 +43,6 @@ import { AskGgGuideService } from './ask-gg-guide.service';
   imports: [
     ReloadingModule,
     BallisticsModule,
-    LoadLabModule,
     ListingsModule,
     PaymentsModule,
     OffersModule,

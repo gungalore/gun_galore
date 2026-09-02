@@ -294,7 +294,7 @@ export const GUIDES: Record<string, AskGgGuide> = {
     points: [
       'GG+ has two tiers — Member and Pro — with perks like more Ask GG advice and bigger photo limits.',
       'It’s prepaid by EFT: no debit order, no auto-renew. You’re only ever charged when you choose to renew.',
-      'Pro unlocks the most — including the reloading Load Lab and the deepest advice quota.',
+      'Pro unlocks the most — including forum cross-referencing, the ballistic calculator and the deepest advice quota.',
       'Not sure it’s worth it? Ask me to compare the tiers against what you actually use.',
     ],
     ctas: [

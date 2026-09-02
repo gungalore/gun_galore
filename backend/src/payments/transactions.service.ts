@@ -338,61 +338,6 @@ export class TransactionsService {
     if ('error' in qres) throw new BadRequestException(qres.error);
     const quantity = qres.quantity;
 
-    // ─── DD-2 — Daily Deals per-customer fair-share cap ────────────────
-    // A house deal (Listing.isDealListing) caps how many units ONE buyer
-    // can take across ALL their orders of this deal (Deal.perCustomerCap).
-    // Counted here — BEFORE the atomic reserve below — so a capped buyer is
-    // rejected without ever creating a phantom reservation / stock movement.
-    // Excludes reversed rows (refunded / seller-rejected / buyer-cancelled)
-    // and synthetic refund children so a buyer whose earlier order fell
-    // through isn't wrongly blocked. This is a SOFT fair-share cap: two
-    // concurrent checkouts by the same buyer can marginally overshoot (it's
-    // a read-then-check, not an atomic counter) — it is not a money-safety
-    // invariant, so a small overshoot is acceptable.
-    if (listing.isDealListing) {
-      // DD-F4 — Daily Deals ship by courier (The Courier Guy door-to-door)
-      // ONLY. The deal listing's shippingMethods are already [TCG]-only from
-      // Wave 1, but enforce it server-authoritatively here too so a tampered or
-      // stale method can never route a deal via Pudo / collection / dealer. This
-      // fires BEFORE the atomic reserve below, so a rejected deal checkout
-      // leaves no orphaned hold.
-      if (dto.shippingMethod !== 'TCG') {
-        throw new BadRequestException('Daily Deals ship by courier only.');
-      }
-      const deal = await this.prisma.deal.findUnique({
-        where: { listingId: listing.id },
-        select: { perCustomerCap: true },
-      });
-      if (deal) {
-        const prior = await this.prisma.transaction.aggregate({
-          _sum: { quantity: true },
-          where: {
-            listingId: listing.id,
-            buyerId: buyer.id,
-            refundOfId: null,
-            paymentStatus: { not: 'REFUNDED' },
-            rejectedAt: null,
-            cancelledByBuyerAt: null,
-            // A manual-EFT checkout that lapsed unpaid is SOFT-cancelled by the
-            // freeze sweep, which stamps manualCancelledAt but leaves the row
-            // HELD/paidAt=null. Excluding it here stops an abandoned checkout
-            // from permanently counting against (and locking a buyer out of)
-            // their cap on a deal they never actually bought.
-            manualCancelledAt: null,
-          },
-        });
-        const priorUnits = prior._sum.quantity ?? 0;
-        if (priorUnits + quantity > deal.perCustomerCap) {
-          const remaining = Math.max(0, deal.perCustomerCap - priorUnits);
-          throw new BadRequestException(
-            remaining === 0
-              ? `You've reached the limit of ${deal.perCustomerCap} on this deal.`
-              : `You can buy at most ${deal.perCustomerCap} of this deal — you already have ${priorUnits}, so ${remaining} more.`,
-          );
-        }
-      }
-    }
-
     // Live shipping quote — re-fetched server-side so the buyer can't
     // tamper with the priceCents the frontend showed them. The same
     // quote endpoint the checkout UI hit pre-Pay runs again here. For
@@ -516,24 +461,6 @@ export class TransactionsService {
           handlingFeeCents,
         );
 
-    // ─── DD-2 — Daily Deals first-party economics ──────────────────────
-    // GG is the seller of a house deal (Listing.isDealListing), so there is
-    // NO platform commission and NO seller payout: the whole sale (goods +
-    // fees + handling, minus the carrier's shipping cost) is GG's OWN
-    // revenue, recorded at RELEASED by a Zoho Sales Receipt (createDeal-
-    // SalesReceipt), not a commission invoice. buyerTotal / listingPrice /
-    // shippingCost / processingFee / handling are UNCHANGED — the buyer
-    // still pays the full amount. Zeroing sellerPayout removes the row from
-    // the payout batch AND the held-funds "owed to sellers" bucket (both
-    // filter sellerPayout>0), so GG never pays itself and the row is never a
-    // client-fund liability. Zeroing commissionZar keeps house first-party
-    // sales out of commission-revenue reporting (the real revenue is the
-    // Sales Receipt). Conservation still holds: buyerTotal = shippingCost
-    // (carrier) + GG-retained (buyerTotal − shippingCost); sellerPaid = 0.
-    const isHouseDeal = listing.isDealListing;
-    const effectiveCommissionZar = isHouseDeal ? 0 : commissionZar;
-    const effectiveSellerPayout = isHouseDeal ? 0 : sellerPayout;
-
     // Reserve the listing ATOMICALLY. Only ONE buyer can flip it from
     // ACTIVE → PAYMENT_PENDING. This is the double-sell guard: for
     // TAKE_A_SHOT listings multiple offers can be ACCEPTED at once, so
@@ -609,7 +536,7 @@ export class TransactionsService {
         sellerId: listing.sellerId,
         quantity,
         listingPrice,
-        commissionZar: effectiveCommissionZar, // DD-2 — 0 for a house deal
+        commissionZar,
         processingFee,
         shippingCost,
         shippingHandlingCents, // P6.4 — R15/waybill GG margin (0 for firearm/collection/sibling)
@@ -621,7 +548,7 @@ export class TransactionsService {
         passFeeToBuyer: buyerPaysProcessingFee,
         feeModel,
         buyerTotal,
-        sellerPayout: effectiveSellerPayout, // DD-2 — 0 for a house deal (GG doesn't pay itself)
+        sellerPayout,
         shippingMethod: dto.shippingMethod,
         pudoPickupLockerId: dto.pudoPickupLockerId,
         deliveryAddress: dto.deliveryAddress ? { ...dto.deliveryAddress } : undefined,
@@ -881,12 +808,6 @@ export class TransactionsService {
         collectionOnly: true,
         title: true,
         shippingMethods: true,
-        // DD-F4 — deal lines all carry the ONE house sellerId; the consolidation
-        // key needs the deal's supplier so different-supplier deals don't merge
-        // into a single waybill. Supplier id stays server-side (grouping only,
-        // never returned on any listing payload).
-        isDealListing: true,
-        deal: { select: { supplierId: true } },
       },
     });
     if (lineListings.some((l) => l.listingType !== 'BUY_NOW')) {
@@ -927,17 +848,6 @@ export class TransactionsService {
     const sellerByListing = new Map(
       lineListings.map((l) => [l.id, l.sellerId]),
     );
-    // DD-F4 — map each DEAL line to its supplier. Deals all share the house
-    // sellerId, so keying consolidation by sellerId alone would wrongly merge
-    // two different suppliers' deals into one pickup/waybill. For a deal line
-    // the group owner becomes its supplier (same-supplier deals still
-    // consolidate); every ordinary line still owns by sellerId (unchanged).
-    const dealSupplierByListing = new Map<string, string>();
-    for (const l of lineListings) {
-      if (l.isDealListing && l.deal?.supplierId) {
-        dealSupplierByListing.set(l.id, l.deal.supplierId);
-      }
-    }
     const shipOverride = new Map<
       string,
       {
@@ -962,15 +872,12 @@ export class TransactionsService {
           continue;
         const sellerId = sellerByListing.get(line.listingId);
         if (!sellerId) continue;
-        // DD-F4 — a deal line is owned by its supplier for grouping; every
-        // ordinary line is owned by sellerId, so the key is unchanged for them.
-        const owner = dealSupplierByListing.get(line.listingId) ?? sellerId;
         const a = line.deliveryAddress;
         const destKey =
           line.shippingMethod === 'PUDO'
             ? `L:${line.pudoPickupLockerId ?? ''}`
             : `A:${a?.streetAddress ?? ''}|${a?.suburb ?? ''}|${a?.city ?? ''}|${a?.postalCode ?? ''}`;
-        const key = `${owner}|${line.shippingMethod}|${destKey}`;
+        const key = `${sellerId}|${line.shippingMethod}|${destKey}`;
         const arr = groups.get(key) ?? [];
         arr.push(line);
         groups.set(key, arr);
@@ -1814,8 +1721,7 @@ export class TransactionsService {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
-        // DD-F3 — isDealListing lets _stampAcceptAndBook defer the deal booking.
-        listing: { select: { title: true, isDealListing: true } },
+        listing: { select: { title: true } },
         buyer: {
           select: {
             email: true,
@@ -1861,22 +1767,20 @@ export class TransactionsService {
     return updated;
   }
 
-  // DD-2 — shared accept-and-book core, extracted verbatim from
-  // acceptTransaction so the house-deal auto-accept (maybeAutoAcceptHouseDeal)
-  // reuses the EXACT same consolidated-group cascade, idempotent stamp,
-  // courier booking, and buyer "accepted / dispatch in 5d" notice — no
-  // duplication, no drift. Returns the stamps on success, or null when
-  // nothing was stamped (row not HELD / already accepted / rejected).
+  // Shared accept-and-book core, extracted verbatim from acceptTransaction:
+  // the consolidated-group cascade, the idempotent stamp, the courier booking
+  // and the buyer "accepted / dispatch in 5d" notice. Kept as its own method
+  // (rather than folded back into its one caller) so the accept seam stays
+  // exactly the code the specs exercise. Returns the stamps on success, or
+  // null when nothing was stamped (row not HELD / already accepted /
+  // rejected).
   private async _stampAcceptAndBook(
     transactionId: string,
     tx: {
       id: string;
-      // DD-F3 — needed to load the Deal (ships-in window) for a house deal.
-      listingId: string;
       shipsWithId: string | null;
       shippingMethod: string | null;
-      // DD-F3 — isDealListing gates deferral of the immediate courier booking.
-      listing: { title: string; isDealListing: boolean };
+      listing: { title: string };
       buyer: {
         email: string;
         firstName: string | null;
@@ -1895,8 +1799,8 @@ export class TransactionsService {
     // shipment on the carrier. carrierId = this line's carrier, or itself when
     // it's a standalone line (a "group of one"). Stamp every still-live member
     // that isn't already accepted/rejected. The acceptedAt:null predicate +
-    // HELD gate make this exactly-once, so a house-deal auto-accept and a
-    // stray manual accept can never double-book.
+    // HELD gate make this exactly-once, so two concurrent accepts (a
+    // double-tapped SMS link, or a retry) can never double-book.
     const carrierId = tx.shipsWithId ?? transactionId;
     const stamped = await this.prisma.transaction.updateMany({
       where: {
@@ -1914,204 +1818,28 @@ export class TransactionsService {
       return null;
     }
 
-    // DD-F3 — a house deal (Listing.isDealListing) is sell-first / buy-after:
-    // GG holds NO stock at accept time and the courier collects from the
-    // SUPPLIER's warehouse only once the operator taps "Stock ready". So for a
-    // deal we DEFER the courier booking here — it is fired later by
-    // DealsService.markStockReadyAndBook. A non-deal sale books immediately,
-    // byte-for-byte as before.
-    const isDeal = tx.listing.isDealListing === true;
-
     // P5.2: book the real carrier shipment on the CARRIER line, which combines
     // the whole group's parcel. Fire-and-forget + fully self-contained
     // (idempotent, courier-only, fail-safe). On success it SMSes/emails the
-    // seller (the operator, for a house deal) the waybill + Pudo PIN + label.
-    if (!isDeal) {
-      void this.shipping.bookForTransaction(carrierId);
-    }
+    // seller the waybill + Pudo PIN + label.
+    void this.shipping.bookForTransaction(carrierId);
 
     // Timeline + notifications — fire-and-forget. (Unchanged for every sale.)
     void this.tracking.recordInternal(transactionId, 'SELLER_ACCEPTED');
     void this.notifications.resolveByEntity('transaction', transactionId);
 
-    // Buyer notification. A non-deal sale keeps the "dispatch within 5 days"
-    // promise (byte-identical). A house deal has no 5-day dispatch promise —
-    // GG ships JIT from the supplier — so the buyer should hear the deal's own
-    // ships-in window (shipsInDaysMin–Max). We forward that window on the
-    // payload; the copy literal ("ships in 3–7 days" vs "dispatch within 5
-    // days") is authored in notifications.service.ts, which is outside this
-    // wave's file set — Wave 3 branches on the forwarded fields. Until then a
-    // deal buyer still reads the generic accepted copy.
-    if (isDeal) {
-      const deal = await this.prisma.deal
-        .findUnique({
-          where: { listingId: tx.listingId },
-          select: { shipsInDaysMin: true, shipsInDaysMax: true },
-        })
-        .catch(() => null);
-      // Non-fresh payload object: the forward-wired shipsIn* fields (not yet
-      // read by notifications.service.ts) must not trip the excess-property
-      // check on a fresh literal. Deals never ship COLLECTION (TCG-only).
-      const dealPayload = {
-        buyerEmail: tx.buyer.email,
-        buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
-        buyerPhone: tx.buyer.phone,
-        listingTitle: tx.listing.title,
-        transactionId: tx.id,
-        dispatchDeadlineAt,
-        isCollection: false,
-        shipsInDaysMin: deal?.shipsInDaysMin,
-        shipsInDaysMax: deal?.shipsInDaysMax,
-      };
-      void this.notifications.saleAcceptedBuyer(dealPayload);
-    } else {
-      // Non-deal — "Seller accepted, dispatch within 5d". Unchanged.
-      void this.notifications.saleAcceptedBuyer({
-        buyerEmail: tx.buyer.email,
-        buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
-        buyerPhone: tx.buyer.phone,
-        listingTitle: tx.listing.title,
-        transactionId: tx.id,
-        dispatchDeadlineAt,
-        isCollection: tx.shippingMethod === 'COLLECTION',
-      });
-    }
+    // Buyer notification — "Seller accepted, dispatch within 5d".
+    void this.notifications.saleAcceptedBuyer({
+      buyerEmail: tx.buyer.email,
+      buyerName: tx.buyer.firstName ?? tx.buyer.username ?? 'there',
+      buyerPhone: tx.buyer.phone,
+      listingTitle: tx.listing.title,
+      transactionId: tx.id,
+      dispatchDeadlineAt,
+      isCollection: tx.shippingMethod === 'COLLECTION',
+    });
 
     return { acceptedAt, dispatchDeadlineAt };
-  }
-
-  // DD-2 — Daily Deals AUTO-ACCEPT. A house deal (Listing.isDealListing) has
-  // no human seller to tap the TOK-7 accept token, so at payment-confirmed
-  // (called fire-and-forget from markPaid, on BOTH the manual-EFT and card
-  // rails) we stamp acceptedAt + dispatchDeadlineAt immediately and fire the
-  // courier booking, exactly as a seller acceptance would. Idempotent on
-  // acceptedAt (safe to re-invoke from the reconcile sweep). Runs AFTER
-  // markPaid's atomic claim commits, so paidAt + HELD are set (both
-  // bookForTransaction's HELD backstop and the stamp's HELD gate pass).
-  async maybeAutoAcceptHouseDeal(transactionId: string): Promise<void> {
-    try {
-      const tx = await this.prisma.transaction.findUnique({
-        where: { id: transactionId },
-        include: {
-          listing: { select: { title: true, isDealListing: true } },
-          buyer: {
-            select: {
-              email: true,
-              firstName: true,
-              phone: true,
-              username: true,
-            },
-          },
-        },
-      });
-      if (!tx) return;
-      if (!tx.listing?.isDealListing) return; // not a house deal
-      if (!tx.paidAt) return; // must be paid
-      if (tx.paymentStatus !== 'HELD') return; // already moved / refunded
-      if (tx.rejectedAt) return;
-      if (tx.acceptedAt) return; // idempotent — already auto-accepted
-      // Multi-line cart: a consolidated courier group ships as ONE parcel, so
-      // we must NOT accept+book until EVERY sibling in the order is paid (HELD)
-      // — otherwise bookForTransaction (which only sees HELD siblings) declares
-      // an under-weight/under-insured parcel that can never grow. Defer until
-      // the parent Order's paid-claim commits; maybeConfirmWholeOrder re-drives
-      // us the moment it wins that claim (confirmManualOrder, named here before,
-      // was deleted with the manual-EFT rail and re-drove nothing), and the
-      // 5-min reconcile sweep is a backstop. A single-item deal
-      // (no orderId) is unaffected and auto-accepts immediately.
-      if (tx.orderId) {
-        const order = await this.prisma.order.findUnique({
-          where: { id: tx.orderId },
-          select: { paidAt: true },
-        });
-        if (!order?.paidAt) return; // whole order not paid yet — wait
-      }
-      const stamp = await this._stampAcceptAndBook(transactionId, tx);
-      if (stamp) {
-        this.logger.log(
-          `House deal ${transactionId} auto-accepted (Daily Deals); dispatch deadline ${stamp.dispatchDeadlineAt.toISOString()}`,
-        );
-      }
-    } catch (err) {
-      this.logger.error(
-        `maybeAutoAcceptHouseDeal failed for ${transactionId}: ${(err as Error).message}`,
-      );
-    }
-  }
-
-  // DD-2 — sync the Deal to SOLD_OUT when its listing's stock is exhausted.
-  // markPaid flips the Listing to SOLD on the last unit; this stamps the
-  // matching Deal so the admin pipeline + (future) storefront reflect it.
-  // Fire-and-forget; no-op unless the listing is genuinely a SOLD house deal.
-  private async syncDealSoldOut(listingId: string): Promise<void> {
-    try {
-      const l = await this.prisma.listing.findUnique({
-        where: { id: listingId },
-        select: { status: true, isDealListing: true },
-      });
-      if (!l?.isDealListing || l.status !== 'SOLD') return;
-      const flip = await this.prisma.deal.updateMany({
-        where: {
-          listingId,
-          status: { in: ['DRAFT', 'SCHEDULED', 'LIVE', 'EXTENDED'] },
-        },
-        data: { status: 'SOLD_OUT', soldOutAt: new Date() },
-      });
-      // DD-F2 — the deal just transitioned to SOLD_OUT exactly ONCE (the status
-      // filter makes the updateMany one-shot, so count>0 fires a single time).
-      // Raise the supplier Purchase Order in Zoho Books. ZohoBooksService is
-      // ALREADY injected here (see createDealSalesReceipt), so we call it
-      // directly — no DealsService/forwardRef, no Payments↔Deals cycle.
-      // createDealPurchaseOrder is idempotent, isEnabled-guarded and never
-      // throws; fire-and-forget after the flip commits.
-      if (flip.count > 0) {
-        const deal = await this.prisma.deal.findUnique({
-          where: { listingId },
-          select: { id: true },
-        });
-        if (deal) void this.zohoBooks.createDealPurchaseOrder(deal.id);
-      }
-    } catch (err) {
-      this.logger.warn(
-        `syncDealSoldOut failed for listing ${listingId}: ${(err as Error).message}`,
-      );
-    }
-  }
-
-  // DD-2 — reliability backstop mirroring reconcileStrandedPrivateArrange. If
-  // the process died between markPaid committing and the fire-and-forget
-  // auto-accept, a house deal sits paid+HELD+unaccepted with no courier. This
-  // sweep (driven by a cron) re-drives the auto-accept for any such row.
-  async reconcileStrandedHouseDeals(): Promise<{ recovered: number }> {
-    const floor = new Date(Date.now() - 5 * 60_000); // 5 min past payment
-    const stranded = await this.prisma.transaction.findMany({
-      where: {
-        paymentStatus: 'HELD',
-        paidAt: { not: null, lt: floor },
-        acceptedAt: null,
-        rejectedAt: null,
-        listing: { isDealListing: true },
-      },
-      select: { id: true },
-      take: 50,
-    });
-    let recovered = 0;
-    for (const t of stranded) {
-      try {
-        await this.maybeAutoAcceptHouseDeal(t.id);
-        recovered += 1;
-      } catch (err) {
-        this.logger.warn(
-          `reconcileStrandedHouseDeals failed for ${t.id}: ${(err as Error).message}`,
-        );
-      }
-    }
-    if (recovered > 0) {
-      this.logger.log(
-        `reconcileStrandedHouseDeals re-drove ${recovered} house-deal auto-accept(s)`,
-      );
-    }
-    return { recovered };
   }
 
   // P6.2 — is this transaction part of a LIVE consolidated shipment group?
@@ -2525,17 +2253,6 @@ export class TransactionsService {
       })
       .catch(() => undefined);
 
-    // DD-2 — if this was a sold-out Daily Deal, the reversal put the listing
-    // back to ACTIVE; un-sold-out the Deal so its status matches. The
-    // status:'SOLD_OUT' predicate only ever matches a house-deal Deal row, so
-    // this is a no-op for every non-deal cancellation. Money-neutral resync.
-    void this.prisma.deal
-      .updateMany({
-        where: { listingId: tx.listingId, status: 'SOLD_OUT' },
-        data: { status: 'LIVE', soldOutAt: null },
-      })
-      .catch(() => undefined);
-
     // P5.2: cancel any platform-booked carrier shipment (booking fires on
     // seller-accept, which can precede an undispatched buyer cancellation) so
     // the refunded order doesn't leave a live, billed waybill.
@@ -2598,8 +2315,6 @@ export class TransactionsService {
     // ≤24h left on the 48h accept window, seller hasn't actioned, no
     // reminder sent yet. Without this the seller hears ONE new-sale notice
     // and then nothing until the deadline lapses into an admin case.
-    // House-deal rows are excluded — reconcileStrandedHouseDeals drives
-    // those, and the operator shouldn't get accept nags for GG's own deals.
     const dueReminder = await this.prisma.transaction.findMany({
       where: {
         acceptDeadlineAt: { gt: now, lte: new Date(now.getTime() + 24 * 3600_000) },
@@ -2608,7 +2323,6 @@ export class TransactionsService {
         acceptEscalatedAt: null,
         acceptReminderSentAt: null,
         paymentStatus: 'HELD',
-        listing: { isDealListing: false },
       },
       include: {
         listing: { select: { title: true } },
@@ -3545,17 +3259,6 @@ export class TransactionsService {
       this.logger.log(
         `Order ${orderId} fully paid (${lines.length} lines, ${buyerTotal}c) — buyer confirmed`,
       );
-
-      // ⚠️ RE-DRIVE THE LINES THAT WERE WAITING ON THIS CLAIM. A house-deal
-      // line in a cart refuses to auto-accept until the parent Order is paid
-      // (so the courier booking sees every sibling and cannot declare an
-      // under-weight parcel). That deferral used to be re-driven by
-      // confirmManualOrder, which no longer exists — leaving only the 5-minute
-      // reconcile sweep, so a paid basket sat undispatched until a cron
-      // noticed. Idempotent on acceptedAt and a no-op for non-deal rows, so
-      // firing it for every line is safe. Detached deliberately: a booking
-      // failure must not unwind the confirmation we just sent.
-      for (const l of lines) void this.maybeAutoAcceptHouseDeal(l.id);
     } catch (err) {
       this.logger.error(
         `Could not confirm whole order ${orderId}: ${(err as Error).message}`,
@@ -3698,15 +3401,6 @@ export class TransactionsService {
     // returned values into local scope, and we need shippingMethod +
     // consent stamp to decide.
     void this.maybeImmediatePayout(txId);
-
-    // DD-2 — Daily Deals house deal: no human seller to tap the accept token,
-    // so auto-accept + book the courier immediately on payment-confirmed. Runs
-    // after the atomic claim above committed (paidAt + HELD set). Idempotent;
-    // the reconcile sweep re-drives it if this fire-and-forget is lost.
-    void this.maybeAutoAcceptHouseDeal(txId);
-    // DD-2 — if this sale exhausted a house deal's stock (listing → SOLD
-    // above), stamp the Deal SOLD_OUT to match. No-op for normal sales.
-    void this.syncDealSoldOut(listing.id);
 
     // Fire-and-forget notifications
     void this.sendSaleNotifications(txId);
@@ -3939,21 +3633,15 @@ export class TransactionsService {
       if (!tx) return;
 
       // ─── The basket, once every line in it is paid for ────────────────
-      // ⚠️ MUST RUN BEFORE THE TWO BAIL-OUTS BELOW. PRIVATE_ARRANGE returns
-      // at the next guard and a Daily-Deals house line returns a little
-      // further down, and BOTH are legal cart lines — createOrderCheckout
-      // consolidates deal lines by supplier, and a firearm line routes to
-      // PRIVATE_ARRANGE. Placed after those returns (as it first was), the
-      // confirmer is simply never reached when either kind happens to be the
-      // LAST line paid, and the consequences compound:
+      // ⚠️ MUST RUN BEFORE THE BAIL-OUT BELOW. PRIVATE_ARRANGE returns at the
+      // next guard and is a legal cart line (a firearm line routes to PA).
+      // Placed after that return (as it first was), the confirmer is simply
+      // never reached when a PA line happens to be the LAST line paid, and the
+      // consequences compound:
       //   · orderConfirmedBuyerMulti never fires — the exact silence this
       //     whole change exists to close, left open for those baskets;
       //   · Order.paidAt stays null and status stays AWAITING_PAYMENT
-      //     forever, because orderStatusRollupSweep only scans status PAID;
-      //   · worst, maybeAutoAcceptHouseDeal refuses to accept an order-linked
-      //     deal line until order.paidAt is set, so a cart deal line is never
-      //     accepted, never booked and never dispatched — the buyer has paid,
-      //     the funds sit HELD, and nothing ships.
+      //     forever, because orderStatusRollupSweep only scans status PAID.
       // Safe this early: the method no-ops unless every sibling is paid.
       if (tx.orderId) await this.maybeConfirmWholeOrder(tx.orderId);
 
@@ -3967,45 +3655,6 @@ export class TransactionsService {
       // all false for PA). Bail out here; the contact-reveal path owns PA
       // notifications end to end (incl. a dismissible seller inbox row).
       if (tx.shippingMethod === 'PRIVATE_ARRANGE') return;
-
-      // DD-2 — Daily Deals house deal: maybeAutoAcceptHouseDeal already
-      // stamped acceptedAt, booked the courier, and sent the buyer the
-      // "accepted, dispatch in 5d" notice at payment time. So do NOT mint the
-      // TOK-7 accept token or fire the seller's "accept within 48h"
-      // newSaleSeller SMS (there's no human house seller to tap it). The
-      // buyer's "order confirmed — funds held" notice still fires (single-item
-      // only; order children get one consolidated confirmation elsewhere).
-      if (tx.listing.isDealListing) {
-        if (!tx.orderId) {
-          void this.notifications.orderConfirmedBuyer({
-            listingTitle: tx.listing.title,
-            listingId: tx.listingId,
-            transactionId: txId,
-            buyerEmail: tx.buyer.email,
-            buyerName:
-              [tx.buyer.firstName, tx.buyer.lastName].filter(Boolean).join(' ') ||
-              'Buyer',
-            buyerPhone: tx.buyer.phone,
-            sellerEmail: tx.seller.email,
-            sellerName:
-              [tx.seller.firstName, tx.seller.lastName]
-                .filter(Boolean)
-                .join(' ') || 'Seller',
-            sellerPhone: tx.seller.phone,
-            listingPrice: tx.listingPrice,
-            commissionZar: tx.commissionZar,
-            processingFee: tx.processingFee,
-            buyerTotal: tx.buyerTotal,
-            sellerPayout: tx.sellerPayout,
-            passFeeToBuyer: tx.passFeeToBuyer,
-            feeModel: tx.feeModel,
-            shippingCost: tx.shippingCost,
-            shippingHandlingCents: tx.shippingHandlingCents,
-            shippingMethod: tx.shippingMethod,
-          });
-        }
-        return;
-      }
 
       // Mint the TRANSACTION_ACCEPT token so the seller can tap the
       // SMS link and accept the sale in one tap (no sign-in). 48h TTL
@@ -4061,10 +3710,10 @@ export class TransactionsService {
       await Promise.all([
         // Buyer "order confirmed" — SKIPPED for multi-item order children
         // (tx.orderId set), which instead get ONE consolidated confirmation
-        // from maybeConfirmWholeOrder (called above, before the PA and
-        // house-deal bail-outs), so the buyer isn't emailed and
-        // SMSed N times for one basket. Single-item sales (orderId null) keep
-        // the per-transaction confirmation.
+        // from maybeConfirmWholeOrder (called above, before the PA bail-out),
+        // so the buyer isn't emailed and SMSed N times for one basket.
+        // Single-item sales (orderId null) keep the per-transaction
+        // confirmation.
         //
         // ⚠️ THIS SUPPRESSION USED TO LEAD NOWHERE. It deferred to
         // confirmManualOrder, which was DELETED with the manual-EFT rail —

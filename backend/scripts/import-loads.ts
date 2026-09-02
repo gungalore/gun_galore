@@ -11,7 +11,7 @@ import 'dotenv/config';
 import * as fs from 'fs';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { cartridgeKey } from '../src/load-lab/recommended-loads.service';
+import { cartridgeKey } from '../src/common/cartridge-key';
 
 interface SeedRow {
   cartridge?: string;

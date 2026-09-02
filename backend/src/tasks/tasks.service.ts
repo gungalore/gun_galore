@@ -20,12 +20,10 @@ import { decideOpsAlert } from './ops-alert-decision';
 import { PushService } from '../push/push.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { SavedSearchesService } from '../saved-searches/saved-searches.service';
-import { DealsService } from '../deals/deals.service';
 import { RatingsService } from '../ratings/ratings.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { WishlistAlertsService } from '../wishlist-alerts/wishlist-alerts.service';
 import { ListingsService } from '../listings/listings.service';
-import { NotificationCategory } from '@prisma/client';
 
 // Threshold-alert dedup window. Once we've fired an alert at any
 // severity for a given service, we won't fire ANOTHER alert at the
@@ -51,18 +49,6 @@ const CREDIT_ALERT_REPEAT_FLOOR_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
-  // DD-4 — re-entrancy guard: @Cron(EVERY_MINUTE) re-fires on tick even if the
-  // previous invocation is still running, so a >60s sweep could overlap itself.
-  // The go-live transitions are CAS-guarded (idempotent), but this also avoids
-  // redundant work + duplicate drop pushes.
-  private dealDropRunning = false;
-  // DD-F — re-entrancy guard for the hourly deal-PO retry: a slow Zoho batch
-  // must not overlap the next tick (retryMissingDealPurchaseOrders is bounded
-  // + idempotent, but this avoids redundant work).
-  private dealPoRetryRunning = false;
-  // DD-F — re-entrancy guard for the hourly stock-ready collection re-book
-  // sweep (courier calls can be slow; bookings are idempotent but sequential).
-  private dealCollectionSweepRunning = false;
   private statsRollupRunning = false;
 
   constructor(
@@ -80,7 +66,6 @@ export class TasksService {
     private readonly push: PushService,
     private readonly zohoBooks: ZohoBooksService,
     private readonly savedSearches: SavedSearchesService,
-    private readonly deals: DealsService,
     private readonly ratings: RatingsService,
     private readonly settings: SettingsService,
     private readonly wishlistAlerts: WishlistAlertsService,
@@ -208,6 +193,12 @@ export class TasksService {
   // unrelated writes (offer counters, moderation edits) which would silently
   // keep dead listings alive forever. AUCTIONS are excluded (they have their own
   // endTime lifecycle), as are house deal listings.
+  //
+  // The `isDealListing: false` predicates below are KEPT on purpose. Daily
+  // Deals is gone, but Listing.isDealListing is still a column (the Prisma
+  // models were left orphaned) and dropping the predicate would widen what
+  // these sweeps expire and de-index. This is a live listing-lifecycle path;
+  // the removal is not allowed to change it. Same for photolessListingSweep.
   @Cron('0 4 * * *')
   async staleListingSweep() {
     const NUDGE_DAYS = 75;
@@ -395,23 +386,18 @@ export class TasksService {
 
   // Recover PRIVATE_ARRANGE sales stranded paid+HELD (crash between markPaid
   // and the immediate-payout fire-and-forget). Small, idempotent, cheap.
-  // DD-2 — the SAME sweep also re-drives Daily Deals house-deal auto-accept
-  // for any house sale stranded paid+HELD+unaccepted (identical crash window).
+  // This cron used to run a SECOND pass — the DD-2 Daily Deals house-deal
+  // auto-accept re-drive — which went with the feature. Only the deal half was
+  // taken: the PRIVATE_ARRANGE pass, its catch, and the
+  // 'pa-payout-reconcile' heartbeat behave exactly as before.
   @Cron(CronExpression.EVERY_5_MINUTES)
   async reconcileStrandedPrivateArrange() {
-    this.logger.debug('Running PRIVATE_ARRANGE + house-deal reconcile');
+    this.logger.debug('Running PRIVATE_ARRANGE reconcile');
     try {
       await this.transactions.reconcileStrandedPrivateArrange();
     } catch (err) {
       this.logger.error(
         `reconcileStrandedPrivateArrange failed: ${(err as Error).message}`,
-      );
-    }
-    try {
-      await this.transactions.reconcileStrandedHouseDeals();
-    } catch (err) {
-      this.logger.error(
-        `reconcileStrandedHouseDeals failed: ${(err as Error).message}`,
       );
     } finally {
       await this.recordCronRun('pa-payout-reconcile');
@@ -694,57 +680,13 @@ export class TasksService {
     }
   }
 
-  // ─── DD-4 — Daily Deals scheduled drops ──────────────────────────
-  // Every minute: auto go-live SCHEDULED deals whose start has arrived,
-  // auto-END deals at their endsAt / extendedUntil (the hard time-gate the
-  // buy path lacks — closes the DD-3 "buyable past the advertised end" gap),
-  // run "Extra Time", and enforce the deals_enabled killswitch. INERT while
-  // there are no scheduled/live deals (the queries return empty → no-op, so
-  // this ships safely with the flag off + zero deals). Each newly-live deal
-  // is announced via web-push to opted-in BUYER devices when
-  // deal_push_enabled. Outer try/catch + recordCronRun('deal-drops') so one
-  // bad deal can't stall the sweep and the health dashboard sees a heartbeat.
-  @Cron(CronExpression.EVERY_MINUTE)
-  async dailyDealDrops() {
-    if (this.dealDropRunning) return; // a previous sweep is still running
-    this.dealDropRunning = true;
-    try {
-      const { dropped } = await this.deals.runScheduledDrops();
-      if (dropped.length === 0) return;
-      const pushOn = await this.settings.get(FLAGS.dealPushEnabled);
-      if (!pushOn) return;
-      for (const d of dropped) {
-        // Match the storefront/PDP whole-rand display for whole-rand deals (the
-        // norm); show cents only when the price actually has cents so the push
-        // never advertises a price BELOW what checkout charges (CPA).
-        const rands = d.dealPriceCents / 100;
-        const price = `R${Number.isInteger(rands) ? rands : rands.toFixed(2)}`;
-        await this.push
-          .broadcast(NotificationCategory.BUYER, {
-            title: '🔥 New Daily Deal',
-            body:
-              d.savePct > 0
-                ? `${d.title} — save ${d.savePct}%, now ${price}`
-                : `${d.title} — now ${price}`,
-            url: `/deals/${d.id}`,
-            tag: `deal-${d.id}`, // dedup: one notification per deal
-          })
-          .catch((err) =>
-            this.logger.warn(
-              `deal-drop push for ${d.id} failed: ${(err as Error).message}`,
-            ),
-          );
-      }
-    } catch (err) {
-      this.logger.error(
-        `dailyDealDrops failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      this.dealDropRunning = false;
-      await this.recordCronRun('deal-drops');
-    }
-  }
+  // The DD-4 daily-deal drop sweep (EVERY_MINUTE) was removed with Daily
+  // Deals. 'deal-drops' was never in the AdminHealthService cron registry, so
+  // nothing watches for its heartbeat; the stale Setting row it left behind is
+  // inert. (The 'deal-po-retry' and 'deal-collection-sweep' crons removed
+  // below WERE registered — those two rows have been taken out of
+  // AdminHealthService.cronStatuses(), otherwise cronWatchdog would have
+  // raised a permanent urgent CRON_STALE alert for jobs that no longer exist.)
 
   // AUDIT M15 — every cron below wraps work in try/catch with
   // recordCronRun in finally. A DB hiccup in the leading findMany
@@ -848,52 +790,12 @@ export class TasksService {
     }
   }
 
-  // DD-F — hourly retry for deal purchase orders that never reached Zoho (the
-  // DealPurchaseOrder row is missing) or failed at placement (zohoSyncStatus
-  // FAILED). createDealPurchaseOrder is idempotent (guarded by the row + its
-  // zohoPurchaseOrderId), so a re-fire can only fill the gap — keeps Books
-  // whole without an admin clicking retry.
-  // INERT until deals go live + POs exist (the query returns empty → no-op).
-  @Cron(CronExpression.EVERY_HOUR)
-  async retryDealPurchaseOrders() {
-    if (this.dealPoRetryRunning) return; // a previous run is still going
-    this.dealPoRetryRunning = true;
-    try {
-      await this.zohoBooks.retryMissingDealPurchaseOrders(25);
-    } catch (err) {
-      this.logger.error(
-        `retryDealPurchaseOrders failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      this.dealPoRetryRunning = false;
-      await this.recordCronRun('deal-po-retry');
-    }
-  }
-
-  // DD-F — hourly re-attempt for supplier collections still unbooked after the
-  // operator tapped "Stock ready" (a crash or TCG error inside
-  // markStockReadyAndBook would otherwise strand them until an admin notices
-  // the attention card). The sweep only re-drives bookings the admin tap
-  // already authorised — it can never initiate new courier spend on its own —
-  // and every booking is idempotent + HELD-gated in ShippingService. INERT
-  // until deals go live (no stock-ready POs with unbooked lines → no-op).
-  @Cron(CronExpression.EVERY_HOUR)
-  async sweepDealCollections() {
-    if (this.dealCollectionSweepRunning) return; // a previous run is still going
-    this.dealCollectionSweepRunning = true;
-    try {
-      await this.deals.sweepUnbookedStockReadyCollections();
-    } catch (err) {
-      this.logger.error(
-        `sweepDealCollections failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    } finally {
-      this.dealCollectionSweepRunning = false;
-      await this.recordCronRun('deal-collection-sweep');
-    }
-  }
+  // The two DD-F hourly sweeps that lived here — the deal purchase-order retry
+  // ('deal-po-retry') and the stock-ready supplier-collection re-book
+  // ('deal-collection-sweep') — went with Daily Deals. Both were deal-only:
+  // one queried DealPurchaseOrder, the other re-drove DealsService bookings.
+  // The Zoho revenue-doc retry above is the ordinary-order equivalent and is
+  // untouched.
 
   // P5.1 — Saved-search alerts. Every 10 min: for each enabled SavedSearch,
   // find ACTIVE listings published since its notify cursor and alert the

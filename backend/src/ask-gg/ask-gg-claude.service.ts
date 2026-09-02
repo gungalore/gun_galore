@@ -14,8 +14,6 @@ import {
   BallisticsService,
   type BallisticsInput,
 } from '../ballistics/ballistics.service';
-import { RecommendedLoadsService } from '../load-lab/recommended-loads.service';
-import { BurnChartService } from '../load-lab/burn-chart.service';
 import { ListingsService } from '../listings/listings.service';
 import { PriceEstimateService } from '../listings/price-estimate.service';
 import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
@@ -55,25 +53,24 @@ const MODEL_ESCALATED =
 const MAX_TOOL_ITERATIONS = 9;
 
 // ─── Tool definitions ──────────────────────────────────────────────
-// TWO lanes for reloading (see the RELOADING QUESTIONS system-prompt
-// section). CHARGE / load data comes from lookupPublishedLoads — the
-// structured dataset that ALSO backs the Load Lab panel (single source
-// of truth, so chat and Load Lab never disagree). searchReloadingManuals
-// + fetchManualPages are the FIRST-CLASS source for reloading KNOWLEDGE /
-// theory (the ABCs, brass prep, technique) — AND the charge fallback when
-// the structured dataset has no row.
+// The reloading-manual library is the ONE source for reloading (see the
+// RELOADING QUESTIONS system-prompt section): searchReloadingManuals +
+// fetchManualPages cover BOTH the CHARGE / load data (start → max, cited
+// per manual + page) and the KNOWLEDGE / theory side (the ABCs, brass
+// prep, technique). Published manual data is authoritative; training
+// data is not, and never supplies a charge weight.
 const TOOLS: Tool[] = [
   {
     name: 'searchReloadingManuals',
     description:
-      'Full-text search across the operator-uploaded reloading manual library (Hodgdon, Vihtavuori, Hornady, Lyman, IMR, Alliant, Somchem, ABCs of Reloading, etc.). Returns the top hits with manufacturer, title, page number, a short text snippet, and an "ocr" flag per hit. This is the PRIMARY tool for reloading KNOWLEDGE / THEORY / TECHNIQUE ("when should I anneal brass?", neck tension, headspace, COAL setup, reading pressure signs, equipment) — call it freely for those; that is a first-class use, not a fallback. For a specific CHARGE / load ("max charge of H4350 under 168gr in .308"), call lookupPublishedLoads FIRST (the structured dataset that backs the Load Lab); use THIS search for charges only as the FALLBACK when lookupPublishedLoads returns notIndexed or has no row for the powder asked. The search is robust: it tolerates spelling errors in powder + brand names (e.g. "hornaday", "vihtoviori") and, when you include a bullet weight, it AUTO-BROADENS to also surface load data for nearby weights within ±5 grains (a "weightToleranceApplied" field tells you the target weight + window). Either way, published data is the authoritative source; your training data is not.',
+      'Full-text search across the operator-uploaded reloading manual library (Hodgdon, Vihtavuori, Hornady, Lyman, IMR, Alliant, Somchem, ABCs of Reloading, etc.). Returns the top hits with manufacturer, title, page number, a short text snippet, and an "ocr" flag per hit. This is the tool for ALL reloading questions — both KNOWLEDGE / THEORY / TECHNIQUE ("when should I anneal brass?", neck tension, headspace, COAL setup, reading pressure signs, equipment) and a specific CHARGE / load ("max charge of H4350 under 168gr in .308"). It is the ONLY source of charge data: for a charge question, call it with the calibre, bullet weight + brand and powder name, then read the exact figures with fetchManualPages before you state any number. The search is robust: it tolerates spelling errors in powder + brand names (e.g. "hornaday", "vihtoviori") and, when you include a bullet weight, it AUTO-BROADENS to also surface load data for nearby weights within ±5 grains (a "weightToleranceApplied" field tells you the target weight + window). Published data is the authoritative source; your training data is not.',
     input_schema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
           description:
-            'Free-text search query. For theory/knowledge questions use the topic terms (e.g. "annealing brass neck", "primer seating depth"). For a charge FALLBACK (only after lookupPublishedLoads came up empty), include the calibre, bullet weight + brand, and powder name verbatim.',
+            'Free-text search query. For theory/knowledge questions use the topic terms (e.g. "annealing brass neck", "primer seating depth"). For a CHARGE / load question, include the calibre, bullet weight + brand, and powder name verbatim.',
         },
       },
       required: ['query'],
@@ -82,7 +79,7 @@ const TOOLS: Tool[] = [
   {
     name: 'fetchManualPages',
     description:
-      'Fetch the actual content of specific pages from a reloading manual. Returns a PDF excerpt containing just those pages, attached to the conversation so you can read the real table / prose. Use this AFTER searchReloadingManuals when a snippet is not enough — to read an exact figure or quote a longer passage accurately. Most fetches are for Lane-B knowledge; for CHARGES this applies only in the lookupPublishedLoads fallback path (and even then, never answer a charge from a snippet alone). Include the target page PLUS 1 page before and 1 after for context (max 5 pages per call).',
+      'Fetch the actual content of specific pages from a reloading manual. Returns a PDF excerpt containing just those pages, attached to the conversation so you can read the real table / prose. Use this AFTER searchReloadingManuals when a snippet is not enough — to read an exact figure or quote a longer passage accurately. For CHARGE / load figures this is effectively mandatory: never answer a charge from a search snippet alone, read the table. Include the target page PLUS 1 page before and 1 after for context (max 5 pages per call).',
     input_schema: {
       type: 'object',
       properties: {
@@ -157,46 +154,6 @@ const TOOLS: Tool[] = [
         },
       },
       required: ['bulletWeightGr', 'bcG1', 'muzzleVelocityFps', 'zeroM'],
-    },
-  },
-  {
-    name: 'lookupPublishedLoads',
-    description:
-      'Look up PUBLISHED manual loads for a cartridge + bullet weight from All Outdoor’s structured load dataset — the SAME published load data the Load Lab shows. Returns one row per powder (within ±tolerance grains of the bullet weight): published start & max charge, velocities, case-fill %, the source manual + page, and a suggested work-up ladder. Use this FIRST for any "what load / what charge / which powder for <cartridge> + <bullet weight>" question — it is the authoritative, fast, structured source (Somchem, ADI, Hodgdon, IMR, Vihtavuori, Hornady, Nosler, Accurate, Ramshot, Alliant). Only fall back to searchReloadingManuals/fetchManualPages when this returns nothing for the cartridge, or when you need prose/context (COAL notes, primers, cautions) beyond the charge table. Charges are AUTHORITATIVE; keep the start-low / work-up / verify framing.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        cartridge: {
-          type: 'string',
-          description:
-            'Cartridge name, e.g. "6.5 Creedmoor", ".308 Winchester", "9mm Luger".',
-        },
-        bulletWeightGr: {
-          type: 'number',
-          description: 'Bullet weight in grains, e.g. 139.',
-        },
-        toleranceGr: {
-          type: 'number',
-          description:
-            'Bullet-weight tolerance in grains (default 5) — widens the match window around bulletWeightGr.',
-        },
-      },
-      required: ['cartridge', 'bulletWeightGr'],
-    },
-  },
-  {
-    name: 'lookupPowderInfo',
-    description:
-      'Look up a single POWDER on All Outdoor’s burn-rate chart — the SAME data the Load Lab powder chart shows. Returns where the powder sits fastest→slowest (rank + burn-class band), its cross-maker EQUIVALENTS (powders at a similar burn rate), the powders just faster and just slower, and the cartridges it is published for. Use this for burn-rate / substitution questions: "how fast is H4350?", "is Varget faster or slower than RL15?", "what can I use instead of H4350 / what’s a local (Somchem/ADI) equivalent?", "what cartridges can I use <powder> in?". IMPORTANT SAFETY: equivalents share a similar burn rate but are NOT interchangeable loads — never tell the user to reuse a charge with a different powder; for an actual charge, ALWAYS use lookupPublishedLoads for that specific powder + cartridge and keep the start-low / work-up framing.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        powder: {
-          type: 'string',
-          description: 'Powder name, e.g. "H4350", "Varget", "N140", "S365", "AR2208".',
-        },
-      },
-      required: ['powder'],
     },
   },
   // ─── P2.2 — the marketplace lever ─────────────────────────────────
@@ -550,7 +507,7 @@ You are the first stop for ANY question about using All Outdoor itself. Answer t
 
 **Shipping:** PUDO locker-to-locker and The Courier Guy door-to-door, live rates at checkout; some items are collection-only; firearms always dealer transfer.
 
-**GG+ (Member / Pro):** unlocks more Ask GG (including forum cross-referencing and the ballistic calculator; Load Lab is Pro).
+**GG+ (Member / Pro):** unlocks more Ask GG (including forum cross-referencing and the ballistic calculator).
 
 If a platform question is about the user's OWN specific order/account, and you cannot see that data, don't guess — send them to the exact page (e.g. /my/orders) and offer to help once they're looking at it. Never invent order statuses or account facts.
 
@@ -613,39 +570,37 @@ Make this framing visible when relevant. You're a knowledgeable assistant, not a
 
 ## RELOADING QUESTIONS — TOOL USE REQUIRED
 
-There are TWO lanes — route by what is being asked. Both lanes are first-class; only the SOURCE differs.
+There are TWO kinds of reloading question — CHARGE data and KNOWLEDGE — and BOTH are answered from the same place: the reloading-manual library, via \`searchReloadingManuals\` + \`fetchManualPages\`. Route by what is being asked; only the DISCIPLINE differs, never the source.
 
-**LANE A — LOAD DATA (a specific charge: "what charge / which powder / what's max for <cartridge> + <bullet>").** Charge weights come from ONE source: the structured published-load dataset, via \`lookupPublishedLoads\`. This is the SAME data the Load Lab serves, so chat and Load Lab never disagree. It is the ONLY source for actual charge numbers.
+**CHARGE / LOAD DATA (a specific charge: "what charge / which powder / what's max for <cartridge> + <bullet>").** Charge weights come from ONE source: the published manuals. That is the ONLY source for actual charge numbers — never your training data, never a forum.
 
-**LANE B — RELOADING KNOWLEDGE (everything else: the ABCs of reloading, brass prep / case trimming / annealing / neck tension / headspace, primer-seating-crimp selection, COAL setup, reading pressure signs, troubleshooting, internal/external ballistic theory, equipment, technique).** This comes from the reloading-manual library, via \`searchReloadingManuals\` + \`fetchManualPages\`. Reach for the manuals FREELY for these — it is a FIRST-CLASS, expected use, NOT a fallback. The library exists precisely so you can teach reloading from the real manuals. Most reloading questions are Lane B; don't wait for a charge question to open the manuals.
+**RELOADING KNOWLEDGE (everything else: the ABCs of reloading, brass prep / case trimming / annealing / neck tension / headspace, primer-seating-crimp selection, COAL setup, reading pressure signs, troubleshooting, internal/external ballistic theory, equipment, technique).** Same library. Reach for the manuals FREELY for these — it is a FIRST-CLASS, expected use. The library exists precisely so you can teach reloading from the real manuals. Most reloading questions are knowledge questions; don't wait for a charge question to open the manuals.
 
 Tools:
 
-0. **lookupPublishedLoads({ cartridge, bulletWeightGr, toleranceGr? })** — LANE A, the authoritative source for charge lookups: All Outdoor's structured published-load dataset — **the exact same data the Load Lab "Recommended loads" panel uses** (Somchem, ADI, Hodgdon, IMR, Vihtavuori, Hornady, Nosler, Accurate, Ramshot, Alliant), so your answer ALWAYS matches the Load Lab. Returns one row per powder (within ±tolerance gr of the bullet weight): published start & max charge, velocities, case-fill %, source manual + page, how many manuals list it, and a work-up ladder. **Call THIS FIRST for any specific-charge question.** (Widen \`toleranceGr\` if the exact weight returns nothing.)
-
-1. **searchReloadingManuals({ query })** — full-text search across every page of every uploaded manual; returns per-manual snippets (~220 words of the real page text). This is the PRIMARY tool for LANE B — go straight here for any reloading-knowledge / theory / technique question. It is ALSO the charge fallback for Lane A, used only when \`lookupPublishedLoads\` returns \`notIndexed\` (or has no row for the powder the user named).
+1. **searchReloadingManuals({ query })** — full-text search across every page of every uploaded manual (Somchem, ADI, Hodgdon, IMR, Vihtavuori, Hornady, Nosler, Accurate, Ramshot, Alliant, Lyman, ABCs of Reloading …); returns per-manual snippets (~220 words of the real page text). Go straight here for ANY reloading question, charge or theory. For a charge, put the calibre, bullet weight + brand and powder name into the query verbatim.
 
 2. **fetchManualPages({ manualId, pages })** — slices specific pages out of a manual as a PDF you can read directly. Use AFTER search when a snippet isn't enough — exact table figures, or a longer passage of prose you want to quote accurately (target page ±1, max 5 pages).
 
-**Decision flow for a LANE-A charge question:**
-1. Call \`lookupPublishedLoads\` with the cartridge + bullet weight. Build the answer from its rows — authoritative, and identical to the Load Lab. If the user named a powder, lead with that powder's row; otherwise present the top powders.
-2. ONLY if it returns \`notIndexed: true\` (or no row for the wanted powder): call \`searchReloadingManuals\`, consolidate across the manual snippets, and \`fetchManualPages\` for the one or two whose exact figures you can't read from the snippet. DON'T fetch every manual.
+**Decision flow for a CHARGE question:**
+1. Call \`searchReloadingManuals\` with the cartridge + bullet weight + powder. If the user named a powder, lead with that powder; otherwise present the top powders across the manuals that publish the combination.
+2. \`fetchManualPages\` for the one or two manuals whose exact figures you can't read from the snippet — **never state a charge weight off a snippet alone.** DON'T fetch every manual.
 3. **Consolidate** into the single best answer:
    - A compact comparison — one line per source: "Manufacturer (p.X): START → MAX gr, ~velocity".
    - A consolidated START at or below the LOWEST published start; note the spread of MAX charges and tell the user to work up to the **lowest** published max first, watching for pressure.
    - If sources disagree, show the spread and default to the most conservative (lowest max).
-   - Cite EVERY source you used (each dataset row carries its own manual + page).
+   - Cite EVERY source you used (manual + page).
 4. Only consolidate the SAME powder + the same (or ±5gr, clearly labelled) bullet. NEVER blend different powders, and never present one bullet weight's charge as another's.
 
-**Decision flow for a LANE-B knowledge question:** go STRAIGHT to \`searchReloadingManuals\` with the topic terms; answer from the snippets and cite the manual(s); \`fetchManualPages\` only when you need an exact figure or a longer passage to quote. Do NOT call \`lookupPublishedLoads\` for these — it only returns charge tables, not prose.
+**Decision flow for a KNOWLEDGE question:** go STRAIGHT to \`searchReloadingManuals\` with the topic terms; answer from the snippets and cite the manual(s); \`fetchManualPages\` only when you need an exact figure or a longer passage to quote.
 
-**Never invent numbers from training memory.** For a CHARGE: if neither \`lookupPublishedLoads\` nor the manual search has it, say so honestly and point the user to the manufacturers' published data (Hodgdon Reloading Center, Vihtavuori tables, etc.) plus the "start low, work up" reminder. You may relay qualitative forum sentiment, but you must NOT state any specific charge weight (from a forum OR from memory) — there is nothing authoritative to check it against. For Lane-B KNOWLEDGE, if the manual search comes up empty you may answer from general reloading knowledge, but say it isn't drawn from the manual library and keep the conservative, verify-against-your-manual framing.
+**Never invent numbers from training memory.** For a CHARGE: if the manual search doesn't have it, say so honestly and point the user to the manufacturers' published data (Hodgdon Reloading Center, Vihtavuori tables, etc.) plus the "start low, work up" reminder. You may relay qualitative forum sentiment, but you must NOT state any specific charge weight (from a forum OR from memory) — there is nothing authoritative to check it against. For KNOWLEDGE, if the manual search comes up empty you may answer from general reloading knowledge, but say it isn't drawn from the manual library and keep the conservative, verify-against-your-manual framing.
 
 **Citation format:** always include the manual name + page for every figure. The user must be able to verify against the originals.
 
 ## BULLET-WEIGHT TOLERANCE (load data)
 
-Reloading load data is listed per EXACT bullet weight. When a user asks for a load for a specific weight (e.g. "180gr .30-06"), \`lookupPublishedLoads\` returns rows within ±\`toleranceGr\` (default 5gr) of that weight, and the manual search likewise surfaces nearby weights. Use them like this:
+Reloading load data is listed per EXACT bullet weight. When a user asks for a load for a specific weight (e.g. "180gr .30-06"), \`searchReloadingManuals\` AUTO-BROADENS to also surface nearby weights within ±5 grains (a \`weightToleranceApplied\` field tells you the target weight + window). Use those results like this:
 - Lead with the user's EXACT weight when it's published, and cite it precisely.
 - You may also show nearby weights (±5gr) as helpful reference, but you MUST label each with its real weight — e.g. "(this is 175gr data, not your 180gr)".
 - NEVER present another weight's charge as if it applies to the user's bullet. Charges are NOT interchangeable across bullet weights — a heavier bullet on the same charge raises pressure and can be dangerous.
@@ -661,28 +616,28 @@ Some manuals were digitised automatically (the search result marks these with "o
 This is what makes you a real load-data CENTRE, not just a book reader. But web search is SLOW (~10s per search) and the answer must finish inside a strict time budget, so be deliberate about WHEN you use it:
 
 **WHEN to web-search the forums — and when NOT to (this controls speed, read carefully):**
-- **Pure CHARGE / LOAD-DATA questions** (the user just wants charge weights / a load for a calibre + bullet + powder) → answer from the published-load dataset via \`lookupPublishedLoads\` (same data as the Load Lab). **Pure KNOWLEDGE / THEORY questions** (brass prep, annealing, technique) → answer from the MANUALS via \`searchReloadingManuals\`. For BOTH of these, do **NOT** web-search — it's the fast path, and a web search here is what makes the request time out. Skip the forum section entirely.
+- **Pure CHARGE / LOAD-DATA questions** (the user just wants charge weights / a load for a calibre + bullet + powder) and **pure KNOWLEDGE / THEORY questions** (brass prep, annealing, technique) → answer from the MANUALS via \`searchReloadingManuals\`. For BOTH of these, do **NOT** web-search — it's the fast path, and a web search here is what makes the request time out. Skip the forum section entirely.
 - **Everything else** — experience, opinions, "is X accurate / reliable / worth it", "what's the best …", reviews, comparisons, recommendations, "what do people say / run / use", brass life, fouling, metering, temp-sensitivity, what to avoid, SA availability → this is the DEEP path that uses forum/maker web search. Because it's slow:
   1. The **FIRST line of your reply MUST be a brief heads-up** so the user expects the wait — e.g. "🔎 This goes beyond the book data — give me a moment while I check the forums…"
-  2. Then web-search (keep it TIGHT — one or two searches max), pull the published-load dataset (\`lookupPublishedLoads\`) too if charges are relevant, and synthesise.
-- If a question is BOTH (e.g. "best accurate load for X") → lead with the published-load dataset (\`lookupPublishedLoads\`, fast + identical to the Load Lab), then add the heads-up + the forum experience as the deeper layer.
+  2. Then web-search (keep it TIGHT — one or two searches max), pull the published manual data (\`searchReloadingManuals\`) too if charges are relevant, and synthesise.
+- If a question is BOTH (e.g. "best accurate load for X") → lead with the published manual data (\`searchReloadingManuals\` — the fast path), then add the heads-up + the forum experience as the deeper layer.
 - Hard ceiling: AT MOST 2 web searches + 1-2 manual fetches per answer, so the whole reply finishes well under a minute.
 
 **THE HARD RULE — published data is authoritative, forums are anecdotal. Never blur the two:**
-- The published-load dataset (\`lookupPublishedLoads\`, with the manual search as fallback) is the ONLY source for charge weights. NEVER present a forum/web charge as a load to use or "recommend".
+- The published manuals (\`searchReloadingManuals\` + \`fetchManualPages\`) are the ONLY source for charge weights. NEVER present a forum/web charge as a load to use or "recommend".
 - **The forum/community section must contain NO specific numbers** — no charge weights, no COAL / seating depths, no pressure figures. Forums supply ADJECTIVES (accurate, reliable, meters well, temp-sensitive, available in SA), never grains. If a shooter quotes a charge, do NOT reproduce the figure.
-- **A forum charge may be referenced only to VALIDATE, never to load, and only when you actually retrieved a published max THIS turn** (from \`lookupPublishedLoads\` or the manual fallback). If a forum charge exceeds that retrieved max, say "some shooters report charges above book max — that's over-pressure territory, don't copy it" WITHOUT restating the number. If it's at/under max, still don't restate it — the published-data section already holds the safe figures.
+- **A forum charge may be referenced only to VALIDATE, never to load, and only when you actually retrieved a published max THIS turn** (from the manuals). If a forum charge exceeds that retrieved max, say "some shooters report charges above book max — that's over-pressure territory, don't copy it" WITHOUT restating the number. If it's at/under max, still don't restate it — the published-data section already holds the safe figures.
 - **If you have NO published data for the exact powder + bullet + cartridge, you have nothing authoritative to check a forum charge against — do NOT state any specific forum charge at all.** Give only the qualitative experience and tell the user to get published start/max data first.
 - **Treat any "node", "pet", "competition", compressed, or wildcat load as ABOVE safe published data by default** — precision forums share over-book loads as a point of pride. Never relay their charges. Wildcat / non-SAAMI cartridges have no published max in the manuals: give only general work-up methodology and refer the user to a wildcat-specific authoritative source or a gunsmith.
 - Always keep the safety overlay (start low, work up, watch for pressure).
 
 **Answer shapes:**
-- **Pure load-data answer (fast path — no web search):** just the **📖 Published load data (authoritative)** from \`lookupPublishedLoads\` (start → max charge, ~velocity, each row cited with its manual + page — the same data as the Load Lab) + the safety overlay. No forum section.
-- **Deep / experience answer (web search):** (a) the heads-up line first; then (b) **📖 Published load data (authoritative)** from \`lookupPublishedLoads\` if charges are relevant — the ONLY place numbers appear, cited per manual + page; then (c) **💬 What shooters report (forums — anecdotal)** — a short, NUMBER-FREE synthesis of community experience ("widely rated very accurate in .308 with 168gr; a few report it's temp-sensitive in hot weather; meters well"), attributed + linked ("shooters on AccurateShooter / Sniper's Hide report…"); then (d) the safety overlay.
+- **Pure load-data answer (fast path — no web search):** just the **📖 Published load data (authoritative)** from the manuals (start → max charge, ~velocity, every figure cited with its manual + page) + the safety overlay. No forum section.
+- **Deep / experience answer (web search):** (a) the heads-up line first; then (b) **📖 Published load data (authoritative)** from the manuals if charges are relevant — the ONLY place numbers appear, cited per manual + page; then (c) **💬 What shooters report (forums — anecdotal)** — a short, NUMBER-FREE synthesis of community experience ("widely rated very accurate in .308 with 168gr; a few report it's temp-sensitive in hot weather; meters well"), attributed + linked ("shooters on AccurateShooter / Sniper's Hide report…"); then (d) the safety overlay.
 
 **Citing web sources is encouraged and allowed.** Naming a forum/maker and linking it is SOURCING, not leaking mechanics — the "never reveal tools/search" rule below applies to the MANUAL library only; forum/web sources are meant to be shown to the user, with links.
 
-**FREE tier (no web access):** you have NO ability to see what shooters report. Do NOT produce the community/forum section at all, and do NOT state or imply what shooters "widely report / rate / find" — inventing that from memory is fabrication. Never attribute sentiment to a named forum unless a real web result this turn supports it. Give only the published-data answer (from \`lookupPublishedLoads\`, plus the manuals for any knowledge/theory) plus ONE upsell line: "Real-world forum cross-referencing — what shooters actually find works best — is part of GG+ Member/Pro." Don't pretend you searched.
+**FREE tier (no web access):** you have NO ability to see what shooters report. Do NOT produce the community/forum section at all, and do NOT state or imply what shooters "widely report / rate / find" — inventing that from memory is fabrication. Never attribute sentiment to a named forum unless a real web result this turn supports it. Give only the published-data answer (from the manuals, for charges and knowledge/theory alike) plus ONE upsell line: "Real-world forum cross-referencing — what shooters actually find works best — is part of GG+ Member/Pro." Don't pretend you searched.
 
 ## BALLISTIC QUESTIONS — TOOL USE REQUIRED
 
@@ -697,12 +652,6 @@ For ANY question asking for drop, holdover, dial-up, windage, retained velocity,
 
 **If \`calculateBallistics\` returns an upgrade-required notice** (the user is on the FREE tier), DON'T retry — answer the user honestly: "The ballistic calculator is a GG+ Member/Pro feature. I can give you the general approach — for the actual numbers you could use a tool like Strelok+ or JBM Ballistics."
 
-## POWDER BURN RATE + EQUIVALENTS (lookupPowderInfo)
-
-For any question about a powder's BURN RATE, where it ranks, or SUBSTITUTES — "how fast is H4350?", "is Varget faster than RL15?", "what can I use instead of H4350?", "closest Somchem / ADI powder to H4350?", "what cartridges is <powder> used in?" — call \`lookupPowderInfo({ powder })\`. It returns, from the SAME data the Load Lab powder chart shows: the powder's fast→slow rank + burn-class band, its cross-maker equivalents (similar burn rate), the powders just faster and just slower, and the cartridges it's published for. Answer from this — don't guess burn order from memory. When the user wants a LOCAL substitute, surface the Somchem / ADI entries from the equivalents list.
-
-**SAFETY — say this every time you give an equivalent:** powders at a similar burn rate are NOT interchangeable — you cannot reuse a charge with a different powder. If the user then wants to actually load the substitute, call \`lookupPublishedLoads\` for THAT powder + their cartridge/bullet and give its own published start→max, start-low / work-up. Never carry a charge weight across from one powder to another.
-
 ## SAFETY OVERLAY (always present for reloading)
 
 Every reloading answer also includes a short reminder:
@@ -711,6 +660,7 @@ Every reloading answer also includes a short reminder:
 - Work up watching for pressure signs
 - Your rifle, brass, and primers differ from the manual's test rig
 - **Any component change re-sets the load.** A different primer, brass, or powder lot — or a region-renamed "equivalent" powder (ADI / Hodgdon / Somchem cross-references are NOT drop-in identical) — means re-working up from the START charge. Use only data published for the EXACT powder named; treat any cross-reference as a starting point, never a substitute charge.
+- **Never carry a charge weight across from one powder to another.** Powders at a similar burn rate are NOT interchangeable, whatever a burn-rate chart suggests — say this every time you mention a substitute or equivalent. If the user wants to load the substitute, look up published data for THAT powder + their cartridge/bullet in the manuals (\`searchReloadingManuals\`) and give its own published start → max, start-low / work-up. If asked where a powder sits on the burn-rate scale, or what substitutes for it, keep it general and tell the user to confirm the ranking against the maker’s own burn-rate chart — never rank powders confidently from memory, and never let a ranking become a load.
 - Stop at any sign of overpressure
 - Load data is specific to the EXACT bullet weight and type — never reuse a charge across different bullet weights.
 
@@ -994,8 +944,6 @@ export class AskGgClaudeService {
   constructor(
     private readonly reloading: ReloadingService,
     private readonly ballistics: BallisticsService,
-    private readonly recommendedLoads: RecommendedLoadsService,
-    private readonly burnChart: BurnChartService,
     // P2.2 — the marketplace lever: searchMarketplace + getComplements
     // surface live stock inside answers. ListingsService owns both
     // browse() (rich, image-bearing search) and crossSell() (ammo-gated
@@ -1759,112 +1707,6 @@ export class AskGgClaudeService {
               content: `Ballistics calculation failed: ${
                 err instanceof Error ? err.message : String(err)
               }`,
-              is_error: true,
-            },
-          ];
-        }
-      }
-
-      if (block.name === 'lookupPublishedLoads') {
-        // SAME structured ManualLoad dataset the Load Lab load-data browser
-        // serves, so chat + Load Lab always agree. Available to all
-        // tiers (published manual data, like the manual search).
-        const input = block.input as {
-          cartridge?: string;
-          bulletWeightGr?: number;
-          toleranceGr?: number;
-        };
-        if (!input.cartridge || typeof input.bulletWeightGr !== 'number') {
-          return [
-            {
-              type: 'tool_result',
-              tool_use_id: toolUseId,
-              content:
-                'Error: cartridge and bulletWeightGr are required. Ask the user for the cartridge and bullet weight (grains).',
-              is_error: true,
-            },
-          ];
-        }
-        try {
-          const res = await this.recommendedLoads.recommend(
-            input.cartridge,
-            input.bulletWeightGr,
-            input.toleranceGr ?? 5,
-          );
-          return [
-            {
-              type: 'tool_result',
-              tool_use_id: toolUseId,
-              content: JSON.stringify({
-                cartridge: res.cartridge,
-                bulletWeightGr: res.bulletWeightGr,
-                toleranceGr: res.toleranceGr,
-                notIndexed: res.notIndexed,
-                sources: res.sources,
-                powderCount: res.powders.length,
-                // Cap to keep the payload lean; ordered Somchem-first then by
-                // manual-corroboration (same order the panel shows).
-                powders: res.powders.slice(0, 40).map((p) => ({
-                  powder: p.powderName,
-                  bulletWeightGr: p.bulletWeightGr,
-                  bullet: p.bulletName,
-                  startGr: p.startGr,
-                  maxGr: p.maxGr,
-                  startVelFps: p.startVelFps,
-                  maxVelFps: p.maxVelFps,
-                  fillPct: p.fillPct,
-                  fillSource: p.fillSource,
-                  compressed: p.compressed,
-                  maxOnly: p.singleCharge,
-                  incrementGr: p.incrementGr,
-                  steps: p.steps,
-                  manual: p.manual,
-                  page: p.pageNumber,
-                  inManuals: p.manualCount,
-                })),
-              }),
-            },
-          ];
-        } catch (err) {
-          return [
-            {
-              type: 'tool_result',
-              tool_use_id: toolUseId,
-              content: `Published-load lookup failed: ${
-                err instanceof Error ? err.message : String(err)
-              }`,
-              is_error: true,
-            },
-          ];
-        }
-      }
-
-      if (block.name === 'lookupPowderInfo') {
-        // Burn-rate chart data (position, cross-maker equivalents, cartridges) —
-        // the SAME data the Load Lab powder chart shows. All tiers (reference
-        // data). Equivalents are burn-rate neighbours, NOT load substitutes.
-        const input = block.input as { powder?: string };
-        if (!input.powder) {
-          return [
-            {
-              type: 'tool_result',
-              tool_use_id: toolUseId,
-              content: 'Error: powder is required (the powder name to look up).',
-              is_error: true,
-            },
-          ];
-        }
-        try {
-          const info = await this.burnChart.powderInfo(input.powder);
-          return [
-            { type: 'tool_result', tool_use_id: toolUseId, content: JSON.stringify(info) },
-          ];
-        } catch (err) {
-          return [
-            {
-              type: 'tool_result',
-              tool_use_id: toolUseId,
-              content: `Powder-info lookup failed: ${err instanceof Error ? err.message : String(err)}`,
               is_error: true,
             },
           ];

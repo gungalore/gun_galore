@@ -302,9 +302,14 @@ export class AdminHealthService {
       // Every schedule below is cross-checked against the actual @Cron
       // decorators in tasks.service.ts (audit 2026-07-18 — dispatch-sla
       // was declared "every 10 min" while the cron runs hourly, which
-      // false-red'd the row for 30 of every 60 minutes). deal-drops is
-      // deliberately NOT monitored: it only records a run when a drop
-      // actually fires, so a freshness check would false-alarm forever.
+      // false-red'd the row for 30 of every 60 minutes).
+      //
+      // The three Daily Deals rows are gone with the feature: 'deal-drops'
+      // was never monitored, and 'deal-po-retry' / 'deal-collection-sweep'
+      // HAD to come out — their @Cron handlers no longer exist, so their
+      // `cron:lastrun:*` Setting rows freeze at the last pre-deploy run and
+      // cronWatchdog would raise a permanent urgent CRON_STALE alert (and an
+      // ops SMS) for two jobs that were deliberately deleted.
       { key: 'shipping-poll', label: 'Shipping tracking poll', schedule: 'every 10 min', expectedIntervalSec: 600 },
       // Nightly at 02:40. Deletes the encrypted identity documents behind
       // motivations past their retention date. A retention job that stops
@@ -334,7 +339,6 @@ export class AdminHealthService {
       { key: 'push-prune', label: 'Push subscription cleanup', schedule: 'every 1 week', expectedIntervalSec: 604800 },
       { key: 'saved-search-match', label: 'Saved-search alert matcher', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'stuck-held-funds', label: 'Stuck-held-funds admin alert', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
-      { key: 'deal-po-retry', label: 'Deal PO retry', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'credit-poll', label: 'Service credit snapshot poll', schedule: 'every 15 min', expectedIntervalSec: 900 },
       { key: 'firearm-licence-expiry', label: 'Firearm licence expiry sweep', schedule: 'daily 06:00', expectedIntervalSec: 86400 },
       { key: 'pa-payout-reconcile', label: 'Payout reconcile sweep', schedule: 'every 5 min', expectedIntervalSec: 300 },
@@ -343,7 +347,6 @@ export class AdminHealthService {
       { key: 'zoho-revenue-doc-retry', label: 'Zoho revenue-doc retry', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'email-outbox-retry', label: 'Email outbox retry', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'trust-score-refresh', label: 'Trust-score refresh', schedule: 'daily 03:00', expectedIntervalSec: 86_400 },
-      { key: 'deal-collection-sweep', label: 'Deal collection sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'dealer-verification-ageing', label: 'Dealer verification ageing', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
       { key: 'accept-escalation', label: '48h accept escalation', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'sms-retry', label: 'SMS retry + outage watch', schedule: 'every 10 min', expectedIntervalSec: 600 },

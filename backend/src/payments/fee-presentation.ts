@@ -83,11 +83,11 @@ export interface SellerBreakdown {
 const sum = (lines: MoneyLine[]) => lines.reduce((t, l) => t + l.cents, 0);
 
 /**
- * ⚠️ A FIRST-PARTY SALE HAS NO SELLER. Daily Deals zero both commissionZar
- * and sellerPayout because All Outdoor is the seller of record, and a refund
- * child row does the same. Neither can produce a seller breakdown that
- * balances against a non-zero price, so they are answered explicitly rather
- * than being allowed to fail the invariant.
+ * ⚠️ A ROW WITH NO SELLER SIDE. A refund child row zeroes both commissionZar
+ * and sellerPayout, as would any future first-party sale where All Outdoor is
+ * the seller of record. Such a row cannot produce a seller breakdown that
+ * balances against a non-zero price, so it is answered explicitly rather than
+ * being allowed to fail the invariant.
  */
 const isHouseOrRefundRow = (f: FeeFacts) =>
   f.sellerPayout === 0 && f.commissionZar === 0 && f.listingPrice > 0;

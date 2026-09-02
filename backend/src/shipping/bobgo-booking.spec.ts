@@ -69,7 +69,6 @@ const TX = {
   },
   listing: {
     title: 'Camping lantern',
-    isDealListing: false,
     weightGrams: 2500,
     lengthCm: 30,
     widthCm: 20,
@@ -247,7 +246,7 @@ describe('resolvePendingBobGoBookings', () => {
       shippingMethod: 'TCG',
       trackingReference: 'PEND1234',
       carrierDropoffPin: null,
-      listing: { title: 'Lantern', isDealListing: false },
+      listing: { title: 'Lantern' },
       seller: TX.seller,
     });
     bobgo.listShipments.mockResolvedValue([

@@ -1,13 +1,17 @@
-// DD-F3 — booking DEFERRAL at the accept-and-book seam.
+// The accept-and-book seam — `_stampAcceptAndBook`.
 //
-// A house deal (Listing.isDealListing) is sell-first / buy-after: GG holds no
-// stock at accept time and the courier collects from the SUPPLIER warehouse
-// only once the operator taps "Stock ready" (DealsService.markStockReadyAndBook
-// fires bookForTransaction later). So `_stampAcceptAndBook` must NOT call
-// shipping.bookForTransaction for a deal line, while an ORDINARY sale must book
-// immediately exactly as before. This locks that branch (transactions.service
-// :1657-1665) so a refactor can't silently start double-booking (accept +
-// stock-ready) or, worse, courier-book a deal from GG's non-existent address.
+// On seller-accept we CAS-stamp acceptedAt/dispatchDeadlineAt across the whole
+// consolidated group and book ONE carrier shipment on the group's carrier line.
+// Two things must hold and are easy to break in a refactor:
+//   · the booking is keyed on the CARRIER (shipsWithId ?? self), never on a
+//     sibling — booking a sibling declares a second parcel for one shipment;
+//   · a LOST claim (count 0 — the row was refunded/disputed/already accepted)
+//     stamps nothing, books nothing and notifies nobody.
+//
+// These three cases arrived with the Daily Deals booking-deferral spec
+// (deal-booking-deferral.spec.ts) and are kept here, unchanged, now that Daily
+// Deals is gone — they were always assertions about the ORDINARY sale, and
+// they are what proves the deal removal left this seam alone.
 //
 // TransactionsService transitively imports modules that pull ESM-only
 // meilisearch; stub it so ts-jest doesn't choke (same as the sibling specs).
@@ -16,15 +20,13 @@ jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 import { TransactionsService } from './transactions.service';
 
 // Minimal shape `_stampAcceptAndBook(transactionId, tx)` reads. The private
-// method is exercised directly (its two public callers — acceptTransaction and
-// maybeAutoAcceptHouseDeal — funnel through it verbatim), keyed on the one
-// field under test: tx.listing.isDealListing.
+// method is exercised directly — its caller (acceptTransaction) funnels
+// through it verbatim.
 type StampTx = {
   id: string;
-  listingId: string;
   shipsWithId: string | null;
   shippingMethod: string | null;
-  listing: { title: string; isDealListing: boolean };
+  listing: { title: string };
   buyer: {
     email: string;
     firstName: string | null;
@@ -36,10 +38,9 @@ type StampTx = {
 function makeTx(over: Partial<StampTx> = {}): StampTx {
   return {
     id: 'TX1',
-    listingId: 'L1',
     shipsWithId: null,
     shippingMethod: 'TCG',
-    listing: { title: 'Widget', isDealListing: false },
+    listing: { title: 'Widget' },
     buyer: {
       email: 'b@x.co',
       firstName: 'Bo',
@@ -53,16 +54,10 @@ function makeTx(over: Partial<StampTx> = {}): StampTx {
 function makeService(over: { stampedCount?: number } = {}) {
   const prisma = {
     transaction: {
-      // The atomic accept-stamp claim. count>0 → proceeds to (defer/)book.
+      // The atomic accept-stamp claim. count>0 → proceeds to book.
       updateMany: jest
         .fn()
         .mockResolvedValue({ count: over.stampedCount ?? 1 }),
-    },
-    deal: {
-      // Only read on the deal branch (ships-in window for the buyer notice).
-      findUnique: jest
-        .fn()
-        .mockResolvedValue({ shipsInDaysMin: 3, shipsInDaysMax: 7 }),
     },
   };
   const shipping = { bookForTransaction: jest.fn().mockResolvedValue(null) };
@@ -92,7 +87,7 @@ function makeService(over: { stampedCount?: number } = {}) {
     {} as never, // saps534
   );
 
-  // Reach the private stamp core directly (public callers are thin wrappers).
+  // Reach the private stamp core directly (its caller is a thin wrapper).
   const stamp = (transactionId: string, tx: StampTx) =>
     (
       service as unknown as {
@@ -106,45 +101,29 @@ function makeService(over: { stampedCount?: number } = {}) {
   return { service, prisma, shipping, tracking, notifications, stamp };
 }
 
-describe('DD-F3 _stampAcceptAndBook — deal booking deferral', () => {
-  it('DEFERS: a deal line (isDealListing) does NOT book the courier at accept', async () => {
+describe('_stampAcceptAndBook — the ordinary accept books immediately', () => {
+  it('BOOKS: a standalone line books the courier immediately, keyed on itself', async () => {
     const { shipping, notifications, stamp } = makeService();
-    const res = await stamp('TX1', makeTx({ listing: { title: 'Deal item', isDealListing: true } }));
-
-    // Stamped (acceptedAt/dispatchDeadlineAt returned) but NO booking — that is
-    // deferred to markStockReadyAndBook.
-    expect(res).not.toBeNull();
-    expect(shipping.bookForTransaction).not.toHaveBeenCalled();
-    // Buyer is still notified their deal is accepted.
-    expect(notifications.saleAcceptedBuyer).toHaveBeenCalledTimes(1);
-  });
-
-  it('BOOKS: an ordinary (non-deal) line books the courier immediately, keyed on itself', async () => {
-    const { shipping, stamp } = makeService();
-    const res = await stamp('TX1', makeTx({ listing: { title: 'Seller item', isDealListing: false } }));
+    const res = await stamp('TX1', makeTx({ listing: { title: 'Seller item' } }));
 
     expect(res).not.toBeNull();
     // carrierId = shipsWithId ?? transactionId → itself for a standalone line.
     expect(shipping.bookForTransaction).toHaveBeenCalledTimes(1);
     expect(shipping.bookForTransaction).toHaveBeenCalledWith('TX1');
+    // …and the buyer hears "accepted, dispatch within 5 days".
+    expect(notifications.saleAcceptedBuyer).toHaveBeenCalledTimes(1);
   });
 
-  it('BOOKS the CARRIER, not the sibling: a consolidated non-deal line books shipsWithId', async () => {
+  it('BOOKS the CARRIER, not the sibling: a consolidated line books shipsWithId', async () => {
     const { shipping, stamp } = makeService();
     // A consolidated sibling — its carrier owns the one parcel/booking.
-    await stamp('TX1', makeTx({ shipsWithId: 'CARRIER9', listing: { title: 'x', isDealListing: false } }));
+    await stamp('TX1', makeTx({ shipsWithId: 'CARRIER9', listing: { title: 'x' } }));
     expect(shipping.bookForTransaction).toHaveBeenCalledWith('CARRIER9');
-  });
-
-  it('does NOT read the deal ships-in window for a non-deal line', async () => {
-    const { prisma, stamp } = makeService();
-    await stamp('TX1', makeTx({ listing: { title: 'x', isDealListing: false } }));
-    expect(prisma.deal.findUnique).not.toHaveBeenCalled();
   });
 
   it('a lost accept-claim (count 0) stamps nothing and books nothing', async () => {
     const { shipping, notifications, stamp } = makeService({ stampedCount: 0 });
-    const res = await stamp('TX1', makeTx({ listing: { title: 'Seller item', isDealListing: false } }));
+    const res = await stamp('TX1', makeTx({ listing: { title: 'Seller item' } }));
     expect(res).toBeNull();
     expect(shipping.bookForTransaction).not.toHaveBeenCalled();
     expect(notifications.saleAcceptedBuyer).not.toHaveBeenCalled();

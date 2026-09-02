@@ -87,7 +87,6 @@ const PUSH_TITLES: Array<[string, string]> = [
   ['/dashboard', 'Seller dashboard'],
   ['/support', 'Support'],
   ['/faq', 'FAQ'],
-  ['/deals', 'Daily Deals'],
   ['/kyc', 'Verification'],
   ['/scan', 'Scan'],
 ];

@@ -14,7 +14,6 @@ const LISTING = {
   id: 'L1',
   isFirearm: false,
   collectionOnly: false,
-  isDealListing: false,
   weightGrams: 2500,
   lengthCm: 30,
   widthCm: 20,

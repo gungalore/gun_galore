@@ -17,7 +17,7 @@ function meta(entries: Array<[string, Partial<ShippingLineMeta>]>) {
   return new Map<string, ShippingLineMeta>(
     entries.map(([id, m]) => [
       id,
-      { sellerId: m.sellerId ?? 'S1', isFirearm: m.isFirearm ?? false, dealSupplierId: m.dealSupplierId ?? null },
+      { sellerId: m.sellerId ?? 'S1', isFirearm: m.isFirearm ?? false },
     ]),
   );
 }
@@ -46,24 +46,6 @@ describe('planShippingGroups', () => {
     );
     expect(groups).toHaveLength(2);
     expect(groups.every((g) => g.consolidated === false)).toBe(true);
-  });
-
-  // The reason the frontend must not compute these keys: every Daily Deal
-  // shares the house seller id, so client-side grouping by sellerId would
-  // quote ONE parcel where TWO suppliers each ship one.
-  it('groups deal lines by SUPPLIER, not by the shared house seller id', () => {
-    const groups = planShippingGroups(
-      [
-        { listingId: 'D1', shippingMethod: 'TCG', deliveryAddress: ADDR },
-        { listingId: 'D2', shippingMethod: 'TCG', deliveryAddress: ADDR },
-      ],
-      meta([
-        ['D1', { sellerId: 'HOUSE', dealSupplierId: 'SUP-A' }],
-        ['D2', { sellerId: 'HOUSE', dealSupplierId: 'SUP-B' }],
-      ]),
-    );
-    expect(groups).toHaveLength(2);
-    expect(groups.map((g) => g.owner).sort()).toEqual(['SUP-A', 'SUP-B']);
   });
 
   it('never pulls a firearm into a parcel, even carrying a courier method', () => {

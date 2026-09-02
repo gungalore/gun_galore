@@ -23,7 +23,7 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { cartridgeKey } from '../../load-lab/recommended-loads.service';
+import { cartridgeKey } from '../../common/cartridge-key';
 import { consolidate, needsReview } from '../consolidate';
 
 /**

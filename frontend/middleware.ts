@@ -25,11 +25,11 @@ const isPublicRoute = createRouteMatcher([
   '/sso-callback(.*)', // OAuth (Google) redirect target — finishes the flow client-side
   '/marketplace(.*)',
   '/listings(.*)',
-  '/deals(.*)',    // DD-3 — public Daily Deals storefront (/deals) + deal PDPs
-                   // (/deals/[id]). Both the pages AND their backing API gate
-                   // server-side on the `deals_enabled` Setting, so this ships
-                   // INERT (empty storefront / 404 PDP) until the operator
-                   // flips the flag. Public like /listings for anon browsing.
+  '/deals(.*)',     // RETIRED 2026-09-02 — Daily Deals was removed. Kept
+                   // public, like /load-lab and /competitions, so a bookmarked
+                   // or indexed deal link 404s honestly instead of bouncing a
+                   // signed-out visitor to a sign-in form for a page that no
+                   // longer exists.
   '/auctions(.*)',
   '/about(.*)',
   '/buy-and-sell(.*)',

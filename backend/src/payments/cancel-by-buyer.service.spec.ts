@@ -33,8 +33,6 @@ function makeService(opts: {
       update: jest.fn().mockResolvedValue({}),
       findUnique: jest.fn().mockResolvedValue({ trackInventory: false }),
     },
-    // DD-2 — cancelByBuyer now un-sold-outs a Daily Deal on reactivation.
-    deal: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     adminAlert: { create: jest.fn().mockResolvedValue({}) },
   };
   const notifications = {

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { toCsv } from '../common/csv.util';
 import {
   coalFlags,
   THUMB_DIM_FIELDS,
@@ -349,22 +350,27 @@ export class BenchService {
       'Date', 'Cartridge', 'Bullet', 'Powder', 'Charge (gr)', 'COAL (mm)',
       'Primer', 'Case', 'Velocity (m/s)', 'Group (mm)', 'Notes',
     ];
-    const cell = (v: unknown) => {
-      if (v === null || v === undefined) return '';
-      const t = String(v);
-      return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
-    };
-    const body = rows.map((r) =>
-      [
-        r.shotAt.toISOString().slice(0, 10),
-        r.cartridgeName, r.bulletLabel, r.powderName, r.chargeGr, r.coalMm,
-        r.primer, r.caseLabel, r.velocityMs, r.groupMm, r.notes,
-      ]
-        .map(cell)
-        .join(','),
-    );
+    // toCsv from common/csv.util rather than a local escape: the seller
+    // statement, the admin export and the payout CSV all quote identically,
+    // and a fourth hand-rolled version is a fourth chance to get free-text
+    // notes wrong.
     return {
-      csv: [head.join(','), ...body].join('\r\n'),
+      csv: toCsv([
+        head,
+        ...rows.map((r) => [
+          r.shotAt.toISOString().slice(0, 10),
+          r.cartridgeName,
+          r.bulletLabel,
+          r.powderName,
+          r.chargeGr,
+          r.coalMm,
+          r.primer,
+          r.caseLabel,
+          r.velocityMs,
+          r.groupMm,
+          r.notes,
+        ]),
+      ]),
       filename: 'the-bench-load-log.csv',
     };
   }

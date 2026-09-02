@@ -10,7 +10,6 @@ import { AdminModule } from '../admin/admin.module';
 import { PushModule } from '../push/push.module';
 import { ZohoBooksModule } from '../zoho/zoho-books.module';
 import { SavedSearchesModule } from '../saved-searches/saved-searches.module';
-import { DealsModule } from '../deals/deals.module';
 import { RatingsModule } from '../ratings/ratings.module';
 import { WishlistAlertsModule } from '../wishlist-alerts/wishlist-alerts.module';
 import { ListingsModule } from '../listings/listings.module';
@@ -32,14 +31,15 @@ import { ListingsModule } from '../listings/listings.module';
     PushModule,
     ZohoBooksModule,
     SavedSearchesModule,
-    // DD-4 — DealsModule exports DealsService for the daily-deal drop cron.
-    // NOT @Global, so it MUST be listed here or Nest can't inject DealsService
-    // into TasksService and the app crash-loops at boot (tsc stays green).
-    DealsModule,
+    // DealsModule dropped with Daily Deals — the drop / collection-sweep crons
+    // it fed are gone from TasksService.
+    //
     // Trust-score refresh cron — RatingsModule exports RatingsService.
     RatingsModule,
     // Auction ending-soon watcher alerts — WishlistAlertsModule exports
-    // WishlistAlertsService (NOT @Global; same crash-loop rule as above).
+    // WishlistAlertsService. NOT @Global, so it MUST be listed here or Nest
+    // can't inject it into TasksService and the app crash-loops at boot
+    // (tsc stays green).
     WishlistAlertsModule,
     // Stale-listing expiry + photo-less listing sweeps need ListingsService
     // to yank a de-activated listing out of the Meilisearch index.

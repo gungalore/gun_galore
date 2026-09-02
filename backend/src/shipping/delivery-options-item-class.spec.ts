@@ -25,7 +25,6 @@ const BASE_LISTING = {
   isFirearm: false,
   collectionOnly: false,
   isExperience: false,
-  isDealListing: false,
   weightGrams: 2500,
   lengthCm: 30,
   widthCm: 20,

@@ -132,65 +132,6 @@ const FLAGS: SettingFlag[] = [
     default: '100',
   },
 
-  // ─── Deals ────────────────────────────────────────────────────
-  // First-party "OneDayOnly-style" Daily Deals. house_seller_user_id is
-  // deliberately NOT surfaced here — it's a system-seeded id with no
-  // text validation and must not be hand-edited.
-  {
-    key: 'deals_enabled',
-    label: 'Daily Deals enabled',
-    hint: 'Master switch for the public Daily Deals surface. Leave OFF until the storefront ships — the admin deal builder works regardless.',
-    group: 'Deals',
-    type: 'boolean',
-    default: 'false',
-    // Flipping ON exposes the Daily Deals storefront to the public and
-    // is gated on real suppliers + a live payments rail.
-    danger: true,
-  },
-  {
-    key: 'deal_drop_hour',
-    label: 'Daily drop hour (SAST, 0–23)',
-    hint: 'Hour of day the daily deal drop goes live, in SAST. 6 = 06:00. Values outside 0–23 are clamped.',
-    group: 'Deals',
-    type: 'number',
-    default: '6',
-  },
-  {
-    key: 'deal_default_per_customer_cap',
-    label: 'Default per-customer cap',
-    hint: 'Default maximum units one customer can buy of a new deal. Overridable per-deal in the builder. Default 10.',
-    group: 'Deals',
-    type: 'number',
-    default: '10',
-  },
-  {
-    key: 'deal_push_enabled',
-    label: 'Deal drop push enabled',
-    hint: 'Whether the daily drop sends a push/notification to subscribers. Default ON.',
-    group: 'Deals',
-    type: 'boolean',
-    default: 'true',
-  },
-  {
-    key: 'deal_extra_time_hours',
-    label: 'Extra Time hours',
-    hint: 'Auto-extend a live deal that reaches its end while stock remains, by this many hours (the "Extra Time" second-chance slot). 0 = off; a deal is extended at most once. Clamped 0–48.',
-    group: 'Deals',
-    type: 'number',
-    default: '0',
-  },
-  {
-    key: 'deal_po_email_enabled',
-    label: 'Email deal POs to suppliers',
-    hint: 'When ON, purchase orders are emailed to the supplier from Zoho at deal end. Keep OFF until real suppliers are live.',
-    group: 'Deals',
-    type: 'boolean',
-    default: 'false',
-    // Flipping ON sends real purchase orders to real third parties —
-    // an outbound commercial commitment, not a display toggle.
-    danger: true,
-  },
-
   // ─── Verification ─────────────────────────────────────────────
   // The cheap Claude-vision ID flow: ~R3/seller (1-credit VerifyNow SA
   // ID Basic + Claude vision doc+selfie match) vs the legacy ~R59.80

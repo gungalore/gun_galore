@@ -81,13 +81,6 @@ export default function manifest(): MetadataRoute.Manifest {
         url: '/?listingType=AUCTION',
         icons: [{ src: av('/icon-192.png'), sizes: '192x192', type: 'image/png' }],
       },
-      {
-        name: 'Daily Deals',
-        short_name: 'Deals',
-        description: 'Today’s limited-time deal',
-        url: '/deals',
-        icons: [{ src: av('/icon-192.png'), sizes: '192x192', type: 'image/png' }],
-      },
     ],
     // SCREENSHOTS REMOVED at the All Outdoor rebrand.
     //

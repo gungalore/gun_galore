@@ -4,16 +4,7 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": [
-      {
-        "include": "load-lab/internal-ballistics/grt-data/*.json",
-        "outDir": "dist/src"
-      },
-      {
-        "include": "load-lab/data/*.json",
-        "outDir": "dist/src"
-      }
-    ],
+    "assets": [],
     "watchAssets": true
   }
 }

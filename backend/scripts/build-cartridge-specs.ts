@@ -41,7 +41,7 @@
 import 'dotenv/config';
 import * as fs from 'fs';
 import * as path from 'path';
-import { cartridgeKey } from '../src/load-lab/recommended-loads.service';
+import { cartridgeKey } from '../src/common/cartridge-key';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 

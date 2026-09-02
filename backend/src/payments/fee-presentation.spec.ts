@@ -187,9 +187,9 @@ describe('what the seller is shown', () => {
     }
   });
 
-  it('⚠️ answers a first-party sale instead of failing the invariant', () => {
-    // Daily Deals zero commission AND payout because All Outdoor is the
-    // seller of record; a refund child row looks the same. Neither can
+  it('⚠️ answers a row with no seller side instead of failing the invariant', () => {
+    // A refund child row zeroes commission AND payout, as would any
+    // first-party sale where All Outdoor is the seller of record. Neither can
     // balance against a non-zero price.
     const f = { ...deductFacts(), commissionZar: 0, sellerPayout: 0 };
     const s = sellerBreakdown(f);

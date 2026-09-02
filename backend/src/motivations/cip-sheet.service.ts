@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
-import { cartridgeKey } from '../load-lab/recommended-loads.service';
+import { cartridgeKey } from '../common/cartridge-key';
 import CIP_INDEX from './cip-index.json';
 
 // ────────────────────────────────────────────────────────────────────

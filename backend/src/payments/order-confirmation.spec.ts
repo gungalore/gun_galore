@@ -79,13 +79,6 @@ function makeService(over: {
     {} as never, // saps534
   );
 
-  // The confirmer re-drives house-deal auto-accept for every sibling once it
-  // wins the claim. Stubbed so these tests isolate the confirmation itself
-  // rather than the booking machinery (the real method would swallow its own
-  // failure, but it makes the output noisy and the intent unclear).
-  (service as unknown as Record<string, unknown>).maybeAutoAcceptHouseDeal =
-    jest.fn().mockResolvedValue(undefined);
-
   const run = (orderId = 'O1') =>
     (
       service as unknown as {
@@ -205,13 +198,11 @@ describe('confirming a whole basket', () => {
 // ⚠️ THE CALL SITE ITSELF — the gap the tests above could not see.
 //
 // Every test above invokes maybeConfirmWholeOrder directly through a cast, so
-// they all passed while the call site sat BELOW two early returns:
-// sendSaleNotifications bails out for PRIVATE_ARRANGE, and again for a
-// Daily-Deals house line. Both are legal cart lines, so whenever either was
-// the LAST line paid the confirmer was never reached — Order stuck at
-// AWAITING_PAYMENT (the rollup sweep only scans PAID), no consolidated
-// confirmation, and a cart deal line never accepted, booked or dispatched
-// because maybeAutoAcceptHouseDeal waits on order.paidAt.
+// they all passed while the call site sat BELOW an early return:
+// sendSaleNotifications bails out for PRIVATE_ARRANGE, which is a legal cart
+// line (a firearm line routes to PA), so whenever one was the LAST line paid
+// the confirmer was never reached — Order stuck at AWAITING_PAYMENT (the
+// rollup sweep only scans PAID) and no consolidated confirmation.
 //
 // These drive sendSaleNotifications for real and assert the order is still
 // claimed. Testing a private method directly is what hid the defect; this is
@@ -254,10 +245,6 @@ function makeNotifyService(tx: Record<string, unknown>) {
     {} as never,
     {} as never,
   );
-  // The house-deal path re-drives auto-accept; stub it so the test isolates
-  // the confirmation call site rather than the booking machinery.
-  (service as unknown as Record<string, unknown>).maybeAutoAcceptHouseDeal =
-    jest.fn().mockResolvedValue(undefined);
   const run = () =>
     (
       service as unknown as {
@@ -291,17 +278,7 @@ describe('the confirmation is reachable on every cart line kind', () => {
     const h = makeNotifyService({
       ...CART_LINE,
       shippingMethod: 'PRIVATE_ARRANGE',
-      listing: { id: 'L1', title: 'Rifle', isDealListing: false, category: {} },
-    });
-    await h.run();
-    expect(h.prisma.order.updateMany).toHaveBeenCalledTimes(1);
-    expect(h.notifications.orderConfirmedBuyerMulti).toHaveBeenCalledTimes(1);
-  });
-
-  it('⚠️ claims the order even when the last line is a Daily Deal', async () => {
-    const h = makeNotifyService({
-      ...CART_LINE,
-      listing: { id: 'L1', title: 'Torch', isDealListing: true, category: {} },
+      listing: { id: 'L1', title: 'Rifle', category: {} },
     });
     await h.run();
     expect(h.prisma.order.updateMany).toHaveBeenCalledTimes(1);
@@ -311,9 +288,10 @@ describe('the confirmation is reachable on every cart line kind', () => {
   it('still claims it on an ordinary courier line', async () => {
     const h = makeNotifyService({
       ...CART_LINE,
-      listing: { id: 'L1', title: 'Torch', isDealListing: false, category: {} },
+      listing: { id: 'L1', title: 'Torch', category: {} },
     });
     await h.run();
     expect(h.prisma.order.updateMany).toHaveBeenCalledTimes(1);
+    expect(h.notifications.orderConfirmedBuyerMulti).toHaveBeenCalledTimes(1);
   });
 });

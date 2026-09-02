@@ -24,13 +24,6 @@ interface AttentionQueue {
   // FLOW-F4 (H17) — firearm dealer-verifications awaiting a human decision.
   // Buyer's payment is HELD until approved. URGENT.
   dealerVerificationsPendingReview: number;
-  // DD-F3 — house Daily Deals that are stock-ready but still have
-  // unbooked/uncollected supplier collections past the deal's
-  // shipsInDaysMax window. Populated by the backend ops agent (owns
-  // admin-command-center.service.ts). OPTIONAL on purpose: if that
-  // field lands under a different key, this stays undefined and the
-  // card simply hides rather than crashing the whole dashboard.
-  dealFulfilmentAttention?: number;
 }
 
 interface TodayPulse {
@@ -180,26 +173,6 @@ export default function AdminCommandCenterPage() {
           hint: 'Dealer transfer — funds held pending review',
           group: 'Fulfilment',
         },
-        // DD-F3 — house-deal supplier collections that are stock-ready but
-        // still unbooked/uncollected past the deal's shipsInDaysMax window.
-        // Modelled on 'Dispatch SLA at risk' above. Backend field name is
-        // ASSUMED `dealFulfilmentAttention` (the ops agent owns
-        // admin-command-center.service.ts); wired defensively — the card is
-        // only added when the count is present and > 0, so a key mismatch or
-        // a not-yet-deployed backend fails safe (no card) instead of showing
-        // a stray zero or throwing.
-        ...((attention.dealFulfilmentAttention ?? 0) > 0
-          ? [
-              {
-                label: 'Deal fulfilment needs attention',
-                value: attention.dealFulfilmentAttention ?? 0,
-                href: '/admin/deals',
-                tone: 'warn' as Tone,
-                hint: 'Supplier collection overdue',
-                group: 'Fulfilment' as Group,
-              },
-            ]
-          : []),
         {
           label: 'KYC stalled',
           value: attention.kycStalled,

@@ -25,7 +25,6 @@ import {
   cleanup,
   installStubs,
   seedActors,
-  seedHouseSeller,
   resolveCategories,
 } from './dummy-run/seed';
 import { runModule } from './dummy-run/money';
@@ -36,7 +35,6 @@ import {
   moduleOffers,
   moduleOrders,
   moduleContentSmoke,
-  moduleDailyDeals,
   moduleFinalLedger,
 } from './dummy-run/modules';
 
@@ -150,8 +148,9 @@ async function main() {
   await cleanup(prisma);
   console.log('[seed] seeding actors + resolving categories …');
   const actors = await seedActors(prisma);
-  // DD-2 — the Daily Deals house seller (+ its Setting) for the house-money module.
-  actors.house = await seedHouseSeller(prisma);
+  // The Daily Deals house seller was seeded here; it existed only for the
+  // house-money driver and went with the feature. seedActors() is unchanged,
+  // so every other driver sees exactly the cast it saw before.
   const cats = await resolveCategories(prisma);
   const ctx: Ctx = { app, prisma, rep, actors, cats, tcgShipments };
   console.log(`[seed] ${Object.keys(actors).length} actors ready.`);
@@ -162,7 +161,10 @@ async function main() {
   await runModule(ctx, 'Auctions', moduleAuctions);
   await runModule(ctx, 'Take-a-Shot offers', moduleOffers);
   await runModule(ctx, 'Cart / Orders (multi-seller)', moduleOrders);
-  await runModule(ctx, 'Daily Deals (house)', moduleDailyDeals);
+  // The 'Daily Deals (house)' driver went with the Daily Deals feature. Every
+  // other driver is untouched — none of them depended on it, and the
+  // held-funds closing balance below sums only the ledger rows that actually
+  // ran, so it still balances with the deal rows absent.
   await runModule(ctx, 'Content smoke', moduleContentSmoke);
   await runModule(ctx, 'Held-funds closing balance', moduleFinalLedger);
 

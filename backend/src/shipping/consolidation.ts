@@ -13,10 +13,10 @@
  * touching Prisma, so the menu endpoint and the checkout path can each fetch
  * once and group identically.
  *
- * The frontend must NOT compute these keys. A deal line is owned by its
- * SUPPLIER, not by the house seller id every deal listing shares, and the cart
- * has no supplier field — a client-side guess under-counts parcels for a
- * two-supplier deals cart and would quote one waybill where two are booked.
+ * The frontend must NOT compute these keys. Grouping depends on server-side
+ * listing metadata (seller, firearm flag) the cart payload does not carry, so
+ * a client-side guess would mis-count parcels and quote one waybill where two
+ * are booked.
  */
 
 /** The two courier shapes. Everything else is a non-courier hand-over. */
@@ -39,13 +39,11 @@ export interface ShippingLineInput {
 export interface ShippingLineMeta {
   sellerId: string;
   isFirearm: boolean;
-  /** Set only for Daily Deal lines — the supplier that actually ships. */
-  dealSupplierId?: string | null;
 }
 
 export interface ShippingGroup {
   groupKey: string;
-  /** Seller id, or the deal supplier id for a deal line. */
+  /** The seller the parcel ships from. */
   owner: string;
   slot: CourierSlot;
   listingIds: string[];
@@ -57,9 +55,9 @@ export interface ShippingGroup {
  * Group courier lines into the parcels they will actually ship as.
  *
  * Exact port of the grouping that createOrderCheckout has always used, so the
- * `shipsWithId` semantics that nine downstream consumers depend on (booking
- * skip, buyer cancel, seller reject, dispatch, delivery release, admin refund,
- * the deals sweep and the unbooked-shipment metric) are unchanged.
+ * `shipsWithId` semantics that the downstream consumers depend on (booking
+ * skip, buyer cancel, seller reject, dispatch, delivery release, admin refund
+ * and the unbooked-shipment metric) are unchanged.
  *
  * Excluded, deliberately:
  *  - firearms, which move via a licensed dealer and never join a parcel — the
@@ -81,7 +79,7 @@ export function planShippingGroups(
     if (m.isFirearm) continue;
     if (line.shippingMethod !== 'PUDO' && line.shippingMethod !== 'TCG') continue;
 
-    const owner = m.dealSupplierId ?? m.sellerId;
+    const owner = m.sellerId;
     const a = line.deliveryAddress;
     // The destination is part of the key: two lines only share a waybill if
     // they are going to the same place.

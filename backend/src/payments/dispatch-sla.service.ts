@@ -81,10 +81,6 @@ export class DispatchSlaService {
         dispatchNudgedAt: null,
         paymentStatus: 'HELD',
         shippingMethod: { in: ['PUDO', 'TCG'] },
-        // DD-F — deals defer their booking to "Stock ready"; nudging the house
-        // seller (the operator) to "dispatch within 5 days" is both wrong and
-        // confusing. Excluded here for the same reason as the auto-refund cron.
-        listing: { isDealListing: false },
       },
       include: {
         listing: true,
@@ -151,15 +147,6 @@ export class DispatchSlaService {
         rejectedAt: null,
         paymentStatus: 'HELD',
         shippingMethod: { in: ['PUDO', 'TCG'] },
-        // DD-F — a house deal (Listing.isDealListing) is sell-first / buy-after:
-        // its courier booking is DEFERRED to the operator's "Stock ready" tap, so
-        // it legitimately sits accepted+HELD+undispatched during its whole
-        // ships-in window (default 3–7d) — well past this cron's accept+5d
-        // deadline. Auto-refunding here would refund a paid, in-flight buyer
-        // (and orphan the supplier PO already cut at sold-out). Deal fulfilment
-        // is governed by its own lifecycle (stock-ready booking + the "Supplier
-        // collection overdue" attention card), not this generic dispatch clock.
-        listing: { isDealListing: false },
       },
       include: { listing: true, seller: true, buyer: true },
       take: 50,
@@ -239,23 +226,7 @@ export class DispatchSlaService {
             fresh?.listing?.listingType,
           ),
         });
-        // DD-2 — a Daily Deals house deal is sold BY All Outdoor. If GG fails
-        // to dispatch in time the buyer is STILL auto-refunded above (payment
-        // protection is unconditional), but we must NOT strike / threshold-
-        // suspend GG's own house-seller account. Restock only for a house
-        // deal; strike + threshold-alert only for a real seller.
-        if (tx.listing.isDealListing) {
-          await this.prisma.$transaction([restock]);
-          // DD-2 — the single unit is back in stock (listing → ACTIVE), so
-          // un-sold-out the Deal to keep its status consistent with the
-          // now-buyable listing. Money-neutral state resync.
-          await this.prisma.deal
-            .updateMany({
-              where: { listingId: tx.listingId, status: 'SOLD_OUT' },
-              data: { status: 'LIVE', soldOutAt: null },
-            })
-            .catch(() => undefined);
-        } else if (blamelessSeller(tx)) {
+        if (blamelessSeller(tx)) {
           // OUR failure, not theirs. Under Bob Go a booking can be created and
           // then refused by the courier, or sit unaccepted — in either case the
           // seller was never given a waybill and had nothing to dispatch.
@@ -329,11 +300,7 @@ export class DispatchSlaService {
 
         refunded++;
         this.logger.log(
-          `Auto-refunded transaction ${tx.id} — ${
-            tx.listing.isDealListing
-              ? 'house deal (no seller strike)'
-              : `seller ${tx.sellerId} struck`
-          }`,
+          `Auto-refunded transaction ${tx.id} — seller ${tx.sellerId} struck`,
         );
       } catch (err) {
         this.logger.error(

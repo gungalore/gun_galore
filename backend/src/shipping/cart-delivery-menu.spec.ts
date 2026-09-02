@@ -16,7 +16,6 @@ const base = {
   isFirearm: false,
   collectionOnly: false,
   isExperience: false,
-  isDealListing: false,
   sellerId: 'S1',
   shippingMethods: [] as string[],
   province: 'WESTERN_CAPE',
@@ -163,25 +162,6 @@ describe('cart delivery menu', () => {
     // Same seller, so both land in one group; the group is unquotable.
     expect(groups[0].unavailableReason).toMatch(/cannot be sent by courier/i);
     expect(groups[0].door).toBeNull();
-  });
-
-  it('offers no collection point for a Daily Deal — deals are door-only', async () => {
-    const deal = { ...L1, isDealListing: true };
-    const { svc } = makeService([deal], [DOOR, PICKUP]);
-    // A deal ships from the supplier's warehouse, resolved by its own lookup
-    // chain — stub it so this test is about the door-only RULE, not origins.
-    jest
-      .spyOn(svc as unknown as { dealCollectionOrigin: () => Promise<unknown> }, 'dealCollectionOrigin')
-      .mockResolvedValue({
-        streetAddress: '2 Warehouse Rd',
-        suburb: 'Epping',
-        city: 'Cape Town',
-        postalCode: '7460',
-        province: 'Western Cape',
-      });
-    const groups = await svc.deliveryOptionsForCart([{ listingId: 'L1' }], DELIVERY);
-    expect(groups[0].pickupPoints).toEqual([]);
-    expect(groups[0].door).not.toBeNull();
   });
 
   it('says options are unavailable on the legacy rail rather than inventing a price', async () => {

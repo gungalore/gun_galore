@@ -26,8 +26,6 @@ import { RatingsModule } from './ratings/ratings.module';
 import { AdminModule } from './admin/admin.module';
 import { OffersModule } from './offers/offers.module';
 import { AuctionsModule } from './auctions/auctions.module';
-import { DealsModule } from './deals/deals.module';
-import { SuppliersModule } from './suppliers/suppliers.module';
 import { TasksModule } from './tasks/tasks.module';
 import { KycModule } from './kyc/kyc.module';
 import { ReferenceNumberModule } from './common/reference-number.service';
@@ -48,7 +46,6 @@ import { ReloadingModule } from './reloading/reloading.module';
 import { HuntBallisticsModule } from './hunt-ballistics/hunt-ballistics.module';
 import { ManualPaymentsModule } from './manual-payments/manual-payments.module';
 import { MyShipmentsModule } from './my-shipments/my-shipments.module';
-import { LoadLabModule } from './load-lab/load-lab.module';
 import { BenchModule } from './bench/bench.module';
 
 @Module({
@@ -70,6 +67,10 @@ import { BenchModule } from './bench/bench.module';
       { name: 'default', ttl: 60_000, limit: 60 },
     ]),
     PrismaModule,
+    // DealsModule (Daily Deals), SuppliersModule and LoadLabModule were
+    // removed with their features. The Deal / DealPurchaseOrder / Supplier
+    // Prisma models are deliberately left orphaned in the schema — house
+    // precedent, the same as the Competitions tables.
     BenchModule,
     PeachModule,
     ScanModule,
@@ -90,8 +91,6 @@ import { BenchModule } from './bench/bench.module';
     AdminModule,
     OffersModule,
     AuctionsModule,
-    DealsModule,
-    SuppliersModule,
     TasksModule,
     KycModule,
     ReferenceNumberModule,
@@ -107,7 +106,6 @@ import { BenchModule } from './bench/bench.module';
     HuntBallisticsModule,
     ManualPaymentsModule,
     MyShipmentsModule,
-    LoadLabModule,
     SupportModule,
     ComplaintsModule,
     MotivationsModule,
