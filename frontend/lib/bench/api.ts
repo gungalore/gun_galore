@@ -118,6 +118,35 @@ export interface BenchView {
   units: string;
 }
 
+/**
+ * One row of GET /bench/bullets — mirrors BenchService.BenchBulletOptionView.
+ *
+ * ⚠️ DECLARED HERE, NOT IN contract.ts, WHICH RE-EXPORTS IT. This is a wire
+ * shape, and contract.ts's own header says data shapes come from this file and
+ * are not redeclared there. Two declarations of one payload is how a field
+ * added at one end quietly stops being read at the other.
+ */
+export interface BenchBulletOption {
+  maker: string;
+  weightGr: number;
+  /** FMJ | MONO | TIP | HP | CAST | SP | OTHER. */
+  category: string;
+  /**
+   * How many consolidated loads use it.
+   *
+   * ⚠️ NEVER A COUNT OF WHAT THOSE LOADS WERE BUILT FROM. Operator ruling
+   * 2026-09-02; the backend's leak spec is the other half of this boundary.
+   */
+  loads: number;
+}
+
+/** One row of GET /bench/cartridges. `loads` reads exactly as above. */
+export interface BenchCartridgeOption {
+  key: string;
+  name: string;
+  loads: number;
+}
+
 export interface CartridgeSpec {
   cartridge: {
     key: string;
@@ -132,7 +161,15 @@ export interface CartridgeSpec {
     pmaxBar: number | null;
   };
   dims: Record<string, number | string | null> | null;
-  loadsOnBench: number;
+  /**
+   * ⚠️ THE SERVER'S NAMES, NOT COMFORTABLE ONES. BenchService.cartridge()
+   * returns loadsForBench (buildable from THIS member's shelf) and loadCount
+   * (every load for the cartridge). Calling the first "loadsOnBench" read
+   * better and silently arrived as undefined — the spec card rendered a blank
+   * where a figure belongs, and nothing on either side failed a type check.
+   */
+  loadsForBench: number;
+  loadCount: number;
   stations: unknown[];
   shellHolderGroup: { key: string; name: string }[];
 }
@@ -200,6 +237,10 @@ export const benchApi = {
   ) => call<BenchView>(t, '/me', { method: 'PUT', body: JSON.stringify(body) }),
 
   loads: (t: TokenGetter, q: LoadQuery = {}) => call<LoadsResponse>(t, `/loads${query(q)}`),
+
+  bullets: (t: TokenGetter) => call<BenchBulletOption[]>(t, '/bullets'),
+
+  cartridgeList: (t: TokenGetter) => call<BenchCartridgeOption[]>(t, '/cartridges'),
 
   powders: (t: TokenGetter, search?: string) =>
     call<BenchPowder[]>(t, `/powders${search ? `?q=${encodeURIComponent(search)}` : ''}`),

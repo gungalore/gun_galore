@@ -67,6 +67,35 @@ export class BenchController {
     return this.bench.powders(q.q || undefined, await this.benchFor(req, q));
   }
 
+  /**
+   * The bullet picker's list.
+   *
+   * No bench is read: `loads` here is how many consolidated loads use the
+   * bullet at all, not how many the caller could build. A member choosing what
+   * to put ON the shelf is asking about the world, not about their shelf —
+   * and a bench-relative count would read 0 for every row until they already
+   * had the thing they are trying to add.
+   */
+  @Get('bullets')
+  @UseGuards(OptionalClerkGuard)
+  bullets() {
+    return this.bench.bullets();
+  }
+
+  /**
+   * ⚠️ DECLARED BEFORE 'cartridges/:key', AND IT STAYS THERE. Express tells
+   * the two apart on its own today — ':key' demands a segment, so
+   * /bench/cartridges cannot fall into it — but Nest matches in declaration
+   * order, and that ordering is what keeps this route reachable if the param
+   * route ever gains an optional segment or a wildcard. Same rule that keeps
+   * 'log.csv' ahead of 'log/:id' below.
+   */
+  @Get('cartridges')
+  @UseGuards(OptionalClerkGuard)
+  cartridges() {
+    return this.bench.cartridgeList();
+  }
+
   @Get('cartridges/:key')
   @UseGuards(OptionalClerkGuard)
   async cartridge(

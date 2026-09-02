@@ -649,7 +649,7 @@ export function SpecCard({
       )}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
         <span className="num head" style={{ fontSize: phone ? 26 : 28, lineHeight: 1 }}>
-          {spec.loadsOnBench}
+          {spec.loadsForBench}
         </span>
         <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>loads from your bench</span>
       </div>

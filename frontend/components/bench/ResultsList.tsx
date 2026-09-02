@@ -23,8 +23,8 @@ import type { Dims, Units } from '@/lib/bench/geometry';
 import { DIM_KEYS, coalCheck, fmtVelocity, MM_PER_INCH } from '@/lib/bench/geometry';
 
 import { CartridgeThumb } from './CartridgeThumb';
-import { SAFETY_LINE, VELOCITY_NOTE } from './contract';
-import type { ResultsListProps } from './contract';
+import { BENCH_AXES, SAFETY_LINE, VELOCITY_NOTE } from './contract';
+import type { BenchAxis, ResultsListProps } from './contract';
 import { Btn, Tag } from './primitives';
 
 /* ── Formatting ─────────────────────────────────────────────────────── */
@@ -42,6 +42,19 @@ function grouped(n: number): string {
   return Math.round(n)
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+/**
+ * "a bullet", "a bullet and a cartridge" — the missing axes as prose.
+ *
+ * Two items get "and", never a comma-only list: the empty state is one
+ * sentence a member reads once, and three items is the all-missing case, which
+ * has its own sentence.
+ */
+function axisList(axes: readonly string[]): string {
+  const a = axes.map((x) => `a ${x}`);
+  if (a.length <= 1) return a[0] ?? '';
+  return `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
 }
 
 /**
@@ -302,11 +315,26 @@ export function ResultsList({
   onOpenLoad,
   onOpenSpec,
   onRetry,
-  benchIsEmpty,
+  gaps,
   onAddPowder,
+  onAddBullet,
+  onAddCartridge,
 }: ResultsListProps) {
   const groups = result?.groups ?? [];
   const isEmpty = !loading && !error && groups.length === 0;
+
+  // The bare axes, in the rail's order, so the sentence and the button below
+  // always name the same one.
+  const missing = BENCH_AXES.filter((a) => gaps[a]);
+  const opener: Record<BenchAxis, () => void> = {
+    powder: onAddPowder,
+    bullet: onAddBullet,
+    cartridge: onAddCartridge,
+  };
+  // Nothing missing means the filter is what is too narrow; the button is then
+  // a fallback rather than the advice, and a powder is the cheapest thing to
+  // widen a bench with.
+  const cta: BenchAxis = missing[0] ?? 'powder';
 
   return (
     <section className="flex min-h-0 flex-1 flex-col md:gap-[10px] md:pb-4">
@@ -369,19 +397,40 @@ export function ResultsList({
           </div>
         ) : isEmpty ? (
           <Centred>
-            {benchIsEmpty ? (
+            {/*
+              ⚠️ THE BENCH IS AN *AND* ACROSS THREE AXES — powder, bullet AND
+              cartridge — so a shelf holding two of the three yields nothing at
+              all, and "Add a powder" is then actively wrong advice: it sends
+              someone to the one axis they have already filled, where adding
+              another changes nothing. Three states, not two, because the fix
+              differs: no bench at all, a bench short of one axis, and a bench
+              that can build things the current filter excludes.
+            */}
+            {missing.length === 3 ? (
               <>
                 <Title>Nothing on the bench yet</Title>
-                <div>Add a powder and the loads your shelf can build appear here.</div>
+                <div>
+                  A load needs all three: a powder, a bullet and a cartridge. Add one of each and
+                  what your shelf can build appears here.
+                </div>
+              </>
+            ) : missing.length > 0 ? (
+              <>
+                <Title>Your bench is missing {axisList(missing)}</Title>
+                <div>
+                  A load needs all three: a powder, a bullet and a cartridge. Add {axisList(missing)}{' '}
+                  and what your shelf can build appears here.
+                </div>
               </>
             ) : (
               <>
                 <Title>Nothing on the shelf builds this</Title>
-                <div>Turn a chip back on, widen the weight range, or add a powder.</div>
+                <div>Turn a chip back on, widen the weight range, or add another component.</div>
               </>
             )}
-            <Btn size="mobile" onClick={onAddPowder}>
-              Add a powder
+            {/* Opens the picker for the axis the sentence just named. */}
+            <Btn size="mobile" onClick={opener[cta]}>
+              Add a {cta}
             </Btn>
           </Centred>
         ) : (
