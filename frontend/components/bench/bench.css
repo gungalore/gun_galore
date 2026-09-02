@@ -1,0 +1,661 @@
+/* ────────────────────────────────────────────────────────────────────
+   THE BENCH — the module's own stylesheet.
+
+   Imported by app/bench/page.tsx. Everything here is scoped under
+   `.bench` so nothing leaks into the storefront, and every colour,
+   duration and easing is a globals.css token — the design prototype
+   inlines the resolved values, and they are mapped back here per
+   SPEC-BUILD.md §5.3.
+
+   ⚠️ NO RAW HEX BELOW THIS LINE. An undefined var() resolves to the
+   property's INITIAL value rather than failing — a background silently
+   becomes transparent, a radius becomes 0 — so every token used here
+   was checked to exist in globals.css before it was written.
+
+   ⚠️ NEVER `var(--red)18` TO TINT. Concatenating alpha onto a var()
+   produces an invalid colour, which computes to transparent. Use the
+   ready-made --red-wash / --gold-wash, or color-mix().
+   ──────────────────────────────────────────────────────────────────── */
+
+.bench {
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  letter-spacing: -0.01em;
+}
+
+.bench .head {
+  font-family: var(--font-head);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+/* The prototype's `.mono`. SPEC §5.3: there is no --font-mono token and
+   this file may not add one to globals.css, so the stack is repeated
+   inline exactly as Load Lab does it. */
+.bench .mono {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+.bench .num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ── Tags ─────────────────────────────────────────────────────────── */
+
+.bench .tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 3px;
+  border: 0.5px solid var(--border);
+  background: var(--bg-inset);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* The COAL warning. --gold-wash / --gold-line are the palette's ready-made
+   tints; the prototype's rgba(168,123,20,·) values are the same colour. */
+.bench .tag.warn {
+  color: var(--warning);
+  border-color: var(--gold-line);
+  background: var(--gold-wash);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────── */
+
+.bench .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* ⚠️ A <button> DOES NOT INHERIT font-family. In the prototype .btn was a
+     <div>, which does — so the real control renders in the UA's default face
+     while every sibling is Public Sans, and nothing about that reads as a bug
+     worth chasing. .chip, .seg > button, .row, .grp and .pick already carry
+     "font: inherit" for the same reason. */
+  font-family: inherit;
+  height: 34px;
+  padding: 0 12px;
+  border: 0.5px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-card);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-press) var(--ease-out);
+}
+
+.bench .btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border);
+}
+
+.bench .btn:active {
+  transform: scale(0.97);
+}
+
+/* ⚠️ OUTLINE, NOT RING/SHADOW. Tailwind's ring-* and shadow-* utilities are
+   inert under the global box-shadow killswitch, so a focus style built from
+   them is invisible. Every focusable thing in this module uses outline. */
+.bench .btn:focus-visible,
+.bench .chip:focus-visible,
+.bench .seg > button:focus-visible,
+.bench .x:focus-visible,
+.bench .pick:focus-visible,
+.bench .row:focus-visible,
+.bench .grp:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.bench .btn.red {
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--bg-card);
+  height: 38px;
+  padding: 0 16px;
+  font-size: 13.5px;
+}
+
+.bench .btn.red:hover {
+  background: var(--red-hover);
+  border-color: var(--red-hover);
+}
+
+.bench .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Segmented control ────────────────────────────────────────────── */
+
+.bench .seg {
+  display: inline-flex;
+  background: var(--bg-inset);
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.bench .seg > button {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.bench .seg > button:hover {
+  color: var(--text-primary);
+}
+
+.bench .seg > button.on {
+  background: var(--red);
+  color: var(--bg-card);
+  font-weight: 600;
+}
+
+/* ── Chips ────────────────────────────────────────────────────────── */
+
+.bench .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-inset);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    opacity var(--dur-fast) var(--ease-standard),
+    transform var(--dur-press) var(--ease-out);
+}
+
+.bench .chip:hover {
+  border-color: var(--border);
+  background: var(--bg-card-hover);
+}
+
+.bench .chip:active {
+  transform: scale(0.96);
+}
+
+/* Switched off for THIS search only — nothing is saved. The dashed border
+   and grey dot are the whole signal, so they must not be dropped. */
+.bench .chip.off {
+  background: var(--bg-card);
+  border-style: dashed;
+  color: var(--text-faint);
+}
+
+.bench .chip .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--success);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.bench .chip.off .dot {
+  background: var(--border);
+}
+
+.bench .chip.add {
+  background: var(--bg-card);
+  border-style: dashed;
+  color: var(--text-tertiary);
+}
+
+/* ── Results ──────────────────────────────────────────────────────── */
+
+.bench .grp {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg-card);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.bench .grp:hover {
+  background: var(--bg-card-hover);
+}
+
+.bench .grp .thumb {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.bench .grp:hover .thumb {
+  transform: translateX(4px);
+}
+
+.bench .grp .go {
+  opacity: 0;
+  transform: translateX(-6px);
+  transition:
+    opacity var(--dur-fast) var(--ease-standard),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.bench .grp:hover .go {
+  opacity: 1;
+  transform: none;
+}
+
+/* The seven columns are quoted from the spec and must stay in step with
+   `.cols`; a mismatch silently shears the header off the data. */
+.bench .row,
+.bench .cols {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr 0.8fr 1.1fr 28px;
+  gap: 10px;
+}
+
+.bench .row {
+  align-items: center;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 0.5px solid var(--border-divider);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  animation: bench-rise var(--dur-base) var(--ease-out) both;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.bench .row:hover {
+  background: var(--bg-card-hover);
+}
+
+.bench .row .chev {
+  color: var(--text-faint);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity var(--dur-fast) var(--ease-standard),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.bench .row:hover .chev {
+  opacity: 1;
+  transform: none;
+}
+
+.bench .cols {
+  padding: 8px 14px;
+  border-bottom: 0.5px solid var(--border);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.bench .wt {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-inset);
+  border-bottom: 0.5px solid var(--border-divider);
+}
+
+/* ── Overlays ─────────────────────────────────────────────────────── */
+
+/* ⚠️ fixed, NOT the prototype's absolute. The prototype is one artboard, so
+   `absolute` anchored to it. In the app these anchor to the viewport.
+   Anything that wraps the page in a `transform` would re-anchor them — see
+   the note on .bench-overlay below. */
+.bench-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--text-primary) 38%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: bench-fade var(--dur-fast) var(--ease-standard) both;
+  z-index: 60;
+}
+
+/* ⚠️ z-index ≥ 60 IS A HOUSE RULE, NOT A PREFERENCE. The PWA install
+   prompt and the app shell sit below 60; a modal underneath them is
+   unreachable on a phone. */
+.bench-modal,
+.bench-sheet {
+  position: fixed;
+  background: var(--bg-card);
+  z-index: 61;
+}
+
+.bench-modal {
+  left: 50%;
+  top: 50%;
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  transform: translate(-50%, -50%);
+  border: 0.5px solid var(--border);
+  border-radius: var(--r-md);
+  animation: bench-pop 320ms var(--ease-out) both;
+  overflow: hidden;
+}
+
+.bench-sheet {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(720px, 100vw);
+  border-left: 0.5px solid var(--border);
+  animation: bench-slide var(--dur-sheet) var(--ease-out) both;
+  overflow-y: auto;
+}
+
+/* The phone's bottom sheet.
+
+   Lives here rather than inline in OverlayShell because two implementations of
+   it existed at once — the shell built it from a style object while BenchSheet
+   injected its own <style> block — and a sheet that differs by surface is the
+   drift this stylesheet exists to prevent. Values are quoted from Pwa.dc.html.
+
+   Entrance is played through the Web Animations API in OverlayShell rather
+   than declared here: it reads --dur-sheet and --ease-out off the element, so
+   the curve is not re-typed in a second place. */
+.bench-bottom-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 92%;
+  z-index: 61;
+  background: var(--bg-card);
+  border-top: 0.5px solid var(--border);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The elevation opt-in, exactly as .gg-tile does it: a class beats the
+   universal selector on specificity, both being !important, so nothing
+   gets a shadow unless it asks for one.
+
+   ⚠️ THIS IS THE ONLY SHADOW IN THE MODULE, AND IT IS STATIC. An
+   ANIMATED shadow is impossible here: in the cascade, !important author
+   declarations override animation values, so `* { box-shadow: none
+   !important }` wins over any @keyframes regardless of specificity. That
+   is why the log badge's pulse below is a scaling ring, not a shadow. */
+.bench-overlay {
+  box-shadow: var(--elev-2) !important;
+}
+
+.bench .toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: var(--text-primary);
+  color: var(--bg-inset);
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  animation: bench-up var(--dur-base) var(--ease-out) both;
+  z-index: 70;
+  white-space: nowrap;
+}
+
+.bench .x {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.bench .x:hover {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+/* ── Forms ────────────────────────────────────────────────────────── */
+
+.bench .field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bench .field label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.bench .field input {
+  height: 36px;
+  padding: 0 10px;
+  background: var(--bg-inset);
+  border: 0.5px solid var(--border);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+
+.bench .field input:focus {
+  border-color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+/* The prototype signals input focus by darkening the border alone, which is a
+   0.5px colour change and the weakest indicator in the module — every other
+   control here gets an outline. :focus-visible rather than :focus keeps the
+   designed look for a pointer user and gives a keyboard user the same ring
+   they get everywhere else. */
+.bench .field input:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+/* ── Dimensions table ─────────────────────────────────────────────── */
+
+.bench .kv {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 0.5px solid var(--border-divider);
+  font-size: 13px;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+/* The row whose letter is lit on the drawing. */
+.bench .kv.hot {
+  background: var(--red-wash);
+  margin: 0 -8px;
+  padding-left: 8px;
+  padding-right: 8px;
+  border-radius: 4px;
+}
+
+.bench .kv.hot .k {
+  color: var(--red);
+}
+
+.bench .dim {
+  cursor: pointer;
+}
+
+.bench .dim line,
+.bench .dim path {
+  transition: stroke var(--dur-fast) var(--ease-standard);
+}
+
+.bench .dim text {
+  transition: fill var(--dur-fast) var(--ease-standard);
+}
+
+.bench .pick {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 0.5px solid var(--border-divider);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.bench .pick:hover {
+  background: var(--bg-card-hover);
+}
+
+/* ── Motion ───────────────────────────────────────────────────────── */
+
+.bench .draw {
+  stroke-dasharray: 700;
+  stroke-dashoffset: 700;
+  animation: bench-draw 700ms var(--ease-out) 200ms forwards;
+}
+
+.bench .late {
+  opacity: 0;
+  animation: bench-fade var(--dur-base) var(--ease-standard) 800ms forwards;
+}
+
+.bench .coalpin {
+  transition: left var(--dur-sheet) var(--ease-out);
+}
+
+.bench .scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+@keyframes bench-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes bench-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes bench-pop {
+  from { opacity: 0; transform: translate(-50%, -50%) translateY(14px) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+@keyframes bench-slide {
+  from { opacity: 0; transform: translateX(48px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes bench-up {
+  from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+  to { opacity: 1; transform: translateX(-50%); }
+}
+
+@keyframes bench-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* The log badge's pulse.
+
+   The prototype expands a red box-shadow. That cannot work here (see
+   .bench-overlay), so the same expanding-ring read is built from a
+   pseudo-element that scales and fades — transform and opacity, which
+   nothing in globals.css overrides. */
+.bench .bump {
+  position: relative;
+}
+
+.bench .bump::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 2px solid var(--red);
+  opacity: 0.35;
+  pointer-events: none;
+  animation: bench-pulse 600ms var(--ease-out) 1;
+}
+
+@keyframes bench-pulse {
+  from { transform: scale(1); opacity: 0.35; }
+  to { transform: scale(1.45); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bench .row,
+  .bench .toast,
+  .bench .draw,
+  .bench .late,
+  .bench .bump::after,
+  .bench-modal,
+  .bench-sheet,
+  .bench-backdrop {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+
+  .bench .coalpin {
+    transition-duration: 1ms !important;
+  }
+}

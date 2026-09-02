@@ -225,7 +225,7 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     items: [
       { href: '/documents', label: 'Document Centre', Icon: ShieldDocIcon },
       { href: '/motivations', label: 'Motivation Centre', Icon: DocIcon },
-      { href: '/load-lab', label: 'Load Lab', Icon: CartridgeIcon },
+      { href: '/bench', label: 'The Bench', Icon: CartridgeIcon },
     ],
   },
   {

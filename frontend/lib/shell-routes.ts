@@ -72,7 +72,7 @@ const PUSH_TITLES: Array<[string, string]> = [
   // shows its own name (its label if the member set one, otherwise its
   // section), not this fixed title.
   ['/motivations', 'Motivation Centre'],
-  ['/load-lab', 'Load Lab'],
+  ['/bench', 'The Bench'],
   ['/licence-centre', 'Licence Centre'],
   ['/notifications', 'Notifications'],
   ['/my/offers', 'Offers'],

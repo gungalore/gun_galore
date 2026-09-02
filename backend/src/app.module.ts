@@ -49,6 +49,7 @@ import { HuntBallisticsModule } from './hunt-ballistics/hunt-ballistics.module';
 import { ManualPaymentsModule } from './manual-payments/manual-payments.module';
 import { MyShipmentsModule } from './my-shipments/my-shipments.module';
 import { LoadLabModule } from './load-lab/load-lab.module';
+import { BenchModule } from './bench/bench.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { LoadLabModule } from './load-lab/load-lab.module';
       { name: 'default', ttl: 60_000, limit: 60 },
     ]),
     PrismaModule,
+    BenchModule,
     PeachModule,
     ScanModule,
     CloudinaryModule,

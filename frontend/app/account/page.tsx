@@ -294,8 +294,8 @@ function findAccountItem(href: string): AccountMenuItem | null {
 // (not per-request inside the page component).
 const MOTIVATION_ITEM = findAccountItem('/motivations');
 const DOCUMENT_ITEM = findAccountItem('/documents');
-const LOAD_LAB_ITEM = findAccountItem('/load-lab');
-const PROMOTED_HREFS = new Set(['/motivations', '/documents', '/load-lab']);
+const BENCH_ITEM = findAccountItem('/bench');
+const PROMOTED_HREFS = new Set(['/motivations', '/documents', '/bench']);
 
 // TIER 4 — every remaining ACCOUNT_GROUPS destination, grouped exactly as
 // that data defines (Buying / Shipping / Selling / Account / Help). The
@@ -478,7 +478,7 @@ export default async function AccountPage() {
                 whichever exists, or nothing) if ACCOUNT_GROUPS ever drops
                 one of these hrefs — this page must not 500 over a menu-data
                 edit made elsewhere. */}
-            {(DOCUMENT_ITEM || LOAD_LAB_ITEM) && (
+            {(DOCUMENT_ITEM || BENCH_ITEM) && (
               <div
                 style={{
                   display: 'grid',
@@ -492,10 +492,10 @@ export default async function AccountPage() {
                     blurb="Your licences, certificates and ID — kept safe, with renewals tracked."
                   />
                 )}
-                {LOAD_LAB_ITEM && (
+                {BENCH_ITEM && (
                   <ServiceCard
-                    item={LOAD_LAB_ITEM}
-                    blurb="Published manual load data and the powder burn-rate chart."
+                    item={BENCH_ITEM}
+                    blurb="What you can load from what is on your shelf."
                   />
                 )}
               </div>

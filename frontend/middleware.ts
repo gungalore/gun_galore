@@ -106,6 +106,10 @@ const isPublicRoute = createRouteMatcher([
   '/experiences-cancellation-policy',    // Hunting Packages legal page — note
                                          // this was NEVER in the matcher,
                                          // unlike every sibling legal page.
+  '/load-lab(.*)',      // RETIRED 2026-09-02 — Load Lab was replaced by The
+                        // Bench at /bench. Kept public so a bookmarked or
+                        // indexed link 404s honestly rather than prompting a
+                        // sign-in for a page that no longer exists.
   '/ask-gg(.*)',         // RETIRED 2026-08-26 — the Ask Boet assistant was
                          // removed. Same precedent as /competitions: the page
                          // was signed-in-only, so without this entry Clerk

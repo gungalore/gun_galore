@@ -5346,3 +5346,239 @@ model Credential {
   // just as a confirmed one is. See dateSource.
   @@index([dateSource, remindersMuted, expiresOn])
 }
+
+// ─── The Bench ─────────────────────────────────────────────────────────
+//
+// The reverse load finder: "what can I load from what is on my shelf".
+// All additive — nothing above this banner changes.
+//
+// ⚠️ BenchCartridge.key IS cartridgeKey(cartridge_european), the SAME helper
+// that computed CartridgeSpec's primary key and ManualLoad.cartridgeKey. That
+// is what lets a Bench cartridge join a CIP spec sheet. The helper must never
+// change behaviour: its output is already persisted in three tables, and a
+// drifting alias would not error — the joins would simply stop finding
+// anything.
+
+model BenchCartridge {
+  /// cartridgeKey(cartridge_european) — see the banner above.
+  key          String  @id
+  /// cartridge_european exactly as the reference file prints it, e.g. "6,5 Creedmoor".
+  name         String
+  slug         String  @unique
+  type         String?
+  origin       String?
+  year         Int?
+  /// L3 — case length.
+  caseLengthMm Float?
+  /// L6 — the COAL ceiling.
+  maxLengthMm  Float?
+  pmaxPsi      Int?
+  /// psi / 14.5038, rounded.
+  pmaxBar      Int?
+
+  aliases BenchCartridgeAlias[]
+  dims    BenchCipDimension?
+  loads   BenchLoad[]
+  sources BenchSourceLoad[]
+}
+
+model BenchCartridgeAlias {
+  id           String         @id @default(cuid())
+  cartridgeKey String
+  cartridge    BenchCartridge @relation(fields: [cartridgeKey], references: [key])
+  printed      String         @unique
+}
+
+model BenchPowder {
+  id      String             @id @default(cuid())
+  name    String             @unique
+  maker   String?
+  aliases BenchPowderAlias[]
+  loads   BenchLoad[]
+}
+
+model BenchPowderAlias {
+  id       String      @id @default(cuid())
+  powderId String
+  powder   BenchPowder @relation(fields: [powderId], references: [id])
+  printed  String      @unique
+}
+
+model BenchBulletMaker {
+  id      String   @id @default(cuid())
+  name    String   @unique
+  /// e.g. ["HDY", "Hornady"] — the printed forms that fold into this maker.
+  aliases String[]
+}
+
+/// ⚠️ INTERNAL. One row per CSV row. Never exposed by any endpoint: these are
+/// the un-consolidated manual rows, and publishing them would put one
+/// manual's start charge beside another's max as if they were comparable.
+model BenchSourceLoad {
+  id             String         @id @default(cuid())
+  cartridgeKey   String
+  cartridge      BenchCartridge @relation(fields: [cartridgeKey], references: [key])
+  printedName    String
+  nameVerified   Boolean
+  bulletMaker    String?
+  bulletType     String
+  /// FMJ | HP | SP | BT | TIP | CAST | MONO | OTHER
+  bulletCategory String
+  weightGr       Float
+  powderId       String
+  startGr        Float
+  startFps       Int?
+  maxGr          Float
+  maxFps         Int?
+  coalMm         Float?
+  /// source_manual — internal audit only.
+  source         String
+  sourcePage     Int?
+  needsReview    String?
+  loadId         String?
+  load           BenchLoad?     @relation(fields: [loadId], references: [id])
+
+  @@index([cartridgeKey, weightGr])
+}
+
+/// Public. One row per cartridge + bullet maker + weight + bullet category + powder.
+model BenchLoad {
+  id             String         @id @default(cuid())
+  cartridgeKey   String
+  cartridge      BenchCartridge @relation(fields: [cartridgeKey], references: [key])
+  bulletMaker    String
+  /// The most common raw type string in the group, for display ("ELD Match").
+  bulletType     String
+  bulletCategory String
+  weightGr       Float
+  powderId       String
+  powder         BenchPowder    @relation(fields: [powderId], references: [id])
+  /// LOWEST start in the group, and the velocity printed beside it.
+  startGr        Float
+  startFps       Int?
+  /// HIGHEST max in the group, and the velocity printed beside it.
+  maxGr          Float
+  maxFps         Int?
+  /// The COAL printed beside the highest max, else the group's most common.
+  coalMm         Float?
+  /// Set only when the group's COALs span more than 0.5 mm.
+  coalLoMm       Float?
+  coalHiMm       Float?
+  /// Internal; never serialised.
+  sourcesCount   Int
+
+  sources BenchSourceLoad[]
+
+  @@unique([cartridgeKey, bulletMaker, weightGr, bulletCategory, powderId])
+  @@index([powderId])
+}
+
+/// C.I.P. Tables of Dimensions of Cartridges and Chambers, as printed.
+/// ⚠️ Values are mm and bar exactly as the sheet prints them — no conversion,
+/// no rounding, tolerances kept as text. A converted figure in a reloading
+/// context is a figure somebody could load to.
+model BenchCipDimension {
+  cartridgeKey String         @id
+  cartridge    BenchCartridge @relation(fields: [cartridgeKey], references: [key])
+
+  // CARTRIDGE MAXI
+  R     Float?
+  R1    Float?
+  R3    Float?
+  E     Float?
+  E1    Float?
+  eMin  Float?
+  f     Float?
+  beta  String?
+  P1    Float?
+  P2    Float?
+  alpha String?
+  S     Float?
+  r1Min Float?
+  r2    Float?
+  H1    Float?
+  H2    Float?
+  G1    Float?
+  G2    Float?
+  F     Float?
+  L1    Float?
+  L2    Float?
+  L3    Float?
+  L4    Float?
+  L5    Float?
+  L6    Float?
+
+  pmaxBar Int?
+  pkBar   Int?
+  peBar   Int?
+  M       Float?
+  EE      Float?
+
+  // CHAMBER MINI
+  cL1     Float?
+  cL2     Float?
+  cL3     Float?
+  cP1     Float?
+  cP2     Float?
+  cH1     Float?
+  cH2     Float?
+  cG      Float?
+  cAlpha1 String?
+  cH      Float?
+  cS      Float?
+  cI      String?
+  cW      Float?
+
+  // Barrel
+  bF Float?
+  bZ Float?
+  bB Float?
+  bN Int?
+  bU Float?
+  bQ Float?
+
+  /// { "L1": "-0.20", ... } as printed.
+  tolerances Json?
+  /// { "L3": "1", "P1": "*" }
+  footnotes  Json?
+  /// The page's text block, kept for audit.
+  rawText    String  @db.Text
+  tab        String?
+  sheetDate  String?
+  revision   String?
+  /// Five sheets have no text layer.
+  imageOnly  Boolean @default(false)
+}
+
+/// What a reloader actually has on the shelf.
+model UserBench {
+  /// User.id (Clerk-backed).
+  userId        String   @id
+  powderIds     String[]
+  /// [{ maker, weightGr, category, type }]
+  bullets       Json
+  cartridgeKeys String[]
+  units         String   @default("metric")
+  updatedAt     DateTime @updatedAt
+}
+
+model BenchLogEntry {
+  id           String   @id @default(cuid())
+  userId       String
+  cartridgeKey String
+  bulletLabel  String
+  powderName   String
+  chargeGr     Float
+  coalMm       Float?
+  primer       String?
+  caseLabel    String?
+  /// The consolidated load it was based on, if any.
+  loadId       String?
+  shotAt       DateTime @default(now())
+  velocityMs   Int?
+  groupMm      Float?
+  notes        String?  @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

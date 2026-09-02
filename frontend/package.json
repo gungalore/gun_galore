@@ -21,7 +21,8 @@
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "serwist": "^9.5.11"
+    "serwist": "^9.5.11",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",
@@ -30,6 +31,7 @@
     "@types/node": "^20",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.4",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
     "jsdom": "^30.0.1",
