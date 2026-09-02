@@ -271,7 +271,16 @@ export function PowderPicker({
               someone who has typed nothing that nothing matches their name
               sends them hunting for a typo they never made.
             */}
-            {term.trim() ? 'Nothing matches that name.' : 'No powders to show.'}
+            {powders.length === 0
+              ? /* Nothing was loaded at all. Telling someone their search
+                   failed when the catalogue itself is empty sends them
+                   hunting for a typo they never made — which is exactly
+                   what happened when the Bench shipped before its import
+                   had run. */
+                'No powders are loaded yet.'
+              : term.trim()
+                ? 'Nothing matches that name.'
+                : 'No powders to show.'}
           </div>
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>

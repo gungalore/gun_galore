@@ -227,7 +227,12 @@ export class BenchService {
       where: q ? { name: { contains: q, mode: 'insensitive' } } : undefined,
       select: { id: true, name: true, maker: true },
       orderBy: { name: 'asc' },
-      take: 300,
+      // ⚠️ THE PICKER FILTERS THIS LIST CLIENT-SIDE, so whatever this cap
+      // omits is unreachable no matter what the member types — they get
+      // 'Nothing matches that name' for a powder that exists. At 300, with
+      // 305 powders imported, the last five were invisible. Kept generous
+      // rather than paged: the canonical list is small and rarely changes.
+      take: 1000,
     });
 
     // Without a bench there is nothing to count against, and a zero would
