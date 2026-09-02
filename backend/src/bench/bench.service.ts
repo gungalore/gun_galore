@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { toCsv } from '../common/csv.util';
+import { calibreFromG1 } from './bullet-calibre';
 import {
   coalFlags,
   THUMB_DIM_FIELDS,
@@ -13,7 +14,19 @@ import {
 /** What a guest sends instead of a stored bench. */
 export interface GuestBench {
   powderIds?: string[];
-  bullets?: { maker: string; weightGr: number; category: string }[];
+  bullets?: {
+    maker: string;
+    weightGr: number;
+    category: string;
+    /**
+     * Inches, from the cartridge's C.I.P. G1 — see bullet-calibre.ts.
+     *
+     * ⚠️ OPTIONAL, AND IT HAS TO STAY OPTIONAL. Benches saved before calibres
+     * were recorded hold none, and a bullet without one matches any calibre —
+     * exactly the behaviour it had. See loads() for why.
+     */
+    calibreIn?: number | null;
+  }[];
   cartridgeKeys?: string[];
 }
 
@@ -30,6 +43,18 @@ export interface BenchBulletOptionView {
   weightGr: number;
   /** FMJ | MONO | TIP | HP | CAST | SP | OTHER. */
   category: string;
+  /**
+   * 🚨 A WEIGHT IS NOT A BULLET, AND THIS FIELD IS WHY. "Hornady 150gr SP"
+   * names four projectiles — .277 for .270 Win, .308 for .308 Win, .311 for
+   * .303 British, .323 for 8x57 — which are not interchangeable. Without it
+   * one row stood for all four and the results told a member they could build
+   * loads their bullets do not fit.
+   *
+   * Inches. Null only where the cartridge has no C.I.P. sheet to take a
+   * diameter from; those rows are still offered, because the bullet is still
+   * loadable.
+   */
+  calibreIn: number | null;
   loads: number;
 }
 
@@ -38,6 +63,36 @@ export interface BenchCartridgeOptionView {
   key: string;
   name: string;
   loads: number;
+}
+
+/**
+ * One branch of the bullet OR — a shelf bullet, pinned to its own calibre.
+ *
+ * Named rather than inlined so the shape is stated once and the three callers
+ * cannot drift apart: `cartridgeKey` is ABSENT for a bullet with no calibre
+ * (matches any) and an explicit `in` list for one that has it, which may be
+ * empty (matches nothing). Both are meaningful; neither is a default.
+ */
+interface BulletClause {
+  bulletMaker: string;
+  weightGr: number;
+  bulletCategory: string;
+  cartridgeKey?: { in: string[] };
+}
+
+/**
+ * Calibre tie-break for the picker's ordering.
+ *
+ * ⚠️ NOT `(a ?? Infinity) - (b ?? Infinity)`. Two nulls give Infinity minus
+ * Infinity, which is NaN, and a comparator returning NaN leaves the pair in
+ * whatever order the sort happened to see them — the exact instability the
+ * tie-breaks exist to remove. Cartridges with no sheet sort last, together.
+ */
+function compareCalibre(a: number | null, b: number | null): number {
+  if (a === b) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return a - b;
 }
 
 @Injectable()
@@ -128,10 +183,10 @@ export class BenchService {
    * Consolidated loads buildable from a bench.
    *
    * The shelf is an AND across three axes: a load shows only if the reloader
-   * has the powder AND a bullet matching maker + weight + category AND the
-   * cartridge. Anything looser would answer a different question — "loads that
-   * exist" rather than "loads I can make tonight" — which is the whole point
-   * of the screen.
+   * has the powder AND a bullet matching maker + weight + category + calibre
+   * AND the cartridge. Anything looser would answer a different question —
+   * "loads that exist" rather than "loads I can make tonight" — which is the
+   * whole point of the screen.
    */
   async loads(
     bench: GuestBench,
@@ -147,18 +202,20 @@ export class BenchService {
       return { count: 0, groups: [] };
     }
 
+    // The calibre axis, built once for every surface — see bulletAxis(). The
+    // candidate keys are the ones THIS query could return, so a filtered view
+    // resolves calibres against the one cartridge it is showing rather than
+    // the whole shelf.
+    const candidateKeys = filter.cartridgeKey ? [filter.cartridgeKey] : cartridgeKeys;
+    const bulletOr = await this.bulletAxis(bullets, candidateKeys);
+
     const rows = await this.prisma.benchLoad.findMany({
       where: {
         cartridgeKey: filter.cartridgeKey
           ? { equals: filter.cartridgeKey }
           : { in: cartridgeKeys },
         powderId: filter.powderId ? { equals: filter.powderId } : { in: powderIds },
-        // The bullet axis: any of the shelf's maker+weight+category triples.
-        OR: bullets.map((b) => ({
-          bulletMaker: b.maker,
-          weightGr: b.weightGr,
-          bulletCategory: b.category,
-        })),
+        OR: bulletOr,
         ...(filter.weightMin !== undefined || filter.weightMax !== undefined
           ? {
               weightGr: {
@@ -275,15 +332,15 @@ export class BenchService {
     // read as "this powder has no loads" rather than "you have no shelf".
     if (!bench || !(bench.cartridgeKeys?.length && bench.bullets?.length)) return list;
 
+    // ⚠️ THE SAME BULLET AXIS THE RESULTS USE, NOT A LOOSER ONE. This number
+    // is a promise about what tapping the powder will show: counted without
+    // the calibre it counts 8x57 loads for a member whose 150 gr SP is a .308,
+    // and the chip then reads "12 loads" onto a screen with none on it.
     const counts = await this.prisma.benchLoad.groupBy({
       by: ['powderId'],
       where: {
         cartridgeKey: { in: bench.cartridgeKeys },
-        OR: bench.bullets.map((b) => ({
-          bulletMaker: b.maker,
-          weightGr: b.weightGr,
-          bulletCategory: b.category,
-        })),
+        OR: await this.bulletAxis(bench.bullets, bench.cartridgeKeys),
       },
       _count: { _all: true },
     });
@@ -291,64 +348,197 @@ export class BenchService {
     return list.map((p) => ({ ...p, loadsForBench: byId.get(p.id) ?? 0 }));
   }
 
+  /* ── Calibre, which lives on the cartridge ─────────────────────────── */
+
+  /**
+   * cartridgeKey → the calibre its bullets are, in inches.
+   *
+   * ⚠️ EVERY FIGURE GOES THROUGH calibreFromG1 AND NOTHING ELSE ROUNDS IT.
+   * A thou of spread WITHIN one calibre (.308 Win publishes 0.309", .300 H&H
+   * 0.308", .300 Lapua 0.310" — all three take a .308 bullet) is the same size
+   * as the gap BETWEEN neighbouring calibres (.321" .32 Rem against .323"
+   * 8mm). So there is no rounding, no bucketing and no chaining by tolerance
+   * anywhere on this path: two figures are one calibre only when the snap says
+   * they are.
+   *
+   * Only cartridgeKey and G1 are read. Nothing else on the sheet may travel
+   * this far — see bench.leak.spec.ts.
+   */
+  private async calibreByCartridge(keys?: string[]): Promise<Map<string, number | null>> {
+    const rows = await this.prisma.benchCipDimension.findMany({
+      where: keys ? { cartridgeKey: { in: keys } } : undefined,
+      select: { cartridgeKey: true, G1: true },
+      // No take, for the reason spelled out in bullets() below: a calibre this
+      // omits silently drops every bullet of that calibre off the picker.
+    });
+    return new Map(rows.map((r) => [r.cartridgeKey, calibreFromG1(r.G1)]));
+  }
+
+  /**
+   * The inverse: a calibre → the cartridge keys that take that bullet.
+   *
+   * Cartridges with no sheet are absent rather than gathered under a null key.
+   * A load whose cartridge has no published diameter cannot be shown to fit a
+   * bullet of a known one — we would be guessing, in the direction that ends
+   * with a round that does not chamber.
+   */
+  private async cartridgeKeysByCalibre(keys: string[]): Promise<Map<number, string[]>> {
+    const byKey = await this.calibreByCartridge(keys);
+    const out = new Map<number, string[]>();
+    for (const [key, calibre] of byKey) {
+      if (calibre === null) continue;
+      const list = out.get(calibre);
+      if (list) list.push(key);
+      else out.set(calibre, [key]);
+    }
+    return out;
+  }
+
+  /**
+   * The bullet axis: the OR clause that says "a load whose bullet is one of
+   * the ones on this shelf, of the calibre that shelf bullet actually is".
+   *
+   * 🚨 ONE BUILDER, AND EVERY SURFACE THAT FILTERS BY A BENCH CALLS IT. Three
+   * places AND on the shelf's bullets — the results, the powder rows' counts
+   * and the spec card's count — and while each wrote its own clause the
+   * calibre reached only the first of them. The same shelf then said "12
+   * loads" on a powder chip and showed none when the member tapped it, and the
+   * spec card counted 8x57 loads against a .308" bullet that will not chamber
+   * in one. A hand-rolled fourth copy is a fourth chance to leave the axis out,
+   * so there is no hand-rolled copy: NEVER re-derive this clause.
+   *
+   * BenchLoad has no diameter column — the calibre lives one join away, on the
+   * cartridge's sheet — so the constraint is expressed as the set of cartridge
+   * keys of that calibre. `candidateKeys` is the set the calling query could
+   * return, so the lookup stays as narrow as the question.
+   *
+   * ⚠️ A SHELF BULLET WITH NO CALIBRE MATCHES ANY CALIBRE, DELIBERATELY. Every
+   * bench saved before calibres were recorded stores bullets without one, and
+   * treating those as "matches nothing" would empty a member's screen overnight
+   * through no action of theirs. They keep exactly the behaviour they had; a
+   * bullet WITH a calibre is held to it.
+   *
+   * ⚠️ NO SHEET IS READ UNLESS A BULLET NEEDS ONE. An all-pre-calibre bench
+   * costs the query it always cost.
+   */
+  private async bulletAxis(
+    bullets: NonNullable<GuestBench['bullets']>,
+    candidateKeys: string[],
+  ): Promise<BulletClause[]> {
+    const keysByCalibre = bullets.some((b) => b.calibreIn != null)
+      ? await this.cartridgeKeysByCalibre(candidateKeys)
+      : null;
+
+    return bullets.map((b) => ({
+      bulletMaker: b.maker,
+      weightGr: b.weightGr,
+      bulletCategory: b.category,
+      // `?? []` is not a fallback to "anything" — a calibre no candidate
+      // cartridge shares must match NOTHING, which is what an empty `in` does.
+      // Falling back to no clause at all would be the original bug with extra
+      // steps: the bullet would match every cartridge on the shelf.
+      ...(b.calibreIn != null && keysByCalibre
+        ? { cartridgeKey: { in: keysByCalibre.get(b.calibreIn) ?? [] } }
+        : {}),
+    }));
+  }
+
   /* ── The bullet picker ─────────────────────────────────────────────── */
 
   /**
    * Every bullet the consolidated set knows: the distinct maker + weight +
-   * category triples, each with how many loads use it.
+   * category + CALIBRE combinations, each with how many loads use it.
    *
-   * ⚠️ A groupBy, NOT a findMany. ~28 000 consolidated rows collapse to about
-   * 1 100 triples; distinct-ing them in node would drag the whole table across
-   * the wire to answer a question Postgres answers with one GROUP BY.
+   * 🚨 THE CALIBRE IS PART OF THE GROUP, NOT A LABEL ON IT. A (maker, weight,
+   * category) triple that appears across three calibres is three different
+   * projectiles and comes back as THREE rows. Folded into one, the picker
+   * offers a member a "150gr SP" that stands for a .277, a .308, a .311 and a
+   * .323 at once, and the results then tell them they can build loads their
+   * bullets do not fit.
+   *
+   * ⚠️ THE GROUP BY CARRIES cartridgeKey BECAUSE BenchLoad HAS NO DIAMETER.
+   * The calibre is one join away, on the cartridge's sheet, so Postgres groups
+   * per cartridge and the calibres are folded together here — which is the
+   * only place that knows calibreFromG1's answer. The aggregate still does the
+   * expensive part: ~28 000 consolidated rows collapse to a few thousand
+   * (triple, cartridge) pairs, where distinct-ing in node would drag the whole
+   * table across the wire.
    *
    * This axis exists because the bench is an AND. A member with powders and
    * cartridges but no bullet matches nothing, for ever — which is precisely
    * what happened while all three Add buttons opened the powder picker.
    */
   async bullets(): Promise<BenchBulletOptionView[]> {
-    const groups = await this.prisma.benchLoad.groupBy({
-      by: ['bulletMaker', 'weightGr', 'bulletCategory'],
-      // A bullet nobody named cannot be picked off a shelf: the picker would
-      // draw a blank row that matches nothing a member types. Prisma types the
-      // column non-null, but the manual rows it is consolidated from allow a
-      // missing maker, so the guard belongs in SQL rather than in the types —
-      // and `<> ''` drops a NULL too, should the column ever be relaxed.
-      where: { bulletMaker: { not: '' } },
-      _count: { _all: true },
-    });
+    const [groups, calibres] = await Promise.all([
+      this.prisma.benchLoad.groupBy({
+        by: ['bulletMaker', 'weightGr', 'bulletCategory', 'cartridgeKey'],
+        // A bullet nobody named cannot be picked off a shelf: the picker would
+        // draw a blank row that matches nothing a member types. Prisma types the
+        // column non-null, but the manual rows it is consolidated from allow a
+        // missing maker, so the guard belongs in SQL rather than in the types —
+        // and `<> ''` drops a NULL too, should the column ever be relaxed.
+        where: { bulletMaker: { not: '' } },
+        _count: { _all: true },
+      }),
+      // Every cartridge, not just the ones with loads: the join below is a
+      // lookup, and a missing entry is indistinguishable from a missing sheet.
+      this.calibreByCartridge(),
+    ]);
 
     // ⚠️ NO take/skip ANYWHERE ON THIS PATH, AND NONE MAY BE ADDED. The picker
     // filters this list in the browser, so whatever the server omits is
     // unreachable no matter how the member spells it. Capping the powder list
     // at 300 with 305 imported is exactly how five powders went invisible.
-    return groups
-      .map((g) => ({
-        maker: g.bulletMaker,
-        weightGr: g.weightGr,
-        category: g.bulletCategory,
-        // Consolidated loads. Never the number of manuals behind them.
-        loads: g._count._all,
-      }))
-      // Sorted here rather than in the GROUP BY: the aggregate has already
-      // collapsed the table to about a thousand rows, so ordering them in node
-      // costs nothing and the tie-breaks stay readable. Most loads first,
-      // because the top of a picker should be the part worth adding.
-      //
-      // ⚠️ THE TIE-BREAKS RUN ALL THE WAY TO category, WHICH IS NOT TIDINESS.
-      // A bullet's identity is maker + weight + category — that is what
-      // bulletKey() joins and what the results AND matches on — so two rows
-      // differing only by category are two different bullets. Stopping the
-      // tie-break at weight leaves them in whatever order Postgres's hash
-      // aggregate happened to emit, which is not stable between runs: the same
-      // two rows swap places between one opening of the picker and the next,
-      // in a list the member is scanning by eye.
-      .sort(
-        (a, b) =>
-          b.loads - a.loads ||
-          a.maker.localeCompare(b.maker) ||
-          a.weightGr - b.weightGr ||
-          a.category.localeCompare(b.category),
-      );
+    const byBullet = new Map<string, BenchBulletOptionView>();
+    for (const g of groups) {
+      // ⚠️ A CARTRIDGE WITH NO SHEET KEEPS ITS ROW. Five of the 177 have none,
+      // and their loads are still loads a member can build — dropping them
+      // would make those bullets unaddable and their cartridges dead ends.
+      // They group under null, which loads() then treats as "any calibre".
+      const calibreIn = calibres.get(g.cartridgeKey) ?? null;
+
+      // The identity, in one string — the same four parts, in the same order,
+      // that the client's bulletKey() joins. Built from calibreFromG1's own
+      // answer and never a rounded or bucketed form of it, which is how two
+      // calibres end up in one group.
+      const key = `${g.bulletMaker}|${g.weightGr}|${g.bulletCategory}|${calibreIn ?? ''}`;
+
+      const row = byBullet.get(key);
+      // Summed across every cartridge of the calibre: .308 Win, .300 H&H and
+      // .300 Lapua all take the .308 bullet, so its count is all three.
+      if (row) row.loads += g._count._all;
+      else
+        byBullet.set(key, {
+          maker: g.bulletMaker,
+          weightGr: g.weightGr,
+          category: g.bulletCategory,
+          calibreIn,
+          // Consolidated loads. Never the number of manuals behind them.
+          loads: g._count._all,
+        });
+    }
+
+    // Sorted here rather than in the GROUP BY: the aggregate has already
+    // collapsed the table, so ordering in node costs nothing and the
+    // tie-breaks stay readable. Most loads first, because the top of a picker
+    // should be the part worth adding.
+    //
+    // ⚠️ THE TIE-BREAKS RUN ALL THE WAY THROUGH THE IDENTITY, WHICH IS NOT
+    // TIDINESS. A bullet is maker + weight + category + calibre — that is what
+    // bulletKey() joins and what the results AND matches on — so two rows
+    // differing only by calibre are two different bullets. A hash aggregate
+    // guarantees no order at all, so anything the tie-breaks leave undecided
+    // swaps places between one opening of the picker and the next, in a list
+    // the member is scanning by eye. Every field is compared, so the order is
+    // total.
+    return [...byBullet.values()].sort(
+      (a, b) =>
+        b.loads - a.loads ||
+        a.maker.localeCompare(b.maker) ||
+        a.weightGr - b.weightGr ||
+        compareCalibre(a.calibreIn, b.calibreIn) ||
+        a.category.localeCompare(b.category),
+    );
   }
 
   /* ── The cartridge picker ──────────────────────────────────────────── */
@@ -401,18 +591,27 @@ export class BenchService {
     });
     if (!cartridge) throw new NotFoundException('Unknown cartridge');
 
+    // ⚠️ THE BENCH COUNT IS BUILT THROUGH bulletAxis() LIKE EVERY OTHER ONE.
+    // This card is where a member decides whether to add the cartridge, and
+    // "4 for your bench" against a bullet three thou too fat is the exact
+    // claim the calibre axis exists to stop us making. Resolved against this
+    // one cartridge, so a shelf bullet of another calibre lands on the empty
+    // `in` and counts nothing.
+    const shelfBullets = bench?.bullets ?? [];
+    const shelfPowders = bench?.powderIds ?? [];
+    const bulletOr =
+      shelfPowders.length && shelfBullets.length
+        ? await this.bulletAxis(shelfBullets, [key])
+        : null;
+
     const [loadCount, loadsForBench] = await Promise.all([
       this.prisma.benchLoad.count({ where: { cartridgeKey: key } }),
-      bench?.powderIds?.length && bench.bullets?.length
+      bulletOr
         ? this.prisma.benchLoad.count({
             where: {
               cartridgeKey: key,
-              powderId: { in: bench.powderIds },
-              OR: bench.bullets.map((b) => ({
-                bulletMaker: b.maker,
-                weightGr: b.weightGr,
-                bulletCategory: b.category,
-              })),
+              powderId: { in: shelfPowders },
+              OR: bulletOr,
             },
           })
         : Promise.resolve(0),

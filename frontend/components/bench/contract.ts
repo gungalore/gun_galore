@@ -55,8 +55,20 @@ export interface OffState {
 
 export const EMPTY_OFF: OffState = { powderIds: [], cartridgeKeys: [], bullets: [] };
 
-export function bulletKey(b: { maker: string; weightGr: number; category: string }): string {
-  return `${b.maker}|${b.weightGr}|${b.category}`;
+/**
+ * ⚠️ THE CALIBRE IS PART OF A BULLET'S IDENTITY. Leave it out and a .277 and a
+ * .308 150gr collapse to one key again — which is the bug this whole field
+ * exists to fix. Benches saved before calibres existed have none; those keep
+ * the old three-part key and keep matching as they did.
+ */
+export function bulletKey(b: {
+  maker: string;
+  weightGr: number;
+  category: string;
+  calibreIn?: number | null;
+}): string {
+  const base = `${b.maker}|${b.weightGr}|${b.category}`;
+  return b.calibreIn == null ? base : `${base}|${b.calibreIn}`;
 }
 
 /* ── Shared leaf props ──────────────────────────────────────────────── */

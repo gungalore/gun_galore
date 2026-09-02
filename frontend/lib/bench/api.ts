@@ -108,6 +108,8 @@ export interface BenchBullet {
   maker: string;
   weightGr: number;
   category: string;
+  /** Inches. Absent on benches saved before calibres were recorded. */
+  calibreIn?: number | null;
   type?: string;
 }
 
@@ -131,6 +133,15 @@ export interface BenchBulletOption {
   weightGr: number;
   /** FMJ | MONO | TIP | HP | CAST | SP | OTHER. */
   category: string;
+  /**
+   * 🚨 A WEIGHT IS NOT A BULLET. "Hornady 150gr SP" names four different
+   * projectiles — .277 for .270 Win, .308 for .308 Win, .311 for .303
+   * British, .323 for 8x57 — and they are not interchangeable. Without this
+   * the picker showed one row for all four, and the results told a member
+   * they could build loads their bullets do not fit. Inches; null only where
+   * no C.I.P. sheet gives a diameter.
+   */
+  calibreIn: number | null;
   /**
    * How many consolidated loads use it.
    *
