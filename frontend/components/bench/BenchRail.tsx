@@ -9,10 +9,18 @@
  * sheet is exactly how the two surfaces drift apart, and a chip that behaves
  * differently on a phone is a safety problem, not a cosmetic one.
  *
- * ⚠️ A CHIP TOGGLES THIS SEARCH, NOT THE SAVED BENCH. onToggle only edits the
- * `off` set the page holds; nothing in this file calls a save. The saved bench
- * is changed solely through the Add flows, which the page wires to
- * PUT /bench/me. See the warning on OffState in contract.ts.
+ * ⚠️ A CHIP'S BODY TOGGLES THIS SEARCH, NOT THE SAVED BENCH. onToggle only
+ * edits the `off` set the page holds; nothing in this file calls a save. The
+ * saved bench is changed by the Add flows and by the × beside each chip, both
+ * of which the page wires to PUT /bench/me. See the warning on OffState in
+ * contract.ts.
+ *
+ * 🚨 AND THOSE TWO ACTS SIT SIDE BY SIDE ON EVERY CHIP, SO THEY ARE DRAWN AS
+ * TWO CONTROLS. The pill is the toggle; the × is a separate button with its
+ * own hit area, its own outline and its own name ("Remove H4350 from your
+ * bench"). Fold the second into the first — a chip that removes on a long
+ * press, a shift-click, a second tap — and the member who meant "not this
+ * search" silently loses a shelf entry instead.
  */
 
 import type { CSSProperties } from 'react';
@@ -22,8 +30,16 @@ import { CALIBRE_UNKNOWN_SHORT, formatCalibre } from '@/lib/bench/calibre';
 import { bulletKey, type BenchRailProps } from './contract';
 import { Chip, type BenchSize } from './primitives';
 
-/** One string, two shells — the rail and the sheet must not word this apart. */
-export const BENCH_HINT = 'Tap a chip to take it off the shelf for this search.';
+/**
+ * One string, two shells — the rail and the sheet must not word this apart.
+ *
+ * ⚠️ IT NAMES BOTH ACTIONS, because the chip now carries both and only one of
+ * them is reversible by tapping again. A hint that mentions the toggle alone
+ * leaves the × to be discovered by pressing it, which is the one way of
+ * finding out that costs the member a shelf entry.
+ */
+export const BENCH_HINT =
+  'Tap a chip to take it off the shelf for this search. The × removes it from your bench.';
 
 /* ── Small parts ────────────────────────────────────────────────────── */
 
@@ -77,11 +93,21 @@ const SECTION_HEAD: CSSProperties = {
   color: 'var(--text-tertiary)',
 };
 
-const CHIP_ROW: CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: 6,
-};
+/**
+ * ⚠️ THE ROW'S GAP MUST BEAT THE PAIR'S. Each chip is now a pill and its own
+ * × set 4px apart (see Chip in primitives.tsx), so a row gap of 6 would leave
+ * a × almost equidistant between the chip it removes and the next one along —
+ * and the member reads the nearest thing as the owner. The phone's gap is
+ * wider again because its × is a 44px target sitting beside a 40px pill.
+ */
+function chipRow(size: BenchSize): CSSProperties {
+  return {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: size === 'mobile' ? 12 : 8,
+  };
+}
 
 /**
  * "Hornady ELD Match" reads as the product; `category` ("HPBT") is the shape
@@ -94,6 +120,22 @@ const CHIP_ROW: CSSProperties = {
  */
 function bulletLabel(b: BenchBullet): string {
   return `${b.maker} ${b.type ?? b.category}`.trim();
+}
+
+/**
+ * A bullet in the chip's own words: calibre, product, weight.
+ *
+ * ⚠️ EXPORTED SO THE PAGE CAN SAY IT TOO. The × beside a bullet chip is named
+ * with this, and the toast that confirms the removal is named with this, and
+ * they have to be the same words the chip itself is showing — "Hornady 150 gr"
+ * names four projectiles, so a confirmation the member cannot match to the
+ * chip they pointed at is not a confirmation. One helper, three surfaces.
+ *
+ * filter() rather than a template: a bullet with no calibre would otherwise be
+ * named with a leading space where a figure belongs.
+ */
+export function benchBulletName(b: BenchBullet): string {
+  return [formatCalibre(b.calibreIn), bulletLabel(b), `${b.weightGr} gr`].filter(Boolean).join(' ');
 }
 
 /* ── The shared sections ────────────────────────────────────────────── */
@@ -117,12 +159,14 @@ export function BenchSections({
   bench,
   off,
   onToggle,
+  onRemove,
   onAddPowder,
   onAddBullet,
   onAddCartridge,
   size = 'desktop',
 }: BenchRailProps & { size?: BenchSize }) {
   const uid = useId();
+  const row = chipRow(size);
 
   return (
     <>
@@ -130,13 +174,17 @@ export function BenchSections({
         <h3 id={`${uid}-powders`} style={SECTION_HEAD}>
           Powders · {bench.powders.length}
         </h3>
-        <div style={{ ...CHIP_ROW, marginBottom: 14 }}>
+        <div style={{ ...row, marginBottom: 14 }}>
           {bench.powders.map((p) => (
             <Chip
               key={p.id}
               on={!off.powderIds.includes(p.id)}
               size={size}
               onClick={() => onToggle('powderIds', p.id)}
+              onRemove={() => onRemove('powderIds', p.id)}
+              // The powder, not "this chip": the name is read on its own, out
+              // of the list of buttons, with no chip beside it for context.
+              removeLabel={`Remove ${p.name} from your bench`}
             >
               {p.name}
             </Chip>
@@ -154,7 +202,7 @@ export function BenchSections({
         <h3 id={`${uid}-bullets`} style={SECTION_HEAD}>
           Bullets · {bench.bullets.length}
         </h3>
-        <div style={{ ...CHIP_ROW, marginBottom: 14 }}>
+        <div style={{ ...row, marginBottom: 14 }}>
           {bench.bullets.map((b) => {
             // The key that is rendered and the key that is toggled come from
             // the same helper on purpose: two bullets can share a maker, a
@@ -168,6 +216,12 @@ export function BenchSections({
                 on={!off.bullets.includes(key)}
                 size={size}
                 onClick={() => onToggle('bullets', key)}
+                onRemove={() => onRemove('bullets', key)}
+                // 🚨 THE CALIBRE IS IN THE NAME FOR THE SAME REASON IT LEADS
+                // THE CHIP. A member with a .270 and a .308 Hornady 150 gr on
+                // the bench hears "Remove Hornady SP 150 gr from your bench"
+                // twice over and cannot tell which projectile is about to go.
+                removeLabel={`Remove ${benchBulletName(b)} from your bench`}
               >
                 {/*
                   🚨 THE CALIBRE LEADS THE CHIP. "Hornady 150 gr" names four
@@ -209,13 +263,15 @@ export function BenchSections({
         </h3>
         {/* No trailing margin: the rail closes on its card padding and the
             sheet on its own footer spacing, so one here would double up. */}
-        <div style={CHIP_ROW}>
+        <div style={row}>
           {bench.cartridges.map((c) => (
             <Chip
               key={c.key}
               on={!off.cartridgeKeys.includes(c.key)}
               size={size}
               onClick={() => onToggle('cartridgeKeys', c.key)}
+              onRemove={() => onRemove('cartridgeKeys', c.key)}
+              removeLabel={`Remove ${c.name} from your bench`}
             >
               {c.name}
             </Chip>

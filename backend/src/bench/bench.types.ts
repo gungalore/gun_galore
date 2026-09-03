@@ -52,9 +52,47 @@ export interface PublicLoadGroup {
   weights: PublicWeightGroup[];
 }
 
+/**
+ * Why a search came back with nothing.
+ *
+ * ⚠️ AN EMPTY SCREEN IS INDISTINGUISHABLE FROM A BROKEN ONE WITHOUT THIS, AND
+ * THAT IS EXACTLY HOW IT WAS REPORTED: "I choose a cartridge and a bullet and
+ * nothing comes up." The results are an AND across powder, bullet and
+ * cartridge, so ONE starving axis empties the page while the other two are
+ * full — a bench holding N550, .30-06 and a 150 gr Hornady SP has 70 .30-06
+ * loads on that powder and 13 on that bullet, and none that are both. The
+ * screen was right and said nothing, which reads as the screen being broken.
+ *
+ * Each figure is the same query with ONE axis relaxed:
+ *
+ *   ignoringBullets    — this bench's cartridges and powders, any bullet
+ *   ignoringPowders    — this bench's cartridges and bullets, any powder
+ *   ignoringCartridges — this bench's powders and bullets, any cartridge
+ *
+ * Read together they name the axis to change: the one whose removal finds
+ * loads is the one that is starving.
+ *
+ * ⚠️ THESE ARE LOAD COUNTS AND NOTHING ELSE. How many consolidated loads a
+ * combination has is a fact about the combination — the same fact the picker
+ * chips already publish. A count of what those loads were derived from is a
+ * different fact and never travels; bench.leak.spec.ts is the boundary.
+ *
+ * Present ONLY when count is 0 AND the bench holds all three axes. With an
+ * axis bare the answer is already known — the client says "add a bullet"
+ * rather than "no combination exists" — and three more counts would be spent
+ * to learn nothing.
+ */
+export interface LoadsWhy {
+  ignoringBullets: number;
+  ignoringPowders: number;
+  ignoringCartridges: number;
+}
+
 export interface LoadsResponse {
   count: number;
   groups: PublicLoadGroup[];
+  /** See LoadsWhy — absent unless the answer was empty and the bench was full. */
+  why?: LoadsWhy;
 }
 
 export interface BenchPowderView {

@@ -42,14 +42,28 @@ export const WEIGHT_BANDS: { id: WeightBand; label: string }[] = [
  * What the member has switched OFF for this search.
  *
  * ⚠️ THIS IS NOT THEIR BENCH. Toggling a chip changes the current search only;
- * the saved bench is edited through the Add flows, which PUT /bench/me. A
+ * the saved bench is edited through the Add flows and through the × beside
+ * each chip (BenchRailProps.onRemove), both of which PUT /bench/me. A
  * component that writes an `off` toggle back to the server has broken the
  * central promise of the finder.
+ *
+ * 🚨 AND THE IDS HERE ARE THE IDS THE REMOVE USES. onToggle and onRemove take
+ * the same `(kind, id)` pair, so a key spelled one way for the toggle and
+ * another for the removal would take the wrong entry off the bench for good.
+ * Every one of them comes from the same place: `p.id`, `c.key`, bulletKey(b).
  */
 export interface OffState {
   powderIds: string[];
   cartridgeKeys: string[];
-  /** `${maker}|${weightGr}|${category}` — the bullet's identity on the bench. */
+  /**
+   * bulletKey() — `${maker}|${weightGr}|${category}`, with `|${calibreIn}`
+   * appended for every bullet that has one.
+   *
+   * ⚠️ WRITTEN OUT HERE ONLY AS A REMINDER; bulletKey() BELOW IS THE SPELLING,
+   * and the backend's benchBulletKey() has to match it character for character
+   * or `off` silently matches nothing. Dropping the calibre part from this
+   * line is how the four-part form quietly stops being sent.
+   */
   bullets: string[];
 }
 
@@ -121,6 +135,14 @@ export interface BenchRailProps {
   bench: BenchView;
   off: OffState;
   onToggle: (kind: keyof OffState, id: string) => void;
+  /**
+   * ⚠️ TOGGLING AND REMOVING ARE DIFFERENT ACTS, AND THE RAIL MUST OFFER BOTH.
+   * onToggle takes something off the shelf for THIS SEARCH and saves nothing;
+   * onRemove takes it off the bench for good and writes. Until this existed a
+   * member who added a bullet they did not own had no way to take it back —
+   * the chip greyed out and stayed there for ever.
+   */
+  onRemove: (kind: keyof OffState, id: string) => void;
   onAddPowder: () => void;
   onAddBullet: () => void;
   onAddCartridge: () => void;
@@ -152,6 +174,26 @@ export const BENCH_AXES: BenchAxis[] = ['powder', 'bullet', 'cartridge'];
  */
 export type BenchGaps = Record<BenchAxis, boolean>;
 
+/**
+ * The three axes as the search actually ran them, each item named the way the
+ * rail names it: a powder by its name, a cartridge by its name, a bullet as
+ * calibre-maker-weight.
+ *
+ * ⚠️ THE ACTIVE SHELF, NOT THE SAVED BENCH. `off` chips narrow the search
+ * without touching the bench, so a list built from BenchView alone would name
+ * a powder the member had just switched off — and the sentence it feeds is a
+ * statement about the search it is explaining, not about the shelf.
+ *
+ * ⚠️ NAMES, NOT ROWS. The empty state only ever prints these; handing it
+ * BenchView instead would let it re-derive a bullet's label a second way and
+ * disagree with the chip the member is looking at.
+ */
+export interface ShelfNames {
+  powders: string[];
+  bullets: string[];
+  cartridges: string[];
+}
+
 export interface ResultsListProps extends UnitProps {
   result: LoadsResponse | null;
   loading: boolean;
@@ -161,6 +203,16 @@ export interface ResultsListProps extends UnitProps {
   onRetry: () => void;
   /** Which axes are bare. See BenchGaps — not a "bench is empty" flag. */
   gaps: BenchGaps;
+  /**
+   * What this search ran against, named.
+   *
+   * ⚠️ THE OTHER HALF OF LoadsResponse.why. The counts say WHICH axis starved;
+   * these say WHAT the member has on the two that did not, so the empty state
+   * can read "Your .30-06 and N550 have 70 loads together — but none for the
+   * bullets on your bench" instead of a shrug. Counts without names is a
+   * sentence about nobody's bench.
+   */
+  shelf: ShelfNames;
   /**
    * ⚠️ ALL THREE, NOT JUST THE POWDER ONE. The empty state opens the picker
    * for the axis it just named; with only `onAddPowder` to hand it could not.

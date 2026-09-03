@@ -7,8 +7,11 @@
  * same component the desktop rail renders: this file is a shell and a dialog,
  * nothing more. If a chip ever needs changing, it changes once, in BenchRail.
  *
- * ⚠️ TOGGLING A CHIP HERE SAVES NOTHING EITHER. Same rule as the rail — the
- * sheet edits the current search; the Add flows edit the bench.
+ * ⚠️ TOGGLING A CHIP HERE SAVES NOTHING EITHER, AND THE × HERE REMOVES FOR
+ * GOOD JUST AS IT DOES ON THE RAIL. Same two acts, same two controls, because
+ * they are the same component: `onRemove` reaches BenchSections through the
+ * rest spread below, exactly as `onToggle` does. Naming it out of the spread
+ * to "make it explicit" is how the phone ends up one prop behind the desktop.
  *
  * ⚠️ THE DIALOG BEHAVIOUR IS OverlayShell's, NOT THIS FILE'S. Backdrop, the
  * bottom-sheet box, the grab handle, the entrance, Escape (top-most overlay

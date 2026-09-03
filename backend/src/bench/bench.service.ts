@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { toCsv } from '../common/csv.util';
 import { calibreFromG1 } from './bullet-calibre';
@@ -7,6 +8,7 @@ import {
   THUMB_DIM_FIELDS,
   type BenchView,
   type LoadsResponse,
+  type LoadsWhy,
   type PublicLoadGroup,
   type PublicLoadRow,
 } from './bench.types';
@@ -78,6 +80,38 @@ interface BulletClause {
   weightGr: number;
   bulletCategory: string;
   cartridgeKey?: { in: string[] };
+}
+
+/**
+ * What the finder narrows the bench WITH — the cartridge tab, the weight band
+ * and the powder chip.
+ *
+ * ⚠️ A FILTER IS NOT AN AXIS, AND THE DIFFERENCE IS WHAT KEEPS THE EMPTY-STATE
+ * DIAGNOSIS HONEST. An axis is what the member OWNS; a filter is what they are
+ * currently looking at. whyEmpty() relaxes an axis and NEVER a filter, because
+ * "70 loads are available" about a weight band or a cartridge tab the member
+ * cannot see from here is a number they can neither reach nor explain.
+ */
+interface LoadsFilter {
+  cartridgeKey?: string;
+  weightMin?: number;
+  weightMax?: number;
+  powderId?: string;
+}
+
+/**
+ * The three axes a loads query ANDs on.
+ *
+ * ⚠️ `null` MEANS "RELAXED", NOT "EMPTY". An empty array is a real constraint
+ * that matches nothing — that is what an out-of-calibre bullet resolves to —
+ * whereas null drops the clause from the `where` altogether. The two are one
+ * character apart and mean opposite things, which is why they are named here
+ * rather than passed as bare arrays.
+ */
+interface LoadsAxes {
+  cartridgeKeys: string[] | null;
+  powderIds: string[] | null;
+  bulletOr: BulletClause[] | null;
 }
 
 /**
@@ -188,16 +222,19 @@ export class BenchService {
    * "loads that exist" rather than "loads I can make tonight" — which is the
    * whole point of the screen.
    */
-  async loads(
-    bench: GuestBench,
-    filter: { cartridgeKey?: string; weightMin?: number; weightMax?: number; powderId?: string },
-  ): Promise<LoadsResponse> {
+  async loads(bench: GuestBench, filter: LoadsFilter): Promise<LoadsResponse> {
     const powderIds = bench.powderIds ?? [];
     const cartridgeKeys = bench.cartridgeKeys ?? [];
     const bullets = bench.bullets ?? [];
 
     // An empty shelf is an empty answer, not the whole database. Returning
     // everything would bury the one thing the page is for.
+    //
+    // ⚠️ AND NO `why` HERE, DELIBERATELY. With an axis bare the diagnosis is
+    // already in hand — the client names the empty axis and offers its Add
+    // button — so three more counts would be spent to learn what the caller
+    // knew before it asked. `why` answers a different question: "all three are
+    // stocked and STILL nothing".
     if (powderIds.length === 0 || cartridgeKeys.length === 0 || bullets.length === 0) {
       return { count: 0, groups: [] };
     }
@@ -210,21 +247,7 @@ export class BenchService {
     const bulletOr = await this.bulletAxis(bullets, candidateKeys);
 
     const rows = await this.prisma.benchLoad.findMany({
-      where: {
-        cartridgeKey: filter.cartridgeKey
-          ? { equals: filter.cartridgeKey }
-          : { in: cartridgeKeys },
-        powderId: filter.powderId ? { equals: filter.powderId } : { in: powderIds },
-        OR: bulletOr,
-        ...(filter.weightMin !== undefined || filter.weightMax !== undefined
-          ? {
-              weightGr: {
-                ...(filter.weightMin !== undefined ? { gte: filter.weightMin } : {}),
-                ...(filter.weightMax !== undefined ? { lte: filter.weightMax } : {}),
-              },
-            }
-          : {}),
-      },
+      where: this.benchLoadWhere({ cartridgeKeys, powderIds, bulletOr }, filter),
       // ⚠️ AN EXPLICIT SELECT, NOT AN INCLUDE. sourcesCount and the
       // BenchSourceLoad relation must never reach a response, and the surest
       // way to keep that true as this query grows is to never fetch them.
@@ -303,7 +326,128 @@ export class BenchService {
       for (const w of g.weights) w.rows.sort((a, b) => a.powder.localeCompare(b.powder));
     }
 
-    return { count: rows.length, groups };
+    // Only when there is nothing to show. A full screen explains itself, and
+    // three extra counts on every search would be paid by every member who is
+    // simply reading their loads.
+    const why =
+      rows.length === 0
+        ? await this.whyEmpty({ cartridgeKeys, powderIds, bullets }, filter, bulletOr)
+        : null;
+
+    // Spread rather than `why: why ?? undefined`: a key that is present and
+    // undefined survives into `Object.keys` and into every `'why' in result`
+    // check the client might make, and "there is a diagnosis" must not be
+    // true of a search that found loads.
+    return { count: rows.length, groups, ...(why ? { why } : {}) };
+  }
+
+  /**
+   * The `where` every loads query is built from — the listing and the three
+   * counts that explain an empty listing.
+   *
+   * 🚨 ONE BUILDER, FOR THE SAME REASON bulletAxis() IS ONE BUILDER. The
+   * diagnosis is a claim ABOUT the result beside it — "drop your bullets and
+   * there are 70 loads here" — and a claim built by a second hand-rolled
+   * `where` is a claim that can disagree with the thing it explains. A count
+   * that quietly forgot the weight band would tell a member 70 loads are
+   * waiting behind a filter they cannot see from where they are standing,
+   * and every one of them would vanish the moment they cleared the bullets.
+   *
+   * ⚠️ EVERY NARROWING BELONGS IN HERE, NOT IN THE CALLER. A clause added to
+   * loads() alone is a clause the counts do not have, which is precisely the
+   * drift this exists to prevent.
+   *
+   * ⚠️ A FILTER OUTRANKS ITS AXIS, RELAXED OR NOT. Relaxing the cartridge axis
+   * on a screen pinned to one cartridge tab still shows that tab: the member
+   * is asking "why is THIS view empty", and an answer about a view they are
+   * not looking at is not an answer.
+   */
+  private benchLoadWhere(axes: LoadsAxes, filter: LoadsFilter): Prisma.BenchLoadWhereInput {
+    return {
+      ...(filter.cartridgeKey
+        ? { cartridgeKey: { equals: filter.cartridgeKey } }
+        : axes.cartridgeKeys
+          ? { cartridgeKey: { in: axes.cartridgeKeys } }
+          : {}),
+      ...(filter.powderId
+        ? { powderId: { equals: filter.powderId } }
+        : axes.powderIds
+          ? { powderId: { in: axes.powderIds } }
+          : {}),
+      // `?? {}` is wrong here and `axes.bulletOr ? … : {}` is right: an EMPTY
+      // OR array is not a relaxed axis, it is Prisma for "match nothing".
+      ...(axes.bulletOr ? { OR: axes.bulletOr } : {}),
+      ...(filter.weightMin !== undefined || filter.weightMax !== undefined
+        ? {
+            weightGr: {
+              ...(filter.weightMin !== undefined ? { gte: filter.weightMin } : {}),
+              ...(filter.weightMax !== undefined ? { lte: filter.weightMax } : {}),
+            },
+          }
+        : {}),
+    };
+  }
+
+  /**
+   * The same search three more times, each with ONE axis relaxed.
+   *
+   * ⚠️ THE AXIS IS RELAXED. NOTHING ELSE IS. Same filter object, same builder,
+   * so the cartridge tab, the weight band and the powder chip apply to all
+   * four queries identically — see benchLoadWhere().
+   *
+   * 🚨 AND THE CALIBRE SURVIVES. Two of the three counts keep the bullet axis,
+   * and a bullet is maker + weight + category + CALIBRE. Counted without it,
+   * "ignoringPowders: 12" against a .308" 150 gr SP would be counting 8x57
+   * loads that will not chamber — the same false promise the powder chips and
+   * the spec card once made. So both go through bulletAxis(), and the count
+   * that drops the CARTRIDGE axis rebuilds its clause against every cartridge
+   * rather than reusing the shelf-resolved one: relaxing the cartridges is
+   * what widens the set of cartridges that bullet may legitimately be found
+   * in, and reusing the narrow clause would answer "0, there are none
+   * anywhere" about a bullet with thousands.
+   *
+   * Three counts, one round trip — they are independent, so they go together.
+   */
+  private async whyEmpty(
+    bench: {
+      cartridgeKeys: string[];
+      powderIds: string[];
+      bullets: NonNullable<GuestBench['bullets']>;
+    },
+    filter: LoadsFilter,
+    /** The clause the main query used — resolved against the bench's cartridges. */
+    bulletOr: BulletClause[],
+  ): Promise<LoadsWhy> {
+    // `undefined` here means "every cartridge there is", which is what
+    // "ignoring the bench's cartridges" has to mean for a calibred bullet.
+    // A cartridge tab still pins it, because a filter is not an axis.
+    const bulletOrAnyCartridge = await this.bulletAxis(
+      bench.bullets,
+      filter.cartridgeKey ? [filter.cartridgeKey] : undefined,
+    );
+
+    const [ignoringBullets, ignoringPowders, ignoringCartridges] = await Promise.all([
+      this.prisma.benchLoad.count({
+        where: this.benchLoadWhere(
+          { cartridgeKeys: bench.cartridgeKeys, powderIds: bench.powderIds, bulletOr: null },
+          filter,
+        ),
+      }),
+      this.prisma.benchLoad.count({
+        where: this.benchLoadWhere(
+          { cartridgeKeys: bench.cartridgeKeys, powderIds: null, bulletOr },
+          filter,
+        ),
+      }),
+      this.prisma.benchLoad.count({
+        where: this.benchLoadWhere(
+          { cartridgeKeys: null, powderIds: bench.powderIds, bulletOr: bulletOrAnyCartridge },
+          filter,
+        ),
+      }),
+    ]);
+
+    return { ignoringBullets, ignoringPowders, ignoringCartridges };
   }
 
   /* ── The powder picker ─────────────────────────────────────────────── */
@@ -382,7 +526,7 @@ export class BenchService {
    * bullet of a known one — we would be guessing, in the direction that ends
    * with a round that does not chamber.
    */
-  private async cartridgeKeysByCalibre(keys: string[]): Promise<Map<number, string[]>> {
+  private async cartridgeKeysByCalibre(keys?: string[]): Promise<Map<number, string[]>> {
     const byKey = await this.calibreByCartridge(keys);
     const out = new Map<number, string[]>();
     for (const [key, calibre] of byKey) {
@@ -412,6 +556,12 @@ export class BenchService {
    * keys of that calibre. `candidateKeys` is the set the calling query could
    * return, so the lookup stays as narrow as the question.
    *
+   * ⚠️ `undefined` candidateKeys MEANS EVERY CARTRIDGE, AND IT IS NOT THE SAME
+   * AS AN EMPTY ARRAY. Only whyEmpty()'s ignoringCartridges count passes it:
+   * that question is "does this bullet appear ANYWHERE with this powder", so
+   * the calibre still binds but the shelf no longer does. An empty array would
+   * bind it to nothing and answer 0 for every bullet in the catalogue.
+   *
    * ⚠️ A SHELF BULLET WITH NO CALIBRE MATCHES ANY CALIBRE, DELIBERATELY. Every
    * bench saved before calibres were recorded stores bullets without one, and
    * treating those as "matches nothing" would empty a member's screen overnight
@@ -423,7 +573,7 @@ export class BenchService {
    */
   private async bulletAxis(
     bullets: NonNullable<GuestBench['bullets']>,
-    candidateKeys: string[],
+    candidateKeys?: string[],
   ): Promise<BulletClause[]> {
     const keysByCalibre = bullets.some((b) => b.calibreIn != null)
       ? await this.cartridgeKeysByCalibre(candidateKeys)

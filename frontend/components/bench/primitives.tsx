@@ -111,14 +111,15 @@ export function Tag({ children, warn, className, title }: TagProps) {
 
 /* ── Chip ───────────────────────────────────────────────────────────── */
 
-export interface ChipProps {
+export interface ChipBaseProps {
   children: React.ReactNode;
   /**
    * In this search or not. `false` draws the dashed border and the grey dot.
    *
-   * ⚠️ THIS IS NOT THE SAVED BENCH. Toggling a chip narrows the current
-   * search; the bench itself is only ever edited through the Add flows. See
-   * the warning on OffState in contract.ts.
+   * ⚠️ THIS IS NOT THE SAVED BENCH — `onRemove` BELOW IS. Toggling a chip
+   * narrows the current search and saves nothing; the bench itself changes
+   * only through the Add flows and the remove control. See the warning on
+   * OffState in contract.ts.
    */
   on?: boolean;
   /** The dashed "+ Add" chip. Opens a picker, so it is not a two-state control. */
@@ -131,6 +132,38 @@ export interface ChipProps {
   ariaLabel?: string;
 }
 
+/**
+ * The remove control — present WITH a name, or absent altogether.
+ *
+ * ⚠️ A UNION RATHER THAN TWO OPTIONAL FIELDS, AND THE NAME IS THE REASON.
+ * The control is a bare glyph, so `removeLabel` is its ONLY accessible name:
+ * without it a reader hears "button" beside each of a dozen chips with
+ * nothing to say which one it throws away. Pairing them in the type puts that
+ * in tsc rather than in a review comment.
+ *
+ * ⚠️ AND IT MUST NAME THE THING — "Remove H4350 from your bench", never a
+ * bare "Remove". Same rule as the three Add chips, which carry their own
+ * aria-labels for exactly the same reason.
+ */
+export type ChipRemoveProps =
+  | { onRemove: () => void; removeLabel: string }
+  | { onRemove?: undefined; removeLabel?: undefined };
+
+export type ChipProps = ChipBaseProps & ChipRemoveProps;
+
+/**
+ * 🚨 TWO CONTROLS, NOT ONE, AND THEY MUST NOT BE CONFUSED. The pill toggles
+ * the item for THIS SEARCH and saves nothing; the × beside it takes the item
+ * off the saved bench and writes. A member who meant the first and got the
+ * second has lost a shelf entry they may not know how to put back, so the
+ * remove is a SEPARATE button, set apart from the pill, with its own outline,
+ * its own hit area (44px on a phone, §9) and its own name. It is never a
+ * second target inside the pill, where a stray tap lands.
+ *
+ * It is also a SIBLING rather than a child because a <button> inside a
+ * <button> is invalid markup, and browsers recover from it by silently
+ * dropping one of the two.
+ */
 export function Chip({
   children,
   on = true,
@@ -140,8 +173,12 @@ export function Chip({
   className,
   title,
   ariaLabel,
+  onRemove,
+  removeLabel,
 }: ChipProps) {
-  return (
+  const mobile = size === 'mobile';
+
+  const chip = (
     <button
       type="button"
       className={cx('chip', add ? 'add' : !on && 'off', className)}
@@ -151,11 +188,49 @@ export function Chip({
       aria-label={ariaLabel}
       title={title}
       onClick={onClick}
-      style={size === 'mobile' ? { height: 40, padding: '0 12px', fontSize: 13 } : undefined}
+      style={mobile ? { height: 40, padding: '0 12px', fontSize: 13 } : undefined}
     >
       {add ? <IconPlus /> : <span className="dot" aria-hidden="true" />}
       {children}
     </button>
+  );
+
+  // No remove: the chip is exactly the element it has always been. Wrapping
+  // every chip in a span "for consistency" would change the layout of the Add
+  // chips and of the pickers for nothing.
+  if (!onRemove) return chip;
+
+  return (
+    // The pair is bound by proximity, so this gap is deliberately TIGHTER than
+    // the gap between chips in the row (see BenchRail's chip row): the × has
+    // to read as belonging to the chip on its LEFT rather than the one on its
+    // right. Loosen one without the other and it starts removing the wrong
+    // thing in the member's head before it does on the screen.
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      {chip}
+      <IconX
+        onClick={onRemove}
+        label={removeLabel}
+        // The same sentence as a tooltip: the accessible name is the only
+        // place this control says what it does, and a mouse never hears it.
+        title={removeLabel}
+        size={size}
+        glyph={mobile ? 14 : 11}
+        style={{
+          flex: 'none',
+          width: mobile ? 44 : 24,
+          height: mobile ? 44 : 24,
+          borderRadius: 999,
+          // The hairline ring is the whole visual difference between "part of
+          // the chip" and "a control of its own".
+          //
+          // ⚠️ AND NO `background` HERE. The fill belongs to `.bench .x:hover`;
+          // an inline background would out-specify that rule and take the
+          // hover feedback with it.
+          border: '0.5px solid var(--border)',
+        }}
+      />
+    </span>
   );
 }
 
@@ -275,6 +350,8 @@ export interface IconXProps {
   onClick: () => void;
   /** Required: a glyph-only button has no accessible name otherwise. */
   label: string;
+  /** The tooltip, where a mouse needs the same sentence a reader is given. */
+  title?: string;
   size?: BenchSize;
   /** The glyph — 16 in an overlay header, 12 on the log list's delete. */
   glyph?: number;
@@ -282,12 +359,21 @@ export interface IconXProps {
   style?: React.CSSProperties;
 }
 
-export function IconX({ onClick, label, size = 'desktop', glyph = 16, className, style }: IconXProps) {
+export function IconX({
+  onClick,
+  label,
+  title,
+  size = 'desktop',
+  glyph = 16,
+  className,
+  style,
+}: IconXProps) {
   return (
     <button
       type="button"
       className={cx('x', className)}
       aria-label={label}
+      title={title}
       onClick={onClick}
       style={{ ...(size === 'mobile' ? { width: 44, height: 44 } : null), ...style }}
     >
