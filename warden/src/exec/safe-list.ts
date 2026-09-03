@@ -52,8 +52,39 @@ import { describePlan, runPlan, type ExecPlan, type RunOutcome } from './proc.js
 // the real stderr. Override with WARDEN_APP_ROOT rather than editing the
 // constant — config from env, never a path baked into a release.
 const APP_ROOT = process.env.WARDEN_APP_ROOT?.trim() || '/home/alloutdoor/app';
-const LOG_DIR = `${APP_ROOT}/logs`;
-const ARCHIVE_DIR = `${APP_ROOT}/warden-archive`;
+
+/**
+ * Where pm2 writes the marketplace processes' logs.
+ *
+ * 🚨 THIS WAS `${APP_ROOT}/logs` AND THAT DIRECTORY DOES NOT EXIST. pm2 was
+ * never told otherwise for alloutdoor-backend/-frontend, so it uses its own
+ * default — `~/.pm2/logs/<name>-{error,out}.log` — verified on the live box
+ * via `pm2 jlist` (pm_err_log_path). The crash-output check was therefore
+ * PERMANENTLY blind, reporting "no process error log could be read" every
+ * sweep, and it read as a provisioning gap rather than a wrong constant.
+ *
+ * ⚠️ warden's OWN logs DO live under ${APP_ROOT}/logs, because
+ * ecosystem.config.cjs sets error_file/out_file explicitly. That coincidence
+ * is what made the wrong default look plausible.
+ */
+const PM2_LOG_DIR =
+  process.env.WARDEN_PM2_LOG_DIR?.trim() ||
+  `${process.env.HOME?.trim() || '/home/alloutdoor'}/.pm2/logs`;
+/**
+ * Where truncateLog parks a gzipped log before truncating it.
+ *
+ * ⚠️ EXPORTED so env-order.test.ts can probe it. It is the last constant here
+ * that still derives from APP_ROOT at module scope, which is precisely the
+ * property that test exists to prove — the probe used to read
+ * LOG_FILES.backendError, and that stopped deriving from APP_ROOT when the pm2
+ * paths were corrected to ~/.pm2/logs. A test whose probe no longer touches
+ * the thing under test passes for the wrong reason.
+ *
+ * ⚠️ IT SITS INSIDE THE GIT WORKING TREE — APP_ROOT on the box IS the repo
+ * root, so this is a top-level sibling of warden/, not a child of it. The root
+ * .gitignore covers it; warden/.gitignore cannot reach it.
+ */
+export const ARCHIVE_DIR = `${APP_ROOT}/warden-archive`;
 
 export const PM2_PROCESSES = ['alloutdoor-backend', 'alloutdoor-frontend'] as const;
 export type Pm2Process = (typeof PM2_PROCESSES)[number];
@@ -72,10 +103,11 @@ export const LOG_IDS = [
 export type LogId = (typeof LOG_IDS)[number];
 
 export const LOG_FILES: Readonly<Record<LogId, string>> = Object.freeze({
-  backendError: `${LOG_DIR}/backend-error.log`,
-  backendOut: `${LOG_DIR}/backend-out.log`,
-  frontendError: `${LOG_DIR}/frontend-error.log`,
-  frontendOut: `${LOG_DIR}/frontend-out.log`,
+  // pm2's own naming: <process name>-error.log / -out.log.
+  backendError: `${PM2_LOG_DIR}/alloutdoor-backend-error.log`,
+  backendOut: `${PM2_LOG_DIR}/alloutdoor-backend-out.log`,
+  frontendError: `${PM2_LOG_DIR}/alloutdoor-frontend-error.log`,
+  frontendOut: `${PM2_LOG_DIR}/alloutdoor-frontend-out.log`,
   // Stock Ubuntu nginx defaults — infra/nginx/alloutdoor.conf sets no explicit
   // access_log/error_log, so nginx uses these. Confirm with `nginx -T` on the
   // box; a wrong path fails closed ("does not exist"), never silently.

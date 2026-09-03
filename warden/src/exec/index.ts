@@ -21,6 +21,7 @@ export {
 export {
   SAFE_LIST,
   findSafeListOperation,
+  ARCHIVE_DIR,
   LOG_FILES,
   LOG_IDS,
   PM2_PROCESSES,

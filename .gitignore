@@ -220,3 +220,19 @@ postal-entry-preview.pdf
 # Regressions derived from them are rebuilt as SYNTHETIC scenes in lib/scan.
 scan-fixtures/
 frontend/.scan-diag-cache/
+
+# ── Warden's runtime directories ────────────────────────────────────
+#
+# 🚨 THESE LIVE INSIDE THE GIT WORKING TREE AND WERE NOT IGNORED. Warden's
+# ARCHIVE_DIR and WARDEN_STATE_PATH both default to `${APP_ROOT}/...`, and
+# APP_ROOT on the box IS the repo root (/home/alloutdoor/app) — so they land
+# as top-level siblings of warden/, not inside it. warden/.gitignore does not
+# reach them: its patterns are scoped to paths under warden/.
+#
+# warden-state/ is ALREADY present and untracked on the live box, and the
+# first truncateLog would add warden-archive/ beside it. Neither collides with
+# a tracked path, so `git pull --ff-only` still succeeds — but a permanently
+# dirty tree is how a box stops being able to show you real drift, and this
+# repo's deploy already died once blaming "local edits on the box".
+warden-state/
+warden-archive/

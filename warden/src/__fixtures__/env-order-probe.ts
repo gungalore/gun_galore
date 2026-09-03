@@ -17,6 +17,12 @@
 //            prevent, kept executable so the test can prove the two differ.
 //
 // It prints one line, `RESOLVED:<path>`, and exits.
+//
+// ⚠️ IT PROBES ARCHIVE_DIR, NOT LOG_FILES. The probe must read a constant that
+// still derives from WARDEN_APP_ROOT at module scope; LOG_FILES.backendError
+// stopped doing so when the pm2 log paths were corrected to ~/.pm2/logs, and a
+// probe that no longer touches the thing under test passes for the wrong
+// reason.
 
 const mode = process.argv[2];
 
@@ -24,12 +30,12 @@ if (mode === 'after') {
   const env = await import('../env.js');
   env.loadDotEnvFile();
   const exec = await import('../exec/index.js');
-  process.stdout.write(`RESOLVED:${exec.LOG_FILES.backendError}\n`);
+  process.stdout.write(`RESOLVED:${exec.ARCHIVE_DIR}\n`);
 } else if (mode === 'before') {
   // Evaluate the app tree first, exactly as a static import in boot.ts would,
   // and read the constant it froze at that moment.
   const exec = await import('../exec/index.js');
-  const frozen = exec.LOG_FILES.backendError;
+  const frozen = exec.ARCHIVE_DIR;
   const env = await import('../env.js');
   env.loadDotEnvFile();
   process.stdout.write(`RESOLVED:${frozen}\n`);

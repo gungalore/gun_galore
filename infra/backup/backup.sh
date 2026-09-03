@@ -174,9 +174,43 @@ else
   say "uploads: $UPLOAD_DIR does not exist yet (nothing stored)"
 fi
 
+# ── the C.I.P. sheet library ───────────────────────────────────────
+#
+# 🚨 THIS WAS THE GAP WARDEN RAISED AS A STANDING RED GATE, and it is the one
+# kind of loss that leaves no trace: 552 files / 40 MiB of cartridge data that
+# nothing else holds a copy of. The db dump does not cover it (these are files
+# on disk, not rows) and the uploads tar does not either (different tree), so
+# losing this disk lost them silently — no error, no alert, nothing missing
+# from a restore until somebody opened The Bench and the spec panel was empty.
+#
+# ⚠️ SAME SHAPE AS THE UPLOADS BLOCK ABOVE ON PURPOSE, including the "does not
+# exist yet" branch: a box where the library has not been populated is not a
+# failed backup, and reporting it as one teaches the operator to skim the log.
+CIP_DIR=$(grep -E '^CIP_SHEETS_DIR=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2- | tr -d '"')
+CIP_DIR=${CIP_DIR:-/home/alloutdoor/data/cip}
+
+if [ -d "$CIP_DIR" ]; then
+  CIP_FILE="$DEST/cip/cip-sheets-$STAMP.tar.gz"
+  mkdir -p "$DEST/cip"
+  if tar -czf "$CIP_FILE" -C "$(dirname "$CIP_DIR")" "$(basename "$CIP_DIR")" 2>>"$LOG"; then
+    chmod 600 "$CIP_FILE"
+    n=$(find "$CIP_DIR" -type f | wc -l)
+    say "cip OK: $n file(s), $(du -h "$CIP_FILE" | cut -f1) $CIP_FILE"
+  else
+    say "CIP ARCHIVE FAILED"
+    fail=1
+  fi
+else
+  say "cip: $CIP_DIR does not exist yet (nothing stored)"
+fi
+
 # ── retention ──────────────────────────────────────────────────────
 find "$DEST/db" -name '*.dump' -mtime +$KEEP_DAYS -delete 2>>"$LOG"
 find "$DEST/uploads" -name '*.tar.gz' -mtime +$KEEP_DAYS -delete 2>>"$LOG"
+# ⚠️ THE CIP ARCHIVES NEED PRUNING TOO. Adding a nightly 40 MiB tar with no
+# retention line is how a backup directory becomes the disk-full incident it
+# was meant to protect against.
+find "$DEST/cip" -name '*.tar.gz' -mtime +$KEEP_DAYS -delete 2>>"$LOG"
 
 if [ "$fail" -ne 0 ]; then
   say "=== backup FINISHED WITH ERRORS ==="
