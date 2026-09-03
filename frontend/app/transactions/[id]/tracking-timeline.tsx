@@ -35,7 +35,7 @@ const API_URL =
 const SOURCE_LABEL: Record<string, string> = {
   INTERNAL: 'All Outdoor',
   PUDO: 'Pudo',
-  TCG: 'The Courier Guy',
+  TCG: 'Door delivery',
 };
 
 const SOURCE_COLOR: Record<string, string> = {

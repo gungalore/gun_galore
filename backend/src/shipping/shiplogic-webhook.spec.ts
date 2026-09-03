@@ -1,19 +1,28 @@
-// Verifies the TCG/Shiplogic webhook handler against the REAL payload shape
-// from The Courier Guy's official docs (hyphenated status slugs, no `event`
-// field, tracking ref under short_/custom_tracking_reference). Mock the heavy
-// collaborators so importing ShippingService doesn't drag in the
-// NotificationsService / meilisearch import chains.
+// Verifies the ShipLogic webhook handler against the REAL payload shape
+// (hyphenated status slugs, no `event` field, tracking ref under
+// short_/custom_tracking_reference). Mock the heavy collaborators so
+// importing ShippingService doesn't drag in the NotificationsService /
+// meilisearch import chains.
+//
+// These payloads were captured from The Courier Guy's official docs, and this
+// file used to test processPudoEvent. That integration was retired (operator
+// 2026-09-04) — but the handler under test, processShiplogicWebhook, is
+// SHARED and still very much live for Pudo, which runs on the same ShipLogic
+// platform and emits the identical shape. So the cases were RETARGETED at
+// processPudoEvent rather than deleted with the vendor: they cover code that
+// still runs on every real Pudo tracking update, including the two named
+// regressions below. Deleting them with the integration would have quietly
+// dropped live coverage.
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 jest.mock('../notifications/notifications.service', () => ({
   NotificationsService: class {},
 }));
 jest.mock('./pudo.service', () => ({ PudoService: class {} }));
-jest.mock('./tcg.service', () => ({ TcgService: class {} }));
 
 import { ShippingService } from './shipping.service';
 
-// A TCG "Tracking event" webhook body, trimmed to the fields our handler
-// reads, taken verbatim from the Courier Guy API docs sample.
+// A ShipLogic "Tracking event" webhook body, trimmed to the fields our handler
+// reads, taken verbatim from the ShipLogic API docs sample.
 function trackingEvent(status: string, over: Record<string, unknown> = {}) {
   return {
     custom_tracking_reference: 'SLXS7GL',
@@ -82,17 +91,16 @@ function makeService(currentStatus: string | null) {
     notifications as never,
     {} as never,
     {} as never,
-    {} as never,
     // Webhook ingestion never reads a flag; a stub keeps the constructor happy.
     { get: jest.fn().mockResolvedValue(false) } as never,
   );
   return { svc, notifications, prisma, txClient };
 }
 
-describe('ShippingService.processTcgEvent (real TCG payload)', () => {
+describe('ShippingService.processPudoEvent (real ShipLogic payload)', () => {
   it('maps hyphenated "at-hub" → IN_TRANSIT, finds the tx by short ref, notifies the buyer', async () => {
     const { svc, notifications, prisma } = makeService(null);
-    await svc.processTcgEvent(trackingEvent('at-hub'));
+    await svc.processPudoEvent(trackingEvent('at-hub'));
     expect(prisma.transaction.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { trackingReference: 'S7GL' } }),
     );
@@ -101,14 +109,14 @@ describe('ShippingService.processTcgEvent (real TCG payload)', () => {
 
   it('"delivered" → DELIVERED notifies buyer + seller', async () => {
     const { svc, notifications } = makeService('OUT_FOR_DELIVERY');
-    await svc.processTcgEvent(trackingEvent('delivered'));
+    await svc.processPudoEvent(trackingEvent('delivered'));
     expect(notifications.shippingDelivered).toHaveBeenCalledTimes(1);
     expect(notifications.sellerParcelDelivered).toHaveBeenCalledTimes(1);
   });
 
   it('"out-for-delivery" → OUT_FOR_DELIVERY (buyer email only, no seller)', async () => {
     const { svc, notifications } = makeService('IN_TRANSIT');
-    await svc.processTcgEvent(trackingEvent('out-for-delivery'));
+    await svc.processPudoEvent(trackingEvent('out-for-delivery'));
     expect(notifications.shippingOutForDelivery).toHaveBeenCalledTimes(1);
     expect(notifications.sellerParcelCollected).not.toHaveBeenCalled();
   });
@@ -116,20 +124,20 @@ describe('ShippingService.processTcgEvent (real TCG payload)', () => {
   it('does NOT re-notify the buyer once already past COLLECTED (hub scans are quiet)', async () => {
     // current already COLLECTED → an at-hub/in-transit scan must not re-fire.
     const { svc, notifications } = makeService('COLLECTED');
-    await svc.processTcgEvent(trackingEvent('in-transit'));
+    await svc.processPudoEvent(trackingEvent('in-transit'));
     expect(notifications.shippingDispatched).not.toHaveBeenCalled();
   });
 
   it('ignores intermediate/internal statuses (collection-assigned) — no lookup, no notify', async () => {
     const { svc, notifications, prisma } = makeService(null);
-    await svc.processTcgEvent(trackingEvent('collection-assigned'));
+    await svc.processPudoEvent(trackingEvent('collection-assigned'));
     expect(prisma.transaction.findFirst).not.toHaveBeenCalled();
     expect(notifications.shippingDispatched).not.toHaveBeenCalled();
   });
 
   it('ignores a note payload (no status field at all)', async () => {
     const { svc, notifications, prisma } = makeService(null);
-    await svc.processTcgEvent({
+    await svc.processPudoEvent({
       message: 'sender note',
       shipment_short_tracking_reference: 'S7GL',
       type: 'external',
@@ -144,7 +152,7 @@ describe('ShippingService.processTcgEvent (real TCG payload)', () => {
       ({ where }: { where: { trackingReference: string } }) =>
         Promise.resolve(where.trackingReference === 'SLXS7GL' ? { ...TX } : null),
     );
-    await svc.processTcgEvent(
+    await svc.processPudoEvent(
       trackingEvent('delivered', { short_tracking_reference: undefined }),
     );
     expect(prisma.transaction.findFirst).toHaveBeenCalledWith(
@@ -158,14 +166,14 @@ describe('ShippingService.processTcgEvent (real TCG payload)', () => {
   // countdown. They must NEVER map to DELIVERED.
   it('out-for-delivery does NOT map to DELIVERED (regression)', async () => {
     const { svc, notifications } = makeService('IN_TRANSIT');
-    await svc.processTcgEvent(trackingEvent('out-for-delivery'));
+    await svc.processPudoEvent(trackingEvent('out-for-delivery'));
     expect(notifications.shippingDelivered).not.toHaveBeenCalled();
     expect(notifications.shippingOutForDelivery).toHaveBeenCalledTimes(1);
   });
 
   it('delivery-failed-attempt → DELIVERY_FAILED, never DELIVERED (regression)', async () => {
     const { svc, notifications, txClient } = makeService('OUT_FOR_DELIVERY');
-    await svc.processTcgEvent(trackingEvent('delivery-failed-attempt'));
+    await svc.processPudoEvent(trackingEvent('delivery-failed-attempt'));
     expect(notifications.shippingDelivered).not.toHaveBeenCalled();
     expect(notifications.shippingFailed).toHaveBeenCalledTimes(1);
     // Money-critical: a failed delivery must surface on the admin queue —
@@ -178,7 +186,7 @@ describe('ShippingService.processTcgEvent (real TCG payload)', () => {
   });
 });
 
-describe('ShippingService.processPudoEvent (Pudo = Shiplogic, shared handler)', () => {
+describe('ShippingService.processPudoEvent (delegation)', () => {
   it('delegates to the shared handler — "collected-by-recipient" → DELIVERED', async () => {
     const { svc, notifications, prisma } = makeService('OUT_FOR_DELIVERY');
     // Pudo stores custom_tracking_reference at booking.

@@ -49,7 +49,7 @@ function HandshakeIcon() {
 
 const META: Record<string, { title: string; subtitle: string; icon: ReactNode }> = {
   PUDO: { title: 'Pudo locker', subtitle: 'Collect from a nearby locker', icon: <LockerIcon /> },
-  TCG: { title: 'Door delivery', subtitle: 'The Courier Guy, to your address', icon: <TruckIcon /> },
+  TCG: { title: 'Door delivery', subtitle: 'Courier, to your address', icon: <TruckIcon /> },
   // Firearms have exactly TWO hand-over options and both go through a licensed
   // dealer. Never describe either as a "private collection" — a firearm is
   // never simply handed over, and copy that implies otherwise misdescribes what

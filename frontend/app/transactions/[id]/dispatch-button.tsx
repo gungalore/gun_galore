@@ -144,7 +144,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
   const handoverCopy = sellerDropsOff
     ? 'We’ve booked your Pudo shipment. Drop the parcel at any Pudo locker using the PIN below.'
     : sellerPicksOption
-      ? 'We’ve booked The Courier Guy to collect from your pickup address.'
+      ? 'We’ve booked a courier to collect from your pickup address.'
       : 'A courier collects the parcel from your address between 08:00 and 17:00 — have it packed and ready. You don’t drop it anywhere, whether the buyer chose their door or a collection point.';
 
   // The failure record deliberately SURVIVES a re-book — it's the record of
@@ -169,7 +169,7 @@ export function DispatchButton({ tx }: { tx: Transaction }) {
   const trackingPlaceholder = !sellerPicksOption
     ? 'Waybill / tracking number'
     : tx.shippingMethod === 'TCG'
-      ? 'TCG waybill number'
+      ? 'Waybill / tracking number'
       : 'e.g. PUD-12345';
 
   async function handleSubmit() {

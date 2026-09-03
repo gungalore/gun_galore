@@ -17,7 +17,6 @@ function makeService(bobgoOn: boolean) {
     {} as never,
     {} as never,
     {} as never,
-    {} as never,
     { get: jest.fn().mockResolvedValue(bobgoOn) } as never,
   );
 }

@@ -47,7 +47,6 @@ it is actually "the integration is protecting you". The fail-closed set:
 | `TCG_WEBHOOK_SECRET`  | Inbound Courier Guy tracking events rejected in production         |
 | `PEACH_SECRET`        | Inbound Peach webhooks rejected → orders never confirm as paid     |
 | `HEALTH_PING_SECRET`  | `/api/health/crons` returns 503 rather than 200                    |
-| `HUNT_BALLISTICS_ADMIN_KEY` | Hunt Ballistics admin endpoints return 503 (also if < 16 chars) |
 
 `ANTHROPIC_API_KEY` is a special case: it fails *safe* rather than closed.
 Without it, listing moderation returns `HUMAN_REVIEW` with confidence 0 instead
@@ -543,15 +542,6 @@ configured' }`** — not 200. That is intentional: a monitor wired up before the
 secret exists should alarm loudly rather than report a false healthy. When
 configured, it returns 503 with the list of stale cron names if any cron has
 gone quiet, 200 otherwise.
-
-### `HUNT_BALLISTICS_ADMIN_KEY`
-**Required to use the Hunt Ballistics INFO Centre admin endpoints** (PDF
-import, edit, delete), sent as the `X-Hunt-Admin-Key` header.
-
-Hunt Ballistics has no admin UI, so this is a curl-only surface and a single
-shared secret is the honest amount of auth for it. **Must be at least 16
-characters** — the guard 503s on a shorter value as well as on a missing one.
-Use 32+. Wrong key → 401.
 
 ### `COMING_SOON_BYPASS_SECRET`
 Present in the backend env file **only** so both processes can be deployed from

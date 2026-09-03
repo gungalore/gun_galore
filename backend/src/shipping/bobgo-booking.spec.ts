@@ -36,7 +36,6 @@ function makeService(over: { tx?: unknown } = {}) {
     prisma as never,
     notifications as never,
     { createShipment: jest.fn() } as never,
-    { createShipment: jest.fn() } as never,
     bobgo as never,
     { get: jest.fn().mockResolvedValue(true) } as never, // bobgo_enabled ON
   );

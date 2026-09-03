@@ -4188,7 +4188,7 @@ export default function NewListingPage() {
                     drop at any Pudo locker, buyer picks any locker to
                     collect. Self-service, 24/7. Capped at 60 × 41 × 69 cm
                     / 20 kg. <br />
-                    <strong>The Courier Guy (TCG):</strong> door-to-door
+                    <strong>Door delivery:</strong> courier to the buyer’s address
                     pickup and delivery. Pricier but works for any size or
                     weight.
                   </>
@@ -4270,7 +4270,7 @@ export default function NewListingPage() {
                           },
                           {
                             value: 'TCG',
-                            label: 'The Courier Guy',
+                            label: 'Door delivery',
                             description: 'Door-to-door courier.',
                           },
                         ]

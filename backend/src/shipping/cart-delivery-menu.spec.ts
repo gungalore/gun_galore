@@ -78,7 +78,6 @@ function makeService(listings: unknown[], rates: unknown[], flag = true) {
     prisma as never,
     {} as never,
     {} as never,
-    {} as never,
     { getRates } as never,
     { get: jest.fn().mockResolvedValue(flag) } as never,
   );

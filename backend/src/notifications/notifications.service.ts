@@ -1640,16 +1640,21 @@ export class NotificationsService {
     // actually coming to their door.
     const isBobGo = d.provider === 'BOBGO';
     const isPudo = !isBobGo && d.carrier === 'PUDO';
+    // The final arm is a door delivery on the legacy rail. It used to name The
+    // Courier Guy; that integration was retired (operator 2026-09-04), so
+    // nothing can promise WHICH company arrives and naming one would be a
+    // guess printed as a fact. "The courier" is the honest amount of detail —
+    // what the seller has to DO is identical either way.
     const courier = isBobGo
       ? 'Bob Go'
       : isPudo
         ? 'Pudo (locker-to-locker)'
-        : 'The Courier Guy (door-to-door)';
+        : 'Courier (door-to-door)';
     const handover = isBobGo
       ? 'A courier will collect the parcel from your pickup address between 08:00 and 17:00 — have it packed and ready.'
       : isPudo
         ? 'Drop your parcel at any Pudo locker using the drop-off PIN below.'
-        : 'The Courier Guy will collect the parcel from your pickup address.';
+        : 'The courier will collect the parcel from your pickup address.';
 
     await this.persistByEmail(d.sellerEmail, {
       category: 'SELLER',
@@ -1703,7 +1708,7 @@ export class NotificationsService {
       ? `Courier collects from your address 08:00-17:00${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
       : isPudo
         ? `Drop at any Pudo locker${d.dropoffPin ? `, PIN ${d.dropoffPin}` : ''}.`
-        : 'Courier Guy will collect.';
+        : 'The courier will collect.';
     await this.sendSms(
       d.sellerPhone,
       `All Outdoor: ${truncate(d.listingTitle, 26)} sold! ${smsHandover} Waybill ${d.trackingReference}. Print label or write it on the parcel: ${txUrl}`,

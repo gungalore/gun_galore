@@ -88,13 +88,6 @@ function assertProductionConfig() {
       '⚠️  CLERK_WEBHOOK_SECRET is not set — incoming Clerk webhooks cannot be verified and will be DROPPED (user sync breaks). Set the Svix signing secret from the Clerk dashboard.',
     );
   }
-  // WARN: TCG shipping webhook secret missing — without it the TCG webhook
-  // can't authenticate callers; it fails closed in production (rejects).
-  if (!process.env.TCG_WEBHOOK_SECRET) {
-    log.error(
-      '⚠️  TCG_WEBHOOK_SECRET is not set — TCG shipping webhooks will be REJECTED in production (fail-closed). Set the shared secret agreed with The Courier Guy.',
-    );
-  }
   // WARN (audit fix 2026-07-20): the Anthropic key powers Ask Boet, KYC
   // vision, listing/Q&A moderation, licence + dealer + swap verification.
   // Missing/empty = all of them silently degrade to manual-review/blocked

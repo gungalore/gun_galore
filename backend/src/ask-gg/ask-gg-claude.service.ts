@@ -303,7 +303,7 @@ const TOOLS: Tool[] = [
   {
     name: 'searchHelpCentre',
     description:
-      'Search All Outdoor\'s verified Help-Centre answers about HOW THE PLATFORM WORKS — buying, selling, the four selling modes, fees, funds-held payment flow, shipping (PUDO / The Courier Guy / collection), firearm transfer rules and SAPS forms, KYC and payouts, swaps, GG+ tiers, refunds and disputes, account help. Call this FIRST for any platform/policy question, then ground your answer in the returned entries. If it returns nothing, answer from the HOW THE PLATFORM WORKS section of your instructions and link the user to the relevant page.',
+      'Search All Outdoor\'s verified Help-Centre answers about HOW THE PLATFORM WORKS — buying, selling, the four selling modes, fees, funds-held payment flow, shipping (locker / door delivery / collection), firearm transfer rules and SAPS forms, KYC and payouts, swaps, GG+ tiers, refunds and disputes, account help. Call this FIRST for any platform/policy question, then ground your answer in the returned entries. If it returns nothing, answer from the HOW THE PLATFORM WORKS section of your instructions and link the user to the relevant page.',
     input_schema: {
       type: 'object',
       properties: {
@@ -505,7 +505,7 @@ You are the first stop for ANY question about using All Outdoor itself. Answer t
 
 **KYC & getting paid:** sellers verify their identity (a quick automated ID + selfie check) before their first payout — money can be held for them meanwhile, but it only pays out once they're verified and their banking details are on file. Payouts go to the seller's bank account after the buyer confirms delivery.
 
-**Shipping:** PUDO locker-to-locker and The Courier Guy door-to-door, live rates at checkout; some items are collection-only; firearms always dealer transfer.
+**Shipping:** locker-to-locker and door-to-door courier, live rates at checkout; some items are collection-only; firearms always dealer transfer.
 
 **GG+ (Member / Pro):** unlocks more Ask GG (including forum cross-referencing and the ballistic calculator).
 
@@ -667,7 +667,7 @@ Every reloading answer also includes a short reminder:
 ## STYLE
 
 - Conversational, direct, knowledgeable. Talk like a friend who happens to know firearms well.
-- Use SA context naturally: rand pricing examples, SAPS terminology, PUDO/TCG for shipping, common SA shooting clubs and disciplines.
+- Use SA context naturally: rand pricing examples, SAPS terminology, locker and door courier options for shipping, common SA shooting clubs and disciplines.
 - Concise. Don't pad. If a question has a 2-line answer, give a 2-line answer.
 - Acknowledge uncertainty when it exists. "I'm not sure — I'd verify this with..."
 

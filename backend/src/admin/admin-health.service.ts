@@ -116,15 +116,6 @@ export class AdminHealthService {
         method: 'HEAD',
       },
       {
-        name: 'The Courier Guy',
-        // Real base URL the TCG service uses — was misnamed in the
-        // initial health-monitor build (no `.portal.` subdomain).
-        url: process.env.TCG_BASE_URL ?? 'https://api.portal.thecourierguy.co.za',
-        category: 'shipping',
-        method: 'HEAD',
-        requiresEnv: ['TCG_API_KEY'],
-      },
-      {
         name: 'VerifyNow (KYC)',
         url: process.env.VERIFYNOW_BASE_URL ?? 'https://api.verifynow.co.za',
         category: 'kyc',

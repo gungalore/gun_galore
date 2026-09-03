@@ -213,45 +213,6 @@ export class ShippingController {
   }
 
   // ---------------------------------------------------------------
-  // TCG webhook — public route, no JWT.
-  // Auth: TCG_WEBHOOK_SECRET in x-tcg-webhook-secret header.
-  // Always returns 200 to acknowledge receipt (CLAUDE.md rule).
-  // ---------------------------------------------------------------
-  @Post('webhook/tcg')
-  @HttpCode(200)
-  async tcgWebhook(
-    @Headers('x-tcg-webhook-secret') secret: string,
-    @Body() body: Record<string, unknown>,
-  ) {
-    const expected = process.env.TCG_WEBHOOK_SECRET;
-    // Fail CLOSED: if the secret isn't configured, reject in production
-    // (a missing secret previously short-circuited the check entirely,
-    // letting anyone POST shipping events). Dev is allowed through so
-    // local testing works without the secret wired.
-    if (!expected) {
-      if (process.env.NODE_ENV === 'production') {
-        this.logger.error(
-          'TCG webhook rejected — TCG_WEBHOOK_SECRET not configured in production',
-        );
-        return { received: true };
-      }
-    } else if (secret !== expected) {
-      this.logger.warn('TCG webhook rejected — invalid secret');
-      return { received: true };
-    }
-
-    try {
-      await this.shipping.processTcgEvent(body);
-    } catch (err) {
-      this.logger.error(
-        `TCG webhook handler failed: ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    }
-    return { received: true };
-  }
-
-  // ---------------------------------------------------------------
   // Pudo webhook — public route, no JWT, no auth key (CLAUDE.md).
   // Always returns 200 regardless of content.
   // ---------------------------------------------------------------

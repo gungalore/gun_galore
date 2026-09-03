@@ -16,7 +16,6 @@ import {
   type ResidentialAddress,
   type ShippingQuote,
 } from './pudo.service';
-import { TcgService, type TcgResidentialAddress } from './tcg.service';
 import { BobGoService } from './bobgo.service';
 import { planShippingGroups } from './consolidation';
 import type { BobGoAddress, BobGoRate } from './bobgo.types';
@@ -27,7 +26,7 @@ import {
 } from './bobgo-adapter';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { displayShippingCents } from '../payments/fee.calculator';
-import { CarrierContact, CarrierShipmentResult } from './carrier.types';
+import { CarrierAddress, CarrierContact, CarrierShipmentResult } from './carrier.types';
 import { shiplogicToShippingStatus } from './status-map';
 import {
   failedShipmentChargeCents,
@@ -222,7 +221,6 @@ export class ShippingService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly pudo: PudoService,
-    private readonly tcg: TcgService,
     private readonly bobgo: BobGoService,
     private readonly settings: SettingsService,
   ) {}
@@ -253,7 +251,7 @@ export class ShippingService {
    */
   private async bobgoQuoteForSlot(input: {
     slot: 'PUDO' | 'TCG';
-    collection: TcgResidentialAddress;
+    collection: CarrierAddress;
     delivery: {
       streetAddress: string;
       suburb: string;
@@ -415,7 +413,7 @@ export class ShippingService {
           "Seller hasn't provided a collection address yet.",
         );
       }
-      const from: TcgResidentialAddress = {
+      const from: CarrierAddress = {
         streetAddress: listing.pickupStreet,
         suburb: listing.pickupSuburb ?? '',
         city: listing.pickupCity,
@@ -468,68 +466,22 @@ export class ShippingService {
       return quote;
     }
 
+    // ── The DOOR slot has no legacy quoting path any more ────────────────
+    //
+    // This used to quote The Courier Guy directly. That integration was
+    // retired (operator 2026-09-04), and the DOOR slot is now served only by
+    // Bob Go — which is handled far above, before this fallback runs.
+    //
+    // ⚠️ Reaching here with 'TCG' means bobgo_enabled is OFF, i.e. somebody
+    // flipped the incident-rollback switch. The legacy rail can still quote
+    // Pudo lockers, but nothing can quote a door delivery, so say that rather
+    // than falling through to the generic "doesn't use a courier rate"
+    // message below — which would be flatly untrue of a door parcel and would
+    // send an operator looking for a config error that isn't there.
     if (body.shippingMethod === 'TCG') {
-      if (
-        !listing.pickupStreet ||
-        !listing.pickupCity ||
-        listing.pickupLat == null ||
-        listing.pickupLng == null
-      ) {
-        throw new BadRequestException(
-          'Seller hasn\'t provided a collection address yet.',
-        );
-      }
-      const from: TcgResidentialAddress = {
-        streetAddress: listing.pickupStreet,
-        suburb: listing.pickupSuburb ?? '',
-        city: listing.pickupCity,
-        postalCode: listing.pickupPostalCode ?? '',
-        province: PROVINCE_LONG[listing.province],
-        lat: listing.pickupLat,
-        lng: listing.pickupLng,
-      };
-      if (!body.deliveryAddress) {
-        throw new BadRequestException('Provide a delivery address first.');
-      }
-      // TCG runs on Shiplogic at api.portal.thecourierguy.co.za —
-      // SEPARATE wallet and SEPARATE rate card from Pudo. We used to
-      // route D2D through Pudo's API, which gave merchant wholesale
-      // rates (~R200 minimum); TCG's retail API quotes ~R124 for the
-      // same parcel because their flat-rate Economy tier isn't
-      // exposed via Pudo. See tcg.service.ts.
-      const to: TcgResidentialAddress = {
-        streetAddress: body.deliveryAddress.streetAddress,
-        suburb: body.deliveryAddress.suburb,
-        city: body.deliveryAddress.city,
-        postalCode: body.deliveryAddress.postalCode,
-        province: PROVINCE_LONG[body.deliveryAddress.province],
-        lat: body.deliveryAddress.lat,
-        lng: body.deliveryAddress.lng,
-      };
-      const tcgQuote = await this.tcg.getQuote(
-        from,
-        to,
-        {
-          weightKg: parcel.weightGrams / 1000,
-          lengthCm: parcel.lengthCm,
-          widthCm: parcel.widthCm,
-          heightCm: parcel.heightCm,
-        },
-        listing.price ?? 0, // declared value — item price drives liability cover
+      throw new BadRequestException(
+        'Door-to-door delivery is unavailable right now — please choose a Pudo pickup point instead.',
       );
-      if (!tcgQuote) {
-        throw new BadRequestException(
-          'No door-delivery rate available for this route right now.',
-        );
-      }
-      // Map TCG's response shape back to the shared ShippingQuote
-      // shape PudoService uses, so the caller (TransactionsService,
-      // checkout-form) doesn't need to branch on courier.
-      return {
-        serviceCode: tcgQuote.serviceCode,
-        serviceName: tcgQuote.serviceName,
-        priceCents: tcgQuote.priceCents,
-      };
     }
 
     throw new BadRequestException(
@@ -1035,60 +987,21 @@ export class ShippingService {
     const offers = (m: 'PUDO' | 'TCG') =>
       offered.length === 0 || offered.includes(m);
 
-    // Door — one TCG quote. Null on failure is TcgService's own contract and
-    // here means simply "no door option", matching the Bob Go branch.
-    let door: {
+    // Door — permanently unavailable on the legacy rail.
+    //
+    // This used to carry one The Courier Guy quote. That integration was
+    // retired (operator 2026-09-04) and nothing replaced it *here*, because
+    // the DOOR slot is now Bob Go's and Bob Go has its own branch above.
+    //
+    // Null was already this branch's honest answer for "no door option" — a
+    // seller not offering it, or a quote that failed — so the menu below
+    // handles it correctly without further change. It now simply never fills.
+    const door: {
       priceCents: number;
       carrierRateCents: number;
       serviceName: string;
       serviceCode: string;
     } | null = null;
-    try {
-      if (!offers('TCG')) throw new Error('seller does not offer door delivery');
-      const from: TcgResidentialAddress = {
-        streetAddress: listing.pickupStreet ?? '',
-        suburb: listing.pickupSuburb ?? '',
-        city: listing.pickupCity ?? '',
-        postalCode: listing.pickupPostalCode ?? '',
-        province: PROVINCE_LONG[listing.province],
-        lat: listing.pickupLat ?? undefined,
-        lng: listing.pickupLng ?? undefined,
-      };
-      if (from.streetAddress && from.city) {
-        const q = await this.tcg.getQuote(
-          from,
-          {
-            streetAddress: deliveryAddress.streetAddress,
-            suburb: deliveryAddress.suburb,
-            city: deliveryAddress.city,
-            postalCode: deliveryAddress.postalCode,
-            province: PROVINCE_LONG[deliveryAddress.province],
-            lat: deliveryAddress.lat,
-            lng: deliveryAddress.lng,
-          },
-          {
-            weightKg: parcel.weightGrams / 1000,
-            lengthCm: parcel.lengthCm,
-            widthCm: parcel.widthCm,
-            heightCm: parcel.heightCm,
-          },
-          listing.price ?? 0,
-        );
-        if (q) {
-          door = {
-            priceCents: withHandling(q.priceCents),
-            carrierRateCents: q.priceCents,
-            serviceName: q.serviceName,
-            serviceCode: q.serviceCode,
-          };
-        }
-      }
-    } catch (err) {
-      // Covers both a genuine quote failure and the seller simply not offering
-      // door delivery — either way there is no door option, which is a valid
-      // menu rather than an error.
-      this.logger.debug(`No legacy door option: ${(err as Error).message}`);
-    }
 
     // Collection points — nearest lockers from the cached directory. The L2L
     // rate is FLAT across lockers, so one quote prices the whole list; if that
@@ -1230,7 +1143,7 @@ export class ShippingService {
       // runs it without a try/catch. Anything that ever learns to throw while
       // building the origin must keep degrading to per-line quoting rather
       // than 500ing a whole cart checkout.
-      let from: TcgResidentialAddress;
+      let from: CarrierAddress;
       try {
         from = {
           streetAddress: first.pickupStreet ?? '',
@@ -1276,53 +1189,17 @@ export class ShippingService {
       return this.pudo.quoteL2L(String(dest.toLockerId), parcel);
     }
 
-    // TCG door-to-door. Pickup is the (shared) seller's address — take it off
-    // the first listing (same seller, so same pickup).
-    const pickup = listings[0];
-    if (
-      !pickup?.pickupStreet ||
-      !pickup.pickupCity ||
-      pickup.pickupLat == null ||
-      pickup.pickupLng == null
-    ) {
-      return null;
-    }
-    const from: TcgResidentialAddress = {
-      streetAddress: pickup.pickupStreet,
-      suburb: pickup.pickupSuburb ?? '',
-      city: pickup.pickupCity,
-      postalCode: pickup.pickupPostalCode ?? '',
-      province: PROVINCE_LONG[pickup.province],
-      lat: pickup.pickupLat,
-      lng: pickup.pickupLng,
-    };
-    if (!dest.deliveryAddress) return null;
-    const to: TcgResidentialAddress = {
-      streetAddress: dest.deliveryAddress.streetAddress,
-      suburb: dest.deliveryAddress.suburb,
-      city: dest.deliveryAddress.city,
-      postalCode: dest.deliveryAddress.postalCode,
-      province: PROVINCE_LONG[dest.deliveryAddress.province],
-      lat: dest.deliveryAddress.lat,
-      lng: dest.deliveryAddress.lng,
-    };
-    const tcgQuote = await this.tcg.getQuote(
-      from,
-      to,
-      {
-        weightKg: parcel.weightGrams / 1000,
-        lengthCm: parcel.lengthCm,
-        widthCm: parcel.widthCm,
-        heightCm: parcel.heightCm,
-      },
-      declaredValueCents,
-    );
-    if (!tcgQuote) return null;
-    return {
-      serviceCode: tcgQuote.serviceCode,
-      serviceName: tcgQuote.serviceName,
-      priceCents: tcgQuote.priceCents,
-    };
+    // DOOR — no combined (multi-line) quote on the legacy rail.
+    //
+    // This used to ask The Courier Guy for one basket-wide door rate. That
+    // integration was retired (operator 2026-09-04); the DOOR slot is Bob Go's
+    // now, and Bob Go's combined quoting is handled before this fallback.
+    //
+    // Null is this method's established "couldn't combine" answer and callers
+    // already degrade to quoting each line on its own — which, for a door
+    // parcel on the legacy rail, then refuses with a clear message rather than
+    // silently pricing something we cannot book.
+    return null;
   }
 
   // ------------------------------------------------------------------
@@ -1496,7 +1373,7 @@ export class ShippingService {
       // throwing 'seller pickup address incomplete' for Pudo sellers who have
       // always booked fine. Bob Go needs it for BOTH slots, so it has to be
       // reachable from both branches — but only actually run when asked.
-      const collectionAddress = (): TcgResidentialAddress => {
+      const collectionAddress = (): CarrierAddress => {
         const L = tx.listing;
         if (
           !L.pickupStreet ||
@@ -1595,49 +1472,22 @@ export class ShippingService {
           deliveryContact,
         });
       } else {
-        const fromAddress = collectionAddress();
-        const d = tx.deliveryAddress as {
-          streetAddress: string;
-          suburb: string;
-          city: string;
-          province: Province;
-          postalCode: string;
-          lat?: number;
-          lng?: number;
-        } | null;
-        // deliveryAddress is stored JSON (untrusted) — validate every field
-        // the carrier needs before the wallet-billed call, and that the
-        // province maps to a name TCG accepts (an unmapped province would
-        // otherwise be sent as `undefined` and rejected after billing).
-        if (!d?.streetAddress || !d.suburb || !d.city || !d.postalCode || !d.province) {
-          throw new Error('delivery address is incomplete for courier booking');
-        }
-        if (!PROVINCE_LONG[d.province]) {
-          throw new Error(`invalid delivery province on transaction: ${d.province}`);
-        }
-        // Parcel + declared value are computed once above the branch.
-        result = await this.tcg.createShipment({
-          serviceCode: tx.shippingServiceCode,
-          from: fromAddress,
-          to: {
-            streetAddress: d.streetAddress,
-            suburb: d.suburb,
-            city: d.city,
-            postalCode: d.postalCode,
-            province: PROVINCE_LONG[d.province],
-            lat: d.lat,
-            lng: d.lng,
-          },
-          parcel: {
-            weightKg: weightGrams / 1000,
-            lengthCm,
-            widthCm,
-            heightCm,
-          },
-          declaredValueCents,
-          collectionContact,
-          deliveryContact,
-        });
+        // DOOR delivery on the legacy rail — no carrier left to book it.
+        //
+        // The Courier Guy served this branch until the integration was retired
+        // (operator 2026-09-04). Bob Go serves the DOOR slot now and is handled
+        // in the first branch above, so reaching here means bobgo_enabled is
+        // OFF and a door parcel has nowhere to go.
+        //
+        // ⚠️ THROWING IS THE SAFE OUTCOME, NOT A GAP. This whole block runs
+        // inside a try whose catch releases the idempotency claim, logs, and
+        // raises an admin alert, leaving the seller their manual
+        // tracking-entry fallback. The alternative — quietly marking the sale
+        // booked with no shipment behind it — would tell a buyer a parcel was
+        // collected that no courier has ever seen.
+        throw new Error(
+          'door delivery cannot be booked: the legacy courier rail was retired and Bob Go is disabled (bobgo_enabled=false)',
+        );
       }
 
       // Persist the booking. trackingReference is the carrier waybill the
@@ -1712,6 +1562,16 @@ export class ShippingService {
         listingTitle: tx.listing.title,
         transactionId,
         carrier: result.carrier,
+        // 🚨 WITHOUT THIS THE SELLER IS TOLD THE WRONG COURIER IS COMING.
+        //
+        // shipmentBooked() picks its copy from `provider`, because `carrier` is
+        // only the SLOT and Bob Go sits behind both. This payload omitted it,
+        // so provider was undefined, isBobGo was false, and every fresh Bob Go
+        // DOOR booking (slot 'TCG') fell through to the legacy branch and told
+        // the seller The Courier Guy was collecting — a courier we no longer
+        // use at all. The tracking-poll path passed it; only this immediate
+        // post-booking notification did not.
+        provider: result.provider,
         trackingReference: result.trackingReference,
         dropoffPin: result.pin ?? null,
       };
@@ -2127,13 +1987,27 @@ export class ShippingService {
       );
       return;
     }
+    if (provider === 'TCG') {
+      // A parcel genuinely held by The Courier Guy, from before that
+      // integration was retired (operator 2026-09-04). There is no client left
+      // to call, and the same reasoning as the Bob Go branch applies: a silent
+      // false would read as "the carrier declined" when in truth nobody asked.
+      // The charge and a collectable parcel both stay live until a human acts.
+      //
+      // Production held ZERO transactions when this was written, so this path
+      // is expected to be unreachable — it is here so that if a row does
+      // surface, it surfaces loudly instead of being swallowed.
+      await this.raiseBookingFailedAlert(
+        transactionId,
+        `Sale reversed but Courier Guy shipment ${tx.carrierShipmentId} cannot be cancelled automatically (integration retired) — cancel it in the Courier Guy portal to reclaim the charge and stop the collection`,
+      );
+      return;
+    }
     try {
       ok =
         provider === 'PUDO'
           ? await this.pudo.cancelShipment(tx.carrierShipmentId)
-          : provider === 'TCG'
-            ? await this.tcg.cancelShipment(tx.carrierShipmentId)
-            : false;
+          : false;
     } catch {
       ok = false;
     }
@@ -2253,17 +2127,16 @@ export class ShippingService {
     });
   }
 
-  // Fetch a booked shipment's waybill/label PDF from the right carrier.
-  // Auth (Pudo api_key / TCG bearer) is handled inside each carrier client,
-  // so the key never reaches the seller — our proxy endpoint streams the
-  // bytes back after checking ownership.
-  async getWaybillPdf(
-    carrier: 'PUDO' | 'TCG',
-    shipmentId: string,
-  ): Promise<Buffer> {
-    return carrier === 'PUDO'
-      ? this.pudo.fetchWaybillPdf(shipmentId)
-      : this.tcg.fetchWaybillPdf(shipmentId);
+  // Fetch a booked shipment's waybill/label PDF from the carrier.
+  //
+  // Pudo is the only carrier left with a label endpoint we can call: Bob Go
+  // has none we have verified, and The Courier Guy's client was deleted when
+  // that integration was retired (operator 2026-09-04). Both of those are
+  // refused by the caller with an explanation before reaching here, so the
+  // parameter is narrowed to what can actually be served — a union member that
+  // no longer has an implementation is an invitation to add a silent failure.
+  async getWaybillPdf(carrier: 'PUDO', shipmentId: string): Promise<Buffer> {
+    return this.pudo.fetchWaybillPdf(shipmentId);
   }
 
   private async releaseBookingClaim(transactionId: string): Promise<void> {
@@ -2537,7 +2410,7 @@ export class ShippingService {
   // ------------------------------------------------------------------
   private async processShiplogicWebhook(
     payload: Record<string, unknown>,
-    carrier: 'TCG' | 'Pudo',
+    carrier: 'Pudo',
   ): Promise<void> {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
 
@@ -2595,13 +2468,15 @@ export class ShippingService {
     await this.applyShippingUpdate(transaction.id, status);
   }
 
-  async processTcgEvent(payload: Record<string, unknown>): Promise<void> {
-    return this.processShiplogicWebhook(payload, 'TCG');
-  }
-
   async processPudoEvent(payload: Record<string, unknown>): Promise<void> {
-    // Pudo runs on the SAME Shiplogic platform as TCG — identical tracking
-    // payload (hyphenated `status` slug + custom_/short_tracking_reference).
+    // Pudo runs on the ShipLogic platform, whose tracking payload is the
+    // hyphenated `status` slug + custom_/short_tracking_reference.
+    //
+    // processShiplogicWebhook is deliberately kept generic rather than folded
+    // into this method: it was written against the shared ShipLogic contract,
+    // not against one vendor, and it is the only reader of that payload shape.
+    // The Courier Guy used to be its second caller (processTcgEvent) until
+    // that integration was retired (operator 2026-09-04).
     return this.processShiplogicWebhook(payload, 'Pudo');
   }
 }

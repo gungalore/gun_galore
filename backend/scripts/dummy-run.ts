@@ -45,7 +45,6 @@ const MUST_BE_BLANK = [
   'RESEND_API_KEY',
   'SMSPORTAL_API_SECRET',
   'PUDO_API_KEY',
-  'TCG_API_KEY',
   'STITCH_CLIENT_SECRET',
   'CLOUDINARY_API_SECRET',
   'MEILISEARCH_HOST',
@@ -88,7 +87,7 @@ function printSafeBanner() {
   console.log('════════════════════════════════════════════════════════════════');
   console.log(`  DB          : ${REQUIRED_DB} @ localhost  (isolated, throwaway)`);
   console.log('  Payments    : manual EFT only, no gateway call');
-  console.log('  Courier     : Pudo/TCG keys blank → no waybill, no credits billed');
+  console.log('  Courier     : Pudo keys blank → no waybill, no credits billed');
   console.log('  KYC         : sandbox; test users seeded VERIFIED directly');
   console.log('  Zoho/Email  : disabled (ZOHO_BOOKS_ENABLED=false, RESEND blank)');
   console.log('  SMS/Push    : blank → STUB log rows only');
@@ -139,7 +138,7 @@ async function main() {
   // Neutralise the two outbound courier-rate calls (blank keys → null quote →
   // dead-ended courier checkout). This stubs ONLY the external rate lookup; the
   // whole transaction + fee code path under test still runs for real.
-  const tcgShipments = installStubs(app);
+  installStubs(app);
 
   const prisma = app.get(PrismaService, { strict: false });
   const rep = new Reporter();
@@ -152,7 +151,7 @@ async function main() {
   // house-money driver and went with the feature. seedActors() is unchanged,
   // so every other driver sees exactly the cast it saw before.
   const cats = await resolveCategories(prisma);
-  const ctx: Ctx = { app, prisma, rep, actors, cats, tcgShipments };
+  const ctx: Ctx = { app, prisma, rep, actors, cats };
   console.log(`[seed] ${Object.keys(actors).length} actors ready.`);
 
   // ── Module drivers ──────────────────────────────────────────────────

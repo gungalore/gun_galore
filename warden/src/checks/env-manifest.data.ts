@@ -42,12 +42,10 @@ export const BACKEND_ENV_MANIFEST: readonly EnvVar[] = [
   { name: 'DATABASE_URL', tier: 'fails-closed', disables: 'nothing works — no database connection at all' },
   { name: 'CLERK_SECRET_KEY', tier: 'fails-closed', disables: 'no request can be authenticated' },
   { name: 'CLERK_WEBHOOK_SECRET', tier: 'fails-closed', disables: 'Clerk webhooks are dropped unverified — new sign-ups get no User row until their first authed request lazily upserts one' },
-  { name: 'TCG_WEBHOOK_SECRET', tier: 'fails-closed', disables: 'Courier Guy tracking events are rejected in production' },
   { name: 'BOBGO_WEBHOOK_SECRET', tier: 'fails-closed', disables: 'Bob Go tracking callbacks are rejected — Bob Go is the live courier rail' },
   { name: 'PEACH_SECRET', tier: 'fails-closed', disables: 'inbound Peach webhooks are rejected, so orders never confirm as paid' },
   { name: 'HEALTH_PING_SECRET', tier: 'fails-closed', disables: '/api/health/crons always answers "not configured" — and Warden’s own cron-freshness check goes unknown with it' },
   { name: 'ID_HASH_SECRET', tier: 'fails-closed', disables: 'KYC cannot store or read an SA ID. ⚠️ ROTATING THIS DESTROYS EVERY STORED FILE — it is never a fix for anything' },
-  { name: 'HUNT_BALLISTICS_ADMIN_KEY', tier: 'fails-closed', disables: 'the ballistics admin endpoints answer 503 (also if under 16 characters)' },
   { name: 'FRONTEND_URL', tier: 'fails-closed', disables: 'CORS rejects the site, and every notification link points nowhere' },
 
   // ── feature-level ─────────────────────────────────────────────────────
@@ -63,7 +61,6 @@ export const BACKEND_ENV_MANIFEST: readonly EnvVar[] = [
   { name: 'BOBGO_API_KEY', tier: 'feature', disables: 'the live courier rail — with bobgo_enabled on, checkout offers no shipping options at all' },
   { name: 'BOBGO_BASE_URL', tier: 'feature', disables: 'Bob Go calls have no endpoint' },
   { name: 'PUDO_API_KEY', tier: 'feature', disables: 'Pudo bookings. ⚠️ no sandbox — every create bills real credits' },
-  { name: 'TCG_API_KEY', tier: 'feature', disables: 'Courier Guy bookings' },
   { name: 'ANTHROPIC_API_KEY', tier: 'feature', disables: 'listing moderation falls back to HUMAN_REVIEW and the contact filter to regex only — fails safe, not closed' },
   { name: 'GOOGLE_VISION_API_KEY', tier: 'feature', disables: 'licence-card OCR — skipped and logged' },
   { name: 'VAPID_PUBLIC_KEY', tier: 'feature', disables: 'web push. ⚠️ matched pair — changing either key kills every existing subscription' },

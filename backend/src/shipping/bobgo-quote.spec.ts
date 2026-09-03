@@ -87,7 +87,6 @@ function makeService(
     prisma as never,
     {} as never,
     {} as never,
-    {} as never,
     bobgo as never,
     { get: jest.fn().mockResolvedValue(bobgoBehaviour.flag ?? true) } as never,
   );
