@@ -61,6 +61,8 @@ export interface FeedAction {
 export interface DeskCardData {
   id: string;
   type: DeskCardType;
+  /** Overrides the per-type header glyph. Two Warden faces share one type. */
+  icon?: 'clock' | 'alert' | 'lock' | 'check' | 'info' | 'bolt';
   /** "Firearm transfer" — what the operator reads, not the enum. */
   typeLabel: string;
   band: BandKey;

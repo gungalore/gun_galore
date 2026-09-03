@@ -258,9 +258,47 @@ export default function DeskPage() {
         });
         return;
       }
-      // Money keeps its own surface on the Ledger, and a gated control is a
-      // statement rather than a button. Only 'undo' is dispatched from here.
-      if (action.kind !== 'undo') return;
+      /*
+       * 🚨 MONEY HAS ONE PATH AND IT IS NOT THIS ONE — but it must not die
+       * SILENTLY here, which is what it did. The Warden proposal card carries
+       * "Approve the fix…" (kind 'money'); fire() handled link, then drawer,
+       * then returned for everything else, so the operator pressed the button
+       * on the pile and nothing happened at all. A dead control is worse than
+       * a missing one because it is trusted.
+       *
+       * It is NOT reimplemented here. A second approval surface means a second
+       * copy of the compare-and-swap that makes the confirm honest, and the
+       * drifted copy is the one nobody reads. So the press takes the operator
+       * to the card's own surface — every money-bearing card also carries a
+       * link action to the place its confirm lives — and says so when it
+       * cannot.
+       */
+      if (action.kind === 'money' || action.kind === 'gated') {
+        const home = card.actions.find((x) => x.kind === 'link' && x.href);
+        if (home?.href) {
+          window.open(home.href, '_blank', 'noopener');
+          return;
+        }
+        setTrouble({
+          title: 'Approve it on its own surface',
+          detail:
+            `"${action.label}" moves money, and money is confirmed where the\n` +
+            `exact command can be restated — not from the pile.\n` +
+            `Card ${card.id} carries no link to that surface, which is a bug.`,
+          scopeNote: 'nothing was sent — the card is untouched',
+        });
+        return;
+      }
+      // Anything left is a kind this board does not dispatch. Say so rather
+      // than returning quietly — that silence is the bug above.
+      if (action.kind !== 'undo') {
+        setTrouble({
+          title: 'That button is not wired here',
+          detail: `"${action.label}" is a ${action.kind} action on ${card.id}.`,
+          scopeNote: 'nothing was sent — the card is untouched',
+        });
+        return;
+      }
       undo.run({
         cardId: card.id,
         message: action.doneMessage ?? `${action.label} ${card.reference ?? ''}`.trim(),
@@ -467,6 +505,11 @@ function PileCard({
       laterUntil={card.laterUntil ? formatReturnTime(card.laterUntil) : undefined}
       onLater={onLater}
       onSelect={onSelect}
+      /* ⚠️ THE RED GATE AND THE PROPOSAL ARE BOTH type 'warden', so one icon
+         per TYPE drew a bolt on both — where the catalogue draws a padlock on
+         the gate. The server says which; this is the only place that can
+         honour it. */
+      iconOverride={card.icon ? TAG_ICON[card.icon] : undefined}
       tags={card.tags.map((t) => ({
         kind: t.kind,
         label: t.label,

@@ -10,6 +10,15 @@
  * consult rather than surfaces you live in.
  */
 import { deskFetch } from './desk-auth';
+/**
+ * ⚠️ THE WARDEN KIND UNION IS IMPORTED, NOT RETYPED. It is the tag the
+ * operator reads — "fixed alone" against "red gate" is the difference between
+ * a note and an emergency — and it already exists twice: chat.tsx's KIND_TAG
+ * and the backend's WARDEN_MESSAGE_KINDS, which its own header says must not
+ * be extended on one side alone. A third copy here is a third thing to
+ * forget. Type-only, so nothing is bundled.
+ */
+import type { WardenKind } from '@/components/desk/chat';
 
 /* ── Settings ─────────────────────────────────────────────────────────── */
 
@@ -436,3 +445,195 @@ export const fetchReportedListings = () =>
   deskFetch<ReportedListingRow[]>('/admin/trust-safety/reported-listings');
 export const fetchReportedSellers = () =>
   deskFetch<ReportedSellerRow[]>('/admin/trust-safety/reported-sellers');
+
+/* ── Warden ───────────────────────────────────────────────────────────
+ *
+ * The Site tab is a conversation, and this is the wire to the other side of
+ * it. Warden does NOT run in the API process: it is a daemon on the box, and
+ * backend/src/desk/warden.service.ts is an authenticated door to it that
+ * fails closed on WARDEN_BASE_URL / WARDEN_TOKEN.
+ *
+ * 🚨 ABSENT AND QUIET LOOK IDENTICAL AND MEAN OPPOSITE THINGS. `present` is
+ * read as `=== true` below and defaults to false on anything the server did
+ * not explicitly assert — an unreachable daemon, an older build with no such
+ * route, a body that is not the shape expected. A chat card rendering an
+ * empty thread under a green badge says "nothing has gone wrong" when it
+ * means "nothing is watching", which is the failure this whole surface
+ * exists to prevent.
+ */
+
+export interface WardenPre {
+  /** `inset` is a dry run — what WOULD happen. `ground` already ran. */
+  tone: 'inset' | 'ground';
+  lines: string[];
+}
+
+export interface WardenChatMessage {
+  id: string;
+  role: 'warden' | 'operator';
+  kind: WardenKind;
+  at: string;
+  /** Paragraphs, already split. Warden writes prose, not markdown. */
+  body: string[];
+  pre?: WardenPre;
+  proposalId?: string;
+  footnote?: string;
+}
+
+export type WardenProposalKind = 'proposal' | 'red_gate';
+export type WardenProposalStatus = 'pending' | 'approved' | 'declined' | 'acknowledged';
+
+export interface WardenProposal {
+  id: string;
+  kind: WardenProposalKind;
+  status: WardenProposalStatus;
+  headline: string;
+  diagnosis: string;
+  /** EXACTLY what "Approve the fix…" runs. Null on a red gate, which has nothing to run. */
+  command: string | null;
+  gateKey: string | null;
+  raisedAt: string;
+}
+
+export interface WardenChat {
+  present: boolean;
+  note?: string;
+  /** Null while unknown. NEVER `now` — a guessed check time reads as a check. */
+  lastCheckAt: string | null;
+  messages: WardenChatMessage[];
+  proposals: WardenProposal[];
+}
+
+/** What the card shows when the fetch itself failed: absent, with the reason. */
+export function wardenAbsent(note: string): WardenChat {
+  return { present: false, note, lastCheckAt: null, messages: [], proposals: [] };
+}
+
+export async function fetchWardenChat(): Promise<WardenChat> {
+  const raw = await deskFetch<Partial<WardenChat> | null>('/admin/warden/chat');
+  return {
+    present: raw?.present === true,
+    note: typeof raw?.note === 'string' ? raw.note : undefined,
+    lastCheckAt: raw?.lastCheckAt ?? null,
+    messages: Array.isArray(raw?.messages) ? raw.messages : [],
+    proposals: Array.isArray(raw?.proposals) ? raw.proposals : [],
+  };
+}
+
+/** React, refuse, ask or instruct. 503s when no Warden is configured. */
+export async function sendWardenChat(message: string): Promise<WardenChatMessage[]> {
+  const res = await deskFetch<{ messages?: WardenChatMessage[] }>('/admin/warden/chat', {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+  return Array.isArray(res?.messages) ? res.messages : [];
+}
+
+/**
+ * 🚨 MONEY-GRADE, AND THE COMMAND IS THE COMPARE-AND-SWAP. `expectedCommand`
+ * is the exact string the confirm dialog restated; the server re-reads the
+ * proposal from Warden and 409s on any difference. Never send anything but
+ * the command the operator actually read — a confirm that restates one thing
+ * and runs another is worse than no confirm, because it is one they have
+ * learned to trust.
+ *
+ * ⚠️ AND IT NEVER UNDOES. This ends in a command running on the production
+ * box. There is no undo window here and there must not be one.
+ */
+export async function approveWardenProposal(
+  id: string,
+  expectedCommand: string,
+  reason?: string,
+): Promise<WardenChatMessage[]> {
+  const res = await deskFetch<{ messages?: WardenChatMessage[] }>(
+    `/admin/warden/proposals/${encodeURIComponent(id)}/approve`,
+    { method: 'POST', body: JSON.stringify({ expectedCommand, reason: reason || undefined }) },
+  );
+  return Array.isArray(res?.messages) ? res.messages : [];
+}
+
+/** Refuse a fix. Warden reads declines back as standing guidance. */
+export async function declineWardenProposal(
+  id: string,
+  reason?: string,
+): Promise<WardenChatMessage[]> {
+  const res = await deskFetch<{ messages?: WardenChatMessage[] }>(
+    `/admin/warden/proposals/${encodeURIComponent(id)}/decline`,
+    { method: 'POST', body: JSON.stringify({ reason: reason || undefined }) },
+  );
+  return Array.isArray(res?.messages) ? res.messages : [];
+}
+
+/**
+ * The only four, shaped for the panel.
+ *
+ * ⚠️ THE PHONE ARRIVES MASKED AND THIS ENDPOINT HAS NO RAW FOR IT. The board
+ * is screenshotted into support threads and read over shoulders; the edit
+ * field prefills from /admin/settings instead, which is a deliberate open
+ * rather than a passive render. `raw` is present only where the value is not
+ * personal data — a flag, a list of alert types.
+ */
+export interface WardenSettingRow {
+  key: string;
+  label: string;
+  kind: 'phone' | 'checkboxes' | 'toggle';
+  display: string;
+  raw?: string;
+  items?: { value: string; label: string; checked: boolean }[];
+  /** True when PATCH /admin/settings accepts it. Not a claim that this endpoint writes it. */
+  editable: boolean;
+  note: string;
+}
+
+export async function fetchWardenSettings(): Promise<WardenSettingRow[]> {
+  const res = await deskFetch<{ rows?: WardenSettingRow[] }>('/admin/warden/settings');
+  return Array.isArray(res?.rows) ? res.rows : [];
+}
+
+/**
+ * "09:14" for today, "2 Sep 09:14" for anything older, "never" for null.
+ *
+ * ⚠️ SAST, EXPLICITLY. The board is read from one country and the box runs in
+ * UTC; a cron that "last ran 02:10" is a different fact from one that last
+ * ran 04:10, and the difference is the two hours nobody notices.
+ */
+export function clock(iso: string | null): string {
+  if (!iso) return 'never';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const zone = { timeZone: 'Africa/Johannesburg' } as const;
+  const sameDay =
+    d.toLocaleDateString('en-ZA', zone) === new Date().toLocaleDateString('en-ZA', zone);
+  return sameDay
+    ? d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit', hour12: false, ...zone })
+    : stamp(iso);
+}
+
+/* ── The WhatsApp reply drawer's entrance ─────────────────────────────
+ *
+ * 🚨 THE DRAWER EXISTS AND NOTHING OPENED IT. components/desk/whatsapp-drawer
+ * was built against /admin/desk/whatsapp/*, and `whatsapp_reply` sits in the
+ * DeskCardType union with nothing emitting it — so the whole feature was
+ * unreachable and neither file said so by reading it. This is the door: the
+ * same deep link the broadcast drawer already uses (?send=1), so the pile
+ * card has a destination that exists today rather than one somebody has to
+ * remember to build, and so a thread can be opened by hand right now.
+ *
+ * ⚠️ THE ID IS VALIDATED BEFORE IT IS BELIEVED. It comes off the address bar,
+ * goes straight into a fetch path and is rendered in a drawer header. The
+ * same character class the backend enforces on a Warden proposal id is
+ * enforced here, so a crafted link cannot walk the API path.
+ */
+export const WHATSAPP_PARAM = 'whatsapp';
+
+export function parseWhatsappThreadId(search: string): string | null {
+  const id = (new URLSearchParams(search).get(WHATSAPP_PARAM) ?? '').trim();
+  return /^[A-Za-z0-9_-]{1,64}$/.test(id) ? id : null;
+}
+
+export function stripWhatsappParam(search: string): string {
+  const p = new URLSearchParams(search);
+  p.delete(WHATSAPP_PARAM);
+  const rest = p.toString();
+  return rest ? `?${rest}` : '';
+}

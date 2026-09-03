@@ -1,6 +1,8 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { queryFreshnessGraveyard } from '../admin/freshness-graveyard';
+import { DeskSiteService } from './desk-site.service';
+import { WardenService } from './warden.service';
 import {
   BAND_ORDER,
   SLA,
@@ -38,6 +40,68 @@ function humanCategory(raw: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * Warden
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The id prefix that marks a Warden card as a RED GATE rather than a finding.
+ *
+ * 🚨 LOAD-BEARING IN THREE PLACES, AND ALL THREE ARE THE SERVER'S JOB.
+ * sortPile() floats a red gate to the top of its band, later() refuses to
+ * sink one and act() refuses to acknowledge one. The card face carries no
+ * Later and no Acknowledge button, but a card face is not a boundary:
+ * POST /admin/desk/<id>/later takes any string at all and the in-memory sunk
+ * map never type-checks it. If the rule does not hold here it does not hold.
+ *
+ * ⚠️ THE TAIL MUST STAY COLON-FREE. act() destructures `cardId.split(':')`
+ * and keeps only the first two segments, so `warden:gate:VERIFYNOW_MODE`
+ * would silently lose its key. Hence `gate-`, not `gate:`.
+ */
+const RED_GATE_ID = 'warden:gate.';
+/*
+ * ⚠️ THE DOT IS THE POINT, AND IT USED TO BE A HYPHEN. Warden's own
+ * proposal ids are [A-Za-z0-9_-] (PROPOSAL_ID_RE in warden.service.ts), so
+ * a hyphen prefix was forgeable: a proposal named "gate-nginx" read as a
+ * red gate and could then never be sunk or acknowledged. A dot cannot come
+ * from the daemon, so this prefix is ours by construction rather than by
+ * convention. Still colon-free, so act()'s split(':') holds.
+ */
+
+/**
+ * How long an acknowledged Warden finding stays off the pile.
+ *
+ * ⚠️ A DAY, BECAUSE THE CATALOGUE SAYS "NAGS DAILY". Acknowledge is not
+ * "resolved" — nothing about the stalled outbox changed when the operator
+ * tapped it. It is "I have seen this, stop showing me today", and the finding
+ * comes back tomorrow if the condition is still true.
+ */
+const WARDEN_ACK_HOURS = 24;
+
+/** Setting key holding the last acknowledgement of one Warden finding. */
+function wardenAckKey(entityId: string): string {
+  return `warden:ack:${entityId}`;
+}
+
+/**
+ * How overdue an outbox row must be before Warden calls the sweep stalled.
+ *
+ * NotificationsService.retryOutboxEmails runs every 10 minutes and its own
+ * comment says the table should normally be empty. A row still sitting there
+ * half an hour after it came due has been passed over by three sweeps — that
+ * is a stalled worker, not a send that happens to be waiting its turn.
+ */
+const OUTBOX_STALL_MINUTES = 30;
+
+/**
+ * How many dead SMS make a pattern rather than a bad number.
+ *
+ * A FAILED SmsLog row with no nextRetryAt is finished: either it was never
+ * retryable or the retries are spent, and nothing will try it again. One is
+ * usually a wrong number the member typed. Three in a day is the provider.
+ */
+const SMS_DEAD_LETTER_MIN = 3;
+
 @Injectable()
 export class DeskService {
   private readonly log = new Logger(DeskService.name);
@@ -55,7 +119,29 @@ export class DeskService {
    */
   private readonly sunk = new Map<string, number>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    /**
+     * ⚠️ THE SITE BOARD OWNS WHICH GATES ARE RED, AND IT IS THE ONLY THING
+     * THAT DOES. A red-gate card and the Config gates panel are two renderings
+     * of one fact; re-reading VERIFYNOW_MODE here would give the operator a
+     * board and a pile that can disagree about whether the site is safe. This
+     * calls gates() and deals whatever came back `bad`.
+     *
+     * @Optional() with a default: DeskModule provides DeskSiteService and Nest
+     * injects it, while the spec constructs DeskService with a fake prisma
+     * alone. The fallback is the same read-only service over the same client,
+     * so neither path can see a different set of gates.
+     */
+    @Optional() private readonly site: DeskSiteService = new DeskSiteService(prisma),
+    /**
+     * ⚠️ OPTIONAL WITH NO FALLBACK, BECAUSE THERE IS NO HONEST FALLBACK.
+     * WardenService is the authenticated door to a daemon on the box; this
+     * process cannot stand in for it. Absent, the pile simply carries no
+     * proposals — which is the truth — rather than a plausible empty thread.
+     */
+    @Optional() private readonly warden?: WardenService,
+  ) {}
 
   /**
    * A transaction's operator-facing reference.
@@ -104,6 +190,11 @@ export class DeskService {
       complaints,
       tickets,
       stale,
+      gates,
+      wardenChat,
+      outboxStalled,
+      smsDeadLetters,
+      wardenAcks,
     ] = await Promise.all([
         this.prisma.transaction.findMany({
           where: { dealerVerificationStatus: 'PENDING_ADMIN_REVIEW' },
@@ -258,7 +349,61 @@ export class DeskService {
          * slow category.
          */
         queryFreshnessGraveyard(this.prisma, { minAgeDays: 60, limit: 5 }),
+        /* ── Warden ─────────────────────────────────────────────────
+         *
+         * 🚨 'warden' AND 'whatsapp_reply' SAT IN DeskCardType FOR WEEKS
+         * WITH NOTHING PUTTING EITHER ON THE WIRE — the same failure the
+         * complaint and support cards above were written to close. The
+         * catalogue drew the faces, the union carried the types, and no
+         * operator could ever reach one.
+         *
+         * The three things Warden can honestly say today, from state this
+         * process can actually measure. Everything else the Warden chat
+         * shows — proposals with an approvable command, Claude diagnoses,
+         * the ran/output transcript — needs the WardenProposal store, which
+         * does not exist yet. A card offering "Approve the fix…" with no
+         * fix behind it would be worse than no card.
+         */
+        this.site.gates(),
+        /**
+         * ⚠️ present() FIRST, AND NOT AS AN OPTIMISATION. chat() is an HTTP
+         * hop to the box with a read timeout on it. Warden is unconfigured on
+         * every environment today, so without this the whole pile would wait
+         * on a socket that was never going to answer, every load.
+         */
+        this.warden?.present() ? this.warden.chat() : Promise.resolve(null),
+        this.prisma.emailOutbox.count({
+          where: { nextAttemptAt: { lt: new Date(now - OUTBOX_STALL_MINUTES * 60_000) } },
+        }),
+        // FAILED with no retry due: the retry cron is finished with these, so
+        // they are lost sends and not a queue still working through a backlog.
+        this.prisma.smsLog.count({
+          where: {
+            status: 'FAILED',
+            nextRetryAt: null,
+            createdAt: { gte: new Date(now - 24 * 3_600_000) },
+          },
+        }),
+        /**
+         * ⚠️ Setting, NOT A NEW TABLE. An acknowledgement is one timestamp
+         * per finding, and the Setting table already carries exactly this
+         * shape of bookkeeping (cron:lastrun:*). A migration for a handful of
+         * rows meaning "seen today" would be the wrong trade.
+         */
+        this.prisma.setting.findMany({ where: { key: { startsWith: 'warden:ack:' } } }),
       ]);
+
+    /*
+     * Acknowledgement rows, read ONCE for every loop that suppresses on them.
+     * ⚠️ Both the findings loop and the proposals loop must consult this. The
+     * proposals loop did not, and the card returned immediately.
+     */
+    const ackAt = new Map(wardenAcks.map((s) => [s.key, Date.parse(s.value)]));
+    const ackCutoff = Date.now() - WARDEN_ACK_HOURS * 3_600_000;
+    const stillAcknowledged = (entityId: string): boolean => {
+      const seen = ackAt.get(wardenAckKey(entityId));
+      return seen !== undefined && Number.isFinite(seen) && seen > ackCutoff;
+    };
 
     const cards: DeskCardData[] = [];
 
@@ -484,6 +629,200 @@ export class DeskService {
 
     /* ── Housekeeping ─────────────────────────────────────────────── */
 
+    /* ── Warden · red gates ───────────────────────────────────────────
+     *
+     * ⚠️ THE BOARD DECIDES WHAT IS RED; THIS ONLY DEALS IT. Every gate that
+     * came back `bad` from DeskSiteService.gates() becomes a card, and no
+     * gate is named here. Add a red gate to the board and it starts arriving
+     * on the pile the same day, with no second list to remember to update.
+     *
+     * The headline and meta are composed from the gate's own label, value and
+     * note rather than written out again. Two files describing one gate in
+     * two sets of words is how the board and the pile end up disagreeing
+     * about what "sandbox" means.
+     *
+     * ⚠️ key AND value ARE SAFE TO PRINT, AND ONLY BECAUSE gates() GUARANTEES
+     * IT. Its contract is a mode string or a boolean word, never a secret,
+     * never a masked tail. If that contract ever loosens, this line leaks.
+     */
+    for (const gate of gates.filter((g) => g.tone === 'bad')) {
+      cards.push({
+        // Colon-free tail — act() keeps only two segments. See RED_GATE_ID.
+        id: `${RED_GATE_ID}${gate.key.replace(/[^A-Za-z0-9_]/g, '')}`,
+        type: 'warden',
+        typeLabel: 'Warden',
+        band: 'housekeeping',
+        headline: `Red gate: ${gate.label} — ${gate.value}`,
+        meta: `${gate.key}=${gate.value}${gate.note ? ` · ${gate.note}` : ''} · nags daily until it flips`,
+        // The padlock the catalogue draws on this face, not the bolt the
+        // type would otherwise give it.
+        icon: 'lock',
+        tags: [{ kind: 'bad', label: 'red gate', icon: 'lock' }],
+        // ⚠️ ONE ACTION, AND THAT IS THE WHOLE POINT OF THE CARD. No
+        // Acknowledge and no Later: a gate that could be waved away would be
+        // waved away, and the thing it is gating is whether sellers are
+        // really ID-verified. It clears when the gate flips in code and never
+        // because somebody was tired of seeing it.
+        actions: [
+          {
+            key: 'chat',
+            label: 'Open the chat',
+            kind: 'link',
+            variant: 'primary',
+            href: '/admin/desk/site',
+          },
+        ],
+        // ⚠️ NO overdueSince. env has no changed-at, so there is no honest
+        // "red since". The card floats on its own rule in sortPile instead of
+        // borrowing the overdue clock with an invented timestamp.
+        canLater: false,
+      });
+    }
+
+    /* ── Warden · proposals ───────────────────────────────────────────
+     *
+     * A proposal Warden raised on the box, waiting for a decision. The
+     * catalogue's Warden face, with the command it wants to run behind it.
+     *
+     * ⚠️ PENDING ONLY, AND kind 'proposal' ONLY. A settled proposal is a line
+     * in the chat, not work. And a `red_gate` proposal is the SAME FACT as
+     * the gate cards above — WardenService.gates() reads its gate values from
+     * DeskSiteService for exactly that reason — so dealing both would put one
+     * red gate on the pile twice, once from each side of the wire.
+     */
+    for (const p of wardenChat?.proposals ?? []) {
+      if (p.kind !== 'proposal' || p.status !== 'pending') continue;
+      // The read that makes Acknowledge mean something on a proposal. act()
+      // writes wardenAckKey(<tail after "warden:">), which for this card is
+      // p.id — so this is the same key from the other side.
+      if (stillAcknowledged(p.id)) continue;
+      cards.push({
+        // PROPOSAL_ID_RE in warden.service.ts is [A-Za-z0-9_-], so the tail
+        // is colon-free by construction and act()'s split holds.
+        id: `warden:${p.id}`,
+        type: 'warden',
+        typeLabel: 'Warden',
+        band: 'housekeeping',
+        headline: p.headline,
+        meta: p.diagnosis,
+        /**
+         * ⚠️ THE COMMAND RIDES ON `note` BECAUSE FeedAction HAS NOWHERE ELSE
+         * TO PUT IT. A money-grade confirm must restate exactly what will
+         * run, and the only payload a money action carries is `amount` — a
+         * rand string. Putting a shell command in a field named `amount`
+         * would be a lie tsc cannot see, so the confirm reads it from here.
+         */
+        note: p.command ?? undefined,
+        tags: [{ kind: 'info', label: 'proposal', icon: 'bolt' }],
+        actions: [
+          {
+            key: 'chat',
+            label: 'Open the chat',
+            kind: 'link',
+            variant: 'primary',
+            href: '/admin/desk/site',
+          },
+          /**
+           * ⚠️ 'money', NOT 'undo', AND THE UNDO WINDOW MUST NEVER REACH IT.
+           * Approve ends in a command running on a production box. The undo
+           * window is a client-side delay; a fix already run cannot be taken
+           * back by letting a timer expire. act() refuses this action by
+           * name for the same reason the money card types are refused there.
+           */
+          {
+            key: 'approve',
+            label: 'Approve the fix…',
+            kind: 'money',
+            variant: 'secondary',
+          },
+          {
+            key: 'acknowledge',
+            label: 'Acknowledge',
+            kind: 'undo',
+            variant: 'ghost',
+            doneMessage: 'Acknowledged — Warden will raise it again tomorrow',
+          },
+        ],
+        canLater: true,
+      });
+    }
+
+    /* ── Warden · findings this process can see for itself ────────────
+     *
+     * ⚠️ ONLY WHILE WARDEN IS ABSENT, AND THAT IS THE WHOLE RULE. Warden is
+     * the authority on what is wrong with the running system; when it is
+     * deployed it raises its own findings on its own thread and these would
+     * be the same trouble reported twice, in two voices, with two ids.
+     *
+     * ⚠️ "diagnosis", NOT "proposal", AND THE DIFFERENCE IS A BUTTON. These
+     * carry no approvable command — this process has no shell and must never
+     * have one — so they say what was found and stop there. Neither is on the
+     * pile any other way: a stalled outbox and a dead SMS are invisible
+     * everywhere except the Site board's channel row, which nobody opens on a
+     * day when nothing looks wrong.
+     */
+    const findings: { key: string; headline: string; meta: string }[] = [];
+
+    // The deferral is one condition on the whole block, not a repeated guard:
+    // when Warden is up, this process has nothing to add.
+    if (!wardenChat?.present) {
+      if (outboxStalled > 0) {
+        findings.push({
+          key: 'outbox-stalled',
+          headline: `The email outbox is not draining — ${outboxStalled} ${
+            outboxStalled === 1 ? 'send is' : 'sends are'
+          } overdue`,
+          meta: `Parked ${OUTBOX_STALL_MINUTES}+ minutes past their retry time · the 10-minute sweep should have cleared them · members are not getting these emails`,
+        });
+      }
+
+      if (smsDeadLetters >= SMS_DEAD_LETTER_MIN) {
+        findings.push({
+          key: 'sms-dead-letters',
+          headline: `${smsDeadLetters} SMS were dropped and will not be retried`,
+          meta: 'Failed in the last 24h with no retry pending · waybill PINs and payout notices ride this path',
+        });
+      }
+    }
+
+    /**
+     * ⚠️ ACKNOWLEDGED, NOT RESOLVED. The condition is still true; the
+     * operator has seen it. It comes back tomorrow.
+     */
+    // ackAt / ackCutoff / stillAcknowledged are hoisted above the proposals
+    // loop — one reading of the rows for every loop that suppresses on them.
+
+    for (const f of findings) {
+      const seen = ackAt.get(wardenAckKey(f.key));
+      if (seen && !Number.isNaN(seen) && seen > ackCutoff) continue;
+      cards.push({
+        id: `warden:${f.key}`,
+        type: 'warden',
+        typeLabel: 'Warden',
+        band: 'housekeeping',
+        headline: f.headline,
+        meta: f.meta,
+        tags: [{ kind: 'info', label: 'diagnosis', icon: 'bolt' }],
+        actions: [
+          {
+            key: 'chat',
+            label: 'Open the chat',
+            kind: 'link',
+            variant: 'primary',
+            href: '/admin/desk/site',
+          },
+          {
+            key: 'acknowledge',
+            label: 'Acknowledge',
+            kind: 'undo',
+            variant: 'secondary',
+            doneMessage: 'Acknowledged — Warden will raise it again tomorrow',
+          },
+        ],
+        canLater: true,
+      });
+    }
+
     for (const q of questions) {
       const hours = this.hoursSince(q.createdAt) ?? 0;
       cards.push({
@@ -584,8 +923,15 @@ export class DeskService {
    */
   private sortPile(cards: DeskCardData[]): DeskCardData[] {
     const band = (c: DeskCardData) => BAND_ORDER.indexOf(c.band as BandKey);
+    // ⚠️ A RED GATE FLOATS ABOVE EVERYTHING IN ITS BAND, INCLUDING OVERDUE.
+    // Housekeeping is the bottom band and a dead listing that has been dead
+    // for 91 days would otherwise sort above the reason sellers are not
+    // really ID-verified. It is the one card the operator cannot sink, so it
+    // has to be the one they cannot scroll past either.
+    const float = (c: DeskCardData) => (this.isRedGate(c.id) ? 0 : 1);
     return [...cards].sort((a, b) => {
       if (band(a) !== band(b)) return band(a) - band(b);
+      if (float(a) !== float(b)) return float(a) - float(b);
       const aSunk = a.laterUntil ? 1 : 0;
       const bSunk = b.laterUntil ? 1 : 0;
       if (aSunk !== bSunk) return aSunk - bSunk;
@@ -678,8 +1024,26 @@ export class DeskService {
     }));
   }
 
+  /**
+   * Is this card id a Warden red gate?
+   *
+   * The id carries it, so the answer needs no row and no round trip — which
+   * matters, because later() has to answer it for an id the operator posted
+   * and the pile may not have been rebuilt since.
+   */
+  private isRedGate(cardId: string): boolean {
+    return cardId.startsWith(RED_GATE_ID);
+  }
+
   /** Sink a card for four hours. */
   later(cardId: string): { laterUntil: string } {
+    // 🚨 THE RULE LIVES HERE, NOT ON THE CARD FACE. The red-gate card ships
+    // no Later button, but this endpoint takes any string and the sunk map
+    // is an untyped Map — omitting a button hides the door, it does not lock
+    // it. A red gate that could be sunk for four hours is a red gate.
+    if (this.isRedGate(cardId)) {
+      throw new BadRequestException('A red gate cannot be sunk. It clears when the gate flips.');
+    }
     const until = Date.now() + SLA.LATER_HOURS * 3_600_000;
     this.sunk.set(cardId, until);
     return { laterUntil: new Date(until).toISOString() };
@@ -707,6 +1071,30 @@ export class DeskService {
       );
     }
 
+    // 🚨 SAME REASON AS later(). Acknowledge is the other way to make a card
+    // go away for a day, and a red gate must not have one however the request
+    // was built.
+    if (this.isRedGate(cardId)) {
+      throw new BadRequestException(
+        'A red gate cannot be acknowledged. It clears when the gate flips.',
+      );
+    }
+
+    /**
+     * 🚨 APPROVING A WARDEN FIX RUNS A COMMAND ON A PRODUCTION BOX, SO IT
+     * NEVER COMES THROUGH HERE. This is the generic card-face dispatcher and
+     * the worst a bug in it should be able to do is approve a listing twice.
+     * POST admin/warden/proposals/:id/approve is the one door: it re-reads
+     * the proposal from the daemon, compares the command against the one the
+     * operator actually confirmed, and writes an audit row. Same rule as the
+     * money card types refused above, for a bigger reason.
+     */
+    if (type === 'warden' && action === 'approve') {
+      throw new NotFoundException(
+        'A Warden fix is approved from the chat, with the command restated, and never from the card face',
+      );
+    }
+
     this.log.log(`desk act: ${type} ${action} ${id}`);
 
     switch (`${type}:${action}`) {
@@ -715,6 +1103,18 @@ export class DeskService {
         return { ok: true };
       case 'seller_verification:approve':
         await this.prisma.user.update({ where: { id }, data: { kycStatus: 'VERIFIED' } });
+        return { ok: true };
+      case 'warden:acknowledge':
+        // ⚠️ NOT A FIX AND NOT A RESOLUTION — a "seen it, not today". The
+        // outbox is still stalled after this write; the finding is simply
+        // suppressed until WARDEN_ACK_HOURS is up, and comes back if the
+        // condition is still true. Anything that actually repairs the
+        // condition belongs behind its own endpoint with its own confirm.
+        await this.prisma.setting.upsert({
+          where: { key: wardenAckKey(id) },
+          create: { key: wardenAckKey(id), value: new Date().toISOString() },
+          update: { value: new Date().toISOString() },
+        });
         return { ok: true };
       case 'dispatch_check:nudge':
       case 'unanswered_question:remind':

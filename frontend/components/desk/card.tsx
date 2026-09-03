@@ -37,6 +37,14 @@ export interface DeskCardAction {
 export interface DeskCardProps {
   /** The server's card type — picks the glyph and nothing else. */
   type: DeskCardType;
+  /**
+   * Overrides the per-type glyph.
+   *
+   * ⚠️ THE WARDEN PAIR NEEDS THIS. A red gate and a proposal are both
+   * type 'warden', so one icon per type drew a bolt on both — where the
+   * catalogue draws a padlock on the gate. The server says which face it is.
+   */
+  iconOverride?: React.ComponentType<IconProps>;
   /** The type label as the operator reads it: "Firearm transfer". */
   typeLabel: string;
   /** Reference, in mono. Faint, because the label beside it already said it. */
@@ -70,6 +78,7 @@ export interface DeskCardProps {
 
 export function DeskCard({
   type,
+  iconOverride,
   typeLabel,
   reference,
   headline,
@@ -84,7 +93,9 @@ export function DeskCard({
   onSelect,
 }: DeskCardProps) {
   const [hover, setHover] = React.useState(false);
-  const Icon = CARD_TYPE_ICON[type];
+  // A per-card glyph wins over the per-type one: the Warden red gate and
+  // the Warden proposal are the same type and must not look the same.
+  const Icon = iconOverride ?? CARD_TYPE_ICON[type];
   const sunk = Boolean(laterUntil);
 
   return (
