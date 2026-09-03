@@ -36,7 +36,9 @@ import {
 import {
   fetchPayoutRun,
   formatRandCents,
+  describePayoutRun,
   holdPayout,
+  runDuePayouts,
   includePayout,
   type HeldPayoutRow,
   type PayoutRow,
@@ -80,6 +82,8 @@ export default function LedgerPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [drawer, setDrawer] = React.useState(false);
   const [confirm, setConfirm] = React.useState(false);
+  /** A batch is in flight — see the confirm's handler. */
+  const [paying, setPaying] = React.useState(false);
   const [result, setResult] = React.useState<{ ok: boolean; tag: string; body: string } | null>(null);
   const [payoutSegment, setPayoutSegment] = React.useState('attention');
   /** The sale whose Order drawer is open — a Transaction id. */
@@ -550,9 +554,10 @@ export default function LedgerPage() {
                 variant="primary"
                 icon={IconBanknote}
                 amount={run.totals.inRunLabel}
+                disabled={paying}
                 onClick={() => setConfirm(true)}
               >
-                Run payouts
+                {paying ? 'Sending…' : 'Run payouts'}
               </Button>
             )}
             <Button variant="ghost" onClick={() => setDrawer(true)}>
