@@ -226,6 +226,11 @@ export class ManualPaymentsService {
         // SubscriptionCharge has no zohoSync* columns — a receipt failure
         // is recorded in errorMessage on a SUCCEEDED charge whose
         // zohoReceiptId never got set.
+        //
+        // ⚠️ AND NOTHING WRITES zohoReceiptId, so a row here cannot clear by
+        // any code path that exists; the receipt has to be raised in Zoho by
+        // hand. Only the transactions arm above has a repair
+        // (POST /admin/transactions/:id/zoho-retry).
         this.prisma.subscriptionCharge.findMany({
           where: {
             status: 'SUCCEEDED',
@@ -241,10 +246,18 @@ export class ManualPaymentsService {
             chargedAt: true,
           },
         }),
-        // P1.3 — COMPLETED swaps that still owe a leg-fee Sales Receipt (the
-        // Zoho POST failed at completion). Swap has no zohoSync* columns, so
-        // the signal is a fee>0 side with a null receipt id. These are
-        // re-fired by the hourly retryMissingSwapFeeReceipts cron.
+        // P1.3 — COMPLETED swaps that still owe a leg-fee Sales Receipt.
+        // Swap has no zohoSync* columns, so the signal is a fee>0 side with a
+        // null receipt id.
+        //
+        // 🚨 THIS COMMENT USED TO SAY THESE ARE "re-fired by the hourly
+        // retryMissingSwapFeeReceipts cron". THAT CRON DOES NOT EXIST — grep
+        // finds the name in this one comment and nowhere else in the repo —
+        // and nothing anywhere writes zohoInitiatorFeeReceiptId or
+        // zohoOwnerFeeReceiptId either. So a swap that lands in this arm stays
+        // in it permanently, and the promise of an automatic retry would have
+        // an operator wait for a repair that never runs. The Desk's Books lens
+        // labels this arm "will not clear itself" for that reason.
         this.prisma.swap.findMany({
           where: {
             status: 'COMPLETED',
