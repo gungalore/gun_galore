@@ -3,6 +3,7 @@ import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { DeskService } from './desk.service';
 import { DeskPayoutsService } from './desk-payouts.service';
 import { DeskSiteService } from './desk-site.service';
+import { WardenService } from './warden.service';
 import type { DeskFeed } from './desk.types';
 
 /**
@@ -21,6 +22,13 @@ export class DeskController {
     private readonly desk: DeskService,
     private readonly payouts: DeskPayoutsService,
     private readonly site: DeskSiteService,
+    /**
+     * ⚠️ COMPOSED HERE, NOT INJECTED INTO DeskSiteService. WardenService
+     * already depends on that service, so reaching the other way would close
+     * a cycle. The controller is the composition point, which also keeps
+     * `vitals()` a pure function of its argument.
+     */
+    private readonly warden: WardenService,
   ) {}
 
   /**
@@ -38,8 +46,11 @@ export class DeskController {
    * only a mode or a boolean. See DeskSiteService.
    */
   @Get('site/board')
-  siteBoard() {
-    return this.site.board();
+  async siteBoard() {
+    // A read that never throws — null covers no daemon, no answer and a bad
+    // answer alike, and every tile renders the same "not measured" for all
+    // three, with the reason it was given.
+    return this.site.board(await this.warden.checkBoard());
   }
 
   /** The pile, the ribbon, the rail and the feed, in one request. */

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import type { WardenCheckBoard } from './warden.types';
 
 /**
  * THE DESK — the Site board.
@@ -120,17 +121,68 @@ export class DeskSiteService {
   }
 
   /**
-   * What the API process can see of its own health.
+   * The server vitals board.
    *
-   * ⚠️ THIS IS NOT THE FULL VITALS BOARD AND DOES NOT PRETEND TO BE. Disk,
-   * SSL expiry, nginx error rates and backup freshness live on the box, not
-   * in this process — they are Warden's to report. Rather than invent them or
-   * render a plausible zero, anything this process cannot measure is returned
-   * as `known: false` and the board draws an em dash. A vitals tile showing
-   * "0%" for a disk nobody measured is worse than one showing nothing.
+   * 🚨 FOUR OF THESE SIX WERE HARD-CODED `known: false` WITH A LITERAL EM
+   * DASH, and the card's own footer told the operator they fill in "until
+   * Warden is on it". Warden went on it on 2026-09-03 and they stayed em
+   * dashes, because nothing ever read from it — the comment here said "they
+   * are Warden's to report" and that was a statement of intent, not of
+   * wiring. Once the stated precondition was met, the copy became a false
+   * promise rather than an honest gap.
+   *
+   * ⚠️ THE HONESTY RULE IS UNCHANGED AND IS WHY THIS TAKES A REASON. An
+   * unknown still renders as an em dash — but now with the reason Warden gave
+   * ("cannot read /var/log/nginx/access.log: Permission denied") instead of
+   * the blanket "needs Warden on the box", which is exactly wrong once Warden
+   * is there and simply lacks a group membership. A tile showing 0% for a
+   * disk nobody measured is worse than one showing nothing; a tile blaming
+   * the wrong cause is worse than either.
+   *
+   * ⚠️ WARDEN IS PASSED IN, NEVER INJECTED. WardenService already depends on
+   * this service, so reaching the other way would close a cycle. The
+   * controller fetches the board and hands it over, which also keeps this
+   * method pure and testable with a literal.
    */
-  vitals() {
+  vitals(warden: WardenCheckBoard | null = null) {
     const mem = process.memoryUsage();
+    const row = (id: string) => warden?.rows.find((r) => r.id === id) ?? null;
+
+    /**
+     * One Warden check as one tile.
+     *
+     * `unknown` and an absent row are the same outcome — not measured — but
+     * they carry different reasons, and the difference matters to whoever
+     * has to fix it: "Warden is not deployed" is a deploy, "Permission
+     * denied" is a group membership.
+     */
+    const fromWarden = (key: string, label: string, id: string) => {
+      const r = row(id);
+      if (!r) {
+        return {
+          key,
+          label,
+          known: false,
+          value: '—',
+          tone: 'info' as GateTone,
+          reason: warden
+            ? `Warden ran but reported no ${id} check.`
+            : 'Warden is not deployed — nothing has measured this.',
+        };
+      }
+      if (r.status === 'unknown') {
+        return { key, label, known: false, value: '—', tone: 'info' as GateTone, reason: r.verdict };
+      }
+      return {
+        key,
+        label,
+        known: true,
+        value: r.verdict,
+        tone: (r.status === 'bad' ? 'bad' : r.status === 'warn' ? 'warn' : 'ok') as GateTone,
+        reason: undefined,
+      };
+    };
+
     return [
       {
         key: 'api_process',
@@ -138,6 +190,7 @@ export class DeskSiteService {
         known: true,
         value: `up ${Math.floor(process.uptime() / 86400)}d`,
         tone: 'ok' as GateTone,
+        reason: undefined,
       },
       {
         key: 'heap',
@@ -145,11 +198,17 @@ export class DeskSiteService {
         known: true,
         value: `${Math.round(mem.heapUsed / 1024 / 1024)} MB`,
         tone: 'ok' as GateTone,
+        reason: undefined,
       },
-      { key: 'disk', label: 'Disk', known: false, value: '—', tone: 'info' as GateTone },
-      { key: 'ssl', label: 'SSL cert', known: false, value: '—', tone: 'info' as GateTone },
-      { key: 'backups', label: 'Backups', known: false, value: '—', tone: 'info' as GateTone },
-      { key: 'nginx', label: 'Errors', known: false, value: '—', tone: 'info' as GateTone },
+      fromWarden('disk', 'Disk', 'host-disk'),
+      // ⚠️ tls-EDGE, NOT tls-origin. The edge check reads the certificate as
+      // actually served, which is the one a member's browser meets. tls-origin
+      // reads the file on disk and is EACCES for Warden's service user today —
+      // pointing this tile at it would render "not measured" for a certificate
+      // that is verifiably fine.
+      fromWarden('ssl', 'SSL cert', 'tls-edge'),
+      fromWarden('backups', 'Backups', 'backup-last-run'),
+      fromWarden('nginx', 'Errors', 'nginx-error-rate'),
     ];
   }
 
@@ -198,22 +257,27 @@ export class DeskSiteService {
     ];
   }
 
-  async board() {
+  async board(warden: WardenCheckBoard | null = null) {
     const [gates, channels] = await Promise.all([this.gates(), this.channels()]);
     return {
       gates,
       channels,
-      vitals: this.vitals(),
+      vitals: this.vitals(warden),
       /**
-       * ⚠️ WARDEN IS NOT RUNNING. There is no daemon: no checks engine, no
-       * safe-list actions, no Claude escalation and no chat thread. The board
-       * says so on its face rather than rendering an empty, healthy-looking
-       * chat that implies something is watching.
+       * 🚨 THIS WAS HARD-CODED `present: false` and stayed that way after the
+       * daemon went live — a second copy of the same mistake as the vitals
+       * tiles above, in the same object. It now reports what is actually
+       * there.
        */
-      warden: {
-        present: false,
-        note: 'Warden is not deployed. Nothing is watching the box automatically yet.',
-      },
+      warden: warden
+        ? {
+            present: true,
+            note: `Warden last checked ${warden.lastCheckAt ?? 'an unknown time'} — ${warden.counts.bad} bad, ${warden.counts.warn} warn, ${warden.counts.unknown} not measured.`,
+          }
+        : {
+            present: false,
+            note: 'Warden is not deployed. Nothing is watching the box automatically yet.',
+          },
     };
   }
 }

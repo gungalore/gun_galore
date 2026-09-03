@@ -134,7 +134,24 @@ import {
 type Tone = 'ok' | 'warn' | 'bad' | 'info';
 
 interface ConfigGate { key: string; label: string; value: string; tone: Tone; note?: string }
-interface VitalRow { key: string; label: string; known: boolean; value: string; tone: Tone }
+interface VitalRow {
+  key: string;
+  label: string;
+  known: boolean;
+  value: string;
+  tone: Tone;
+  /**
+   * Why an unmeasured tile is unmeasured, in Warden's own words.
+   *
+   * 🚨 THE SUB-LABEL USED TO BE A HARD-CODED "needs Warden on the box" for
+   * every unknown tile. That was right while Warden was not deployed and
+   * became wrong the moment it was: the nginx tiles are unmeasured because
+   * Warden's service user is not in the `adm` group, and telling an operator
+   * to deploy a daemon that is already running sends them to fix the wrong
+   * thing. Absent means the server sent no reason.
+   */
+  reason?: string;
+}
 interface ChannelRow { key: string; label: string; state: string; tone: Tone; detail: string }
 interface SiteBoard {
   gates: ConfigGate[];
@@ -1077,7 +1094,7 @@ function ServerVitals({
       footer={
         known === vitals.length
           ? undefined
-          : 'Disk, SSL expiry, nginx error rates and backup freshness live on the box, not in this process. They read as an em dash until Warden is on it — a tile showing 0% for a disk nobody measured is worse than one showing nothing.'
+          : 'Disk, SSL expiry, nginx error rates and backup freshness live on the box, not in this process — Warden measures them and each tile carries its own reason when it could not. A tile showing 0% for a disk nobody measured is worse than one showing nothing.'
       }
     >
       <div
@@ -1093,7 +1110,9 @@ function ServerVitals({
             label={v.label}
             value={v.value}
             tone={v.known ? v.tone : 'unknown'}
-            sub={v.known ? undefined : 'needs Warden on the box'}
+            // ⚠️ THE REASON THE SERVER GAVE, NOT A GUESS AT IT. The fallback
+            // is only for a server that sent none.
+            sub={v.known ? undefined : (v.reason ?? 'not measured')}
           />
         ))}
       </div>

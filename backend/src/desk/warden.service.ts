@@ -22,6 +22,7 @@ import {
   type WardenProposalKind,
   type WardenProposalStatus,
   type WardenSettingRow,
+  type WardenCheckBoard,
   type WardenSettingsView,
 } from './warden.types';
 
@@ -374,6 +375,31 @@ export class WardenService {
    * `red` is the whole contract: a red gate is dealt onto the Desk daily and
    * can never be sunk. Amber is information.
    */
+  /**
+   * The daemon's own check board — what it measured on the box.
+   *
+   * ⚠️ A READ, SO IT NEVER THROWS. Null covers all three of "no daemon
+   * configured", "daemon did not answer" and "daemon answered rubbish",
+   * because every caller renders the same thing for all three: an em dash
+   * with a reason, never a zero. The Site board is drawn around this; a 503
+   * here would take the whole page down over four tiles.
+   */
+  async checkBoard(): Promise<WardenCheckBoard | null> {
+    const cfg = this.config();
+    if (!cfg) return null;
+    try {
+      const board = await this.call<WardenCheckBoard>(cfg, '/gates', {
+        method: 'GET',
+        timeoutMs: 8_000,
+      });
+      return Array.isArray(board?.rows) ? board : null;
+    } catch {
+      // Already logged by call(). The caller's job is to say "not measured",
+      // which is the same sentence it would say for an absent daemon.
+      return null;
+    }
+  }
+
   async gates(): Promise<WardenGatesView> {
     const gates: WardenGate[] = (await this.site.gates()).map((g) => ({
       key: g.key,
