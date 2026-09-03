@@ -15,6 +15,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { toCsv } from '../common/csv.util';
 import { DealerVerificationService } from '../payments/dealer-verification.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
 import { Throttle } from '@nestjs/throttler';
@@ -848,6 +849,52 @@ export class AdminAnalyticsController {
   }
 
   // ─── Insights (Phase 3) ────────────────────────────────────────
+  /**
+   * The analytics time series, as a spreadsheet.
+   *
+   * 🚨 THE LAST THING THE CUTOVER MAP RECORDED AS GENUINELY MISSING, and the
+   * only one that needed a backend route rather than a caller: there was no
+   * analytics CSV endpoint at all, only the unrelated transactions export. So
+   * this is not "a button nobody wired" — it is the one gap on that list where
+   * the map was right that something had to be built.
+   *
+   * ⚠️ A GET, SO IT STAYS OPEN TO A MONITORING ADMIN. AdminJwtGuard denies
+   * mutating methods, and an export reads. Making it a POST to carry a body
+   * would have quietly made the report SUPERADMIN-only.
+   *
+   * ⚠️ SAME period AND bucket VOCABULARY AS THE CHART, resolved by the same
+   * two helpers — so the file an operator downloads is the series they were
+   * looking at, not a differently-windowed one that happens to look similar.
+   */
+  @Get('export.csv')
+  async exportSeriesCsv(
+    @Res() res: Response,
+    @Query('period') period?: string,
+    @Query('bucket') bucket?: string,
+  ) {
+    const p = this.resolvePeriod(period);
+    const b = this.resolveBucket(bucket);
+    const points = await this.analytics.timeSeries(p, b);
+    const csv = toCsv([
+      ['bucket', 'gmv_rand', 'revenue_rand', 'transactions'],
+      ...points.map((pt) => [
+        pt.bucket,
+        // ⚠️ RAND, NOT CENTS, AND THE HEADER SAYS SO. A spreadsheet column of
+        // integers labelled "gmv" is read as rands by whoever opens it, and
+        // every figure would be a hundred times too big.
+        (pt.gmvCents / 100).toFixed(2),
+        (pt.revenueCents / 100).toFixed(2),
+        pt.txCount,
+      ]),
+    ]);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="all-outdoor-analytics-${p}-${b}.csv"`,
+    );
+    res.send(csv);
+  }
+
   @Get('insights/pulse')
   insightsPulse() {
     return this.analytics.insightsPulse();

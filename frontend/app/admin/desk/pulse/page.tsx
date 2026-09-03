@@ -16,6 +16,7 @@
 import * as React from 'react';
 import {
   BarList,
+  Button,
   Heatmap,
   Label,
   ChartCard,
@@ -59,6 +60,7 @@ import {
   type KycStage,
   type OverviewKpis,
   BUCKETS,
+  downloadSeriesCsv,
   PERIODS,
   defaultBucket,
   type Bucket,
@@ -105,6 +107,8 @@ export default function PulsePage() {
    * deliberate Daily.
    */
   const [bucket, setBucket] = React.useState<Bucket | null>(null);
+  const [exporting, setExporting] = React.useState(false);
+  const [exportError, setExportError] = React.useState<string | null>(null);
   const activeBucket = bucket ?? defaultBucket(period);
   const [data, setData] = React.useState<PulseData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -190,7 +194,7 @@ export default function PulsePage() {
         {/* ⚠️ THE BUCKET IS A SEPARATE ROW, NOT MORE PERIOD CHIPS. They read
             as one control otherwise, and picking "Weekly" would look like
             picking a window. */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {BUCKETS.map((b) => (
             <Chip
               key={b.value}
@@ -200,8 +204,33 @@ export default function PulsePage() {
               {b.label}
             </Chip>
           ))}
+          {/* ⚠️ IT EXPORTS WHAT IS ON SCREEN. Same period and bucket, resolved
+              by the same two helpers server-side — so the file is the series
+              the operator was looking at, not a differently-windowed one that
+              happens to look similar. */}
+          <Button
+            variant="ghost"
+            disabled={exporting}
+            onClick={() => {
+              setExporting(true);
+              void downloadSeriesCsv(period, activeBucket)
+                .catch((err) => setExportError(describeFailure(err)))
+                .finally(() => setExporting(false));
+            }}
+          >
+            {exporting ? 'Preparing…' : 'Export CSV'}
+          </Button>
         </div>
       </div>
+
+      {exportError ? (
+        <FailedRegion
+          title="Couldn't export"
+          detail={exportError}
+          onRetry={() => setExportError(null)}
+          scopeNote="the numbers on screen are unaffected"
+        />
+      ) : null}
 
       {error ? (
         <FailedRegion title="Couldn't load the numbers" detail={error} onRetry={() => void load()} />

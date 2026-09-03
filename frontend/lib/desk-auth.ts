@@ -127,6 +127,38 @@ export class DeskFetchError extends Error {
  * DeskFetchError carrying the status and the server's own words, because the
  * surfaces render those verbatim rather than inventing a friendly sentence.
  */
+/**
+ * The same authenticated request, returning the RAW Response.
+ *
+ * ⚠️ FOR FILES, NOT FOR JSON — an export is bytes plus a Content-Disposition,
+ * and deskFetch's job is to parse a body. Written as its own function rather
+ * than a flag on deskFetch because the two differ in what they return, and a
+ * boolean that changes a return type is how a caller ends up with a Response
+ * where it expected a parsed object.
+ *
+ * ⚠️ IT REPEATS THE 401 HANDLING DELIBERATELY. Signing out on a stale token
+ * has to happen for a download exactly as it does for a read; a file request
+ * that quietly 401s would look like a browser blocking the download.
+ */
+export async function deskFetchRaw(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = getDeskToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  const res = await fetch(`${DESK_API_URL}${path}`, { ...init, headers, cache: 'no-store' });
+
+  if (res.status === 401) {
+    clearDeskToken();
+    if (typeof window !== 'undefined') window.location.href = DESK_SIGN_IN_PATH;
+    throw new DeskFetchError('Signed out', 401, '', path);
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new DeskFetchError(`${res.status} ${res.statusText}`, res.status, body, path);
+  }
+  return res;
+}
+
 export async function deskFetch<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getDeskToken();
   const headers = new Headers(init.headers);
