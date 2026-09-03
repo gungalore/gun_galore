@@ -67,11 +67,14 @@ pm2, the shell, or a secrets manager always wins over the file.
 Then:
 
 ```bash
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 pm2 save
 ```
 
-`ecosystem.config.js` in this directory defines the `warden` pm2 process —
+`ecosystem.config.cjs` in this directory defines the `warden` pm2 process —
+(**.cjs**, because `package.json` sets `"type": "module"` and pm2 config is
+CommonJS — as `.js` it dies on load with "module is not defined in ES module
+scope") 
 see its own header for the details (log paths, memory ceiling, restart
 bounds). It is separate from `infra/pm2/ecosystem.config.js`, which defines
 the two marketplace processes; adding Warden never touches that file.

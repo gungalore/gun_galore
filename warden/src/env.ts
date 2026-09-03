@@ -20,7 +20,7 @@
 //   · WARDEN_APP_ROOT                                — exec/safe-list.ts
 // and the last one matters most: safe-list.ts's own comment tells you to
 // "Override with WARDEN_APP_ROOT rather than editing the constant", while
-// ecosystem.config.js deliberately ships NO env block ("NO SECRETS, NO env
+// ecosystem.config.cjs deliberately ships NO env block ("NO SECRETS, NO env
 // BLOCK") and points at this .env as the delivery path. So on a box whose
 // checkout is not /home/alloutdoor/app, every log path and the backup rerun
 // silently targeted a directory that does not exist — and the boot banner
@@ -39,7 +39,7 @@ import path from 'node:path';
  * three lines of parsing. Loads `<cwd>/.env` (or `WARDEN_ENV_FILE` if set) so
  * WARDEN_TOKEN, ANTHROPIC_API_KEY and DATABASE_URL can live in a file instead
  * of the pm2 ecosystem config — see the "NO SECRETS, NO env BLOCK" convention
- * in ecosystem.config.js, which this mirrors.
+ * in ecosystem.config.cjs, which this mirrors.
  *
  * Never overrides a value already set in the real environment (pm2 `env`
  * block, shell export, systemd unit) — a file on disk fills gaps, it does not

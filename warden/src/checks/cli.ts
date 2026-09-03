@@ -9,10 +9,28 @@
 //
 // It runs the same fixed checks the daemon runs, calls no model, and runs
 // no fix — printing is all it does.
+//
+// 🚨 IT LOADS .env FIRST, THE SAME WAY boot.ts DOES, AND FOR THE SAME REASON.
+// It did not, and the consequence was that the documented smoke test LIED:
+// every db-* check reported "DATABASE_URL is not set in Warden's environment"
+// on a box where warden/.env sets it perfectly well, because the CLI never
+// read the file the daemon reads. Sixteen of thirty checks came back "not
+// measured" on a correctly-configured box — and since an honest `unknown` is
+// exactly what this daemon is built to produce, nothing looked wrong.
+//
+// ⚠️ THE DYNAMIC IMPORT IS LOAD-BEARING, exactly as in boot.ts: ESM evaluates
+// every static import before the importing module's first line, so loading
+// the env file at the top of main() would already be too late for anything
+// read at module top level — WARDEN_APP_ROOT among them, which decides which
+// box this sweep is even describing.
 
-import { runSweep, createSweepMemory } from './engine.js';
-import { createSystemContext } from './context.js';
-import { ALL_CHECKS } from './registry.js';
+import { loadDotEnvFile } from '../env.js';
+
+loadDotEnvFile();
+
+const { runSweep, createSweepMemory } = await import('./engine.js');
+const { createSystemContext } = await import('./context.js');
+const { ALL_CHECKS } = await import('./registry.js');
 
 const MARK: Record<string, string> = { ok: 'ok  ', warn: 'WARN', bad: 'BAD ', unknown: '—   ' };
 
