@@ -54,6 +54,8 @@ import {
   IconUser,
   Input,
   Label,
+  ListingDrawer,
+  MemberDrawer,
   OperatorMessage,
   Section,
   SendDrawer,
@@ -63,13 +65,9 @@ import {
   Vital,
   WardenMessage,
   useIsPhone,
+  AdminsDrawer,
+  WhatsappDrawer,
 } from '../../../../components/desk';
-/* ⚠️ IMPORTED BY FILE, NOT FROM THE KIT INDEX, and only because index.ts is
-   another agent's file this task may not touch. Whoever next edits it should
-   add `export * from './whatsapp-drawer';` and change this line — the kit's
-   own header says import from there, never from a file. */
-import { AdminsDrawer } from '@/components/desk/admins-drawer';
-import { WhatsappDrawer } from '../../../../components/desk/whatsapp-drawer';
 import { deskFetch, describeFailure } from '../../../../lib/desk-auth';
 import { parseSendPreset, stripSendPreset, type SendPreset } from '@/lib/desk-send';
 import {
@@ -2064,6 +2062,24 @@ function TrustSafety() {
   const [failure, setFailure] = React.useState<string | null>(null);
   // One at a time, never a wall: revealing a second sample hides the first.
   const [revealed, setRevealed] = React.useState<string | null>(null);
+  /**
+   * 🚨 THIS IS THE PART THE CUTOVER LOST, AND IT WAS A SAFETY CONTROL.
+   * Every row on the legacy /admin/trust-safety page was a link — offenders,
+   * reported sellers and the rejecting user to /admin/users/[id], reported
+   * listings and questions to /admin/listings/[id] — so the page was a queue
+   * you worked FROM. The Desk section rendered the same five feeds as text,
+   * which made it a page you could only read: a member could be reported for
+   * a live listing and there was NO route anywhere on the Desk to open that
+   * listing, let alone take it down.
+   *
+   * Both drawers already open on an id alone and both already handle a LIVE
+   * listing — ListingDrawer offers Take down on ACTIVE/PAYMENT_PENDING, and
+   * POST /admin/listings/:id/delete has never had a status guard. So nothing
+   * new is being granted here; the reports are simply being connected to the
+   * decisions they exist to prompt.
+   */
+  const [openListingId, setOpenListingId] = React.useState<string | null>(null);
+  const [openMemberId, setOpenMemberId] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     try {
@@ -2103,7 +2119,7 @@ function TrustSafety() {
     <Card
       label="Trust and safety"
       hint="last 7 days · contact blocks and reported content"
-      footer="Read-only. Warning, banning and removing all happen where the person or the listing is; this is the evidence that says which needs it."
+      footer="Open a name to act on it — the member drawer warns and bans, the listing drawer takes down. A name that doesn't open is one whose listing or account has since been deleted."
     >
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingBottom: 4 }}>
         {tabs.map((t) => (
@@ -2121,9 +2137,9 @@ function TrustSafety() {
         ) : (
           data.offenders.map((o, i) => (
             <Row key={o.userId} last={i === data.offenders.length - 1}>
-              <span style={{ fontSize: 12.5, color: 'var(--dk-ink)', minWidth: 0, flex: 1 }}>
+              <OpenName onOpen={() => setOpenMemberId(o.userId)} open={openMemberId === o.userId}>
                 {o.username ?? 'no username'}
-              </span>
+              </OpenName>
               <span className="dk-mono" style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>
                 last {stamp(o.lastRejectionAt)}
               </span>
@@ -2144,7 +2160,18 @@ function TrustSafety() {
                 <Tag kind="warn" icon={null}>{`${q.reportedCount} reports`}</Tag>
               </span>
               <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>
-                {q.listing.title} · asked by {q.asker.username ?? 'no username'} ·{' '}
+                {/* The listing opens; the asker does not. ReportedQuestionRow
+                    carries `asker.username` with NO id, so there is nothing to
+                    open a member on — a door here would 404 on a cuid we never
+                    received. Work the person from People, or from the listing. */}
+                <OpenName
+                  inline
+                  onOpen={() => setOpenListingId(q.listing.id)}
+                  open={openListingId === q.listing.id}
+                >
+                  {q.listing.title}
+                </OpenName>{' '}
+                · asked by {q.asker.username ?? 'no username'} ·{' '}
                 {q.status.replace(/_/g, ' ').toLowerCase()} · {stamp(q.createdAt)}
               </span>
             </Stack>
@@ -2157,9 +2184,12 @@ function TrustSafety() {
           data.listings.map((r, i) => (
             <Stack key={r.id} last={i === data.listings.length - 1}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 12.5, color: 'var(--dk-ink)', minWidth: 0, flex: 1 }}>
+                <OpenName
+                  onOpen={r.listing ? () => setOpenListingId(r.listing!.id) : undefined}
+                  open={!!r.listing && openListingId === r.listing.id}
+                >
                   {r.listing ? r.listing.title : 'listing since deleted'}
-                </span>
+                </OpenName>
                 <span className="dk-mono" style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>
                   {stamp(r.createdAt)}
                 </span>
@@ -2175,9 +2205,12 @@ function TrustSafety() {
           data.sellers.map((r, i) => (
             <Stack key={r.id} last={i === data.sellers.length - 1}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 12.5, color: 'var(--dk-ink)', minWidth: 0, flex: 1 }}>
+                <OpenName
+                  onOpen={r.seller ? () => setOpenMemberId(r.seller!.id) : undefined}
+                  open={!!r.seller && openMemberId === r.seller.id}
+                >
                   {r.seller ? (r.seller.username ?? 'no username') : 'account since deleted'}
-                </span>
+                </OpenName>
                 <span className="dk-mono" style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>
                   {stamp(r.createdAt)}
                 </span>
@@ -2192,9 +2225,15 @@ function TrustSafety() {
         data.rejections.map((r, i) => (
           <Stack key={r.id} last={i === data.rejections.length - 1}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12.5, color: 'var(--dk-ink)', minWidth: 0, flex: 1 }}>
+              {/* "signed out" is a real state here, not a deleted account: the
+                  contact filter runs on anonymous traffic too, and that row has
+                  no user to open. */}
+              <OpenName
+                onOpen={r.user ? () => setOpenMemberId(r.user!.id) : undefined}
+                open={!!r.user && openMemberId === r.user.id}
+              >
                 {r.user ? (r.user.username ?? 'no username') : 'signed out'}
-              </span>
+              </OpenName>
               <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>{r.channel}</span>
               <Tag kind="neutral">{r.category.replace(/-/g, ' ')}</Tag>
               <span className="dk-mono" style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>
@@ -2211,7 +2250,99 @@ function TrustSafety() {
           </Stack>
         ))
       )}
+
+      {/* Both drawers are modal overlays that fetch their own dossier from the
+          id, so mounting them inside the card costs nothing and keeps the
+          state next to the rows that set it. Reload the feeds after either
+          one acts: taking a listing down or banning a member is exactly the
+          thing that should make its report stop being the top of the queue. */}
+      <ListingDrawer
+        listingId={openListingId}
+        onClose={() => setOpenListingId(null)}
+        onDecided={() => {
+          setOpenListingId(null);
+          void load();
+        }}
+      />
+      <MemberDrawer
+        open={openMemberId !== null}
+        userId={openMemberId}
+        onClose={() => setOpenMemberId(null)}
+        onChanged={() => void load()}
+      />
     </Card>
+  );
+}
+
+/**
+ * The name in a trust-and-safety row, as a door.
+ *
+ * 🚨 THE NAME IS THE TARGET, NOT THE ROW. The obvious move is to wrap each
+ * row in a button the way People wraps a member row, and it is wrong here:
+ * the contact-block row already carries its own "Show text" button, and a
+ * button inside a button is invalid markup that browsers resolve by dropping
+ * one of them — silently, and not always the same one. Making the name the
+ * target is also the more honest affordance, because a reported-listing row
+ * names two different things (the listing, and the reason someone gave) and
+ * only one of them opens.
+ *
+ * `onOpen` omitted renders a plain span, which is what a row whose subject
+ * has since been deleted must render: `listing` and `seller` are nullable on
+ * the wire, and a dead id must not look like a door.
+ */
+function OpenName({
+  children,
+  onOpen,
+  open = false,
+  inline = false,
+}: {
+  children: React.ReactNode;
+  onOpen?: () => void;
+  open?: boolean;
+  /** Sits inside a meta line rather than filling the name slot — the reported
+   *  question's door is the LISTING it was asked on, which lives down there
+   *  next to the asker and the timestamp. */
+  inline?: boolean;
+}) {
+  const shared: React.CSSProperties = inline
+    ? { fontSize: 11.5, color: 'var(--dk-ink-2)', textAlign: 'left' }
+    : {
+        fontSize: 12.5,
+        color: 'var(--dk-ink)',
+        minWidth: 0,
+        flex: 1,
+        textAlign: 'left',
+      };
+  if (!onOpen) return <span style={shared}>{children}</span>;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      style={{
+        ...shared,
+        padding: 0,
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        // Underlined on hover only: five feeds of underlined names would read
+        // as a wall of links and bury the one the operator is looking for.
+        textDecoration: 'underline',
+        textDecorationColor: 'transparent',
+        textUnderlineOffset: 3,
+        transition: 'text-decoration-color 120ms',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.textDecorationColor = 'var(--dk-ink-3)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.textDecorationColor = 'transparent';
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

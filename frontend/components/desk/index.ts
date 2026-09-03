@@ -30,3 +30,5 @@ export * from './member-drawer';
 export * from './case-drawer';
 export * from './send-drawer';
 export * from './order-drawer';
+export * from './admins-drawer';
+export * from './whatsapp-drawer';
