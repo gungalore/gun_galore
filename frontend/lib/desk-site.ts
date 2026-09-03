@@ -303,19 +303,24 @@ export const ASSIGNABLE_ROLES = ['SUPERADMIN', 'MONITORING_ADMIN'] as const;
 export type AdminRoleValue = (typeof ASSIGNABLE_ROLES)[number];
 
 /**
- * 🚨 "MONITORING ADMIN" IS NOT READ-ONLY TODAY, AND THIS COPY MUST NOT SAY IT
- * IS. The schema calls it the read-only tier and adds, in its own words,
- * "(Currently not enforced on individual endpoints yet — that gate work is
- * tracked separately.)" That is accurate: SuperadminGuard sits on exactly the
- * three admin-management routes, and every other admin endpoint is guarded
- * only by AdminJwtGuard — so a monitoring admin can today release a payout,
- * refund a buyer, approve a listing and ban a member.
+ * ✅ "MONITORING ADMIN" IS NOW GENUINELY READ-ONLY, AND THIS COPY CHANGED ONLY
+ * BECAUSE THAT BECAME TRUE. Until 2026-09-03 it was a label with no teeth:
+ * SuperadminGuard sat on exactly the three admin-management routes and every
+ * other admin endpoint took any logged-in admin, so the tier could release a
+ * payout, refund a buyer and ban a member. This file refused to call it
+ * read-only for exactly as long as that was the case.
  *
- * A picker labelled "read-only" would therefore hand someone full control
- * while its author believed they had handed out a viewer. That is strictly
- * worse than having no picker, which is the whole reason this file already
- * refuses to print a warning that cannot fire. When the role guard lands,
- * change this line and not before.
+ * AdminJwtGuard now enforces it for every route behind admin auth: safe
+ * methods open to any active admin, every mutating method SUPERADMIN-only,
+ * deny-by-default rather than an allow-list — and the role is read off the
+ * AdminUser row on each request, not out of the 8-hour token, so a demotion
+ * bites on the next request.
+ *
+ * ⚠️ IF THAT GUARD IS EVER WEAKENED, THIS SENTENCE BECOMES A LIE BEFORE
+ * ANYTHING ELSE DOES. A picker promising read-only over an unenforced tier
+ * hands somebody full control while its author believes they granted a
+ * viewer — worse than having no picker at all. desk-admins.spec.ts pins the
+ * pairing; change both together or neither.
  */
 export const ADMIN_ROLE_LABEL: Record<string, string> = {
   SUPERADMIN: 'Full admin',
@@ -326,7 +331,7 @@ export const ADMIN_ROLE_LABEL: Record<string, string> = {
 export const ADMIN_ROLE_NOTE: Record<AdminRoleValue, string> = {
   SUPERADMIN: 'Everything, including adding and removing administrators.',
   MONITORING_ADMIN:
-    'Intended as view-only — but not enforced yet. Today this can still move money and act on members. Grant it as you would full access.',
+    'Can see everything and change nothing — no payouts, no refunds, no decisions on members or listings. Takes effect immediately, including on anyone already signed in.',
 };
 
 /** "2 Sep 09:14" — SAST, for a record you read rather than act on. */

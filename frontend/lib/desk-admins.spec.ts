@@ -101,27 +101,43 @@ describe('the roles offered', () => {
   });
 });
 
-describe('🚨 the monitoring role must not be described as restricted', () => {
+describe('the monitoring role is described as what it actually is', () => {
   const note = ADMIN_ROLE_NOTE.MONITORING_ADMIN;
 
-  it('never claims read-only, view-only or restricted access', () => {
-    // The schema's own words: "(Currently not enforced on individual endpoints
-    // yet — that gate work is tracked separately.)" Until that lands, any of
-    // these phrasings is a false promise about who can move money.
-    for (const lie of [/read-?only(?!\s*—\s*but)/i, /\bcannot\b/i, /\brestricted\b/i, /\bview only\b/i]) {
-      expect(note).not.toMatch(lie);
-    }
+  /**
+   * 🚨 THIS BLOCK USED TO ASSERT THE OPPOSITE, AND THAT WAS CORRECT AT THE
+   * TIME. Until the role guard landed, MONITORING_ADMIN was a label with no
+   * teeth — SuperadminGuard covered three routes and every other admin
+   * endpoint took any logged-in admin — so the copy was required to warn that
+   * it was not enforced, and this test failed if anyone tidied that away.
+   *
+   * AdminJwtGuard now enforces it: deny-by-default on mutating methods, role
+   * and isActive read off the row per request rather than out of the 8-hour
+   * token. So the copy flipped, and the test flipped with it — deliberately,
+   * in the same change as the guard, which is the only circumstance in which
+   * either may move.
+   */
+  it('no longer carries the stale "not enforced" warning', () => {
+    expect(note).not.toMatch(/not enforced/i);
   });
 
-  it('says outright that it is not enforced yet', () => {
-    expect(note).toMatch(/not enforced/i);
+  it('says plainly that it cannot change anything', () => {
+    expect(note).toMatch(/change nothing|cannot/i);
   });
 
-  it('says what it can still do, in terms of consequence', () => {
-    expect(note).toMatch(/money/i);
+  it('names what it cannot touch, rather than leaving it abstract', () => {
+    expect(note).toMatch(/payout/i);
+    expect(note).toMatch(/refund/i);
+  });
+
+  it('says the restriction applies to someone already signed in', () => {
+    // The guard reads the row per request, so a demotion does not wait for
+    // the 8-hour token to expire. That is the part an operator acting on a
+    // compromised account needs to know.
+    expect(note).toMatch(/immediately|already signed in/i);
   });
 
   it('the full-admin note stays plain — no warning where there is nothing to warn about', () => {
-    expect(ADMIN_ROLE_NOTE.SUPERADMIN).not.toMatch(/not enforced/i);
+    expect(ADMIN_ROLE_NOTE.SUPERADMIN).not.toMatch(/not enforced|cannot/i);
   });
 });

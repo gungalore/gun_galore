@@ -24,8 +24,11 @@ enum AdminRole {
   SUPERADMIN
   // Read-only tier — sees the dashboard, listings, transactions, KYC
   // credit balance, but can't take destructive actions. Maps to the
-  // user-facing "Monitoring admin" label. (Currently not enforced on
-  // individual endpoints yet — that gate work is tracked separately.)
+  // user-facing "Monitoring admin" label. ENFORCED since 2026-09-03 in
+  // AdminJwtGuard: safe methods open to any active admin, every mutating
+  // method SUPERADMIN-only (deny-by-default, not an allow-list), with the
+  // role and isActive read off this row on each request rather than out of
+  // the 8-hour token.
   MONITORING_ADMIN
 }
 
