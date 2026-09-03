@@ -58,7 +58,7 @@ function withEnvFile(body: (envFile: string, root: string) => void): void {
 
 test('WARDEN_APP_ROOT from a .env file reaches the safe list when env loads first', () => {
   withEnvFile((envFile, root) => {
-    assert.equal(probe('after', envFile), `${root}/logs/backend-error.log`);
+    assert.equal(probe('after', envFile), `${root}/warden-archive`);
   });
 });
 
@@ -67,7 +67,7 @@ test('…and is silently ignored when the app tree is imported first — the bug
   // OLD behaviour, so the pair proves the ordering is what decides it rather
   // than the .env file merely being readable.
   withEnvFile((envFile) => {
-    assert.equal(probe('before', envFile), '/home/alloutdoor/app/logs/backend-error.log');
+    assert.equal(probe('before', envFile), '/home/alloutdoor/app/warden-archive');
   });
 });
 
