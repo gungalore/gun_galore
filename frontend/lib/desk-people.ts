@@ -589,3 +589,87 @@ export function describeDealerFailure(err: unknown): string {
   }
   return err instanceof Error ? err.message : String(err);
 }
+
+/* ── The bulk sweep ───────────────────────────────────────────────────── */
+
+/**
+ * Ban a selection of members in one call.
+ *
+ * 🚨 THIS WAS LEFT OUT DELIBERATELY, NOT LEFT UNDONE, and the reason is worth
+ * keeping: the legacy sweep is safe only because its checkbox column greys out
+ * already-banned and closed accounts, and the Desk's row is a single button
+ * that opens the Member drawer — so a checkbox column meant rebuilding the row,
+ * and a confirm would otherwise name a count it could not vouch for.
+ *
+ * The cutover note left the spec for whoever built it, and this follows it:
+ * PersonRow carries accountClosedAt for exactly that greying-out, the server
+ * caps a call at 50 and skips closed accounts ITSELF, and THE CONFIRM MUST
+ * NAME THE ELIGIBLE COUNT, NOT THE SELECTED ONE.
+ *
+ * ⚠️ A CLOSED ACCOUNT IS NOT MISCONDUCT. The server skips them because every
+ * gate already refuses a closed account, so the ban buys nothing and the audit
+ * row is the only thing it leaves behind — where a later reader takes it for
+ * misconduct by someone who simply left. Banning one individually is still
+ * allowed: that is a deliberate act on one person, not a sweep.
+ */
+export const BULK_BAN_CAP = 50;
+export const BULK_BAN_MIN_REASON = 5;
+
+export interface BulkBanResult {
+  processed: number;
+  skipped: number;
+  results: { userId: string; outcome: 'ok' | 'skipped'; message?: string }[];
+}
+
+export function bulkBanUsers(userIds: string[], reason: string): Promise<BulkBanResult> {
+  return deskFetch('/admin/users/bulk-ban', {
+    method: 'POST',
+    body: JSON.stringify({ userIds, reason }),
+  });
+}
+
+/**
+ * Can this row be swept?
+ *
+ * ⚠️ ALREADY-BANNED IS EXCLUDED TOO, and not only because it is pointless.
+ * Re-banning stamps a second USER_BAN audit row for one act, so a sweep run
+ * twice reads afterwards as two separate offences.
+ */
+export function isSweepable(p: PersonRow): boolean {
+  return !p.isBanned && !p.accountClosedAt;
+}
+
+/** Why a row cannot be swept, for the checkbox's title. */
+export function unsweepableReason(p: PersonRow): string | null {
+  if (p.accountClosedAt) return 'Account closed — a member leaving is not misconduct';
+  if (p.isBanned) return 'Already banned';
+  return null;
+}
+
+/**
+ * The sentence the confirm shows.
+ *
+ * 🚨 IT NAMES THE ELIGIBLE COUNT AND THE SKIPPED ONE SEPARATELY. "Ban 12
+ * members" over a selection where four are closed is a promise the call will
+ * not keep, and the operator finds out afterwards from a tally — if they read
+ * it. Saying "8 of the 12 selected" before the press is the whole point of
+ * this control having been held back until it could.
+ */
+export function describeSweep(selected: PersonRow[]): {
+  eligible: PersonRow[];
+  skipped: PersonRow[];
+  sentence: string;
+} {
+  const eligible = selected.filter(isSweepable);
+  const skipped = selected.filter((p) => !isSweepable(p));
+  const n = eligible.length;
+  const noun = n === 1 ? 'member' : 'members';
+  if (skipped.length === 0) {
+    return { eligible, skipped, sentence: `Ban ${n} ${noun}.` };
+  }
+  return {
+    eligible,
+    skipped,
+    sentence: `Ban ${n} of the ${selected.length} selected — ${skipped.length} already banned or closed, and those are left alone.`,
+  };
+}

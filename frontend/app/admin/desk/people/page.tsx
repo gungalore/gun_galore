@@ -76,6 +76,11 @@ import {
   reviewDealer,
   saveDealerDetails,
   setDealerActive,
+  bulkBanUsers,
+  describeSweep,
+  unsweepableReason,
+  BULK_BAN_CAP,
+  BULK_BAN_MIN_REASON,
   waitedFor,
   type DealerDetails,
   type DealerReasonChoice,
@@ -129,6 +134,23 @@ export default function PeoplePage() {
    * now only the way in.
    */
   const [openMemberId, setOpenMemberId] = React.useState<string | null>(null);
+
+  /**
+   * The bulk sweep — off unless the operator turns it on.
+   *
+   * 🚨 THIS CONTROL WAS HELD BACK ON PURPOSE UNTIL IT COULD BE HONEST. The
+   * cutover note recorded why: the legacy sweep is safe only because its
+   * checkbox column greys out already-banned and closed accounts, and a
+   * confirm that could not tell them apart would name a count it could not
+   * vouch for. The row now carries a disabled checkbox with the reason on
+   * hover, and the confirm names the ELIGIBLE count, not the selected one.
+   */
+  const [sweeping, setSweeping] = React.useState(false);
+  const [swept, setSwept] = React.useState<Set<string>>(new Set());
+  const [sweepConfirm, setSweepConfirm] = React.useState(false);
+  const [sweepReason, setSweepReason] = React.useState('');
+  const [sweepBusy, setSweepBusy] = React.useState(false);
+  const [sweepResult, setSweepResult] = React.useState<string | null>(null);
 
   /**
    * `?member=<userId>` opens straight onto one member's drawer.
@@ -233,6 +255,53 @@ export default function PeoplePage() {
     </Empty>
   ) : (
     <>
+      {/* ⚠️ THE SWEEP IS OFF BY DEFAULT AND IS TURNED ON DELIBERATELY. A
+          checkbox column standing open on the members board invites a sweep
+          as the normal way to work, and it is not — individual bans are in
+          the Member drawer, where the operator can see who they are banning.
+          This is for a burst of the same offender pattern, and nothing else. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 8 }}>
+        <span style={{ flex: 1 }} />
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setSweeping((on) => !on);
+            setSwept(new Set());
+          }}
+        >
+          {sweeping ? 'Cancel sweep' : 'Ban several…'}
+        </Button>
+      </div>
+
+      {sweeping && swept.size > 0 ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '9px 12px',
+            marginBottom: 8,
+            borderRadius: 'var(--dk-radius-control)',
+            background: 'var(--dk-inset)',
+            border: '1px solid var(--dk-line-2)',
+          }}
+        >
+          <span style={{ fontSize: 12.5, color: 'var(--dk-ink)', flex: 1 }}>
+            {describeSweep(rows.filter((r) => swept.has(r.id))).sentence}
+          </span>
+          <Button variant="ghost" onClick={() => setSwept(new Set())}>
+            Clear
+          </Button>
+          <Button
+            variant="primary"
+            disabled={describeSweep(rows.filter((r) => swept.has(r.id))).eligible.length === 0}
+            onClick={() => setSweepConfirm(true)}
+          >
+            Ban them…
+          </Button>
+        </div>
+      ) : null}
+
       <div
         style={{
           background: 'var(--dk-surface)',
@@ -248,6 +317,18 @@ export default function PeoplePage() {
             last={i === rows.length - 1}
             open={openMemberId === u.id}
             onOpen={() => setOpenMemberId(u.id)}
+            selected={swept.has(u.id)}
+            onToggle={
+              sweeping
+                ? () =>
+                    setSwept((cur) => {
+                      const next = new Set(cur);
+                      if (next.has(u.id)) next.delete(u.id);
+                      else next.add(u.id);
+                      return next;
+                    })
+                : undefined
+            }
           />
         ))}
       </div>
@@ -339,6 +420,46 @@ export default function PeoplePage() {
         cleanup frees any decrypted identity document it revealed. See the
         release-on-close note in member-drawer.tsx.
       */}
+      {sweepConfirm ? (
+        <SweepConfirm
+          people={(page?.users ?? []).filter((u) => swept.has(u.id))}
+          reason={sweepReason}
+          onReason={setSweepReason}
+          busy={sweepBusy}
+          onClose={() => setSweepConfirm(false)}
+          onConfirm={async () => {
+            const { eligible } = describeSweep((page?.users ?? []).filter((u) => swept.has(u.id)));
+            setSweepBusy(true);
+            try {
+              const res = await bulkBanUsers(
+                eligible.map((p) => p.id),
+                sweepReason,
+              );
+              setSweepResult(
+                `${res.processed} banned${res.skipped ? `, ${res.skipped} skipped by the server` : ''}.`,
+              );
+              setSweepConfirm(false);
+              setSweeping(false);
+              setSwept(new Set());
+              setSweepReason('');
+              void load();
+            } catch (err) {
+              setSweepResult(describeFailure(err));
+            } finally {
+              setSweepBusy(false);
+            }
+          }}
+        />
+      ) : null}
+
+      {sweepResult ? (
+        <ResultBlock
+          ok={!sweepResult.toLowerCase().includes('http')}
+          tag="Sweep"
+          body={sweepResult}
+        />
+      ) : null}
+
       {openMemberId ? (
         <MemberDrawer
           open
@@ -376,14 +497,52 @@ function PersonListRow({
   last,
   open,
   onOpen,
+  selected,
+  onToggle,
 }: {
   person: PersonRow;
   last: boolean;
   open: boolean;
   onOpen: () => void;
+  /** Omitted when the sweep is off — the row is then exactly as it was. */
+  selected?: boolean;
+  onToggle?: () => void;
 }) {
+  /**
+   * ⚠️ THE CHECKBOX SITS BESIDE THE BUTTON, NOT INSIDE IT. The row is a single
+   * button that opens the drawer, and a checkbox nested in a button is invalid
+   * markup that browsers resolve by dropping one of them — the same trap the
+   * trust-and-safety rows hit with their Show-text control.
+   *
+   * ⚠️ AND IT IS DISABLED, NOT HIDDEN, when a row cannot be swept. A missing
+   * checkbox reads as a rendering glitch; a disabled one with a reason on
+   * hover says why, which is the whole safety property the legacy sweep had
+   * and the reason this control was held back until the Desk could match it.
+   */
+  const blocked = unsweepableReason(person);
   return (
-    <div style={{ borderBottom: last ? undefined : '1px solid var(--dk-line)' }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        borderBottom: last ? undefined : '1px solid var(--dk-line)',
+      }}
+    >
+      {onToggle ? (
+        <input
+          type="checkbox"
+          checked={Boolean(selected) && !blocked}
+          disabled={Boolean(blocked)}
+          onChange={onToggle}
+          title={blocked ?? undefined}
+          aria-label={`Select ${person.username ?? 'this member'}`}
+          style={{
+            flex: 'none',
+            marginLeft: 16,
+            cursor: blocked ? 'not-allowed' : 'pointer',
+          }}
+        />
+      ) : null}
       <button
         type="button"
         onClick={onOpen}
@@ -1296,5 +1455,90 @@ function Empty({ children }: { children: React.ReactNode }) {
     >
       {children}
     </div>
+  );
+}
+
+
+/**
+ * The sweep confirm.
+ *
+ * 🚨 IT NAMES THE ELIGIBLE COUNT AND LISTS WHO IS BEING SKIPPED. "Ban 12
+ * members" over a selection where four are closed is a promise the call will
+ * not keep, and the operator would only find out afterwards from a tally. The
+ * whole reason this control was held back was that the Desk could not say
+ * this sentence truthfully; now it can, so it says it before the press rather
+ * than reporting it after.
+ */
+function SweepConfirm({
+  people,
+  reason,
+  onReason,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  people: PersonRow[];
+  reason: string;
+  onReason: (r: string) => void;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const { eligible, skipped, sentence } = describeSweep(people);
+  const reasonOk = reason.trim().length >= BULK_BAN_MIN_REASON;
+  const overCap = eligible.length > BULK_BAN_CAP;
+
+  return (
+    <DialogFrame
+      label="Ban several"
+      title={sentence}
+      onClose={onClose}
+      assertive
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={busy || !reasonOk || eligible.length === 0 || overCap}
+            onClick={onConfirm}
+          >
+            {busy ? 'Banning…' : `Ban ${eligible.length}`}
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <span style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--dk-ink-2)' }}>
+          Each ban is recorded against that member with this reason, and each gets
+          its own audit row. Banning does not close an account or refund anything.
+        </span>
+
+        {skipped.length ? (
+          <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--dk-ink-3)' }}>
+            {/* Named, not just counted — an operator who selected someone and is
+                told "3 skipped" cannot tell which three, or whether they picked
+                the wrong row. */}
+            {`Left alone: ${skipped
+              .map((p) => `${p.username ?? 'no username'} (${unsweepableReason(p)?.toLowerCase()})`)
+              .join('; ')}`}
+          </div>
+        ) : null}
+
+        {overCap ? (
+          <span style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--dk-bad)' }}>
+            {`The server caps a sweep at ${BULK_BAN_CAP}. Do this in smaller batches — that limit exists so a mistake stays small.`}
+          </span>
+        ) : null}
+
+        <Input
+          value={reason}
+          onChange={(e) => onReason(e.target.value)}
+          placeholder={`Why — at least ${BULK_BAN_MIN_REASON} characters, recorded against each member`}
+          aria-label="Reason for the ban"
+        />
+      </div>
+    </DialogFrame>
   );
 }
