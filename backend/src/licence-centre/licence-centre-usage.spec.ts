@@ -51,10 +51,24 @@ function build(o: {
       }),
     },
   };
-  const svc = Object.create(LicenceCentreService.prototype) as LicenceCentreService & {
+  /**
+   * ⚠️ THE DEPENDENCIES ARE private ON THE CLASS, so
+   * `LicenceCentreService & { prisma: unknown }` REDUCES TO never:
+   * TypeScript will not let an object type re-declare a name the class keeps
+   * private, and every svc.* read below then errors against a type that
+   * cannot exist. Nine red lines, and the suite passed the whole time — the
+   * harness works at runtime and only the types were nonsense.
+   *
+   * So it casts through unknown to a shape naming only what these tests
+   * touch, and borrows usage’s real signature rather than restating it, so a
+   * change to that method still breaks these tests instead of drifting past
+   * them.
+   */
+  const svc = Object.create(LicenceCentreService.prototype) as unknown as {
     prisma: unknown;
     quota: unknown;
     requireUser: (c: string) => Promise<{ id: string }>;
+    usage: LicenceCentreService['usage'];
   };
   svc.prisma = prisma;
   svc.quota = { assertEnabled: jest.fn(async () => undefined) };

@@ -1,3 +1,41 @@
 {
-  "extends": ["next/core-web-vitals", "next/typescript"]
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "overrides": [
+    {
+      // THE DESK is a rebuild, not a reskin. Nothing in it may reach back into
+      // the legacy admin: the first wrapped component brings the old panel's
+      // vocabulary into the new one and makes the cutover undeletable.
+      // scripts/desk-guard.cjs enforces the same rule at build time (and also
+      // bans raw hex); this override is what surfaces it in the editor while
+      // you type.
+      //
+      // ⚠️ A COMMENT, NOT A "//" KEY. ESLint strips // comments out of
+      // .eslintrc.json before parsing it, but it validates the object that
+      // comes out against a strict schema — an override carrying a "//"
+      // property is rejected as invalid config, and `next lint` then fails for
+      // EVERY file in the app, not just the Desk's.
+      "files": ["components/desk/**/*.{ts,tsx}", "app/admin/desk-kit/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/components/admin/*", "**/components/admin/**"],
+                "message": "The Desk builds its own kit — import from components/desk instead."
+              },
+              {
+                "group": ["**/app/admin/(protected)/**"],
+                "message": "The legacy admin pages are being replaced, not reused."
+              },
+              {
+                "group": ["**/lib/admin-auth"],
+                "message": "Use lib/desk-auth: the legacy lib leaves a live JWT in localStorage after sign-out."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }
