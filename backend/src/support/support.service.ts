@@ -148,18 +148,36 @@ export class SupportService {
   }
 
   // ─── Admin side ──────────────────────────────────────────────────
-  async listForAdmin(status?: string) {
+  /**
+   * The admin support register.
+   *
+   * ⚠️ take: 200 WAS A CEILING, NOT PAGING — the 201st ticket was simply
+   * unreachable, and nothing on screen said the list had been cut. An
+   * envelope with a total lets the register say "1–50 of 431" instead of
+   * silently showing a prefix.
+   *
+   * The Desk pile does not come through here (desk.service.ts reads Prisma
+   * directly), so fetchCases is the only HTTP consumer.
+   */
+  async listForAdmin(status?: string, page = 1, limit = 50) {
+    const take = Math.min(Math.max(limit, 1), 100);
+    const skip = Math.max(page - 1, 0) * take;
     const where = status ? { status: status as never } : {};
-    return this.prisma.supportTicket.findMany({
-      where,
-      orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
-      include: {
-        user: { select: { id: true, username: true, email: true } },
-        replies: { orderBy: { createdAt: 'desc' }, take: 1 },
-        _count: { select: { replies: true } },
-      },
-      take: 200,
-    });
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.supportTicket.findMany({
+        where,
+        orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
+        include: {
+          user: { select: { id: true, username: true, email: true } },
+          replies: { orderBy: { createdAt: 'desc' }, take: 1 },
+          _count: { select: { replies: true } },
+        },
+        skip,
+        take,
+      }),
+      this.prisma.supportTicket.count({ where }),
+    ]);
+    return { rows, total, page: Math.max(page, 1), limit: take };
   }
 
   async getForAdmin(id: string) {

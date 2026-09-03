@@ -142,6 +142,8 @@ export interface CaseSummary {
 
 /** ComplaintsService.adminList — GET /admin/complaints. */
 interface ComplaintWire {
+  /** Added to adminList's select alongside paging — see complaints.service.ts. */
+  updatedAt?: string | null;
   id: string;
   referenceNumber: string;
   role: string;
@@ -288,27 +290,77 @@ function ticketToDossier(row: TicketWire): CaseDossier {
   };
 }
 
-export async function fetchCases(kind: CaseKind, state?: CaseState): Promise<CaseSummary[]> {
-  const qs = state ? `?status=${encodeURIComponent(state)}` : '';
+/**
+ * One page of a register.
+ *
+ * ⚠️ BOTH LIST ENDPOINTS NOW RETURN AN ENVELOPE, and this reads a bare array
+ * too. That tolerance is not defensive habit — it is the exact bug this
+ * rebuild already shipped once: lib/desk-site.ts typed a bare array as an
+ * envelope and read `.rows` off it, so the alerts inbox rendered
+ * "0 unresolved · Nothing unresolved" with alerts waiting. A register that
+ * silently reads empty is indistinguishable from a quiet week.
+ */
+function unwrap<T>(res: T[] | { rows?: T[]; total?: number } | null): {
+  rows: T[];
+  total: number | null;
+} {
+  if (Array.isArray(res)) return { rows: res, total: res.length };
+  const rows = Array.isArray(res?.rows) ? res.rows : [];
+  // ⚠️ A MISSING TOTAL IS null, NEVER rows.length. "1–50 of 50" printed over
+  // the first page of 431 is a number that reads as a fact and is a lie; the
+  // register renders an em dash instead.
+  return { rows, total: typeof res?.total === 'number' ? res.total : null };
+}
+
+export interface CasePage {
+  rows: CaseSummary[];
+  total: number | null;
+}
+
+export async function fetchCasePage(
+  kind: CaseKind,
+  state?: CaseState,
+  page = 1,
+  limit = 50,
+): Promise<CasePage> {
+  const p = new URLSearchParams();
+  if (state) p.set('status', state);
+  p.set('page', String(page));
+  p.set('limit', String(limit));
+  const qs = `?${p.toString()}`;
   if (kind === 'support') {
-    const rows = await deskFetch<TicketWire[]>(`/admin/support${qs}`);
-    return (rows ?? []).map((r) => ({
-      kind: 'support' as const,
-      id: r.id,
-      reference: caseRef('support', r.id),
-      subject: r.subject,
-      state: stateOf(r.status),
-      category: r.category ?? null,
-      raisedBy: r.user?.username ?? null,
-      openedAt: r.createdAt,
-      updatedAt: r.updatedAt,
-      messageCount: r._count?.replies ?? r.replies?.length ?? 0,
-      payoutFrozen: false,
-      evidenceCount: 0,
-    }));
+    const res = await deskFetch<TicketWire[] | { rows?: TicketWire[]; total?: number }>(
+      `/admin/support${qs}`,
+    );
+    const { rows, total } = unwrap(res);
+    return { total, rows: rows.map(supportSummary) };
   }
-  const rows = await deskFetch<ComplaintWire[]>(`/admin/complaints${qs}`);
-  return (rows ?? []).map((r) => ({
+  const res = await deskFetch<ComplaintWire[] | { rows?: ComplaintWire[]; total?: number }>(
+    `/admin/complaints${qs}`,
+  );
+  const { rows, total } = unwrap(res);
+  return { total, rows: rows.map(complaintSummary) };
+}
+
+function supportSummary(r: TicketWire): CaseSummary {
+  return {
+    kind: 'support' as const,
+    id: r.id,
+    reference: caseRef('support', r.id),
+    subject: r.subject,
+    state: stateOf(r.status),
+    category: r.category ?? null,
+    raisedBy: r.user?.username ?? null,
+    openedAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    messageCount: r._count?.replies ?? r.replies?.length ?? 0,
+    payoutFrozen: false,
+    evidenceCount: 0,
+  };
+}
+
+function complaintSummary(r: ComplaintWire): CaseSummary {
+  return {
     kind: 'complaint' as const,
     id: r.id,
     reference: r.referenceNumber,
@@ -317,32 +369,38 @@ export async function fetchCases(kind: CaseKind, state?: CaseState): Promise<Cas
     category: r.category ?? null,
     raisedBy: r.user?.username ?? null,
     openedAt: r.createdAt,
-    updatedAt: null,
+    // adminList now selects updatedAt, so "last touched" is no longer blank
+    // on every complaint row while support has one.
+    updatedAt: r.updatedAt ?? null,
     messageCount: 1 + (r.outcome?.trim() ? 1 : 0),
     payoutFrozen: r.drovePayoutHold && r.transaction?.paymentStatus === 'DISPUTED',
     evidenceCount: r.photos?.length ?? 0,
-  }));
+  };
+}
+
+export async function fetchCases(kind: CaseKind, state?: CaseState): Promise<CaseSummary[]> {
+  return (await fetchCasePage(kind, state, 1, 100)).rows;
 }
 
 /**
  * One case, in full.
  *
- * ⚠️ THERE IS NO GET /admin/complaints/:id. ComplaintsAdminController exposes
- * exactly two routes — the whole register and a PATCH — so a single complaint
- * is read by pulling the register and filtering here. It is written this way
- * rather than having the drawer accept a pre-fetched row, because a drawer
- * that cannot refresh itself shows a stale verdict after the first save.
+ * ✅ THIS NOW READS ONE ROW. It used to pull the ENTIRE complaints register
+ * and filter client-side, and the note that stood here recorded the cost
+ * honestly: adminList selects `user.email` on every row, so opening a SINGLE
+ * complaint dragged every complainant's address into the operator's browser,
+ * where nothing rendered it but a screen-share or a screenshot of the network
+ * tab would. It named the fix — "add GET /admin/complaints/:id" — and that
+ * endpoint now exists and is what this calls.
  *
- * 🚨 AND IT COSTS PRIVACY, NOT JUST BYTES. adminList selects `user.email` on
- * every row and takes no limit, so opening ONE complaint pulls EVERY
- * complainant's address into this browser. Nothing maps it onto a dossier and
- * nothing renders it — that boundary is tested — but it is sitting in the
- * network tab of a machine an operator may be screen-sharing, and the only
- * thing standing between it and a screenshot is a devtools panel. THE FIX IS
- * SERVER-SIDE: add GET /admin/complaints/:id, or stop selecting the address
- * on the register (adminUpdate re-reads the complainant for the notifier, so
- * the list does not need it). Until then this is a known, recorded exposure
- * rather than an accident.
+ * ⚠️ PAGING THE REGISTER TURNED IT INTO A CORRECTNESS BUG TOO, which is what
+ * finally forced it. Once adminList takes a limit, "fetch the register and
+ * find the row" silently fails for any complaint past the first page, and
+ * reports "no case in the register" — which reads as deleted rather than
+ * unfetched. Fixing the privacy leak and the paging bug was the same change.
+ *
+ * The endpoint accepts a reference number as well as an id, because a
+ * reference is what a member quotes.
  */
 export async function fetchCase(kind: CaseKind, id: string): Promise<CaseDossier> {
   if (kind === 'support') {

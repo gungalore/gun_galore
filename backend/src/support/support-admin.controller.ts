@@ -19,8 +19,16 @@ export class SupportAdminController {
   constructor(private readonly support: SupportService) {}
 
   @Get()
-  list(@Query('status') status?: string) {
-    return this.support.listForAdmin(status);
+  list(
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.support.listForAdmin(
+      status,
+      page ? parseInt(page, 10) || 1 : 1,
+      limit ? parseInt(limit, 10) || 50 : 50,
+    );
   }
 
   @Get(':id')

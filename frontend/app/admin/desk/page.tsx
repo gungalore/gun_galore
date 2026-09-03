@@ -27,6 +27,7 @@ import {
   AllClear,
   Band,
   CaseDrawer,
+  Chip,
   DeskCard,
   DeskShell,
   FailedRegion,
@@ -63,6 +64,7 @@ import {
 } from '@/lib/desk-feed';
 import type { CaseKind } from '@/lib/desk-case';
 import { describeFailure } from '@/lib/desk-auth';
+import { CasesRegister } from './cases-register';
 
 /** How often the pile and ribbon refresh themselves. */
 const REFRESH_MS = 60_000;
@@ -161,6 +163,17 @@ export default function DeskPage() {
   /** Open drawers, innermost last. Only the last one is rendered. */
   const [stack, setStack] = React.useState<DrawerTarget[]>([]);
   const phone = useIsPhone();
+  /**
+   * The pile is the worklist; the register is the record.
+   *
+   * ⚠️ A LENS, NOT A SIXTH TAB — components/desk/tabs.tsx calls its list "the
+   * five surfaces... nothing configurable about this list", and a register is
+   * somewhere an operator goes with a question rather than somewhere they
+   * live. Same shape the Ledger uses for its order book, same param name.
+   */
+  const [view, setView] = React.useState<'pile' | 'cases'>('pile');
+  /** Bumped after a case decision so the register re-reads. */
+  const [casesNonce, setCasesNonce] = React.useState(0);
 
   const undo = useUndo({
     onError: (err, action) =>
@@ -218,6 +231,14 @@ export default function DeskPage() {
    *
    * ⚠️ window.location, NOT useSearchParams — see the Ledger's note.
    */
+  React.useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('view') === 'cases') {
+      setView('cases');
+    }
+    // Mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   React.useEffect(() => {
     const deep = new URLSearchParams(window.location.search).get('listing');
     if (!deep) return;
@@ -409,6 +430,27 @@ export default function DeskPage() {
     <DeskShell active="desk" title="The Desk" sub={sub} rail={rail}>
       {feed ? <Ribbon cells={feed.ribbon} compact={phone} /> : null}
 
+      {/* ⚠️ THE PILE IS THE DEFAULT AND MUST STAY ONE. A passive register is
+          never what an operator should land on when the thing they came to do
+          is work today's cards — the same argument the Ledger makes for
+          defaulting to the payout run rather than the order book. */}
+      <div style={{ display: 'flex', gap: 8, paddingBottom: 2 }}>
+        <Chip active={view === 'pile'} onClick={() => setView('pile')}>
+          Today
+        </Chip>
+        <Chip active={view === 'cases'} onClick={() => setView('cases')}>
+          Register
+        </Chip>
+      </div>
+
+      {view === 'cases' ? (
+        <CasesRegister
+          refreshKey={casesNonce}
+          onOpen={(kind, id) => openDrawer({ sort: 'case', caseKind: kind, caseId: id })}
+        />
+      ) : (
+        <>
+
       {trouble ? (
         <FailedRegion
           title={trouble.title}
@@ -452,7 +494,12 @@ export default function DeskPage() {
           {!phone ? <ShortcutFooter /> : null}
         </>
       )}
+        </>
+      )}
 
+      {/* ⚠️ THE DRAWERS SIT OUTSIDE THE LENS. The register opens the Case
+          drawer too, so mounting them inside the pile branch would make a
+          row in the register press-and-do-nothing. */}
       {undo.pending ? (
         <UndoToast message={undo.pending.message} seconds={undo.seconds} onUndo={undo.undo} />
       ) : null}
@@ -482,7 +529,12 @@ export default function DeskPage() {
           // one place the board re-reads itself rather than editing a card in
           // place: guessing would either strand a resolved case on the pile or
           // hide one that is still waiting on the member.
-          onChanged={() => void load()}
+          onChanged={() => {
+            void load();
+            // The register is a separate read; without this a case decided
+            // from it keeps its old state until the operator reloads.
+            setCasesNonce((n) => n + 1);
+          }}
           /*
            * ⚠️ STEPPING INTO THE ORDER COSTS AN UNSENT DRAFT. CaseDrawer
            * clears its reply box on every open by design — "a fresh case is a
