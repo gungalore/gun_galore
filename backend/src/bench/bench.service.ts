@@ -860,6 +860,8 @@ export class BenchService {
         ? await this.bulletAxis(shelfBullets, resolveTolerance(bench?.toleranceGr), [key])
         : null;
 
+    const shellHolderGroup = await this.shellHolderGroup(key, cartridge.dims);
+
     const [loadCount, loadsForBench] = await Promise.all([
       this.prisma.benchLoad.count({ where: { cartridgeKey: key } }),
       bulletOr
@@ -899,11 +901,66 @@ export class BenchService {
       // all published, so naming each one here would be a list to forget to
       // extend. rawText is the single field on it that must not travel.
       dims: cartridge.dims ? this.stripAudit(cartridge.dims) : null,
-      stations: [],
-      shellHolderGroup: [],
+      // `stations` is deliberately NOT returned. The calliper's snap points
+      // are a pure function of these same dims and LatheView already
+      // computes them; sending a second copy over the wire would be one
+      // more place for the drawing and the ruler to disagree.
+      shellHolderGroup,
       loadCount,
       loadsForBench,
     };
+  }
+
+  /**
+   * Cartridges whose case head this one shares, so a member knows the shell
+   * holder already in their press will hold it.
+   *
+   * ⚠️ RIM GEOMETRY ONLY, AND NO MANUFACTURER'S NUMBER IS CLAIMED. A shell
+   * holder grips the rim: its diameter (R1), its thickness (R) and the
+   * extractor groove (E1). Two cartridges agreeing on all three to within a
+   * twentieth of a millimetre take the same holder — .308 Win, .243 Win,
+   * .260 Rem, 7mm-08 and 6,5 Creedmoor are one family on the .473" head.
+   * What is NOT claimed is which numbered holder that is: those are each
+   * maker's own catalogue and vary between them, so the card says "same
+   * shell holder as these" and never "RCBS #3".
+   *
+   * ⚠️ THE TOLERANCE IS THE SPEC'S, NOT A GUESS (SPEC-BUILD §332). It is
+   * tight enough that C.I.P.'s published rim thicknesses separate some
+   * cartridges a press would in practice hold together — .30-06 publishes
+   * 1.24 mm against .308 Win's 1.37 and so falls out of its group. Erring
+   * narrow is right for a hint: a missing chip costs a member nothing, a
+   * wrong one sends them to the bench with the wrong holder.
+   */
+  private async shellHolderGroup(
+    key: string,
+    dims: { R1: number | null; R: number | null; E1: number | null } | null,
+  ): Promise<{ key: string; name: string }[]> {
+    // No sheet, or a sheet missing any of the three, proves nothing. An
+    // empty list renders no section, which is the honest outcome.
+    if (!dims || dims.R1 == null || dims.R == null || dims.E1 == null) return [];
+    const TOL = 0.05;
+
+    const near = await this.prisma.benchCipDimension.findMany({
+      where: {
+        cartridgeKey: { not: key },
+        R1: { gte: dims.R1 - TOL, lte: dims.R1 + TOL },
+        R: { gte: dims.R - TOL, lte: dims.R + TOL },
+        E1: { gte: dims.E1 - TOL, lte: dims.E1 + TOL },
+      },
+      select: { cartridgeKey: true },
+    });
+    if (!near.length) return [];
+
+    // Only cartridges the member can actually reach. One with no loads is a
+    // chip that leads nowhere.
+    const rows = await this.prisma.benchCartridge.findMany({
+      where: { key: { in: near.map((n) => n.cartridgeKey) }, loads: { some: {} } },
+      select: { key: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    // Rebuilt field by field: BenchCartridge owns the relation a spread would
+    // one day carry into a public response.
+    return rows.map((c) => ({ key: c.key, name: c.name }));
   }
 
   private stripAudit<T extends Record<string, unknown>>(dims: T) {

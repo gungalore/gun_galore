@@ -209,7 +209,10 @@ export interface CartridgeSpec {
    */
   loadsForBench: number;
   loadCount: number;
-  stations: unknown[];
+  // `stations` used to sit here as unknown[] and was read by nothing: the
+  // calliper snap points are a pure function of dims, and LatheView computes
+  // them itself. A field carried across the wire that no one reads is a
+  // second copy waiting to disagree with the first.
   shellHolderGroup: { key: string; name: string }[];
 }
 
