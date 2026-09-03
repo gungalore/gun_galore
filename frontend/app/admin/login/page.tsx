@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { setAdminToken } from '@/lib/admin-auth';
+import { setDeskToken } from '@/lib/desk-auth';
 
 const API_URL = process.env.INTERNAL_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -36,7 +36,7 @@ export default function AdminLoginPage() {
       // Primary storage: localStorage (bypasses all cookie-blocking
       // browser configs we've hit). Each admin page reads from here
       // via lib/admin-auth.adminFetch().
-      setAdminToken(token);
+      setDeskToken(token);
       // Secondary: also try to set the JS cookie. Works in most
       // environments and lets server-component admin pages (legacy)
       // still gate via cookies(). Privacy-extension envs ignore this

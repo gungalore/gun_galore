@@ -58,6 +58,23 @@ const GUARDED = ['components/desk', 'app/admin/desk', 'app/admin/desk-kit', ...d
  * because the old one leaves a live JWT in localStorage after sign-out, and
  * importing the old one back in would reintroduce that hole.
  */
+/*
+ * ⚠️ THE GUARD INVERTED AT CUTOVER. Before it, this list stopped the Desk
+ * IMPORTING the legacy admin. The legacy admin is now deleted, so the risk is
+ * no longer a bad import — it is somebody reintroducing the tree, and the
+ * import rules below become unreachable dead law the day nothing matches them.
+ * The check that matters now is that these paths STAY GONE.
+ *
+ * CUTOVER IS DONE. If one of these exists again, either a revert went wrong or
+ * a page was rebuilt in the wrong place; either way the Desk is no longer the
+ * only admin and that is worth failing a build over.
+ */
+const MUST_NOT_EXIST = [
+  { path: "app/admin/(protected)", why: "the legacy admin pages were deleted at cutover" },
+  { path: "components/admin", why: "the legacy admin components were deleted at cutover" },
+  { path: "lib/admin-auth.ts", why: "replaced by lib/desk-auth.ts, which does not leak a live JWT after sign-out" },
+];
+
 const FORBIDDEN_IMPORTS = [
   { pattern: /components\/admin\//, why: 'the legacy admin kit — the Desk builds its own' },
   { pattern: /app\/admin\/\(protected\)/, why: 'the legacy admin pages' },
@@ -88,6 +105,13 @@ const STOREFRONT_TOKEN = /var\(\s*--(bg|bg-card|bg-deep|bg-inset|text-primary|te
 const DEAD_UTILITY = /\b(shadow-(sm|md|lg|xl|2xl|inner)|ring-\d|ring-offset-\d)\b/;
 
 const problems = [];
+
+for (const entry of MUST_NOT_EXIST) {
+  if (fs.existsSync(path.join(ROOT, entry.path))) {
+    problems.push(entry.path + " exists again — " + entry.why);
+  }
+}
+
 
 function walk(dir) {
   /**
