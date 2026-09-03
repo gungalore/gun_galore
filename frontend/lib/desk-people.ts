@@ -106,14 +106,31 @@ export interface PageWindow {
   last: number;
   hasPrev: boolean;
   hasNext: boolean;
+  /**
+   * The requested page is past the end of a non-empty list.
+   *
+   * ⚠️ CALLERS MUST BRANCH ON THIS BEFORE PRINTING A RANGE. A page beyond the
+   * end used to compute first > last and render as "61–50 of 50" — a range
+   * that counts backwards, printed under a table saying it was empty. It is
+   * reachable two ways with no adversary: a stale bookmark carrying ?page=4,
+   * and a list that shrinks between loads while somebody is reading it.
+   */
+  beyondEnd: boolean;
 }
 
 /** The arithmetic behind "51–100 of 1,284", kept out of the JSX. */
 export function pageWindow(total: number, page: number, size = PEOPLE_PAGE_SIZE): PageWindow {
   const safePage = Math.max(1, Math.floor(page));
+  const lastPage = total === 0 ? 1 : Math.ceil(total / size);
+  // Past the end of a non-empty list: report nothing on screen rather than a
+  // range that counts backwards. hasPrev stays true — the operator has to be
+  // able to get back to a page that exists.
+  if (total > 0 && safePage > lastPage) {
+    return { first: 0, last: 0, hasPrev: true, hasNext: false, beyondEnd: true };
+  }
   const first = total === 0 ? 0 : (safePage - 1) * size + 1;
   const last = Math.min(total, safePage * size);
-  return { first, last, hasPrev: safePage > 1, hasNext: last < total };
+  return { first, last, hasPrev: safePage > 1, hasNext: last < total, beyondEnd: false };
 }
 
 /**

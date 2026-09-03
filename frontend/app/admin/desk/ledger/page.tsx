@@ -42,7 +42,36 @@ import {
   type PayoutRow,
   type PayoutRun,
 } from '@/lib/desk-ledger';
+import {
+  fetchOrderBook,
+  fetchOrderCard,
+  orderRowReference,
+  orderSub,
+  parseOrderPage,
+  parseOrderSegment,
+  type OrderBookPage,
+  type OrderCard,
+  type OrderRow,
+  type OrderSegment,
+} from '@/lib/desk-orders';
 import { describeFailure } from '@/lib/desk-auth';
+import { OrderBook } from './order-book';
+
+/**
+ * The two lenses this board has.
+ *
+ * 'run' is today's payout run — the one daily ACTION, and therefore the
+ * default: a passive list must never be what an operator lands on when the
+ * thing they came to do is pay sellers. 'orders' is the whole order book, the
+ * replacement for /admin/orders.
+ */
+type LedgerView = 'run' | 'orders';
+
+/** Nothing to open, and why. Not a failure — a shape. */
+const NO_LINES = {
+  tag: 'nothing to open',
+  body: 'This order has no lines. A dossier is a line’s dossier, so there is nothing to open.',
+};
 
 export default function LedgerPage() {
   const [run, setRun] = React.useState<PayoutRun | null>(null);
@@ -50,10 +79,27 @@ export default function LedgerPage() {
   const [drawer, setDrawer] = React.useState(false);
   const [confirm, setConfirm] = React.useState(false);
   const [result, setResult] = React.useState<{ ok: boolean; tag: string; body: string } | null>(null);
-  const [segment, setSegment] = React.useState('attention');
+  const [payoutSegment, setPayoutSegment] = React.useState('attention');
   /** The sale whose Order drawer is open — a Transaction id. */
   const [orderId, setOrderId] = React.useState<string | null>(null);
   const phone = useIsPhone();
+
+  /* ── the Orders lens ─────────────────────────────────────────────────
+   *
+   * ⚠️ THE TWO LENSES KEEP SEPARATE FILTERS. Flipping the view never resets
+   * the other lens's segment: an operator who was three pages into REFUNDED,
+   * ducked into the run to hold a payout back, and came back expecting to
+   * carry on should find their place — not page one of All.
+   */
+  const [view, setView] = React.useState<LedgerView>('run');
+  const [orderSegment, setOrderSegment] = React.useState<OrderSegment>('ALL');
+  const [orderPageIndex, setOrderPageIndex] = React.useState(1);
+  const [orderPage, setOrderPage] = React.useState<OrderBookPage | null>(null);
+  const [orderError, setOrderError] = React.useState<string | null>(null);
+  /** The parent order behind the open drawer. Null in the run lens. */
+  const [orderCard, setOrderCard] = React.useState<OrderCard | null>(null);
+  const [openError, setOpenError] = React.useState<{ tag: string; body: string } | null>(null);
+  const [resolvingOrderId, setResolvingOrderId] = React.useState<string | null>(null);
 
   /**
    * ⚠️ ONE DRAWER AT A TIME. Drawer binds Escape on `document` and defers only
@@ -64,6 +110,12 @@ export default function LedgerPage() {
    */
   const openOrder = React.useCallback((transactionId: string) => {
     setDrawer(false);
+    // ⚠️ AND THE ORDER CARD GOES WITH IT. A payout row is one sale; it carries
+    // no cart parent, so any card still in state belongs to a DIFFERENT order.
+    // The drawer refuses to draw a mismatched card anyway, but leaving one
+    // here would mean the guard is the only thing standing between the two —
+    // and a guard is a last line, not a plan.
+    setOrderCard(null);
     setOrderId(transactionId);
   }, []);
 
@@ -79,6 +131,237 @@ export default function LedgerPage() {
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * One page of the order book.
+   *
+   * ⚠️ EVERY READ TAKES A TICKET AND ONLY THE NEWEST MAY WRITE. Chips are
+   * clicked faster than a list comes back, and nothing orders the replies —
+   * the slow answer for CANCELLED landing after the fast one for REFUNDED
+   * would paint cancelled orders under a chip that says Refunded, with the
+   * right count in the header and no error anywhere. The drawer already keeps
+   * a ticket for exactly this reason (order-drawer.tsx); a board that filters
+   * server-side needs its own.
+   *
+   * ⚠️ AND IT IS LAZY. Nothing fetches until the Orders lens is first opened,
+   * so the run — the reason the page exists — is never waiting behind a list
+   * nobody has asked to see.
+   */
+  const orderTicket = React.useRef(0);
+  const loadOrders = React.useCallback(async () => {
+    const ticket = ++orderTicket.current;
+    setOrderError(null);
+    setOrderPage(null);
+    // A stale "couldn't open GG-ORD-0042" hanging over a list that no longer
+    // contains that order is a report about nothing on screen.
+    setOpenError(null);
+    try {
+      const next = await fetchOrderBook(orderSegment, orderPageIndex);
+      if (orderTicket.current === ticket) setOrderPage(next);
+    } catch (err) {
+      if (orderTicket.current === ticket) setOrderError(describeFailure(err));
+    }
+  }, [orderSegment, orderPageIndex]);
+
+  React.useEffect(() => {
+    if (view === 'orders') void loadOrders();
+  }, [view, loadOrders]);
+
+  /**
+   * A new query starts on page one.
+   *
+   * ⚠️ IN THE HANDLER, NOT IN AN EFFECT KEYED ON orderSegment — and that is
+   * not a style choice. People resets its page in an effect because nothing
+   * else on that board ever sets a page; here the URL reader does. An effect
+   * would fire on the render AFTER the reader picked `?status=PAID&page=3` up,
+   * see the segment change, and reset the page to 1 — so every deep link past
+   * page one would silently land on page one and look like it had worked.
+   *
+   * Without the reset at all, clicking a chip while three pages deep asks for
+   * rows 41–60 of an eleven-row set and draws an empty state the operator
+   * reads as a fact about the filter. Both failures are real; only the handler
+   * avoids both.
+   */
+  const chooseSegment = React.useCallback((next: OrderSegment) => {
+    setOrderSegment(next);
+    setOrderPageIndex(1);
+  }, []);
+
+  /**
+   * Open an order's dossier.
+   *
+   * ⚠️ TWO HOPS, BECAUSE getOrders CARRIES NO TRANSACTION ID. OrderDrawer is
+   * keyed on a Transaction — a cart parent is reached THROUGH one of its lines
+   * — and the list endpoint returns only `_count.transactions`. So the row
+   * click fetches the order's dossier, takes its first line, and opens on
+   * that. The cost is one round trip a payout row does not pay, and it is
+   * visible (the row lights) rather than hidden.
+   */
+  /**
+   * 🚨 THE TICKET IS WHAT KEEPS THE DRAWER ON THE ORDER THAT WAS CLICKED.
+   * Every write below used to be unconditional, and `loadOrders` one function
+   * above already takes a ticket for exactly this reason — this one was left
+   * without. Nothing blocks a second click: DeskTable's row onClick fires
+   * regardless of `resolvingOrderId`, which only lights a row. So two clicks
+   * race, and the SLOWER reply landed last and won: the drawer silently
+   * swapped to an order nobody asked for, with no error and nothing on screen
+   * to say it had happened.
+   *
+   * That is a money bug, not a cosmetic one. order-actions.tsx wires five
+   * levers — release, refund, hold — to the foot of this drawer, so an
+   * operator reading order B could release order A.
+   *
+   * The ticket also survives a lens switch: `switchView` bumps it, because a
+   * resolve that outlives the switch would otherwise mount the Order drawer
+   * over the payout run — and if the run's own drawer were open, two Drawers
+   * would bind Escape on `document` at once, which is the failure this file
+   * documents elsewhere and must not reintroduce here.
+   */
+  const openTicket = React.useRef(0);
+  const resolveAndOpen = React.useCallback(
+    async (id: string, label: string, alignSegment: boolean) => {
+      const ticket = ++openTicket.current;
+      setResolvingOrderId(id);
+      setOpenError(null);
+      try {
+        const card = await fetchOrderCard(id);
+        if (openTicket.current !== ticket) return;
+        if (!card.firstTransactionId) {
+          setOpenError(NO_LINES);
+          return;
+        }
+        // ⚠️ ONE DRAWER AT A TIME, ACROSS THE LENSES TOO. The run's own drawer
+        // and confirm bind Escape on `document`; two overlays mounted at once
+        // both hear one keypress.
+        setDrawer(false);
+        setConfirm(false);
+        // A deep link arrives with no list behind it. Filtering to the order's
+        // own status means closing the drawer lands the operator among orders
+        // like the one they were sent, rather than on an unrelated page one.
+        // A ROW click never does this — moving the list out from under someone
+        // who just clicked it is the same sin as a jumping form field.
+        if (alignSegment) {
+          setOrderSegment(card.status);
+          setOrderPageIndex(1);
+        }
+        setOrderCard(card);
+        setOrderId(card.firstTransactionId);
+      } catch (err) {
+        // A failure for an order the operator has already navigated past would
+        // post "couldn't open GG-ORD-0042" over a drawer that is open and
+        // correct.
+        if (openTicket.current !== ticket) return;
+        setOpenError({
+          tag: "couldn't open",
+          body: `Order ${label}\n${describeFailure(err)}`,
+        });
+      } finally {
+        // Only the newest resolve owns the spinner; a stale one clearing it
+        // would un-light the row that is still genuinely resolving.
+        if (openTicket.current === ticket) setResolvingOrderId(null);
+      }
+    },
+    [],
+  );
+
+  const openOrderRow = React.useCallback(
+    (row: OrderRow) => {
+      // ⚠️ NO NETWORK CALL FOR AN ORDER WITH NOTHING IN IT. An AWAITING_PAYMENT
+      // order whose lines were all cancelled is a real shape, and a dossier is
+      // a LINE's dossier — so there is nothing behind the click and the honest
+      // answer is to say so rather than to spin and then fail.
+      if (row._count.transactions === 0) {
+        setOpenError(NO_LINES);
+        return;
+      }
+      void resolveAndOpen(row.id, orderRowReference(row), false);
+    },
+    [resolveAndOpen],
+  );
+
+  /**
+   * Switch lens, and take the leaving lens's overlays with you.
+   *
+   * ⚠️ THE STATE STACK CROSSES THE SWITCH. Leaving a lens with its drawer
+   * still mounted is how two Drawers end up listening for the same Escape —
+   * the failure the run drawer's own comment already warns about, one level
+   * up.
+   */
+  const switchView = React.useCallback((next: LedgerView) => {
+    setView(next);
+    if (next === 'orders') {
+      setDrawer(false);
+      setConfirm(false);
+    } else {
+      // ⚠️ INVALIDATE, DO NOT JUST CLEAR. deskFetch issues a plain fetch with
+      // no AbortController, so a resolve already in flight still lands — and
+      // because <OrderDrawer open> is gated on `orderId` and not on `view`,
+      // it would mount the Order drawer on top of the run the operator just
+      // switched to. Bumping the ticket makes that reply a no-op.
+      openTicket.current += 1;
+      setResolvingOrderId(null);
+      setOrderId(null);
+      setOrderCard(null);
+      setOpenError(null);
+    }
+  }, []);
+
+  /**
+   * `/admin/desk/ledger?view=orders&status=PAID&page=3` — and
+   * `?order=<orderId>` opens straight onto one order's drawer.
+   *
+   * ⚠️ THE PARAM NAMES ARE LEGACY'S ON PURPOSE. /admin/orders used `status`
+   * and `page`, so a bookmark, a Slack link or an old email survives the
+   * cutover redirect intact instead of landing on an unfiltered page one.
+   *
+   * ⚠️ window.location, NOT useSearchParams — the same call the Site board
+   * makes and for the same reason: reading the hook in a client board drags a
+   * Suspense boundary around the whole page for a value that matters once.
+   */
+  React.useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const deepOrder = q.get('order');
+    if (q.get('view') !== 'orders' && !deepOrder) return;
+    setView('orders');
+    setOrderSegment(parseOrderSegment(q.get('status')));
+    setOrderPageIndex(parseOrderPage(q.get('page')));
+    if (deepOrder) void resolveAndOpen(deepOrder, deepOrder, true);
+    // Mount only. A later render must not re-read a URL this page is writing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * ⚠️ THE FIRST RUN IS SKIPPED, AND HAS TO BE. Both effects fire on the same
+   * first commit, in declaration order: the reader above queues its state and
+   * this writer would then run with the PREVIOUS render's state — view still
+   * 'run' — and strip the very params the reader had just picked up. Skipping
+   * one invocation means the URL is only ever written from state that came
+   * from somewhere, and a plain visit with no params is left untouched.
+   *
+   * replaceState, not push: browsing chips must not fill the back button with
+   * a filter history nobody wants to walk back through.
+   */
+  const urlPrimed = React.useRef(false);
+  React.useEffect(() => {
+    if (!urlPrimed.current) {
+      urlPrimed.current = true;
+      return;
+    }
+    const q = new URLSearchParams();
+    if (view === 'orders') {
+      q.set('view', 'orders');
+      // Defaults are omitted so a plain visit keeps a clean URL.
+      if (orderSegment !== 'ALL') q.set('status', orderSegment);
+      if (orderPageIndex > 1) q.set('page', String(orderPageIndex));
+      if (orderCard) q.set('order', orderCard.id);
+    }
+    const qs = q.toString();
+    window.history.replaceState(
+      {},
+      '',
+      window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash,
+    );
+  }, [view, orderSegment, orderPageIndex, orderCard]);
 
   const gated = run?.gated ?? true;
 
@@ -100,7 +383,17 @@ export default function LedgerPage() {
     <DeskShell
       active="ledger"
       title="Ledger"
-      sub={run ? `${run.totals.saleCount} sales payable` : 'Loading…'}
+      /* Two lenses, one board — so `active` stays "ledger" and DESK_TABS keeps
+         its five entries. Orders is not a sixth tab. */
+      sub={
+        view === 'orders'
+          ? orderPage
+            ? orderSub(orderPage.total, orderSegment)
+            : 'Loading…'
+          : run
+            ? `${run.totals.saleCount} sales payable`
+            : 'Loading…'
+      }
     >
       {/*
         ⚠️ NO "EXPORT CSV" BUTTON. One used to sit here with no onClick and no
@@ -111,10 +404,48 @@ export default function LedgerPage() {
         first, then put it back.
       */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        {/* One identity in both lenses. The page is the Ledger; the switch
+            below only says which end of the money you are looking at. */}
         <span style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.015em' }}>Ledger</span>
+        <span style={{ flex: 1 }} />
+        {/*
+          ⚠️ THIS ROW SITS OUTSIDE THE RUN'S ERROR GATE, DELIBERATELY. Everything
+          below it used to live inside `error ? … : !run ? …`, so the day
+          fetchPayoutRun 500s the operator would be stranded on a red region
+          with no way to reach the order book — a second, unrelated surface
+          made unreachable by the first one's outage. The switch is drawn
+          before either lens is consulted.
+
+          ⚠️ AND IT IS ABOVE THE RUN'S OWN CHIPS, NOT BESIDE THEM. Those four
+          chips re-slice a PayoutRun already in memory; this pair changes the
+          data source, the pager and the URL. Same control, two meanings, is
+          exactly what the row separation prevents — the same shape People uses
+          for its Dealers lens.
+        */}
+        <div role="group" aria-label="Ledger view" style={{ display: 'flex', gap: 8 }}>
+          <Chip active={view === 'run'} onClick={() => switchView('run')}>
+            Payout run
+          </Chip>
+          <Chip active={view === 'orders'} onClick={() => switchView('orders')}>
+            Orders
+          </Chip>
+        </div>
       </div>
 
-      {error ? (
+      {view === 'orders' ? (
+        <OrderBook
+          segment={orderSegment}
+          onSegment={chooseSegment}
+          pageIndex={orderPageIndex}
+          onPage={setOrderPageIndex}
+          page={orderPage}
+          error={orderError}
+          onRetry={() => void loadOrders()}
+          onOpenRow={openOrderRow}
+          resolvingId={resolvingOrderId}
+          openError={openError}
+        />
+      ) : error ? (
         <FailedRegion title="Couldn't load the run" detail={error} onRetry={() => void load()} />
       ) : !run ? (
         <SkeletonPile count={2} />
@@ -168,9 +499,9 @@ export default function LedgerPage() {
             ].map(([key, label, count]) => (
               <Chip
                 key={key as string}
-                active={segment === key}
+                active={payoutSegment === key}
                 count={count as number}
-                onClick={() => setSegment(key as string)}
+                onClick={() => setPayoutSegment(key as string)}
               >
                 {label as string}
               </Chip>
@@ -179,7 +510,7 @@ export default function LedgerPage() {
 
           <PayoutList
             run={run}
-            segment={segment}
+            segment={payoutSegment}
             gated={gated}
             onChanged={load}
             onError={(m) => setError(m)}
@@ -188,7 +519,7 @@ export default function LedgerPage() {
         </>
       )}
 
-      {run ? (
+      {view === 'run' && run ? (
         <Drawer
           open={drawer}
           onClose={() => setDrawer(false)}
@@ -292,7 +623,7 @@ export default function LedgerPage() {
         </Drawer>
       ) : null}
 
-      {run ? (
+      {view === 'run' && run ? (
         <MoneyDialog
           open={confirm}
           onCancel={() => setConfirm(false)}
@@ -324,12 +655,33 @@ export default function LedgerPage() {
       ) : null}
 
       {/*
-        The sale's dossier, opened over the list. It reads and moves nothing —
-        the levers that touch this money are Hold back and Include on the row
-        behind it, and the run button above them. See order-drawer.tsx.
+        The sale's dossier, opened over whichever lens the operator was in.
+        ONE drawer for both — a payout row and an order row open the same panel
+        on the same unit (a Transaction), and mounting a second copy per lens
+        would put two Escape listeners on `document`.
+
+        `orderCard` is null from the run lens, which is correct: a payout row
+        is one sale and carries no cart parent to describe. From the Orders
+        lens it is the card the row click already had to fetch, so the
+        order-level money split and the manual-EFT stamps cost no extra
+        request.
+
+        `onOpenLine` is passed from BOTH lenses. It is what makes lines 2..N of
+        a multi-seller order reachable at all — the reason this board was asked
+        for — and it keeps `orderCard` because stepping between siblings never
+        leaves the order.
       */}
       {orderId ? (
-        <OrderDrawer open transactionId={orderId} onClose={() => setOrderId(null)} />
+        <OrderDrawer
+          open
+          transactionId={orderId}
+          orderCard={orderCard}
+          onOpenLine={(id) => setOrderId(id)}
+          onClose={() => {
+            setOrderId(null);
+            setOrderCard(null);
+          }}
+        />
       ) : null}
     </DeskShell>
   );

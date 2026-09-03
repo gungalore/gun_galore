@@ -470,7 +470,9 @@ function Pager({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 2px 0' }}>
       <span className="dk-mono" style={{ fontSize: 12, color: 'var(--dk-ink-3)' }}>
-        {bounds.first}–{bounds.last} of {total}
+        {bounds.beyondEnd
+          ? `That page is past the end · ${total} ${total === 1 ? 'member' : 'members'}`
+          : `${bounds.first}–${bounds.last} of ${total}`}
       </span>
       <span style={{ flex: 1 }} />
       <Button variant="ghost" disabled={!bounds.hasPrev} onClick={() => onPage(pageIndex - 1)}>

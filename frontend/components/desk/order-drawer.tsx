@@ -55,6 +55,9 @@ import {
   type OrderDossier,
   type OrderTransaction,
 } from '@/lib/desk-order';
+// 🚨 desk-orderS, PLURAL — the CART PARENT's module, not desk-order's. See its
+// header: one character apart, two different units of money.
+import type { OrderCard } from '@/lib/desk-orders';
 
 export interface OrderDrawerProps {
   open: boolean;
@@ -64,10 +67,41 @@ export interface OrderDrawerProps {
    * this from an order row passes that order's first line.
    */
   transactionId: string | null;
+  /**
+   * The parent order, when the board that opened this already had it.
+   *
+   * ⚠️ OPTIONAL, AND NULL IS THE NORMAL CASE. A payout row is one sale and has
+   * no cart parent to describe, so the Ledger's run lens passes null and this
+   * drawer looks exactly as it did. The Orders lens passes the card it had to
+   * fetch anyway to learn which line to open — which is how the order-level
+   * money split and the manual-EFT stamps the legacy /admin/orders/[id] page
+   * owned come back for free.
+   *
+   * ⚠️ IT IS ALSO CHECKED AGAINST THE LOADED SALE BEFORE ANYTHING IS DRAWN.
+   * The parent can swap `transactionId` to a payout row without clearing the
+   * card, and one frame of the wrong order's totals under the right order's
+   * reference is exactly the lie the ticket guard below exists to prevent.
+   */
+  orderCard?: OrderCard | null;
+  /**
+   * Step to another line of the same order.
+   *
+   * ⚠️ ABSENT MEANS THE SIBLING LIST STAYS INERT — today's markup exactly. When
+   * supplied, each sibling row in the Parcel fold becomes a button. Without
+   * it, lines 2..N of a multi-seller order are visible and unreachable: the
+   * only way in is a board that happens to list that exact transaction.
+   */
+  onOpenLine?: (transactionId: string) => void;
   onClose: () => void;
 }
 
-export function OrderDrawer({ open, transactionId, onClose }: OrderDrawerProps) {
+export function OrderDrawer({
+  open,
+  transactionId,
+  orderCard = null,
+  onOpenLine,
+  onClose,
+}: OrderDrawerProps) {
   const [dossier, setDossier] = React.useState<OrderDossier | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   /**
@@ -151,6 +185,11 @@ export function OrderDrawer({ open, transactionId, onClose }: OrderDrawerProps) 
         <Body
           dossier={loaded}
           tx={tx}
+          /* ⚠️ THE CARD IS ONLY THIS ORDER'S IF IT NAMES THIS ORDER. A parent
+             that swaps transactionId without clearing the card would otherwise
+             put one cart's totals under another cart's reference. */
+          orderCard={orderCard && orderCard.id === tx.order?.id ? orderCard : null}
+          onOpenLine={onOpenLine}
           referenceSource={reference?.source ?? 'transaction'}
           /* Every lever changes what this drawer says, so it re-reads rather
              than patching state: a dossier half-updated from a response is a
@@ -208,11 +247,16 @@ function HeaderTags({ dossier }: { dossier: OrderDossier }) {
 function Body({
   dossier,
   tx,
+  orderCard,
+  onOpenLine,
   referenceSource,
   onActed,
 }: {
   dossier: OrderDossier;
   tx: OrderTransaction;
+  /** Already checked against this sale's parent by the caller. */
+  orderCard: OrderCard | null;
+  onOpenLine?: (transactionId: string) => void;
   referenceSource: 'order' | 'gateway' | 'transaction';
   /** Re-read the dossier after a lever lands. */
   onActed: () => void;
@@ -544,6 +588,8 @@ function Body({
         </Fold>
       ) : null}
 
+      {orderCard ? <OrderCardSection card={orderCard} /> : null}
+
       {parcel && tx.order ? (
         <Fold
           label={`Parcel · item ${parcel.index} of ${parcel.total}`}
@@ -559,40 +605,80 @@ function Body({
           <Kv k="Order total" v={formatRand(tx.order.buyerTotal)} />
           <Kv k="Order paid" v={formatWhen(tx.order.paidAt)} last />
           <div style={{ marginTop: 10 }}>
-            {tx.order.transactions.map((sib) => (
-              <div
-                key={sib.id}
-                style={{ padding: '8px 0', borderBottom: '1px solid var(--dk-line)' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                  <span
-                    style={{
-                      fontSize: 12.5,
-                      color: sib.id === tx.id ? 'var(--dk-ink)' : 'var(--dk-ink-2)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {sib.listing?.title ?? 'Item'}
-                  </span>
-                  <span style={{ flex: 1 }} />
-                  <span className="dk-mono" style={{ fontSize: 12, color: 'var(--dk-ink)' }}>
-                    {formatRand(sib.buyerTotal)}
-                  </span>
+            {tx.order.transactions.map((sib) => {
+              const head = (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <span
+                      style={{
+                        fontSize: 12.5,
+                        color: sib.id === tx.id ? 'var(--dk-ink)' : 'var(--dk-ink-2)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {sib.listing?.title ?? 'Item'}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    <span className="dk-mono" style={{ fontSize: 12, color: 'var(--dk-ink)' }}>
+                      {formatRand(sib.buyerTotal)}
+                    </span>
+                  </div>
+                  <Muted style={{ marginTop: 3 }}>
+                    {[
+                      sib.id === tx.id ? 'this line' : null,
+                      humanise(sib.paymentStatus),
+                      humanise(sib.shippingMethod),
+                      // The line's own shipping state, which is what says
+                      // WHICH of a cart's parcels is the one that is stuck.
+                      sib.shippingStatus ? humanise(sib.shippingStatus) : null,
+                      sib.shipsWithId ? 'ships with another line' : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Muted>
+                </>
+              );
+
+              /* ⚠️ THE LINE ALREADY ON SCREEN IS NOT A CONTROL. Making it one
+                 would offer to open the drawer that is already open — a click
+                 whose only effect is a reload and a lost scroll position. */
+              const steppable = Boolean(onOpenLine) && sib.id !== tx.id;
+
+              return (
+                <div
+                  key={sib.id}
+                  style={{ padding: '8px 0', borderBottom: '1px solid var(--dk-line)' }}
+                >
+                  {steppable ? (
+                    /* A row is a button, not a div with an onClick: it has to
+                       be reachable by Tab and announced as opening a dialog —
+                       the same rule the Ledger's payout rows follow. */
+                    <button
+                      type="button"
+                      onClick={() => onOpenLine?.(sib.id)}
+                      aria-haspopup="dialog"
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        padding: 0,
+                        background: 'transparent',
+                        border: 'none',
+                        textAlign: 'left',
+                        font: 'inherit',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {head}
+                    </button>
+                  ) : (
+                    head
+                  )}
                 </div>
-                <Muted style={{ marginTop: 3 }}>
-                  {[
-                    sib.id === tx.id ? 'this line' : null,
-                    humanise(sib.paymentStatus),
-                    humanise(sib.shippingMethod),
-                    sib.shipsWithId ? 'ships with another line' : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Muted>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Fold>
       ) : null}
@@ -649,7 +735,14 @@ function Body({
           shipping and the admin trail before a button that moves cash is in
           reach — the reading is the safeguard, and putting the buttons at the
           top would let someone act on a header alone. */}
+      {/* ⚠️ KEYED ON THE TRANSACTION, SO A LEVER CANNOT OUTLIVE ITS ORDER.
+          OrderActions holds the operator's typed refund amount and reason in
+          its own state. Without a key React reuses the instance when the
+          drawer moves to another line — the panel stays open, the typed amount
+          survives, and the confirm would restate a different order's names
+          around a figure composed for the previous one. */}
       <OrderActions
+        key={dossier.transaction.id}
         txId={dossier.transaction.id}
         sellerPayoutCents={dossier.transaction.sellerPayout ?? null}
         buyerTotalCents={dossier.transaction.buyerTotal ?? null}
@@ -661,6 +754,62 @@ function Body({
         onDone={onActed}
       />
     </>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * The Order card — the cart parent, when a board handed one over
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The order-level money split and the manual-EFT lifecycle.
+ *
+ * This is the half of the legacy /admin/orders/[id] page that the transaction
+ * dossier genuinely could not show: the split belongs to the ORDER, which owns
+ * the single payment capture, while every column in the Money section above
+ * belongs to one LINE.
+ *
+ * ⚠️ ALL FIVE PARTS ARE PRINTED AND NOTHING IS ADDED UP. items + shipping +
+ * handling + processingFee == buyerTotal is the backend's invariant, held by
+ * the one fee presenter the platform has. A UI that recomputed the total would
+ * be a ninth guess at it, and the day the two disagreed the operator would
+ * have no way to tell which number was the real charge. buyerTotal is what was
+ * actually taken; the four above it are what it was made of, as recorded.
+ *
+ * ⚠️ THE MANUAL-EFT BLOCK IS DRAWN ONLY FOR MANUAL_EFT. Three em dashes under
+ * a gateway order is noise pretending to be a timeline.
+ */
+function OrderCardSection({ card }: { card: OrderCard }) {
+  const manual = card.paymentMethod === 'MANUAL_EFT';
+  return (
+    <Section label="Order">
+      <Kv k="Order" v={card.orderReference ?? '—'} />
+      <Kv k="Paid by" v={humanise(card.paymentMethod)} />
+      <Kv k="Lines" v={String(card.lineCount)} />
+      <Kv k="Items" v={formatRand(card.itemsSubtotal)} />
+      <Kv k="Shipping" v={formatRand(card.shippingSubtotal)} />
+      <Kv k="Handling" v={formatRand(card.handlingSubtotal)} />
+      <Kv k="Processing fee" v={formatRand(card.processingFee)} />
+      <Kv k="Order total" v={formatRand(card.buyerTotal)} last />
+
+      {manual ? (
+        <div style={{ marginTop: 10 }}>
+          <Kv k="Pay by" v={formatWhen(card.manualPayByAt)} />
+          <Kv k="Payment detected" v={formatWhen(card.manualDetectedAt)} />
+          <Kv
+            k="Cancelled"
+            v={formatWhen(card.manualCancelledAt)}
+            tone={card.manualCancelledAt ? 'warn' : undefined}
+            last
+          />
+        </div>
+      ) : null}
+
+      <Muted style={{ marginTop: 10 }}>
+        Stored columns on the order, shown as recorded. The four parts are what
+        the total was made of; the Desk does not re-add them.
+      </Muted>
+    </Section>
   );
 }
 
