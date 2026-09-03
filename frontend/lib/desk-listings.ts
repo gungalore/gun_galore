@@ -19,7 +19,14 @@ import { STATUS_LABEL, type ListingStatusWire } from './desk-listing';
  */
 
 /** The statuses worth a chip, plus the pseudo-segment for everything. */
-export type ListingSegment = 'PENDING_REVIEW' | 'ACTIVE' | 'SOLD' | 'CANCELLED' | 'EXPIRED' | 'ALL';
+export type ListingSegment =
+  | 'PENDING_REVIEW'
+  | 'ACTIVE'
+  | 'SOLD'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'ALL'
+  | 'DEAD';
 
 export const LISTING_SEGMENTS: { value: ListingSegment; label: string }[] = [
   // ⚠️ PENDING_REVIEW FIRST AND DEFAULT, because it is the only segment with
@@ -32,6 +39,12 @@ export const LISTING_SEGMENTS: { value: ListingSegment; label: string }[] = [
   { value: 'CANCELLED', label: 'Taken down' },
   { value: 'EXPIRED', label: 'Expired' },
   { value: 'ALL', label: 'Everything' },
+  // ⚠️ NOT A STATUS — A RANKING. Dead stock is ACTIVE listings ordered by
+  // age x price, which is a different endpoint (/admin/freshness-graveyard)
+  // and not something getListings can express. It sits among the status chips
+  // because that is where an operator looks for "show me listings like X",
+  // and the register says on its face that this one is sorted, not filtered.
+  { value: 'DEAD', label: 'Dead stock' },
 ];
 
 export function segmentLabel(s: ListingSegment): string {
@@ -103,4 +116,67 @@ export async function fetchListingPage(
     page: res?.page ?? page,
     limit: res?.limit ?? LISTINGS_PAGE_SIZE,
   };
+}
+
+/* ── Dead stock ───────────────────────────────────────────────────────── */
+
+/**
+ * The freshness graveyard: ACTIVE listings with no bids, offers or watchers,
+ * ranked by age x price.
+ *
+ * 🚨 THE DESK ONLY EVER SHOWED THE TOP FIVE. desk.service.ts emits a
+ * stale_listing card for the worst five, which is right for a pile — a
+ * worklist is not a report — but it left the other end of a long tail
+ * unreachable, and the legacy page ranked every one of them.
+ *
+ * ⚠️ sellerEmail IS ON THE WIRE AND IS NOT DECLARED HERE. The endpoint
+ * selects it and the legacy report printed it under every row. The Desk rule
+ * is username only, and the Order drawer's note is the precedent: the data
+ * module does not declare the field, so no row component can render it by
+ * reaching for something that happens to be in the response.
+ *
+ * ⚠️ staleScore IS ALSO NOT DECLARED. It is age x price in rands — a ranking
+ * number with no meaning to a person, and "412 000" beside a rifle reads as
+ * money. It orders the list server-side and stays behind the glass, which is
+ * the same call the pile card already makes.
+ */
+interface DeadStockWire {
+  id: string;
+  referenceNumber: string | null;
+  title: string;
+  priceCents: number | null;
+  ageDays: number;
+  sellerId: string;
+  sellerUsername: string | null;
+  categoryName: string;
+  listingType: string;
+}
+
+export interface DeadStockRow extends ListingRow {
+  /** Whole days live with nothing happening — the reason the row is here. */
+  ageDays: number;
+}
+
+export async function fetchDeadStock(limit = 100): Promise<DeadStockRow[]> {
+  const rows = await deskFetch<DeadStockWire[] | { rows?: DeadStockWire[] }>(
+    `/admin/freshness-graveyard?limit=${limit}`,
+  );
+  const list = Array.isArray(rows) ? rows : (rows?.rows ?? []);
+  return list.map((r) => ({
+    id: r.id,
+    referenceNumber: r.referenceNumber,
+    title: r.title,
+    // Every row here is ACTIVE by definition — that is what makes it dead
+    // stock rather than history — so the tag is correct without being sent.
+    status: 'ACTIVE',
+    listingType: r.listingType,
+    price: r.priceCents,
+    // The endpoint returns age, not a created date. Deriving a fake createdAt
+    // from it would put a precise-looking timestamp on an approximation.
+    createdAt: '',
+    ageDays: Math.round(r.ageDays),
+    seller: { id: r.sellerId, username: r.sellerUsername },
+    category: { name: r.categoryName, isFirearm: false },
+    images: [],
+  }));
 }

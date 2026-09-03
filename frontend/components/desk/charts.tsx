@@ -297,3 +297,132 @@ export function ChartCard({
     </div>
   );
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Heatmap — day of week x hour of day
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export interface HeatmapCell {
+  dow: number;
+  hour: number;
+  count: number;
+}
+
+/**
+ * A 7x24 grid of when something happens.
+ *
+ * ⚠️ ONE HUE, VARIED BY OPACITY — the same rule as every other chart here.
+ * A heatmap is the single most tempting place in this kit to reach for a
+ * red-to-green ramp, and it is the worst place to do it: colour on this
+ * surface means "something needs you", and a busy Saturday is not a problem.
+ * Intensity is --dk-ink at an opacity scaled against the peak.
+ *
+ * ⚠️ SUNDAY-FIRST, because Postgres EXTRACT(DOW) returns 0 for Sunday. A
+ * Monday-first grid would shift every row by one and report the busiest
+ * trading day as the day before — a chart that is entirely plausible and
+ * entirely wrong.
+ *
+ * ⚠️ A MISSING CELL IS A REAL ZERO. The query counts rows and returns only
+ * cells with activity, so it cannot distinguish "nothing sold" from "nothing
+ * recorded"; both render as an empty square, and the caption has to carry
+ * that rather than the grid pretending to a precision it does not have.
+ */
+export function Heatmap({
+  cells,
+  dayLabels,
+  emptyNote = 'Nothing recorded in this window.',
+}: {
+  cells: HeatmapCell[];
+  dayLabels: readonly string[];
+  emptyNote?: string;
+}) {
+  const index = React.useMemo(() => {
+    // Keyed on dow*24+hour — a string concat of the two merges dow 1/hour 12
+    // with dow 11/hour 2 and paints a real number onto the wrong square.
+    const m = new Map<number, number>();
+    for (const c of cells) m.set(c.dow * 24 + c.hour, c.count);
+    return m;
+  }, [cells]);
+
+  const peak = React.useMemo(
+    () => cells.reduce((max, c) => (c.count > max ? c.count : max), 0),
+    [cells],
+  );
+
+  if (peak === 0) {
+    return <span style={{ fontSize: 12.5, color: 'var(--dk-ink-3)' }}>{emptyNote}</span>;
+  }
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table
+        style={{ borderCollapse: 'separate', borderSpacing: 2, fontSize: 10 }}
+        // The grid is a picture of a distribution; a screen reader gets the
+        // peak and the caption, which is the whole of what it says.
+        aria-label={`Activity by day and hour. Busiest hour has ${peak}.`}
+      >
+        <tbody>
+          {dayLabels.map((day, dow) => (
+            <tr key={day}>
+              <th
+                scope="row"
+                style={{
+                  fontSize: 10,
+                  fontWeight: 400,
+                  color: 'var(--dk-ink-4)',
+                  textAlign: 'right',
+                  paddingRight: 6,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {day}
+              </th>
+              {Array.from({ length: 24 }, (_, hour) => {
+                const n = index.get(dow * 24 + hour) ?? 0;
+                return (
+                  <td
+                    key={hour}
+                    title={`${day} ${String(hour).padStart(2, '0')}:00 — ${n}`}
+                    style={{
+                      width: 12,
+                      height: 12,
+                      padding: 0,
+                      borderRadius: 2,
+                      // A cell with activity never falls below 0.12, so "one
+                      // sale" is visibly different from "none" rather than
+                      // fading into the background at a high peak.
+                      background:
+                        n === 0
+                          ? 'var(--dk-inset)'
+                          : `color-mix(in srgb, var(--dk-ink) ${Math.round(
+                              12 + (n / peak) * 88,
+                            )}%, transparent)`,
+                    }}
+                  />
+                );
+              })}
+            </tr>
+          ))}
+          <tr>
+            <th />
+            {Array.from({ length: 24 }, (_, hour) => (
+              <td
+                key={hour}
+                className="dk-mono"
+                style={{
+                  fontSize: 8.5,
+                  color: 'var(--dk-ink-4)',
+                  textAlign: 'center',
+                  paddingTop: 2,
+                }}
+              >
+                {/* Every third hour, or the row is unreadable at 12px cells. */}
+                {hour % 3 === 0 ? String(hour).padStart(2, '0') : ''}
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
