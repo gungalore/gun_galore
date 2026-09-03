@@ -78,6 +78,7 @@ import {
   clock,
   creditIsLow,
   creditUnreadable,
+  describeThresholdVerdict,
   declineWardenProposal,
   fetchAdmins,
   fetchAlerts,
@@ -108,6 +109,8 @@ import {
   type AdminAlertRow,
   type AuditRow,
   type CreditSnapshot,
+  saveCreditThreshold,
+  thresholdVerdict,
   type CreditThreshold,
   type CronRow,
   type QueueRow,
@@ -342,6 +345,12 @@ export default function SitePage() {
       }}
       credits={credits}
       thresholds={thresholds}
+      onThresholdsChanged={() => {
+        // Re-read rather than patching state from the response: saving a
+        // floor can change whether OTHER rows are flagged (the command
+        // centre counts services below alarm off the same list).
+        void fetchCreditThresholds().then(setThresholds).catch(() => undefined);
+      }}
       onSend={() => setSendOpen(true)}
       onAudit={() => {
         setAuditOpen(true);
@@ -1658,6 +1667,7 @@ function CutoverRegion({
   onSend,
   onAudit,
   onAdmins,
+  onThresholdsChanged,
 }: {
   alerts: AdminAlertRow[];
   alertError: string | null;
@@ -1667,7 +1677,9 @@ function CutoverRegion({
   onSend: () => void;
   onAudit: () => void;
   onAdmins: () => void;
+  onThresholdsChanged: () => void;
 }) {
+  const [editingFloor, setEditingFloor] = React.useState<string | null>(null);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -1736,14 +1748,25 @@ function CutoverRegion({
         <Card
           label="Credits"
           hint="vendor balances"
-          footer="Low means at or under the vendor warn floor. A vendor with no floor, or with the pair encoding a spend ceiling rather than a floor, is shown unflagged rather than flagged the wrong way. No balance API is a post-paid or key-less vendor, not a fault — colouring those amber is how amber stops meaning anything."
+          footer="Low means at or under the vendor warn floor. Edit a floor to change when that fires — the editor says outright whether what you have typed can ever go off, because a floor that cannot is indistinguishable on this row from a vendor that is simply well stocked. No balance API is a post-paid or key-less vendor, not a fault; colouring those amber is how amber stops meaning anything."
         >
           {credits.map((c, i) => {
-            const low = creditIsLow(c, thresholds.find((t) => t.service === c.service));
+            const threshold = thresholds.find((t) => t.service === c.service);
+            const low = creditIsLow(c, threshold);
             const unreadable = creditUnreadable(c);
+            const verdict = threshold ? thresholdVerdict(threshold) : null;
             return (
               <Row key={c.service} last={i === credits.length - 1}>
                 <span style={{ fontSize: 12.5, color: 'var(--dk-ink)' }}>{c.service}</span>
+                {/* 🚨 A FLOOR THAT CANNOT FIRE IS MARKED ON THE ROW, not left
+                    to look like good news. Without this the operator cannot
+                    tell "well stocked" from "wired so it never warns", which
+                    is the exact state VerifyNow was in at 28 credits. */}
+                {verdict && !verdict.fires && !unreadable ? (
+                  <Tag kind="neutral" icon={null}>
+                    {verdict.why === 'off' ? 'alarm off' : 'never flags'}
+                  </Tag>
+                ) : null}
                 <span style={{ flex: 1 }} />
                 {unreadable ? (
                   <Tag kind={unreadable === 'failed' ? 'warn' : 'neutral'} icon={null}>
@@ -1759,15 +1782,178 @@ function CutoverRegion({
                     {low ? <Tag kind="warn">low</Tag> : null}
                   </>
                 )}
+                <Button variant="ghost" onClick={() => setEditingFloor(c.service)}>
+                  Floor
+                </Button>
               </Row>
             );
           })}
         </Card>
       ) : null}
 
+      {editingFloor ? (
+        <FloorDialog
+          service={editingFloor}
+          unit={credits.find((c) => c.service === editingFloor)?.unit ?? null}
+          current={thresholds.find((t) => t.service === editingFloor)}
+          onClose={() => setEditingFloor(null)}
+          onSaved={() => {
+            setEditingFloor(null);
+            onThresholdsChanged();
+          }}
+        />
+      ) : null}
+
       <ProbesAndQueues />
       <TrustSafety />
     </div>
+  );
+}
+
+/**
+ * Edit one vendor's low-balance floor.
+ *
+ * 🚨 THE POINT OF THIS DIALOG IS THE SENTENCE UNDER THE FIELDS, not the
+ * fields. Two numbers and a switch are easy; what the legacy page never did
+ * was tell the operator that the pair they just saved is inert. There are
+ * three ways to write a floor that never fires — switch it off, leave one
+ * side blank, or put warn at or below alarm — and all three render on the
+ * credits row exactly like a vendor that is comfortably stocked. That is the
+ * state VerifyNow was in when it reached 28 credits with the board calm.
+ *
+ * So the verdict is computed from the LIVE field values on every keystroke,
+ * by the same pure function the row uses, and it is shown whether it is good
+ * news or bad. It never blocks the save — a spend ceiling in these columns is
+ * a real thing an operator may want (anthropic uses one) — it just refuses to
+ * let it be saved silently.
+ */
+function FloorDialog({
+  service,
+  unit,
+  current,
+  onClose,
+  onSaved,
+}: {
+  service: string;
+  unit: string | null;
+  current: CreditThreshold | undefined;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [warn, setWarn] = React.useState(
+    current?.warnThreshold === null || current?.warnThreshold === undefined
+      ? ''
+      : String(current.warnThreshold),
+  );
+  const [alarm, setAlarm] = React.useState(
+    current?.alarmThreshold === null || current?.alarmThreshold === undefined
+      ? ''
+      : String(current.alarmThreshold),
+  );
+  const [enabled, setEnabled] = React.useState(current?.enabled ?? true);
+  const [saving, setSaving] = React.useState(false);
+  const [failure, setFailure] = React.useState<string | null>(null);
+
+  /** '' means "no floor", which is a different thing from 0. */
+  const parse = (raw: string): number | null => {
+    const t = raw.trim();
+    if (t === '') return null;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : null;
+  };
+  const pending = {
+    warnThreshold: parse(warn),
+    alarmThreshold: parse(alarm),
+    enabled,
+  };
+  const verdict = thresholdVerdict(pending);
+  const isDefault = current?.source === 'default';
+
+  async function save() {
+    setSaving(true);
+    setFailure(null);
+    try {
+      await saveCreditThreshold(service, pending);
+      onSaved();
+    } catch (err) {
+      setFailure(describeFailure(err));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <DialogFrame
+      label="Credit floor"
+      title={service}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={() => void save()} disabled={saving}>
+            {saving ? 'Saving…' : 'Save floor'}
+          </Button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {isDefault ? (
+          <span style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--dk-ink-3)' }}>
+            This vendor is on the built-in floor — there is no saved row for it yet. Saving
+            creates one, and it overrides the default from then on.
+          </span>
+        ) : null}
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <Label>Warn at or below</Label>
+            <Input
+              value={warn}
+              onChange={(e) => setWarn(e.target.value)}
+              inputMode="numeric"
+              placeholder="no floor"
+            />
+          </div>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <Label>Alarm at or below</Label>
+            <Input
+              value={alarm}
+              onChange={(e) => setAlarm(e.target.value)}
+              inputMode="numeric"
+              placeholder="no floor"
+            />
+          </div>
+        </div>
+
+        <Toggle
+          checked={enabled}
+          onChange={setEnabled}
+          label="Watch this vendor"
+        />
+
+        {/* The sentence this dialog exists for. */}
+        <div
+          style={{
+            padding: '9px 11px',
+            borderRadius: 6,
+            background: 'var(--dk-inset)',
+            border: `1px solid ${verdict.fires ? 'var(--dk-line-2)' : 'var(--dk-warn)'}`,
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: verdict.fires ? 'var(--dk-ink-2)' : 'var(--dk-ink)',
+          }}
+        >
+          {describeThresholdVerdict(verdict, unit)}
+        </div>
+
+        {failure ? (
+          <span style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--dk-bad)' }}>
+            {`Not saved. ${failure}`}
+          </span>
+        ) : null}
+      </div>
+    </DialogFrame>
   );
 }
 

@@ -162,6 +162,15 @@ export interface CreditThreshold {
   warnThreshold: number | null;
   alarmThreshold: number | null;
   enabled: boolean;
+  /**
+   * ⚠️ PRESENT ONLY ON A ROW THAT IS NOT IN THE DATABASE. listThresholds()
+   * merges built-in floors for any service with no CreditThreshold row and
+   * stamps those `source: 'default'`. The distinction is not cosmetic: those
+   * floors exist BECAUSE the alarm chain used to do nothing until an operator
+   * hand-created rows, and VerifyNow reached 28 credits with no warning
+   * anywhere. An operator editing a default is creating that first real row.
+   */
+  source?: 'default';
 }
 
 export function fetchCredits(): Promise<CreditSnapshot[]> {
@@ -205,6 +214,69 @@ export function creditIsLow(
   const { warnThreshold: warn, alarmThreshold: alarm } = threshold;
   if (warn === null || alarm === null || warn <= alarm) return false;
   return snap.balance <= warn;
+}
+
+/**
+ * Will this pair EVER raise a flag, and if not, why not?
+ *
+ * 🚨 THE FAILURE THIS EXISTS TO MAKE VISIBLE IS A WARNING THAT CANNOT GO OFF.
+ * creditIsLow() returns false for four different reasons and the row renders
+ * identically for all of them — a vendor that is comfortably stocked and a
+ * vendor whose alarm is wired backwards both show no tag. That is precisely
+ * the shape of the incident these thresholds were introduced for: VerifyNow
+ * ran to 28 credits while the board stayed calm.
+ *
+ * So an operator editing a threshold is told, before they save, whether what
+ * they have typed can ever fire. Kept as a pure function beside creditIsLow
+ * so the two cannot drift: every branch below is a condition under which
+ * creditIsLow is unable to return true.
+ */
+export type ThresholdVerdict =
+  | { fires: true; at: number }
+  | { fires: false; why: 'off' | 'unset' | 'not-a-floor' };
+
+export function thresholdVerdict(t: {
+  warnThreshold: number | null;
+  alarmThreshold: number | null;
+  enabled: boolean;
+}): ThresholdVerdict {
+  if (!t.enabled) return { fires: false, why: 'off' };
+  if (t.warnThreshold === null || t.alarmThreshold === null) {
+    return { fires: false, why: 'unset' };
+  }
+  // Warn must sit ABOVE alarm — you get warned on the way down to the alarm.
+  // The anthropic row inverts this on purpose to encode a daily SPEND CEILING
+  // in the same two columns, and is left unflagged rather than flagged
+  // backwards; see creditIsLow.
+  if (t.warnThreshold <= t.alarmThreshold) return { fires: false, why: 'not-a-floor' };
+  return { fires: true, at: t.warnThreshold };
+}
+
+/** The verdict in the operator's words. One sentence, no jargon. */
+export function describeThresholdVerdict(v: ThresholdVerdict, unit?: string | null): string {
+  if (v.fires) {
+    return `Flags low at ${v.at.toLocaleString('en-ZA')}${unit ? ` ${unit}` : ''} or below.`;
+  }
+  if (v.why === 'off') return 'Switched off — this vendor will never be flagged low.';
+  if (v.why === 'unset') {
+    return 'No floor set — this vendor will never be flagged low, whatever the balance.';
+  }
+  return 'Warn is not above alarm, so this reads as a spend ceiling rather than a floor and will never flag low.';
+}
+
+/**
+ * Save one vendor's floor. PUT is an upsert server-side, so this both edits a
+ * saved row and creates the first real row for a vendor still on the built-in
+ * default.
+ */
+export function saveCreditThreshold(
+  service: string,
+  body: { warnThreshold: number | null; alarmThreshold: number | null; enabled: boolean },
+): Promise<CreditThreshold> {
+  return deskFetch(`/admin/credits/thresholds/${encodeURIComponent(service)}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
 }
 
 /* ── Audit trail ──────────────────────────────────────────────────────── */
