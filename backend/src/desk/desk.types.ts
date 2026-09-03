@@ -87,6 +87,10 @@ export interface DeskFeed {
     held: string;
     payable: string;
     blocked: string;
+    /** The raw figure behind `blocked`, so the rail can colour the row by its
+     *  VALUE. The tone was hard-coded to amber, so R0 blocked — the good
+     *  state, and the usual one — read as a warning on every load. */
+    blockedCents?: number;
     refundPending: string;
     heldSub?: string;
     payableSub?: string;

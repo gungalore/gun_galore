@@ -1072,14 +1072,83 @@ export class AdminService {
   async getUserDossier(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      // Include EVERYTHING — admin-side, so admin-only PII fields
-      // (phone, address, bank) are fair game. We're not redacting.
-      // The frontend admin layout is JWT-gated separately.
-      include: {
-        // Relation field names live on the User model — see schema.prisma:
-        //   listings, buyerTransactions, sellerTransactions,
-        //   offersPlaced (NOT buyerOffers), bidsPlaced (if defined).
-        // We pull only the ones that exist + are always defined.
+      // 🚨 AN ALLOWLIST, NOT `include`. This used to be a bare `include`, whose
+      // comment argued that "admin-side, so admin-only PII fields are fair
+      // game — we're not redacting". Two things were wrong with that:
+      //
+      //  · `phoneOtpHash` / `phoneOtpExpiresAt` are a LIVE AUTH CREDENTIAL, not
+      //    PII. A short numeric OTP behind a plain hash is reversible in
+      //    milliseconds, and it is the second factor on phone verification.
+      //    `kycIdHash` and `idNumberEncrypted` are the same category.
+      //  · The route is a GET, so MONITORING_ADMIN — the READ-ONLY tier that
+      //    exists precisely so someone can watch without being trusted to act
+      //    — could read all of it.
+      //
+      // The frontend narrowed this at the TYPE layer (see MemberUser in
+      // lib/desk-member.ts, whose own comment lists these as "deliberately
+      // absent"). A type does not stop bytes: the full row still crossed the
+      // wire into the network tab, any body-logging proxy, and any XSS on the
+      // admin panel. Same lesson as the listing-detail leak — fix it at the
+      // SELECT, never at the render.
+      //
+      // This list is MemberUser's fields exactly. Adding one here is a decision
+      // to show it; adding one there without this is a no-op.
+      select: {
+        id: true,
+        username: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        phoneVerified: true,
+        dateOfBirth: true,
+
+        createdAt: true,
+        sellerTier: true,
+        trustScore: true,
+        averageRating: true,
+        totalSales: true,
+        profileCompletedAt: true,
+
+        kycStatus: true,
+        kycMethod: true,
+        kycTier: true,
+        kycRequiredAt: true,
+        kycVerifiedAt: true,
+        kycAttempts: true,
+        kycFaceMatchScore: true,
+        kycReviewedAt: true,
+        kycReviewNote: true,
+        kycClaudeFindings: true,
+        // Presence only — the bytes come from the authenticated media route.
+        kycIdStorageKey: true,
+        kycSelfieStorageKey: true,
+        kycIdDocumentUrl: true,
+        kycSelfieUrl: true,
+
+        // ⚠️ The account number stays. The bank-ownership check is MANUAL —
+        // an admin compares these against the member's documents before the
+        // first payout — so masking here would break the one workflow the
+        // field exists for. It is dropped from the ORDER dossier, where no
+        // such need exists.
+        bankName: true,
+        bankAccountHolder: true,
+        bankAccountNumber: true,
+        bankVerifiedAt: true,
+        bankAvsResult: true,
+
+        isBanned: true,
+        bannedAt: true,
+        accountClosedAt: true,
+
+        auctionStrikes: true,
+        dispatchStrikes: true,
+        sellerRejectStrikes: true,
+        sellingBannedAt: true,
+
+        // Relation names live on the User model — listings,
+        // buyerTransactions, sellerTransactions, offersPlaced (NOT
+        // buyerOffers). Only ones that exist and are always defined.
         _count: {
           select: {
             listings: true,
@@ -1731,10 +1800,21 @@ export class AdminService {
             kycStatus: true,
             sellerTier: true,
             profileCompletedAt: true,
+            // 🚨 bankAccountNumber / bankAccountHolder / bankName WERE HERE
+            // AND ARE GONE. They are stored in plaintext (deliberately, see
+            // schema.prisma), and this is the ORDER drawer — it judges a sale,
+            // not a payout, and never renders them. lib/desk-order.ts's own
+            // comment already said the endpoint "hands back far more about the
+            // two members than this drawer has any business showing" and named
+            // these exactly — but it fixed it by not declaring them in the
+            // TypeScript types, which does not stop the account number
+            // crossing the wire on every load of the drawer.
+            //
+            // `bankVerifiedAt` is what a money question here actually needs:
+            // whether the seller can be paid, not the digits. The Member
+            // drawer still carries the number, because the manual
+            // bank-ownership check is the one workflow that genuinely needs it.
             bankVerifiedAt: true,
-            bankName: true,
-            bankAccountHolder: true,
-            bankAccountNumber: true,
           },
         },
         dealer: {

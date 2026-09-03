@@ -1832,8 +1832,12 @@ function FloorDialog({
           </span>
         ) : null}
 
+        {/* <label>, not <div>: `Label` renders a <span>, so both inputs had
+            the SAME placeholder ("no floor") as their only accessible name.
+            A screen reader announced two identical fields, and there was
+            nothing to say which one was the alarm. */}
         <div style={{ display: 'flex', gap: 10 }}>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
             <Label>Warn at or below</Label>
             <Input
               value={warn}
@@ -1841,8 +1845,8 @@ function FloorDialog({
               inputMode="numeric"
               placeholder="no floor"
             />
-          </div>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+          </label>
+          <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
             <Label>Alarm at or below</Label>
             <Input
               value={alarm}
@@ -1850,7 +1854,7 @@ function FloorDialog({
               inputMode="numeric"
               placeholder="no floor"
             />
-          </div>
+          </label>
         </div>
 
         <Toggle

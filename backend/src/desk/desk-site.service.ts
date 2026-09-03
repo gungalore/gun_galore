@@ -231,8 +231,45 @@ export class DeskSiteService {
       .count({ where: { createdAt: { gte: dayAgo }, status: 'FAILED' } })
       .catch(() => 0);
 
+    // 🚨 EMAIL USED TO BE A BARE LITERAL SAYING "delivering", tone ok — a green
+    // tag that was true by assertion, never by measurement. The signal already
+    // existed: desk.service.ts counts EmailOutbox rows parked past their retry
+    // time and raises the pile card "The email outbox is not draining". So the
+    // Site board could show a green Email tag at the same instant the Desk
+    // showed an email outage, and both came from this one process.
+    //
+    // Same 30-minute stall window as that card, deliberately — two numbers for
+    // "is email stuck" that could drift apart is how the pair disagreed before.
+    const OUTBOX_STALL_MINUTES = 30;
+    const emailStalled = await this.prisma.emailOutbox
+      .count({
+        where: { nextAttemptAt: { lt: new Date(Date.now() - OUTBOX_STALL_MINUTES * 60_000) } },
+      })
+      .catch(() => null);
+
     return [
-      { key: 'email', label: 'Email', state: 'delivering', tone: 'ok' as GateTone, detail: 'Resend' },
+      {
+        key: 'email',
+        label: 'Email',
+        // A failed COUNT is not zero stuck emails — it is no answer, and the
+        // board's own rule is that unknown never renders as a healthy state.
+        state:
+          emailStalled === null
+            ? 'not measured'
+            : emailStalled > 0
+              ? `${emailStalled} stuck`
+              : 'delivering',
+        tone:
+          emailStalled === null
+            ? ('neutral' as GateTone)
+            : emailStalled > 0
+              ? ('warn' as GateTone)
+              : ('ok' as GateTone),
+        detail:
+          emailStalled === null
+            ? 'Resend · outbox could not be read'
+            : `Resend · outbox, ${OUTBOX_STALL_MINUTES}m stall window`,
+      },
       {
         key: 'sms',
         label: 'SMS',
@@ -240,7 +277,23 @@ export class DeskSiteService {
         tone: smsFailures > 0 ? ('warn' as GateTone) : ('ok' as GateTone),
         detail: 'SMSPortal · last 24h',
       },
-      { key: 'push', label: 'Web push', state: 'delivering', tone: 'ok' as GateTone, detail: 'VAPID' },
+      {
+        key: 'push',
+        label: 'Web push',
+        // ⚠️ NOTHING RECORDS WEB-PUSH DELIVERY, so there is no honest way to
+        // say it is working. This said "delivering" with a green tone, which
+        // is the same claim the Email row was making falsely — an assertion
+        // wearing the colour of a measurement.
+        //
+        // `neutral` is the tone WhatsApp already uses below for "real but not
+        // reporting", and it exists precisely so a permanent unknown does not
+        // sit in amber next to genuine alarms until nobody reads either.
+        // Turning this green again requires a failure table to read, not a
+        // different literal.
+        state: 'not measured',
+        tone: 'neutral' as GateTone,
+        detail: 'VAPID · no delivery record kept',
+      },
       {
         key: 'whatsapp',
         label: 'WhatsApp',

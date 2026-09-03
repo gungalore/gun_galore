@@ -240,7 +240,10 @@ export function AdminsDrawer({ open, onClose, admins, onChanged }: AdminsDrawerP
                           last in {stamp(a.lastLoginAt)}
                         </span>
                       ) : (
-                        <span style={{ fontSize: 11, color: 'var(--dk-ink-4)' }}>never signed in</span>
+                        // Same field as the branch above ('last login'), which
+                        // renders at ink-3 — so the SAME row was legible with a
+                        // date and near-invisible without one.
+                        <span style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>never signed in</span>
                       )}
                     </span>
                     <Tag kind={a.role === 'SUPERADMIN' ? 'info' : 'neutral'} icon={null}>

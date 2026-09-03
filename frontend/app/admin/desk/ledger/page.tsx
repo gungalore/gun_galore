@@ -719,16 +719,36 @@ export default function LedgerPage() {
         <MoneyDialog
           open={confirm}
           onCancel={() => setConfirm(false)}
-          onConfirm={() => {
+          onConfirm={async () => {
+            // 🚨 THIS HANDLER WAS A STUB THAT ALWAYS REPORTED "not sent".
+            //
+            // runDuePayouts + describePayoutRun were written, tested and
+            // imported at the top of this file, and a paying/setPaying pair was
+            // scaffolded for exactly this call — but onConfirm still set a
+            // hard-coded failure and never touched the network. So the Ledger
+            // could say what was owed and to whom, and pressing the button paid
+            // nobody, however many times it was pressed.
+            //
+            // ⚠️ ACCEPTED IS NOT PAID — Peach settles asynchronously and the
+            // payout webhook reconciles, which is why describePayoutRun says
+            // "accepted by the bank rail" and never "paid". Exactly-once is the
+            // server's, via paidOutAt; setPaying only stops a second batch
+            // being started while the first is in flight.
             setConfirm(false);
-            // The run itself is not wired here — see the handover note. The
-            // dialog exists and is correct; the disbursement call is the one
-            // piece deliberately left for review.
-            setResult({
-              ok: false,
-              tag: 'not sent',
-              body: 'Single-sale and batch disbursement are not wired from the Desk yet.\nSee the Phase 3 handover note.',
-            });
+            setPaying(true);
+            try {
+              const r = await runDuePayouts();
+              setResult({
+                ok: r.failed === 0,
+                tag: r.failed > 0 ? 'partly accepted' : 'accepted',
+                body: describePayoutRun(r),
+              });
+              await load();
+            } catch (err) {
+              setResult({ ok: false, tag: 'failed', body: describeFailure(err) });
+            } finally {
+              setPaying(false);
+            }
           }}
           title={
             <>

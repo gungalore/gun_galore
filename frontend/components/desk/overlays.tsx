@@ -321,12 +321,51 @@ export function DialogFrame({
   width?: number;
   assertive?: boolean;
 }) {
+  const panelRef = React.useRef<HTMLDivElement>(null);
+  // Whatever had focus when the dialog opened gets it back when it closes.
+  const returnFocusRef = React.useRef<HTMLElement | null>(null);
+
   React.useEffect(() => {
+    // ⚠️ THIS DIALOG DECLARES aria-modal AND USED TO TRAP NOTHING. Drawer,
+    // directly above, does the full job — initial focus, a Tab trap, focus
+    // restored on close — and DialogFrame only listened for Escape. So the
+    // modal that guards the IRREVERSIBLE actions (MoneyDialog is built on
+    // this) was the one a keyboard operator could Tab straight out of, into
+    // the inert pile behind the dim, with no visible focus and no way back
+    // except Escape. aria-modal="true" also tells a screen reader the outside
+    // is inert, which was then untrue.
+    returnFocusRef.current = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    panel?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]')?.focus();
+
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !panel) return;
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
+
     document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      returnFocusRef.current?.focus?.();
+    };
   }, [onClose]);
 
   return (
@@ -336,6 +375,7 @@ export function DialogFrame({
         style={{ position: 'fixed', inset: 0, background: 'var(--dk-dim)', zIndex: 70 }}
       />
       <div
+        ref={panelRef}
         role="alertdialog"
         aria-modal="true"
         aria-live={assertive ? 'assertive' : undefined}
@@ -416,7 +456,20 @@ export function MoneyDialog({
           <Button variant="ghost" onClick={onCancel} disabled={loading}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={onConfirm} amount={amount} loading={loading}>
+          {/* 🚨 `disabled` AS WELL AS `loading`. Every other confirm in the Desk
+              pairs the two; this one — the money one — passed `loading` alone,
+              which spins the button but leaves it clickable. So the single
+              dialog guarding a payout run was the single place a double-click
+              could fire the action twice. Exactly-once is enforced server-side
+              via paidOutAt, so this would not double-PAY, but it would start a
+              second bank batch and report a confusing second result. */}
+          <Button
+            variant="primary"
+            onClick={onConfirm}
+            amount={amount}
+            loading={loading}
+            disabled={loading}
+          >
             {confirmLabel}
           </Button>
         </>

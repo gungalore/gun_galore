@@ -67,10 +67,14 @@ export default function AdminLoginPage() {
         </p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+            {/* htmlFor/id, so the caption is the input's accessible name and
+                clicking it focuses the field. Without it a screen reader
+                announced two unlabelled boxes on the admin sign-in form. */}
+            <label htmlFor="admin-email" className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
               Email
             </label>
             <input
+              id="admin-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -84,10 +88,11 @@ export default function AdminLoginPage() {
             />
           </div>
           <div>
-            <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+            <label htmlFor="admin-password" className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
               Password
             </label>
             <input
+              id="admin-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

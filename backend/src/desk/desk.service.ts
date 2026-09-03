@@ -900,6 +900,11 @@ export class DeskService {
         held: this.rand(money.heldCents),
         payable: this.rand(money.payableCents),
         blocked: this.rand(money.blockedCents),
+        // The raw figure travels with the formatted one so the rail can
+        // colour the row by its VALUE. It used to be painted amber
+        // unconditionally, so a blocked total of R0 — the good state, and
+        // the usual one — still read as something needing attention.
+        blockedCents: money.blockedCents,
         refundPending: this.rand(money.refundCents),
         heldSub: `${money.heldCount} orders`,
         payableSub: `${money.payableCount} sales`,

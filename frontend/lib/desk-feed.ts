@@ -102,6 +102,10 @@ export interface DeskFeed {
     held: string;
     payable: string;
     blocked: string;
+    /** The raw figure behind `blocked`, so the row can be coloured by
+     *  VALUE rather than by which row it is. R0 blocked is the good
+     *  state and must not read as a warning. */
+    blockedCents?: number;
     refundPending: string;
     heldSub?: string;
     payableSub?: string;

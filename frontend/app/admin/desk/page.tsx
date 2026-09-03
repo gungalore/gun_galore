@@ -679,7 +679,14 @@ function DeskRail({ feed }: { feed: DeskFeed }) {
       <RailCard label="Money right now">
         <Kv k="Held" v={feed.money.held} />
         <Kv k="Payable" v={feed.money.payable} />
-        <Kv k="Blocked" v={feed.money.blocked} tone="warn" />
+        {/* Amber only when something IS blocked. The tone was hard-coded,
+            so R0 — nothing blocked, the state you want — was painted as a
+            warning on every load, next to three white rows reading R0. */}
+        <Kv
+          k="Blocked"
+          v={feed.money.blocked}
+          tone={(feed.money.blockedCents ?? 0) > 0 ? 'warn' : undefined}
+        />
         <Kv k="Refund pending" v={feed.money.refundPending} last />
         {feed.money.gateNote ? (
           <span style={{ fontSize: 11.5, color: 'var(--dk-warn)', marginTop: 2, lineHeight: 1.45 }}>
