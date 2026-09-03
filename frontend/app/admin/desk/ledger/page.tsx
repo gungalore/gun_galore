@@ -59,6 +59,7 @@ import {
 import { describeFailure } from '@/lib/desk-auth';
 import { OrderBook } from './order-book';
 import { SalesBook } from './sales-book';
+import { Books } from './books';
 import type { SaleFilter } from '@/lib/desk-transactions';
 
 /**
@@ -69,7 +70,7 @@ import type { SaleFilter } from '@/lib/desk-transactions';
  * thing they came to do is pay sellers. 'orders' is the whole order book, the
  * replacement for /admin/orders.
  */
-type LedgerView = 'run' | 'orders' | 'sales';
+type LedgerView = 'run' | 'orders' | 'sales' | 'books';
 
 /** Nothing to open, and why. Not a failure — a shape. */
 const NO_LINES = {
@@ -360,6 +361,8 @@ export default function LedgerPage() {
       setView('sales');
     } else if (q.get('view') === 'sales') {
       setView('sales');
+    } else if (q.get('view') === 'books') {
+      setView('books');
     }
 
     const deepTxn = q.get('txn');
@@ -412,6 +415,7 @@ export default function LedgerPage() {
      * the `order` param is written here to avoid. Writing it also makes an
      * open sale a link an operator can paste, like an order already is.
      */
+    if (view === 'books') q.set('view', 'books');
     if (view === 'sales') {
       q.set('view', 'sales');
       // ⚠️ THE FILTER SURVIVES THE WRITER TOO. It arrives from a command-centre
@@ -501,10 +505,17 @@ export default function LedgerPage() {
           <Chip active={view === 'sales'} onClick={() => switchView('sales')}>
             Sales
           </Chip>
+          {/* The back-office lens: what of the bank balance is not ours, and
+              what never reached Zoho Books. */}
+          <Chip active={view === 'books'} onClick={() => switchView('books')}>
+            Books
+          </Chip>
         </div>
       </div>
 
-      {view === 'sales' ? (
+      {view === 'books' ? (
+        <Books onOpenSale={openOrder} />
+      ) : view === 'sales' ? (
         <SalesBook
           filter={saleFilter ?? undefined}
           onClearFilter={() => setSaleFilter(null)}
