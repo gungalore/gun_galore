@@ -27,9 +27,11 @@ import { formatRand } from '@/components/desk';
 import {
   LISTINGS_PAGE_SIZE,
   LISTING_SEGMENTS,
+  fetchDeadStock,
   fetchListingPage,
   segmentLabel,
   statusLabel,
+  type DeadStockRow,
   type ListingRow,
   type ListingSegment,
 } from '@/lib/desk-listings';
@@ -50,7 +52,7 @@ export function ListingsRegister({ onOpen }: { onOpen: (listingId: string) => vo
   const [search, setSearch] = React.useState('');
   const [debounced, setDebounced] = React.useState('');
   const [page, setPage] = React.useState(1);
-  const [rows, setRows] = React.useState<ListingRow[] | null>(null);
+  const [rows, setRows] = React.useState<(ListingRow | DeadStockRow)[] | null>(null);
   const [total, setTotal] = React.useState(0);
   const [failure, setFailure] = React.useState<string | null>(null);
 
@@ -75,6 +77,18 @@ export function ListingsRegister({ onOpen }: { onOpen: (listingId: string) => vo
     setRows(null);
     setFailure(null);
     try {
+      // ⚠️ DEAD STOCK IS A DIFFERENT ENDPOINT, NOT A STATUS. It ranks ACTIVE
+      // listings by age x price server-side, which getListings cannot express
+      // — so it is fetched whole rather than paged, and the search box does
+      // not apply to it. The caption says both, because a search box that
+      // silently does nothing is worse than one that is not there.
+      if (segment === 'DEAD') {
+        const dead = await fetchDeadStock();
+        if (ticket.current !== mine) return;
+        setRows(dead);
+        setTotal(dead.length);
+        return;
+      }
       const res = await fetchListingPage(segment, debounced, page);
       if (ticket.current !== mine) return;
       setRows(res.rows);
@@ -103,20 +117,24 @@ export function ListingsRegister({ onOpen }: { onOpen: (listingId: string) => vo
         ))}
       </div>
 
-      <Input
-        icon={IconSearch}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Title, reference, make or model"
-        aria-label="Search listings"
-      />
+      {segment === 'DEAD' ? null : (
+        <Input
+          icon={IconSearch}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Title, reference, make or model"
+          aria-label="Search listings"
+        />
+      )}
 
       <div style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>
         {rows === null
           ? 'reading…'
           : rows.length === 0
             ? 'nothing here'
-            : `${from}–${to} of ${total} · ${segmentLabel(segment).toLowerCase()}`}
+            : segment === 'DEAD'
+              ? `${total} listings, worst first · live 30+ days with no bids, offers or watchers`
+              : `${from}–${to} of ${total} · ${segmentLabel(segment).toLowerCase()}`}
       </div>
 
       {failure ? (
@@ -128,9 +146,11 @@ export function ListingsRegister({ onOpen }: { onOpen: (listingId: string) => vo
           {/* ⚠️ THREE DIFFERENT EMPTIES, THREE DIFFERENT SENTENCES. "No
               results" over a search reads as "this listing does not exist",
               which is a fact this board has not established. */}
-          {debounced.trim().length >= 2
-            ? `Nothing matching “${debounced.trim()}” in ${segmentLabel(segment).toLowerCase()}.`
-            : `No listings are ${segmentLabel(segment).toLowerCase()}.`}
+          {segment === 'DEAD'
+            ? 'Nothing has been live for 30 days without a bid, an offer or a watcher. That is the good outcome.'
+            : debounced.trim().length >= 2
+              ? `Nothing matching “${debounced.trim()}” in ${segmentLabel(segment).toLowerCase()}.`
+              : `No listings are ${segmentLabel(segment).toLowerCase()}.`}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -193,6 +213,9 @@ export function ListingsRegister({ onOpen }: { onOpen: (listingId: string) => vo
               {/* A firearm is the one attribute on this row that changes what
                   an operator may do next, so it is tagged and nothing else is. */}
               {l.category?.isFirearm ? <Tag kind="neutral">firearm</Tag> : null}
+              {'ageDays' in l ? (
+                <Tag kind="neutral">{`${(l as DeadStockRow).ageDays} days live`}</Tag>
+              ) : null}
               <span className="dk-mono" style={{ fontSize: 12, color: 'var(--dk-ink-2)' }}>
                 {l.price === null ? '—' : formatRand(l.price)}
               </span>
@@ -202,7 +225,7 @@ export function ListingsRegister({ onOpen }: { onOpen: (listingId: string) => vo
         </div>
       )}
 
-      {rows && rows.length > 0 && total > LISTINGS_PAGE_SIZE ? (
+      {rows && rows.length > 0 && segment !== 'DEAD' && total > LISTINGS_PAGE_SIZE ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Button variant="ghost" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
             Previous

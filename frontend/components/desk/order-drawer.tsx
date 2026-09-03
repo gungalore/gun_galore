@@ -66,6 +66,7 @@ import {
   shippingTimeline,
   zohoNeedsAttention,
   type OrderDossier,
+  type OrderParty,
   type OrderTransaction,
 } from '@/lib/desk-order';
 // 🚨 desk-orderS, PLURAL — the CART PARENT's module, not desk-order's. See its
@@ -375,13 +376,29 @@ function Body({
       </Section>
 
       <Section label="Parties">
-        <Kv k="Buyer" v={tx.buyer.username ?? '—'} mono={false} />
+        {/*
+         * ⚠️ A LINK, NOT A NESTED DRAWER. The cutover note recorded that the
+         * legacy page printed the buyer's email and phone under their name and
+         * that neither is rendered here — deliberate, per the usernames-only
+         * rule, but a real workflow change: an operator who used to copy a
+         * phone number off the order page now needs the Member drawer.
+         *
+         * Mounting MemberDrawer inside this one is the obvious fix and is
+         * wrong: Drawer binds Escape on `document` and defers only to a
+         * `.dk-dialog` above it, so two mounted at once both hear one keypress
+         * and both close — the failure this file's own header warns about. The
+         * Pile solves that with a stack; the Ledger has none, so a party opens
+         * the People board on that member instead. It also makes the identity
+         * reveal happen where the reveal is designed, behind its deliberate
+         * press, rather than as a side effect of reading an order.
+         */}
+        <Kv k="Buyer" v={<PartyLink party={tx.buyer} />} mono={false} />
         <Kv
           k="Buyer KYC"
           v={humanise(tx.buyer.kycStatus)}
           tone={tx.buyer.kycStatus === 'APPROVED' ? 'ok' : undefined}
         />
-        <Kv k="Seller" v={tx.seller.username ?? '—'} mono={false} />
+        <Kv k="Seller" v={<PartyLink party={tx.seller} />} mono={false} />
         <Kv
           k="Seller KYC"
           v={humanise(tx.seller.kycStatus)}
@@ -1031,6 +1048,25 @@ function ZohoFold({ tx, onActed }: { tx: OrderTransaction; onActed: () => void }
         </div>
       ) : null}
     </Fold>
+  );
+}
+
+/**
+ * A party's handle, as a door into their Member drawer.
+ *
+ * Renders plain text when there is no id to open — which is the deleted-account
+ * case, and must not look like a link that does nothing.
+ */
+function PartyLink({ party }: { party: OrderParty }) {
+  const label = party.username ?? '—';
+  if (!party.id) return <>{label}</>;
+  return (
+    <a
+      href={`/admin/desk/people?member=${encodeURIComponent(party.id)}`}
+      style={{ color: 'var(--dk-ink)', textUnderlineOffset: 3 }}
+    >
+      {label}
+    </a>
   );
 }
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   LISTINGS_PAGE_SIZE,
   LISTING_SEGMENTS,
+  fetchDeadStock,
   fetchListingPage,
   segmentLabel,
 } from './desk-listings';
@@ -114,5 +115,97 @@ describe('🚨 reading the response', () => {
     const page = await fetchListingPage('ALL', '', 1);
     expect(page.rows).toEqual([]);
     expect(page.total).toBe(0);
+  });
+});
+
+describe('🚨 dead stock is a ranking, not a status', () => {
+  it('carries a Dead stock segment alongside the statuses', () => {
+    expect(LISTING_SEGMENTS.map((s) => s.value)).toContain('DEAD');
+  });
+
+  it('maps the graveyard row without declaring the seller email', async () => {
+    // The endpoint selects sellerEmail and the legacy report printed it under
+    // every row. The Desk rule is username only, and the Order drawer set the
+    // precedent: the data module does not declare the field, so no row
+    // component can render it by reaching for what happens to be in the
+    // response. Asserting on the mapped object is how that stays true.
+    stub([
+      {
+        id: 'l1',
+        referenceNumber: 'GG-9',
+        title: 'An old rifle',
+        priceCents: 2500_00,
+        ageDays: 91.4,
+        staleScore: 412000,
+        sellerId: 'u1',
+        sellerUsername: 'boet',
+        sellerEmail: 'boet@example.com',
+        categoryName: 'Rifles',
+        listingType: 'BUY_NOW',
+      },
+    ]);
+    const [row] = await fetchDeadStock();
+    expect(JSON.stringify(row)).not.toContain('boet@example.com');
+    expect(JSON.stringify(row)).not.toContain('412000');
+    expect(row.seller?.username).toBe('boet');
+  });
+
+  it('rounds the age, because a row says "91 days live" not "91.4"', async () => {
+    stub([
+      {
+        id: 'l1',
+        referenceNumber: null,
+        title: 't',
+        priceCents: 1,
+        ageDays: 91.4,
+        staleScore: 1,
+        sellerId: 'u',
+        sellerUsername: null,
+        sellerEmail: 'x@y.z',
+        categoryName: 'c',
+        listingType: 'BUY_NOW',
+      },
+    ]);
+    expect((await fetchDeadStock())[0].ageDays).toBe(91);
+  });
+
+  it('every row is ACTIVE by definition, which is what makes it dead stock', async () => {
+    stub([
+      {
+        id: 'l1',
+        referenceNumber: null,
+        title: 't',
+        priceCents: null,
+        ageDays: 40,
+        staleScore: 1,
+        sellerId: 'u',
+        sellerUsername: null,
+        sellerEmail: 'x@y.z',
+        categoryName: 'c',
+        listingType: 'BUY_NOW',
+      },
+    ]);
+    expect((await fetchDeadStock())[0].status).toBe('ACTIVE');
+  });
+
+  it('does not invent a createdAt from an age', async () => {
+    // The endpoint returns days, not a date. Deriving one would put a
+    // precise-looking timestamp on an approximation.
+    stub([
+      {
+        id: 'l1',
+        referenceNumber: null,
+        title: 't',
+        priceCents: null,
+        ageDays: 40,
+        staleScore: 1,
+        sellerId: 'u',
+        sellerUsername: null,
+        sellerEmail: 'x@y.z',
+        categoryName: 'c',
+        listingType: 'BUY_NOW',
+      },
+    ]);
+    expect((await fetchDeadStock())[0].createdAt).toBe('');
   });
 });

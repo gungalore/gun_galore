@@ -6,7 +6,7 @@
  * deriving "conversion" from raw rows is how two surfaces end up disagreeing
  * about it in a meeting.
  */
-import { deskFetch } from './desk-auth';
+import { deskFetch, deskFetchRaw } from './desk-auth';
 
 /**
  * ⚠️ THE SERVER'S PERIOD VOCABULARY, NOT OURS. resolvePeriod() on the admin
@@ -324,4 +324,41 @@ export function heatIndex(cells: HeatCell[]): Map<number, number> {
 
 export function heatPeak(cells: HeatCell[]): number {
   return cells.reduce((max, c) => (c.count > max ? c.count : max), 0);
+}
+
+/* ── Export ───────────────────────────────────────────────────────────── */
+
+/**
+ * Download the series as a spreadsheet.
+ *
+ * 🚨 A PLAIN <a href> CANNOT DO THIS. The admin API is bearer-authenticated,
+ * and a link navigation sends no Authorization header — so the browser would
+ * follow it, receive a 401, and land the operator on a JSON error page having
+ * lost the board they were on. The file has to be fetched with the token,
+ * turned into a blob and handed to a synthetic link.
+ *
+ * ⚠️ AND THE OBJECT URL IS REVOKED. Every export otherwise pins a copy of the
+ * file in the tab for as long as it lives — harmless for one, not for an
+ * operator who exports a dozen windows while comparing them.
+ *
+ * ⚠️ THE FILENAME COMES FROM Content-Disposition when the server sends one, so
+ * the name is decided in one place. The fallback exists because a proxy that
+ * strips the header should not produce a download called "download".
+ */
+export async function downloadSeriesCsv(p: Period, b: Bucket): Promise<void> {
+  const res = await deskFetchRaw(`/admin/analytics/export.csv?period=${p}&bucket=${b}`);
+  const blob = await res.blob();
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const named = /filename="([^"]+)"/.exec(disposition)?.[1];
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = named ?? `all-outdoor-analytics-${p}-${b}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

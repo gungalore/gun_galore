@@ -16,6 +16,8 @@
 import * as React from 'react';
 import {
   BarList,
+  Button,
+  Heatmap,
   Label,
   ChartCard,
   Chip,
@@ -40,7 +42,10 @@ import {
   fetchKycFunnel,
   fetchOverview,
   fetchRefundRisk,
+  DOW_LABELS,
+  fetchActivityHeatmap,
   fetchDormant,
+  fetchSalesHeatmap,
   fetchSearchIntel,
   fetchSeries,
   fetchTimeToSale,
@@ -55,10 +60,12 @@ import {
   type KycStage,
   type OverviewKpis,
   BUCKETS,
+  downloadSeriesCsv,
   PERIODS,
   defaultBucket,
   type Bucket,
   type DormantSegment,
+  type HeatCell,
   type Period,
   type SearchIntel,
   type TimeToSaleRow,
@@ -100,6 +107,8 @@ export default function PulsePage() {
    * deliberate Daily.
    */
   const [bucket, setBucket] = React.useState<Bucket | null>(null);
+  const [exporting, setExporting] = React.useState(false);
+  const [exportError, setExportError] = React.useState<string | null>(null);
   const activeBucket = bucket ?? defaultBucket(period);
   const [data, setData] = React.useState<PulseData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -185,7 +194,7 @@ export default function PulsePage() {
         {/* ⚠️ THE BUCKET IS A SEPARATE ROW, NOT MORE PERIOD CHIPS. They read
             as one control otherwise, and picking "Weekly" would look like
             picking a window. */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {BUCKETS.map((b) => (
             <Chip
               key={b.value}
@@ -195,8 +204,33 @@ export default function PulsePage() {
               {b.label}
             </Chip>
           ))}
+          {/* ⚠️ IT EXPORTS WHAT IS ON SCREEN. Same period and bucket, resolved
+              by the same two helpers server-side — so the file is the series
+              the operator was looking at, not a differently-windowed one that
+              happens to look similar. */}
+          <Button
+            variant="ghost"
+            disabled={exporting}
+            onClick={() => {
+              setExporting(true);
+              void downloadSeriesCsv(period, activeBucket)
+                .catch((err) => setExportError(describeFailure(err)))
+                .finally(() => setExporting(false));
+            }}
+          >
+            {exporting ? 'Preparing…' : 'Export CSV'}
+          </Button>
         </div>
       </div>
+
+      {exportError ? (
+        <FailedRegion
+          title="Couldn't export"
+          detail={exportError}
+          onRetry={() => setExportError(null)}
+          scopeNote="the numbers on screen are unaffected"
+        />
+      ) : null}
 
       {error ? (
         <FailedRegion title="Couldn't load the numbers" detail={error} onRetry={() => void load()} />
@@ -469,6 +503,7 @@ export default function PulsePage() {
           </div>
 
           <MarketDetail period={period} />
+          <Heatmaps period={period} />
         </>
       )}
     </DeskShell>
@@ -680,6 +715,112 @@ function MarketDetail({ period }: { period: Period }) {
               No sign-in for 14 days, marketing consent given, not banned. This one figure
               does not move with the period chips — the window is fixed in the service.
               Reachable means a verified phone with SMS still switched on.
+            </span>
+          </>
+        )}
+      </ChartCard>
+    </div>
+  );
+}
+
+/**
+ * When the marketplace is busy, and when it sells.
+ *
+ * 🚨 THE ENDPOINTS EXISTED; THE GRID DID NOT. Both heatmaps have been served
+ * by /admin/analytics/insights/{sales,activity}-heatmap since the legacy page
+ * was written, and components/desk/charts.tsx had no dow x hour primitive — so
+ * this was the one item on the insights list that genuinely needed building
+ * rather than calling.
+ *
+ * ⚠️ THE TWO GRIDS ANSWER DIFFERENT QUESTIONS AND MUST NOT BE READ AS ONE.
+ * Activity is when members are on the site; sales is when money is released.
+ * They peak at different hours, and a single grid labelled "busy" would
+ * quietly merge a browsing pattern with a paying one.
+ */
+function Heatmaps({ period }: { period: Period }) {
+  const [sales, setSales] = React.useState<HeatCell[] | null>(null);
+  const [activity, setActivity] = React.useState<HeatCell[] | null>(null);
+  const [failure, setFailure] = React.useState<string | null>(null);
+  const [attempt, setAttempt] = React.useState(0);
+  const ticket = React.useRef(0);
+
+  React.useEffect(() => {
+    const mine = ++ticket.current;
+    setSales(null);
+    setActivity(null);
+    Promise.all([fetchSalesHeatmap(period), fetchActivityHeatmap(period)])
+      .then(([s, a]) => {
+        if (ticket.current !== mine) return;
+        setSales(s);
+        setActivity(a);
+        setFailure(null);
+      })
+      .catch((err) => {
+        if (ticket.current !== mine) return;
+        setFailure(describeFailure(err));
+      });
+  }, [period, attempt]);
+
+  if (failure) {
+    return (
+      <div style={{ marginTop: 12 }}>
+        <FailedRegion
+          title="Couldn't load the heatmaps"
+          detail={failure}
+          onRetry={() => setAttempt((a) => a + 1)}
+          scopeNote="the numbers above are unaffected"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+        gap: 12,
+        marginTop: 12,
+      }}
+    >
+      <ChartCard label="When sales complete">
+        {sales === null ? (
+          <SkeletonPile count={1} />
+        ) : (
+          <>
+            <Heatmap
+              cells={sales}
+              dayLabels={DOW_LABELS}
+              emptyNote="Nothing was released in this window."
+            />
+            <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)', lineHeight: 1.45 }}>
+              {/* ⚠️ RELEASE TIME IS AN ADMIN ACTION, NOT A BUYING PATTERN. This
+                  grid says when payouts were released, which today clusters
+                  around whenever the operator worked — not when members buy.
+                  Left unsaid, it reads as customer behaviour and would be
+                  planned against. */}
+              By the hour a payout was released, in SAST. That is when the sale was
+              settled, not when the buyer paid — so while releases are still done by
+              hand this is largely a picture of the operator’s own working day.
+            </span>
+          </>
+        )}
+      </ChartCard>
+
+      <ChartCard label="When members are here">
+        {activity === null ? (
+          <SkeletonPile count={1} />
+        ) : (
+          <>
+            <Heatmap
+              cells={activity}
+              dayLabels={DOW_LABELS}
+              emptyNote="No activity recorded in this window."
+            />
+            <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)', lineHeight: 1.45 }}>
+              Member activity by hour, in SAST. An empty square is a real zero —
+              the query counts rows and cannot tell &ldquo;nobody was here&rdquo; from
+              &ldquo;nothing was recorded&rdquo;.
             </span>
           </>
         )}
