@@ -310,6 +310,15 @@ export function formatWhen(iso: string | null | undefined): string {
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
+    // SAST explicitly, matching desk-listing.ts's stamp() and desk-site.ts's.
+    // Without it this rendered in the BROWSER's zone, so the same event
+    // showed one time on this surface and another on those — and an
+    // operator abroad, or on a machine with a wrong clock, read every
+    // Desk timestamp shifted. The Desk is one product; a timestamp has to
+    // mean the same thing on all five surfaces.
+    year: 'numeric',
+    hour12: false,
+    timeZone: 'Africa/Johannesburg',
   });
 }
 

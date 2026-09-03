@@ -1067,7 +1067,11 @@ function StrikesSection({
           k={
             <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
               <span>{r.label}</span>
-              <span style={{ fontSize: 11, color: 'var(--dk-ink-4)' }}>{r.consequence}</span>
+              {/* The CONSEQUENCE of a strike — what the member actually loses.
+                  It was the faintest text in the drawer at 2.8:1, below AA,
+                  while the strike label above it was fully legible. ink-3 is
+                  5.1:1 and is the Desk's floor for text that means something. */}
+              <span style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>{r.consequence}</span>
             </span>
           }
           v={String(r.count)}

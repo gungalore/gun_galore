@@ -957,7 +957,11 @@ function DealerListRow({
             auto-added dealer and a review queue is exactly where it earns its
             place: first seen in March and not seen since is a dealer who may
             have moved. */}
-        {seen ? <span style={{ fontSize: 11.5, color: 'var(--dk-ink-4)' }}>{seen}</span> : null}
+        {/* At ink-4 this was 2.8:1 — and the comment right above says it is
+            review-critical ("first seen in March and not seen since is a dealer
+            who may have moved"). Text an operator is asked to judge on cannot
+            be the hardest text on the row to read. */}
+        {seen ? <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>{seen}</span> : null}
         {/* ⚠️ An entry an operator could activate without noticing it has no
             suburb is the whole hazard of the auto-registration path. Say it on
             the row, not only inside the dialog they may never open. */}
@@ -1423,8 +1427,14 @@ function FormField({
   span?: boolean;
   children: React.ReactNode;
 }) {
+  // A real <label> wrapping the control, so the association is implicit
+  // through nesting — the same shape order-actions.tsx's `Labelled` already
+  // uses. This was a <div>, and `Label` renders a <span>, so the dealer form's
+  // fields had a visible caption and NO accessible name at all: a screen
+  // reader announced five consecutive "edit text" boxes with nothing to tell
+  // them apart, and clicking the caption did not focus its input.
   return (
-    <div
+    <label
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -1436,7 +1446,7 @@ function FormField({
       <Label>{label}</Label>
       {children}
       {hint ? <span style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>{hint}</span> : null}
-    </div>
+    </label>
   );
 }
 

@@ -91,12 +91,22 @@ export interface OverviewKpis {
   revenueCentsPrev: number;
   txCount: number;
   txCountPrev: number;
-  aovCents: number;
-  aovCentsPrev: number;
-  refundRate: number; // 0..1
-  refundRatePrev: number;
-  disputeRate: number; // 0..1
-  disputeRatePrev: number;
+  /**
+   * ⚠️ NULL MEANS THE PERIOD HAD NOTHING TO MEASURE, NOT ZERO.
+   *
+   * An average over no orders is undefined, and a rate over a zero
+   * denominator is undefined — but both used to be coerced to 0, so an empty
+   * period reported "Avg order R0" and "Refund rate 0.0%" as if they were
+   * findings. A refund rate of 0.0% is something a marketplace would be
+   * pleased to see; printing it for a period with no sales is the Desk
+   * stating something it never worked out. Null renders as an em dash.
+   */
+  aovCents: number | null;
+  aovCentsPrev: number | null;
+  refundRate: number | null; // 0..1, or null when nothing was sold
+  refundRatePrev: number | null;
+  disputeRate: number | null; // 0..1, or null when nothing was sold
+  disputeRatePrev: number | null;
 }
 
 export interface ByListingType {
@@ -607,9 +617,12 @@ export class AdminAnalyticsService {
       gmvCents: released._sum.buyerTotal ?? 0,
       revenueCents: released._sum.commissionZar ?? 0,
       txCount: released._count,
-      aovCents: Math.round(released._avg.buyerTotal ?? 0),
-      refundRate: total > 0 ? refunded / total : 0,
-      disputeRate: total > 0 ? disputed / total : 0,
+      // `_avg` is null when the period matched no rows — that is "no
+      // orders", not "the average was nought". Same for the two rates: the
+      // divide-by-zero guard was already here, it just answered 0.
+      aovCents: released._count === 0 ? null : Math.round(released._avg.buyerTotal ?? 0),
+      refundRate: total > 0 ? refunded / total : null,
+      disputeRate: total > 0 ? disputed / total : null,
     };
   }
 

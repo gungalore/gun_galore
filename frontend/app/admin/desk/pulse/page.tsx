@@ -248,10 +248,13 @@ export default function PulsePage() {
             <KpiTile label="Sales" value={rand(data.overview.gmvCents)} now={data.overview.gmvCents} prev={data.overview.gmvCentsPrev} period={period} />
             <KpiTile label="Orders" value={String(data.overview.txCount)} now={data.overview.txCount} prev={data.overview.txCountPrev} period={period} />
             <KpiTile label="Revenue" value={rand(data.overview.revenueCents)} now={data.overview.revenueCents} prev={data.overview.revenueCentsPrev} period={period} />
-            <KpiTile label="Refund rate" value={`${(data.overview.refundRate * 100).toFixed(1)}%`} now={data.overview.refundRate} prev={data.overview.refundRatePrev} period={period} />
+            {/* An em dash, not "0.0%", when nothing sold in the period — see
+                the note on OverviewKpis. A refund rate reads as a compliment;
+                showing one for a period with no orders is a lie in our favour. */}
+            <KpiTile label="Refund rate" value={data.overview.refundRate === null ? '—' : `${(data.overview.refundRate * 100).toFixed(1)}%`} now={data.overview.refundRate} prev={data.overview.refundRatePrev} period={period} />
             {/* Avg order drops on the phone: four tiles fit two-up, five do not. */}
             {phone ? null : (
-              <KpiTile label="Avg order" value={rand(data.overview.aovCents)} now={data.overview.aovCents} prev={data.overview.aovCentsPrev} period={period} />
+              <KpiTile label="Avg order" value={data.overview.aovCents === null ? '—' : rand(data.overview.aovCents)} now={data.overview.aovCents} prev={data.overview.aovCentsPrev} period={period} />
             )}
           </div>
 
@@ -519,8 +522,8 @@ function KpiTile({
 }: {
   label: string;
   value: string;
-  now: number;
-  prev: number;
+  now: number | null;
+  prev: number | null;
   period: Period;
 }) {
   const d = delta(now, prev);

@@ -2,9 +2,8 @@
 /**
  * THE DESK — the build guard.
  *
- * Two rules from the build plan, enforced mechanically rather than by
- * memory, because both are the kind that erode one reasonable-looking commit
- * at a time:
+ * Three rules, enforced mechanically rather than by memory, because each is
+ * the kind that erodes one reasonable-looking commit at a time:
  *
  *   1. NOTHING IN THE DESK IMPORTS FROM THE LEGACY ADMIN. The Desk is a
  *      rebuild, not a reskin. The first time a legacy component is wrapped
@@ -15,6 +14,12 @@
  *      A hex that matches the palette today is a hex that silently stops
  *      matching it the day the palette moves — and on this surface the
  *      palette IS the meaning, because colour is reserved for state.
+ *
+ *   3. NO DESK LIB FUNCTION IMPORTED AND NEVER CALLED. This repo's most
+ *      common defect is a finished feature nobody connected, and an unused
+ *      import is its signature — see the note above the rule for the payout
+ *      run that shipped that way, with passing tests and a cutover note
+ *      recording the gap as closed.
  *
  * Wired into `npm run build`, so it fails the deploy rather than printing a
  * warning nobody reads. There is no CI in this repo — `next build` is the
@@ -129,7 +134,10 @@ function walk(dir) {
     return; // a guarded path that does not exist yet is not a failure
   }
   if (stat.isFile()) {
-    if (/\.(tsx?|jsx?|css)$/.test(dir)) check(dir);
+    if (/\.(tsx?|jsx?|css)$/.test(dir)) {
+      check(dir);
+      checkUnusedDeskImports(dir);
+    }
     return;
   }
 
@@ -145,6 +153,7 @@ function walk(dir) {
       walk(full);
     } else if (/\.(tsx?|jsx?|css)$/.test(e.name)) {
       check(full);
+      checkUnusedDeskImports(full);
     }
   }
 }
@@ -184,6 +193,62 @@ function check(file) {
       );
     }
   });
+}
+
+/**
+ * RULE 3 — A DESK LIB FUNCTION IMPORTED AND NEVER CALLED.
+ *
+ * This repo's single most common defect is not a broken feature, it is a
+ * finished one nobody connected: of 17 gaps closed in the cutover, sixteen
+ * were endpoints or helpers that already existed and simply had no caller.
+ *
+ * 🚨 IT HAPPENED AGAIN AND SHIPPED. `runDuePayouts` and `describePayoutRun`
+ * were written, unit-tested, and imported at the top of the Ledger — and the
+ * confirm handler still set a hard-coded "not sent" and never called them. The
+ * Ledger could say what every seller was owed and pay none of it, and the
+ * cutover note recorded the gap as CLOSED. Nothing caught it: the lib had
+ * tests (they passed — they tested the lib), `next/typescript` only WARNS on
+ * an unused binding, and `npm run lint` is not part of `npm run build`.
+ *
+ * An unused import is the exact signature of that bug, so the build now
+ * refuses it. A binding that is genuinely not needed should be deleted, not
+ * left as a promise the screen does not keep.
+ */
+function checkUnusedDeskImports(file) {
+  const rel = path.relative(ROOT, file).split(path.sep).join('/');
+  if (!/\.tsx?$/.test(rel) || /\.(spec|test)\.tsx?$/.test(rel)) return;
+  const src = fs.readFileSync(file, 'utf8');
+
+  // Only value imports from the Desk's own lib. A type-only import is checked
+  // by tsc in type position and is not what this rule is about.
+  const IMPORT_RE = /^import\s+\{([^}]+)\}\s+from\s+['"]([^'"]*desk-[\w-]+)['"];?/gm;
+
+  // ⚠️ COMPUTED ONCE, AND WITH ITS OWN REGEX OBJECT. Calling
+  // String.replace with a /g regex resets that regex's lastIndex to 0 —
+  // so doing this inside the exec loop below restarted the scan from the
+  // top on every iteration and hung the build. Caught by the guard taking
+  // longer than two minutes on a tree it should cross in milliseconds.
+  const body = src.replace(new RegExp(IMPORT_RE.source, 'gm'), '');
+
+  let m;
+  while ((m = IMPORT_RE.exec(src)) !== null) {
+    if (/^import\s+type/.test(m[0])) continue;
+    for (const raw of m[1].split(',')) {
+      const spec = raw.trim();
+      if (!spec || spec.startsWith('type ')) continue;
+      // `a as b` binds b; a bare `a` binds a.
+      const local = (spec.includes(' as ') ? spec.split(' as ')[1] : spec).trim();
+      if (!/^[A-Za-z_$][\w$]*$/.test(local)) continue;
+      const used = new RegExp(`\\b${local.replace(/\$/g, '\\$')}\\b`).test(body);
+      if (!used) {
+        problems.push(
+          `${rel}  imports \`${local}\` from ${m[2]} and never uses it\n` +
+            '    A Desk lib function imported but not called is how "built but not wired"\n' +
+            '    ships. Call it, or delete the import — do not leave it as a promise.',
+        );
+      }
+    }
+  }
 }
 
 for (const tree of GUARDED) walk(path.join(ROOT, tree));

@@ -737,6 +737,15 @@ export function memberDate(iso: string | null): string {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
+    // SAST explicitly, matching desk-listing.ts's stamp() and desk-site.ts's.
+    // Without it this rendered in the BROWSER's zone, so the same event
+    // showed one time on this surface and another on those — and an
+    // operator abroad, or on a machine with a wrong clock, read every
+    // Desk timestamp shifted. The Desk is one product; a timestamp has to
+    // mean the same thing on all five surfaces. (No hour12 here — this is
+    // date-only, but the zone still decides which DAY a near-midnight UTC
+    // timestamp falls on.)
+    timeZone: 'Africa/Johannesburg',
   });
 }
 
@@ -748,6 +757,8 @@ export function memberDateTime(iso: string | null): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
+    timeZone: 'Africa/Johannesburg',
   });
 }
 

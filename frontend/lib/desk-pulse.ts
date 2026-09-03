@@ -68,10 +68,14 @@ export interface OverviewKpis {
   revenueCentsPrev: number;
   txCount: number;
   txCountPrev: number;
-  aovCents: number;
-  aovCentsPrev: number;
-  refundRate: number;
-  refundRatePrev: number;
+  /** ⚠️ Null means the period had nothing to measure — NOT zero. An average
+   *  over no orders and a rate over a zero denominator are both undefined;
+   *  they used to arrive as 0 and render as "R0" / "0.0%", which is the Desk
+   *  claiming a finding it never worked out. Null renders as an em dash. */
+  aovCents: number | null;
+  aovCentsPrev: number | null;
+  refundRate: number | null;
+  refundRatePrev: number | null;
   disputeRate: number;
   disputeRatePrev: number;
 }
@@ -115,7 +119,14 @@ export const fetchByCategory = (p: Period) => deskFetch<ByCategory[]>(`/admin/an
 export const fetchFunnel = (p: Period) => deskFetch<FunnelStage[]>(`/admin/analytics/insights/funnel${q(p)}`);
 
 /** A percentage change, as the ink-only delta the tiles render. */
-export function delta(now: number, prev: number): { label: string; direction: 'up' | 'down' } | null {
+export function delta(
+  now: number | null,
+  prev: number | null,
+): { label: string; direction: 'up' | 'down' } | null {
+  // No change to show against a period that was never measured — and none from
+  // one, either. Returning a percentage here would invent a trend out of an
+  // absence.
+  if (now === null || prev === null) return null;
   if (!prev) return null;
   const pct = ((now - prev) / prev) * 100;
   return {

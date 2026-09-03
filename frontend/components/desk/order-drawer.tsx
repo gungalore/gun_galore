@@ -339,7 +339,7 @@ function Body({
                 <>
                   {r.label}
                   {r.note ? (
-                    <span style={{ color: 'var(--dk-ink-4)' }}> · {r.note}</span>
+                    <span style={{ color: 'var(--dk-ink-3)' }}> · {r.note}</span>
                   ) : null}
                 </>
               }
@@ -358,7 +358,9 @@ function Body({
               k={
                 <>
                   Wasted courier charge
-                  <span style={{ color: 'var(--dk-ink-4)' }}> · taken off at payout</span>
+                  {/* A money qualifier: it says the charge is DEDUCTED, not
+                      merely noted. Losing it changes what the line means. */}
+                  <span style={{ color: 'var(--dk-ink-3)' }}> · taken off at payout</span>
                 </>
               }
               v={formatRand(money.wastedCourierCents)}
