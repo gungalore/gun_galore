@@ -29,7 +29,7 @@ import * as React from 'react';
 // Kit pieces come from their own files, the way every other file in this
 // directory does it — importing the barrel from inside the barrel is how a
 // circular import gets introduced the day this is added to index.ts.
-import { Button, Input, Tag } from './primitives';
+import { Button, Chip, Input, Tag } from './primitives';
 import { DialogFrame, Drawer, ResultBlock, Section, Timeline } from './overlays';
 import { Kv, Label, formatRand } from './numbers';
 import { FailedRegion, SkeletonPile } from './states';
@@ -52,7 +52,17 @@ import {
   UNBAN_REASONS,
   accountStandings,
   bankStanding,
+  CLOSE_MIN_REASON,
+  KYC_STATUSES,
+  SELLER_TIERS,
+  USERNAME_MAX,
+  USERNAME_MIN,
   clearRejectStrikes,
+  closeMemberAccount,
+  setKycStatusDirect,
+  setSellerTier,
+  setUsername,
+  usernameIsUsable,
   composeReason,
   describeDecisionFailure,
   faceMatchPercent,
@@ -75,6 +85,7 @@ import {
   verificationStanding,
   type KycDocumentKind,
   type MemberDossier,
+  type MemberUser,
   type ReasonChoice,
   type RevealedDocument,
   type StandingKind,
@@ -89,7 +100,7 @@ export interface MemberDrawerProps {
   onChanged?: () => void;
 }
 
-type PendingAction = 'approve' | 'reject' | 'ban' | 'unban' | 'bank' | 'strikes' | null;
+type PendingAction = 'approve' | 'reject' | 'ban' | 'unban' | 'bank' | 'strikes' | 'close' | null;
 
 interface ActionResult {
   ok: boolean;
@@ -513,6 +524,15 @@ export function MemberDrawer({ open, userId, onClose, onChanged }: MemberDrawerP
             />
 
             <StrikesSection dossier={dossier} onClearStrikes={() => setAction('strikes')} />
+
+            {/* ⚠️ IT USES THE DRAWER'S OWN `run`, NOT ITS OWN RESULT HANDLING.
+                That function already carries the one-press guard, the reload
+                bump, the onChanged callback and — most importantly — the rule
+                that a REFUSAL is printed verbatim, because the backend's guards
+                speak in full sentences and rewriting one as "something went
+                wrong" costs a support call. A second implementation beside it
+                would drift from all four. */}
+            <AccountAdmin user={user} handle={handle} busy={busy} run={run} />
 
             <Section label="Admin history" last>
               {dossier.auditEvents.length === 0 ? (
@@ -1379,4 +1399,199 @@ function toneOf(kind: StandingKind | undefined): 'ok' | 'warn' | 'bad' | 'info' 
 function humaniseAction(action: string): string {
   const words = action.toLowerCase().replace(/_/g, ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * The writes the legacy per-row actions menu carried and the cutover dropped.
+ *
+ * 🚨 THIS WAS A STRAIGHT REMOVAL OF WORKING CAPABILITY, recorded in the map as
+ * "the entire per-row actions menu, which was not recorded here at all".
+ * Legacy rendered UserActions on every row of /admin/users AND on
+ * /admin/users/[id]; the Desk carried three of its writes and lost the rest.
+ *
+ * ⚠️ THEY LIVE IN A SECTION, NOT THE FOOTER. The footer holds the decisions an
+ * operator opened the drawer TO MAKE — approve, reject, ban. These are repairs
+ * and administration, and putting them beside a verification decision would
+ * make a stuck-state fix look like one.
+ *
+ * ⚠️ AND THE SECTION IS FOLDED BY DEFAULT. Four destructive-ish controls
+ * standing open under every member is an invitation; opening it is a small
+ * deliberate act, which is the right weight for what is inside.
+ */
+function AccountAdmin({
+  user,
+  handle,
+  busy,
+  run,
+}: {
+  user: MemberUser;
+  handle: string;
+  busy: boolean;
+  run: (tag: string, done: string, fn: () => Promise<unknown>) => Promise<void>;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [rename, setRename] = React.useState('');
+  const [closing, setClosing] = React.useState(false);
+  const [closeReason, setCloseReason] = React.useState('');
+
+  return (
+    <Section label="Account admin">
+      {!open ? (
+        <Button variant="ghost" onClick={() => setOpen(true)}>
+          Change tier, status or handle…
+        </Button>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <Label>Seller tier</Label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {SELLER_TIERS.map((t) => (
+                <Chip
+                  key={t}
+                  active={user.sellerTier === t}
+                  onClick={() => {
+                    if (user.sellerTier === t || busy) return;
+                    void run(
+                      'TIER CHANGED',
+                      `${handle} is now ${t.replace(/_/g, ' ').toLowerCase()}.`,
+                      () => setSellerTier(user.id, t),
+                    );
+                  }}
+                >
+                  {t.replace(/_/g, ' ').toLowerCase()}
+                </Chip>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <Label>Verification status — direct</Label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {KYC_STATUSES.map((k) => (
+                <Chip
+                  key={k}
+                  active={user.kycStatus === k}
+                  onClick={() => {
+                    if (user.kycStatus === k || busy) return;
+                    void run(
+                      'STATUS SET',
+                      `${handle}'s verification status is now ${k
+                        .replace(/_/g, ' ')
+                        .toLowerCase()}. Nobody was messaged and no reviewer was recorded.`,
+                      () => setKycStatusDirect(user.id, k),
+                    );
+                  }}
+                >
+                  {k.replace(/_/g, ' ').toLowerCase()}
+                </Chip>
+              ))}
+            </div>
+            {/* 🚨 THE MOST IMPORTANT SENTENCE IN THIS SECTION. Approve and
+                Reject in the footer run the real path: they record the
+                decision, message the member and leave a reviewer on the
+                record. This writes the column and nothing else — which makes
+                it the right tool for a stuck state and the wrong one for
+                deciding a verification. Unsaid, it is simply the faster
+                Approve button, and someone will use it as one. */}
+            <span style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--dk-ink-3)' }}>
+              This writes the column and nothing else — nobody is messaged and no
+              reviewer is recorded against it. To DECIDE a verification, use Approve
+              or Reject at the foot of this drawer. Use this only to repair a status
+              that is stuck.
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <Label>Username</Label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <Input
+                value={rename}
+                onChange={(e) => setRename(e.target.value)}
+                placeholder={user.username ?? 'no username'}
+                aria-label="New username"
+              />
+              <Button
+                variant="secondary"
+                disabled={busy || !usernameIsUsable(rename) || rename.trim() === user.username}
+                onClick={() =>
+                  void run('RENAMED', `${handle} is now ${rename.trim()}.`, () =>
+                    setUsername(user.id, rename),
+                  )
+                }
+              >
+                Rename
+              </Button>
+            </div>
+            <span style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--dk-ink-3)' }}>
+              {/* ⚠️ firstName AND lastName ARE DELIBERATELY NOT EDITABLE HERE
+                  even though UpdateUserDto accepts them: they are the identity
+                  fields the KYC decision was made against, and changing one
+                  from this drawer would quietly break the link between a
+                  verification and the person it verified. */}
+              {`${USERNAME_MIN}–${USERNAME_MAX} characters. For an offensive or impersonating handle — the one thing about a member that appears on every public surface. Their real name is not editable from here; it is what the verification was decided against.`}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <Label>Close this account</Label>
+            {!closing ? (
+              <div>
+                <Button variant="danger" onClick={() => setClosing(true)}>
+                  Close account…
+                </Button>
+              </div>
+            ) : (
+              <>
+                {/* 🚨 NOT A BAN AND NOT A DELETE, AND THE OPERATOR HAS TO KNOW
+                    BOTH. A ban keeps the profile and the listings up. This
+                    takes them off the public side and RELEASES the handle,
+                    email and phone back into the uniqueness namespace so the
+                    person can register again — while every transaction, rating
+                    and complaint stays attached to the row.
+                    ⚠️ It is also the ONLY route by which a banned member can be
+                    closed: the self-service button refuses a restricted
+                    account, precisely so closing can never launder a ban. */}
+                <Kv k="Not a ban" v="A ban keeps their profile and listings up" mono={false} />
+                <Kv
+                  k="Releases"
+                  v="Their handle, email and phone — they can register again"
+                  mono={false}
+                />
+                <Kv
+                  k="Keeps"
+                  v="Every transaction, rating and complaint stays on the record"
+                  mono={false}
+                  last
+                />
+                <Input
+                  value={closeReason}
+                  onChange={(e) => setCloseReason(e.target.value)}
+                  placeholder={`Why — at least ${CLOSE_MIN_REASON} characters, written onto the closure record`}
+                  aria-label="Reason for closing"
+                />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button variant="ghost" onClick={() => setClosing(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="danger"
+                    disabled={busy || closeReason.trim().length < CLOSE_MIN_REASON}
+                    onClick={() =>
+                      void run(
+                        'CLOSED',
+                        `${handle}'s account is closed. Their handle, email and phone are released; their history stays on the record.`,
+                        () => closeMemberAccount(user.id, closeReason),
+                      )
+                    }
+                  >
+                    Close the account
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </Section>
+  );
 }

@@ -750,3 +750,124 @@ export function memberDateTime(iso: string | null): string {
     minute: '2-digit',
   });
 }
+
+/* ── The writes the per-row actions menu used to carry ────────────────── */
+
+/**
+ * 🚨 THESE WERE A STRAIGHT REMOVAL OF WORKING CAPABILITY. Legacy rendered a
+ * UserActions menu on every row of /admin/users AND on /admin/users/[id]; the
+ * Member drawer carried three of its writes and the cutover map recorded the
+ * rest as simply gone. They are all one endpoint each.
+ *
+ * ⚠️ EVERY ONE IS SUPERADMIN-ONLY NOW, without anything being written here to
+ * make it so: AdminJwtGuard denies every mutating method to a monitoring
+ * admin, so a new write is gated by the act of existing.
+ */
+
+/**
+ * 🚨 TRANSCRIBED FROM prisma/schema.prisma, NOT GUESSED — and the first draft
+ * of this line WAS guessed, as NONE / INDIVIDUAL / BUSINESS / DEALER. Only
+ * DEALER was real. Every other option would have been a 400 from @IsEnum: a
+ * loud failure rather than a silent one, but a picker offering four choices of
+ * which three can never work is a control that lies about what it can do.
+ */
+export const SELLER_TIERS = ['NEW', 'ESTABLISHED', 'TRUSTED', 'TOP_SELLER', 'DEALER'] as const;
+export type SellerTier = (typeof SELLER_TIERS)[number];
+
+/**
+ * Also transcribed. The empty state is NONE, not NOT_STARTED — and the list
+ * includes UNDER_REVIEW, which a first pass truncated away: it is the
+ * Claude-vision inconclusive verdict, and payout gates check `!== VERIFIED`,
+ * so it blocks a payout while looking like an ordinary in-progress state.
+ * Leaving it off the picker would have made the one status an operator most
+ * needs to move a member OUT of the only one they could not select.
+ */
+export const KYC_STATUSES = [
+  'NONE',
+  'PENDING',
+  'UNDER_REVIEW',
+  'VERIFIED',
+  'REJECTED',
+] as const;
+export type KycStatusValue = (typeof KYC_STATUSES)[number];
+
+/**
+ * ⚠️ THE ENUM VALUES ARE THE SERVER'S, AND A WRONG ONE IS A 400, NOT A SILENT
+ * NO-OP — UpdateUserDto validates both with @IsEnum against the Prisma enums.
+ * That is the good failure mode, and it is only good because these lists are
+ * transcribed from the schema rather than guessed; a value that IS in the enum
+ * but wrong for the situation still writes.
+ */
+export function setSellerTier(userId: string, tier: SellerTier): Promise<unknown> {
+  return deskFetch(`/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ sellerTier: tier }),
+  });
+}
+
+/**
+ * Set kycStatus directly, bypassing the review.
+ *
+ * 🚨 THIS IS NOT THE APPROVE BUTTON AND MUST NOT BE OFFERED AS ONE.
+ * reviewMemberKyc runs the real path — it records the decision, notifies the
+ * member, and leaves a reviewer on the record. This writes the column and
+ * nothing else, which is what makes it the right tool for repairing a stuck
+ * state and the wrong tool for deciding a verification. The drawer says so at
+ * the control, not only here.
+ */
+export function setKycStatusDirect(userId: string, status: KycStatusValue): Promise<unknown> {
+  return deskFetch(`/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ kycStatus: status }),
+  });
+}
+
+/** 3–30 characters, enforced by UpdateUserDto and again here. */
+export const USERNAME_MIN = 3;
+export const USERNAME_MAX = 30;
+
+export function usernameIsUsable(name: string): boolean {
+  const t = name.trim();
+  return t.length >= USERNAME_MIN && t.length <= USERNAME_MAX;
+}
+
+/**
+ * Rename a member.
+ *
+ * ⚠️ THE MODERATION CASE, NOT THE TIDYING CASE. A username is the only thing
+ * about a person that appears on every public surface, so an offensive one is
+ * a thing an operator must be able to change today. firstName and lastName are
+ * deliberately NOT offered even though the DTO accepts them: those are the
+ * identity fields the KYC decision was made against, and editing them from
+ * here would quietly break the link between a verification and the person it
+ * verified.
+ */
+export function setUsername(userId: string, username: string): Promise<unknown> {
+  return deskFetch(`/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ username: username.trim() }),
+  });
+}
+
+export const CLOSE_MIN_REASON = 5;
+
+/**
+ * Close a member's account on their behalf.
+ *
+ * 🚨 THIS IS NOT A BAN AND NOT A DELETE, AND THE CONFIRM HAS TO SAY BOTH. A
+ * ban keeps the profile and the listings up; this takes them off the public
+ * side and RELEASES THE HANDLE, email and phone back into the uniqueness
+ * namespace so the person can register again — while every transaction,
+ * rating and complaint stays attached to the row.
+ *
+ * ⚠️ IT IS ALSO THE ONLY ROUTE BY WHICH A BANNED MEMBER CAN BE CLOSED. The
+ * self-service button refuses a restricted account, precisely so closing can
+ * never launder a ban — which means an admin doing it is taking that decision
+ * deliberately and the reason is the record of why.
+ */
+export function closeMemberAccount(userId: string, reason: string): Promise<unknown> {
+  return deskFetch(`/admin/users/${encodeURIComponent(userId)}/close-account`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason.trim() }),
+  });
+}
