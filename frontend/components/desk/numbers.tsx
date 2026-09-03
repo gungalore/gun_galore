@@ -338,14 +338,28 @@ export function Label({ children }: { children: React.ReactNode }) {
 }
 
 function Sub({ children }: { children: React.ReactNode }) {
+  /**
+   * ⚠️ TWO LINES, NOT ONE, AND THE WHOLE THING ON HOVER. This was
+   * `whiteSpace: nowrap` with an ellipsis, which was right while the only
+   * sub-label a vitals tile ever carried was the fixed "needs Warden on the
+   * box". Now an unmeasured tile carries the REASON it is unmeasured —
+   * "cannot read the access log — tail exited 1: … Permission denied" — and
+   * one clipped line showed "Not measured — …", which is the half that says
+   * nothing. The reason is the entire value of the tile when there is no
+   * number in it.
+   */
+  const text = typeof children === 'string' ? children : undefined;
   return (
     <span
+      title={text}
       style={{
         fontSize: 12,
         color: 'var(--dk-ink-3)',
-        whiteSpace: 'nowrap',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
         overflow: 'hidden',
-        textOverflow: 'ellipsis',
+        lineHeight: 1.35,
         minWidth: 0,
       }}
     >
