@@ -146,3 +146,34 @@ export interface WardenSettingRow {
 export interface WardenSettingsView {
   rows: WardenSettingRow[];
 }
+
+/**
+ * One row of the daemon's own check board (`GET /gates` on Warden itself).
+ *
+ * ⚠️ NOT WardenGate. That one is the Site board's CONFIG gates — env values
+ * this process reads for itself. This is a measurement Warden took on the
+ * box, and the two are one word apart in the UI and completely different
+ * facts: a config gate says what a variable is set to, a check row says what
+ * was found when somebody looked.
+ */
+export interface WardenCheckRow {
+  id: string;
+  title: string;
+  status: 'ok' | 'warn' | 'bad' | 'unknown';
+  /**
+   * The sentence the operator reads. For an `unknown` this is the REASON it
+   * could not be measured — "cannot read /var/log/nginx/access.log:
+   * Permission denied" — never a hedge, and never a zero.
+   */
+  verdict: string;
+  gateKey: string | null;
+  standing: boolean;
+  measuredAt: string;
+  fresh: boolean;
+}
+
+export interface WardenCheckBoard {
+  lastCheckAt: string | null;
+  counts: { ok: number; warn: number; bad: number; unknown: number };
+  rows: WardenCheckRow[];
+}

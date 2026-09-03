@@ -70,7 +70,15 @@ echo "box branch: $REMOTE_BRANCH"
 # fast-forward pull. Those edits are never wanted — the lockfile in the repo is
 # the intended one — so they are discarded rather than left to fail a deploy at
 # the worst moment.
-ssh "$HOST" "cd $APP && git checkout -- package-lock.json backend/package-lock.json frontend/package-lock.json 2>/dev/null; true"
+# ⚠️ ONE PATH AT A TIME. This used to name three lockfiles in a single
+# `git checkout --`, including a ROOT package-lock.json that does not exist in
+# this repo. git rejects the WHOLE pathspec list when one entry matches
+# nothing, so neither real lockfile was ever reset — and `2>/dev/null; true`
+# hid the failure, so the deploy died one step later at the pull instead,
+# blaming "local edits on the box". Reset each independently.
+for LOCK in backend/package-lock.json frontend/package-lock.json warden/package-lock.json; do
+  ssh "$HOST" "cd $APP && git checkout -- $LOCK 2>/dev/null || true"
+done
 ssh "$HOST" "cd $APP && git pull --ff-only -q origin $BRANCH" || die "pull failed — check for local edits on the box"
 REMOTE=$(ssh "$HOST" "cd $APP && git rev-parse HEAD")
 [ "$REMOTE" = "$LOCAL" ] || die "box HEAD ${REMOTE:0:8} != local ${LOCAL:0:8}"
@@ -135,7 +143,63 @@ if [ "$MODE" != "--backend-only" ]; then
   echo "  health 2: OK"
 fi
 
-# ── 5. from outside ─────────────────────────────────────────────────
+# ── 5. warden ───────────────────────────────────────────────────────
+#
+# 🚨 THIS STAGE DID NOT EXIST UNTIL 2026-09-03, AND THAT IS WHY WARDEN HAD
+# NEVER RUN. Its source ships with the pull like everything else, so the box
+# had the code for weeks — but nothing installed it, built it or started it,
+# and the Site board sat reading "Warden is not deployed" with no step
+# anywhere that would have changed that.
+#
+# ⚠️ WARDEN NEVER FAILS THE DEPLOY. It watches the marketplace; it is not the
+# marketplace. A box with no warden/.env yet, or one where the process was
+# never started, is a normal state — this stage says so plainly and moves on,
+# because dying here would block a frontend fix on a monitoring daemon. The
+# one thing it will NOT do is stay quiet: a skipped Warden is printed as a
+# skip, never as a success.
+if [ "$MODE" != "--frontend-only" ]; then
+  say "warden"
+
+  if ! ssh "$HOST" "test -d $APP/warden"; then
+    echo "  SKIPPED: no warden/ on the box"
+  else
+    ssh "$HOST" "cd $APP/warden && npm install --no-audit --no-fund >/dev/null 2>&1"       || echo "  WARNING: warden npm install failed — leaving the running process alone"
+
+    if ssh "$HOST" "cd $APP/warden && npm run build >/dev/null 2>&1"; then
+      # Same guard the other two get: an exit 0 with nothing usable behind it
+      # is the state a full disk produces. boot.js, not index.js — see
+      # warden/ecosystem.config.cjs for why that distinction is load-bearing.
+      if ssh "$HOST" "test -s $APP/warden/dist/boot.js"; then
+
+        # `pm2 describe` rather than a grep of `pm2 list`: the list is a
+        # rendered table and "warden" would also match a process merely
+        # mentioning it. Absent is not an error — it is a first deploy.
+        if ssh "$HOST" "pm2 describe warden >/dev/null 2>&1"; then
+          ssh "$HOST" "pm2 reload warden --update-env >/dev/null 2>&1"             || echo "  WARNING: pm2 reload warden failed"
+          sleep 6
+          # It fails closed on a missing or short WARDEN_TOKEN by EXITING at
+          # boot, so "still online a few seconds later" is a real check and
+          # not a formality. min_uptime/max_restarts bound the spin.
+          if ssh "$HOST" "pm2 describe warden | grep -q 'status.*online'"; then
+            echo "  reloaded and online"
+          else
+            echo "  WARNING: warden is NOT online after reload — pm2 logs warden"
+          fi
+        else
+          echo "  SKIPPED: built, but no pm2 process yet."
+          echo "           First deploy: cd $APP/warden && pm2 start ecosystem.config.cjs && pm2 save"
+          echo "           It needs warden/.env (mode 600) with WARDEN_TOKEN first — see warden/README.md."
+        fi
+      else
+        echo "  WARNING: warden build exited 0 but dist/boot.js is missing — not reloading"
+      fi
+    else
+      echo "  WARNING: warden build FAILED — the running process was left alone"
+    fi
+  fi
+fi
+
+# ── 6. from outside ─────────────────────────────────────────────────
 say "public"
 for i in 1 2; do
   code=$(curl -s -o /dev/null -w '%{http_code}' https://alloutdoor.co.za/)
@@ -145,4 +209,4 @@ for i in 1 2; do
 done
 
 say "deployed ${LOCAL:0:8}"
-ssh "$HOST" "pm2 list --no-color | grep -E 'alloutdoor-(backend|frontend)'"
+ssh "$HOST" "pm2 list --no-color | grep -E 'alloutdoor-(backend|frontend)|warden'"
