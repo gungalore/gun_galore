@@ -5,6 +5,9 @@ import { DeskController } from './desk.controller';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { DeskPayoutsService } from './desk-payouts.service';
 import { DeskSiteService } from './desk-site.service';
+import { WardenController } from './warden.controller';
+import { WardenService } from './warden.service';
+import { AdminAuditService } from '../admin/admin-audit.service';
 import { ManualPaymentsModule } from '../manual-payments/manual-payments.module';
 
 /**
@@ -18,10 +21,27 @@ import { ManualPaymentsModule } from '../manual-payments/manual-payments.module'
  * ComplaintsModule and SupportModule.
  *
  * PrismaService comes from the @Global() PrismaModule, so it is not imported.
+ *
+ * AdminAuditService is provided LOCALLY rather than by importing AdminModule:
+ * AdminModule exports only AdminCreditsService and AdminHealthService, and
+ * pulling the whole of it in here would drag Listings, Payments, Zoho and
+ * Shipping behind it for one audit write. It is stateless over the @Global()
+ * PrismaService, so a second instance is a second reference, not a second
+ * source of truth — same as RatingsModule, AskGgModule and ReloadingModule
+ * already do.
  */
 @Module({
   imports: [JwtModule.register({}), ManualPaymentsModule],
-  controllers: [DeskController],
-  providers: [DeskService, DeskPayoutsService, DeskSiteService, AdminJwtGuard],
+  controllers: [DeskController, WardenController],
+  providers: [
+    DeskService,
+    DeskPayoutsService,
+    DeskSiteService,
+    // WardenService reads gates through DeskSiteService rather than the env
+    // directly, so /admin/warden/gates and the Site board cannot disagree.
+    WardenService,
+    AdminAuditService,
+    AdminJwtGuard,
+  ],
 })
 export class DeskModule {}

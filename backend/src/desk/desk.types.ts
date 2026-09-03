@@ -46,6 +46,14 @@ export interface DeskCardData {
   id: string;
   type: DeskCardType;
   typeLabel: string;
+  /**
+   * Overrides the per-type header glyph.
+   *
+   * ⚠️ TWO WARDEN FACES SHARE ONE TYPE. A red gate and a proposal are both
+   * 'warden', so without this the pile draws a bolt on both where the
+   * catalogue draws a padlock on the gate. Mirrors lib/desk-feed.ts.
+   */
+  icon?: FeedTag["icon"];
   band: BandKey;
   reference?: string;
   headline: string;

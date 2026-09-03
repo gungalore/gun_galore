@@ -10,6 +10,15 @@
  * consult rather than surfaces you live in.
  */
 import { deskFetch } from './desk-auth';
+/**
+ * ⚠️ THE WARDEN KIND UNION IS IMPORTED, NOT RETYPED. It is the tag the
+ * operator reads — "fixed alone" against "red gate" is the difference between
+ * a note and an emergency — and it already exists twice: chat.tsx's KIND_TAG
+ * and the backend's WARDEN_MESSAGE_KINDS, which its own header says must not
+ * be extended on one side alone. A third copy here is a third thing to
+ * forget. Type-only, so nothing is bundled.
+ */
+import type { WardenKind } from '@/components/desk/chat';
 
 /* ── Settings ─────────────────────────────────────────────────────────── */
 
@@ -153,6 +162,15 @@ export interface CreditThreshold {
   warnThreshold: number | null;
   alarmThreshold: number | null;
   enabled: boolean;
+  /**
+   * ⚠️ PRESENT ONLY ON A ROW THAT IS NOT IN THE DATABASE. listThresholds()
+   * merges built-in floors for any service with no CreditThreshold row and
+   * stamps those `source: 'default'`. The distinction is not cosmetic: those
+   * floors exist BECAUSE the alarm chain used to do nothing until an operator
+   * hand-created rows, and VerifyNow reached 28 credits with no warning
+   * anywhere. An operator editing a default is creating that first real row.
+   */
+  source?: 'default';
 }
 
 export function fetchCredits(): Promise<CreditSnapshot[]> {
@@ -198,6 +216,69 @@ export function creditIsLow(
   return snap.balance <= warn;
 }
 
+/**
+ * Will this pair EVER raise a flag, and if not, why not?
+ *
+ * 🚨 THE FAILURE THIS EXISTS TO MAKE VISIBLE IS A WARNING THAT CANNOT GO OFF.
+ * creditIsLow() returns false for four different reasons and the row renders
+ * identically for all of them — a vendor that is comfortably stocked and a
+ * vendor whose alarm is wired backwards both show no tag. That is precisely
+ * the shape of the incident these thresholds were introduced for: VerifyNow
+ * ran to 28 credits while the board stayed calm.
+ *
+ * So an operator editing a threshold is told, before they save, whether what
+ * they have typed can ever fire. Kept as a pure function beside creditIsLow
+ * so the two cannot drift: every branch below is a condition under which
+ * creditIsLow is unable to return true.
+ */
+export type ThresholdVerdict =
+  | { fires: true; at: number }
+  | { fires: false; why: 'off' | 'unset' | 'not-a-floor' };
+
+export function thresholdVerdict(t: {
+  warnThreshold: number | null;
+  alarmThreshold: number | null;
+  enabled: boolean;
+}): ThresholdVerdict {
+  if (!t.enabled) return { fires: false, why: 'off' };
+  if (t.warnThreshold === null || t.alarmThreshold === null) {
+    return { fires: false, why: 'unset' };
+  }
+  // Warn must sit ABOVE alarm — you get warned on the way down to the alarm.
+  // The anthropic row inverts this on purpose to encode a daily SPEND CEILING
+  // in the same two columns, and is left unflagged rather than flagged
+  // backwards; see creditIsLow.
+  if (t.warnThreshold <= t.alarmThreshold) return { fires: false, why: 'not-a-floor' };
+  return { fires: true, at: t.warnThreshold };
+}
+
+/** The verdict in the operator's words. One sentence, no jargon. */
+export function describeThresholdVerdict(v: ThresholdVerdict, unit?: string | null): string {
+  if (v.fires) {
+    return `Flags low at ${v.at.toLocaleString('en-ZA')}${unit ? ` ${unit}` : ''} or below.`;
+  }
+  if (v.why === 'off') return 'Switched off — this vendor will never be flagged low.';
+  if (v.why === 'unset') {
+    return 'No floor set — this vendor will never be flagged low, whatever the balance.';
+  }
+  return 'Warn is not above alarm, so this reads as a spend ceiling rather than a floor and will never flag low.';
+}
+
+/**
+ * Save one vendor's floor. PUT is an upsert server-side, so this both edits a
+ * saved row and creates the first real row for a vendor still on the built-in
+ * default.
+ */
+export function saveCreditThreshold(
+  service: string,
+  body: { warnThreshold: number | null; alarmThreshold: number | null; enabled: boolean },
+): Promise<CreditThreshold> {
+  return deskFetch(`/admin/credits/thresholds/${encodeURIComponent(service)}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+}
+
 /* ── Audit trail ──────────────────────────────────────────────────────── */
 
 export interface AuditRow {
@@ -235,25 +316,44 @@ export interface AdminAccount {
 }
 
 /**
- * 🚨 THE ROSTER READS. IT DOES NOT GRANT AND IT DOES NOT REVOKE. An earlier
- * note here said this was "the only way to grant or revoke admin access",
- * which was the opposite of true: the drawer lists accounts and has no
- * control on any row. setAdminRole and deactivateAdmin below are the right
- * calls and nothing calls them; creating an admin has no call here at all.
- * Until buttons exist, adding, demoting or switching off an administrator is
- * still a legacy-page act, and /admin/admins is marked partial on the cutover
- * map for exactly that reason.
+ * The roster, and the three writes that act on it.
  *
- * Note the role that matters: MONITORING_ADMIN is meant to be read-only, and
- * the build plan records that it can currently perform mutating actions. The
- * roster shows the role so the operator can see who holds it; the server-side
- * fix is a separate piece of backend work.
+ * 🚨 THIS USED TO READ AND NOTHING ELSE, WHICH IS WHY IT MATTERED. After the
+ * cutover deleted the legacy panel, setAdminRole and deactivateAdmin existed
+ * here with NO caller and there was no create call at all — so a database
+ * write was the only way to remove a compromised administrator. The drawer on
+ * the Site board now calls all three.
+ *
+ * ⚠️ THE SERVER IS THE AUTHORITY, NOT THIS FILE. Every rule below is enforced
+ * in AdminService and re-read from the database, so a forged JWT cannot talk
+ * its way past them:
+ *   · only a SUPERADMIN may create, change a role, or deactivate;
+ *   · you cannot change your OWN role ("ask another Full admin");
+ *   · you cannot deactivate yourself.
+ * Those last two together are what make a lockout unreachable: the sole Full
+ * admin can neither demote nor switch off the only account that could undo it.
+ * Do NOT re-implement any of this here — a second copy is a second set of
+ * rules, and the drifted one is the one nobody reads. Surface the server's
+ * refusal instead.
  */
 export function fetchAdmins(): Promise<AdminAccount[]> {
   return deskFetch('/admin/admins');
 }
 
-export function setAdminRole(id: string, role: string) {
+/**
+ * ⚠️ THE EMAIL MUST ALREADY BE A MEMBER. createAdmin looks the address up in
+ * the User table and refuses when it finds nothing — an admin account is a
+ * promotion of someone who has signed up, never an invitation to a stranger.
+ * The server says so in words; this passes that through untouched.
+ */
+export function createAdmin(email: string, role: AdminRoleValue) {
+  return deskFetch('/admin/admins', {
+    method: 'POST',
+    body: JSON.stringify({ email, role }),
+  });
+}
+
+export function setAdminRole(id: string, role: AdminRoleValue) {
   return deskFetch(`/admin/admins/${encodeURIComponent(id)}/role`, {
     method: 'PATCH',
     body: JSON.stringify({ role }),
@@ -263,6 +363,48 @@ export function setAdminRole(id: string, role: string) {
 export function deactivateAdmin(id: string) {
   return deskFetch(`/admin/admins/${encodeURIComponent(id)}/deactivate`, { method: 'POST' });
 }
+
+/**
+ * The two roles the server will accept, mirroring ASSIGNABLE_ROLES in
+ * backend/src/admin/dto/create-admin.dto.ts. The legacy `ADMIN` tier still
+ * exists on old rows and is rendered where it appears, but it is deliberately
+ * not offered: assigning it would add a third meaning to a field that already
+ * has one too many.
+ */
+export const ASSIGNABLE_ROLES = ['SUPERADMIN', 'MONITORING_ADMIN'] as const;
+export type AdminRoleValue = (typeof ASSIGNABLE_ROLES)[number];
+
+/**
+ * ✅ "MONITORING ADMIN" IS NOW GENUINELY READ-ONLY, AND THIS COPY CHANGED ONLY
+ * BECAUSE THAT BECAME TRUE. Until 2026-09-03 it was a label with no teeth:
+ * SuperadminGuard sat on exactly the three admin-management routes and every
+ * other admin endpoint took any logged-in admin, so the tier could release a
+ * payout, refund a buyer and ban a member. This file refused to call it
+ * read-only for exactly as long as that was the case.
+ *
+ * AdminJwtGuard now enforces it for every route behind admin auth: safe
+ * methods open to any active admin, every mutating method SUPERADMIN-only,
+ * deny-by-default rather than an allow-list — and the role is read off the
+ * AdminUser row on each request, not out of the 8-hour token, so a demotion
+ * bites on the next request.
+ *
+ * ⚠️ IF THAT GUARD IS EVER WEAKENED, THIS SENTENCE BECOMES A LIE BEFORE
+ * ANYTHING ELSE DOES. A picker promising read-only over an unenforced tier
+ * hands somebody full control while its author believes they granted a
+ * viewer — worse than having no picker at all. desk-admins.spec.ts pins the
+ * pairing; change both together or neither.
+ */
+export const ADMIN_ROLE_LABEL: Record<string, string> = {
+  SUPERADMIN: 'Full admin',
+  MONITORING_ADMIN: 'Monitoring admin',
+  ADMIN: 'Admin (legacy)',
+};
+
+export const ADMIN_ROLE_NOTE: Record<AdminRoleValue, string> = {
+  SUPERADMIN: 'Everything, including adding and removing administrators.',
+  MONITORING_ADMIN:
+    'Can see everything and change nothing — no payouts, no refunds, no decisions on members or listings. Takes effect immediately, including on anyone already signed in.',
+};
 
 /** "2 Sep 09:14" — SAST, for a record you read rather than act on. */
 export function stamp(iso: string): string {
@@ -436,3 +578,195 @@ export const fetchReportedListings = () =>
   deskFetch<ReportedListingRow[]>('/admin/trust-safety/reported-listings');
 export const fetchReportedSellers = () =>
   deskFetch<ReportedSellerRow[]>('/admin/trust-safety/reported-sellers');
+
+/* ── Warden ───────────────────────────────────────────────────────────
+ *
+ * The Site tab is a conversation, and this is the wire to the other side of
+ * it. Warden does NOT run in the API process: it is a daemon on the box, and
+ * backend/src/desk/warden.service.ts is an authenticated door to it that
+ * fails closed on WARDEN_BASE_URL / WARDEN_TOKEN.
+ *
+ * 🚨 ABSENT AND QUIET LOOK IDENTICAL AND MEAN OPPOSITE THINGS. `present` is
+ * read as `=== true` below and defaults to false on anything the server did
+ * not explicitly assert — an unreachable daemon, an older build with no such
+ * route, a body that is not the shape expected. A chat card rendering an
+ * empty thread under a green badge says "nothing has gone wrong" when it
+ * means "nothing is watching", which is the failure this whole surface
+ * exists to prevent.
+ */
+
+export interface WardenPre {
+  /** `inset` is a dry run — what WOULD happen. `ground` already ran. */
+  tone: 'inset' | 'ground';
+  lines: string[];
+}
+
+export interface WardenChatMessage {
+  id: string;
+  role: 'warden' | 'operator';
+  kind: WardenKind;
+  at: string;
+  /** Paragraphs, already split. Warden writes prose, not markdown. */
+  body: string[];
+  pre?: WardenPre;
+  proposalId?: string;
+  footnote?: string;
+}
+
+export type WardenProposalKind = 'proposal' | 'red_gate';
+export type WardenProposalStatus = 'pending' | 'approved' | 'declined' | 'acknowledged';
+
+export interface WardenProposal {
+  id: string;
+  kind: WardenProposalKind;
+  status: WardenProposalStatus;
+  headline: string;
+  diagnosis: string;
+  /** EXACTLY what "Approve the fix…" runs. Null on a red gate, which has nothing to run. */
+  command: string | null;
+  gateKey: string | null;
+  raisedAt: string;
+}
+
+export interface WardenChat {
+  present: boolean;
+  note?: string;
+  /** Null while unknown. NEVER `now` — a guessed check time reads as a check. */
+  lastCheckAt: string | null;
+  messages: WardenChatMessage[];
+  proposals: WardenProposal[];
+}
+
+/** What the card shows when the fetch itself failed: absent, with the reason. */
+export function wardenAbsent(note: string): WardenChat {
+  return { present: false, note, lastCheckAt: null, messages: [], proposals: [] };
+}
+
+export async function fetchWardenChat(): Promise<WardenChat> {
+  const raw = await deskFetch<Partial<WardenChat> | null>('/admin/warden/chat');
+  return {
+    present: raw?.present === true,
+    note: typeof raw?.note === 'string' ? raw.note : undefined,
+    lastCheckAt: raw?.lastCheckAt ?? null,
+    messages: Array.isArray(raw?.messages) ? raw.messages : [],
+    proposals: Array.isArray(raw?.proposals) ? raw.proposals : [],
+  };
+}
+
+/** React, refuse, ask or instruct. 503s when no Warden is configured. */
+export async function sendWardenChat(message: string): Promise<WardenChatMessage[]> {
+  const res = await deskFetch<{ messages?: WardenChatMessage[] }>('/admin/warden/chat', {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+  return Array.isArray(res?.messages) ? res.messages : [];
+}
+
+/**
+ * 🚨 MONEY-GRADE, AND THE COMMAND IS THE COMPARE-AND-SWAP. `expectedCommand`
+ * is the exact string the confirm dialog restated; the server re-reads the
+ * proposal from Warden and 409s on any difference. Never send anything but
+ * the command the operator actually read — a confirm that restates one thing
+ * and runs another is worse than no confirm, because it is one they have
+ * learned to trust.
+ *
+ * ⚠️ AND IT NEVER UNDOES. This ends in a command running on the production
+ * box. There is no undo window here and there must not be one.
+ */
+export async function approveWardenProposal(
+  id: string,
+  expectedCommand: string,
+  reason?: string,
+): Promise<WardenChatMessage[]> {
+  const res = await deskFetch<{ messages?: WardenChatMessage[] }>(
+    `/admin/warden/proposals/${encodeURIComponent(id)}/approve`,
+    { method: 'POST', body: JSON.stringify({ expectedCommand, reason: reason || undefined }) },
+  );
+  return Array.isArray(res?.messages) ? res.messages : [];
+}
+
+/** Refuse a fix. Warden reads declines back as standing guidance. */
+export async function declineWardenProposal(
+  id: string,
+  reason?: string,
+): Promise<WardenChatMessage[]> {
+  const res = await deskFetch<{ messages?: WardenChatMessage[] }>(
+    `/admin/warden/proposals/${encodeURIComponent(id)}/decline`,
+    { method: 'POST', body: JSON.stringify({ reason: reason || undefined }) },
+  );
+  return Array.isArray(res?.messages) ? res.messages : [];
+}
+
+/**
+ * The only four, shaped for the panel.
+ *
+ * ⚠️ THE PHONE ARRIVES MASKED AND THIS ENDPOINT HAS NO RAW FOR IT. The board
+ * is screenshotted into support threads and read over shoulders; the edit
+ * field prefills from /admin/settings instead, which is a deliberate open
+ * rather than a passive render. `raw` is present only where the value is not
+ * personal data — a flag, a list of alert types.
+ */
+export interface WardenSettingRow {
+  key: string;
+  label: string;
+  kind: 'phone' | 'checkboxes' | 'toggle';
+  display: string;
+  raw?: string;
+  items?: { value: string; label: string; checked: boolean }[];
+  /** True when PATCH /admin/settings accepts it. Not a claim that this endpoint writes it. */
+  editable: boolean;
+  note: string;
+}
+
+export async function fetchWardenSettings(): Promise<WardenSettingRow[]> {
+  const res = await deskFetch<{ rows?: WardenSettingRow[] }>('/admin/warden/settings');
+  return Array.isArray(res?.rows) ? res.rows : [];
+}
+
+/**
+ * "09:14" for today, "2 Sep 09:14" for anything older, "never" for null.
+ *
+ * ⚠️ SAST, EXPLICITLY. The board is read from one country and the box runs in
+ * UTC; a cron that "last ran 02:10" is a different fact from one that last
+ * ran 04:10, and the difference is the two hours nobody notices.
+ */
+export function clock(iso: string | null): string {
+  if (!iso) return 'never';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const zone = { timeZone: 'Africa/Johannesburg' } as const;
+  const sameDay =
+    d.toLocaleDateString('en-ZA', zone) === new Date().toLocaleDateString('en-ZA', zone);
+  return sameDay
+    ? d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit', hour12: false, ...zone })
+    : stamp(iso);
+}
+
+/* ── The WhatsApp reply drawer's entrance ─────────────────────────────
+ *
+ * 🚨 THE DRAWER EXISTS AND NOTHING OPENED IT. components/desk/whatsapp-drawer
+ * was built against /admin/desk/whatsapp/*, and `whatsapp_reply` sits in the
+ * DeskCardType union with nothing emitting it — so the whole feature was
+ * unreachable and neither file said so by reading it. This is the door: the
+ * same deep link the broadcast drawer already uses (?send=1), so the pile
+ * card has a destination that exists today rather than one somebody has to
+ * remember to build, and so a thread can be opened by hand right now.
+ *
+ * ⚠️ THE ID IS VALIDATED BEFORE IT IS BELIEVED. It comes off the address bar,
+ * goes straight into a fetch path and is rendered in a drawer header. The
+ * same character class the backend enforces on a Warden proposal id is
+ * enforced here, so a crafted link cannot walk the API path.
+ */
+export const WHATSAPP_PARAM = 'whatsapp';
+
+export function parseWhatsappThreadId(search: string): string | null {
+  const id = (new URLSearchParams(search).get(WHATSAPP_PARAM) ?? '').trim();
+  return /^[A-Za-z0-9_-]{1,64}$/.test(id) ? id : null;
+}
+
+export function stripWhatsappParam(search: string): string {
+  const p = new URLSearchParams(search);
+  p.delete(WHATSAPP_PARAM);
+  const rest = p.toString();
+  return rest ? `?${rest}` : '';
+}

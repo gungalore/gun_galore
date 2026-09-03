@@ -16,8 +16,9 @@
  */
 import * as React from 'react';
 import { BottomTabs, DeskMark, TopTabs } from './tabs';
+import { ServicesDrawer } from './services-drawer';
 import { Dot } from './numbers';
-import { IconSearch } from './icons';
+import { IconExternal, IconSearch } from './icons';
 import { useIsPhone } from './interactions';
 
 export interface DeskShellProps {
@@ -65,12 +66,31 @@ export function DeskShell({
 }: DeskShellProps) {
   const phone = useIsPhone();
 
+  /*
+   * ⚠️ THE EXTERNAL CONSOLES LIVE ON THE SHELL, NOT ON A PAGE. Every
+   * surface needs them and none of them owns them: an operator reaches for
+   * Bob Go from the Ledger and for Meta from the Site board. Hanging it off
+   * a page would mean five copies and one of them going stale.
+   */
+  const [services, setServices] = React.useState(false);
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {phone ? (
-        <PhoneHeader title={title} sub={sub} site={site} onSearch={onSearch} />
+        <PhoneHeader
+          title={title}
+          sub={sub}
+          site={site}
+          onSearch={onSearch}
+          onServices={() => setServices(true)}
+        />
       ) : (
-        <DesktopBar active={active} site={site} onSearch={onSearch} />
+        <DesktopBar
+          active={active}
+          site={site}
+          onSearch={onSearch}
+          onServices={() => setServices(true)}
+        />
       )}
 
       <div
@@ -104,6 +124,8 @@ export function DeskShell({
       </div>
 
       {phone ? <BottomTabs active={active} /> : null}
+
+      <ServicesDrawer open={services} onClose={() => setServices(false)} />
     </div>
   );
 }
@@ -112,10 +134,12 @@ function DesktopBar({
   active,
   site,
   onSearch,
+  onServices,
 }: {
   active: string;
   site?: { tone: 'ok' | 'warn' | 'bad' | 'unknown'; word: string };
   onSearch?: () => void;
+  onServices?: () => void;
 }) {
   return (
     <header
@@ -139,6 +163,35 @@ function DesktopBar({
       </nav>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, width: 420, justifyContent: 'flex-end' }}>
+        {/* ⚠️ AN EXIT, NOT A SURFACE. It sits with search and the site dot on
+            the right rather than among the five tabs: those are where the
+            work is, and this leads out of the building. */}
+        {onServices ? (
+          <button
+            type="button"
+            onClick={onServices}
+            aria-label="External consoles"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 32,
+              padding: '0 10px',
+              background: 'transparent',
+              border: '1px solid var(--dk-line-2)',
+              borderRadius: 'var(--dk-radius-control)',
+              color: 'var(--dk-ink-2)',
+              fontFamily: 'inherit',
+              fontSize: 12.5,
+              fontWeight: 500,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <IconExternal size={14} />
+            Services
+          </button>
+        ) : null}
         {onSearch ? (
           <button
             type="button"
@@ -213,11 +266,13 @@ function PhoneHeader({
   sub,
   site,
   onSearch,
+  onServices,
 }: {
   title: string;
   sub?: string;
   site?: { tone: 'ok' | 'warn' | 'bad' | 'unknown'; word: string };
   onSearch?: () => void;
+  onServices?: () => void;
 }) {
   return (
     <header
@@ -246,6 +301,11 @@ function PhoneHeader({
       {onSearch ? (
         <RoundButton label="Search" onClick={onSearch}>
           <IconSearch size={16} style={{ color: 'var(--dk-ink-2)' }} />
+        </RoundButton>
+      ) : null}
+      {onServices ? (
+        <RoundButton label="External consoles" onClick={onServices}>
+          <IconExternal size={16} style={{ color: 'var(--dk-ink-2)' }} />
         </RoundButton>
       ) : null}
     </header>

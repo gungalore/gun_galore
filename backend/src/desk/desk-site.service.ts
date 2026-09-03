@@ -186,7 +186,11 @@ export class DeskSiteService {
         key: 'whatsapp',
         label: 'WhatsApp',
         state: whatsappEnabled ? 'enabled' : 'gated',
-        tone: whatsappEnabled ? ('ok' as GateTone) : ('warn' as GateTone),
+        // ⚠️ NOT CONFIGURED IS NOT FAILING. warn is the amber the SMS row wears
+        // to say "2 failed"; giving it to a channel nobody has switched on yet
+        // parks a permanent false alarm beside a real one, and the real one
+        // stops being read. The artboard draws this neutral.
+        tone: whatsappEnabled ? ('ok' as GateTone) : ('neutral' as GateTone),
         // ⚠️ The honest line. There is no provider, no WABA and no send path;
         // "0 sent" would read as a working channel having a quiet day.
         detail: whatsappEnabled ? 'enabled' : 'no provider yet · whatsapp_enabled off',

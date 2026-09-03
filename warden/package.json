@@ -1,0 +1,26 @@
+{
+  "name": "gungalore-warden",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Warden — the daemon that watches the All Outdoor production box, diagnoses what's wrong, and (only with operator approval, or via its own narrow safe list) fixes it. Runs under pm2 alongside the API; not part of the Nest backend.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "test": "tsx --test src/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run clean && tsc",
+    "start": "node dist/boot.js",
+    "sweep": "tsx src/checks/cli.ts",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0"
+  }
+}

@@ -154,17 +154,46 @@ function Pre({ children, tone }: { children: string; tone: 'inset' | 'ground' })
   );
 }
 
+/**
+ * The standing rule, shown where the operator is about to type an instruction
+ * rather than buried in a settings page they will never open.
+ */
+const SAFE_LIST_RULE =
+  'Warden acts alone only on its safe list — restart a worker, retry a sync, clear a stuck job. ' +
+  'Anything touching config, money or member data waits for your word here. Every action, either ' +
+  'way, lands in the audit trail.';
+
 export function ChatComposer({
   value,
   onChange,
   onSend,
   placeholder = 'Tell Warden what to do…',
+  disabled = false,
+  busy = false,
+  hint,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   placeholder?: string;
+  /**
+   * ⚠️ NO WARDEN, NO COMPOSER. With WARDEN_BASE_URL unset every send is a
+   * guaranteed 503, and a field that accepts an instruction nothing will ever
+   * read is the same lie as an empty thread under a green badge. The caller
+   * disables it and says why on the card's face.
+   */
+  disabled?: boolean;
+  /** In flight. Dims the button and stops a second send racing the first. */
+  busy?: boolean;
+  /**
+   * Overrides the standing-rule footnote. `null` removes it — the phone pins
+   * this composer over the tab bar, where four lines of prose would cover the
+   * message the operator is answering.
+   */
+  hint?: React.ReactNode | null;
 }) {
+  const footnote = hint === undefined ? SAFE_LIST_RULE : hint;
+  const armed = !disabled && !busy && value.trim().length > 0;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
@@ -172,26 +201,31 @@ export function ChatComposer({
           <Input
             value={value}
             placeholder={placeholder}
+            disabled={disabled}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                onSend();
+                if (armed) onSend();
               }
             }}
           />
         </div>
-        <Button variant="primary" icon={IconSend} onClick={onSend}>
+        <Button
+          variant="primary"
+          icon={IconSend}
+          disabled={!armed}
+          loading={busy}
+          onClick={() => {
+            if (armed) onSend();
+          }}
+        >
           Send
         </Button>
       </div>
-      {/* The standing rule, where the operator is about to type an instruction
-          — not buried in a settings page they will never open. */}
-      <span style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--dk-ink-3)' }}>
-        Warden acts alone only on its safe list — restart a worker, retry a sync, clear a stuck job.
-        Anything touching config, money or member data waits for your word here. Every action, either
-        way, lands in the audit trail.
-      </span>
+      {footnote ? (
+        <span style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--dk-ink-3)' }}>{footnote}</span>
+      ) : null}
     </div>
   );
 }

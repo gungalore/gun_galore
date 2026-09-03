@@ -23,6 +23,7 @@ import { ShippingService } from '../shipping/shipping.service';
 import { isShipmentFailureReason } from '../common/shipment-failure-policy';
 import { SuperadminGuard } from './guards/superadmin.guard';
 import { CurrentAdmin } from './decorators/current-admin.decorator';
+import { ReadShapedRoute } from './decorators/read-shaped-route.decorator';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminService } from './admin.service';
 import { ListingsService } from '../listings/listings.service';
@@ -891,6 +892,9 @@ export class AdminAnalyticsController {
   }
 
   // Admin-triggered generate-now (so the operator doesn't wait for Monday).
+  // ⚠️ NOT a read, despite sitting under the insights GETs and being named
+  // "generate": it persists an InsightsDigest row and spends on an LLM call.
+  // Never give this @ReadShapedRoute() — it is SUPERADMIN-only on purpose.
   @Post('insights/digest/generate')
   generateDigest() {
     return this.digest.generate(30);
@@ -1013,7 +1017,11 @@ export class AdminBroadcastController {
   constructor(private readonly broadcast: AdminBroadcastService) {}
 
   // Preview the recipient count before sending. Body: { audience, channel }
+  // READ: resolves the recipient list and returns its length — no send,
+  // no audit row, nothing written. A POST only because the audience
+  // filter travels in the body.
   @Post('preview')
+  @ReadShapedRoute()
   @HttpCode(200)
   preview(
     @Body() body: { audience: BroadcastAudience; channel: BroadcastChannel },
@@ -1323,7 +1331,12 @@ export class AdminCreditsController {
 
   // Test endpoint — fires a non-billing probe per service. Returns
   // { ok, detail } so the UI can show a single-line result.
+  // READ: every branch is a balance fetch or a bare connectivity ping —
+  // none of them write a row or change any state of ours. (The anthropic
+  // branch's 1-token probe is real-billed at sub-cent; it changes no data
+  // and no authorization state, so it stays on the read side of the line.)
   @Post(':service/test')
+  @ReadShapedRoute()
   @HttpCode(200)
   test(@Param('service') service: string) {
     return this.credits.testService(service);
