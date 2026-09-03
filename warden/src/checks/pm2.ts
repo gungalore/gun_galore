@@ -120,9 +120,43 @@ export const pm2CrashOutputCheck: CheckModule = {
   async run(ctx): Promise<CheckOutcome> {
     // Read the process log files directly rather than `pm2 logs`, which
     // wraps everything in colour codes and its own prefixes.
+    //
+    // 🚨 THE PATH IS pm2's OWN ANSWER, NOT A CONSTRUCTED GUESS. This built
+    // `${appRoot}/logs/<short name>-error.log`, a directory pm2 was never told
+    // to use for the marketplace processes — it uses its default,
+    // ~/.pm2/logs/<full name>-error.log. So this check was PERMANENTLY blind
+    // and said "no process error log could be read", which reads as a
+    // provisioning gap rather than a wrong constant.
+    //
+    // ⚠️ IT WAS ALSO THE SECOND COPY OF THAT GUESS. safe-list.ts's LOG_FILES
+    // had the same wrong assumption, and fixing only that one left this check
+    // still blind — the classic two-places-one-truth. Asking pm2 where it
+    // actually writes removes the constant entirely: there is nothing left to
+    // drift, on this box or a differently-configured one.
+    const described = await ctx.run('pm2', ['jlist'], { timeoutMs: 8_000 });
+    const byName = new Map<string, string>();
+    if (described.exitCode === 0) {
+      try {
+        for (const p of JSON.parse(described.stdout) as {
+          name?: string;
+          pm2_env?: { pm_err_log_path?: string };
+        }[]) {
+          const path = p.pm2_env?.pm_err_log_path;
+          if (p.name && path) byName.set(p.name, path);
+        }
+      } catch {
+        // A pm2 that answers with something unparseable is already reported by
+        // pm2ProcessesCheck; here it just means we fall back below.
+      }
+    }
+
     const files = ctx.config.pm2Processes.map((name) => ({
       name,
-      path: `${ctx.config.appRoot}/logs/${name.replace(/^alloutdoor-|^gungalore-/, '')}-error.log`,
+      // Fallback keeps the shape honest when pm2 could not be asked: a wrong
+      // path fails as a named unreadable, never as a silent "no errors".
+      path:
+        byName.get(name) ??
+        `${process.env.HOME?.trim() || '/home/alloutdoor'}/.pm2/logs/${name}-error.log`,
     }));
 
     const evidence: Evidence[] = [];
