@@ -16,6 +16,7 @@
 import * as React from 'react';
 import {
   BarList,
+  Label,
   ChartCard,
   Chip,
   DeskShell,
@@ -39,7 +40,11 @@ import {
   fetchKycFunnel,
   fetchOverview,
   fetchRefundRisk,
+  fetchDormant,
+  fetchSearchIntel,
   fetchSeries,
+  fetchTimeToSale,
+  fetchTopMakeModel,
   rand,
   splitTypes,
   type ByCategory,
@@ -53,7 +58,11 @@ import {
   PERIODS,
   defaultBucket,
   type Bucket,
+  type DormantSegment,
   type Period,
+  type SearchIntel,
+  type TimeToSaleRow,
+  type TopMakeModel,
   type RefundRiskRow,
   type SeriesPoint,
 } from '../../../../lib/desk-pulse';
@@ -458,6 +467,8 @@ export default function PulsePage() {
               )}
             </ChartCard>
           </div>
+
+          <MarketDetail period={period} />
         </>
       )}
     </DeskShell>
@@ -486,5 +497,193 @@ function KpiTile({
       deltaDirection={d?.direction}
       deltaContext={d ? `vs prior ${period.replace("d", "")} days` : undefined}
     />
+  );
+}
+
+/**
+ * The four reads the cutover map recorded as having "no Desk equivalent".
+ *
+ * 🚨 ALL FOUR WERE LIVE ENDPOINTS THE WHOLE TIME — top makes and models, time
+ * to sale, search intel and the dormant segment have been serving since the
+ * legacy page was written. Nothing had to be computed; they had to be asked
+ * for. Loaded here rather than in the parent so a failure in any of them
+ * leaves the KPIs and the charts above untouched: these are context, and
+ * context must never take the numbers down with it.
+ */
+function MarketDetail({ period }: { period: Period }) {
+  const [attempt, setAttempt] = React.useState(0);
+  const [makes, setMakes] = React.useState<TopMakeModel[] | null>(null);
+  const [tts, setTts] = React.useState<TimeToSaleRow[] | null>(null);
+  const [intel, setIntel] = React.useState<SearchIntel | null>(null);
+  const [dormant, setDormant] = React.useState<DormantSegment | null>(null);
+  const [failure, setFailure] = React.useState<string | null>(null);
+  const ticket = React.useRef(0);
+
+  React.useEffect(() => {
+    const mine = ++ticket.current;
+    setMakes(null);
+    setTts(null);
+    setIntel(null);
+    Promise.all([
+      fetchTopMakeModel(period),
+      fetchTimeToSale(period),
+      fetchSearchIntel(period),
+      // ⚠️ NOT PERIOD-SCOPED — see fetchDormant. Fetched alongside the others
+      // for one round trip, but it does not change when the chips do.
+      fetchDormant(),
+    ])
+      .then(([m, t, i, d]) => {
+        if (ticket.current !== mine) return;
+        setMakes(m);
+        setTts(t);
+        setIntel(i);
+        setDormant(d);
+        setFailure(null);
+      })
+      .catch((err) => {
+        if (ticket.current !== mine) return;
+        setFailure(describeFailure(err));
+      });
+  }, [period, attempt]);
+
+  if (failure) {
+    return (
+      <div style={{ marginTop: 12 }}>
+        <FailedRegion
+          title="Couldn't load the market detail"
+          detail={failure}
+          onRetry={() => setAttempt((a) => a + 1)}
+          scopeNote="the numbers above are unaffected"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+        gap: 12,
+        marginTop: 12,
+      }}
+    >
+      <ChartCard label="Top makes and models">
+        {makes === null ? (
+          <SkeletonPile count={1} />
+        ) : makes.length === 0 ? (
+          <span style={{ fontSize: 12.5, color: 'var(--dk-ink-3)' }}>
+            Nothing sold in this window.
+          </span>
+        ) : (
+          <>
+            <BarList
+              rows={makes.slice(0, 10).map((m) => ({
+                id: `${m.make}|${m.model}`,
+                label: `${m.make} ${m.model}`.trim() || 'unrecorded',
+                value: m.count,
+              }))}
+              formatValue={(v) => `${v} sold`}
+            />
+            <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)', lineHeight: 1.45 }}>
+              Ranked by units, not rand — a cheap item that moves often is a different
+              fact from one expensive sale, and the bar is the one an operator stocks to.
+            </span>
+          </>
+        )}
+      </ChartCard>
+
+      <ChartCard label="Time to sale">
+        {tts === null ? (
+          <SkeletonPile count={1} />
+        ) : tts.length === 0 ? (
+          <span style={{ fontSize: 12.5, color: 'var(--dk-ink-3)' }}>
+            Nothing has sold in this window, so there is nothing to time.
+          </span>
+        ) : (
+          <>
+            <BarList
+              rows={tts.slice(0, 10).map((r) => ({
+                id: r.categoryName,
+                label: r.categoryName,
+                value: r.medianDays,
+              }))}
+              formatValue={(v) => `${v} days`}
+            />
+            <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)', lineHeight: 1.45 }}>
+              {/* ⚠️ MEDIAN, AND IT MATTERS. One listing that sat for a year drags a
+                  mean into uselessness; the server computes a median for exactly
+                  that reason and the label has to say so, or the number reads as
+                  an average and gets argued with. */}
+              Median days from listing to sale, per category. Sold items only —
+              anything still listed has no time to measure and is not counted.
+            </span>
+          </>
+        )}
+      </ChartCard>
+
+      <ChartCard label="What members searched for">
+        {intel === null ? (
+          <SkeletonPile count={1} />
+        ) : intel.topTerms.length === 0 && intel.zeroResult.length === 0 ? (
+          <span style={{ fontSize: 12.5, color: 'var(--dk-ink-3)' }}>No searches recorded.</span>
+        ) : (
+          <>
+            {intel.topTerms.length ? (
+              <BarList
+                rows={intel.topTerms.slice(0, 8).map((t) => ({
+                  id: `top-${t.term}`,
+                  label: t.term,
+                  value: t.count,
+                }))}
+              />
+            ) : null}
+            {/* 🚨 THE ZERO-RESULT LIST IS THE VALUABLE HALF. A popular term is
+                a thing being found; a term returning nothing is demand the
+                storefront cannot serve, which is a stocking decision. */}
+            {intel.zeroResult.length ? (
+              <>
+                <Label>Found nothing</Label>
+                <div>
+                  {intel.zeroResult.slice(0, 8).map((t, i, arr) => (
+                    <Kv
+                      key={`zero-${t.term}`}
+                      k={t.term}
+                      v={`${t.count} search${t.count === 1 ? '' : 'es'}`}
+                      mono={false}
+                      last={i === arr.length - 1}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </>
+        )}
+      </ChartCard>
+
+      <ChartCard label="Dormant members">
+        {dormant === null ? (
+          <SkeletonPile count={1} />
+        ) : (
+          <>
+            <Kv k="Dormant" v={dormant.total.toLocaleString('en-ZA')} />
+            <Kv
+              k="Reachable by SMS"
+              v={dormant.smsReachable.toLocaleString('en-ZA')}
+              last
+            />
+            <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)', lineHeight: 1.45 }}>
+              {/* ⚠️ THE ONLY FIGURE ON THIS BOARD THAT IGNORES THE PERIOD CHIPS.
+                  dormantSegment() counts against a fixed 14-day window in the
+                  service, so without saying so it would read as "dormant in the
+                  last 7 days" — a different and much smaller number. */}
+              No sign-in for 14 days, marketing consent given, not banned. This one figure
+              does not move with the period chips — the window is fixed in the service.
+              Reachable means a verified phone with SMS still switched on.
+            </span>
+          </>
+        )}
+      </ChartCard>
+    </div>
   );
 }

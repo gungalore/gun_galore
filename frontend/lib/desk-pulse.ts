@@ -224,3 +224,104 @@ export const DISPATCH_BUCKET_LABEL: Record<string, string> = {
   pending: 'Still pending',
   breached: 'Breached, over 72h',
 };
+
+/* ── The four reads the cutover map listed as lost ────────────────────── */
+
+/**
+ * 🚨 ALL FOUR ENDPOINTS EXISTED THE WHOLE TIME. The map recorded top makes and
+ * models, time to sale, search intel and the dormant segment as "no Desk
+ * equivalent" — and every one of them is a GET that has been serving since the
+ * legacy page was written. Nothing had to be computed; they had to be asked
+ * for. Same shape as the period gap on this module, which was a union that
+ * stopped two entries early.
+ */
+
+export interface TopMakeModel {
+  make: string;
+  model: string;
+  count: number;
+  gmvCents: number;
+  avgPriceCents: number;
+}
+
+export const fetchTopMakeModel = (p: Period) =>
+  deskFetch<TopMakeModel[]>(`/admin/analytics/top-make-model${q(p)}`);
+
+export interface TimeToSaleRow {
+  categoryName: string;
+  /** Already rounded to one decimal by the server. */
+  medianDays: number;
+  sold: number;
+}
+
+export const fetchTimeToSale = (p: Period) =>
+  deskFetch<TimeToSaleRow[]>(`/admin/analytics/time-to-sale${q(p)}`);
+
+export interface SearchTerm {
+  term: string;
+  count: number;
+  maxResults?: number;
+}
+
+export interface SearchIntel {
+  topTerms: SearchTerm[];
+  zeroResult: SearchTerm[];
+}
+
+export const fetchSearchIntel = (p: Period) =>
+  deskFetch<SearchIntel>(`/admin/analytics/insights/search${q(p)}`);
+
+/**
+ * ⚠️ NO PERIOD, AND THE CARD MUST SAY SO. dormantSegment() counts against a
+ * fixed 14-day window in the service, so it does NOT move when the period
+ * chips move. Rendering it inside a period-scoped board without a word would
+ * make it read as "dormant in the last 7 days", which is a different and
+ * much smaller number.
+ */
+export interface DormantSegment {
+  total: number;
+  smsReachable: number;
+}
+
+export const fetchDormant = () =>
+  deskFetch<DormantSegment>('/admin/analytics/insights/dormant');
+
+/**
+ * A day-of-week x hour grid.
+ *
+ * ⚠️ SPARSE. The server returns only cells that HAVE activity, so a missing
+ * (dow, hour) is a real zero — but an absent cell and a measured zero must
+ * still render the same way here, because the query counts rows and cannot
+ * distinguish "nothing sold" from "nothing recorded".
+ */
+export interface HeatCell {
+  dow: number;
+  hour: number;
+  count: number;
+}
+
+export const fetchSalesHeatmap = (p: Period) =>
+  deskFetch<HeatCell[]>(`/admin/analytics/insights/sales-heatmap${q(p)}`);
+
+export const fetchActivityHeatmap = (p: Period) =>
+  deskFetch<HeatCell[]>(`/admin/analytics/insights/activity-heatmap${q(p)}`);
+
+/** Sunday-first, matching Postgres EXTRACT(DOW). */
+export const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+/**
+ * Index a sparse cell list for O(1) lookup while drawing the grid.
+ *
+ * ⚠️ THE KEY IS dow*24+hour, NOT a string concat of the two. "1" + "12" and
+ * "11" + "2" both make "112"; a grid built on that would silently merge two
+ * unrelated cells and paint a Monday lunchtime figure onto a Thursday.
+ */
+export function heatIndex(cells: HeatCell[]): Map<number, number> {
+  const m = new Map<number, number>();
+  for (const c of cells) m.set(c.dow * 24 + c.hour, c.count);
+  return m;
+}
+
+export function heatPeak(cells: HeatCell[]): number {
+  return cells.reduce((max, c) => (c.count > max ? c.count : max), 0);
+}
