@@ -56,13 +56,14 @@ export interface OffState {
   powderIds: string[];
   cartridgeKeys: string[];
   /**
-   * bulletKey() — `${maker}|${weightGr}|${category}`, with `|${calibreIn}`
-   * appended for every bullet that has one.
+   * bulletKey() — `${calibreIn}|${weightGr}`, with an EMPTY first part for a
+   * bullet saved before calibres were recorded.
    *
    * ⚠️ WRITTEN OUT HERE ONLY AS A REMINDER; bulletKey() BELOW IS THE SPELLING,
-   * and the backend's benchBulletKey() has to match it character for character
-   * or `off` silently matches nothing. Dropping the calibre part from this
-   * line is how the four-part form quietly stops being sent.
+   * and the backend's benchBulletKey() in bench.types.ts has to match it
+   * character for character or `off` silently matches nothing — the chip stays
+   * greyed on the screen and stays live in the query. An empty part is a part:
+   * `|150` is the two-part form, not a one-part one.
    */
   bullets: string[];
 }
@@ -70,20 +71,41 @@ export interface OffState {
 export const EMPTY_OFF: OffState = { powderIds: [], cartridgeKeys: [], bullets: [] };
 
 /**
- * ⚠️ THE CALIBRE IS PART OF A BULLET'S IDENTITY. Leave it out and a .277 and a
- * .308 150gr collapse to one key again — which is the bug this whole field
- * exists to fix. Benches saved before calibres existed have none; those keep
- * the old three-part key and keep matching as they did.
+ * A bullet's identity, in one string: calibre then weight, and nothing else.
+ *
+ * 🚨 THE CALIBRE IS HALF OF IT. Leave it out and a .277 and a .308 150 gr
+ * collapse to one key again — which is the bug this whole field exists to fix.
+ * The maker and the category are NOT in it, deliberately: a 150 gr .308 is the
+ * same bullet whoever made it, which is the whole point of the Bench.
+ *
+ * ⚠️ A BULLET WITH NO CALIBRE KEYS AS `|150`, NOT AS `150`. Benches saved
+ * before calibres were recorded have none, and the empty leading part is what
+ * the backend's parseGuestBullet() counts to tell the new two-part form from
+ * the legacy `maker|weight|category` one. Collapsing it away would make a
+ * legacy shelf unreadable at the other end.
  */
-export function bulletKey(b: {
-  maker: string;
-  weightGr: number;
-  category: string;
-  calibreIn?: number | null;
-}): string {
-  const base = `${b.maker}|${b.weightGr}|${b.category}`;
-  return b.calibreIn == null ? base : `${base}|${b.calibreIn}`;
+export function bulletKey(b: { weightGr: number; calibreIn?: number | null }): string {
+  return `${b.calibreIn ?? ''}|${b.weightGr}`;
 }
+
+/**
+ * Grain windows the finder offers, and the default.
+ *
+ * ⚠️ FIVE GRAINS IS INHERITED, NOT INVENTED — the retired Load Lab used the
+ * same default, and the reloading-manual search auto-broadens by the same.
+ *
+ * ⚠️ IT WIDENS THE SEARCH, NEVER A CHARGE. Every load stays quoted at its
+ * own bullet weight with its own start and max. Nothing on screen may
+ * suggest a charge for a 145 gr bullet may be used with a 155 gr one.
+ */
+export const WEIGHT_TOLERANCES: { id: number; label: string }[] = [
+  { id: 0, label: 'Exact' },
+  { id: 5, label: '± 5 gr' },
+  { id: 10, label: '± 10 gr' },
+  { id: 15, label: '± 15 gr' },
+];
+
+export const DEFAULT_TOLERANCE = 5;
 
 /* ── Shared leaf props ──────────────────────────────────────────────── */
 
@@ -198,7 +220,17 @@ export interface ResultsListProps extends UnitProps {
   result: LoadsResponse | null;
   loading: boolean;
   error: string | null;
-  onOpenLoad: (row: LoadRow, group: LoadGroup) => void;
+  /**
+   * 🚨 THE WEIGHT IS PASSED, NOT LOOKED UP AGAIN. It is the LOAD'S OWN bullet
+   * weight — the weight group the row was drawn under — and it is the number
+   * the load card and the log sheet print beside the charge. Since the finder
+   * matches a bench bullet over a ± gr window, one cartridge now draws several
+   * weight groups, and a caller that re-derived this by searching the group
+   * for the row would have a miss to handle: a fallback of 0, or of the bench
+   * bullet's weight, prints a charge under a weight it was never worked up at.
+   * The row already knows; it says so.
+   */
+  onOpenLoad: (row: LoadRow, group: LoadGroup, weightGr: number) => void;
   onOpenSpec: (cartridgeKey: string) => void;
   onRetry: () => void;
   /** Which axes are bare. See BenchGaps — not a "bench is empty" flag. */

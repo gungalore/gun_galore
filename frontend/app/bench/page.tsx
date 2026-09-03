@@ -22,12 +22,13 @@ import {
   type LogEntry,
 } from '@/lib/bench/api';
 import type { Units } from '@/lib/bench/geometry';
-import { formatCalibre } from '@/lib/bench/calibre';
 import {
+  DEFAULT_TOLERANCE,
   EMPTY_OFF,
   type BenchBulletOption,
   type BenchCartridgeOption,
   WEIGHT_BANDS,
+  WEIGHT_TOLERANCES,
   bulletKey,
   type LogDraft,
   type OffState,
@@ -119,6 +120,23 @@ export default function BenchPage() {
   const [off, setOff] = useState<OffState>(EMPTY_OFF);
   const [cartridge, setCartridge] = useState('all');
   const [weight, setWeight] = useState<WeightBand>('any');
+  /**
+   * How many grains either side of a bench bullet's weight the search covers.
+   *
+   * 🚨 IT WIDENS THE SEARCH, IT NEVER WIDENS A CHARGE. A member who owns a
+   * 150 gr .308 owns a shelf of bullets a reloader treats as one: on the
+   * operator's own bench, .30-06 with N550 finds 9 loads at exactly 150 gr and
+   * 17 at ± 5. Those extra loads are the point of the tool. Every one of them
+   * still arrives quoted at ITS OWN bullet weight, in its own weight group,
+   * with its own start and max charge — the window says what is SHOWN, never
+   * what may be loaded, and no copy on this page may blur the two.
+   *
+   * ⚠️ A NUMBER, DEFAULTED FROM contract.ts. The widths and the default live
+   * in WEIGHT_TOLERANCES / DEFAULT_TOLERANCE beside the backend's matching
+   * pair, and a literal 5 typed here is how the toolbar and the server end up
+   * disagreeing about what the member asked for.
+   */
+  const [tolerance, setTolerance] = useState<number>(DEFAULT_TOLERANCE);
   const [units, setUnits] = useState<Units>('metric');
 
   const [result, setResult] = useState<LoadsResponse | null>(null);
@@ -224,11 +242,12 @@ export default function BenchPage() {
    * The switched-off chips as the API takes them: one flat list, all three
    * axes, because the server matches each axis against the same set.
    *
-   * 🚨 IT GOES TO EVERY BENCH-RELATIVE COUNT, NOT JUST THE LIST. The powder
-   * picker's per-powder count and the spec card's "loads on your bench" are
-   * answers about the same shelf as the results behind them, and a request
-   * that leaves this out does not fail — it silently answers for the full
-   * bench and prints a bigger figure over a shorter list.
+   * 🚨 IT GOES TO EVERY BENCH-RELATIVE COUNT, NOT JUST THE LIST, AND SO DOES
+   * THE GRAIN WINDOW. The powder picker's per-powder count and the spec card's
+   * "loads on your bench" are answers about the same shelf as the results
+   * behind them, and a request that leaves either out does not fail — it
+   * silently answers for a different shelf and prints a figure the list
+   * contradicts. The two travel together as a BenchScope; see lib/bench/api.ts.
    */
   const offList = useMemo(
     () => [...off.powderIds, ...off.cartridgeKeys, ...off.bullets],
@@ -241,7 +260,10 @@ export default function BenchPage() {
     setLoading(true);
     setError(null);
     benchApi
-      .loads(token, { cartridge, weight, off: offList })
+      // ⚠️ THE TOLERANCE IS SENT ON EVERY SEARCH, INCLUDING WHEN IT IS 0.
+      // "Exact" is a real choice and an omitted tolerance falls back to the
+      // server's default of 5 — see the note in lib/bench/api.ts query().
+      .loads(token, { cartridge, weight, tolerance, off: offList })
       .then((r) => {
         if (mine !== seq.current) return;
         setResult(r);
@@ -252,7 +274,12 @@ export default function BenchPage() {
         setError(e.message);
         setLoading(false);
       });
-  }, [isLoaded, isSignedIn, token, cartridge, weight, offList]);
+    // ⚠️ `tolerance` IS IN THE DEPS, WHICH IS WHAT MAKES THE CONTROL REAL.
+    // The effect below re-runs the search when this callback's identity
+    // changes; a width left out of the list would change the pill, change the
+    // request it would have sent, and never send one — the decorative-filter
+    // failure this module has already shipped twice.
+  }, [isLoaded, isSignedIn, token, cartridge, weight, tolerance, offList]);
 
   useEffect(() => {
     if (bench) search();
@@ -298,6 +325,19 @@ export default function BenchPage() {
         .map((c) => ({ id: c.key, label: c.name })),
     ],
     [bench, off.cartridgeKeys],
+  );
+
+  /**
+   * The grain widths as the segmented control speaks them.
+   *
+   * ⚠️ BUILT FROM WEIGHT_TOLERANCES, NEVER RETYPED. Seg is a tablist keyed by
+   * string ids, so the figures are carried as strings across it and converted
+   * back with Number() on the way out; a second hand-written list of labels
+   * here is how the toolbar comes to offer a width the server does not honour.
+   */
+  const toleranceOptions = useMemo(
+    () => WEIGHT_TOLERANCES.map((t) => ({ id: String(t.id), label: t.label })),
+    [],
   );
 
   /**
@@ -352,15 +392,25 @@ export default function BenchPage() {
       powders: (bench?.powders ?? [])
         .filter((p) => !off.powderIds.includes(p.id))
         .map((p) => p.name),
+      // ⚠️ THE WINDOW IS NAMED WITH THE BULLET, OR THE COUNT BESIDE IT LIES.
+      // The empty panel says "X and Y have N loads together", and for the
+      // bullet axis that N is counted across the whole ± window — 145 to 155
+      // grains for a 150. Naming the bullet at its exact weight while quoting
+      // a window-wide count attributes loads to a bullet that did not earn
+      // them. A count is a promise; this keeps it one.
       bullets: (bench?.bullets ?? [])
         .filter((b) => !off.bullets.includes(bulletKey(b)))
-        .map(benchBulletName),
+        .map((b) =>
+          tolerance > 0
+            ? `${benchBulletName(b)} ± ${tolerance} gr`
+            : benchBulletName(b),
+        ),
       cartridges: (bench?.cartridges ?? [])
         .filter((c) => !off.cartridgeKeys.includes(c.key))
         .filter((c) => cartridge === 'all' || c.key === cartridge)
         .map((c) => c.name),
     }),
-    [bench, off, cartridge],
+    [bench, off, cartridge, tolerance],
   );
 
   /* ── Units ─────────────────────────────────────────────────────────── */
@@ -401,11 +451,14 @@ export default function BenchPage() {
       setSpecError(null);
       setSpecLoading(true);
       benchApi
-        // ⚠️ WITH THE OFF CHIPS. The card's "loads on your bench" is a count
-        // against the same shelf as the list it was opened from; sent without
-        // them it answers for the full bench and prints a bigger figure over a
-        // shorter list, with the greyed-out chip beside it explaining neither.
-        .cartridge(token, key, offList)
+        // ⚠️ WITH THE OFF CHIPS *AND* THE GRAIN WINDOW. The card's "loads on
+        // your bench" is a count against the same shelf as the list it was
+        // opened from, and the shelf is both of those: sent without the chips
+        // it answers for the full bench, and sent without the window it
+        // answers over the server's default ± 5 gr. Either way it prints a
+        // figure the list behind it contradicts, with nothing on screen to
+        // explain the gap. See BenchScope in lib/bench/api.ts.
+        .cartridge(token, key, { off: offList, tolerance })
         .then((s) => {
           setSpec(s);
           setSpecLoading(false);
@@ -415,7 +468,7 @@ export default function BenchPage() {
           setSpecLoading(false);
         });
     },
-    [token, offList],
+    [token, offList, tolerance],
   );
 
   const openLogList = useCallback(() => {
@@ -434,16 +487,19 @@ export default function BenchPage() {
     setOverlay('powders');
     setPowdersLoading(true);
     benchApi
-      // ⚠️ WITH THE OFF CHIPS, for the reason openSpec carries them: each row's
-      // count is "how many loads this powder adds to your bench", and the bench
-      // it means is the one the member can see, chips and all.
-      .powders(token, undefined, offList)
+      // ⚠️ WITH THE OFF CHIPS AND THE WINDOW, for the reason openSpec carries
+      // them: each row's count is "how many loads this powder adds to your
+      // bench", and the bench it means is the one the member can see — chips
+      // and all, over the width the toolbar is showing. Counted at the default
+      // ± 5 gr while the finder is on "Exact", a row reads "17 loads on your
+      // bench" and opens onto nine.
+      .powders(token, undefined, { off: offList, tolerance })
       .then((p) => {
         setPowders(p);
         setPowdersLoading(false);
       })
       .catch(() => setPowdersLoading(false));
-  }, [token, offList]);
+  }, [token, offList, tolerance]);
 
   const addPowder = useCallback(
     (p: BenchPowder) => {
@@ -506,40 +562,42 @@ export default function BenchPage() {
    * merges, so a body that omits an axis clears it — adding a bullet with a
    * partial body would wipe the member's powders.
    *
-   * 🚨 AND THE CALIBRE TRAVELS WITH THE BULLET. `calibreIn` is part of what a
-   * bullet IS — "Hornady 150gr SP" is a .277", a .308", a .311" and a .323"
-   * projectile, and they do not swap — so dropping it here would store the
-   * member's .308 bullet as a bare "Hornady 150 SP" that bulletKey() then
-   * matches against every other calibre of the same name, which is the whole
-   * bug. It is copied through verbatim, never re-derived.
+   * 🚨 A BULLET IS A WEIGHT IN A CALIBRE — NOT A BRAND. Operator, 2026-09-03:
+   * "a 150gr bullet of any manufacturer would yield almost the exact same
+   * pressures and speeds. this is the whole point of the Bench." So the two
+   * fields written here are the two the match reads, and the maker and the
+   * shape family are deliberately NOT among them: stored, they would only be a
+   * second identity for the same shelf entry, and .30-06 + N550 + "Hornady
+   * 150gr SP" is the bench that returned nothing at all.
+   *
+   * 🚨 AND THE CALIBRE STILL TRAVELS WITH IT. Dropping the maker is not
+   * dropping the diameter: 150 gr names a .277", a .308", a .311" and a .323"
+   * projectile, and they do not swap. `calibreIn` is copied through verbatim,
+   * never re-derived — without it bulletKey() collapses all four into one
+   * entry, which is the hazard the calibre work exists to prevent.
    */
   const addBullet = useCallback(
     (b: BenchBulletOption) => {
       writeBench(
         (current) => ({
           powderIds: current.powders.map((p) => p.id),
-          bullets: [
-            ...current.bullets,
-            {
-              maker: b.maker,
-              weightGr: b.weightGr,
-              category: b.category,
-              calibreIn: b.calibreIn,
-            },
-          ],
+          bullets: [...current.bullets, { weightGr: b.weightGr, calibreIn: b.calibreIn }],
           cartridgeKeys: current.cartridges.map((c) => c.key),
           units,
         }),
         () => {
-          // Named the way the picker named it, calibre first: the member just
-          // chose between two rows that differed only there, and a toast that
-          // says "Hornady 150gr added" cannot confirm which one they got.
-          // filter() rather than a template: a bullet with no calibre would
-          // otherwise be toasted with a leading space where a figure belongs.
-          const named = [formatCalibre(b.calibreIn), b.maker, `${b.weightGr}gr`]
-            .filter(Boolean)
-            .join(' ');
-          setToast(`${named} added to your bench`);
+          // ⚠️ benchBulletName(), THE CHIP'S OWN WORDS — the fourth surface on
+          // the same helper as the chip, its × and the removal toast. A bullet
+          // is a calibre and a weight, so `.308" 150 gr added to your bench` is
+          // a sentence the member can match to the row they just tapped AND to
+          // the chip that appears on the rail a moment later.
+          //
+          // Spelled here by hand it drifted: the toast said `150 gr` where the
+          // chip said `no calibre 150 gr`, and a confirmation the member cannot
+          // match to the chip they are looking at is not a confirmation.
+          setToast(
+            `${benchBulletName({ weightGr: b.weightGr, calibreIn: b.calibreIn })} added to your bench`,
+          );
         },
         (e) => setToast(e.message),
       );
@@ -728,6 +786,27 @@ export default function BenchPage() {
         value={weight}
         onChange={setWeight}
       />
+      {/*
+        ⚠️ BOTH OF THESE ACT ON THE LOAD'S OWN BULLET WEIGHT, AND THEY AND.
+        The band above is a bound on the weights SHOWN — "150 gr +" hides every
+        lighter load, whichever bench bullet found it. This one is a width
+        around each bench bullet's weight. So a 150 gr shelf bullet at ± 15 gr
+        under the "100–150 gr" band returns 135 to 150, not 135 to 165: the
+        band cuts the window, it does not pick which bullets are searched with.
+
+        ⚠️ THE NAME DESCRIBES THE SEARCH, AND ONLY THE SEARCH. "Bullet weight
+        window" is what a reader hears, and "± 5 gr" is what the pill says: a
+        width of bullets the finder will SHOW. Nothing here may be named in a
+        way that suggests a charge travels between weights — every load that
+        comes back carries its own bullet weight and its own charges, and the
+        results group them by that weight for exactly this reason.
+      */}
+      <Seg
+        label="Bullet weight window"
+        options={toleranceOptions}
+        value={String(tolerance)}
+        onChange={(id) => setTolerance(Number(id))}
+      />
       <Seg
         label="Units"
         options={[
@@ -788,9 +867,13 @@ export default function BenchPage() {
             onAddBullet={openBullets}
             onAddCartridge={openCartridges}
             onOpenSpec={openSpec}
-            onOpenLoad={(row, group) => {
-              const weightGr =
-                group.weights.find((w) => w.rows.some((r) => r.id === row.id))?.weightGr ?? 0;
+            // 🚨 THE WEIGHT COMES FROM THE ROW, NOT FROM A SEARCH BACK THROUGH
+            // THE GROUP. It is the load's own bullet weight, and the card and
+            // the log sheet print it beside the charge. Re-derived here it had
+            // a `?? 0` on the end of it — and now that a ± gr window draws
+            // several weight groups per cartridge, a miss would print a real
+            // charge under a weight nobody worked it up at.
+            onOpenLoad={(row, group, weightGr) => {
               setOpenLoad({ row, group, weightGr });
               setOverlay('load');
             }}
