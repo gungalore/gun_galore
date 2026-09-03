@@ -178,7 +178,7 @@ export function explainEmpty(why: LoadsWhy, shelf: ShelfNames): EmptyExplanation
       title: 'Nothing joins these three',
       lines: [
         'No load uses one of your powders with one of your bullets in one of your cartridges.',
-        'Adding one more of any single thing will not change that — turn a chip back on, widen the weight range, or swap out what is on the bench.',
+        'Adding one more of any single thing will not change that — turn a chip back on, widen the weight band or the ± gr window, or swap out what is on the bench.',
       ],
       offer: [],
     };
@@ -234,13 +234,18 @@ function fmtPmax(bar: number | null, psi: number | null, units: Units): string |
 }
 
 /**
- * `12 loads from your bench · Pmax 4 350 bar (63 092 psi) · max COAL 71.12 mm`
+ * `12 loads matching your bench · Pmax 4 350 bar (63 092 psi) · max COAL 71.12 mm`
  *
  * Each segment is dropped rather than faked when its figure is missing — a
  * cartridge whose sheet is incomplete shows a shorter line, never a zero.
+ *
+ * ⚠️ "MATCHING", FOR THE REASON THE COUNT ABOVE THE LIST SAYS "MATCH". The ± gr
+ * window puts loads in here that were worked up with bullets the member does
+ * not own, each under its own weight heading. They matched the shelf; they are
+ * not all buildable from it.
  */
 function groupMeta(head: CartridgeHead, loadCount: number, units: Units): string {
-  const parts: string[] = [`${loadCount} load${loadCount === 1 ? '' : 's'} from your bench`];
+  const parts: string[] = [`${loadCount} load${loadCount === 1 ? '' : 's'} matching your bench`];
   const pmax = fmtPmax(head.pmaxBar, head.pmaxPsi, units);
   if (pmax) parts.push(pmax);
   if (head.maxLengthMm !== null) parts.push(`max COAL ${fmtLen(head.maxLengthMm, units)}`);
@@ -532,10 +537,21 @@ export function ResultsList({
               <span className="num" style={{ fontWeight: 600 }}>
                 {result.count}
               </span>
-              <span className="md:hidden"> load{result.count === 1 ? '' : 's'} from your bench</span>
+              {/*
+                🚨 "MATCH", NOT "CAN BE BUILT". The finder matches a bench
+                bullet over a ± gr window — five grains by default — so this
+                list routinely holds loads worked up with bullets the member
+                does NOT own: a 150 gr .308 on the shelf brings back 145 and
+                155 gr loads. "N loads can be built from your bench" told them
+                those were theirs to load, which is one weight's charge offered
+                for another. The window decides what is SHOWN; every row still
+                carries its own bullet weight, and the member loads the one
+                whose bullet they actually have.
+              */}
+              <span className="md:hidden"> load{result.count === 1 ? '' : 's'} match your bench</span>
               <span className="hidden md:inline">
                 {' '}
-                load{result.count === 1 ? '' : 's'} can be built from your bench{' '}
+                load{result.count === 1 ? '' : 's'} match your bench{' '}
               </span>
               <span className="hidden md:inline" style={{ color: 'var(--text-tertiary)' }}>
                 · {groups.length} cartridge{groups.length === 1 ? '' : 's'}
@@ -633,8 +649,24 @@ export function ResultsList({
               </>
             ) : (
               <>
+                {/*
+                  ⚠️ THE TOOLBAR'S TWO WEIGHT CONTROLS ARE NAMED SEPARATELY,
+                  because they are two different narrowings and a member who
+                  has already set the band to "Any gr" would read a single
+                  "widen the weight range" as advice they have taken. The
+                  window is the ± gr one beside it.
+
+                  ⚠️ AND BOTH SENTENCES ARE ABOUT THE SEARCH. Widening shows
+                  more loads; it never changes a charge. Every load below is
+                  printed under its own bullet weight with its own start and
+                  max, and nothing here may suggest one weight's charge
+                  carries to another.
+                */}
                 <Title>Nothing on the shelf builds this</Title>
-                <div>Turn a chip back on, widen the weight range, or add another component.</div>
+                <div>
+                  Turn a chip back on, widen the weight band or the ± gr window, or add another
+                  component.
+                </div>
               </>
             )}
             {/* Opens the picker for each axis the sentence just named. Nothing
@@ -751,6 +783,16 @@ function Group({
         </div>
       </div>
 
+      {/*
+        🚨 ONE HEADING PER BULLET WEIGHT, AND IT IS THE LOAD'S OWN WEIGHT.
+        The finder matches a bench bullet within a ± gr window, so a bench
+        holding a 150 gr .308 can bring back 145, 150 and 155 gr loads at
+        once — and each one arrives in the group for the weight IT was worked
+        up at, with its own start and max charge underneath. That separation
+        is the whole safety of the wider search: the window decides what is
+        shown, never what may be loaded. Never fold these groups together, and
+        never label a row with the bench bullet's weight instead of its own.
+      */}
       {group.weights.map((w) => (
         <div key={w.weightGr}>
           <div className="wt num">{w.weightGr} gr</div>
@@ -788,12 +830,28 @@ function Row({
   delayMs: number;
   onOpenLoad: ResultsListProps['onOpenLoad'];
 }) {
+  /**
+   * `Sierra 150 gr HP` — the load's own bullet, in full.
+   *
+   * 🚨 THE MAKER AND THE TYPE STAY HERE. They were dropped from the MATCH —
+   * a 150 gr .308 is a 150 gr .308 whoever made it, which is why the bench
+   * finds these loads at all — but they are exactly the detail a member needs
+   * once a row is in front of them: it names the projectile this charge was
+   * worked up with. Stripping them from the results would leave three
+   * indistinguishable "150 gr" rows and hide the one fact that separates them.
+   *
+   * `weightGr` is the group's — that is, this load's own weight, never the
+   * bench bullet's. See the note above the weight groups.
+   */
   const bullet = `${row.bulletMaker} ${row.bulletType} ${weightGr} gr`;
   const startV = chargeVelocity(row.startFps, units);
   const maxV = chargeVelocity(row.maxFps, units);
   const coal = coalText(row, units);
   const tags = tagsFor(row, group.cartridge.maxLengthMm);
-  const open = () => onOpenLoad(row, group);
+  // The group's weight travels with the row — see ResultsListProps.onOpenLoad.
+  // It is what the card and the log sheet print beside this charge, so it is
+  // handed over rather than searched for at the other end.
+  const open = () => onOpenLoad(row, group, weightGr);
 
   const tile: React.CSSProperties = {
     padding: '6px 8px',

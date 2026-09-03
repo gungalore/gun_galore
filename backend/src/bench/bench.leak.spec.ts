@@ -1,4 +1,5 @@
 import { BenchService } from './bench.service';
+import { DEFAULT_WEIGHT_TOLERANCE_GR } from './bullet-weight';
 
 /**
  * THE BENCH — the leak test.
@@ -154,26 +155,34 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
        */
       groupBy: jest.fn((args: Record<string, unknown>) => {
         const by = ([] as string[]).concat((args.by ?? []) as string[]);
-        // ⚠️ bulletMaker IS TESTED FIRST AND MUST STAY FIRST. The bullet
-        // groupBy now carries cartridgeKey too — the calibre lives on the
-        // cartridge — so the cartridge-list branch below would swallow it if
-        // the order were reversed, and bullets() would silently receive the
-        // cartridge counts.
-        if (by.includes('bulletMaker')) {
-          // Deliberately out of order: Sierra's 9 must come back above
-          // Hornady's 6, so the ordering is proven rather than inherited.
+        // ⚠️ weightGr IS TESTED FIRST AND MUST STAY FIRST. Both the bullet
+        // picker and the cartridge list group by cartridgeKey — the calibre
+        // lives on the cartridge — so the cartridge-list branch below would
+        // swallow the picker's call if the order were reversed, and bullets()
+        // would silently receive the cartridge counts.
+        if (by.includes('weightGr')) {
+          // 🚨 NO MAKER AND NO CATEGORY IN THE ROW, BECAUSE THERE IS NONE IN
+          // THE GROUP BY. Postgres has already folded every maker at one
+          // weight in one cartridge into a single row; that is the change.
+          //
+          // Deliberately out of order: the 120's 9 must come back above the
+          // 140's 6, so the ordering is proven rather than inherited.
           return Promise.resolve([
-            { bulletMaker: 'Hornady', weightGr: 140, bulletCategory: 'TIP', cartridgeKey: '65creedmoor', _count: { _all: 6 }, ...DIRT },
-            { bulletMaker: 'Sierra', weightGr: 120, bulletCategory: 'HP', cartridgeKey: '65creedmoor', _count: { _all: 9 }, ...DIRT },
-            // 🚨 ONE MAKER, ONE WEIGHT, ONE CATEGORY — THREE PROJECTILES.
-            // .277 for the .270 Win, .308 for the .308 Win, and the .300 H&H's
-            // .308 which is the same bullet as the .308 Win's.
-            { bulletMaker: 'Hornady', weightGr: 150, bulletCategory: 'SP', cartridgeKey: '270win', _count: { _all: 4 }, ...DIRT },
-            { bulletMaker: 'Hornady', weightGr: 150, bulletCategory: 'SP', cartridgeKey: '308win', _count: { _all: 5 }, ...DIRT },
-            { bulletMaker: 'Hornady', weightGr: 150, bulletCategory: 'SP', cartridgeKey: '300hh', _count: { _all: 3 }, ...DIRT },
+            { cartridgeKey: '65creedmoor', weightGr: 140, _count: { _all: 6 }, ...DIRT },
+            { cartridgeKey: '65creedmoor', weightGr: 120, _count: { _all: 9 }, ...DIRT },
+            // 🚨 ONE WEIGHT, THREE PROJECTILES. .277 for the .270 Win, .308
+            // for the .308 Win, and the .300 H&H's .308 which is the same
+            // bullet as the .308 Win's.
+            { cartridgeKey: '270win', weightGr: 150, _count: { _all: 4 }, ...DIRT },
+            { cartridgeKey: '308win', weightGr: 150, _count: { _all: 5 }, ...DIRT },
+            { cartridgeKey: '300hh', weightGr: 150, _count: { _all: 3 }, ...DIRT },
+            // Three rows tying on 6, across two calibres and three weights —
+            // the tie-breaks below are what keeps them in a fixed order.
+            { cartridgeKey: '65creedmoor', weightGr: 95, _count: { _all: 6 }, ...DIRT },
+            { cartridgeKey: '270win', weightGr: 130, _count: { _all: 6 }, ...DIRT },
             // No sheet at all — five of the 177 cartridges have none. Still a
             // load a member can build, so still a row.
-            { bulletMaker: 'Speer', weightGr: 180, bulletCategory: 'SP', cartridgeKey: 'nosheet', _count: { _all: 2 }, ...DIRT },
+            { cartridgeKey: 'nosheet', weightGr: 180, _count: { _all: 2 }, ...DIRT },
           ]);
         }
         if (by.includes('cartridgeKey')) {
@@ -283,39 +292,70 @@ describe('The Bench — no manual ever leaks into a public response', () => {
  * not field by field.
  */
 describe('The Bench — the bullet and cartridge pickers', () => {
-  it('bullets are the distinct maker+weight+category+calibre rows, most loads first, and carry nothing else', async () => {
+  it('bullets are the distinct calibre+weight rows, most loads first, and carry nothing else', async () => {
     const svc = new BenchService(makePrisma() as never);
 
     // toEqual on the whole array rather than a key-by-key check: an extra
     // field rides along unnoticed under a per-field assertion, and
-    // `sourcesCount` is exactly the kind of field that would.
+    // `sourcesCount` is exactly the kind of field that would — as would a
+    // maker, which is the field this change exists to remove.
     expect(await svc.bullets()).toEqual([
-      { maker: 'Sierra', weightGr: 120, category: 'HP', calibreIn: 0.264, loads: 9 },
+      { calibreIn: 0.264, weightGr: 120, loads: 9 },
       // .308 Win's 5 and .300 H&H's 3 are the same bullet, so they sum.
-      { maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308, loads: 8 },
-      { maker: 'Hornady', weightGr: 140, category: 'TIP', calibreIn: 0.264, loads: 6 },
-      { maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.277, loads: 4 },
+      { calibreIn: 0.308, weightGr: 150, loads: 8 },
+      // Three tying on 6: calibre decides before weight, so the two .264s
+      // come first and are ordered light to heavy between themselves.
+      { calibreIn: 0.264, weightGr: 95, loads: 6 },
+      { calibreIn: 0.264, weightGr: 140, loads: 6 },
+      { calibreIn: 0.277, weightGr: 130, loads: 6 },
+      { calibreIn: 0.277, weightGr: 150, loads: 4 },
       // No sheet, so no calibre — and still offered, because the bullet is
       // still loadable.
-      { maker: 'Speer', weightGr: 180, category: 'SP', calibreIn: null, loads: 2 },
+      { calibreIn: null, weightGr: 180, loads: 2 },
     ]);
   });
 
   /**
-   * 🚨 THE WHOLE POINT. A member with .270 Win and .308 Win on the bench and
-   * one "Hornady 150gr SP" entry was shown loads for both and told they could
-   * build them. A .277 bullet in a .308 case will not chamber; the other way
-   * round it chambers and spikes pressure.
+   * 🚨 THE OPERATOR'S REPORT, 2026-09-03: "when 150gr is selected it should
+   * spit out all 150gr bullets, not just what specifically matches that exact
+   * same criteria. a 150gr bullet of any manufacturer would yield almost the
+   * exact same pressures and speeds."
+   *
+   * Grouped by maker and type as well, "Hornady 150 SP .308" and "Sierra 150
+   * SP .308" were two entries a member had to choose between, and choosing
+   * wrong emptied their screen. The fold happens in the GROUP BY, so this is
+   * asserted on the query rather than on the rows.
    */
-  it('a .277 and a .308 of one maker, weight and category are two rows and never one', async () => {
-    const rows = await new BenchService(makePrisma() as never).bullets();
-    const sp150 = rows.filter(
-      (r) => r.maker === 'Hornady' && r.weightGr === 150 && r.category === 'SP',
-    );
+  it('groups by the calibre and the weight and by nothing else', async () => {
+    const prisma = makePrisma();
+    await new BenchService(prisma as never).bullets();
 
-    expect(sp150).toHaveLength(2);
+    const [args] = prisma.benchLoad.groupBy.mock.calls.find(([a]) =>
+      ([] as string[]).concat(a.by as string[]).includes('weightGr'),
+    ) as [{ by: string[]; where?: unknown }];
+
+    expect(args.by).toEqual(['cartridgeKey', 'weightGr']);
+    // ⚠️ AND NO `where`. The maker filter that lived here excluded loads whose
+    // bulletMaker was blank — sensible while the maker was half the row's
+    // name, wrong now that it is not: loads() does not look at the maker
+    // either, so a filter here would make this count smaller than the list it
+    // promises. The chip would read 8 over a screen showing 9.
+    expect(args.where).toBeUndefined();
+  });
+
+  /**
+   * 🚨 DROPPING THE MAKER DOES NOT DROP THE DIAMETER. A member with .270 Win
+   * and .308 Win on the bench and one "150 gr" entry would be shown loads for
+   * both and told they could build them. A .277 bullet in a .308 case will not
+   * chamber; the other way round it chambers and spikes pressure.
+   */
+  it('a .277 and a .308 at one weight are two rows and never one', async () => {
+    const rows = await new BenchService(makePrisma() as never).bullets();
+    const gr150 = rows.filter((r) => r.weightGr === 150);
+
+    expect(gr150).toHaveLength(2);
     // Two calibres, and neither of them a blend of the two.
-    expect(new Set(sp150.map((r) => r.calibreIn))).toEqual(new Set([0.277, 0.308]));
+    expect(new Set(gr150.map((r) => r.calibreIn))).toEqual(new Set([0.277, 0.308]));
 
     // ⚠️ NO ROW MAY EVER HOLD TWO CALIBRES. Asserted across the whole list
     // rather than on this pair alone: the failure mode is a fold that reaches
@@ -323,7 +363,7 @@ describe('The Bench — the bullet and cartridge pickers', () => {
     // adjacent.
     const seen = new Set<string>();
     for (const r of rows) {
-      const identity = `${r.maker}|${r.weightGr}|${r.category}|${r.calibreIn}`;
+      const identity = `${r.calibreIn}|${r.weightGr}`;
       expect(seen.has(identity)).toBe(false);
       seen.add(identity);
     }
@@ -343,16 +383,11 @@ describe('The Bench — the bullet and cartridge pickers', () => {
     // forbidden, but it is not a bullet's business either, and leaving it on
     // would re-split one bullet into a row per cartridge.
     expect(JSON.stringify(rows)).not.toContain('cartridgeKey');
+    // ⚠️ AND NEITHER TRAVELS ANY LONGER. A maker on the row is a maker the
+    // picker can start filtering on again, which is the model this replaced.
+    expect(JSON.stringify(rows)).not.toContain('maker');
+    expect(JSON.stringify(rows)).not.toContain('category');
     assertNoLeak(rows, 'bullets/calibre');
-  });
-
-  it('an unnamed bullet maker is never offered', async () => {
-    const prisma = makePrisma();
-    await new BenchService(prisma as never).bullets();
-    // A blank maker draws a row nothing a member types can match.
-    expect(prisma.benchLoad.groupBy).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { bulletMaker: { not: '' } } }),
-    );
   });
 
   it('only cartridges that have loads are offered, named and counted', async () => {
@@ -448,15 +483,15 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
   it('pins a .308 bullet to the .308 cartridges and keeps the .270 out', async () => {
     const prisma = makePrisma();
     await new BenchService(prisma as never).loads(
-      { ...shelf, bullets: [{ maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 }] },
+      { ...shelf, bullets: [{ weightGr: 150, calibreIn: 0.308 }] },
       {},
     );
 
     expect(bulletClauses(prisma)).toEqual([
       {
-        bulletMaker: 'Hornady',
-        weightGr: 150,
-        bulletCategory: 'SP',
+        // 🚨 A WINDOW AND A CALIBRE. No maker, no category — the whole clause
+        // is here, so a field creeping back in fails on this line.
+        weightGr: { gte: 145, lte: 155 },
         // .308 Win and .300 H&H publish maxima a thou apart and take the same
         // bullet, so both are in. .270 Win is three thou away and is not.
         cartridgeKey: { in: ['308win', '300hh'] },
@@ -464,10 +499,32 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
     ]);
   });
 
+  /**
+   * 🚨 THE DEFECT THE OPERATOR REPORTED, IN ONE ASSERTION. The bench held
+   * .30-06, N550 and a Hornady 150 gr SP, and the screen was empty: the loads
+   * that exist at 150 grains on that powder are a Barnes, a Sierra, a Lapua, a
+   * Norma and a Hornady TIP. Nothing about the maker or the type may reach the
+   * query, however the shelf entry was saved.
+   */
+  it('ignores a legacy maker and category still stored beside the weight', async () => {
+    const prisma = makePrisma();
+    await new BenchService(prisma as never).loads(
+      { ...shelf, bullets: [{ maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 }] },
+      {},
+    );
+
+    expect(bulletClauses(prisma)).toEqual([
+      { weightGr: { gte: 145, lte: 155 }, cartridgeKey: { in: ['308win', '300hh'] } },
+    ]);
+    const where = JSON.stringify(prisma.benchLoad.findMany.mock.calls[0][0].where);
+    expect(where).not.toContain('Hornady');
+    expect(where).not.toContain('bulletCategory');
+  });
+
   it('pins a .277 bullet to the .270, which is the pair that started this', async () => {
     const prisma = makePrisma();
     await new BenchService(prisma as never).loads(
-      { ...shelf, bullets: [{ maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.277 }] },
+      { ...shelf, bullets: [{ weightGr: 150, calibreIn: 0.277 }] },
       {},
     );
 
@@ -478,7 +535,7 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
     const prisma = makePrisma();
     await new BenchService(prisma as never).loads(
       // 8x57 IS is .323. Nothing on this shelf is.
-      { ...shelf, bullets: [{ maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.323 }] },
+      { ...shelf, bullets: [{ weightGr: 150, calibreIn: 0.323 }] },
       {},
     );
 
@@ -492,7 +549,7 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
   it('resolves calibres only against the cartridges the query could return', async () => {
     const prisma = makePrisma();
     await new BenchService(prisma as never).loads(
-      { ...shelf, bullets: [{ maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 }] },
+      { ...shelf, bullets: [{ weightGr: 150, calibreIn: 0.308 }] },
       { cartridgeKey: '308win' },
     );
 
@@ -518,8 +575,9 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
     );
 
     expect(bulletClauses(prisma)).toEqual([
-      // No cartridgeKey on the branch at all — the clause it had before.
-      { bulletMaker: 'Hornady', weightGr: 140, bulletCategory: 'TIP' },
+      // No cartridgeKey on the branch at all — the clause it had before, now
+      // over a window rather than an exact weight.
+      { weightGr: { gte: 135, lte: 145 } },
     ]);
     expect(out.count).toBe(1);
     // And the old bench costs no extra query: nothing needed a calibre.
@@ -533,7 +591,7 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
         ...shelf,
         bullets: [
           { maker: 'Hornady', weightGr: 140, category: 'TIP' },
-          { maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.277 },
+          { weightGr: 150, calibreIn: 0.277 },
         ],
       },
       {},
@@ -542,13 +600,8 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
     // One shelf, two eras, and the branches are independent — a mixed bench is
     // the normal case the day this ships.
     expect(bulletClauses(prisma)).toEqual([
-      { bulletMaker: 'Hornady', weightGr: 140, bulletCategory: 'TIP' },
-      {
-        bulletMaker: 'Hornady',
-        weightGr: 150,
-        bulletCategory: 'SP',
-        cartridgeKey: { in: ['270win'] },
-      },
+      { weightGr: { gte: 135, lte: 145 } },
+      { weightGr: { gte: 145, lte: 155 }, cartridgeKey: { in: ['270win'] } },
     ]);
   });
 
@@ -566,10 +619,10 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
    */
   const shelfWith308 = {
     ...shelf,
-    bullets: [{ maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 }],
+    bullets: [{ weightGr: 150, calibreIn: 0.308 }],
   };
 
-  it('counts a powder against the calibre the results will honour', async () => {
+  it('counts a powder against the calibre and the window the results will honour', async () => {
     const prisma = makePrisma();
     await new BenchService(prisma as never).powders(undefined, shelfWith308);
 
@@ -578,13 +631,33 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
       .find((a) => a.by.includes('powderId'));
 
     // The .270 is on this shelf and must not be counted: the bullet is a .308.
+    // ⚠️ AND THE SAME WINDOW. A chip counted at the exact weight over a list
+    // built at ± 5 reads "4 loads" onto a screen showing nine.
     expect(groupBy?.where?.OR).toEqual([
-      {
-        bulletMaker: 'Hornady',
-        weightGr: 150,
-        bulletCategory: 'SP',
-        cartridgeKey: { in: ['308win', '300hh'] },
-      },
+      { weightGr: { gte: 145, lte: 155 }, cartridgeKey: { in: ['308win', '300hh'] } },
+    ]);
+  });
+
+  /**
+   * 🚨 EVERY SURFACE READS THE WINDOW FROM THE SAME SHELF. It rides on the
+   * bench through BenchController.benchFor, so a member who narrows the finder
+   * to Exact gets an Exact powder chip too — a chip counted over ± 5 beside a
+   * list built at 0 is the same broken promise as a chip counted without the
+   * calibre.
+   */
+  it('carries a narrowed window onto the powder chips as well', async () => {
+    const prisma = makePrisma();
+    await new BenchService(prisma as never).powders(undefined, {
+      ...shelfWith308,
+      toleranceGr: 0,
+    });
+
+    const groupBy = prisma.benchLoad.groupBy.mock.calls
+      .map(([args]) => args as { by: string[]; where?: { OR?: unknown[] } })
+      .find((a) => a.by.includes('powderId'));
+
+    expect(groupBy?.where?.OR).toEqual([
+      { weightGr: { gte: 150, lte: 150 }, cartridgeKey: { in: ['308win', '300hh'] } },
     ]);
   });
 
@@ -609,6 +682,50 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
     );
   });
 
+  /**
+   * 🚨 THE THIRD SURFACE, AND THE ONE NOTHING WAS WATCHING. The results and
+   * the powder chips each have a test above pinning them to the shelf's
+   * window; the spec card's "loads on your bench" had one for the calibre and
+   * none for the width, so a caller that resolved the tolerance differently
+   * here — or a `resolveTolerance()` dropped from this line — would have
+   * printed a figure over ± 5 gr beside a list built at Exact and no test
+   * would have said so. That is the drift the whole one-builder rule exists
+   * to stop, so the card is asserted like the other two.
+   */
+  it("carries a narrowed window onto the card's bench count as well", async () => {
+    const prisma = makePrisma();
+    await new BenchService(prisma as never).cartridge('308win', {
+      ...shelfWith308,
+      cartridgeKeys: ['308win'],
+      toleranceGr: 0,
+    });
+
+    const [args] = prisma.benchLoad.count.mock.calls.at(-1) as [
+      { where: { OR?: { weightGr?: { gte: number; lte: number } }[] } },
+    ];
+    expect(args.where.OR?.[0].weightGr).toEqual({ gte: 150, lte: 150 });
+  });
+
+  /**
+   * ⚠️ AND THE DEFAULT REACHES IT TOO. A bench that names no width is the
+   * every-request case — the finder starts on ± 5 and the client omits nothing
+   * else — so the card must land on the inherited five grains rather than on a
+   * silent zero, which is the narrowing this parameter exists to undo.
+   */
+  it("counts the card's bench figure over the inherited default when none is named", async () => {
+    const prisma = makePrisma();
+    await new BenchService(prisma as never).cartridge('308win', {
+      ...shelfWith308,
+      cartridgeKeys: ['308win'],
+    });
+
+    const [args] = prisma.benchLoad.count.mock.calls.at(-1) as [
+      { where: { OR?: { weightGr?: { gte: number; lte: number } }[] } },
+    ];
+    expect(DEFAULT_WEIGHT_TOLERANCE_GR).toBe(5);
+    expect(args.where.OR?.[0].weightGr).toEqual({ gte: 145, lte: 155 });
+  });
+
   it('leaves an old bench costing exactly the queries it always cost', async () => {
     const prisma = makePrisma();
     const svc = new BenchService(prisma as never);
@@ -620,6 +737,168 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
     // Nothing on the shelf carries a calibre, so no sheet is read on any of
     // the three paths — the counts stay one query each, as before.
     expect(prisma.benchCipDimension.findMany).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 🚨 THE TOLERANCE WIDENS THE SEARCH AND NEVER A CHARGE.
+ *
+ * Operator, 2026-09-03: "also need a tolerance on the bullet weight to give a
+ * wider variety." On the real bench — .30-06 with N550 — the exact 150 grains
+ * finds 9 loads and 150 ± 5 finds 17, because 145 to 155 grains in a .30
+ * calibre is one shelf of bullets to a reloader.
+ *
+ * ⚠️ AND THAT IS ALL IT IS: A SEARCH WIDTH. Every load that comes back is
+ * quoted at ITS OWN bullet weight, in its own weight group, with its own start
+ * and max charge. Nothing here says a charge worked up for a 145 gr bullet may
+ * be used with a 155 gr one — the member picks the load whose bullet they
+ * actually have, and the assertions below are what keep the rows separable.
+ */
+describe('The Bench — the weight window', () => {
+  /** Each weight carries its own charges, so a blurred one would show. */
+  const CHARGES: Record<number, { startGr: number; maxGr: number }> = {
+    147: { startGr: 47.5, maxGr: 52.0 },
+    150: { startGr: 46.8, maxGr: 51.2 },
+    155: { startGr: 45.1, maxGr: 49.6 },
+    165: { startGr: 43.0, maxGr: 47.4 },
+  };
+
+  /**
+   * A double whose findMany HONOURS the OR's weight window, so what comes back
+   * is decided by the clause the service built rather than by the fixture.
+   */
+  function weightPrisma() {
+    const base = makePrisma();
+    const rows = Object.entries(CHARGES).map(([w, c]) => ({
+      ...dirtyLoad,
+      id: `load_${w}`,
+      weightGr: Number(w),
+      ...c,
+    }));
+    return makePrisma({
+      benchLoad: {
+        ...base.benchLoad,
+        findMany: jest.fn(
+          (args: { where: { OR?: { weightGr?: { gte: number; lte: number } }[] } }) =>
+            Promise.resolve(
+              rows.filter((r) =>
+                (args.where.OR ?? []).some(
+                  (c) =>
+                    !c.weightGr || (r.weightGr >= c.weightGr.gte && r.weightGr <= c.weightGr.lte),
+                ),
+              ),
+            ),
+        ),
+      },
+    });
+  }
+
+  const bench = (toleranceGr?: number) => ({
+    powderIds: ['pwd_1'],
+    cartridgeKeys: ['65creedmoor'],
+    bullets: [{ weightGr: 150, calibreIn: 0.264 }],
+    ...(toleranceGr === undefined ? {} : { toleranceGr }),
+  });
+
+  it('finds a 147 and a 155 for a 150 gr bullet, and stops before a 165', async () => {
+    const out = await new BenchService(weightPrisma() as never).loads(bench(5), {});
+
+    expect(out.count).toBe(3);
+    expect(out.groups[0].weights.map((w) => w.weightGr)).toEqual([147, 150, 155]);
+  });
+
+  it('defaults to the inherited five grains when the bench names no width', async () => {
+    const out = await new BenchService(weightPrisma() as never).loads(bench(), {});
+
+    expect(DEFAULT_WEIGHT_TOLERANCE_GR).toBe(5);
+    expect(out.groups[0].weights.map((w) => w.weightGr)).toEqual([147, 150, 155]);
+  });
+
+  /**
+   * 🚨 THE ASSERTION THE SAFETY RULE RESTS ON. A 155 gr load found for a 150 gr
+   * shelf bullet arrives in its OWN weight group carrying its OWN start and
+   * max. Nothing merges, averages or re-labels a charge across the window.
+   */
+  it('quotes every load at its own weight, with its own start and max', async () => {
+    const out = await new BenchService(weightPrisma() as never).loads(bench(5), {});
+
+    for (const group of out.groups[0].weights) {
+      const expected = CHARGES[group.weightGr];
+      for (const row of group.rows) {
+        expect({ startGr: row.startGr, maxGr: row.maxGr }).toEqual(expected);
+      }
+    }
+    // Spelled out for the pair a reader would worry about: the 155's charge is
+    // the 155's, never the 150's.
+    const at155 = out.groups[0].weights.find((w) => w.weightGr === 155);
+    expect(at155?.rows[0]).toMatchObject({ startGr: 45.1, maxGr: 49.6 });
+  });
+
+  it('collapses to the stated weight on Exact', async () => {
+    const out = await new BenchService(weightPrisma() as never).loads(bench(0), {});
+
+    // ⚠️ 0 IS A REAL ANSWER, NOT AN ABSENT ONE. A width the member chose must
+    // survive the trip; treating it as "unset" would silently widen the search
+    // they just narrowed.
+    expect(out.groups[0].weights.map((w) => w.weightGr)).toEqual([150]);
+  });
+
+  it('widens to the whole shelf at fifteen grains', async () => {
+    const out = await new BenchService(weightPrisma() as never).loads(bench(15), {});
+
+    expect(out.groups[0].weights.map((w) => w.weightGr)).toEqual([147, 150, 155, 165]);
+  });
+
+  /**
+   * ⚠️ A CALLER IS A STRANGER TOO. resolveTolerance() runs at the controller
+   * door AND here, so a width nobody offers cannot reach the query however it
+   * arrives — unbounded, one request would ask for every bullet weight in the
+   * catalogue.
+   */
+  it('clamps an absurd width to one the finder offers', async () => {
+    const prisma = weightPrisma();
+    await new BenchService(prisma as never).loads(bench(9999), {});
+
+    const [args] = prisma.benchLoad.findMany.mock.calls[0] as [
+      { where: { OR: { weightGr: { gte: number; lte: number } }[] } },
+    ];
+    expect(args.where.OR[0].weightGr).toEqual({ gte: 135, lte: 165 });
+  });
+
+  it('never inverts the window on a negative width', async () => {
+    const prisma = weightPrisma();
+    await new BenchService(prisma as never).loads(bench(-40), {});
+
+    // An inverted range matches nothing, and an empty screen reads as a broken
+    // one rather than as a bad input.
+    const [args] = prisma.benchLoad.findMany.mock.calls[0] as [
+      { where: { OR: { weightGr: { gte: number; lte: number } }[] } },
+    ];
+    expect(args.where.OR[0].weightGr).toEqual({ gte: 150, lte: 150 });
+  });
+
+  /**
+   * ⚠️ THE FINDER'S BAND STILL BINDS. The weight band is a filter and the
+   * window is the axis, so both apply: a 150 gr bullet at ± 15 inside the
+   * "100–150 gr" band cannot reach a 165 the band excludes.
+   */
+  it('is ANDed with the finder weight band rather than replacing it', async () => {
+    const prisma = weightPrisma();
+    await new BenchService(prisma as never).loads(bench(15), {
+      weightMin: 100,
+      weightMax: 150,
+    });
+
+    const [args] = prisma.benchLoad.findMany.mock.calls[0] as [
+      {
+        where: {
+          weightGr: { gte: number; lte: number };
+          OR: { weightGr: { gte: number; lte: number } }[];
+        },
+      },
+    ];
+    expect(args.where.weightGr).toEqual({ gte: 100, lte: 150 });
+    expect(args.where.OR[0].weightGr).toEqual({ gte: 135, lte: 165 });
   });
 });
 
@@ -643,7 +922,7 @@ describe('The Bench — an empty answer explains itself', () => {
   const fullBench = {
     powderIds: ['pwd_1'],
     cartridgeKeys: ['308win'],
-    bullets: [{ maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 }],
+    bullets: [{ weightGr: 150, calibreIn: 0.308 }],
   };
 
   /**
@@ -771,7 +1050,7 @@ describe('The Bench — an empty answer explains itself', () => {
         powderIds: ['pwd_1'],
         // A .270 sits on the shelf beside the .308 and must never be counted.
         cartridgeKeys: ['308win', '270win'],
-        bullets: [{ maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 }],
+        bullets: [{ weightGr: 150, calibreIn: 0.308 }],
       },
       {},
     );
@@ -782,12 +1061,7 @@ describe('The Bench — an empty answer explains itself', () => {
     // pinned to the .308 one and the .270 beside it is out.
     const keepingShelf = wheres.find((w) => w.OR && w.cartridgeKey);
     expect(keepingShelf.OR).toEqual([
-      {
-        bulletMaker: 'Hornady',
-        weightGr: 150,
-        bulletCategory: 'SP',
-        cartridgeKey: { in: ['308win'] },
-      },
+      { weightGr: { gte: 145, lte: 155 }, cartridgeKey: { in: ['308win'] } },
     ]);
 
     // ⚠️ CARTRIDGES RELAXED MEANS ANY CARTRIDGE OF THAT CALIBRE, NOT ANY
@@ -797,12 +1071,7 @@ describe('The Bench — an empty answer explains itself', () => {
     // the shelf and would answer "none anywhere" for a bullet with thousands.
     const anyCartridge = wheres.find((w) => w.OR && !w.cartridgeKey);
     expect(anyCartridge.OR).toEqual([
-      {
-        bulletMaker: 'Hornady',
-        weightGr: 150,
-        bulletCategory: 'SP',
-        cartridgeKey: { in: ['308win', '300hh'] },
-      },
+      { weightGr: { gte: 145, lte: 155 }, cartridgeKey: { in: ['308win', '300hh'] } },
     ]);
 
     // The widened lookup reads every sheet — `where: undefined`, not an empty
@@ -811,6 +1080,27 @@ describe('The Bench — an empty answer explains itself', () => {
     expect(prisma.benchCipDimension.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: undefined }),
     );
+  });
+
+  /**
+   * 🚨 THE DIAGNOSIS IS A CLAIM ABOUT THE LIST BESIDE IT, SO IT USES THE LIST'S
+   * WINDOW. "Your .30-06 and N550 have 41 loads together" counted over ± 5
+   * beside a screen searched at Exact is a number the member cannot reach: they
+   * clear their bullets as told and most of those 41 are still not there.
+   */
+  it('explains an empty screen over the window it actually searched', async () => {
+    const prisma = emptyPrisma();
+    await new BenchService(prisma as never).loads({ ...fullBench, toleranceGr: 15 }, {});
+
+    const keepingBullets = prisma.benchLoad.count.mock.calls
+      .map(([a]) => a.where)
+      .filter((w) => w.OR);
+
+    // Two of the three counts keep the bullet axis, and both over ± 15.
+    expect(keepingBullets).toHaveLength(2);
+    for (const where of keepingBullets) {
+      expect(where.OR[0].weightGr).toEqual({ gte: 135, lte: 165 });
+    }
   });
 
   /**
@@ -855,6 +1145,91 @@ describe('The Bench — an empty answer explains itself', () => {
     const json = JSON.stringify(out);
     expect(json).not.toContain('sourcesCount');
     expect(json).not.toContain('sources');
+  });
+});
+
+/**
+ * 🚨 A BENCH SAVED UNDER THE OLD MODEL HOLDS DUPLICATES UNDER THIS ONE.
+ * "Hornady 150 SP .308" and "Sierra 150 HP .308" were two bullets when the
+ * maker was half the identity; they are ONE now. Left as they are, the rail
+ * draws two chips both reading `.308" 150 gr` — the member cannot tell which
+ * × removes which, and switching one off changes nothing, because the other
+ * matches exactly the same loads.
+ */
+describe('The Bench — one chip per bullet', () => {
+  function benchHolding(bullets: unknown[]) {
+    const base = makePrisma();
+    return makePrisma({
+      userBench: {
+        ...base.userBench,
+        findUnique: jest.fn().mockResolvedValue({
+          userId: 'usr_1',
+          powderIds: ['pwd_1'],
+          cartridgeKeys: ['65creedmoor'],
+          bullets,
+          units: 'metric',
+        }),
+      },
+    });
+  }
+
+  it('folds two stored bullets that are now one, keeping the first', async () => {
+    const prisma = benchHolding([
+      { maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 },
+      { maker: 'Sierra', weightGr: 150, category: 'HP', calibreIn: 0.308 },
+      { maker: 'Barnes', weightGr: 150, category: 'MONO', calibreIn: 0.308 },
+    ]);
+
+    const out = await new BenchService(prisma as never).getBench('user_2abcCLERKsub');
+
+    // The first survives, decoration and all — it is the one at the position
+    // the member is used to seeing, and nothing of theirs is rewritten.
+    expect(out.bullets).toEqual([
+      { maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 },
+    ]);
+  });
+
+  /**
+   * 🚨 THE CALIBRE STILL TELLS THEM APART. A 150 gr .277 and a 150 gr .308 are
+   * different bullets; folding them would be the hazard the calibre work
+   * exists to prevent, wearing a tidy-up's clothes.
+   */
+  it('keeps one weight in two calibres as two bullets', async () => {
+    const prisma = benchHolding([
+      { maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.277 },
+      { maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 },
+    ]);
+
+    const out = await new BenchService(prisma as never).getBench('user_2abcCLERKsub');
+
+    expect(out.bullets.map((b) => b.calibreIn)).toEqual([0.277, 0.308]);
+  });
+
+  /**
+   * ⚠️ AND A BULLET WITH NO CALIBRE IS NOT THE SAME BULLET AS ONE WITH. The
+   * calibre-less entry matches ANY calibre, so folding it into the .308 would
+   * quietly narrow a shelf the member never touched.
+   */
+  it('keeps a calibre-less bullet beside a calibred one of the same weight', async () => {
+    const prisma = benchHolding([
+      { maker: 'Hornady', weightGr: 150, category: 'SP' },
+      { maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 },
+    ]);
+
+    const out = await new BenchService(prisma as never).getBench('user_2abcCLERKsub');
+
+    expect(out.bullets).toHaveLength(2);
+  });
+
+  it('leaves different weights alone', async () => {
+    const prisma = benchHolding([
+      { maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 },
+      { maker: 'Sierra', weightGr: 168, category: 'HPBT', calibreIn: 0.308 },
+    ]);
+
+    const out = await new BenchService(prisma as never).getBench('user_2abcCLERKsub');
+
+    expect(out.bullets.map((b) => b.weightGr)).toEqual([150, 168]);
   });
 });
 

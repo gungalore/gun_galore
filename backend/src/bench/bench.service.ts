@@ -3,7 +3,9 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { toCsv } from '../common/csv.util';
 import { calibreFromG1 } from './bullet-calibre';
+import { resolveTolerance, weightWindow, type WeightToleranceGr } from './bullet-weight';
 import {
+  benchBulletKey,
   coalFlags,
   THUMB_DIM_FIELDS,
   type BenchView,
@@ -17,9 +19,7 @@ import {
 export interface GuestBench {
   powderIds?: string[];
   bullets?: {
-    maker: string;
     weightGr: number;
-    category: string;
     /**
      * Inches, from the cartridge's C.I.P. G1 — see bullet-calibre.ts.
      *
@@ -28,8 +28,37 @@ export interface GuestBench {
      * exactly the behaviour it had. See loads() for why.
      */
     calibreIn?: number | null;
+    /**
+     * ⚠️ CARRIED, NEVER MATCHED ON. A bench saved under the old model still
+     * names a maker and a category; keeping the fields means an old shelf
+     * still parses, and matching on them again would undo the change. See
+     * bulletAxis().
+     */
+    maker?: string;
+    category?: string;
   }[];
   cartridgeKeys?: string[];
+  /**
+   * Grains either side of a shelf bullet's weight that still count as that
+   * bullet — see bullet-weight.ts.
+   *
+   * 🚨 IT WIDENS THE SEARCH, NEVER A CHARGE. Every load returned is still
+   * quoted at ITS OWN bullet weight with its own start and max, and nothing
+   * here says a charge for a 145 gr bullet may be used with a 155 gr one. The
+   * window decides what a member is SHOWN; it never decides what is safe to
+   * load.
+   *
+   * ⚠️ IT RIDES ON THE BENCH BECAUSE EVERY SURFACE THAT READS A BENCH NEEDS
+   * IT. The results list, the powder chips' counts and the spec card's count
+   * all AND on the same shelf, and this module's history is a property that
+   * reached one of the three and not the other two — the calibre did exactly
+   * that. Coming through BenchController.benchFor with the rest of the shelf,
+   * it cannot reach one surface and miss another.
+   *
+   * Absent means the default; anything unreadable or absurd is clamped by
+   * resolveTolerance() rather than trusted.
+   */
+  toleranceGr?: number;
 }
 
 /**
@@ -41,22 +70,20 @@ export interface GuestBench {
  * about the manuals, and that is the line bench.leak.spec.ts guards.
  */
 export interface BenchBulletOptionView {
-  maker: string;
-  weightGr: number;
-  /** FMJ | MONO | TIP | HP | CAST | SP | OTHER. */
-  category: string;
   /**
-   * 🚨 A WEIGHT IS NOT A BULLET, AND THIS FIELD IS WHY. "Hornady 150gr SP"
-   * names four projectiles — .277 for .270 Win, .308 for .308 Win, .311 for
-   * .303 British, .323 for 8x57 — which are not interchangeable. Without it
-   * one row stood for all four and the results told a member they could build
-   * loads their bullets do not fit.
+   * 🚨 A WEIGHT IS NOT A BULLET, AND A BULLET IS NOT A BRAND. "150 gr" names
+   * four projectiles — .277 for .270 Win, .308 for .308 Win, .311 for .303
+   * British, .323 for 8x57 — which are not interchangeable, so the calibre is
+   * half the identity. The MAKER is not part of it at all: a 150 gr .308 from
+   * Hornady, Sierra or Barnes gives near enough the same pressures and speeds,
+   * which is the whole point of the Bench.
    *
    * Inches. Null only where the cartridge has no C.I.P. sheet to take a
    * diameter from; those rows are still offered, because the bullet is still
    * loadable.
    */
   calibreIn: number | null;
+  weightGr: number;
   loads: number;
 }
 
@@ -68,7 +95,16 @@ export interface BenchCartridgeOptionView {
 }
 
 /**
- * One branch of the bullet OR — a shelf bullet, pinned to its own calibre.
+ * One branch of the bullet OR — a shelf bullet as a WEIGHT WINDOW in a
+ * calibre.
+ *
+ * 🚨 NO MAKER AND NO CATEGORY. A load is offered for a shelf bullet when its
+ * bullet weighs what that bullet weighs, give or take the tolerance, and is of
+ * the same diameter. Whose name is on the box narrows nothing.
+ *
+ * ⚠️ THE WINDOW IS A SEARCH WIDTH, NOT A SAFETY MARGIN. Each matched row keeps
+ * its own weight, start and max — the member picks the load whose bullet they
+ * actually have.
  *
  * Named rather than inlined so the shape is stated once and the three callers
  * cannot drift apart: `cartridgeKey` is ABSENT for a bullet with no calibre
@@ -76,9 +112,7 @@ export interface BenchCartridgeOptionView {
  * empty (matches nothing). Both are meaningful; neither is a default.
  */
 interface BulletClause {
-  bulletMaker: string;
-  weightGr: number;
-  bulletCategory: string;
+  weightGr: { gte: number; lte: number };
   cartridgeKey?: { in: string[] };
 }
 
@@ -127,6 +161,33 @@ function compareCalibre(a: number | null, b: number | null): number {
   if (a === null) return 1;
   if (b === null) return -1;
   return a - b;
+}
+
+/**
+ * One chip per bullet, where a bullet is now a weight in a calibre.
+ *
+ * ⚠️ TWO IDENTICAL CHIPS ARE WORSE THAN A LOST ROW. A bench holding "Hornady
+ * 150 SP .308" and "Sierra 150 HP .308" was two bullets under the old model
+ * and is ONE under this one, so both chips now read `.308" 150 gr` — the
+ * member cannot tell them apart, cannot tell which × removes which, and
+ * switching one off leaves the other matching exactly the same loads.
+ *
+ * The first is kept and the rest dropped, so the surviving chip is the one at
+ * the position the member is used to seeing it, and its legacy maker/category
+ * decoration is the one they added first.
+ *
+ * ⚠️ ON THE WAY OUT, NOT ON THE WAY IN. putBench() stores what the client
+ * sends; folding here means a shelf saved before this shipped reads correctly
+ * without a migration, and the next save writes the folded list back.
+ */
+function dedupeBullets(bullets: BenchView['bullets']): BenchView['bullets'] {
+  const seen = new Set<string>();
+  return bullets.filter((b) => {
+    const key = benchBulletKey(b);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 @Injectable()
@@ -186,7 +247,9 @@ export class BenchService {
       // Prisma types this column as JsonValue; the shape is ours to promise,
       // so the cast goes through unknown rather than pretending the two
       // types overlap. Array.isArray is the actual guard.
-      bullets: Array.isArray(row.bullets) ? (row.bullets as unknown as BenchView['bullets']) : [],
+      bullets: dedupeBullets(
+        Array.isArray(row.bullets) ? (row.bullets as unknown as BenchView['bullets']) : [],
+      ),
       cartridges: cartridges.map((c) => ({ key: c.key, name: c.name })),
       units: row.units,
     };
@@ -217,15 +280,27 @@ export class BenchService {
    * Consolidated loads buildable from a bench.
    *
    * The shelf is an AND across three axes: a load shows only if the reloader
-   * has the powder AND a bullet matching maker + weight + category + calibre
-   * AND the cartridge. Anything looser would answer a different question —
-   * "loads that exist" rather than "loads I can make tonight" — which is the
-   * whole point of the screen.
+   * has the powder AND a bullet of that WEIGHT in that CALIBRE AND the
+   * cartridge. Anything looser would answer a different question — "loads that
+   * exist" rather than "loads I can make tonight" — which is the whole point
+   * of the screen.
+   *
+   * 🚨 AND ANYTHING TIGHTER ANSWERED NOTHING AT ALL. The bullet axis used to
+   * carry the maker and the bullet type as well, which is how the SOURCE data
+   * is shaped rather than how a reloader thinks: .30-06 with N550 and a
+   * Hornady 150 gr SP returned 0 loads, because the 150 gr .30-06 loads on
+   * N550 are a Barnes, a Sierra, a Lapua, a Norma and a Hornady TIP. Any maker
+   * at exactly 150 gr finds 9; any maker at 150 ± 5 finds 17. Operator,
+   * 2026-09-03: "this is the whole point of the Bench."
    */
   async loads(bench: GuestBench, filter: LoadsFilter): Promise<LoadsResponse> {
     const powderIds = bench.powderIds ?? [];
     const cartridgeKeys = bench.cartridgeKeys ?? [];
     const bullets = bench.bullets ?? [];
+    // Clamped here as well as at the controller: a direct caller cannot ask
+    // for a window wider than the finder offers, and a blank one from the
+    // query string means the default rather than a silent zero.
+    const tolerance = resolveTolerance(bench.toleranceGr);
 
     // An empty shelf is an empty answer, not the whole database. Returning
     // everything would bury the one thing the page is for.
@@ -244,7 +319,7 @@ export class BenchService {
     // resolves calibres against the one cartridge it is showing rather than
     // the whole shelf.
     const candidateKeys = filter.cartridgeKey ? [filter.cartridgeKey] : cartridgeKeys;
-    const bulletOr = await this.bulletAxis(bullets, candidateKeys);
+    const bulletOr = await this.bulletAxis(bullets, tolerance, candidateKeys);
 
     const rows = await this.prisma.benchLoad.findMany({
       where: this.benchLoadWhere({ cartridgeKeys, powderIds, bulletOr }, filter),
@@ -331,7 +406,7 @@ export class BenchService {
     // simply reading their loads.
     const why =
       rows.length === 0
-        ? await this.whyEmpty({ cartridgeKeys, powderIds, bullets }, filter, bulletOr)
+        ? await this.whyEmpty({ cartridgeKeys, powderIds, bullets, tolerance }, filter, bulletOr)
         : null;
 
     // Spread rather than `why: why ?? undefined`: a key that is present and
@@ -395,11 +470,13 @@ export class BenchService {
    * so the cartridge tab, the weight band and the powder chip apply to all
    * four queries identically — see benchLoadWhere().
    *
-   * 🚨 AND THE CALIBRE SURVIVES. Two of the three counts keep the bullet axis,
-   * and a bullet is maker + weight + category + CALIBRE. Counted without it,
-   * "ignoringPowders: 12" against a .308" 150 gr SP would be counting 8x57
-   * loads that will not chamber — the same false promise the powder chips and
-   * the spec card once made. So both go through bulletAxis(), and the count
+   * 🚨 AND THE WINDOW AND THE CALIBRE BOTH SURVIVE. Two of the three counts
+   * keep the bullet axis, and that axis is a weight WINDOW in a CALIBRE.
+   * Counted at the exact weight, "ignoringPowders: 2" contradicts a list built
+   * over ± 5 the moment the member clears a powder; counted without the
+   * calibre, the same figure against a .308" 150 gr would be counting 8x57
+   * loads that will not chamber — the false promise the powder chips and the
+   * spec card once made. So both go through bulletAxis(), and the count
    * that drops the CARTRIDGE axis rebuilds its clause against every cartridge
    * rather than reusing the shelf-resolved one: relaxing the cartridges is
    * what widens the set of cartridges that bullet may legitimately be found
@@ -413,6 +490,8 @@ export class BenchService {
       cartridgeKeys: string[];
       powderIds: string[];
       bullets: NonNullable<GuestBench['bullets']>;
+      /** The window the listing used. The same one, or the counts contradict it. */
+      tolerance: WeightToleranceGr;
     },
     filter: LoadsFilter,
     /** The clause the main query used — resolved against the bench's cartridges. */
@@ -423,6 +502,7 @@ export class BenchService {
     // A cartridge tab still pins it, because a filter is not an axis.
     const bulletOrAnyCartridge = await this.bulletAxis(
       bench.bullets,
+      bench.tolerance,
       filter.cartridgeKey ? [filter.cartridgeKey] : undefined,
     );
 
@@ -476,15 +556,21 @@ export class BenchService {
     // read as "this powder has no loads" rather than "you have no shelf".
     if (!bench || !(bench.cartridgeKeys?.length && bench.bullets?.length)) return list;
 
-    // ⚠️ THE SAME BULLET AXIS THE RESULTS USE, NOT A LOOSER ONE. This number
-    // is a promise about what tapping the powder will show: counted without
-    // the calibre it counts 8x57 loads for a member whose 150 gr SP is a .308,
-    // and the chip then reads "12 loads" onto a screen with none on it.
+    // ⚠️ THE SAME BULLET AXIS THE RESULTS USE, NEITHER LOOSER NOR TIGHTER.
+    // This number is a promise about what tapping the powder will show:
+    // counted without the calibre it counts 8x57 loads for a member whose
+    // 150 gr bullet is a .308, and counted at the exact weight while the list
+    // runs over ± 5 it reads "4 loads" onto a screen showing nine. Same
+    // window, from the same bench — see GuestBench.toleranceGr.
     const counts = await this.prisma.benchLoad.groupBy({
       by: ['powderId'],
       where: {
         cartridgeKey: { in: bench.cartridgeKeys },
-        OR: await this.bulletAxis(bench.bullets, bench.cartridgeKeys),
+        OR: await this.bulletAxis(
+          bench.bullets,
+          resolveTolerance(bench.toleranceGr),
+          bench.cartridgeKeys,
+        ),
       },
       _count: { _all: true },
     });
@@ -539,8 +625,18 @@ export class BenchService {
   }
 
   /**
-   * The bullet axis: the OR clause that says "a load whose bullet is one of
-   * the ones on this shelf, of the calibre that shelf bullet actually is".
+   * The bullet axis: the OR clause that says "a load whose bullet weighs what
+   * one on this shelf weighs, give or take the tolerance, and is the calibre
+   * that shelf bullet actually is".
+   *
+   * 🚨 A BULLET IS A WEIGHT IN A CALIBRE. The maker and the bullet type are
+   * shown on every result and narrow nothing — a 150 gr .308 from Hornady,
+   * Sierra or Barnes gives near enough the same pressures and speeds, and
+   * matching on the name is what made a stocked bench return nothing at all.
+   *
+   * ⚠️ THE WINDOW WIDENS THE SEARCH AND NEVER A CHARGE. Each row that comes
+   * back keeps its own weight and its own start and max; a 155 gr load found
+   * for a 150 gr shelf bullet is a 155 gr load, quoted as one.
    *
    * 🚨 ONE BUILDER, AND EVERY SURFACE THAT FILTERS BY A BENCH CALLS IT. Three
    * places AND on the shelf's bullets — the results, the powder rows' counts
@@ -573,6 +669,12 @@ export class BenchService {
    */
   private async bulletAxis(
     bullets: NonNullable<GuestBench['bullets']>,
+    /**
+     * ⚠️ REQUIRED, AND AHEAD OF THE OPTIONAL ARGUMENT ON PURPOSE. A default
+     * here is a caller that can silently search a different width from the one
+     * beside it, which is the drift this builder exists to stop.
+     */
+    toleranceGr: WeightToleranceGr,
     candidateKeys?: string[],
   ): Promise<BulletClause[]> {
     const keysByCalibre = bullets.some((b) => b.calibreIn != null)
@@ -580,9 +682,9 @@ export class BenchService {
       : null;
 
     return bullets.map((b) => ({
-      bulletMaker: b.maker,
-      weightGr: b.weightGr,
-      bulletCategory: b.category,
+      // weightWindow() rather than arithmetic here: inclusive at both ends and
+      // never inverted, stated once in bullet-weight.ts and tested there.
+      weightGr: weightWindow(b.weightGr, toleranceGr),
       // `?? []` is not a fallback to "anything" — a calibre no candidate
       // cartridge shares must match NOTHING, which is what an empty `in` does.
       // Falling back to no clause at all would be the original bug with extra
@@ -596,22 +698,29 @@ export class BenchService {
   /* ── The bullet picker ─────────────────────────────────────────────── */
 
   /**
-   * Every bullet the consolidated set knows: the distinct maker + weight +
-   * category + CALIBRE combinations, each with how many loads use it.
+   * Every bullet the consolidated set knows: the distinct CALIBRE + WEIGHT
+   * pairs, each with how many loads use it.
    *
-   * 🚨 THE CALIBRE IS PART OF THE GROUP, NOT A LABEL ON IT. A (maker, weight,
-   * category) triple that appears across three calibres is three different
-   * projectiles and comes back as THREE rows. Folded into one, the picker
-   * offers a member a "150gr SP" that stands for a .277, a .308, a .311 and a
-   * .323 at once, and the results then tell them they can build loads their
-   * bullets do not fit.
+   * 🚨 A BULLET IS A WEIGHT IN A CALIBRE, AND THE PICKER IS WHERE THAT STARTS.
+   * Grouped by maker and bullet type as well, this list was the source data's
+   * shape rather than a reloader's shelf: 1723 rows, of which "Hornady 150 SP
+   * .308" and "Sierra 150 SP .308" were two entries a member had to choose
+   * between, and choosing wrong emptied their screen. Folded to the weight it
+   * is roughly 636 rows and every one of them is a thing somebody owns.
+   *
+   * ⚠️ THE CALIBRE IS PART OF THE GROUP, NOT A LABEL ON IT. Dropping the maker
+   * does not drop the diameter: a 150 gr weight that appears in three calibres
+   * is three different projectiles and comes back as THREE rows. Folded into
+   * one, the picker offers a "150 gr" that stands for a .277, a .308, a .311
+   * and a .323 at once, and the results then tell a member they can build
+   * loads their bullets do not fit.
    *
    * ⚠️ THE GROUP BY CARRIES cartridgeKey BECAUSE BenchLoad HAS NO DIAMETER.
    * The calibre is one join away, on the cartridge's sheet, so Postgres groups
    * per cartridge and the calibres are folded together here — which is the
    * only place that knows calibreFromG1's answer. The aggregate still does the
    * expensive part: ~28 000 consolidated rows collapse to a few thousand
-   * (triple, cartridge) pairs, where distinct-ing in node would drag the whole
+   * (cartridge, weight) pairs, where distinct-ing in node would drag the whole
    * table across the wire.
    *
    * This axis exists because the bench is an AND. A member with powders and
@@ -621,13 +730,14 @@ export class BenchService {
   async bullets(): Promise<BenchBulletOptionView[]> {
     const [groups, calibres] = await Promise.all([
       this.prisma.benchLoad.groupBy({
-        by: ['bulletMaker', 'weightGr', 'bulletCategory', 'cartridgeKey'],
-        // A bullet nobody named cannot be picked off a shelf: the picker would
-        // draw a blank row that matches nothing a member types. Prisma types the
-        // column non-null, but the manual rows it is consolidated from allow a
-        // missing maker, so the guard belongs in SQL rather than in the types —
-        // and `<> ''` drops a NULL too, should the column ever be relaxed.
-        where: { bulletMaker: { not: '' } },
+        // ⚠️ NO WHERE, AND THE MAKER FILTER THAT WAS HERE IS GONE WITH THE
+        // MAKER ITSELF. It excluded rows with a blank bulletMaker, because
+        // such a row drew a picker entry nothing a member typed could match.
+        // The entry is now `.308" 150 gr` — nothing about it is blank — and
+        // loads() no longer looks at the maker either, so a filter here would
+        // make this count smaller than the list it promises: the chip would
+        // read 8 and the screen would show 9.
+        by: ['cartridgeKey', 'weightGr'],
         _count: { _all: true },
       }),
       // Every cartridge, not just the ones with loads: the join below is a
@@ -647,11 +757,12 @@ export class BenchService {
       // They group under null, which loads() then treats as "any calibre".
       const calibreIn = calibres.get(g.cartridgeKey) ?? null;
 
-      // The identity, in one string — the same four parts, in the same order,
-      // that the client's bulletKey() joins. Built from calibreFromG1's own
-      // answer and never a rounded or bucketed form of it, which is how two
-      // calibres end up in one group.
-      const key = `${g.bulletMaker}|${g.weightGr}|${g.bulletCategory}|${calibreIn ?? ''}`;
+      // The identity, in one string — the same two parts, in the same order,
+      // that the client's bulletKey() joins, and that benchBulletKey() spells
+      // for a stored bullet. Built from calibreFromG1's own answer and never a
+      // rounded or bucketed form of it, which is how two calibres end up in
+      // one group.
+      const key = benchBulletKey({ weightGr: g.weightGr, calibreIn });
 
       const row = byBullet.get(key);
       // Summed across every cartridge of the calibre: .308 Win, .300 H&H and
@@ -659,10 +770,8 @@ export class BenchService {
       if (row) row.loads += g._count._all;
       else
         byBullet.set(key, {
-          maker: g.bulletMaker,
-          weightGr: g.weightGr,
-          category: g.bulletCategory,
           calibreIn,
+          weightGr: g.weightGr,
           // Consolidated loads. Never the number of manuals behind them.
           loads: g._count._all,
         });
@@ -674,20 +783,17 @@ export class BenchService {
     // should be the part worth adding.
     //
     // ⚠️ THE TIE-BREAKS RUN ALL THE WAY THROUGH THE IDENTITY, WHICH IS NOT
-    // TIDINESS. A bullet is maker + weight + category + calibre — that is what
-    // bulletKey() joins and what the results AND matches on — so two rows
-    // differing only by calibre are two different bullets. A hash aggregate
-    // guarantees no order at all, so anything the tie-breaks leave undecided
-    // swaps places between one opening of the picker and the next, in a list
-    // the member is scanning by eye. Every field is compared, so the order is
-    // total.
+    // TIDINESS. A bullet is calibre + weight — that is what bulletKey() joins
+    // and what the results AND matches on — so the two tie-breaks below cover
+    // it exactly and the order is total. A hash aggregate guarantees no order
+    // at all, so anything they left undecided would swap places between one
+    // opening of the picker and the next, in a list the member is scanning by
+    // eye.
     return [...byBullet.values()].sort(
       (a, b) =>
         b.loads - a.loads ||
-        a.maker.localeCompare(b.maker) ||
-        a.weightGr - b.weightGr ||
         compareCalibre(a.calibreIn, b.calibreIn) ||
-        a.category.localeCompare(b.category),
+        a.weightGr - b.weightGr,
     );
   }
 
@@ -751,7 +857,7 @@ export class BenchService {
     const shelfPowders = bench?.powderIds ?? [];
     const bulletOr =
       shelfPowders.length && shelfBullets.length
-        ? await this.bulletAxis(shelfBullets, [key])
+        ? await this.bulletAxis(shelfBullets, resolveTolerance(bench?.toleranceGr), [key])
         : null;
 
     const [loadCount, loadsForBench] = await Promise.all([

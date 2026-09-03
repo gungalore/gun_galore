@@ -103,18 +103,25 @@ export interface BenchPowderView {
   loadsForBench?: number;
 }
 
+/**
+ * A bullet on a member's shelf: A WEIGHT IN A CALIBRE, and nothing else.
+ *
+ * 🚨 THE MAKER AND THE TYPE ARE NOT PART OF IT. Operator, 2026-09-03: "a 150gr
+ * bullet of any manufacturer would yield almost the exact same pressures and
+ * speeds. this is the whole point of the Bench." They are kept below as
+ * decoration off older benches — nothing of a member's is thrown away — but no
+ * query narrows on them. See bullet-weight.ts.
+ */
 export interface BenchBulletView {
-  maker: string;
   weightGr: number;
-  category: string;
   /**
    * Inches, from the cartridge's C.I.P. G1 — see bullet-calibre.ts.
    *
-   * 🚨 A WEIGHT IS NOT A BULLET, AND THIS IS THE FIELD THAT SAYS WHICH ONE.
-   * "Hornady 150gr SP" names a .277", a .308", a .311" and a .323" projectile
-   * and they do not swap, so it travels with the bullet everywhere the bullet
-   * goes — onto the chip, and back into loads() through the controller's
-   * benchFor().
+   * 🚨 DROPPING THE MAKER DOES NOT DROP THE DIAMETER. A 150 gr .277 and a
+   * 150 gr .308 are different bullets, and offering one for the other is the
+   * hazard this field exists to prevent — so it travels with the bullet
+   * everywhere the bullet goes: onto the chip, and back into loads() through
+   * the controller's benchFor().
    *
    * ⚠️ DECLARED HERE OR IT IS INVISIBLE. UserBench.bullets is a Json column
    * that getBench() casts straight through, so the VALUE reaches the client
@@ -127,7 +134,35 @@ export interface BenchBulletView {
    * recorded carry none; those bullets match any calibre, exactly as they did.
    */
   calibreIn?: number | null;
+  /**
+   * ⚠️ LEGACY DECORATION, READ BY NOTHING THAT MATCHES. Benches saved under
+   * the maker+weight+category model carry these, and they are kept so a
+   * member's shelf survives the change — but a query that narrowed on one
+   * would put the old model back. Mirrors BenchBullet in lib/bench/api.ts.
+   */
+  maker?: string;
+  category?: string;
   type?: string;
+}
+
+/**
+ * A bullet's identity, in one string: calibre then weight.
+ *
+ * 🚨 THE SAME SPELLING AS bulletKey() IN components/bench/contract.ts, AND IT
+ * HAS TO STAY THAT WAY. The client sends these strings back as `off` — the
+ * chips switched off for one search — and a key that disagrees by so much as
+ * an empty part does not error: it leaves the chip greyed on the screen and
+ * live in the query. Declared here, imported by the controller and by
+ * getBench()'s de-duplication, so there is one spelling on this side too.
+ *
+ * ⚠️ THE STORED VALUE, TEMPLATED, NOT A PARSED ONE. GET /bench/me hands the
+ * Json column back as written, so the client keyed on exactly this — and
+ * rounding, re-parsing or normalising here would build a key it never sends.
+ * A missing or null calibre writes an empty first part, which is what the
+ * client writes for a bench saved before calibres were recorded.
+ */
+export function benchBulletKey(b: { weightGr: number; calibreIn?: number | null }): string {
+  return `${b.calibreIn ?? ''}|${b.weightGr}`;
 }
 
 export interface BenchView {

@@ -21,10 +21,16 @@
  * bench"). Fold the second into the first — a chip that removes on a long
  * press, a shift-click, a second tap — and the member who meant "not this
  * search" silently loses a shelf entry instead.
+ *
+ * 🚨 A BULLET CHIP IS A CALIBRE AND A WEIGHT — `.308" 150 gr`. The maker is
+ * gone from the chip because it is gone from what a bullet IS (operator,
+ * 2026-09-03), and a chip still printing "Hornady" would be naming something
+ * the search does not use. See benchBulletName below, which every surface that
+ * names a bullet borrows.
  */
 
 import type { CSSProperties } from 'react';
-import { useId } from 'react';
+import { useId, useMemo } from 'react';
 import type { BenchBullet } from '@/lib/bench/api';
 import { CALIBRE_UNKNOWN_SHORT, formatCalibre } from '@/lib/bench/calibre';
 import { bulletKey, type BenchRailProps } from './contract';
@@ -110,32 +116,32 @@ function chipRow(size: BenchSize): CSSProperties {
 }
 
 /**
- * "Hornady ELD Match" reads as the product; `category` ("HPBT") is the shape
- * family and is what bulletKey() is built from, so it is the fallback when a
- * bullet reached the bench without a product name.
+ * A bullet in the chip's own words: the calibre, then the weight. That is the
+ * whole of it.
  *
- * ⚠️ THE CALIBRE IS NOT IN HERE, AND THAT IS DELIBERATE — the chip renders it
- * as its own leading span so it keeps tabular numerals and does not get folded
- * into a product name. It is never optional on a chip; see the note there.
- */
-function bulletLabel(b: BenchBullet): string {
-  return `${b.maker} ${b.type ?? b.category}`.trim();
-}
-
-/**
- * A bullet in the chip's own words: calibre, product, weight.
+ * 🚨 NO MAKER, NO TYPE. Operator, 2026-09-03: "a 150gr bullet of any
+ * manufacturer would yield almost the exact same pressures and speeds. this is
+ * the whole point of the Bench." What the member owns is a weight in a calibre,
+ * so naming the brand on the chip would name something the search no longer
+ * cares about — and a member reading "Hornady 150 gr" on a chip that also
+ * matches their Sierras would be reading the shelf wrong.
+ *
+ * ⚠️ THE CALIBRE STAYS, THOUGH. It is the other half of the identity: "150 gr"
+ * is a .277", a .308", a .311" and a .323" projectile, and they do not swap.
  *
  * ⚠️ EXPORTED SO THE PAGE CAN SAY IT TOO. The × beside a bullet chip is named
  * with this, and the toast that confirms the removal is named with this, and
- * they have to be the same words the chip itself is showing — "Hornady 150 gr"
- * names four projectiles, so a confirmation the member cannot match to the
- * chip they pointed at is not a confirmation. One helper, three surfaces.
+ * all three have to be the same words in the same order the chip is showing —
+ * a confirmation the member cannot match to the chip they pointed at is not a
+ * confirmation. One helper, three surfaces.
  *
- * filter() rather than a template: a bullet with no calibre would otherwise be
- * named with a leading space where a figure belongs.
+ * ⚠️ AND A BULLET WITH NO CALIBRE SAYS SO RATHER THAN LEAVING A GAP. Benches
+ * saved before calibres were recorded have none, and those entries go on
+ * matching every calibre, so the chip must not read as a blank or as a bare
+ * quote mark where a figure belongs.
  */
 export function benchBulletName(b: BenchBullet): string {
-  return [formatCalibre(b.calibreIn), bulletLabel(b), `${b.weightGr} gr`].filter(Boolean).join(' ');
+  return `${formatCalibre(b.calibreIn) || CALIBRE_UNKNOWN_SHORT} ${b.weightGr} gr`;
 }
 
 /* ── The shared sections ────────────────────────────────────────────── */
@@ -167,6 +173,28 @@ export function BenchSections({
 }: BenchRailProps & { size?: BenchSize }) {
   const uid = useId();
   const row = chipRow(size);
+
+  /**
+   * 🚨 ONE CHIP PER BULLET, EVEN WHERE THE SAVED BENCH HOLDS TWO OF THEM. A
+   * bullet is a weight in a calibre now, so a shelf filled under the old model
+   * can carry a Hornady 150 gr .308" AND a Sierra 150 gr .308" — one bullet,
+   * stored twice. Drawn twice they would be two identical pills that toggle the
+   * same key, remove each other, and hand React the same child key; the member
+   * would be looking at what reads like a duplicate they cannot get rid of.
+   *
+   * ⚠️ AND THE COUNT IN THE HEADING COMES FROM THE SAME LIST. A heading saying
+   * three over two chips is the rail contradicting itself about the one thing
+   * it exists to show.
+   */
+  const bullets = useMemo(() => {
+    const seen = new Set<string>();
+    return bench.bullets.filter((b) => {
+      const key = bulletKey(b);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [bench.bullets]);
 
   return (
     <>
@@ -200,14 +228,14 @@ export function BenchSections({
 
       <section aria-labelledby={`${uid}-bullets`}>
         <h3 id={`${uid}-bullets`} style={SECTION_HEAD}>
-          Bullets · {bench.bullets.length}
+          Bullets · {bullets.length}
         </h3>
         <div style={{ ...row, marginBottom: 14 }}>
-          {bench.bullets.map((b) => {
+          {bullets.map((b) => {
             // The key that is rendered and the key that is toggled come from
-            // the same helper on purpose: two bullets can share a maker, a
-            // product name and a weight and differ only by calibre, so an
-            // ad-hoc key here would switch off the wrong one.
+            // the same helper on purpose: two bullets can share a weight and
+            // differ only by calibre, so an ad-hoc key here would switch off
+            // the wrong one.
             const key = bulletKey(b);
             const calibre = formatCalibre(b.calibreIn);
             return (
@@ -218,17 +246,22 @@ export function BenchSections({
                 onClick={() => onToggle('bullets', key)}
                 onRemove={() => onRemove('bullets', key)}
                 // 🚨 THE CALIBRE IS IN THE NAME FOR THE SAME REASON IT LEADS
-                // THE CHIP. A member with a .270 and a .308 Hornady 150 gr on
-                // the bench hears "Remove Hornady SP 150 gr from your bench"
-                // twice over and cannot tell which projectile is about to go.
+                // THE CHIP. A member with a .270 and a .308 150 gr on the bench
+                // hears "Remove 150 gr from your bench" twice over and cannot
+                // tell which projectile is about to go.
                 removeLabel={`Remove ${benchBulletName(b)} from your bench`}
               >
                 {/*
-                  🚨 THE CALIBRE LEADS THE CHIP. "Hornady 150 gr" names four
-                  different projectiles — .277", .308", .311", .323" — and a
-                  member with a .270 and a .308 on the bench reading one chip
-                  cannot tell which of theirs it is. Written as it is on the
-                  box: `.308"`.
+                  🚨 THE CALIBRE LEADS THE CHIP. "150 gr" names four different
+                  projectiles — .277", .308", .311", .323" — and a member with a
+                  .270 and a .308 on the bench reading one chip cannot tell
+                  which of theirs it is. Written as it is on the box: `.308"`.
+
+                  ⚠️ AND WHERE THERE IS NO FIGURE THE CHIP SAYS SO. A bullet
+                  saved before calibres were recorded still matches every
+                  calibre, so a blank — or a stray `."` from a formatter given
+                  nothing — would be the one thing on the chip the member
+                  cannot check.
 
                   No colour of its own: `.chip.off` dims the whole chip to
                   --text-faint, and an inline colour here would leave the
@@ -244,10 +277,18 @@ export function BenchSections({
                 >
                   {calibre || CALIBRE_UNKNOWN_SHORT}
                 </span>
-                {bulletLabel(b)}
-                <span className="num" style={{ color: 'var(--text-tertiary)', fontSize: 11.5 }}>
-                  {b.weightGr} gr
-                </span>
+                {/* ⚠️ A SPACE, NOT A GAP. The 6px flex gap between the two
+                    spans is not in the accessible name, so without this the
+                    chip reads out as `.308"150 gr` — the two halves of the
+                    bullet run together in the one place a member listening
+                    rather than looking has to tell two chips apart. A
+                    whitespace-only text node is not a flex item, so nothing
+                    moves on screen. */}{' '}
+                {/* The weight is the chip's other half now that the brand has
+                    gone, so it reads in the chip's own colour rather than in
+                    the tertiary grey of a trailing detail — and inheriting is
+                    what lets `.chip.off` dim it with the rest of the pill. */}
+                <span className="num">{b.weightGr} gr</span>
               </Chip>
             );
           })}

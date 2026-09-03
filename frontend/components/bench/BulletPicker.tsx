@@ -25,20 +25,33 @@
  * rather than vanishing from it. A member who searches for the bullet they
  * added a moment ago should find it sitting there, not an empty list.
  *
- * 🚨 EVERY ROW LEADS WITH ITS CALIBRE, AND THAT IS THE POINT OF THE ROW. A
- * weight is not a bullet: "Hornady 150gr SP" names a .277", a .308", a .311"
- * and a .323" projectile, and they are not interchangeable — three thou over
- * and the round will not chamber, or chambers and spikes pressure. When two
- * rows read the same, the calibre is the ONLY thing the member is choosing
- * between, so it goes first, in its own aligned column, not trailing after the
- * load count where the eye arrives last.
+ * 🚨 A ROW IS A WEIGHT IN A CALIBRE, AND THE BRAND IS NOT PART OF IT. Operator,
+ * 2026-09-03: "a 150gr bullet of any manufacturer would yield almost the exact
+ * same pressures and speeds. this is the whole point of the Bench." The picker
+ * used to draw one row per maker per type per weight per calibre — 1,139 of
+ * them — so a member who added the Hornady 150 gr saw none of the loads worked
+ * up with a Sierra, a Barnes or a Lapua of the same weight, and a bench holding
+ * .30-06, N550 and that Hornady returned NOTHING. The rows are the shelf now,
+ * roughly 636 of them, one per weight per calibre.
+ *
+ * 🚨 THE CALIBRE STILL LEADS, BECAUSE IT IS THE OTHER HALF OF THE IDENTITY.
+ * Dropping the maker does not drop the diameter: "150 gr" names a .277", a
+ * .308", a .311" and a .323" projectile, and they are not interchangeable —
+ * three thou over and the round will not chamber, or chambers and spikes
+ * pressure. So the calibre goes first, in its own aligned column, not trailing
+ * after the load count where the eye arrives last.
+ *
+ * ⚠️ AND NOTHING HERE MAY BLUR A CHARGE. The finder's grain window widens what
+ * a member is SHOWN; every load stays quoted at its own bullet weight with its
+ * own start and max charge. This picker names one weight per row and never
+ * mentions the window — no copy in this file may suggest a charge worked up for
+ * one weight carries to another.
  *
  * ⚠️ COPY. Operator ruling 2026-09-02: nothing here may name where a figure
  * comes from. No "manual", no "CIP", no "SAAMI", no "published", and no source
  * counts — `loads` is a count of consolidated loads, which is the number the
  * member is choosing between. That rule reaches the calibre too: a row without
- * one says "Calibre unknown", never "not published". Bullet MAKER names
- * (Hornady, Sierra, Barnes) are product facts and stay.
+ * one says "Calibre unknown", never "not published".
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -51,9 +64,9 @@ import { IconX, OverlayShell, usePhone } from './primitives';
  * The input stays controlled — typing is never delayed — and only the list
  * waits. 160ms sits under --dur-fast, so the pause reads as the list settling
  * rather than as lag. It matters more here than on powders: this list is
- * roughly 1,139 rows against 305 — and MORE than that since the calibre
- * split, because a (maker, weight, category) triple that appears across three
- * calibres is now three rows rather than one.
+ * roughly 636 rows against 305. It was 1,139 while every maker drew its own
+ * row; collapsing the brand shortened it, and the debounce stays because the
+ * filter still runs over the whole list on every keystroke.
  */
 const SEARCH_DEBOUNCE_MS = 160;
 
@@ -70,27 +83,32 @@ const SEARCH_DEBOUNCE_MS = 160;
  * set, the picker says exactly that, above the list, where it cannot be
  * missed — and narrowing the search brings the rest into reach.
  *
- * 200 is the ceiling on DOM cost: each row is a button and four spans, so the
- * full list is several thousand nodes to lay out on a phone before the first
- * keystroke.
+ * 200 is the ceiling on DOM cost: each row is a button and three spans, so the
+ * full list is a couple of thousand nodes to lay out on a phone before the
+ * first keystroke.
  */
 const DRAW_CAP = 200;
 
 /**
- * The one string a row is matched against.
+ * The one string a row is matched against — a calibre and a weight, which is
+ * all a row now is.
  *
  * The weight goes in twice, bare and with its unit, so "150" and "150gr" both
  * land, and the calibre goes in three ways — `.308"`, `308`, `0.308` — because
  * a member types it with the dot, without it, and occasionally with the
- * leading zero. Searching for the calibre is how someone with two 150 gr rows
- * in front of them gets down to the one that fits their rifle, so it has to
- * work on the digits alone.
+ * leading zero. The digits are matched loosely on purpose: a member types 308
+ * for a calibre and 308 for a cartridge, and narrowing 636 rows to the .30
+ * calibre ones is the point.
  *
- * Built once per list rather than per keystroke: lower-casing a thousand-odd
+ * ⚠️ NO MAKER AND NO TYPE IN HERE ANY MORE. Neither is on the row, so a search
+ * that still matched them would light up a `.308" 150 gr` row with nothing on
+ * it to explain why the word the member typed found it.
+ *
+ * Built once per list rather than per keystroke: lower-casing six hundred-odd
  * strings on every debounce tick is work nobody asked for.
  */
 export function haystack(b: BenchBulletOption): string {
-  return `${calibreSearchTokens(b.calibreIn)} ${b.maker} ${b.weightGr} ${b.weightGr}gr ${b.category}`.toLowerCase();
+  return `${calibreSearchTokens(b.calibreIn)} ${b.weightGr} ${b.weightGr}gr`.toLowerCase();
 }
 
 /**
@@ -98,13 +116,34 @@ export function haystack(b: BenchBulletOption): string {
  *
  * ⚠️ NOT ONE SUBSTRING OVER THE JOINED STRING, WHICH IS WHAT THE POWDER
  * PICKER CAN AFFORD. A powder is matched on two fields that are nearly always
- * typed in one order ("Hodgdon H4350"); a bullet is matched on four, and a
- * member types them in whichever order they think of them. "hornady 150" and
- * "150 sp" both have to work, and so do "sp 150" and "308 150".
+ * typed in one order ("Hodgdon H4350"); a bullet is matched on a calibre and a
+ * weight, and a member types those in whichever order they think of them.
+ * "308 150" and "150 308" both have to work, and so does either half alone.
  */
 export function matches(hay: string, words: string[]): boolean {
   for (const w of words) if (!hay.includes(w)) return false;
   return true;
+}
+
+/**
+ * What separates the thousands in a load count.
+ *
+ * ⚠️ BUILT FROM ITS CODE POINT, NEVER TYPED. It is U+00A0, a non-breaking
+ * space, so a grouped figure cannot wrap in half — and a non-breaking space
+ * typed into source is indistinguishable from an ordinary one to everybody who
+ * reads the line afterwards.
+ */
+const GROUP_GAP = String.fromCharCode(0xa0);
+
+/**
+ * `1 240` — a load count grouped so a four-figure number reads at a glance.
+ *
+ * Grouped here rather than by toLocaleString: the separator that call returns
+ * comes from the browser's locale data, so the same row would read `1,240` on
+ * one member's phone and `1 240` on the next.
+ */
+export function formatLoads(n: number): string {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, GROUP_GAP);
 }
 
 export function BulletPicker({
@@ -152,17 +191,44 @@ export function BulletPicker({
 
   const onBenchKeys = useMemo(() => new Set(onBench), [onBench]);
 
-  // The row and its search string, paired once.
-  //
-  // ⚠️ SERVER ORDER IS PRESERVED, AND THE CAP IS WHY IT MATTERS. The endpoint
-  // returns most-used bullets first, so the drawn head of an unsearched list
-  // is the part worth adding. Re-sorting here — alphabetically, say — would
-  // turn the same cap into "every maker from A to C", which looks like a
-  // catalogue that stops at C.
-  const indexed = useMemo(
-    () => bullets.map((b) => ({ b, key: bulletKey(b), hay: haystack(b) })),
-    [bullets],
-  );
+  /**
+   * The rows, each with its search string, paired once — and ONE ROW PER
+   * BULLET.
+   *
+   * 🚨 THE COLLAPSE IS THE FEATURE, SO IT IS ENFORCED HERE AS WELL AS UPSTREAM.
+   * A bullet is a weight in a calibre now, so two entries that once differed
+   * only by the name on the box are the same row. Drawn twice they would be two
+   * identical lines with nothing to choose between them — and, because the row
+   * key is bulletKey(), two React children sharing a key, which is a rendering
+   * bug on top of a reading one.
+   *
+   * ⚠️ THE LARGER COUNT IS KEPT, NEVER THE SUM. Nothing on this side can tell
+   * whether two counts for one bullet cover the same loads or different ones,
+   * and a sum would promise loads that may not exist. A count that is low is a
+   * member pleasantly surprised; a count that is high is the picker overstating
+   * the one figure it is asking them to choose on.
+   *
+   * ⚠️ SERVER ORDER IS PRESERVED, AND THE CAP IS WHY IT MATTERS. The endpoint
+   * returns most-used bullets first, so the drawn head of an unsearched list is
+   * the part worth adding. Re-sorting here — by weight, say — would turn the
+   * same cap into "every calibre up to .243", which looks like a catalogue that
+   * stops halfway.
+   */
+  const indexed = useMemo(() => {
+    const rows: { b: BenchBulletOption; key: string; hay: string }[] = [];
+    const seen = new Map<string, number>();
+    for (const b of bullets) {
+      const key = bulletKey(b);
+      const at = seen.get(key);
+      if (at === undefined) {
+        seen.set(key, rows.length);
+        rows.push({ b, key, hay: haystack(b) });
+      } else if (b.loads > rows[at].b.loads) {
+        rows[at] = { ...rows[at], b };
+      }
+    }
+    return rows;
+  }, [bullets]);
 
   const filtered = useMemo(() => {
     const words = term.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -243,14 +309,14 @@ export function BulletPicker({
       <div style={{ flex: 'none', padding: phone ? '0 16px 10px' : '0 20px 10px' }}>
         <div className="field">
           <label htmlFor={searchId} className="sr-only">
-            Search bullets by calibre, maker, weight or type
+            Search bullets by calibre or weight
           </label>
           <input
             id={searchId}
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Calibre, maker, weight or type — try 308 150"
+            placeholder="Calibre or weight — try 308 150"
             autoComplete="off"
             spellCheck={false}
             // 44px is the §9 tap target; 16px is not a taste call either, iOS
@@ -334,7 +400,7 @@ export function BulletPicker({
             {bullets.length === 0
               ? 'No bullets are loaded yet.'
               : term.trim()
-                ? 'Nothing matches that calibre, maker, weight or type.'
+                ? 'Nothing matches that calibre or weight.'
                 : 'No bullets to show.'}
           </div>
         ) : (
@@ -343,15 +409,14 @@ export function BulletPicker({
               const added = onBenchKeys.has(key);
               const calibre = formatCalibre(b.calibreIn);
 
-              // ⚠️ ALL FOUR PARTS, ALWAYS, AND THE CALIBRE FIRST. A bullet's
-              // identity IS calibre + maker + weight + category — that is
-              // literally what bulletKey() joins, and what the AND in the
-              // results query matches on. Two Hornady 150 gr bullets in
-              // different categories are different bullets, and so are two in
-              // different calibres: .277" for a .270 and .308" for a .308 are
-              // the same three words on the box and will not swap. A row that
-              // printed only "Hornady 150 gr · SP" drew the same line four
-              // times and left the member picking blind.
+              // ⚠️ BOTH HALVES, ALWAYS, AND THE CALIBRE FIRST. A bullet's
+              // identity IS calibre + weight — that is literally what
+              // bulletKey() joins, and what the bullet axis of the results
+              // query matches on. The maker is not in it: a 150 gr .308" is a
+              // 150 gr .308" whoever's name is on the box, which is the whole
+              // point of the tool. The calibre is not decoration either —
+              // .277" for a .270 and .308" for a .308 read the same on the
+              // shelf and will not swap.
               const name = (
                 <span
                   style={{
@@ -405,16 +470,27 @@ export function BulletPicker({
                       {CALIBRE_UNKNOWN}
                     </span>
                   )}
-                  <span style={{ minWidth: 0 }}>
-                    {b.maker}
-                    <span className="num" style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
-                      {' '}
-                      · {b.weightGr} gr
-                    </span>
-                    <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
-                      {' '}
-                      · {b.category}
-                    </span>
+                  {/* ⚠️ A SPACE, NOT A GAP. The 10px flex gap is not in the
+                      row's accessible name, so without this a reader hears
+                      `.308"150 gr` — the two halves of the bullet run
+                      together in the one place a member who is listening has
+                      to tell two rows apart. Whitespace-only text is not a
+                      flex item, so nothing moves on screen. */}{' '}
+                  {/* The weight is the row's other half, so it is read as text
+                      in its own right, not as a footnote trailing a product
+                      name that is no longer there. Tabular numerals for the
+                      same reason the calibre has them: this column is scanned,
+                      not read. */}
+                  <span
+                    className="num"
+                    style={{
+                      minWidth: 0,
+                      fontWeight: 600,
+                      color: 'var(--text-primary)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {b.weightGr} gr
                   </span>
                 </span>
               );
@@ -437,7 +513,7 @@ export function BulletPicker({
                         minHeight: phone ? 48 : undefined,
                       }}
                     >
-                      {name}
+                      {name}{' '}
                       <span
                         style={{
                           display: 'inline-flex',
@@ -476,9 +552,12 @@ export function BulletPicker({
                     onClick={() => add(b)}
                     style={phone ? { minHeight: 48, fontSize: 14 } : undefined}
                   >
-                    {name}
+                    {name}{' '}
                     {/* A count of loads, which is the reason to pick one bullet
-                        over another. Never a count of anything underneath it. */}
+                        over another. Never a count of anything underneath it.
+                        Separated from the name by a space for the same reason
+                        the two halves of the name are: `150 gr1 240 loads` is
+                        what a reader hears otherwise. */}
                     <span
                       className="num"
                       style={{
@@ -487,7 +566,7 @@ export function BulletPicker({
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {b.loads} load{b.loads === 1 ? '' : 's'}
+                      {formatLoads(b.loads)} load{b.loads === 1 ? '' : 's'}
                     </span>
                   </button>
                 </li>
@@ -498,7 +577,12 @@ export function BulletPicker({
       </div>
 
       {/* Main.dc.html only. The phone sheet is short and this is a nicety, so
-          the prototype drops it there rather than eat a row of the list. */}
+          the prototype drops it there rather than eat a row of the list.
+
+          ⚠️ IT EXPLAINS THE COLLAPSE, AND IT STOPS AT THE COLLAPSE. A member
+          who came looking for their Hornady and finds no maker anywhere needs
+          telling why; nothing here may go on to suggest that one weight's
+          charge belongs to another, because it does not. */}
       {phone ? null : (
         <div
           style={{
@@ -508,9 +592,9 @@ export function BulletPicker({
             color: 'var(--text-tertiary)',
           }}
         >
-          A bullet is its calibre, maker, weight and type together, so the same maker and weight
-          appears once per calibre — a 150 gr .308&quot; and a 150 gr .277&quot; are different
-          bullets and will not swap.
+          A bullet here is a weight in a calibre — whose name is on the box does not change the
+          row, so every maker&apos;s 150 gr .308&quot; is this one row. The calibre still counts: a
+          150 gr .308&quot; and a 150 gr .277&quot; are different bullets and will not swap.
         </div>
       )}
 

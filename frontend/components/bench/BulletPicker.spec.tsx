@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { benchApi, type BenchView } from '@/lib/bench/api';
+import { benchApi, type BenchBullet, type BenchView } from '@/lib/bench/api';
 import { CALIBRE_UNKNOWN, CALIBRE_UNKNOWN_SHORT, formatCalibre } from '@/lib/bench/calibre';
-import { BulletPicker, haystack, matches } from './BulletPicker';
-import { BenchSections } from './BenchRail';
+import { BulletPicker, formatLoads, haystack, matches } from './BulletPicker';
+import { BenchSections, benchBulletName } from './BenchRail';
 import { EMPTY_OFF, bulletKey } from './contract';
 import type { BenchBulletOption } from './contract';
 
@@ -42,23 +42,33 @@ import BenchPage from '@/app/bench/page';
 /**
  * THE BENCH — the bullet picker's calibre.
  *
- * 🚨 THIS IS THE FILE THAT SAYS THE MEMBER CAN TELL TWO ROWS APART. "Hornady
- * 150gr SP" names four different projectiles — .277" for .270 Win, .308" for
- * .308 Win, .311" for .303 British, .323" for 8x57 IS — and they are not
- * interchangeable: three thou over will not chamber, or will chamber and spike
- * pressure. The picker filters in the browser, so nothing on the server can
- * rescue a search that cannot separate them.
+ * 🚨 THIS IS THE FILE THAT SAYS THE MEMBER CAN TELL TWO ROWS APART. "150 gr"
+ * names four different projectiles — .277" for .270 Win, .308" for .308 Win,
+ * .311" for .303 British, .323" for 8x57 IS — and they are not interchangeable:
+ * three thou over will not chamber, or will chamber and spike pressure. The
+ * picker filters in the browser, so nothing on the server can rescue a search
+ * that cannot separate them.
+ *
+ * 🚨 AND THE MAKER IS NOT PART OF THE ROW. Operator, 2026-09-03: "a 150gr
+ * bullet of any manufacturer would yield almost the exact same pressures and
+ * speeds. this is the whole point of the Bench." Dropping the brand is what
+ * made a stocked bench find loads at all; dropping the DIAMETER would be the
+ * hazard. The cases below hold both halves of that at once.
  *
  * ⚠️ AND NOTHING HERE MAY ROUND, BUCKET OR CHAIN BY TOLERANCE. A thou of
  * spread inside one calibre is the same size as the gap between neighbouring
  * ones (.311" and .312" are both bullets you can buy), so the picker matches
  * on the figure it was handed and nothing else. The neighbour cases below are
  * the guard on that.
+ *
+ * The GRAIN WINDOW is a different thing entirely and is not tested here: it
+ * widens the SEARCH the server runs, never a charge, and it never reaches the
+ * picker. See lib/bench/api.spec.ts.
  */
 
-/** As the endpoint returns them: the same three words, four different bullets. */
+/** As the endpoint returns them: one weight, four different bullets. */
 function bullet(calibreIn: number | null, over: Partial<BenchBulletOption> = {}): BenchBulletOption {
-  return { maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn, loads: 12, ...over };
+  return { weightGr: 150, calibreIn, loads: 12, ...over };
 }
 
 /** Exactly what the component does: fold the term, look for every word in the hay. */
@@ -101,9 +111,12 @@ describe('typing a calibre narrows to that calibre', () => {
     expect(finds(THREE_OH_EIGHT, typed)).toBe(true);
   });
 
-  it.each(['308', '.308', '0.308'])('%s does NOT find the .277 bullet of the same name', (typed) => {
-    expect(finds(TWO_SEVEN_SEVEN, typed)).toBe(false);
-  });
+  it.each(['308', '.308', '0.308'])(
+    '%s does NOT find the .277 bullet of the same weight',
+    (typed) => {
+      expect(finds(TWO_SEVEN_SEVEN, typed)).toBe(false);
+    },
+  );
 
   it('separates neighbouring calibres, which are one thou apart', () => {
     expect(finds(THREE_ELEVEN, '311')).toBe(true);
@@ -112,33 +125,65 @@ describe('typing a calibre narrows to that calibre', () => {
     expect(finds(THREE_TWELVE, '311')).toBe(false);
   });
 
-  it('still finds a bullet by maker, weight and type, in any order', () => {
-    for (const typed of ['hornady 150', '150 sp', 'sp 150', '150gr']) {
+  it('finds a bullet by weight, with or without the unit', () => {
+    for (const typed of ['150', '150gr']) {
       expect(finds(THREE_OH_EIGHT, typed)).toBe(true);
       expect(finds(TWO_SEVEN_SEVEN, typed)).toBe(true);
     }
   });
 
-  it('takes calibre and the rest of the row together', () => {
-    expect(finds(THREE_OH_EIGHT, '308 hornady 150')).toBe(true);
-    expect(finds(TWO_SEVEN_SEVEN, '308 hornady 150')).toBe(false);
+  it('takes the calibre and the weight together, in either order', () => {
+    expect(finds(THREE_OH_EIGHT, '308 150')).toBe(true);
+    expect(finds(THREE_OH_EIGHT, '150 308')).toBe(true);
+    expect(finds(TWO_SEVEN_SEVEN, '308 150')).toBe(false);
+  });
+
+  /**
+   * 🚨 THE BRAND IS NOT ON THE ROW, SO IT MUST NOT BE IN THE SEARCH EITHER. A
+   * member typing "hornady" gets nothing rather than a `.308" 150 gr` row with
+   * no visible reason for having matched — and, worse, one that would read as
+   * "this is your Hornady" when it stands for every maker's 150 gr .308".
+   */
+  it('does not match a maker or a bullet type, which are no longer on the row', () => {
+    for (const typed of ['hornady', 'sp', '150 sp', 'hornady 150']) {
+      expect(finds(THREE_OH_EIGHT, typed)).toBe(false);
+    }
   });
 
   it('does not match a calibre search to a bullet that has no calibre', () => {
     expect(finds(NO_CALIBRE, '308')).toBe(false);
-    expect(finds(NO_CALIBRE, '150 sp')).toBe(true);
+    expect(finds(NO_CALIBRE, '150')).toBe(true);
   });
 });
 
 describe('two calibres are never one row', () => {
-  it('keys four same-named bullets apart', () => {
+  it('keys four same-weight bullets apart', () => {
     const keys = [0.277, 0.308, 0.311, 0.323].map((c) => bulletKey(bullet(c)));
     expect(new Set(keys).size).toBe(4);
   });
 
-  it('keeps the pre-calibre key for a bench saved before calibres existed', () => {
-    expect(bulletKey({ maker: 'Hornady', weightGr: 150, category: 'SP' })).toBe('Hornady|150|SP');
-    expect(bulletKey(THREE_OH_EIGHT)).toBe('Hornady|150|SP|0.308');
+  /**
+   * ⚠️ A BENCH SAVED BEFORE CALIBRES WERE RECORDED KEEPS AN EMPTY FIRST PART,
+   * and the server spells it the same way — benchBulletKey() in
+   * backend/src/bench/bench.types.ts. These strings are sent back as `off`, so
+   * a disagreement of one empty segment does not error: it leaves a chip greyed
+   * on screen and live in the query.
+   */
+  it('keys a pre-calibre bullet on its weight alone', () => {
+    expect(bulletKey({ weightGr: 150 })).toBe('|150');
+    expect(bulletKey({ weightGr: 150, calibreIn: null })).toBe('|150');
+    expect(bulletKey(THREE_OH_EIGHT)).toBe('0.308|150');
+  });
+
+  /**
+   * 🚨 THE LEGACY DECORATION CHANGES NO KEY. An older bench stores a maker and
+   * a category beside the weight; they are kept so nothing of a member's is
+   * thrown away, and a key that read either would put the old model — the one
+   * where a stocked bench found nothing — straight back.
+   */
+  it('ignores the maker and the category an older bench still carries', () => {
+    const legacy = { weightGr: 150, calibreIn: 0.308, maker: 'Hornady', category: 'SP' };
+    expect(bulletKey(legacy)).toBe(bulletKey(THREE_OH_EIGHT));
   });
 });
 
@@ -168,8 +213,64 @@ describe('the calibre is on screen wherever a bullet is named', () => {
     // Said, not left blank, where the cartridge gives no figure.
     expect(screen.getByText(CALIBRE_UNKNOWN)).toBeInTheDocument();
 
-    // The three rows read the same but for that: three Hornadys, one each.
-    expect(screen.getAllByText(/Hornady/)).toHaveLength(3);
+    // The three rows read the same but for that: one weight, three times over.
+    expect(screen.getAllByText('150 gr')).toHaveLength(3);
+  });
+
+  /**
+   * 🚨 ONE ROW PER BULLET, EVEN WHERE THE ENDPOINT SENDS TWO. Two entries that
+   * differ only by the name that used to be on the box are one bullet now, so
+   * drawn twice they would be two identical lines with nothing to choose
+   * between — and two React children sharing bulletKey().
+   *
+   * ⚠️ THE LARGER COUNT SURVIVES, NEVER THE SUM: nothing on this side can tell
+   * whether two counts cover the same loads, and a sum would promise loads that
+   * may not exist.
+   */
+  it('draws one row where the same weight and calibre arrive twice', () => {
+    render(
+      <BulletPicker
+        open
+        loading={false}
+        bullets={[bullet(0.308, { loads: 12 }), bullet(0.308, { loads: 31 })]}
+        onBench={[]}
+        onClose={vi.fn()}
+        onAdd={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText('150 gr')).toHaveLength(1);
+    expect(screen.getByText(/31 loads/)).toBeInTheDocument();
+    // Not 43: the two counts may cover the same loads, and a sum would promise
+    // loads that do not exist behind the only figure on the row.
+    expect(screen.queryByText(/43 loads/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The row reads `.308"   150 gr   1 240 loads`, and the count is grouped
+   * because collapsing the makers made these figures four digits long.
+   *
+   * ⚠️ GROUPED BY HAND, NOT BY toLocaleString, whose separator comes from the
+   * browser's locale data — the same row would otherwise read `1,240` on one
+   * member's phone and `1 240` on the next.
+   */
+  it('groups a four-figure load count', () => {
+    // A non-breaking space, so a grouped figure cannot wrap in half.
+    expect(formatLoads(1240)).toBe(`1${String.fromCharCode(0xa0)}240`);
+    expect(formatLoads(940)).toBe('940');
+
+    render(
+      <BulletPicker
+        open
+        loading={false}
+        bullets={[bullet(0.308, { loads: 1240 })]}
+        onBench={[]}
+        onClose={vi.fn()}
+        onAdd={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('1 240 loads')).toBeInTheDocument();
   });
 
   it('is on the bench chip too, which is where the member reads their own shelf', () => {
@@ -201,6 +302,31 @@ describe('the calibre is on screen wherever a bullet is named', () => {
     expect(screen.getByText(CALIBRE_UNKNOWN_SHORT)).toBeInTheDocument();
   });
 
+  /**
+   * 🚨 THE GRAIN WINDOW WIDENS THE SEARCH, NEVER A CHARGE — AND THIS LIST IS
+   * WHERE A REASSURING SENTENCE ABOUT IT WOULD BE EASIEST TO WRITE. Every load
+   * is quoted at its own bullet weight with its own start and max charge, so
+   * the picker, which names a weight per row and no charges at all, must not
+   * say anything that reads as one weight's charge carrying to another. Nor may
+   * it name where a figure comes from (operator ruling, 2026-09-02).
+   */
+  it('says nothing about charges, and nothing about where a figure comes from', () => {
+    const { container } = render(
+      <BulletPicker
+        open
+        loading={false}
+        bullets={[THREE_OH_EIGHT, NO_CALIBRE]}
+        onBench={[]}
+        onClose={vi.fn()}
+        onAdd={vi.fn()}
+      />,
+    );
+
+    const copy = (container.textContent ?? '').toLowerCase();
+    expect(copy).not.toMatch(/charge|grains of|interchang|either side|tolerance/);
+    expect(copy).not.toMatch(/source|manual|c\.?i\.?p|saami|published/);
+  });
+
   it('shows a bullet already on the bench as added only when the calibre matches too', () => {
     render(
       <BulletPicker
@@ -217,6 +343,84 @@ describe('the calibre is on screen wherever a bullet is named', () => {
     // adding the .308 must not mark the .277 of the same name as owned.
     expect(screen.getAllByText('On your bench')).toHaveLength(1);
     expect(screen.getByRole('button', { name: /\.277/ })).toBeInTheDocument();
+  });
+});
+
+/* ── The chip, in the member's own words ────────────────────────────── */
+
+/**
+ * 🚨 THE CHIP IS WHERE A MEMBER READS THEIR OWN SHELF, SO IT READS THE SAME
+ * MODEL THE SEARCH USES: a calibre and a weight. A chip still printing
+ * "Hornady" would name something narrower than the shelf entry actually is —
+ * the entry now stands for every maker's 150 gr .308".
+ */
+describe('a bench chip reads the calibre and the weight, and nothing else', () => {
+  function railWith(bullets: BenchBullet[]) {
+    render(
+      <BenchSections
+        bench={{ powders: [], cartridges: [], units: 'metric', bullets }}
+        off={EMPTY_OFF}
+        onToggle={vi.fn()}
+        onRemove={vi.fn()}
+        onAddPowder={vi.fn()}
+        onAddBullet={vi.fn()}
+        onAddCartridge={vi.fn()}
+      />,
+    );
+  }
+
+  it('leaves the maker and the category an older save still carries off the chip', () => {
+    railWith([{ maker: 'Hornady', category: 'SP', weightGr: 150, calibreIn: 0.308 }]);
+
+    expect(screen.getByText('.308"')).toBeInTheDocument();
+    expect(screen.getByText('150 gr')).toBeInTheDocument();
+    expect(screen.queryByText(/Hornady/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\bSP\b/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * ⚠️ A BULLET SAVED BEFORE CALIBRES EXISTED SHOWS ITS WEIGHT AND SAYS THE
+   * CALIBRE IS NOT RECORDED. Those entries go on matching every calibre, so the
+   * chip must not read as a blank — nor as the bare `."` a formatter handed
+   * nothing would leave where a figure belongs.
+   */
+  it('says the calibre is not recorded rather than leaving a gap', () => {
+    railWith([{ maker: 'Hornady', category: 'SP', weightGr: 150 }]);
+
+    expect(screen.getByText(CALIBRE_UNKNOWN_SHORT)).toBeInTheDocument();
+    expect(screen.getByText('150 gr')).toBeInTheDocument();
+    expect(screen.queryByText('."')).not.toBeInTheDocument();
+    expect(screen.queryByText('"')).not.toBeInTheDocument();
+  });
+
+  /**
+   * ⚠️ ONE CHIP PER BULLET, EVEN WHERE THE SAVED BENCH HOLDS TWO. A shelf
+   * filled under the old model can carry a Hornady 150 gr .308" AND a Sierra
+   * 150 gr .308" — one bullet, stored twice. Two chips would toggle the one key
+   * between them, remove each other, and share a React child key.
+   */
+  it('draws one chip where the saved bench holds the same bullet twice', () => {
+    railWith([
+      { maker: 'Hornady', category: 'SP', weightGr: 150, calibreIn: 0.308 },
+      { maker: 'Sierra', category: 'HPBT', weightGr: 150, calibreIn: 0.308 },
+    ]);
+
+    expect(screen.getAllByText('150 gr')).toHaveLength(1);
+    // The heading counts what is drawn, not what is stored: two over one chip
+    // is the rail contradicting itself about the shelf it is showing.
+    expect(screen.getByRole('heading', { name: /Bullets · 1/ })).toBeInTheDocument();
+  });
+
+  /**
+   * ⚠️ ONE HELPER, THREE SURFACES. The chip, the × that removes it and the
+   * toast that confirms the removal all say this, so a member can match the
+   * confirmation to the chip they pointed at.
+   */
+  it('names a bullet the same way wherever it is named', () => {
+    expect(benchBulletName({ maker: 'Hornady', weightGr: 150, calibreIn: 0.308 })).toBe(
+      '.308" 150 gr',
+    );
+    expect(benchBulletName({ weightGr: 150 })).toBe(`${CALIBRE_UNKNOWN_SHORT} 150 gr`);
   });
 });
 
@@ -241,9 +445,13 @@ const SHELF: BenchView = {
 };
 
 /** Written out, not built from the component's own helper: a test that names
- *  the thing the same way the code does cannot notice the code renaming it. */
-const REMOVE_LAPUA = 'Remove .264" Lapua HP 139 gr from your bench';
-const REMOVE_HORNADY = 'Remove .308" Hornady SP 150 gr from your bench';
+ *  the thing the same way the code does cannot notice the code renaming it.
+ *
+ *  ⚠️ CALIBRE AND WEIGHT, AND NOTHING OFF THE BOX. The two shelf entries below
+ *  still carry a maker and a category from an older save; the chip and its ×
+ *  name neither, because neither narrows the search any more. */
+const REMOVE_LAPUA = 'Remove .264" 139 gr from your bench';
+const REMOVE_HORNADY = 'Remove .308" 150 gr from your bench';
 const REMOVE_N550 = 'Remove N550 from your bench';
 const REMOVE_CARTRIDGE = 'Remove .30-06 Springfield from your bench';
 
@@ -263,10 +471,10 @@ describe('every chip has a way off the bench that is not its toggle', () => {
     return { onToggle, onRemove };
   }
 
-  it('names what it removes, so two same-named bullets are told apart', () => {
+  it('names what it removes, so two same-weight bullets are told apart', () => {
     sections();
     // 🚨 The calibre is in the name for the same reason it leads the chip:
-    // "Remove Hornady SP 150 gr" is four different projectiles.
+    // "Remove 150 gr" is four different projectiles.
     expect(screen.getByRole('button', { name: REMOVE_LAPUA })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: REMOVE_HORNADY })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: REMOVE_N550 })).toBeInTheDocument();
@@ -286,6 +494,19 @@ describe('every chip has a way off the bench that is not its toggle', () => {
     fireEvent.click(screen.getByRole('button', { name: /N550/, pressed: true }));
     expect(onToggle).toHaveBeenCalledWith('powderIds', 'p-n550');
     expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * ⚠️ THE CHIP REPORTS THE KEY IT IS DRAWN WITH. onToggle and onRemove take
+   * the same pair, so a chip that invented a key of its own — one still
+   * carrying the maker, say — would grey out one entry and delete another.
+   */
+  it('toggles a bullet by bulletKey(), calibre and weight', () => {
+    const { onToggle } = sections();
+
+    fireEvent.click(screen.getByRole('button', { name: /\.308" 150 gr/, pressed: true }));
+    expect(onToggle).toHaveBeenCalledWith('bullets', bulletKey(SHELF.bullets[0]));
+    expect(onToggle).toHaveBeenCalledWith('bullets', '0.308|150');
   });
 
   it('keeps the remove out of the toggle, which is a separate button', () => {

@@ -125,12 +125,20 @@ export interface BenchPowder {
   loadsForBench?: number;
 }
 
+/**
+ * A bullet as the member's bench stores it.
+ *
+ * ⚠️ maker AND category ARE LEGACY DECORATION. Benches saved before the
+ * weight model carry them, and they are kept so nothing of a member's is
+ * thrown away — but nothing matches on them any more. A stored bullet is
+ * identified by its weight and calibre; see bulletKey().
+ */
 export interface BenchBullet {
-  maker: string;
   weightGr: number;
-  category: string;
   /** Inches. Absent on benches saved before calibres were recorded. */
   calibreIn?: number | null;
+  maker?: string;
+  category?: string;
   type?: string;
 }
 
@@ -150,24 +158,23 @@ export interface BenchView {
  * added at one end quietly stops being read at the other.
  */
 export interface BenchBulletOption {
-  maker: string;
-  weightGr: number;
-  /** FMJ | MONO | TIP | HP | CAST | SP | OTHER. */
-  category: string;
   /**
-   * 🚨 A WEIGHT IS NOT A BULLET. "Hornady 150gr SP" names four different
-   * projectiles — .277 for .270 Win, .308 for .308 Win, .311 for .303
-   * British, .323 for 8x57 — and they are not interchangeable. Without this
-   * the picker showed one row for all four, and the results told a member
-   * they could build loads their bullets do not fit. Inches; null only where
-   * no C.I.P. sheet gives a diameter.
+   * 🚨 A WEIGHT IS NOT A BULLET, AND A BULLET IS NOT A BRAND. "150 gr"
+   * names four different projectiles across calibres — .277 for .270 Win,
+   * .308, .311 for .303 British, .323 for 8x57 — so the calibre is half
+   * the identity. The MAKER is not part of it at all: a 150 gr .308 from
+   * Hornady, Sierra or Barnes gives near enough the same pressures and
+   * speeds, which is the whole point of the Bench.
+   *
+   * Inches; null only where no C.I.P. sheet gives a diameter.
    */
   calibreIn: number | null;
+  weightGr: number;
   /**
    * How many consolidated loads use it.
    *
    * ⚠️ NEVER A COUNT OF WHAT THOSE LOADS WERE BUILT FROM. Operator ruling
-   * 2026-09-02; the backend's leak spec is the other half of this boundary.
+   * 2026-09-02; the leak spec is the other half of this boundary.
    */
   loads: number;
 }
@@ -235,40 +242,93 @@ export interface LogEntry {
 /* ── Calls ──────────────────────────────────────────────────────────── */
 
 export interface LoadQuery {
+  /**
+   * Grains either side of a bench bullet's weight to search. Omitted means
+   * the server's default of 5.
+   *
+   * 🚨 A SEARCH WIDTH, NEVER A CHARGE. It decides which loads the member is
+   * SHOWN; every load that comes back is still quoted at ITS OWN bullet
+   * weight with its own start and max charge. Nothing on this wire says a
+   * charge for a 145 gr bullet may be used with a 155 gr one.
+   */
+  tolerance?: number;
   cartridge?: string;
   weight?: string;
   /** Bench entries the member has switched off for this search only. */
   off?: string[];
 }
 
+/**
+ * The grain window onto a query string.
+ *
+ * 🚨 ZERO IS A CHOICE, NOT AN ABSENCE, AND `if (tolerance)` WOULD EAT IT.
+ * The finder's narrowest setting is "Exact", which is a tolerance of 0 —
+ * and an omitted tolerance falls back to the server's default of 5, so a
+ * falsey check would leave the one member who deliberately asked for the
+ * exact weight looking at a ± 5 gr answer with "Exact" lit in the toolbar.
+ * The other three widths would work, which is what makes it hard to see.
+ *
+ * NaN is dropped rather than sent: `?tolerance=NaN` is a string the server
+ * has to guess about, and its default is the right guess.
+ *
+ * 🚨 ONE SPELLING, BECAUSE THREE SURFACES SEND IT. The loads list, the powder
+ * rows' counts and the spec card's "loads on your bench" are three answers
+ * about ONE shelf, and the server resolves the window per request — so a
+ * surface that serialises it differently, or not at all, prints a figure the
+ * list beside it contradicts.
+ */
+function setTolerance(p: URLSearchParams, tolerance: number | undefined): void {
+  if (tolerance !== undefined && Number.isFinite(tolerance)) {
+    p.set('tolerance', String(tolerance));
+  }
+}
+
 function query(q: LoadQuery): string {
   const p = new URLSearchParams();
   if (q.cartridge && q.cartridge !== 'all') p.set('cartridge', q.cartridge);
   if (q.weight && q.weight !== 'any') p.set('weight', q.weight);
+  setTolerance(p, q.tolerance);
   if (q.off?.length) p.set('off', q.off.join(','));
   const s = p.toString();
   return s ? `?${s}` : '';
 }
 
 /**
- * The switched-off chips, for the two bench-relative COUNTS that are not the
- * loads list.
+ * The shelf a bench-relative COUNT is counted against — everything that
+ * narrows the loads list and therefore has to narrow the count beside it.
  *
- * 🚨 EVERY SURFACE THAT COUNTS AGAINST THE BENCH SENDS THIS, OR IT ANSWERS FOR
- * A DIFFERENT SHELF THAN THE ONE ON SCREEN. BenchController.benchFor takes
- * `off` out in the one door, so the results, the powder chips' counts and the
- * spec card's "loads on your bench" agree — but only for a caller that sends
- * it. Omitted, the request does not fail: it quietly answers for the full
- * bench, and the spec card then reads "12 loads on your bench" over a list
- * showing five, with a greyed-out chip beside it explaining neither figure.
+ * 🚨 BOTH FIELDS ARE REQUIRED, AND THAT IS THE WHOLE GUARD. BenchController
+ * .benchFor() reads `off` AND `tolerance` on every bench endpoint, so the
+ * results, the powder chips' counts and the spec card's "loads on your bench"
+ * agree only for a caller that sends both. Neither omission fails: the request
+ * quietly answers for a DIFFERENT shelf. `off` omitted answers for the full
+ * bench, and the spec card reads "12 loads on your bench" over a list showing
+ * five. `tolerance` omitted answers over the server's default of ± 5 gr — so a
+ * member on "Exact" reads 17 on a powder chip and taps through to 9, and a
+ * member on "± 15 gr" reads 9 and taps through to 31. Optional, both were
+ * forgettable; required, tsc names the surface that forgot.
  *
- * ⚠️ ONE FLAT LIST, ALL THREE AXES, exactly as the loads query sends it — the
- * server matches each axis against the same set. See bulletKey() in
+ * ⚠️ `off` IS ONE FLAT LIST, ALL THREE AXES, exactly as the loads query sends
+ * it — the server matches each axis against the same set. See bulletKey() in
  * components/bench/contract.ts for the shape of a bullet's entry.
  */
-function offParam(off: string[] | undefined, extra?: Record<string, string>): string {
+export interface BenchScope {
+  /** Bench entries the member has switched off for this search only. */
+  off: string[];
+  /**
+   * The grain window the results beside this count were found over.
+   *
+   * 🚨 A SEARCH WIDTH, NEVER A CHARGE — see LoadQuery.tolerance. It is here so
+   * a count and the list it describes are the same question, and for no other
+   * reason.
+   */
+  tolerance: number;
+}
+
+function scopeParam(scope: BenchScope, extra?: Record<string, string>): string {
   const p = new URLSearchParams(extra);
-  if (off?.length) p.set('off', off.join(','));
+  if (scope.off.length) p.set('off', scope.off.join(','));
+  setTolerance(p, scope.tolerance);
   const s = p.toString();
   return s ? `?${s}` : '';
 }
@@ -297,13 +357,17 @@ export const benchApi = {
 
   cartridgeList: (t: TokenGetter) => call<BenchCartridgeOption[]>(t, '/cartridges'),
 
-  /** `off` carries the switched-off chips — see offParam. */
-  powders: (t: TokenGetter, search?: string, off?: string[]) =>
-    call<BenchPowder[]>(t, `/powders${offParam(off, search ? { q: search } : undefined)}`),
+  /**
+   * Each row's `loadsForBench` is a promise about what tapping that powder
+   * will show, so the scope it is counted over is the results' — see
+   * BenchScope.
+   */
+  powders: (t: TokenGetter, search: string | undefined, scope: BenchScope) =>
+    call<BenchPowder[]>(t, `/powders${scopeParam(scope, search ? { q: search } : undefined)}`),
 
-  /** `off` carries the switched-off chips — see offParam. */
-  cartridge: (t: TokenGetter, key: string, off?: string[]) =>
-    call<CartridgeSpec>(t, `/cartridges/${encodeURIComponent(key)}${offParam(off)}`),
+  /** The card's `loadsForBench` is the same promise — see BenchScope. */
+  cartridge: (t: TokenGetter, key: string, scope: BenchScope) =>
+    call<CartridgeSpec>(t, `/cartridges/${encodeURIComponent(key)}${scopeParam(scope)}`),
 
   log: (t: TokenGetter) => call<LogEntry[]>(t, '/log'),
 

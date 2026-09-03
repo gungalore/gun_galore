@@ -16,6 +16,8 @@ import { ClerkGuard } from '../auth/clerk.guard';
 import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { BenchService, type GuestBench } from './bench.service';
+import { benchBulletKey } from './bench.types';
+import { resolveTolerance } from './bullet-weight';
 
 /**
  * THE BENCH — /api/bench.
@@ -70,6 +72,10 @@ export class BenchController {
    * ⚠️ SO A CONTROL THE MEMBER CAN SEE IS A PARAMETER THIS METHOD READS.
    * A new filter added to the toolbar and not added here does not fail — it
    * silently widens every figure on the screen, the diagnosis included.
+   *
+   * `?tolerance=` is the grain window, and it is read in benchFor() with the
+   * rest of the shelf so the results, the powder chips and the spec card
+   * cannot answer over three different widths.
    */
   @Get('loads')
   @UseGuards(OptionalClerkGuard)
@@ -180,6 +186,18 @@ export class BenchController {
    * in. The service's own spec could not catch it — it calls loads() directly
    * and never comes through the controller.
    *
+   * 🚨 AND A BULLET IS NOW A WEIGHT IN A CALIBRE, SO THAT IS ALL THAT CROSSES.
+   * The stored maker and category are deliberately left behind rather than
+   * carried: they are decoration on the chip, nothing matches on them, and a
+   * field that reaches the query is a field something can start narrowing on
+   * again. `weightGr` and `calibreIn` are the whole identity.
+   *
+   * 🚨 THE GRAIN WINDOW COMES THROUGH THE SAME DOOR. It changes which loads a
+   * shelf bullet finds, so a surface reading it and a surface not reading it
+   * would print two different numbers about one shelf — which is the exact
+   * shape of the calibre bug above. It widens the SEARCH and never a charge:
+   * every load is still quoted at its own bullet weight.
+   *
    * 🚨 AND THE SWITCHED-OFF CHIPS COME OUT HERE, IN THE ONE DOOR, so the
    * results, the powder chips' counts and the spec card's count all answer
    * for the SAME shelf. `off` is what the member has greyed out for this
@@ -191,10 +209,17 @@ export class BenchController {
     q: Record<string, string>,
   ): Promise<GuestBench> {
     const off = new Set(split(q.off));
+    // ⚠️ THROUGH resolveTolerance(), NEVER Number(). An empty `?tolerance=` in
+    // the URL is Number('') — which is 0, not NaN — and a silent zero
+    // collapses the search back to the exact weight, the precise narrowness
+    // this parameter exists to undo. It also clamps a stranger from the query
+    // string to a width the finder actually offers.
+    const toleranceGr = resolveTolerance(q.tolerance);
 
     if (req.clerkUserId) {
       const mine = await this.bench.getBench(req.clerkUserId);
       return {
+        toleranceGr,
         powderIds: mine.powders.filter((p) => !off.has(p.id)).map((p) => p.id),
         // ⚠️ KEYED OFF THE STORED BULLET, NOT THE SANITISED ONE. The client
         // builds these keys from what GET /bench/me handed it, which is the
@@ -204,35 +229,20 @@ export class BenchController {
         bullets: mine.bullets
           .filter((b) => !off.has(benchBulletKey(b)))
           .map((b) => ({
-            maker: b.maker,
             weightGr: b.weightGr,
-            category: b.category,
             calibreIn: storedCalibre(b.calibreIn),
           })),
         cartridgeKeys: mine.cartridges.filter((c) => !off.has(c.key)).map((c) => c.key),
       };
     }
     return {
+      toleranceGr,
       powderIds: split(q.powders).filter((id) => !off.has(id)),
       cartridgeKeys: split(q.cartridges).filter((key) => !off.has(key)),
-      // "maker|weight|category" or "maker|weight|category|calibre" — the two
-      // shapes the client's bulletKey() emits, and it emits the second for
-      // every bullet added since calibres were recorded. Both are accepted:
-      // dropping the four-part form would make a guest's whole shelf parse to
-      // nothing, which reads as the page being broken.
       bullets: split(q.bullets)
         .filter((s) => !off.has(s))
-        .map((s) => s.split('|'))
-        .filter((p) => p.length === 3 || p.length === 4)
-        .map(([maker, weight, category, calibre]) => ({
-          maker,
-          weightGr: Number(weight),
-          category,
-          // An empty fourth part is how bulletKey() writes "no calibre", so it
-          // has to mean the same thing here as a missing one.
-          calibreIn: calibre ? storedCalibre(Number(calibre)) : null,
-        }))
-        .filter((b) => Number.isFinite(b.weightGr)),
+        .map(parseGuestBullet)
+        .filter((b): b is { weightGr: number; calibreIn: number | null } => b !== null),
     };
   }
 }
@@ -242,28 +252,42 @@ function split(v: string | undefined): string[] {
 }
 
 /**
- * A bullet's identity on the bench, in the client's own spelling.
+ * One entry of a guest's `?bullets=` list, as a shelf bullet.
  *
- * 🚨 THE SAME STRING bulletKey() BUILDS IN components/bench/contract.ts, AND
- * IT HAS TO STAY THAT WAY OR `off` SILENTLY MATCHES NOTHING. Two shapes, both
- * of which the query string carries: three parts for a bench saved before
- * calibres were recorded, four for every bullet added since. A key that
- * disagrees by so much as a trailing part does not error — it just leaves the
- * chip switched off on the screen and switched on in the query.
+ * 🚨 THE KEY IS bulletKey()'s, AND ITS SPELLING IS benchBulletKey() — imported
+ * rather than rewritten, because a key that disagrees by so much as an empty
+ * part does not error: it leaves the chip switched off on the screen and
+ * switched on in the query. Today's shape is `calibre|weight`, with an empty
+ * first part for a bullet with no calibre.
  *
- * ⚠️ `${b.calibreIn}` ON THE STORED VALUE, NOT ON A PARSED ONE. GET /bench/me
- * returns the Json column as written, so the client keyed on exactly this —
- * and rounding, re-parsing or normalising it here would build a key the
- * client never sends.
+ * ⚠️ THE OLD SHAPES ARE STILL READ, AND THAT IS NOT POLITENESS. Links shared
+ * before this change carry `maker|weight|category` or
+ * `maker|weight|category|calibre`; rejecting them would turn a shared bench
+ * into an empty page. Only the weight and the calibre are taken from them —
+ * the maker and the category are dropped on the floor, which is exactly what
+ * this change means. The three shapes cannot be confused: two parts is the new
+ * form, three or four the old.
+ *
+ * A weight that is not a number is not a bullet, and returns null.
  */
-function benchBulletKey(b: {
-  maker: string;
-  weightGr: number;
-  category: string;
-  calibreIn?: number | null;
-}): string {
-  const base = `${b.maker}|${b.weightGr}|${b.category}`;
-  return b.calibreIn == null ? base : `${base}|${b.calibreIn}`;
+function parseGuestBullet(s: string): { weightGr: number; calibreIn: number | null } | null {
+  const parts = s.split('|');
+  // An empty part is how a missing calibre is written, at either end.
+  const [weight, calibre] =
+    parts.length === 2
+      ? [parts[1], parts[0]]
+      : parts.length === 3 || parts.length === 4
+        ? [parts[1], parts[3]]
+        : [undefined, undefined];
+
+  // ⚠️ `!weight` RATHER THAN `weight === undefined`. Number('') IS 0, NOT NaN,
+  // so a key with a blank weight would otherwise parse as a 0 gr bullet and
+  // quietly search a window nothing sits in.
+  if (!weight) return null;
+  const weightGr = Number(weight);
+  if (!Number.isFinite(weightGr)) return null;
+
+  return { weightGr, calibreIn: calibre ? storedCalibre(Number(calibre)) : null };
 }
 
 /**
