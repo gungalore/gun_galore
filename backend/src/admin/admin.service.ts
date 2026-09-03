@@ -235,8 +235,40 @@ export class AdminService {
   // ---------------------------------------------------------------
   // Listings
   // ---------------------------------------------------------------
-  async getListings(status?: string, page = 1, limit = 20) {
-    const where = status ? { status: status as never } : { status: 'PENDING_REVIEW' as never };
+  /**
+   * The admin listings register.
+   *
+   * ⚠️ THE DEFAULT IS PENDING_REVIEW, AND IT STAYS THAT WAY. The review queue
+   * is what nearly every caller wants and what the legacy page opened on; a
+   * browse surface asks for a status explicitly, or for 'ALL'.
+   *
+   * `search` reuses the exact OR-clause globalSearch already applies to
+   * listings, rather than inventing a second definition of what it means to
+   * find a listing — two of those would drift, and the one an operator hit
+   * would be whichever surface they happened to be on.
+   */
+  async getListings(status?: string, page = 1, limit = 20, search?: string) {
+    const q = (search ?? '').trim();
+    const statusWhere =
+      status === 'ALL'
+        ? {}
+        : status
+          ? { status: status as never }
+          : { status: 'PENDING_REVIEW' as never };
+    const where = {
+      ...statusWhere,
+      ...(q.length >= 2
+        ? {
+            OR: [
+              { title: { contains: q, mode: 'insensitive' as const } },
+              { referenceNumber: { equals: q.toUpperCase() } },
+              { make: { contains: q, mode: 'insensitive' as const } },
+              { model: { contains: q, mode: 'insensitive' as const } },
+              { id: q },
+            ],
+          }
+        : {}),
+    };
     const [listings, total] = await Promise.all([
       this.prisma.listing.findMany({
         where,

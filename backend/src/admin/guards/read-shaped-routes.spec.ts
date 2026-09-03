@@ -107,10 +107,20 @@ describe('@ReadShapedRoute() nowhere else in the tree', () => {
       path.join(__dirname, '..', 'admin.controller.ts'),
       'utf8',
     );
+    //
+    // 🚨 AND THE STRIP MUST NOT DEPEND ON LINE ENDINGS. This was written as
+    // `line.replace(/\/\/.*$/, '')`, which silently stops working the moment
+    // the file is CRLF: `.` does not match `\r`, so `.*` halts before it, and
+    // `$` without the `m` flag matches only at end-of-string or before a
+    // trailing `\n` — never before a `\r`. The comment then survives the strip
+    // and is counted as a third application. It failed exactly that way on a
+    // Windows checkout, reporting a hatch nobody had added.
+    //
+    // `[^\n]*` needs no anchor and cannot care.
     const applied =
       src
         .split('\n')
-        .map((line) => line.replace(/\/\/.*$/, ''))
+        .map((line) => line.replace(/\/\/[^\n]*/, ''))
         .join('\n')
         .match(/@ReadShapedRoute\(/g) ?? [];
     expect(applied).toHaveLength(EXPECTED.length);

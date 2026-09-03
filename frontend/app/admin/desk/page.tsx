@@ -65,6 +65,7 @@ import {
 import type { CaseKind } from '@/lib/desk-case';
 import { describeFailure } from '@/lib/desk-auth';
 import { CasesRegister } from './cases-register';
+import { ListingsRegister } from './listings-register';
 
 /** How often the pile and ribbon refresh themselves. */
 const REFRESH_MS = 60_000;
@@ -171,7 +172,7 @@ export default function DeskPage() {
    * somewhere an operator goes with a question rather than somewhere they
    * live. Same shape the Ledger uses for its order book, same param name.
    */
-  const [view, setView] = React.useState<'pile' | 'cases'>('pile');
+  const [view, setView] = React.useState<'pile' | 'cases' | 'listings'>('pile');
   /** Bumped after a case decision so the register re-reads. */
   const [casesNonce, setCasesNonce] = React.useState(0);
 
@@ -232,9 +233,8 @@ export default function DeskPage() {
    * ⚠️ window.location, NOT useSearchParams — see the Ledger's note.
    */
   React.useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('view') === 'cases') {
-      setView('cases');
-    }
+    const v = new URLSearchParams(window.location.search).get('view');
+    if (v === 'cases' || v === 'listings') setView(v);
     // Mount only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -439,7 +439,10 @@ export default function DeskPage() {
           Today
         </Chip>
         <Chip active={view === 'cases'} onClick={() => setView('cases')}>
-          Register
+          Cases
+        </Chip>
+        <Chip active={view === 'listings'} onClick={() => setView('listings')}>
+          Listings
         </Chip>
       </div>
 
@@ -447,6 +450,18 @@ export default function DeskPage() {
         <CasesRegister
           refreshKey={casesNonce}
           onOpen={(kind, id) => openDrawer({ sort: 'case', caseKind: kind, caseId: id })}
+        />
+      ) : view === 'listings' ? (
+        <ListingsRegister
+          onOpen={(listingId) =>
+            openDrawer({
+              sort: 'listing',
+              listingId,
+              title: 'Opening…',
+              // No card behind it — see DEEP_LINK_CARD_ID.
+              cardId: DEEP_LINK_CARD_ID,
+            })
+          }
         />
       ) : (
         <>

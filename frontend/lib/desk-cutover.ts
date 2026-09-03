@@ -71,9 +71,9 @@ export const CUTOVER_MAP: CutoverRoute[] = [
   },
   {
     legacy: '/admin/listings',
-    desk: '/admin/desk',
-    coverage: 'partial',
-    note: "REACH IS CLOSED, BROWSE IS NOT, and they are different things. Any listing now opens by id or reference from global search (Ctrl K, or the top-bar box on any surface), so the operator who knows WHICH listing they want is served. What is still missing is the operator who does not: there is no surface that lists all listings with the legacy status filters, so a question shaped like 'show me everything pending in Optics' has nowhere to go. The PENDING_REVIEW queue remains a Desk card type, which covers the daily loop but not the browse. Needs a small backend change too — AdminService.getListings takes no search param, though globalSearch already contains the exact OR-clause to reuse.",
+    desk: '/admin/desk?view=listings',
+    coverage: 'replaced',
+    note: "BOTH HALVES ARE NOW HERE. REACH was closed by global search (any listing by id, reference, make or model, from any surface) — and the Listing drawer never needed a change for it, because fetchListingDossier has no status gate. BROWSE is this: a Listings lens on the pile at /admin/desk?view=listings, with status chips including an Everything segment, a search box over title, reference, make and model, thumbnails, paging with a real total, and every row opening the same drawer that reviews and takes down. ⚠️ A LENS, NOT A SIXTH TAB — tabs.tsx calls its list 'the five surfaces... nothing configurable about this list'. BACKEND: getListings grew a `search` param and an ALL status. The search REUSES globalSearch's existing OR-clause rather than inventing a second definition of what it means to find a listing; two of those would drift and the one an operator hit would depend on which surface they were standing on. The PENDING_REVIEW default is unchanged and is what the board opens on, so the first paint and a refresh agree. 🚨 THE WIRE CALLS THE ARRAY `listings`, NOT `rows` — desk-listings.ts is the only place that is translated, and reading `.rows` would have rendered an empty register beside a correct-looking total, which is exactly the shape of the alerts bug this rebuild already shipped once.",
   },
   {
     legacy: '/admin/listings/[id]',
