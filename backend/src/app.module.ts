@@ -37,6 +37,8 @@ import { SavedSearchesModule } from './saved-searches/saved-searches.module';
 import { ReportsModule } from './reports/reports.module';
 import { SupportModule } from './support/support.module';
 import { ComplaintsModule } from './complaints/complaints.module';
+import { DeskModule } from './desk/desk.module';
+import { BenchModule } from './bench/bench.module';
 import { MotivationsModule } from './motivations/motivations.module';
 import { LicenceCentreModule } from './licence-centre/licence-centre.module';
 import { ActivityModule } from './activity/activity.module';
@@ -46,7 +48,6 @@ import { ReloadingModule } from './reloading/reloading.module';
 import { HuntBallisticsModule } from './hunt-ballistics/hunt-ballistics.module';
 import { ManualPaymentsModule } from './manual-payments/manual-payments.module';
 import { MyShipmentsModule } from './my-shipments/my-shipments.module';
-import { BenchModule } from './bench/bench.module';
 
 @Module({
   imports: [
@@ -67,11 +68,6 @@ import { BenchModule } from './bench/bench.module';
       { name: 'default', ttl: 60_000, limit: 60 },
     ]),
     PrismaModule,
-    // DealsModule (Daily Deals), SuppliersModule and LoadLabModule were
-    // removed with their features. The Deal / DealPurchaseOrder / Supplier
-    // Prisma models are deliberately left orphaned in the schema — house
-    // precedent, the same as the Competitions tables.
-    BenchModule,
     PeachModule,
     ScanModule,
     CloudinaryModule,
@@ -91,6 +87,9 @@ import { BenchModule } from './bench/bench.module';
     AdminModule,
     OffersModule,
     AuctionsModule,
+    // DealsModule (Daily Deals) removed with the feature. The Deal /
+    // DealPurchaseOrder Prisma models are deliberately left orphaned in the
+    // schema — house precedent, same as Message and the Competitions tables.
     TasksModule,
     KycModule,
     ReferenceNumberModule,
@@ -108,6 +107,8 @@ import { BenchModule } from './bench/bench.module';
     MyShipmentsModule,
     SupportModule,
     ComplaintsModule,
+    DeskModule,
+    BenchModule,
     MotivationsModule,
     LicenceCentreModule,
     ActivityModule,

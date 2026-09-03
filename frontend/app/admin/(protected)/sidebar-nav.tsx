@@ -28,6 +28,20 @@ interface NavGroup {
 
 const TOP: NavItem = { href: '/admin', label: 'Command Center' };
 
+/**
+ * ⚠️ THE ONLY WAY INTO THE DESK, AND IT HAD NONE.
+ *
+ * The Desk is a ground-up rebuild of this panel living at /admin/desk. It was
+ * built, it works, and nothing anywhere linked to it — you had to know the URL
+ * and type it. A surface nobody can reach gets no use and no feedback, which
+ * is how a rebuild quietly dies beside the thing it was meant to replace.
+ *
+ * It sits ABOVE the groups rather than inside one because it is not another
+ * admin page: it is where the groups below are going. When the cutover lands
+ * this link stays and everything under it goes.
+ */
+const DESK: NavItem = { href: '/admin/desk', label: 'The Desk' };
+
 const GROUPS: NavGroup[] = [
   {
     key: 'operations',
@@ -176,6 +190,9 @@ export default function SidebarNav() {
   return (
     <nav className="flex flex-col gap-0.5 text-sm">
       <NavLink item={TOP} active={pathname === '/admin'} />
+      {/* startsWith, not equality: the Desk has five boards under it and the
+          link should read as active on all of them. */}
+      <NavLink item={DESK} active={pathname.startsWith('/admin/desk')} />
 
       {GROUPS.map((g) => {
         const isOpen = open.has(g.key);

@@ -29,7 +29,7 @@ const ISSUED = '2020-03-01';
 
 describe('the competency date the Document Centre offers', () => {
   it('offers five-from-issue to a member with NO licence on file', () => {
-    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, false);
+    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, []);
     expect(out?.on).toBe('2025-03-01');
   });
 
@@ -174,7 +174,7 @@ describe('the competency date the Document Centre offers', () => {
     // v3 §5.3.1 is explicit — "never present it to a user as the legal
     // position". So it may be stated; it may not be dressed in a section
     // number.
-    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, false);
+    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, []);
     expect(out?.why ?? '').not.toMatch(/section 10|s10\(2\)|Firearms Control Act/i);
   });
 
@@ -196,13 +196,13 @@ describe('the competency date the Document Centre offers', () => {
     // So the copy tells the member there is no date on the card, and does not
     // send them to look for one. §9: any guidance saying "check the expiry on
     // your card" is wrong.
-    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, false);
+    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, []);
     expect(out?.why ?? '').toMatch(/does not print a date/i);
     expect(out?.why ?? '').not.toMatch(/check it against your certificate/i);
   });
 
   it('says WHY, so the member can tell a derivation from a reading', () => {
-    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, false);
+    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, []);
     expect(out?.why).toMatch(/no firearm licence on file/i);
     // The rolling behaviour, however it is worded — the operator's DFO put it
     // as "it renews with the latest firearm license obtained".
@@ -212,18 +212,18 @@ describe('the competency date the Document Centre offers', () => {
 
   it('stays out of the way when the document printed its own date', () => {
     expect(
-      derivedExpiryFor('COMPETENCY_CERTIFICATE', '2030-01-01', ISSUED, false),
+      derivedExpiryFor('COMPETENCY_CERTIFICATE', '2030-01-01', ISSUED, []),
     ).toBeNull();
   });
 
   it('needs an issue date to work from', () => {
-    expect(derivedExpiryFor('COMPETENCY_CERTIFICATE', null, null, false)).toBeNull();
+    expect(derivedExpiryFor('COMPETENCY_CERTIFICATE', null, null, [])).toBeNull();
   });
 
   it('⚠️ never guesses for a LICENCE or for dedicated status', () => {
     // Licence validity runs off section 27 and varies by section; dedicated
     // status is set by the association. Both would be inventing a deadline.
-    expect(derivedExpiryFor('FIREARM_LICENCE', null, ISSUED, false)).toBeNull();
-    expect(derivedExpiryFor('DEDICATED_DISCIPLINE', null, ISSUED, false)).toBeNull();
+    expect(derivedExpiryFor('FIREARM_LICENCE', null, ISSUED, [])).toBeNull();
+    expect(derivedExpiryFor('DEDICATED_DISCIPLINE', null, ISSUED, [])).toBeNull();
   });
 });

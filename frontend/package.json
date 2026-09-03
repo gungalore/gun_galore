@@ -4,11 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "next build --webpack",
+    "build": "node scripts/desk-guard.cjs && node scripts/desk-cutover.cjs && next build --webpack",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "desk:guard": "node scripts/desk-guard.cjs",
+    "typecheck": "tsc --noEmit",
+    "desk:cutover": "node scripts/desk-cutover.cjs --report"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.5",

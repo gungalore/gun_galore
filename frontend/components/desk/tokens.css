@@ -1,0 +1,159 @@
+/*
+ * THE DESK — design tokens.
+ *
+ * Scoped under [data-desk] on purpose. The storefront is a white retail skin
+ * and the admin is a dark control room; the two share a stylesheet, a build
+ * and a browser tab, and the ONLY thing keeping them apart is this attribute.
+ * Nothing here may leak to :root.
+ *
+ * ⚠️ THE PRINCIPLE THAT DECIDES EVERY COLOUR QUESTION: the only colour on
+ * screen is state. There is no brand accent. Text, primary buttons and the
+ * active tab are one ink; ok / warn / bad / info carry every meaning and are
+ * never decoration, never a chart series, never a mood. When the operator
+ * sees colour, something needs them — which is only true if colour is spent
+ * nowhere else.
+ */
+
+[data-desk] {
+  /* Surfaces, ground up. Cool green-black rather than neutral grey: it reads
+   * as a different product from the shop at a glance, which is the point. */
+  --dk-ground: #101312;
+  --dk-surface: #171B1A;
+  --dk-raised: #1D2221;
+  --dk-inset: #232928;
+
+  /* Two line weights. Hairlines separate content; line-2 bounds a control. */
+  --dk-line: #262D2B;
+  --dk-line-2: #343C3A;
+
+  /* One ink in four steps. ink on ground is 14.6:1, ink-2 8.1:1, ink-3 4.6:1.
+   * ⚠️ ink-3 is a LABEL colour — it clears 4.5:1 and nothing more, so it must
+   * never carry body text. ink-4 does NOT clear 4.5:1 and is only ever used
+   * for genuinely faint furniture: axis ticks, chevrons, a ref beside a label
+   * that repeats it. Putting money, an identifier or a rule in ink-4 is the
+   * mistake the previous admin made on seven surfaces. */
+  --dk-ink: #EEF2F0;
+  --dk-ink-2: #B3BBB8;
+  --dk-ink-3: #7F8885;
+  --dk-ink-4: #555E5B;
+
+  /* The four states. Same lightness, so none shouts louder than another. */
+  --dk-ok: #3ECF8E;
+  --dk-warn: #F2B33D;
+  --dk-bad: #FF6B5E;
+  --dk-info: #5AA7FF;
+
+  /* ⚠️ TINT WITH color-mix, NEVER BY CONCATENATION. `var(--dk-ok)18` parses
+   * as garbage and silently computes to transparent — the whole declaration
+   * is dropped and you get no fill at all, with no error anywhere. Each state
+   * gets a 14% fill and a 34% border, pre-mixed here so no call site has to
+   * remember the numbers. */
+  --dk-ok-wash: color-mix(in srgb, var(--dk-ok) 14%, transparent);
+  --dk-ok-line: color-mix(in srgb, var(--dk-ok) 34%, transparent);
+  --dk-warn-wash: color-mix(in srgb, var(--dk-warn) 14%, transparent);
+  --dk-warn-line: color-mix(in srgb, var(--dk-warn) 34%, transparent);
+  --dk-bad-wash: color-mix(in srgb, var(--dk-bad) 14%, transparent);
+  --dk-bad-line: color-mix(in srgb, var(--dk-bad) 34%, transparent);
+  --dk-info-wash: color-mix(in srgb, var(--dk-info) 14%, transparent);
+  --dk-info-line: color-mix(in srgb, var(--dk-info) 34%, transparent);
+
+  /* Only overlays lift. Cards are flat and hairlined — a shadow on a card is
+   * how a dark UI turns to soup. */
+  --dk-shadow-drawer: -24px 0 60px rgba(0, 0, 0, 0.45);
+  --dk-shadow-dialog: 0 20px 60px rgba(0, 0, 0, 0.5);
+  --dk-dim: rgba(0, 0, 0, 0.55);
+  --dk-dim-sheet: rgba(0, 0, 0, 0.6);
+
+  --dk-radius-card: 12px;
+  --dk-radius-control: 8px;
+  --dk-radius-pill: 999px;
+
+  /* 34 at the desk, 44 under the thumb. Overridden in the phone block below
+   * rather than branched in every component. */
+  --dk-h-control: 34px;
+
+  background: var(--dk-ground);
+  color: var(--dk-ink);
+  font-family: var(--font-geist), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Tabular numerals globally, not per component: a column of amounts that
+   * does not line up is the fastest way to make a ledger look broken. */
+  font-feature-settings: 'tnum' 1;
+}
+
+/* One breakpoint, no tablet layout. Below it, everything is the phone. */
+@media (max-width: 1023.98px) {
+  [data-desk] {
+    --dk-h-control: 44px;
+  }
+}
+
+[data-desk] .dk-mono {
+  font-family: var(--font-geist-mono), ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+/*
+ * ⚠️ THE GLOBAL BOX-SHADOW KILL SWITCH STAYS. globals.css carries
+ * `* { box-shadow: none !important }` (line ~356) to stop the storefront
+ * growing shadows nobody designed. It applies here too, so the only two
+ * places on the Desk that are ALLOWED to lift have to win with !important —
+ * and these rules have to be loaded after globals.css to do it.
+ *
+ * The corollary bites elsewhere: Tailwind's shadow-* and ring-* utilities
+ * compile to box-shadow and therefore do nothing at all in this subtree. That
+ * is why focus is an outline everywhere below, never a ring.
+ */
+[data-desk] .dk-drawer {
+  box-shadow: var(--dk-shadow-drawer) !important;
+}
+
+[data-desk] .dk-dialog {
+  box-shadow: var(--dk-shadow-dialog) !important;
+}
+
+/* One focus treatment for the whole surface. Visible on every ground because
+ * it is the ink itself, offset clear of the control's own border. */
+[data-desk] :focus-visible {
+  outline: 2px solid var(--dk-ink);
+  outline-offset: 2px;
+}
+
+/* Motion is a courtesy, not a feature. Everything that slides becomes a fade,
+ * and the undo ring stops sweeping, when the operator has asked for less. */
+@media (prefers-reduced-motion: reduce) {
+  [data-desk] *,
+  [data-desk] *::before,
+  [data-desk] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * Motion. Five keyframes, and every one of them is neutralised by the
+ * reduced-motion block above — the drawer still arrives, it just arrives
+ * without travelling.
+ */
+@keyframes dk-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dk-drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes dk-dialog-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.98); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes dk-toast-in {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes dk-skeleton {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.85; }
+}

@@ -492,9 +492,19 @@ export class AdminTransactionsController {
     res.send(csv);
   }
 
-  // Dossier — parties, listing, payment + shipping timeline, messages,
-  // raw Peach result codes, dealer (if firearm), rating. One round-trip
-  // so the admin can resolve a dispute from one screen.
+  // Dossier — parties, listing, payment + shipping timeline, raw Peach result
+  // codes, dealer (if firearm), rating, complaints and the admin audit trail.
+  // One round-trip so the admin can resolve a dispute from one screen.
+  //
+  // ⚠️ NO MESSAGES, THOUGH THIS COMMENT PROMISED THEM UNTIL 2026-09-03. Buyer
+  // to seller chat was never built; the Prisma Message model is kept only for
+  // dormant legacy rows, and the service deliberately does not include it. The
+  // promise sent a reader looking for a relation that has never existed.
+  //
+  // ⚠️ AND NO PRESENTED MONEY. This returns the raw fee columns, never
+  // payments/fee-presentation.ts — so every consumer is left to reason about
+  // feeModel for itself, which is the exact ambiguity that file exists to end.
+  // A `money` block built by the one presenter belongs here.
   @Get(':id/dossier')
   getTransactionDossier(@Param('id') id: string) {
     return this.adminService.getTransactionDossier(id);
