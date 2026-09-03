@@ -1934,9 +1934,14 @@ export class AdminService {
     // Default to HELD — the live money-in-flight queue. (The old default
     // was the manual-EFT PENDING_ADMIN_VERIFICATION fossil, which made
     // /admin/transactions land on a permanently-empty list.)
-    const where: Record<string, unknown> = {
-      paymentStatus: (status ?? 'HELD') as never,
-    };
+    //
+    // ⚠️ 'ALL' IS THE ONLY WAY TO SEE ANYTHING ELSE AS A SET. Before it, the
+    // status was pinned to one value on every call, so there was no way to
+    // browse sales by any other status — which is why the cutover map recorded
+    // a transaction book as unbuildable. An explicit 'ALL' keeps the HELD
+    // default, so nothing that relies on it changes.
+    const where: Record<string, unknown> =
+      status === 'ALL' ? {} : { paymentStatus: (status ?? 'HELD') as never };
     // Command-center deep-link: HELD sales where the seller blew the 48h
     // accept window and the escalation cron flagged them.
     if (filter === 'accept-stalled') {
@@ -1955,9 +1960,16 @@ export class AdminService {
       this.prisma.transaction.findMany({
         where,
         include: {
-          listing: { select: { title: true, price: true } },
-          buyer: { select: { firstName: true, lastName: true, email: true } },
-          seller: { select: { firstName: true, lastName: true, email: true } },
+          listing: { select: { title: true, price: true, referenceNumber: true } },
+          // 🚨 USERNAMES ONLY. This used to select firstName, lastName and
+          // email for BOTH parties, for a page that has since been deleted —
+          // so every row of a sales list carried two people's real names and
+          // addresses into the browser to render a column the Desk's own rule
+          // forbids. Nothing else in the tree calls getTransactions, so the
+          // shape is corrected here rather than filtered on the way out: data
+          // that never arrives cannot be rendered by accident.
+          buyer: { select: { id: true, username: true } },
+          seller: { select: { id: true, username: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,

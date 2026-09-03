@@ -95,9 +95,9 @@ export const CUTOVER_MAP: CutoverRoute[] = [
   },
   {
     legacy: '/admin/transactions',
-    desk: '/admin/desk/ledger',
-    coverage: 'partial',
-    note: "⚠️ THIS NOTE WAS STALE AND SAID THE OPPOSITE OF THE CODE. It read 'The Ledger shows the payout run. The order book with the needs-attention filter is not built' — the order book HAS been built: the Ledger carries a second lens (view=orders) with status segments, paging, and deep links that keep the legacy param names so an old bookmark survives. What is genuinely missing is a TRANSACTION book as distinct from the ORDER book: AdminService.getTransactions defaults status to HELD, so there is no way to list sales by any other status. Individual sales are reachable — global search opens any of them by id, reference, waybill or gateway id — so this is the browse half only, same as /admin/listings.",
+    desk: '/admin/desk/ledger?view=sales',
+    coverage: 'replaced',
+    note: "THE SALES BOOK IS BUILT — a third Ledger lens beside the payout run and the order book, at ?view=sales. Status chips including Everything, paging with a real total, and every row opening the same Order drawer on the null-parent path a single sale has always used. 🚨 THE MAP CALLED THIS UNBUILDABLE AND IT WAS ONE WHERE-CLAUSE: getTransactions pinned paymentStatus on every call, defaulting to HELD with no way to ask for anything else as a set, so browsing sales by any other status was impossible and was recorded as a missing feature rather than a missing branch. An explicit ALL was added and the HELD default is unchanged, so nothing relying on it moved. ⚠️ AND THE ENDPOINT WAS LEAKING. Its include selected firstName, lastName and email for BOTH parties — for a legacy page that no longer exists — so every row of a sales list would have carried two people's real names and addresses into the browser to render a column the Desk's own rule forbids. Nothing else in the tree calls getTransactions, so the SELECT was corrected rather than the render filtered: data that never arrives cannot be rendered by accident. ⚠️ A PAYOUT HOLD IS NOT A PAYMENT STATUS AND THE ROW SAYS BOTH — a RELEASED sale with payoutHeldAt set is money the seller is owed and is not getting this run; showing only one of the two is wrong in either direction and looks entirely normal. The ?filter= deep links from the command centre and the health page are honoured, shown as a removable banner, and preserved by the URL writer.",
   },
   {
     legacy: '/admin/transactions/[id]',

@@ -56,6 +56,8 @@ import {
 } from '@/lib/desk-orders';
 import { describeFailure } from '@/lib/desk-auth';
 import { OrderBook } from './order-book';
+import { SalesBook } from './sales-book';
+import type { SaleFilter } from '@/lib/desk-transactions';
 
 /**
  * The two lenses this board has.
@@ -65,7 +67,7 @@ import { OrderBook } from './order-book';
  * thing they came to do is pay sellers. 'orders' is the whole order book, the
  * replacement for /admin/orders.
  */
-type LedgerView = 'run' | 'orders';
+type LedgerView = 'run' | 'orders' | 'sales';
 
 /** Nothing to open, and why. Not a failure — a shape. */
 const NO_LINES = {
@@ -92,6 +94,14 @@ export default function LedgerPage() {
    * carry on should find their place — not page one of All.
    */
   const [view, setView] = React.useState<LedgerView>('run');
+  /**
+   * A deep-link narrowing on the sales lens.
+   *
+   * The command centre links with ?filter=accept-stalled and the health page
+   * with ?filter=dispatch-overdue; both param names are the legacy page's, so
+   * an old bookmark or a Slack link still lands on the rows it named.
+   */
+  const [saleFilter, setSaleFilter] = React.useState<SaleFilter | null>(null);
   const [orderSegment, setOrderSegment] = React.useState<OrderSegment>('ALL');
   const [orderPageIndex, setOrderPageIndex] = React.useState(1);
   const [orderPage, setOrderPage] = React.useState<OrderBookPage | null>(null);
@@ -289,7 +299,7 @@ export default function LedgerPage() {
    */
   const switchView = React.useCallback((next: LedgerView) => {
     setView(next);
-    if (next === 'orders') {
+    if (next !== 'run') {
       setDrawer(false);
       setConfirm(false);
     } else {
@@ -340,6 +350,14 @@ export default function LedgerPage() {
      * a cart, and moving the list out from under the operator to a view that
      * does not contain what they opened would be its own small lie.
      */
+    const rawFilter = q.get('filter');
+    if (rawFilter === 'accept-stalled' || rawFilter === 'dispatch-overdue') {
+      setSaleFilter(rawFilter);
+      setView('sales');
+    } else if (q.get('view') === 'sales') {
+      setView('sales');
+    }
+
     const deepTxn = q.get('txn');
     if (deepTxn) {
       openOrder(deepTxn);
@@ -390,6 +408,14 @@ export default function LedgerPage() {
      * the `order` param is written here to avoid. Writing it also makes an
      * open sale a link an operator can paste, like an order already is.
      */
+    if (view === 'sales') {
+      q.set('view', 'sales');
+      // ⚠️ THE FILTER SURVIVES THE WRITER TOO. It arrives from a command-centre
+      // or health-page link, and the writer rebuilds the query from state — so
+      // without this the narrowing vanishes from the URL on the next state
+      // change while the banner on screen still says the list is filtered.
+      if (saleFilter) q.set('filter', saleFilter);
+    }
     if (orderId && !orderCard) q.set('txn', orderId);
     const qs = q.toString();
     window.history.replaceState(
@@ -397,7 +423,7 @@ export default function LedgerPage() {
       '',
       window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash,
     );
-  }, [view, orderSegment, orderPageIndex, orderCard, orderId]);
+  }, [view, orderSegment, orderPageIndex, orderCard, orderId, saleFilter]);
 
   const gated = run?.gated ?? true;
 
@@ -465,10 +491,24 @@ export default function LedgerPage() {
           <Chip active={view === 'orders'} onClick={() => switchView('orders')}>
             Orders
           </Chip>
+          {/* ⚠️ SALES, NOT "TRANSACTIONS". The row is one sale — what a payout
+              pays and a refund refunds. An Order is the cart above it, and the
+              two words are already one letter apart in the modules. */}
+          <Chip active={view === 'sales'} onClick={() => switchView('sales')}>
+            Sales
+          </Chip>
         </div>
       </div>
 
-      {view === 'orders' ? (
+      {view === 'sales' ? (
+        <SalesBook
+          filter={saleFilter ?? undefined}
+          onClearFilter={() => setSaleFilter(null)}
+          // Opens the same drawer the run and the order book open, on the
+          // null-parent path a single sale has always used.
+          onOpen={openOrder}
+        />
+      ) : view === 'orders' ? (
         <OrderBook
           segment={orderSegment}
           onSegment={chooseSegment}
