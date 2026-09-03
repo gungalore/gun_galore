@@ -2,7 +2,6 @@
 jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { PudoService } from './pudo.service';
-import { TcgService } from './tcg.service';
 
 function mockFetchOnce(status: number, json: unknown) {
   (global.fetch as jest.Mock).mockResolvedValueOnce({
@@ -85,74 +84,5 @@ describe('PudoService.createShipment (L2L)', () => {
 
   it('waybillUrl embeds the shipment id (key carried server-side only)', () => {
     expect(svc.waybillUrl('297')).toContain('/generate/waybill/297?api_key=');
-  });
-});
-
-describe('TcgService.createShipment (D2D)', () => {
-  let svc: TcgService;
-  const addr = {
-    streetAddress: '1 Main',
-    suburb: 'X',
-    city: 'Cape Town',
-    province: 'Western Cape',
-    postalCode: '8001',
-  };
-  beforeEach(() => {
-    process.env.TCG_API_KEY = 'tcg_test';
-    delete process.env.TCG_BASE_URL;
-    global.fetch = jest.fn();
-    svc = new TcgService();
-  });
-
-  it('posts the D2D body and parses tracking (no PIN for door-to-door)', async () => {
-    mockFetchOnce(200, {
-      id: 8881,
-      short_tracking_reference: 'TCG12345',
-      status: 'pending-collection',
-    });
-
-    const res = await svc.createShipment({
-      serviceCode: 'ECO',
-      from: addr,
-      to: { ...addr, city: 'Joburg', province: 'Gauteng', postalCode: '2000' },
-      parcel: { weightKg: 2, lengthCm: 40, widthCm: 30, heightCm: 8 },
-      declaredValueCents: 150000,
-      collectionContact: { name: 'jan', mobile: '0820000000' },
-      deliveryContact: { name: 'buyer', mobile: '0830000000' },
-    });
-
-    expect(res).toEqual({
-      carrier: 'TCG',
-      provider: 'TCG',
-      submission: 'SUBMITTED',
-      shipmentId: '8881',
-      trackingReference: 'TCG12345',
-      status: 'pending-collection',
-    });
-    expect(res.pin).toBeUndefined();
-
-    const [url, opts] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe('https://api.portal.thecourierguy.co.za/shipments');
-    const body = JSON.parse(opts.body);
-    expect(body.service_level_code).toBe('ECO');
-    expect(body.declared_value).toBe(1500); // cents → rand
-    expect(body.parcels[0].submitted_weight_kg).toBe(2);
-    expect(body.collection_address.city).toBe('Cape Town');
-    expect(body.delivery_address.city).toBe('Joburg');
-  });
-
-  it('throws on a non-ok carrier response', async () => {
-    mockFetchOnce(400, { message: 'bad route' });
-    await expect(
-      svc.createShipment({
-        serviceCode: 'ECO',
-        from: addr,
-        to: addr,
-        parcel: { weightKg: 2, lengthCm: 40, widthCm: 30, heightCm: 8 },
-        declaredValueCents: 1000,
-        collectionContact: { name: 'jan', mobile: '0820000000' },
-        deliveryContact: { name: 'buyer', mobile: '0830000000' },
-      }),
-    ).rejects.toThrow(/TCG shipment create 400/);
   });
 });

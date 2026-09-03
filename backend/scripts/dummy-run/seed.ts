@@ -12,7 +12,6 @@
 import type { INestApplicationContext } from '@nestjs/common';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { PudoService } from '../../src/shipping/pudo.service';
-import { TcgService } from '../../src/shipping/tcg.service';
 import { Reporter } from './harness';
 
 export interface Actor {
@@ -20,26 +19,6 @@ export interface Actor {
   clerkId: string;
   email: string;
   username: string;
-}
-
-/**
- * DD-F5 — the args captured from a stubbed TcgService.createShipment() call.
- * Loosely typed (only `from` is asserted on) so the stub can record the whole
- * booking payload without coupling to the service's exact input shape.
- */
-export interface TcgShipmentCapture {
-  serviceCode?: string;
-  from?: {
-    streetAddress?: string;
-    suburb?: string;
-    city?: string;
-    postalCode?: string;
-    province?: string;
-    company?: string;
-    [k: string]: unknown;
-  };
-  to?: Record<string, unknown>;
-  [k: string]: unknown;
 }
 
 export interface Ctx {
@@ -52,11 +31,6 @@ export interface Ctx {
     firearm: string;
     collection: string;
   };
-  // DD-F5 — optional: the captured JIT supplier collection bookings. installStubs
-  // both returns this array and stashes it on the TcgService instance, so the
-  // module can resolve it via capturedTcgShipments() even if the harness entry
-  // never hangs it here.
-  tcgShipments?: TcgShipmentCapture[];
 }
 
 const CLERK_PREFIX = 'dr_';
@@ -131,9 +105,8 @@ export async function cleanup(prisma: PrismaService) {
  * still runs. Booking (bookForTransaction) is left as its real fire-and-forget
  * no-op (it self-guards on the blank keys and only logs).
  */
-export function installStubs(app: INestApplicationContext): TcgShipmentCapture[] {
+export function installStubs(app: INestApplicationContext): void {
   const pudo = app.get(PudoService, { strict: false }) as any;
-  const tcg = app.get(TcgService, { strict: false }) as any;
   pudo.quoteL2L = async () => ({
     serviceCode: 'L2LXS-ECO',
     serviceName: 'Locker to Locker XS (stub)',
@@ -145,47 +118,8 @@ export function installStubs(app: INestApplicationContext): TcgShipmentCapture[]
     serviceName: 'Door to Door M (stub)',
     priceCents: 12400,
   });
-  tcg.getQuote = async () => ({
-    serviceCode: 'ECO',
-    serviceName: 'Economy (stub)',
-    priceCents: 12400,
-    estimatedDays: 3,
-  });
-  // DD-F5 — capture (never fire) the JIT supplier collection booking. Unlike the
-  // rate lookups above, createShipment is the ONE booking call the deal
-  // stock-ready flow actually makes, and we need to assert it collects FROM the
-  // supplier warehouse. Record each createShipment() arg object, then return a
-  // deterministic booked result so bookForTransaction stamps shipmentBookedAt +
-  // trackingReference exactly as a real booking would. The array is stashed on
-  // the (singleton) TcgService instance so capturedTcgShipments() can resolve it
-  // from the Ctx, and also returned so the harness entry can hang it on the Ctx.
-  const capturedShipments: TcgShipmentCapture[] = [];
-  tcg.createShipment = async (input: TcgShipmentCapture) => {
-    capturedShipments.push(input);
-    return {
-      carrier: 'TCG',
-      shipmentId: 'STUB-1',
-      trackingReference: 'TCGSTUB001',
-    };
-  };
-  (tcg as { __capturedShipments?: TcgShipmentCapture[] }).__capturedShipments =
-    capturedShipments;
-  return capturedShipments;
 }
 
-/**
- * DD-F5 — resolve the captured JIT supplier collection bookings. Prefers the
- * array the harness entry hung on the Ctx; falls back to the copy installStubs
- * stashed on the TcgService singleton, so the module's assertions work whether
- * or not the (optional) Ctx wiring was applied.
- */
-export function capturedTcgShipments(ctx: Ctx): TcgShipmentCapture[] {
-  if (ctx.tcgShipments) return ctx.tcgShipments;
-  const tcg = ctx.app.get(TcgService, { strict: false }) as unknown as {
-    __capturedShipments?: TcgShipmentCapture[];
-  };
-  return tcg.__capturedShipments ?? [];
-}
 
 const BANK = {
   bankName: 'FNB',

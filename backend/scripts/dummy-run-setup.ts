@@ -69,7 +69,7 @@ async function main() {
   }
 
   // 2) Write the neutralised .env.dummyrun. Only the keys below are defined;
-  //    everything else (ANTHROPIC/RESEND/SMSPORTAL/PUDO/TCG/STITCH/CLOUDINARY/
+  //    everything else (ANTHROPIC/RESEND/SMSPORTAL/PUDO/STITCH/CLOUDINARY/
   //    ZOHO/MEILI/VAPID/CLERK) stays undefined -> no-op clients.
   // Every sensitive key is set to EMPTY (not omitted). The harness preloads this
   // file first; the app also loads backend/.env at runtime, and dotenv/config is
@@ -84,8 +84,6 @@ async function main() {
     'SMSPORTAL_API_SECRET',
     'PUDO_API_KEY',
     'PUDO_BASE_URL',
-    'TCG_API_KEY',
-    'TCG_BASE_URL',
     'STITCH_CLIENT_ID',
     'STITCH_CLIENT_SECRET',
     'CLOUDINARY_CLOUD_NAME',

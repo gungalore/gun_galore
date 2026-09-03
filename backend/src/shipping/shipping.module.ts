@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { BobGoService } from './bobgo.service';
 import { BobGoWebhookService } from './bobgo-webhook.service';
 import { PudoService } from './pudo.service';
-import { TcgService } from './tcg.service';
 import { DealersService } from './dealers.service';
 import { ShippingService } from './shipping.service';
 import { TrackingService } from './tracking.service';
@@ -14,7 +13,6 @@ import { ShippingController } from './shipping.controller';
     BobGoService,
     BobGoWebhookService,
     PudoService,
-    TcgService,
     DealersService,
     ShippingService,
     TrackingService,
@@ -26,7 +24,6 @@ import { ShippingController } from './shipping.controller';
     BobGoService,
     BobGoWebhookService,
     PudoService,
-    TcgService,
     DealersService,
     TrackingService,
     PostalCodesService,

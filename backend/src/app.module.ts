@@ -45,7 +45,6 @@ import { ActivityModule } from './activity/activity.module';
 import { PushModule } from './push/push.module';
 import { AskGgModule } from './ask-gg/ask-gg.module';
 import { ReloadingModule } from './reloading/reloading.module';
-import { HuntBallisticsModule } from './hunt-ballistics/hunt-ballistics.module';
 import { ManualPaymentsModule } from './manual-payments/manual-payments.module';
 import { MyShipmentsModule } from './my-shipments/my-shipments.module';
 
@@ -102,7 +101,6 @@ import { MyShipmentsModule } from './my-shipments/my-shipments.module';
     PushModule,
     AskGgModule,
     ReloadingModule,
-    HuntBallisticsModule,
     ManualPaymentsModule,
     MyShipmentsModule,
     SupportModule,

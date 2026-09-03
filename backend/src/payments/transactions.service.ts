@@ -2487,17 +2487,23 @@ export class TransactionsService {
       );
     }
     const provider = tx.carrierProvider ?? tx.shippingMethod;
-    if (provider === 'BOBGO') {
-      // No verified Bob Go label endpoint exists yet. Say that plainly instead
-      // of falling through to a legacy carrier that has never heard of this id.
+    if (provider !== 'PUDO') {
+      // Pudo is the only carrier we can fetch a label from.
+      //
+      //  • BOBGO — no verified label endpoint exists yet.
+      //  • TCG   — a parcel from before that integration was retired
+      //            (operator 2026-09-04); the client that fetched its labels
+      //            is gone. Production held zero transactions at the time, so
+      //            no seller can actually be holding such an order.
+      //
+      // Either way, say so plainly rather than falling through to a carrier
+      // that has never heard of this shipment id. The tracking reference is
+      // still shown on the order, which is what the parcel actually needs.
       throw new BadRequestException(
-        'Printable waybills are not available for this courier yet — write the tracking reference on the parcel instead.',
+        'Printable waybills are not available for this courier — write the tracking reference on the parcel instead.',
       );
     }
-    const pdf = await this.shipping.getWaybillPdf(
-      provider === 'PUDO' ? 'PUDO' : 'TCG',
-      tx.carrierShipmentId,
-    );
+    const pdf = await this.shipping.getWaybillPdf('PUDO', tx.carrierShipmentId);
     return {
       pdf,
       filename: `waybill-${tx.trackingReference ?? transactionId}.pdf`,

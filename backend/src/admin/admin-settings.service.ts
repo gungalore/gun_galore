@@ -114,7 +114,7 @@ const FLAGS: SettingFlag[] = [
   {
     key: 'bobgo_enabled',
     label: 'Bob Go courier rail',
-    hint: 'OFF = Pudo lockers + The Courier Guy door delivery (the rail that has always run). ON = Bob Go behind both, quoting and booking every courier parcel. Needs BOBGO_API_KEY set on the server first — with the flag ON and no key, checkout shows no shipping options at all. Reversible: parcels already with a carrier stay with that carrier, so flipping back only affects new sales.',
+    hint: 'OFF = Pudo lockers ONLY — the door-delivery leg died with The Courier Guy integration (retired 2026-09-04), so flipping OFF now means locker parcels work and door parcels are refused at quote. ON = Bob Go behind both, quoting and booking every courier parcel. Needs BOBGO_API_KEY set on the server first — with the flag ON and no key, checkout shows no shipping options at all. Reversible: parcels already with a carrier stay with that carrier, so flipping back only affects new sales.',
     group: 'Shipping',
     type: 'boolean',
     default: 'false',

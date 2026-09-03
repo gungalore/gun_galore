@@ -109,10 +109,15 @@ describe('shipmentBooked copy', () => {
       expect(sent.emails[0]).toMatch(/locker screen/);
     });
 
-    it('still tells a TCG seller the courier will collect', async () => {
+    it('tells a door seller a courier will collect, WITHOUT naming one', async () => {
+      // This used to assert the copy said "Courier Guy will collect". That
+      // integration was retired (operator 2026-09-04) and Bob Go serves the
+      // DOOR slot now, so naming a company here would print a guess as a fact
+      // — and would name the one courier we are certain is NOT coming.
       const { svc, sent } = makeService();
       await svc.shipmentBooked({ ...BASE, carrier: 'TCG' });
-      expect(sent.sms[0]).toMatch(/Courier Guy will collect/);
+      expect(sent.sms[0]).toMatch(/courier will collect/i);
+      expect(sent.sms[0]).not.toMatch(/Courier Guy/);
     });
 
     it('treats a missing provider as legacy', async () => {

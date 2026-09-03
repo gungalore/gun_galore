@@ -394,7 +394,10 @@ export interface BrandSummary {
 export type PaymentStatus = 'HELD' | 'PENDING_ADMIN_VERIFICATION' | 'RELEASED' | 'DISPUTED' | 'REFUNDED';
 export type ShippingMethod =
   | 'PUDO'              // Pudo locker-to-locker (non-firearm)
-  | 'TCG'               // The Courier Guy door-to-door (non-firearm)
+  | 'TCG'               // DOOR slot — courier to the address (non-firearm).
+                        // Named for the retired Courier Guy integration; Bob Go
+                        // serves this slot now, so it means the SHAPE of the
+                        // delivery, never the company carrying the parcel.
   | 'DEALER_TRANSFER'   // Routed through a SAPS-licensed dealer (firearm)
   | 'PRIVATE_ARRANGE'   // Buyer + seller arrange in-person transfer at a dealer
   | 'COLLECTION'        // In-person collection from the seller — no courier

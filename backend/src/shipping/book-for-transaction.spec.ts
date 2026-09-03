@@ -27,7 +27,6 @@ function makeService(over: { claimCount?: number; tx?: unknown } = {}) {
     prisma as never,
     notifications as never,
     pudo as never,
-    tcg as never,
     bobgo as never,
     // Flag OFF — these specs assert the LEGACY Pudo/TCG rail, which must keep
     // behaving identically while Bob Go rides behind the same enum slots.

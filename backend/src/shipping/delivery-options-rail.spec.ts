@@ -2,7 +2,18 @@ jest.mock('meilisearch', () => ({ Meilisearch: class {} }));
 
 import { ShippingService } from './shipping.service';
 
-// The delivery menu must look the SAME whichever rail is live.
+// The delivery menu used to look the SAME whichever rail was live.
+//
+// 🚨 THAT IS NO LONGER TRUE, AND THE ASYMMETRY IS DELIBERATE. The legacy rail's
+// door leg was The Courier Guy's, and that integration was retired (operator
+// 2026-09-04). Bob Go serves the DOOR slot now — so with bobgo_enabled OFF
+// there is no door option at all, only Pudo lockers. The pickup-point leg is
+// still rail-agnostic; the door leg is Bob Go or nothing.
+//
+// ⚠️ OPERATIONAL CONSEQUENCE, recorded here because this file is where someone
+// will look: flipping bobgo_enabled off is no longer invisible to the buyer.
+// It used to be a carrier swap behind an identical menu; it is now a feature
+// reduction, and door parcels stop being sellable until the flag goes back on.
 //
 // Every price here is the CARRIER RATE with our 10% delivery margin folded in.
 // The margin was always charged; it just used to appear at checkout as a
@@ -50,7 +61,6 @@ function makeService(opts: {
   rates?: unknown[];
   lockers?: unknown[];
   l2l?: unknown;
-  tcgQuote?: unknown;
 }) {
   const prisma = {
     listing: { findUnique: jest.fn().mockResolvedValue(LISTING) },
@@ -64,16 +74,14 @@ function makeService(opts: {
     getNearbyLockers: jest.fn().mockResolvedValue(opts.lockers ?? []),
     quoteL2L: jest.fn().mockResolvedValue(opts.l2l ?? null),
   };
-  const tcg = { getQuote: jest.fn().mockResolvedValue(opts.tcgQuote ?? null) };
   const svc = new ShippingService(
     prisma as never,
     {} as never,
     pudo as never,
-    tcg as never,
     bobgo as never,
     { get: jest.fn().mockResolvedValue(opts.bobgoOn) } as never,
   );
-  return { svc, bobgo, pudo, tcg };
+  return { svc, bobgo, pudo };
 }
 
 const DOOR_RATE = {
@@ -105,25 +113,20 @@ describe('deliveryOptions is rail-agnostic', () => {
     expect(pudo.getNearbyLockers).not.toHaveBeenCalled();
   });
 
-  it('answers from Pudo + TCG when the flag is off, in the SAME shape', async () => {
+  it('answers from Pudo when the flag is off — lockers only, no door', async () => {
     const { svc, bobgo } = makeService({
       bobgoOn: false,
       lockers: LOCKERS,
       l2l: { serviceCode: 'L2LXS - ECO', serviceName: 'Locker to locker', priceCents: 6000 },
-      tcgQuote: { serviceCode: 'ECO', serviceName: 'Economy', priceCents: 12300 },
     });
 
     const opts = await svc.deliveryOptions('L1', DELIVERY);
 
     expect(bobgo.getRates).not.toHaveBeenCalled();
-    expect(opts.door).toEqual({
-      priceCents: withMargin(12300),
-      // Carried for the fee maths only — the transaction fee is charged on the
-      // carrier's rate, never on our own margin. Never displayed.
-      carrierRateCents: 12300,
-      serviceName: 'Economy',
-      serviceCode: 'ECO',
-    });
+    // The pickup-point leg is still shape-identical across both rails, which is
+    // what keeps the checkout from needing to know which carrier answered.
+    // The door leg is not, and cannot be: nothing on this rail can quote one.
+    expect(opts.door).toBeNull();
     expect(opts.pickupPoints).toHaveLength(2);
     expect(opts.pickupPoints[0].name).toBe('Pick n Pay Milpark');
     expect(opts.pickupPoints[0].serviceCode).toBe('CG929');
@@ -152,7 +155,7 @@ describe('deliveryOptions is rail-agnostic', () => {
     expect(opts.pickupPoints).toEqual([]);
   });
 
-  it('still returns door when the legacy locker lookup fails outright', async () => {
+  it('survives a legacy locker lookup failing outright', async () => {
     const prisma = { listing: { findUnique: jest.fn().mockResolvedValue(LISTING) } };
     const svc = new ShippingService(
       prisma as never,
@@ -161,15 +164,18 @@ describe('deliveryOptions is rail-agnostic', () => {
         getNearbyLockers: jest.fn().mockRejectedValue(new Error('meili down')),
         quoteL2L: jest.fn(),
       } as never,
-      { getQuote: jest.fn().mockResolvedValue({ serviceCode: 'ECO', serviceName: 'Economy', priceCents: 12300 }) } as never,
       {} as never,
       { get: jest.fn().mockResolvedValue(false) } as never,
     );
 
     const opts = await svc.deliveryOptions('L1', DELIVERY);
-    // Losing lockers must not lose the door option too.
-    expect(opts.door?.priceCents).toBe(withMargin(12300));
+    // This used to assert that losing lockers must not lose the door option
+    // too. There is no door option left on this rail to lose, so what the case
+    // now protects is that a carrier outage still RESOLVES to an empty menu
+    // rather than throwing — the checkout renders "no delivery options"
+    // instead of a 500.
     expect(opts.pickupPoints).toEqual([]);
+    expect(opts.door).toBeNull();
   });
 });
 
@@ -195,13 +201,6 @@ describe('the legacy menu never offers what the legacy quote will refuse', () =>
           priceCents: 6000,
         }),
       } as never,
-      {
-        getQuote: jest.fn().mockResolvedValue({
-          serviceCode: 'ECO',
-          serviceName: 'Economy',
-          priceCents: 12300,
-        }),
-      } as never,
       {} as never,
       { get: jest.fn().mockResolvedValue(false) } as never,
     );
@@ -213,22 +212,28 @@ describe('the legacy menu never offers what the legacy quote will refuse', () =>
     expect(opts.pickupPoints.length).toBeGreaterThan(0);
   });
 
-  it('hides collection points when the seller only offered door', async () => {
+  it('leaves a door-only seller with NOTHING on the legacy rail', async () => {
+    // ⚠️ Worth stating outright rather than hiding behind a null check: a
+    // seller who offered only door delivery becomes unsellable the moment
+    // bobgo_enabled goes off. Their own restriction still hides the lockers,
+    // and the door leg no longer exists to fill the gap.
     const opts = await legacyFor(['TCG']).deliveryOptions('L1', DELIVERY);
     expect(opts.pickupPoints).toEqual([]);
-    expect(opts.door).not.toBeNull();
+    expect(opts.door).toBeNull();
   });
 
-  it('offers both when the seller offered both', async () => {
+  it('offers only the lockers when the seller offered both', async () => {
     const opts = await legacyFor(['PUDO', 'TCG']).deliveryOptions('L1', DELIVERY);
-    expect(opts.door).not.toBeNull();
     expect(opts.pickupPoints.length).toBeGreaterThan(0);
+    expect(opts.door).toBeNull();
   });
 
   it('treats an empty list as no restriction, as the quote gate does', async () => {
+    // "No restriction" still means the seller placed none — it does not
+    // conjure a door option the rail cannot quote.
     const opts = await legacyFor([]).deliveryOptions('L1', DELIVERY);
-    expect(opts.door).not.toBeNull();
     expect(opts.pickupPoints.length).toBeGreaterThan(0);
+    expect(opts.door).toBeNull();
   });
 });
 
@@ -257,15 +262,16 @@ describe('the 10% delivery margin is quoted, not sprung at checkout', () => {
     expect(opts.pickupPoints[0].priceCents).toBe(withMargin(7900));
   });
 
-  it('applies on the legacy rail identically', async () => {
+  it('applies on the legacy rail identically, on the leg it still has', async () => {
     const { svc } = makeService({
       bobgoOn: false,
       lockers: LOCKERS,
       l2l: { serviceCode: 'L2LXS - ECO', serviceName: 'L2L', priceCents: 6000 },
-      tcgQuote: { serviceCode: 'ECO', serviceName: 'Economy', priceCents: 12300 },
     });
     const opts = await svc.deliveryOptions('L1', DELIVERY);
-    expect(opts.door?.priceCents).toBe(withMargin(12300));
+    // The margin is a pricing rule, not a carrier feature — losing the door
+    // leg must not quietly change what a locker costs.
     expect(opts.pickupPoints[0].priceCents).toBe(withMargin(6000));
+    expect(opts.door).toBeNull();
   });
 });
