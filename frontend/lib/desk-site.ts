@@ -244,25 +244,44 @@ export interface AdminAccount {
 }
 
 /**
- * 🚨 THE ROSTER READS. IT DOES NOT GRANT AND IT DOES NOT REVOKE. An earlier
- * note here said this was "the only way to grant or revoke admin access",
- * which was the opposite of true: the drawer lists accounts and has no
- * control on any row. setAdminRole and deactivateAdmin below are the right
- * calls and nothing calls them; creating an admin has no call here at all.
- * Until buttons exist, adding, demoting or switching off an administrator is
- * still a legacy-page act, and /admin/admins is marked partial on the cutover
- * map for exactly that reason.
+ * The roster, and the three writes that act on it.
  *
- * Note the role that matters: MONITORING_ADMIN is meant to be read-only, and
- * the build plan records that it can currently perform mutating actions. The
- * roster shows the role so the operator can see who holds it; the server-side
- * fix is a separate piece of backend work.
+ * 🚨 THIS USED TO READ AND NOTHING ELSE, WHICH IS WHY IT MATTERED. After the
+ * cutover deleted the legacy panel, setAdminRole and deactivateAdmin existed
+ * here with NO caller and there was no create call at all — so a database
+ * write was the only way to remove a compromised administrator. The drawer on
+ * the Site board now calls all three.
+ *
+ * ⚠️ THE SERVER IS THE AUTHORITY, NOT THIS FILE. Every rule below is enforced
+ * in AdminService and re-read from the database, so a forged JWT cannot talk
+ * its way past them:
+ *   · only a SUPERADMIN may create, change a role, or deactivate;
+ *   · you cannot change your OWN role ("ask another Full admin");
+ *   · you cannot deactivate yourself.
+ * Those last two together are what make a lockout unreachable: the sole Full
+ * admin can neither demote nor switch off the only account that could undo it.
+ * Do NOT re-implement any of this here — a second copy is a second set of
+ * rules, and the drifted one is the one nobody reads. Surface the server's
+ * refusal instead.
  */
 export function fetchAdmins(): Promise<AdminAccount[]> {
   return deskFetch('/admin/admins');
 }
 
-export function setAdminRole(id: string, role: string) {
+/**
+ * ⚠️ THE EMAIL MUST ALREADY BE A MEMBER. createAdmin looks the address up in
+ * the User table and refuses when it finds nothing — an admin account is a
+ * promotion of someone who has signed up, never an invitation to a stranger.
+ * The server says so in words; this passes that through untouched.
+ */
+export function createAdmin(email: string, role: AdminRoleValue) {
+  return deskFetch('/admin/admins', {
+    method: 'POST',
+    body: JSON.stringify({ email, role }),
+  });
+}
+
+export function setAdminRole(id: string, role: AdminRoleValue) {
   return deskFetch(`/admin/admins/${encodeURIComponent(id)}/role`, {
     method: 'PATCH',
     body: JSON.stringify({ role }),
@@ -272,6 +291,43 @@ export function setAdminRole(id: string, role: string) {
 export function deactivateAdmin(id: string) {
   return deskFetch(`/admin/admins/${encodeURIComponent(id)}/deactivate`, { method: 'POST' });
 }
+
+/**
+ * The two roles the server will accept, mirroring ASSIGNABLE_ROLES in
+ * backend/src/admin/dto/create-admin.dto.ts. The legacy `ADMIN` tier still
+ * exists on old rows and is rendered where it appears, but it is deliberately
+ * not offered: assigning it would add a third meaning to a field that already
+ * has one too many.
+ */
+export const ASSIGNABLE_ROLES = ['SUPERADMIN', 'MONITORING_ADMIN'] as const;
+export type AdminRoleValue = (typeof ASSIGNABLE_ROLES)[number];
+
+/**
+ * 🚨 "MONITORING ADMIN" IS NOT READ-ONLY TODAY, AND THIS COPY MUST NOT SAY IT
+ * IS. The schema calls it the read-only tier and adds, in its own words,
+ * "(Currently not enforced on individual endpoints yet — that gate work is
+ * tracked separately.)" That is accurate: SuperadminGuard sits on exactly the
+ * three admin-management routes, and every other admin endpoint is guarded
+ * only by AdminJwtGuard — so a monitoring admin can today release a payout,
+ * refund a buyer, approve a listing and ban a member.
+ *
+ * A picker labelled "read-only" would therefore hand someone full control
+ * while its author believed they had handed out a viewer. That is strictly
+ * worse than having no picker, which is the whole reason this file already
+ * refuses to print a warning that cannot fire. When the role guard lands,
+ * change this line and not before.
+ */
+export const ADMIN_ROLE_LABEL: Record<string, string> = {
+  SUPERADMIN: 'Full admin',
+  MONITORING_ADMIN: 'Monitoring admin',
+  ADMIN: 'Admin (legacy)',
+};
+
+export const ADMIN_ROLE_NOTE: Record<AdminRoleValue, string> = {
+  SUPERADMIN: 'Everything, including adding and removing administrators.',
+  MONITORING_ADMIN:
+    'Intended as view-only — but not enforced yet. Today this can still move money and act on members. Grant it as you would full access.',
+};
 
 /** "2 Sep 09:14" — SAST, for a record you read rather than act on. */
 export function stamp(iso: string): string {

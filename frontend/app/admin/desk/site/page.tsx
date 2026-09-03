@@ -68,6 +68,7 @@ import {
    another agent's file this task may not touch. Whoever next edits it should
    add `export * from './whatsapp-drawer';` and change this line — the kit's
    own header says import from there, never from a file. */
+import { AdminsDrawer } from '@/components/desk/admins-drawer';
 import { WhatsappDrawer } from '../../../../components/desk/whatsapp-drawer';
 import { deskFetch, describeFailure } from '../../../../lib/desk-auth';
 import { parseSendPreset, stripSendPreset, type SendPreset } from '@/lib/desk-send';
@@ -735,40 +736,18 @@ export default function SitePage() {
         </Section>
       </Drawer>
 
-      <Drawer
+      {/* 🚨 THE THREE WRITES THE CUTOVER COST. This roster listed accounts and
+          carried no control on any row, so removing a compromised
+          administrator meant a database write. AdminsDrawer adds create,
+          change-role and switch-off, all against rules the SERVER owns. */}
+      <AdminsDrawer
         open={adminsOpen}
         onClose={() => setAdminsOpen(false)}
-        typeLabel="Admin accounts"
-        icon={IconUser}
-        title="Who can get in"
-        meta="Roles and access. The only route to granting or revoking an administrator."
-        note="MONITORING_ADMIN is meant to be read-only. The server does not yet enforce that on every mutating route — see the build plan's role-guard item."
-      >
-        <Section label="Accounts" last>
-          {!admins ? (
-            <Quiet>Loading…</Quiet>
-          ) : admins.length === 0 ? (
-            <Quiet>No admin accounts returned.</Quiet>
-          ) : (
-            admins.map((a, i) => (
-              <Row key={a.id} last={i === admins.length - 1}>
-                <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-                  <span style={{ fontSize: 12.5, color: 'var(--dk-ink)' }}>{a.email}</span>
-                  {a.lastLoginAt ? (
-                    <span style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>
-                      last in {stamp(a.lastLoginAt)}
-                    </span>
-                  ) : null}
-                </span>
-                <Tag kind={a.role === 'SUPERADMIN' ? 'info' : a.role === 'MONITORING_ADMIN' ? 'warn' : 'neutral'} icon={null}>
-                  {a.role}
-                </Tag>
-                {a.isActive === false ? <Tag kind="neutral">inactive</Tag> : null}
-              </Row>
-            ))
-          )}
-        </Section>
-      </Drawer>
+        admins={admins}
+        onChanged={() => {
+          void fetchAdmins().then(setAdmins).catch(() => setAdmins([]));
+        }}
+      />
 
       {/* /admin/broadcast and /admin/campaigns, merged: a key and the blast it
           attributes are one job. Everything dangerous about it lives inside. */}
