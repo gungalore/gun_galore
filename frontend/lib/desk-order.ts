@@ -202,6 +202,37 @@ export interface OrderTransaction {
   dealerVerificationStatus: string | null;
   dealerVerifiedAt: string | null;
   dealerStockRegisterRef: string | null;
+  /**
+   * The evidence the dealer uploaded, and the model's read of it.
+   *
+   * 🚨 THESE WERE ALWAYS ON THE WIRE AND SIMPLY NOT DECLARED HERE.
+   * getTransactionDossier uses Prisma `include` with no top-level `select`, so
+   * every Transaction scalar has been arriving since the drawer was written —
+   * the fold rendered a status with no way to see what the status was reached
+   * FROM. An operator asked to override a machine verdict on a firearm payout
+   * with none of the machine's inputs in front of them is being asked to
+   * rubber-stamp it.
+   */
+  saps534PhotoUrl: string | null;
+  stockRegisterPhotoUrl: string | null;
+  firearmSerialPhotoUrl: string | null;
+  dealerVerificationScore: number | null;
+  dealerVerifyAttempts: number;
+
+  /**
+   * Zoho Books commission posting.
+   *
+   * ⚠️ ALSO ALREADY ON THE WIRE, ALSO NEVER RENDERED. A failed Books post is
+   * money that left the platform without an invoice behind it, and until now
+   * the Desk showed no sign of one — zohoSyncStatus 'FAILED' looked exactly
+   * like a healthy sale. The backend's own comment describes a "ZohoSyncPanel
+   * Retry button" that has never existed in any version of this frontend.
+   */
+  zohoCommissionInvoiceId: string | null;
+  zohoCommissionPaymentId: string | null;
+  zohoSyncStatus: string | null;
+  zohoSyncError: string | null;
+  zohoSyncLastAttemptAt: string | null;
 
   listing: OrderListing;
   buyer: OrderParty;
@@ -766,4 +797,59 @@ export function releasePayoutHold(txId: string, reason: string): Promise<unknown
     `/admin/transactions/${encodeURIComponent(txId)}/release-payout-hold`,
     { method: 'POST', body: JSON.stringify({ reason }) },
   );
+}
+
+/**
+ * Override the dealer stock-in verdict on a firearm transfer.
+ *
+ * 🚨 THIS IS THE LEVER THAT UNSTICKS A FIREARM PAYOUT. releaseTransaction
+ * refuses any isFirearm + DEALER_TRANSFER sale whose dealerVerificationStatus
+ * is not APPROVED, and the automated check is a model reading three uploaded
+ * photos. When it says no and it is wrong, this is the only way the seller
+ * ever gets paid — and it had a live endpoint that nothing in this frontend
+ * called, so the money simply stopped.
+ *
+ * ⚠️ APPROVING DOES MORE THAN CLEAR A FLAG. The backend's adminOverride emails
+ * and SMSes the seller the same outcome message the automated verdict would
+ * have sent, and on APPROVE it also force-releases the held funds and sends
+ * the buyer the dealer's contact details. It is a payout, not a tick.
+ *
+ * The reason is stored on the row and shown in the audit trail. Minimum five
+ * characters, enforced here and again by the server.
+ */
+export function overrideDealerVerification(
+  txId: string,
+  decision: 'APPROVE' | 'REJECT',
+  reason: string,
+): Promise<unknown> {
+  return deskFetch(
+    `/admin/transactions/${encodeURIComponent(txId)}/dealer-verification/override`,
+    { method: 'POST', body: JSON.stringify({ decision, reason }) },
+  );
+}
+
+/**
+ * Re-post a failed commission invoice to Zoho Books.
+ *
+ * Idempotent on the server — it creates the invoice only if absent and marks
+ * it paid only if unpaid — so pressing it on a healthy sale is a no-op rather
+ * than a double-post. That is what makes it safe to offer without a confirm.
+ */
+export function retryZohoPost(txId: string): Promise<unknown> {
+  return deskFetch(`/admin/transactions/${encodeURIComponent(txId)}/zoho-retry`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Is the Books posting in a state a human should act on?
+ *
+ * ⚠️ NULL IS NOT A FAILURE. A sale that has never needed a commission invoice
+ * — not yet released, refunded before release — has no sync status at all, and
+ * treating that as broken would put a red flag on most of the ledger. Only an
+ * explicit FAILED is a failure; anything else unrecognised is reported as
+ * itself rather than guessed at.
+ */
+export function zohoNeedsAttention(status: string | null): boolean {
+  return (status ?? '').toUpperCase() === 'FAILED';
 }
