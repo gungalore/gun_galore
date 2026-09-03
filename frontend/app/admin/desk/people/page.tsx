@@ -130,6 +130,28 @@ export default function PeoplePage() {
    */
   const [openMemberId, setOpenMemberId] = React.useState<string | null>(null);
 
+  /**
+   * `?member=<userId>` opens straight onto one member's drawer.
+   *
+   * This is where a Members hit in the global search lands. The drawer fetches
+   * its own dossier from the id, so nothing has to be found in the list first
+   * — which matters, because the member being searched for is frequently NOT
+   * in the current segment (a closed account, or a buyer while the board is
+   * filtered to sellers). Waiting to match a row would have made search
+   * silently fail on exactly the members hardest to reach by browsing.
+   *
+   * ⚠️ window.location, NOT useSearchParams — the same call the Ledger and the
+   * Site board make, and for the same reason: reading the hook in a client
+   * board drags a Suspense boundary around the whole page for a value that
+   * matters once, at mount.
+   */
+  React.useEffect(() => {
+    const deep = new URLSearchParams(window.location.search).get('member');
+    if (deep) setOpenMemberId(deep);
+    // Mount only. A later render must not re-read a URL this page is writing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // The Dealers segment reads the SAPS directory in four of its five views;
   // the fifth is the member list, which the ordinary people fetch serves.
   const onDirectory = segment === 'dealers' && dealerView !== 'members';
@@ -1049,10 +1071,31 @@ function DealerFormDialog({
               label="Activate now — offer this dealer to buyers at dealer-transfer checkout"
             />
             {dealer?.transactions?.[0]?.id ? (
-              /* No click-through: the order dossier has no Desk home yet, and a
-                 link into the legacy panel is the one thing this rebuild may
-                 not grow. The id is here so it can still be looked up. */
-              <Kv k="Came from transfer" v={dealer.transactions[0].id} last />
+              /**
+               * The transfer that auto-added this dealer, as a door.
+               *
+               * ⚠️ THE COMMENT HERE USED TO SAY "no click-through: the order
+               * dossier has no Desk home yet". That stopped being true when
+               * the Order drawer landed, and stayed in place afterwards — so
+               * the one piece of context that explains WHY a dealer appeared
+               * in the registry sat on screen as an unusable cuid.
+               *
+               * ⚠️ ?txn= AND NOT ?order=. This is a Transaction id. The Ledger
+               * resolves ?order= through fetchOrderCard, which wants an ORDER
+               * and would 404 on this — see lib/desk-search.ts.
+               */
+              <Kv
+                k="Came from transfer"
+                v={
+                  <a
+                    href={`/admin/desk/ledger?txn=${encodeURIComponent(dealer.transactions[0].id)}`}
+                    style={{ color: 'var(--dk-ink)', textUnderlineOffset: 3 }}
+                  >
+                    Open the sale
+                  </a>
+                }
+                last
+              />
             ) : null}
           </div>
         ) : null}

@@ -313,10 +313,31 @@ export class ComplaintsService {
   }
 
   // ─── Admin ────────────────────────────────────────────────────────
-  async adminList(status?: string) {
-    return this.prisma.complaint.findMany({
-      where: status ? { status } : undefined,
+  /**
+   * The admin complaints register.
+   *
+   * 🚨 THIS WAS UNBOUNDED — no `take` at all — so it returned every complaint
+   * ever logged, with each row's full body and every photo, on one request.
+   * That is survivable at today's volume and is a wall the moment the table
+   * grows; a register that times out is a register nobody can work from.
+   *
+   * ⚠️ THE RESPONSE IS NOW AN ENVELOPE, {rows, total, page, limit}. The Desk
+   * pile does NOT come through here — it reads Prisma directly in
+   * desk.service.ts — so the only HTTP consumer is fetchCases, which reads
+   * both shapes so a version skew cannot blank the register. (An earlier bug
+   * on this rebuild did exactly that: a type claiming an envelope over a bare
+   * array rendered an empty alerts inbox with alerts waiting.)
+   */
+  async adminList(status?: string, page = 1, limit = 50) {
+    const take = Math.min(Math.max(limit, 1), 100);
+    const skip = Math.max(page - 1, 0) * take;
+    const where = status ? { status } : undefined;
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.complaint.findMany({
+      where,
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      skip,
+      take,
       select: {
         id: true,
         referenceNumber: true,
@@ -329,6 +350,61 @@ export class ComplaintsService {
         outcome: true,
         drovePayoutHold: true,
         createdAt: true,
+        // The register sorts and shows "last touched"; without this the
+        // column is blank on every complaint row while support has one.
+        updatedAt: true,
+        resolvedAt: true,
+        user: { select: { username: true, email: true } },
+        photos: { select: { id: true, url: true }, orderBy: { order: 'asc' } },
+        transaction: {
+          select: {
+            id: true,
+            paymentStatus: true,
+            listing: { select: { title: true, referenceNumber: true } },
+          },
+        },
+      },
+      }),
+      this.prisma.complaint.count({ where }),
+    ]);
+    return { rows, total, page: Math.max(page, 1), limit: take };
+  }
+
+  /**
+   * One complaint, by id or by reference number.
+   *
+   * 🚨 THIS EXISTS BECAUSE THE FRONTEND WAS PULLING THE WHOLE REGISTER TO READ
+   * ONE ROW. desk-case.ts's own comment recorded it as a known exposure:
+   * adminList selects user.email on every row, so opening a SINGLE complaint
+   * dragged every complainant's address into the operator's browser, where
+   * nothing rendered it but a screen-share or a screenshot of the network tab
+   * would. That comment named this endpoint as the fix.
+   *
+   * ⚠️ AND PAGING MADE IT A CORRECTNESS BUG, not just a privacy one. Once
+   * adminList takes a limit, "fetch the register and find the row" silently
+   * fails for any complaint past the first page — reported to the operator as
+   * "no case in the register", which reads as deleted rather than unfetched.
+   *
+   * Accepts a reference number too, because that is what a member quotes.
+   */
+  async adminGet(idOrReference: string) {
+    const complaint = await this.prisma.complaint.findFirst({
+      where: {
+        OR: [{ id: idOrReference }, { referenceNumber: idOrReference }],
+      },
+      select: {
+        id: true,
+        referenceNumber: true,
+        role: true,
+        category: true,
+        subject: true,
+        body: true,
+        status: true,
+        assignedAdminId: true,
+        outcome: true,
+        drovePayoutHold: true,
+        createdAt: true,
+        updatedAt: true,
         resolvedAt: true,
         user: { select: { username: true, email: true } },
         photos: { select: { id: true, url: true }, orderBy: { order: 'asc' } },
@@ -341,6 +417,8 @@ export class ComplaintsService {
         },
       },
     });
+    if (!complaint) throw new NotFoundException('Complaint not found');
+    return complaint;
   }
 
   async adminUpdate(

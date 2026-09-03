@@ -56,6 +56,8 @@ import {
 } from '@/lib/desk-orders';
 import { describeFailure } from '@/lib/desk-auth';
 import { OrderBook } from './order-book';
+import { SalesBook } from './sales-book';
+import type { SaleFilter } from '@/lib/desk-transactions';
 
 /**
  * The two lenses this board has.
@@ -65,7 +67,7 @@ import { OrderBook } from './order-book';
  * thing they came to do is pay sellers. 'orders' is the whole order book, the
  * replacement for /admin/orders.
  */
-type LedgerView = 'run' | 'orders';
+type LedgerView = 'run' | 'orders' | 'sales';
 
 /** Nothing to open, and why. Not a failure — a shape. */
 const NO_LINES = {
@@ -92,6 +94,14 @@ export default function LedgerPage() {
    * carry on should find their place — not page one of All.
    */
   const [view, setView] = React.useState<LedgerView>('run');
+  /**
+   * A deep-link narrowing on the sales lens.
+   *
+   * The command centre links with ?filter=accept-stalled and the health page
+   * with ?filter=dispatch-overdue; both param names are the legacy page's, so
+   * an old bookmark or a Slack link still lands on the rows it named.
+   */
+  const [saleFilter, setSaleFilter] = React.useState<SaleFilter | null>(null);
   const [orderSegment, setOrderSegment] = React.useState<OrderSegment>('ALL');
   const [orderPageIndex, setOrderPageIndex] = React.useState(1);
   const [orderPage, setOrderPage] = React.useState<OrderBookPage | null>(null);
@@ -289,7 +299,7 @@ export default function LedgerPage() {
    */
   const switchView = React.useCallback((next: LedgerView) => {
     setView(next);
-    if (next === 'orders') {
+    if (next !== 'run') {
       setDrawer(false);
       setConfirm(false);
     } else {
@@ -321,6 +331,38 @@ export default function LedgerPage() {
   React.useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const deepOrder = q.get('order');
+    /**
+     * `?txn=<transactionId>` opens ONE SALE, and is a different param from
+     * `?order=` on purpose.
+     *
+     * ⚠️ THEY TAKE DIFFERENT IDS AND ARE NOT INTERCHANGEABLE. `?order=`
+     * resolves through fetchOrderCard, which wants an ORDER id and looks up
+     * that cart's first line; a transaction has no cart parent to resolve and
+     * opens the drawer directly on the line — the null-card case openOrder
+     * already exists for, and which the payout run has always used. Feeding a
+     * transaction id to `?order=` would 404 against an order that does not
+     * exist, and the failure would read as "this sale is missing" rather than
+     * "wrong kind of id".
+     *
+     * This is where a raw transaction hit in the global search lands, which is
+     * what makes an arbitrary sale reachable rather than only those in today's
+     * payout run. It does NOT switch to the orders lens: a single sale is not
+     * a cart, and moving the list out from under the operator to a view that
+     * does not contain what they opened would be its own small lie.
+     */
+    const rawFilter = q.get('filter');
+    if (rawFilter === 'accept-stalled' || rawFilter === 'dispatch-overdue') {
+      setSaleFilter(rawFilter);
+      setView('sales');
+    } else if (q.get('view') === 'sales') {
+      setView('sales');
+    }
+
+    const deepTxn = q.get('txn');
+    if (deepTxn) {
+      openOrder(deepTxn);
+      return;
+    }
     if (q.get('view') !== 'orders' && !deepOrder) return;
     setView('orders');
     setOrderSegment(parseOrderSegment(q.get('status')));
@@ -355,13 +397,33 @@ export default function LedgerPage() {
       if (orderPageIndex > 1) q.set('page', String(orderPageIndex));
       if (orderCard) q.set('order', orderCard.id);
     }
+    /**
+     * A sale open with no cart parent is `?txn=`, in every lens.
+     *
+     * ⚠️ WITHOUT THIS THE WRITER DELETES THE PARAM IT WAS JUST SENT. It
+     * rebuilds the query from state, and a run-lens row has nothing to write,
+     * so a `?txn=` arriving from search survived exactly until the next state
+     * change and then vanished from the URL while its drawer stayed open —
+     * the address bar and the screen disagreeing, which is the same failure
+     * the `order` param is written here to avoid. Writing it also makes an
+     * open sale a link an operator can paste, like an order already is.
+     */
+    if (view === 'sales') {
+      q.set('view', 'sales');
+      // ⚠️ THE FILTER SURVIVES THE WRITER TOO. It arrives from a command-centre
+      // or health-page link, and the writer rebuilds the query from state — so
+      // without this the narrowing vanishes from the URL on the next state
+      // change while the banner on screen still says the list is filtered.
+      if (saleFilter) q.set('filter', saleFilter);
+    }
+    if (orderId && !orderCard) q.set('txn', orderId);
     const qs = q.toString();
     window.history.replaceState(
       {},
       '',
       window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash,
     );
-  }, [view, orderSegment, orderPageIndex, orderCard]);
+  }, [view, orderSegment, orderPageIndex, orderCard, orderId, saleFilter]);
 
   const gated = run?.gated ?? true;
 
@@ -429,10 +491,24 @@ export default function LedgerPage() {
           <Chip active={view === 'orders'} onClick={() => switchView('orders')}>
             Orders
           </Chip>
+          {/* ⚠️ SALES, NOT "TRANSACTIONS". The row is one sale — what a payout
+              pays and a refund refunds. An Order is the cart above it, and the
+              two words are already one letter apart in the modules. */}
+          <Chip active={view === 'sales'} onClick={() => switchView('sales')}>
+            Sales
+          </Chip>
         </div>
       </div>
 
-      {view === 'orders' ? (
+      {view === 'sales' ? (
+        <SalesBook
+          filter={saleFilter ?? undefined}
+          onClearFilter={() => setSaleFilter(null)}
+          // Opens the same drawer the run and the order book open, on the
+          // null-parent path a single sale has always used.
+          onOpen={openOrder}
+        />
+      ) : view === 'orders' ? (
         <OrderBook
           segment={orderSegment}
           onSegment={chooseSegment}

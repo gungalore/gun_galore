@@ -27,6 +27,7 @@ import {
   AllClear,
   Band,
   CaseDrawer,
+  Chip,
   DeskCard,
   DeskShell,
   FailedRegion,
@@ -63,6 +64,8 @@ import {
 } from '@/lib/desk-feed';
 import type { CaseKind } from '@/lib/desk-case';
 import { describeFailure } from '@/lib/desk-auth';
+import { CasesRegister } from './cases-register';
+import { ListingsRegister } from './listings-register';
 
 /** How often the pile and ribbon refresh themselves. */
 const REFRESH_MS = 60_000;
@@ -147,6 +150,12 @@ interface Trouble {
   scopeNote?: string;
 }
 
+/**
+ * A cardId no card can have. See the ?listing= effect: a listing opened from
+ * search has no card behind it, and dropCard must therefore match nothing.
+ */
+const DEEP_LINK_CARD_ID = 'deep-link:no-card';
+
 export default function DeskPage() {
   const [feed, setFeed] = React.useState<DeskFeed | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -155,6 +164,17 @@ export default function DeskPage() {
   /** Open drawers, innermost last. Only the last one is rendered. */
   const [stack, setStack] = React.useState<DrawerTarget[]>([]);
   const phone = useIsPhone();
+  /**
+   * The pile is the worklist; the register is the record.
+   *
+   * ⚠️ A LENS, NOT A SIXTH TAB — components/desk/tabs.tsx calls its list "the
+   * five surfaces... nothing configurable about this list", and a register is
+   * somewhere an operator goes with a question rather than somewhere they
+   * live. Same shape the Ledger uses for its order book, same param name.
+   */
+  const [view, setView] = React.useState<'pile' | 'cases' | 'listings'>('pile');
+  /** Bumped after a case decision so the register re-reads. */
+  const [casesNonce, setCasesNonce] = React.useState(0);
 
   const undo = useUndo({
     onError: (err, action) =>
@@ -192,6 +212,44 @@ export default function DeskPage() {
 
   const openDrawer = React.useCallback((target: DrawerTarget) => {
     setStack((s) => [...s, target]);
+  }, []);
+
+  /**
+   * `?listing=<listingId>` opens straight onto one listing's drawer.
+   *
+   * Where a Listings hit in the global search lands. The drawer fetches its
+   * own dossier from the id and decides its own actions from the loaded
+   * status — review on PENDING_REVIEW, take down on ACTIVE or
+   * PAYMENT_PENDING — so an arbitrary listing opens correctly whether or not
+   * it is anywhere in today's pile. That is the whole of the
+   * /admin/listings/[id] reach gap.
+   *
+   * ⚠️ cardId IS THE DEEP-LINK SENTINEL, NOT A CARD. onDecided drops the
+   * decided card from the pile by id; a listing opened from search has no
+   * card, and passing a real-looking id would drop an unrelated one. A value
+   * no card can carry drops nothing, which is correct — the feed reload after
+   * a decision brings the board back in line.
+   *
+   * ⚠️ window.location, NOT useSearchParams — see the Ledger's note.
+   */
+  React.useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get('view');
+    if (v === 'cases' || v === 'listings') setView(v);
+    // Mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  React.useEffect(() => {
+    const deep = new URLSearchParams(window.location.search).get('listing');
+    if (!deep) return;
+    openDrawer({
+      sort: 'listing',
+      listingId: deep,
+      title: 'Opening…',
+      cardId: DEEP_LINK_CARD_ID,
+    });
+    // Mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** Close the top drawer, revealing whatever it was opened over. */
@@ -341,9 +399,19 @@ export default function DeskPage() {
     onLater: () => {
       if (selected?.canLater) sink(selected);
     },
-    // Nothing to open: SearchPalette is built but no search endpoint exists,
-    // so the shell draws no search box and the footer prints no Ctrl K either.
-    // See DeskShellProps.onSearch.
+    /**
+     * ⚠️ DELIBERATELY EMPTY — THE SHELL OWNS CTRL+K NOW, and this page sits
+     * OUTSIDE the shell it renders, so it cannot reach the shell's opener
+     * through context. Both listeners are on `document` and both fire; the
+     * shell's opens the palette, and anything here would be a second opener
+     * racing the first.
+     *
+     * It is not the dead handler it replaced. That one read `() => undefined`
+     * under a comment asserting "no search endpoint exists" — while
+     * GET /admin/search had existed all along and SearchPalette sat finished
+     * and mounted nowhere. Search now works from this page; it simply is not
+     * this page's to wire.
+     */
     onSearch: () => undefined,
     // Escape belongs to the drawer on top; the pile does not compete for it.
     onEscape: () => undefined,
@@ -361,6 +429,42 @@ export default function DeskPage() {
   return (
     <DeskShell active="desk" title="The Desk" sub={sub} rail={rail}>
       {feed ? <Ribbon cells={feed.ribbon} compact={phone} /> : null}
+
+      {/* ⚠️ THE PILE IS THE DEFAULT AND MUST STAY ONE. A passive register is
+          never what an operator should land on when the thing they came to do
+          is work today's cards — the same argument the Ledger makes for
+          defaulting to the payout run rather than the order book. */}
+      <div style={{ display: 'flex', gap: 8, paddingBottom: 2 }}>
+        <Chip active={view === 'pile'} onClick={() => setView('pile')}>
+          Today
+        </Chip>
+        <Chip active={view === 'cases'} onClick={() => setView('cases')}>
+          Cases
+        </Chip>
+        <Chip active={view === 'listings'} onClick={() => setView('listings')}>
+          Listings
+        </Chip>
+      </div>
+
+      {view === 'cases' ? (
+        <CasesRegister
+          refreshKey={casesNonce}
+          onOpen={(kind, id) => openDrawer({ sort: 'case', caseKind: kind, caseId: id })}
+        />
+      ) : view === 'listings' ? (
+        <ListingsRegister
+          onOpen={(listingId) =>
+            openDrawer({
+              sort: 'listing',
+              listingId,
+              title: 'Opening…',
+              // No card behind it — see DEEP_LINK_CARD_ID.
+              cardId: DEEP_LINK_CARD_ID,
+            })
+          }
+        />
+      ) : (
+        <>
 
       {trouble ? (
         <FailedRegion
@@ -405,7 +509,12 @@ export default function DeskPage() {
           {!phone ? <ShortcutFooter /> : null}
         </>
       )}
+        </>
+      )}
 
+      {/* ⚠️ THE DRAWERS SIT OUTSIDE THE LENS. The register opens the Case
+          drawer too, so mounting them inside the pile branch would make a
+          row in the register press-and-do-nothing. */}
       {undo.pending ? (
         <UndoToast message={undo.pending.message} seconds={undo.seconds} onUndo={undo.undo} />
       ) : null}
@@ -435,7 +544,12 @@ export default function DeskPage() {
           // one place the board re-reads itself rather than editing a card in
           // place: guessing would either strand a resolved case on the pile or
           // hide one that is still waiting on the member.
-          onChanged={() => void load()}
+          onChanged={() => {
+            void load();
+            // The register is a separate read; without this a case decided
+            // from it keeps its old state until the operator reloads.
+            setCasesNonce((n) => n + 1);
+          }}
           /*
            * ⚠️ STEPPING INTO THE ORDER COSTS AN UNSENT DRAFT. CaseDrawer
            * clears its reply box on every open by design — "a fresh case is a

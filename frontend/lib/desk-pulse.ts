@@ -15,7 +15,51 @@ import { deskFetch } from './desk-auth';
  * returns a real, plausible-looking chart for the wrong window, with no
  * error anywhere. The suffix is load-bearing.
  */
-export type Period = '7d' | '30d' | '90d';
+export type Period = '7d' | '30d' | '90d' | '365d' | 'all';
+
+/**
+ * ⚠️ THIS TYPE USED TO STOP AT '90d' WHILE THE COMMENT ABOVE IT LISTED ALL
+ * FIVE THE SERVER ACCEPTS. The map recorded "the legacy switcher offers 7d,
+ * 30d, 90d, 365d and all time; Pulse offers the first three" as a gap needing
+ * work — and the work was two entries in a union, because the fetchers already
+ * pass the value straight through. A year-on-year or all-time read had nowhere
+ * to happen for want of a type.
+ */
+export const PERIODS: { value: Period; label: string }[] = [
+  { value: '7d', label: '7 days' },
+  { value: '30d', label: '30 days' },
+  { value: '90d', label: '90 days' },
+  { value: '365d', label: 'A year' },
+  { value: 'all', label: 'All time' },
+];
+
+/**
+ * How the time series is grouped.
+ *
+ * ⚠️ THE SERVER SILENTLY FALLS BACK TO 'day' on anything it does not know,
+ * exactly as it does for period — so a typo here returns a real, plausible
+ * chart at the wrong resolution with no error anywhere.
+ */
+export type Bucket = 'day' | 'week' | 'month';
+
+export const BUCKETS: { value: Bucket; label: string }[] = [
+  { value: 'day', label: 'Daily' },
+  { value: 'week', label: 'Weekly' },
+  { value: 'month', label: 'Monthly' },
+];
+
+/**
+ * The bucket that suits a window, used when the operator has not chosen one.
+ *
+ * 365 daily points on a sparkline is a smear, and 'all' is worse; a year read
+ * weekly and all-time read monthly is the same data at a resolution a person
+ * can see. Choosing explicitly always wins — this only supplies the default.
+ */
+export function defaultBucket(p: Period): Bucket {
+  if (p === 'all') return 'month';
+  if (p === '365d') return 'week';
+  return 'day';
+}
 
 export interface OverviewKpis {
   gmvCents: number;
@@ -62,7 +106,10 @@ export interface FunnelStage {
 const q = (p: Period) => `?period=${p}`;
 
 export const fetchOverview = (p: Period) => deskFetch<OverviewKpis>(`/admin/analytics/overview${q(p)}`);
-export const fetchSeries = (p: Period) => deskFetch<SeriesPoint[]>(`/admin/analytics/time-series${q(p)}`);
+export const fetchSeries = (p: Period, b?: Bucket) =>
+  deskFetch<SeriesPoint[]>(
+    `/admin/analytics/time-series${q(p)}&bucket=${b ?? defaultBucket(p)}`,
+  );
 export const fetchByType = (p: Period) => deskFetch<ByListingType[]>(`/admin/analytics/by-listing-type${q(p)}`);
 export const fetchByCategory = (p: Period) => deskFetch<ByCategory[]>(`/admin/analytics/by-category${q(p)}`);
 export const fetchFunnel = (p: Period) => deskFetch<FunnelStage[]>(`/admin/analytics/insights/funnel${q(p)}`);
@@ -177,3 +224,104 @@ export const DISPATCH_BUCKET_LABEL: Record<string, string> = {
   pending: 'Still pending',
   breached: 'Breached, over 72h',
 };
+
+/* ── The four reads the cutover map listed as lost ────────────────────── */
+
+/**
+ * 🚨 ALL FOUR ENDPOINTS EXISTED THE WHOLE TIME. The map recorded top makes and
+ * models, time to sale, search intel and the dormant segment as "no Desk
+ * equivalent" — and every one of them is a GET that has been serving since the
+ * legacy page was written. Nothing had to be computed; they had to be asked
+ * for. Same shape as the period gap on this module, which was a union that
+ * stopped two entries early.
+ */
+
+export interface TopMakeModel {
+  make: string;
+  model: string;
+  count: number;
+  gmvCents: number;
+  avgPriceCents: number;
+}
+
+export const fetchTopMakeModel = (p: Period) =>
+  deskFetch<TopMakeModel[]>(`/admin/analytics/top-make-model${q(p)}`);
+
+export interface TimeToSaleRow {
+  categoryName: string;
+  /** Already rounded to one decimal by the server. */
+  medianDays: number;
+  sold: number;
+}
+
+export const fetchTimeToSale = (p: Period) =>
+  deskFetch<TimeToSaleRow[]>(`/admin/analytics/time-to-sale${q(p)}`);
+
+export interface SearchTerm {
+  term: string;
+  count: number;
+  maxResults?: number;
+}
+
+export interface SearchIntel {
+  topTerms: SearchTerm[];
+  zeroResult: SearchTerm[];
+}
+
+export const fetchSearchIntel = (p: Period) =>
+  deskFetch<SearchIntel>(`/admin/analytics/insights/search${q(p)}`);
+
+/**
+ * ⚠️ NO PERIOD, AND THE CARD MUST SAY SO. dormantSegment() counts against a
+ * fixed 14-day window in the service, so it does NOT move when the period
+ * chips move. Rendering it inside a period-scoped board without a word would
+ * make it read as "dormant in the last 7 days", which is a different and
+ * much smaller number.
+ */
+export interface DormantSegment {
+  total: number;
+  smsReachable: number;
+}
+
+export const fetchDormant = () =>
+  deskFetch<DormantSegment>('/admin/analytics/insights/dormant');
+
+/**
+ * A day-of-week x hour grid.
+ *
+ * ⚠️ SPARSE. The server returns only cells that HAVE activity, so a missing
+ * (dow, hour) is a real zero — but an absent cell and a measured zero must
+ * still render the same way here, because the query counts rows and cannot
+ * distinguish "nothing sold" from "nothing recorded".
+ */
+export interface HeatCell {
+  dow: number;
+  hour: number;
+  count: number;
+}
+
+export const fetchSalesHeatmap = (p: Period) =>
+  deskFetch<HeatCell[]>(`/admin/analytics/insights/sales-heatmap${q(p)}`);
+
+export const fetchActivityHeatmap = (p: Period) =>
+  deskFetch<HeatCell[]>(`/admin/analytics/insights/activity-heatmap${q(p)}`);
+
+/** Sunday-first, matching Postgres EXTRACT(DOW). */
+export const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+/**
+ * Index a sparse cell list for O(1) lookup while drawing the grid.
+ *
+ * ⚠️ THE KEY IS dow*24+hour, NOT a string concat of the two. "1" + "12" and
+ * "11" + "2" both make "112"; a grid built on that would silently merge two
+ * unrelated cells and paint a Monday lunchtime figure onto a Thursday.
+ */
+export function heatIndex(cells: HeatCell[]): Map<number, number> {
+  const m = new Map<number, number>();
+  for (const c of cells) m.set(c.dow * 24 + c.hour, c.count);
+  return m;
+}
+
+export function heatPeak(cells: HeatCell[]): number {
+  return cells.reduce((max, c) => (c.count > max ? c.count : max), 0);
+}

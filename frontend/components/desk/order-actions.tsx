@@ -27,11 +27,36 @@ import {
   reasonIsUsable,
   refundOrder,
   releaseOrder,
+  overrideDealerVerification,
   releasePayoutHold,
   resolveDisputeRelease,
 } from '@/lib/desk-order';
 
-type Lever = null | 'release' | 'dispute-release' | 'refund' | 'hold' | 'unhold';
+type Lever =
+  | null
+  | 'release'
+  | 'dispute-release'
+  | 'refund'
+  | 'hold'
+  | 'unhold'
+  | 'dealer-approve'
+  | 'dealer-reject';
+
+/**
+ * The automated verdict, in the words the confirm needs.
+ *
+ * ⚠️ NULL AND "PENDING" ARE DIFFERENT, and both are different from a refusal.
+ * An operator about to override a machine needs to know whether the machine
+ * said no, has not finished, or was never asked — "overriding: nothing" is a
+ * sentence that should never appear on a firearms decision.
+ */
+function humanVerdict(status: string | null): string {
+  const s = (status ?? '').toUpperCase();
+  if (!s) return 'nothing yet — no automated check has run';
+  if (s === 'REJECTED') return 'REJECTED';
+  if (s === 'PENDING' || s === 'IN_PROGRESS') return 'it is still checking';
+  return s.replace(/_/g, ' ').toLowerCase();
+}
 
 export interface OrderActionsProps {
   txId: string;
@@ -46,6 +71,17 @@ export interface OrderActionsProps {
   disputed: boolean;
   seller: string;
   buyer: string;
+  /**
+   * The dealer stock-in verdict, when this sale is a firearm going through a
+   * dealer. Null on every other sale, and the override is not offered.
+   *
+   * 🚨 THIS IS WHY A FIREARM PAYOUT CAN BE STUCK WITH NOTHING TO PRESS.
+   * releaseTransaction refuses an isFirearm + DEALER_TRANSFER sale until this
+   * reads APPROVED, and the verdict is a model reading three uploaded photos.
+   * When it says no and it is wrong, the override is the ONLY way the seller
+   * is ever paid — and its endpoint had no caller anywhere in this frontend.
+   */
+  dealerVerificationStatus?: string | null;
   /** Reload the dossier: every lever changes what it says. */
   onDone: () => void;
 }
@@ -79,6 +115,7 @@ export function OrderActions({
   disputed,
   seller,
   buyer,
+  dealerVerificationStatus = null,
   onDone,
 }: OrderActionsProps) {
   const [lever, setLever] = React.useState<Lever>(null);
@@ -110,7 +147,11 @@ export function OrderActions({
   }, [partial]);
 
   const amountUnreadable = partial.trim() !== '' && partialCents === undefined;
-  const needsReason = lever === 'hold' || lever === 'unhold';
+  const needsReason =
+    lever === 'hold' ||
+    lever === 'unhold' ||
+    lever === 'dealer-approve' ||
+    lever === 'dealer-reject';
   const reasonShort = needsReason && note.trim() !== '' && !reasonIsUsable(note);
   const ready = !busy && !amountUnreadable && (!needsReason || reasonIsUsable(note));
 
@@ -123,6 +164,8 @@ export function OrderActions({
       else if (lever === 'dispute-release') await resolveDisputeRelease(txId, note);
       else if (lever === 'refund') await refundOrder(txId, note, partialCents);
       else if (lever === 'hold') await holdPayout(txId, note);
+      else if (lever === 'dealer-approve') await overrideDealerVerification(txId, 'APPROVE', note);
+      else if (lever === 'dealer-reject') await overrideDealerVerification(txId, 'REJECT', note);
       else await releasePayoutHold(txId, note);
       reset();
       onDone();
@@ -177,6 +220,42 @@ export function OrderActions({
         ],
       };
     }
+    if (l === 'dealer-approve' || l === 'dealer-reject') {
+      const approving = l === 'dealer-approve';
+      return {
+        title: approving ? 'Approve the dealer stock-in' : 'Reject the dealer stock-in',
+        // ⚠️ APPROVING SHOWS THE PAYOUT because approving IS one. The server's
+        // adminOverride force-releases the held funds and emails the buyer the
+        // dealer's details; a confirm that said only "approve the paperwork"
+        // would be describing a filing decision while money left the account.
+        amount: approving ? (payout ?? '') : '',
+        confirmLabel: approving ? 'Approve and release' : 'Reject the stock-in',
+        rows: approving
+          ? [
+              { k: 'To', v: seller },
+              { k: 'Amount', v: payout ?? 'the stored payout' },
+              {
+                k: 'Then',
+                v: 'The seller is told the stock-in passed, the held funds are released, and the buyer is sent the dealer’s contact details.',
+              },
+              {
+                k: 'Overriding',
+                v: `The automated check said ${humanVerdict(dealerVerificationStatus)}.`,
+              },
+            ]
+          : [
+              { k: 'Seller', v: seller },
+              {
+                k: 'Then',
+                v: 'The seller is told the stock-in failed and the payout stays blocked. Nothing moves.',
+              },
+              {
+                k: 'Overriding',
+                v: `The automated check said ${humanVerdict(dealerVerificationStatus)}.`,
+              },
+            ],
+      };
+    }
     return {
       title: l === 'hold' ? 'Hold this payout' : 'Lift the payout hold',
       amount: payout ?? '',
@@ -227,6 +306,31 @@ export function OrderActions({
         >
           {payoutHeld ? 'Lift payout hold…' : 'Hold payout…'}
         </Button>
+
+        {/* ⚠️ ONLY ON A FIREARM SALE GOING THROUGH A DEALER, and only while the
+            verdict is not already APPROVED. Offering it everywhere would put a
+            firearms control on every second-hand optic; offering it after
+            approval would invite a second release on a sale already paid. */}
+        {dealerVerificationStatus && dealerVerificationStatus.toUpperCase() !== 'APPROVED' && (
+          <>
+            <Button
+              onClick={() => {
+                reset();
+                setLever('dealer-approve');
+              }}
+            >
+              Approve stock-in…
+            </Button>
+            <Button
+              onClick={() => {
+                reset();
+                setLever('dealer-reject');
+              }}
+            >
+              Reject stock-in…
+            </Button>
+          </>
+        )}
       </div>
 
       {/* ⚠️ COMPOSE FIRST, CONFIRM SECOND. The inputs sit outside the dialog on

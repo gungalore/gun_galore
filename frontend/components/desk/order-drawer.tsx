@@ -9,12 +9,23 @@
  * consult to finish the card in front of you — not somewhere you navigate to
  * and then have to find your way back from.
  *
- * ⚠️ THIS DRAWER READS. It moves no money and changes no state, so it carries
- * no footer and no confirm. That is deliberate: release, refund and the payout
- * hold each need a reason the backend records and a confirm that restates the
- * party, the amount and the channel, and wiring those is a separate pass with
- * its own review. A read surface that is honest about being one beats a button
- * that fires an endpoint nobody checked.
+ * ⚠️ THIS DRAWER MOVES MONEY. Release, resolve-and-release, refund, payout
+ * hold and lift all live at its foot in OrderActions, each behind a confirm
+ * that restates the party, the amount and what happens next.
+ *
+ * 🚨 THIS PARAGRAPH USED TO SAY THE OPPOSITE — "this drawer reads, it moves no
+ * money and changes no state, so it carries no footer and no confirm" — while
+ * OrderActions was mounted eighty lines below it and the `note` prop three
+ * lines down told the operator where the money levers were. It was true when
+ * written and nobody revisited it, which is how the cutover map came to record
+ * that every action here was missing and left this entry looking far larger
+ * than it was. A comment describing a limitation is a claim with an expiry
+ * date on it.
+ *
+ * Two levers were genuinely absent until now, both with a live endpoint and no
+ * caller: the dealer stock-in override — which is the ONLY way a firearm
+ * DEALER_TRANSFER payout is ever released once the automated check says no —
+ * and the Zoho Books retry for a failed commission post.
  *
  * ⚠️ MONEY IS RENDERED, NEVER DERIVED — see lib/desk-order.ts. Every figure
  * below is a stored column on the sale. The buyer's receipt and the seller's
@@ -50,8 +61,10 @@ import {
   paymentTimeline,
   paymentTone,
   readResultCode,
+  retryZohoPost,
   resultTone,
   shippingTimeline,
+  zohoNeedsAttention,
   type OrderDossier,
   type OrderTransaction,
 } from '@/lib/desk-order';
@@ -584,9 +597,21 @@ function Body({
             tone={tx.dealerVerificationStatus === 'APPROVED' ? 'ok' : 'warn'}
           />
           <Kv k="Verified" v={formatWhen(tx.dealerVerifiedAt)} />
-          <Kv k="Stock register ref" v={tx.dealerStockRegisterRef ?? '—'} last />
+          <Kv
+            k="Model score"
+            v={
+              tx.dealerVerificationScore === null
+                ? '— (not measured)'
+                : tx.dealerVerificationScore.toFixed(2)
+            }
+          />
+          <Kv k="Attempts" v={String(tx.dealerVerifyAttempts ?? 0)} />
+          <Kv k="Stock register ref" v={tx.dealerStockRegisterRef ?? '—'} />
+          <DealerEvidence tx={tx} />
         </Fold>
       ) : null}
+
+      <ZohoFold tx={tx} onActed={onActed} />
 
       {orderCard ? <OrderCardSection card={orderCard} /> : null}
 
@@ -751,6 +776,16 @@ function Body({
         disputed={dossier.complaints.length > 0}
         seller={dossier.transaction.seller?.username ?? 'the seller'}
         buyer={dossier.transaction.buyer?.username ?? 'the buyer'}
+        {.../**
+         * ⚠️ ONLY ON A FIREARM GOING THROUGH A DEALER. OrderActions offers the
+         * override when this is a non-APPROVED string, so passing the raw
+         * column on every sale would put a firearms control on a pair of
+         * binoculars whose column happens to be null — and, worse, would keep
+         * offering it on the sales where it means nothing.
+         */
+        (tx.shippingMethod === 'DEALER_TRANSFER' || tx.dealer
+          ? { dealerVerificationStatus: tx.dealerVerificationStatus ?? 'not started' }
+          : {})}
         onDone={onActed}
       />
     </>
@@ -842,6 +877,163 @@ function Muted({ children, style }: { children: React.ReactNode; style?: React.C
  * the summary line carries the fact — the result code, the dealer's status,
  * the last admin action — so opening it is a choice rather than a probe.
  */
+/**
+ * The three photos the dealer uploaded, which the model read to reach its
+ * verdict.
+ *
+ * 🚨 THE OVERRIDE IS UNUSABLE WITHOUT THESE. Approving a firearm stock-in
+ * releases money and tells the buyer where to collect a firearm; an operator
+ * asked to overrule a machine with none of the machine's inputs on screen is
+ * being asked to rubber-stamp it. The URLs have been on the wire since the
+ * drawer was written — getTransactionDossier `include`s every Transaction
+ * scalar — and were simply never declared in the frontend type.
+ *
+ * ⚠️ ONE AT A TIME, ON A PRESS. A SAPS 534 carries a serial number, a licence
+ * number and a person's details. Three of them auto-loading in a fold that
+ * opens on any firearm sale would put that on screen every time anyone looked
+ * at a parcel — the same reason KYC documents are behind a per-document
+ * reveal on the Member drawer, and the intercepted text is folded on Trust
+ * and safety.
+ */
+function DealerEvidence({ tx }: { tx: OrderTransaction }) {
+  const [shown, setShown] = React.useState<string | null>(null);
+
+  const shots: { key: string; label: string; url: string | null }[] = [
+    { key: 'saps534', label: 'SAPS 534', url: tx.saps534PhotoUrl },
+    { key: 'register', label: 'Stock register', url: tx.stockRegisterPhotoUrl },
+    { key: 'serial', label: 'Firearm serial', url: tx.firearmSerialPhotoUrl },
+  ];
+  const present = shots.filter((s) => s.url);
+
+  if (present.length === 0) {
+    return (
+      <Kv
+        k="Evidence"
+        v="— none uploaded (the check had nothing to read)"
+        tone="warn"
+        last
+      />
+    );
+  }
+
+  return (
+    <>
+      <Kv
+        k="Evidence"
+        v={
+          present.length === 3
+            ? 'all three photos'
+            : `${present.length} of 3 photos — ${shots
+                .filter((s) => !s.url)
+                .map((s) => s.label.toLowerCase())
+                .join(' and ')} missing`
+        }
+        tone={present.length === 3 ? undefined : 'warn'}
+        last
+      />
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+        {present.map((s) => (
+          <Button
+            key={s.key}
+            variant="ghost"
+            onClick={() => setShown((cur) => (cur === s.key ? null : s.key))}
+          >
+            {shown === s.key ? `Hide ${s.label}` : s.label}
+          </Button>
+        ))}
+      </div>
+      {shown ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={present.find((s) => s.key === shown)?.url ?? ''}
+          alt={`${present.find((s) => s.key === shown)?.label} as uploaded by the dealer`}
+          style={{
+            marginTop: 10,
+            width: '100%',
+            borderRadius: 6,
+            border: '1px solid var(--dk-line-2)',
+            background: 'var(--dk-inset)',
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The Zoho Books commission posting, and the retry for a failed one.
+ *
+ * 🚨 A FAILED POST USED TO BE INVISIBLE. Every one of these columns has been
+ * on the wire all along and none was rendered, so a sale whose commission
+ * invoice never reached Books looked identical to a healthy one — money out
+ * of the platform with no invoice behind it, and nothing on any screen saying
+ * so. The backend's own comment describes "the admin dossier's ZohoSyncPanel
+ * Retry button", which has never existed in any version of this frontend.
+ *
+ * ⚠️ NO CONFIRM, DELIBERATELY. The endpoint creates the invoice only if it is
+ * absent and marks it paid only if unpaid, so pressing it on a healthy sale
+ * is a no-op rather than a double-post. A confirm on an idempotent repair is
+ * a confirm people learn to click through.
+ */
+function ZohoFold({ tx, onActed }: { tx: OrderTransaction; onActed: () => void }) {
+  const [busy, setBusy] = React.useState(false);
+  const [failed, setFailed] = React.useState<string | null>(null);
+  const needs = zohoNeedsAttention(tx.zohoSyncStatus);
+
+  // Nothing has ever been posted and nothing failed: this sale has not reached
+  // the point of having a commission invoice, and a fold saying so on every
+  // unreleased sale would be noise.
+  if (!tx.zohoSyncStatus && !tx.zohoCommissionInvoiceId) return null;
+
+  async function retry() {
+    setBusy(true);
+    setFailed(null);
+    try {
+      await retryZohoPost(tx.id);
+      onActed();
+    } catch (err) {
+      setFailed(describeFailure(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Fold
+      label="Books"
+      summary={
+        needs
+          ? 'Commission invoice FAILED to post'
+          : humanise(tx.zohoSyncStatus ?? 'posted')
+      }
+    >
+      <Kv
+        k="Sync status"
+        v={humanise(tx.zohoSyncStatus ?? 'not attempted')}
+        tone={needs ? 'bad' : tx.zohoSyncStatus ? 'ok' : undefined}
+      />
+      <Kv k="Invoice" v={tx.zohoCommissionInvoiceId ?? '—'} />
+      <Kv k="Payment" v={tx.zohoCommissionPaymentId ?? '—'} />
+      <Kv k="Last attempt" v={formatWhen(tx.zohoSyncLastAttemptAt)} />
+      {tx.zohoSyncError ? (
+        <Kv k="Error" v={tx.zohoSyncError} tone="bad" mono={false} last />
+      ) : null}
+      {needs ? (
+        <div style={{ marginTop: 12 }}>
+          <Button variant="primary" onClick={() => void retry()} disabled={busy}>
+            {busy ? 'Posting…' : 'Retry the Books post'}
+          </Button>
+          {failed ? (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--dk-bad)', lineHeight: 1.5 }}>
+              {`Still not posted. ${failed}`}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </Fold>
+  );
+}
+
 function Fold({
   label,
   summary,

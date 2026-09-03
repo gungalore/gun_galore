@@ -25,6 +25,7 @@ export * from './chat';
 export * from './shell';
 export * from './interactions';
 export * from './use-undo';
+export * from './use-desk-search';
 export * from './listing-drawer';
 export * from './member-drawer';
 export * from './case-drawer';

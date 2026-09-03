@@ -19,8 +19,26 @@ export class ComplaintsAdminController {
   constructor(private readonly complaints: ComplaintsService) {}
 
   @Get()
-  list(@Query('status') status?: string) {
-    return this.complaints.adminList(status);
+  list(
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.complaints.adminList(
+      status,
+      page ? parseInt(page, 10) || 1 : 1,
+      limit ? parseInt(limit, 10) || 50 : 50,
+    );
+  }
+
+  /**
+   * ⚠️ DECLARED BEFORE THE PATCH, and it is a GET so the two cannot collide —
+   * but keep it above any future parameterised GET for the same reason
+   * 'bulk-resolve' sits above ':id' on the alerts controller.
+   */
+  @Get(':id')
+  get(@Param('id') id: string) {
+    return this.complaints.adminGet(id);
   }
 
   @Patch(':id')
