@@ -344,6 +344,23 @@ export class AdminHealthService {
       { key: 'cron-watchdog', label: 'Cron watchdog', schedule: 'every 10 min', expectedIntervalSec: 600 },
       { key: 'stale-listing-sweep', label: 'Stale listing expiry', schedule: 'daily 04:00', expectedIntervalSec: 86_400 },
       { key: 'photoless-listing-sweep', label: 'Photo-less listing sweep', schedule: 'every 1 hour', expectedIntervalSec: 3600 },
+
+      // 🚨 THESE FOUR RAN FOR WEEKS WITH NOTHING WATCHING THEM. They call
+      // recordCronRun, so they stamp `cron:lastrun:*` on every pass and LOOK
+      // monitored in the database — but they were never added here, and this
+      // list is the only thing that turns a stamp into a stale check. Found by
+      // diffing the keys the code writes against the keys this array names:
+      // 30 written, 27 registered.
+      //
+      // ⚠️ bobgo-pending-bookings is the one that matters. Bob Go is the live
+      // courier rail and EVERY booking there starts unconfirmed — this is the
+      // sweep that resolves them. If it stops, parcels sit in limbo, sellers
+      // are never told to ship, and the board says nothing, because a job
+      // nobody registered cannot go stale.
+      { key: 'bobgo-pending-bookings', label: 'Bob Go pending-booking resolver', schedule: 'every 5 min', expectedIntervalSec: 300 },
+      { key: 'stats-rollup', label: 'Nightly stats rollup', schedule: 'daily 02:00', expectedIntervalSec: 86_400 },
+      { key: 'event-prune', label: 'User-event prune', schedule: 'weekly', expectedIntervalSec: 7 * 24 * 3600 },
+      { key: 'insights-digest', label: 'Weekly insights digest', schedule: 'weekly Mon 06:00', expectedIntervalSec: 7 * 24 * 3600 },
     ];
 
     const rows = await this.prisma.setting.findMany({
