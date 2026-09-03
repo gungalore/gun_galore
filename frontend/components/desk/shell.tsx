@@ -19,6 +19,8 @@ import { BottomTabs, DeskMark, TopTabs } from './tabs';
 import { ServicesDrawer } from './services-drawer';
 import { Dot } from './numbers';
 import { IconExternal, IconSearch } from './icons';
+import { SearchPalette } from './dialogs';
+import { useDeskSearch } from './use-desk-search';
 import { useIsPhone } from './interactions';
 
 export interface DeskShellProps {
@@ -40,14 +42,19 @@ export interface DeskShellProps {
    */
   site?: { tone: 'ok' | 'warn' | 'bad' | 'unknown'; word: string };
   /**
-   * Opens the search palette.
+   * OPTIONAL NOTIFICATION THAT THE PALETTE OPENED. It does not decide whether
+   * search exists — the shell owns that now (see useDeskSearch below), so the
+   * control is always drawn and always works.
    *
-   * ⚠️ THE SEARCH CONTROL IS DRAWN ONLY WHEN THIS IS SUPPLIED. Nothing mounts
-   * SearchPalette yet and there is no search endpoint, so the 290px box in the
-   * top bar was a live-looking field that swallowed every press — on the two
-   * surfaces whose cutover note says in as many words that an arbitrary
-   * listing or transaction cannot be reached. Advertising the reach we do not
-   * have is the one thing that note exists to prevent.
+   * 🚨 THIS COMMENT USED TO SAY "the search control is drawn only when this is
+   * supplied. Nothing mounts SearchPalette yet and there is no search endpoint."
+   * BOTH HALVES WERE WRONG, and together they cost this rebuild four cutover
+   * entries. GET /admin/search existed the whole time, with its own comment
+   * saying it "powers the type-ahead in the admin layout header"; SearchPalette
+   * existed the whole time, finished, with keyboard navigation. And the gate
+   * was `{onSearch ? <button/> : null}` — the Pile passed `() => undefined`,
+   * which is truthy, so the button rendered anyway and swallowed every press.
+   * The warning describing the bug was sitting directly above the bug.
    */
   onSearch?: () => void;
   /** The 340 context rail. Desktop only — the phone folds it into the body. */
@@ -74,6 +81,20 @@ export function DeskShell({
    */
   const [services, setServices] = React.useState(false);
 
+  /**
+   * 🚨 SEARCH IS THE SHELL'S, FOR THE SAME REASON THE CONSOLES ARE. It used
+   * to be a per-page `onSearch` prop, and the only page that passed one
+   * passed `() => undefined` — a function, therefore truthy, therefore the
+   * button rendered and swallowed every press, on the two surfaces whose
+   * cutover note says in as many words that an arbitrary listing or
+   * transaction cannot be reached.
+   *
+   * Owning it here means every surface gets it and none of them can get it
+   * wrong. `onSearch` is kept only so a page can still be NOTIFIED that the
+   * palette opened; it no longer decides whether search exists.
+   */
+  const search = useDeskSearch();
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {phone ? (
@@ -81,17 +102,54 @@ export function DeskShell({
           title={title}
           sub={sub}
           site={site}
-          onSearch={onSearch}
+          onSearch={() => {
+            search.open();
+            onSearch?.();
+          }}
           onServices={() => setServices(true)}
         />
       ) : (
         <DesktopBar
           active={active}
           site={site}
-          onSearch={onSearch}
+          onSearch={() => {
+            search.open();
+            onSearch?.();
+          }}
           onServices={() => setServices(true)}
         />
       )}
+
+      <SearchPalette
+        open={search.isOpen}
+        onClose={search.close}
+        query={search.query}
+        onQueryChange={search.setQuery}
+        results={search.results}
+        loading={search.loading}
+      />
+      {search.failure ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 16,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 90,
+            maxWidth: 420,
+            padding: '9px 13px',
+            borderRadius: 6,
+            background: 'var(--dk-surface)',
+            border: '1px solid var(--dk-bad)',
+            color: 'var(--dk-ink)',
+            fontSize: 12,
+            lineHeight: 1.5,
+          }}
+        >
+          {`Search failed. ${search.failure}`}
+        </div>
+      ) : null}
 
       <div
         style={{

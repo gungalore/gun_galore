@@ -321,6 +321,30 @@ export default function LedgerPage() {
   React.useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const deepOrder = q.get('order');
+    /**
+     * `?txn=<transactionId>` opens ONE SALE, and is a different param from
+     * `?order=` on purpose.
+     *
+     * ⚠️ THEY TAKE DIFFERENT IDS AND ARE NOT INTERCHANGEABLE. `?order=`
+     * resolves through fetchOrderCard, which wants an ORDER id and looks up
+     * that cart's first line; a transaction has no cart parent to resolve and
+     * opens the drawer directly on the line — the null-card case openOrder
+     * already exists for, and which the payout run has always used. Feeding a
+     * transaction id to `?order=` would 404 against an order that does not
+     * exist, and the failure would read as "this sale is missing" rather than
+     * "wrong kind of id".
+     *
+     * This is where a raw transaction hit in the global search lands, which is
+     * what makes an arbitrary sale reachable rather than only those in today's
+     * payout run. It does NOT switch to the orders lens: a single sale is not
+     * a cart, and moving the list out from under the operator to a view that
+     * does not contain what they opened would be its own small lie.
+     */
+    const deepTxn = q.get('txn');
+    if (deepTxn) {
+      openOrder(deepTxn);
+      return;
+    }
     if (q.get('view') !== 'orders' && !deepOrder) return;
     setView('orders');
     setOrderSegment(parseOrderSegment(q.get('status')));
@@ -355,13 +379,25 @@ export default function LedgerPage() {
       if (orderPageIndex > 1) q.set('page', String(orderPageIndex));
       if (orderCard) q.set('order', orderCard.id);
     }
+    /**
+     * A sale open with no cart parent is `?txn=`, in every lens.
+     *
+     * ⚠️ WITHOUT THIS THE WRITER DELETES THE PARAM IT WAS JUST SENT. It
+     * rebuilds the query from state, and a run-lens row has nothing to write,
+     * so a `?txn=` arriving from search survived exactly until the next state
+     * change and then vanished from the URL while its drawer stayed open —
+     * the address bar and the screen disagreeing, which is the same failure
+     * the `order` param is written here to avoid. Writing it also makes an
+     * open sale a link an operator can paste, like an order already is.
+     */
+    if (orderId && !orderCard) q.set('txn', orderId);
     const qs = q.toString();
     window.history.replaceState(
       {},
       '',
       window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash,
     );
-  }, [view, orderSegment, orderPageIndex, orderCard]);
+  }, [view, orderSegment, orderPageIndex, orderCard, orderId]);
 
   const gated = run?.gated ?? true;
 

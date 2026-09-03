@@ -147,6 +147,12 @@ interface Trouble {
   scopeNote?: string;
 }
 
+/**
+ * A cardId no card can have. See the ?listing= effect: a listing opened from
+ * search has no card behind it, and dropCard must therefore match nothing.
+ */
+const DEEP_LINK_CARD_ID = 'deep-link:no-card';
+
 export default function DeskPage() {
   const [feed, setFeed] = React.useState<DeskFeed | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -192,6 +198,37 @@ export default function DeskPage() {
 
   const openDrawer = React.useCallback((target: DrawerTarget) => {
     setStack((s) => [...s, target]);
+  }, []);
+
+  /**
+   * `?listing=<listingId>` opens straight onto one listing's drawer.
+   *
+   * Where a Listings hit in the global search lands. The drawer fetches its
+   * own dossier from the id and decides its own actions from the loaded
+   * status — review on PENDING_REVIEW, take down on ACTIVE or
+   * PAYMENT_PENDING — so an arbitrary listing opens correctly whether or not
+   * it is anywhere in today's pile. That is the whole of the
+   * /admin/listings/[id] reach gap.
+   *
+   * ⚠️ cardId IS THE DEEP-LINK SENTINEL, NOT A CARD. onDecided drops the
+   * decided card from the pile by id; a listing opened from search has no
+   * card, and passing a real-looking id would drop an unrelated one. A value
+   * no card can carry drops nothing, which is correct — the feed reload after
+   * a decision brings the board back in line.
+   *
+   * ⚠️ window.location, NOT useSearchParams — see the Ledger's note.
+   */
+  React.useEffect(() => {
+    const deep = new URLSearchParams(window.location.search).get('listing');
+    if (!deep) return;
+    openDrawer({
+      sort: 'listing',
+      listingId: deep,
+      title: 'Opening…',
+      cardId: DEEP_LINK_CARD_ID,
+    });
+    // Mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** Close the top drawer, revealing whatever it was opened over. */
@@ -341,9 +378,19 @@ export default function DeskPage() {
     onLater: () => {
       if (selected?.canLater) sink(selected);
     },
-    // Nothing to open: SearchPalette is built but no search endpoint exists,
-    // so the shell draws no search box and the footer prints no Ctrl K either.
-    // See DeskShellProps.onSearch.
+    /**
+     * ⚠️ DELIBERATELY EMPTY — THE SHELL OWNS CTRL+K NOW, and this page sits
+     * OUTSIDE the shell it renders, so it cannot reach the shell's opener
+     * through context. Both listeners are on `document` and both fire; the
+     * shell's opens the palette, and anything here would be a second opener
+     * racing the first.
+     *
+     * It is not the dead handler it replaced. That one read `() => undefined`
+     * under a comment asserting "no search endpoint exists" — while
+     * GET /admin/search had existed all along and SearchPalette sat finished
+     * and mounted nowhere. Search now works from this page; it simply is not
+     * this page's to wire.
+     */
     onSearch: () => undefined,
     // Escape belongs to the drawer on top; the pile does not compete for it.
     onEscape: () => undefined,

@@ -73,13 +73,13 @@ export const CUTOVER_MAP: CutoverRoute[] = [
     legacy: '/admin/listings',
     desk: '/admin/desk',
     coverage: 'partial',
-    note: 'The PENDING_REVIEW queue is a Desk card type. Browsing and filtering all listings is not.',
+    note: "REACH IS CLOSED, BROWSE IS NOT, and they are different things. Any listing now opens by id or reference from global search (Ctrl K, or the top-bar box on any surface), so the operator who knows WHICH listing they want is served. What is still missing is the operator who does not: there is no surface that lists all listings with the legacy status filters, so a question shaped like 'show me everything pending in Optics' has nowhere to go. The PENDING_REVIEW queue remains a Desk card type, which covers the daily loop but not the browse. Needs a small backend change too — AdminService.getListings takes no search param, though globalSearch already contains the exact OR-clause to reuse.",
   },
   {
     legacy: '/admin/listings/[id]',
     desk: '/admin/desk',
-    coverage: 'partial',
-    note: 'The Listing drawer is wired to the listing_review card on the pile (click Reject, or Enter on the focused card): photos, the seller words, the regulated band, the model verdict, and approve / reject with their confirms. Two things are lost. REACH — only a listing sitting in the PENDING_REVIEW queue can be opened, so there is no way to pull up an arbitrary listing by id the way the legacy page allowed. And HISTORY — the drawer deliberately omits the legacy dossier bids, offers, watchers and Q&A tables, none of which are an input to the review decision. ⚠️ TAKE DOWN IS IN THE DRAWER AND IS UNREACHABLE, so do not read it as delivered: canTakeDown wants ACTIVE or PAYMENT_PENDING and the only door into this drawer is a PENDING_REVIEW card, so no listing that could be taken down can currently be opened. Removing a live listing is still a legacy-only act. It becomes reachable the moment reach is fixed — by id, from a Trust and Safety row, or from a take-down card — and not before.',
+    coverage: 'replaced',
+    note: "The Listing drawer carries photos, the seller words, the regulated band, the model verdict, approve / reject with their confirms, and take down with a reason. REACH IS CLOSED. It was the standing gap here — only a listing in the PENDING_REVIEW queue could be opened — and it is now reachable three ways: the review card, the stale-listing card, a reported row on Trust and safety, and global search, which opens ANY listing by id or reference from any surface. 🚨 THE DRAWER NEVER NEEDED A CHANGE FOR ANY OF IT: fetchListingDossier has no status gate and canTakeDown has always covered ACTIVE and PAYMENT_PENDING. Every one of those was missing wiring, not a missing capability, which is why this entry sat partial for so long while the thing it described was already built. HISTORY stays out on purpose: the legacy dossier bids, offers, watchers and Q and A tables are not inputs to a review or a take-down decision.",
   },
   {
     legacy: '/admin/users',
@@ -97,13 +97,13 @@ export const CUTOVER_MAP: CutoverRoute[] = [
     legacy: '/admin/transactions',
     desk: '/admin/desk/ledger',
     coverage: 'partial',
-    note: 'The Ledger shows the payout run. The order book with the needs-attention filter is not built.',
+    note: "⚠️ THIS NOTE WAS STALE AND SAID THE OPPOSITE OF THE CODE. It read 'The Ledger shows the payout run. The order book with the needs-attention filter is not built' — the order book HAS been built: the Ledger carries a second lens (view=orders) with status segments, paging, and deep links that keep the legacy param names so an old bookmark survives. What is genuinely missing is a TRANSACTION book as distinct from the ORDER book: AdminService.getTransactions defaults status to HELD, so there is no way to list sales by any other status. Individual sales are reachable — global search opens any of them by id, reference, waybill or gateway id — so this is the browse half only, same as /admin/listings.",
   },
   {
     legacy: '/admin/transactions/[id]',
     desk: '/admin/desk/ledger',
     coverage: 'partial',
-    note: 'The Order drawer opens off a Ledger row: item, money as the sale stored it, both parties by handle, payment, shipping, the message thread and the rating. Two things are lost, and the second is the one that matters. REACH — only sales in the payout run (payable, held back or blocked) are listed, so an arbitrary transaction still cannot be opened. And EVERY ACTION — the legacy page carries dealer stock-in verification, payout hold and release, refunds and the Zoho posting, and the drawer reads only. Firearm DEALER_TRANSFER payouts gate on that dealer verification, so this route must not be redirected until those levers exist somewhere on the Desk.',
+    note: "🚨 THE PREVIOUS NOTE SAID 'EVERY ACTION [is lost] ... the drawer reads only'. THAT WAS FALSE, and it is the reason this entry looked far larger than it is. Release, resolve-dispute-and-release, refund (full and partial), hold payout and lift payout hold are ALL wired, through components/desk/order-actions.tsx inside the Order drawer, and hold/lift are wired a second time as row controls on the payout run. REACH is also closed: global search opens any sale by id, reference, waybill or gateway id, and the Ledger takes ?txn= for one. TWO LEVERS ARE GENUINELY MISSING, both money-adjacent and both with a live endpoint nothing calls. (1) POST /admin/transactions/:id/dealer-verification/override — the exact lever this entry was held open for, because release() refuses a firearm DEALER_TRANSFER payout until dealerVerificationStatus is APPROVED. The drawer shows the status read-only and offers no decision, and the three evidence photo URLs are already on the wire and simply undeclared in the frontend type. (2) POST /admin/transactions/:id/zoho-retry — the backend comment still describes a 'ZohoSyncPanel Retry button' that has never existed, and no sync status is rendered at all, so a failed Books post is invisible.",
   },
   {
     legacy: '/admin/orders',
