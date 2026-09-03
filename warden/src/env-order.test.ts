@@ -3,7 +3,7 @@
 // importing module's first line — so loadDotEnvFile() as the first statement
 // of main() had already missed them. Four documented overrides were silently
 // dead (ANTHROPIC_MODEL_WARDEN, ANTHROPIC_MODEL_JUDGE, WARDEN_MODEL_TIMEOUT_MS
-// and, worst, WARDEN_APP_ROOT — while ecosystem.config.js ships no env block
+// and, worst, WARDEN_APP_ROOT — while ecosystem.config.cjs ships no env block
 // and names this .env as the delivery path).
 //
 // The fix is src/boot.ts: its only static import is the loader, and the app
@@ -91,7 +91,7 @@ test('boot.ts reaches the composition root dynamically', () => {
 test('pm2 starts boot.js, not index.js', () => {
   // Pointing this back at index.js reinstates the dead overrides with no
   // error anywhere — the ordering is only real if the process entry uses it.
-  const eco = readFileSync(path.join(HERE, '..', 'ecosystem.config.js'), 'utf8');
+  const eco = readFileSync(path.join(HERE, '..', 'ecosystem.config.cjs'), 'utf8');
   assert.match(eco, /script:\s*'dist\/boot\.js'/);
 });
 

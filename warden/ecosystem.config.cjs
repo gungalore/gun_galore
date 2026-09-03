@@ -1,6 +1,12 @@
 // ===========================================================================
 // Warden — pm2 process definition
 //
+// 🚨 .cjs, NOT .js, AND THAT IS LOAD-BEARING. package.json declares
+// "type": "module", so a .js file here is evaluated as ESM and `module` is
+// not defined — pm2 dies on load with "module is not defined in ES module
+// scope" and the process never starts. It shipped as .js and the first-deploy
+// procedure below had therefore never once been run end to end.
+//
 // Warden is a standalone Node service, not part of the Nest backend. It runs
 // under pm2 on the SAME box as the API and the frontend, alongside them —
 // see infra/pm2/ecosystem.config.js for those two. This file defines only
@@ -14,7 +20,7 @@
 //   npm ci
 //   npm run build              # compiles src/ -> dist/
 //   npm run sweep               # SMOKE TEST — see README.md before trusting this
-//   pm2 start ecosystem.config.js
+//   pm2 start ecosystem.config.cjs
 //   pm2 save
 //
 // ROUTINE DEPLOYS reload the running process by name, the same way
