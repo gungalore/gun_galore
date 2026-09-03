@@ -15,7 +15,51 @@ import { deskFetch } from './desk-auth';
  * returns a real, plausible-looking chart for the wrong window, with no
  * error anywhere. The suffix is load-bearing.
  */
-export type Period = '7d' | '30d' | '90d';
+export type Period = '7d' | '30d' | '90d' | '365d' | 'all';
+
+/**
+ * ⚠️ THIS TYPE USED TO STOP AT '90d' WHILE THE COMMENT ABOVE IT LISTED ALL
+ * FIVE THE SERVER ACCEPTS. The map recorded "the legacy switcher offers 7d,
+ * 30d, 90d, 365d and all time; Pulse offers the first three" as a gap needing
+ * work — and the work was two entries in a union, because the fetchers already
+ * pass the value straight through. A year-on-year or all-time read had nowhere
+ * to happen for want of a type.
+ */
+export const PERIODS: { value: Period; label: string }[] = [
+  { value: '7d', label: '7 days' },
+  { value: '30d', label: '30 days' },
+  { value: '90d', label: '90 days' },
+  { value: '365d', label: 'A year' },
+  { value: 'all', label: 'All time' },
+];
+
+/**
+ * How the time series is grouped.
+ *
+ * ⚠️ THE SERVER SILENTLY FALLS BACK TO 'day' on anything it does not know,
+ * exactly as it does for period — so a typo here returns a real, plausible
+ * chart at the wrong resolution with no error anywhere.
+ */
+export type Bucket = 'day' | 'week' | 'month';
+
+export const BUCKETS: { value: Bucket; label: string }[] = [
+  { value: 'day', label: 'Daily' },
+  { value: 'week', label: 'Weekly' },
+  { value: 'month', label: 'Monthly' },
+];
+
+/**
+ * The bucket that suits a window, used when the operator has not chosen one.
+ *
+ * 365 daily points on a sparkline is a smear, and 'all' is worse; a year read
+ * weekly and all-time read monthly is the same data at a resolution a person
+ * can see. Choosing explicitly always wins — this only supplies the default.
+ */
+export function defaultBucket(p: Period): Bucket {
+  if (p === 'all') return 'month';
+  if (p === '365d') return 'week';
+  return 'day';
+}
 
 export interface OverviewKpis {
   gmvCents: number;
@@ -62,7 +106,10 @@ export interface FunnelStage {
 const q = (p: Period) => `?period=${p}`;
 
 export const fetchOverview = (p: Period) => deskFetch<OverviewKpis>(`/admin/analytics/overview${q(p)}`);
-export const fetchSeries = (p: Period) => deskFetch<SeriesPoint[]>(`/admin/analytics/time-series${q(p)}`);
+export const fetchSeries = (p: Period, b?: Bucket) =>
+  deskFetch<SeriesPoint[]>(
+    `/admin/analytics/time-series${q(p)}&bucket=${b ?? defaultBucket(p)}`,
+  );
 export const fetchByType = (p: Period) => deskFetch<ByListingType[]>(`/admin/analytics/by-listing-type${q(p)}`);
 export const fetchByCategory = (p: Period) => deskFetch<ByCategory[]>(`/admin/analytics/by-category${q(p)}`);
 export const fetchFunnel = (p: Period) => deskFetch<FunnelStage[]>(`/admin/analytics/insights/funnel${q(p)}`);

@@ -1071,10 +1071,31 @@ function DealerFormDialog({
               label="Activate now — offer this dealer to buyers at dealer-transfer checkout"
             />
             {dealer?.transactions?.[0]?.id ? (
-              /* No click-through: the order dossier has no Desk home yet, and a
-                 link into the legacy panel is the one thing this rebuild may
-                 not grow. The id is here so it can still be looked up. */
-              <Kv k="Came from transfer" v={dealer.transactions[0].id} last />
+              /**
+               * The transfer that auto-added this dealer, as a door.
+               *
+               * ⚠️ THE COMMENT HERE USED TO SAY "no click-through: the order
+               * dossier has no Desk home yet". That stopped being true when
+               * the Order drawer landed, and stayed in place afterwards — so
+               * the one piece of context that explains WHY a dealer appeared
+               * in the registry sat on screen as an unusable cuid.
+               *
+               * ⚠️ ?txn= AND NOT ?order=. This is a Transaction id. The Ledger
+               * resolves ?order= through fetchOrderCard, which wants an ORDER
+               * and would 404 on this — see lib/desk-search.ts.
+               */
+              <Kv
+                k="Came from transfer"
+                v={
+                  <a
+                    href={`/admin/desk/ledger?txn=${encodeURIComponent(dealer.transactions[0].id)}`}
+                    style={{ color: 'var(--dk-ink)', textUnderlineOffset: 3 }}
+                  >
+                    Open the sale
+                  </a>
+                }
+                last
+              />
             ) : null}
           </div>
         ) : null}

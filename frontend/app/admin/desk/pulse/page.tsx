@@ -49,17 +49,16 @@ import {
   type FunnelStage,
   type KycStage,
   type OverviewKpis,
+  BUCKETS,
+  PERIODS,
+  defaultBucket,
+  type Bucket,
   type Period,
   type RefundRiskRow,
   type SeriesPoint,
 } from '../../../../lib/desk-pulse';
 import { describeFailure } from '../../../../lib/desk-auth';
 
-const PERIODS: { key: Period; label: string }[] = [
-  { key: '7d', label: '7 days' },
-  { key: '30d', label: '30 days' },
-  { key: '90d', label: '90 days' },
-];
 
 interface PulseData {
   overview: OverviewKpis;
@@ -86,6 +85,13 @@ interface StandingData {
 
 export default function PulsePage() {
   const [period, setPeriod] = React.useState<Period>('30d');
+  /**
+   * Null means "whatever suits the window" — see defaultBucket. Choosing
+   * explicitly pins it, so switching to All time does not silently undo a
+   * deliberate Daily.
+   */
+  const [bucket, setBucket] = React.useState<Bucket | null>(null);
+  const activeBucket = bucket ?? defaultBucket(period);
   const [data, setData] = React.useState<PulseData | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [standing, setStanding] = React.useState<StandingData | null>(null);
@@ -110,7 +116,7 @@ export default function PulsePage() {
       // serialising them would make the whole page wait for the slowest.
       const [overview, series, types, categories, funnel] = await Promise.all([
         fetchOverview(period),
-        fetchSeries(period),
+        fetchSeries(period, activeBucket),
         fetchByType(period),
         fetchByCategory(period),
         fetchFunnel(period),
@@ -122,7 +128,10 @@ export default function PulsePage() {
       if (mine !== generation.current) return;
       setError(describeFailure(err));
     }
-  }, [period]);
+    // ⚠️ activeBucket IS A DEPENDENCY. Without it the bucket chips light up
+    // and fetch nothing — the chart keeps the old resolution under a control
+    // that says otherwise, which is worse than having no control at all.
+  }, [period, activeBucket]);
 
   const loadStanding = React.useCallback(async () => {
     try {
@@ -152,15 +161,29 @@ export default function PulsePage() {
   const split = data ? splitTypes(data.types) : null;
 
   return (
-    <DeskShell active="pulse" title="Pulse" sub={`Last ${period.replace("d", "")} days`}>
+    <DeskShell active="pulse" title="Pulse" sub={PERIODS.find((p) => p.value === period)?.label ?? period}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.015em' }}>Pulse</span>
         <span style={{ fontSize: 12.5, color: 'var(--dk-ink-3)' }}>SAST · paid orders</span>
         <span style={{ flex: 1 }} />
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {PERIODS.map((p) => (
-            <Chip key={p.key} active={period === p.key} onClick={() => setPeriod(p.key)}>
+            <Chip key={p.value} active={period === p.value} onClick={() => setPeriod(p.value)}>
               {p.label}
+            </Chip>
+          ))}
+        </div>
+        {/* ⚠️ THE BUCKET IS A SEPARATE ROW, NOT MORE PERIOD CHIPS. They read
+            as one control otherwise, and picking "Weekly" would look like
+            picking a window. */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {BUCKETS.map((b) => (
+            <Chip
+              key={b.value}
+              active={activeBucket === b.value}
+              onClick={() => setBucket((cur) => (cur === b.value ? null : b.value))}
+            >
+              {b.label}
             </Chip>
           ))}
         </div>
