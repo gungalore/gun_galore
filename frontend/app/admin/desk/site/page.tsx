@@ -81,7 +81,11 @@ import {
   describeThresholdVerdict,
   declineWardenProposal,
   fetchAdmins,
+  fetchAlertTypeFacets,
   fetchAlerts,
+  bulkResolveAlerts,
+  AUDIT_PAGE_SIZE,
+  AUDIT_RESOURCE_TYPES,
   fetchAudit,
   fetchCreditThresholds,
   fetchCredits,
@@ -107,6 +111,7 @@ import {
   wardenAbsent,
   type AdminAccount,
   type AdminAlertRow,
+  type AlertFacet,
   type AuditRow,
   type CreditSnapshot,
   saveCreditThreshold,
@@ -157,11 +162,9 @@ export default function SitePage() {
   const [board, setBoard] = React.useState<SiteBoard | null>(null);
   const [settings, setSettings] = React.useState<SettingFlag[] | null>(null);
   const [wardenRows, setWardenRows] = React.useState<WardenSettingRow[] | null>(null);
-  const [alerts, setAlerts] = React.useState<AdminAlertRow[]>([]);
   const [credits, setCredits] = React.useState<CreditSnapshot[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [loadedAt, setLoadedAt] = React.useState<string | null>(null);
-  const [audit, setAudit] = React.useState<AuditRow[] | null>(null);
   const [admins, setAdmins] = React.useState<AdminAccount[] | null>(null);
   const [auditOpen, setAuditOpen] = React.useState(false);
   const [adminsOpen, setAdminsOpen] = React.useState(false);
@@ -170,7 +173,6 @@ export default function SitePage() {
   const [whatsappThread, setWhatsappThread] = React.useState<string | null>(null);
   // Same reasoning as the settings dialog below: one row refusing must not
   // take the health probes and the trust-and-safety feeds off the screen.
-  const [alertError, setAlertError] = React.useState<string | null>(null);
   const [thresholds, setThresholds] = React.useState<CreditThreshold[]>([]);
   const phone = useIsPhone();
   const [lens, setLens] = React.useState<'chat' | 'board'>('chat');
@@ -228,7 +230,6 @@ export default function SitePage() {
       // Shaped for the panel — masked phone, alert types as items. A failure
       // costs the shaping and nothing else; see fallbackSettingRows.
       void fetchWardenSettings().then(setWardenRows).catch(() => setWardenRows([]));
-      void fetchAlerts().then(setAlerts).catch(() => setAlerts([]));
       void fetchCredits().then(setCredits).catch(() => setCredits([]));
       // The floors the balances are judged against. A failure here costs the
       // "low" tag and nothing else, so the balances still render.
@@ -335,14 +336,6 @@ export default function SitePage() {
 
   const cutoverRegion = (
     <CutoverRegion
-      alerts={alerts}
-      alertError={alertError}
-      onResolve={(id) => {
-        setAlertError(null);
-        void resolveAlert(id)
-          .then(() => setAlerts((xs) => xs.filter((x) => x.id !== id)))
-          .catch((e) => setAlertError(describeFailure(e)));
-      }}
       credits={credits}
       thresholds={thresholds}
       onThresholdsChanged={() => {
@@ -354,7 +347,6 @@ export default function SitePage() {
       onSend={() => setSendOpen(true)}
       onAudit={() => {
         setAuditOpen(true);
-        if (!audit) void fetchAudit().then((a) => setAudit(a.rows)).catch(() => setAudit([]));
       }}
       onAdmins={() => {
         setAdminsOpen(true);
@@ -701,46 +693,7 @@ export default function SitePage() {
         meta="Every admin action, newest first. Read-only by design."
         note="This is the record a money action is answered for with. It is never edited or pruned from here."
       >
-        <Section label="Recent" last>
-          {!audit ? (
-            <Quiet>Loading…</Quiet>
-          ) : audit.length === 0 ? (
-            <Quiet>No audit rows.</Quiet>
-          ) : (
-            audit.map((r, i) => (
-              <div
-                key={r.id}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 3,
-                  padding: '10px 0',
-                  borderBottom: i === audit.length - 1 ? undefined : '1px solid var(--dk-line)',
-                }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="dk-mono" style={{ fontSize: 11.5, color: 'var(--dk-ink)' }}>
-                    {r.action}
-                  </span>
-                  <span style={{ flex: 1 }} />
-                  <span className="dk-mono" style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>
-                    {stamp(r.createdAt)}
-                  </span>
-                </span>
-                <span style={{ fontSize: 12, color: 'var(--dk-ink-2)' }}>
-                  {r.adminUser?.email ?? 'unknown admin'}
-                  {r.resourceType ? ` · ${r.resourceType}` : ''}
-                  {r.resourceId ? ` ${r.resourceId.slice(-8)}` : ''}
-                </span>
-                {r.reason ? (
-                  <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)', lineHeight: 1.45 }}>
-                    “{r.reason}”
-                  </span>
-                ) : null}
-              </div>
-            ))
-          )}
-        </Section>
+        <AuditTrail open={auditOpen} />
       </Drawer>
 
       {/* 🚨 THE THREE WRITES THE CUTOVER COST. This roster listed accounts and
@@ -1659,9 +1612,6 @@ function fallbackSettingRows(settings: SettingFlag[]): WardenSettingRow[] {
  * ══════════════════════════════════════════════════════════════════════ */
 
 function CutoverRegion({
-  alerts,
-  alertError,
-  onResolve,
   credits,
   thresholds,
   onSend,
@@ -1669,9 +1619,6 @@ function CutoverRegion({
   onAdmins,
   onThresholdsChanged,
 }: {
-  alerts: AdminAlertRow[];
-  alertError: string | null;
-  onResolve: (id: string) => void;
   credits: CreditSnapshot[];
   thresholds: CreditThreshold[];
   onSend: () => void;
@@ -1703,46 +1650,7 @@ function CutoverRegion({
         </Button>
       </div>
 
-      {/* ⚠️ THE HINT SAYS WHAT IT READ, NOT WHAT EXISTS. The fetch asks for
-          fifty and the card shows eight, so "50 unresolved" would be a floor
-          wearing the clothes of a total. */}
-      <Card
-        label="Alerts"
-        hint={
-          alerts.length === 0
-            ? 'none unresolved'
-            : alerts.length >= 50
-              ? 'newest 8 of at least 50 unresolved'
-              : `newest ${Math.min(alerts.length, 8)} of ${alerts.length} unresolved`
-        }
-        footer="Warden replaces this inbox once it is deployed. Until then it is the only place these surface — but it neither pages nor filters, so a long tail is only visible on the legacy alerts page."
-      >
-        {alertError ? (
-          <span style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--dk-bad)' }}>
-            {`That alert is still unresolved. ${alertError}`}
-          </span>
-        ) : null}
-        {alerts.length === 0 ? (
-          <Quiet>Nothing unresolved.</Quiet>
-        ) : (
-          alerts.slice(0, 8).map((a, i) => (
-            <Row key={a.id} last={i === Math.min(alerts.length, 8) - 1}>
-              <Tag kind={a.urgent ? 'bad' : 'neutral'} icon={a.urgent ? IconAlert : null}>
-                {a.type}
-              </Tag>
-              <span style={{ fontSize: 12.5, color: 'var(--dk-ink-2)', minWidth: 0, flex: 1 }}>
-                {a.context ?? '—'}
-              </span>
-              <span className="dk-mono" style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>
-                {stamp(a.createdAt)}
-              </span>
-              <Button variant="ghost" onClick={() => onResolve(a.id)}>
-                Resolve
-              </Button>
-            </Row>
-          ))
-        )}
-      </Card>
+      <AlertsInbox />
 
       {credits.length ? (
         <Card
@@ -2240,6 +2148,439 @@ interface TsData {
   listings: ReportedListingRow[];
   sellers: ReportedSellerRow[];
   rejections: RejectionRow[];
+}
+
+/**
+ * The audit trail — filtered and paged.
+ *
+ * 🚨 "A RECORD YOU CAN ONLY SEE THE LAST FIFTY ROWS OF IS NOT THE RECORD."
+ * The drawer read the newest fifty once, cached it forever, and stopped — so
+ * "who released that payout in July" was unanswerable on the single surface
+ * that exists to answer it. `offset` was accepted by the server the whole
+ * time and never sent; `resourceType` was a declared parameter of fetchAudit
+ * that no caller passed.
+ *
+ * ⚠️ AND THE CACHE GUARD WAS PART OF THE BUG. The parent fetched with
+ * `if (!audit)`, which is correct for a list that never changes and wrong the
+ * moment a filter exists — the second chip press would have redrawn the first
+ * chip's rows. State lives here, keyed on the filter, so that cannot recur.
+ */
+function AuditTrail({ open }: { open: boolean }) {
+  const [rows, setRows] = React.useState<AuditRow[] | null>(null);
+  const [total, setTotal] = React.useState(0);
+  const [offset, setOffset] = React.useState(0);
+  const [resourceType, setResourceType] = React.useState<string | null>(null);
+  const [failure, setFailure] = React.useState<string | null>(null);
+  const ticket = React.useRef(0);
+
+  const load = React.useCallback(async () => {
+    const mine = ++ticket.current;
+    setRows(null);
+    try {
+      const page = await fetchAudit({
+        resourceType: resourceType ?? undefined,
+        limit: AUDIT_PAGE_SIZE,
+        offset,
+      });
+      if (ticket.current !== mine) return;
+      setRows(page.rows);
+      setTotal(page.total);
+      setFailure(null);
+    } catch (err) {
+      if (ticket.current !== mine) return;
+      setRows([]);
+      setFailure(describeFailure(err));
+    }
+  }, [resourceType, offset]);
+
+  // Only while the drawer is open: this is the most sensitive list on the
+  // board and there is no reason to hold it in a closed drawer's state.
+  React.useEffect(() => {
+    if (open) void load();
+  }, [open, load]);
+
+  const from = total === 0 ? 0 : offset + 1;
+  const to = Math.min(offset + AUDIT_PAGE_SIZE, total);
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: '0 0 10px' }}>
+        <Chip
+          active={resourceType === null}
+          onClick={() => {
+            setResourceType(null);
+            setOffset(0);
+          }}
+        >
+          Everything
+        </Chip>
+        {AUDIT_RESOURCE_TYPES.map((t) => (
+          <Chip
+            key={t}
+            active={resourceType === t}
+            onClick={() => {
+              // ⚠️ A NEW FILTER STARTS AT PAGE ONE. Keeping the offset would
+              // ask for rows 51–100 of a nine-row set and draw an empty state
+              // the operator reads as a fact about the filter.
+              setResourceType((cur) => (cur === t ? null : t));
+              setOffset(0);
+            }}
+          >
+            {t}
+          </Chip>
+        ))}
+      </div>
+
+      <Section label={total > 0 ? `${from}–${to} of ${total}` : 'Recent'} last>
+        {failure ? (
+          <FailedRegion
+            title="Couldn't read the audit trail"
+            detail={failure}
+            onRetry={() => void load()}
+          />
+        ) : !rows ? (
+          <Quiet>Loading…</Quiet>
+        ) : rows.length === 0 ? (
+          <Quiet>
+            {resourceType
+              ? `Nothing recorded against ${resourceType}.`
+              : 'No audit rows.'}
+          </Quiet>
+        ) : (
+          rows.map((r, i) => (
+            <div
+              key={r.id}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 3,
+                padding: '10px 0',
+                borderBottom: i === rows.length - 1 ? undefined : '1px solid var(--dk-line)',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="dk-mono" style={{ fontSize: 11.5, color: 'var(--dk-ink)' }}>
+                  {r.action}
+                </span>
+                <span style={{ flex: 1 }} />
+                <span className="dk-mono" style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>
+                  {stamp(r.createdAt)}
+                </span>
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--dk-ink-2)' }}>
+                {r.adminUser?.email ?? 'unknown admin'}
+                {r.resourceType ? ` · ${r.resourceType}` : ''}
+                {r.resourceId ? ` ${r.resourceId.slice(-8)}` : ''}
+              </span>
+              {r.reason ? (
+                <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)', lineHeight: 1.45 }}>
+                  “{r.reason}”
+                </span>
+              ) : null}
+            </div>
+          ))
+        )}
+
+        {total > AUDIT_PAGE_SIZE ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 12 }}>
+            <Button
+              variant="ghost"
+              disabled={offset === 0}
+              onClick={() => setOffset((o) => Math.max(0, o - AUDIT_PAGE_SIZE))}
+            >
+              Newer
+            </Button>
+            <span style={{ flex: 1 }} />
+            <Button
+              variant="ghost"
+              disabled={to >= total}
+              onClick={() => setOffset((o) => o + AUDIT_PAGE_SIZE)}
+            >
+              Older
+            </Button>
+          </div>
+        ) : null}
+      </Section>
+    </>
+  );
+}
+
+/**
+ * The alerts inbox.
+ *
+ * 🚨 THIS CARD ONCE RENDERED "0 unresolved · Nothing unresolved" WHILE ALERTS
+ * WERE WAITING, because the type here claimed an envelope and read `.rows` off
+ * a bare array. A quiet card reading as all-clear, on the one surface whose
+ * entire job is to say otherwise. That is fixed and stays fixed; what this
+ * change adds is the rest of what the legacy page did — filter by type from
+ * server facets, narrow to urgent, page through every match, and clear a
+ * selection in one press.
+ *
+ * ⚠️ IT OWNS ITS OWN STATE rather than taking rows as props. The parent used
+ * to fetch a flat array and drill it down with a resolve callback; filtering,
+ * paging and selection would have meant six more props threaded through a
+ * component that has nothing to do with alerts.
+ */
+function AlertsInbox() {
+  // One page. The server caps at what it is asked for; asking for a round
+  // number keeps 'is there more' a simple length comparison.
+  const PAGE = 50;
+
+  const [rows, setRows] = React.useState<AdminAlertRow[]>([]);
+  const [facets, setFacets] = React.useState<AlertFacet[]>([]);
+  const [type, setType] = React.useState<string | null>(null);
+  const [urgentOnly, setUrgentOnly] = React.useState(false);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [failure, setFailure] = React.useState<string | null>(null);
+  const [actionError, setActionError] = React.useState<string | null>(null);
+  const [confirming, setConfirming] = React.useState(false);
+  const [reason, setReason] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [exhausted, setExhausted] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+
+  /** Only the newest read may write — chips outrun the network. */
+  const ticket = React.useRef(0);
+
+  const load = React.useCallback(async () => {
+    const mine = ++ticket.current;
+    setLoading(true);
+    try {
+      const [page, f] = await Promise.all([
+        fetchAlerts({ type: type ?? undefined, urgent: urgentOnly || undefined, limit: PAGE }),
+        fetchAlertTypeFacets().catch(() => [] as AlertFacet[]),
+      ]);
+      if (ticket.current !== mine) return;
+      setRows(page);
+      setFacets(f);
+      setExhausted(page.length < PAGE);
+      setFailure(null);
+      // A selection made under a different filter is a selection of rows the
+      // operator can no longer see.
+      setSelected(new Set());
+    } catch (err) {
+      if (ticket.current !== mine) return;
+      setRows([]);
+      setFailure(describeFailure(err));
+    } finally {
+      if (ticket.current === mine) setLoading(false);
+    }
+  }, [type, urgentOnly]);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function loadMore() {
+    const last = rows[rows.length - 1];
+    if (!last) return;
+    const mine = ++ticket.current;
+    try {
+      const next = await fetchAlerts({
+        type: type ?? undefined,
+        urgent: urgentOnly || undefined,
+        cursor: last.id,
+        limit: PAGE,
+      });
+      if (ticket.current !== mine) return;
+      // ⚠️ APPEND, AND DEDUPE ON ID. The server pages forward from a cursor,
+      // and a row resolved by someone else between pages can shift the window
+      // enough to repeat one. A duplicate key would break React's list and a
+      // duplicate row would be resolved twice.
+      setRows((cur) => {
+        const seen = new Set(cur.map((r) => r.id));
+        return [...cur, ...next.filter((r) => !seen.has(r.id))];
+      });
+      setExhausted(next.length < PAGE);
+    } catch (err) {
+      if (ticket.current === mine) setActionError(describeFailure(err));
+    }
+  }
+
+  function toggle(id: string) {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function resolveOne(id: string) {
+    setActionError(null);
+    try {
+      await resolveAlert(id);
+      setRows((xs) => xs.filter((x) => x.id !== id));
+    } catch (err) {
+      setActionError(describeFailure(err));
+    }
+  }
+
+  async function resolveSelected() {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await bulkResolveAlerts([...selected], reason);
+      setSelected(new Set());
+      setConfirming(false);
+      setReason('');
+      /**
+       * 🚨 REPORT THE TALLY, AND RE-READ RATHER THAN SPLICE. The endpoint
+       * loops the single-alert path and returns {resolved, skipped, failed}:
+       * a row someone else cleared between the render and the press comes
+       * back SKIPPED, one that genuinely errored comes back FAILED, and the
+       * response carries skippedIds but no failedIds — so the client CANNOT
+       * work out which rows survived. Removing every selected id on a 200
+       * would hide rows that are still open and still need somebody, which is
+       * the exact failure this tally exists to prevent. The server knows;
+       * asking it again is both simpler and correct.
+       */
+      if (result.skipped + result.failed > 0) {
+        setActionError(
+          `${result.resolved} resolved. ${result.skipped} were already handled and ${result.failed} did not go through — the list below is re-read, so anything still open is still here.`,
+        );
+      }
+      await load();
+    } catch (err) {
+      setActionError(describeFailure(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const total = facets.reduce((n, f) => n + f.unresolved, 0);
+  const shownType = type ? facets.find((f) => f.type === type) : null;
+
+  return (
+    <Card
+      label="Alerts"
+      hint={
+        loading
+          ? 'reading…'
+          : total === 0
+            ? 'none unresolved'
+            : type
+              ? `${rows.length} of ${shownType?.unresolved ?? rows.length} ${type}`
+              : `${rows.length} of ${total} unresolved`
+      }
+      footer="Warden replaces this inbox once it is deployed. Until then it is the only place these types surface at all — so it filters, pages and clears in bulk, because there is no longer a legacy page behind it to fall back to."
+    >
+      {/* ⚠️ THE CHIPS ARE SERVER FACETS, NOT A HARD-CODED LIST. ~45 alert
+          types are raised from 52 call sites with free-form strings, so any
+          list written here would be wrong within a month — and a chip for a
+          type nothing raises is a filter that always returns nothing. */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingBottom: 4 }}>
+        <Chip active={type === null} onClick={() => setType(null)}>
+          Everything
+        </Chip>
+        <Chip active={urgentOnly} onClick={() => setUrgentOnly((u) => !u)}>
+          Urgent only
+        </Chip>
+        {facets.slice(0, 8).map((f) => (
+          <Chip
+            key={f.type}
+            active={type === f.type}
+            count={f.unresolved}
+            onClick={() => setType((cur) => (cur === f.type ? null : f.type))}
+          >
+            {f.type}
+          </Chip>
+        ))}
+      </div>
+
+      {failure ? (
+        <FailedRegion title="Couldn't load alerts" detail={failure} onRetry={() => void load()} />
+      ) : null}
+      {actionError ? (
+        <span style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--dk-bad)' }}>{actionError}</span>
+      ) : null}
+
+      {selected.size > 0 ? (
+        <Row>
+          <span style={{ fontSize: 12.5, color: 'var(--dk-ink)', flex: 1 }}>
+            {`${selected.size} selected`}
+          </span>
+          <Button variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
+          <Button variant="primary" onClick={() => setConfirming(true)}>
+            Resolve selected…
+          </Button>
+        </Row>
+      ) : null}
+
+      {!loading && rows.length === 0 && !failure ? (
+        <Quiet>
+          {type || urgentOnly
+            ? 'Nothing unresolved under this filter.'
+            : 'Nothing unresolved.'}
+        </Quiet>
+      ) : (
+        rows.map((a, i) => (
+          <Row key={a.id} last={i === rows.length - 1}>
+            <input
+              type="checkbox"
+              checked={selected.has(a.id)}
+              onChange={() => toggle(a.id)}
+              aria-label={`Select ${a.type}`}
+              style={{ flex: 'none', cursor: 'pointer' }}
+            />
+            <Tag kind={a.urgent ? 'bad' : 'neutral'} icon={a.urgent ? IconAlert : null}>
+              {a.type}
+            </Tag>
+            <span style={{ fontSize: 12.5, color: 'var(--dk-ink-2)', minWidth: 0, flex: 1 }}>
+              {a.context ?? '—'}
+            </span>
+            <span className="dk-mono" style={{ fontSize: 11, color: 'var(--dk-ink-3)' }}>
+              {stamp(a.createdAt)}
+            </span>
+            <Button variant="ghost" onClick={() => void resolveOne(a.id)}>
+              Resolve
+            </Button>
+          </Row>
+        ))
+      )}
+
+      {!exhausted && rows.length > 0 ? (
+        <Row last>
+          <span style={{ flex: 1 }} />
+          <Button variant="ghost" onClick={() => void loadMore()}>
+            Load more
+          </Button>
+        </Row>
+      ) : null}
+
+      {confirming ? (
+        <DialogFrame
+          label="Resolve alerts"
+          title={`Resolve ${selected.size} alert${selected.size === 1 ? '' : 's'}`}
+          onClose={() => setConfirming(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={() => void resolveSelected()} disabled={busy}>
+                {busy ? 'Resolving…' : 'Resolve them'}
+              </Button>
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <span style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--dk-ink-2)' }}>
+              This marks them handled. It does not fix what raised them — an alert
+              is a message about something that already happened.
+            </span>
+            <Input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Why, if it is worth saying — optional, goes in the audit trail"
+            />
+          </div>
+        </DialogFrame>
+      ) : null}
+    </Card>
+  );
 }
 
 function TrustSafety() {

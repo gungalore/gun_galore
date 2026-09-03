@@ -117,16 +117,79 @@ export interface AdminAlertRow {
  * quiet card reading as "nothing has gone wrong" when it means "nothing was
  * read". The envelope is still tolerated in case the endpoint ever grows one.
  */
-export async function fetchAlerts(): Promise<AdminAlertRow[]> {
+export interface AlertQuery {
+  /** One type family, from the facet chips. Omitted means every type. */
+  type?: string;
+  /** True narrows to urgent. Omitted means both — see the controller: an
+   *  empty string from a cleared toggle must behave like no filter. */
+  urgent?: boolean;
+  /** The id of the last row already rendered. The server pages FORWARD from
+   *  it — a cursor, not an offset, so a row resolved mid-scroll cannot shift
+   *  the window and hide the row after it. */
+  cursor?: string;
+  limit?: number;
+}
+
+export async function fetchAlerts(q: AlertQuery = {}): Promise<AdminAlertRow[]> {
+  const p = new URLSearchParams({ resolved: 'false' });
+  p.set('limit', String(q.limit ?? 50));
+  if (q.type) p.set('type', q.type);
+  if (q.urgent) p.set('urgent', 'true');
+  if (q.cursor) p.set('cursor', q.cursor);
   const res = await deskFetch<AdminAlertRow[] | { rows?: AdminAlertRow[] }>(
-    '/admin/alerts?resolved=false&limit=50',
+    `/admin/alerts?${p.toString()}`,
   );
+  // ⚠️ THE ENDPOINT RETURNS A BARE ARRAY. This tolerated an envelope once
+  // because the type here CLAIMED one and read `.rows` off it, so the inbox
+  // rendered "0 unresolved · Nothing unresolved" however many were waiting —
+  // a quiet card reading as all-clear on the one surface whose whole job is
+  // to say otherwise. Keeping both shapes costs nothing and cannot regress.
   if (Array.isArray(res)) return res;
   return Array.isArray(res?.rows) ? res.rows : [];
 }
 
-export function resolveAlert(id: string) {
-  return deskFetch(`/admin/alerts/${encodeURIComponent(id)}/resolve`, { method: 'POST' });
+export interface AlertFacet {
+  type: string;
+  unresolved: number;
+}
+
+/** Distinct unresolved types, busiest first — the chip row. */
+export function fetchAlertTypeFacets(): Promise<AlertFacet[]> {
+  return deskFetch('/admin/alerts/types');
+}
+
+export function resolveAlert(id: string, reason?: string) {
+  return deskFetch(`/admin/alerts/${encodeURIComponent(id)}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason ?? '' }),
+  });
+}
+
+export interface BulkResolveResult {
+  resolved: number;
+  skipped: number;
+  skippedIds?: string[];
+  failed: number;
+}
+
+/**
+ * Resolve a selection in one call.
+ *
+ * ⚠️ THE TALLY IS THE POINT, NOT THE OK. The server loops the single-alert
+ * path and reports {resolved, skipped, failed} — a row someone else cleared
+ * between the render and the press is SKIPPED, not failed. Splicing out every
+ * selected id on success would therefore remove rows that are still open and
+ * still need somebody, which is the failure mode this endpoint's own tally
+ * exists to prevent.
+ */
+export function bulkResolveAlerts(
+  alertIds: string[],
+  reason?: string,
+): Promise<BulkResolveResult> {
+  return deskFetch('/admin/alerts/bulk-resolve', {
+    method: 'POST',
+    body: JSON.stringify({ alertIds, reason: reason ?? '' }),
+  });
 }
 
 /* ── Credits ──────────────────────────────────────────────────────────── */
@@ -297,12 +360,58 @@ export interface AuditRow {
  * the twenty-two: a money action that cannot be traced to a person is a money
  * action nobody can answer for.
  */
-export function fetchAudit(opts: { resourceType?: string; limit?: number } = {}) {
+export const AUDIT_PAGE_SIZE = 50;
+
+/**
+ * ⚠️ `offset` WAS ALWAYS ACCEPTED BY THE SERVER AND NEVER SENT. The drawer read
+ * the newest fifty and stopped, which is how "who released that payout in
+ * July" became unanswerable on a surface whose entire purpose is answering it.
+ * A record you can only see the last fifty rows of is not the record.
+ */
+export function fetchAudit(
+  opts: { resourceType?: string; limit?: number; offset?: number } = {},
+) {
   const p = new URLSearchParams();
   if (opts.resourceType) p.set('resourceType', opts.resourceType);
-  p.set('limit', String(opts.limit ?? 50));
-  return deskFetch<{ rows: AuditRow[]; total: number }>(`/admin/audit?${p.toString()}`);
+  p.set('limit', String(opts.limit ?? AUDIT_PAGE_SIZE));
+  if (opts.offset) p.set('offset', String(opts.offset));
+  return deskFetch<{ rows: AuditRow[]; total: number; limit: number; offset: number }>(
+    `/admin/audit?${p.toString()}`,
+  );
 }
+
+/**
+ * The resourceType families worth offering as filters.
+ *
+ * ⚠️ THERE IS NO FACET ENDPOINT FOR AUDIT, unlike alerts. The server filters by
+ * resourceType but never enumerates them, so this list is TRANSCRIBED from the
+ * `resourceType:` literals actually written in backend/src — not guessed. The
+ * first draft of it was guessed, and included Complaint and AdminUser, neither
+ * of which any writer emits: two chips that would have returned an empty log
+ * and read as "nothing has ever happened to a complaint".
+ *
+ * It can still go stale in one direction — a NEW type appears and has no chip —
+ * which is why "Everything" is the default and always present. A chip narrows a
+ * complete list; the list is never assembled from the chips. An unlisted type
+ * stays reachable, just not one press away.
+ *
+ * ⚠️ DELIBERATELY OMITTED, THOUGH ROWS EXIST: ReloadingManual, ManualLoad,
+ * AskGgKbEntry and AskGgGuideOverride. Those features were removed (see the
+ * Load Lab and Ask Boet decisions) and their history is frozen — offering a
+ * chip for a thing nobody can do any more spends a filter slot on a dead end.
+ * The rows are still in the log and still returned under "Everything".
+ */
+export const AUDIT_RESOURCE_TYPES = [
+  'Transaction',
+  'User',
+  'Listing',
+  'Dealer',
+  'Rating',
+  'Setting',
+  'Broadcast',
+  'Alert',
+  'WardenProposal',
+] as const;
 
 /* ── Admin accounts ───────────────────────────────────────────────────── */
 
