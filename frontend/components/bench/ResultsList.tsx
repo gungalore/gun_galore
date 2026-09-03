@@ -11,6 +11,12 @@
  * hands it `result` and takes every action back through the callbacks in
  * ResultsListProps. The `off` chips live in the rail, not here.
  *
+ * ⚠️ AND AN EMPTY PANEL EXPLAINS ITSELF. A full bench whose three axes have no
+ * load in common is a correct empty screen, and a correct empty screen that
+ * says nothing is indistinguishable from a broken one — which is exactly how
+ * it was reported. `LoadsResponse.why` names the starving axis and `shelf`
+ * names what is on the other two; explainEmpty turns the pair into a sentence.
+ *
  * ⚠️ COPY. Operator ruling, 2026-09-02: nothing here may name where a figure
  * comes from. The two fixed strings are imported from contract.ts rather than
  * retyped, and the raw `error` message is deliberately NOT rendered — it is
@@ -18,13 +24,13 @@
  * copy boundary (see the backend's leak spec).
  */
 
-import type { CartridgeHead, LoadGroup, LoadRow } from '@/lib/bench/api';
+import type { CartridgeHead, LoadGroup, LoadRow, LoadsWhy } from '@/lib/bench/api';
 import type { Dims, Units } from '@/lib/bench/geometry';
 import { DIM_KEYS, coalCheck, fmtVelocity, MM_PER_INCH } from '@/lib/bench/geometry';
 
 import { CartridgeThumb } from './CartridgeThumb';
 import { BENCH_AXES, SAFETY_LINE, VELOCITY_NOTE } from './contract';
-import type { BenchAxis, ResultsListProps } from './contract';
+import type { BenchAxis, ResultsListProps, ShelfNames } from './contract';
 import { Btn, Tag } from './primitives';
 
 /* ── Formatting ─────────────────────────────────────────────────────── */
@@ -55,6 +61,150 @@ function axisList(axes: readonly string[]): string {
   const a = axes.map((x) => `a ${x}`);
   if (a.length <= 1) return a[0] ?? '';
   return `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`;
+}
+
+/* ── Why a full bench came back empty ───────────────────────────────── */
+
+/** The plural noun each axis is spoken of by. */
+const AXIS_PLURAL: Record<BenchAxis, string> = {
+  powder: 'powders',
+  bullet: 'bullets',
+  cartridge: 'cartridges',
+};
+
+/**
+ * How a load relates to each axis: it is built FOR a bullet, WITH a powder,
+ * IN a cartridge. One preposition doing all three ("none for the powders") is
+ * the difference between a sentence a reloader wrote and one a form did.
+ */
+const AXIS_PREP: Record<BenchAxis, string> = {
+  powder: 'with the powders',
+  bullet: 'for the bullets',
+  cartridge: 'in the cartridges',
+};
+
+/** The order the two surviving axes read best in: the cartridge leads. */
+const PAIR_ORDER: BenchAxis[] = ['cartridge', 'powder', 'bullet'];
+
+function shelfOf(shelf: ShelfNames, axis: BenchAxis): string[] {
+  if (axis === 'powder') return shelf.powders;
+  if (axis === 'bullet') return shelf.bullets;
+  return shelf.cartridges;
+}
+
+/**
+ * `.30-06 Springfield` or `your 2 cartridges`.
+ *
+ * ⚠️ ONE NAME OR A COUNT, NEVER A LIST. The sentence names TWO axes and joins
+ * them with "and", so an inner list makes ".30-06 and .308 Win and N550 and
+ * N140" — a line whose own grammar hides which name belongs to which shelf.
+ * The count keeps it one clause per axis and stays true at any size.
+ *
+ * An empty list can only reach here if the caller skipped the panel's own
+ * check; it degrades to the plural rather than to a hole in the middle of the
+ * line.
+ */
+function axisNames(shelf: ShelfNames, axis: BenchAxis): string {
+  const list = shelfOf(shelf, axis);
+  const plural = AXIS_PLURAL[axis];
+  if (list.length === 0) return `your ${plural}`;
+  if (list.length === 1) return list[0];
+  return `your ${list.length} ${plural}`;
+}
+
+function upperFirst(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * `.30-06 Springfield and N550 have 70 loads together — but none for the
+ * bullets on your bench.`
+ *
+ * The two axes that DO join are named with the member's own products; the one
+ * that starves is named by its plural, because the point is that nothing they
+ * own is on that side.
+ */
+function pairSentence(axis: BenchAxis, n: number, shelf: ShelfNames): string {
+  const [a, b] = PAIR_ORDER.filter((x) => x !== axis);
+  const head = `${axisNames(shelf, a)} and ${axisNames(shelf, b)}`;
+  const loads = `${grouped(n)} load${n === 1 ? '' : 's'}`;
+  return `${upperFirst(head)} have ${loads} together — but none ${AXIS_PREP[axis]} on your bench.`;
+}
+
+/** What the panel says, and which Add buttons it offers under it. */
+export interface EmptyExplanation {
+  title: string;
+  lines: string[];
+  /**
+   * The axes worth widening, biggest opening first. Empty — deliberately —
+   * when widening any single one provably cannot help.
+   */
+  offer: BenchAxis[];
+}
+
+/**
+ * The empty panel's whole reason for existing.
+ *
+ * 🚨 A CORRECT EMPTY SCREEN AND A BROKEN ONE LOOK IDENTICAL. Results are an
+ * AND across powder, bullet and cartridge, so a member holding N550, a .30-06
+ * and two bullets that no .30-06 N550 load uses gets a blank panel — and every
+ * word on it was true. The operator reported that as "nothing resolves", which
+ * is the only reading available when the screen says nothing.
+ *
+ * `why` is the counts with each axis relaxed in turn, so a non-zero one names
+ * an axis the member could widen and says how much is behind it. All three
+ * zero is the case that must NOT offer a door: result ⊆ each relaxed set, so
+ * if every relaxed set is empty then adding one more of any single thing
+ * provably changes nothing, and pointing at a picker would be a lie.
+ */
+export function explainEmpty(why: LoadsWhy, shelf: ShelfNames): EmptyExplanation {
+  const counts: Record<BenchAxis, number> = {
+    powder: why.ignoringPowders,
+    bullet: why.ignoringBullets,
+    cartridge: why.ignoringCartridges,
+  };
+  /*
+   * Biggest opening first, ties in the rail's order.
+   *
+   * Sort is stable, so two axes hiding the same number of loads stay in the
+   * order the chips are in — and the sentences and the Add buttons are both
+   * built from THIS array, so they can never name the axes in two different
+   * orders.
+   */
+  const starving = BENCH_AXES.filter((a) => counts[a] > 0).sort((a, b) => counts[b] - counts[a]);
+
+  if (starving.length === 0) {
+    return {
+      title: 'Nothing joins these three',
+      lines: [
+        'No load uses one of your powders with one of your bullets in one of your cartridges.',
+        'Adding one more of any single thing will not change that — turn a chip back on, widen the weight range, or swap out what is on the bench.',
+      ],
+      offer: [],
+    };
+  }
+
+  if (starving.length === 1) {
+    const axis = starving[0];
+    const n = counts[axis];
+    return {
+      title: `${grouped(n)} load${n === 1 ? '' : 's'} — but not for your ${AXIS_PLURAL[axis]}`,
+      lines: [
+        pairSentence(axis, n, shelf),
+        `Add a ${axis} that suits them and those loads appear here.`,
+      ],
+      offer: [axis],
+    };
+  }
+
+  return {
+    title: `${starving.length === 3 ? 'Three' : 'Two'} ways to open this up`,
+    lines: [
+      ...starving.map((a) => pairSentence(a, counts[a], shelf)),
+      'Widen whichever is easiest — each one opens loads the others still block.',
+    ],
+    offer: starving,
+  };
 }
 
 /**
@@ -316,6 +466,7 @@ export function ResultsList({
   onOpenSpec,
   onRetry,
   gaps,
+  shelf,
   onAddPowder,
   onAddBullet,
   onAddCartridge,
@@ -331,10 +482,45 @@ export function ResultsList({
     bullet: onAddBullet,
     cartridge: onAddCartridge,
   };
-  // Nothing missing means the filter is what is too narrow; the button is then
-  // a fallback rather than the advice, and a powder is the cheapest thing to
-  // widen a bench with.
-  const cta: BenchAxis = missing[0] ?? 'powder';
+  // The bare axis the sentence above names, and the door it opens. Only ever
+  // read when there IS one — see `offer` below.
+  const cta: BenchAxis | undefined = missing[0];
+
+  /*
+   * ⚠️ THREE THINGS HAVE TO BE TRUE BEFORE THE SENTENCE CAN BE WRITTEN, and
+   * each guards a different lie:
+   *   · `missing.length === 0` — a bare axis has its own, better state above.
+   *   · `why` — the server only sends the counts for a full bench that found
+   *     nothing; without them nothing here knows which axis starved.
+   *   · every shelf list non-empty — a member who has switched every bullet
+   *     off for this search has bullets, so `gaps` is false and `why` may well
+   *     arrive, but "none for the bullets on your bench" would be describing a
+   *     shelf they can see is switched off. That case falls through to the
+   *     filter state, which says to turn a chip back on.
+   */
+  const why = result?.why ?? null;
+  const shelfIsWhole =
+    shelf.powders.length > 0 && shelf.bullets.length > 0 && shelf.cartridges.length > 0;
+  const explained =
+    isEmpty && missing.length === 0 && why && shelfIsWhole ? explainEmpty(why, shelf) : null;
+
+  /*
+   * One button per axis the sentence just named, and NOT ONE MORE.
+   *
+   * 🚨 THE FILTER STATE OFFERS NOTHING, WHICH IS THE WHOLE POINT OF THIS LINE.
+   * It used to fall back to "Add a powder" whenever nothing else applied — and
+   * "nothing else applied" means a bench that already holds all three axes,
+   * whose chips are switched off or whose weight band is too narrow. Sending
+   * that member to the powder picker is the exact advice this file's header
+   * calls actively wrong: it points at the shelf they have already filled,
+   * where adding another changes nothing. The copy beside it already names the
+   * three things that do work — turn a chip back on, widen the band, add a
+   * component — and a door that leads nowhere is worse than no door.
+   *
+   * `explained.offer` is likewise empty on purpose when nothing joins the
+   * three; see explainEmpty.
+   */
+  const offer: BenchAxis[] = cta ? [cta] : (explained?.offer ?? []);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col md:gap-[10px] md:pb-4">
@@ -402,9 +588,11 @@ export function ResultsList({
               cartridge — so a shelf holding two of the three yields nothing at
               all, and "Add a powder" is then actively wrong advice: it sends
               someone to the one axis they have already filled, where adding
-              another changes nothing. Three states, not two, because the fix
-              differs: no bench at all, a bench short of one axis, and a bench
-              that can build things the current filter excludes.
+              another changes nothing. Four states, not one, because the fix
+              differs every time: no bench at all; a bench short of one axis; a
+              FULL bench whose three axes have no load in common, which is the
+              one the counts explain; and a bench that can build things this
+              filter excludes.
             */}
             {missing.length === 3 ? (
               <>
@@ -422,16 +610,45 @@ export function ResultsList({
                   and what your shelf can build appears here.
                 </div>
               </>
+            ) : explained ? (
+              <>
+                {/*
+                  🚨 THE BENCH HOLDS ALL THREE AND STILL BUILDS NOTHING. This
+                  is the state the operator hit: powder, bullet and cartridge
+                  all present, the AND across them empty, and a screen that
+                  said only "check you have a powder, a bullet and a
+                  cartridge" — advice for a bench they did not have. The
+                  counts name the starving axis, so the panel names it too.
+                */}
+                <Title>{explained.title}</Title>
+                {/* A measure, because these are sentences rather than the one
+                    short line the other states carry: the panel is the full
+                    width of the results column on a desktop, and a 120-column
+                    line of prose centred in it is read twice. */}
+                {explained.lines.map((line) => (
+                  <div key={line} style={{ maxWidth: '54ch' }}>
+                    {line}
+                  </div>
+                ))}
+              </>
             ) : (
               <>
                 <Title>Nothing on the shelf builds this</Title>
                 <div>Turn a chip back on, widen the weight range, or add another component.</div>
               </>
             )}
-            {/* Opens the picker for the axis the sentence just named. */}
-            <Btn size="mobile" onClick={opener[cta]}>
-              Add a {cta}
-            </Btn>
+            {/* Opens the picker for each axis the sentence just named. Nothing
+                is offered when no single addition could help — a door that
+                leads nowhere is worse than no door. */}
+            {offer.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {offer.map((axis) => (
+                  <Btn key={axis} size="mobile" onClick={opener[axis]}>
+                    Add a {axis}
+                  </Btn>
+                ))}
+              </div>
+            ) : null}
           </Centred>
         ) : (
           groups.map((group) => (

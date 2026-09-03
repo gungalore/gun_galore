@@ -623,6 +623,241 @@ describe('The Bench — a shelf bullet only matches its own calibre', () => {
   });
 });
 
+/**
+ * 🚨 THE OTHER HALF OF THE OPERATOR'S REPORT: "when I choose a cartridge and a
+ * bullet, nothing comes up."
+ *
+ * Nothing was broken. The bench held N550, .30-06 and a 150 gr Hornady SP;
+ * .30-06 with N550 has 70 loads and that bullet in .30-06 has 13, and the
+ * intersection of the two is genuinely empty. The results are an AND across
+ * three axes, so ONE starving axis empties the page — and a correct empty
+ * screen that says nothing is indistinguishable from a broken one. THAT is
+ * the defect these counts fix.
+ *
+ * ⚠️ THE DIAGNOSIS IS A CLAIM ABOUT THE RESULT BESIDE IT. Every count is built
+ * from the same where-builder as the listing, so it cannot drift from the
+ * thing it explains: relax the AXIS, never the filter, and never the calibre.
+ */
+describe('The Bench — an empty answer explains itself', () => {
+  /** Full on all three axes, and still empty on screen. The reported bench. */
+  const fullBench = {
+    powderIds: ['pwd_1'],
+    cartridgeKeys: ['308win'],
+    bullets: [{ maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 }],
+  };
+
+  /**
+   * A double whose load table has nothing for the combination asked for, and
+   * whose count() answers by WHICH AXIS THE CALLER DROPPED.
+   *
+   * ⚠️ THE THREE ANSWERS ARE DELIBERATELY DIFFERENT NUMBERS. One canned count
+   * would pass on a service that ran the same relaxed query three times, which
+   * is the failure that makes the whole diagnosis useless — three equal
+   * figures name no axis at all.
+   */
+  function emptyPrisma() {
+    const base = makePrisma();
+    return makePrisma({
+      benchLoad: {
+        ...base.benchLoad,
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn((args: { where: Record<string, unknown> }) => {
+          const where = args.where;
+          if (!where.OR) return Promise.resolve(70); // bullets relaxed
+          if (!where.powderId) return Promise.resolve(13); // powders relaxed
+          if (!where.cartridgeKey) return Promise.resolve(41); // cartridges relaxed
+          // Nothing relaxed — which would mean the service asked the question
+          // it had already answered.
+          return Promise.resolve(-1);
+        }),
+      },
+    });
+  }
+
+  it('says nothing about why when there are loads to show', async () => {
+    const prisma = makePrisma();
+    const out = await new BenchService(prisma as never).loads(fullBench, {});
+
+    expect(out.count).toBe(1);
+    // ⚠️ ABSENT, NOT PRESENT-AND-UNDEFINED. A key that exists with an
+    // undefined value passes `'why' in result`, and "there is a diagnosis"
+    // must not be true of a screen that found loads.
+    expect(Object.prototype.hasOwnProperty.call(out, 'why')).toBe(false);
+    // And it costs nothing: three counts on every search is waste paid for by
+    // every member who is simply reading their loads.
+    expect(prisma.benchLoad.count).not.toHaveBeenCalled();
+  });
+
+  it('names the starving axis with three counts when the bench is full and the screen is not', async () => {
+    const prisma = emptyPrisma();
+    const out = await new BenchService(prisma as never).loads(fullBench, {});
+
+    expect(out.count).toBe(0);
+    expect(out.groups).toEqual([]);
+    expect(out.why).toEqual({ ignoringBullets: 70, ignoringPowders: 13, ignoringCartridges: 41 });
+    // Three, and exactly three — one per axis, not one per axis plus the
+    // question that was already answered.
+    expect(prisma.benchLoad.count).toHaveBeenCalledTimes(3);
+  });
+
+  it('offers no diagnosis when an axis is bare — the caller already knows the answer', async () => {
+    const prisma = emptyPrisma();
+    const svc = new BenchService(prisma as never);
+
+    for (const bare of [
+      { ...fullBench, bullets: [] },
+      { ...fullBench, powderIds: [] },
+      { ...fullBench, cartridgeKeys: [] },
+    ]) {
+      const out = await svc.loads(bare, {});
+      expect(out).toEqual({ count: 0, groups: [] });
+      expect(Object.prototype.hasOwnProperty.call(out, 'why')).toBe(false);
+    }
+
+    // ⚠️ NOT ONE COUNT SPENT. On a bench missing an axis the diagnosis is
+    // already in hand — the client says "add a bullet" — and "no combination
+    // exists" would be both slower and wrong.
+    expect(prisma.benchLoad.count).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 🚨 RELAX THE AXIS, NOTHING ELSE. The weight band is a filter, not an axis:
+   * counted without it the screen tells a member 70 loads are waiting on a
+   * shelf they are looking at, and clearing their bullets would reveal none of
+   * them — because those 70 are outside the band the finder is holding.
+   */
+  it('carries the weight band into all three counts', async () => {
+    const prisma = emptyPrisma();
+    const out = await new BenchService(prisma as never).loads(fullBench, {
+      weightMin: 100,
+      weightMax: 150,
+    });
+
+    const wheres = prisma.benchLoad.count.mock.calls.map(([a]) => a.where);
+    expect(wheres).toHaveLength(3);
+    for (const where of wheres) expect(where.weightGr).toEqual({ gte: 100, lte: 150 });
+    // The band narrowed every count and relaxed none of them: the three
+    // answers still differ, so the axes were still the thing being dropped.
+    expect(out.why).toEqual({ ignoringBullets: 70, ignoringPowders: 13, ignoringCartridges: 41 });
+  });
+
+  it('keeps the cartridge tab and the powder chip pinned in every count', async () => {
+    const prisma = emptyPrisma();
+    await new BenchService(prisma as never).loads(fullBench, {
+      cartridgeKey: '308win',
+      powderId: 'pwd_1',
+    });
+
+    for (const [args] of prisma.benchLoad.count.mock.calls) {
+      // ⚠️ A FILTER OUTRANKS ITS OWN AXIS EVEN WHERE THE AXIS IS RELAXED. The
+      // member asked why THIS view is empty; a number about a view they are
+      // not looking at is not an answer to that.
+      expect(args.where.cartridgeKey).toEqual({ equals: '308win' });
+      expect(args.where.powderId).toEqual({ equals: 'pwd_1' });
+    }
+  });
+
+  /**
+   * 🚨 AND THE CALIBRE SURVIVES THE RELAXATION. A bullet is maker + weight +
+   * category + CALIBRE, so a count that keeps the bullet axis keeps all four —
+   * otherwise "13 loads" against a .308" 150 gr SP is counting 8x57 loads that
+   * will not chamber, which is the exact false promise the powder chips and
+   * the spec card once made.
+   */
+  it('holds a calibred bullet to its calibre in both counts that keep the bullet axis', async () => {
+    const prisma = emptyPrisma();
+    await new BenchService(prisma as never).loads(
+      {
+        powderIds: ['pwd_1'],
+        // A .270 sits on the shelf beside the .308 and must never be counted.
+        cartridgeKeys: ['308win', '270win'],
+        bullets: [{ maker: 'Hornady', weightGr: 150, category: 'SP', calibreIn: 0.308 }],
+      },
+      {},
+    );
+
+    const wheres = prisma.benchLoad.count.mock.calls.map(([a]) => a.where);
+
+    // Powders relaxed: the shelf's cartridges stand, so the .308 bullet is
+    // pinned to the .308 one and the .270 beside it is out.
+    const keepingShelf = wheres.find((w) => w.OR && w.cartridgeKey);
+    expect(keepingShelf.OR).toEqual([
+      {
+        bulletMaker: 'Hornady',
+        weightGr: 150,
+        bulletCategory: 'SP',
+        cartridgeKey: { in: ['308win'] },
+      },
+    ]);
+
+    // ⚠️ CARTRIDGES RELAXED MEANS ANY CARTRIDGE OF THAT CALIBRE, NOT ANY
+    // CARTRIDGE. .300 H&H joins — it takes the same .308 bullet — and the .270
+    // still does not, on this shelf or off it. Rebuilt against every sheet
+    // rather than reused from the main query, which had resolved it against
+    // the shelf and would answer "none anywhere" for a bullet with thousands.
+    const anyCartridge = wheres.find((w) => w.OR && !w.cartridgeKey);
+    expect(anyCartridge.OR).toEqual([
+      {
+        bulletMaker: 'Hornady',
+        weightGr: 150,
+        bulletCategory: 'SP',
+        cartridgeKey: { in: ['308win', '300hh'] },
+      },
+    ]);
+
+    // The widened lookup reads every sheet — `where: undefined`, not an empty
+    // `in`, which would pin the bullet to nothing and answer 0 for every
+    // bullet in the catalogue.
+    expect(prisma.benchCipDimension.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: undefined }),
+    );
+  });
+
+  /**
+   * ⚠️ AN OLD BENCH STILL COSTS WHAT IT ALWAYS COST, ON THE EMPTY PATH TOO.
+   * Benches saved before calibres were recorded carry none, nothing needs a
+   * sheet, and explaining an empty screen must not be the thing that starts
+   * reading them.
+   */
+  it('reads no sheet to explain an empty screen for a bench with no calibres', async () => {
+    const prisma = emptyPrisma();
+    const out = await new BenchService(prisma as never).loads(
+      { ...fullBench, bullets: [{ maker: 'Hornady', weightGr: 140, category: 'TIP' }] },
+      {},
+    );
+
+    expect(out.why).toEqual({ ignoringBullets: 70, ignoringPowders: 13, ignoringCartridges: 41 });
+    expect(prisma.benchCipDimension.findMany).not.toHaveBeenCalled();
+  });
+
+  it('no count is capped either — take and skip belong nowhere on this module', async () => {
+    const prisma = emptyPrisma();
+    await new BenchService(prisma as never).loads(fullBench, {});
+
+    for (const [args] of prisma.benchLoad.count.mock.calls) {
+      expect(args.take).toBeUndefined();
+      expect(args.skip).toBeUndefined();
+    }
+  });
+
+  /**
+   * The leak boundary, on the one payload that did not exist when it was
+   * drawn. `why` is three LOAD counts — a fact about a combination, which is
+   * ours to publish — and never a count of what those loads were derived from.
+   */
+  it('the diagnosis carries no manual, and no count of them', async () => {
+    const out = await new BenchService(emptyPrisma() as never).loads(fullBench, {});
+
+    expect(out.why).toBeDefined();
+    assertNoLeak(out, 'loads/why');
+    // By key rather than by value, for the reason the sibling test gives: a
+    // bare '7' hides inside 70 as readily as inside 71.76.
+    const json = JSON.stringify(out);
+    expect(json).not.toContain('sourcesCount');
+    expect(json).not.toContain('sources');
+  });
+});
+
 describe('The Bench — the clerk-sub / User.id trap', () => {
   it('resolves the Clerk sub to a User.id before touching UserBench', async () => {
     const prisma = makePrisma();

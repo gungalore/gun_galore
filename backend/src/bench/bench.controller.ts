@@ -49,15 +49,36 @@ export class BenchController {
 
   /* ── the answer ─────────────────────────────────────────────────────── */
 
+  /**
+   * 🚨 THE PARAMETER NAMES HERE ARE THE ONES THE CLIENT ACTUALLY SENDS, AND
+   * THEY WERE NOT. lib/bench/api.ts writes `?cartridge=`, `?weight=` and
+   * `?off=`; this method read `cartridgeKey`, `weightMin` and `weightMax` and
+   * nothing at all read `off`. Every one of the finder's three controls was
+   * therefore inert: the cartridge tab, the weight band and every chip the
+   * member switched off changed the query string and nothing else. Nothing
+   * errored — an unread query parameter is just an unread query parameter —
+   * so the screen answered the same question however it was narrowed.
+   *
+   * ⚠️ AND THE EMPTY-STATE DIAGNOSIS IS WHAT MADE IT A LIE RATHER THAN A DEAD
+   * CONTROL. LoadsResponse.why counts loads with one AXIS relaxed and the
+   * FILTERS held, and the panel prints those counts beside the member's own
+   * product names with the switched-off chips taken out. Counted against the
+   * full shelf and printed against the narrowed one, "your .30-06 and N550
+   * have 70 loads together" credits N550 with loads that were found on the
+   * H4350 the member had just switched off.
+   *
+   * ⚠️ SO A CONTROL THE MEMBER CAN SEE IS A PARAMETER THIS METHOD READS.
+   * A new filter added to the toolbar and not added here does not fail — it
+   * silently widens every figure on the screen, the diagnosis included.
+   */
   @Get('loads')
   @UseGuards(OptionalClerkGuard)
   async loads(@Req() req: { clerkUserId?: string }, @Query() q: Record<string, string>) {
     const bench = await this.benchFor(req, q);
     return this.bench.loads(bench, {
-      cartridgeKey: q.cartridgeKey || undefined,
+      cartridgeKey: q.cartridge || undefined,
       powderId: q.powderId || undefined,
-      weightMin: q.weightMin ? Number(q.weightMin) : undefined,
-      weightMax: q.weightMax ? Number(q.weightMax) : undefined,
+      ...weightBand(q.weight),
     });
   }
 
@@ -158,33 +179,49 @@ export class BenchController {
    * member's .308" 150 gr SP went on matching 8x57 loads it will not chamber
    * in. The service's own spec could not catch it — it calls loads() directly
    * and never comes through the controller.
+   *
+   * 🚨 AND THE SWITCHED-OFF CHIPS COME OUT HERE, IN THE ONE DOOR, so the
+   * results, the powder chips' counts and the spec card's count all answer
+   * for the SAME shelf. `off` is what the member has greyed out for this
+   * search — it never touches the saved bench — and a surface that skipped it
+   * would print a figure for a shelf the member can see they are not using.
    */
   private async benchFor(
     req: { clerkUserId?: string },
     q: Record<string, string>,
   ): Promise<GuestBench> {
+    const off = new Set(split(q.off));
+
     if (req.clerkUserId) {
       const mine = await this.bench.getBench(req.clerkUserId);
       return {
-        powderIds: mine.powders.map((p) => p.id),
-        bullets: mine.bullets.map((b) => ({
-          maker: b.maker,
-          weightGr: b.weightGr,
-          category: b.category,
-          calibreIn: storedCalibre(b.calibreIn),
-        })),
-        cartridgeKeys: mine.cartridges.map((c) => c.key),
+        powderIds: mine.powders.filter((p) => !off.has(p.id)).map((p) => p.id),
+        // ⚠️ KEYED OFF THE STORED BULLET, NOT THE SANITISED ONE. The client
+        // builds these keys from what GET /bench/me handed it, which is the
+        // raw Json column — so an unreadable calibre keys as the client wrote
+        // it here and as storedCalibre() reads it below, and the chip the
+        // member switched off is the bullet that leaves.
+        bullets: mine.bullets
+          .filter((b) => !off.has(benchBulletKey(b)))
+          .map((b) => ({
+            maker: b.maker,
+            weightGr: b.weightGr,
+            category: b.category,
+            calibreIn: storedCalibre(b.calibreIn),
+          })),
+        cartridgeKeys: mine.cartridges.filter((c) => !off.has(c.key)).map((c) => c.key),
       };
     }
     return {
-      powderIds: split(q.powders),
-      cartridgeKeys: split(q.cartridges),
+      powderIds: split(q.powders).filter((id) => !off.has(id)),
+      cartridgeKeys: split(q.cartridges).filter((key) => !off.has(key)),
       // "maker|weight|category" or "maker|weight|category|calibre" — the two
       // shapes the client's bulletKey() emits, and it emits the second for
       // every bullet added since calibres were recorded. Both are accepted:
       // dropping the four-part form would make a guest's whole shelf parse to
       // nothing, which reads as the page being broken.
       bullets: split(q.bullets)
+        .filter((s) => !off.has(s))
         .map((s) => s.split('|'))
         .filter((p) => p.length === 3 || p.length === 4)
         .map(([maker, weight, category, calibre]) => ({
@@ -202,6 +239,56 @@ export class BenchController {
 
 function split(v: string | undefined): string[] {
   return v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [];
+}
+
+/**
+ * A bullet's identity on the bench, in the client's own spelling.
+ *
+ * 🚨 THE SAME STRING bulletKey() BUILDS IN components/bench/contract.ts, AND
+ * IT HAS TO STAY THAT WAY OR `off` SILENTLY MATCHES NOTHING. Two shapes, both
+ * of which the query string carries: three parts for a bench saved before
+ * calibres were recorded, four for every bullet added since. A key that
+ * disagrees by so much as a trailing part does not error — it just leaves the
+ * chip switched off on the screen and switched on in the query.
+ *
+ * ⚠️ `${b.calibreIn}` ON THE STORED VALUE, NOT ON A PARSED ONE. GET /bench/me
+ * returns the Json column as written, so the client keyed on exactly this —
+ * and rounding, re-parsing or normalising it here would build a key the
+ * client never sends.
+ */
+function benchBulletKey(b: {
+  maker: string;
+  weightGr: number;
+  category: string;
+  calibreIn?: number | null;
+}): string {
+  const base = `${b.maker}|${b.weightGr}|${b.category}`;
+  return b.calibreIn == null ? base : `${base}|${b.calibreIn}`;
+}
+
+/**
+ * The finder's weight band as a range on `weightGr`.
+ *
+ * ⚠️ THE IDS ARE THE CLIENT'S, VERBATIM — see WEIGHT_BANDS in
+ * components/bench/contract.ts, whose own comment promises "values match the
+ * API's `weight` query". They did not: nothing on this side read the
+ * parameter at all, so every band searched every weight.
+ *
+ * ⚠️ THE BOUNDS OVERLAP BECAUSE THE LABELS DO. "≤ 100 gr", "100–150 gr" and
+ * "150 gr +" all claim their endpoint, so a 150 gr bullet is in two bands —
+ * which is what a reloader reading those labels expects. Nudging one bound to
+ * make the set disjoint would hide a weight from the band that names it.
+ *
+ * An unknown or absent band narrows nothing, which is what 'any' means.
+ */
+const WEIGHT_BANDS: Record<string, { weightMin?: number; weightMax?: number }> = {
+  lte100: { weightMax: 100 },
+  '100to150': { weightMin: 100, weightMax: 150 },
+  gte150: { weightMin: 150 },
+};
+
+function weightBand(band: string | undefined): { weightMin?: number; weightMax?: number } {
+  return (band && WEIGHT_BANDS[band]) || {};
 }
 
 /**

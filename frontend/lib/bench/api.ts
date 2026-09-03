@@ -92,9 +92,30 @@ export interface LoadGroup {
   weights: WeightGroup[];
 }
 
+/**
+ * Why a search came back empty.
+ *
+ * ⚠️ AN EMPTY BENCH SCREEN IS INDISTINGUISHABLE FROM A BROKEN ONE WITHOUT
+ * THIS. Results are an AND across powder, bullet and cartridge, so one
+ * starving axis empties the page and the member cannot tell which. These are
+ * the counts with each axis relaxed in turn: if dropping the bullets would
+ * have found loads, the bullets are what is missing.
+ *
+ * Present only when count is 0 and the bench holds all three axes.
+ */
+export interface LoadsWhy {
+  /** Loads for the cartridges and powders on the bench, ignoring its bullets. */
+  ignoringBullets: number;
+  /** Loads for the cartridges and bullets on the bench, ignoring its powders. */
+  ignoringPowders: number;
+  /** Loads for the powders and bullets on the bench, ignoring its cartridges. */
+  ignoringCartridges: number;
+}
+
 export interface LoadsResponse {
   count: number;
   groups: LoadGroup[];
+  why?: LoadsWhy;
 }
 
 export interface BenchPowder {
@@ -229,6 +250,29 @@ function query(q: LoadQuery): string {
   return s ? `?${s}` : '';
 }
 
+/**
+ * The switched-off chips, for the two bench-relative COUNTS that are not the
+ * loads list.
+ *
+ * 🚨 EVERY SURFACE THAT COUNTS AGAINST THE BENCH SENDS THIS, OR IT ANSWERS FOR
+ * A DIFFERENT SHELF THAN THE ONE ON SCREEN. BenchController.benchFor takes
+ * `off` out in the one door, so the results, the powder chips' counts and the
+ * spec card's "loads on your bench" agree — but only for a caller that sends
+ * it. Omitted, the request does not fail: it quietly answers for the full
+ * bench, and the spec card then reads "12 loads on your bench" over a list
+ * showing five, with a greyed-out chip beside it explaining neither figure.
+ *
+ * ⚠️ ONE FLAT LIST, ALL THREE AXES, exactly as the loads query sends it — the
+ * server matches each axis against the same set. See bulletKey() in
+ * components/bench/contract.ts for the shape of a bullet's entry.
+ */
+function offParam(off: string[] | undefined, extra?: Record<string, string>): string {
+  const p = new URLSearchParams(extra);
+  if (off?.length) p.set('off', off.join(','));
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
+
 export const benchApi = {
   me: (t: TokenGetter) => call<BenchView>(t, '/me'),
 
@@ -253,11 +297,13 @@ export const benchApi = {
 
   cartridgeList: (t: TokenGetter) => call<BenchCartridgeOption[]>(t, '/cartridges'),
 
-  powders: (t: TokenGetter, search?: string) =>
-    call<BenchPowder[]>(t, `/powders${search ? `?q=${encodeURIComponent(search)}` : ''}`),
+  /** `off` carries the switched-off chips — see offParam. */
+  powders: (t: TokenGetter, search?: string, off?: string[]) =>
+    call<BenchPowder[]>(t, `/powders${offParam(off, search ? { q: search } : undefined)}`),
 
-  cartridge: (t: TokenGetter, key: string) =>
-    call<CartridgeSpec>(t, `/cartridges/${encodeURIComponent(key)}`),
+  /** `off` carries the switched-off chips — see offParam. */
+  cartridge: (t: TokenGetter, key: string, off?: string[]) =>
+    call<CartridgeSpec>(t, `/cartridges/${encodeURIComponent(key)}${offParam(off)}`),
 
   log: (t: TokenGetter) => call<LogEntry[]>(t, '/log'),
 

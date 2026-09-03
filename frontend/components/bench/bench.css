@@ -439,6 +439,16 @@
   align-items: center;
   animation: bench-up var(--dur-base) var(--ease-out) both;
   z-index: 70;
+  /*
+   * ⚠️ THE CAP THAT KEEPS THIS ON THE SCREEN IS Toast.tsx's, NOT THIS RULE'S.
+   * Fixed, centred and unclamped, a long line runs off BOTH edges of a phone
+   * and puts a horizontal scrollbar on a page whose CSS deliberately never
+   * clamps overflow-x. The removal confirmation is the longest line the module
+   * has — it names a bullet the way the chip does, calibre and product and
+   * weight — so it is the one that would do it. Toast.tsx caps the width and
+   * ellipsises; the name leads the sentence, so what is lost off the end is
+   * "…from your bench" and never which bullet went.
+   */
   white-space: nowrap;
 }
 
