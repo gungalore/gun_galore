@@ -153,7 +153,7 @@ Everything else has a coded default, documented at its own definition
 | `WARDEN_SWEEP_INTERVAL_MS` | `60000` | How often the background loop wakes (each check still declares its own cadence) |
 | `WARDEN_DIAGNOSE_MIN_INTERVAL_MS` | `1800000` | Minimum gap between model calls when the fault set hasn't changed |
 | `WARDEN_CHAT_BUDGET_MS` | `18000` | `POST /chat`'s own ceiling, inside the backend's 25s |
-| `WARDEN_MODEL_TIMEOUT_MS` | `20000` | Per-call timeout to Anthropic |
+| `WARDEN_MODEL_TIMEOUT_MS` | `90000` | Per-call timeout to Anthropic. ⚠️ Was 20s, which is SHORTER than a real diagnosis and meant no sweep ever completed one — a trivial zero-check prompt measures 6.8s on the box and `MAX_TOKENS` is 4096. Not bound by nginx: the chat request answers inside `WARDEN_CHAT_BUDGET_MS` and the model call continues in the background. |
 | `ANTHROPIC_MODEL_WARDEN` | falls back to `ANTHROPIC_MODEL_JUDGE`, then `claude-sonnet-4-6` | Model choice — never pinned in code as if it were a contract |
 | `WARDEN_APP_ROOT` | `/home/alloutdoor/app` | The live box's checkout root — this is the one the repo itself disagrees about; see `context.ts`'s header |
 | `WARDEN_REPO_ROOT` | same as `WARDEN_APP_ROOT` | Separate only for a dev running Warden against a different copy |

@@ -36,7 +36,25 @@ const MODEL =
 
 /** Under the backend's 25s write budget with room for the two-hop approve
  *  path — a sweep that wants longer passes its own value. */
-const DEFAULT_TIMEOUT_MS = Number(process.env.WARDEN_MODEL_TIMEOUT_MS ?? 20_000);
+/**
+ * 🚨 90s, NOT 20s — AND THE OLD DEFAULT MEANT WARDEN NEVER ONCE DIAGNOSED
+ * ANYTHING. Measured on the live box: a TRIVIAL prompt with zero checks takes
+ * 6.8s, and MAX_TOKENS here is 4096 — a real sweep over ~30 checks with their
+ * evidence generates far more than that trivially does, and output tokens are
+ * what the latency is made of. Every diagnosis hit 20s and came back as the
+ * SDK's "Request timed out.", which the board then rendered as "I could not
+ * reach Claude for this sweep" — a sentence that sent the reader looking at
+ * the network and the key, both of which were fine (a direct completion from
+ * that box answers in 2s).
+ *
+ * ⚠️ THIS IS NOT BOUND BY nginx OR CLOUDFLARE. The chat request answers within
+ * WARDEN_CHAT_BUDGET_MS (18s) and hands the model call to the background set,
+ * which deliberately outlives the request — that whole design exists so the
+ * model may take as long as it needs. A timeout SHORTER than the work is the
+ * one thing that breaks it, because the deferred reply then dies too and the
+ * thread just says the call failed.
+ */
+const DEFAULT_TIMEOUT_MS = Number(process.env.WARDEN_MODEL_TIMEOUT_MS ?? 90_000);
 
 /** A diagnosis is a handful of short items. A bigger ceiling buys nothing and
  *  lets one bad turn cost real money. */
