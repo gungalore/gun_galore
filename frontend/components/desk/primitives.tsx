@@ -238,8 +238,12 @@ export function Tag({ kind = 'neutral', children, icon }: TagProps) {
         gap: 5,
         height: 22,
         padding: '0 8px',
-        borderRadius: 'var(--dk-radius-pill)',
-        fontSize: 11,
+        // The artboards' .tag, to the value: a 5px rounded rectangle at
+        // 10.5px. It was a 999px pill at 11px — which is the Chip's shape,
+        // and a tag that looks like a chip reads as pressable when it is
+        // only ever a state being reported.
+        borderRadius: 'var(--dk-radius-tag)',
+        fontSize: 10.5,
         fontWeight: 500,
         lineHeight: 1,
         whiteSpace: 'nowrap',

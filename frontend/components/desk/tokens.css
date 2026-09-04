@@ -67,6 +67,10 @@
   --dk-radius-card: 12px;
   --dk-radius-control: 8px;
   --dk-radius-pill: 999px;
+  /* A tag is a rounded RECTANGLE, not a pill. Every artboard sets
+     `.tag { border-radius: 5px }`; the Desk had them at 999, which reads
+     as a chip — something you press — rather than a state you read. */
+  --dk-radius-tag: 5px;
 
   /* 34 at the desk, 44 under the thumb. Overridden in the phone block below
    * rather than branched in every component. */
