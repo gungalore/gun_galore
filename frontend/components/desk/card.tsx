@@ -133,8 +133,9 @@ export function DeskCard({
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 22 }}>
         <Icon size={14} style={{ color: 'var(--dk-ink-3)' }} />
+        {/* Sans — the artboards' .lbl. Mono is reserved for the data
+            beside it: the reference, the counts, the money. */}
         <span
-          className="dk-mono"
           style={{
             fontSize: 11,
             fontWeight: 500,

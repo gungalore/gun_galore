@@ -402,12 +402,12 @@ export function Band({ label, count, children }: BandProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 2px 2px' }}>
+        {/* Sans, like every .lbl in the artboards — mono is for data. */}
         <span
-          className="dk-mono"
           style={{
             fontSize: 11,
             fontWeight: 500,
-            letterSpacing: '0.08em',
+            letterSpacing: '0.07em',
             textTransform: 'uppercase',
             color: 'var(--dk-ink-3)',
             whiteSpace: 'nowrap',

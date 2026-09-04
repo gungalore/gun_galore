@@ -3,11 +3,14 @@
 /**
  * THE DESK — the number surfaces: Ribbon, KPI, RailCard, Vital, Meter, Delta.
  *
- * One recipe shared by the Desk ribbon, the Pulse tiles and the rail: a mono
- * label in ink-3, a mono value, a quiet sub-line. Values are mono because the
- * operator reads them as data and sometimes copies them out; labels are mono
- * because it keeps the label and its value in one visual family and leaves
- * Geist to carry the prose.
+ * One recipe shared by the Desk ribbon, the Pulse tiles and the rail: a label
+ * in ink-3, a mono value, a quiet sub-line. Values are mono because the
+ * operator reads them as data and sometimes copies them out.
+ *
+ * ⚠️ LABELS ARE NOT MONO. They used to be, on the reasoning that it kept a
+ * label and its value in one visual family — which is the thing the
+ * artboards reject. All five define .lbl in the sans face and reserve .mono
+ * for data. A label is prose ABOUT a value, not another value.
  *
  * ⚠️ DELTAS ARE INK, NEVER GREEN OR RED. A month that is down 3% is not an
  * alarm and a month that is up 3% is not a success — they are numbers. The
@@ -89,8 +92,8 @@ export function Ribbon({ cells, compact = false }: RibbonProps) {
               borderRadius: 'var(--dk-radius-control)',
             }}
           >
+            {/* .stat .k in the artboard — sans, like every other label. */}
             <span
-              className="dk-mono"
               style={{
                 fontSize: 10.5,
                 fontWeight: 500,
@@ -405,14 +408,28 @@ export function Meter({ value, tone = 'ok' }: { value: number; tone?: StateTone 
  * Shared bits
  * ──────────────────────────────────────────────────────────────────────── */
 
+/**
+ * A field label.
+ *
+ * ⚠️ THE SANS FACE, NOT MONO — and this reverses what the note at the top
+ * of this file used to argue. All five artboards define .lbl identically
+ * and none of them is mono: `font-size: 11px; letter-spacing: 0.07em;
+ * text-transform: uppercase; color: #7F8885; font-weight: 500`. Mono is
+ * `.mono`, and the artboards spend it on DATA — references, counts, money,
+ * the things an operator reads as figures or copies out.
+ *
+ * The old reasoning ("it keeps the label and its value in one visual
+ * family") is exactly what the artboards reject: the label is prose about
+ * the value, not another value, and setting both in mono flattens the two
+ * into one column of typewriter text.
+ */
 export function Label({ children }: { children: React.ReactNode }) {
   return (
     <span
-      className="dk-mono"
       style={{
         fontSize: 11,
         fontWeight: 500,
-        letterSpacing: '0.06em',
+        letterSpacing: '0.07em',
         textTransform: 'uppercase',
         color: 'var(--dk-ink-3)',
         whiteSpace: 'nowrap',
