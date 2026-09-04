@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BrowserMayOnlyStreamALivenessChallenge",
+      "Effect": "Allow",
+      "Action": "rekognition:StartFaceLivenessSession",
+      "Resource": "*"
+    },
+    {
+      "Sid": "IrelandOnly",
+      "Effect": "Deny",
+      "Action": "rekognition:*",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": "eu-west-1"
+        }
+      }
+    }
+  ]
+}

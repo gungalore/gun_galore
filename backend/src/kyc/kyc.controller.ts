@@ -115,11 +115,28 @@ export class KycController {
     return this.kyc.submitIdDocument(clerkId, file);
   }
 
-  // Step 4: live selfie → the single Claude verdict.
+  // Opens an AWS Face Liveness session. The browser runs the challenge
+  // against this id with Amplify's FaceLivenessDetector, then posts the
+  // id back with the selfie so the verdict can read the result.
+  //
+  // ⚠️ A SESSION RESULT IS READABLE ONCE, and only for a few minutes. The
+  // seller must go straight from this call into the challenge and then
+  // into POST /kyc/selfie — an id parked in a tab is worthless.
+  @Post('liveness-session')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async livenessSession(@CurrentUser() clerkId: string) {
+    return this.kyc.createLivenessSession(clerkId);
+  }
+
+  // Step 4: live selfie → the single AWS verdict.
   @Post('selfie')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async selfie(@CurrentUser() clerkId: string, @Body() dto: KycSelfieDto) {
-    return this.kyc.submitSelfieClaudeVerdict(clerkId, dto.selfieBase64);
+    return this.kyc.submitSelfieClaudeVerdict(
+      clerkId,
+      dto.selfieBase64,
+      dto.livenessSessionId,
+    );
   }
 
   // "SMS me the link" — desktop-without-camera handoff to the phone.

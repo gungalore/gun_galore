@@ -3,6 +3,7 @@ process.env.ID_HASH_SECRET = 'test-secret-kyc-spec';
 import { BadRequestException } from '@nestjs/common';
 import { KycService } from './kyc.service';
 import { ClaudeKycService, type KycClaudeFindings } from './claude-kyc.service';
+import { AwsKycService } from './aws-kyc.service';
 import { encryptSaIdNumber } from '../common/id-crypto';
 
 // Canonical Luhn-valid SA test ID — DOB 1980-01-01.
@@ -144,10 +145,29 @@ function makeService(o: Overrides = {}) {
       .mockResolvedValue({ url: 'https://res.cloudinary.com/demo/raw/upload/v1/kyc/u1/doc.pdf', publicId: 'p' }),
   };
 
+  // ClaudeKycService is REAL — it still owns statusFromFindings and
+  // retakeReason, which is exactly what these tests exercise. Only the
+  // scan itself moved to AWS, so that is the only thing stubbed.
   const claudeKyc = new ClaudeKycService();
-  const scanMock = jest.spyOn(claudeKyc, 'scan');
+  const aws = new AwsKycService();
+  const scanMock = jest.spyOn(aws, 'scan');
   if (o.scan instanceof Error) scanMock.mockRejectedValue(o.scan);
-  else scanMock.mockResolvedValue(o.scan ?? goodFindings());
+  else
+    scanMock.mockResolvedValue({
+      ...(o.scan ?? goodFindings()),
+      provenance: {
+        engine: 'aws' as const,
+        integrity: {
+          score: 90,
+          source: 'rules' as const,
+          checked: [],
+          notChecked: [],
+          flags: [],
+        },
+        livenessRan: true,
+        notes: [],
+      },
+    });
 
   // ⚠️ IDENTITY DOCUMENTS LIVE HERE NOW, NOT ON A CDN. They went up with
   // Cloudinary's defaults — no `type: 'private'`, no access_mode — so the
@@ -173,11 +193,13 @@ function makeService(o: Overrides = {}) {
     settings as never,
     cloudinary as never,
     claudeKyc,
+    aws,
     files as never,
   );
 
   return {
     service,
+    aws,
     prisma,
     verifyNow,
     sms,
@@ -296,12 +318,13 @@ describe('submitSelfieClaudeVerdict', () => {
     });
     const res = await service.submitSelfieClaudeVerdict('clerk_1', 'c2VsZmll');
     expect(verifyNow.verifyIdNumber).toHaveBeenCalled();
-    // Second arg is the consensus lens — the anchored scan now runs through
-    // scanWithConsensus, which labels each reading (BASELINE here; a
-    // borderline score would add the SKEPTICAL/CHARITABLE passes).
+    // `mode` and the consensus lens both belonged to the Claude flow and
+    // are gone: AWS returns one deterministic reading, and anchored mode
+    // is derived in kyc.service from the tier plus whether a Home Affairs
+    // photo actually came back. What must still hold is that the photo
+    // reached the scan — without it there is no anchored gate at all.
     expect(scanMock).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'anchored', haPhotoBase64: expect.any(String) }),
-      'BASELINE',
+      expect.objectContaining({ haPhotoBase64: expect.any(String) }),
     );
     expect(res.status).toBe('VERIFIED');
     expect(
@@ -478,5 +501,114 @@ describe('maybeUpgradeKycTier (silent anchored upgrade)', () => {
     await expect(
       service.maybeUpgradeKycTier('u1', 1_500_000),
     ).resolves.toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// A RETAKE is a camera problem, not a verdict. The server is careful about
+// this — no attempt increment, no status write, no alert, no failure SMS —
+// but it says so ONLY through the `outcome` field, because `status` is
+// deliberately left at whatever the seller already had. The wizard used to
+// infer a rejection from that unchanged status, show the "email support"
+// screen, and spend one of its three local attempts on a photo the server
+// never counted. These tests hold the signal in place.
+// ─────────────────────────────────────────────────────────────────────
+describe('submitSelfieClaudeVerdict — RETAKE is not a failure', () => {
+  it('reports outcome RETAKE and takes no strike', async () => {
+    const { service, prisma } = makeService({
+      // Can't see the photo on the ID, so there is nothing to compare the
+      // selfie against — ask for a better picture, do not accuse anyone.
+      scan: goodFindings({ document_photo_visible: 15 }),
+    });
+
+    const res = await service.submitSelfieClaudeVerdict('clerk_1', 'c2VsZmll');
+
+    expect(res.outcome).toBe('RETAKE');
+    expect(res.status).toBe('PENDING');
+    // The guarded write is what increments kycAttempts and sets kycStatus.
+    // Reaching it at all would cost the seller a strike.
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+    expect(prisma.adminAlert.create).not.toHaveBeenCalled();
+  });
+
+  it('tells the seller what to do differently, not to email support', async () => {
+    const { service } = makeService({
+      scan: goodFindings({ document_photo_visible: 15 }),
+    });
+    const res = await service.submitSelfieClaudeVerdict('clerk_1', 'c2VsZmll');
+    expect(res.message).toMatch(/retake|light|glare|frame/i);
+    expect(res.message).not.toMatch(/email .*support/i);
+  });
+
+  it('a real rejection is still reported as one', async () => {
+    // The counterpart: outcome must actually discriminate. If REJECTED also
+    // came back as RETAKE the field would be decoration.
+    const { service } = makeService({
+      scan: goodFindings({ same_person: 4 }),
+    });
+    const res = await service.submitSelfieClaudeVerdict('clerk_1', 'c2VsZmll');
+    expect(res.outcome).toBe('REJECTED');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// The liveness challenge is the ONLY thing that can answer the
+// anti-spoofing gate, and it runs in the browser against credentials this
+// endpoint vends. The failure mode that matters is not an outage — it is
+// the endpoint quietly handing back something unusable and the wizard
+// carrying on as though the check had happened.
+// ─────────────────────────────────────────────────────────────────────
+describe('createLivenessSession', () => {
+  it('reports itself unavailable when credentials cannot be vended, and mints NO session', async () => {
+    const { service, aws } = makeService();
+    jest.spyOn(aws, 'vendBrowserCredentials').mockResolvedValue(undefined);
+    const create = jest.spyOn(aws, 'createLivenessSession');
+
+    const res = await service.createLivenessSession('clerk_1');
+
+    expect(res.available).toBe(false);
+    expect('sessionId' in res).toBe(false);
+    // A session starts expiring the moment it exists and is single-use.
+    // Minting one we cannot hand credentials for burns it for nothing and
+    // gives the browser an id that can only ever come back as CREATED.
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('vends credentials and a session together when configured', async () => {
+    const { service, aws } = makeService();
+    jest.spyOn(aws, 'vendBrowserCredentials').mockResolvedValue({
+      accessKeyId: 'ASIA_TEST',
+      secretAccessKey: 'secret',
+      sessionToken: 'token',
+      expiration: new Date().toISOString(),
+    });
+    jest.spyOn(aws, 'createLivenessSession').mockResolvedValue('sess_123');
+
+    const res = await service.createLivenessSession('clerk_1');
+
+    expect(res.available).toBe(true);
+    // Atomic on purpose: a session id without credentials is unusable, and
+    // credentials without a session have nothing to stream.
+    expect(res).toMatchObject({
+      sessionId: 'sess_123',
+      region: expect.any(String),
+      credentials: expect.objectContaining({ sessionToken: 'token' }),
+    });
+  });
+
+  it('never returns the server key to the browser', async () => {
+    process.env.AWS_ACCESS_KEY_ID = 'AKIA_SERVER_KEY_MUST_NOT_LEAK';
+    const { service, aws } = makeService();
+    jest.spyOn(aws, 'vendBrowserCredentials').mockResolvedValue({
+      accessKeyId: 'ASIA_TEMP',
+      secretAccessKey: 'temp',
+      sessionToken: 'token',
+      expiration: new Date().toISOString(),
+    });
+    jest.spyOn(aws, 'createLivenessSession').mockResolvedValue('sess_123');
+
+    const res = await service.createLivenessSession('clerk_1');
+
+    expect(JSON.stringify(res)).not.toContain('AKIA_SERVER_KEY_MUST_NOT_LEAK');
   });
 });
