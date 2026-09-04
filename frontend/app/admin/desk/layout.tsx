@@ -16,6 +16,21 @@ import '../../../components/desk/tokens.css';
 import { RequireDeskSession } from '../../../components/desk/require-desk-session';
 
 /**
+ * ⚠️ THE DESK LINKS ITS OWN MANIFEST, NOT THE SHOP'S.
+ *
+ * Without this line every /admin page carried the root <link rel="manifest">
+ * to /manifest.webmanifest, whose id/start_url/scope are all '/'. So adding
+ * the Desk to a home screen installed the SHOP — its name, its icon, and a
+ * launch into the storefront — and no setting on the phone could change it.
+ *
+ * The manifest itself is served by app/admin/manifest.webmanifest/route.ts;
+ * see the note there for why it is a route handler and not a manifest.ts.
+ */
+export const metadata = {
+  manifest: '/admin/manifest.webmanifest',
+};
+
+/**
  * The Desk paints its own browser chrome.
  *
  * Without this the Desk inherited the SHOP's theme-color, #F6F5F1 — the cream
