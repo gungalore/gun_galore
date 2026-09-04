@@ -22,6 +22,7 @@ import { IconExternal, IconSearch } from './icons';
 import { SearchPalette } from './dialogs';
 import { useDeskSearch } from './use-desk-search';
 import { useIsPhone } from './interactions';
+import { signOutOfDesk } from '@/lib/desk-auth';
 
 export interface DeskShellProps {
   /** Which of the five tabs is lit. */
@@ -302,8 +303,21 @@ function DesktopBar({
           </span>
         ) : null}
 
-        <span
-          aria-hidden="true"
+        {/* 🚨 THIS WAS A DECORATIVE <span aria-hidden="true">, AND IT WAS THE
+            ONLY PLACE AN OPERATOR WOULD LOOK TO SIGN OUT. signOutOfDesk() has
+            sat in lib/desk-auth.ts since the cutover — documented as "the only
+            honest logout" because it clears BOTH stores — with no caller
+            anywhere in the Desk. So the admin surface had no way out of itself
+            except closing the tab, which leaves the token live.
+
+            The artboard puts "Sign out of the Desk" at the foot of the More
+            screen; that screen is not built, so it lives on the avatar, which
+            is where people already reach for it. */}
+        <button
+          type="button"
+          onClick={signOutOfDesk}
+          aria-label="Sign out of the Desk"
+          title="Sign out of the Desk"
           style={{
             width: 30,
             height: 30,
@@ -314,13 +328,15 @@ function DesktopBar({
             borderRadius: '50%',
             background: 'var(--dk-inset)',
             border: '1px solid var(--dk-line-2)',
+            fontFamily: 'inherit',
             fontSize: 11,
             fontWeight: 600,
             color: 'var(--dk-ink-2)',
+            cursor: 'pointer',
           }}
         >
           Op
-        </span>
+        </button>
       </div>
     </header>
   );

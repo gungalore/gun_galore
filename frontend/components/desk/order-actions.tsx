@@ -27,6 +27,7 @@ import {
   reasonIsUsable,
   refundOrder,
   releaseOrder,
+  withLineContext,
   overrideDealerVerification,
   releasePayoutHold,
   resolveDisputeRelease,
@@ -72,6 +73,21 @@ export interface OrderActionsProps {
   seller: string;
   buyer: string;
   /**
+   * WHICH LINE THESE LEVERS ACT ON, and how many it does NOT act on.
+   *
+   * 🚨 THE CONFIRM IS THE SAFETY RAIL AND IT WAS MISSING ITS SUBJECT.
+   * Money here is per-LINE — the artboard says so in capitals and the
+   * server enforces it: fully refunding a consolidated carrier line while
+   * its siblings are still held is refused, in an order the operator
+   * cannot predict from this screen. The confirm named the amount and the
+   * recipient and never once named the LINE, so on a three-line cart it
+   * read exactly the same whichever line was selected.
+   *
+   * Null on a single-line sale, where there is no sibling to be wrong
+   * about and "1 of 1" is noise.
+   */
+  line?: { title: string; index: number; total: number } | null;
+  /**
    * The dealer stock-in verdict, when this sale is a firearm going through a
    * dealer. Null on every other sale, and the override is not offered.
    *
@@ -115,6 +131,7 @@ export function OrderActions({
   disputed,
   seller,
   buyer,
+  line = null,
   dealerVerificationStatus = null,
   onDone,
 }: OrderActionsProps) {
@@ -181,7 +198,7 @@ export function OrderActions({
   const payout = sellerPayoutCents === null ? null : formatRand(sellerPayoutCents);
   const paid = buyerTotalCents === null ? null : formatRand(buyerTotalCents);
 
-  function dialogFor(l: Exclude<Lever, null>) {
+  function dialogForLever(l: Exclude<Lever, null>) {
     if (l === 'refund') {
       const shown =
         partialCents === undefined ? (paid ?? 'the remaining balance') : formatRand(partialCents);
@@ -274,10 +291,44 @@ export function OrderActions({
     };
   }
 
+  /**
+   * Every confirm names the LINE it acts on, and says what it leaves alone.
+   *
+   * 🚨 APPLIED HERE RATHER THAN INSIDE EACH LEVER, DELIBERATELY. There are
+   * seven levers and each builds its own rows; adding the line to the two
+   * obvious ones would have left refund-on-a-sibling — the exact case the
+   * server refuses — still reading as though it acted on the whole order.
+   * Wrapping is how all seven get it and none can be forgotten.
+   *
+   * The reasoning and the wording live with withLineContext in
+   * lib/desk-order.ts, where they are unit-tested.
+   */
+  function dialogFor(l: Exclude<Lever, null>) {
+    const d = dialogForLever(l);
+    return { ...d, rows: withLineContext(d.rows, line) };
+  }
+
   const d = lever ? dialogFor(lever) : null;
 
   return (
     <Section label="Money levers" last>
+      {/* ⚠️ READ BEFORE A LEVER IS PICKED, NOT AFTER ONE IS.
+          The artboard puts this line directly under the "Money levers" label
+          and above the buttons (Order.dc.html). The only equivalent copy in
+          the build lived inside the confirm — "Undo: None. Money never
+          undoes." — which an operator sees only once they have already chosen
+          a lever and typed a note. A warning that arrives after the decision
+          is a warning about a decision already made. */}
+      <span
+        style={{
+          fontSize: 12,
+          lineHeight: 1.45,
+          color: 'var(--dk-ink-3)',
+          paddingBottom: 2,
+        }}
+      >
+        Nothing here undoes. Each writes an audit row against you.
+      </span>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {!released && (
           <Button
