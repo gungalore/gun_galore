@@ -591,7 +591,14 @@ export function UndoToast({ message, seconds, total = 10, onUndo }: UndoToastPro
       aria-live="polite"
       style={{
         position: 'fixed',
-        bottom: 24,
+        // Above the phone tab bar, not on top of it. BottomTabs is fixed at
+        // bottom 0 with height 78 + inset; a flat bottom:24 put this toast
+        // wholly INSIDE that footprint, and at z 80 against the bar's 40 it
+        // painted over the middle tabs — so the control that undoes a
+        // decision covered the controls for leaving the screen.
+        // Desktop is unaffected: with no bar rendered the extra lift is a
+        // slightly higher toast, which is where it sat on the artboards.
+        bottom: 'calc(78px + env(safe-area-inset-bottom, 0px) + 12px)',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 80,

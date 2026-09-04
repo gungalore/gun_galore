@@ -188,8 +188,8 @@ export const viewport: Viewport = {
   // theme, so the two media arms are deliberately identical rather than
   // absent — a missing light arm lets Chrome pick its own tab colour.
   themeColor: [
-    { media: '(prefers-color-scheme: dark)', color: '#F6F5F1' },
-    { media: '(prefers-color-scheme: light)', color: '#F6F5F1' },
+    { media: '(prefers-color-scheme: dark)', color: '#FFFFFF' },
+    { media: '(prefers-color-scheme: light)', color: '#FFFFFF' },
   ],
 };
 

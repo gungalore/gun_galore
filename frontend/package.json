@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "node scripts/desk-guard.cjs && node scripts/desk-cutover.cjs && next build --webpack",
+    "build": "node scripts/desk-guard.cjs && node scripts/desk-cutover.cjs && node scripts/theme-sync.cjs && next build --webpack",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",

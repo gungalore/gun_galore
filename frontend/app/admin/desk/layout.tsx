@@ -15,6 +15,25 @@ import { fontDesk, fontDeskMono } from '../../fonts';
 import '../../../components/desk/tokens.css';
 import { RequireDeskSession } from '../../../components/desk/require-desk-session';
 
+/**
+ * The Desk paints its own browser chrome.
+ *
+ * Without this the Desk inherited the SHOP's theme-color, #F6F5F1 — the cream
+ * of the white retail skin — so on a phone the status bar and the pull-to-
+ * refresh gutter rendered near-white directly above a #101312 near-black app.
+ * On an installed home-screen icon that is the first and last thing seen on
+ * every launch.
+ *
+ * ⚠️ --dk-ground's literal value, not a var(). This is a meta tag, resolved by
+ * the browser chrome long before any stylesheet is parsed; a var() here
+ * resolves to nothing and the tag is silently dropped. Keep it in step with
+ * components/desk/tokens.css — it is the one place the palette is duplicated,
+ * and the only place it has to be.
+ */
+export const viewport = {
+  themeColor: '#101312',
+};
+
 export default function DeskLayout({ children }: { children: React.ReactNode }) {
   return (
     <div

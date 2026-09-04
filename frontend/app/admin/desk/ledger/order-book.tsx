@@ -45,6 +45,7 @@ import {
   SkeletonPile,
   Tag,
   formatRand,
+  useIsPhone,
   type Column,
 } from '@/components/desk';
 import { formatWhen } from '@/lib/desk-order';
@@ -90,6 +91,7 @@ export function OrderBook({
 }: OrderBookProps) {
   const rows = page?.orders ?? [];
   const bounds = page ? orderPageWindow(page.total, pageIndex) : null;
+  const phone = useIsPhone();
 
   /**
    * ⚠️ 860, NOT DeskTable's 1100 DEFAULT. That default exists to stop a wide
@@ -171,24 +173,149 @@ export function OrderBook({
         <SkeletonPile count={3} />
       ) : (
         <>
-          <DeskTable
-            minWidth={860}
-            columns={columns}
-            rows={rows}
-            rowKey={(r) => r.id}
-            onOpen={onOpenRow}
-            /* An order's first line has to be fetched before the drawer can
-               open, so the row lights while that hop is in the air — using
-               DeskTable's existing selection, not a new spinner. */
-            selectedKey={resolvingId ?? undefined}
-            empty={<EmptyCopy segment={segment} pageIndex={pageIndex} />}
-          />
+          {/* 🚨 A TABLE IS THE WRONG SHAPE ON A PHONE, AND THIS ONE WAS THE
+              LAST BOARD STILL USING IT THERE. DeskTable wraps itself in an
+              overflowX:auto div, so the PAGE never scrolled sideways — the
+              card did, silently: six fixed tracks totalling 860px inside a
+              390px screen, so more than half of every row, including Status
+              and Total, sat off-screen behind a scroll nobody signals.
+              The stack below is the same data with the same single click
+              target, wrapped instead of scrolled. */}
+          {phone ? (
+            <OrderCards
+              rows={rows}
+              onOpen={onOpenRow}
+              resolvingId={resolvingId}
+              empty={<EmptyCopy segment={segment} pageIndex={pageIndex} />}
+            />
+          ) : (
+            <DeskTable
+              minWidth={860}
+              columns={columns}
+              rows={rows}
+              rowKey={(r) => r.id}
+              onOpen={onOpenRow}
+              /* An order's first line has to be fetched before the drawer can
+                 open, so the row lights while that hop is in the air — using
+                 DeskTable's existing selection, not a new spinner. */
+              selectedKey={resolvingId ?? undefined}
+              empty={<EmptyCopy segment={segment} pageIndex={pageIndex} />}
+            />
+          )}
           {bounds ? (
             <Pager bounds={bounds} pageIndex={pageIndex} total={page.total} onPage={onPage} />
           ) : null}
         </>
       )}
     </>
+  );
+}
+
+/**
+ * The Orders lens on a phone: one card per order, nothing sideways.
+ *
+ * The shape is the one the phone artboards specify — reference and status on
+ * the first line, who and how much on the second, the date last. Same reading
+ * order as the table's columns, so an operator who knows one knows the other.
+ *
+ * ⚠️ THE WHOLE CARD IS THE CLICK TARGET AND THERE ARE NO BUTTONS ON IT — the
+ * same rule the table row follows, and for the reason at the top of this file:
+ * money on this board is per LINE, so an order-level control would promise an
+ * outcome the operator cannot predict. The card opens the drawer; the drawer
+ * holds the levers.
+ */
+function OrderCards({
+  rows,
+  onOpen,
+  resolvingId,
+  empty,
+}: {
+  rows: OrderRow[];
+  onOpen: (row: OrderRow) => void;
+  resolvingId: string | null;
+  empty: React.ReactNode;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div
+        style={{
+          padding: '32px 16px',
+          textAlign: 'center',
+          fontSize: 13,
+          color: 'var(--dk-ink-3)',
+          background: 'var(--dk-surface)',
+          border: '1px solid var(--dk-line)',
+          borderRadius: 'var(--dk-radius-card)',
+        }}
+      >
+        {empty}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {rows.map((r) => {
+        const resolving = resolvingId === r.id;
+        return (
+          <button
+            key={r.id}
+            type="button"
+            onClick={() => onOpen(r)}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              width: '100%',
+              textAlign: 'left',
+              padding: '12px 14px',
+              background: resolving ? 'var(--dk-inset)' : 'var(--dk-surface)',
+              border: '1px solid var(--dk-line)',
+              borderRadius: 'var(--dk-radius-card)',
+              color: 'var(--dk-ink)',
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <Ref>{orderRowReference(r)}</Ref>
+              <span style={{ flex: 1 }} />
+              <Tag kind={orderStatusTone(r.status)}>{orderSegmentLabel(r.status)}</Tag>
+            </span>
+            <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+              {/* The handle, never a name or an email — see the Buyer column. */}
+              <span
+                style={{
+                  fontSize: 13,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                @{r.buyer.username ?? 'anon'}
+              </span>
+              <span style={{ flex: 1 }} />
+              <Amount>{formatRand(r.buyerTotal)}</Amount>
+            </span>
+            <span
+              style={{
+                display: 'flex',
+                gap: 8,
+                fontSize: 11.5,
+                color: 'var(--dk-ink-3)',
+              }}
+            >
+              <span>{formatWhen(r.createdAt)}</span>
+              <span style={{ flex: 1 }} />
+              <span>
+                {r._count.transactions} {r._count.transactions === 1 ? 'line' : 'lines'}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

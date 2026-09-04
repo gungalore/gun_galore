@@ -1213,6 +1213,33 @@ html[data-standalone='true'] .gg-shell-pane {
   -webkit-overflow-scrolling: touch;
 }
 
+/* ── The service-worker update banner, when it lands on the Desk ────────
+   The banner is mounted ONCE in the root layout with no path check, so it
+   appears over the admin Desk as well as the shop. It cannot inherit the
+   Desk's tokens: it is a SIBLING of the page tree, not a descendant of
+   [data-desk], so the variables have to be set up here on <html> instead.
+
+   Without this it rendered in shop clothes on the Desk — --bg-card is
+   #FFFFFF, so a white card with #1A1613 text and a brand-red border sat on
+   the #101312 ground of a surface whose rule is that colour is ONLY ever
+   state, and which has no brand accent at all.
+
+   The lift is the other half: the shop's tab bar is --shell-tab-h (62px)
+   and the banner clears it at 72; the Desk's BottomTabs is 78, so the same
+   72 put the banner 6px inside it.
+
+   ⚠️ :has() — a browser without it falls back to the shop skin, which is
+   what shipped before this rule, so the degradation is the old behaviour
+   rather than a broken one. */
+html:has([data-desk]) {
+  --sw-banner-lift: 88px;
+  --sw-banner-bg: #1D2221;      /* --dk-raised */
+  --sw-banner-ink: #EEF2F0;     /* --dk-ink */
+  --sw-banner-ink-dim: #7F8885; /* --dk-ink-3 */
+  --sw-banner-line: #343C3A;    /* --dk-line-2 */
+  --sw-banner-accent: #5AA7FF;  /* --dk-info — a notice, not an alarm */
+}
+
 /* The header sits above page content in both modes so the search dropdown,
    which renders absolutely inside it, stacks over the page. Deliberately below
    60: modals and sheets live at z >= 60 and must be able to cover the chrome. */

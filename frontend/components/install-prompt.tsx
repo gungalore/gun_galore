@@ -743,8 +743,13 @@ function InstallPromptBody() {
             // the tab bar occupies its own height plus its own safe-area
             // padding (see [data-shell-tabs] in globals.css), so that's what
             // this bar's floor becomes.
+            // ⚠️ THE SAME min() CLAMP THE TAB BAR ITSELF USES. [data-shell-tabs]
+            // pads with min(env(safe-area-inset-bottom), 34px) because Chrome
+            // for iOS can report an inflated inset; reading the RAW inset here
+            // would lift this bar past the top of the bar it is sitting on and
+            // open a strip of page between them.
             bottom: tabBarPresent
-              ? 'calc(var(--shell-tab-h) + env(safe-area-inset-bottom))'
+              ? 'calc(var(--shell-tab-h) + min(env(safe-area-inset-bottom), 34px))'
               : 0,
             // Under Boet (z-60) and under the tab bar (z-55), both of which
             // outrank it by the house rule. Boet is lifted clear of this bar
@@ -757,7 +762,15 @@ function InstallPromptBody() {
             alignItems: 'center',
             gap: 10,
             padding: '9px 12px',
-            paddingBottom: 'calc(9px + env(safe-area-inset-bottom))',
+            // ⚠️ THE INSET IS PAID FOR ONCE, NOT TWICE. `bottom` above already
+            // lifts this bar clear of the home indicator whenever the tab bar
+            // is present; adding the inset again here padded a second copy of
+            // it INSIDE the bar, so on a notched iPhone the bar grew by ~34px
+            // of empty --bg-deep under its own text. Only pad when the bar is
+            // actually flush with the bottom edge and nothing else has paid.
+            paddingBottom: tabBarPresent
+              ? 9
+              : 'calc(9px + min(env(safe-area-inset-bottom), 34px))',
             background: 'var(--bg-deep)',
             // The hairline is the whole separation. A box-shadow here would be
             // dead code: globals.css opens with `* { box-shadow: none

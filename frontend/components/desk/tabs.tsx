@@ -127,7 +127,15 @@ export function BottomTabs({ active }: { active: string }) {
         // phone and costs nothing on one without.
         height: 78,
         paddingTop: 8,
-        paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))',
+        // ⚠️ CLAMPED, exactly as components/bottom-tab-bar.tsx is. Chrome for
+        // iOS keeps its own auto-hiding toolbar reserved even where
+        // display-mode reads standalone, so env(safe-area-inset-bottom) can
+        // come back far larger than the ~34pt home indicator it is meant to
+        // describe — that is the 'white bar roughly twice the height of the
+        // home indicator' already reported once on the shop. This bar paints
+        // --dk-ground, so uncapped it would do the same in near-black.
+        // min() needs no UA sniff: where the inset is honest nothing changes.
+        paddingBottom: 'calc(20px + min(env(safe-area-inset-bottom, 0px), 34px))',
         background: 'var(--dk-ground)',
         borderTop: '1px solid var(--dk-line)',
       }}
