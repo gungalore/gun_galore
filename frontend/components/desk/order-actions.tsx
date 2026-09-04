@@ -338,7 +338,9 @@ export function OrderActions({
               setLever(disputed ? 'dispute-release' : 'release');
             }}
           >
-            {disputed ? 'Resolve & release…' : 'Release payout…'}
+            {disputed
+              ? `Resolve & release ${payout ?? 'the stored payout'} to ${seller}`
+              : `Release ${payout ?? 'the stored payout'} to ${seller}`}
           </Button>
         )}
         <Button

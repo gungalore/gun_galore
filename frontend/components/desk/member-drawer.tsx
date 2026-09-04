@@ -358,7 +358,7 @@ export function MemberDrawer({ open, userId, onClose, onChanged }: MemberDrawerP
                     Reject…
                   </Button>
                   <Button variant="primary" icon={IconCheck} onClick={() => setAction('approve')}>
-                    Approve selling
+                    Approve to sell
                   </Button>
                 </>
               ) : null}
@@ -571,7 +571,7 @@ export function MemberDrawer({ open, userId, onClose, onChanged }: MemberDrawerP
             ]}
             options={KYC_APPROVE_REASONS}
             noteHint="Recorded on the audit trail and on their verification record. The member does not see it."
-            confirmLabel="Approve selling"
+            confirmLabel="Approve to sell"
             tone="primary"
             busy={busy}
             onCancel={() => setAction(null)}

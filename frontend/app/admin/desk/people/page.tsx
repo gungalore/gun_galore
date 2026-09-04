@@ -134,6 +134,20 @@ export default function PeoplePage() {
    * identity document or the face-match the approval rests on. The drawer
    * carries the reveal, the reasons and the ban and bank levers; the row is
    * now only the way in.
+   *
+   * 🚨 RE-CHECKED AGAINST People.dc.html, WHICH DRAWS THE REVIEW INLINE —
+   * kept as a drawer anyway. The mock's inline card is not the old bare
+   * strip: it gates the ID card and the face-match behind their own
+   * "Reveal", the same idea as here. What it cannot reproduce is what the
+   * drawer does around that reveal: a dimmed background marking "this is
+   * the sensitive view now", one controlled `open` boolean the unmount
+   * cleanup hangs off to revoke a decrypted blob (see the header comment in
+   * member-drawer.tsx), and a surface that never shares DOM with the sweep
+   * checkboxes a few rows away. Moving the card into a paginated,
+   * infinitely-scrolling list reopens exactly the exposure this comment was
+   * written to close. The artboard's INTENT — review without losing your
+   * place in the queue — already holds: opening the drawer leaves the
+   * segment, page and search exactly as they were.
    */
   const [openMemberId, setOpenMemberId] = React.useState<string | null>(null);
 
@@ -420,7 +434,19 @@ export default function PeoplePage() {
         }}
       >
         {SEGMENTS.map((s) => (
-          <Chip key={s.key} active={segment === s.key} onClick={() => setSegment(s.key)}>
+          <Chip
+            key={s.key}
+            active={segment === s.key}
+            onClick={() => setSegment(s.key)}
+            // ⚠️ ONLY WHILE VERIFYING IS THE LOADED SEGMENT. Unlike the Dealers
+            // directory fetch below, fetchPeople returns a total for whichever
+            // one segment is on screen — there is no endpoint bundling a
+            // "how many waiting" figure on every call. Verifying is also the
+            // DEFAULT segment (see above), so this is the count on screen at
+            // the moment that matters; it clears on any other chip rather
+            // than guess at a number the server was never asked for.
+            count={s.key === 'verifying' && segment === 'verifying' && page ? page.total : undefined}
+          >
             {s.label}
           </Chip>
         ))}
@@ -643,7 +669,7 @@ function PersonListRow({
 
         {person.kycStatus && person.kycStatus !== 'VERIFIED' ? (
           <Tag kind={person.kycStatus === 'UNDER_REVIEW' ? 'warn' : 'neutral'} icon={null}>
-            {person.kycStatus === 'UNDER_REVIEW' ? 'Verifying' : person.kycStatus}
+            {person.kycStatus === 'UNDER_REVIEW' ? 'Under review' : 'KYC waiting'}
           </Tag>
         ) : null}
 

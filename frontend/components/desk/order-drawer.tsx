@@ -672,6 +672,18 @@ function Body({
                   <Muted style={{ marginTop: 3 }}>
                     {[
                       sib.id === tx.id ? 'this line' : null,
+                      // ⚠️ WHOSE LINE IT IS, FIRST. A consolidated order can
+                      // span several sellers, and the artboard gives every
+                      // line in the picker its own handle for that reason —
+                      // @skietrob on one, @turbosnail on the next two. Money
+                      // here is per-line, so "which line" is inseparable from
+                      // "whose", and this list named the payment state and the
+                      // carrier and never the person being paid.
+                      //
+                      // The handle, never a name: the same rule the Buyer
+                      // column follows. Null seller is an older row whose
+                      // dossier predates the field, not an unowned line.
+                      sib.seller?.username ? `@${sib.seller.username}` : null,
                       humanise(sib.paymentStatus),
                       humanise(sib.shippingMethod),
                       // The line's own shipping state, which is what says
