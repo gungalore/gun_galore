@@ -124,6 +124,38 @@ const nextConfig = {
 const withSerwist = withSerwistInit({
   swSrc: 'app/sw.ts',
   swDest: 'public/sw.js',
+  // 🚨 KEEP THE DOCUMENT-SCANNER MODEL OUT OF THE INSTALL-TIME PRECACHE.
+  //
+  // Serwist's default is globPublicPatterns: ['**/*'] — every file under
+  // public/. public/ is 27 MB, and 23 MB of that is two files:
+  // scan/v1/docquad.ort (12.8 MB) and scan/v1/ort-wasm-simd.wasm (10.1 MB),
+  // the DocQuadNet256 weights and the ONNX runtime. Both were in the LIVE
+  // sw.js precache manifest, so every visitor whose service worker installed
+  // downloaded ~23 MB before seeing a single listing — for a scanner that only
+  // ever runs inside KYC / motivation document capture, which most shoppers
+  // never open. On the mobile data this marketplace is built for, that is the
+  // whole install budget spent on a feature the visitor has not asked for.
+  //
+  // ⚠️ THE PATTERN LOOKS ODD BECAUSE `!` NEGATION DOES NOT WORK HERE. Serwist
+  // calls globSync(patterns, {cwd: 'public'}) and modern glob has no negation
+  // in the pattern list — it takes an `ignore` option, which serwist hard-codes
+  // and does not expose. Verified empirically: ['**/*', '!scan/v1/**'] returns
+  // the identical 61 files, model included. This extglob form was checked by
+  // set-comparison against ['**/*'] minus the two model files and matches it
+  // EXACTLY — 59 files, nothing else added or dropped.
+  //
+  // The obvious-looking alternative — listing the wanted directories — was
+  // wrong in a way worth recording: it silently ADDED .well-known/security.txt,
+  // because glob skips dotfiles under `**/*` but not under an explicit
+  // `.well-known/**`.
+  //
+  // ⚠️ A NEW TOP-LEVEL DIRECTORY IN public/ IS STILL PRECACHED by this pattern.
+  // Only `scan` is excluded. If another large asset tree lands, exclude it here
+  // too — `!(scan|whatever)/**/*`.
+  //
+  // The scanner still works: nothing here stops it being fetched on demand when
+  // the capture flow opens, it is simply no longer downloaded up front.
+  globPublicPatterns: ['*', '!(scan)/**/*'],
   // H7 — DO NOT hard-reload on reconnect. Serwist's `online` listener
   // would trigger a full `location.reload()` the instant signal returns,
   // wiping in-progress React state — KYC selfie/ID capture, checkout

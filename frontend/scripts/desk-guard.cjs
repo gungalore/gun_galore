@@ -103,6 +103,22 @@ const FORBIDDEN_IMPORTS = [
 const HEX = /#[0-9a-fA-F]{3,8}\b/;
 const HEX_EXEMPT = new Set(['components/desk/tokens.css']);
 
+/**
+ * The one hex a Desk file may legitimately carry: a `themeColor`.
+ *
+ * ⚠️ A THEME-COLOR CANNOT BE A var(). It is a <meta> value read by the browser
+ * chrome — the status bar, the tab strip, the pull-to-refresh gutter — long
+ * before any stylesheet is parsed. `var(--dk-ground)` there resolves to
+ * nothing and the tag is silently dropped, which is the failure mode this
+ * guard exists to prevent, not an instance of it.
+ *
+ * Narrowed to the DECLARATION rather than exempting the file, so the same
+ * layout still cannot smuggle a hex into an ordinary style. Same reasoning as
+ * tokens.css's exemption above: a guard that cannot express its own exception
+ * blocks the thing it is protecting.
+ */
+const THEME_COLOR_DECL = /\bthemeColor\s*:/;
+
 /** Storefront tokens. Correct on the shop, wrong on the Desk. */
 const STOREFRONT_TOKEN = /var\(\s*--(bg|bg-card|bg-deep|bg-inset|text-primary|text-secondary|text-tertiary|gold|red|border|hairline|elev-\d)\b/;
 
@@ -179,7 +195,7 @@ function check(file) {
       }
     }
 
-    if (!HEX_EXEMPT.has(rel) && HEX.test(code)) {
+    if (!HEX_EXEMPT.has(rel) && !THEME_COLOR_DECL.test(code) && HEX.test(code)) {
       problems.push(`${at}  raw hex colour — use a --dk-* token\n    ${trimmed}`);
     }
 

@@ -336,11 +336,27 @@ function PhoneHeader({
     <header
       style={{
         height: 56,
+        // ⚠️ THE NOTCH EATS THIS HEADER IN THE INSTALLED APP. The manifest's
+        // scope is '/', so /admin/desk stays inside the installed window
+        // rather than kicking out to a browser tab, and the document already
+        // carries viewport-fit=cover — so on a notched phone the status bar
+        // sits ON this 56px row, over the board title and the round buttons.
+        // The shop's own header pads for the same inset; the Desk's did not.
+        //
+        // content-box so the inset is ADDED to the 56, not taken out of it —
+        // padding-box would shrink the row to fit the notch instead of clearing
+        // it, which is the same bug with extra steps. Clamped for the same
+        // reason as the tab bar: Chrome for iOS can report an inflated inset.
+        boxSizing: 'content-box',
         flex: 'none',
         display: 'flex',
         alignItems: 'center',
         gap: 12,
         padding: '0 16px',
+        // ⚠️ AFTER the `padding` shorthand, never before it. In a style object
+        // the later key wins, and `padding: '0 16px'` resets all four sides —
+        // so a paddingTop written above it is silently discarded.
+        paddingTop: 'min(env(safe-area-inset-top, 0px), 60px)',
         borderBottom: '1px solid var(--dk-line)',
       }}
     >

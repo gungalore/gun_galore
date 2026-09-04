@@ -39,6 +39,64 @@ import { useEffect, useState } from 'react';
 const RELOAD_FLAG_KEY = 'gg-sw-reload-at';
 const SUPPRESS_MS = 60_000;
 
+/**
+ * Dismissal, persisted — and scoped to ONE update.
+ *
+ * 🚨 IT USED TO BE A BARE `useState(false)` THAT WAS NEVER RESET, which broke
+ * in both directions at once:
+ *
+ *  · TOO STICKY. Tapping × on the first deploy's banner set `dismissed` for the
+ *    life of the tab. Every later update still fired setUpdateReady(true)
+ *    internally and never reached the screen — so an admin who dismissed once
+ *    in the morning was never told again, and kept working against stale code
+ *    with no way to know. On the Desk that is the surface where the answer to
+ *    "why did that not save" is "you are on yesterday's bundle".
+ *
+ *  · TOO LEAKY. Being in-memory only, it also did not survive a remount — and
+ *    the file's own header claimed the dismissal was "per-session". A mobile
+ *    tab suspended by the OS and resumed comes back with dismissed=false and
+ *    re-shows a notice the operator already waved away.
+ *
+ * The fix is one key holding WHICH update was dismissed. A fresh
+ * updatefound → installed cycle is a genuinely different service worker, so it
+ * clears the key and the banner returns; a remount inside the same update
+ * reads the key and stays quiet.
+ */
+const DISMISS_KEY = 'gg-sw-dismissed-generation';
+
+/** Bumped once per detected update, so a dismissal can name the one it meant. */
+let updateGeneration = 0;
+
+function readDismissedGeneration(): number | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(DISMISS_KEY);
+    if (!raw) return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function markDismissed(generation: number) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(DISMISS_KEY, String(generation));
+  } catch {
+    /* private mode / quota — falls back to in-memory only */
+  }
+}
+
+function clearDismissed() {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.removeItem(DISMISS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 function isInRecentReloadWindow(): boolean {
   if (typeof window === 'undefined') return false;
   try {
@@ -64,7 +122,13 @@ function markReloading() {
 export function SwUpdateBanner() {
   const [updateReady, setUpdateReady] = useState(false);
   const [reloading, setReloading] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  // The generation this banner is showing, and the one the operator waved
+  // away. Equal => stay hidden; a newer generation => show again.
+  const [generation, setGeneration] = useState(0);
+  const [dismissedGeneration, setDismissedGeneration] = useState<number | null>(
+    () => readDismissedGeneration(),
+  );
+  const dismissed = dismissedGeneration !== null && dismissedGeneration >= generation;
 
   // Activate the parked (waiting) service worker, then reload into the
   // new bundle. Because the SW ships with `skipWaiting: false`, a plain
@@ -125,6 +189,8 @@ export function SwUpdateBanner() {
         reg.waiting &&
         navigator.serviceWorker.controller
       ) {
+        // Same update the stored dismissal (if any) refers to — do not
+        // clear it; a remount must not re-raise a waved-away notice.
         setUpdateReady(true);
       }
       reg.addEventListener('updatefound', () => {
@@ -138,6 +204,14 @@ export function SwUpdateBanner() {
             navigator.serviceWorker.controller
           ) {
             if (!cancelled && !isInRecentReloadWindow()) {
+              // 🚨 A NEW WORKER FINISHED INSTALLING — a different update
+              // from any the operator has already dismissed. Bump past the
+              // stored generation and clear it, or a single × in the
+              // morning silences every deploy for the rest of the day.
+              updateGeneration += 1;
+              clearDismissed();
+              setDismissedGeneration(null);
+              setGeneration(updateGeneration);
               setUpdateReady(true);
             }
           }
@@ -186,20 +260,36 @@ export function SwUpdateBanner() {
     <div
       role="status"
       aria-live="polite"
+      className="gg-sw-banner"
       style={{
         position: 'fixed',
-        // Sit just above the bottom tab bar (60 px tall + safe-area).
-        // Browser-mobile users (no tab bar) get the same visual
-        // anchor relative to the bottom edge.
-        bottom: 'calc(72px + env(safe-area-inset-bottom))',
+        // Sit just above the bottom tab bar. The shop's bar is
+        // --shell-tab-h (62px), so 72 clears it with a 10px gap.
+        //
+        // ⚠️ THE DESK'S BAR IS 78px, NOT 62. This banner renders on EVERY
+        // route — it is mounted in the root layout with no path check — so on
+        // the Desk the hard-coded 72 put it 6px INSIDE the bottom tab bar.
+        // The lift is a variable now, and globals.css raises it for the Desk.
+        bottom: 'calc(var(--sw-banner-lift, 72px) + env(safe-area-inset-bottom))',
         left: 12,
         right: 12,
-        zIndex: 70,
+        // ⚠️ 58, NOT 70. The house rule (globals.css) is that modals and
+        // sheets live at z >= 60 and must be able to cover the chrome, and the
+        // shop's tab bar sits at 55 as the number that rule is measured
+        // against. At 70 this ambient notice was IN modal territory: on the
+        // Desk it painted over an open drawer (z 61), so a Reload button
+        // floated on top of a half-finished money decision — and pressing it
+        // discards that work. 58 is above the chrome, below every modal.
+        zIndex: 58,
         padding: '12px 14px',
         borderRadius: 12,
-        background: 'var(--bg-card)',
-        border: '0.5px solid var(--red)',
-        color: 'var(--text-primary)',
+        // Shop skin by default; the Desk overrides these three in globals.css.
+        // They were flat shop tokens, which resolve on the Desk too — to
+        // #FFFFFF on a #101312 ground, with the brand red on a surface whose
+        // rule is that colour is ONLY ever state.
+        background: 'var(--sw-banner-bg, var(--bg-card))',
+        border: '0.5px solid var(--sw-banner-line, var(--red))',
+        color: 'var(--sw-banner-ink, var(--text-primary))',
         display: 'flex',
         alignItems: 'center',
         gap: 12,
@@ -221,13 +311,14 @@ export function SwUpdateBanner() {
           // the sessionStorage flag so the freshly-reloaded page also
           // suppresses the banner for 60s — otherwise the
           // controllerchange that fires post-reload would re-show it.
-          setDismissed(true);
+          markDismissed(generation);
+          setDismissedGeneration(generation);
           void applyUpdateAndReload();
         }}
         style={{
           padding: '6px 12px',
           borderRadius: 6,
-          background: 'var(--red)',
+          background: 'var(--sw-banner-accent, var(--red))',
           color: '#fff',
           border: 'none',
           fontSize: 13,
@@ -239,12 +330,15 @@ export function SwUpdateBanner() {
       </button>
       <button
         type="button"
-        onClick={() => setDismissed(true)}
+        onClick={() => {
+          markDismissed(generation);
+          setDismissedGeneration(generation);
+        }}
         aria-label="Dismiss update notice"
         style={{
           padding: '4px 8px',
           background: 'transparent',
-          color: 'var(--text-tertiary)',
+          color: 'var(--sw-banner-ink-dim, var(--text-tertiary))',
           border: 'none',
           fontSize: 16,
           lineHeight: 1,

@@ -583,8 +583,25 @@ function PersonListRow({
         </span>
 
         <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--dk-ink)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            {/* ⚠️ TRUNCATES, because this row does not wrap. It is a single
+                non-wrapping flex line — avatar, this block, an optional KYC
+                tag, a fixed 110px "waited for" column, a chevron — and on a
+                390px phone a long username had nothing telling it to stop, so
+                it pushed the columns to its right off the edge instead of
+                ellipsing. minWidth:0 on the parent is half the fix: a flex item
+                will not shrink below its content width without it. */}
+            <span
+              style={{
+                fontSize: 14,
+                fontWeight: 500,
+                color: 'var(--dk-ink)',
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               @{person.username ?? 'unknown'}
             </span>
             {person.sellerTier === 'DEALER' ? <Tag kind="ink">SAPS dealer</Tag> : null}
@@ -598,7 +615,7 @@ function PersonListRow({
           <span style={{ fontSize: 12, color: 'var(--dk-ink-3)' }}>
             {person.isBanned
               ? 'Banned'
-              : `Joined ${new Date(person.createdAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}`}
+              : `Joined ${new Date(person.createdAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', timeZone: 'Africa/Johannesburg' })}`}
           </span>
         </span>
 

@@ -38,8 +38,16 @@ export default function manifest(): MetadataRoute.Manifest {
     //
     // Keep both equal to --bg and equal to layout.tsx. Three places name this
     // colour; they must not disagree again.
-    background_color: '#F6F5F1',
-    theme_color: '#F6F5F1',
+    //
+    // 🚨 AND THEN THEY DID, NINETEEN HOURS AFTER THAT LINE WAS WRITTEN.
+    // --bg moved to #FFFFFF ("white background only on the whole website")
+    // and these two stayed on the Winkel cream, so Android painted a beige
+    // splash and status bar around a white app on every launch. A comment
+    // asking three files to agree is not a mechanism — scripts/theme-sync.cjs
+    // now fails the build when they drift, which is what should have been
+    // written the first time.
+    background_color: '#FFFFFF',
+    theme_color: '#FFFFFF',
     categories: ['shopping', 'sports', 'lifestyle'],
     lang: 'en-ZA',
     // Lets navigator.getInstalledRelatedApps() actually report THIS PWA as
