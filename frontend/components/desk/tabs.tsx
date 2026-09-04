@@ -163,9 +163,21 @@ export function BottomTabs({ active }: { active: string }) {
               gap: 4,
               margin: '0 4px',
               padding: '6px 0',
+              // Kept although nothing is filled any more: the focus ring is an
+              // outline, and an outline follows the border radius.
               borderRadius: 10,
               textDecoration: 'none',
-              background: on ? 'var(--dk-surface)' : 'transparent',
+              // ⚠️ NO BACKGROUND ON THE ACTIVE TAB. The artboard's rule is
+              // `.tab.on { color: #EEF2F0; font-weight: 600 }` and nothing
+              // else, with the reasoning written beside it: "the active tab is
+              // INK, not a colour: on this surface colour is reserved for
+              // state, so a coloured tab would say something needs attention
+              // when nothing does."
+              //
+              // A raised --dk-surface pill is the same claim in a quieter
+              // voice — it is the only lifted box in the bar, so it reads as
+              // a badge on whichever board you happen to be standing on.
+              // Ink and weight carry it.
               color: on ? 'var(--dk-ink)' : 'var(--dk-ink-3)',
             }}
           >

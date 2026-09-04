@@ -148,7 +148,22 @@ export function OrderBook({
 
   return (
     <>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', overflowX: 'auto' }}>
+      {/* ⚠️ ONE SCROLLING LINE, NOT A WRAPPING BLOCK. flexWrap:'wrap' beat
+          the overflowX beside it — they contradict each other and wrap wins
+          — so seven segments stacked two or three rows deep on a 390px
+          screen and pushed the list itself below the fold. The artboard's
+          `.hs` is a single hidden-scrollbar line (Ledger.dc.html). */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+          margin: '0 -14px',
+          padding: '0 14px',
+        }}
+      >
         {/* No counts on these chips, unlike the run's. A count per status
             would be six more fetches or a backend aggregate that does not
             exist; a wrong-but-confident number beside a filter is worse than
