@@ -21,6 +21,46 @@ Verified against the service consoles themselves, not the documentation.
 eu-west-1, so a misconfigured region fails loudly rather than quietly sending
 South African identity documents somewhere unintended.
 
+## What actually exists today (checked in the console, 2026-09-04)
+
+Account **369607682800**, alias **ALLOUTDOOR**.
+
+| | |
+|---|---|
+| IAM user | **`turbosnail69`** — the only user in the account. Access key `AKIAVMDSVVLYMZWOM43S`, created 2026-09-04, active. |
+| Its permissions | Inline policy **`KYC_ALL_OUTDOOR_OCR`**, which is `kyc-iam-policy.json` as it stood before the liveness work: Textract, CompareFaces/DetectFaces, all three liveness actions, and the eu-west-1 Deny. |
+| IAM roles | None of ours. Only AWS's own service-linked roles. |
+| Customer-managed policies | None. |
+
+So the KYC scan runs as `turbosnail69`, not as a dedicated user, and the
+policy is inline on that user rather than a managed policy of its own.
+
+⚠️ **The one thing missing for the browser liveness challenge** is
+`sts:GetFederationToken`. Everything else it needs — notably
+`rekognition:StartFaceLivenessSession` — is already there, which is what
+makes the federation path work without a role.
+
+IAM → Users → `turbosnail69` → Permissions → **`KYC_ALL_OUTDOOR_OCR`** → Edit
+→ JSON, and add:
+
+```json
+{
+  "Sid": "VendShortLivedBrowserCredentials",
+  "Effect": "Allow",
+  "Action": ["sts:GetFederationToken"],
+  "Resource": "*"
+}
+```
+
+That is the only change needed to turn liveness on.
+
+### Still outstanding: the dedicated user
+
+The section below describes creating a separate `alloutdoor-kyc` user. **It
+has not been done** — it is a hygiene improvement (rotate or revoke KYC access
+without touching anything else; CloudTrail shows plainly which calls were
+identity checks), not a prerequisite. Nothing is blocked on it.
+
 ## The `alloutdoor-kyc` IAM user
 
 A dedicated user, so KYC access can be rotated or revoked without touching
@@ -95,9 +135,9 @@ policy; the browser's effective permissions are that policy INTERSECTED with
 the user's, which comes to `rekognition:StartFaceLivenessSession` in eu-west-1
 and nothing else. Not Textract, and **not** `GetFaceLivenessSessionResults`.
 
-So the only change to what you already created is one statement in
-`alloutdoor-kyc-policy` — re-paste [`kyc-iam-policy.json`](./kyc-iam-policy.json),
-which now includes it:
+So the only change to what already exists is one statement in the inline
+policy on `turbosnail69` — re-paste
+[`kyc-iam-policy.json`](./kyc-iam-policy.json), which now includes it:
 
 ```json
 {
@@ -108,8 +148,9 @@ which now includes it:
 }
 ```
 
-IAM → Policies → `alloutdoor-kyc-policy` → Edit → replace the JSON → Save.
-That is the whole job; `AWS_KYC_LIVENESS_ROLE_ARN` stays unset.
+IAM → Users → `turbosnail69` → Permissions → `KYC_ALL_OUTDOOR_OCR` → Edit →
+JSON → replace → Save. That is the whole job; `AWS_KYC_LIVENESS_ROLE_ARN`
+stays unset.
 
 ### Optional, later: the tighter role
 
@@ -125,7 +166,7 @@ there is a quiet moment.
 2. Attach a policy built from
    [`kyc-liveness-role-policy.json`](./kyc-liveness-role-policy.json).
 3. Name it **`alloutdoor-kyc-liveness-browser`**.
-4. In `alloutdoor-kyc-policy`, swap the `sts:GetFederationToken` statement for
+4. In the user's policy, swap the `sts:GetFederationToken` statement for
    `sts:AssumeRole` scoped to that role's ARN, and drop
    `rekognition:StartFaceLivenessSession` from the user.
 5. Put the ARN on the box:
