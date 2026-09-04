@@ -176,7 +176,15 @@ function walk(dir) {
 
 function check(file) {
   const rel = path.relative(ROOT, file).split(path.sep).join('/');
-  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  // SPLIT ON /\r?\n/, NOT '\n'. Splitting on the newline alone leaves a
+  // trailing \r on every line of a CRLF checkout, and JavaScript's `.` does
+  // not match \r -- so the comment stripper below, whose `//.*$` carries no
+  // `m` flag, silently fails to match and every comment is then scanned as
+  // if it were code. That made this guard reject a hex colour QUOTED INSIDE
+  // A COMMENT, but only on Windows: the same commit passed on an LF
+  // checkout and failed on a CRLF one, which is the worst kind of build
+  // failure to chase down.
+  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
 
   lines.forEach((line, i) => {
     const at = `${rel}:${i + 1}`;
