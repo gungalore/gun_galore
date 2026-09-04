@@ -1001,8 +1001,8 @@ export class DeskService {
         sub: `${salesToday._count} orders`,
       },
       { label: 'Orders open', value: String(openOrders) },
-      { label: 'Members', value: `+${newMembers}` },
       { label: 'Held', value: this.rand(money.heldCents), sub: `${money.heldCount} orders` },
+      { label: 'Members', value: `+${newMembers}` },
       {
         label: 'Site',
         value: money.gated ? 'Gated' : 'Healthy',

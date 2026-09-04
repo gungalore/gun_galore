@@ -288,10 +288,13 @@ export function Chip({ active = false, children, count, style, ...rest }: ChipPr
         whiteSpace: 'nowrap',
         cursor: 'pointer',
         transition: 'background 120ms ease-out, border-color 120ms ease-out',
-        // The active chip is ink-filled, exactly like the active tab: one
-        // selection idiom for the whole surface.
+        // The active chip is a raised dark chip — background lifts one step
+        // off the surface, the border follows, the text stays plain ink.
+        // Not an inverted fill: that idiom was tried on the active tab too
+        // and pulled back off it (ink + weight only, no background pill) —
+        // a chip is not the exception the tab isn't either.
         ...(active
-          ? { background: 'var(--dk-ink)', color: 'var(--dk-ground)', border: '1px solid var(--dk-ink)' }
+          ? { background: 'var(--dk-inset)', color: 'var(--dk-ink)', border: '1px solid var(--dk-line-2)' }
           : {
               background: hover ? 'var(--dk-raised)' : 'transparent',
               color: 'var(--dk-ink-2)',

@@ -1863,6 +1863,7 @@ export class AdminService {
                 shipsWithId: true,
                 buyerTotal: true,
                 listing: { select: { title: true, referenceNumber: true } },
+                seller: { select: { id: true, username: true } },
               },
               orderBy: { createdAt: 'asc' },
             },

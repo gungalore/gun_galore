@@ -310,23 +310,17 @@ function OrderCards({
               >
                 @{r.buyer.username ?? 'anon'}
               </span>
+              {/* ⚠️ THE LINE COUNT LIVES HERE, NOT ON THE DATE LINE. The
+                  artboard's baseline row reads "@boet · 3 lines … R 18
+                  500.00" (Ledger.dc.html); the date gets its own line below,
+                  alone. This card had the two swapped. */}
+              <span style={{ fontSize: 12.5, color: 'var(--dk-ink-3)', flex: 'none', whiteSpace: 'nowrap' }}>
+                · {r._count.transactions} {r._count.transactions === 1 ? 'line' : 'lines'}
+              </span>
               <span style={{ flex: 1 }} />
               <Amount>{formatRand(r.buyerTotal)}</Amount>
             </span>
-            <span
-              style={{
-                display: 'flex',
-                gap: 8,
-                fontSize: 11.5,
-                color: 'var(--dk-ink-3)',
-              }}
-            >
-              <span>{formatWhen(r.createdAt)}</span>
-              <span style={{ flex: 1 }} />
-              <span>
-                {r._count.transactions} {r._count.transactions === 1 ? 'line' : 'lines'}
-              </span>
-            </span>
+            <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>{formatWhen(r.createdAt)}</span>
           </button>
         );
       })}

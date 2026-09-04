@@ -90,6 +90,8 @@ export interface OrderSiblingLine {
   shipsWithId: string | null;
   buyerTotal: number;
   listing: { title: string; referenceNumber: string | null } | null;
+  /** Username only, never a real name — see the file-level privacy note. */
+  seller: { id: string; username: string | null } | null;
 }
 
 export interface ParentOrder {
