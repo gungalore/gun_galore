@@ -25,10 +25,15 @@
       "Effect": "Allow",
       "Action": [
         "rekognition:CreateFaceLivenessSession",
-        "rekognition:StartFaceLivenessSession",
         "rekognition:GetFaceLivenessSessionResults"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "AssumeOnlyTheBrowserLivenessRole",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::<ACCOUNT_ID>:role/alloutdoor-kyc-liveness-browser"
     },
     {
       "Sid": "IrelandOnly",

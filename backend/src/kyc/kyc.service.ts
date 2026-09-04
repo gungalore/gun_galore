@@ -721,8 +721,34 @@ export class KycService {
     if (user.kycStatus === 'VERIFIED' || user.kycStatus === 'UNDER_REVIEW') {
       throw new BadRequestException('Your verification is already in progress.');
     }
+    // ⚠️ CREDENTIALS FIRST, SESSION SECOND. A Face Liveness session starts
+    // expiring the moment it is created (3 minutes), and it is single-use.
+    // Minting one we then discover we cannot hand credentials for burns an
+    // AWS call and gives the browser a session id it can do nothing with —
+    // which reaches the verdict as CREATED, not SUCCEEDED, and quietly
+    // parks the seller. Better to find out before the clock starts.
+    const credentials = await this.aws.vendBrowserCredentials(clerkId);
+    if (!credentials) {
+      // The feature is not configured. Say so plainly instead of handing
+      // back a session: the wizard skips the challenge, submits the selfie
+      // alone, and the verdict parks for a human because anti-spoofing was
+      // never checked. Degraded and visible, never silently approved.
+      return {
+        available: false as const,
+        reason: 'liveness-not-configured',
+        region: process.env.AWS_REGION || 'eu-west-1',
+      };
+    }
     const sessionId = await this.aws.createLivenessSession();
-    return { sessionId, region: process.env.AWS_REGION || 'eu-west-1' };
+    return {
+      available: true as const,
+      sessionId,
+      region: process.env.AWS_REGION || 'eu-west-1',
+      credentials,
+      // The browser must finish the challenge AND post the selfie inside
+      // this window; it is the AWS session TTL, not a UI preference.
+      expiresInSeconds: 180,
+    };
   }
   async submitSelfieClaudeVerdict(
     clerkId: string,

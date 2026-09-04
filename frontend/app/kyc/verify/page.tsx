@@ -16,6 +16,9 @@ import DateField from '@/components/date-field';
 import { shiftYears, toIso, todayYmd } from '@/lib/date-picker-model';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
 import { StepRail, type StepRailStep } from '@/components/step-rail';
+import LivenessChallenge, {
+  type LivenessSession,
+} from '@/components/kyc/liveness-challenge';
 import { useShellStep } from '@/components/shell/shell-step';
 
 // TWO FLOWS live on this page, branched by GET /kyc/status → `flow`:
@@ -153,6 +156,13 @@ function VerifyKycPageInner() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
 
   const [step, setStep] = useState<Step>('loading');
+  // ── Liveness challenge state ─────────────────────────────────────
+  //
+  // The captured selfie is parked here while the challenge runs, because
+  // the selfie and the session id have to be POSTed TOGETHER: the server
+  // reads the liveness result once, at verdict time, in the same request.
+  const [livenessSession, setLivenessSession] = useState<LivenessSession | null>(null);
+  const [pendingSelfie, setPendingSelfie] = useState<string | null>(null);
   const [flow, setFlow] = useState<'CLAUDE' | 'VERIFYNOW'>('VERIFYNOW');
   const [phoneMasked, setPhoneMasked] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -602,15 +612,69 @@ function VerifyKycPageInner() {
     void startCamera();
   }
 
+  // ─── Anti-spoofing: run the liveness challenge, then submit ──────
+  //
+  // ⚠️ ORDER MATTERS, AND NOT FOR THE REASON IT LOOKS LIKE.
+  //
+  // The obvious sequence is challenge-then-photo. This is photo-then-
+  // challenge, because an AWS liveness session starts expiring the moment
+  // it is created — three minutes, single use — and everything, the
+  // challenge AND the POST that reads its result, has to land inside that
+  // window. Taking the selfie first (framing, lighting, a retake or two,
+  // reading the screen) happens BEFORE the clock starts, leaving the whole
+  // three minutes for the part that is actually timed.
+  //
+  // The two also cannot overlap: FaceLivenessDetectorCore opens its own
+  // camera, and captureFrame() has already released ours by the time this
+  // runs.
+  async function runLivenessThenSubmit(base64: string) {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await apiPost('liveness-session');
+      if (res.available === false || !res.sessionId) {
+        // Liveness is not configured on this environment. Submit anyway:
+        // the server scores the unrun check as unknown and parks the
+        // verdict for a human, which is the safe direction. Silently
+        // skipping it and letting the seller auto-approve is the one
+        // outcome that must not happen.
+        await submitSelfie(base64);
+        return;
+      }
+      setPendingSelfie(base64);
+      setLivenessSession(res as unknown as LivenessSession);
+    } catch {
+      // Same reasoning: a failure to START the challenge must not block a
+      // legitimate seller, and must not pass them either. Park for review.
+      await submitSelfie(base64);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function closeLiveness() {
+    setLivenessSession(null);
+    setPendingSelfie(null);
+  }
+
   // ─── Final step: submit selfie ───────────────────────────────────
-  async function submitSelfie(base64: string) {
+  async function submitSelfie(base64: string, livenessSessionId?: string) {
     setLoading(true);
     setError('');
     try {
       if (flow === 'CLAUDE') {
-        // One call: uploads the selfie, runs the vision verdict, returns
-        // VERIFIED | UNDER_REVIEW | REJECTED.
-        const data = await apiPost('selfie', { selfieBase64: base64 });
+        // One call: uploads the selfie, reads the liveness result, runs the
+        // verdict, returns VERIFIED | UNDER_REVIEW | REJECTED | RETAKE.
+        //
+        // The session id travels WITH the selfie rather than being reported
+        // separately, because the browser must never read its own liveness
+        // result — a page that could would also be a page that could lie
+        // about it. GetFaceLivenessSessionResults is a server call, made
+        // once, here.
+        const data = await apiPost('selfie', {
+          selfieBase64: base64,
+          ...(livenessSessionId ? { livenessSessionId } : {}),
+        });
         const status = data.status as string | undefined;
 
         // ⚠️ A RETAKE IS NOT A FAILURE — READ `outcome`, NEVER `status`.
@@ -758,6 +822,33 @@ function VerifyKycPageInner() {
         padding: 24,
       }}
     >
+      {/* The liveness challenge takes over the whole screen while it runs.
+          It is mounted only while a session exists, so the SDK — and the
+          camera it grabs — never load for sellers who are not mid-challenge. */}
+      {livenessSession && pendingSelfie && (
+        <LivenessChallenge
+          session={livenessSession}
+          onComplete={() => {
+            // Both read BEFORE closing. They survive it either way — this
+            // render's closure holds the old values — but code that reads
+            // state it has just cleared reads as a bug to the next person.
+            const selfie = pendingSelfie;
+            const sessionId = livenessSession.sessionId;
+            closeLiveness();
+            void submitSelfie(selfie, sessionId);
+          }}
+          onFailed={(message) => {
+            // Keep the captured selfie: the PHOTO was fine, the challenge
+            // was not. Making them retake it would be a second penalty for
+            // the same problem. Pressing Submit again starts a FRESH
+            // session, which is required — a liveness session id cannot be
+            // reused once it has been started or has expired.
+            closeLiveness();
+            setError(message);
+          }}
+          onCancel={closeLiveness}
+        />
+      )}
       {/* ── MAY WE KEEP THE ID YOU JUST HANDED OVER? ──────────────────
           Operator, 2026-08-23: "As soon as the KYC is done a window must pop
           up asking for permission and a short explanation. Does not matter if
@@ -1491,7 +1582,7 @@ function VerifyKycPageInner() {
                   Retake
                 </button>
                 <button
-                  onClick={() => submitSelfie(capturedImage)}
+                  onClick={() => void runLivenessThenSubmit(capturedImage)}
                   disabled={loading}
                   style={{ ...primaryButton(loading), flex: 2 }}
                 >

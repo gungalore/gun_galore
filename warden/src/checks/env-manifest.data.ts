@@ -63,6 +63,7 @@ export const BACKEND_ENV_MANIFEST: readonly EnvVar[] = [
   { name: 'AWS_REGION', tier: 'feature', disables: 'Textract OCR and Rekognition face match — the SDK falls back to its own default region, which is not Ireland' },
   { name: 'AWS_ACCESS_KEY_ID', tier: 'feature', disables: 'Textract OCR and Rekognition face match / liveness' },
   { name: 'AWS_SECRET_ACCESS_KEY', tier: 'feature', disables: 'Textract OCR and Rekognition face match / liveness' },
+  { name: 'AWS_KYC_LIVENESS_ROLE_ARN', tier: 'feature', disables: 'the browser liveness challenge — POST /kyc/liveness-session vends no credentials, so anti-spoofing is never checked and every KYC verdict parks in UNDER_REVIEW instead of auto-approving' },
   { name: 'PUDO_API_KEY', tier: 'feature', disables: 'Pudo bookings. ⚠️ no sandbox — every create bills real credits' },
   { name: 'ANTHROPIC_API_KEY', tier: 'feature', disables: 'listing moderation falls back to HUMAN_REVIEW and the contact filter to regex only — fails safe, not closed' },
   { name: 'GOOGLE_VISION_API_KEY', tier: 'feature', disables: 'licence-card OCR — skipped and logged' },

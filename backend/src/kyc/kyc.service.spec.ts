@@ -199,6 +199,7 @@ function makeService(o: Overrides = {}) {
 
   return {
     service,
+    aws,
     prisma,
     verifyNow,
     sms,
@@ -547,5 +548,76 @@ describe('submitSelfieClaudeVerdict — RETAKE is not a failure', () => {
     });
     const res = await service.submitSelfieClaudeVerdict('clerk_1', 'c2VsZmll');
     expect(res.outcome).toBe('REJECTED');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// The liveness challenge is the ONLY thing that can answer the
+// anti-spoofing gate, and it runs in the browser against credentials this
+// endpoint vends. The failure mode that matters is not an outage — it is
+// the endpoint quietly handing back something unusable and the wizard
+// carrying on as though the check had happened.
+// ─────────────────────────────────────────────────────────────────────
+describe('createLivenessSession', () => {
+  const ROLE = 'AWS_KYC_LIVENESS_ROLE_ARN';
+  const original = process.env[ROLE];
+  afterEach(() => {
+    if (original === undefined) delete process.env[ROLE];
+    else process.env[ROLE] = original;
+  });
+
+  it('reports itself unavailable when no role is configured — and mints NO session', async () => {
+    delete process.env[ROLE];
+    const { service, aws } = makeService();
+    const create = jest.spyOn(aws, 'createLivenessSession');
+
+    const res = await service.createLivenessSession('clerk_1');
+
+    expect(res.available).toBe(false);
+    expect('sessionId' in res).toBe(false);
+    // A session starts expiring the moment it exists and is single-use.
+    // Minting one we cannot hand credentials for burns it for nothing and
+    // gives the browser an id that can only ever come back as CREATED.
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('vends credentials and a session together when configured', async () => {
+    process.env[ROLE] = 'arn:aws:iam::123456789012:role/alloutdoor-kyc-liveness-browser';
+    const { service, aws } = makeService();
+    jest.spyOn(aws, 'vendBrowserCredentials').mockResolvedValue({
+      accessKeyId: 'ASIA_TEST',
+      secretAccessKey: 'secret',
+      sessionToken: 'token',
+      expiration: new Date().toISOString(),
+    });
+    jest.spyOn(aws, 'createLivenessSession').mockResolvedValue('sess_123');
+
+    const res = await service.createLivenessSession('clerk_1');
+
+    expect(res.available).toBe(true);
+    // The pair is atomic on purpose: a session id without credentials is
+    // unusable, and credentials without a session have nothing to stream.
+    expect(res).toMatchObject({
+      sessionId: 'sess_123',
+      region: expect.any(String),
+      credentials: expect.objectContaining({ sessionToken: 'token' }),
+    });
+  });
+
+  it('never returns the server key to the browser', async () => {
+    process.env[ROLE] = 'arn:aws:iam::123456789012:role/alloutdoor-kyc-liveness-browser';
+    process.env.AWS_ACCESS_KEY_ID = 'AKIA_SERVER_KEY_MUST_NOT_LEAK';
+    const { service, aws } = makeService();
+    jest.spyOn(aws, 'vendBrowserCredentials').mockResolvedValue({
+      accessKeyId: 'ASIA_TEMP',
+      secretAccessKey: 'temp',
+      sessionToken: 'token',
+      expiration: new Date().toISOString(),
+    });
+    jest.spyOn(aws, 'createLivenessSession').mockResolvedValue('sess_123');
+
+    const res = await service.createLivenessSession('clerk_1');
+
+    expect(JSON.stringify(res)).not.toContain('AKIA_SERVER_KEY_MUST_NOT_LEAK');
   });
 });

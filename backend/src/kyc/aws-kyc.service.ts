@@ -23,6 +23,7 @@ import {
   AnalyzeDocumentCommand,
   TextractClient,
 } from '@aws-sdk/client-textract';
+import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
 import {
   CompareFacesCommand,
   CreateFaceLivenessSessionCommand,
@@ -39,6 +40,19 @@ export class NoFaceInSelfieError extends Error {
     super('no face detected in the selfie');
     this.name = 'NoFaceInSelfieError';
   }
+}
+
+/**
+ * Short-lived AWS credentials handed to the BROWSER so it can stream the
+ * liveness challenge. Shaped to match what Amplify's FaceLivenessDetectorCore
+ * expects back from its `config.credentialProvider`.
+ */
+export interface BrowserLivenessCredentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken: string;
+  /** ISO-8601. The browser gets ONE set: the provider is not called again. */
+  expiration: string;
 }
 
 export interface LivenessOutcome {
@@ -63,6 +77,7 @@ export class AwsKycService {
   private readonly log = new Logger(AwsKycService.name);
   private textractClient?: TextractClient;
   private rekognitionClient?: RekognitionClient;
+  private stsClient?: STSClient;
 
   /** eu-west-1 unless overridden; see the region note at the top. */
   private get region(): string {
@@ -203,6 +218,62 @@ export class AwsKycService {
     }
   }
 
+  /**
+   * Mint temporary credentials for the browser to run the liveness stream.
+   *
+   * 🚨 OUR OWN KEY MUST NEVER REACH A BROWSER. The server key can read
+   * identity documents, compare faces and pull liveness RESULTS; a page that
+   * held it could call Rekognition against our account at will. So the
+   * browser gets a role assumed for this one purpose, whose policy grants
+   * `rekognition:StartFaceLivenessSession` and nothing else, region-locked
+   * the same way the server's is.
+   *
+   * This is deliberately NOT Cognito. The documented alternative is an
+   * unauthenticated Identity Pool, which means standing up a public guest
+   * identity that anyone can obtain credentials from. We already know who
+   * this seller is — they are signed in and mid-verification — so vending
+   * from behind our own auth guard is both smaller and tighter.
+   *
+   * Returns undefined when AWS_KYC_LIVENESS_ROLE_ARN is unset, which is how
+   * the feature stays off: no credentials means the browser runs no
+   * challenge, which means the verdict cannot auto-approve and parks for a
+   * human. Degraded, never silently passed.
+   */
+  async vendBrowserCredentials(
+    subjectRef: string,
+  ): Promise<BrowserLivenessCredentials | undefined> {
+    const roleArn = process.env.AWS_KYC_LIVENESS_ROLE_ARN;
+    if (!roleArn) {
+      this.log.warn(
+        'AWS_KYC_LIVENESS_ROLE_ARN unset — no browser liveness challenge can run, so every verdict will park for human review',
+      );
+      return undefined;
+    }
+    this.stsClient ??= new STSClient({ region: this.region });
+    const res = await this.stsClient.send(
+      new AssumeRoleCommand({
+        RoleArn: roleArn,
+        // Shows up in CloudTrail against every browser-side call, so a
+        // suspicious stream can be traced back to one verification attempt.
+        // Sanitised because AssumeRole rejects anything outside [\w+=,.@-].
+        RoleSessionName: `kyc-${subjectRef.replace(/[^\w+=,.@-]/g, '')}`.slice(0, 64),
+        // 900 is the AssumeRole minimum. The liveness session itself expires
+        // after 3 minutes, so the credentials always outlive what they are
+        // for — we cannot make them shorter-lived than the work.
+        DurationSeconds: 900,
+      }),
+    );
+    const c = res.Credentials;
+    if (!c?.AccessKeyId || !c.SecretAccessKey || !c.SessionToken) {
+      throw new Error('AssumeRole returned no usable credentials');
+    }
+    return {
+      accessKeyId: c.AccessKeyId,
+      secretAccessKey: c.SecretAccessKey,
+      sessionToken: c.SessionToken,
+      expiration: (c.Expiration ?? new Date(Date.now() + 900_000)).toISOString(),
+    };
+  }
   /**
    * Open a Face Liveness session. The returned id goes to the browser,
    * which runs the challenge with AWS Amplify's FaceLivenessDetector; the

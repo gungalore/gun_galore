@@ -68,8 +68,49 @@ not a fault.
 - `rekognition:CompareFaces`, `DetectFaces` — matching the selfie to the photo on
   the document and, for high-value sellers, to the official Home Affairs
   photograph.
-- `rekognition:CreateFaceLivenessSession`, `StartFaceLivenessSession`,
-  `GetFaceLivenessSessionResults` — the anti-spoofing challenge.
-  **`StartFaceLivenessSession` is called by the BROWSER, not by this server** —
-  see the liveness notes in `backend/src/kyc/aws-kyc.service.ts` for how the
-  browser is given credentials.
+- `rekognition:CreateFaceLivenessSession`, `GetFaceLivenessSessionResults` —
+  opening the anti-spoofing challenge and reading its verdict.
+
+`rekognition:StartFaceLivenessSession` is deliberately **not** here. That call
+is made by the browser, never by this server, so granting it to the server's
+own key would widen what a leaked key could do for no benefit. The browser
+gets it through the role below instead.
+
+## The `alloutdoor-kyc-liveness-browser` role
+
+The liveness challenge is a video stream from the seller's camera straight to
+Rekognition, so the **browser** needs AWS credentials. Ours must never go
+there: the server key can read identity documents and pull liveness verdicts,
+and a page holding it could call Rekognition against this account at will.
+
+AWS documents Cognito Identity Pools for this, which means standing up a
+public unauthenticated identity anyone can draw credentials from. We do not
+need it — the seller is signed in and mid-verification — so the server assumes
+a role scoped to exactly one action and hands the temporary credentials to the
+page from behind our own auth guard.
+
+1. **IAM → Roles → Create role → Custom trust policy.** Paste
+   [`kyc-liveness-role-trust-policy.json`](./kyc-liveness-role-trust-policy.json),
+   replacing `<ACCOUNT_ID>` with this account's id (top right of the console).
+2. Attach a new policy built from
+   [`kyc-liveness-role-policy.json`](./kyc-liveness-role-policy.json) —
+   `StartFaceLivenessSession` and nothing else, region-locked to eu-west-1 the
+   same way the server's policy is.
+3. Name the role **`alloutdoor-kyc-liveness-browser`**.
+4. Edit `alloutdoor-kyc-policy` and replace `<ACCOUNT_ID>` in its
+   `AssumeOnlyTheBrowserLivenessRole` statement with the same id. The user can
+   assume that one role and no other.
+5. Put the role's ARN on the box:
+
+```bash
+ssh -t alloutdoor 'f=/home/alloutdoor/app/backend/.env; cp "$f" "$f.bak-$(date +%F-%H%M%S)"; \
+  read -p "AWS_KYC_LIVENESS_ROLE_ARN: " a; \
+  sed -i "/^AWS_KYC_LIVENESS_ROLE_ARN=/d" "$f"; \
+  echo "AWS_KYC_LIVENESS_ROLE_ARN=$a" >> "$f"; grep "^AWS_KYC" "$f"'
+```
+
+⚠️ **Until that ARN is set, no liveness challenge can run.** The endpoint
+reports itself unavailable, the wizard submits the selfie on its own, and
+every verdict parks in `UNDER_REVIEW` for a human — because anti-spoofing was
+never checked. That is the intended degraded state, not a bug; the thing that
+must never happen is a seller auto-approving on a check nobody ran.
