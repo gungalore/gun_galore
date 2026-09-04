@@ -612,6 +612,29 @@ function VerifyKycPageInner() {
         // VERIFIED | UNDER_REVIEW | REJECTED.
         const data = await apiPost('selfie', { selfieBase64: base64 });
         const status = data.status as string | undefined;
+
+        // ⚠️ A RETAKE IS NOT A FAILURE — READ `outcome`, NEVER `status`.
+        //
+        // On a retake the server deliberately leaves kycStatus untouched, so
+        // `status` still says PENDING and looks exactly like every other
+        // mid-flow state. This branch used to fall through to the rejection
+        // screen below, which leads with "Email support" and spends one of
+        // the three attempts — for a photo the server explicitly refused to
+        // count against the seller. Three glary pictures and an honest
+        // person was out of retries with no strike anywhere on their record.
+        //
+        // So: no attempt increment, no failed step. Say what to fix, reopen
+        // the camera, let them try again.
+        if (data.outcome === 'RETAKE') {
+          setError(
+            (data.message as string) ||
+              'We could not read that clearly. Please try again in better light.',
+          );
+          setCapturedImage(null);
+          void startCamera();
+          return;
+        }
+
         const nextAttempts = attempts + 1;
         setAttempts(nextAttempts);
         if (status === 'VERIFIED') {
@@ -963,11 +986,11 @@ function VerifyKycPageInner() {
                     ID number, date of birth, ID document and a selfie. The ID
                     number is checked against official records by VerifyNow
                     (Pty) Ltd. My ID document and selfie are stored encrypted
-                    on our own servers and sent to Amazon Web Services in
-                    Ireland (AWS Europe, eu-west-1) for automated text
-                    extraction, a face match and a liveness check, and are
-                    reviewed by our staff where needed — all in accordance
-                    with POPIA and the{' '}
+                    on our own servers in South Africa and sent to Amazon Web
+                    Services in Ireland (AWS Europe, eu-west-1) for automated
+                    text extraction, a face match and a liveness check, and
+                    are reviewed by our staff where needed — all in
+                    accordance with POPIA and the{' '}
                     <a
                       href="/privacy"
                       target="_blank"

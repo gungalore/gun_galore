@@ -95,8 +95,8 @@ export default function PrivacyPage() {
       <ul>
         <li>South African ID number (stored encrypted at rest with AES-GCM; we also derive a salted SHA-256 hash for duplicate-registration checks. We retain the encrypted ID — see &ldquo;How long we keep your information&rdquo; below — so that we can confirm the person being paid is the person we verified, prevent fraud and impersonation, and meet the record-keeping and transfer-documentation obligations that apply to certain regulated categories, where the seller&rsquo;s identity number must be reproduced on a prescribed statutory form)</li>
         <li>VerifyNow Home Affairs lookup result (full name, date of birth, status), which may include the official record photograph held by the Department of Home Affairs</li>
-        <li>An image of the identity document you upload during verification (an identity card, identity book page or passport, or a PDF of one). This image is stored encrypted on our own servers and is retained as an audit record of the verification for the life of your account.</li>
-        <li><strong>Selfie image captured during face-match verification.</strong> The image is <strong>stored</strong> encrypted on our own servers. We retain it as an audit record of the verification for the life of your account, and we re-use it only to re-run a verification check on that same account. If you delete your account we remove the link to the image from your account record, but the stored image itself is <strong>not deleted today</strong> — that deletion is a follow-up we have not yet implemented, and we will not describe it as done until it is.</li>
+        <li>An image of the identity document you upload during verification (an identity card, identity book page or passport, or a PDF of one). This image is stored encrypted on our own servers, which are hosted in South Africa, and is retained as an audit record of the verification for the life of your account.</li>
+        <li><strong>Selfie image captured during face-match verification.</strong> The image is <strong>stored</strong> encrypted on our own servers, which are hosted in South Africa. We retain it as an audit record of the verification for the life of your account, and we re-use it only to re-run a verification check on that same account. If you delete your account we remove the link to the image from your account record, but the stored image itself is <strong>not deleted today</strong> — that deletion is a follow-up we have not yet implemented, and we will not describe it as done until it is.</li>
         <li>Number of face-match attempts and outcome</li>
       </ul>
       <p>
@@ -265,7 +265,8 @@ export default function PrivacyPage() {
         identity-verification images described in paragraph 3.2 — the
         identity-document image, the face image (selfie) and, where the
         anchored check is used, the official record photograph. Those images
-        are stored encrypted on our own servers and are transmitted to Amazon
+        are stored encrypted on our own servers in South Africa and are transmitted
+        to Amazon
         Web Services in Ireland (AWS Europe, eu-west-1) for the automated text
         extraction, face match and liveness check. For that transfer
         specifically we rely on the consent you give before verification
@@ -285,8 +286,8 @@ export default function PrivacyPage() {
         <li><strong>KYC ID hash:</strong> retained while your account is active, plus 12 months after deletion to prevent duplicate registration.</li>
         <li><strong>Encrypted SA ID number:</strong> retained (AES-GCM encrypted at rest) while your account is active, so that we can confirm the identity of the person being paid, prevent impersonation, and complete any prescribed statutory transfer or record-keeping document required for the regulated categories we handle; where such a document has been completed, the encrypted ID is kept for the period that legislation requires that record to be retained, and is otherwise deleted on account closure. The legislation imposing that requirement is identified in our{' '}
           <a href="/regulated-categories" style={{ color: 'var(--red)' }}>Regulated Categories — Statutory Schedule</a>.</li>
-        <li><strong>KYC selfie (face image):</strong> stored with our image-hosting provider, Cloudinary, and retained as an audit record of the verification for the life of your account; re-used only to re-run a verification check on that same account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present; deleting the copy held by the image-hosting provider is a tracked follow-up and is not yet implemented.</li>
-        <li><strong>KYC identity-document image:</strong> stored with our image-hosting provider, Cloudinary, and retained as an audit record of the verification for the life of your account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present, on the same basis as the selfie above.</li>
+        <li><strong>KYC selfie (face image):</strong> stored encrypted on our own servers in South Africa and retained as an audit record of the verification for the life of your account; re-used only to re-run a verification check on that same account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present; that deletion is a tracked follow-up and is not yet implemented.</li>
+        <li><strong>KYC identity-document image:</strong> stored encrypted on our own servers in South Africa and retained as an audit record of the verification for the life of your account. On account deletion we clear the reference held in your account record, but the stored image itself is not deleted at present, on the same basis as the selfie above.</li>
         <li><strong>Email and SMS logs:</strong> 90 days.</li>
         <li><strong>Usage analytics (raw activity events):</strong> up to 12 months, after which they are deleted; we keep only aggregated, de-identified statistics beyond that period.</li>
         <li><strong>Banking details:</strong> retained while your account is active; deleted on account closure unless there is an unresolved transaction or legal-hold reason to retain.</li>

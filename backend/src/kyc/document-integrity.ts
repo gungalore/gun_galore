@@ -50,9 +50,15 @@
 //   • Rekognition still has to match the face.
 //
 // That is a genuine reduction in coverage against artwork forgery, stated
-// plainly rather than papered over. It is the operator's call whether to
-// buy it back with a narrow vision call; this module does not pretend the
-// question was answered.
+// plainly rather than papered over.
+//
+// ✅ DECIDED 2026-09-04 — THE OPERATOR ACCEPTED THIS REDUCED COVERAGE, with
+// the trade-off stated as it is written above. So this is a settled
+// position, not an oversight and not a TODO: do not "restore" forgery
+// detection by quietly raising the score, and do not add a vision call back
+// into this path without asking. If the decision is ever revisited, the
+// thing to change is the SCORE'S SOURCE — a real check writing a real
+// number — never the constants below.
 
 /** Above AUTO_APPROVE_FLOOR (70): the checks that CAN run, ran, and passed. */
 const CONSISTENT = 75;

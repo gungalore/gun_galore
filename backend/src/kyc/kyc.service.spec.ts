@@ -502,3 +502,50 @@ describe('maybeUpgradeKycTier (silent anchored upgrade)', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// A RETAKE is a camera problem, not a verdict. The server is careful about
+// this — no attempt increment, no status write, no alert, no failure SMS —
+// but it says so ONLY through the `outcome` field, because `status` is
+// deliberately left at whatever the seller already had. The wizard used to
+// infer a rejection from that unchanged status, show the "email support"
+// screen, and spend one of its three local attempts on a photo the server
+// never counted. These tests hold the signal in place.
+// ─────────────────────────────────────────────────────────────────────
+describe('submitSelfieClaudeVerdict — RETAKE is not a failure', () => {
+  it('reports outcome RETAKE and takes no strike', async () => {
+    const { service, prisma } = makeService({
+      // Can't see the photo on the ID, so there is nothing to compare the
+      // selfie against — ask for a better picture, do not accuse anyone.
+      scan: goodFindings({ document_photo_visible: 15 }),
+    });
+
+    const res = await service.submitSelfieClaudeVerdict('clerk_1', 'c2VsZmll');
+
+    expect(res.outcome).toBe('RETAKE');
+    expect(res.status).toBe('PENDING');
+    // The guarded write is what increments kycAttempts and sets kycStatus.
+    // Reaching it at all would cost the seller a strike.
+    expect(prisma.user.updateMany).not.toHaveBeenCalled();
+    expect(prisma.adminAlert.create).not.toHaveBeenCalled();
+  });
+
+  it('tells the seller what to do differently, not to email support', async () => {
+    const { service } = makeService({
+      scan: goodFindings({ document_photo_visible: 15 }),
+    });
+    const res = await service.submitSelfieClaudeVerdict('clerk_1', 'c2VsZmll');
+    expect(res.message).toMatch(/retake|light|glare|frame/i);
+    expect(res.message).not.toMatch(/email .*support/i);
+  });
+
+  it('a real rejection is still reported as one', async () => {
+    // The counterpart: outcome must actually discriminate. If REJECTED also
+    // came back as RETAKE the field would be decoration.
+    const { service } = makeService({
+      scan: goodFindings({ same_person: 4 }),
+    });
+    const res = await service.submitSelfieClaudeVerdict('clerk_1', 'c2VsZmll');
+    expect(res.outcome).toBe('REJECTED');
+  });
+});

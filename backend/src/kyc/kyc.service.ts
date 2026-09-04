@@ -862,6 +862,7 @@ export class KycService {
         );
         return {
           success: false,
+          outcome: 'RETAKE' as const,
           status: user.kycStatus,
           message:
             'We could not find a face in your selfie. Please make sure your whole face is in frame, well lit and not covered, then try again.',
@@ -949,6 +950,14 @@ export class KycService {
         );
         return {
           success: false,
+          // ⚠️ RETAKE IS NOT A FAILURE, AND THE CLIENT CANNOT INFER THAT.
+          // `status` here is the seller's EXISTING status, deliberately
+          // left untouched — so it is indistinguishable from any other
+          // mid-flow state. Without this field the wizard read a retake as
+          // a rejection, showed the "email support" screen and burned one
+          // of its three local attempts, for a photo the server never
+          // counted against anyone.
+          outcome: 'RETAKE' as const,
           status: user.kycStatus,
           message: this.claudeKyc.retakeReason(findings),
         };
@@ -992,6 +1001,7 @@ export class KycService {
       );
       return {
         success: false,
+        outcome: 'ALREADY_PROCESSED' as const,
         status: user.kycStatus,
         message: 'KYC already processed. Check your account status.',
       };
@@ -1012,7 +1022,12 @@ export class KycService {
           user.firstName ?? 'Seller',
         );
       }
-      return { success: true, status, message: 'Identity verified.' };
+      return {
+        success: true,
+        outcome: 'VERIFIED' as const,
+        status,
+        message: 'Identity verified.',
+      };
     }
 
     if (status === 'UNDER_REVIEW') {
@@ -1032,6 +1047,7 @@ export class KycService {
       }
       return {
         success: true,
+        outcome: 'UNDER_REVIEW' as const,
         status,
         message:
           'Your verification is being reviewed — nothing more is needed from you. We will SMS you when it is done.',
@@ -1068,7 +1084,12 @@ export class KycService {
         retryMessage,
       );
     }
-    return { success: false, status, message: retryMessage };
+    return {
+      success: false,
+      outcome: 'REJECTED' as const,
+      status,
+      message: retryMessage,
+    };
   }
 
   // ── "SMS me the link" phone handoff ─────────────────────────────────
