@@ -832,6 +832,26 @@ export class ClaudeKycService {
     // its photo is at most five years old, so a poor match against it is a
     // real finding rather than the fog of a decades-old portrait.
     if (licenceUsable && licenceMatch < AUTO_REJECT_CEILING) return 'REJECTED';
+    // ⚠️ "COULD NOT COMPARE" IS NOT "DIFFERENT PERSON".
+    //
+    // When the document photo is the only face evidence and it is not
+    // usable, there was nothing to compare the selfie against — so a low
+    // same_person score carries no information about who this is. Letting
+    // it fall through to the mismatch check below rejects an honest seller
+    // (and costs them a strike) because their ID photo has glare on it,
+    // which is exactly what the quality gates further down exist to
+    // prevent — they simply never get reached.
+    //
+    // Guarded by docPhotoDecides so this can never soften an anchored
+    // verdict: where the Home Affairs original is carrying the decision,
+    // a bad card photo is irrelevant and the HA gate still rejects.
+    if (
+      docPhotoDecides &&
+      toGate(findings.face_match?.document_photo_visible) < AUTO_REJECT_CEILING
+    ) {
+      return 'RETAKE';
+    }
+
     // A confident face mismatch is a finding in its own right and outranks
     // capture quality — it must not be excused as "the photo was bad".
     if (faceGates.some((g) => g < faceFloor)) return 'REJECTED';
