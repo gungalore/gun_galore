@@ -1,0 +1,48 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TextractReadDocuments",
+      "Effect": "Allow",
+      "Action": [
+        "textract:DetectDocumentText",
+        "textract:AnalyzeDocument",
+        "textract:AnalyzeID"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RekognitionFaceMatch",
+      "Effect": "Allow",
+      "Action": [
+        "rekognition:CompareFaces",
+        "rekognition:DetectFaces"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RekognitionFaceLiveness",
+      "Effect": "Allow",
+      "Action": [
+        "rekognition:CreateFaceLivenessSession",
+        "rekognition:StartFaceLivenessSession",
+        "rekognition:GetFaceLivenessSessionResults"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IrelandOnly",
+      "Effect": "Deny",
+      "Action": [
+        "textract:*",
+        "rekognition:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": "eu-west-1"
+        }
+      }
+    }
+  ]
+}
