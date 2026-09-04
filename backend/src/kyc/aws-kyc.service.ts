@@ -23,7 +23,11 @@ import {
   AnalyzeDocumentCommand,
   TextractClient,
 } from '@aws-sdk/client-textract';
-import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
+import {
+  AssumeRoleCommand,
+  GetFederationTokenCommand,
+  STSClient,
+} from '@aws-sdk/client-sts';
 import {
   CompareFacesCommand,
   CreateFaceLivenessSessionCommand,
@@ -33,6 +37,29 @@ import {
 
 import { buildAwsFindings, type AwsFindings, type FaceComparison } from './aws-kyc-findings';
 import type { TextractResponse } from './textract-extract';
+
+/**
+ * The ceiling on what browser-held credentials can do, passed inline to
+ * GetFederationToken. Effective permissions are this INTERSECTED with the
+ * server user's own policy, so it can only ever narrow, never widen.
+ *
+ * One action, one region. Notably absent: GetFaceLivenessSessionResults —
+ * the browser must not be able to read the verdict it is being judged by.
+ */
+const BROWSER_SESSION_POLICY = {
+  Version: '2012-10-17',
+  Statement: [
+    {
+      Sid: 'BrowserMayOnlyStreamALivenessChallenge',
+      Effect: 'Allow',
+      Action: 'rekognition:StartFaceLivenessSession',
+      Resource: '*',
+      Condition: {
+        StringEquals: { 'aws:RequestedRegion': 'eu-west-1' },
+      },
+    },
+  ],
+};
 
 /** The selfie itself had no detectable face — a retake, not a verdict. */
 export class NoFaceInSelfieError extends Error {
@@ -223,49 +250,78 @@ export class AwsKycService {
    *
    * 🚨 OUR OWN KEY MUST NEVER REACH A BROWSER. The server key can read
    * identity documents, compare faces and pull liveness RESULTS; a page that
-   * held it could call Rekognition against our account at will. So the
-   * browser gets a role assumed for this one purpose, whose policy grants
-   * `rekognition:StartFaceLivenessSession` and nothing else, region-locked
-   * the same way the server's is.
+   * held it could call Rekognition against our account at will — and a page
+   * that could read its own liveness result could also lie about it.
    *
    * This is deliberately NOT Cognito. The documented alternative is an
-   * unauthenticated Identity Pool, which means standing up a public guest
-   * identity that anyone can obtain credentials from. We already know who
-   * this seller is — they are signed in and mid-verification — so vending
-   * from behind our own auth guard is both smaller and tighter.
+   * unauthenticated Identity Pool: a public guest identity anyone on the
+   * internet can draw credentials from. We already know who this seller is —
+   * signed in, mid-verification — so we vend from behind our own auth guard.
    *
-   * Returns undefined when AWS_KYC_LIVENESS_ROLE_ARN is unset, which is how
-   * the feature stays off: no credentials means the browser runs no
-   * challenge, which means the verdict cannot auto-approve and parks for a
-   * human. Degraded, never silently passed.
+   * ── TWO WAYS TO DO THAT, AND THE SIMPLER ONE IS THE DEFAULT ─────────
+   *
+   * GetFederationToken (no extra IAM objects) takes the CALLER's own
+   * permissions and INTERSECTS them with a session policy passed inline. So
+   * the browser ends up with `rekognition:StartFaceLivenessSession` in
+   * eu-west-1 and nothing else, minted from the same user the server already
+   * runs as. Nothing to create in the console beyond one line added to that
+   * user's existing policy.
+   *
+   * AssumeRole (tighter, optional) additionally keeps
+   * StartFaceLivenessSession off the server user's own policy, so a leaked
+   * server key could not start a stream either. Worth it eventually; not
+   * worth blocking the feature on a second IAM object today.
+   *
+   * Set AWS_KYC_LIVENESS_ROLE_ARN to use the role. Leave it unset and this
+   * falls back to federation, which is why the feature no longer needs it.
+   *
+   * ⚠️ INTERSECTION, NOT ASSIGNMENT. The session policy below cannot GRANT
+   * anything the user lacks. If StartFaceLivenessSession is ever removed
+   * from the user's policy, this silently returns credentials that can do
+   * nothing and the challenge fails at the browser — so the two must move
+   * together.
    */
   async vendBrowserCredentials(
     subjectRef: string,
   ): Promise<BrowserLivenessCredentials | undefined> {
-    const roleArn = process.env.AWS_KYC_LIVENESS_ROLE_ARN;
-    if (!roleArn) {
+    if (!this.enabled()) {
       this.log.warn(
-        'AWS_KYC_LIVENESS_ROLE_ARN unset — no browser liveness challenge can run, so every verdict will park for human review',
+        'AWS credentials unset — no browser liveness challenge can run, so every verdict will park for human review',
       );
       return undefined;
     }
     this.stsClient ??= new STSClient({ region: this.region });
-    const res = await this.stsClient.send(
-      new AssumeRoleCommand({
-        RoleArn: roleArn,
-        // Shows up in CloudTrail against every browser-side call, so a
-        // suspicious stream can be traced back to one verification attempt.
-        // Sanitised because AssumeRole rejects anything outside [\w+=,.@-].
-        RoleSessionName: `kyc-${subjectRef.replace(/[^\w+=,.@-]/g, '')}`.slice(0, 64),
-        // 900 is the AssumeRole minimum. The liveness session itself expires
-        // after 3 minutes, so the credentials always outlive what they are
-        // for — we cannot make them shorter-lived than the work.
-        DurationSeconds: 900,
-      }),
-    );
+
+    // Shows up in CloudTrail against every browser-side call, so a
+    // suspicious stream traces back to one verification attempt. Sanitised
+    // because STS rejects anything outside [\w+=,.@-], and truncated
+    // because GetFederationToken caps Name at 32 characters (AssumeRole
+    // allows 64, so the shorter limit governs).
+    const sessionName = `kyc-${subjectRef.replace(/[^\w+=,.@-]/g, '')}`.slice(0, 32);
+
+    const roleArn = process.env.AWS_KYC_LIVENESS_ROLE_ARN;
+    const res = roleArn
+      ? await this.stsClient.send(
+          new AssumeRoleCommand({
+            RoleArn: roleArn,
+            RoleSessionName: sessionName,
+            // 900 is the STS minimum. The liveness session itself expires
+            // after 3 minutes, so the credentials always outlive the work —
+            // we cannot make them shorter-lived than what they are for.
+            DurationSeconds: 900,
+          }),
+        )
+      : await this.stsClient.send(
+          new GetFederationTokenCommand({
+            Name: sessionName,
+            DurationSeconds: 900,
+            Policy: JSON.stringify(BROWSER_SESSION_POLICY),
+          }),
+        );
+
     const c = res.Credentials;
     if (!c?.AccessKeyId || !c.SecretAccessKey || !c.SessionToken) {
-      throw new Error('AssumeRole returned no usable credentials');
+      throw new Error('STS returned no usable credentials');
     }
     return {
       accessKeyId: c.AccessKeyId,

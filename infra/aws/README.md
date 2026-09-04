@@ -70,37 +70,65 @@ not a fault.
   photograph.
 - `rekognition:CreateFaceLivenessSession`, `GetFaceLivenessSessionResults` —
   opening the anti-spoofing challenge and reading its verdict.
+- `rekognition:StartFaceLivenessSession` — **not called by this server.** It is
+  held so the server can pass it *down* to the browser: a federated session
+  can only ever narrow the caller's own permissions, never add to them, so the
+  user must hold this for the browser to be given it. The optional role path
+  below is what removes it from the user again.
+- `sts:GetFederationToken` — minting those narrowed, short-lived browser
+  credentials.
 
-`rekognition:StartFaceLivenessSession` is deliberately **not** here. That call
-is made by the browser, never by this server, so granting it to the server's
-own key would widen what a leaked key could do for no benefit. The browser
-gets it through the role below instead.
+## Giving the browser credentials (no new IAM object needed)
 
-## The `alloutdoor-kyc-liveness-browser` role
-
-The liveness challenge is a video stream from the seller's camera straight to
+The liveness challenge streams video from the seller's camera straight to
 Rekognition, so the **browser** needs AWS credentials. Ours must never go
 there: the server key can read identity documents and pull liveness verdicts,
-and a page holding it could call Rekognition against this account at will.
+and a page that could read its own verdict could also lie about it.
 
 AWS documents Cognito Identity Pools for this, which means standing up a
 public unauthenticated identity anyone can draw credentials from. We do not
-need it — the seller is signed in and mid-verification — so the server assumes
-a role scoped to exactly one action and hands the temporary credentials to the
-page from behind our own auth guard.
+need it — the seller is signed in and mid-verification.
 
-1. **IAM → Roles → Create role → Custom trust policy.** Paste
-   [`kyc-liveness-role-trust-policy.json`](./kyc-liveness-role-trust-policy.json),
-   replacing `<ACCOUNT_ID>` with this account's id (top right of the console).
-2. Attach a new policy built from
-   [`kyc-liveness-role-policy.json`](./kyc-liveness-role-policy.json) —
-   `StartFaceLivenessSession` and nothing else, region-locked to eu-west-1 the
-   same way the server's policy is.
-3. Name the role **`alloutdoor-kyc-liveness-browser`**.
-4. Edit `alloutdoor-kyc-policy` and replace `<ACCOUNT_ID>` in its
-   `AssumeOnlyTheBrowserLivenessRole` statement with the same id. The user can
-   assume that one role and no other.
-5. Put the role's ARN on the box:
+**The default needs nothing beyond the user above.** The server calls
+`sts:GetFederationToken` on its own identity and passes an inline session
+policy; the browser's effective permissions are that policy INTERSECTED with
+the user's, which comes to `rekognition:StartFaceLivenessSession` in eu-west-1
+and nothing else. Not Textract, and **not** `GetFaceLivenessSessionResults`.
+
+So the only change to what you already created is one statement in
+`alloutdoor-kyc-policy` — re-paste [`kyc-iam-policy.json`](./kyc-iam-policy.json),
+which now includes it:
+
+```json
+{
+  "Sid": "VendShortLivedBrowserCredentials",
+  "Effect": "Allow",
+  "Action": ["sts:GetFederationToken"],
+  "Resource": "*"
+}
+```
+
+IAM → Policies → `alloutdoor-kyc-policy` → Edit → replace the JSON → Save.
+That is the whole job; `AWS_KYC_LIVENESS_ROLE_ARN` stays unset.
+
+### Optional, later: the tighter role
+
+Federation leaves `StartFaceLivenessSession` on the server user's own policy,
+because an intersection cannot grant what the user lacks. A role removes even
+that, so a leaked server key could not start a stream either. It is a real
+improvement and it is **not worth blocking the feature on** — do it when
+there is a quiet moment.
+
+1. **IAM → Roles → Create role → Custom trust policy**, pasting
+   [`kyc-liveness-role-trust-policy.json`](./kyc-liveness-role-trust-policy.json)
+   with `<ACCOUNT_ID>` replaced by this account's id (top right of the console).
+2. Attach a policy built from
+   [`kyc-liveness-role-policy.json`](./kyc-liveness-role-policy.json).
+3. Name it **`alloutdoor-kyc-liveness-browser`**.
+4. In `alloutdoor-kyc-policy`, swap the `sts:GetFederationToken` statement for
+   `sts:AssumeRole` scoped to that role's ARN, and drop
+   `rekognition:StartFaceLivenessSession` from the user.
+5. Put the ARN on the box:
 
 ```bash
 ssh -t alloutdoor 'f=/home/alloutdoor/app/backend/.env; cp "$f" "$f.bak-$(date +%F-%H%M%S)"; \
@@ -109,8 +137,11 @@ ssh -t alloutdoor 'f=/home/alloutdoor/app/backend/.env; cp "$f" "$f.bak-$(date +
   echo "AWS_KYC_LIVENESS_ROLE_ARN=$a" >> "$f"; grep "^AWS_KYC" "$f"'
 ```
 
-⚠️ **Until that ARN is set, no liveness challenge can run.** The endpoint
-reports itself unavailable, the wizard submits the selfie on its own, and
-every verdict parks in `UNDER_REVIEW` for a human — because anti-spoofing was
-never checked. That is the intended degraded state, not a bug; the thing that
-must never happen is a seller auto-approving on a check nobody ran.
+The code picks the path from that variable alone: set means AssumeRole, unset
+means federation. Nothing else changes.
+
+⚠️ **If neither works, no liveness challenge runs.** The endpoint reports
+itself unavailable, the wizard submits the selfie on its own, and every
+verdict parks in `UNDER_REVIEW` for a human — because anti-spoofing was never
+checked. That is the intended degraded state, not a bug; what must never
+happen is a seller auto-approving on a check nobody ran.

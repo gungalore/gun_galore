@@ -559,16 +559,9 @@ describe('submitSelfieClaudeVerdict — RETAKE is not a failure', () => {
 // carrying on as though the check had happened.
 // ─────────────────────────────────────────────────────────────────────
 describe('createLivenessSession', () => {
-  const ROLE = 'AWS_KYC_LIVENESS_ROLE_ARN';
-  const original = process.env[ROLE];
-  afterEach(() => {
-    if (original === undefined) delete process.env[ROLE];
-    else process.env[ROLE] = original;
-  });
-
-  it('reports itself unavailable when no role is configured — and mints NO session', async () => {
-    delete process.env[ROLE];
+  it('reports itself unavailable when credentials cannot be vended, and mints NO session', async () => {
     const { service, aws } = makeService();
+    jest.spyOn(aws, 'vendBrowserCredentials').mockResolvedValue(undefined);
     const create = jest.spyOn(aws, 'createLivenessSession');
 
     const res = await service.createLivenessSession('clerk_1');
@@ -582,7 +575,6 @@ describe('createLivenessSession', () => {
   });
 
   it('vends credentials and a session together when configured', async () => {
-    process.env[ROLE] = 'arn:aws:iam::123456789012:role/alloutdoor-kyc-liveness-browser';
     const { service, aws } = makeService();
     jest.spyOn(aws, 'vendBrowserCredentials').mockResolvedValue({
       accessKeyId: 'ASIA_TEST',
@@ -595,8 +587,8 @@ describe('createLivenessSession', () => {
     const res = await service.createLivenessSession('clerk_1');
 
     expect(res.available).toBe(true);
-    // The pair is atomic on purpose: a session id without credentials is
-    // unusable, and credentials without a session have nothing to stream.
+    // Atomic on purpose: a session id without credentials is unusable, and
+    // credentials without a session have nothing to stream.
     expect(res).toMatchObject({
       sessionId: 'sess_123',
       region: expect.any(String),
@@ -605,7 +597,6 @@ describe('createLivenessSession', () => {
   });
 
   it('never returns the server key to the browser', async () => {
-    process.env[ROLE] = 'arn:aws:iam::123456789012:role/alloutdoor-kyc-liveness-browser';
     process.env.AWS_ACCESS_KEY_ID = 'AKIA_SERVER_KEY_MUST_NOT_LEAK';
     const { service, aws } = makeService();
     jest.spyOn(aws, 'vendBrowserCredentials').mockResolvedValue({
