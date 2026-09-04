@@ -71,7 +71,7 @@ import {
 } from '@/lib/desk-order';
 // 🚨 desk-orderS, PLURAL — the CART PARENT's module, not desk-order's. See its
 // header: one character apart, two different units of money.
-import type { OrderCard } from '@/lib/desk-orders';
+import { fetchOrderCard, type OrderCard } from '@/lib/desk-orders';
 
 export interface OrderDrawerProps {
   open: boolean;
@@ -167,6 +167,48 @@ export function OrderDrawer({
    * that frame into a loading state instead of a plausible-looking lie.
    */
   const loaded = dossier && dossier.transaction.id === transactionId ? dossier : null;
+  /**
+   * The parent order, fetched HERE when the board that opened this had none.
+   *
+   * 🚨 THE ORDER-LEVEL MONEY USED TO DEPEND ON WHICH DOOR YOU CAME THROUGH.
+   * Only the Orders lens passes a card — it had fetched one anyway to learn
+   * which line to open — so the same sale showed its cart total when reached
+   * from the order book and hid it when reached from the payout run, a card,
+   * a complaint or search. The operator could not tell that the section was
+   * missing rather than absent, because nothing says which entry point they
+   * used.
+   *
+   * ⚠️ ONLY WHEN THE SALE ACTUALLY HAS A PARENT. A single-item checkout has no
+   * Order row at all (every pre-cart sale), and `tx.order` is null there — so
+   * this fetches nothing and the drawer looks exactly as it did. It is also
+   * skipped entirely when a card was supplied, so no board pays twice.
+   */
+  const [fetchedCard, setFetchedCard] = React.useState<OrderCard | null>(null);
+  const parentOrderId = loaded?.transaction.order?.id ?? null;
+
+  React.useEffect(() => {
+    // Same rule as the dossier above: closing drops it rather than holding a
+    // cart's figures in the tab after the operator has moved on.
+    if (!open) {
+      setFetchedCard(null);
+      return;
+    }
+    if (orderCard || !parentOrderId) return;
+    let alive = true;
+    fetchOrderCard(parentOrderId)
+      .then((c) => {
+        if (alive) setFetchedCard(c);
+      })
+      // Silent: the lead section is context, not the reason the drawer was
+      // opened. A failed parent read must not put a red region over a sale
+      // whose own dossier loaded perfectly well.
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [open, orderCard, parentOrderId]);
+
+  const effectiveCard = orderCard ?? fetchedCard;
   const tx = loaded?.transaction ?? null;
   const reference = tx ? orderReferenceOf(tx) : null;
 
@@ -202,7 +244,7 @@ export function OrderDrawer({
           /* ⚠️ THE CARD IS ONLY THIS ORDER'S IF IT NAMES THIS ORDER. A parent
              that swaps transactionId without clearing the card would otherwise
              put one cart's totals under another cart's reference. */
-          orderCard={orderCard && orderCard.id === tx.order?.id ? orderCard : null}
+          orderCard={effectiveCard && effectiveCard.id === tx.order?.id ? effectiveCard : null}
           onOpenLine={onOpenLine}
           referenceSource={reference?.source ?? 'transaction'}
           /* Every lever changes what this drawer says, so it re-reads rather
@@ -283,6 +325,20 @@ function Body({
 
   return (
     <>
+      {/* 🚨 THE LEAD SECTION, AS THE ARTBOARD DRAWS IT. Order.dc.html puts
+          the order-level money — buyer, placed, items, shipping, handling,
+          processing, buyer paid — immediately under the header, before
+          anything about the line. It was rendered about ten sections down,
+          below Item, Money, Parties, Payment, Shipping, Complaints,
+          Messages, Gateway, Dealer and Zoho.
+
+          That ordering asked the operator to judge a line before seeing
+          what the buyer actually paid for the cart it belongs to — on a
+          surface whose entire safety rule is that money is per LINE and
+          the lines around it are not being touched. The parent total is
+          the context for that rule, so it goes first. */}
+      {orderCard ? <OrderCardSection card={orderCard} /> : null}
+
       <Section label="Item">
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
           {thumb ? (
@@ -631,8 +687,6 @@ function Body({
       ) : null}
 
       <ZohoFold tx={tx} onActed={onActed} />
-
-      {orderCard ? <OrderCardSection card={orderCard} /> : null}
 
       {parcel && tx.order ? (
         <Fold

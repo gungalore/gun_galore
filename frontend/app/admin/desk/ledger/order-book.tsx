@@ -218,7 +218,7 @@ export function OrderBook({
             />
           )}
           {bounds ? (
-            <Pager bounds={bounds} pageIndex={pageIndex} total={page.total} onPage={onPage} />
+            <Pager bounds={bounds} pageIndex={pageIndex} total={page.total} onPage={onPage} phone={phone} />
           ) : null}
         </>
       )}
@@ -363,21 +363,58 @@ function Pager({
   pageIndex,
   total,
   onPage,
+  phone,
 }: {
   bounds: ReturnType<typeof orderPageWindow>;
   pageIndex: number;
   total: number;
   onPage: (next: number) => void;
+  phone: boolean;
 }) {
   if (total <= ORDER_PAGE_SIZE) {
     return (
-      <span style={{ fontSize: 12, color: 'var(--dk-ink-3)', padding: '2px 2px 0' }}>
+      <span
+        style={{
+          fontSize: 12,
+          color: 'var(--dk-ink-3)',
+          padding: phone ? '10px 14px' : '2px 2px 0',
+          borderTop: phone ? '1px solid var(--dk-line)' : undefined,
+          margin: phone ? '0 -14px' : undefined,
+        }}
+      >
         {total} {total === 1 ? 'order' : 'orders'}, all of them shown.
       </span>
     );
   }
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 2px 0' }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        // The artboard's own footer chrome: a hairline above it and real
+        // padding, rather than a row tacked onto the end of the list.
+        padding: phone ? '10px 14px' : '10px 2px 0',
+        borderTop: phone ? '1px solid var(--dk-line)' : undefined,
+        // ⚠️ PINNED, BECAUSE THE ARTBOARD PUTS IT OUTSIDE THE SCROLLER.
+        // There the list scrolls under a footer that stays; here the whole
+        // page scrolls, so the pager was reachable only by scrolling to the
+        // bottom — on a 20-row list, past everything you were reading. A
+        // sticky bottom gets the same behaviour without rebuilding the page
+        // into a fixed-chrome shell.
+        //
+        // It rests just above BottomTabs (78 + its inset) and sits BELOW
+        // them in z (30 against 40), so the bar always wins the last strip
+        // of the screen rather than the two overlapping.
+        position: phone ? 'sticky' : undefined,
+        bottom: phone ? 'calc(78px + min(env(safe-area-inset-bottom, 0px), 34px))' : undefined,
+        zIndex: phone ? 30 : undefined,
+        background: phone ? 'var(--dk-ground)' : undefined,
+        // Bleed to the screen edges so the hairline spans the full width,
+        // the way a footer rule does — the shell pads the body by 14.
+        margin: phone ? '0 -14px' : undefined,
+      }}
+    >
       <span className="dk-mono" style={{ fontSize: 12, color: 'var(--dk-ink-3)' }}>
         {bounds.beyondEnd
           ? `That page is past the end · ${total} ${total === 1 ? 'order' : 'orders'}`
