@@ -41,11 +41,97 @@ export interface RibbonCell {
 
 export interface RibbonProps {
   cells: RibbonCell[];
-  /** The phone ribbon: four cells at 17px rather than five at 22px. */
+  /** The phone ribbon — see the note on the scrolled strip below. */
   compact?: boolean;
 }
 
 export function Ribbon({ cells, compact = false }: RibbonProps) {
+  /**
+   * 🚨 ON A PHONE THE RIBBON SCROLLS SIDEWAYS. IT DOES NOT DIVIDE.
+   *
+   * The artboard (docs/design/desk-pwa/Main.dc.html) draws this as `.hs` — a
+   * flex strip of `.stat` cards, each `min-width: 104px; flex: 0 0 auto`,
+   * overflowing horizontally — and its comment says why: "Five figures,
+   * scrolled sideways rather than stacked: they are a glance, not a screen."
+   *
+   * The grid below is right on a desktop and wrong on a phone. Five columns of
+   * `minmax(0, 1fr)` across 390px is 78px each, and the value carries
+   * overflow:hidden + text-overflow:ellipsis — so "R 191 400" renders as
+   * "R 191…". A money figure truncated to look like a smaller money figure is
+   * the worst thing this surface can do, and it does it silently.
+   */
+  if (compact) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          overflowX: 'auto',
+          // The strip bleeds to both screen edges so the last cell is visibly
+          // cut off — that is the affordance telling the operator it scrolls.
+          margin: '0 -14px',
+          padding: '0 14px',
+          scrollbarWidth: 'none',
+        }}
+      >
+        {cells.map((c, i) => (
+          <div
+            key={i}
+            style={{
+              minWidth: 104,
+              flex: '0 0 auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+              padding: '8px 10px',
+              background: 'var(--dk-surface)',
+              border: '1px solid var(--dk-line)',
+              borderRadius: 'var(--dk-radius-control)',
+            }}
+          >
+            <span
+              className="dk-mono"
+              style={{
+                fontSize: 10.5,
+                fontWeight: 500,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: 'var(--dk-ink-3)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {c.label}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {c.dot ? <Dot tone={c.dot} /> : null}
+              {/* No ellipsis here, deliberately — the cell grows to its number
+                  and the strip scrolls, rather than the number being clipped
+                  to fit a cell. */}
+              <span
+                className="dk-mono"
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  lineHeight: 1.1,
+                  letterSpacing: '-0.01em',
+                  color: 'var(--dk-ink)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {c.value}
+              </span>
+            </span>
+            {c.sub ? (
+              <span style={{ fontSize: 10.5, color: 'var(--dk-ink-4)', whiteSpace: 'nowrap' }}>
+                {c.sub}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -66,7 +152,7 @@ export function Ribbon({ cells, compact = false }: RibbonProps) {
             display: 'flex',
             flexDirection: 'column',
             gap: 6,
-            padding: compact ? '12px 14px' : '14px 18px',
+            padding: '14px 18px',
             minWidth: 0,
             borderLeft: i === 0 ? undefined : '1px solid var(--dk-line)',
           }}
@@ -77,7 +163,7 @@ export function Ribbon({ cells, compact = false }: RibbonProps) {
             <span
               className="dk-mono"
               style={{
-                fontSize: compact ? 17 : 22,
+                fontSize: 22,
                 fontWeight: 500,
                 lineHeight: 1,
                 letterSpacing: '-0.01em',

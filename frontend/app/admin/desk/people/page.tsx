@@ -46,6 +46,7 @@ import {
   ResultBlock,
   SkeletonPile,
   Tag,
+  useIsPhone,
 } from '@/components/desk';
 import {
   DEALER_ACTIVATE_REASONS,
@@ -117,6 +118,7 @@ const DEALER_VIEWS: { key: DealerView; label: string }[] = [
 ];
 
 export default function PeoplePage() {
+  const phone = useIsPhone();
   const [segment, setSegment] = React.useState<Segment>('verifying');
   const [search, setSearch] = React.useState('');
   const [pageIndex, setPageIndex] = React.useState(1);
@@ -351,7 +353,14 @@ export default function PeoplePage() {
       }
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.015em' }}>People</span>
+        {/* ⚠️ DESKTOP ONLY — the phone header already prints it.
+            On a phone DeskShell's PhoneHeader renders `title`, so this
+            span put the same word on screen twice, one above the other,
+            eating a line of a 390px screen to say nothing. The desktop
+            top bar carries no page title, so it is still needed there. */}
+        {phone ? null : (
+          <span style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.015em' }}>People</span>
+        )}
         <span style={{ flex: 1 }} />
         <div style={{ width: 360, maxWidth: '100%' }}>
           <Input
@@ -396,7 +405,20 @@ export default function PeoplePage() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {/* One scrolling line on a phone, as the artboard draws it — five
+          segments wrapped to a second row and pushed the list down.
+          Desktop keeps wrapping, where there is width for one row. */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          flexWrap: phone ? 'nowrap' : 'wrap',
+          overflowX: phone ? 'auto' : undefined,
+          scrollbarWidth: phone ? 'none' : undefined,
+          margin: phone ? '0 -14px' : undefined,
+          padding: phone ? '0 14px' : undefined,
+        }}
+      >
         {SEGMENTS.map((s) => (
           <Chip key={s.key} active={segment === s.key} onClick={() => setSegment(s.key)}>
             {s.label}

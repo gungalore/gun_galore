@@ -28,8 +28,15 @@ export interface DeskShellProps {
   active: string;
   /** Phone header title — "The Desk", "Ledger". */
   title: string;
-  /** Phone header sub-line — "10 things need you · 3 overdue". */
-  sub?: string;
+  /**
+   * Phone header sub-line — "10 things need you · 3 overdue".
+   *
+   * A NODE, not a string, so a page can colour part of it. The artboard
+   * paints the overdue figure in bad-red inside an otherwise dim line
+   * (Main.dc.html), which a flat string cannot express — it rendered
+   * uniformly ink-3, so the one number worth noticing looked like the rest.
+   */
+  sub?: React.ReactNode;
   /**
    * Site health, shown in the top bar and as the phone's first button.
    *
@@ -327,7 +334,7 @@ function PhoneHeader({
   onServices,
 }: {
   title: string;
-  sub?: string;
+  sub?: React.ReactNode;
   site?: { tone: 'ok' | 'warn' | 'bad' | 'unknown'; word: string };
   onSearch?: () => void;
   onServices?: () => void;
@@ -364,9 +371,13 @@ function PhoneHeader({
         <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</span>
         {sub ? <span style={{ fontSize: 11.5, color: 'var(--dk-ink-3)' }}>{sub}</span> : null}
       </div>
-      {/* The site dot becomes a button here: the phone ribbon is four cells,
-          so health moves into the header rather than being dropped. Drawn only
-          when a surface actually measured it — see DeskShellProps.site. */}
+      {/* Health as a header button, for a surface that measured it —
+          see DeskShellProps.site. Only the Site board passes one.
+          (This used to say "the phone ribbon is four cells, so health moves
+          into the header". The ribbon carries FIVE, Site among them, and it
+          scrolls rather than dropping any — so nothing is being rescued from
+          a squeeze here. The Desk board passes no `site` and shows the dot
+          only in its ribbon cell, which is what the artboard draws.) */}
       {site ? (
         <RoundButton label={`Site: ${site.word}`}>
           <Dot tone={site.tone} />
@@ -401,8 +412,12 @@ function RoundButton({
       aria-label={label}
       onClick={onClick}
       style={{
-        width: 36,
-        height: 36,
+        // 44, not 36 — the artboard draws a 44x44 control (Main.dc.html), and
+        // 44 is both the platform minimum tap target and what --dk-h-control
+        // already resolves to on this breakpoint. Every other control in the
+        // phone header was thumb-sized; these two were not.
+        width: 44,
+        height: 44,
         flex: 'none',
         display: 'inline-flex',
         alignItems: 'center',

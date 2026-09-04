@@ -415,21 +415,31 @@ export function Band({ label, count, children }: BandProps) {
         >
           {label}
         </span>
+        {/* ⚠️ RULE FIRST, THEN THE COUNT — the order the artboard draws
+            (docs/design/desk-pwa/Main.dc.html) and the reason its annotation
+            insists "a band header is a rule, not a chip row". The count used
+            to sit in a pill immediately after the label, with the rule
+            trailing off to the right: a pill beside a label is a chip, and a
+            row of them reads as a control the operator can press. Pushing the
+            count to the far end turns the header back into a divider with a
+            tally on it.
+
+            ⚠️ ink-3, where the artboard uses ink-4. ink-4 is 2.8:1 on this
+            ground — below AA — and five sites of it were raised to ink-3 on
+            2026-09-04 for exactly that reason. Structure matches the artboard;
+            this one colour deliberately does not. */}
+        <span style={{ flex: 1, height: 1, background: 'var(--dk-line)' }} />
         <span
           className="dk-mono"
           style={{
             fontSize: 11,
             fontWeight: 500,
             lineHeight: 1,
-            color: 'var(--dk-ink)',
-            background: 'var(--dk-inset)',
-            borderRadius: 'var(--dk-radius-pill)',
-            padding: '3px 7px',
+            color: 'var(--dk-ink-3)',
           }}
         >
           {count}
         </span>
-        <span style={{ flex: 1, height: 1, background: 'var(--dk-line)' }} />
       </div>
       {children}
     </div>

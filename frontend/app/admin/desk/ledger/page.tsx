@@ -476,7 +476,14 @@ export default function LedgerPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         {/* One identity in both lenses. The page is the Ledger; the switch
             below only says which end of the money you are looking at. */}
-        <span style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.015em' }}>Ledger</span>
+        {/* ⚠️ DESKTOP ONLY — the phone header already prints it.
+            On a phone DeskShell's PhoneHeader renders `title`, so this
+            span put the same word on screen twice, one above the other,
+            eating a line of a 390px screen to say nothing. The desktop
+            top bar carries no page title, so it is still needed there. */}
+        {phone ? null : (
+          <span style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.015em' }}>Ledger</span>
+        )}
         <span style={{ flex: 1 }} />
         {/*
           ⚠️ THIS ROW SITS OUTSIDE THE RUN'S ERROR GATE, DELIBERATELY. Everything

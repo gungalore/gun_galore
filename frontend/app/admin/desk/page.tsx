@@ -422,9 +422,31 @@ export default function DeskPage() {
 
   const rail = feed ? <DeskRail feed={feed} /> : null;
   const overdue = feed?.pile.overdue ?? 0;
-  const sub = feed
-    ? `${visible.length} ${visible.length === 1 ? 'thing needs' : 'things need'} you${overdue ? ` · ${overdue} overdue` : ''}`
-    : 'Loading…';
+  /**
+   * ⚠️ THE OVERDUE FIGURE IS BAD-RED, THE REST IS NOT.
+   *
+   * The artboard paints it that way (Main.dc.html: `14 cards ·
+   * <span style="color:#FF6B5E">3 overdue</span>`) and it is the one number in
+   * the header worth a colour — it is the sole reason to open the app before
+   * you meant to. As one flat string it rendered uniformly ink-3, so the thing
+   * that was late looked exactly like the count of things that were not.
+   *
+   * Nothing is coloured when the count is zero: there is no overdue segment at
+   * all, rather than a red nought.
+   */
+  const sub = feed ? (
+    <>
+      {`${visible.length} ${visible.length === 1 ? 'thing needs' : 'things need'} you`}
+      {overdue ? (
+        <>
+          {' · '}
+          <span style={{ color: 'var(--dk-bad)' }}>{`${overdue} overdue`}</span>
+        </>
+      ) : null}
+    </>
+  ) : (
+    'Loading…'
+  );
 
   return (
     <DeskShell active="desk" title="The Desk" sub={sub} rail={rail}>
