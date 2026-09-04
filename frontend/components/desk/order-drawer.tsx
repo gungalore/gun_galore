@@ -723,6 +723,23 @@ function Body({
                       {formatRand(sib.buyerTotal)}
                     </span>
                   </div>
+                  {/* ⚠️ THE LINE'S MONEY STATE IS A TAG, NOT A WORD IN A LIST.
+                      The artboard gives every line in the picker its own pill —
+                      "Held", "Carries the parcel" — because this list is the
+                      safety rail: the operator is choosing WHICH line to act on,
+                      and whether a sibling is still holding money is the thing
+                      that decides whether the act will be refused. Folded into a
+                      comma-dot sentence beside the carrier and the shipping
+                      state, it read at the same weight as the courier's name.
+
+                      Same tone function the header already uses for the primary
+                      line, so one status cannot be two colours in one drawer. */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 5 }}>
+                    <Tag kind={paymentTone(sib.paymentStatus)} icon={null}>
+                      {humanise(sib.paymentStatus)}
+                    </Tag>
+                    {sib.shipsWithId ? <Tag kind="neutral" icon={null}>Carries the parcel</Tag> : null}
+                  </div>
                   <Muted style={{ marginTop: 3 }}>
                     {[
                       sib.id === tx.id ? 'this line' : null,
@@ -738,12 +755,10 @@ function Body({
                       // column follows. Null seller is an older row whose
                       // dossier predates the field, not an unowned line.
                       sib.seller?.username ? `@${sib.seller.username}` : null,
-                      humanise(sib.paymentStatus),
                       humanise(sib.shippingMethod),
                       // The line's own shipping state, which is what says
                       // WHICH of a cart's parcels is the one that is stuck.
                       sib.shippingStatus ? humanise(sib.shippingStatus) : null,
-                      sib.shipsWithId ? 'ships with another line' : null,
                     ]
                       .filter(Boolean)
                       .join(' · ')}
