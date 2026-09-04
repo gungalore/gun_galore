@@ -23,6 +23,8 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { sniffMime } from '../common/sniff-mime';
 import { ClaudeKycService, type KycClaudeFindings } from './claude-kyc.service';
+import { AwsKycService, NoFaceInSelfieError } from './aws-kyc.service';
+import type { AwsFindings } from './aws-kyc-findings';
 import {
   ageFromSaIdNumber,
   crossCheckIdentity,
@@ -97,6 +99,7 @@ export class KycService {
     // URL has been moved and the columns dropped.
     private cloudinary: CloudinaryService,
     private claudeKyc: ClaudeKycService,
+    private aws: AwsKycService,
     // Where identity documents actually live now. See the `kyc` namespace.
     private files: SecureFileStorageService,
   ) {}
@@ -696,7 +699,36 @@ export class KycService {
   }
 
   // ── Step 4: live selfie → the one vision verdict ────────────────────
-  async submitSelfieClaudeVerdict(clerkId: string, selfieBase64: string) {
+  /**
+   * Open an AWS Face Liveness session for a seller who is mid-verification.
+   *
+   * The region goes back with it because Amplify's FaceLivenessDetector
+   * needs to talk to the SAME region the session was created in, and
+   * hard-coding it in the frontend is how the two drift apart.
+   */
+  async createLivenessSession(clerkId: string) {
+    await this.assertClaudeFlow();
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId },
+      select: { kycStatus: true, kycIdVerifiedAt: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.kycIdVerifiedAt) {
+      throw new ForbiddenException(
+        'Complete your details and ID document upload first.',
+      );
+    }
+    if (user.kycStatus === 'VERIFIED' || user.kycStatus === 'UNDER_REVIEW') {
+      throw new BadRequestException('Your verification is already in progress.');
+    }
+    const sessionId = await this.aws.createLivenessSession();
+    return { sessionId, region: process.env.AWS_REGION || 'eu-west-1' };
+  }
+  async submitSelfieClaudeVerdict(
+    clerkId: string,
+    selfieBase64: string,
+    livenessSessionId?: string,
+  ) {
     await this.assertClaudeFlow();
 
     const user = await this.prisma.user.findUnique({
@@ -782,50 +814,61 @@ export class KycService {
     // bytes and send them inline.
     const doc = await this.readIdDocument(user);
     const isPdfDoc = doc?.mimeType === 'application/pdf';
-    const documentPdf = isPdfDoc ? doc?.bytes : undefined;
 
     const mode: 'standard' | 'anchored' =
       tier === 'ANCHORED' && haPhotoBase64 ? 'anchored' : 'standard';
 
     // Vision scan — failure NEVER auto-verifies or auto-rejects.
-    let findings: KycClaudeFindings | null = null;
-    // How many readings the verdict rests on (1 = clear-cut, 3 = borderline
-    // consensus). Persisted so an admin looking at a disputed decision can
-    // see whether it was a knife-edge call, and so we can measure later
-    // whether the consensus pass is actually earning its cost.
-    let consensusSamples = 0;
+    let findings: AwsFindings | null = null;
+    // Kept at 0 and still persisted: the best-of-3 consensus pass belonged
+    // to the Claude flow and has no analogue in AWS, which returns one
+    // deterministic reading. Dropping the field would silently change the
+    // shape of every stored dossier, including the historical ones an
+    // admin may still open.
+    const consensusSamples = 0;
     try {
       // ⚠️ NO BYTES MEANS NO SCAN, EVER. A missing document must reach the
       // catch below and park the member for a human — never fall through to a
-      // scan with nothing to look at, which Claude would answer.
+      // scan with nothing to look at.
       if (!doc) throw new Error('ID document bytes unavailable');
-      // Best-of-3 on borderline scores only: a clear-cut scan costs one
-      // call as before, and only a knife-edge one pays for three readings
-      // (skeptical + charitable lenses, per-gate median). See
-      // ClaudeKycService.scanWithConsensus.
-      const consensus = await this.claudeKyc.scanWithConsensus({
+      // The synchronous Textract API takes images, not PDFs. Throwing
+      // parks the seller for a human, which is the correct outcome while
+      // the asynchronous S3 path is unbuilt — it is not a claim that PDF
+      // identity documents are handled.
+      if (isPdfDoc) {
+        throw new Error(
+          'PDF identity documents are not supported by the synchronous Textract path',
+        );
+      }
+
+      findings = await this.aws.scan({
+        documentBytes: doc.bytes,
         selfieBase64,
-        documentImage:
-          isPdfDoc || !doc
-            ? undefined
-            : { bytes: doc.bytes, mediaType: doc.mimeType },
-        documentPdf,
-        mode,
         haPhotoBase64,
-        // Derived from the ID number's own YYMMDD digits — free, and it
-        // turns "allow for ageing" into a stated number of years.
-        subjectAgeYears: ageFromSaIdNumber(idNumber) ?? undefined,
+        livenessSessionId,
       });
-      findings = consensus.findings;
-      consensusSamples = consensus.samples;
-      if (consensus.borderline) {
-        this.log.log(
-          `KYC borderline for ${clerkId} — merged ${consensus.samples} readings`,
+      if (!findings.provenance?.livenessRan) {
+        this.log.warn(
+          `KYC for ${clerkId} ran WITHOUT a completed liveness challenge — anti-spoofing unchecked, verdict cannot auto-approve`,
         );
       }
     } catch (err) {
+      // A selfie with no detectable face is a camera problem, not a
+      // verdict: no strike, no alert, no status write. Mirrors the RETAKE
+      // early-return further down.
+      if (err instanceof NoFaceInSelfieError) {
+        this.log.log(
+          `KYC selfie unusable for ${clerkId} — no face detected (no strike)`,
+        );
+        return {
+          success: false,
+          status: user.kycStatus,
+          message:
+            'We could not find a face in your selfie. Please make sure your whole face is in frame, well lit and not covered, then try again.',
+        };
+      }
       this.log.error(
-        `Claude KYC scan failed for ${clerkId}: ${(err as Error).message}`,
+        `AWS KYC scan failed for ${clerkId}: ${(err as Error).message}`,
       );
       // Outage signal (audit fix 2026-07-20): a dead API silently parks
       // every KYC check in UNDER_REVIEW — surface it so the operator
@@ -1179,12 +1222,14 @@ export class KycService {
       const doc = await this.readIdDocument(seller);
       if (!doc) throw new Error('ID document bytes unavailable');
 
-      const findings = await this.claudeKyc.scan({
+      // Same seam as the interactive verdict. No liveness session exists
+      // here — this is a background re-check of a selfie captured weeks
+      // ago — but that costs nothing on this path: it reads ONLY the
+      // Home Affairs comparison below, and its failure branch parks the
+      // seller for a human rather than approving anything.
+      const findings = await this.aws.scan({
+        documentBytes: doc.bytes,
         selfieBase64: selfieBytes.toString('base64'),
-        ...(doc.mimeType === 'application/pdf'
-          ? { documentPdf: doc.bytes }
-          : { documentImage: { bytes: doc.bytes, mediaType: doc.mimeType } }),
-        mode: 'anchored',
         haPhotoBase64: anchored.idPhotoBase64,
       });
 

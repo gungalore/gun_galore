@@ -5,6 +5,7 @@ import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { KycService } from './kyc.service';
 import { VerifyNowService } from './verifynow.service';
 import { ClaudeKycService } from './claude-kyc.service';
+import { AwsKycService } from './aws-kyc.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 
 // KYC is self-contained — the service depends on PrismaService (global),
@@ -29,6 +30,7 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
     KycService,
     VerifyNowService,
     ClaudeKycService,
+    AwsKycService,
     SecureFileStorageService,
   ],
   exports: [KycService],

@@ -949,21 +949,25 @@ function VerifyKycPageInner() {
               >
                 {flow === 'CLAUDE' ? (
                   // POPIA s72(1)(b) — consent to a cross-border transfer is only
-                  // valid if it is INFORMED. This previously said the document
-                  // and selfie were assessed by "Gun Galore's automated systems",
-                  // which named no processor and no transfer, while the Privacy
-                  // Policy relied on this checkbox as the basis for sending
-                  // biometric data to the United States. Say what actually
-                  // happens, or the consent carries nothing.
+                  // valid if it is INFORMED. It has to name the actual
+                  // destination, so it changes whenever the processor does.
+                  //
+                  // 🚨 THIS TEXT IS PART OF THE VERIFICATION PIPELINE, NOT
+                  // DECORATION. It named the United States because the images
+                  // went to Anthropic; they now go to AWS in Ireland instead.
+                  // A cut-over that moves the data without moving this
+                  // sentence collects consent for a transfer that no longer
+                  // happens and none for the one that does.
                   <>
                     I consent to All Outdoor verifying my identity using my SA
                     ID number, date of birth, ID document and a selfie. The ID
                     number is checked against official records by VerifyNow
-                    (Pty) Ltd. My ID document and selfie are stored with our
-                    image-hosting provider and sent to our AI provider, both in
-                    the United States, for an automated authenticity and
-                    face-match check, and are reviewed by our staff where
-                    needed — all in accordance with POPIA and the{' '}
+                    (Pty) Ltd. My ID document and selfie are stored encrypted
+                    on our own servers and sent to Amazon Web Services in
+                    Ireland (AWS Europe, eu-west-1) for automated text
+                    extraction, a face match and a liveness check, and are
+                    reviewed by our staff where needed — all in accordance
+                    with POPIA and the{' '}
                     <a
                       href="/privacy"
                       target="_blank"

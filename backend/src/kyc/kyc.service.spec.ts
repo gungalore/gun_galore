@@ -3,6 +3,7 @@ process.env.ID_HASH_SECRET = 'test-secret-kyc-spec';
 import { BadRequestException } from '@nestjs/common';
 import { KycService } from './kyc.service';
 import { ClaudeKycService, type KycClaudeFindings } from './claude-kyc.service';
+import { AwsKycService } from './aws-kyc.service';
 import { encryptSaIdNumber } from '../common/id-crypto';
 
 // Canonical Luhn-valid SA test ID — DOB 1980-01-01.
@@ -144,10 +145,29 @@ function makeService(o: Overrides = {}) {
       .mockResolvedValue({ url: 'https://res.cloudinary.com/demo/raw/upload/v1/kyc/u1/doc.pdf', publicId: 'p' }),
   };
 
+  // ClaudeKycService is REAL — it still owns statusFromFindings and
+  // retakeReason, which is exactly what these tests exercise. Only the
+  // scan itself moved to AWS, so that is the only thing stubbed.
   const claudeKyc = new ClaudeKycService();
-  const scanMock = jest.spyOn(claudeKyc, 'scan');
+  const aws = new AwsKycService();
+  const scanMock = jest.spyOn(aws, 'scan');
   if (o.scan instanceof Error) scanMock.mockRejectedValue(o.scan);
-  else scanMock.mockResolvedValue(o.scan ?? goodFindings());
+  else
+    scanMock.mockResolvedValue({
+      ...(o.scan ?? goodFindings()),
+      provenance: {
+        engine: 'aws' as const,
+        integrity: {
+          score: 90,
+          source: 'rules' as const,
+          checked: [],
+          notChecked: [],
+          flags: [],
+        },
+        livenessRan: true,
+        notes: [],
+      },
+    });
 
   // ⚠️ IDENTITY DOCUMENTS LIVE HERE NOW, NOT ON A CDN. They went up with
   // Cloudinary's defaults — no `type: 'private'`, no access_mode — so the
@@ -173,6 +193,7 @@ function makeService(o: Overrides = {}) {
     settings as never,
     cloudinary as never,
     claudeKyc,
+    aws,
     files as never,
   );
 
@@ -296,12 +317,13 @@ describe('submitSelfieClaudeVerdict', () => {
     });
     const res = await service.submitSelfieClaudeVerdict('clerk_1', 'c2VsZmll');
     expect(verifyNow.verifyIdNumber).toHaveBeenCalled();
-    // Second arg is the consensus lens — the anchored scan now runs through
-    // scanWithConsensus, which labels each reading (BASELINE here; a
-    // borderline score would add the SKEPTICAL/CHARITABLE passes).
+    // `mode` and the consensus lens both belonged to the Claude flow and
+    // are gone: AWS returns one deterministic reading, and anchored mode
+    // is derived in kyc.service from the tier plus whether a Home Affairs
+    // photo actually came back. What must still hold is that the photo
+    // reached the scan — without it there is no anchored gate at all.
     expect(scanMock).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'anchored', haPhotoBase64: expect.any(String) }),
-      'BASELINE',
+      expect.objectContaining({ haPhotoBase64: expect.any(String) }),
     );
     expect(res.status).toBe('VERIFIED');
     expect(

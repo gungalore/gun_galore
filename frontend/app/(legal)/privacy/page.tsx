@@ -95,16 +95,16 @@ export default function PrivacyPage() {
       <ul>
         <li>South African ID number (stored encrypted at rest with AES-GCM; we also derive a salted SHA-256 hash for duplicate-registration checks. We retain the encrypted ID — see &ldquo;How long we keep your information&rdquo; below — so that we can confirm the person being paid is the person we verified, prevent fraud and impersonation, and meet the record-keeping and transfer-documentation obligations that apply to certain regulated categories, where the seller&rsquo;s identity number must be reproduced on a prescribed statutory form)</li>
         <li>VerifyNow Home Affairs lookup result (full name, date of birth, status), which may include the official record photograph held by the Department of Home Affairs</li>
-        <li>An image of the identity document you upload during verification (an identity card, identity book page or passport, or a PDF of one). This image is stored with our image-hosting provider, Cloudinary, in the United States, and is retained as an audit record of the verification for the life of your account.</li>
-        <li><strong>Selfie image captured during face-match verification.</strong> The image is <strong>stored</strong> with our image-hosting provider, Cloudinary, in the United States. We retain it as an audit record of the verification for the life of your account, and we re-use it only to re-run a verification check on that same account. If you delete your account we remove the link to the image from your account record, but the stored image itself is <strong>not deleted today</strong> — deletion of the copy held by the image-hosting provider is a follow-up we have not yet implemented, and we will not describe it as done until it is.</li>
+        <li>An image of the identity document you upload during verification (an identity card, identity book page or passport, or a PDF of one). This image is stored encrypted on our own servers and is retained as an audit record of the verification for the life of your account.</li>
+        <li><strong>Selfie image captured during face-match verification.</strong> The image is <strong>stored</strong> encrypted on our own servers. We retain it as an audit record of the verification for the life of your account, and we re-use it only to re-run a verification check on that same account. If you delete your account we remove the link to the image from your account record, but the stored image itself is <strong>not deleted today</strong> — that deletion is a follow-up we have not yet implemented, and we will not describe it as done until it is.</li>
         <li>Number of face-match attempts and outcome</li>
       </ul>
       <p>
         The identity-document image, the selfie and — where the anchored check
         is used — the official record photograph returned by the Home Affairs
-        lookup are transmitted to Anthropic in the United States, which runs
-        the automated document-authenticity and face-match checks on our
-        behalf. See paragraphs 7 and 8.
+        lookup are transmitted to Amazon Web Services in Ireland (AWS Europe,
+        eu-west-1), which runs the automated text extraction, face match and
+        liveness check on our behalf. See paragraphs 7 and 8.
       </p>
       <p>
         Additional terms apply to regulated categories. See the{' '}
@@ -226,10 +226,11 @@ export default function PrivacyPage() {
             ['Clerk', 'United States', 'Email, name, sessions, login activity'],
             ['VerifyNow', 'South Africa', 'ID number, name, selfie image (KYC face-match)'],
             ['Bob Go', 'South Africa', 'Buyer address, collection address, parcel size + weight, contact phone, waybill reference'],
-            ['Cloudinary', 'United States', 'Listing photos; identity-verification images (ID document, selfie) and compliance documents you upload'],
+            ['Cloudinary', 'United States', 'Listing photos and compliance documents you upload'],
             ['Resend', 'United States', 'Email address, content of transactional emails'],
             ['SMSPortal', 'South Africa', 'Phone number, content of transactional SMS'],
-            ['Anthropic (Claude)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation); identity-verification images (ID document, selfie and, where applicable, the official record photograph) for automated document-authenticity and face-match checks'],
+            ['Anthropic (Claude)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation)'],
+            ['Amazon Web Services', 'Ireland (eu-west-1)', 'Identity-verification images (ID document, selfie and, where applicable, the official record photograph) for automated text extraction, face match and liveness check'],
           ].map(([op, country, share], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
               <td style={{ padding: '6px 8px 6px 0' }}>{op}</td>
@@ -250,7 +251,8 @@ export default function PrivacyPage() {
       <p>
         Some of the operators above are located outside South Africa
         (notably Clerk, Cloudinary, Resend and Anthropic in the United
-        States). Where personal information is transferred across
+        States, and Amazon Web Services in Ireland). Where personal
+        information is transferred across
         borders, we rely on the following POPIA § 72 grounds:
       </p>
       <ul>
@@ -263,12 +265,12 @@ export default function PrivacyPage() {
         identity-verification images described in paragraph 3.2 — the
         identity-document image, the face image (selfie) and, where the
         anchored check is used, the official record photograph. Those images
-        are stored with Cloudinary in the United States and are transmitted to
-        Anthropic in the United States for the automated document-authenticity
-        and face-match checks. For that transfer specifically we rely on the
-        consent you give before verification begins — the consent screen names
-        the storage and assessment providers, and states that both are in the
-        United States — on the necessity of the transfer for the verification
+        are stored encrypted on our own servers and are transmitted to Amazon
+        Web Services in Ireland (AWS Europe, eu-west-1) for the automated text
+        extraction, face match and liveness check. For that transfer
+        specifically we rely on the consent you give before verification
+        begins — the consent screen names the processor and states that it is
+        in Ireland — on the necessity of the transfer for the verification
         step you asked us to perform, and on the contractual safeguards above.
       </p>
 
