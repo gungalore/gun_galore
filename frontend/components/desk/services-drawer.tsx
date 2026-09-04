@@ -20,6 +20,8 @@
  */
 import * as React from 'react';
 import { Drawer } from './overlays';
+import { Button } from './primitives';
+import { signOutOfDesk } from '@/lib/desk-auth';
 import { IconExternal, IconAlert, IconSite } from './icons';
 import {
   DESK_SERVICES,
@@ -101,6 +103,32 @@ export function ServicesDrawer({ open, onClose }: { open: boolean; onClose: () =
       title="External consoles"
       meta={`${DESK_SERVICES.length} services this business runs on`}
       note="Every one of these opens in a new tab, signed in as you. None of them is managed from here."
+      /**
+       * 🚨 SIGNING OUT HAD NO CONTROL ANYWHERE IN THE DESK. signOutOfDesk()
+       * has sat in lib/desk-auth.ts since the cutover, documented as "the
+       * only honest logout" because it clears BOTH stores — and nothing
+       * imported it. The desktop bar's "Op" avatar, the obvious home for
+       * it, was a decorative <span aria-hidden="true"> with no handler.
+       *
+       * The artboard puts "Sign out of the Desk" at the foot of the More
+       * screen. That screen is not built (its premise — rows opening the
+       * old admin panel — died when the cutover finished and the panel was
+       * deleted), so this drawer is the nearest surface that already
+       * reaches every viewport: one control, on the shell, phone and
+       * desktop alike. It goes in the FOOTER rather than the list, because
+       * the list is external links and this is the one thing here that acts
+       * on the Desk itself.
+       */
+      footer={
+        <Button
+          variant="ghost"
+          onClick={() => {
+            signOutOfDesk();
+          }}
+        >
+          Sign out of the Desk
+        </Button>
+      }
     >
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {SERVICE_GROUP_ORDER.map((group) => {

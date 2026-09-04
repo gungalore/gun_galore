@@ -737,6 +737,74 @@ export function parcelPosition(tx: OrderTransaction): ParcelPosition | null {
   return { index: index + 1, total: order._count.lineItems };
 }
 
+/**
+ * The line a money lever acts on, and the lines it does not.
+ */
+export interface ActingLine {
+  title: string;
+  index: number;
+  total: number;
+}
+
+/** One row of a money confirm — a label and the words under it. */
+export interface ConfirmRow {
+  k: string;
+  v: string;
+}
+
+/**
+ * Put the LINE into a money confirm, and say what the act leaves alone.
+ *
+ * 🚨 THE CONFIRM IS THE SAFETY RAIL AND IT WAS MISSING ITS SUBJECT. Money on
+ * an order is per-LINE, never per-order: the server refuses a full refund of
+ * a consolidated carrier line while its siblings are still held, in an order
+ * the operator cannot predict from the screen. That is why there is no
+ * "refund the order" button anywhere — you pick a line first.
+ *
+ * But the confirm then named the amount and the recipient and never the line,
+ * so on a three-line cart every lever read identically whichever line was
+ * selected. The operator's last chance to notice they are about to refund the
+ * scope instead of the rifle said nothing about either.
+ *
+ * ⚠️ THE 'Then' ROW IS EXTENDED, NOT REPLACED. It already says what follows;
+ * what it never said is what does NOT follow. "The other two lines are
+ * untouched" is the half an operator needs to act quickly without being
+ * reckless — and it is the exact wording the artboard specifies.
+ *
+ * Null `line` is a single-line sale. Nothing is added: "1 of 1" and "the
+ * other 0 lines are untouched" are both noise, and noise on a money confirm
+ * is how people learn to tap through them.
+ */
+export function withLineContext(rows: ConfirmRow[], line: ActingLine | null): ConfirmRow[] {
+  if (!line) return rows;
+
+  const siblings = Math.max(0, line.total - 1);
+  const untouched =
+    siblings === 0
+      ? ''
+      : siblings === 1
+        ? ' The other line is untouched.'
+        : ` The other ${siblings} lines are untouched.`;
+
+  const out = [...rows];
+  const lineRow: ConfirmRow = {
+    k: 'Line',
+    v: `${line.title} — ${line.index} of ${line.total}`,
+  };
+
+  const thenAt = out.findIndex((r) => r.k === 'Then');
+  if (thenAt < 0) {
+    out.push(lineRow);
+    return out;
+  }
+  // The line is stated BEFORE the consequence: what is being acted on, then
+  // what follows from it.
+  out.splice(thenAt, 0, lineRow);
+  const then = out[thenAt + 1];
+  out[thenAt + 1] = { ...then, v: `${then.v}${untouched}` };
+  return out;
+}
+
 /* ── Actions ────────────────────────────────────────────────────────────
  *
  * 🚨 THESE MOVE REAL MONEY, AND NONE OF THEM UNDOES. Every one is a POST the

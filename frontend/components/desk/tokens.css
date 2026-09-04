@@ -148,6 +148,15 @@
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
+/* The same dialog on a phone, where it is a bottom sheet rather than a
+   centred card — so it rises from the edge it is anchored to instead of
+   scaling from the middle of the screen. No translate(-50%) here: the sheet
+   is positioned by left/right/bottom, not by a centring transform. */
+@keyframes dk-sheet-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes dk-toast-in {
   from { opacity: 0; transform: translate(-50%, 12px); }
   to { opacity: 1; transform: translate(-50%, 0); }

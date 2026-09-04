@@ -795,6 +795,15 @@ function Body({
         disputed={dossier.complaints.length > 0}
         seller={dossier.transaction.seller?.username ?? 'the seller'}
         buyer={dossier.transaction.buyer?.username ?? 'the buyer'}
+        /* Which line the levers act on. parcelPosition returns null on a
+           single-line sale, and the confirm then says nothing about lines —
+           there is no sibling to be wrong about. */
+        line={(() => {
+          const at = parcelPosition(dossier.transaction);
+          return at
+            ? { title: dossier.transaction.listing.title, index: at.index, total: at.total }
+            : null;
+        })()}
         {.../**
          * ⚠️ ONLY ON A FIREARM GOING THROUGH A DEALER. OrderActions offers the
          * override when this is a non-APPROVED string, so passing the raw

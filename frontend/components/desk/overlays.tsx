@@ -16,8 +16,9 @@
  */
 import * as React from 'react';
 import { Button, Rule } from './primitives';
-import { IconAlert, IconClose, IconInfo, IconUndo } from './icons';
+import { IconAlert, IconChevronLeft, IconClose, IconInfo, IconUndo } from './icons';
 import { Label } from './numbers';
+import { useIsPhone } from './interactions';
 
 /* ────────────────────────────────────────────────────────────────────────
  * Drawer
@@ -56,6 +57,7 @@ export function Drawer({
   footer,
   children,
 }: DrawerProps) {
+  const phone = useIsPhone();
   const panelRef = React.useRef<HTMLDivElement>(null);
   // Whatever had focus when the drawer opened gets it back when it closes,
   // so Escape lands the operator back on the card they were deciding.
@@ -129,25 +131,47 @@ export function Drawer({
           top: 0,
           right: 0,
           bottom: 0,
-          width: 480,
+          // ⚠️ A DRAWER IS A FULL-SCREEN PUSH ON A PHONE, not a 480px sheet
+          // that happens to be capped at the screen width. The artboard
+          // (docs/design/desk-pwa/Order.dc.html) draws it edge to edge with
+          // its own back header, because at 390px a sheet with a border down
+          // one side is a sheet pretending there is something behind it.
+          left: phone ? 0 : undefined,
+          width: phone ? '100%' : 480,
           maxWidth: '100vw',
           zIndex: 61,
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--dk-raised)',
-          borderLeft: '1px solid var(--dk-line-2)',
+          borderLeft: phone ? undefined : '1px solid var(--dk-line-2)',
           animation: 'dk-drawer-in 180ms ease-out',
         }}
       >
-        <div style={{ flex: 'none', padding: '16px 20px 0' }}>
+        <div
+          style={{
+            flex: 'none',
+            padding: phone ? '10px 14px 0' : '16px 20px 0',
+            // The push covers the whole screen, notch included.
+            paddingTop: phone
+              ? 'calc(10px + min(env(safe-area-inset-top, 0px), 60px))'
+              : undefined,
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* ⚠️ BACK, NOT CLOSE, AND 44px, ON A PHONE. The artboard's own
+                note: "Close is a 44px target at the leading edge, where a
+                thumb is." A 30px X in the corner is a desktop gesture that
+                merely also renders on a phone — it is under the least
+                reachable part of the hand and below the tap-target minimum.
+                The screen is a push there, so the way out is a back arrow. */}
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close"
+              aria-label={phone ? 'Back' : 'Close'}
               style={{
-                width: 30,
-                height: 30,
+                width: phone ? 44 : 30,
+                height: phone ? 44 : 30,
+                marginLeft: phone ? -6 : undefined,
                 flex: 'none',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -159,7 +183,7 @@ export function Drawer({
                 cursor: 'pointer',
               }}
             >
-              <IconClose size={15} />
+              {phone ? <IconChevronLeft size={19} /> : <IconClose size={15} />}
             </button>
             {Icon ? <Icon size={14} style={{ color: 'var(--dk-ink-3)' }} /> : null}
             <Label>{typeLabel}</Label>
@@ -210,7 +234,17 @@ export function Drawer({
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
-                  padding: '14px 20px',
+                  padding: phone ? '14px 14px' : '14px 20px',
+                  // ⚠️ THE PUSH COVERS THE TAB BAR, SO IT OWES THE HOME
+                  // INDICATOR ITSELF. BottomTabs pays that inset and sits at
+                  // z 40; this panel is z 61 and edge to edge, so the bar is
+                  // no longer underneath doing it. Without this the decision
+                  // buttons — the last thing pressed on a money screen — sit
+                  // in the swipe-up strip. Clamped like every other inset
+                  // here, for Chrome-iOS's inflated value.
+                  paddingBottom: phone
+                    ? 'calc(14px + min(env(safe-area-inset-bottom, 0px), 34px))'
+                    : undefined,
                   marginTop: 12,
                   borderTop: '1px solid var(--dk-line-2)',
                 }}
@@ -321,6 +355,7 @@ export function DialogFrame({
   width?: number;
   assertive?: boolean;
 }) {
+  const phone = useIsPhone();
   const panelRef = React.useRef<HTMLDivElement>(null);
   // Whatever had focus when the dialog opened gets it back when it closes.
   const returnFocusRef = React.useRef<HTMLElement | null>(null);
@@ -382,20 +417,38 @@ export function DialogFrame({
         className="dk-dialog"
         style={{
           position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width,
-          maxWidth: 'calc(100vw - 32px)',
+          // ⚠️ A BOTTOM SHEET ON A PHONE, A CENTRED CARD ON A DESKTOP.
+          // The artboard pins it to left/right/bottom 12 and says why in
+          // its own note: the confirm is where money is committed, so it
+          // belongs under the thumb rather than in the middle of the
+          // screen where a one-handed reach cannot land accurately.
+          // It also sits above BottomTabs (z 40) so the bar can never
+          // paint over the tap that commits the money.
+          ...(phone
+            ? {
+                left: 12,
+                right: 12,
+                bottom: 'calc(12px + min(env(safe-area-inset-bottom, 0px), 34px))',
+                maxHeight: 'calc(100vh - 96px)',
+                overflowY: 'auto' as const,
+                animation: 'dk-sheet-in 160ms ease-out',
+              }
+            : {
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width,
+                maxWidth: 'calc(100vw - 32px)',
+                animation: 'dk-dialog-in 140ms ease-out',
+              }),
           zIndex: 71,
           background: 'var(--dk-raised)',
           border: '1px solid var(--dk-line-2)',
           borderRadius: 'var(--dk-radius-card)',
-          padding: '20px 22px',
+          padding: phone ? '18px 16px' : '20px 22px',
           display: 'flex',
           flexDirection: 'column',
           gap: 14,
-          animation: 'dk-dialog-in 140ms ease-out',
         }}
       >
         <Label>{label}</Label>

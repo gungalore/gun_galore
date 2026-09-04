@@ -182,6 +182,17 @@ export const IconChevronRight = (p: IconProps) => (
   </Glyph>
 );
 
+/**
+ * Back, on a phone. A drawer is a full-screen push there, so the way out is a
+ * back arrow at the leading edge under the thumb — not a close X in the far
+ * corner, which is a desktop gesture that happens to also exist on phones.
+ */
+export const IconChevronLeft = (p: IconProps) => (
+  <Glyph {...p}>
+    <path d="m15 18-6-6 6-6" />
+  </Glyph>
+);
+
 /** Later. The card sinks; the arrow points the way it goes. */
 export const IconArrowDown = (p: IconProps) => (
   <Glyph {...p}>
