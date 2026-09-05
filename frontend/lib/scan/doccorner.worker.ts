@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import * as ort from 'onnxruntime-web';
+import type * as OrtNs from 'onnxruntime-web';
 import { DCN_SIZE, decodeOutputs, toInputTensor } from './doccorner';
 
 // ────────────────────────────────────────────────────────────────────
@@ -11,14 +11,23 @@ import { DCN_SIZE, decodeOutputs, toInputTensor } from './doccorner';
 // tracker already share the main thread with the video and the overlay, and
 // every millisecond spent there is a frame the box does not glide.
 //
+// ⚠️ THE RUNTIME IS NOT BUNDLED. IT IS importScripts'D FROM OUR ORIGIN.
+// onnxruntime-web 1.19+ loads its WebAssembly through a dynamic `import()`
+// of `ort-wasm-simd-threaded.mjs`. When webpack bundles the runtime into
+// this worker it rewrites that import into its own chunk loader, which can
+// never resolve a URL under /scan/, and the runtime reports "no available
+// backend found" on EVERY phone — which is exactly what both of the
+// operator's phones reported on 2026-09-05: live detector `unavailable`,
+// tracking falling back to the classical detector, auto-capture never
+// firing. Loading the runtime's own classic build with importScripts keeps
+// its `import()` native, so it resolves against wasmPaths as designed.
+// Dynamic import inside a dedicated worker is supported by Chrome 80+ and
+// Safari 15+, which covers every phone this scanner has met.
+//
 // ⚠️ SINGLE-THREADED, DELIBERATELY. Multi-threaded WASM needs SharedArrayBuffer,
 // which needs COOP/COEP cross-origin isolation headers, which apply SITE-WIDE
 // and would put Clerk and every embed at risk. The runtime's threaded build
 // detects their absence and runs on one thread; SIMD stays on.
-//
-// The model is 1.9 MB (was 13.4 MB) and its runtime 11 MB; both are served
-// from our own origin because the CSP blocks the CDN ORT would otherwise reach
-// for, and a scanner that only works online is not the point.
 // ────────────────────────────────────────────────────────────────────
 
 // ⚠️ VERSIONED PATH, AND IT MUST CHANGE WHENEVER THESE FILES DO.
@@ -30,7 +39,13 @@ import { DCN_SIZE, decodeOutputs, toInputTensor } from './doccorner';
 // bad response against those exact URLs. A query string is not enough — a
 // cached entry can still match one. A new PATH cannot. v1 → v2 with this
 // model; bump again rather than overwrite a file in place.
+//
+// ⚠️ THE FOUR FILES UNDER THIS PATH MUST COME FROM THE SAME onnxruntime-web
+// VERSION AS package.json: ort.wasm.min.js, ort-wasm-simd-threaded.mjs and
+// .wasm are copied out of node_modules/onnxruntime-web/dist and the runtime
+// refuses a glue file from another build.
 const ASSET_BASE = '/scan/v2/';
+const RUNTIME_URL = ASSET_BASE + 'ort.wasm.min.js';
 const MODEL_URL = ASSET_BASE + 'doccornernet_lean.ort';
 
 /** One square of pixels for the model, and where in the frame it came from. */
@@ -60,20 +75,34 @@ export interface DetectReply {
   error?: string;
 }
 
-let session: ort.InferenceSession | null = null;
-let loading: Promise<ort.InferenceSession | null> | null = null;
+type Ort = typeof OrtNs;
+
+let session: OrtNs.InferenceSession | null = null;
+let loading: Promise<OrtNs.InferenceSession | null> | null = null;
+let ort: Ort | null = null;
 /** Reused across runs: the input is always the same shape. */
 const scratch = new Float32Array(DCN_SIZE * DCN_SIZE * 3);
 
-async function ensureSession(): Promise<ort.InferenceSession | null> {
+/** Load the runtime as a classic script, once. Throws with the real reason. */
+function loadRuntime(): Ort {
+  if (ort) return ort;
+  const g = self as unknown as { ort?: Ort; importScripts: (u: string) => void };
+  g.importScripts(RUNTIME_URL);
+  if (!g.ort) throw new Error(`runtime script loaded but defined no 'ort' (${RUNTIME_URL})`);
+  ort = g.ort;
+  return ort;
+}
+
+async function ensureSession(): Promise<OrtNs.InferenceSession | null> {
   if (session) return session;
   if (loading) return loading;
   loading = (async () => {
     try {
-      ort.env.wasm.numThreads = 1;
-      ort.env.wasm.simd = true;
-      ort.env.wasm.wasmPaths = ASSET_BASE;
-      const s = await ort.InferenceSession.create(MODEL_URL, {
+      const o = loadRuntime();
+      o.env.wasm.numThreads = 1;
+      o.env.wasm.simd = true;
+      o.env.wasm.wasmPaths = ASSET_BASE;
+      const s = await o.InferenceSession.create(MODEL_URL, {
         executionProviders: ['wasm'],
         graphOptimizationLevel: 'all',
       });
@@ -81,8 +110,13 @@ async function ensureSession(): Promise<ort.InferenceSession | null> {
       return s;
     } catch (err) {
       // A phone that cannot run this must still be able to scan. The caller
-      // falls back to the server route, which falls back to the aim box.
-      self.postMessage({ id: -1, ok: false, error: (err as Error).message } as DetectReply);
+      // falls back to the server route, which falls back to the aim box —
+      // and the reason travels with it, into the diagnostics report.
+      self.postMessage({
+        id: -1,
+        ok: false,
+        error: `${(err as Error)?.name ?? 'Error'}: ${(err as Error)?.message ?? String(err)}`,
+      } as DetectReply);
       return null;
     }
   })();
@@ -92,7 +126,7 @@ async function ensureSession(): Promise<ort.InferenceSession | null> {
 self.onmessage = async (e: MessageEvent<DetectRequest>) => {
   const { id, passes } = e.data;
   const s = await ensureSession();
-  if (!s) {
+  if (!s || !ort) {
     self.postMessage({ id, ok: false, error: 'no session' } as DetectReply);
     return;
   }

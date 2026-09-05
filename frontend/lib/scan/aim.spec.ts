@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { NEAR_LIMIT_MM, Rect, aimAgreement, aimBox } from './aim';
+import { NEAR_LIMIT_MM, Rect, aimAgreement, aimBox, minFillFor } from './aim';
+import { MIN_FILL } from './guidance';
 import {
   DocShape,
   FULL_FRAME_DISTANCE_RATIO,
@@ -315,5 +316,25 @@ describe('⚠️ the aim box is scale-invariant, only its aspect matters', () =>
     const consistentW = (atGrab.width / 384) * raster.w;
     const consistentH = (atGrab.height / 486) * raster.h;
     expect(consistentW / consistentH).toBeCloseTo(0.707, 2);
+  });
+});
+
+describe('minFillFor — the 60% a shape can actually reach', () => {
+  it('asks an A4 in a portrait viewfinder for the full MIN_FILL', () => {
+    expect(minFillFor('a4', { width: 393, height: 700 })).toBeCloseTo(MIN_FILL, 6);
+  });
+
+  it('⚠️ ASKS A CARD FOR NO MORE THAN ITS OWN BOX — the lens will not focus closer', () => {
+    const view = { width: 393, height: 700 };
+    const box = aimBox('card', view);
+    const boxFill = Math.max(box.width / view.width, box.height / view.height);
+    const need = minFillFor('card', view);
+    expect(boxFill).toBeLessThan(MIN_FILL);
+    expect(need).toBeCloseTo(boxFill * 0.95, 6);
+    expect(need).toBeLessThan(MIN_FILL);
+  });
+
+  it('never exceeds MIN_FILL and survives a zero viewfinder', () => {
+    expect(minFillFor('a4', { width: 0, height: 0 })).toBe(MIN_FILL);
   });
 });

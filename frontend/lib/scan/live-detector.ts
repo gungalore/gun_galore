@@ -312,6 +312,63 @@ export class LiveDetector {
   }
 
   /**
+   * Prove the detector can run on this device, with no camera.
+   *
+   * Draws a white rectangle on grey, runs both passes on it and reports what
+   * happened — the runtime's own error text when it could not start. This is
+   * what /scan/selftest shows, and it exists because "unavailable" on two
+   * phones with no reason attached cost a build cycle of guessing.
+   */
+  async selfTest(): Promise<{
+    status: LiveStatus;
+    ms?: number;
+    score?: number;
+    quad?: Quad;
+    region?: string;
+    error?: string;
+  }> {
+    this.start();
+    const w = 480;
+    const h = 640;
+    const canvas =
+      typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(w, h)
+        : Object.assign(document.createElement('canvas'), { width: w, height: h });
+    const g = (canvas as HTMLCanvasElement).getContext('2d');
+    if (!g) return { status: this.status, error: 'no 2d canvas' };
+    g.fillStyle = '#6f6f6f';
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = '#f4f4f4';
+    g.fillRect(w * 0.2, h * 0.28, w * 0.6, h * 0.44);
+    g.fillStyle = '#222';
+    for (let i = 0; i < 6; i++) g.fillRect(w * 0.26, h * (0.34 + i * 0.05), w * 0.42, h * 0.012);
+    const blob: Blob | null =
+      'convertToBlob' in canvas
+        ? await (canvas as OffscreenCanvas).convertToBlob({ type: 'image/jpeg', quality: 0.9 })
+        : await new Promise<Blob | null>((r) =>
+            (canvas as HTMLCanvasElement).toBlob(r, 'image/jpeg', 0.9),
+          );
+    if (!blob) return { status: this.status, error: 'could not encode the test image' };
+    // Give the worker its first message and up to 20s for the runtime and
+    // model to arrive over mobile data.
+    const started = Date.now();
+    let r: LiveReading | LiveMiss | null = null;
+    while (Date.now() - started < 20_000) {
+      r = await this.detectStill(blob, {
+        minScore: 0.3,
+        expectAspect: 1.36,
+        aim: { x: 0.2, y: 0.28, width: 0.6, height: 0.44 },
+      });
+      if (r !== null || this.status.state === 'unavailable' || this.status.state === 'too-slow') break;
+      await new Promise((res) => setTimeout(res, 250));
+    }
+    if (this.status.state === 'unavailable') return { status: this.status, error: this.status.why };
+    if (!r) return { status: this.status, error: 'no answer within 20s' };
+    if ('miss' in r) return { status: this.status, ms: r.ms, error: 'ran, but found no document in the test image' };
+    return { status: this.status, ms: r.ms, score: r.score, quad: r.quad, region: r.region };
+  }
+
+  /**
    * Detect in a captured still — the same model the live box used, on the
    * photograph itself, so the crop and the preview never disagree about
    * where the document was.

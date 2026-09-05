@@ -1,4 +1,5 @@
 import { exposureProblem } from './exposure';
+import { MIN_FILL } from './guidance';
 
 // ────────────────────────────────────────────────────────────────────
 // WHEN THE SCANNER MAY SHOOT BY ITSELF.
@@ -203,7 +204,32 @@ export interface FrameReading {
   glare: number;
   /** Mean brightness, 0-255. */
   luma: number;
+  /**
+   * How much of the frame the TRACKED document fills, 0-1, or null when
+   * nothing is locked.
+   *
+   * ⚠️ THE FOURTH GATE, AND IT DOES CONSULT THE DETECTOR — deliberately, by
+   * the operator's instruction (2026-09-05): "we need at least 60% coverage
+   * before auto trigger can fire". The three frame gates above decide whether
+   * a photograph CAN be taken; this one decides whether it is worth taking.
+   * With no locked document there is no coverage to measure and the shutter
+   * waits; the manual shutter never waits on anything.
+   *
+   * `null` means "no lock" and BLOCKS. `undefined` means "not measured" —
+   * only the diagnostic snapshot and older tests omit it — and does not
+   * gate. The scanner always passes a number or null.
+   */
+  fill?: number | null;
+  /**
+   * The fill this shape must reach, when the aim box cannot let it reach
+   * MIN_FILL — a landscape card in a portrait viewfinder is drawn at ~53% of
+   * the width because the lens will not focus any closer. Defaults to
+   * MIN_FILL. See minFillFor in guidance.ts.
+   */
+  minFill?: number;
 }
+
+export { MIN_FILL };
 
 /**
  * Why the shutter has not fired yet.
@@ -218,6 +244,8 @@ export type AutoBlocker =
   | 'off'
   /** Nothing that looks like a document is in the box. */
   | 'empty'
+  /** A document is tracked but fills under MIN_FILL of the frame. */
+  | 'small'
   /** Glare, too bright or too dark — see exposure.ts. */
   | 'light'
   /** Everything else is fine; the phone is moving. */
@@ -235,6 +263,10 @@ export function autoBlocker(on: boolean, r: FrameReading): AutoBlocker | null {
   // the tablecloth under it. No verdict falls back to ink rather than to no.
   if (r.document === false) return 'empty';
   if (r.document === undefined && r.ink < INK_AT) return 'empty';
+  // The operator's 60%. See FrameReading.fill.
+  if (r.fill !== undefined && (r.fill === null || r.fill < (r.minFill ?? MIN_FILL))) {
+    return 'small';
+  }
   // ⚠️ THE SAME CALL THE ALERT ON SCREEN MAKES. Two copies of these thresholds
   // would eventually disagree, and a scanner that shows a warning and then
   // fires anyway — or shows nothing and refuses to fire — reads as broken in a
@@ -274,6 +306,8 @@ export function autoHint(b: AutoBlocker | null, documentName: string): string {
   switch (b) {
     case 'empty':
       return `Put the ${documentName} inside the corners.`;
+    case 'small':
+      return `Move closer — fill more of the frame with the ${documentName}.`;
     case 'light':
       return 'Fix the lighting above first.';
     case 'steady':

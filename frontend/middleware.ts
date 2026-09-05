@@ -6,6 +6,10 @@ const isPublicRoute = createRouteMatcher([
   // whole point is that the phone is NOT signed in, and the ?t= token is what
   // authorises it. See app/scan/handoff/page.tsx.
   '/scan/handoff(.*)',
+  // The scanner's self-test: loads the detector with no camera and prints
+  // exactly why it did or did not start. Public because the phone that needs
+  // it is the signed-out one on the handoff page, and it touches no data.
+  '/scan/selftest',
   // A CHARACTER WITNESS completing a statement. ⚠️ IT MUST BE PUBLIC, and for
   // a stronger reason than the handoff above: this person is not our member
   // and never will be. They received an SMS from somebody applying for a
