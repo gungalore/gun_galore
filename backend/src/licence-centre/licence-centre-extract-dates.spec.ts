@@ -1,5 +1,6 @@
 import { CredentialKind } from '@prisma/client';
 import { LicenceCentreExtractService } from './licence-centre-extract.service';
+import { LicenceCentreTextractService } from './licence-centre-textract.service';
 
 // ────────────────────────────────────────────────────────────────────
 // THE TWO DATES A DOCUMENT CAN GIVE US, AND WHAT WE DO WITH THEM.
@@ -24,7 +25,7 @@ type Parse = (
   lowConfidence: string[];
 };
 
-const svc = new LicenceCentreExtractService();
+const svc = new LicenceCentreExtractService(new LicenceCentreTextractService());
 // Private by design; reaching it keeps the test honest about where the defect
 // was rather than mocking the model around it.
 const parse = (svc as unknown as { parse: Parse }).parse.bind(svc);

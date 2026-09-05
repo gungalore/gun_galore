@@ -7,6 +7,7 @@ import { LicenceCentreAdminController } from './licence-centre-admin.controller'
 import { LicenceCentreService } from './licence-centre.service';
 import { LicenceCentreQuotaService } from './licence-centre-quota.service';
 import { LicenceCentreExtractService } from './licence-centre-extract.service';
+import { LicenceCentreTextractService } from './licence-centre-textract.service';
 import { KycIdAdoptionService } from './kyc-id-adoption.service';
 import { LicenceCentreRemindersService } from './licence-centre-reminders.service';
 import { LicenceCentreRetentionService } from './licence-centre-retention.service';
@@ -42,6 +43,7 @@ import { MotivationsModule } from '../motivations/motivations.module';
     LicenceCentreService,
     LicenceCentreQuotaService,
     LicenceCentreExtractService,
+    LicenceCentreTextractService,
     KycIdAdoptionService,
     LicenceCentreRemindersService,
     LicenceCentreRetentionService,
