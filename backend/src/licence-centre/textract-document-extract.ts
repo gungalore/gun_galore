@@ -194,9 +194,22 @@ const SA_ID = /\b(\d[\d\s]{11,17}\d)\b/;
  * S4.8.2 the SAPS forms carry INITIALS ONLY, never full names.
  */
 const INITIALS_SURNAME = /(?:^|\| )([A-Z]{1,4} [A-Z][A-Z'-]{2,})(?: \||$)/;
-/** The firearm type, also printed bare. Feeds the endorsement parser. */
+/**
+ * The firearm type, also printed bare. Feeds the endorsement parser and,
+ * through categoryFromText, the category a competency's expiry is derived
+ * from.
+ *
+ * 🚨 THE LEADING PREFIX IS OPTIONAL, AND IT WAS NOT. Requiring one character
+ * before the keyword meant a line reading exactly "HANDGUN" never matched —
+ * the [A-Z] ate the H. Three of the operator's seven licences are handguns
+ * and all three came back with no type, so categoryFromText returned null,
+ * so they were EXCLUDED from the competency derivation (null is excluded,
+ * never defaulted). The handgun competency then fell to the five-year
+ * assumption, which mayArmDerivedExpiry refuses to arm — leaving it with no
+ * date at all. Nothing errored anywhere along that chain.
+ */
 const FIREARM_TYPE =
-  /(?:^|\| )((?:S\/L[:\s-]*)?[A-Z][A-Z\/\s.:-]*(?:RIFLE|SHOTGUN|HANDGUN|PISTOL|REVOLVER|CARBINE|MUZZLE[\s-]?LOADER)[A-Z\/\s.:-]*)(?: \||$)/;
+  /(?:^|\| )((?:S\/L[:\s-]*)?[A-Z\/\s.:-]*(?:RIFLE|SHOTGUN|HANDGUN|PISTOL|REVOLVER|CARBINE|MUZZLE[\s-]?LOADER)[A-Z\/\s.:-]*)(?: \||$)/;
 /**
  * Reference S4.8.2: a competency certificate number is `C` + 7-8 digits.
  * A value that is not that shape was misread, whatever Textract's
@@ -334,6 +347,23 @@ export function extractDocument(
   // A misread number is not a low-confidence number, it is a wrong one.
   if (details.competency_number && !COMPETENCY_NUMBER.test(details.competency_number)) {
     confidence.competency_number = 0;
+  }
+
+  // ⚠️ STRIP THE BOILERPLATE OFF THE ENDORSEMENT. Reference S4.8.2: the
+  // "Type of competency certificate" block is two lines, and line 1 is
+  // ALWAYS "COMPETENCY TO POSSESS A FIREARM" - the category, identical on
+  // every certificate. Line 2 is the endorsement, which is the part that
+  // means anything.
+  //
+  // parseEndorsements copes with the prefix either way, but this value is
+  // also carried onto a motivation as `competency_for` and PRINTED on the
+  // form. Printing the boilerplate there puts eleven words of nothing where
+  // an assessor is looking for the endorsement.
+  if (details.covers) {
+    const stripped = details.covers
+      .replace(/^COMPETENCY\s+TO\s+POSSESS\s+A\s+FIREARM\s*/i, '')
+      .trim();
+    if (stripped) details.covers = stripped;
   }
 
   if (kind === 'FIREARM_LICENCE') {
