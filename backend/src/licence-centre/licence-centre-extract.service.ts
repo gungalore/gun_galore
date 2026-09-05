@@ -1,5 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
+
+import { classifyByMarkers } from './document-markers';
+import { LicenceCentreTextractService } from './licence-centre-textract.service';
+import {
+  extractDocument,
+  lines as textractLines,
+} from './textract-document-extract';
 import { CredentialKind } from '@prisma/client';
 import { parseIsoDate } from './licence-dates';
 
@@ -281,7 +288,7 @@ export class LicenceCentreExtractService {
   private readonly logger = new Logger(LicenceCentreExtractService.name);
   private readonly client: Anthropic | null;
 
-  constructor() {
+  constructor(private readonly textract: LicenceCentreTextractService) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     this.client = apiKey
       ? new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 })
@@ -306,6 +313,30 @@ export class LicenceCentreExtractService {
     /** Other roles this same document satisfies. Usually empty. */
     alsoCovers: CredentialKind[];
   } | null> {
+    // ── TEXTRACT FIRST, AND IT USUALLY ENDS HERE ──────────────────────
+    //
+    // A firearm licence has "LICENCE TO POSSESS A FIREARM" printed across
+    // the top. Asking a model what a document is, when the document says so
+    // in words, spends a round trip to be told something the paper already
+    // stated - and when the guess is wrong it is wrong expensively: a SA
+    // Hunters certificate filed as DEDICATED_HUNTER put the operator's
+    // SPORT-shooter status on a section 16 application.
+    //
+    // Only a DECISIVE match counts. A document scoring well on two kinds,
+    // or on none, falls through to the model below - which is what carries
+    // proof of address, letters of good standing, and every association
+    // certificate whose letterhead is not in the table yet.
+    const ocr = await this.textract.analyse(args.bytes, args.mimeType);
+    if (ocr) {
+      const hit = classifyByMarkers(textractLines(ocr));
+      if (hit?.decisive) {
+        this.logger.log(
+          `classified ${hit.kind} from markers (${hit.variant}, score ${hit.score} vs ${hit.runnerUp})`,
+        );
+        return { kind: currentKind(hit.kind), confident: true, alsoCovers: [] };
+      }
+    }
+
     if (!this.client) return null;
 
     let text = '';
@@ -384,6 +415,31 @@ export class LicenceCentreExtractService {
      */
     alsoCovers?: CredentialKind[];
   }): Promise<CredentialReading> {
+    // Same response the classify pass just fetched, served from its cache.
+    const ocr = await this.textract.analyse(args.bytes, args.mimeType);
+    if (ocr) {
+      const material = wantedFor(args.kind, args.alsoCovers ?? []);
+      const got = extractDocument(ocr, args.kind, material);
+      const useful = Object.keys(got.reading.details).some((f) =>
+        material.includes(f),
+      );
+      // ⚠️ "USEFUL" MEANS A FIELD THIS KIND ACTUALLY STORES. Textract will
+      // happily return a street address and a printer's imprint off a
+      // certificate whose real fields it could not resolve; counting those
+      // as a successful read would skip the fallback on exactly the
+      // documents that need it. Operator: "if textract fails or send
+      // information back that does not match use claude."
+      if (useful) {
+        if (got.notes.length) {
+          this.logger.log(`textract read ${args.kind}: ${got.notes.join('; ')}`);
+        }
+        return got.reading;
+      }
+      this.logger.log(
+        `textract read ${args.kind} produced nothing storable — falling back`,
+      );
+    }
+
     if (!this.client) return EMPTY;
 
     const isPdf = args.mimeType === 'application/pdf';

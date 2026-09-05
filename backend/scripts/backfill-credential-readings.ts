@@ -50,6 +50,7 @@ import {
   LicenceCentreExtractService,
   WANTED,
 } from '../src/licence-centre/licence-centre-extract.service';
+import { LicenceCentreTextractService } from '../src/licence-centre/licence-centre-textract.service';
 
 const APPLY = process.argv.includes('--apply');
 const LIMIT = (() => {
@@ -64,7 +65,7 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg(process.env.DATABASE_URL!),
 });
 const files = new SecureFileStorageService();
-const extract = new LicenceCentreExtractService();
+const extract = new LicenceCentreExtractService(new LicenceCentreTextractService());
 
 /** Kinds the vault now actually asks something of. */
 function readable(kind: CredentialKind): boolean {
