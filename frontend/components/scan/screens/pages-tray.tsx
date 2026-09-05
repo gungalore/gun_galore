@@ -44,6 +44,8 @@ export default function PagesTray({
   onAdd,
   onRetake,
   onRemove,
+  onOpen,
+  onMove,
   onSave,
   onBack,
 }: {
@@ -51,6 +53,10 @@ export default function PagesTray({
   onAdd: () => void;
   onRetake: (id: string) => void;
   onRemove: (id: string) => void;
+  /** Tap the thumbnail: reopen the page for corners, filter or rotation. */
+  onOpen?: (id: string) => void;
+  /** Move a page one slot earlier (-1) or later (+1). */
+  onMove?: (id: string, dir: -1 | 1) => void;
   onSave: () => void;
   onBack: () => void;
 }) {
@@ -137,13 +143,24 @@ export default function PagesTray({
         >
           {pages.map((p, i) => (
             <div key={p.id} style={{ position: 'relative' }}>
-              <div
+              {/* ⚠️ THE THUMBNAIL IS A BUTTON. A page on the pile used to be
+                  read-only: once it left the review screen its crop, filter
+                  and rotation were fixed, and a bad corner on page 2 of 5
+                  meant shooting it again. Tapping reopens it. */}
+              <button
+                type="button"
+                onClick={onOpen ? () => onOpen(p.id) : undefined}
+                aria-label={`Open page ${i + 1}`}
                 style={{
+                  display: 'block',
+                  width: '100%',
                   aspectRatio: '210 / 297',
                   border: `1px solid ${T.border}`,
                   borderRadius: T.r.sm,
                   background: T.card,
                   overflow: 'hidden',
+                  padding: 0,
+                  cursor: onOpen ? 'pointer' : 'default',
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -153,9 +170,60 @@ export default function PagesTray({
                   // ⚠️ contain, not cover. A card page cropped to A4
                   // proportions shows a strip of its middle, and two similar
                   // licences become indistinguishable on the pile.
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                 />
-              </div>
+              </button>
+              {onMove && pages.length > 1 && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 6,
+                    right: 6,
+                    display: 'flex',
+                    gap: 4,
+                  }}
+                >
+                  {([-1, 1] as const).map((dir) => {
+                    const can = dir === -1 ? i > 0 : i < pages.length - 1;
+                    return (
+                      <button
+                        key={dir}
+                        type="button"
+                        disabled={!can}
+                        onClick={() => onMove(p.id, dir)}
+                        aria-label={dir === -1 ? `Move page ${i + 1} earlier` : `Move page ${i + 1} later`}
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 6,
+                          border: 'none',
+                          background: 'rgba(0,0,0,0.55)',
+                          color: '#fff',
+                          opacity: can ? 1 : 0.35,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: can ? 'pointer' : 'default',
+                          padding: 0,
+                        }}
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          {dir === -1 ? <path d="M15 5l-7 7 7 7" /> : <path d="M9 5l7 7-7 7" />}
+                        </svg>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               <span
                 style={{
                   position: 'absolute',

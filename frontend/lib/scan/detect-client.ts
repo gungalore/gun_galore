@@ -1,77 +1,46 @@
-import type { Quad } from './geometry';
+import type { Quad, Rect } from './geometry';
+import { type Candidate, pickCandidate } from './doccorner';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 // ────────────────────────────────────────────────────────────────────
 // Asking the server where the document is.
 //
-// The model runs on the server, not here: onnxruntime-web's smallest runtime
-// is 13.3MB and the model another 12.8MB, and 26MB before a member scans
-// anything is not a cost to put on a South African phone. See
-// backend/src/scan/docquad.service.ts for the rest of that reasoning.
+// ⚠️ THE FALLBACK, NOT THE PATH. The phone runs the same DocCornerNet in a
+// worker for the live box and for the capture itself (live-detector.ts). This
+// is for a browser that could not load the runtime — and it must answer the
+// same way: the server returns every pass's candidate and the choice is made
+// HERE with pickCandidate, exactly as the worker path does, so both paths
+// prefer the card in the box over the sheet it lies on.
 //
 // ⚠️ THE QUAD COMES BACK NORMALISED, AND THAT IS THE WHOLE POINT. The server
-// answers in the pixels of the image it was handed. processCapture then
-// decodes that same image into a raster which `decode` QUIETLY SHRINKS above
-// 3000px on the long edge — so on a 4K phone the server's pixels and the
-// raster's pixels are different numbers for the same corner, and nothing
-// throws when you mix them. capture.ts already carries this scar on aimBox
-// ("NORMALISED, NOT PIXELS, and that is the whole point"). Same trap, same
-// answer: divide by the dimensions the server used, here, once, at the
-// boundary — and let the consumer multiply by whatever raster it ends up with.
+// answers in fractions of the upright image it was handed. processCapture
+// then decodes that same image into a raster which `decode` QUIETLY SHRINKS
+// above its cap — so on a 4K phone the server's pixels and the raster's pixels
+// are different numbers for the same corner. Fractions cannot drift.
 // ────────────────────────────────────────────────────────────────────
 
 /**
- * How sure the model has to be before its corners replace the aim box.
+ * How sure the model has to be before its corners may CROP a document.
  *
- * ⚠️ MEASURED, NOT CHOSEN. Run over fifteen photographs of the operator's own
- * licence card, the minimum per-corner confidence separates the model's
- * successes from its failures with nothing in between:
- *
- *     white-on-white (all four genuinely wrong)   0.06  0.12  0.41  0.43
- *     every photograph it got right               0.83 .. 0.95
- *
- * 0.80 sits in that gap. It accepts ten and declines five, and the five it
- * declines fall through to the aim box, which is a working outcome rather
- * than a wrong crop of a statutory document.
- *
- * ⚠️ DO NOT SWAP THIS FOR THE SIGMA FIGURE. The response also carries
- * `minSigma`, and it looks like a confidence but is not one: it sits at
- * 2.5-3.4 across successes AND failures alike on the same fifteen images, so
- * it separates nothing. The reference implementation ships a 5.0 threshold on
- * it with the check commented out — they tried it and disabled it too.
+ * With DocCornerNet this is a presence probability, and it is decisive: 1.00
+ * or 0.00 on 31 of 33 fixtures. 0.80 keeps the old constant's meaning — a
+ * crop of a statutory document needs the model to be sure — without sitting
+ * on a knife edge.
  */
 export const DETECT_ACCEPT = 0.8;
-
-/** base64 Float32 -> plane, or undefined for anything malformed. */
-function decodeMask(b64?: string): Float32Array | undefined {
-  if (!b64) return undefined;
-  try {
-    const bin = atob(b64);
-    const buf = new ArrayBuffer(bin.length);
-    const view = new Uint8Array(buf);
-    for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
-    // 64*64 floats. Anything else is not the plane we asked for.
-    if (buf.byteLength !== 64 * 64 * 4) return undefined;
-    return new Float32Array(buf);
-  } catch {
-    return undefined;
-  }
-}
 
 export interface DetectedDocument {
   /** Corners as FRACTIONS of the image, 0..1, TL TR BR BL. */
   quad: Quad;
-  /** The weakest corner's confidence — min over parts, never a mean. */
+  /** P(document present) for the chosen pass. */
   minConfidence: number;
   /** True when minConfidence clears DETECT_ACCEPT. */
   confident: boolean;
-  /** Diagnostic only. Never gate on this — see DETECT_ACCEPT. */
-  minSigma: number;
-  /** Fraction of the frame the model's mask calls document. */
-  maskCoverage: number;
-  /** The raw 64x64 mask plane, for mask-quad.ts. Absent on older servers. */
-  mask?: Float32Array;
+  /** Which pass won, and why — diagnostics. */
+  region: 'full' | 'aim';
+  why: string;
+  candidates: Candidate[];
   /** Server-side round trip, milliseconds. */
   ms: number;
 }
@@ -81,40 +50,28 @@ export interface DetectedDocument {
  *
  * ⚠️ BECAUSE "no answer" COST A DIAGNOSIS CYCLE. Both phones reported the
  * model never answering and the cause was a 401 — the wrong guard, and the
- * token in the wrong place. An HTTP status in the panel would have said so
- * immediately instead of leaving four possibilities open. Diagnostics only;
- * nothing branches on it.
+ * token in the wrong place. Diagnostics only; nothing branches on it.
  */
 export let lastDetectFailure: string | null = null;
 
-/** The raw shape the endpoint returns. Kept separate so the mapping is visible. */
 interface DetectResponse {
   found: boolean;
-  quad?: Array<{ x: number; y: number }>;
+  candidates?: Array<{
+    quad: Array<{ x: number; y: number }>;
+    score: number;
+    region: 'full' | 'aim';
+  }>;
   width?: number;
   height?: number;
-  minConfidence?: number;
-  minSigma?: number;
-  maskCoverage?: number;
-  mask?: string;
   ms?: number;
 }
 
-/**
- * Normalise the server's pixel corners against the dimensions it used.
- *
- * Exported for its own test: this is the exact step whose absence has broken
- * four separate measurement harnesses on this project, each time silently.
- */
-export function normaliseQuad(
-  pts: Array<{ x: number; y: number }>,
-  width: number,
-  height: number,
-): Quad | null {
-  if (pts.length !== 4 || !(width > 0) || !(height > 0)) return null;
-  const out = pts.map((p) => ({ x: p.x / width, y: p.y / height }));
-  if (out.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
-  return out as unknown as Quad;
+/** What the caller knows that the server does not. */
+export interface DetectPriors {
+  /** The aim box as fractions of the frame. Enables the server's second pass. */
+  aim?: Rect;
+  /** The document's long/short ratio when the shape is known. */
+  expectAspect?: number;
 }
 
 /**
@@ -124,12 +81,11 @@ export function normaliseQuad(
  * bar of signal must still be able to photograph their licence. Every failure
  * — offline, timeout, 500, the model unavailable on the box, a malformed
  * response — returns null, and null means the caller falls back to the aim
- * box exactly as it did before this existed. Detection is an improvement to
- * the flow, not a dependency of it.
+ * box exactly as it did before this existed.
  */
 export async function detectDocument(
   frame: Blob,
-  opts: {
+  opts: DetectPriors & {
     /** A SCAN_HANDOFF action token — travels as ?t=, per ScanHandoffGuard. */
     token?: string | null;
     /** A Clerk session token — travels as a Bearer header. */
@@ -140,20 +96,21 @@ export async function detectDocument(
 ): Promise<DetectedDocument | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 15_000);
-  // Caller aborts (they navigated away, they retook the shot) chain through.
   opts.signal?.addEventListener('abort', () => controller.abort(), { once: true });
 
   try {
     const form = new FormData();
     form.append('frame', frame, 'frame.jpg');
+    if (opts.aim) {
+      form.append('aimX', String(opts.aim.x));
+      form.append('aimY', String(opts.aim.y));
+      form.append('aimW', String(opts.aim.width));
+      form.append('aimH', String(opts.aim.height));
+    }
     // ⚠️ THE ACTION TOKEN GOES IN ?t=, NOT IN A BEARER HEADER. ScanHandoffGuard
     // tries Authorization as a CLERK session first and only then looks for the
     // query parameter — so a scan-handoff token sent as a Bearer fails the
-    // Clerk check, finds no ?t=, and 401s. That is what shipped, and it is why
-    // both phones reported "model no answer".
-    //
-    // Bearer is still sent when we have a Clerk session, because the same
-    // guard accepts that on the first branch.
+    // Clerk check, finds no ?t=, and 401s.
     const url = new URL(`${API_URL}/scan/detect`);
     if (opts.token) url.searchParams.set('t', opts.token);
     const res = await fetch(url.toString(), {
@@ -170,30 +127,38 @@ export async function detectDocument(
     }
 
     const body = (await res.json()) as DetectResponse;
-    if (!body.found || !body.quad || !body.width || !body.height) {
+    if (!body.found || !body.candidates || !body.width || !body.height) {
       lastDetectFailure = body.found ? 'malformed response' : 'server found nothing';
       return null;
     }
-
-    const quad = normaliseQuad(body.quad, body.width, body.height);
-    if (!quad) {
-      lastDetectFailure = 'unusable corners';
+    const candidates: Candidate[] = [];
+    for (const c of body.candidates) {
+      if (!c.quad || c.quad.length !== 4) continue;
+      const q = c.quad.map((p) => ({ x: Number(p.x), y: Number(p.y) }));
+      if (q.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) continue;
+      candidates.push({ quad: q as unknown as Quad, score: Number(c.score) || 0, region: c.region });
+    }
+    // The same admission test as the worker path, and a lower bar than the
+    // crop gate: the caller reads `confident` for that.
+    const pick = pickCandidate(candidates, {
+      minScore: 0.5,
+      frameW: body.width,
+      frameH: body.height,
+      expectAspect: opts.expectAspect,
+      aim: opts.aim,
+    });
+    if (!pick) {
+      lastDetectFailure = candidates.length ? 'no plausible candidate' : 'unusable corners';
       return null;
     }
     lastDetectFailure = null;
-
-    const minConfidence = body.minConfidence ?? 0;
     return {
-      quad,
-      minConfidence,
-      confident: minConfidence >= DETECT_ACCEPT,
-      minSigma: body.minSigma ?? 0,
-      maskCoverage: body.maskCoverage ?? 0,
-      // ⚠️ OPTIONAL ON PURPOSE. A server that predates the mask response
-      // simply omits it, and every consumer must treat its absence as "no
-      // mask rung available" rather than as an error — a deploy where the
-      // frontend leads the backend by a few minutes must not break capture.
-      mask: decodeMask(body.mask),
+      quad: pick.quad,
+      minConfidence: pick.score,
+      confident: pick.score >= DETECT_ACCEPT,
+      region: pick.region,
+      why: pick.why,
+      candidates,
       ms: body.ms ?? 0,
     };
   } catch (e) {

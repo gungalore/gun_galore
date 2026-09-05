@@ -271,9 +271,17 @@ export default clerkMiddleware(async (auth, request) => {
 // unavailable and it read as a broken model rather than as a 307.
 //
 // Any future binary asset served from public/ needs its extension here too.
+//
+// ⚠️ AND mjs, SINCE ORT WEB 1.19+. The runtime no longer ships a plain
+// .wasm: it loads `ort-wasm-simd-threaded.mjs` from wasmPaths first and that
+// glue fetches the .wasm. `js(?!on)` does not match `.mjs` — the alternation
+// must start right after the dot — so without `mjs` here the glue is 307'd
+// to sign-in on a signed-out phone (the handoff page), and the model fails
+// with a JavaScript syntax error on `<!DOCTYPE` instead of the magic-word
+// message above. Same trap, one extension over.
 export const config = {
   matcher: [
-    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|webmanifest|wasm|ort)).*)',
+    '/((?!_next|[^?]*\\.(?:html?|css|m?js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|webmanifest|wasm|ort)).*)',
     '/(api|trpc)(.*)',
   ],
 };

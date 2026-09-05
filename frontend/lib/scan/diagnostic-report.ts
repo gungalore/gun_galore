@@ -1,6 +1,5 @@
 import { EDGE_MARGIN, TOO_SMALL } from './guidance';
 import { DECODE_MAX_EDGE, FLOOR_DPI, OUTPUT_MAX_EDGE } from './framing';
-import { MIN_COVERAGE } from './mask-quad';
 
 // ────────────────────────────────────────────────────────────────────
 // THE WHOLE STATE OF THE SCANNER, AS TEXT SOMEBODY CAN PASTE.
@@ -88,8 +87,9 @@ export interface ReportInput {
     status: string;
     medianMs?: number;
     lastConfidence?: number;
-    minSigma?: number;
-    maskCoverage?: number;
+    /** Which pass the last reading came from, and the picker's reasoning. */
+    region?: string;
+    why?: string;
     lock?: number;
     guide?: string;
     fpsCap?: number;
@@ -131,13 +131,6 @@ export interface ReportInput {
     sourceEdge?: number;
     pickedBy?: string;
     arbitration?: { worstSide: number; support: number };
-    maskFit?: {
-      coverage: number;
-      aspect: number;
-      residual: number;
-      rectangularity: number;
-      reject?: string;
-    };
     refined?: { moved: number; skipped: number };
     seed?: { confidence: number; hits: number[] };
     detect?: { outcome: string; minConfidence?: number; ms?: number };
@@ -279,14 +272,8 @@ export function buildReport(r: ReportInput): string {
     out.push(line('median', l.medianMs !== undefined ? `${l.medianMs}ms` : undefined));
     out.push(line('fps cap', l.fpsCap));
     out.push(line('frames', l.framesSeen !== undefined ? `${l.framesSeen} seen, ${l.framesDropped ?? 0} dropped` : undefined));
-    out.push(line('confidence', n(l.lastConfidence, 3)));
-    out.push(line('min sigma', n(l.minSigma, 2)));
-    out.push(
-      line(
-        'mask coverage',
-        gated(pct(l.maskCoverage), 'every cell over 0.5, of the padded model square'),
-      ),
-    );
+    out.push(line('presence', n(l.lastConfidence, 3)));
+    out.push(line('pass', l.region !== undefined ? `${l.region} (${l.why ?? ''})` : undefined));
     out.push(line('lock', l.lock !== undefined ? `${l.lock}/3` : undefined));
     out.push(line('guidance', l.guide));
     out.push(line('detector off', l.detectorOff ? 'YES (dropped)' : undefined));
@@ -371,25 +358,6 @@ export function buildReport(r: ReportInput): string {
     if (c.arbitration) {
       out.push(line('worst side', n(c.arbitration.worstSide)));
       out.push(line('edge support', n(c.arbitration.support)));
-    }
-    if (c.maskFit) {
-      const m = c.maskFit;
-      // ⚠️ NOT THE SAME MEASUREMENT AS THE LIVE ONE ABOVE, DESPITE THE LABEL.
-      // Live counts every above-threshold cell; this counts only the largest
-      // connected blob, so this one is always the smaller of the two even at
-      // identical framing. Both are fractions of the PADDED model square, not
-      // of the picture — on a tall phone frame the padding alone is ~40%, so
-      // a document filling the whole screen still cannot reach 60% here.
-      out.push(
-        line(
-          'mask coverage',
-          gated(pct(m.coverage), `largest blob only; min ${pct(MIN_COVERAGE)}`),
-        ),
-      );
-      out.push(line('mask aspect', n(m.aspect)));
-      out.push(line('mask residual', n(m.residual, 1)));
-      out.push(line('mask rect', n(m.rectangularity)));
-      out.push(line('mask verdict', m.reject ?? 'accepted'));
     }
     if (c.refined) out.push(line('refined', `${c.refined.moved}px moved, ${c.refined.skipped} side(s) skipped`));
     if (c.seed) {

@@ -198,7 +198,7 @@ export function fillForDetection(
  * cap made twice — 171 dpi, then 230 — and it is only ever caught by showing
  * the ceiling next to the number.
  */
-export const DECODE_MAX_EDGE = 3000;
+export const DECODE_MAX_EDGE = 4096;
 
 /**
  * The longest edge a saved page may have, in pixels.
@@ -235,8 +235,20 @@ export const DECODE_MAX_EDGE = 3000;
  * being allocated before the stages that never touch it. That saved plane is
  * what pays for the extra resolution here, and enhance()'s output is
  * byte-identical across the change.
+ *
+ * ⚠️ 3600, BELOW THE DECODE CAP AGAIN, AND THIS TIME ON PURPOSE (2026-09-05).
+ * The stills path (capture.ts takeStill) hands Android Chrome the sensor's
+ * full photograph — 8000px across on a 50MP phone — so the decode cap rose to
+ * 4096 to keep that detail through refinement. The OUTPUT is where the
+ * memory goes: enhance() holds ~7 Float32 planes of the rectified page, and
+ * at 4096 on the long edge an A4 is 12M pixels, 330MB of planes, which is
+ * past what an older iPhone's tab survives. 3600 is 9M pixels and 255MB,
+ * and puts an A4 at 308 dpi — the print standard — when the page fills the
+ * frame. iOS never reaches this cap at all: it has no stills API, its visible
+ * portrait crop of the 4032x3024 track is 1698x3024, and outputSize never
+ * upsamples. So the two caps differ only where the extra pixels exist.
  */
-export const OUTPUT_MAX_EDGE = DECODE_MAX_EDGE;
+export const OUTPUT_MAX_EDGE = 3600;
 
 /**
  * The best dpi this shape can ever be SAVED at, whatever the camera manages.

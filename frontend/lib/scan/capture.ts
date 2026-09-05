@@ -1,15 +1,14 @@
 'use client';
 
 import { DETECT_WIDTH, Gray, detectQuad, inkiness, toLuma } from './detect';
-import { EnhanceReport, enhance, inspect } from './enhance';
+import { EnhanceReport, inspect } from './enhance';
+import { FilterChoice, FilterMode, applyChoice } from './filters';
 import { Quad, Rect, frameQuad, outputSize, scaleQuad } from './geometry';
 import { Raster, rectify } from './warp';
 import { blur3, seededCorners } from './edges';
 import { DETECT_ACCEPT } from './detect-client';
 import { DECODE_MAX_EDGE, OUTPUT_MAX_EDGE } from './framing';
 import { edgeMargin } from './guidance';
-import { letterboxFor } from './letterbox';
-import { analyseMask } from './mask-quad';
 import { bestCandidate } from './quad-score';
 import { refineEdges } from './refine-edges';
 
@@ -57,22 +56,6 @@ const CLIPPED_AT = 0.01;
  */
 const CROP_GROW = 1;
 
-
-/**
- * How much edge support a MASK-derived quad must show before it may crop.
- *
- * Measured against the synthetic scenes in quad-score.spec.ts: a quad sitting
- * on real document edges scores above 0.9 on its worst side, a quad with one
- * side running through open page scores below 0.3, and a quad over empty desk
- * below 0.15. 0.5 sits in the gap with room either way.
- *
- * ⚠️ STILL NOT MEASURED ON REAL CAPTURES. This is a reasoned floor placed in a
- * gap that synthetic fixtures showed, not a threshold earned the way
- * DETECT_ACCEPT was. It is deliberately conservative: too high costs the mask
- * rung some wins and falls back to the behaviour that shipped before it, which
- * is a known-good outcome rather than a new failure.
- */
-const MASK_MIN_SUPPORT = 0.5;
 
 // ────────────────────────────────────────────────────────────────────
 // THE BROWSER HALF.
@@ -201,9 +184,18 @@ export function makeScratch(vw: number, vh: number): CanvasRenderingContext2D {
  */
 export async function grabVisible(
   video: HTMLVideoElement,
-): Promise<{ blob: Blob; width: number; height: number } | null> {
+  /**
+   * The live track, for the stills path. Optional: without it, or where the
+   * browser has no ImageCapture, the frame is read off the <video> as before.
+   */
+  track?: MediaStreamTrack | null,
+): Promise<{ blob: Blob; width: number; height: number; still: boolean } | null> {
   const vis = visibleRect(video);
   if (!vis) return null;
+  if (track) {
+    const still = await takeStill(track, video, vis);
+    if (still) return { ...still, still: true };
+  }
   const w = Math.round(vis.sw);
   const h = Math.round(vis.sh);
   const g = ctx2d(w, h);
@@ -211,7 +203,82 @@ export async function grabVisible(
   const blob = await new Promise<Blob | null>((res) =>
     g.canvas.toBlob(res, 'image/jpeg', 0.95),
   );
-  return blob ? { blob, width: w, height: h } : null;
+  return blob ? { blob, width: w, height: h, still: false } : null;
+}
+
+/** How long the stills sensor gets before the video frame is used instead. */
+const STILL_TIMEOUT_MS = 2500;
+
+/**
+ * The same visible region, from the STILLS sensor rather than the video track.
+ *
+ * ⚠️ THIS IS THE ONE LEVER LEFT ON RESOLUTION. The track is already the
+ * sensor's full 4032x3024 video mode, but a portrait viewfinder shows a
+ * 1698x3024 crop of it, so an A4 filling the box spans ~1390 of those
+ * pixels — 168 dpi against a 200 floor, on every phone, whatever else is
+ * tuned. ImageCapture.takePhoto() answers with the sensor's PHOTO mode — 8000
+ * across on a 50MP phone — and the same crop of that is twice the resolution.
+ *
+ * ⚠️ ANDROID CHROME ONLY, IN PRACTICE. iOS Safari has no ImageCapture; the
+ * absence is the fallback, not an error. And on a device that reports no
+ * gain — a photo mode no larger than the video mode — the call is skipped
+ * entirely, because takePhoto costs a shutter delay and sometimes a focus
+ * hunt that the member would pay for nothing.
+ *
+ * ⚠️ THE STILL IS THE WHOLE SENSOR FRAME, NOT THE VISIBLE REGION. It is
+ * cropped here by the same fractions visibleRect produced for the video, so
+ * everything downstream — the aim box, the detector's second pass, the
+ * fractions the server answers in — keeps the coordinate space the member
+ * framed in. A still whose aspect disagrees with the track (some devices hand
+ * back the other sensor mode) is thrown away rather than mis-cropped.
+ */
+async function takeStill(
+  track: MediaStreamTrack,
+  video: HTMLVideoElement,
+  vis: VisibleRect,
+): Promise<{ blob: Blob; width: number; height: number } | null> {
+  const IC = (globalThis as { ImageCapture?: new (t: MediaStreamTrack) => ImageCaptureLike })
+    .ImageCapture;
+  if (!IC || track.readyState !== 'live' || !video.videoWidth) return null;
+  let bmp: ImageBitmap | null = null;
+  try {
+    const ic = new IC(track);
+    const caps = await ic.getPhotoCapabilities().catch(() => null);
+    const wmax = caps?.imageWidth?.max ?? 0;
+    const hmax = caps?.imageHeight?.max ?? 0;
+    // No gain, no shutter delay.
+    if (!wmax || !hmax || wmax < video.videoWidth * 1.15) return null;
+    const photo = await Promise.race<Blob | null>([
+      ic.takePhoto({ imageWidth: wmax, imageHeight: hmax }),
+      new Promise<null>((r) => setTimeout(() => r(null), STILL_TIMEOUT_MS)),
+    ]);
+    if (!photo) return null;
+    bmp = await createImageBitmap(photo);
+    const kx = bmp.width / video.videoWidth;
+    const ky = bmp.height / video.videoHeight;
+    if (kx < 1.1 || Math.abs(kx - ky) / kx > 0.03) return null;
+    const w = Math.round(vis.sw * kx);
+    const h = Math.round(vis.sh * ky);
+    const g = ctx2d(w, h);
+    g.drawImage(bmp, vis.sx * kx, vis.sy * ky, vis.sw * kx, vis.sh * ky, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>((res) =>
+      g.canvas.toBlob(res, 'image/jpeg', 0.95),
+    );
+    return blob ? { blob, width: w, height: h } : null;
+  } catch {
+    return null;
+  } finally {
+    bmp?.close();
+  }
+}
+
+/** The subset of the ImageCapture API this file uses; lib.dom lacks it. */
+interface ImageCaptureLike {
+  getPhotoCapabilities(): Promise<{
+    imageWidth?: { max?: number };
+    imageHeight?: { max?: number };
+  }>;
+  takePhoto(settings?: { imageWidth?: number; imageHeight?: number }): Promise<Blob>;
 }
 
 /** The aim box as a quad, corners in the same order the warp expects. */
@@ -281,18 +348,23 @@ export async function previewUrl(r: Raster, maxEdge = 900): Promise<string> {
 /**
  * Which cleanup ran. Named for what the member sees, not for the code path.
  *
- * ⚠️ 'shadow' IS enhance()'s `flatten`, WHICH HAS ALWAYS BEEN ON. Illumination
- * division was built here long before anyone asked for a filter menu — what
- * was missing was never the algorithm, only the choice. Exposing it costs an
- * option and no new maths.
+ * ⚠️ THE VALUES LIVE IN filters.ts, NOT HERE. This is a re-export under the
+ * name the review screen and the scanner already import, so that adding a
+ * filter is one change in one file rather than two lists that can disagree.
+ *
+ * ⚠️ 'shadow' IS THE OLD SPELLING OF 'colour' AND IT IS STILL ACCEPTED.
+ * Illumination division was built here long before anyone asked for a filter
+ * menu, so it was named for the thing it removed; every ScanResult built
+ * before the filter set arrived carries that string, and document-scanner.tsx
+ * still falls back to it. See FilterChoice.
  *
  * The choice matters because flattening is not always wanted: it decides what
  * counts as paper and lifts everything towards it, which is right for a
  * shadowed page and wrong when somebody needs the original tones — a
  * photograph on an ID, a coloured security print, anything where the question
- * later is "what did this actually look like".
+ * later is "what did this actually look like". That is what 'none' is for.
  */
-export type ScanFilter = 'shadow' | 'none';
+export type ScanFilter = FilterChoice;
 
 export interface ScanResult {
   file: File;
@@ -327,16 +399,8 @@ export interface ScanResult {
   outputWanted: number;
   outputWidth: number;
   outputHeight: number;
-  /** What the mask rung made of the frame. Absent when no mask was supplied. */
-  maskFit?: {
-    coverage: number;
-    aspect: number;
-    residual: number;
-    rectangularity: number;
-    reject?: string;
-  };
   /** Which candidate the arbitration chose, and on what score. */
-  pickedBy?: 'corners' | 'mask';
+  pickedBy?: 'corners';
   arbitration?: { worstSide: number; support: number };
   /** How far sub-pixel refinement moved the worst corner, and sides skipped. */
   refined?: { moved: number; skipped: number };
@@ -439,13 +503,6 @@ export async function processCapture(
     name?: string;
     expectAspect?: number;
     /**
-     * The model's 64x64 mask plane, when the detector returned one.
-     *
-     * Feeds the mask rung below. Absent on an older server, which simply means
-     * the ladder behaves exactly as it did before.
-     */
-    mask?: Float32Array;
-    /**
      * Where the member was asked to put the document, as FRACTIONS of the
      * image — x, y, width and height all 0 to 1.
      *
@@ -474,8 +531,7 @@ export async function processCapture(
   // refused every time, and a refusal with no numbers beside it is
   // indistinguishable from a detector that never ran.
   let seedReport: ScanResult['seed'] = undefined;
-  let maskReport: ScanResult['maskFit'] = undefined;
-  let pickedBy: 'corners' | 'mask' | undefined;
+  let pickedBy: 'corners' | undefined;
   let arbitration: { worstSide: number; support: number } | undefined;
   let refineReport: ScanResult['refined'] = undefined;
 
@@ -506,25 +562,18 @@ export async function processCapture(
   // of the network or the model, the member gets precisely what they got
   // before. The box did not lose its argument; it became the fallback for a
   // detector that knows when to shut up.
-  // ── THE MODEL'S TWO ANSWERS, JUDGED AGAINST THE PHOTOGRAPH ─────────
+  // ── THE MODEL'S ANSWER, JUDGED AGAINST THE PHOTOGRAPH ──────────────
   //
-  // ⚠️ THE CORNER HEADS AND THE MASK ARE DIFFERENT CLAIMS, AND NEITHER IS
-  // AUTOMATICALLY RIGHT. The heads always emit four peaks — four planes, each
-  // with a maximum — so a confident quad is not evidence that a document is
-  // there, only that the argmax landed somewhere. The mask can be empty, and
-  // fitting lines to its boundary finds the corner of a ROUNDED document,
-  // which no peak ever sits on.
-  //
-  // So both are offered as CANDIDATES and arbitration picks on evidence in the
-  // source image: does a real intensity step actually run along each side. The
-  // worst side decides — three good edges and one running through open page is
-  // the spine-straddling failure, and it averages to a respectable score.
-  //
-  // This is why adding the mask rung is safe to ship before its own gates are
-  // measured: it can only WIN by out-scoring the corner path on the
-  // photograph, never by asserting itself.
+  // DocCornerNet already chose between its two passes (doccorner.ts), and its
+  // presence head already said a document is there. What it cannot know is
+  // whether its 224px view landed the corners on the PIXELS: so the quad is
+  // admitted only if a real intensity step runs along each side of it in the
+  // photograph. The worst side decides — three good edges and one running
+  // through open page is the spine-straddling failure, and it averages to a
+  // respectable score. (The old model's mask rung lived here too; the new
+  // model has no mask and no longer needs a second opinion of its own.)
   if (!quad) {
-    const candidates: { quad: Quad; from: 'corners' | 'mask' }[] = [];
+    const candidates: { quad: Quad; from: 'corners' }[] = [];
     if (opts.detected && opts.detected.minConfidence >= DETECT_ACCEPT) {
       candidates.push({
         quad: opts.detected.quad.map((p) => ({
@@ -533,18 +582,6 @@ export async function processCapture(
         })) as unknown as Quad,
         from: 'corners',
       });
-    }
-    if (opts.mask) {
-      const lb = letterboxFor(raster.width, raster.height);
-      const m = analyseMask(opts.mask, lb);
-      maskReport = {
-        coverage: Math.round(m.coverage * 100) / 100,
-        aspect: Math.round(m.aspect * 100) / 100,
-        residual: Number.isFinite(m.residual) ? Math.round(m.residual * 10) / 10 : -1,
-        rectangularity: Math.round(m.rectangularity * 100) / 100,
-        reject: m.reject,
-      };
-      if (m.quad) candidates.push({ quad: m.quad, from: 'mask' });
     }
 
     // ⚠️ EVERY CANDIDATE IS SCORED, INCLUDING A LONE ONE. The first version of
@@ -595,12 +632,9 @@ export async function processCapture(
         // statutory document. Below the floor, nothing is chosen and the
         // ladder falls through to the aim box exactly as it did before this
         // rung existed.
-        const needsProof = chosen.from === 'mask';
-        if (!needsProof || pick.score.worstSide >= MASK_MIN_SUPPORT) {
-          quad = chosen.quad;
-          from = 'detected';
-          pickedBy = chosen.from;
-        }
+        quad = chosen.quad;
+        from = 'detected';
+        pickedBy = chosen.from;
       }
     }
   }
@@ -739,7 +773,13 @@ export async function processCapture(
   const flat = rectify(raster, cropQuad, w, h);
   if (!flat) throw new Error('We could not straighten that one.');
 
-  const better = enhance(flat);
+  // ⚠️ THROUGH applyChoice, NOT enhance() DIRECTLY, so that the first look at
+  // a page and a later tap on the same filter produce the same pixels. The
+  // result below is stamped `filter: 'shadow'`, and 'shadow' now resolves to
+  // colour() — which white-balances before flattening. Calling enhance() here
+  // would show the member an un-balanced page and then silently change it the
+  // moment they touched the filter row that was already selected.
+  const better = applyChoice(flat, 'shadow').raster;
   // ⚠️ INSPECTED ON `flat`, NEVER ON `better` — WE GRADE THE PHOTOGRAPH, NOT
   // OUR OWN PROCESSING OF IT. Every consumer of this report is advice about
   // how the picture was TAKEN — "tilting the phone will clear the glare",
@@ -792,7 +832,6 @@ export async function processCapture(
 
   return {
     seed: seedReport,
-    maskFit: maskReport,
     edgeMargin: cropEdgeMargin,
     measuredRatio: measuredRatio,
     clipped: cropEdgeMargin <= CLIPPED_AT,
@@ -919,10 +958,11 @@ export async function refilter(
   flat: Raster,
   filter: ScanFilter,
   name: string,
-): Promise<{ file: File; preview: string }> {
-  const out =
-    filter === 'none'
-      ? flat
-      : enhance(flat, { flatten: true, localContrast: true, sharpen: true });
-  return { file: await toFile(out, name), preview: await previewUrl(out) };
+): Promise<{ file: File; preview: string; mode: FilterMode | null }> {
+  // ⚠️ `mode` IS THE ONLY THING THE CALLER CANNOT WORK OUT FOR ITSELF. For
+  // every named filter it is that filter; for 'auto' it is what auto decided
+  // after looking at the page, which is what the review screen puts on the
+  // Auto chip. Null means 'none' — no cleanup ran at all.
+  const { raster, mode } = applyChoice(flat, filter);
+  return { file: await toFile(raster, name), preview: await previewUrl(raster), mode };
 }

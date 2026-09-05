@@ -134,33 +134,35 @@ describe('prefilterFor — the anti-aliasing guard', () => {
     // The old guard compared the RASTER to the destination (8x and 7.5x),
     // halved three times, and warpQuad upsampled the result back — every
     // real capture lost most of its resolution before anything read it.
-    const src = bars(4000, 3000, 6);
+    // 1600x1200 rather than a full 4K frame: the raster is built pixel by
+    // pixel and the test must stay well inside vitest's 5s under a full run.
+    const src = bars(1600, 1200, 6);
     const quad: Quad = [
-      { x: 1700, y: 1300 },
-      { x: 2300, y: 1300 },
-      { x: 2300, y: 1700 },
-      { x: 1700, y: 1700 },
+      { x: 500, y: 400 },
+      { x: 800, y: 400 },
+      { x: 800, y: 600 },
+      { x: 500, y: 600 },
     ];
-    const { scale } = prefilterFor(src, 600, 400, quadSpan(quad));
+    const { scale } = prefilterFor(src, 300, 200, quadSpan(quad));
     expect(scale).toBe(1);
 
     // And the pixels prove it: rectify must match an unfiltered warp exactly,
     // because at 1:1 there is nothing to filter.
-    const naive = warpQuad(src, quad, 600, 400)!;
-    const guarded = rectify(src, quad, 600, 400)!;
+    const naive = warpQuad(src, quad, 300, 200)!;
+    const guarded = rectify(src, quad, 300, 200)!;
     expect(spread(guarded)).toBeGreaterThan(200);
     expect(guarded.data).toEqual(naive.data);
   });
 
   it('still pre-filters a genuinely minified quad', () => {
-    const src = bars(4000, 3000, 6);
+    const src = blank(1600, 1200);
     const quad: Quad = [
-      { x: 500, y: 500 },
-      { x: 3500, y: 500 },
-      { x: 3500, y: 2500 },
-      { x: 500, y: 2500 },
+      { x: 200, y: 200 },
+      { x: 1400, y: 200 },
+      { x: 1400, y: 1000 },
+      { x: 200, y: 1000 },
     ];
-    const { scale } = prefilterFor(src, 600, 400, quadSpan(quad));
+    const { scale } = prefilterFor(src, 300, 200, quadSpan(quad));
     expect(scale).toBeLessThan(1);
   });
 

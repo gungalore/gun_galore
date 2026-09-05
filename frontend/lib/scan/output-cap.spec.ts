@@ -23,14 +23,30 @@ import { SHAPES, SHAPE_ORDER } from './shapes';
 // than that it clears a number.
 // ────────────────────────────────────────────────────────────────────
 
+/**
+ * The longest edge the VIDEO path can ever hand to decode(): the sensor's
+ * 4032x3024 video mode, seen through a portrait viewfinder, is a 1698x3024
+ * crop. Only the stills path (capture.ts takeStill, Android Chrome) produces
+ * anything larger.
+ */
+const VIDEO_PATH_MAX_EDGE = 3024;
+
 describe('the output cap must not be a second, tighter ceiling', () => {
-  it('never sits below the decode cap', () => {
+  it('⚠️ NEVER BINDS ON THE VIDEO PATH — the cap only exists where extra pixels do', () => {
     // A crop cannot carry more pixels than the decoded photograph it came
     // from, and outputSize() only ever clamps down — it never upsamples. So an
-    // output cap below the decode cap can only ever discard detail that
-    // decode() deliberately kept. Two caps in series with different bases is
-    // the whole bug.
-    expect(OUTPUT_MAX_EDGE).toBeGreaterThanOrEqual(DECODE_MAX_EDGE);
+    // output cap below what the camera hands us can only ever discard detail
+    // that decode() deliberately kept: two caps in series with different
+    // bases was the whole bug, twice.
+    //
+    // Since 2026-09-05 the two caps DO differ, on purpose: decode() keeps the
+    // stills sensor's 8000px photograph through refinement, and the output is
+    // capped where enhance()'s Float32 planes would exhaust an older phone's
+    // tab. That is only allowed because the output cap sits ABOVE anything
+    // the video path produces — so on iOS, which has no stills API, and on
+    // every video-frame capture, it still never binds.
+    expect(DECODE_MAX_EDGE).toBeGreaterThanOrEqual(OUTPUT_MAX_EDGE);
+    expect(OUTPUT_MAX_EDGE).toBeGreaterThan(VIDEO_PATH_MAX_EDGE);
   });
 
   it('leaves every shape clear of the resolution floor', () => {
@@ -50,11 +66,14 @@ describe('the output cap must not be a second, tighter ceiling', () => {
     // asserting a premise this suite cannot check — the same mistake as the
     // old test that only checked the cap cleared the floor.
     //
-    // What IS checkable: whichever of the two ceilings binds first must be the
-    // source one, because that is the only one that reflects a real limit.
-    expect(OUTPUT_MAX_EDGE).toBeGreaterThanOrEqual(DECODE_MAX_EDGE);
+    // What IS checkable: on the video path the source ceiling binds first,
+    // because that is the only one that reflects a real limit — and where the
+    // output cap does bind (a still), it must leave an A4 at the 300 dpi
+    // print standard, otherwise the stills path bought nothing.
+    expect(OUTPUT_MAX_EDGE).toBeGreaterThan(VIDEO_PATH_MAX_EDGE);
     const a4 = capDpiFor('a4')!;
     expect(a4).toBeGreaterThan(dpiOf(2690, SHAPES.a4.longMm!));
+    expect(a4).toBeGreaterThanOrEqual(300);
   });
 
   it('is not derived from any single shape, which is how A4 got pinned', () => {

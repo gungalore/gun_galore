@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OVERLAY_WARNING } from '@/lib/scan/overlay';
 import {
   Pt,
@@ -18,6 +18,15 @@ import {
   loupeSource,
   magnifierSpot,
 } from '@/lib/scan/magnifier';
+import {
+  edgeLinesNear,
+  fromLumaPt,
+  magneticBand,
+  snapCorner,
+  snapEdge,
+  toLumaQuad,
+  type Luma,
+} from '@/lib/scan/magnetic';
 
 // ────────────────────────────────────────────────────────────────────
 // PUTTING THE CORNERS WHERE THEY BELONG.
@@ -61,6 +70,16 @@ export interface CornerEditorProps {
   onCancel: () => void;
   onApply: (q: Quad) => void;
   busy?: boolean;
+  /**
+   * A downscaled luma copy of the SAME capture `src` shows, for magnetic
+   * lines. Optional throughout: without it the editor behaves exactly as it
+   * did before, which is the fallback for a capture we could not decode.
+   *
+   * Coordinates are the raster's own pixels — `quad` times `luma.scale`. The
+   * conversion is never done by hand here; `toLumaQuad` and `fromLumaPt` own
+   * it, so there is one place to be wrong.
+   */
+  luma?: Luma;
 }
 
 export default function CornerEditor({
@@ -70,6 +89,7 @@ export default function CornerEditor({
   onCancel,
   onApply,
   busy = false,
+  luma,
 }: CornerEditorProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [pts, setPts] = useState<Quad>(quad);
@@ -152,6 +172,207 @@ export default function CornerEditor({
   const [draggingEdge, setDraggingEdge] = useState<number | null>(null);
   const edgeStart = useRef<{ x: number; y: number; pts: Quad } | null>(null);
 
+  // ────────────────────────────────────────────────────────────────
+  // MAGNETIC LINES.
+  //
+  // Let go of a handle within a few pixels of a real document edge and it
+  // lands ON the edge. While the handle is down, the lines it would land on
+  // are drawn faintly, so the jump is something the member watched coming
+  // rather than something that happened to them. The maths is all in
+  // lib/scan/magnetic.ts and is tested there against synthetic pages.
+  //
+  // ⚠️ THE SNAP IS A TOGGLE, DEFAULT ON, AND THAT IS THE UNDO. A snap that
+  // cannot be refused is a corner the member cannot place: they drop it where
+  // they mean it, we move it, and their only recourse is to fight it drag
+  // after drag. The alternative considered was a hold-still gesture — pause
+  // 250ms before lifting to suppress the snap for that release — and it was
+  // rejected because it is invisible: nothing on screen could tell them the
+  // gesture exists, and a member holding still is exactly what a careful
+  // member does anyway. A labelled button says what it does and stays said.
+  //
+  // ⚠️ THE KEYBOARD PATH NEVER SNAPS. An arrow key is a one-pixel deliberate
+  // nudge; a member who has chosen to place a corner a pixel at a time has
+  // already said they do not want it moved for them.
+  // ────────────────────────────────────────────────────────────────
+  const [snapOn, setSnapOn] = useState(true);
+  const band = useMemo(() => (luma ? magneticBand(luma) : 0), [luma]);
+  /** The current corners, readable from a rAF loop that does not re-subscribe. */
+  const ptsRef = useRef<Quad>(pts);
+  ptsRef.current = pts;
+  /** Candidate lines under the finger, already in IMAGE coordinates. */
+  const [hints, setHints] = useState<{ a: Pt; b: Pt; alpha: number }[]>([]);
+  /** Where a snap just landed, so the ring can flash there. */
+  const [flash, setFlash] = useState<{ at: Pt[]; n: number } | null>(null);
+  const flashN = useRef(0);
+
+  const tween = useRef<number | null>(null);
+  const cancelTween = useCallback(() => {
+    if (tween.current !== null) {
+      cancelAnimationFrame(tween.current);
+      tween.current = null;
+    }
+  }, []);
+
+  /**
+   * Slide the corners to `target` over 130ms.
+   *
+   * ⚠️ ANIMATED RATHER THAN SET. A corner that teleports on release reads as a
+   * misplaced touch — the member sees the dot somewhere they did not put it
+   * and has no way to know whether that was them or us. 130ms is long enough
+   * to see the direction of travel and short enough that nobody waits for it.
+   */
+  const glideTo = useCallback(
+    (target: Quad) => {
+      cancelTween();
+      const from = ptsRef.current;
+      const t0 =
+        typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const DUR = 130;
+      const step = () => {
+        const now =
+          typeof performance !== 'undefined' ? performance.now() : Date.now();
+        const k = Math.min(1, (now - t0) / DUR);
+        const e = 1 - (1 - k) ** 3;
+        setPts(
+          from.map((p, i) => ({
+            x: p.x + (target[i].x - p.x) * e,
+            y: p.y + (target[i].y - p.y) * e,
+          })) as Quad,
+        );
+        tween.current = k < 1 ? requestAnimationFrame(step) : null;
+      };
+      tween.current = requestAnimationFrame(step);
+    },
+    [cancelTween],
+  );
+
+  const clampPt = useCallback(
+    (p: Pt): Pt => ({
+      x: Math.max(0, Math.min(size.width, p.x)),
+      y: Math.max(0, Math.min(size.height, p.y)),
+    }),
+    [size.width, size.height],
+  );
+
+  /**
+   * The handle has been released. Snap it, if there is anything to snap to.
+   *
+   * Silent when there is not — magnetic.ts returns null rather than a
+   * best-effort guess, and a snap that fires on bare desk would be worse than
+   * none because the member would stop trusting the ones that are right.
+   */
+  const settle = useCallback(
+    (kind: 'corner' | 'edge', index: number) => {
+      if (!luma || !snapOn) return;
+      const cur = ptsRef.current;
+      const lq = toLumaQuad(cur, luma.scale);
+      const next = [...cur] as Quad;
+      const landed: Pt[] = [];
+      if (kind === 'corner') {
+        const p = snapCorner(luma, lq, index, band);
+        if (!p) return;
+        next[index] = clampPt(fromLumaPt(p, luma.scale));
+        landed.push(next[index]);
+      } else {
+        const r = snapEdge(luma, lq, index, band);
+        if (!r) return;
+        const ia = index;
+        const ib = (index + 1) % 4;
+        next[ia] = clampPt(fromLumaPt(r.a, luma.scale));
+        next[ib] = clampPt(fromLumaPt(r.b, luma.scale));
+        landed.push(next[ia], next[ib]);
+      }
+      // ⚠️ THE SAME VALIDATION APPLY USES. A snap is bounded by the band, so
+      // in principle it cannot fold the quad — but "in principle" is how the
+      // bow-tie got in last time, and refusing costs one comparison.
+      if (!isConvex(next) || minInteriorAngle(next) < 15) return;
+      // Below half a view pixel nobody can see it move, and flashing a ring
+      // for a correction that is not visible just looks like a glitch.
+      if (!landed.some((p, i) => {
+        const was = kind === 'corner' ? cur[index] : cur[(index + i) % 4];
+        return Math.hypot(p.x - was.x, p.y - was.y) * fit > 0.5;
+      })) {
+        return;
+      }
+      glideTo(next);
+      flashN.current += 1;
+      setFlash({ at: landed, n: flashN.current });
+    },
+    [luma, snapOn, band, clampPt, glideTo, fit],
+  );
+
+  useEffect(() => {
+    if (!flash) return;
+    const t = window.setTimeout(() => setFlash(null), 500);
+    return () => window.clearTimeout(t);
+  }, [flash]);
+
+  useEffect(() => cancelTween, [cancelTween]);
+
+  /**
+   * The lines the member is about to land on, redrawn while a handle is down.
+   *
+   * ⚠️ ON A rAF LOOP READING A REF, NOT ON EVERY pts CHANGE. Measured on a
+   * 900x1200 raster with band 27 — what a portrait A4 photograph actually
+   * decodes to — the two edges of a corner drag cost 2.1ms. Fine once a frame;
+   * not fine on every pointermove, which on a 120Hz phone arrives more often
+   * than a frame and would compete with the drag itself on the one thread that
+   * has to keep up with the finger. Skipping the fit while the quad has not
+   * moved a whole raster pixel takes most of the rest — a finger resting still
+   * then costs nothing at all.
+   */
+  useEffect(() => {
+    if (!luma || !snapOn) {
+      setHints([]);
+      return;
+    }
+    const which =
+      dragging !== null
+        ? [(dragging + 3) % 4, dragging]
+        : draggingEdge !== null
+          ? [draggingEdge]
+          : null;
+    if (!which) {
+      setHints([]);
+      return;
+    }
+    let raf = 0;
+    let last: Quad | null = null;
+    const run = () => {
+      const q = ptsRef.current;
+      const moved =
+        !last ||
+        last.some(
+          (p, i) => Math.hypot(p.x - q[i].x, p.y - q[i].y) * luma.scale > 1,
+        );
+      if (moved) {
+        last = q;
+        const lq = toLumaQuad(q, luma.scale);
+        const out: { a: Pt; b: Pt; alpha: number }[] = [];
+        for (const e of which) {
+          const lines = edgeLinesNear(luma, lq, e, band);
+          lines.forEach((l, rank) => {
+            out.push({
+              a: fromLumaPt(l.a, luma.scale),
+              b: fromLumaPt(l.b, luma.scale),
+              // The runner-up is drawn fainter rather than hidden: when the
+              // winner is the wrong one, seeing the other candidate is what
+              // tells the member to turn Snap off instead of wondering.
+              alpha: rank === 0 ? 0.45 : 0.22,
+            });
+          });
+        }
+        setHints(out);
+      }
+      raf = requestAnimationFrame(run);
+    };
+    raf = requestAnimationFrame(run);
+    return () => {
+      cancelAnimationFrame(raf);
+      setHints([]);
+    };
+  }, [luma, snapOn, band, dragging, draggingEdge]);
+
   const moveTo = useCallback(
     (i: number, clientX: number, clientY: number) => {
       const el = boxRef.current;
@@ -229,6 +450,10 @@ export default function CornerEditor({
     };
     const onUp = () => {
       setDragging(null);
+      // Snap FIRST, so the magnifier is still up while the corner glides the
+      // last few pixels — the loupe is the only place the member can see
+      // whether it landed on the edge or beside it.
+      settle('corner', dragging);
       // The corner has just landed. Hold the magnifier for half a second so
       // the member can see WHERE it landed, then let it go.
       fadeLoupe(500);
@@ -241,7 +466,7 @@ export default function CornerEditor({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragging, moveTo, fadeLoupe]);
+  }, [dragging, moveTo, fadeLoupe, settle]);
 
   // The same, for an edge. Its own effect so the corner path above stays
   // exactly as it was.
@@ -266,6 +491,7 @@ export default function CornerEditor({
     const onUp = () => {
       setDraggingEdge(null);
       edgeStart.current = null;
+      settle('edge', draggingEdge);
       fadeLoupe(500);
     };
     window.addEventListener('pointermove', onMove, { passive: false });
@@ -276,7 +502,7 @@ export default function CornerEditor({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [draggingEdge, fit, sizeW, sizeH, fadeLoupe]);
+  }, [draggingEdge, fit, sizeW, sizeH, fadeLoupe, settle]);
 
   const viewPts = pts.map(toView);
   /** Midpoint of edge i (corner i to corner i+1), in view pixels. */
@@ -429,6 +655,27 @@ export default function CornerEditor({
               fill="rgba(0,0,0,0.9)"
               mask="url(#gg-quad-mask)"
             />
+            {/* THE MAGNETIC LINES. Drawn UNDER the quad outline and the
+                handles, thin and semi-transparent, so they read as "this is
+                what is there" rather than as another thing to drag. Dashed
+                as well as faint: a solid blue line beside a solid blue quad
+                edge is two of the same object. */}
+            {hints.map((h, i) => {
+              const p = toView(h.a);
+              const q = toView(h.b);
+              return (
+                <line
+                  key={`hint-${i}`}
+                  x1={p.x}
+                  y1={p.y}
+                  x2={q.x}
+                  y2={q.y}
+                  stroke={`rgba(77,163,255,${h.alpha})`}
+                  strokeWidth={1.5}
+                  strokeDasharray="6 5"
+                />
+              );
+            })}
             <polygon
               points={viewPts.map((p) => `${p.x},${p.y}`).join(' ')}
               fill="none"
@@ -511,6 +758,51 @@ export default function CornerEditor({
                 )}
               </g>
             ))}
+            {/* THE SNAP FLASH. A ring that expands and fades once, wherever
+                a corner just landed.
+
+                ⚠️ SMIL, NOT A CSS KEYFRAME. This file carries no stylesheet
+                — every rule in it is an inline style — and globals.css is
+                not reachable from a component that portals over the camera.
+                Keyed on the flash count so each snap remounts the element
+                and the animation runs again; without the key React reuses
+                the node and the second snap flashes nothing. */}
+            {flash?.at.map((p, i) => {
+              const v = toView(p);
+              // Two passes, dark under light — the same halo trick the
+              // crosshair and the aim corners use. A white ring on white
+              // paper, which is where a snap most often lands, is otherwise
+              // invisible at exactly the moment it has something to say.
+              return [
+                { c: 'rgba(0,0,0,0.6)', w: 5 },
+                { c: '#fff', w: 2.5 },
+              ].map((pass, pi) => (
+                <circle
+                  key={`flash-${flash.n}-${i}-${pi}`}
+                  cx={v.x}
+                  cy={v.y}
+                  r={13}
+                  fill="none"
+                  stroke={pass.c}
+                  strokeWidth={pass.w}
+                >
+                  <animate
+                    attributeName="r"
+                    from="13"
+                    to="30"
+                    dur="0.45s"
+                    fill="freeze"
+                  />
+                  <animate
+                    attributeName="opacity"
+                    from="0.95"
+                    to="0"
+                    dur="0.45s"
+                    fill="freeze"
+                  />
+                </circle>
+              ));
+            })}
           </svg>
         )}
 
@@ -528,6 +820,10 @@ export default function CornerEditor({
               onPointerDown={(e) => {
                 e.preventDefault();
                 (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+                // A glide still running from the last snap would fight this
+                // drag for `pts` and the handle would stutter under the
+                // finger.
+                cancelTween();
                 edgeStart.current = { x: e.clientX, y: e.clientY, pts };
                 e.currentTarget.focus({ preventScroll: true });
                 setFocused(null);
@@ -587,6 +883,7 @@ export default function CornerEditor({
                 // How far the finger is from the corner itself. Held for the
                 // life of the drag so the corner tracks the finger's MOTION
                 // rather than snapping to its position — see `grab` above.
+                cancelTween();
                 const box = boxRef.current?.getBoundingClientRect();
                 grab.current = box
                   ? { dx: e.clientX - box.left - p.x, dy: e.clientY - box.top - p.y }
@@ -778,6 +1075,9 @@ export default function CornerEditor({
       >
         Drag the blue dots onto the corners of the document. A magnifier opens
         while you drag.
+        {luma && snapOn
+          ? ' Let go near an edge and the corner jumps onto it — turn Snap off to place it exactly.'
+          : ''}
       </p>
 
       <div
@@ -796,7 +1096,10 @@ export default function CornerEditor({
         </button>
         <button
           type="button"
-          onClick={() => setPts(quad)}
+          onClick={() => {
+            cancelTween();
+            setPts(quad);
+          }}
           disabled={busy}
           style={btn}
           // ⚠️ NOT aria-label. An accessible name that replaces the visible
@@ -806,6 +1109,30 @@ export default function CornerEditor({
         >
           Reset
         </button>
+        {luma && (
+          <button
+            type="button"
+            onClick={() => setSnapOn((v) => !v)}
+            disabled={busy}
+            // aria-pressed, not a checkbox: this is a mode the button is in,
+            // and a screen reader should say "Snap, pressed" rather than
+            // making the member hunt for a control's label.
+            aria-pressed={snapOn}
+            title={
+              snapOn
+                ? 'Corners jump onto the edge of the document when you let go. Turn this off to place them exactly where you drop them.'
+                : 'Corners stay exactly where you drop them.'
+            }
+            style={{
+              ...btn,
+              padding: '0 12px',
+              borderColor: snapOn ? BLUE : 'rgba(255,255,255,0.35)',
+              color: snapOn ? BLUE : '#fff',
+            }}
+          >
+            {snapOn ? 'Snap ✓' : 'Snap'}
+          </button>
+        )}
         <div style={{ flex: 1 }} />
         {/* ⚠️ aria-disabled, NOT disabled. A plain disabled button cannot take
             focus, so a screen-reader member tabbing to the end of this editor

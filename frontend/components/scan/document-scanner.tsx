@@ -13,7 +13,7 @@ import {
   visibleRect,
 } from '@/lib/scan/capture';
 import { detectQuad } from '@/lib/scan/detect';
-import { Quad } from '@/lib/scan/geometry';
+import { Quad, Rect } from '@/lib/scan/geometry';
 import { av } from '@/lib/asset-version';
 import CornerEditor from './corner-editor';
 import { type Grade, gradeScan } from '@/lib/scan/quality';
@@ -23,18 +23,23 @@ import DocumentType from './screens/document-type';
 import PagesTray from './screens/pages-tray';
 import ReviewScreen from './screens/review-screen';
 import SavedScreen from './screens/saved';
+import QualityGate from './screens/quality-gate';
 import DiagnosticsPanel from './screens/diagnostics-panel';
 import { QuadSmoother } from '@/lib/scan/smooth';
 import {
   LIVE_DRAW_ACCEPT,
   LIVE_FPS,
   LIVE_MIN_INTERVAL_MS,
-} from '@/lib/scan/docquad-live';
+  LiveDetector,
+  type LiveReading,
+  type LiveStatus,
+} from '@/lib/scan/live-detector';
 import { rotateResult } from '@/lib/scan/rotate';
 import { nameFiles } from '@/lib/scan/name-files';
+import { type Luma, lumaFromBlob } from '@/lib/scan/magnetic';
+import type { FilterMode } from '@/lib/scan/filters';
 import { QuadPresence, scaleAboutCentre } from '@/lib/scan/quad-presence';
 import { QuadTracker } from '@/lib/scan/quad-track';
-import { implausibleWhy } from '@/lib/scan/quad-plausible';
 import {
   DocShape,
   SHAPES,
@@ -61,11 +66,6 @@ import {
   guidanceText,
   occupancy,
 } from '@/lib/scan/guidance';
-import {
-  LiveDetector,
-  type LiveReading,
-  type LiveStatus,
-} from '@/lib/scan/docquad-live';
 import {
   type CameraOption,
   bestCamera,
@@ -193,12 +193,16 @@ export interface DocumentScannerProps {
    */
   detect?: (
     frame: Blob,
+    /**
+     * What the scanner knows and the server does not: the aim box as
+     * fractions of the photograph, and the chosen shape's long/short ratio.
+     * The server runs its second pass on the box and the client picks.
+     */
+    priors: { aim?: Rect; expectAspect?: number },
   ) => Promise<{
     quad: Quad;
     minConfidence: number;
     ms?: number;
-    /** The model's 64x64 mask plane, when the server returned one. */
-    mask?: Float32Array;
   } | null>;
   /**
    * What the member is most likely holding. Sets the starting guide frame and
@@ -333,10 +337,29 @@ export default function DocumentScanner({
   const [docName, setDocName] = useState('');
   /** Kept pages, with the grade each one earned. */
   const [tray, setTray] = useState<
-    { id: string; file: File; preview: string; grade: Grade; dpi: number | null; note?: string }[]
+    {
+      id: string;
+      file: File;
+      preview: string;
+      grade: Grade;
+      dpi: number | null;
+      note?: string;
+      /**
+       * Everything needed to REOPEN the page: the raw photograph, the
+       * processed result and its quarter turns. A tray page used to be a
+       * file and a thumbnail — once it left the review screen nothing could
+       * be changed about it, so a member who noticed a bad crop on page 2
+       * of 5 could only shoot it again.
+       */
+      raw: Blob | null;
+      result: ScanResult;
+      turns: number;
+    }[]
   >([]);
   /** Quarter turns applied to the current page, 0-3. */
   const [turns, setTurns] = useState(0);
+  const turnsRef = useRef(0);
+  turnsRef.current = turns;
   // ⚠️ STILL NON-NULL. `shape` is dereferenced without a guard in five places
   // (SHAPES[shape].label, SHAPES[shape].multiLabel, aimBox, AimFrame,
   // expectAspectFor), so a null here blows up on the chooser's own first paint.
@@ -370,6 +393,71 @@ export default function DocumentScanner({
   const [err, setErr] = useState<string | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
+  /** The white blink on the shutter. 160ms, then gone. */
+  const [flash, setFlash] = useState(false);
+  /** The acknowledgement sheet's reason, or null when the page passed. */
+  const [gate, setGate] = useState<string | null>(null);
+  /** Did the last capture come off the stills sensor? Diagnostics only. */
+  const stillRef = useRef(false);
+  /** Where the member tapped to focus, as fractions, while the ring shows. */
+  const [focusAt, setFocusAt] = useState<{ x: number; y: number } | null>(null);
+  /** The track's zoom range when it has one, and where it is set. */
+  const [zoomCaps, setZoomCaps] = useState<{ min: number; max: number } | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+
+  /**
+   * Tap to focus.
+   *
+   * ⚠️ ANDROID CHROME ONLY, IN PRACTICE — iOS Safari exposes no focus
+   * control at all, and there the tap draws the ring and does nothing else,
+   * which is honest: the ring says "we heard you", not "we did it". Where
+   * `pointsOfInterest` exists the track is asked for a single-shot focus at
+   * the tap, then handed back to continuous after a moment so the next
+   * document does not inherit a lock on the last one's distance. A laminated
+   * card is the case this exists for: continuous AF hunts on the specular
+   * patch and never settles on the print.
+   */
+  const focusOn = useCallback(async (x: number, y: number) => {
+    setFocusAt({ x, y });
+    window.setTimeout(() => setFocusAt(null), 700);
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    const caps = track.getCapabilities?.() as
+      | (MediaTrackCapabilities & { focusMode?: string[]; pointsOfInterest?: unknown })
+      | undefined;
+    if (!caps?.focusMode?.includes('single-shot')) return;
+    try {
+      await track.applyConstraints({
+        advanced: [
+          { focusMode: 'single-shot', pointsOfInterest: [{ x, y }] } as MediaTrackConstraintSet,
+        ],
+      });
+      window.setTimeout(() => {
+        if (caps.focusMode?.includes('continuous')) {
+          void track
+            .applyConstraints({
+              advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+            })
+            .catch(() => undefined);
+        }
+      }, 2500);
+    } catch {
+      // The platform declined. The ring already told the member we tried.
+    }
+  }, []);
+
+  /** Step the track's zoom: 1x → 2x → back. Only offered where the track has one. */
+  const cycleZoom = useCallback(async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track || !zoomCaps) return;
+    const next = zoomLevel < 2 ? Math.min(2, zoomCaps.max) : zoomCaps.min;
+    try {
+      await track.applyConstraints({ advanced: [{ zoom: next } as MediaTrackConstraintSet] });
+      setZoomLevel(next);
+    } catch {
+      // Not every track that advertises zoom accepts it; leave the pill as is.
+    }
+  }, [zoomCaps, zoomLevel]);
   // ── the diagnostic readout ──────────────────────────────────────────
   //
   // ⚠️ OFF UNLESS ?diag=1, AND IT COSTS NOTHING WHEN OFF. The trail is only
@@ -539,6 +627,35 @@ export default function DocumentScanner({
   const [editing, setEditing] = useState(false);
   editingRef.current = editing;
   /**
+   * The raw capture as downscaled luma, for the editor's magnetic lines.
+   *
+   * Decoded when the editor opens, not at capture — most captures never
+   * visit the editor, and a 1200px luma of a 4K still costs ~40ms and 1.4MB
+   * that the review screen has no use for. Null while decoding or when the
+   * decode failed; the editor then behaves exactly as it did before magnetic
+   * lines existed (see lib/scan/magnetic.ts).
+   */
+  const [editLuma, setEditLuma] = useState<Luma | null>(null);
+  useEffect(() => {
+    if (!editing) {
+      setEditLuma(null);
+      return;
+    }
+    const blob = rawBlobRef.current;
+    if (!blob) return;
+    let live = true;
+    lumaFromBlob(blob)
+      .then((l) => {
+        if (live) setEditLuma(l);
+      })
+      .catch(() => {
+        if (live) setEditLuma(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [editing]);
+  /**
    * ⚠️ THE LIVE TICK MUST FOLLOW THE PANEL, NOT THE EDITOR. This gate used to
    * read editingRef, because the old readout was an overlay drawn on top of
    * the corner editor. The panel is its own screen now, so that condition was
@@ -654,6 +771,8 @@ export default function DocumentScanner({
     });
     const replacing = retakeIdRef.current;
     retakeIdRef.current = null;
+    const raw = rawBlobRef.current;
+    const pageTurns = turnsRef.current;
     setTray((t) => {
       const page = {
         id: replacing ?? `${Date.now()}-${t.length}`,
@@ -662,6 +781,9 @@ export default function DocumentScanner({
         grade: g.grade,
         dpi,
         note: g.reasons[0],
+        raw,
+        result: cur,
+        turns: pageTurns,
       };
       const at = replacing ? t.findIndex((x) => x.id === replacing) : -1;
       if (at < 0) return [...t, page];
@@ -777,9 +899,9 @@ export default function DocumentScanner({
           liveStatusRef.current.state === 'running'
             ? liveStatusRef.current.medianMs
             : undefined,
-        lastConfidence: liveReadingRef.current?.minConfidence,
-        minSigma: liveReadingRef.current?.minSigma,
-        maskCoverage: liveReadingRef.current?.maskCoverage,
+        lastConfidence: liveReadingRef.current?.score,
+        region: liveReadingRef.current?.region,
+        why: liveReadingRef.current?.why,
         lock: lockRef.current,
         guide: guideRef.current,
         fpsCap: LIVE_FPS,
@@ -812,7 +934,6 @@ export default function DocumentScanner({
             source: cur.source,
             pickedBy: cur.pickedBy,
             arbitration: cur.arbitration,
-            maskFit: cur.maskFit,
             refined: cur.refined,
             seed: cur.seed
               ? { confidence: cur.seed.confidence, hits: cur.seed.hits }
@@ -856,6 +977,8 @@ export default function DocumentScanner({
     };
   }, [shape, phase, err, shotDpi]);
 
+  /** The mode Auto picked for the current page, for the review chip. */
+  const [autoMode, setAutoMode] = useState<FilterMode | null>(null);
   const applyFilter = useCallback(
     (next: ScanFilter) => {
       const cur = shotRef.current;
@@ -863,7 +986,9 @@ export default function DocumentScanner({
       setRecutting(true);
       void (async () => {
         try {
-          const { file, preview } = await refilter(cur.flat, next, cur.file.name);
+          const { file, preview, mode } = await refilter(cur.flat, next, cur.file.name);
+          // What Auto chose, so the review screen can say so in the chip.
+          setAutoMode(next === 'auto' ? mode : null);
           setShot((prev) =>
             prev ? { ...prev, file, preview, filter: next } : prev,
           );
@@ -1132,6 +1257,12 @@ export default function DocumentScanner({
           | (MediaTrackCapabilities & { torch?: boolean; focusMode?: string[] })
           | undefined;
         setHasTorch(caps?.torch === true);
+        // Zoom, where the track has it. A 1x/2x step lets a member fill the
+        // box with a card without breaching the lens's near-focus limit,
+        // which is the whole reason the card box is drawn small.
+        const z = (caps as { zoom?: { min?: number; max?: number } } | undefined)?.zoom;
+        setZoomCaps(z && typeof z.max === 'number' && z.max > 1.5 ? { min: z.min ?? 1, max: z.max } : null);
+        setZoomLevel(1);
 
         // ⚠️ ASK FOR CONTINUOUS FOCUS. A video track often defaults to a fixed
         // or slow focus, and a licence card held 150mm away sits near the
@@ -1441,38 +1572,52 @@ export default function DocumentScanner({
       // Fractions of the VISIBLE region, which is the overlay's own space.
       const lw = vis ? vis.sw : video.videoWidth;
       const lh = vis ? vis.sh : video.videoHeight;
-      void live.detect(video, vis ?? undefined).then((r) => {
-        // null is a DROPPED frame — an inference was already in flight, or
-        // the ceiling said wait. Not news, not a miss.
-        if (!alive || r === null) return;
-        lastModelAt = performance.now();
-        if ('miss' in r) {
-          applyDetection(null, false);
-          return;
-        }
-        liveReadingRef.current = r;
-        // ⚠️ LIVE_DRAW_ACCEPT, NOT DETECT_ACCEPT. Drawing a box on a preview
-        // commits to nothing; cropping a statutory document does. The live
-        // path gated on the crop threshold anyway, so every preview frame
-        // under 0.80 — most of them, on a small blurred stream — fell through
-        // to the classical detector and its different rectangle. `confident`
-        // still carries the crop-grade verdict for anything that reads it.
-        const raw =
-          r.minConfidence >= LIVE_DRAW_ACCEPT && lw > 0 && lh > 0
-            ? (r.quad.map((p) => ({ x: p.x * lw, y: p.y * lh })) as Quad)
-            : null;
-        // ⚠️ THE MODEL'S QUAD IS CHECKED FOR BEING A RECTANGLE AT ALL, WHICH
-        // IT NEVER WAS. Its four corners come from four INDEPENDENT heatmap
-        // planes, so nothing ties them to each other, and measured over 30
-        // real fixtures 3 of them were not the shape of a photographed
-        // rectangle — corners at 32° and 45°, one off the frame. Confidence
-        // cannot see it: that 45° case scored 0.546, four corners
-        // individually plausible and mutually impossible. A rejected quad is
-        // a miss: the tracker decays and keeps drawing the last good one.
-        const why = raw ? implausibleWhy(raw, lw, lh) : null;
-        if (why) rejectedQuadRef.current = why;
-        applyDetection(why ? null : raw, r.minConfidence >= DETECT_ACCEPT);
-      });
+      // ⚠️ THE TWO PRIORS ONLY WE HOLD. The model sees pixels; it does not
+      // know the member said "card" or where the box was. Both go with every
+      // frame so the detector can run its second pass on the box and choose
+      // the card over the sheet it is lying on (doccorner.ts).
+      const el = video.getBoundingClientRect();
+      const aim =
+        el.width > 0 && el.height > 0
+          ? (() => {
+              const b = aimBox(shape, { width: el.width, height: el.height });
+              return {
+                x: b.x / el.width,
+                y: b.y / el.height,
+                width: b.width / el.width,
+                height: b.height / el.height,
+              };
+            })()
+          : undefined;
+      void live
+        .detect(video, vis ?? undefined, {
+          aim,
+          expectAspect: expectAspectFor(shape),
+          // ⚠️ LIVE_DRAW_ACCEPT, NOT DETECT_ACCEPT. Drawing a box on a preview
+          // commits to nothing; cropping a statutory document does.
+          minScore: LIVE_DRAW_ACCEPT,
+        })
+        .then((r) => {
+          // null is a DROPPED frame — an inference was already in flight, or
+          // the ceiling said wait. Not news, not a miss.
+          if (!alive || r === null) return;
+          lastModelAt = performance.now();
+          if ('miss' in r) {
+            // The picker saw candidates and refused them all: not a
+            // plausible rectangle, or the wrong shape in the wrong place.
+            if (r.candidates.length) rejectedQuadRef.current = 'no candidate passed';
+            applyDetection(null, false);
+            return;
+          }
+          liveReadingRef.current = r;
+          rejectedQuadRef.current = null;
+          const raw =
+            lw > 0 && lh > 0
+              ? (r.quad.map((p) => ({ x: p.x * lw, y: p.y * lh })) as Quad)
+              : null;
+          // `confident` carries the crop-grade verdict for anything that reads it.
+          applyDetection(raw, r.score >= DETECT_ACCEPT);
+        });
     };
 
     // ⚠️ THE DETECTOR DOES NOT HOLD THE TRIGGER. It turns the aim box green
@@ -2048,10 +2193,17 @@ export default function DocumentScanner({
     setPhase('working');
     say('Photo taken. Straightening it up.');
     try {
-      const grabbed = await grabVisible(video);
+      // ⚠️ FEEDBACK BEFORE THE WORK, NOT AFTER IT. The still can take a
+      // second on Android; a shutter that answers a second late reads as a
+      // shutter that did not answer, and the member presses again.
+      navigator.vibrate?.(30);
+      setFlash(true);
+      window.setTimeout(() => setFlash(false), 160);
+      const grabbed = await grabVisible(video, streamRef.current?.getVideoTracks()[0]);
       if (!grabbed) throw new Error('We could not take that photo.');
       const blob = grabbed.blob;
       rawBlobRef.current = blob;
+      stillRef.current = grabbed.still;
 
       // ⚠️ THE AIM BOX GOES WITH THE PHOTOGRAPH. The corners the member lined
       // the document up against are the single most reliable thing we know
@@ -2099,38 +2251,61 @@ export default function DocumentScanner({
         width: grabbed.width,
         height: grabbed.height,
       });
-      // ⚠️ ONE ROUND TRIP, AND IT MAY NOT BLOCK THE SCAN. detectDocument never
-      // throws — offline, timeout, a 500, the model missing on the box all
-      // arrive here as null, and null simply means the aim box is used, which
-      // is what happened before this existed. A member in a gun shop on one
-      // bar must still be able to photograph their licence.
-      const detected = detect ? await detect(blob) : null;
-      // Record WHICH of the four things happened, not just that we fell back.
-      detectRef.current = !detect
-        ? { outcome: 'not-asked' }
-        : detected === null
-          ? { outcome: 'no-answer', why: lastDetectFailure ?? 'unknown' }
-          : {
-              outcome:
-                detected.minConfidence >= DETECT_ACCEPT ? 'accepted' : 'declined',
-              minConfidence: detected.minConfidence,
-              ms: detected.ms ?? 0,
-            };
+      const aimFrac =
+        grabbed.width > 0 && grabbed.height > 0
+          ? {
+              x: box.x / grabbed.width,
+              y: box.y / grabbed.height,
+              width: box.width / grabbed.width,
+              height: box.height / grabbed.height,
+            }
+          : undefined;
+      const priors = { aim: aimFrac, expectAspect: expectAspectFor(shape) };
+
+      // ⚠️ THE SAME MODEL THAT DREW THE LIVE BOX, ON THE PHOTOGRAPH ITSELF.
+      // The detector is already loaded in the worker and takes ~25ms for both
+      // passes; a server round trip took hundreds and could 401, time out, or
+      // find nothing on one bar of signal. The server (`detect`) is now the
+      // fallback for a browser that could not load the runtime, and it runs
+      // the identical model and picker, so the two never disagree about the
+      // document. Either way this may not block the scan: a miss means the
+      // aim box is used, exactly as before detection existed.
+      let detected: { quad: Quad; minConfidence: number; ms: number } | null = null;
+      let via: 'device' | 'server' | 'none' = 'none';
+      let miss = false;
+      const worker = liveRef.current;
+      if (worker && liveStatusRef.current.state === 'running') {
+        const r = await worker.detectStill(blob, { ...priors, minScore: LIVE_DRAW_ACCEPT });
+        if (r) {
+          via = 'device';
+          if ('miss' in r) miss = true;
+          else detected = { quad: r.quad, minConfidence: r.score, ms: r.ms };
+        }
+      }
+      if (via === 'none' && detect) {
+        via = 'server';
+        const s = await detect(blob, priors);
+        if (s) detected = { quad: s.quad, minConfidence: s.minConfidence, ms: s.ms ?? 0 };
+      }
+      // Record WHICH of the things happened, not just that we fell back.
+      detectRef.current =
+        via === 'none'
+          ? { outcome: 'not-asked' }
+          : detected === null
+            ? {
+                outcome: 'no-answer',
+                why: miss ? 'device: no plausible document' : (lastDetectFailure ?? 'unknown'),
+              }
+            : {
+                outcome:
+                  detected.minConfidence >= DETECT_ACCEPT ? 'accepted' : 'declined',
+                minConfidence: detected.minConfidence,
+                ms: detected.ms,
+              };
       const res = await processCapture(blob, {
         detected: detected ?? undefined,
-        // The mask rung. Absent on an older server, in which case the ladder
-        // behaves exactly as it did before.
-        mask: detected?.mask,
         expectAspect: expectAspectFor(shape),
-        aimBox:
-          grabbed.width > 0 && grabbed.height > 0
-            ? {
-                x: box.x / grabbed.width,
-                y: box.y / grabbed.height,
-                width: box.width / grabbed.width,
-                height: box.height / grabbed.height,
-              }
-            : undefined,
+        aimBox: aimFrac,
       });
       // ⚠️ `source` IS THE SKEW ANSWER, AND IT IS ONLY KNOWABLE HERE. 'aim'
       // means the crop was the aim-box rectangle — and warping a rectangle to
@@ -2149,6 +2324,22 @@ export default function DocumentScanner({
       // A fresh page starts upright; the previous page's turns are its own.
       setTurns(0);
       setPhase('review');
+      // ⚠️ A POOR PAGE IS STOPPED AT THE DOOR, NOT BADGED AND WAVED THROUGH.
+      // Scanbot's acknowledgement screen does this; ours showed a red "Poor"
+      // chip that a member in a hurry tapped straight past. Blur, clipping
+      // and too few pixels are the defects nothing downstream recovers, and
+      // the document is still in front of them right now.
+      const verdict = gradeScan({
+        dpi: shotDpi(res, shape),
+        glare: res.report?.glare,
+        luma: res.report?.meanLuma,
+        sharpness: res.report?.sharpness,
+        source: res.source,
+        clipped: res.clipped,
+        measuredRatio: res.measuredRatio,
+        expectedRatio: expectAspectFor(shape),
+      });
+      setGate(verdict.grade === 'poor' ? verdict.reasons[0] ?? verdict.detail : null);
       // ⚠️ STRAIGHT INTO THE CORNER EDITOR, not the enhanced preview. The
       // operator's chosen flow: shoot manually, then fix the corners. The
       // editor opens with our best guess already drawn — a good guess is two
@@ -2294,6 +2485,10 @@ export default function DocumentScanner({
             grade: g.grade,
             dpi,
             note: g.reasons[0],
+            // A gallery page can be reopened too: the file IS its photograph.
+            raw: f,
+            result: res,
+            turns: 0,
           });
         } catch {
           // One bad picture must not lose the rest of the batch.
@@ -2585,6 +2780,32 @@ export default function DocumentScanner({
               setEditing(false);
               setPhase(started ? 'live' : 'add');
             }}
+            onOpen={(id) => {
+              // ⚠️ REOPEN, NOT RESHOOT. The page comes back into the review
+              // screen with its photograph, its crop and its turns, so its
+              // corners, filter or rotation can be changed; keeping it puts it
+              // back in the same slot (retakeIdRef).
+              const p = tray.find((x) => x.id === id);
+              if (!p) return;
+              retakeIdRef.current = id;
+              rawBlobRef.current = p.raw;
+              setShot(p.result);
+              setTurns(p.turns);
+              setGate(null);
+              setEditing(false);
+              setErr(null);
+              setPhase('review');
+            }}
+            onMove={(id, dir) => {
+              setTray((t) => {
+                const i = t.findIndex((x) => x.id === id);
+                const j = i + dir;
+                if (i < 0 || j < 0 || j >= t.length) return t;
+                const next = t.slice();
+                [next[i], next[j]] = [next[j], next[i]];
+                return next;
+              });
+            }}
             onRemove={(id) => {
               setTray((t) => {
                 const next = t.filter((x) => x.id !== id);
@@ -2593,7 +2814,12 @@ export default function DocumentScanner({
               });
             }}
             onSave={() => void finish(tray.map((t) => t.file))}
-            onBack={() => setPhase(started ? 'live' : 'add')}
+            onBack={() => {
+              // Back to the camera for a NEW page — an abandoned retake or
+              // reopen must not make the next capture replace the wrong one.
+              retakeIdRef.current = null;
+              setPhase(started ? 'live' : 'add');
+            }}
           />
         )}
 
@@ -2646,6 +2872,12 @@ export default function DocumentScanner({
           playsInline
           muted
           autoPlay
+          onClick={(e) => {
+            // Tap to focus, where the platform allows it. See focusAt.
+            const el = e.currentTarget.getBoundingClientRect();
+            if (el.width <= 0 || el.height <= 0) return;
+            void focusOn((e.clientX - el.left) / el.width, (e.clientY - el.top) / el.height);
+          }}
           style={{
             position: 'absolute',
             inset: 0,
@@ -2727,6 +2959,37 @@ export default function DocumentScanner({
                 hold ring's job, and a frame flickering with every tremor would
                 be noise rather than signal. */}
             <ExposureAlert glare={glare} luma={luma} torchOn={torchOn} />
+            {/* The shutter blink. White, brief, over everything. */}
+            {flash && (
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: '#fff',
+                  opacity: 0.85,
+                  pointerEvents: 'none',
+                  zIndex: 4,
+                }}
+              />
+            )}
+            {/* The tap-to-focus ring: "we heard you", at the spot. */}
+            {focusAt && (
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  left: `calc(${focusAt.x * 100}% - 28px)`,
+                  top: `calc(${focusAt.y * 100}% - 28px)`,
+                  width: 56,
+                  height: 56,
+                  borderRadius: 8,
+                  border: '2px solid rgba(255,255,255,0.9)',
+                  boxShadow: '0 0 0 1px rgba(0,0,0,0.45)',
+                  pointerEvents: 'none',
+                }}
+              />
+            )}
         {phase === 'live' && (
           <p
             style={{
@@ -2937,9 +3200,12 @@ export default function DocumentScanner({
             onName={setDocName}
             filter={shot.filter ?? 'shadow'}
             onFilter={applyFilter}
+            autoMode={autoMode}
             busy={recutting}
             pageCount={tray.length + 1}
             onDiscard={() => {
+              // A reopened page goes back to the pile untouched.
+              retakeIdRef.current = null;
               setShot(null);
               setErr(null);
               setPhase(tray.length ? 'pages' : started ? 'live' : 'add');
@@ -2966,6 +3232,21 @@ export default function DocumentScanner({
           />
         )}
 
+        {phase === 'review' && shot && !editing && gate && (
+          <QualityGate
+            reason={gate}
+            onKeep={() => setGate(null)}
+            onRetake={() => {
+              setGate(null);
+              setShot(null);
+              setEditing(false);
+              setErr(null);
+              setPhase('live');
+              say('Ready for another go.');
+            }}
+          />
+        )}
+
         {phase === 'review' && shot && editing && (
           <div style={{ position: 'absolute', inset: 0, background: '#000' }}>
             <CornerEditor
@@ -2973,6 +3254,7 @@ export default function DocumentScanner({
               size={shot.sourceSize}
               quad={shot.quad}
               busy={recutting}
+              luma={editLuma ?? undefined}
               onCancel={() => {
                 if (!recutting) setEditing(false);
               }}
@@ -3154,6 +3436,8 @@ export default function DocumentScanner({
           holdPct={holdPct}
           onDone={pages.length ? () => finish(pages) : undefined}
           pages={pages.length}
+          zoom={zoomCaps ? zoomLevel : null}
+          onZoom={() => void cycleZoom()}
         />
       )}
 
@@ -3578,6 +3862,8 @@ function Controls({
   auto,
   onAuto,
   holdPct,
+  zoom,
+  onZoom,
 }: {
   hasTorch: boolean;
   torchOn: boolean;
@@ -3589,6 +3875,9 @@ function Controls({
   onAuto: () => void;
   /** 0-1 of the way through the hold. */
   holdPct: number;
+  /** The track's current zoom, or null when the track has no zoom to offer. */
+  zoom?: number | null;
+  onZoom?: () => void;
 }) {
   return (
     <div
@@ -3681,6 +3970,30 @@ function Controls({
             capability; iOS Safari does not expose it at all, so on an iPhone
             this simply is not there. That is not a bug to chase — it is the
             platform, and rendering a dead button would be worse. */}
+        {/* Zoom, same rule as the torch: only where the track has it. A
+            1x/2x step lets a card fill the box from a distance the lens can
+            still focus at — the reason the card box is drawn small. */}
+        {onZoom && zoom !== null && zoom !== undefined && (
+          <button
+            type="button"
+            onClick={onZoom}
+            aria-label={zoom >= 2 ? 'Zoom back to 1x' : 'Zoom in to 2x'}
+            style={{
+              minHeight: 44,
+              minWidth: 44,
+              padding: '0 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(255,255,255,0.3)',
+              background: zoom >= 2 ? 'rgba(255,255,255,0.18)' : 'transparent',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 600,
+              textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+            }}
+          >
+            {zoom >= 2 ? '2×' : '1×'}
+          </button>
+        )}
         {hasTorch && (
           <button
             type="button"
