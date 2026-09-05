@@ -234,7 +234,18 @@ export default function ScanHandoffPage() {
                 ? 'They go straight to your motivation at your computer.'
                 : 'It goes straight to your documents at your computer.'
           }
-          onDone={(files) => void upload(files)}
+          // ⚠️ THE CAMERA CLOSES BEFORE THE UPLOAD IS JUDGED. The scanner
+          // shows its own "Saved" screen the moment it hands the files over,
+          // which is right on the desk — both desktop surfaces show upload
+          // progress of their own — and wrong here, where THIS page is the
+          // progress. A 401 on an expired link set phase 'error' behind a
+          // full-screen "Saved" the member could only clear by pressing Done,
+          // and then found out it had not been. Closing the scanner first puts
+          // Sending…, then sent or the error with "Send the rest", in front.
+          onDone={(files) => {
+            setOpen(false);
+            void upload(files);
+          }}
           onClose={() => setOpen(false)}
         />
       )}

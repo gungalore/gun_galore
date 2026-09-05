@@ -5,6 +5,7 @@ import {
   SAFE_MINIFICATION,
   halveRGBA,
   prefilterFor,
+  quadSpan,
   rectify,
   warpQuad,
 } from './warp';
@@ -126,6 +127,41 @@ describe('prefilterFor — the anti-aliasing guard', () => {
     expect(spread(guarded)).toBeLessThan(100);
     // And the guard must genuinely improve it, not merely differ.
     expect(spread(guarded)).toBeLessThan(spread(naive) / 2);
+  });
+
+  it('⚠️ JUDGES THE QUAD, NOT THE PHOTOGRAPH — a small document in a big frame is not minified', () => {
+    // A card covering a fifth of a 4000x3000 frame, warped to its own size.
+    // The old guard compared the RASTER to the destination (8x and 7.5x),
+    // halved three times, and warpQuad upsampled the result back — every
+    // real capture lost most of its resolution before anything read it.
+    const src = bars(4000, 3000, 6);
+    const quad: Quad = [
+      { x: 1700, y: 1300 },
+      { x: 2300, y: 1300 },
+      { x: 2300, y: 1700 },
+      { x: 1700, y: 1700 },
+    ];
+    const { scale } = prefilterFor(src, 600, 400, quadSpan(quad));
+    expect(scale).toBe(1);
+
+    // And the pixels prove it: rectify must match an unfiltered warp exactly,
+    // because at 1:1 there is nothing to filter.
+    const naive = warpQuad(src, quad, 600, 400)!;
+    const guarded = rectify(src, quad, 600, 400)!;
+    expect(spread(guarded)).toBeGreaterThan(200);
+    expect(guarded.data).toEqual(naive.data);
+  });
+
+  it('still pre-filters a genuinely minified quad', () => {
+    const src = bars(4000, 3000, 6);
+    const quad: Quad = [
+      { x: 500, y: 500 },
+      { x: 3500, y: 500 },
+      { x: 3500, y: 2500 },
+      { x: 500, y: 2500 },
+    ];
+    const { scale } = prefilterFor(src, 600, 400, quadSpan(quad));
+    expect(scale).toBeLessThan(1);
   });
 
   it('halves only when BOTH axes are over-minified', () => {

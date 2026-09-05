@@ -14,6 +14,7 @@ import {
   scaleQuad,
   smoothQuad,
   solve8,
+  translateEdge,
 } from './geometry';
 
 // A seeded generator, so a failure is reproducible. Math.random would make
@@ -410,5 +411,40 @@ describe('⚠️ outputSize with a KNOWN aspect — straight is not the same as 
       { x: 0, y: 985 },
     ];
     expect(outputSize(square, 4000).snapped).not.toBeNull();
+  });
+});
+
+describe('translateEdge — the edge handles', () => {
+  const sq: Quad = [
+    { x: 10, y: 10 },
+    { x: 90, y: 10 },
+    { x: 90, y: 90 },
+    { x: 10, y: 90 },
+  ];
+  const bounds = { width: 100, height: 100 };
+
+  it('moves exactly the two corners of that edge, by the same offset', () => {
+    const top = translateEdge(sq, 0, 3, -5, bounds);
+    expect(top[0]).toEqual({ x: 13, y: 5 });
+    expect(top[1]).toEqual({ x: 93, y: 5 });
+    expect(top[2]).toEqual(sq[2]);
+    expect(top[3]).toEqual(sq[3]);
+
+    const left = translateEdge(sq, 3, -4, 0, bounds);
+    expect(left[3]).toEqual({ x: 6, y: 90 });
+    expect(left[0]).toEqual({ x: 6, y: 10 });
+    expect(left[1]).toEqual(sq[1]);
+  });
+
+  it('clamps each corner to the photograph, and does not mutate the input', () => {
+    const out = translateEdge(sq, 1, 50, 0, bounds);
+    expect(out[1]).toEqual({ x: 100, y: 10 });
+    expect(out[2]).toEqual({ x: 100, y: 90 });
+    expect(sq[1]).toEqual({ x: 90, y: 10 });
+  });
+
+  it('wraps the edge index', () => {
+    expect(translateEdge(sq, 4, 1, 1, bounds)).toEqual(translateEdge(sq, 0, 1, 1, bounds));
+    expect(translateEdge(sq, -1, 1, 1, bounds)).toEqual(translateEdge(sq, 3, 1, 1, bounds));
   });
 });

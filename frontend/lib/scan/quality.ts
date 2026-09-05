@@ -31,6 +31,8 @@ export interface QualityInput {
   glare?: number;
   /** Mean luma 0..255. */
   luma?: number;
+  /** Mean |Laplacian| of the RAW rectified page, from inspect(). Lower is softer. */
+  sharpness?: number;
   /** Was the crop the detector's, or a fallback? */
   source?: 'detected' | 'manual' | 'aim' | 'frame';
   /** Did part of the document run off the edge of the photograph? */
@@ -65,6 +67,9 @@ export const TILT_OK = Math.max(SQUARE_MAX - 90, 90 - SQUARE_MIN);
 
 /** Above this, a highlight has blown and cannot be recovered. */
 export const GLARE_BAD = 0.02;
+
+/** Below this mean |Laplacian| the page is soft. Matches capture.ts's note. */
+export const SHARP_MIN = 3.5;
 
 /**
  * Outside this band the page is too dark or too bright to read reliably.
@@ -143,6 +148,18 @@ export function gradeScan(q: QualityInput): Quality {
 
   if (q.glare !== undefined && q.glare > GLARE_BAD) {
     reasons.push('There is a glare on it — part of the page has blown out.');
+    down('acceptable');
+  }
+
+  // ⚠️ SOFTNESS WAS MEASURED AND NEVER GRADED. inspect() has always reported
+  // it, capture.ts has always warned on it under 3.5 — as a 'note', the
+  // weakest level, ranked below the glare line — and the grade the member
+  // actually reads ignored it entirely. A motion-blurred page could be badged
+  // "Good — 257 dpi", and blur is the one defect nothing downstream recovers.
+  // The threshold is the one already calibrated on raw input: 0 of 94 real
+  // fixture photographs fall under it, so anything that does is abnormal.
+  if (q.sharpness !== undefined && q.sharpness < SHARP_MIN) {
+    reasons.push('It came out soft — hold still, or tap to focus, and take it again.');
     down('acceptable');
   }
 
