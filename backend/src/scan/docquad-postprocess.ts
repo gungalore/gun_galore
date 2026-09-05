@@ -106,6 +106,61 @@ function planeStats(
  * function that returns coordinates in an intermediate space is an invitation
  * to forget it again.
  */
+/**
+ * Half-width of the window the sub-cell peak is refined over. 2 = a 5x5 patch.
+ */
+export const REFINE_RADIUS = 2;
+
+/**
+ * Where the peak sits WITHIN its cell, as a fractional (col, row).
+ *
+ * ⚠️ THE ARGMAX ALONE QUANTISES EVERY CORNER TO A 64-CELL GRID. One cell is 4
+ * model pixels, which is ~17 source pixels on a 1080-wide frame and ~6 CSS
+ * pixels on a phone screen. A corner sitting near a cell boundary flips
+ * between the two cells on sensor noise, so a perfectly still document
+ * produced a quad that stepped 6px at a time — the twitch every smoothing
+ * pass since has been fighting, and no filter setting removes a signal that
+ * only ever lands on a grid.
+ *
+ * The heatmap is a blurred peak, so its mass around the argmax says where the
+ * true maximum is between cells. Weights are exp(logit - peak): the peak cell
+ * weighs 1, a cell one nat below it 0.37, and the background (typically ten
+ * or more nats down) contributes nothing. That last property is what makes
+ * this safe on an isolated peak — it reads exactly the cell centre, so every
+ * fixture measured on the integer readout still measures the same.
+ *
+ * The window clips at the plane edge rather than wrapping. A peak on the edge
+ * row is pulled a fraction of a cell inward by the missing rows, which is the
+ * right direction for a corner the model is placing on the letterbox padding.
+ */
+export function refinePeak(
+  heatmaps: Float32Array,
+  channel: number,
+  col: number,
+  row: number,
+  peak: number,
+): { col: number; row: number } {
+  const n = HEATMAP_SIZE * HEATMAP_SIZE;
+  const base = channel * n;
+  let wsum = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let dy = -REFINE_RADIUS; dy <= REFINE_RADIUS; dy++) {
+    const y = row + dy;
+    if (y < 0 || y >= HEATMAP_SIZE) continue;
+    for (let dx = -REFINE_RADIUS; dx <= REFINE_RADIUS; dx++) {
+      const x = col + dx;
+      if (x < 0 || x >= HEATMAP_SIZE) continue;
+      const w = Math.exp(heatmaps[base + y * HEATMAP_SIZE + x] - peak);
+      wsum += w;
+      cx += w * x;
+      cy += w * y;
+    }
+  }
+  if (!(wsum > 0) || !Number.isFinite(wsum)) return { col, row };
+  return { col: cx / wsum, row: cy / wsum };
+}
+
 export function readCorners(
   heatmaps: Float32Array,
   lb: Letterbox,
@@ -114,7 +169,8 @@ export function readCorners(
   const corners = [];
   for (let c = 0; c < 4; c++) {
     const s = planeStats(heatmaps, c);
-    const modelPt = cellToModelSpace(s.col, s.row);
+    const fine = refinePeak(heatmaps, c, s.col, s.row, s.peak);
+    const modelPt = cellToModelSpace(fine.col, fine.row);
     pts.push(toSourceSpace(lb, modelPt));
     corners.push({
       confidence: sigmoid(s.peak),
