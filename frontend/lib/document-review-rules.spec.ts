@@ -5,6 +5,7 @@ import {
   expiryAnswer,
   mergeReviewQueue,
   needsALook,
+  uncertaintyReason,
   refileNeedsPanel,
   settleableInBulk,
 } from './document-review-rules';
@@ -247,5 +248,54 @@ describe('mergeReviewQueue is shared with the Motivation Centre', () => {
     expect(merged).toHaveLength(1);
     expect(merged[0].name).toBe('competency.jpg');
     expect(merged[0].confident).toBe(true);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// SAYING WHICH FIELD, RATHER THAN SHRUGGING AT THE WHOLE DOCUMENT.
+//
+// The panel already said "(check this)" beside the type, which is honest and
+// useless: a member with twelve documents and two doubtful ones cannot tell
+// which two. These turn the reader's own field keys into the words on the
+// paper in front of them.
+// ────────────────────────────────────────────────────────────────────
+describe('uncertaintyReason', () => {
+  it('names one doubtful field in plain words', () => {
+    const r = uncertaintyReason(doc({ readUncertain: ['id_number'] }));
+    expect(r).toContain('the identity number');
+    expect(r).toContain('check it');
+  });
+
+  it('lists several readably, not as a comma-separated dump', () => {
+    const r = uncertaintyReason(
+      doc({ readUncertain: ['covers', 'holder_name'] }),
+    );
+    expect(r).toBe(
+      'We could not read what the certificate covers and the name clearly - please check them against the document.',
+    );
+  });
+
+  // ⚠️ NEVER SHOW THE MEMBER OUR KEY NAMES. `frame_serial` means something
+  // to the extractor and nothing to somebody holding a licence card. An
+  // unlabelled key is dropped rather than printed raw.
+  it('says nothing about a field it has no words for', () => {
+    expect(uncertaintyReason(doc({ readUncertain: ['some_new_key'] }))).toBeNull();
+  });
+
+  it('collapses two keys that mean the same thing to a person', () => {
+    // holder_name and full_name are both 'the name' on the paper.
+    const r = uncertaintyReason(
+      doc({ readUncertain: ['holder_name', 'full_name'] }),
+    );
+    expect(r).toBe(
+      'We could not read the name clearly - please check it against the document.',
+    );
+  });
+
+  // A row filed before this was stored has nothing recorded. Inventing a
+  // reason for it would be worse than the shrug it replaces.
+  it('is silent when nothing was recorded', () => {
+    expect(uncertaintyReason(doc({}))).toBeNull();
+    expect(uncertaintyReason(doc({ readUncertain: [] }))).toBeNull();
   });
 });

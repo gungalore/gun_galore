@@ -1,5 +1,5 @@
 import { HEATMAP_SIZE, cellToModelSpace, letterboxFor, toSourceSpace } from './letterbox';
-import { maskCoverage, readCorners } from './docquad-postprocess';
+import { maskCoverage, readCorners, refinePeak } from './docquad-postprocess';
 
 /** Heatmaps with a single sharp peak per channel at the given cells. */
 function peaksAt(cells: Array<[number, number]>, peak = 8, floor = -4): Float32Array {
@@ -76,6 +76,52 @@ describe('readCorners', () => {
     const r = readCorners(peaksAt([[1, 1], [2, 2], [3, 3], [4, 4]], 900, -900), letterboxFor(1920, 1080));
     expect(Number.isFinite(r.minConfidence)).toBe(true);
     expect(r.minConfidence).toBeGreaterThan(0.99);
+  });
+});
+
+describe('refinePeak — the corner between the cells', () => {
+  const n = HEATMAP_SIZE * HEATMAP_SIZE;
+
+  it('an isolated peak reads exactly its cell, so integer fixtures are unchanged', () => {
+    const r = refinePeak(peaksAt([[20, 30], [0, 0], [0, 0], [0, 0]]), 0, 20, 30, 8);
+    expect(r.col).toBeCloseTo(20, 4);
+    expect(r.row).toBeCloseTo(30, 4);
+  });
+
+  it('two equal neighbours read the midpoint — the case the argmax cannot express', () => {
+    const h = new Float32Array(4 * n).fill(-4);
+    h[30 * HEATMAP_SIZE + 20] = 8;
+    h[30 * HEATMAP_SIZE + 21] = 8;
+    const r = refinePeak(h, 0, 20, 30, 8);
+    expect(r.col).toBeCloseTo(20.5, 4);
+    expect(r.row).toBeCloseTo(30, 4);
+  });
+
+  it('recovers the true centre of a blurred peak to a fraction of a cell', () => {
+    // A Gaussian blob centred at (20.3, 30.7) — what a heatmap head actually
+    // emits — sampled on the cell grid. The argmax says (20, 31); the mass
+    // says where it really is.
+    const h = new Float32Array(4 * n).fill(-6);
+    const cx = 20.3;
+    const cy = 30.7;
+    for (let y = 26; y <= 35; y++) {
+      for (let x = 16; x <= 25; x++) {
+        const d2 = (x - cx) ** 2 + (y - cy) ** 2;
+        h[y * HEATMAP_SIZE + x] = 8 - d2 / (2 * 1.2 * 1.2);
+      }
+    }
+    const r = readCorners(h, letterboxFor(1000, 1000));
+    const want = toSourceSpace(letterboxFor(1000, 1000), cellToModelSpace(cx, cy));
+    // Within a tenth of a cell (a cell is 1000/64 ≈ 15.6 source px here).
+    expect(Math.abs(r.quad[0].x - want.x)).toBeLessThan(1.6);
+    expect(Math.abs(r.quad[0].y - want.y)).toBeLessThan(1.6);
+  });
+
+  it('clips at the plane edge instead of reading off it', () => {
+    const r = refinePeak(peaksAt([[0, 0], [0, 0], [0, 0], [0, 0]]), 0, 0, 0, 8);
+    expect(r.col).toBeGreaterThanOrEqual(0);
+    expect(r.row).toBeGreaterThanOrEqual(0);
+    expect(Number.isFinite(r.col)).toBe(true);
   });
 });
 

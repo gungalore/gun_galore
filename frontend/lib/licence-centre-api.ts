@@ -137,6 +137,20 @@ export interface CredentialRow {
   /** Only meaningful while autoFiled. False reads as "not sure", never "sure". */
   namedConfident: boolean;
   /**
+   * WHICH fields the reader was unsure of, and WHAT it repaired.
+   *
+   * ⚠️ THE PAGE SHOWED NEITHER, AND SAID "(check this)" TO EVERYONE. A member
+   * with twelve documents and two doubtful ones had no way to tell which two,
+   * so the honest label was doing the work of a shrug. These are field KEYS
+   * and plain sentences; the values they refer to never leave the encrypted
+   * blob.
+   *
+   * Empty on any row filed before this was stored — which reads as "nothing
+   * was doubted", correct, because nothing was recorded either way.
+   */
+  readUncertain: string[];
+  readNotes: string[];
+  /**
    * Who put the expiry date there: null, 'read' or 'derived'.
    *
    * ⚠️ NON-NULL MEANS WE FILLED IT IN AND NOBODY HAS CHECKED IT — and that

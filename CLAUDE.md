@@ -1579,6 +1579,25 @@ the quad, `warp` rectifies, `enhance` cleans, `aim` sizes the box,
   > they are gitignored and were not on the machine. If it fires on an empty
   > desk, raise it; if it sits there on a real document, lower it.
   > `scripts/scan-diag.cjs` reports ink per photograph.
+- **The live box: the model runs on its own clock and its answer is applied
+  the moment it lands** (2026-09-05). The smoother was never the problem. Its
+  bench assumes 15 detections a second; the phone was supplying 3–5, because
+  the worker was only asked for a frame from the shutter-gate tick, which
+  re-armed 100–200ms AFTER its own ~95ms of work and whose back-off never
+  came back down. Three things moved and must stay moved: `modelTick` in
+  `document-scanner.tsx` asks the worker at `LIVE_FPS` and resolves straight
+  into `applyDetection`; the classical `detectQuad` runs ONLY while the model
+  is not `running` (two detectors alternating is a stutter no filter removes,
+  and it was most of the main-thread cost); and `readCorners` refines the
+  heatmap argmax to a sub-cell centroid (`refinePeak`, mirrored in
+  `backend/src/scan/`), because one heatmap cell is ~6 CSS px and an integer
+  readout can only ever twitch between cells. `LiveDetector.detect()` returns
+  `null` for a DROPPED frame and `LIVE_MISS` for "ran, nothing there" — the
+  tracker decays on the second and must not on the first. The overlay canvas
+  is sized in device pixels and drawn in CSS pixels (`setTransform(dpr…)`).
+  ⚠️ The shutter-gate tick now costs less and therefore runs more often, so
+  `MOTION_STILL` sees smaller per-sample motion than it was tuned on; watch
+  for auto-capture firing on a hand that is still moving.
 - **Glare / too bright / too dark hold on screen until resolved** — they
   are the only failures no processing recovers. `exposure.ts` (`exposureProblem`)
   is the single source for both the held alert and the viewfinder hint, so the

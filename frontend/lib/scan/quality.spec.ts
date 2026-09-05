@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FLOOR_DPI, TARGET_DPI } from './framing';
-import { GLARE_BAD, LUMA_LOW, TILT_OK, gradeScan } from './quality';
+import { GLARE_BAD, LUMA_LOW, SHARP_MIN, TILT_OK, gradeScan } from './quality';
 
 describe('gradeScan', () => {
   it('calls a sharp square scan good, and says why', () => {
@@ -146,5 +146,18 @@ describe('⚠️ the exposure bounds are measured on the RAW photograph', () => 
 
   it('still catches a dark one', () => {
     expect(gradeScan({ dpi: 300, luma: 40 }).grade).toBe('acceptable');
+  });
+});
+
+describe('⚠️ softness is graded, not just noted', () => {
+  it('a soft page cannot be badged Good', () => {
+    const q = gradeScan({ dpi: 300, sharpness: SHARP_MIN - 0.1 });
+    expect(q.grade).toBe('acceptable');
+    expect(q.reasons.some((r) => /soft/.test(r))).toBe(true);
+  });
+
+  it('a sharp page is unaffected, and an unmeasured one is not penalised', () => {
+    expect(gradeScan({ dpi: 300, sharpness: SHARP_MIN + 1 }).grade).toBe('good');
+    expect(gradeScan({ dpi: 300 }).grade).toBe('good');
   });
 });

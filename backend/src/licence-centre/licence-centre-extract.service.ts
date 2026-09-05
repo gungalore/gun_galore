@@ -52,6 +52,15 @@ export interface CredentialReading {
   details: Record<string, string>;
   /** Set when the model told us it was unsure of something it did return. */
   lowConfidence: string[];
+  /**
+   * What the reader REPAIRED on the way, in a sentence a person can read.
+   *
+   * Optional because the model path has nothing to say here — it either reads
+   * a value or does not. The Textract path does repair things (a SAPS 524's
+   * boxed identity number arrives with a fourteenth digit), and a member
+   * looking at their own ID number has the right to be told we changed it.
+   */
+  notes?: string[];
 }
 
 const EMPTY: CredentialReading = {
@@ -435,7 +444,7 @@ export class LicenceCentreExtractService {
         if (got.notes.length) {
           this.logger.log(`textract read ${args.kind}: ${got.notes.join('; ')}`);
         }
-        return got.reading;
+        return { ...got.reading, notes: got.notes };
       }
       this.logger.log(
         `textract read ${args.kind} produced nothing storable — falling back`,

@@ -25,8 +25,13 @@ import ReviewScreen from './screens/review-screen';
 import SavedScreen from './screens/saved';
 import DiagnosticsPanel from './screens/diagnostics-panel';
 import { QuadSmoother } from '@/lib/scan/smooth';
-import { LIVE_FPS } from '@/lib/scan/docquad-live';
+import {
+  LIVE_DRAW_ACCEPT,
+  LIVE_FPS,
+  LIVE_MIN_INTERVAL_MS,
+} from '@/lib/scan/docquad-live';
 import { rotateResult } from '@/lib/scan/rotate';
+import { nameFiles } from '@/lib/scan/name-files';
 import { QuadPresence, scaleAboutCentre } from '@/lib/scan/quad-presence';
 import { QuadTracker } from '@/lib/scan/quad-track';
 import { implausibleWhy } from '@/lib/scan/quad-plausible';
@@ -165,6 +170,12 @@ const Z = 130;
 
 /** Detection interval, in ms, at each health level. */
 const RATES = [100, 200] as const;
+
+/**
+ * How long the on-device model may go without answering before its silence
+ * is reported to the tracker as a miss. ~9 frames at the LIVE_FPS ceiling.
+ */
+const MODEL_STALE_MS = 600;
 
 export interface DocumentScannerProps {
   /**
@@ -428,6 +439,10 @@ export default function DocumentScanner({
     const next = rear[(at + 1) % rear.length];
     if (!next?.label) return;
     writeCameraPref(next.label);
+    // ⚠️ THE TORCH DIES WITH THE STREAM. A new track starts with the light
+    // off whatever the old one was doing, and the chip read "Light ON" over
+    // a dark frame until this reset the state to match the hardware.
+    setTorchOn(false);
     // Tear the stream down; the effect keyed on `started` rebuilds it and
     // matchPref() will now select the one just written.
     setStarted(false);
@@ -610,6 +625,18 @@ export default function DocumentScanner({
     return dpiOf(Math.min(r.outputWidth, r.outputHeight), across);
   }, []);
 
+  /**
+   * The tray page a retake is replacing, or null when the next page is new.
+   *
+   * ⚠️ RETAKE REPLACES IN PLACE. It used to delete the page and send the
+   * member to the camera, and the replacement was appended at the END — so
+   * retaking page 2 of a five-page motivation reordered the pack, and a
+   * camera that failed, a link that expired or a member who backed out lost
+   * the original for nothing. The original now stays on the pile until the
+   * replacement is actually kept, and takes its slot when it is.
+   */
+  const retakeIdRef = useRef<string | null>(null);
+
   /** Put the page on the pile, with the grade it earned. */
   const keepPage = useCallback(() => {
     const cur = shotRef.current;
@@ -619,22 +646,29 @@ export default function DocumentScanner({
       dpi,
       glare: cur.report?.glare,
       luma: cur.report?.meanLuma,
+      sharpness: cur.report?.sharpness,
       source: cur.source,
       clipped: cur.clipped,
       measuredRatio: cur.measuredRatio,
       expectedRatio: expectAspectFor(shape),
     });
-    setTray((t) => [
-      ...t,
-      {
-        id: `${Date.now()}-${t.length}`,
+    const replacing = retakeIdRef.current;
+    retakeIdRef.current = null;
+    setTray((t) => {
+      const page = {
+        id: replacing ?? `${Date.now()}-${t.length}`,
         file: cur.file,
         preview: cur.preview,
         grade: g.grade,
         dpi,
         note: g.reasons[0],
-      },
-    ]);
+      };
+      const at = replacing ? t.findIndex((x) => x.id === replacing) : -1;
+      if (at < 0) return [...t, page];
+      const next = t.slice();
+      next[at] = page;
+      return next;
+    });
   }, [shape, shotDpi]);
 
   /**
@@ -797,6 +831,7 @@ export default function DocumentScanner({
               dpi: shotDpi(cur, shape),
               glare: cur.report?.glare,
               luma: cur.report?.meanLuma,
+              sharpness: cur.report?.sharpness,
               source: cur.source,
               clipped: cur.clipped,
               measuredRatio: cur.measuredRatio,
@@ -1209,6 +1244,9 @@ export default function DocumentScanner({
 
     let raf = 0;
     let timer = 0;
+    let modelTimer = 0;
+    /** When the model last answered — reading or miss. 0 until it has. */
+    let lastModelAt = 0;
     /** Clock the diagnostic trail is measured from. */
     const startedAt = performance.now();
     let scratch: CanvasRenderingContext2D | null = null;
@@ -1264,6 +1302,178 @@ export default function DocumentScanner({
      */
     const presence = new QuadPresence();
     let lastDrawAt = 0;
+
+    /**
+     * Feed ONE detection — or a miss — into the tracker, and judge the aim box.
+     *
+     * ⚠️ CALLED THE MOMENT A RESULT EXISTS, FROM WHICHEVER DETECTOR PRODUCED
+     * IT. The model's answer used to be parked in a ref and read on the next
+     * detectOnce tick, which fired 100-200ms AFTER its own ~95ms of work — so
+     * a corner the worker had already found waited up to a third of a second
+     * to reach the tracker, and the same stale reading was then re-pushed on
+     * every tick until a fresh one landed. That is the lag the smoothing
+     * filter kept being blamed for. Now the worker's promise resolves straight
+     * into here, and detectOnce feeds only the shutter gates.
+     *
+     * `scaled` is in VISIBLE-frame pixels, whichever detector it came from.
+     */
+    const applyDetection = (scaled: Quad | null, confident: boolean) => {
+      if (!alive) return;
+      const video = videoRef.current;
+      if (!video || !video.videoWidth) return;
+      if (scaled) {
+        // ⚠️ CONSISTENCY BEFORE CONFIDENCE. The first version counted ANY
+        // detection towards the lock — so when successive frames found two
+        // DIFFERENT rectangles (the card, then the table edge, then the
+        // card again), the lock still climbed and the EMA dragged the
+        // markers back and forth between them. That was the jitter the
+        // operator saw. Now only a detection that AGREES with the current
+        // quad — within 8% of the frame — counts; a different rectangle
+        // has to be seen twice before it is believed (quad-track.ts).
+        const tracked = trackerRef.current.push(scaled, video.videoWidth);
+        quadRef.current = tracked.quad;
+        lockRef.current = tracked.lock;
+        confidentRef.current = confident;
+
+        // ── does it sit in the box we asked for? ──────────────────
+        //
+        // The aim box is in CSS pixels over the video element; the quad is
+        // in visible-frame pixels. One scale relates them, because
+        // visibleRect already stripped the object-fit: cover crop.
+        const vis = visibleRect(video);
+        const el = video.getBoundingClientRect();
+        const vw = vis ? vis.sw : video.videoWidth;
+        const vh = vis ? vis.sh : video.videoHeight;
+        const box = aimBox(shape, { width: el.width, height: el.height });
+        const xs = scaled.map((pt) => (pt.x / vw) * el.width);
+        const ys = scaled.map((pt) => (pt.y / vh) * el.height);
+        const bounds = {
+          x: Math.min(...xs),
+          y: Math.min(...ys),
+          width: Math.max(...xs) - Math.min(...xs),
+          height: Math.max(...ys) - Math.min(...ys),
+        };
+        // ⚠️ A LOOSE THRESHOLD ON PURPOSE. This is here to reject the desk,
+        // not to make anybody line a card up to the millimetre. Half the
+        // union is a document roughly where it was asked to be; the fabric
+        // -and-ruler rectangle that beat the card in IMG_4947 scores about
+        // a tenth of that, and a card sitting off in one corner of the
+        // frame scores nothing at all.
+        const ok = aimAgreement(bounds, box) >= 0.35;
+
+        // ⚠️ HYSTERESIS, FOR THE SAME REASON THE LOCK HAS IT. In the
+        // operator's card recording the corners flipped red-green-red about
+        // once a second while the card sat perfectly still on the desk —
+        // the quad wobbles by a few pixels frame to frame and the
+        // threshold happened to run through the middle of that wobble.
+        //
+        // That is not just ugly. Auto-capture needs the phone held steady
+        // for 1.1 seconds, and every flicker restarted the count, so the
+        // hold could never complete. One bad frame must not undo a second
+        // of good ones: it takes three consecutive misses to give up, and
+        // a single hit to come back.
+        if (ok) {
+          aimMissRef.current = 0;
+        } else {
+          aimMissRef.current += 1;
+        }
+        const held = ok || aimMissRef.current < 3;
+        aimedRef.current = held;
+        if (held !== aimShownRef.current) {
+          aimShownRef.current = held;
+          setAimed(held);
+        }
+      } else {
+        // ⚠️ NEVER BLINK OFF. A single frame where a hand shadowed an edge
+        // must not flash the markers away — it reads as a fault. Decay
+        // instead, and only give up after several misses.
+        const missed = trackerRef.current.push(null, video.videoWidth);
+        quadRef.current = missed.quad;
+        lockRef.current = missed.lock;
+        if (lockRef.current === 0) {
+          confidentRef.current = false;
+          aimedRef.current = false;
+          aimMissRef.current = 3;
+          if (aimShownRef.current) {
+            aimShownRef.current = false;
+            setAimed(false);
+          }
+        }
+      }
+    };
+
+    /**
+     * The on-device model, driven on its own clock.
+     *
+     * ⚠️ NOT FROM detectOnce. The worker was only ever asked for a frame from
+     * the shutter-gate tick, so the LIVE_FPS ceiling (15) was never the
+     * limit — the tick was, at 3-5Hz once its own cost was counted and its
+     * back-off had latched. The bench that tuned the smoother assumes fifteen
+     * detections a second; the phone was supplying a third of that, and each
+     * step was three times the size the filter was tuned for. This loop asks
+     * at the ceiling and lets detect() drop what it cannot take — one
+     * inference in flight, ever, never a queue.
+     *
+     * While the model is running, the classical detector does not run at
+     * all: two detectors with two ideas of where the edges are, alternating,
+     * is a stutter no filter can remove — and detectQuad was most of the
+     * main-thread cost that stalled the draw loop once per tick.
+     */
+    const modelTick = () => {
+      if (!alive) return;
+      modelTimer = window.setTimeout(modelTick, LIVE_MIN_INTERVAL_MS);
+      const video = videoRef.current;
+      const live = liveRef.current;
+      const st = liveStatusRef.current.state;
+      if (!video || !video.videoWidth || !live) return;
+      if (st === 'unavailable' || st === 'too-slow') return;
+
+      // ⚠️ A WORKER THAT HAS GONE QUIET MUST NOT LEAVE THE BOX PAINTED WHERE
+      // THE DOCUMENT WAS. The tracker only decays on explicit misses, so
+      // silence is reported as one, once per interval, until it answers.
+      const now = performance.now();
+      if (st === 'running' && lastModelAt && now - lastModelAt > MODEL_STALE_MS) {
+        lastModelAt = now;
+        applyDetection(null, false);
+      }
+
+      const vis = visibleRect(video);
+      // Fractions of the VISIBLE region, which is the overlay's own space.
+      const lw = vis ? vis.sw : video.videoWidth;
+      const lh = vis ? vis.sh : video.videoHeight;
+      void live.detect(video, vis ?? undefined).then((r) => {
+        // null is a DROPPED frame — an inference was already in flight, or
+        // the ceiling said wait. Not news, not a miss.
+        if (!alive || r === null) return;
+        lastModelAt = performance.now();
+        if ('miss' in r) {
+          applyDetection(null, false);
+          return;
+        }
+        liveReadingRef.current = r;
+        // ⚠️ LIVE_DRAW_ACCEPT, NOT DETECT_ACCEPT. Drawing a box on a preview
+        // commits to nothing; cropping a statutory document does. The live
+        // path gated on the crop threshold anyway, so every preview frame
+        // under 0.80 — most of them, on a small blurred stream — fell through
+        // to the classical detector and its different rectangle. `confident`
+        // still carries the crop-grade verdict for anything that reads it.
+        const raw =
+          r.minConfidence >= LIVE_DRAW_ACCEPT && lw > 0 && lh > 0
+            ? (r.quad.map((p) => ({ x: p.x * lw, y: p.y * lh })) as Quad)
+            : null;
+        // ⚠️ THE MODEL'S QUAD IS CHECKED FOR BEING A RECTANGLE AT ALL, WHICH
+        // IT NEVER WAS. Its four corners come from four INDEPENDENT heatmap
+        // planes, so nothing ties them to each other, and measured over 30
+        // real fixtures 3 of them were not the shape of a photographed
+        // rectangle — corners at 32° and 45°, one off the frame. Confidence
+        // cannot see it: that 45° case scored 0.546, four corners
+        // individually plausible and mutually impossible. A rejected quad is
+        // a miss: the tracker decays and keeps drawing the last good one.
+        const why = raw ? implausibleWhy(raw, lw, lh) : null;
+        if (why) rejectedQuadRef.current = why;
+        applyDetection(why ? null : raw, r.minConfidence >= DETECT_ACCEPT);
+      });
+    };
 
     // ⚠️ THE DETECTOR DOES NOT HOLD THE TRIGGER. It turns the aim box green
     // and it supplies nothing else — the crop is the aim box and the fire
@@ -1412,157 +1622,33 @@ export default function DocumentScanner({
             }
           }
         }
-        // ⚠️ THE MODEL FIRST, THE CLASSICAL DETECTOR ONLY AS FALLBACK.
-        //
-        // detect() returns null the instant an inference is already running —
-        // that is a DROPPED FRAME and it is deliberate. Inference is ~100ms
-        // and the camera produces a frame every 33ms; queueing them would make
-        // the box lag the scene by however deep the queue got, which is the
-        // one thing a tracking box must never do. The smoothing below covers
-        // the gaps.
-        const visNow = visibleRect(video);
-        if (liveRef.current && liveStatusRef.current.state !== 'unavailable') {
-          void liveRef.current
-            .detect(video, visNow ?? undefined)
-            .then((r) => {
-              if (r) liveReadingRef.current = r;
-            });
-        }
-        const live = liveReadingRef.current;
-        // Fractions of the VISIBLE region, which is the overlay's own space.
-        const lw = visNow ? visNow.sw : video.videoWidth;
-        const lh = visNow ? visNow.sh : video.videoHeight;
-        const modelRaw =
-          live && live.minConfidence >= DETECT_ACCEPT && lw > 0 && lh > 0
-            ? (live.quad.map((p) => ({ x: p.x * lw, y: p.y * lh })) as Quad)
-            : null;
-        // ⚠️ THE MODEL'S QUAD IS CHECKED FOR BEING A RECTANGLE AT ALL, WHICH IT
-        // NEVER WAS. Its four corners come from four INDEPENDENT heatmap
-        // planes, so nothing ties them to each other, and measured over 30 real
-        // fixtures 3 of them were not the shape of a photographed rectangle —
-        // corners at 32° and 45°, one off the frame. Confidence cannot see it:
-        // that 45° case scored 0.546, four corners individually plausible and
-        // mutually impossible.
-        //
-        // A rejected quad falls through to exactly what happens when the model
-        // finds nothing: the classical detector gets the frame, and IT rejects
-        // its own output on the same two tests. So the fallback is a validated
-        // second opinion rather than a blank, and if that finds nothing either
-        // the tracker decays the lock and keeps drawing the last good quad —
-        // we have lost this frame, not the document.
-        const modelWhy = modelRaw ? implausibleWhy(modelRaw, lw, lh) : null;
-        if (modelWhy) rejectedQuadRef.current = modelWhy;
-        const modelQuad = modelWhy ? null : modelRaw;
-        const found =
-          modelQuad !== null
-            ? { quad: modelQuad, score: live!.minConfidence, confident: true }
-            : gray && !detectorOff
+        // ⚠️ THE CLASSICAL DETECTOR RUNS ONLY WHILE THE MODEL IS NOT. The
+        // model is driven from modelTick on its own clock and resolves
+        // straight into applyDetection; this tick owns the shutter gates. It
+        // covers the seconds the model spends downloading, and every device
+        // where it never arrives — and stops the moment the worker reports
+        // running, so the two never alternate.
+        if (liveStatusRef.current.state !== 'running') {
+          const found =
+            gray && !detectorOff
               ? detectQuad(gray, { expectAspect: expectAspectFor(shape) })
               : null;
-        if (found) {
-          // ⚠️ TWO DETECTORS, TWO COORDINATE SPACES, AND ONLY ONE NEEDS
-          // SCALING. detectQuad answers in the DETECTION BUFFER's pixels
-          // (~320 across), so its quad is multiplied up to visible-frame
-          // pixels here. The model already answers in visible-frame
-          // fractions — multiplied by vis.sw/sh a few lines above — so
-          // scaling it again multiplies it by roughly 9.5 and puts every
-          // corner far off screen.
-          //
-          // That is exactly what happened: the panel read "on-device
-          // tracking · 111ms median" on one phone and 163ms on the other,
-          // the model was genuinely running and genuinely finding the
-          // document, and NO QUAD EVER APPEARED because it was being drawn
+          // ⚠️ detectQuad answers in the DETECTION BUFFER's pixels (~320
+          // across), so its quad is multiplied up to visible-frame pixels
+          // here. The model's answer is already in that space and must NOT
+          // come through this scale — it was once, and every corner landed
           // several thousand pixels outside the canvas.
           const vis = visibleRect(video);
           const k = (vis ? vis.sw : video.videoWidth) / scratch.canvas.width;
-          const scaled =
-            modelQuad !== null
-              ? found.quad
-              : (found.quad.map((p) => ({
-                  x: p.x * k,
-                  y: p.y * k,
-                })) as Quad);
-          // ⚠️ CONSISTENCY BEFORE CONFIDENCE. The first version counted ANY
-          // detection towards the lock — so when successive frames found two
-          // DIFFERENT rectangles (the card, then the table edge, then the
-          // card again), the lock still climbed and the EMA dragged the
-          // markers back and forth between them. That was the jitter the
-          // operator saw. Now only a detection that AGREES with the current
-          // quad — within 8% of the frame — counts; a different rectangle
-          // starts over, snapped rather than glided to, because gliding
-          // across the frame between two candidates IS the jitter.
-          const tracked = trackerRef.current.push(scaled, video.videoWidth);
-          quadRef.current = tracked.quad;
-          lockRef.current = tracked.lock;
-          confidentRef.current = found.confident;
-
-          // ── does it sit in the box we asked for? ──────────────────
-          //
-          // The aim box is in CSS pixels over the video element; the quad is
-          // in visible-frame pixels. One scale relates them, because
-          // visibleRect already stripped the object-fit: cover crop.
-          const el = video.getBoundingClientRect();
-          const vw = vis ? vis.sw : video.videoWidth;
-          const vh = vis ? vis.sh : video.videoHeight;
-          const box = aimBox(shape, { width: el.width, height: el.height });
-          const xs = scaled.map((pt) => (pt.x / vw) * el.width);
-          const ys = scaled.map((pt) => (pt.y / vh) * el.height);
-          const bounds = {
-            x: Math.min(...xs),
-            y: Math.min(...ys),
-            width: Math.max(...xs) - Math.min(...xs),
-            height: Math.max(...ys) - Math.min(...ys),
-          };
-          // ⚠️ A LOOSE THRESHOLD ON PURPOSE. This is here to reject the desk,
-          // not to make anybody line a card up to the millimetre. Half the
-          // union is a document roughly where it was asked to be; the fabric
-          // -and-ruler rectangle that beat the card in IMG_4947 scores about
-          // a tenth of that, and a card sitting off in one corner of the
-          // frame scores nothing at all.
-          const ok = aimAgreement(bounds, box) >= 0.35;
-
-          // ⚠️ HYSTERESIS, FOR THE SAME REASON THE LOCK HAS IT. In the
-          // operator's card recording the corners flipped red-green-red about
-          // once a second while the card sat perfectly still on the desk —
-          // the quad wobbles by a few pixels frame to frame and the
-          // threshold happened to run through the middle of that wobble.
-          //
-          // That is not just ugly. Auto-capture needs the phone held steady
-          // for 1.1 seconds, and every flicker restarted the count, so the
-          // hold could never complete. One bad frame must not undo a second
-          // of good ones: it takes three consecutive misses to give up, and
-          // a single hit to come back.
-          if (ok) {
-            aimMissRef.current = 0;
-          } else {
-            aimMissRef.current += 1;
-          }
-          const held = ok || aimMissRef.current < 3;
-          aimedRef.current = held;
-          if (held !== aimShownRef.current) {
-            aimShownRef.current = held;
-            setAimed(held);
-          }
-        } else {
-          // ⚠️ NEVER BLINK OFF. A single frame where a hand shadowed an edge
-          // must not flash the markers away — it reads as a fault. Decay
-          // instead, and only give up after several misses.
-          const missed = trackerRef.current.push(null, video.videoWidth);
-          quadRef.current = missed.quad;
-          lockRef.current = missed.lock;
-          if (lockRef.current === 0) {
-            confidentRef.current = false;
-            aimedRef.current = false;
-            aimMissRef.current = 3;
-            if (aimShownRef.current) {
-              aimShownRef.current = false;
-              setAimed(false);
-            }
-          }
+          const scaled = found
+            ? (found.quad.map((p) => ({ x: p.x * k, y: p.y * k })) as Quad)
+            : null;
+          applyDetection(scaled, found ? found.confident : false);
         }
       } catch {
         quadRef.current = null;
       }
+
       // ── may we shoot? ───────────────────────────────────────────────
       //
       // Three questions about the FRAME, none about the detector: is there a
@@ -1684,7 +1770,13 @@ export default function DocumentScanner({
       // measurements that decide the capture are cheap. So a phone that
       // cannot keep up loses the markers and keeps the automatic shutter,
       // rather than losing both.
+      // ⚠️ AND IT COMES BACK. `rate` only ever went up, so the classical
+      // detector's cost during the model's five-megabyte download pushed
+      // every session to the slow tick in its first seconds and left it
+      // there — long after the model had taken over and the tick was cheap.
+      // Hysteresis on the way down, for the same reason as detectorOff.
       if (rolling > 45 && rate < RATES.length - 1) rate++;
+      else if (rolling < 25 && rate > 0) rate--;
       // ⚠️ THE ON-DEVICE DETECTOR IS NOT JUDGED BY THIS CLOCK, AND WAS BEING
       // KILLED BY IT. `rolling` is an EMA of the frame function's own cost,
       // and it was calibrated when that function did classical detection and
@@ -1728,13 +1820,28 @@ export default function DocumentScanner({
       const video = videoRef.current;
       if (cv && video && video.videoWidth) {
         const rect = video.getBoundingClientRect();
-        if (cv.width !== Math.round(rect.width) || cv.height !== Math.round(rect.height)) {
-          cv.width = Math.round(rect.width);
-          cv.height = Math.round(rect.height);
+        const cssW = rect.width;
+        const cssH = rect.height;
+        // ⚠️ SIZED IN DEVICE PIXELS, DRAWN IN CSS PIXELS. The bitmap used to
+        // be one CSS pixel per canvas pixel, so on a 3x phone the overlay
+        // was rasterised at a third of the screen's resolution and scaled up
+        // — the 5px stroke went soft, and the sub-pixel glide the smoother
+        // works for was quantised away before it reached the glass. The CSS
+        // size is 100% either way; only the backing store changes. Capped at
+        // 3: beyond that the canvas costs more than the eye can see.
+        const dpr = Math.min(3, window.devicePixelRatio || 1);
+        const pw = Math.round(cssW * dpr);
+        const ph = Math.round(cssH * dpr);
+        if (cv.width !== pw || cv.height !== ph) {
+          cv.width = pw;
+          cv.height = ph;
         }
         const g = cv.getContext('2d');
         if (g) {
-          g.clearRect(0, 0, cv.width, cv.height);
+          // Resizing the bitmap resets the context, so this is set every
+          // frame rather than once.
+          g.setTransform(dpr, 0, 0, dpr, 0, 0);
+          g.clearRect(0, 0, cssW, cssH);
           const q = quadRef.current;
           // ⚠️ ADVANCED EVERY DRAWN FRAME, NOT ONLY ON DETECTION. That is the
           // whole trick: inference lands ~10 times a second and the display
@@ -1748,7 +1855,7 @@ export default function DocumentScanner({
           const dt = lastDrawAt ? (drawNow - lastDrawAt) / 1000 : 1 / 60;
           lastDrawAt = drawNow;
           const shownQuad =
-            q && cv.width > 0
+            q && cssW > 0
               ? smoother.push(q, dt)
               : (smoother.reset(), null);
           // Drawn only once TWO consecutive detections have agreed. A single
@@ -1762,8 +1869,8 @@ export default function DocumentScanner({
           // further, in between hold still.
           {
             const vr = visibleRect(video);
-            const kx = vr ? cv.width / vr.sw : 1;
-            const ky = vr ? cv.height / vr.sh : 1;
+            const kx = vr ? cssW / vr.sw : 1;
+            const ky = vr ? cssH / vr.sh : 1;
             // Its own clock read: draw() is the rAF loop and `now` belongs to
             // detectOnce, a different closure — reaching for it would read a
             // timestamp from whichever detection happened to be last.
@@ -1800,14 +1907,14 @@ export default function DocumentScanner({
             // documents — the exact class of bug that has cost the most time
             // in this file.
             const canvasQuad =
-              q && lockRef.current >= 2 && cv.width > 0
+              q && lockRef.current >= 2 && cssW > 0
                 ? (q.map((p) => ({ x: p.x * kx, y: p.y * ky })) as Quad)
                 : null;
             const occ = canvasQuad
-              ? occupancy(canvasQuad, cv.width, cv.height)
+              ? occupancy(canvasQuad, cssW, cssH)
               : null;
             const edge = canvasQuad
-              ? edgeMargin(canvasQuad, cv.width, cv.height)
+              ? edgeMargin(canvasQuad, cssW, cssH)
               : 0;
             // ⚠️ MEASURED BEFORE THE GATE, BECAUSE THE GATE NEEDS IT. dpi is
             // computed below for the readout either way; the floor check
@@ -1815,7 +1922,7 @@ export default function DocumentScanner({
             // than twice from two slightly different quads.
             const acrossNow = acrossMm(shape);
             const dpiNow =
-              q && acrossNow && cv.width > 0
+              q && acrossNow && cssW > 0
                 ? dpiOf(
                     Math.max(
                       Math.hypot(q[1].x - q[0].x, q[1].y - q[0].y),
@@ -1888,7 +1995,7 @@ export default function DocumentScanner({
             // covers exactly that region — so this is one uniform scale, not
             // a cover transform. That is the whole point of visibleRect.
             const vis = visibleRect(video);
-            const k = vis ? cv.width / vis.sw : 1;
+            const k = vis ? cssW / vis.sw : 1;
             const onScreen = shownQuad.map((p) => ({
               x: p.x * k,
               y: p.y * k,
@@ -1919,10 +2026,12 @@ export default function DocumentScanner({
     };
 
     detectOnce();
+    modelTick();
     raf = requestAnimationFrame(draw);
     return () => {
       alive = false;
       window.clearTimeout(timer);
+      window.clearTimeout(modelTimer);
       cancelAnimationFrame(raf);
     };
   }, [phase, shape]);
@@ -2037,6 +2146,8 @@ export default function DocumentScanner({
         seed: res.seed,
       };
       setShot(res);
+      // A fresh page starts upright; the previous page's turns are its own.
+      setTurns(0);
       setPhase('review');
       // ⚠️ STRAIGHT INTO THE CORNER EDITOR, not the enhanced preview. The
       // operator's chosen flow: shoot manually, then fix the corners. The
@@ -2091,7 +2202,15 @@ export default function DocumentScanner({
           // got whatever its four dragged corners happened to imply.
           expectAspect: expectAspectFor(shape),
         });
-        setShot(next);
+        // ⚠️ THE TURNS SURVIVE A RE-CUT. processCapture rebuilds the page
+        // from the raw photograph, which knows nothing of the rotate button.
+        // Rotate a sideways certificate, then tap Corners → Apply, and it
+        // saved sideways — `turns` was written on every rotate and read by
+        // nothing. It is read here.
+        const turned = turns
+          ? { ...next, ...(await rotateResult(next, 90 * turns)) }
+          : next;
+        setShot(turned);
         setEditing(false);
         say('Corners updated.');
       } catch (e) {
@@ -2107,7 +2226,7 @@ export default function DocumentScanner({
         setRecutting(false);
       }
     },
-    [say],
+    [say, shape, turns],
   );
 
   /**
@@ -2165,6 +2284,7 @@ export default function DocumentScanner({
             dpi,
             glare: res.report?.glare,
             luma: res.report?.meanLuma,
+            sharpness: res.report?.sharpness,
             source: res.source,
           });
           added.push({
@@ -2225,7 +2345,11 @@ export default function DocumentScanner({
       streamRef.current?.getTracks().forEach((t) => t.stop());
       // Deliberately not awaited: the parent owns this now, including its
       // errors, which it is far better placed to show than a closing modal.
-      void onDone(extra);
+      //
+      // ⚠️ NAMED AFTER WHAT THE MEMBER TYPED. docName reached only the Saved
+      // screen before this; every file left as scan-<epoch>.jpg. See
+      // lib/scan/name-files.ts.
+      void onDone(nameFiles(extra, docName));
       // ⚠️ THE SCANNER NO LONGER CLOSES ITSELF HERE. It used to call onClose()
       // on the same tick, so a member photographed a statutory document, the
       // sheet vanished, and nothing ever confirmed that anything had been
@@ -2237,7 +2361,7 @@ export default function DocumentScanner({
       setSavedCount(extra.length);
       setPhase('saved');
     },
-    [onDone],
+    [onDone, docName],
   );
   finishRef.current = finish;
 
@@ -2446,13 +2570,17 @@ export default function DocumentScanner({
               note: t.note,
             }))}
             onAdd={() => {
+              // A new page, not a replacement — even after an abandoned retake.
+              retakeIdRef.current = null;
               setShot(null);
               setEditing(false);
               setErr(null);
               setPhase(started ? 'live' : 'add');
             }}
             onRetake={(id) => {
-              setTray((t) => t.filter((x) => x.id !== id));
+              // The page stays on the pile until its replacement is kept —
+              // see retakeIdRef.
+              retakeIdRef.current = id;
               setShot(null);
               setEditing(false);
               setPhase(started ? 'live' : 'add');
@@ -2799,6 +2927,7 @@ export default function DocumentScanner({
               dpi: shotDpi(shot, shape),
               glare: shot.report?.glare,
               luma: shot.report?.meanLuma,
+              sharpness: shot.report?.sharpness,
               source: shot.source,
               clipped: shot.clipped,
               measuredRatio: shot.measuredRatio,

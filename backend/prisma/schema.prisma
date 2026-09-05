@@ -5169,6 +5169,31 @@ model Credential {
   /// Field KEYS in the clear; the values are in `detailsEncrypted`.
   extractedFields     String[]
 
+  /// ── WHY THIS ROW NEEDS A HUMAN, AND WHICH PART OF IT ──────────────
+  ///
+  /// ⚠️ STORED BECAUSE THE ANSWER USED TO LIVE FOR ONE PAGE LOAD. The reader
+  /// returns which fields it was unsure of, and that list went into the
+  /// CREATE RESPONSE only. So the review screen could tell the two documents
+  /// it doubted from the ten it did not — right up until the member
+  /// refreshed, at which point every row read "check this" identically and
+  /// the two that actually needed eyes became invisible among the ten that
+  /// did not. Exactly the failure `autoFiled` and `namedConfident` above were
+  /// added to fix, one field later.
+  ///
+  /// Field KEYS, in the clear, same as `extractedFields` — the values they
+  /// name stay in `detailsEncrypted`. Empty means nothing was doubted, which
+  /// is not the same as nothing having been read.
+  readUncertain String[]
+  /// What the reader REPAIRED on the way, in a sentence a person can read.
+  ///
+  /// A SAPS 524 prints the identity number in boxes and the left border of
+  /// the first box reads as a digit, so `1890512-5220-089` arrives with
+  /// fourteen. Dropping the leading one and re-checking the checksum is
+  /// arithmetic rather than a guess, but it is still something WE did to the
+  /// member's document, and a member looking at their own ID number has the
+  /// right to be told we changed it.
+  readNotes     String[]
+
   /// One nullable stamp per reminder stage, CAS-claimed before sending.
   /// ⚠️ NOT a String[] of stage names: Postgres cannot express "array does
   /// not contain X" atomically in an updateMany where-clause, so an array

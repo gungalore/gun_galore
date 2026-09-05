@@ -248,6 +248,8 @@ export class LicenceCentreService {
         createdAt: true,
         autoFiled: true,
         namedConfident: true,
+        readUncertain: true,
+        readNotes: true,
         firearmCategory: true,
         dateSource: true,
         dateSourceNote: true,
@@ -388,6 +390,11 @@ export class LicenceCentreService {
       // were unsure about. See the model for what these two mean.
       autoFiled: r.autoFiled,
       namedConfident: r.namedConfident,
+      // Why this one might want a look, and what we changed on it. Empty on
+      // every row filed before this was stored, which reads as "nothing was
+      // doubted" — correct, since nothing was recorded either way.
+      readUncertain: r.readUncertain,
+      readNotes: r.readNotes,
       /**
        * WHO PUT THE DATE THERE.
        *
@@ -637,6 +644,12 @@ export class LicenceCentreService {
               : {}),
             // Keys in the clear, values encrypted. The key names are not PII.
             extractedFields: Object.keys(reading.details),
+            // ⚠️ WHY THIS ROW MIGHT NEED EYES, KEPT PAST THIS REQUEST. Both
+            // used to exist only in the create response, so a refresh
+            // flattened "we doubted the identity number on this one" into the
+            // same amber every unconfirmed row already had.
+            readUncertain: reading.lowConfidence,
+            readNotes: reading.notes ?? [],
             detailsEncrypted: Object.keys(reading.details).length
               ? encryptJson(reading.details)
               : null,

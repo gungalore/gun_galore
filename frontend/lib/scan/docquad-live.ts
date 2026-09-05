@@ -25,6 +25,21 @@ export interface LiveReading {
 }
 
 /**
+ * The worker RAN and found no document.
+ *
+ * ⚠️ DISTINCT FROM `null`, WHICH MEANS THE FRAME WAS DROPPED. The two used to
+ * share one value, so the caller could not tell "an inference was already in
+ * flight, ask again" from "the model looked and there is nothing here" — and
+ * treated both as silence. Silence keeps the last quad on screen; a miss must
+ * decay it. A tracker that cannot hear misses never lets go of a document
+ * that has left the frame.
+ */
+export interface LiveMiss {
+  miss: true;
+}
+export const LIVE_MISS: LiveMiss = { miss: true };
+
+/**
  * How slow is too slow to be worth running.
  *
  * A phone that takes half a second an inference gives a box that lags the
@@ -83,7 +98,7 @@ export class LiveDetector {
   private busy = false;
   private lastStart = 0;
   private nextId = 1;
-  private pending = new Map<number, (r: LiveReading | null) => void>();
+  private pending = new Map<number, (r: LiveReading | LiveMiss | null) => void>();
   private times: number[] = [];
   private slow = 0;
   private canvas: OffscreenCanvas | HTMLCanvasElement | null = null;
@@ -135,7 +150,7 @@ export class LiveDetector {
     this.busy = false;
 
     if (!r.ok || !r.quad) {
-      resolve?.(null);
+      resolve?.(LIVE_MISS);
       return;
     }
 
@@ -200,7 +215,7 @@ export class LiveDetector {
      * which is also the space the capture uses.
      */
     src?: { sx: number; sy: number; sw: number; sh: number },
-  ): Promise<LiveReading | null> {
+  ): Promise<LiveReading | LiveMiss | null> {
     if (!this.worker || this.busy) return null;
     // The frame-rate ceiling. Checked before any pixel work: letterboxing and
     // getImageData cost real milliseconds on the main thread, and skipping a
@@ -244,7 +259,7 @@ export class LiveDetector {
     this.busy = true;
     this.lastStart = now;
     const buf = rgba.buffer.slice(0) as ArrayBuffer;
-    return new Promise<LiveReading | null>((resolve) => {
+    return new Promise<LiveReading | LiveMiss | null>((resolve) => {
       this.pending.set(id, resolve);
       this.worker?.postMessage({ id, rgba: buf, srcWidth: w, srcHeight: h }, [buf]);
     });

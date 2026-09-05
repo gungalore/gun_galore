@@ -41,6 +41,59 @@ export interface ReviewItem {
   neverExpires: boolean;
   issuedOnUnknown: boolean;
   proposed: CredentialProposal;
+  /** Field keys the reader doubted. Optional: rows filed before it was stored. */
+  readUncertain?: string[];
+  /** What the reader repaired, already in a sentence. */
+  readNotes?: string[];
+}
+
+/**
+ * Field keys in the member's words.
+ *
+ * WARNING: THE KEYS ARE OURS, NOT THEIRS. `covers` and `competency_issued`
+ * mean something to the extractor and nothing to a person holding a
+ * certificate. A key with no entry here is simply not mentioned - better to
+ * say nothing than to show somebody the word `frame_serial`.
+ */
+const FIELD_LABELS: Record<string, string> = {
+  id_number: 'the identity number',
+  full_name: 'the name',
+  holder_name: 'the name',
+  covers: 'what the certificate covers',
+  competency_number: 'the certificate number',
+  competency_issued: 'the date of issue',
+  certificate_number: 'the certificate number',
+  licence_number: 'the licence number',
+  section: 'the section',
+  firearm_type: 'the firearm type',
+  make: 'the make',
+  calibre: 'the calibre',
+  frame_serial: 'the frame serial number',
+  barrel_serial: 'the barrel serial number',
+  unit_standard: 'the unit standard',
+  issue_date: 'the date of issue',
+};
+
+/**
+ * One sentence saying what to look at, or null when there is nothing to say.
+ *
+ * Deliberately NOT a list of keys on screen. A member is checking their own
+ * document against ours, so naming the thing in their words points their eye
+ * at the right line on the paper.
+ */
+export function uncertaintyReason(d: ReviewItem): string | null {
+  const named = (d.readUncertain ?? [])
+    .map((f) => FIELD_LABELS[f])
+    .filter((l): l is string => !!l);
+  if (!named.length) return null;
+  const unique = [...new Set(named)];
+  const list =
+    unique.length === 1
+      ? unique[0]
+      : `${unique.slice(0, -1).join(', ')} and ${unique[unique.length - 1]}`;
+  return `We could not read ${list} clearly - please check ${
+    unique.length === 1 ? 'it' : 'them'
+  } against the document.`;
 }
 
 /**

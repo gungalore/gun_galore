@@ -9,6 +9,7 @@ import {
   minInteriorAngle,
   orderQuad,
   quadArea,
+  translateEdge,
 } from '@/lib/scan/geometry';
 import {
   containFit,
@@ -42,6 +43,12 @@ const BLUE = '#4DA3FF';
 const ZOOM = 3.5;
 /** Finger-sized. The visible dot is smaller; this is what you can grab. */
 const GRAB = 44;
+/**
+ * The edge handles' grab pad. Smaller than a corner's on purpose: on a short
+ * edge the midpoint sits within a thumb's width of both corners, and the
+ * corner — the finer control — must stay the easier one to hit.
+ */
+const EDGE_GRAB = 36;
 /** Radius of the crosshair's clear centre window, in loupe pixels. */
 const GAP = 9;
 
@@ -131,6 +138,19 @@ export default function CornerEditor({
    * effect's deps do not re-subscribe mid-drag.
    */
   const grab = useRef({ dx: 0, dy: 0 });
+
+  /**
+   * Which EDGE is being dragged, 0-3 for top, right, bottom, left.
+   *
+   * ⚠️ EIGHT HANDLES, NOT FOUR. Straightening one skewed side of an A4 page
+   * cost two separate corner drags, each re-aimed through the loupe; every
+   * scanner this one is measured against ships a handle on each edge as well.
+   * An edge drag moves both of its corners by the finger's MOTION from where
+   * it landed — the same rule as `grab` above, for the same reason — so
+   * touching a handle to look at it moves nothing.
+   */
+  const [draggingEdge, setDraggingEdge] = useState<number | null>(null);
+  const edgeStart = useRef<{ x: number; y: number; pts: Quad } | null>(null);
 
   const moveTo = useCallback(
     (i: number, clientX: number, clientY: number) => {
@@ -223,7 +243,47 @@ export default function CornerEditor({
     };
   }, [dragging, moveTo, fadeLoupe]);
 
+  // The same, for an edge. Its own effect so the corner path above stays
+  // exactly as it was.
+  const sizeW = size.width;
+  const sizeH = size.height;
+  useEffect(() => {
+    if (draggingEdge === null) return;
+    const onMove = (e: PointerEvent) => {
+      e.preventDefault();
+      const start = edgeStart.current;
+      if (!start || !(fit > 0)) return;
+      setPts(
+        translateEdge(
+          start.pts,
+          draggingEdge,
+          (e.clientX - start.x) / fit,
+          (e.clientY - start.y) / fit,
+          { width: sizeW, height: sizeH },
+        ),
+      );
+    };
+    const onUp = () => {
+      setDraggingEdge(null);
+      edgeStart.current = null;
+      fadeLoupe(500);
+    };
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [draggingEdge, fit, sizeW, sizeH, fadeLoupe]);
+
   const viewPts = pts.map(toView);
+  /** Midpoint of edge i (corner i to corner i+1), in view pixels. */
+  const edgeMids = viewPts.map((p, i) => {
+    const q = viewPts[(i + 1) % 4];
+    return { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+  });
   // ⚠️ FOCUS COUNTS AS ACTIVE, so the keyboard path gets a magnifier too. It
   // had none: the loupe existed only while a finger was down, which meant the
   // one member who cannot see where the dot landed — the one nudging it with
@@ -237,19 +297,30 @@ export default function CornerEditor({
   // The LOUPE follows `loupeOn`, not `active` — see the note on loupeOn. A
   // corner stays selected after the finger lifts; the magnifier does not.
   const lens = loupeOn ?? -1;
+  // 0-3 is a corner; 4-7 is an edge, magnified at its midpoint — which is
+  // where a whole side either sits on the printed edge or does not.
+  const lensImg: Pt | null =
+    lens < 0
+      ? null
+      : lens < 4
+        ? pts[lens]
+        : {
+            x: (pts[lens - 4].x + pts[(lens - 3) % 4].x) / 2,
+            y: (pts[lens - 4].y + pts[(lens - 3) % 4].y) / 2,
+          };
   const loupeAt =
-    lens >= 0 && view.w > 0
-      ? magnifierSpot(viewPts[lens], { width: view.w, height: view.h }, LOUPE)
+    lensImg && view.w > 0
+      ? magnifierSpot(toView(lensImg), { width: view.w, height: view.h }, LOUPE)
       : null;
   // Image pixels to loupe pixels. ZOOM is relative to what is ON SCREEN, so
   // "3.5x" means three and a half times the size the member is already
   // looking at — not some ratio of the raw file they have no feel for.
   const mag = ZOOM * fit;
-  const loupeSrc = lens >= 0 ? loupeSource(pts[lens], size, LOUPE, mag) : null;
-  const cross =
-    lens >= 0 ? loupeCrosshair(pts[lens], size, LOUPE, mag) : null;
+  const loupeSrc = lensImg ? loupeSource(lensImg, size, LOUPE, mag) : null;
+  const cross = lensImg ? loupeCrosshair(lensImg, size, LOUPE, mag) : null;
 
   const CORNER_NAMES = ['top left', 'top right', 'bottom right', 'bottom left'];
+  const EDGE_NAMES = ['top', 'right', 'bottom', 'left'];
 
   /**
    * Is the shape on screen something we can actually cut a document out of?
@@ -364,6 +435,42 @@ export default function CornerEditor({
               stroke={BLUE}
               strokeWidth={2}
             />
+            {/* The side being dragged, picked out so the eye follows the
+                whole edge and not just the handle in the middle of it. */}
+            {draggingEdge !== null && (
+              <line
+                x1={viewPts[draggingEdge].x}
+                y1={viewPts[draggingEdge].y}
+                x2={viewPts[(draggingEdge + 1) % 4].x}
+                y2={viewPts[(draggingEdge + 1) % 4].y}
+                stroke="#fff"
+                strokeWidth={3}
+              />
+            )}
+            {/* Edge handles: a small filled dot at each midpoint. Smaller
+                than the corner rings so the two read as different controls,
+                and filled because there is no edge pixel under it to keep
+                visible — the edge runs THROUGH it. */}
+            {edgeMids.map((m, i) => (
+              <g key={`e${i}`}>
+                <circle
+                  cx={m.x}
+                  cy={m.y}
+                  r={draggingEdge === i ? 9 : 7}
+                  fill="none"
+                  stroke="rgba(0,0,0,0.55)"
+                  strokeWidth={5}
+                />
+                <circle
+                  cx={m.x}
+                  cy={m.y}
+                  r={draggingEdge === i ? 9 : 7}
+                  fill={draggingEdge === i ? BLUE : '#fff'}
+                  stroke={draggingEdge === i ? '#fff' : BLUE}
+                  strokeWidth={2}
+                />
+              </g>
+            ))}
             {viewPts.map((p, i) => (
               <g key={i}>
                 {/* ⚠️ A RING AT REST, NOT A CAP. A filled 20px dot sits exactly
@@ -406,6 +513,58 @@ export default function CornerEditor({
             ))}
           </svg>
         )}
+
+        {/* The edge grab targets. Rendered BEFORE the corners: later siblings
+            sit on top, so where a very short edge puts its midpoint pad under
+            a corner pad, the corner — the finer control — wins the hit test.
+            The pad is smaller than a corner's for the same reason. */}
+        {view.w > 0 &&
+          edgeMids.map((m, i) => (
+            <button
+              key={`edge-${i}`}
+              type="button"
+              aria-label={`Move the ${EDGE_NAMES[i]} edge`}
+              onBlur={() => fadeLoupe(0)}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+                edgeStart.current = { x: e.clientX, y: e.clientY, pts };
+                e.currentTarget.focus({ preventScroll: true });
+                setFocused(null);
+                setDraggingEdge(i);
+                showLoupe(4 + i);
+              }}
+              onKeyDown={(e) => {
+                const step = e.shiftKey ? 10 : 1;
+                const d: Record<string, [number, number]> = {
+                  ArrowLeft: [-step, 0],
+                  ArrowRight: [step, 0],
+                  ArrowUp: [0, -step],
+                  ArrowDown: [0, step],
+                };
+                const move = d[e.key];
+                if (!move || !(fit > 0)) return;
+                e.preventDefault();
+                showLoupe(4 + i);
+                setPts((cur) =>
+                  translateEdge(cur, i, move[0] / fit, move[1] / fit, size),
+                );
+              }}
+              style={{
+                position: 'absolute',
+                left: m.x - EDGE_GRAB / 2,
+                top: m.y - EDGE_GRAB / 2,
+                width: EDGE_GRAB,
+                height: EDGE_GRAB,
+                borderRadius: '50%',
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
+                touchAction: 'none',
+                cursor: 'grab',
+              }}
+            />
+          ))}
 
         {/* The grab targets. Separate from the drawn dots because a 10px
             circle is not something a thumb can reliably hit, and enlarging

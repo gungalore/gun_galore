@@ -69,24 +69,59 @@ export function prefilterFor(
   src: Raster,
   dstW: number,
   dstH: number,
+  /**
+   * The extent of the SOURCE REGION being warped, in source pixels.
+   *
+   * ⚠️ DEFAULTS TO THE WHOLE RASTER, AND THAT DEFAULT IS ONLY RIGHT FOR A
+   * QUAD THAT COVERS THE WHOLE RASTER. The minification that matters is
+   * "how many source pixels feed one output pixel", and that is the span of
+   * the QUAD over the destination — not the span of the photograph. The
+   * destination is sized from the quad's own edges (geometry.ts outputSize),
+   * so for a card filling a fifth of the frame the true ratio is about 1.0
+   * while raster/dst read 2 and 7: the guard halved the source, shrank the
+   * card to half its pixels, and warpQuad then UPSAMPLED it back. The
+   * header of this file warns about exactly that failure — "turns 8-point
+   * print to mush" — and the guard was the cause on nearly every real
+   * capture, because framing.ts deliberately keeps the document at 8-23% of
+   * the frame. rectify() passes the quad's span; only the tests use the
+   * default.
+   */
+  span: { w: number; h: number } = { w: src.width, h: src.height },
 ): { raster: Raster; scale: number } {
   let raster = src;
   let scale = 1;
+  let spanW = span.w;
+  let spanH = span.h;
   // BOTH axes, not either. halveRGBA is isotropic, so halving because the
   // width needs it would squash a height that was already 1:1. For a real
   // document the two ratios track each other closely — the destination
   // rectangle is derived from the quad — so this costs nothing in practice and
   // makes the degenerate case safe.
   while (
-    raster.width / Math.max(1, dstW) > SAFE_MINIFICATION &&
-    raster.height / Math.max(1, dstH) > SAFE_MINIFICATION &&
+    spanW / Math.max(1, dstW) > SAFE_MINIFICATION &&
+    spanH / Math.max(1, dstH) > SAFE_MINIFICATION &&
     raster.width > 2 &&
     raster.height > 2
   ) {
     raster = halveRGBA(raster);
     scale /= 2;
+    spanW /= 2;
+    spanH /= 2;
   }
   return { raster, scale };
+}
+
+/**
+ * The quad's extent in source pixels: its longer horizontal edge and its
+ * longer vertical edge. What prefilterFor needs to judge minification.
+ */
+export function quadSpan(quad: Quad): { w: number; h: number } {
+  const d = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(b.x - a.x, b.y - a.y);
+  return {
+    w: Math.max(d(quad[0], quad[1]), d(quad[3], quad[2])),
+    h: Math.max(d(quad[0], quad[3]), d(quad[1], quad[2])),
+  };
 }
 
 /** Bilinear sample with edge clamping. Writes into `out` at `o`. */
@@ -187,7 +222,8 @@ export function rectify(
   dstW: number,
   dstH: number,
 ): Raster | null {
-  const { raster, scale } = prefilterFor(src, dstW, dstH);
+  // The QUAD's span, not the raster's — see prefilterFor.
+  const { raster, scale } = prefilterFor(src, dstW, dstH, quadSpan(quad));
   const scaled = quad.map((p) => ({ x: p.x * scale, y: p.y * scale })) as Quad;
   return warpQuad(raster, scaled, dstW, dstH);
 }

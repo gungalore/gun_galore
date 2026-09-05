@@ -432,3 +432,36 @@ export function smoothQuad(prev: Quad | null, next: Quad, alpha = 0.35): Quad {
     y: prev[i].y + (p.y - prev[i].y) * alpha,
   })) as Quad;
 }
+
+/**
+ * Move one EDGE of a quad — both of its corners by the same offset.
+ *
+ * Edge `i` runs from corner `i` to corner `(i + 1) % 4`, so in TL TR BR BL
+ * order edges are top, right, bottom, left. Each moved corner is clamped to
+ * `bounds` independently: a corner cannot leave the photograph, and the warp
+ * would sample clamped edge pixels for a whole side if it did. Clamping one
+ * corner and not the other is deliberate — an edge dragged past the picture's
+ * edge folds flat against it rather than refusing to move at all.
+ *
+ * Exists for the corner editor's edge handles: straightening one skewed side
+ * of a page used to cost two separate corner drags, and every scanner people
+ * compare this one with ships eight handles rather than four.
+ */
+export function translateEdge(
+  q: Quad,
+  edge: number,
+  dx: number,
+  dy: number,
+  bounds: { width: number; height: number },
+): Quad {
+  const a = ((edge % 4) + 4) % 4;
+  const b = (a + 1) % 4;
+  const move = (p: Pt): Pt => ({
+    x: Math.max(0, Math.min(bounds.width, p.x + dx)),
+    y: Math.max(0, Math.min(bounds.height, p.y + dy)),
+  });
+  const next = [...q] as Quad;
+  next[a] = move(q[a]);
+  next[b] = move(q[b]);
+  return next;
+}
