@@ -85,6 +85,8 @@ export interface ReportInput {
 
   live?: {
     status: string;
+    /** When status is 'unavailable': the error the worker or runtime raised. */
+    unavailable?: string;
     medianMs?: number;
     lastConfidence?: number;
     /** Which pass the last reading came from, and the picker's reasoning. */
@@ -114,6 +116,9 @@ export interface ReportInput {
 
   geometry?: {
     occupancy?: number;
+    /** Linear share of the frame, and what this shape must reach. */
+    fill?: number | null;
+    minFill?: number;
     edgeMargin?: number;
     tilt?: number;
     dpi?: number | null;
@@ -269,6 +274,7 @@ export function buildReport(r: ReportInput): string {
     const l = r.live;
     out.push('', '── live detector ──');
     out.push(line('status', l.status));
+    out.push(line('unavailable because', l.unavailable));
     out.push(line('median', l.medianMs !== undefined ? `${l.medianMs}ms` : undefined));
     out.push(line('fps cap', l.fpsCap));
     out.push(line('frames', l.framesSeen !== undefined ? `${l.framesSeen} seen, ${l.framesDropped ?? 0} dropped` : undefined));
@@ -288,6 +294,17 @@ export function buildReport(r: ReportInput): string {
     const g = r.geometry;
     out.push('', '── geometry ──');
     out.push(line('fills', gated(pct(g.occupancy), `min ${pct(TOO_SMALL)}`)));
+    out.push(
+      line(
+        'fill across',
+        g.fill === undefined
+          ? undefined
+          : gated(
+              g.fill === null ? 'none (no lock)' : pct(g.fill),
+              `needs ${pct(g.minFill ?? 0.6)} to fire`,
+            ),
+      ),
+    );
     out.push(line('edge margin', gated(pct(g.edgeMargin), `min ${pct(EDGE_MARGIN)}`)));
     out.push(line('tilt', n(g.tilt, 1) ? `${n(g.tilt, 1)}°` : undefined));
     // ⚠️ THE SAVED dpi IS SHOWN BESIDE THE MEASURED ONE, BECAUSE THEY DIFFER

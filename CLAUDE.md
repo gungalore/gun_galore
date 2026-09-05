@@ -1545,6 +1545,27 @@ the quad, `warp` rectifies, `enhance` cleans, `aim` sizes the box,
   browser could not load the runtime. Inputs are STRETCHED to 224², not
   letterboxed. Assets live under `/scan/v2/` with ORT web 1.29; bump the
   path, never overwrite a file in place (the service worker caches by URL).
+  ⚠️ **The runtime is NOT bundled into the worker.** `doccorner.worker.ts`
+  `importScripts` the runtime's own classic build (`ort.wasm.min.js`) from
+  `/scan/v2/`. onnxruntime-web 1.19+ loads its WebAssembly through a dynamic
+  `import()` of `ort-wasm-simd-threaded.mjs`; bundled by webpack that import
+  becomes a chunk loader that can never resolve a `/scan/` URL, and the
+  runtime reports "no available backend" on every phone — which is what both
+  of the operator's phones did on the first deploy of this model. The four
+  files under `/scan/v2/` must come from the same onnxruntime-web version as
+  package.json. **`/scan/selftest`** (public, no camera) loads the detector,
+  runs it on a drawn document and prints the runtime's own error text — open
+  it on the phone before chasing anything else, and paste the page.
+- **Auto-capture needs the document to fill the frame** (operator,
+  2026-09-05: "at least 60% coverage before auto trigger can fire").
+  `MIN_FILL` in `guidance.ts` is a LINEAR share — the larger of width over
+  frame width and height over frame height (`linearFill`) — because a
+  landscape card in a portrait viewfinder can never reach 60% of the AREA.
+  `minFillFor` in `aim.ts` caps the requirement at 95% of the shape's own aim
+  box, since the card box is drawn small on purpose (the lens will not focus
+  closer). One number feeds both the guidance ("Move closer") and the
+  shutter gate (`'small'`), so caption and ring cannot disagree. With no
+  locked document the shutter waits; the manual shutter never waits.
 - **Android takes a real photograph.** `capture.ts takeStill` asks
   `ImageCapture.takePhoto()` for the sensor's photo mode and crops the same
   visible region; on a 50 MP phone that is twice the A4 resolution the video

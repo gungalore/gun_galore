@@ -9,6 +9,7 @@ import {
   autoHint,
   holdComplete,
   holdProgress,
+  MIN_FILL,
 } from './autocapture';
 
 // ────────────────────────────────────────────────────────────────────
@@ -24,7 +25,7 @@ import {
 
 /** A frame with a document in the box, good light, phone at rest. */
 function good(over: Partial<Parameters<typeof autoBlocker>[1]> = {}) {
-  return { ink: 0.3, motion: 1, glare: 0, luma: 128, ...over };
+  return { ink: 0.3, motion: 1, glare: 0, luma: 128, fill: 0.7, ...over };
 }
 
 describe('autoBlocker', () => {
@@ -58,15 +59,25 @@ describe('autoBlocker', () => {
     expect(autoBlocker(true, good({ motion: MOTION_STILL }))).toBeNull();
   });
 
+  it('⚠️ WAITS FOR THE OPERATOR\'S 60% — a small or untracked document does not fire', () => {
+    expect(autoBlocker(true, good({ fill: null }))).toBe('small');
+    expect(autoBlocker(true, good({ fill: MIN_FILL - 0.01 }))).toBe('small');
+    expect(autoBlocker(true, good({ fill: MIN_FILL }))).toBeNull();
+    // Named after 'empty' and before 'light': point it, fill the frame, fix
+    // the light, hold still — the order the member can act on.
+    expect(autoBlocker(true, good({ ink: 0, fill: null }))).toBe('empty');
+    expect(autoBlocker(true, good({ fill: 0.2, glare: 0.9 }))).toBe('small');
+  });
+
   it('⚠️ NAMES THE SHUT GATE IN THE ORDER THE MEMBER CAN ACT ON IT', () => {
     // Point it at the document, THEN fix the light, THEN hold still. A frame
     // failing all three must say "empty" first: telling somebody to hold still
     // while the camera is pointed at their desk is how the old version became
     // impossible to report on.
-    const awful = { ink: 0, motion: 50, glare: 0.9, luma: 250 };
+    const awful = { ink: 0, motion: 50, glare: 0.9, luma: 250, fill: 0.7 };
     expect(autoBlocker(true, awful)).toBe('empty');
     expect(autoBlocker(true, { ...awful, ink: 0.3 })).toBe('light');
-    expect(autoBlocker(true, { ...awful, ink: 0.3, glare: 0, luma: 128 })).toBe(
+    expect(autoBlocker(true, { ...awful, ink: 0.3, glare: 0, luma: 128, fill: 0.7 })).toBe(
       'steady',
     );
   });
@@ -86,7 +97,7 @@ describe('the ink floor against the real photographs', () => {
   });
 
   it('admits the faintest measured document', () => {
-    const faintest = { ink: LOWEST_MEASURED_DOCUMENT_INK, motion: 1, glare: 0, luma: 128 };
+    const faintest = { ink: LOWEST_MEASURED_DOCUMENT_INK, motion: 1, glare: 0, luma: 128, fill: 0.7 };
     expect(autoBlocker(true, faintest)).toBeNull();
   });
 });
@@ -142,7 +153,7 @@ describe('⚠️ the shutter will not fire at a surface with no document on it',
   // note admits as much — "what it cannot do is refuse to photograph a
   // tablecloth" — and his panel showed `empty 2%`, meaning ink passed on
   // essentially every frame while the phone was pointed at a woven carpet.
-  const still = { motion: 1, glare: 0, luma: 150 };
+  const still = { motion: 1, glare: 0, luma: 150, fill: 0.7 };
 
   it('refuses when the detector says there is no document, however inky', () => {
     // A patterned surface scores high on ink and is still not a document.

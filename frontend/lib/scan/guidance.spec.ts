@@ -3,8 +3,10 @@ import type { Quad } from './geometry';
 import {
 
   squareness,
+  MIN_FILL,
   TOO_SMALL,
   guidanceFor,
+  linearFill,
   guidanceText,
   mayCapture,
   occupancy,
@@ -80,7 +82,7 @@ describe('guidanceFor', () => {
   it('accepts the bracket edges rather than nagging on the boundary', () => {
     expect(guidanceFor({ occupancy: TOO_SMALL, locked: true, still: true })).toBe('ready');
     expect(
-      guidanceFor({ occupancy: 0.5, locked: true, still: true, edgeMargin: 0.2 }),
+      guidanceFor({ occupancy: 0.7, locked: true, still: true, edgeMargin: 0.2 }),
     ).toBe('ready');
   });
 });
@@ -202,5 +204,30 @@ describe('the 200 dpi quality floor', () => {
   it('shows "Hold still" rather than firing when the phone has not settled', () => {
     expect(guidanceFor({ ...ok, still: false, dpi: 300 })).toBe('steady');
     expect(mayCapture('steady')).toBe(false);
+  });
+});
+
+describe("⚠️ the operator's 60%, measured linearly", () => {
+  const frame = { w: 400, h: 700 };
+  const box = (w: number, h: number): Quad => rect((400 - w) / 2, (700 - h) / 2, w, h);
+
+  it('linearFill is the larger axis share, so a landscape card is judged by its width', () => {
+    expect(linearFill(box(240, 150), frame.w, frame.h)).toBeCloseTo(0.6, 6);
+    expect(linearFill(box(200, 490), frame.w, frame.h)).toBeCloseTo(0.7, 6);
+    expect(linearFill(box(0, 0), frame.w, frame.h)).toBe(0);
+    expect(linearFill(box(200, 200), 0, 0)).toBe(0);
+  });
+
+  it('asks for closer under MIN_FILL, and fires at it', () => {
+    const ok = { occupancy: 0.5, locked: true, still: true };
+    expect(guidanceFor({ ...ok, fill: MIN_FILL - 0.01 })).toBe('closer');
+    expect(guidanceFor({ ...ok, fill: MIN_FILL })).toBe('ready');
+    expect(guidanceFor({ ...ok, fill: null })).toBe('closer');
+  });
+
+  it('honours a per-shape requirement below MIN_FILL, for the card the lens cannot get closer to', () => {
+    const ok = { occupancy: 0.3, locked: true, still: true };
+    expect(guidanceFor({ ...ok, fill: 0.52, minFill: 0.5 })).toBe('ready');
+    expect(guidanceFor({ ...ok, fill: 0.52 })).toBe('closer');
   });
 });

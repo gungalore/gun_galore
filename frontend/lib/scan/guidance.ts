@@ -54,6 +54,40 @@ import type { Quad } from './geometry';
 export const TOO_SMALL = 0.15;
 
 /**
+ * How much of the frame the document must fill before the shutter may fire
+ * on its own, and below which the instruction is "move closer".
+ *
+ * ⚠️ 0.60, BY THE OPERATOR'S INSTRUCTION (2026-09-05): "we need at least 60%
+ * coverage before auto trigger can fire". TOO_SMALL above is the detector's
+ * findability floor and stays what it is; this is the QUALITY bar, the same
+ * one Scanbot's `acceptedSizeScore` (default 80% of the screen's short side)
+ * draws. One constant, read by the guidance and by the auto-capture gate, so
+ * the caption at the bottom and the ring round the shutter can never
+ * disagree about whether the page is big enough.
+ */
+export const MIN_FILL = 0.6;
+
+/**
+ * The document's share of the frame along whichever axis it fills more —
+ * mean of its two horizontal edges over the frame width, or of its two
+ * vertical edges over the frame height, whichever is larger.
+ *
+ * ⚠️ LINEAR, NOT AREA. `occupancy` is the quad's AREA share, and a landscape
+ * card in a portrait viewfinder can never reach 60% of the area: at a 4%
+ * edge margin it tops out near 32%, so an area gate at 60% would be a shutter
+ * that never fires for cards. Scanbot's size score is linear for the same
+ * reason — "document width or height in percent of the screen size".
+ */
+export function linearFill(q: Quad, frameW: number, frameH: number): number {
+  if (!(frameW > 0) || !(frameH > 0)) return 0;
+  const d = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(b.x - a.x, b.y - a.y);
+  const w = (d(q[0], q[1]) + d(q[3], q[2])) / 2;
+  const h = (d(q[0], q[3]) + d(q[1], q[2])) / 2;
+  return Math.max(w / frameW, h / frameH);
+}
+
+/**
  * How close a corner may come to the frame edge, as a fraction of the short
  * axis.
  *
@@ -224,6 +258,13 @@ export function guidanceFor(input: {
   edgeMargin?: number;
   /** The tracked quad, for the squareness check. Omit to skip it. */
   quad?: Quad;
+  /**
+   * The document's LINEAR share of the frame — see linearFill(). Omitted
+   * only by tests of the other rules; the product always passes it.
+   */
+  fill?: number | null;
+  /** What `fill` must reach. Defaults to MIN_FILL; see minFillFor in aim.ts. */
+  minFill?: number;
 }): Guidance {
   if (input.occupancy === null || !input.locked) return 'point';
   // ⚠️ THE EDGE CHECK COMES FIRST, because a corner leaving the frame is the
@@ -233,6 +274,13 @@ export function guidanceFor(input: {
     return 'further';
   }
   if (input.occupancy < TOO_SMALL) return 'closer';
+  // The operator's 60%, on the linear measure — see MIN_FILL and linearFill.
+  if (
+    input.fill !== undefined &&
+    (input.fill === null || input.fill < (input.minFill ?? MIN_FILL))
+  ) {
+    return 'closer';
+  }
   // ⚠️ THE REAL QUALITY FLOOR, AND IT OUTRANKS THE BRACKET. Occupancy is a
   // proxy for resolution; dpi IS resolution, measured off this quad on this
   // lens at this distance. Where the two disagree the measurement wins, and

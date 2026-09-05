@@ -1,4 +1,5 @@
 import { Rect, rectIoU } from './geometry';
+import { MIN_FILL } from './guidance';
 import {
   DocShape,
   FULL_FRAME_DISTANCE_RATIO,
@@ -142,4 +143,22 @@ function centred(w: number, h: number, view: { width: number; height: number }):
  */
 export function aimAgreement(quadBounds: Rect, box: Rect): number {
   return rectIoU(quadBounds, box);
+}
+
+/**
+ * The linear fill this shape must reach before the shutter fires on its own.
+ *
+ * ⚠️ MIN_FILL, CAPPED BY THE BOX. The operator's 60% is right for an A4 in a
+ * portrait viewfinder, whose box spans 82% of the width. A card's box is
+ * drawn at ~53% of the width because NEAR_LIMIT_MM says the lens will not
+ * focus any closer — so asking a card for 60% is asking for a photograph the
+ * camera cannot take, and the shutter would simply never fire for cards. The
+ * requirement is therefore the smaller of MIN_FILL and 95% of the box's own
+ * linear size: fill the box we drew, and you have done what we asked.
+ */
+export function minFillFor(shape: DocShape, view: { width: number; height: number }): number {
+  if (!(view.width > 0) || !(view.height > 0)) return MIN_FILL;
+  const box = aimBox(shape, view);
+  const boxFill = Math.max(box.width / view.width, box.height / view.height);
+  return Math.min(MIN_FILL, boxFill * 0.95);
 }

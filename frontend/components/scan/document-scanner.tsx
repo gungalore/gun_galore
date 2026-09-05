@@ -47,7 +47,7 @@ import {
   expectAspect as expectAspectFor,
 } from '@/lib/scan/shapes';
 import { useScrollLock } from '@/lib/use-scroll-lock';
-import { aimAgreement, aimBox } from '@/lib/scan/aim';
+import { aimAgreement, aimBox, minFillFor } from '@/lib/scan/aim';
 import { exposureProblem } from '@/lib/scan/exposure';
 import {
   type CameraFacts,
@@ -58,6 +58,8 @@ import {
 import { DETECT_ACCEPT, lastDetectFailure } from '@/lib/scan/detect-client';
 import {
   type Guidance,
+  MIN_FILL,
+  linearFill,
   STEADY_MS,
   edgeMargin,
   guidanceFor,
@@ -465,6 +467,10 @@ export default function DocumentScanner({
   // never asks for it runs exactly the loop they ran before.
   /** Did the seeded search find a document in the box on the last frame? */
   const docRef = useRef(false);
+  /** Linear fill of the tracked quad, or null without a lock — for the fill gate. */
+  const fillRef = useRef<number | null>(null);
+  /** What the fill must reach for this shape on this viewfinder. */
+  const minFillRef = useRef(MIN_FILL);
   const docConfRef = useRef(0);
   const [diag, setDiag] = useState(false);
   /** Survives the tab ending — see saveToPhoneOn. */
@@ -895,6 +901,14 @@ export default function DocumentScanner({
       },
       live: {
         status: liveStatusRef.current.state,
+        // ⚠️ THE REASON, NOT JUST THE VERDICT. Both phones reported
+        // `unavailable` and nothing said why; a whole build cycle was spent
+        // guessing. It is one string and it is the only line that matters
+        // when the box does not appear.
+        unavailable:
+          liveStatusRef.current.state === 'unavailable'
+            ? liveStatusRef.current.why
+            : undefined,
         medianMs:
           liveStatusRef.current.state === 'running'
             ? liveStatusRef.current.medianMs
@@ -911,6 +925,8 @@ export default function DocumentScanner({
       geometry: q
         ? {
             occupancy: q.occupancy,
+            fill: fillRef.current,
+            minFill: minFillRef.current,
             edgeMargin: q.edgeMargin,
             tilt: q.tilt,
             dpi: q.dpi,
@@ -1806,6 +1822,10 @@ export default function DocumentScanner({
         motion,
         glare: glareRef.current,
         luma: lumaRef.current,
+        // The tracked document's share of the frame, from the draw loop;
+        // null until the model has a lock. The operator's 60% gate.
+        fill: fillRef.current,
+        minFill: minFillRef.current,
       });
 
       // ⚠️ SAY WHICH GATE IS SHUT. When it does not fire, the member sees a
@@ -2058,6 +2078,14 @@ export default function DocumentScanner({
             const occ = canvasQuad
               ? occupancy(canvasQuad, cssW, cssH)
               : null;
+            // The operator's 60%, measured linearly (guidance.ts linearFill)
+            // and capped at what this shape's aim box can reach (aim.ts
+            // minFillFor). Both go to the guidance AND to the shutter gate,
+            // so caption and ring never disagree.
+            const fillNow = canvasQuad ? linearFill(canvasQuad, cssW, cssH) : null;
+            const minFillNow = minFillFor(shape, { width: cssW, height: cssH });
+            fillRef.current = fillNow;
+            minFillRef.current = minFillNow;
             const edge = canvasQuad
               ? edgeMargin(canvasQuad, cssW, cssH)
               : 0;
@@ -2088,6 +2116,8 @@ export default function DocumentScanner({
               // edge directions, not absolute positions — so the visible-frame
               // quad is fine as-is.
               quad: q ?? undefined,
+              fill: fillNow,
+              minFill: minFillNow,
             });
             // ⚠️ THE QUALITY NUMBERS, MEASURED OFF THE QUAD ITSELF. Not
             // predicted from a working distance or assumed from a box —
