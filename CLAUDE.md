@@ -1851,7 +1851,31 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-08-27, commit `60736d8`.** ⚠️ **THIS ONE CARRIED A
+**Last deploy: 2026-09-05, commit `acf041ec`.** ⚠️ **CARRIED A MIGRATION** —
+`20260905090000_credential_read_provenance`, additive and defaulted (two
+`TEXT[]` columns on `Credential`, no backfill). **FULL DEPLOY** via
+`deploy.sh` (both apps + warden). Pre-deploy dump
+`alloutdoor-20260905-093016.dump` taken by the script before
+`prisma migrate deploy` ran. Backend and frontend each health-checked twice on
+the box, public 200 twice, pm2 all online.
+
+Shipped: the **scanner tracking fix** (`ebedf18a`, `31066cf3` — see the
+Document Scanner section for the decisions that must stay made) merged from
+`feat/scanner-tracking` via `feat/the-bench`, plus the licence-centre
+read-provenance work already on `feat/the-bench` (`4e6955b1`, `79e43019`).
+
+> The stale-Prisma-types trap bit locally on this one: `tsc` in the deploy
+> worktree reported four errors in `licence-centre.service.ts` on the two new
+> columns until `npx prisma generate` was run. Not a code fault. `deploy.sh`
+> runs generate before the backend build on the box, so the box was fine.
+
+⚠️ **Untested on a phone.** Every scanner change was verified by type-check
+and 1138 unit tests, not by holding a document under a camera. Two things to
+check first on a real device: whether the live box is now smooth, and whether
+auto-capture fires while the hand is still moving (the shutter-gate tick runs
+more often than `MOTION_STILL` was tuned on).
+
+**Previous deploy: 2026-08-27, commit `60736d8`.** ⚠️ **THIS ONE CARRIED A
 MIGRATION** — `20260825200000_transaction_fee_model`, the first non-frontend-only
 deploy since the fee model was deliberately held back on 2026-08-26. **FULL
 DEPLOY** (`deploy.sh`, both apps). Pre-deploy dump
