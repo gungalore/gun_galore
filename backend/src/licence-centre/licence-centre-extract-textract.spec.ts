@@ -2,7 +2,9 @@
 //
 // The ORDER of the two readers, which is the whole point of the change.
 //
-// Textract first; Claude only when Textract cannot answer. A regression here
+// Textract first; Claude only when Textract cannot answer. Classification
+// itself is common/document-markers.ts — this pins the ORDER and the seam,
+// not the marker table. A regression here
 // is invisible in every other test — the Claude path still works, so nothing
 // fails — it just quietly goes back to paying a model to read a document that
 // says what it is across the top.

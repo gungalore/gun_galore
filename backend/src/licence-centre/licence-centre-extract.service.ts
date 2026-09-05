@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 
-import { classifyByMarkers } from './document-markers';
+import { readMarkers } from '../common/document-markers';
+import { UPLOAD_TO_CREDENTIAL } from './upload-to-credential';
 import { LicenceCentreTextractService } from './licence-centre-textract.service';
 import {
   extractDocument,
@@ -328,12 +329,13 @@ export class LicenceCentreExtractService {
     // certificate whose letterhead is not in the table yet.
     const ocr = await this.textract.analyse(args.bytes, args.mimeType);
     if (ocr) {
-      const hit = classifyByMarkers(textractLines(ocr));
-      if (hit?.decisive) {
+      const hit = readMarkers(textractLines(ocr).join('\n'));
+      const kind = hit ? UPLOAD_TO_CREDENTIAL[hit.kind] : undefined;
+      if (hit && kind) {
         this.logger.log(
-          `classified ${hit.kind} from markers (${hit.variant}, score ${hit.score} vs ${hit.runnerUp})`,
+          `classified ${kind} from markers (${hit.strength}: ${hit.matched.map((m) => m.name).join(', ')})`,
         );
-        return { kind: currentKind(hit.kind), confident: true, alsoCovers: [] };
+        return { kind: currentKind(kind), confident: true, alsoCovers: [] };
       }
     }
 
