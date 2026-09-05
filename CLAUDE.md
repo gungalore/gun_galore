@@ -1939,7 +1939,20 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-05 (later afternoon), commit `214a0ffa`.** No migrations.
+**Last deploy: 2026-09-05 (evening), commit `1a679c6c`.** No migrations.
+**FRONTEND ONLY** (`deploy.sh --frontend-only`). Dump
+`alloutdoor-20260905-154111.dump`. Health doubled, public 200 twice,
+`/scan/selftest` on the live site: running, presence 1.000.
+
+Shipped: from the operator's first real scans with the working detector —
+robust corner refinement on the still (`corner-refine.ts`, fixes the skew
+iPhone A4), halo-suppressed sharpening scaled to the source's sharpness (the
+Samsung's grey fringe), and photometric crease suppression. See the Document
+Scanner section. ⚠️ Crease suppression was verified on a fold pressed into a
+real page, not on a real fold; inside the corrected band mid-grey decoration
+can lighten slightly.
+
+**Previous deploy: 2026-09-05 (later afternoon), commit `214a0ffa`.** No migrations.
 **FRONTEND ONLY** (`deploy.sh --frontend-only`); the backend kept serving.
 Dump `alloutdoor-20260905-142041.dump`. Health doubled, public 200 twice, and
 **`https://alloutdoor.co.za/scan/selftest` run from the desktop browser
