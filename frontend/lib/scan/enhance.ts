@@ -61,7 +61,7 @@ const DEFAULTS: Required<EnhanceOptions> = {
 };
 
 /** Luma plane from RGBA, as floats so the division below keeps precision. */
-function lumaPlane(r: Raster): Float32Array {
+export function lumaPlane(r: Raster): Float32Array {
   const out = new Float32Array(r.width * r.height);
   for (let i = 0, p = 0; p < out.length; i += 4, p++) {
     out[p] = (77 * r.data[i] + 150 * r.data[i + 1] + 29 * r.data[i + 2]) / 256;
@@ -127,7 +127,7 @@ export function boxBlur(
 }
 
 /** Nearest-power downsample of a float plane, by simple averaging. */
-function shrink(
+export function shrink(
   src: Float32Array,
   w: number,
   h: number,
@@ -156,7 +156,7 @@ function shrink(
 }
 
 /** Bilinear upsample of a float plane. */
-function grow(
+export function grow(
   src: Float32Array,
   sw: number,
   sh: number,
@@ -222,6 +222,54 @@ export function dilate(
 }
 
 /**
+ * Separable min filter — the counterpart to `dilate`, so the two compose into
+ * a morphological CLOSING (dilate then erode).
+ *
+ * ⚠️ A CLOSING IS THE ONE OPERATOR THAT IS SAFE ACROSS A SHADOW EDGE, which
+ * is why paperField reaches for it below rather than for a bigger blur or a
+ * bigger max. Closing fills dark gaps NARROWER than its structuring element
+ * and leaves everything wider than it exactly where it was — so a photograph
+ * disappears into the paper around it while a shadow covering half the page
+ * keeps its own level right up to its boundary. A max filter alone lifts a
+ * band of its own radius on the dark side of every shadow; a closing lifts
+ * none, because the erode takes the darker value back.
+ */
+export function erode(
+  src: Float32Array,
+  w: number,
+  h: number,
+  radius: number,
+): Float32Array {
+  const r = Math.max(1, Math.round(radius));
+  const a = new Float32Array(src.length);
+  const b = new Float32Array(src.length);
+  // horizontal
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      let m = Infinity;
+      for (let k = -r; k <= r; k++) {
+        const xx = Math.min(w - 1, Math.max(0, x + k));
+        if (src[row + xx] < m) m = src[row + xx];
+      }
+      a[row + x] = m;
+    }
+  }
+  // vertical
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let m = Infinity;
+      for (let k = -r; k <= r; k++) {
+        const yy = Math.min(h - 1, Math.max(0, y + k));
+        if (a[yy * w + x] < m) m = a[yy * w + x];
+      }
+      b[y * w + x] = m;
+    }
+  }
+  return b;
+}
+
+/**
  * THE PAPER, WHEREVER IT IS — the local brightness the page itself would have,
  * shadows and all, with the ink removed.
  *
@@ -238,6 +286,33 @@ export function dilate(
  * Computed at 512px on the long edge: fine enough that a photograph or a
  * security emblem is still its own dark region rather than averaged away,
  * coarse enough to cost milliseconds.
+ *
+ * ────────────────────────────────────────────────────────────────────
+ * ⚠️ THE SECOND SCALE EXISTS TO KILL A RING AROUND EVERY ID PHOTOGRAPH, and
+ * it is not cosmetic. The max filter can only find paper within its own
+ * radius. Inside a dark region WIDER than that — an ID photo, a black header
+ * band, a signature block — there is no paper to find, so the estimate
+ * collapses onto the dark region itself and the gain jumps to whatever the cap
+ * allows. Measured on a 512px synthetic page with a 120px dark square, one
+ * scale gave: paper 248, the square's rim 50, the square's centre 143. The
+ * photograph came out with a dark ring drawn round the inside of it and a
+ * washed-out middle — the gain was discontinuous exactly where the eye is most
+ * sensitive to it.
+ *
+ * The fix is a SECOND, COARSER background estimate: a morphological closing at
+ * 128px on the long edge, whose structuring element is wider than any
+ * plausible dark region on a document. A closing fills gaps narrower than
+ * itself and leaves anything wider untouched, so it reads straight across the
+ * photograph at the paper level around it — and, crucially, does NOT read
+ * across a shadow edge (see `erode`). Taking the brighter of the two estimates
+ * gives the fine one where paper exists and the coarse one where it does not,
+ * and the coarse one is smooth, so the gain is continuous across the boundary.
+ *
+ * The consequence for a photograph is the right one: its field becomes the
+ * paper around it, so its gain is the paper's gain (~1.15) instead of the 2.5
+ * cap. It keeps its tones instead of being dragged a third of the way to
+ * white. GAIN_CAP is now a backstop for genuinely deep shadow, which is what
+ * it was always described as.
  */
 export function paperField(
   luma: Float32Array,
@@ -251,9 +326,71 @@ export function paperField(
   const small = shrink(luma, w, h, tw, th);
   // Radius 6 at 512 clears a text stroke and a table rule with margin; a
   // photograph is fifty times wider and stays a dark region of its own.
-  const maxed = dilate(small, tw, th, 6);
-  const smooth = boxBlur(maxed, tw, th, 3, 2);
+  const near = dilate(small, tw, th, 6);
+
+  // The coarse estimate. A quarter of the fine plane, because a background
+  // field is smooth by definition — the same argument illuminationField makes
+  // — and a closing costs O(radius) per pixel, so the sixteen-fold drop in
+  // pixels is what makes a structuring element this wide free.
+  const cw = Math.max(8, Math.round(tw / 4));
+  const ch = Math.max(8, Math.round(th / 4));
+  // ⚠️ 0.25 OF THE SHORT EDGE. The structuring element has to be wider than
+  // half the widest dark region we want to read across; a licence photograph
+  // runs about a quarter of the card's short edge, so this closes anything up
+  // to half the page and still cannot lift a shadow (the erode takes the dark
+  // value back). Erring large is the safe direction: too small leaves the
+  // ring, too large only means a very wide black band keeps its own tones,
+  // which is what it should do anyway.
+  const cr = Math.max(4, Math.round(Math.min(cw, ch) * 0.25));
+  const cSmall = shrink(small, tw, th, cw, ch);
+  const closed = erode(dilate(cSmall, cw, ch, cr), cw, ch, cr);
+  const coarse = grow(closed, cw, ch, tw, th);
+
+  // Brighter of the two: the fine estimate wherever it actually found paper,
+  // the coarse one wherever it collapsed.
+  for (let i = 0; i < near.length; i++) {
+    if (coarse[i] > near[i]) near[i] = coarse[i];
+  }
+
+  const smooth = boxBlur(near, tw, th, 3, 2);
   return grow(smooth, tw, th, w, h);
+}
+
+/**
+ * Divide the paper up to white, over the field's own buffer.
+ *
+ * Illumination is MULTIPLICATIVE — reflectance times illuminant — so this
+ * divides rather than subtracting.
+ *
+ * ⚠️ UP TO WHITE, NOT TO THE MEAN. The first version normalised to the
+ * field's own mean, which removed the gradient and then carefully preserved
+ * the overall murk: a dim photograph came out as a uniformly dim scan, and the
+ * operator's side-by-side against the plain camera app made the point better
+ * than any argument. Paper is white; the estimate under `paperField` IS the
+ * paper; dividing by it and scaling to WHITE sends every patch of bare page —
+ * lit, shaded, or under his hand's shadow — to the same bright background,
+ * while ink keeps its ratio against the paper around it.
+ *
+ * ⚠️ THE RETURNED ARRAY IS THE FIELD'S OWN. Each field value is read exactly
+ * once, so the corrected luma is written straight over it — one full-resolution
+ * plane instead of two, at the point where this pipeline's peak actually is.
+ */
+export function flattenLuma(
+  luma: Float32Array,
+  w: number,
+  h: number,
+): Float32Array {
+  const field = paperField(luma, w, h);
+  for (let i = 0; i < luma.length; i++) {
+    const b = Math.max(20, field[i]);
+    // The cap is what stops the genuinely dark parts of a DEEP SHADOW from
+    // being dragged to white. Since the two-scale field no longer collapses
+    // inside a photograph, it is a backstop rather than the load-bearing part
+    // it used to be.
+    const gain = Math.min(GAIN_CAP, WHITE / b);
+    field[i] = Math.min(255, luma[i] * gain);
+  }
+  return field;
 }
 
 /**
@@ -354,8 +491,15 @@ function identityLut(bins: number): Float32Array {
   return l;
 }
 
-/** Sample the four surrounding tile curves and blend. */
-function claheAt(
+/**
+ * Sample the four surrounding tile curves and blend.
+ *
+ * ⚠️ enhance() DOES NOT CALL THIS — it inlines it, for the six-million-calls
+ * reason recorded at the call site. This stays as the readable statement of
+ * the arithmetic, and `enhance.spec.ts` pins the inlined loop against it pixel
+ * for pixel so the two can never drift.
+ */
+export function claheAt(
   luts: Float32Array[],
   tiles: number,
   bins: number,
@@ -429,32 +573,11 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
   // every one of which is more memory-hungry than the loop that finally writes
   // it. It cost a plane at exactly the moment we had least to spare.
 
-  // (a) Divide the paper up to white. Illumination is MULTIPLICATIVE —
-  // reflectance times illuminant — so this divides rather than subtracting.
-  //
-  // ⚠️ UP TO WHITE, NOT TO THE MEAN. The first version normalised to the
-  // field's own mean, which removed the gradient and then carefully preserved
-  // the overall murk: a dim photograph came out as a uniformly dim scan, and
-  // the operator's side-by-side against the plain camera app made the point
-  // better than any argument. Paper is white; the estimate under `paperField`
-  // IS the paper; dividing by it and scaling to WHITE sends every patch of
-  // bare page — lit, shaded, or under his hand's shadow — to the same bright
-  // background, while ink keeps its ratio against the paper around it.
-  //
-  // The gain cap is what stops the genuinely dark parts — a photograph, hair,
-  // a black emblem — from being dragged up to white along with everything
-  // else: where the true background is far darker than paper, the cap wins
-  // and the region keeps its identity.
+  // (a) Divide the paper up to white. See flattenLuma — the reasoning, and the
+  // two-scale field that keeps the gain continuous across a photograph, both
+  // live beside the code that does it.
   let corrected = luma;
-  if (o.flatten) {
-    const field = paperField(luma, w, h);
-    corrected = new Float32Array(luma.length);
-    for (let i = 0; i < luma.length; i++) {
-      const b = Math.max(20, field[i]);
-      const gain = Math.min(GAIN_CAP, WHITE / b);
-      corrected[i] = Math.min(255, luma[i] * gain);
-    }
-  }
+  if (o.flatten) corrected = flattenLuma(luma, w, h);
 
   // (b) Local contrast.
   let lifted = corrected;
@@ -469,10 +592,46 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
     // remaining job is a gentle lift of faint stamps and security print.
     const luts = claheLut(corrected, w, h, TILES, BINS, 2);
     lifted = new Float32Array(corrected.length);
+    // ⚠️ claheAt IS INLINED HERE, and only here, BECAUSE THIS LOOP RUNS ONCE
+    // PER PIXEL. At 3000x2000 that is six million calls, each repeating two
+    // divisions, two floors and six clamps whose answers depend only on x —
+    // and x takes 3000 distinct values, not six million. Hoisting the column
+    // half into three small arrays and the row half out of the inner loop cut
+    // enhance() from 894ms to 560ms on the 3000x2000 bench, measured in node.
+    // The arithmetic is unchanged; claheAt stays as the readable statement of
+    // what this is doing, and the specs pin the two together.
+    const tx0 = new Int32Array(w);
+    const tx1 = new Int32Array(w);
+    const twx = new Float32Array(w);
+    for (let x = 0; x < w; x++) {
+      const fx = (x / w) * TILES - 0.5;
+      const a = Math.max(0, Math.min(TILES - 1, Math.floor(fx)));
+      tx0[x] = a;
+      tx1[x] = Math.min(TILES - 1, a + 1);
+      twx[x] = Math.max(0, Math.min(1, fx - a));
+    }
+    const BIN_SCALE = BINS / 256;
     for (let y = 0; y < h; y++) {
+      const fy = (y / h) * TILES - 0.5;
+      const ty0 = Math.max(0, Math.min(TILES - 1, Math.floor(fy)));
+      const ty1 = Math.min(TILES - 1, ty0 + 1);
+      const wy = Math.max(0, Math.min(1, fy - ty0));
+      const rowA = ty0 * TILES;
+      const rowB = ty1 * TILES;
+      const row = y * w;
       for (let x = 0; x < w; x++) {
-        const i = y * w + x;
-        lifted[i] = claheAt(luts, TILES, BINS, w, h, x, y, corrected[i]);
+        const i = row + x;
+        let b = (corrected[i] * BIN_SCALE) | 0;
+        if (b < 0) b = 0;
+        else if (b >= BINS) b = BINS - 1;
+        const wx = twx[x];
+        const a0 = tx0[x];
+        const a1 = tx1[x];
+        lifted[i] =
+          luts[rowA + a0][b] * (1 - wx) * (1 - wy) +
+          luts[rowA + a1][b] * wx * (1 - wy) +
+          luts[rowB + a0][b] * (1 - wx) * wy +
+          luts[rowB + a1][b] * wx * wy;
       }
     }
   }

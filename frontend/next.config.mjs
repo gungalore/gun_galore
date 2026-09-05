@@ -127,9 +127,11 @@ const withSerwist = withSerwistInit({
   // 🚨 KEEP THE DOCUMENT-SCANNER MODEL OUT OF THE INSTALL-TIME PRECACHE.
   //
   // Serwist's default is globPublicPatterns: ['**/*'] — every file under
-  // public/. public/ is 27 MB, and 23 MB of that is two files:
-  // scan/v1/docquad.ort (12.8 MB) and scan/v1/ort-wasm-simd.wasm (10.1 MB),
-  // the DocQuadNet256 weights and the ONNX runtime. Both were in the LIVE
+  // public/. When this was written public/ was 27 MB, and 23 MB of that was
+  // two files: scan/v1/docquad.ort (12.8 MB) and scan/v1/ort-wasm-simd.wasm
+  // (10.1 MB), the DocQuadNet256 weights and the ONNX runtime. (Now
+  // scan/v2/: DocCornerNet at 1.9 MB and ORT 1.29 at 13.3 MB — still the
+  // bulk of public/, and still only wanted by the scanner.) Both were in the LIVE
   // sw.js precache manifest, so every visitor whose service worker installed
   // downloaded ~23 MB before seeing a single listing — for a scanner that only
   // ever runs inside KYC / motivation document capture, which most shoppers

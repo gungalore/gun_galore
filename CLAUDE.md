@@ -1527,6 +1527,45 @@ modules (no DOM) so the hard parts are testable in node: `detect` finds
 the quad, `warp` rectifies, `enhance` cleans, `aim` sizes the box,
 `magnifier` places the loupe, `exposure` decides what to warn about.
 
+- **The detector is DocCornerNet, and it runs twice per frame** (2026-09-05).
+  DocQuadNet256 was replaced after a benchmark over the operator's 33 real
+  photographs (`scan-fixtures/iphone74` + `real`, judged by eye against
+  overlays): it found the document in 18; DocCornerNet-lean found it in 29,
+  and 31 with the second pass. It is 1.9 MB against 13.4, ~12 ms against
+  ~60, MIT (`backend/models/NOTICE.doccornernet`), and — the part the old
+  heatmap heads could never do — it says whether a document is there at all.
+  The second pass runs the same model on the AIM-BOX REGION: on a card lying
+  on a white sheet the full-frame pass finds the sheet, the aim pass finds
+  the card, and `pickCandidate` in `lib/scan/doccorner.ts` chooses by the two
+  priors only we hold, the chosen shape's aspect and where the box was.
+  ⚠️ `doccorner.ts` is mirrored in `backend/src/scan/` for the server
+  fallback route, which returns every candidate and lets the client pick, so
+  both paths answer identically. The worker also detects on the captured
+  STILL (`LiveDetector.detectStill`); the server is only asked when the
+  browser could not load the runtime. Inputs are STRETCHED to 224², not
+  letterboxed. Assets live under `/scan/v2/` with ORT web 1.29; bump the
+  path, never overwrite a file in place (the service worker caches by URL).
+- **Android takes a real photograph.** `capture.ts takeStill` asks
+  `ImageCapture.takePhoto()` for the sensor's photo mode and crops the same
+  visible region; on a 50 MP phone that is twice the A4 resolution the video
+  frame gives. iOS has no such API and silently uses the frame. The decode
+  cap is 4096 to keep that detail; the OUTPUT cap is 3600 because
+  `enhance()` holds ~7 Float32 planes of the page (see `framing.ts`). The
+  A4 figure is limited by physics, not caps: a portrait viewfinder shows a
+  1698-wide crop of the 4032×3024 track, so a page filling the box spans
+  ~1390 px for 210 mm — 168 dpi on every phone. Only the stills path or a
+  landscape capture changes that.
+- **Magnetic lines in the crop editor** (`lib/scan/magnetic.ts`): a dropped
+  corner or edge snaps to the nearest strong straight edge within ~3% of the
+  short side, with the candidates drawn while dragging and a Snap toggle to
+  turn it off. Scored by support × step × proximity², because a black ruler
+  beside a white page measures 1.4× the page's own edge and would win on
+  strength alone.
+- **A poor page is stopped at the door.** `screens/quality-gate.tsx` asks
+  once — take it again, or keep it anyway — for a fresh capture that grades
+  poor; a reopened tray page is never asked twice. The tray reopens a page
+  (raw photograph, result and turns travel with it) into the same slot, and
+  reorders with the arrows.
 - **The member picks the shape first** — Card / A4 / Green ID book /
   Something else — and only then does the camera open. `shapes.ts` holds
   the real millimetres, MEASURED against a 150 mm ruler in the operator's

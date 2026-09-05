@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { Raster } from './warp';
-import { boxBlur, claheLut, enhance, illuminationField, inspect } from './enhance';
+import {
+  boxBlur,
+  claheAt,
+  claheLut,
+  dilate,
+  enhance,
+  erode,
+  flattenLuma,
+  illuminationField,
+  inspect,
+  lumaPlane,
+  paperField,
+} from './enhance';
 
 /** A page of print under a lighting gradient, as RGBA. */
 function page(
@@ -347,5 +359,202 @@ describe('enhance', () => {
       height: 1,
     };
     expect(() => enhance(tiny)).not.toThrow();
+  });
+});
+
+
+// ────────────────────────────────────────────────────────────────────
+// THE RING AROUND AN ID PHOTOGRAPH.
+// ────────────────────────────────────────────────────────────────────
+
+/** A printed page with one solid dark square on it: an ID photo, or a stamp. */
+function pageWithBlock(
+  w: number,
+  h: number,
+  sq: number,
+  o: { paper?: number; ink?: number; block?: number } = {},
+): Raster {
+  const paper = o.paper ?? 214;
+  const ink = o.ink ?? 60;
+  const dark = o.block ?? 45;
+  const x0 = Math.round((w - sq) / 2);
+  const y0 = Math.round((h - sq) / 2);
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const inBlock = x >= x0 && x < x0 + sq && y >= y0 && y < y0 + sq;
+      const isInk = !inBlock && y % 12 < 3 && x % 9 < 5;
+      const v = inBlock ? dark : isInk ? ink : paper;
+      const i = (y * w + x) * 4;
+      data[i] = v;
+      data[i + 1] = v;
+      data[i + 2] = v;
+      data[i + 3] = 255;
+    }
+  }
+  return { data, width: w, height: h };
+}
+
+const BLOCK_INK = (x: number, y: number) => y % 12 < 3 && x % 9 < 5;
+
+describe('erode', () => {
+  it('is the counterpart of dilate', () => {
+    const w = 32;
+    const src = new Float32Array(w * w).fill(200);
+    for (let y = 14; y < 18; y++) for (let x = 14; x < 18; x++) src[y * w + x] = 20;
+    // A closing fills a gap narrower than its structuring element...
+    const closed = erode(dilate(src, w, w, 6), w, w, 6);
+    expect(closed[16 * w + 16]).toBeGreaterThan(180);
+    // ...and leaves one wider than it exactly where it was. THIS is the
+    // property that makes a closing safe across a shadow edge, where a max
+    // filter alone lifts a band of its own radius on the dark side.
+    const big = new Float32Array(w * w).fill(200);
+    for (let y = 4; y < 28; y++) for (let x = 4; x < 28; x++) big[y * w + x] = 20;
+    const closedBig = erode(dilate(big, w, w, 3), w, w, 3);
+    expect(closedBig[16 * w + 16]).toBeCloseTo(20, 3);
+  });
+});
+
+describe('paperField', () => {
+  it('\u26a0\ufe0f DOES NOT COLLAPSE INSIDE A DARK REGION WIDER THAN THE MAX FILTER', () => {
+    // One scale could only find paper within its own radius, so inside a
+    // 120px block there was none to find and the estimate fell onto the block
+    // itself. The coarse closing reads straight across it at the paper level
+    // around it.
+    const p = pageWithBlock(512, 512, 120);
+    const field = paperField(lumaPlane(p), 512, 512);
+    const at = (x: number, y: number) => field[y * 512 + x];
+    expect(at(20, 20)).toBeGreaterThan(190);
+    expect(at(256, 256)).toBeGreaterThan(at(20, 20) * 0.85);
+  });
+
+  it('\u26a0\ufe0f STILL FOLLOWS A HARD SHADOW, which the coarse scale must not erase', () => {
+    // The whole risk of a second, wider estimate: reach far enough for a
+    // photograph and you reach across a shadow boundary too, and the field
+    // stops tracking the thing it exists to track. A CLOSING cannot — the
+    // erode takes the dark value back — and this is the test that says so.
+    const w = 256;
+    const h = 256;
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const v = 230 * (x < w / 2 ? 1 : 0.45);
+        const i = (y * w + x) * 4;
+        data[i] = v;
+        data[i + 1] = v;
+        data[i + 2] = v;
+        data[i + 3] = 255;
+      }
+    const field = paperField(lumaPlane({ data, width: w, height: h }), w, h);
+    expect(field[128 * w + 40]).toBeGreaterThan(200);
+    expect(field[128 * w + 215]).toBeLessThan(130);
+  });
+});
+
+describe('enhance, around a photograph', () => {
+  it('\u26a0\ufe0f LEAVES NO RING DARKER THAN THE PAPER OUTSIDE A 120px DARK SQUARE', () => {
+    // The guard against over-correcting. An inpainted or blurred background
+    // estimate that reaches too far pulls the paper's own estimate UP near the
+    // block, which divides that paper DOWN — a dark halo hugging every
+    // photograph, which is both the artefact the fix exists to remove and the
+    // easiest one to reintroduce while removing it.
+    const W = 512;
+    const SQ = 120;
+    const after = enhance(pageWithBlock(W, W, SQ));
+    const x0 = (W - SQ) / 2;
+    const x1 = x0 + SQ;
+
+    const paperAt = (x: number, y: number) =>
+      BLOCK_INK(x, y) ? null : lumaAt(after, x, y);
+    let far = 0;
+    let farN = 0;
+    for (let y = 8; y < 40; y++)
+      for (let x = 8; x < 40; x++) {
+        const v = paperAt(x, y);
+        if (v !== null) {
+          far += v;
+          farN++;
+        }
+      }
+    const paper = far / farN;
+
+    let worst = 255;
+    for (let y = 0; y < W; y++) {
+      for (let x = 0; x < W; x++) {
+        const dx = x < x0 ? x0 - x : x >= x1 ? x - x1 + 1 : 0;
+        const dy = y < x0 ? x0 - y : y >= x1 ? y - x1 + 1 : 0;
+        const d = Math.max(dx, dy);
+        if (d < 1 || d > 40) continue;
+        const v = paperAt(x, y);
+        if (v !== null) worst = Math.min(worst, v);
+      }
+    }
+    expect(worst).toBeGreaterThan(paper - 12);
+  });
+
+  it('\u26a0\ufe0f GIVES THE WHOLE SQUARE ONE GAIN — no dark rim, no washed-out middle', () => {
+    // What actually broke. Measured before the second scale: rim 50, centre
+    // 143 — the max filter found paper near the edge and nothing at all in the
+    // middle, so the middle took the 2.5x cap and the rim took 1.15x, and the
+    // photograph came out with a ring drawn round the inside of it. After the
+    // fix: rim 53, centre 55.
+    const W = 512;
+    const SQ = 120;
+    const after = enhance(pageWithBlock(W, W, SQ));
+    const x0 = (W - SQ) / 2;
+
+    const mean = (bx0: number, by0: number, bx1: number, by1: number) => {
+      let s = 0;
+      let n = 0;
+      for (let y = by0; y < by1; y++)
+        for (let x = bx0; x < bx1; x++) {
+          s += lumaAt(after, x, y);
+          n++;
+        }
+      return s / n;
+    };
+    const rim = mean(x0 + 2, x0 + 2, x0 + SQ - 2, x0 + 8);
+    const core = mean(x0 + 45, x0 + 45, x0 + 75, x0 + 75);
+    expect(Math.abs(core - rim)).toBeLessThan(15);
+    // And the square is still a dark square, not a grey one.
+    expect(core).toBeLessThan(110);
+  });
+});
+
+describe('the inlined CLAHE loop', () => {
+  it('\u26a0\ufe0f MATCHES claheAt PIXEL FOR PIXEL', () => {
+    // enhance() hoists the column half of claheAt out of a six-million-call
+    // loop. The saving is real (894ms to 562ms on the 3000x2000 bench) and so
+    // is the risk: an off-by-one in the tile weights would shift the whole
+    // image by half a tile and nothing else in the suite would notice. This
+    // rebuilds enhance() out of the exported primitives, using the readable
+    // claheAt, and demands the same pixels.
+    const w = 97;
+    const h = 61;
+    const src = page(w, h, { shadow: 0.4, paper: 210, ink: 70 });
+    const mine = enhance(src);
+
+    const luma = lumaPlane(src);
+    const corrected = flattenLuma(luma, w, h);
+    const luts = claheLut(corrected, w, h, 8, 64, 2);
+    const lifted = new Float32Array(corrected.length);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        lifted[i] = claheAt(luts, 8, 64, w, h, x, y, corrected[i]);
+      }
+    const blur = boxBlur(lifted, w, h, 1, 1);
+    const ref = new Uint8ClampedArray(src.data.length);
+    for (let i = 0, q = 0; q < lifted.length; i += 4, q++) {
+      const f = Math.max(0, Math.min(255, lifted[q] + 0.6 * (lifted[q] - blur[q])));
+      const gain = luma[q] > 1 ? f / luma[q] : 1;
+      ref[i] = src.data[i] * gain;
+      ref[i + 1] = src.data[i + 1] * gain;
+      ref[i + 2] = src.data[i + 2] * gain;
+      ref[i + 3] = src.data[i + 3];
+    }
+    for (let i = 0; i < ref.length; i++) {
+      expect(Math.abs(mine.data[i] - ref[i])).toBeLessThanOrEqual(1);
+    }
   });
 });

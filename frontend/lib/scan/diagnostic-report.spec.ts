@@ -53,15 +53,14 @@ describe('buildReport', () => {
       shape: 'card',
       capture: {
         source: 'detected',
-        pickedBy: 'mask',
+        pickedBy: 'corners',
         arbitration: { worstSide: 0.82, support: 0.91 },
-        maskFit: { coverage: 0.31, aspect: 1.59, residual: 0.8, rectangularity: 0.96 },
         refined: { moved: 4.2, skipped: 0 },
       },
       ocr: { engine: 'PP-OCRv3', unclipRatio: 3.5, boxThresh: 0.3, chars: 335, lines: 21 },
     });
     expect(r).toContain('chosen by');
-    expect(r).toContain('mask');
+    expect(r).toContain('corners');
     expect(r).toContain('worst side');
     expect(r).toContain('det unclip');
     expect(r).toContain('3.50');

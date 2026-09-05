@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ScanFilter } from '@/lib/scan/capture';
+import type { FilterMode } from '@/lib/scan/filters';
+import { chooseMode, pageStats } from '@/lib/scan/filters';
 import type { Quality } from '@/lib/scan/quality';
 import Zoomable from '../zoomable';
 import { T, primaryBtn } from '../scan-theme';
@@ -25,6 +27,32 @@ const GRADE_STYLE = {
   acceptable: { ink: T.warn, wash: T.warnWash, line: T.warnLine },
   poor: { ink: T.danger, wash: T.redWash, line: 'rgba(200,16,46,0.3)' },
 } as const;
+
+/**
+ * THE FILTER ROW.
+ *
+ * ⚠️ FIVE SEGMENTS, NOT FIVE BUTTONS, and the difference is not decoration.
+ * Two loose pills read as two independent toggles; five of them read as a
+ * settings screen. A segmented control says the thing every scanner app says
+ * with the same shape: exactly one of these is on, they are alternatives, and
+ * tapping another swaps it. The member has met this control before.
+ *
+ * "Original" sits at the end because it is the escape hatch, not a filter, and
+ * it is spelled for what it gives them rather than for what it skips.
+ */
+const SEGMENTS: ReadonlyArray<{ value: ScanFilter; label: string }> = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'colour', label: 'Colour' },
+  { value: 'grey', label: 'Grey' },
+  { value: 'bw', label: 'B&W' },
+  { value: 'none', label: 'Original' },
+];
+
+const MODE_LABEL: Record<FilterMode, string> = {
+  colour: 'Colour',
+  grey: 'Grey',
+  bw: 'B&W',
+};
 
 function ToolButton({
   label,
@@ -97,6 +125,7 @@ export default function ReviewScreen({
   onName,
   filter,
   onFilter,
+  autoMode: autoModeProp,
   busy,
   onDiscard,
   onSave,
@@ -113,6 +142,13 @@ export default function ReviewScreen({
   onName: (v: string) => void;
   filter: ScanFilter;
   onFilter: (f: ScanFilter) => void;
+  /**
+   * What Auto actually chose, when the parent knows it — `refilter()` returns
+   * it. Optional because the scanner does not carry it on the page yet, and
+   * the fallback below is good enough that wiring it is a nicety rather than
+   * a fix.
+   */
+  autoMode?: FilterMode | null;
   busy?: boolean;
   onDiscard: () => void;
   onSave: () => void;
@@ -126,6 +162,60 @@ export default function ReviewScreen({
 }) {
   const [why, setWhy] = useState(false);
   const g = GRADE_STYLE[quality.grade];
+
+  // WHICH ONE AUTO PICKED.
+  //
+  // ⚠️ READ BACK OFF THE PREVIEW, because this screen never sees the page
+  // Auto looked at. The parent holds the full-resolution original, hands it to
+  // refilter(), and keeps only the file and the preview that come back — so
+  // the decision is made two components away and thrown away before it gets
+  // here. Re-deriving it is honest enough: the classifier's three questions
+  // are stable under their own answers. A page Auto sent to B&W comes back
+  // bimodal and reads as B&W; one it sent to Grey comes back grey; one it kept
+  // in Colour still has the colour in it. The alternative was a chip reading
+  // "Auto" and nothing else, which tells the member nothing about what
+  // changed on their page.
+  //
+  // ⚠️ AT THE PREVIEW'S OWN SIZE, NOT SCALED DOWN. Scaling averages ink into
+  // the paper beside it and manufactures the midtones the B&W test looks for,
+  // so a 1-bit page shrunk to a thumbnail reads as a photograph. The preview
+  // is already ~900px; pageStats does its own nearest-neighbour sampling.
+  const [autoModeSeen, setAutoModeSeen] = useState<FilterMode | null>(null);
+  useEffect(() => {
+    if (filter !== 'auto' || autoModeProp) {
+      setAutoModeSeen(null);
+      return;
+    }
+    let live = true;
+    void (async () => {
+      try {
+        const img = new Image();
+        img.src = preview;
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0);
+        const d = ctx.getImageData(0, 0, c.width, c.height);
+        const mode = chooseMode(
+          pageStats({ data: d.data, width: c.width, height: c.height }),
+        );
+        if (live) setAutoModeSeen(mode);
+      } catch {
+        // The chip just says "Auto". Nothing here is worth an error to a
+        // member who is looking at their document.
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [filter, preview, autoModeProp]);
+  const autoMode = autoModeProp ?? autoModeSeen;
+
+  // 'shadow' is the stored spelling of 'colour'; see ScanFilter.
+  const selected: ScanFilter = filter === 'shadow' ? 'colour' : filter;
 
   return (
     <div
@@ -314,39 +404,74 @@ export default function ReviewScreen({
         style={{
           flex: 'none',
           display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
           gap: 8,
-          justifyContent: 'center',
-          flexWrap: 'wrap',
           padding: '10px 14px 4px',
         }}
       >
-        {(['shadow', 'none'] as const).map((f) => {
-          const on = filter === f;
-          return (
-            <button
-              key={f}
-              type="button"
-              onClick={() => onFilter(f)}
-              disabled={busy}
-              aria-pressed={on}
-              style={{
-                minHeight: 40,
-                padding: '0 14px',
-                borderRadius: T.r.md,
-                border: on ? '1px solid transparent' : `1px solid ${T.border}`,
-                background: on ? '#E8B53A' : T.card,
-                color: on ? '#1A1614' : T.ink,
-                fontSize: 13,
-                fontWeight: on ? 700 : 400,
-                fontFamily: 'inherit',
-                cursor: 'pointer',
-                opacity: busy ? 0.5 : 1,
-              }}
-            >
-              {f === 'shadow' ? 'Remove shadows' : 'No filter'}
-            </button>
-          );
-        })}
+        <div
+          role="radiogroup"
+          aria-label="Filter"
+          style={{
+            display: 'flex',
+            width: '100%',
+            padding: 2,
+            gap: 2,
+            borderRadius: T.r.md,
+            border: `1px solid ${T.border}`,
+            background: T.inset,
+            opacity: busy ? 0.5 : 1,
+          }}
+        >
+          {SEGMENTS.map((seg) => {
+            const on = selected === seg.value;
+            const sub = on && seg.value === 'auto' && autoMode ? MODE_LABEL[autoMode] : null;
+            return (
+              <button
+                key={seg.value}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => onFilter(seg.value)}
+                disabled={busy}
+                style={{
+                  flex: 1,
+                  minHeight: T.tap,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 1,
+                  padding: '0 2px',
+                  borderRadius: T.r.sm,
+                  // ⚠️ A BORDER, NOT A SHADOW. globals.css opens with an
+                  // unscoped `* { box-shadow: none !important }`, so the lift
+                  // every other app puts on the selected segment of a
+                  // segmented control cannot render here at all, inline style
+                  // or not. Paper-white against the inset track, plus a hair
+                  // line, does the same job with something that will actually
+                  // paint. Transparent on the others so nothing reflows when
+                  // the selection moves.
+                  border: `1px solid ${on ? T.border : 'transparent'}`,
+                  background: on ? T.card : 'transparent',
+                  color: on ? T.ink : T.ink2,
+                  fontSize: 12.5,
+                  fontWeight: on ? 600 : 400,
+                  fontFamily: 'inherit',
+                  cursor: busy ? 'default' : 'pointer',
+                }}
+              >
+                <span>{seg.label}</span>
+                {sub && (
+                  <span style={{ fontSize: 10, fontWeight: 400, color: T.ink3 }}>
+                    {sub}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
         {onSaveToPhone && (
           <button
             type="button"

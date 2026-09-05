@@ -205,7 +205,7 @@ export default function ScanHandoffPage() {
           // call too. detectDocument never throws: on a phone with one bar in
           // a gun shop it returns null and the corner editor opens on the aim
           // box, exactly as it did before the model existed.
-          detect={(frame) => detectDocument(frame, { token })}
+          detect={(frame, priors) => detectDocument(frame, { token, ...priors })}
           // Not for the ID: the step wants one photograph, and starting with
           // "more than one" already ticked would be inviting a pack.
           multiDefault={!single}
