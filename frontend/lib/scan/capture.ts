@@ -10,7 +10,7 @@ import { DETECT_ACCEPT } from './detect-client';
 import { DECODE_MAX_EDGE, OUTPUT_MAX_EDGE } from './framing';
 import { edgeMargin } from './guidance';
 import { bestCandidate } from './quad-score';
-import { refineEdges } from './refine-edges';
+import { refineCorners } from './corner-refine';
 
 /**
  * How sure the seeded detector must be before its corners replace the box.
@@ -402,8 +402,18 @@ export interface ScanResult {
   /** Which candidate the arbitration chose, and on what score. */
   pickedBy?: 'corners';
   arbitration?: { worstSide: number; support: number };
-  /** How far sub-pixel refinement moved the worst corner, and sides skipped. */
-  refined?: { moved: number; skipped: number };
+  /**
+   * How far sub-pixel refinement moved the worst corner, and sides skipped.
+   *
+   * `support` is per SIDE, in the quad's own side order — the share of profiles
+   * that agreed with the line that side was fitted to, 0 for a side left where
+   * the detector had it. ⚠️ IT IS THE ONLY WAY TO TELL THE TWO SKEW FAILURES
+   * APART: "moved 28px, support 0.9 on every side" is a refinement that worked
+   * and a detector that was far out, while "moved 28px, support 0.58 on one
+   * side" is a side that snapped onto a crease. The old report showed only the
+   * movement, which is why a wrong refinement read exactly like a right one.
+   */
+  refined?: { moved: number; skipped: number; support?: number[] };
   /**
    * Nearest corner's distance from the frame edge, as a fraction of the short
    * axis. 0 means the crop is touching the edge of the photograph.
@@ -727,18 +737,26 @@ export async function processCapture(
   // ⚠️ SUB-PIXEL REFINEMENT AT FULL RESOLUTION, BEFORE THE MARGIN. Every rung
   // above works at reduced scale — the mask on 64x64 cells, the classical
   // detector halved until print blurs away — so a half-cell becomes tens of
-  // pixels of misplaced crop once scaled back up. refineEdges walks each edge
-  // at full resolution and finds where the step actually is.
+  // pixels of misplaced crop once scaled back up. refineCorners fits each edge
+  // at full resolution and intersects them.
+  //
+  // ⚠️ refineCorners, NOT refineEdges, SINCE 2026-09-05. The old one searched
+  // ±60px and fitted all 32 of its profiles by plain total least squares with
+  // no outlier rejection, so a crease or a table edge tilted a side and the
+  // report read "28.3px moved" over a crop that was still visibly skew. The
+  // replacement is RANSAC over several candidates per profile with a support
+  // floor and a flank test; see corner-refine.ts, which records the numbers.
   //
   // ⚠️ NOT FOR A MANUAL QUAD. Those corners are where the member put them, and
   // moving them afterwards would silently overrule a person who was looking at
   // the document while they dragged.
   if (!opts.manualQuad) {
     const full = toLuma(raster.data, raster.width, raster.height);
-    const r = refineEdges(full, quad as Quad);
+    const r = refineCorners(full, quad as Quad, { expectAspect: opts.expectAspect });
     refineReport = {
       moved: Math.round(Math.max(...r.moved) * 10) / 10,
       skipped: r.skipped,
+      support: r.support.map((s) => Math.round(s * 100) / 100),
     };
     // A refinement that found nothing returns the input unchanged, so this is
     // safe to take unconditionally.

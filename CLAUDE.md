@@ -1576,6 +1576,34 @@ the quad, `warp` rectifies, `enhance` cleans, `aim` sizes the box,
   1698-wide crop of the 4032×3024 track, so a page filling the box spans
   ~1390 px for 210 mm — 168 dpi on every phone. Only the stills path or a
   landscape capture changes that.
+- **The still's corners are refined by robust line fits, not the model's
+  guess** (`lib/scan/corner-refine.ts`, 2026-09-05). The model answers on a
+  224px view, ~30px of error on a 3000px still, and the old `refineEdges`
+  (60px window, plain least squares, no outlier rejection) left the iPhone's
+  A4 visibly skew. Now: 64 gradient profiles per side within a band of 3.5%
+  of the short edge, exhaustive-pair RANSAC, TLS refit, 55% support floor,
+  lines intersected for corners. Two tests are load-bearing and were found
+  on the fixtures: a candidate must be a real boundary (its flanks differ)
+  AND its document-facing flank must match the document's own interior
+  tone, or a line of print or a ruler 10px out wins on strength. A side that
+  finds nothing keeps the detector's line; the guards drop the weakest side
+  and re-intersect rather than discarding all four. Measured over 18 real
+  photographs: 15 better, 2 unchanged, 1 worse (a capture the model had
+  already rejected). ~30ms at 3000px. The report prints per-side support.
+- **Sharpening is halo-suppressed and scaled to the source's sharpness**
+  (`enhance.ts sharpenPlan`/`unsharp`). The Samsung's softer source came
+  back with a grey fringe round every glyph: the unsharp mask overshoots on
+  the dark side and CLAHE amplified the lens's own bleed. The darkening half
+  is now capped at 2 levels on paper (unclamped on ink), and gain, radius,
+  passes, deadzone and the CLAHE mix follow the measured Laplacian
+  sharpness. A crisp source keeps exactly the old settings, pinned by test.
+- **Creases are suppressed photometrically** (`enhance.ts suppressCreases`):
+  a long, thin, faint band (6–45 levels under the paper, ≥45% of the width,
+  within ±3°) with a soft skirt is lifted to the interpolated paper level,
+  leaving ink that crosses it untouched. It runs in every filter mode.
+  ⚠️ Geometric dewarping (Scanbot's Document Enhancer) is NOT this — the
+  fold's shading goes, its bend stays. No fixture has a real page-spanning
+  fold; it was verified on a fold pressed into a real rectified page.
 - **Magnetic lines in the crop editor** (`lib/scan/magnetic.ts`): a dropped
   corner or edge snaps to the nearest strong straight edge within ~3% of the
   short side, with the candidates drawn while dragging and a Snap toggle to

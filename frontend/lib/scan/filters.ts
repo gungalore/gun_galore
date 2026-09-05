@@ -1,5 +1,14 @@
 import { Raster } from './warp';
-import { boxBlur, enhance, flattenLuma, lumaPlane, shrink } from './enhance';
+import {
+  enhance,
+  flattenLuma,
+  lumaPlane,
+  meanAbsLaplacian,
+  sharpenPlan,
+  shrink,
+  suppressCreases,
+  unsharp,
+} from './enhance';
 
 // ────────────────────────────────────────────────────────────────────
 // THE FILTER SET.
@@ -228,6 +237,8 @@ export interface GreyOptions {
   flatten?: boolean;
   /** The restrained unsharp mask, as in enhance(). */
   sharpen?: boolean;
+  /** Take out a fold, as in enhance(). Needs `flatten`. */
+  creases?: boolean;
   /** Percentile to pin to black / white. 0.01 is one percent at each end. */
   clip?: number;
 }
@@ -250,6 +261,7 @@ export interface GreyOptions {
 export function grey(r: Raster, opts: GreyOptions = {}): Raster {
   const flatten = opts.flatten ?? true;
   const sharpen = opts.sharpen ?? true;
+  const creases = opts.creases ?? true;
   const clip = opts.clip ?? 0.01;
   const w = r.width;
   const h = r.height;
@@ -257,15 +269,31 @@ export function grey(r: Raster, opts: GreyOptions = {}): Raster {
   const luma = lumaPlane(r);
   const plane = flatten ? flattenLuma(luma, w, h) : luma;
 
+  // ⚠️ THE FOLD COMES OUT HERE TOO. Grey is not a lesser mode — it is what
+  // `auto` picks for a photocopied form, which is exactly the kind of document
+  // that arrives folded into three. Only when the flatten produced its own
+  // plane: with flatten off, `plane` IS `luma`, which the stretch below still
+  // needs unmodified.
+  if (creases && plane !== luma) suppressCreases(plane, w, h);
+
   if (sharpen) {
-    // `luma` is dead once the flatten has read it, so lend it to boxBlur
-    // instead of letting it allocate — the same trade enhance() makes, and for
-    // the same reason: this is where the peak is.
+    // ⚠️ THE SAME HALO-SUPPRESSED MASK enhance() USES, and on the same
+    // schedule. This was a hand-rolled copy of the old symmetric 0.6-at-
+    // radius-1, so a soft capture got the grey ring round every glyph here
+    // whichever mode the member picked. Measured on the source luma, because
+    // the question is how soft the OPTICS were and the flatten has already
+    // moved the contrast.
+    // `luma` is dead once the flatten has read it, so lend it to the blur
+    // instead of letting it allocate — the same trade enhance() makes.
     const spare = plane !== luma ? luma : undefined;
-    const blur = boxBlur(plane, w, h, 1, 1, spare);
-    for (let i = 0; i < plane.length; i++) {
-      plane[i] = Math.max(0, Math.min(255, plane[i] + 0.6 * (plane[i] - blur[i])));
-    }
+    const sharpened = unsharp(
+      plane,
+      w,
+      h,
+      sharpenPlan(meanAbsLaplacian(luma, w, h, 2)),
+      spare,
+    );
+    plane.set(sharpened);
   }
 
   // The stretch. One 256-bin histogram over a sampled subset — a percentile
@@ -368,6 +396,8 @@ export interface BwOptions {
   antialias?: boolean;
   /** Divide the lighting out first. */
   flatten?: boolean;
+  /** Take out a fold before thresholding, as in enhance(). Needs `flatten`. */
+  creases?: boolean;
 }
 
 /**
@@ -417,11 +447,18 @@ export function bw(r: Raster, opts: BwOptions = {}): Raster {
   const k = opts.k ?? 0.28;
   const antialias = opts.antialias ?? true;
   const flatten = opts.flatten ?? true;
+  const creases = opts.creases ?? true;
   const w = r.width;
   const h = r.height;
 
   const luma = lumaPlane(r);
   const base = flatten ? flattenLuma(luma, w, h) : luma;
+
+  // ⚠️ AND IT MATTERS MOST HERE. Everywhere else a fold is a grey smear; under
+  // an adaptive threshold it is a candidate for INK, and a fold printed solid
+  // black across a licence is the worst output this file can produce. Same
+  // guard as in `grey`: only when the flatten made its own plane.
+  if (creases && base !== luma) suppressCreases(base, w, h);
 
   const long = Math.max(w, h);
   const scale = Math.min(1, BW_FIELD_EDGE / long);

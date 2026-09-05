@@ -29,6 +29,8 @@ export interface EnhanceOptions {
   flatten?: boolean;
   localContrast?: boolean;
   sharpen?: boolean;
+  /** Find a fold and put the paper back inside it. See `suppressCreases`. */
+  creases?: boolean;
 }
 
 export interface EnhanceReport {
@@ -58,6 +60,7 @@ const DEFAULTS: Required<EnhanceOptions> = {
   flatten: true,
   localContrast: true,
   sharpen: true,
+  creases: true,
 };
 
 /** Luma plane from RGBA, as floats so the division below keeps precision. */
@@ -393,6 +396,873 @@ export function flattenLuma(
   return field;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// CREASES
+//
+// A folded certificate photographs as a long, thin, FAINT dark line with a
+// soft shadow band either side. Everything else in this file removes it by
+// accident or not at all:
+//
+//   flattenLuma CANNOT. Its fine field is a max filter that jumps a 3px core
+//   the way it jumps a glyph stroke, and its coarse closing reads straight
+//   across the shadow band — so the field it divides by is the clean paper on
+//   both sides, and the crease keeps its RATIO against that paper exactly as a
+//   letter does. Flattening is a division; a division normalises the paper and
+//   preserves ink, and to a division a crease IS ink.
+//
+//   CLAHE then makes it worse, because a long dark line is real local
+//   contrast and lifting local contrast is CLAHE's entire job.
+//
+// So it needs its own step, and the step has to be photometric: find the band,
+// and put the paper back inside it. ⚠️ GEOMETRIC DEWARPING IS OUT OF SCOPE.
+// The page is genuinely bent, so the print near a fold is genuinely stretched
+// and skewed; straightening THAT needs a 3D model of the sheet and a resample,
+// which is a different piece of work with a different failure mode (it moves
+// glyphs). This moves no pixel — it only changes how bright some of them are.
+//
+// ⚠️ THE ASYMMETRY OF THE RISK DECIDES EVERY THRESHOLD BELOW. A crease we miss
+// is what ships today. A crease we invent erases a line of a licence. So every
+// gate is set to refuse when unsure, and the numbers are quoted where used.
+// ────────────────────────────────────────────────────────────────────
+
+/** One detected fold, in FULL-RESOLUTION pixels. */
+export interface CreaseBand {
+  /** 'row' = runs left-to-right; 'col' = runs top-to-bottom. */
+  axis: 'row' | 'col';
+  /** Where the line crosses the middle of the page, on the other axis. */
+  centre: number;
+  /** How far the line moves across, per pixel along it. |slope| ≤ tan(3°). */
+  slope: number;
+  /** Half the band, core plus shadow. */
+  half: number;
+  /** How far below the paper the core sits, in luma levels. */
+  depth: number;
+  /** Fraction of the page's length the faint line covered. */
+  coverage: number;
+}
+
+export interface CreaseOptions {
+  /** Shallowest band worth touching. Below this it is sensor noise. */
+  faintMin?: number;
+  /** Deepest band we will call a crease. Above this it is print. */
+  faintMax?: number;
+  /** Fraction of the page's length the line must cover. */
+  minCoverage?: number;
+  /** Most bands to remove, per axis. A page folded in three has two. */
+  maxPerAxis?: number;
+}
+
+/**
+ * ⚠️ THESE FIVE NUMBERS ARE THE WHOLE SAFETY ARGUMENT.
+ *
+ * FAINT_MIN 6 — below six levels the "band" is JPEG blocking and sensor
+ * noise, and correcting noise only moves it around.
+ *
+ * FAINT_MAX 45 — the top of the faint window, and the floor of "this is
+ * print". Measured on the real certificate fixtures: body text sits 90–170
+ * levels below its paper and a printed table rule 60–120. Nothing printed
+ * lands under 45, so the window ITSELF is what keeps this off ruled lines and
+ * table borders — they need no separate test.
+ *
+ * MIN_COVERAGE 0.45 — a fold crosses the whole sheet, margins included.
+ *
+ * MIN_HALF 2 (working scale) — the band must have a SOFT SKIRT. This is the
+ * one test that separates a fold from a faint printed hairline: a hairline's
+ * deficit is gone within a pixel, a fold's shadow is not. A printed rule at
+ * full resolution is 3–4px, which is one working-scale pixel — reach 0 or 1,
+ * rejected.
+ *
+ * MAX_INK 0.35 — a backstop against a line that is simply ink. It is NOT the
+ * test that keeps this off a LINE OF TEXT, which is the only other thing on a
+ * page that is long, thin and darker than paper; two better ones do that. The
+ * profile below excludes ink from its medians, so a text row reports the clean
+ * paper BETWEEN its letters and has no peak at all; and the p25 test asks
+ * whether the line is darker than its surroundings for three quarters of its
+ * LENGTH, which a text row fails on its word gaps and its margins. Set tighter
+ * (0.20) this rejected a genuine tilted fold that crossed a dense form.
+ */
+const CREASE_FAINT_MIN = 6;
+const CREASE_FAINT_MAX = 45;
+const CREASE_MIN_COVERAGE = 0.45;
+const CREASE_MIN_HALF = 2;
+const CREASE_MAX_INK = 0.35;
+/** Widest shadow we will attribute to a fold: 2% of the page, either side. */
+const CREASE_MAX_HALF_FRAC = 0.02;
+/** A fold is rarely square to the page, and never far from it. */
+const CREASE_MAX_TILT_DEG = 3;
+/**
+ * ⚠️ SEVEN SEEDS, 1° APART — AND THE GRID DOES NOT NEED TO BE FINER, because
+ * `fitTilt` measures the real tilt afterwards. A seed only has to land the
+ * line inside the observation window over the page's length: half a degree of
+ * error drifts a 1000px line by ±4px, a whole degree by ±9, and the window is
+ * ±40 or more. Thirteen seeds cost the vote loop twice as much for nothing.
+ */
+const CREASE_TILT_STEPS = 7;
+/**
+ * Detection resolution.
+ *
+ * ⚠️ NOT COARSER, AND THE REASON IS TEXT. At 384px on the long edge a line of
+ * 10pt type averages down into a uniform faint grey band spanning most of the
+ * page width — indistinguishable from a fold, by construction. At 1024 the
+ * glyph cores are still ~2px and still darker than FAINT_MAX, so the ink test
+ * above can see them. Everything here votes only on faint pixels, so the cost
+ * is a few per cent of the page rather than the page.
+ */
+const CREASE_SCALE = 1024;
+
+/** Value at a percentile of a plane, from a strided 256-bin histogram. */
+export function paperLevel(plane: Float32Array, pct: number): number {
+  const hist = new Int32Array(256);
+  // One sample in four is still a quarter of a million on a megapixel page —
+  // far more than a percentile of a bimodal histogram can use.
+  const step = plane.length > 1_000_000 ? 4 : 1;
+  let n = 0;
+  for (let i = 0; i < plane.length; i += step) {
+    let v = plane[i] | 0;
+    if (v < 0) v = 0;
+    else if (v > 255) v = 255;
+    hist[v]++;
+    n++;
+  }
+  let cum = 0;
+  for (let b = 0; b < 256; b++) {
+    cum += hist[b];
+    if (cum >= n * pct) return b;
+  }
+  return 255;
+}
+
+/** Along/across addressing, so one body of code handles both fold directions. */
+interface Lay {
+  axis: 'row' | 'col';
+  nAlong: number;
+  nAcross: number;
+  sAlong: number;
+  sAcross: number;
+}
+const layout = (w: number, h: number, axis: 'row' | 'col'): Lay =>
+  axis === 'row'
+    ? { axis, nAlong: w, nAcross: h, sAlong: 1, sAcross: w }
+    : { axis, nAlong: h, nAcross: w, sAlong: w, sAcross: 1 };
+
+/**
+ * Median of a whole plane, from a strided sample — used to find the constant
+ * bias in a max-filter paper estimate, where the answer is a few levels and
+ * forty thousand samples settle it far past what it can use.
+ */
+function medianOf(plane: Float32Array): number {
+  const step = Math.max(1, Math.floor(plane.length / 40_000));
+  const n = Math.ceil(plane.length / step);
+  const buf = new Float32Array(n);
+  let m = 0;
+  for (let i = 0; i < plane.length && m < n; i += step) buf[m++] = plane[i];
+  const s = buf.subarray(0, m);
+  s.sort();
+  return m ? s[m >> 1] : 0;
+}
+
+/** p-th percentile of the first `n` entries of `buf`. Sorts in place. */
+function percentileOf(buf: Float32Array, n: number, p: number): number {
+  if (n === 0) return 0;
+  const s = buf.subarray(0, n);
+  s.sort();
+  return s[Math.min(n - 1, Math.max(0, Math.round((n - 1) * p)))];
+}
+
+/**
+ * The same answer to the nearest level, in O(n) instead of O(n log n).
+ *
+ * ⚠️ THIS IS NOT PREMATURE. The band profile takes a median at each of 105
+ * offsets, for each of up to eight candidates, on each of two axes — sorting
+ * those cost 606ms on one real fixture, three times the rest of enhance()
+ * put together. The values are luma deficits, so a 256-bin histogram over
+ * −64…191 IS the sort, and one level of quantisation is far inside what any
+ * threshold here cares about.
+ */
+const HIST_LO = -64;
+function fastMedian(buf: Float32Array, n: number, hist: Int32Array): number {
+  if (n === 0) return 0;
+  hist.fill(0);
+  for (let i = 0; i < n; i++) {
+    let b = Math.round(buf[i]) - HIST_LO;
+    if (b < 0) b = 0;
+    else if (b > 255) b = 255;
+    hist[b]++;
+  }
+  let cum = 0;
+  const half = n >> 1;
+  for (let b = 0; b < 256; b++) {
+    cum += hist[b];
+    if (cum > half) return b + HIST_LO;
+  }
+  return 255 + HIST_LO;
+}
+
+/**
+ * THE LOCAL PAPER, ROBUST TO A BAND ACROSS IT.
+ *
+ * paperField's fine max filter cannot be reused here: its radius is a glyph
+ * wide, so inside a 40px shadow band it finds no paper and reports the band
+ * back. This one runs the max at a QUARTER of the detection scale with a
+ * radius that spans the widest band we will accept, so it always reaches clean
+ * paper — and it is only ever used as a reference to SUBTRACT, never to divide
+ * by, so its coarseness costs nothing.
+ */
+function creasePaper(small: Float32Array, sw: number, sh: number): Float32Array {
+  const qw = Math.max(8, Math.round(sw / 4));
+  const qh = Math.max(8, Math.round(sh / 4));
+  const q = shrink(small, sw, sh, qw, qh);
+  // The band reaches 2% of the page either side, so 4% overall; a radius of
+  // 6% of the short edge reaches past it from anywhere inside.
+  const r = Math.max(3, Math.round(Math.min(qw, qh) * 0.06 * 4));
+  const lifted = dilate(q, qw, qh, r);
+  return grow(boxBlur(lifted, qw, qh, 2, 2), qw, qh, sw, sh);
+}
+
+/**
+ * MEASURE the tilt, rather than take the vote's word for it.
+ *
+ * Walks the line and, at each position along it, takes the DARKEST offset
+ * within the search window that is faint rather than ink — the fold's own
+ * ridge — then least-squares fits a line through those points, drops the worst
+ * third of the residuals and refits. The trim is what stops a paragraph of
+ * text crossing the fold from dragging the fit sideways.
+ *
+ * Returns the vote's own slope unchanged if too few positions had a ridge to
+ * find, and never returns a tilt outside the ±3° the vote searched.
+ */
+function fitTilt(
+  deficit: Float32Array,
+  lay: Lay,
+  centre: number,
+  seed: number,
+  maxHalf: number,
+  o: Required<CreaseOptions>,
+): number {
+  const { nAlong, nAcross, sAlong, sAcross } = lay;
+  const mid = (nAlong - 1) / 2;
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let a = 0; a < nAlong; a++) {
+    const line = Math.round(centre + (a - mid) * seed);
+    let bestC = 0;
+    let best = 0;
+    for (let d = -maxHalf; d <= maxHalf; d++) {
+      const c = line + d;
+      if (c < 0 || c >= nAcross) continue;
+      const dv = deficit[a * sAlong + c * sAcross];
+      if (dv > o.faintMax || dv < o.faintMin) continue;
+      if (dv > best) {
+        best = dv;
+        bestC = c;
+      }
+    }
+    if (best > 0) {
+      xs.push(a - mid);
+      ys.push(bestC);
+    }
+  }
+  if (xs.length < nAlong * 0.25) return seed;
+
+  const fit = (keep: boolean[]) => {
+    let n = 0;
+    let sx = 0;
+    let sy = 0;
+    let sxx = 0;
+    let sxy = 0;
+    for (let i = 0; i < xs.length; i++) {
+      if (!keep[i]) continue;
+      n++;
+      sx += xs[i];
+      sy += ys[i];
+      sxx += xs[i] * xs[i];
+      sxy += xs[i] * ys[i];
+    }
+    const den = n * sxx - sx * sx;
+    if (n < 8 || Math.abs(den) < 1e-6) return null;
+    const m = (n * sxy - sx * sy) / den;
+    return { m, b: (sy - m * sx) / n };
+  };
+
+  const keep = new Array<boolean>(xs.length).fill(true);
+  let f = fit(keep);
+  if (!f) return seed;
+  const res = xs.map((x, i) => Math.abs(ys[i] - (f as { m: number; b: number }).m * x - (f as { m: number; b: number }).b));
+  const cut = [...res].sort((p, q) => p - q)[Math.floor(res.length * 0.67)];
+  for (let i = 0; i < keep.length; i++) keep[i] = res[i] <= cut;
+  f = fit(keep) ?? f;
+
+  const lim = Math.tan((CREASE_MAX_TILT_DEG * Math.PI) / 180);
+  return Math.max(-lim, Math.min(lim, f.m));
+}
+
+/**
+ * Find the folds, at CREASE_SCALE, in one direction.
+ *
+ * The vote is a cut-down Hough: every faint pixel adds one vote to each of the
+ * 13 candidate tilts, at the offset that tilt puts it on, and a position may
+ * only vote once per (tilt, offset) — otherwise a 6px-thick band votes six
+ * times and claims 600% coverage. Iterating ALONG the line on the outer loop
+ * is what makes that dedupe a single comparison instead of a set.
+ *
+ * The vote only ever says WHERE to look. Every decision is taken afterwards,
+ * from the band's own profile.
+ */
+function findAxisCreases(
+  deficit: Float32Array,
+  ink: Uint8Array,
+  lay: Lay,
+  o: Required<CreaseOptions>,
+): CreaseBand[] {
+  const { nAlong, nAcross, sAlong, sAcross } = lay;
+
+  // The widest band we will accept, plus headroom — the headroom is load
+  // bearing, because "the profile never came back to paper inside the window"
+  // is one of the rejection tests below and it needs somewhere to be observed.
+  const maxHalf = Math.max(4, Math.round(nAcross * CREASE_MAX_HALF_FRAC) + 6);
+
+  /**
+   * ⚠️ THE VOTE MUST NOT SEE AN ABSOLUTE DARKNESS, ONLY A LOCAL ONE.
+   *
+   * `creasePaper` is a max filter and reads high — 10.7 levels on the real
+   * certificate — and the amount it reads high VARIES over the page, because
+   * the page's own shading does. Subtracting one global number then puts the
+   * middle of that certificate below the faint floor and its edges above:
+   * the fold's own pixels stopped being "faint" and the best line on a plainly
+   * folded page scored 49% coverage, under the 45% bar by a whisker and with
+   * nothing else near it.
+   *
+   * A one-dimensional top hat has no such problem. Ask instead: is this pixel
+   * darker than the cleanest bare paper one band-width away on either side?
+   * Broad shading cancels — it is the same on both sides — and a fold does
+   * not, because a fold is exactly the thing that is narrower than the
+   * distance we look.
+   */
+  const faint = new Uint8Array(deficit.length);
+  for (let a = 0; a < nAlong; a++) {
+    const base = a * sAlong;
+    for (let c = maxHalf; c < nAcross - maxHalf; c++) {
+      const i = base + c * sAcross;
+      if (ink[i]) continue;
+      const lo = deficit[base + (c - maxHalf) * sAcross];
+      const hi = deficit[base + (c + maxHalf) * sAcross];
+      // The brighter shoulder is the better estimate of bare paper; a shoulder
+      // that has landed on print is the darker one and would hide the fold.
+      const ridge = deficit[i] - Math.min(lo, hi);
+      if (ridge >= o.faintMin && ridge <= o.faintMax) faint[i] = 1;
+    }
+  }
+
+  const slopes: number[] = [];
+  for (let k = 0; k < CREASE_TILT_STEPS; k++) {
+    const deg =
+      -CREASE_MAX_TILT_DEG +
+      (2 * CREASE_MAX_TILT_DEG * k) / (CREASE_TILT_STEPS - 1);
+    slopes.push(Math.tan((deg * Math.PI) / 180));
+  }
+  // The line is anchored at its middle, so a tilt swings it by half its drift
+  // in each direction; the accumulator carries that margin at both ends.
+  const margin =
+    Math.ceil((nAlong * Math.tan((CREASE_MAX_TILT_DEG * Math.PI) / 180)) / 2) + 2;
+  const bins = nAcross + 2 * margin;
+  const votes = new Int32Array(slopes.length * bins);
+  const lastAlong = new Int32Array(slopes.length * bins).fill(-1);
+  const mid = (nAlong - 1) / 2;
+
+  for (let a = 0; a < nAlong; a++) {
+    const base = a * sAlong;
+    const drift = a - mid;
+    for (let c = 0; c < nAcross; c++) {
+      if (!faint[base + c * sAcross]) continue;
+      for (let s = 0; s < slopes.length; s++) {
+        const bin = Math.round(c - drift * slopes[s]) + margin;
+        if (bin < 0 || bin >= bins) continue;
+        const k = s * bins + bin;
+        if (lastAlong[k] === a) continue;
+        lastAlong[k] = a;
+        votes[k]++;
+      }
+    }
+  }
+
+  // ⚠️ AND WE LOOK TWICE THAT FAR. The baseline below is read off the outer
+  // ends of the window, so the window has to extend well past the widest band
+  // we accept or the band flattens ITSELF: at obsHalf = maxHalf the two folds
+  // drawn at 0° and 1.5° on the synthetic bench vanished, because a band 20px
+  // wide in a 26px window leaves no shoulder to measure paper on.
+  const obsHalf = 2 * maxHalf;
+  const need = o.minCoverage * nAlong;
+  const found: CreaseBand[] = [];
+  const taken: number[] = [];
+  const scratch = new Float32Array(nAlong);
+  const profile = new Float32Array(2 * obsHalf + 1);
+  const hist = new Int32Array(256);
+
+  /**
+   * The band's profile: the MEDIAN deficit at each offset over the line's
+   * length, so a glyph crossing the fold is an outlier rather than a vote —
+   * then flattened against its own two shoulders.
+   *
+   * ⚠️ AGAINST ITS OWN SHOULDERS, NOT AGAINST ZERO. A fold on a page that is
+   * very slightly shaded across it would otherwise measure the shading; and a
+   * page with any residual bias would measure the bias. The outer sixth at
+   * each end of the window is by construction outside the widest band we
+   * accept, so it IS the local paper, and a straight line between the two
+   * removes both effects at once. What is left is the fold and nothing else.
+   */
+  const measure = (centre: number, slope: number) => {
+    for (let d = -obsHalf; d <= obsHalf; d++) {
+      let n = 0;
+      for (let a = 0; a < nAlong; a++) {
+        const c = Math.round(centre + (a - mid) * slope) + d;
+        if (c < 0 || c >= nAcross) continue;
+        const i = a * sAlong + c * sAcross;
+        // ⚠️ INK IS NOT PAPER AND MUST NOT VOTE ON THE PAPER'S LEVEL. Without
+        // this the profile of a SQUARE page aliases against its own text: at
+        // exactly 0° every offset is a whole row, so the median reports "is
+        // this a line of type" and oscillates ±110 levels with the line
+        // pitch — and the re-centring below then walks the band onto a line of
+        // type. A tilted fold never showed it, because a tilted line crosses
+        // the rows and the median comes back to paper.
+        if (ink[i]) continue;
+        scratch[n++] = deficit[i];
+      }
+      // A row with no bare paper at all has nothing to say about the paper.
+      profile[d + obsHalf] = n > nAlong * 0.1 ? fastMedian(scratch, n, hist) : 0;
+    }
+    const edge = obsHalf - maxHalf;
+    let lo = 0;
+    let hi = 0;
+    for (let i = 0; i < edge; i++) {
+      lo += profile[i];
+      hi += profile[profile.length - 1 - i];
+    }
+    lo /= edge;
+    hi /= edge;
+    const span = profile.length - 1;
+    for (let i = 0; i < profile.length; i++) {
+      profile[i] -= lo + ((hi - lo) * i) / span;
+    }
+  };
+
+  // Best-first, so two folds on one page are found independently.
+  //
+  // ⚠️ ONE CANDIDATE PER POSITION, AND THAT IS A PERFORMANCE FIX AS MUCH AS A
+  // CORRECTNESS ONE. A page-spanning band wins its bin at all thirteen tilts
+  // and at every offset inside its own width, so the raw list ran to thousands
+  // of entries — and each one costs a profile (a median per offset over the
+  // page) and a tilt fit. Measured on the real certificate that was 8.9
+  // SECONDS for the colour path against 180ms before. Since `fitTilt` measures
+  // the tilt from the pixels, one seed per position is all that is needed.
+  const order: number[] = [];
+  for (let k = 0; k < votes.length; k++) if (votes[k] >= need) order.push(k);
+  order.sort((p, q) => votes[q] - votes[p]);
+  const tried: number[] = [];
+
+  for (const k of order) {
+    if (found.length >= o.maxPerAxis || tried.length >= 8) break;
+    const seedCentre = (k % bins) - margin;
+    if (tried.some((t) => Math.abs(t - seedCentre) < 2 * maxHalf)) continue;
+    tried.push(seedCentre);
+    if (taken.some((t) => Math.abs(t - seedCentre) < 3 * maxHalf)) continue;
+
+    // ⚠️ THE VOTE FINDS THE BAND BUT CANNOT CHOOSE THE TILT, so do not believe
+    // the one it came with. A fold spanning the page scores 100% coverage at
+    // EVERY tilt whose line stays inside the band over its length — on the
+    // synthetic bench the vote called a 2.5° fold 3°, and a square one −0.5°,
+    // purely on which bin the sort reached first. Fitting a line to the
+    // darkest offset per position measures the tilt instead of guessing it,
+    // and is not restricted to the 0.5° grid the vote was quantised to.
+    const slope = fitTilt(deficit, lay, seedCentre, slopes[(k / bins) | 0], maxHalf, o);
+
+    // …and the vote's OFFSET is no better than its tilt: it is the bin that
+    // won, not the ridge. Re-centre on the deepest offset of the profile, once.
+    measure(seedCentre, slope);
+    let peakAt = 0;
+    for (let d = -maxHalf; d <= maxHalf; d++) {
+      if (profile[d + obsHalf] > profile[peakAt + obsHalf]) peakAt = d;
+    }
+    const centre = seedCentre + peakAt;
+    if (peakAt !== 0) measure(centre, slope);
+    const peak = profile[obsHalf];
+    if (peak < o.faintMin || peak > o.faintMax) continue;
+
+    // How far the shadow reaches: out to where the profile falls under a
+    // quarter of the peak, or under 1.5 levels, whichever comes first.
+    const floor = Math.max(1.5, peak * 0.25);
+    let reach = obsHalf;
+    for (let d = 1; d <= obsHalf; d++) {
+      if (profile[obsHalf + d] < floor && profile[obsHalf - d] < floor) {
+        reach = d;
+        break;
+      }
+    }
+    // ⚠️ THE BAND MUST BE A BAND. Too thin and it is a printed hairline (see
+    // MIN_HALF); too wide and it never closed inside the widest fold shadow we
+    // accept, which means it is shading, not a fold.
+    if (reach < CREASE_MIN_HALF || reach >= maxHalf) continue;
+
+    // Along the core: how much of it is ink, and is it darker than its OWN
+    // surroundings for most of its length? The shoulder subtraction is the
+    // same argument as in `measure`, applied per position rather than to the
+    // median — it is what a text row fails, because a text row's ink is
+    // concentrated in bursts with clean paper between the words.
+    // ⚠️ THE SHOULDERS ARE READ JUST OUTSIDE THE BAND, AND THEY SKIP INK.
+    // The first cut sampled a single pixel at obsHalf on each side, 51px away
+    // — which on a form lands on the next line of type as often as not, and
+    // reported the fold as 70 levels BRIGHTER than its surroundings. Take the
+    // cleanest paper in a short window just past the band instead.
+    const near = reach + 2;
+    const far = Math.min(obsHalf, near + 6);
+    let n = 0;
+    let inked = 0;
+    let seen = 0;
+    for (let a = 0; a < nAlong; a++) {
+      const c = Math.round(centre + (a - mid) * slope);
+      if (c - far < 0 || c + far >= nAcross) continue;
+      const base = a * sAlong;
+      seen++;
+      if (ink[base + c * sAcross]) {
+        inked++;
+        continue;
+      }
+      let lo = Infinity;
+      let hi = Infinity;
+      for (let d = near; d <= far; d++) {
+        const iLo = base + (c - d) * sAcross;
+        const iHi = base + (c + d) * sAcross;
+        if (!ink[iLo] && deficit[iLo] < lo) lo = deficit[iLo];
+        if (!ink[iHi] && deficit[iHi] < hi) hi = deficit[iHi];
+      }
+      if (lo === Infinity || hi === Infinity) continue;
+      scratch[n++] = deficit[base + c * sAcross] - (lo + hi) / 2;
+    }
+    if (!seen || inked / seen > CREASE_MAX_INK) continue;
+    if (percentileOf(scratch, n, 0.25) < o.faintMin * 0.6) continue;
+
+    taken.push(centre);
+    found.push({
+      axis: lay.axis,
+      centre,
+      slope,
+      half: reach,
+      depth: peak,
+      coverage: votes[k] / nAlong,
+    });
+  }
+  return found;
+}
+
+/**
+ * Every fold on the page, in full-resolution coordinates.
+ *
+ * Exported separately from the correction so a test — and a diagnostic — can
+ * ask what was found without also asking for it to be removed.
+ */
+export function findCreases(
+  luma: Float32Array,
+  w: number,
+  h: number,
+  opts: CreaseOptions = {},
+): CreaseBand[] {
+  const o: Required<CreaseOptions> = {
+    faintMin: opts.faintMin ?? CREASE_FAINT_MIN,
+    faintMax: opts.faintMax ?? CREASE_FAINT_MAX,
+    minCoverage: opts.minCoverage ?? CREASE_MIN_COVERAGE,
+    maxPerAxis: opts.maxPerAxis ?? 2,
+  };
+  const long = Math.max(w, h);
+  const scale = Math.min(1, CREASE_SCALE / long);
+  const sw = Math.max(16, Math.round(w * scale));
+  const sh = Math.max(16, Math.round(h * scale));
+  if (sw < 48 || sh < 48) return [];
+  const small = scale < 1 ? shrink(luma, w, h, sw, sh) : luma;
+
+  // ⚠️ THE PAPER ESTIMATE IS A MAX FILTER AND THEREFORE READS HIGH — 10.7
+  // levels on the real certificate, which is inside the faint window. The
+  // median deficit over a document IS that bias (a document is mostly bare
+  // paper), so subtracting it puts clean paper back near zero, which is what
+  // the ink threshold below assumes. It is NOT enough on its own — the amount
+  // it reads high varies over the page — and the per-axis top hat in
+  // `findAxisCreases` is what actually handles that.
+  //
+  // Computed here rather than per axis: it took a third of this function's
+  // time and both directions want the same numbers.
+  const paper = creasePaper(small, sw, sh);
+  const deficit = new Float32Array(small.length);
+  for (let i = 0; i < small.length; i++) deficit[i] = paper[i] - small[i];
+  const bias = medianOf(deficit);
+  for (let i = 0; i < deficit.length; i++) deficit[i] -= bias;
+  // Ink: much darker than the paper. A coarse call, so a global de-bias is
+  // accurate enough — five levels either way does not matter at 45.
+  const ink = new Uint8Array(deficit.length);
+  for (let i = 0; i < deficit.length; i++) if (deficit[i] > o.faintMax) ink[i] = 1;
+
+  const kx = w / sw;
+  const ky = h / sh;
+  const out: CreaseBand[] = [];
+  for (const axis of ['row', 'col'] as const) {
+    for (const b of findAxisCreases(deficit, ink, layout(sw, sh, axis), o)) {
+      // Across-axis lengths scale by that axis's own factor; the slope is a
+      // ratio of the two, so it picks up both.
+      const kAcross = axis === 'row' ? ky : kx;
+      const kAlong = axis === 'row' ? kx : ky;
+      out.push({
+        ...b,
+        centre: (b.centre + 0.5) * kAcross,
+        slope: (b.slope * kAcross) / kAlong,
+        half: b.half * kAcross,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Put the paper back inside the fold.
+ *
+ * ⚠️ IN PLACE, AND THE RETURNED PLANE IS THE ONE PASSED IN. That is what makes
+ * "an uncreased page is untouched" byte-identical rather than nearly so, and
+ * it keeps this off the memory peak — enhance() is already holding three
+ * full-resolution planes by the time this runs.
+ *
+ * Inside a band each pixel's target is the paper interpolated between two
+ * CLEAN anchor lines just outside the band — a local max over a small window
+ * on each, so a glyph sitting on an anchor cannot drag the target down. Then:
+ *
+ *   deficit ≤ 25          the fold, lifted the whole way to the target;
+ *   25 < deficit < 45     blended out, so a glyph's antialiased edge is not
+ *                         bitten in half at a threshold;
+ *   deficit ≥ 45          ink. Untouched. This is the text crossing the fold.
+ *
+ * and the correction fades to nothing across the last quarter of the band, so
+ * no seam can appear where a slightly-mismeasured band meets untouched page.
+ */
+export function suppressCreases(
+  luma: Float32Array,
+  w: number,
+  h: number,
+  opts: CreaseOptions = {},
+): { luma: Float32Array; bands: CreaseBand[] } {
+  const bands = findCreases(luma, w, h, opts);
+  if (!bands.length) return { luma, bands };
+
+  const faintMax = opts.faintMax ?? CREASE_FAINT_MAX;
+  const inkSoft = faintMax * 0.55; // 24.75 at the default 45
+  for (const b of bands) {
+    const { nAlong, nAcross, sAlong, sAcross } = layout(w, h, b.axis);
+    const mid = (nAlong - 1) / 2;
+    // ⚠️ CORRECT WIDER THAN WE MEASURED. `half` is where the profile fell to a
+    // quarter of its peak, which is a good way to IDENTIFY a band and a poor
+    // way to bound one — the shadow carries on past it. Measured on a real
+    // certificate with a fold pressed into it: at the measured width the fold
+    // line came back to 6.6 levels below its paper, at 1.6× to 2.3. Widening
+    // is close to free because every pixel of the correction is driven by the
+    // deficit it finds, and outside the shadow there is none.
+    const half = Math.max(1, Math.round(b.half * 1.6));
+    const pad = Math.max(2, Math.round(half * 0.4));
+    // The anchor window along the line: wide enough to step over a glyph,
+    // narrow enough that the paper level it reports is still local.
+    const win = Math.max(3, Math.round(nAlong / 200));
+
+    for (let a = 0; a < nAlong; a++) {
+      const line = Math.round(b.centre + (a - mid) * b.slope);
+      const cA = line - half - pad;
+      const cB = line + half + pad;
+      if (cA < 0 || cB >= nAcross) continue;
+
+      let anchorA = 0;
+      let anchorB = 0;
+      for (let k = -win; k <= win; k++) {
+        const base = Math.min(nAlong - 1, Math.max(0, a + k)) * sAlong;
+        const va = luma[base + cA * sAcross];
+        const vb = luma[base + cB * sAcross];
+        if (va > anchorA) anchorA = va;
+        if (vb > anchorB) anchorB = vb;
+      }
+
+      const base = a * sAlong;
+      for (let d = -half; d <= half; d++) {
+        const c = line + d;
+        if (c < 0 || c >= nAcross) continue;
+        const i = base + c * sAcross;
+        const t = (d + half) / (2 * half);
+        const deficit = anchorA * (1 - t) + anchorB * t - luma[i];
+        if (deficit <= 0 || deficit >= faintMax) continue;
+        let k = deficit > inkSoft ? (faintMax - deficit) / (faintMax - inkSoft) : 1;
+        const e = Math.abs(d) / half;
+        if (e > 0.75) k *= (1 - e) / 0.25;
+        luma[i] += k * deficit;
+      }
+    }
+  }
+  return { luma, bands };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// SHARPENING WITHOUT THE GREY RING
+// ────────────────────────────────────────────────────────────────────
+
+/** How hard to sharpen, and with what kernel. See `sharpenPlan`. */
+export interface SharpenPlan {
+  /** Gain on the mask. */
+  gain: number;
+  /** Blur radius, px. */
+  radius: number;
+  /** Blur passes — a single box is blocky at any radius above 1. */
+  passes: number;
+  /** Deadzone in luma levels, below which the mask is not the signal. */
+  threshold: number;
+}
+
+/**
+ * ⚠️ THE MOST THE MASK MAY DARKEN A PIXEL THAT IS ALREADY PAPER.
+ *
+ * This is the whole fix for "the darkening around the text". Two levels is
+ * under a JPEG quantisation step on a bright flat: it is the difference
+ * between a ring you can see and one you cannot.
+ */
+const HALO_ON_PAPER = 2;
+
+/**
+ * Measured sharpness of a rectified page, mean absolute Laplacian.
+ *
+ * ⚠️ THESE TWO NUMBERS ARE MEASURED, NOT CHOSEN. Across the real fixtures a
+ * rectified page scores 10.3, 7.5, 6.6, 6.6, 6.1, 5.3, 5.1, 4.9 on the iPhone
+ * captures and 1.7 on the one genuinely soft frame. The same photographs
+ * pushed through a σ=1.4 blur — roughly how much softer the operator's Samsung
+ * output is than the iPhone's — land at 2.1, 2.3, 2.7. So 3 and 7 bracket the
+ * real population with the soft end below and the crisp end above.
+ */
+export const SHARP_SOFT = 3;
+export const SHARP_CRISP = 7;
+
+/**
+ * Mean absolute Laplacian. `step` samples every step-th pixel in both
+ * directions; the Laplacian itself always uses immediate neighbours, so the
+ * answer is the same statistic measured on fewer of them.
+ */
+export function meanAbsLaplacian(
+  luma: Float32Array,
+  w: number,
+  h: number,
+  step = 1,
+): number {
+  let lap = 0;
+  let n = 0;
+  for (let y = 1; y < h - 1; y += step) {
+    const row = y * w;
+    for (let x = 1; x < w - 1; x += step) {
+      const i = row + x;
+      lap += Math.abs(
+        4 * luma[i] - luma[i - 1] - luma[i + 1] - luma[i - w] - luma[i + w],
+      );
+      n++;
+    }
+  }
+  return n ? lap / n : 0;
+}
+
+/**
+ * THE GAIN SCHEDULE.
+ *
+ * ⚠️ A SOFT SOURCE NEEDS A BIGGER RADIUS AND LESS GAIN, WHICH IS THE OPPOSITE
+ * OF THE OBVIOUS MOVE. The Samsung's edges are spread over three or four
+ * pixels, so a radius-1 mask samples entirely INSIDE the ramp: it finds almost
+ * nothing at the edge and plenty on the flats — exactly the wrong way round,
+ * amplifying JPEG mush while leaving the edge soft. A radius that SPANS the
+ * ramp finds the edge instead, and once it does it needs less gain to get the
+ * same contrast back. The deadzone follows from the same fact: on a soft
+ * source the mask's small values are compression artefacts, not detail.
+ *
+ * The crisp end is deliberately EXACTLY what this file did before (0.6, radius
+ * 1, no deadzone), so a sharp iPhone capture changes only by the halo clamp.
+ */
+export function sharpenPlan(sharpness: number): SharpenPlan {
+  const t = Math.max(
+    0,
+    Math.min(1, (sharpness - SHARP_SOFT) / (SHARP_CRISP - SHARP_SOFT)),
+  );
+  const radius = Math.max(1, Math.round(3 + t * (1 - 3)));
+  return {
+    gain: 0.32 + t * (0.6 - 0.32),
+    radius,
+    passes: radius > 1 ? 2 : 1,
+    threshold: 3 - t * 3,
+  };
+}
+
+/**
+ * A HALO-SUPPRESSED UNSHARP MASK.
+ *
+ * A plain unsharp mask is symmetric: it brightens the light side of every edge
+ * and darkens the dark side by the same amount. On print that is a bad trade,
+ * because the two sides are not the same kind of thing — the dark side is INK,
+ * where more contrast is pure gain, and the light side is PAPER, where any
+ * darkening at all reads as a grey shadow drawn round every glyph. On a soft
+ * source, where the ramp is wide and the mask has plenty to work with on both
+ * sides, that shadow is what the operator reported on the Samsung output.
+ *
+ * So the darkening half is clamped by how paper-like the pixel already is: ink
+ * darkens freely, paper may not lose more than HALO_ON_PAPER levels, and
+ * everything between rides a smooth ramp so no boundary shows.
+ *
+ * ⚠️ A FLAT FRACTION (darkGain = ½ × gain) WAS TRIED FIRST AND REJECTED. It
+ * does suppress the ring, but it also halves the mask on genuine ink, so small
+ * print comes back softer than it went in — which fails the one thing this
+ * function exists to protect.
+ */
+export function unsharp(
+  lifted: Float32Array,
+  w: number,
+  h: number,
+  plan: SharpenPlan,
+  spare?: Float32Array,
+): Float32Array {
+  const blur = boxBlur(lifted, w, h, plan.radius, plan.passes, spare);
+  const out = new Float32Array(lifted.length);
+  // Where paper is, and where ink is, on THIS plane — which has already been
+  // flattened and equalised, so a hard-coded 245 would be wrong whenever
+  // either of those steps is switched off.
+  const paper = Math.max(32, paperLevel(lifted, 0.9));
+  const inkTop = paper * 0.55;
+  const span = Math.max(1, paper * 0.88 - inkTop);
+
+  for (let i = 0; i < lifted.length; i++) {
+    const v = lifted[i];
+    const d = v - blur[i];
+    let next = v;
+    if (d > plan.threshold) {
+      next = v + plan.gain * (d - plan.threshold);
+    } else if (d < -plan.threshold) {
+      let dark = plan.gain * (-d - plan.threshold);
+      // ⚠️ TWO QUESTIONS, AND THE PIXEL HAS TO PASS BOTH TO BE PROTECTED.
+      //
+      // How bright is it on the page? That is the one that matters in the real
+      // pipeline, where flatten has already put the paper at a known level.
+      //
+      // And how bright is it against its OWN neighbourhood? That one matters
+      // when the first is wrong. On a badly softened source a 2px stroke never
+      // reaches its ink value at all — blurred it sits at 190 against 232
+      // paper, comfortably above the global ink line — so the global test
+      // alone declared the STROKE to be paper and clamped the very darkening
+      // that makes it legible. Measured on the soft bench, edge contrast fell
+      // from 14.1 to 12.7 before this second question was added.
+      const ratio = blur[i] > 1 ? v / blur[i] : 1;
+      const paperness = Math.min(
+        Math.max(0, Math.min(1, (v - inkTop) / span)),
+        Math.max(0, Math.min(1, (ratio - 0.9) / 0.08)),
+      );
+      // At paperness 1 this is min(dark, 2); at 0 it is dark, unchanged.
+      const cap = HALO_ON_PAPER + (1 - paperness) * dark;
+      if (dark > cap) dark = cap;
+      next = v - dark;
+    }
+    out[i] = next < 0 ? 0 : next > 255 ? 255 : next;
+  }
+  return out;
+}
+
 /**
  * The illumination field: a heavily blurred copy of the luma.
  *
@@ -535,22 +1405,11 @@ export function inspect(r: Raster): EnhanceReport {
     sum += luma[i];
     if (luma[i] > 250) blown++;
   }
-  // Mean absolute Laplacian: high on crisp print, low on a soft photograph.
-  let lap = 0;
-  let n = 0;
-  const w = r.width;
-  for (let y = 1; y < r.height - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const i = y * w + x;
-      lap += Math.abs(
-        4 * luma[i] - luma[i - 1] - luma[i + 1] - luma[i - w] - luma[i + w],
-      );
-      n++;
-    }
-  }
   return {
     glare: blown / luma.length,
-    sharpness: n ? lap / n : 0,
+    // High on crisp print, low on a soft photograph. Step 1 — this number is
+    // read by the verdicts the member sees, so it stays exact.
+    sharpness: meanAbsLaplacian(luma, r.width, r.height, 1),
     meanLuma: sum / luma.length,
   };
 }
@@ -567,6 +1426,13 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
   const w = r.width;
   const h = r.height;
   const luma = lumaPlane(r);
+  // ⚠️ MEASURED ON THE SOURCE LUMA, and measured ONCE for both (b) and (c).
+  // The schedule is asking how soft the OPTICS were; flatten and CLAHE have
+  // both already changed the contrast by the time those steps want the answer,
+  // so the Laplacian of anything later describes this function's own work
+  // rather than the phone's. Step 2 — a quarter of the pixels, which is still
+  // a hundred thousand samples of a single mean on any real page.
+  const sharpness = meanAbsLaplacian(luma, w, h, 2);
   // ⚠️ `out` IS ALLOCATED AT THE BOTTOM, NOT HERE, AND THAT IS DELIBERATE. It
   // used to be created on this line and then sat untouched — a full RGBA plane
   // of reserved, idle memory — through flatten, CLAHE and the unsharp mask,
@@ -579,7 +1445,39 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
   let corrected = luma;
   if (o.flatten) corrected = flattenLuma(luma, w, h);
 
+  // (a2) Take the fold out, if there is one.
+  //
+  // ⚠️ AFTER FLATTENING AND BEFORE CLAHE, and neither neighbour is negotiable.
+  // Before flattening, "faintly darker than the paper" is not a fixed number —
+  // the lighting gradient is bigger than the whole faint window. After CLAHE,
+  // the fold has been AMPLIFIED as local contrast and is no longer faint, so
+  // the window that identifies it would no longer contain it.
+  //
+  // ⚠️ IT RUNS ON `corrected` IN PLACE. When flatten is off that array IS
+  // `luma`, which the final gain loop reads as its denominator — so in that
+  // one case it gets its own copy, or every corrected pixel would divide
+  // itself away to a gain of 1.
+  if (o.creases) {
+    if (corrected === luma) corrected = Float32Array.from(luma);
+    suppressCreases(corrected, w, h);
+  }
+
   // (b) Local contrast.
+  //
+  // ⚠️ HELD BACK ON A SOFT SOURCE, FOR THE SAME REASON THE MASK IS. CLAHE
+  // lifts local contrast, and on a soft capture the local contrast next to a
+  // glyph IS the lens's bleed — so at full strength it takes the source's own
+  // 19-level grey skirt and prints it at 40. Measured on the spaced-marks
+  // bench at σ=2: full CLAHE turned a 19.5-level source skirt into 39.9,
+  // against 22 at this mix. The detail it exists to lift — a faint stamp,
+  // security print — is not there to lift on a page this soft anyway.
+  const claheMix =
+    0.55 +
+    0.45 *
+      Math.max(
+        0,
+        Math.min(1, (sharpness - SHARP_SOFT) / (SHARP_CRISP - SHARP_SOFT)),
+      );
   let lifted = corrected;
   if (o.localContrast) {
     const TILES = 8;
@@ -627,18 +1525,19 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
         const wx = twx[x];
         const a0 = tx0[x];
         const a1 = tx1[x];
-        lifted[i] =
+        const v =
           luts[rowA + a0][b] * (1 - wx) * (1 - wy) +
           luts[rowA + a1][b] * wx * (1 - wy) +
           luts[rowB + a0][b] * (1 - wx) * wy +
           luts[rowB + a1][b] * wx * wy;
+        lifted[i] = corrected[i] + claheMix * (v - corrected[i]);
       }
     }
   }
 
-  // (c) A restrained unsharp mask, to put back what the warp's bilinear cost.
-  // Kept low on purpose: over-sharpening rings around glyph strokes, and a
-  // vision model reads ringing as noise.
+  // (c) A halo-suppressed unsharp mask, to put back what the warp's bilinear
+  // cost. Kept low on purpose: over-sharpening rings around glyph strokes, and
+  // a vision model reads ringing as noise.
   let finalL = lifted;
   if (o.sharpen) {
     // ⚠️ `corrected` IS DEAD BY HERE — CLAHE read it for the last time when it
@@ -648,11 +1547,13 @@ export function enhance(r: Raster, opts: EnhanceOptions = {}): Raster {
     // so the loan is only offered when they are genuinely different arrays.
     const spare =
       corrected !== lifted && corrected !== luma ? corrected : undefined;
-    const blur = boxBlur(lifted, w, h, 1, 1, spare);
-    finalL = new Float32Array(lifted.length);
-    for (let i = 0; i < lifted.length; i++) {
-      finalL[i] = Math.max(0, Math.min(255, lifted[i] + 0.6 * (lifted[i] - blur[i])));
-    }
+    finalL = unsharp(
+      lifted,
+      w,
+      h,
+      sharpenPlan(sharpness),
+      spare,
+    );
   }
 
   // Re-apply as a per-pixel GAIN so hue survives.

@@ -4,6 +4,17 @@ import type { Quad } from './geometry';
 // ────────────────────────────────────────────────────────────────────
 // SUB-PIXEL REFINEMENT, AT FULL RESOLUTION, JUST BEFORE THE WARP.
 //
+// ⚠️ SUPERSEDED ON THE CAPTURE PATH 2026-09-05 BY corner-refine.ts, AND KEPT
+// FOR THE ARGUMENT IT RECORDS RATHER THAN FOR THE CODE. Everything below about
+// EDGES-NEVER-CORNERS and about the nearest step rather than the strongest is
+// still true and is carried over verbatim. What failed is the fit: 32 profiles,
+// one candidate each, plain total least squares, no outlier rejection and a
+// 60px ceiling on the search. On the operator's iPhone that reported "refined
+// 28.3px moved" over an A4 crop that was still visibly skew — a crease or a
+// table edge tilting a side is invisible to a fit that has no way to reject a
+// point. corner-refine.ts keeps several candidates per profile and picks the
+// line by RANSAC with a support floor and a flank test.
+//
 // Every rung that produces a quad works at reduced scale: the model reasons on
 // a 64x64 mask (one cell ≈ 30 source pixels on a 4K frame), and the classical
 // detector halves the image until print blurs away. Both then scale their
