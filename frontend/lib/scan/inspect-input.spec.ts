@@ -81,9 +81,18 @@ describe('enhance() corrupts every number inspect() reports', () => {
     const raw = softPage();
     // Soft enough that the "this one came out soft" note should fire.
     expect(inspect(raw).sharpness).toBeLessThan(3.5);
-    // Sharpening it walks straight past the warning. This is the WORSE half of
-    // the bug: a note that never fires leaves nothing behind to notice.
-    expect(inspect(enhance(raw)).sharpness).toBeGreaterThan(3.5);
+    // Sharpening inflates it several times over, and the note that should have
+    // fired is measured on a number that no longer describes the photograph.
+    // This is the WORSE half of the bug: a note that never fires leaves
+    // nothing behind to notice.
+    //
+    // ⚠️ THIS USED TO READ `> 3.5` — straight past the warning bar. It no
+    // longer clears the bar on THIS scene, and only because the sharpening
+    // schedule now measures how soft the source is and holds back on a soft
+    // one (see `sharpenPlan`). The inflation is still four-fold, so the rule
+    // this file exists to enforce is unchanged: inspect the INPUT.
+    const raised = inspect(enhance(raw)).sharpness;
+    expect(raised).toBeGreaterThan(inspect(raw).sharpness * 3);
   });
 
   it('pushes ordinary paper past the brightness bound', () => {

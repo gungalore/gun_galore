@@ -527,3 +527,101 @@ describe('performance', () => {
     }
   }, 60_000);
 });
+
+// ────────────────────────────────────────────────────────────────────
+// A FOLDED PAGE, THROUGH THE MODES THE MEMBER CAN PICK.
+//
+// The fold suppression lives in enhance.ts and is pinned there. What this
+// pins is that Grey and B&W get it too — they flatten with the same
+// `flattenLuma`, so before this they inherited the fold as faithfully as
+// Colour did, and `auto` sends a photocopied form (the kind of document that
+// arrives folded into three) to Grey.
+// ────────────────────────────────────────────────────────────────────
+
+/** `textPage` with a fold pressed across it: a thin core and a soft shadow. */
+function foldedTextPage(
+  w: number,
+  h: number,
+  o: { depth?: number; at?: number } = {},
+): { raster: Raster; foldY: number } {
+  const r = textPage(w, h);
+  const depth = o.depth ?? 24;
+  // ⚠️ BETWEEN TWO LINES OF TYPE. `textPage` puts ink on rows where y%14 < 4,
+  // so a fold landing on one would have an ink core and be refused — rightly,
+  // but that is not what this is measuring.
+  const foldY = Math.round((h * (o.at ?? 0.45)) / 14) * 14 + 8;
+  const band = h * 0.016;
+  for (let y = 0; y < h; y++) {
+    const d = Math.abs(y - foldY);
+    let drop = 0;
+    if (d <= 1.5) drop = depth;
+    else if (d <= band) drop = depth * 0.55 * (1 - (d - 1.5) / (band - 1.5));
+    if (drop <= 0) continue;
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (r.data[i] < 120) continue; // print keeps its own value
+      r.data[i] -= drop;
+      r.data[i + 1] -= drop;
+      r.data[i + 2] -= drop;
+    }
+  }
+  return { raster: r, foldY };
+}
+
+/** Mean of the bare paper on one row. */
+function paperRow(r: Raster, y: number): number {
+  let s = 0;
+  let n = 0;
+  for (let x = Math.round(r.width * 0.05); x < r.width * 0.95; x++) {
+    const v = lumaAt(r, x, y);
+    if (v < 140) continue;
+    s += v;
+    n++;
+  }
+  return n ? s / n : 0;
+}
+
+describe('a folded page', () => {
+  const W = 900;
+  const H = 1200;
+
+  it('colour takes the fold out', () => {
+    const { raster, foldY } = foldedTextPage(W, H);
+    const out = colour(raster);
+    expect(Math.abs(paperRow(out, foldY) - paperRow(out, foldY - 80))).toBeLessThan(4);
+  });
+
+  it('grey takes the fold out, and the print survives', () => {
+    const { raster, foldY } = foldedTextPage(W, H);
+    const off = grey(raster, { creases: false });
+    const on = grey(raster);
+    expect(paperRow(off, foldY - 80) - paperRow(off, foldY)).toBeGreaterThan(8);
+    expect(Math.abs(paperRow(on, foldY) - paperRow(on, foldY - 80))).toBeLessThan(5);
+    // The line of type that runs straight through the fold's shadow is still
+    // ink — `textPage` puts a row of it eight pixels above, well inside the
+    // band the correction covers.
+    expect(lumaAt(on, W / 2, foldY - 8)).toBeLessThan(120);
+  });
+
+  it('⚠️ B&W DOES NOT PRINT THE FOLD AS A BLACK LINE', () => {
+    // The highest-stakes case in this file. Under an adaptive threshold a
+    // fold is a candidate for ink, and a fold rendered solid black across a
+    // licence is the worst output the scanner can produce.
+    const { raster, foldY } = foldedTextPage(W, H, { depth: 34 });
+    const out = bw(raster);
+    let dark = 0;
+    for (let x = Math.round(W * 0.05); x < W * 0.95; x++) {
+      if (lumaAt(out, x, foldY) < 128) dark++;
+    }
+    expect(dark / (W * 0.9)).toBeLessThan(0.05);
+  });
+
+  it('an unfolded page is unchanged by the step', () => {
+    const p = textPage(W, H, { shadow: 0.3 });
+    const withStep = grey(p);
+    const without = grey(p, { creases: false });
+    for (let i = 0; i < withStep.data.length; i += 997) {
+      expect(withStep.data[i]).toBe(without.data[i]);
+    }
+  });
+});

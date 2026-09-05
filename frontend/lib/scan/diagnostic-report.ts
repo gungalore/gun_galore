@@ -136,7 +136,7 @@ export interface ReportInput {
     sourceEdge?: number;
     pickedBy?: string;
     arbitration?: { worstSide: number; support: number };
-    refined?: { moved: number; skipped: number };
+    refined?: { moved: number; skipped: number; support?: number[] };
     seed?: { confidence: number; hits: number[] };
     detect?: { outcome: string; minConfidence?: number; ms?: number };
     outputWanted?: number;
@@ -376,7 +376,16 @@ export function buildReport(r: ReportInput): string {
       out.push(line('worst side', n(c.arbitration.worstSide)));
       out.push(line('edge support', n(c.arbitration.support)));
     }
-    if (c.refined) out.push(line('refined', `${c.refined.moved}px moved, ${c.refined.skipped} side(s) skipped`));
+    if (c.refined) {
+      // ⚠️ THE SUPPORT IS THE HALF THAT DIAGNOSES. "28.3px moved" was reported
+      // over a crop that still came out skew, and from that number alone there
+      // is no way to tell a refinement that worked from one that snapped a side
+      // onto a crease. Per-side support says which.
+      const sup = c.refined.support?.length ? `, support ${c.refined.support.join(' / ')}` : '';
+      out.push(
+        line('refined', `${c.refined.moved}px moved, ${c.refined.skipped} side(s) skipped${sup}`),
+      );
+    }
     if (c.seed) {
       out.push(line('seed conf', n(c.seed.confidence)));
       out.push(line('seed hits', c.seed.hits.join(' / ')));
