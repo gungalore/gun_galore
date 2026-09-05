@@ -1890,7 +1890,27 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-05, commit `acf041ec`.** ⚠️ **CARRIED A MIGRATION** —
+**Last deploy: 2026-09-05 (afternoon), commit `53a5f3ba`.** No migrations.
+**FULL DEPLOY** via `deploy.sh` (both apps + warden). Pre-deploy dump
+`alloutdoor-20260905-133307.dump`. Backend and frontend each health-checked
+twice on the box, public 200 twice, pm2 all online. Verified afterwards that
+`/scan/v2/doccornernet_lean.ort`, `…/ort-wasm-simd-threaded.mjs` and
+`….wasm` are served publicly with the right content types — the `.mjs` is the
+one the middleware would have 307'd before this deploy.
+
+Shipped: **the scanner rebuilt to Scanbot parity** (`523b6121` on
+`feat/scanner-tracking`, merged via `feat/the-bench`): DocCornerNet replaces
+DocQuadNet256 with a second pass on the aim region; the filter set; magnetic
+lines in the crop editor; Android full-resolution stills; the quality gate;
+tray reopen and reorder; tap-to-focus and zoom; onnxruntime-web 1.29. See the
+Document Scanner section for the decisions that must stay made.
+
+⚠️ **Untested on a phone.** The new worker, runtime and asset path have run
+only under tsc, 1180 unit tests and a production build. First thing to check
+on a real device: that the live box appears at all (the diagnostics panel's
+"live detector" block says `running` and names the winning pass).
+
+**Previous deploy: 2026-09-05, commit `acf041ec`.** ⚠️ **CARRIED A MIGRATION** —
 `20260905090000_credential_read_provenance`, additive and defaulted (two
 `TEXT[]` columns on `Credential`, no backfill). **FULL DEPLOY** via
 `deploy.sh` (both apps + warden). Pre-deploy dump
