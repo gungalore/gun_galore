@@ -23,6 +23,7 @@ import {
   expiryAnswer,
   mergeReviewQueue,
   needsALook,
+  uncertaintyReason,
   refileNeedsPanel,
   settleableInBulk,
 } from '@/lib/document-review-rules';
@@ -845,6 +846,11 @@ function AddPanel({
           // needed a human became invisible among them.
           autoFiled: r.autoFiled,
           confident: r.namedConfident,
+          // WHY it wants a look, not just THAT it does. Stored on the row,
+          // so it survives the refresh that used to flatten every
+          // unconfirmed document into the same amber.
+          readUncertain: r.readUncertain,
+          readNotes: r.readNotes,
           // ⚠️ CARRIED THROUGH, NOT DEFAULTED. A safe photograph arrives with
           // "Never expires" already ticked by the server, and a confirm step
           // that started it unticked would show a disabled-looking form
@@ -975,6 +981,8 @@ function AddPanel({
           mimeType: r.mimeType ?? file.type,
           autoFiled: r.autoFiled === true,
           confident: r.confident === true,
+          readUncertain: r.proposed?.lowConfidence ?? [],
+          readNotes: [],
           neverExpires: r.neverExpires === true,
           issuedOnUnknown: r.issuedOnUnknown === true,
           proposed: r.proposed,
@@ -1564,6 +1572,8 @@ function ReviewScreen({
                   kinds={KINDS}
                   currentKind={panelFor.kind}
                   uncertain={needsALook(panelFor)}
+                  reason={uncertaintyReason(panelFor)}
+                  notes={panelFor.readNotes ?? []}
                   defaultTitle={panelFor.title}
                   neverExpires={panelFor.neverExpires}
                   issuedOnUnknown={panelFor.issuedOnUnknown}
@@ -1896,6 +1906,8 @@ function ConfirmPanel({
   kinds,
   currentKind,
   uncertain,
+  reason,
+  notes,
   defaultTitle,
   neverExpires: neverExpiresInitial,
   issuedOnUnknown: issuedOnUnknownInitial,
@@ -1926,6 +1938,8 @@ function ConfirmPanel({
   currentKind?: CredentialKind;
   /** We guessed, and were not sure. A marker, not a blocker. */
   uncertain?: boolean;
+  reason?: string | null;
+  notes?: string[];
   defaultTitle?: string;
   /**
    * How the two ticks stand on the stored row, so re-opening the panel shows
@@ -2033,6 +2047,34 @@ function ConfirmPanel({
                 : 'We could not read anything off that one. Fill it in as it is printed on the document, or tick “Never expires” if there is no date on it.'}
       </p>
 
+        {/* WHY this document is in front of you.
+
+            The panel already said "(check this)" beside the type. That is
+            honest and it is not useful: a member with twelve documents and
+            two doubtful ones could not tell which two, so the label did the
+            work of a shrug. This names the field in THEIR words, so their
+            eye goes to the right line on the paper they are holding.
+
+            Rendered only when there is something to say. A row filed before
+            this was stored has nothing recorded, and inventing a reason for
+            it would be worse than the shrug. */}
+        {(reason || (notes && notes.length > 0)) && (
+          <div className="mt-3 rounded border border-[var(--border)] bg-[var(--gold-wash)] px-3 py-2 text-[13px] leading-relaxed">
+            {reason && (
+              <p className="text-[var(--warning)]">{reason}</p>
+            )}
+            {notes?.map((n) => (
+              /* What we CHANGED on their document. A SAPS 524 prints the
+                 identity number in boxes and the left border of the first
+                 reads as a digit, so we drop it and re-check the checksum.
+                 That is arithmetic rather than a guess, but it is still
+                 something we did to their document without asking. */
+              <p key={n} className="mt-1 text-[var(--text-secondary)]">
+                We corrected something as we read it: {n}
+              </p>
+            ))}
+          </div>
+        )}
       {/* WHAT WE MADE OF IT. The type is not cosmetic: a licence filed as
           something else is never offered a renewal, and reminder copy is
           written per type. */}
