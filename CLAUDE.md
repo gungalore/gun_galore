@@ -1911,7 +1911,20 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-05 (afternoon), commit `53a5f3ba`.** No migrations.
+**Last deploy: 2026-09-05 (later afternoon), commit `214a0ffa`.** No migrations.
+**FRONTEND ONLY** (`deploy.sh --frontend-only`); the backend kept serving.
+Dump `alloutdoor-20260905-142041.dump`. Health doubled, public 200 twice, and
+**`https://alloutdoor.co.za/scan/selftest` run from the desktop browser
+pane: status running, presence 1.000, corners on the drawn test document.**
+
+Shipped: the fix for the previous deploy — the detector never loaded on
+either phone (both reports: live detector `unavailable`) because webpack had
+rewritten the runtime's dynamic import; the worker now `importScripts` the
+runtime from `/scan/v2/`. Plus the self-test page, "unavailable because …"
+in the diagnostics report, and the operator's 60% fill gate for auto-capture
+(linear, capped per shape at the aim box). See the Document Scanner section.
+
+**Previous deploy: 2026-09-05 (afternoon), commit `53a5f3ba`.** No migrations.
 **FULL DEPLOY** via `deploy.sh` (both apps + warden). Pre-deploy dump
 `alloutdoor-20260905-133307.dump`. Backend and frontend each health-checked
 twice on the box, public 200 twice, pm2 all online. Verified afterwards that
