@@ -176,7 +176,11 @@ function walk(dir) {
 
 function check(file) {
   const rel = path.relative(ROOT, file).split(path.sep).join('/');
-  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  // ⚠️ \r?\n, NOT \n. On a CRLF checkout (a fresh git worktree on Windows)
+  // every line kept its \r, and the comment-stripping regex below anchors on
+  // `$`, which a trailing \r defeats — so a hex colour QUOTED IN A COMMENT
+  // failed the build locally while passing on the LF checkout the box uses.
+  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
 
   lines.forEach((line, i) => {
     const at = `${rel}:${i + 1}`;
