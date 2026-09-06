@@ -30,6 +30,7 @@ import {
 } from './licence-centre-extract.service';
 import {
   categoryFromText,
+  selfLoadingFromText,
   deriveCertificateExpiry,
   type Endorsement,
   endorsementDisplay,
@@ -376,6 +377,7 @@ export class LicenceCentreService {
         readUncertain: true,
         readNotes: true,
         firearmCategory: true,
+        firearmSelfLoading: true,
         dateSource: true,
         dateSourceNote: true,
       },
@@ -403,6 +405,7 @@ export class LicenceCentreService {
      * over their correction on every list() would put it back.
      */
     const categorised = new Map<string, string>();
+    const actioned = new Map<string, boolean>();
     /**
      * ⚠️ DECRYPTED ONCE PER ROW, AND IT WAS THREE TIMES. This loop opened the
      * blob, then the response builder below opened it AGAIN for `details`, and
@@ -423,6 +426,12 @@ export class LicenceCentreService {
       if (r.kind === 'FIREARM_LICENCE' && r.firearmCategory === null) {
         const cat = categoryFromText(details.firearm_type ?? '');
         if (cat) categorised.set(r.id, cat);
+      }
+      // The action, for rows written before it was stored in the clear. Same
+      // repair as the category, one column over.
+      if (r.kind === 'FIREARM_LICENCE' && r.firearmSelfLoading === null) {
+        const sl = selfLoadingFromText(details.firearm_type ?? '');
+        if (sl !== null) actioned.set(r.id, sl);
       }
     }
     /**
@@ -446,6 +455,12 @@ export class LicenceCentreService {
           data: { firearmCategory },
         }),
       ),
+      ...[...actioned].map(([id, firearmSelfLoading]) =>
+        this.prisma.credential.update({
+          where: { id },
+          data: { firearmSelfLoading },
+        }),
+      ),
       ...[...renamed].map(([id, title]) =>
         this.prisma.credential.update({ where: { id }, data: { title } }),
       ),
@@ -456,6 +471,16 @@ export class LicenceCentreService {
           `Could not repair credential rows for ${user.id}: ${(err as Error).message}`,
         ),
       );
+      // A licence that just learned its action can change which competency it
+      // carries: re-derive, the way a licence write would.
+      if (actioned.size) {
+        await recomputeDerivedCompetencies(
+          this.prisma,
+          user.id,
+          (blob) => this.readDetails(blob).covers ?? '',
+          this.logger,
+        );
+      }
     }
 
     /**
@@ -514,6 +539,7 @@ export class LicenceCentreService {
       .map((r) => ({
         category: (categorised.get(r.id) ??
           r.firearmCategory) as LinkedLicence['category'],
+        selfLoading: actioned.get(r.id) ?? r.firearmSelfLoading,
         expiresOn: r.expiresOn,
       }));
 
@@ -855,6 +881,9 @@ export class LicenceCentreService {
                   firearmCategory: categoryFromText(
                     reading.details.firearm_type ?? '',
                   ),
+                  firearmSelfLoading: selfLoadingFromText(
+                    reading.details.firearm_type ?? '',
+                  ),
                 }
               : {}),
             ...(armed.arm
@@ -919,10 +948,11 @@ export class LicenceCentreService {
           firearmCategory: { not: null },
           expiresOn: { not: null },
         },
-        select: { firearmCategory: true, expiresOn: true },
+        select: { firearmCategory: true, firearmSelfLoading: true, expiresOn: true },
       })
     ).map((r) => ({
       category: r.firearmCategory as LinkedLicence['category'],
+      selfLoading: r.firearmSelfLoading,
       expiresOn: r.expiresOn,
     }));
 
@@ -1519,6 +1549,7 @@ export class LicenceCentreService {
         // decides whether this is the last licence holding a competency up —
         // see competencyRenewalNote in licence-renewal.ts.
         firearmCategory: true,
+        firearmSelfLoading: true,
       },
     });
     if (!row) throw new NotFoundException('Document not found');

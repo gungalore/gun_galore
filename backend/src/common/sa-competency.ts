@@ -926,6 +926,14 @@ export interface LinkedLicence {
   section?: LicenceSection;
   /** The category this licence's firearm falls in. */
   category: CompetencyCategory;
+  /**
+   * Whether the firearm is self-loading, where the card said. Only a rifle or
+   * carbine is endorsed per action (119651 manual, 119650 self-loading), so
+   * only there does it decide which certificate a licence can carry; null
+   * means unknown, and an unknown action counts for either endorsement rather
+   * than for neither, because dropping a licence shortens a competency.
+   */
+  selfLoading?: boolean | null;
   expiresOn: Date | null;
 }
 
@@ -1171,11 +1179,31 @@ export function deriveCertificateExpiry(args: {
     });
   }
 
+  // ⚠️ A RIFLE LICENCE ONLY CARRIES THE RIFLE ENDORSEMENT OF ITS OWN ACTION.
+  // The certificate is endorsed per action there (119651 manual, 119650
+  // self-loading) and the licence card prints the action, so a manual-rifle
+  // competency must not follow a semi-automatic rifle's licence — it did, for
+  // the operator's own .30-06, because only the category was compared. A
+  // licence whose action we could not read counts for either, since dropping
+  // it would shorten the competency on a gap in OUR reading, not in the law.
+  const rifleActions = new Set(
+    args.endorsements
+      .map((e) => endorsementSpec(e))
+      .filter((s) => s?.category === 'rifle-carbine')
+      .map((s) => s?.selfLoading)
+      .filter((v): v is boolean => typeof v === 'boolean'),
+  );
+  const carries = (l: LinkedLicence): boolean =>
+    l.category !== 'rifle-carbine' ||
+    l.selfLoading === null ||
+    l.selfLoading === undefined ||
+    rifleActions.has(l.selfLoading);
   const linked = args.licences.filter(
     (l) =>
       l.expiresOn &&
       l.category !== 'muzzle-loader' &&
-      categories.has(l.category),
+      categories.has(l.category) &&
+      carries(l),
   );
 
   if (linked.length) {

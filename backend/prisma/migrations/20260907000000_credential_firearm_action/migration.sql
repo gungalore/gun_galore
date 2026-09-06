@@ -1,0 +1,19 @@
+-- The action of a licensed firearm, beside its category.
+--
+-- ADDITIVE ONLY. One nullable column on Credential. Nothing is dropped,
+-- nothing changes type, and every existing row reads correctly as NULL, which
+-- the derivation treats as "action unknown: counts for either endorsement".
+--
+-- ⚠️ HAND-WRITTEN, NOT `prisma migrate diff`. The raw diff also wants to DROP
+-- the tsvector columns three services add at boot. See CLAUDE.md,
+-- [BC-SCHEMA-DRIFT].
+--
+-- WHY: a competency certificate is endorsed per action as well as per
+-- category (unit standard 119651 is the manually operated rifle, 119650 the
+-- self-loading one), and its expiry follows the longest-running licence it
+-- covers. The vault held each licence's category in the clear but not its
+-- action, so a manual-rifle competency followed a semi-automatic rifle's
+-- licence (operator, 2026-09-06). The backfill happens on the next load of the
+-- Document Centre, from the encrypted firearm type, the same way
+-- firearmCategory was backfilled.
+ALTER TABLE "Credential" ADD COLUMN "firearmSelfLoading" BOOLEAN;
