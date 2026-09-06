@@ -1939,7 +1939,22 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-06 (night), commit `195712dd`.** No migrations.
+**Last deploy: 2026-09-07 (small hours), commit `c6917b28`.** No migrations
+("No pending migrations to apply"). **BACKEND-ONLY** (`deploy.sh
+--backend-only`) on the operator's `deploy now`. Ships `8c328e08`, merged from
+`feat/the-bench`: the licence reader now takes the firearm's Make (and Model)
+from the card's top box rather than the first "Make" Textract hands over, which
+on three of the operator's five rifles was a part's "NONE" and titled the
+vault rows "NONE 45-70 GOVERNMENT". Topmost pair where geometry is present,
+else the first non-placeholder; all-NONE stays NONE. 21 licence-centre suites,
+318 tests. Health doubled, public 200 twice. Rows already in the vault keep
+their old titles until renamed or re-read.
+
+Seen on the same cards and NOT changed: a calibre under the 95% floor still
+holds the read dates back, and the review screen's "These N are right" button
+posts confirms that render as "Date confirmed: By you".
+
+**Previous deploy: 2026-09-06 (night), commit `195712dd`.** No migrations.
 **FRONTEND-ONLY** (`deploy.sh --frontend-only`, run twice) on the operator's
 `deploy now`, to switch the new document scanner on. `NEXT_PUBLIC_SCANNER_V3=1`
 was added to `frontend/.env.production` on the box (backup
