@@ -1939,7 +1939,31 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-06 (late night), commit `76e43524`.** No migrations.
+**Last deploy: 2026-09-06 (later), commit `1db2c067`.** ⚠️ **CARRIED A
+MIGRATION** — `20260906150000_motivation_upload_source_credential`, additive
+only (`MotivationUpload.sourceCredentialId` SetNull FK + index,
+`MotivationUpload.sourceRemovedAt`, `Motivation.autolinkSkippedIds` default
+`{}`), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`, both
+apps + warden). Dump `alloutdoor-20260906-201102.dump` taken before
+`prisma migrate deploy`; `migrate status` reads "up to date" (56 migrations).
+Health doubled on both ports, warden online, public 200 twice.
+
+Shipped: the merge of `feat/the-bench` — the **44-finding audit fix for the
+Document Centre and the Motivation Centre** (`fc4f7fbc`: competency re-dating
+on every licence change, auto-attach that sees system-dated documents and
+re-arms, prefill from the vault/profile/previous motivation with provenance
+shown, document gate on Generate, expiry cautions on the pack, the motivations
+service split into a facade over six services, both page files split into
+components) — plus two scanner commits another session had landed on that
+branch (`bd69117e`, `435e19b2`), the new document scanner behind
+`NEXT_PUBLIC_SCANNER_V3`, which is unset on the box and therefore dark.
+
+Behaviour changes to watch: auto-attach now attaches vault documents whose
+date WE set (`dateSource`), not only member-confirmed ones; generation refuses
+with `missingDocuments` when a required document is absent;
+`FIELD_REGISTRY_VERSION` was bumped for the hidden 517(g) answer.
+
+**Previous deploy: 2026-09-06 (late night), commit `76e43524`.** No migrations.
 **FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's `deploy
 now`; the only commit since `c5fef53e` was this file, so both apps were
 rebuilt on already-shipped code. Dump `alloutdoor-20260906-190415.dump`.
