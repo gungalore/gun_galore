@@ -1939,7 +1939,33 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (morning), commit `0125c39a`.** FRONTEND-ONLY
+**Last deploy: 2026-09-07 (morning), commit `48084d16`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907020000_credential_other_side`, additive only
+(`Credential.otherSideId` TEXT NULL), hand-written per [BC-SCHEMA-DRIFT].
+**FULL DEPLOY** (`deploy.sh`) on the operator's `deploy now`. Dump
+`alloutdoor-20260907-002319.dump` taken by the script; "All migrations have
+been successfully applied", column present. Health doubled on both ports,
+warden online, public 200 twice.
+
+Shipped, merged from `feat/the-bench`: `e32bb55f` — the Textract reader reads
+the training provider's proficiency certificate (the front: One Shot, Progun,
+NSN) and records which side every proficiency is; two definitive front
+markers; the two sides are paired on a shared number (S/C/V, label-blind) or
+same codes + same ID within 120 days, linked both ways (`otherSideId`), never
+flagged as copies, attached to a motivation as one. `6de9de72` — sides are
+settled SERVER-SIDE on every load of the Centre (rows without a side are
+re-read, ≤6/load; unpaired rows are matched; a lonely side is flagged
+`side-missing` until its other page arrives); a known rifle action beats an
+unknown one in deriveCertificateExpiry and the note names the licence ("It
+follows your MAUSER .30-06 SPRINGFIELD licence…"); recompute runs on every
+load and compares the sentence too; the full-name bubble listens on the whole
+row (`data-name-card`) and is 16px; the list orders by type then the
+document's own date with type headings. `4591d037` — the licence type rule
+accepts "Type" on the same line, an "S/L:" FORMS key, OCR's "SIL"; rifles in
+the vault whose stored type never said their action are re-read (≤3/load), so
+the operator's .223 learns it is self-loading on the next load.
+
+**Previous deploy: 2026-09-07 (morning), commit `0125c39a`.** FRONTEND-ONLY
 (`deploy.sh --frontend-only`) on the operator's `deploy now`. No migration.
 Health doubled, public 200 twice. Shipped, merged from `feat/the-bench`:
 `fc9e293e` — clipped document names in the Document Centre list, the review
