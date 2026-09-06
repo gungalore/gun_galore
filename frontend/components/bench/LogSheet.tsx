@@ -26,7 +26,12 @@
 
 import { useId, useState } from 'react';
 
-import { SAFETY_LINE, type LogDraft, type LogSheetProps } from './contract';
+import {
+  SAFETY_LINE,
+  bulletLabel as projectileLabel,
+  type LogDraft,
+  type LogSheetProps,
+} from './contract';
 import { Btn, Field, IconX, OverlayShell, Tag, usePhone } from './primitives';
 import { coalCheck, today, type Units, MM_PER_INCH } from '@/lib/bench/geometry';
 
@@ -138,7 +143,7 @@ export default function LogSheet({
 
   /* The bullet as one string, because that is how the log stores it: the row's
      maker and type, plus the weight of the group the row was found under. */
-  const bulletLabel = `${row.bulletMaker} ${row.bulletType} ${weightGr} gr`;
+  const bulletLabel = projectileLabel(row, weightGr);
   /* The phone's single read-only line, quoted from Pwa.dc.html. */
   const loadLabel = `${cartridge.name} · ${row.powder} · ${bulletLabel}`;
 

@@ -89,6 +89,47 @@ export function bulletKey(b: { weightGr: number; calibreIn?: number | null }): s
 }
 
 /**
+ * The maker the import files a load under when the manual printed none.
+ *
+ * ⚠️ IT IS A GROUP KEY, NOT A NAME. Powder-maker manuals (Hodgdon, ADI,
+ * Somchem, Ramshot, Accurate, IMR) print "Spitzer 120 gr" with no brand, and
+ * since the 2026-09-06 import those rows are kept rather than dropped — 5 700
+ * of them. The word exists so the group has a stable key; it must never be
+ * read out to a member as if a company called Unknown made the bullet.
+ */
+export const UNKNOWN_MAKER = 'Unknown';
+
+/**
+ * What to call the projectile on a row, a card or a log line.
+ *
+ * Maker and type when both are known; the type alone when the manual named
+ * no maker; and when it named neither, the category ("SP 120 gr") or, for a
+ * row filed under OTHER, plainly "bullet". Never an empty string and never
+ * a leading space — the weight is appended by the caller.
+ */
+export function projectileName(row: {
+  bulletMaker: string;
+  bulletType: string;
+  bulletCategory?: string | null;
+}): string {
+  const maker = row.bulletMaker === UNKNOWN_MAKER ? '' : row.bulletMaker.trim();
+  const type = row.bulletType.trim();
+  if (maker && type) return `${maker} ${type}`;
+  if (maker) return maker;
+  if (type) return type;
+  const cat = row.bulletCategory?.trim();
+  return cat && cat !== 'OTHER' ? cat : 'bullet';
+}
+
+/** `projectileName` plus the group's weight — the label the log stores. */
+export function bulletLabel(
+  row: { bulletMaker: string; bulletType: string; bulletCategory?: string | null },
+  weightGr: number,
+): string {
+  return `${projectileName(row)} ${weightGr} gr`;
+}
+
+/**
  * Grain windows the finder offers, and the default.
  *
  * ⚠️ FIVE GRAINS IS INHERITED, NOT INVENTED — the retired Load Lab used the

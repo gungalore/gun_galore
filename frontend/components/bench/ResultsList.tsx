@@ -29,7 +29,7 @@ import type { Dims, Units } from '@/lib/bench/geometry';
 import { DIM_KEYS, coalCheck, fmtVelocity, MM_PER_INCH } from '@/lib/bench/geometry';
 
 import { CartridgeThumb } from './CartridgeThumb';
-import { BENCH_AXES, SAFETY_LINE, VELOCITY_NOTE } from './contract';
+import { BENCH_AXES, SAFETY_LINE, VELOCITY_NOTE, bulletLabel } from './contract';
 import type { BenchAxis, ResultsListProps, ShelfNames } from './contract';
 import { Btn, Tag, usePhone } from './primitives';
 
@@ -931,7 +931,7 @@ function Row({
    * `weightGr` is the group's — that is, this load's own weight, never the
    * bench bullet's. See the note above the weight groups.
    */
-  const bullet = `${row.bulletMaker} ${row.bulletType} ${weightGr} gr`;
+  const bullet = bulletLabel(row, weightGr);
   const startV = chargeVelocity(row.startFps, units);
   const maxV = chargeVelocity(row.maxFps, units);
   const coal = coalText(row, units);
