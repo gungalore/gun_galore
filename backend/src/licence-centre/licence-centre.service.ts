@@ -573,6 +573,41 @@ export class LicenceCentreService {
     const detailsById = new Map<string, Record<string, string>>(
       rows.map((r) => [r.id, this.readDetails(r.detailsEncrypted)]),
     );
+    // ⚠️ RE-READ, A FEW PER LOAD, WHEN THE STORED TYPE NEVER SAID THE ACTION.
+    // The operator's .223 prints "S/L" on its card and sat with an unknown
+    // action because the first reading dropped the prefix; nothing in the
+    // stored details could ever supply it. Read the bytes again with the
+    // reader that now keeps it, store the better type, and let the action
+    // repair below pick it up in the same pass. Capped so a big vault cannot
+    // stall the page; the rest catch up on later loads.
+    let rereads = 0;
+    for (const r of rows) {
+      if (
+        r.kind === 'FIREARM_LICENCE' &&
+        r.firearmSelfLoading === null &&
+        r.firearmCategory === 'rifle-carbine' &&
+        r.storageKey &&
+        !r.purgedAt &&
+        rereads < 3 &&
+        selfLoadingFromText(detailsById.get(r.id)?.firearm_type ?? '') === null
+      ) {
+        rereads += 1;
+        try {
+          const bytes = await this.files.read(r.storageKey);
+          const again = await this.extract.read({ kind: 'FIREARM_LICENCE', bytes, mimeType: r.mimeType ?? 'image/jpeg' });
+          if (selfLoadingFromText(again.details.firearm_type ?? '') !== null) {
+            const merged = { ...(detailsById.get(r.id) ?? {}), firearm_type: again.details.firearm_type };
+            detailsById.set(r.id, merged);
+            await this.prisma.credential.update({
+              where: { id: r.id },
+              data: { detailsEncrypted: encryptJson(merged), extractedFields: Object.keys(merged) },
+            });
+          }
+        } catch (err) {
+          this.logger.warn(`Could not re-read licence ${r.id} for its action: ${(err as Error).message}`);
+        }
+      }
+    }
     for (const r of rows) {
       const details = detailsById.get(r.id) ?? {};
       if (r.title === DEFAULT_TITLE[r.kind]) {

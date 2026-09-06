@@ -33,7 +33,7 @@
 
 import type { CredentialKind } from '@prisma/client';
 
-import { parseUnitStandards, sectionFromText } from '../common/sa-competency';
+import { parseUnitStandards, sectionFromText, selfLoadingFromText } from '../common/sa-competency';
 import { readIdNumber } from '../common/sa-id-number';
 
 /** Matches the Claude extractor's contract exactly. Do not diverge. */
@@ -311,8 +311,24 @@ const INITIALS_SURNAME = /(?:^|\| )([A-Z]{1,4} [A-Z][A-Z'-]{2,})(?: \||$)/;
  * assumption, which mayArmDerivedExpiry refuses to arm — leaving it with no
  * date at all. Nothing errored anywhere along that chain.
  */
+//
+// ⚠️ AND "Type" MAY SHARE THE LINE. The .223's card came back as one line,
+// "Type S/L: RIFLE CAL - RIFLE/CARBINE", where the fixture card has "Type"
+// on its own line. Anchored to the start of a segment, the rule skipped the
+// whole line, the type was never stored, and the action stayed unknown -
+// which let a self-loading rifle stand in for a manual-rifle competency
+// (operator, 2026-09-07, with the card in hand). The label is optional now.
 const FIREARM_TYPE =
-  /(?:^|\| )((?:S\/L[:\s-]*)?[A-Z\/\s.:-]*(?:RIFLE|SHOTGUN|HANDGUN|PISTOL|REVOLVER|CARBINE|MUZZLE[\s-]?LOADER)[A-Z\/\s.:-]*)(?: \||$)/;
+  /(?:^|\| )(?:[Tt][Yy][Pp][Ee]\s*:?\s*)?((?:(?:N\s*\/\s*)?S\s*\/\s*L[:\s-]*|M\s*\/\s*O[:\s-]*)?[A-Z\/\s.:-]*(?:RIFLE|SHOTGUN|HANDGUN|PISTOL|REVOLVER|CARBINE|MUZZLE[\s-]?LOADER)[A-Z\/\s.:-]*)(?: \||$)/;
+/**
+ * The action, as the type row abbreviates it: S/L (self-loading), N/S/L
+ * (non-self-loading), M/O (manually operated) - and "SIL", which is what OCR
+ * makes of "S/L" on a worn card. Read off the type row's own segment or the
+ * one after a bare "Type" label, so a serial number elsewhere cannot supply it.
+ */
+const ACTION_PREFIX = /\b(N\s*\/\s*S\s*\/\s*L|S\s*\/\s*L|S[I1l]L|M\s*\/\s*O)\b\s*:?/i;
+/** A FORMS key that is the action itself: "S/L:" => "RIFLE CAL - RIFLE/CARBINE". */
+const ACTION_KEY = /^(N\s*\/\s*S\s*\/\s*L|S\s*\/\s*L|S[I1l]L|M\s*\/\s*O)\s*:?$/i;
 /**
  * Reference S4.8.2: a competency certificate number is `C` + 7-8 digits.
  * A value that is not that shape was misread, whatever Textract's
@@ -418,6 +434,15 @@ export function extractDocument(
   for (const p of ps) {
     // Everything is kept, under its own printed label.
     if (p.key) raw[p.key] = p.value;
+    // The type row, when FORMS took the action abbreviation as the key.
+    if (kind === 'FIREARM_LICENCE' && ACTION_KEY.test(p.key)) {
+      put('firearm_type', `${p.key.replace(/\s*:$/, '').replace(/S[I1l]L/i, 'S/L')}: ${p.value}`, p.confidence);
+      continue;
+    }
+    if (kind === 'FIREARM_LICENCE' && /^type$/i.test(p.key) && p.value) {
+      put('firearm_type', p.value, p.confidence);
+      continue;
+    }
     const alias = FIELD_ALIASES.find(
       (a) =>
         a.match.test(p.key) && (!a.kinds || a.kinds.includes(kind)),
@@ -500,6 +525,17 @@ export function extractDocument(
     if (holder) put('holder_name', holder[1].trim(), 99);
     const type = text.match(FIREARM_TYPE);
     if (type) put('firearm_type', type[1].trim(), 99);
+    // The action the card states, if the stored type lost it: from the type
+    // row's own segment, or the segment after a bare "Type".
+    if (details.firearm_type && selfLoadingFromText(details.firearm_type) === null) {
+      const at = ls.findIndex((l) => /^type\b/i.test(l.trim()));
+      const seg = at >= 0 ? (/^type\s*:?$/i.test(ls[at].trim()) ? ls[at + 1] : ls[at]) : undefined;
+      const tok = seg?.match(ACTION_PREFIX);
+      if (tok) {
+        details.firearm_type = `${tok[1].replace(/\s+/g, '').replace(/S[I1l]L/i, 'S/L')}: ${details.firearm_type}`;
+        notes.push('took the action off the type row');
+      }
+    }
   }
 
   // An ID document prints the surname and the forenames as two fields; the

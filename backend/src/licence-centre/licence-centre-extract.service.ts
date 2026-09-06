@@ -782,6 +782,16 @@ function userPrompt(
     'Transcribe these keys where they appear:',
     ...keys.map((k) => `- ${k}`),
     '',
+    ...(kind === 'FIREARM_LICENCE'
+      ? [
+          // The prefix is the action, and the action decides which competency
+          // the licence can carry. A tidied "RIFLE CAL - RIFLE/CARBINE" lost it.
+          'firearm_type is the Type row EXACTLY as printed, including any S/L,',
+          'N/S/L or M/O in front of it - that prefix says whether the firearm is',
+          'self-loading and must not be dropped or expanded.',
+          '',
+        ]
+      : []),
     ...(kind === 'PROFICIENCY'
       ? [
           'unit_standard is EVERY SAQA unit-standard code on the page (117705,',
