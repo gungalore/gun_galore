@@ -1939,8 +1939,31 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-06, commit `df232a52`** (merge of `feat/the-bench`
-`febe41da`). ⚠️ **CARRIED A MIGRATION** — `20260906120000_bench_audit`
+**Last deploy: 2026-09-06 (evening), commit `01d3e39e`.** No migrations.
+**FRONTEND ONLY** (`deploy.sh --frontend-only`); dump
+`alloutdoor-20260906-180748.dump`. Health doubled, public 200 twice, and the
+live finder checked signed in: `?tol=15` opens on ± 15 gr, no row prints the
+word "Unknown". Shipped `4efae552`: loads the powder-maker manuals print with
+no bullet brand are named by type alone ("Spitzer 120 gr"), never as made by
+"Unknown" — the import's group key for them (`UNKNOWN_MAKER` in
+`components/bench/contract.ts`).
+
+**Same evening, commit `1bed422c`, BACKEND ONLY** (`deploy.sh --backend-only`,
+dump `alloutdoor-20260906-180223.dump`, health doubled) — then
+**`bench-import` was run on the box** (`node dist/src/bench/scripts/
+bench-import.js --dir /home/alloutdoor/data/bench`, dump
+`alloutdoor-20260906-175845.dump` taken first). The first attempt failed at
+step 3 (P2002 on `BenchPowder.name`): the key backfill had left eight
+suffixed duplicates (RL15 / RL15-2 …) and the upsert on the key renamed the
+base row to the name the duplicate still held. `c260f5b0` adds the merge
+step; the re-run merged all 8, matched the three spec sanity counts exactly
+(868 / 1 901 / 1 717), wrote 42 113 source rows and 34 316 consolidated
+loads (was 28 589 — 6 773 rows the old import dropped for having no bullet
+maker are now kept), and reported Somchem at 657 rows against the spec's
+612. Report at `/home/alloutdoor/data/bench/bench-import-report.json`.
+
+**Previous deploy: 2026-09-06 (afternoon), commit `df232a52`** (merge of
+`feat/the-bench` `febe41da`). ⚠️ **CARRIED A MIGRATION** — `20260906120000_bench_audit`
 (additive: `BenchPowder.key` with a SQL backfill, `BenchShare`, three indexes,
 and FKs `UserBench.userId` / `BenchLogEntry.userId → User` ON DELETE CASCADE).
 **FULL DEPLOY** (`deploy.sh`, both apps + warden). Pre-deploy dump
