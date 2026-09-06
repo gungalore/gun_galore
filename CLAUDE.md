@@ -1939,7 +1939,15 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (morning), commit `8401f432`.** ⚠️ **CARRIED A
+**Last deploy: 2026-09-07 (morning), commit `0125c39a`.** FRONTEND-ONLY
+(`deploy.sh --frontend-only`) on the operator's `deploy now`. No migration.
+Health doubled, public 200 twice. Shipped, merged from `feat/the-bench`:
+`fc9e293e` — clipped document names in the Document Centre list, the review
+screen and the motivation document rows show the whole name in a bubble after
+a 750 ms mouse hover or, on a phone/PWA, a 750 ms hold (components/full-name.tsx);
+only when the browser actually cut the text short, no native `title`.
+
+**Previous deploy: 2026-09-07 (morning), commit `8401f432`.** ⚠️ **CARRIED A
 MIGRATION** — `20260907010000_credential_attention`, additive only
 (`Credential.attention` TEXT[] NOT NULL DEFAULT {} and
 `Credential.duplicateOfId` TEXT NULL), hand-written per [BC-SCHEMA-DRIFT].
