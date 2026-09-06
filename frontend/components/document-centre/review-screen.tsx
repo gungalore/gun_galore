@@ -12,6 +12,7 @@ import {
   settleableInBulk,
 } from '@/lib/document-review-rules';
 import { useFocusTrap } from '@/lib/use-focus-trap';
+import { FullName } from '@/components/full-name';
 import {
   CredentialKind,
   KIND_LABELS,
@@ -583,9 +584,9 @@ export default function ReviewScreen({
                   >
                     <GlyphThumb />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12.5px] font-medium">
+                      <FullName as="p" className="text-[12.5px] font-medium">
                         {r.name}
-                      </p>
+                      </FullName>
                       <p className="text-[11px] text-[var(--red)]">{r.reason}</p>
                     </div>
                     {r.file && (
@@ -790,9 +791,9 @@ function ReviewRow({
         disabled={busy}
         className="min-w-0 flex-1 text-left disabled:opacity-50"
       >
-        <span className="block truncate text-[12.5px] font-medium">
+        <FullName className="text-[12.5px] font-medium">
           {item.title}
-        </span>
+        </FullName>
         {/* ⚠️ THE DATE ONLY. The type used to be repeated here as well, which
             put "Photographs of my safe" on the title, the subtitle AND the
             control — three copies on one row. */}
