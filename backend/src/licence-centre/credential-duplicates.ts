@@ -196,11 +196,15 @@ export function findOtherSide(
 /** The attention code for a proficiency side filed without its other side. */
 export const SIDE_MISSING = 'side-missing';
 
+// ⚠️ "STATEMENT OF RESULTS" AND "CERTIFICATE", NEVER "FRONT" AND "BACK".
+// Operator, 2026-09-07: "ask for the Statement of results or the certificate,
+// don't reference them as front and back." Front and back are how the code
+// tells the two apart; the member holds two named documents.
 const SIDE_MISSING_NOTES: Record<DocumentSide, string> = {
   front:
-    "This is the training provider's certificate. A DFO wants the PFTC statement of results behind it as well: scan that page too and the two are filed together.",
+    "This is the training provider's certificate. A DFO wants the PFTC statement of results that goes with it as well: scan it too and the two are filed together.",
   back:
-    "This is the statement of results. A DFO wants the training provider's certificate in front of it as well: scan that page too and the two are filed together.",
+    "This is the statement of results. A DFO wants the training provider's certificate that goes with it as well: scan it too and the two are filed together.",
 };
 
 /** What the row says while it waits for its other side. */
@@ -210,13 +214,19 @@ export function sideMissingNote(side: DocumentSide): string {
 
 /** So the note can be taken off again when the other side arrives. */
 export function isSideMissingNote(note: string): boolean {
-  return note === SIDE_MISSING_NOTES.front || note === SIDE_MISSING_NOTES.back;
+  // By opening words, so a note written under earlier wording still comes off.
+  return /^This is the (training provider's certificate|statement of results)\./.test(note);
+}
+
+/** A note saying the row is one of a pair, under any wording this module has used. */
+export function isPairNote(note: string): boolean {
+  return /^Filed (as|with) /.test(note);
 }
 
 /** The sentence on the row that completed the pair. */
 export function otherSideNote(match: { title: string }, side: DocumentSide | null): string {
-  const what = side === 'back' ? 'the statement of results behind' : side === 'front' ? 'the certificate in front of' : 'the other side of';
-  return `Filed as ${what} "${match.title}". The two go onto an application together.`;
+  const what = side === 'back' ? 'the statement of results' : side === 'front' ? 'the certificate' : 'one page';
+  return `Filed with "${match.title}" as ${what} of the pair. The two go onto an application together.`;
 }
 
 /** The sentence the member sees on the review screen and the card. */
