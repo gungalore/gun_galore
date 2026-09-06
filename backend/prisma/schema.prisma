@@ -5227,6 +5227,11 @@ model Credential {
   /// plain id, not a relation: the original may be deleted and this row must
   /// stand on its own either way.
   duplicateOfId String?
+  /// The other side of a two-sided document - for a proficiency, the
+  /// provider's certificate (front) and the PFTC statement of results (back)
+  /// are two scans that point at each other. Set on both rows. A plain id,
+  /// not a relation, for the same reason as duplicateOfId.
+  otherSideId String?
 
   /// Opaque key into SecureFileStorageService, namespace `credentials`.
   /// Nullable so a row can outlive its bytes after an erasure.

@@ -70,7 +70,7 @@ export function documentFingerprints(s: DuplicateSubject): string[] {
       out.push(tag('competency', d.competency_number));
       break;
     case 'PROFICIENCY': {
-      out.push(tag('certificate', d.certificate_number));
+      out.push(tag('certificate', d.certificate_number), tag('scv', d.scv_number), tag('auth', d.authentication_code));
       // A statement of results without a printed number: the unit standards it
       // awards on the day it was issued name it well enough.
       const codes = parseUnitStandards(d.unit_standard ?? '').sort();
@@ -114,9 +114,89 @@ export function findDuplicate(subject: DuplicateSubject, others: readonly Duplic
   if (!mine.size) return null;
   const hits = others
     .filter((o) => o.kind === subject.kind)
+    // The front and the back of one proficiency share a number by design.
+    .filter((o) => !oppositeSides(subject, o))
     .filter((o) => documentFingerprints(o).some((f) => mine.has(f)))
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   return hits[0] ?? null;
+}
+
+/* ── The two sides of a proficiency ─────────────────────────────────── */
+
+export type DocumentSide = 'front' | 'back';
+
+/** Which side of a proficiency this is, as the reader recorded it. */
+export function documentSide(d: Record<string, string>): DocumentSide | null {
+  const s = (d.document_side ?? '').trim().toLowerCase();
+  return s === 'front' || s === 'back' ? s : null;
+}
+
+function oppositeSides(a: DuplicateSubject, b: DuplicateSubject): boolean {
+  if (a.kind !== 'PROFICIENCY' || b.kind !== 'PROFICIENCY') return false;
+  const sa = documentSide(a.details);
+  const sb = documentSide(b.details);
+  return !!sa && !!sb && sa !== sb;
+}
+
+function daysApart(a: string | null, b: string | null): number | null {
+  if (!a || !b) return null;
+  const ta = Date.parse(`${a}T00:00:00Z`);
+  const tb = Date.parse(`${b}T00:00:00Z`);
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return null;
+  return Math.abs(ta - tb) / 86_400_000;
+}
+
+/**
+ * The other side of this proficiency, if the member has already filed it.
+ *
+ * Operator, 2026-09-07: "how am I going to match the Statement of Results
+ * (the back) with the front (the actual certificate)? Most statements are the
+ * same format, but the certificate is per training centre and will always
+ * differ." Two ways, in order of trust:
+ *
+ *   • a number printed on both: the S/C/V number, the provider's certificate
+ *     number, or the statement's authentication code;
+ *   • failing that, the same unit standards awarded to the same ID number
+ *     within four months - a provider issues the statement days or weeks
+ *     after the course, never a year after.
+ *
+ * Only across sides: a front never pairs with a front. Only rows not already
+ * paired. Earliest wins where several qualify.
+ */
+export function findOtherSide(
+  subject: DuplicateSubject,
+  others: readonly (DuplicateCandidate & { otherSideId?: string | null })[],
+): DuplicateCandidate | null {
+  if (subject.kind !== 'PROFICIENCY') return null;
+  // ⚠️ LABEL-BLIND ON PURPOSE. Progun prints one number as "CERTIFICATE
+  // NUMBER" on its certificate and the PFTC statement behind it prints the
+  // same number as the "SCV Number", so the two sides only meet if a number
+  // is a number whatever it was called.
+  const numbers = (d: Record<string, string>) =>
+    [d.scv_number, d.certificate_number, d.authentication_code]
+      .map((v) => norm(v))
+      .filter((n) => n.length >= 4 && !PLACEHOLDER.test(n));
+  const mine = new Set(numbers(subject.details));
+  const myCodes = parseUnitStandards(subject.details.unit_standard ?? '').sort().join('+');
+  const myId = norm(subject.details.id_number);
+  const hits = others
+    .filter((o) => o.kind === 'PROFICIENCY' && !o.otherSideId && oppositeSides(subject, o))
+    .filter((o) => {
+      if (numbers(o.details).some((n) => mine.has(n))) return true;
+      if (!myCodes || !myId) return false;
+      const codes = parseUnitStandards(o.details.unit_standard ?? '').sort().join('+');
+      if (codes !== myCodes || norm(o.details.id_number) !== myId) return false;
+      const gap = daysApart(subject.issuedOn, o.issuedOn);
+      return gap === null || gap <= 120;
+    })
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return hits[0] ?? null;
+}
+
+/** The sentence on the row that completed the pair. */
+export function otherSideNote(match: { title: string }, side: DocumentSide | null): string {
+  const what = side === 'back' ? 'the statement of results behind' : side === 'front' ? 'the certificate in front of' : 'the other side of';
+  return `Filed as ${what} "${match.title}". The two go onto an application together.`;
 }
 
 /** The sentence the member sees on the review screen and the card. */

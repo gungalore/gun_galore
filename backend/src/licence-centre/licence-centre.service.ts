@@ -39,7 +39,7 @@ import {
   parseEndorsements,
 } from '../common/sa-competency';
 import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
-import { duplicateNote, findDuplicate } from './credential-duplicates';
+import { documentSide, duplicateNote, findDuplicate, findOtherSide, otherSideNote } from './credential-duplicates';
 import { assessAddressProof } from './address-proof';
 import { MotivationsService } from '../motivations/motivations.service';
 import {
@@ -381,6 +381,7 @@ export class LicenceCentreService {
         readNotes: true,
         attention: true,
         duplicateOfId: true,
+        otherSideId: true,
         firearmCategory: true,
         firearmSelfLoading: true,
         dateSource: true,
@@ -607,6 +608,9 @@ export class LicenceCentreService {
       // renamed since, or deleted, in which case the flag still says "a copy".
       duplicateOf: r.duplicateOfId
         ? { id: r.duplicateOfId, title: titles.get(r.duplicateOfId) ?? null }
+        : null,
+      otherSide: r.otherSideId
+        ? { id: r.otherSideId, title: titles.get(r.otherSideId) ?? null }
         : null,
       /**
        * WHO PUT THE DATE THERE.
@@ -945,6 +949,7 @@ export class LicenceCentreService {
     const attentionNotes: string[] = [];
     const attentionUncertain: string[] = [];
     let duplicateOf: { id: string; title: string } | null = null;
+    let otherSide: { id: string; title: string } | null = null;
     if (reading) {
       try {
         if (resolved === 'ADDRESS_CONFIRMATION') {
@@ -981,19 +986,26 @@ export class LicenceCentreService {
         }
         const others = await this.prisma.credential.findMany({
           where: { userId: user.id, kind: resolved, purgedAt: null, id: { not: created.id } },
-          select: { id: true, title: true, createdAt: true, issuedOn: true, detailsEncrypted: true },
+          select: { id: true, title: true, createdAt: true, issuedOn: true, detailsEncrypted: true, otherSideId: true },
         });
-        const match = findDuplicate(
-          { kind: resolved, details: reading.details, issuedOn: reading.issuedOn },
-          others.map((o) => ({
-            id: o.id,
-            title: o.title,
-            createdAt: o.createdAt,
-            kind: resolved,
-            details: this.readDetails(o.detailsEncrypted),
-            issuedOn: o.issuedOn ? toIsoDate(o.issuedOn) : null,
-          })),
-        );
+        const subject = { kind: resolved, details: reading.details, issuedOn: reading.issuedOn };
+        const candidates = others.map((o) => ({
+          id: o.id,
+          title: o.title,
+          createdAt: o.createdAt,
+          kind: resolved,
+          details: this.readDetails(o.detailsEncrypted),
+          issuedOn: o.issuedOn ? toIsoDate(o.issuedOn) : null,
+          otherSideId: o.otherSideId,
+        }));
+        // The other side of a proficiency first, so it is never mistaken for
+        // a copy: the two sides share a number by design.
+        const pair = findOtherSide(subject, candidates);
+        if (pair) {
+          otherSide = { id: pair.id, title: pair.title };
+          attentionNotes.push(otherSideNote(pair, documentSide(reading.details)));
+        }
+        const match = findDuplicate(subject, candidates.filter((c) => c.id !== pair?.id));
         if (match) {
           duplicateOf = { id: match.id, title: match.title };
           attention.push('duplicate');
@@ -1004,13 +1016,22 @@ export class LicenceCentreService {
           `Could not run the attention checks for credential ${created.id}: ${(err as Error).message}`,
         );
       }
-      if (attention.length) {
+      if (otherSide) {
+        // Both rows point at each other; the partner also learns who joined it.
+        await this.prisma.credential
+          .update({ where: { id: otherSide.id }, data: { otherSideId: created.id } })
+          .catch((err) =>
+            this.logger.warn(`Could not pair credential ${otherSide?.id}: ${(err as Error).message}`),
+          );
+      }
+      if (attention.length || otherSide) {
         await this.prisma.credential
           .update({
             where: { id: created.id },
             data: {
               attention,
               duplicateOfId: duplicateOf?.id ?? null,
+              otherSideId: otherSide?.id ?? null,
               readNotes: { push: attentionNotes },
               ...(attentionUncertain.length ? { readUncertain: { push: attentionUncertain } } : {}),
             },
@@ -1157,6 +1178,7 @@ export class LicenceCentreService {
       mimeType: file.mimetype,
       attention,
       duplicateOf,
+      otherSide,
       readNotes: [...(reading?.notes ?? []), ...attentionNotes],
       proposed: {
         expiresOn: reading?.expiresOn ?? null,

@@ -33,7 +33,7 @@
 
 import type { CredentialKind } from '@prisma/client';
 
-import { sectionFromText } from '../common/sa-competency';
+import { parseUnitStandards, sectionFromText } from '../common/sa-competency';
 import { readIdNumber } from '../common/sa-id-number';
 
 /** Matches the Claude extractor's contract exactly. Do not diverge. */
@@ -186,11 +186,58 @@ export const FIELD_ALIASES: FieldAlias[] = [
   { field: 'competency_number', match: /^competency certificate number/i },
   { field: 'covers', match: /^type of competency certificate/i },
 
-  // Proficiency / statement of results.
-  { field: 'certificate_number', match: /^certificate number/i },
+  // Proficiency: the PFTC statement of results (the back) and the training
+  // provider's own certificate (the front). Operator, 2026-09-07: "we need the
+  // front and back of the proficiency certificate."
+  //
+  // ⚠️ THE S/C/V NUMBER IS WHAT JOINS THE TWO SIDES. One Shot prints
+  // "S/C/V Numbers: 52BS-A8041" on its certificate and the PFTC statement
+  // behind it prints "SCV Number: 52BS-A8041". Nothing else on the two pages
+  // is guaranteed to agree - the provider's certificate number is its own.
+  { field: 'holder_name', match: /^awarded to/i, kinds: ['PROFICIENCY'] },
+  { field: 'certificate_number', match: /^certificate\s*(number|no\b|nr\b)/i },
+  // Progun prints "CERTIFICATE" and "NUMBER:" on two lines; FORMS pairs the first with the value.
+  { field: 'certificate_number', match: /^certificate$/i, kinds: ['PROFICIENCY'] },
+  { field: 'scv_number', match: /^s\/?c\/?v\s+numbers?/i },
+  { field: 'authentication_code', match: /^authentication code/i, kinds: ['PROFICIENCY'] },
   { field: 'unit_standard', match: /^(saqa id|unit standards? title)/i },
   { field: 'issuer', match: /^(training provider name|provider)/i },
 ];
+
+/* ── Dates as a training provider prints them ───────────────────────── */
+
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+function isoDay(y: string, m: string | number, d: string): string | null {
+  const mm = Number(m);
+  const dd = Number(d);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+  return `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+}
+
+/**
+ * "2025/03/28", "14/04/2025", "31 day of MARCH 2021", "23 January 2014" -
+ * every way the operator's four fronts and four statements print a date.
+ * Day-first when the year is last: this is South Africa.
+ */
+export function parseLooseDate(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const t = s.replace(/\s*\|\s*/g, ' ').trim();
+  let m = t.match(/(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/);
+  if (m) return isoDay(m[1], m[2], m[3]);
+  m = t.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+  if (m) return isoDay(m[3], m[2], m[1]);
+  m = t.match(/(\d{1,2})(?:st|nd|rd|th)?\s+(?:day\s+of\s+)?([A-Za-z]{3,9})\.?,?\s+(\d{4})/);
+  if (m) {
+    const mo = MONTHS.indexOf(m[2].toUpperCase().slice(0, 3)) + 1;
+    if (mo) return isoDay(m[3], mo, m[1]);
+  }
+  return null;
+}
+
+/** Two to five capitalised words and nothing else: a printed name, not an address or a heading. */
+const NAME_LINE = /^[A-Z][A-Za-z'-]{1,}(?: [A-Z][A-Za-z'-]{1,}){1,4}$/;
+const NOT_A_NAME = /^(NAME|ID NUMBER|COMPETENCY COURSE|TRAINING COURSE|CERTIFICATE|RANGE MASTER|ASSESSOR)$/i;
 
 /**
  * Fields a licence card prints once per part as well as once for the firearm.
@@ -463,6 +510,34 @@ export function extractDocument(
     if (surname && fore) details.full_name = (fore + ' ' + surname).trim();
   }
 
+  // ── The proficiency, either side ────────────────────────────────────
+  if (kind === 'PROFICIENCY') {
+    // Every registered unit-standard code on the page, however it is laid
+    // out: a table on the statement, "119652 - Handle and Use a Shotgun" on
+    // One Shot's certificate, "SAQA 119651" on Progun's, two bare numbers on
+    // NSN's. The table pair above gives one row; the page gives them all.
+    const codes = parseUnitStandards(text);
+    if (codes.length > parseUnitStandards(details.unit_standard ?? '').length) {
+      details.unit_standard = codes.join(', ');
+      confidence.unit_standard = 99;
+    }
+    // "This is to certify that | <address line> | GERHARD JOHAN PETRUS FOURIE":
+    // the first thing after the phrase that reads as a name.
+    const at = ls.findIndex((l) => /certify that/i.test(l));
+    if (at >= 0) {
+      const name = ls.slice(at + 1, at + 5).map((l) => l.trim()).find((l) => NAME_LINE.test(l) && !NOT_A_NAME.test(l));
+      if (name) put('holder_name', name, 99);
+    }
+    // "CERTIFICATE | NUMBER: | K/10358-K919835" and "TRG 11897 | CERTIFICATE NO".
+    const after = text.match(/\bcertificate(?: \|)? (?:number|no|nr)\b\.?:?(?: \|)? ([A-Z0-9][A-Z0-9\/-]{3,})/i);
+    if (after) put('certificate_number', after[1], 99);
+    const before = text.match(/\| ([A-Z]{2,4} ?\d{4,7}) \| certificate (?:no|nr|number)\b/i);
+    if (before) put('certificate_number', before[1], 99);
+    // Which side of the document this is. The statement names itself; a
+    // provider's certificate is anything else that classified as a proficiency.
+    details.document_side = /statement\s+of\s+results/i.test(text) ? 'back' : 'front';
+  }
+
   let issuedOn: string | null = null;
   let expiresOn: string | null = null;
 
@@ -477,6 +552,20 @@ export function extractDocument(
   }
   if (issuedOn && kind === 'COMPETENCY_CERTIFICATE') {
     details.competency_issued = issuedOn;
+  }
+  // A proficiency's issue date: the statement's "Date of issue" column, One
+  // Shot's "Date of issue: 2025/03/28", NSN's "23/01/2014" over the word
+  // DATE, Progun's "this 31 day of MARCH 2021" split across two lines.
+  if (!issuedOn && kind === 'PROFICIENCY') {
+    const pair =
+      ps.find((q) => /^date of issue/i.test(q.key)) ??
+      ps.find((q) => /^date issued/i.test(q.key)) ??
+      ps.find((q) => /^date$/i.test(q.key));
+    issuedOn =
+      parseLooseDate(pair?.value) ??
+      parseLooseDate(text.match(/(\d{1,2}\s+day\s+of\s+[A-Za-z]{3,9}(?: \|)? \d{4})/i)?.[1]) ??
+      parseLooseDate(text.match(/(\d{2}\/\d{2}\/\d{4}) \| DATE\b/i)?.[1]) ??
+      parseLooseDate(text.match(/date of issue:?(?: \|)? (\d{4}\/\d{2}\/\d{2}|\d{2}\/\d{2}\/\d{4})/i)?.[1]);
   }
 
   // ── The gate ────────────────────────────────────────────────────────

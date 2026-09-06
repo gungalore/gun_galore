@@ -347,6 +347,8 @@ export class MotivationDocumentsService {
           // The competency's own "covers" wording, for the endorsement test.
           detailsEncrypted: true,
           extractionOk: true,
+          // The other half of a two-sided proficiency, attached with it.
+          otherSideId: true,
         },
       }),
       this.prisma.motivationUpload.findMany({
@@ -390,8 +392,26 @@ export class MotivationDocumentsService {
       this.shared.readAnswers(row.answersEncrypted),
     );
 
+    // ⚠️ A TWO-SIDED PROFICIENCY IS ONE CANDIDATE, NOT TWO. The certificate
+    // and its statement of results both cover the same firearm, so both
+    // would pass the gate and decideAutolink would see two candidates and
+    // attach neither. The statement (the back) stands for the pair; when it
+    // is attached, the front goes on with it below (operator, 2026-09-07).
+    const pairOf = new Map<string, { other: string; side: string | null }>();
+    for (const c of credentials) {
+      if (c.otherSideId) pairOf.set(c.id, { other: c.otherSideId, side: this.readSide(c.detailsEncrypted, c.extractionOk) });
+    }
+    const present = new Set(credentials.filter((c) => !refuse.has(c.id)).map((c) => c.id));
+    const standsForPair = (id: string): boolean => {
+      const p = pairOf.get(id);
+      if (!p || !present.has(p.other)) return true;
+      if (p.side === 'front') return false;
+      if (p.side === 'back') return true;
+      return id < p.other;
+    };
+
     const candidates = credentials
-      .filter((c) => !refuse.has(c.id))
+      .filter((c) => !refuse.has(c.id) && standsForPair(c.id))
       .map((c) => {
         // The slot it actually belongs in — disciplineType beats the primary
         // kind, so a sworn good standing letter is not offered as a card.
@@ -464,6 +484,18 @@ export class MotivationDocumentsService {
             placeConfirmed,
           );
           attached.push({ kind: c.kind, title: c.title });
+          // The other side of a paired proficiency rides along.
+          const p = pairOf.get(c.sourceId);
+          if (c.source === 'credential' && p && present.has(p.other) && !refuse.has(p.other)) {
+            try {
+              await this.attachOne({ userId: user.id, row: openRow }, 'credential', p.other, placeConfirmed);
+              attached.push({ kind: c.kind, title: `${c.title} (other side)` });
+            } catch (err) {
+              this.logger.warn(
+                `Motivation ${row.id}: could not auto-attach the other side of ${c.kind}: ${(err as Error).message}`,
+              );
+            }
+          }
         } catch (err) {
           // ⚠️ ONE FAILURE MUST NOT COST THE REST. A purged file or a
           // since-deleted credential is a reason to skip that document, not to
@@ -570,6 +602,18 @@ export class MotivationDocumentsService {
    * test, which reads an empty string as "we have not read this" and therefore
    * does not refuse. See competencyCovers — unknown is a yes, deliberately.
    */
+  /** Which side of a two-sided proficiency this is, as the reader recorded it. */
+  private readSide(blob: string | null, ok: boolean): string | null {
+    if (!ok || !blob) return null;
+    try {
+      const d = decryptJson<Record<string, string>>(blob) ?? {};
+      const s = (d.document_side ?? '').trim().toLowerCase();
+      return s === 'front' || s === 'back' ? s : null;
+    } catch {
+      return null;
+    }
+  }
+
   private readCovers(blob: string | null, ok: boolean): string {
     if (!ok || !blob) return '';
     try {
