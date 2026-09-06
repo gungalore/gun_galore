@@ -1,0 +1,16 @@
+NOTICE — docaligner-lcnet100.onnx
+
+DocAligner (LCNet-100 backbone, heatmap head), a document corner detector
+published by DocsaidLab (https://github.com/DocsaidLab/DocAligner), exported to
+ONNX. Input: one 256x256 RGB image, scaled to 0..1; output: four corner heatmaps.
+
+Licensed under the Apache License, Version 2.0. A copy of the licence is at
+https://www.apache.org/licenses/LICENSE-2.0. The model is used unmodified.
+
+The same file is served to browsers from frontend/public/scan/v3/.
+
+ort.wasm.min.js, ort-wasm-simd-threaded.mjs and ort-wasm-simd-threaded.wasm are
+ONNX Runtime Web 1.29 (Microsoft, MIT licence), the same version as the
+onnxruntime-web dependency in package.json. They are identical to the files
+under scan/v2/ and are kept separately so the two scanners can be removed
+independently.

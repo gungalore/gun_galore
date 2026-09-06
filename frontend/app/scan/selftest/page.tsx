@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { LiveDetector } from '@/lib/scan/live-detector';
+import ScanV3SelfTest from '@/components/scan-v3/self-test';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SCANNER'S SELF-TEST. Open it on any phone: it fetches the four
@@ -128,6 +129,7 @@ export default function ScanSelfTest() {
       </pre>
       <h2 style={{ fontSize: 14, fontWeight: 500, margin: '16px 0 6px' }}>device</h2>
       <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{env.join('\n')}</pre>
+      <ScanV3SelfTest />
     </main>
   );
 }
