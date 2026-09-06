@@ -1,6 +1,6 @@
 import { MotivationUploadKind } from '@prisma/client';
-import type { Endorsement } from '../common/sa-competency';
-import { competencyCovers } from './motivation-upload-row';
+import { readStatementOfResults, type Endorsement } from '../common/sa-competency';
+import { competencyCovers, proficiencyCovers } from './motivation-upload-row';
 
 // ────────────────────────────────────────────────────────────────────
 // ATTACHING WHAT THE MEMBER ALREADY HAS, WITHOUT ASKING.
@@ -168,6 +168,80 @@ export interface AutolinkOptions {
    * ships a pack showing the wrong premises, and nothing on the file says so.
    */
   placeConfirmed?: boolean;
+  /**
+   * The unit-standard text of every proficiency certificate ALREADY on this
+   * application. Lets the pair rule finish a half-attached slot: a member who
+   * attached their handgun statement by hand still needs the 117705 one added.
+   */
+  attachedProficiencyCovers?: readonly string[];
+}
+
+/**
+ * Which of the two things a proficiency slot needs a certificate carries.
+ * A statement of results the reader could not parse carries neither, and is
+ * handled by the old one-or-nothing rule.
+ */
+function proficiencyRoles(covers: string, needed: Endorsement | null) {
+  const sor = readStatementOfResults(covers ?? '');
+  const readable = sor.endorsements.length > 0 || sor.hasMandatoryKnowledge;
+  return {
+    readable,
+    law: sor.hasMandatoryKnowledge,
+    firearm: readable && (needed ? sor.endorsements.includes(needed) : sor.endorsements.length > 0),
+  };
+}
+
+/**
+ * The proficiency slot, which wants TWO unit standards that may sit on one
+ * certificate or two.
+ *
+ * ⚠️ OPERATOR, 2026-09-07: "it must always add the proficiency that has the
+ * knowledge of the firearm act on it with the correlating category proficiency
+ * if they are not on the same certificate." s 9(2)(q) of the Act makes 117705
+ * a condition of every competency, and the training providers issue it on its
+ * own statement as often as not. One-or-nothing here would either attach the
+ * handgun statement and leave the pack short, or see two certificates and
+ * attach neither.
+ *
+ * Returns the rows to attach; anything left in `fresh` afterwards is reported
+ * by the caller as several-candidates. Null means "no readable statements,
+ * use the ordinary rule".
+ */
+function pickProficiencyPair(
+  fresh: readonly AutolinkCandidate[],
+  needed: Endorsement | null,
+  alreadyCovers: readonly string[],
+): { attach: AutolinkCandidate[]; ambiguous: AutolinkCandidate[] } | null {
+  const roles = new Map(fresh.map((c) => [c, proficiencyRoles(c.covers ?? '', needed)]));
+  if (![...roles.values()].some((r) => r.readable)) return null;
+
+  const held = alreadyCovers.map((t) => proficiencyRoles(t, needed));
+  let haveFirearm = held.some((r) => r.firearm);
+  let haveLaw = held.some((r) => r.law);
+
+  const attach: AutolinkCandidate[] = [];
+  const ambiguous: AutolinkCandidate[] = [];
+
+  // The firearm's own standard first: a certificate carrying both settles it.
+  if (!haveFirearm) {
+    const both = fresh.filter((c) => roles.get(c)!.firearm && roles.get(c)!.law);
+    const only = fresh.filter((c) => roles.get(c)!.firearm && !roles.get(c)!.law);
+    const pool = both.length ? both : only;
+    if (pool.length === 1) {
+      attach.push(pool[0]);
+      haveFirearm = true;
+      if (roles.get(pool[0])!.law) haveLaw = true;
+    } else if (pool.length > 1) {
+      ambiguous.push(...pool);
+    }
+  }
+  // Then the Act, from whichever certificate carries it.
+  if (!haveLaw) {
+    const law = fresh.filter((c) => roles.get(c)!.law && !attach.includes(c));
+    if (law.length === 1) attach.push(law[0]);
+    else if (law.length > 1) ambiguous.push(...law.filter((c) => !ambiguous.includes(c)));
+  }
+  return { attach, ambiguous };
 }
 
 function daysLeft(expiresOn: string | null, today: Date): number | null {
@@ -224,7 +298,12 @@ export function decideAutolink(
   }
 
   for (const [kind, group] of byKind) {
-    if (haveSet.has(kind)) {
+    // A proficiency slot with one certificate on it may still want the other
+    // half of the pair, so it is the only kind that is not settled by "have".
+    const halfHeld =
+      kind === MotivationUploadKind.PROFICIENCY_CERTIFICATE &&
+      (opts.attachedProficiencyCovers?.length ?? 0) > 0;
+    if (haveSet.has(kind) && !halfHeld) {
       for (const c of group) skipped.push({ candidate: c, why: 'already-attached' });
       continue;
     }
@@ -253,7 +332,9 @@ export function decideAutolink(
     const covered = group.filter((c) =>
       c.kind === MotivationUploadKind.COMPETENCY_CERTIFICATE
         ? competencyCovers(c.covers ?? '', opts.needed ?? null)
-        : true,
+        : c.kind === MotivationUploadKind.PROFICIENCY_CERTIFICATE
+          ? proficiencyCovers(c.covers ?? '', opts.needed ?? null)
+          : true,
     );
     for (const c of group) {
       if (!covered.includes(c)) {
@@ -271,6 +352,24 @@ export function decideAutolink(
       if (!fresh.includes(c)) skipped.push({ candidate: c, why: 'expiring-too-soon' });
     }
     if (!fresh.length) continue;
+
+    if (kind === MotivationUploadKind.PROFICIENCY_CERTIFICATE) {
+      const pair = pickProficiencyPair(fresh, opts.needed ?? null, opts.attachedProficiencyCovers ?? []);
+      if (pair) {
+        attach.push(...pair.attach);
+        for (const c of pair.ambiguous) skipped.push({ candidate: c, why: 'several-candidates' });
+        for (const c of fresh) {
+          if (!pair.attach.includes(c) && !pair.ambiguous.includes(c)) {
+            skipped.push({ candidate: c, why: haveSet.has(kind) ? 'already-attached' : 'several-candidates' });
+          }
+        }
+        continue;
+      }
+      if (haveSet.has(kind)) {
+        for (const c of fresh) skipped.push({ candidate: c, why: 'already-attached' });
+        continue;
+      }
+    }
 
     // ⚠️ ONE OR NOTHING. Two valid competency certificates is a question for
     // the member, not a coin toss — and the wrong one in front of a DFO is

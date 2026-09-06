@@ -185,3 +185,14 @@ describe('naming a competency certificate', () => {
     expect(derivedCredentialTitle('COMPETENCY_CERTIFICATE', {})).toBeNull();
   });
 });
+
+describe('derivedCredentialTitle: proficiency', () => {
+  it('names a statement of results by the unit standards it awards', () => {
+    expect(
+      derivedCredentialTitle('PROFICIENCY', { unit_standard: '119649, 119651', certificate_number: 'X1' }),
+    ).toBe('Proficiency - Handgun + Manual Rifle');
+  });
+  it('has no name for one with no readable unit standard', () => {
+    expect(derivedCredentialTitle('PROFICIENCY', { certificate_number: 'X1' })).toBeNull();
+  });
+});

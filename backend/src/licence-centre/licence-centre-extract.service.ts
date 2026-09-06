@@ -298,7 +298,10 @@ export const WANTED: Record<CredentialKind, string[]> = {
   // But that date must never become an expiresOn — the CHECK constraint
   // forbids it, because a confirmed one would start SMSing AO Pro members
   // about a municipal bill. Freshness is judged at pick time; see reuseCaution.
-  ADDRESS_CONFIRMATION: ['residential_address', 'residential_postal_code'],
+  // ⚠️ full_name ADDED 2026-09-07, so the vault can check the document is
+  // the member's own: a proof of address is anything with an address on it,
+  // and a DFO wants one in the applicant's name. See address-proof.ts.
+  ADDRESS_CONFIRMATION: ['residential_address', 'residential_postal_code', 'full_name'],
   EMPLOYMENT_CONFIRMATION: ['employer_name', 'employer_address'],
   // ⚠️ EMPTY IS THE ANSWER HERE, AND IT IS LOAD-BEARING. There is nothing
   // printed on a photograph of a gun safe to transcribe, and a vision call
@@ -723,7 +726,7 @@ function userPrompt(
     // naming this file whenever a kind is added.
     IDENTITY_DOCUMENT: 'a South African identity document, card or passport',
     ADDRESS_CONFIRMATION:
-      'a document proving where somebody lives — a municipal bill, a bank statement or a signed confirmation of residence',
+      'a proof of residence: a municipal or utility account, a bank or retail statement, a SARS or insurance letter, a lease, or a signed confirmation of residence from the person the member lives with',
     EMPLOYMENT_CONFIRMATION: 'a letter confirming somebody’s employment',
     SAFE_PHOTOGRAPHS: 'a photograph of a gun safe',
     // Retired 2026-08-23; entries kept so the map stays exhaustive.
@@ -752,6 +755,22 @@ function userPrompt(
     'Transcribe these keys where they appear:',
     ...keys.map((k) => `- ${k}`),
     '',
+    ...(kind === 'ADDRESS_CONFIRMATION'
+      ? [
+          // The three things the vault checks a proof of address on. The
+          // model is a transcriber here too: the checking is done in code
+          // against the member's profile (address-proof.ts).
+          'full_name is the person the document is addressed to or made out',
+          'for - the account holder, the addressee, the tenant, or the person',
+          'named in a confirmation of residence. Transcribe it as printed.',
+          'residential_address is the physical address the document confirms,',
+          'as printed, not the sender\'s address on the letterhead.',
+          'issued_on is the date the document itself was issued: the statement',
+          'date, the account date or the date the letter was signed. It is NOT',
+          'a payment due date and NOT a period covered.',
+          '',
+        ]
+      : []),
     ...(kind === 'COMPETENCY_CERTIFICATE'
       ? [
           // ⚠️ A COMPETENCY CERTIFICATE HAS NO EXPIRY DATE ON IT, and telling
@@ -891,8 +910,13 @@ export const CLASSIFY_USER = [
   // Operator, 2026-08-23: "Make it safe pictures."
   'IDENTITY_DOCUMENT - a South African identity document: the green barcoded',
   '  book, the smart ID card, or the photo page of a passport',
-  'ADDRESS_CONFIRMATION - proof of where somebody lives: a municipal or',
-  '  utility bill, a bank statement, or a signed confirmation of residence',
+  'ADDRESS_CONFIRMATION - proof of where somebody lives. Any of: a municipal',
+  '  rates or utility account, a bank or retail account statement, a SARS,',
+  '  insurance, telecoms or medical-aid letter or statement, a lease or rental',
+  '  agreement, or a signed confirmation of residence from the person they',
+  '  live with (often an affidavit). What makes it this category is that it',
+  '  is addressed to a named person at a residential address and carries a',
+  '  date - the sender does not matter.',
   'EMPLOYMENT_CONFIRMATION - a letter from an employer confirming that',
   '  somebody works there',
   'SAFE_PHOTOGRAPHS - a photograph of a gun safe or strongroom, in ANY state:',

@@ -5216,6 +5216,17 @@ model Credential {
   /// rifle), and its expiry must follow a licence it actually covers. NULL
   /// where the card did not say, or the category has no action split.
   firearmSelfLoading Boolean?
+  /// Why this row is asking to be looked at, as codes the UI keys on:
+  /// 'duplicate' (a copy of another row, see duplicateOfId), and for a proof
+  /// of address 'name-missing' | 'name-mismatch' | 'address-mismatch' |
+  /// 'date-missing' | 'stale'. The words for each live in readNotes. Empty is
+  /// the normal case. Not PII.
+  attention String[] @default([])
+  /// The earlier row this one appears to duplicate (same kind, same printed
+  /// identity: serial, certificate number, ID number, address and date). A
+  /// plain id, not a relation: the original may be deleted and this row must
+  /// stand on its own either way.
+  duplicateOfId String?
 
   /// Opaque key into SecureFileStorageService, namespace `credentials`.
   /// Nullable so a row can outlive its bytes after an erasure.

@@ -343,3 +343,86 @@ describe('the two lists stay honest', () => {
     }
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// Operator, 2026-09-07: "it must always add the proficiency that has the
+// knowledge of the firearm act on it with the correlating category proficiency
+// if they are not on the same certificate." Two unit standards, one slot.
+// ────────────────────────────────────────────────────────────────────
+describe('the proficiency pair', () => {
+  const P = MotivationUploadKind.PROFICIENCY_CERTIFICATE;
+  const want = [P];
+  const ids = (d: ReturnType<typeof decideAutolink>) => d.attach.map((c) => c.sourceId).sort();
+
+  it('attaches the firearm statement AND the Act statement when they are separate', () => {
+    const d = decideAutolink(
+      [
+        cand(P, { sourceId: 'law', covers: '117705' }),
+        cand(P, { sourceId: 'handgun', covers: '119649' }),
+        cand(P, { sourceId: 'shotgun', covers: '119652' }),
+      ],
+      want,
+      [],
+      TODAY,
+      { needed: 'handgun' },
+    );
+    expect(ids(d)).toEqual(['handgun', 'law']);
+    expect(d.skipped.map((s) => [s.candidate.sourceId, s.why])).toEqual([['shotgun', 'endorsement-mismatch']]);
+  });
+
+  it('attaches one certificate when it carries both', () => {
+    const d = decideAutolink(
+      [cand(P, { sourceId: 'both', covers: '117705, 119649' }), cand(P, { sourceId: 'law', covers: '117705' })],
+      want,
+      [],
+      TODAY,
+      { needed: 'handgun' },
+    );
+    expect(ids(d)).toEqual(['both']);
+  });
+
+  it('adds the Act statement beside a firearm statement the member attached by hand', () => {
+    const d = decideAutolink(
+      [cand(P, { sourceId: 'law', covers: '117705' })],
+      want,
+      [P],
+      TODAY,
+      { needed: 'handgun', attachedProficiencyCovers: ['119649'] },
+    );
+    expect(ids(d)).toEqual(['law']);
+  });
+
+  it('adds nothing when both halves are already on the application', () => {
+    const d = decideAutolink(
+      [cand(P, { sourceId: 'law2', covers: '117705' })],
+      want,
+      [P],
+      TODAY,
+      { needed: 'handgun', attachedProficiencyCovers: ['119649', '117705'] },
+    );
+    expect(d.attach).toEqual([]);
+    expect(d.skipped[0].why).toBe('already-attached');
+  });
+
+  it('asks rather than guesses between two Act statements', () => {
+    const d = decideAutolink(
+      [
+        cand(P, { sourceId: 'law1', covers: '117705' }),
+        cand(P, { sourceId: 'law2', covers: '117705' }),
+        cand(P, { sourceId: 'handgun', covers: '119649' }),
+      ],
+      want,
+      [],
+      TODAY,
+      { needed: 'handgun' },
+    );
+    expect(ids(d)).toEqual(['handgun']);
+    expect(d.skipped.filter((s) => s.why === 'several-candidates').map((s) => s.candidate.sourceId).sort()).toEqual(['law1', 'law2']);
+  });
+
+  it('falls back to one-or-nothing when no statement is readable', () => {
+    expect(ids(decideAutolink([cand(P, { sourceId: 'x', covers: '' })], want, [], TODAY, { needed: 'handgun' }))).toEqual(['x']);
+    const two = decideAutolink([cand(P, { sourceId: 'x', covers: '' }), cand(P, { sourceId: 'y', covers: '' })], want, [], TODAY, {});
+    expect(two.attach).toEqual([]);
+  });
+});

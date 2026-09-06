@@ -2,6 +2,7 @@ import { MotivationUploadKind } from '@prisma/client';
 import {
   Endorsement,
   parseEndorsements,
+  readStatementOfResults,
 } from '../common/sa-competency';
 
 // ────────────────────────────────────────────────────────────────────
@@ -149,6 +150,27 @@ export function competencyCovers(
 }
 
 /** The kinds whose attachment is decided by the endorsement test above. */
+/**
+ * Whether a statement of results awards the unit standard the motivation
+ * needs. Same shape as competencyCovers: nothing needed, or nothing readable,
+ * passes; a readable certificate for the wrong firearm does not.
+ *
+ * ⚠️ WITHOUT THIS, NO PROFICIENCY EVER ATTACHED for a member with more than
+ * one. They all passed the gate, so any motivation saw several candidates and
+ * decideAutolink skipped the lot as 'several-candidates' (operator,
+ * 2026-09-07). Gated on the firearm, one is left, and it attaches.
+ */
+export function proficiencyCovers(
+  covers: string,
+  needed: Endorsement | null,
+): boolean {
+  if (!needed) return true;
+  const held = readStatementOfResults(covers ?? '').endorsements;
+  if (!held.length) return true;
+  return held.includes(needed);
+}
+
 export const ENDORSEMENT_GATED: ReadonlySet<MotivationUploadKind> = new Set([
   MotivationUploadKind.COMPETENCY_CERTIFICATE,
+  MotivationUploadKind.PROFICIENCY_CERTIFICATE,
 ]);
