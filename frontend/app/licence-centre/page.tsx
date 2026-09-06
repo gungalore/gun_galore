@@ -182,6 +182,11 @@ export default function LicenceCentrePage() {
     return placed;
   }, [rows]);
 
+  const rowsById = useMemo(
+    () => new Map((rows ?? []).map((r) => [r.id, r] as const)),
+    [rows],
+  );
+
   const visible = useMemo(() => {
     const inFolder =
       openGroup === null ? (rows ?? []) : (folders[openGroup]?.rows ?? []);
@@ -203,13 +208,33 @@ export default function LicenceCentrePage() {
     // date is the one printed on the document; a document with none sorts
     // by the day it was added. Newest first within a type.
     const when = (r: CredentialRow) => r.issuedOn ?? r.createdAt.slice(0, 10);
-    return [...found].sort(
+    const sorted = [...found].sort(
       (a, b) =>
         (KIND_RANK.get(a.kind) ?? 9999) - (KIND_RANK.get(b.kind) ?? 9999) ||
         when(b).localeCompare(when(a)) ||
         b.createdAt.localeCompare(a.createdAt),
     );
-  }, [openGroup, rows, folders, query]);
+    // ⚠️ A PAIRED PROFICIENCY IS ONE ENTRY. The statement of results and the
+    // provider's certificate are two files and two rows on the server, and
+    // one document to the member (operator, 2026-09-07: "the proficiency
+    // front and back should be in the same container"). The statement leads
+    // the pair; the certificate is reached from the panel's page switch.
+    const here = new Set(sorted.map((r) => r.id));
+    return sorted.filter((r) => {
+      if (!r.otherSide || !here.has(r.otherSide.id)) return true;
+      const p = rowsById.get(r.otherSide.id);
+      if (!p) return true;
+      return leadsPair(r, p);
+    });
+  }, [openGroup, rows, folders, query, rowsById]);
+
+  /** The other page of the selected pair, when it is in the vault. */
+  const partner = useMemo(() => {
+    const s = visible.find((r) => r.id === selectedId);
+    return s?.otherSide ? (rowsById.get(s.otherSide.id) ?? null) : null;
+  }, [visible, selectedId, rowsById]);
+  const [showPartner, setShowPartner] = useState(false);
+  useEffect(() => setShowPartner(false), [selectedId]);
 
   /**
    * What the folder heading says under its name.
@@ -365,9 +390,12 @@ export default function LicenceCentrePage() {
                   somebody their dated firearm licence has no expiry date
                   would be plainly false. The one thing true of every row
                   here is that the box it sits in is our guess. */}
+              {/* Operator, 2026-09-07: "that doesn't even make sense as the
+                  system filled in all of them." Everything is filed by us;
+                  what sets these apart is that we were not sure of the type. */}
               {needFiling.length === 1
-                ? 'One document was filed by us rather than by you. Check that we have put it in the right box.'
-                : `${needFiling.length} documents were filed by us rather than by you. Check that we have put them in the right boxes.`}
+                ? 'We were not sure what type one document is. Open it and check it is in the right box.'
+                : `We were not sure what type ${needFiling.length} documents are. Open each and check it is in the right box.`}
             </p>
           )}
         </div>
@@ -690,17 +718,60 @@ export default function LicenceCentrePage() {
             </p>
           ) : selected ? (
             /* A <ul>, because CredentialCard is an <li> — it was written to sit
-               in the old grouped list and there is no reason to change that. */
-            <ul>
-              <CredentialCard
-                key={selected.id}
-                row={selected}
-                usedIn={usage[selected.id] ?? []}
-                token={token}
-                onChanged={refresh}
-                onError={setError}
-              />
-            </ul>
+               in the old grouped list and there is no reason to change that.
+               A paired proficiency wraps the card in one container with a
+               switch between its two pages. */
+            <div
+              className={
+                partner
+                  ? 'rounded-[14px] border border-[var(--border)] bg-[var(--bg-inset)] p-2'
+                  : undefined
+              }
+            >
+              {partner && (
+                <div
+                  role="tablist"
+                  aria-label="Pages of this proficiency"
+                  className="mb-2 grid grid-cols-2 gap-1 rounded-[10px] bg-[var(--bg-card)] p-1 text-[12.5px] font-medium"
+                >
+                  {[selected, partner].map((r) => {
+                    const on = (showPartner ? partner : selected).id === r.id;
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={on}
+                        onClick={() => setShowPartner(r.id === partner.id)}
+                        className="rounded-[8px] px-3 py-2 text-center"
+                        style={{
+                          background: on ? 'var(--bg-inset)' : 'transparent',
+                          color: on ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          border: `1px solid ${on ? 'var(--border)' : 'transparent'}`,
+                        }}
+                      >
+                        {pageLabel(r)}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <ul>
+                {(() => {
+                  const shown = showPartner && partner ? partner : selected;
+                  return (
+                    <CredentialCard
+                      key={shown.id}
+                      row={shown}
+                      usedIn={usage[shown.id] ?? []}
+                      token={token}
+                      onChanged={refresh}
+                      onError={setError}
+                    />
+                  );
+                })()}
+              </ul>
+            </div>
           ) : (
             <p className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-card)] p-4 text-sm text-[var(--text-tertiary-on-card)]">
               {visible.length > 0
@@ -1316,6 +1387,29 @@ const NUMBER_DETAIL_KEYS: Partial<Record<CredentialKind, string[]>> = {
   OTHER: ['reference_number'],
 };
 
+/** Which page of a proficiency a row is, as the reader recorded it. */
+function pageSide(r: CredentialRow): 'front' | 'back' | null {
+  const s = (r.details?.document_side ?? '').toLowerCase();
+  return s === 'front' || s === 'back' ? s : null;
+}
+
+/** What the member calls the page: the statement of results, or the certificate. */
+function pageLabel(r: CredentialRow): string {
+  const s = pageSide(r);
+  return s === 'back' ? 'Statement of results' : s === 'front' ? 'Certificate' : r.title;
+}
+
+/** Of a pair, the row that stands for both in the list: the statement, else the older. */
+function leadsPair(r: CredentialRow, other: CredentialRow): boolean {
+  const s = pageSide(r);
+  const t = pageSide(other);
+  if (s === 'back') return true;
+  if (s === 'front') return false;
+  if (t === 'back') return false;
+  if (t === 'front') return true;
+  return r.createdAt < other.createdAt || (r.createdAt === other.createdAt && r.id < other.id);
+}
+
 /** Where a kind sits in the folder order: folder first, then its place in the folder. */
 const KIND_RANK = new Map<string, number>(
   KIND_GROUPS.flatMap((g, gi) => g.kinds.map((k, ki) => [k, gi * 100 + ki] as [string, number])),
@@ -1386,6 +1480,7 @@ function DocRow({
         </FullName>
         <span className="mt-0.5 block truncate text-[11.5px] text-[var(--text-tertiary-on-card)]">
           {KIND_LABELS[row.kind] ?? row.kind}
+          {row.otherSide ? ' \u00b7 statement of results + certificate' : ''}
           {' \u00b7 added '}
           {formatDate(row.createdAt.slice(0, 10))}
         </span>

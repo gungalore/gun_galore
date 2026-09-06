@@ -45,6 +45,7 @@ import {
   duplicateNote,
   findDuplicate,
   findOtherSide,
+  isPairNote,
   isSideMissingNote,
   otherSideNote,
   sideMissingNote,
@@ -220,12 +221,23 @@ export class LicenceCentreService {
           const other = x === a ? b : a;
           const note = otherSideNote(other, documentSide(x.details));
           x.attention = c.attention;
-          x.readNotes = c.readNotes.includes(note) ? c.readNotes : [...c.readNotes, note];
+          x.readNotes = c.readNotes.includes(note) ? c.readNotes : [...c.readNotes.filter((n) => !isPairNote(n)), note];
           await this.prisma.credential.update({
             where: { id: x.id },
             data: { otherSideId: x.otherSideId, attention: x.attention, readNotes: x.readNotes },
           });
         }
+      }
+
+      // Rows paired under earlier wording say it the current way.
+      for (const a of items) {
+        if (!a.otherSideId) continue;
+        const b = items.find((o) => o.id === a.otherSideId);
+        if (!b) continue;
+        const note = otherSideNote(b, documentSide(a.details));
+        if (a.readNotes.includes(note)) continue;
+        a.readNotes = [...a.readNotes.filter((n) => !isPairNote(n)), note];
+        await this.prisma.credential.update({ where: { id: a.id }, data: { readNotes: a.readNotes } });
       }
 
       for (const a of items) {

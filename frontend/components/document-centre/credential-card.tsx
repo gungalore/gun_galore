@@ -254,11 +254,21 @@ export default function CredentialCard({
           pair was recognised and that both go onto an application. */}
       {row.otherSide && (
         <p className="mt-3 text-[12.5px] text-[var(--text-secondary)]">
-          Filed together with{' '}
+          This is the{' '}
           <span className="font-medium text-[var(--text-primary)]">
-            {row.otherSide.title ?? 'its other side'}
+            {row.details?.document_side === 'back'
+              ? 'statement of results'
+              : row.details?.document_side === 'front'
+                ? 'certificate'
+                : 'one page'}
           </span>
-          . The two go onto an application as one.
+          ; the{' '}
+          {row.details?.document_side === 'back'
+            ? 'certificate'
+            : row.details?.document_side === 'front'
+              ? 'statement of results'
+              : 'other page'}{' '}
+          is filed with it. The two go onto an application as one.
         </p>
       )}
 
