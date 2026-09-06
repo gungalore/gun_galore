@@ -1939,7 +1939,30 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (early), commit `ff66e1e6`.** ⚠️ **CARRIED A
+**Last deploy: 2026-09-07 (morning), commit `8401f432`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907010000_credential_attention`, additive only
+(`Credential.attention` TEXT[] NOT NULL DEFAULT {} and
+`Credential.duplicateOfId` TEXT NULL), hand-written per [BC-SCHEMA-DRIFT].
+**FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's
+`deploy now`. Dump `alloutdoor-20260906-224935.dump` taken by the script
+before `prisma migrate deploy`; "All migrations have been successfully
+applied", `migrate status` up to date at 58, both columns present. Health
+doubled on both ports, warden online, public 200 twice.
+
+Shipped, merged from `feat/the-bench`: `5a76c9c2` — a proof of address is
+read for the name it is made out to and checked against the profile and ID
+(name), the profile address or postal code (address) and ADDRESS_FRESH_DAYS
+(date); every outcome files, a failed check flags the row (`attention` codes
++ words in `readNotes`, address-proof.ts). A statement of results is titled
+by its unit standards ("Proficiency - Handgun + Manual Rifle") and gated on
+the firearm like a competency. A second scan of the same document (serial,
+certificate number, ID number, address+date) is flagged as a copy of the
+earlier row, never refused (credential-duplicates.ts). Autolink: a
+proficiency slot wants the firearm's own standard AND 117705; separate
+certificates both attach, a half-attached slot gets its other half, two
+candidates for either half go back to the member.
+
+**Previous deploy: 2026-09-07 (early), commit `ff66e1e6`.** ⚠️ **CARRIED A
 MIGRATION** — `20260907000000_credential_firearm_action`, additive only
 (`Credential.firearmSelfLoading` BOOLEAN NULL), hand-written per
 [BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`, both apps + warden) on the
