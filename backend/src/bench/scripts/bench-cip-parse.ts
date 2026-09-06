@@ -131,6 +131,8 @@ interface Report {
   /** Labels the sheets print that no column holds, most common first. */
   unmappedLabels: [string, number][];
   thinSheets: { key: string; fields: number }[];
+  /** Cartridges whose blank L3 / L6 / Pmax were filled from their sheet. */
+  cartridgesBackfilled: string[];
 }
 
 async function main(): Promise<void> {
@@ -186,6 +188,7 @@ async function main(): Promise<void> {
     fieldCounts: {},
     unmappedLabels: [],
     thinSheets: [],
+    cartridgesBackfilled: [],
   };
 
   // Only keys that exist as BenchCartridge rows can be written: the dimension
@@ -265,6 +268,29 @@ async function main(): Promise<void> {
         create: { cartridgeKey: key, ...data },
         update: data,
       });
+
+      // A cartridge bench-import created FROM a sheet (the reference file
+      // had no row for it) arrives with no lengths and, when the index had
+      // none, no Pmax. The sheet is the only standard it has, so its L3, L6
+      // and Pmax become the cartridge's own — and only where the row is
+      // blank: a figure the reference file stated is never overwritten by
+      // a parse, because a mis-read column would move a COAL ceiling.
+      const row = await prisma.benchCartridge.findUnique({
+        where: { key },
+        select: { caseLengthMm: true, maxLengthMm: true, pmaxBar: true },
+      });
+      const cd = cart.data as Record<string, unknown>;
+      const patch: Record<string, number> = {};
+      if (row && row.caseLengthMm == null && typeof cd.L3 === 'number') patch.caseLengthMm = cd.L3;
+      if (row && row.maxLengthMm == null && typeof cd.L6 === 'number') patch.maxLengthMm = cd.L6;
+      if (row && row.pmaxBar == null && typeof cd.pmaxBar === 'number') {
+        patch.pmaxBar = cd.pmaxBar;
+        patch.pmaxPsi = Math.round(cd.pmaxBar * 14.5038);
+      }
+      if (Object.keys(patch).length) {
+        await prisma.benchCartridge.update({ where: { key }, data: patch });
+        report.cartridgesBackfilled.push(`${key}: ${Object.keys(patch).join(', ')}`);
+      }
     }
     report.written++;
   }
@@ -279,6 +305,7 @@ async function main(): Promise<void> {
   console.log(`  failed to parse       ${report.sheetsFailed.length}`);
   console.log(`  no BenchCartridge row ${report.keysWithoutCartridge.length}`);
   console.log(`  suspiciously thin     ${report.thinSheets.length}  (review by hand)`);
+  console.log(`  lengths backfilled    ${report.cartridgesBackfilled.length}  (cartridges the reference file lacked)`);
   if (report.unmappedLabels.length) {
     console.log(
       `\n  labels with no column: ${report.unmappedLabels
