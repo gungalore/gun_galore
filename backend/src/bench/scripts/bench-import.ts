@@ -110,8 +110,34 @@ const CIP_LOOKUP_SYNONYMS: [RegExp, string][] = [
   [/^\.?505 gibbs\b.*$/i, '505 Mag. Gibbs'],
 ];
 
+/**
+ * Printed names that are one C.I.P. sheet under a spelling no synonym rule
+ * reaches — checked by hand against the index, 2026-09-06. Lower-case, entities
+ * decoded, parentheticals dropped: the same normalisation cipLookupKey applies
+ * before it consults this table. Lookup only, like the synonyms.
+ */
+const CIP_NAME_OVERRIDES: Record<string, string> = {
+  '6.5 x 50mm japanese': '6,5 x 51 R (Arisaka)',
+  '6.5mm arisaka': '6,5 x 51 R (Arisaka)',
+  '6.5mm japanese': '6,5 x 51 R (Arisaka)',
+  '338 ruger compact magnum': '338 RCM',
+  '.44 russian': '44 S&W Russian',
+  '44 russian': '44 S&W Russian',
+  '.50-70 government': '50-70 Govt.',
+  '.45-90 winchester': '45-90 WM',
+  '45-90 winchester': '45-90 WM',
+  '.32 smith & wesson': '32 S&W',
+  '.30 mauser': '7,63 Mauser',
+  '6.5mm x 68 schuler': '6,5 x 68',
+  '450 nitro express 3¼"': "450 N.E. 3'' 1/4",
+  '450 nitro express': "450 N.E. 3'' 1/4",
+  '30-06 improved': '30-06 Ackley Improved',
+};
+
 export function cipLookupKey(name: string): string {
-  let s = decodeEntities(name).replace(/\([^)]*\)/g, ' ');
+  let s = decodeEntities(name).replace(/\([^)]*\)/g, ' ').trim();
+  const override = CIP_NAME_OVERRIDES[s.toLowerCase().replace(/\s+/g, ' ')];
+  if (override) s = override.replace(/\([^)]*\)/g, ' ');
   for (const [re, to] of CIP_LOOKUP_SYNONYMS) s = s.replace(re, to);
   return cartridgeKey(s);
 }
