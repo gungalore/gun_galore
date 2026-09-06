@@ -31,7 +31,12 @@ import { ENDORSEMENT_LABELS } from '../common/sa-competency';
 // Bumped when the SAPS 271 analysis split the firearm into its own boxes and
 // added the personal and history fields. Same day as the previous version, so
 // it carries a suffix rather than a bare date.
-export const FIELD_REGISTRY_VERSION = '2026-08-19';
+//
+// 2026-09-06: COMPETENCY_RENEWS_KEY added to S24_RENEWAL. A key was added, so
+// the version moves — that is the rule above, and it holds even for a key no
+// applicant ever answers, because "which registry wrote this blob" is exactly
+// the question a stored answer nobody typed makes somebody ask later.
+export const FIELD_REGISTRY_VERSION = '2026-09-06';
 
 // ── THE SAPS 271 IS AN OPT-IN EXTRA, NOT THE PRODUCT ────────────────
 //
@@ -84,6 +89,42 @@ export const SOURCE_UNDECIDED = 'Not decided yet';
  * without. Operator's routing spec §5.4 D.
  */
 export const SOURCE_ESTATE = 'Inherited from a deceased estate';
+
+/**
+ * A FINDING WE MADE, CARRIED ON THE APPLICATION — NOT A QUESTION.
+ *
+ * ⚠️ NOBODY IS EVER ASKED THIS. The Licence Centre works out, from the
+ * member's own licences and competency certificates, whether the licence being
+ * renewed is the last one in its category — in which case the competency
+ * expires with it and a SAPS 517(g) has to be lodged alongside, per s10A(1).
+ * See competencyRenewalNote in licence-renewal.ts, which owns the rule. This
+ * key is where that answer is PUT so the checklist can read it back.
+ *
+ * ⚠️ HIDDEN BY TWO RULES THAT CONTRADICT EACH OTHER, AND THAT IS THE POINT.
+ * There is no "internal" flag on a field, and inventing one would have to be
+ * honoured independently by the wizard's own mirror of isVisible() in
+ * frontend/lib/motivations-api.ts — two implementations that must agree, with
+ * the failure mode being a Yes/No box turning up in somebody's renewal asking
+ * a question we already answered from their own documents. So this uses the
+ * two gates BOTH sides already honour, set against each other:
+ *
+ *   formOnly  — hidden unless fill_saps271 is 'Fill it in for me'
+ *   showIf    — shown only when fill_saps271 is 'My dealer will fill it in'
+ *
+ * No answer satisfies both, so it is never asked, on either side, with no new
+ * concept to keep in step. Each clause is separately well-formed — it names a
+ * real field and a value that field can really hold — which is what the
+ * registry-integrity suite checks, and it is the reason this is written as a
+ * contradiction rather than as a `showIf` pointing at an impossible value: an
+ * unreachable value is exactly the typo that suite exists to catch, and a
+ * deliberate one would have to blind it to the accidental ones.
+ *
+ * ⚠️ formOnly IS ALSO DOING REAL WORK ON ITS OWN. It is what keeps a field
+ * out of the fact pack (see factPackFields), and a model handed
+ * "competency_renews_with_licence: Yes" would find a way to argue from it. It
+ * is an instruction about a second form, not a reason anybody needs a firearm.
+ */
+export const COMPETENCY_RENEWS_KEY = 'competency_renews_with_licence';
 
 export const SAPS271_OPT_KEY = 'fill_saps271';
 export const SAPS271_FILL = 'Fill it in for me';
@@ -2173,6 +2214,24 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // the expiry it renews, so the current decade page is where it belongs
       // and a decade strip would be noise.
       focusOffsetYears: 0,
+    },
+    {
+      // NOT A QUESTION — see COMPETENCY_RENEWS_KEY. Written by the renewal
+      // one-tap when the Licence Centre can see that this is the last licence
+      // holding a competency up, read by the checklist, and shown to nobody as
+      // a box to fill in. The section is an existing one on purpose: a new
+      // section name with no wizard step is exactly what
+      // frontend/lib/wizard-coverage.spec.ts exists to catch, and this field
+      // has no step precisely because it has no question.
+      key: COMPETENCY_RENEWS_KEY,
+      label: 'Your competency in this category runs to this licence',
+      kind: 'yesno',
+      section: 'The existing licence',
+      // ⚠️ THE TWO GATES CONTRADICT EACH OTHER ON PURPOSE — formOnly wants the
+      // fill path, showIf wants the dealer path, and no answer is both. See
+      // COMPETENCY_RENEWS_KEY. Changing either one alone un-hides it.
+      formOnly: true,
+      showIf: { key: SAPS271_OPT_KEY, equals: SAPS271_DEALER },
     },
     {
       key: 'continued_use',

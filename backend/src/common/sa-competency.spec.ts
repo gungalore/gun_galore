@@ -1,5 +1,6 @@
 import {
   ENDORSEMENTS,
+  deriveCertificateExpiry,
   deriveExpiry,
   endorsementDisplay,
   endorsementFromLabel,
@@ -380,5 +381,114 @@ describe('answers stored under the old seven endorsements', () => {
     expect(normaliseCompetencyForAnswer('Muzzle loading firearm')).toBe(
       'Muzzle loading firearm',
     );
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// ONE CERTIFICATE, ONE DATE — AND WHAT THAT DATE IS HIDING.
+//
+// deriveCertificateExpiry takes the MAX across every category a certificate
+// covers, on the operator's DFO advice, and the note on the function records
+// exactly what that trades: taking the latest can only ever push a date OUT,
+// so if a category on a certificate does in fact lapse on its own, this hides
+// it — and a reminder that never fires is the silent failure this product
+// exists to prevent.
+//
+// The date does not change. What changes is that the member is now TOLD which
+// half of their certificate is standing on the other half's licence.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the certificate-wide expiry — §5.3 and the DFO reading', () => {
+  const ISSUED = new Date('2020-03-01T00:00:00Z');
+
+  it('⚠️ names the side of the certificate with no licence behind it', () => {
+    // The operator's real case: a 2025 certificate covering a semi-automatic
+    // rifle AND a shotgun, four rifle licences, no shotgun licence.
+    const out = deriveCertificateExpiry({
+      endorsements: ['rifle-sl', 'shotgun'],
+      issuedOn: ISSUED,
+      licences: [
+        { category: 'rifle-carbine', expiresOn: new Date('2035-09-21T00:00:00Z') },
+      ],
+    });
+    expect(out.on?.toISOString().slice(0, 10)).toBe('2035-09-21');
+    expect(out.why).toMatch(/shotgun side of this certificate/i);
+    expect(out.why).toMatch(/no licence behind it/i);
+    // The member's own word for it, not 'rifle-carbine'.
+    expect(out.why).not.toMatch(/rifle-carbine|rifle-sl/);
+  });
+
+  it('says nothing about bare sides when every side has a licence', () => {
+    const out = deriveCertificateExpiry({
+      endorsements: ['rifle-sl', 'shotgun'],
+      issuedOn: ISSUED,
+      licences: [
+        { category: 'rifle-carbine', expiresOn: new Date('2035-09-21T00:00:00Z') },
+        { category: 'shotgun', expiresOn: new Date('2029-06-15T00:00:00Z') },
+      ],
+    });
+    expect(out.why).not.toMatch(/no licence behind it/i);
+  });
+
+  it('lists several bare sides in one sentence', () => {
+    const out = deriveCertificateExpiry({
+      endorsements: ['handgun', 'rifle-mo', 'shotgun'],
+      issuedOn: ISSUED,
+      licences: [
+        { category: 'handgun', expiresOn: new Date('2031-01-01T00:00:00Z') },
+      ],
+    });
+    expect(out.why).toMatch(/rifle and shotgun side/i);
+  });
+
+  it('⚠️ never dresses an unreadable certificate up as a date', () => {
+    // The certificate is the only thing that says which categories it covers.
+    // Without that, the licences the member holds tell us nothing about it —
+    // and this is the verdict licence-centre.service.ts used to talk over.
+    const out = deriveCertificateExpiry({
+      endorsements: [],
+      issuedOn: ISSUED,
+      licences: [
+        { category: 'handgun', expiresOn: new Date('2033-09-30T00:00:00Z') },
+      ],
+    });
+    expect(out.on).toBeNull();
+    expect(out.basis).toBe('unknown');
+    expect(out.why).toMatch(/could not read which firearms/i);
+  });
+
+  it('⚠️ the five years is stated as ours, and cites no section', () => {
+    // The endorsements ARE read here — handgun — and no handgun licence backs
+    // them, so this is the one case where the five years genuinely applies.
+    // Reference §5.3.1: it is the REPEALED s10(2), surviving as habit, and it
+    // must never be presented to a member as the legal position.
+    const out = deriveCertificateExpiry({
+      endorsements: ['handgun'],
+      issuedOn: ISSUED,
+      licences: [
+        // A rifle licence says nothing about a handgun certificate.
+        { category: 'rifle-carbine', expiresOn: new Date('2040-01-01T00:00:00Z') },
+      ],
+    });
+    expect(out.basis).toBe('fallback');
+    expect(out.on?.toISOString().slice(0, 10)).toBe('2025-03-01');
+    expect(out.why).not.toMatch(/section 10|s10\(2\)|Firearms Control Act/i);
+    // And it must not send them looking for a date the form does not carry
+    // (§5.2: three genuine SAPS 524s, no expiry field on any of them).
+    expect(out.why).toMatch(/does not print a date/i);
+    expect(out.why).not.toMatch(/check it against your certificate/i);
+  });
+
+  it('⚠️ rolls 29 February forward rather than inventing a day', () => {
+    // This used to be pinned against competencyLapses in licence-dates.ts.
+    // That function is gone; the arithmetic lives in plusYears, and 29
+    // February + 5 has no 29 February to land on — JavaScript gives 1 March,
+    // which is a real date and worth knowing rather than discovering.
+    const out = deriveCertificateExpiry({
+      endorsements: ['handgun'],
+      issuedOn: new Date('2024-02-29T00:00:00Z'),
+      licences: [],
+    });
+    expect(out.on?.toISOString().slice(0, 10)).toBe('2029-03-01');
   });
 });

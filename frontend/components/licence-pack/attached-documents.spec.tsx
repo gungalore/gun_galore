@@ -155,6 +155,71 @@ describe('⚠️ "we could not read this" is not a rejection', () => {
   });
 });
 
+describe('⚠️ the date a DFO checks first', () => {
+  // The server has always sent `expiresOn`, `caution` and `sourceRemovedAt` on
+  // the row. This list rendered the kind and the annexure letter and nothing
+  // else — so a step that looked complete could be a letter of good standing
+  // that lapsed in March, and the member found out at the counter.
+
+  it('renders the caution the server sent', () => {
+    show(
+      [
+        doc({
+          id: '1',
+          caution: { tone: 'red', text: 'Expired 3 March 2026' },
+        }),
+      ],
+      ['IDENTITY_DOCUMENT'],
+    );
+    expect(screen.getByText(/expired 3 march 2026/i)).toBeInTheDocument();
+  });
+
+  it('⚠️ SAYS WHEN A ROW CANNOT ANSWER ITS REQUIREMENT', () => {
+    // A checklist that goes green over an expired certificate is worse than
+    // one that stays amber: it stops the member looking.
+    show(
+      [doc({ id: '1', caution: { tone: 'red', text: 'Expired' } })],
+      ['IDENTITY_DOCUMENT'],
+    );
+    expect(screen.getByText(/cannot answer its row/i)).toBeInTheDocument();
+  });
+
+  it('counts an amber row as usable — it is a warning, not a block', () => {
+    show(
+      [doc({ id: '1', caution: { tone: 'amber', text: 'Expires soon' } })],
+      ['IDENTITY_DOCUMENT'],
+    );
+    expect(screen.getByText(/expires soon/i)).toBeInTheDocument();
+    expect(screen.queryByText(/cannot answer/i)).not.toBeInTheDocument();
+  });
+
+  it('⚠️ THE SOURCE CAN BE GONE WHILE THE FILE IS STILL HERE', async () => {
+    // The bytes on this application may survive, but the Document Centre copy
+    // behind them has been deleted — so nothing can be re-read or renewed from
+    // it, and the member needs somewhere to put a fresh one.
+    const user = userEvent.setup();
+    const onReplace = vi.fn();
+    render(
+      <AttachedDocuments
+        documents={[doc({ id: '1', sourceRemovedAt: '2026-09-01' })]}
+        kinds={['IDENTITY_DOCUMENT']}
+        pickable={PICKABLE}
+        onReplace={onReplace}
+        {...handlers()}
+      />,
+    );
+    expect(screen.getByText(/deleted from your document centre/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /replace it/i }));
+    expect(onReplace).toHaveBeenCalledWith('IDENTITY_DOCUMENT');
+  });
+
+  it('says nothing at all about a row with no date and no caution', () => {
+    show([doc({ id: '1' })], ['IDENTITY_DOCUMENT']);
+    expect(screen.queryByText(/expire/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/deleted from/i)).not.toBeInTheDocument();
+  });
+});
+
 describe('a document being worked on', () => {
   it('disables its own controls', async () => {
     const h = handlers();

@@ -27,56 +27,17 @@
 
 import { useState } from 'react';
 import FieldInput from '@/components/motivation-field-input';
+// ⚠️ SHARED, NOT LOCAL. `toneFor` and `Pill` used to live in this file and the
+// live wizard therefore had no way to say where a value came from — see
+// components/motivation/provenance.tsx.
+import { Pill, toneFor } from '@/components/motivation/provenance';
 import type {
-  AnswerProvenance,
   MotivationField,
   ProvenanceMap,
 } from '@/lib/motivations-api';
 
-type Tone = 'read' | 'check' | 'none';
-
-function toneFor(p: AnswerProvenance | undefined, filled: boolean): Tone {
-  if (!filled) return 'none';
-  if (!p) return 'none';
-  // ⚠️ INFERRED VALUES ARE GOLD, NOT GREEN. The server sets this flag when a
-  // value was worked out rather than read — an action split out of "manually
-  // operated rifle", say. Presenting a deduction as a reading is how a wrong
-  // one reaches a signed form unchallenged.
-  if (p.inferred) return 'check';
-  if (p.source === 'MEMBER') return 'none';
-  return 'read';
-}
-
-function Pill({ tone, children }: { tone: Tone; children: React.ReactNode }) {
-  const style =
-    tone === 'read'
-      ? {
-          background: 'var(--success-wash)',
-          color: 'var(--success)',
-          border: '1px solid var(--success-line)',
-        }
-      : tone === 'check'
-        ? {
-            background: 'var(--gold-wash)',
-            color: 'var(--gold-strong)',
-            border: '1px solid var(--gold-line)',
-          }
-        : {
-            background: 'var(--bg-inset)',
-            color: 'var(--text-tertiary)',
-            border: '1px solid transparent',
-          };
-  return (
-    <span
-      className="shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
-      style={style}
-    >
-      {children}
-    </span>
-  );
-}
-
 export default function ReadResult({
+  stepKey,
   section,
   fields,
   answers,
@@ -84,6 +45,17 @@ export default function ReadResult({
   missing,
   onChange,
 }: {
+  /**
+   * Which step is being reviewed.
+   *
+   * ⚠️ ONLY SO THE FOOTNOTE CAN BE TRUE. "We took nothing about the person …
+   * this step is about the firearm" is the right thing to say under a licence
+   * card read for its make and serials, and a false one under the competency
+   * certificate, the association card or the safe photographs — where the
+   * panel rendered it anyway, on every step it drew. A promise about what we
+   * kept off somebody's document is not a decoration to repeat.
+   */
+  stepKey: string;
   /** The registry section this panel is reviewing. */
   section: string;
   fields: MotivationField[];
@@ -100,7 +72,7 @@ export default function ReadResult({
 
   return (
     <div className="max-w-[800px] rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)]">
-      <div className="border-b border-[var(--border-divider)] px-4 py-3 text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
+      <div className="border-b border-[var(--border-divider)] px-4 py-3 text-[11px] font-medium uppercase tracking-[.11em] text-[var(--text-tertiary)]">
         {/* ⚠️ COUNTED, NOT WRITTEN. The mockup's "11 of the 15" is a caption on
             a picture; here it is what this member actually has. */}
         We have {filled.length} of the {fields.length} answers this section asks
@@ -183,21 +155,25 @@ export default function ReadResult({
       {/* ⚠️ SAY WHAT WE DID NOT TAKE. A licence card carries a name, an
           identity number and a photograph, and a member handing one over is
           entitled to know none of that was kept. The mockup puts this at the
-          foot of the panel and it is not decoration. */}
-      <p
-        className="rounded-b-[var(--r-md)] border-t px-4 py-3 text-[12.5px] leading-snug"
-        style={{
-          borderColor: 'var(--gold-line)',
-          background: 'var(--gold-wash)',
-          color: 'var(--text-secondary)',
-        }}
-      >
-        <span className="font-semibold text-[var(--gold-strong)]">
-          We took nothing about the person.
-        </span>{' '}
-        A card carries a name, an identity number and a photograph. None of it
-        was asked for and none of it was kept — this step is about the firearm.
-      </p>
+          foot of the panel and it is not decoration — which is exactly why it
+          may only appear where it is TRUE. See stepKey. */}
+      {stepKey === 'firearm' && (
+        <p
+          className="rounded-b-[var(--r-md)] border-t px-4 py-3 text-[12.5px] leading-snug"
+          style={{
+            borderColor: 'var(--gold-line)',
+            background: 'var(--gold-wash)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <span className="font-medium text-[var(--gold-strong)]">
+            We took nothing about the person.
+          </span>{' '}
+          A card carries a name, an identity number and a photograph. None of
+          it was asked for and none of it was kept — this step is about the
+          firearm.
+        </p>
+      )}
     </div>
   );
 }

@@ -2,9 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import { CredentialKind, MotivationUploadKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
+import { decryptJson } from '../common/blob-crypto';
+import { categoryFromText } from '../common/sa-competency';
 import { FLAGS, SettingsService } from '../settings/settings.service';
 import { VaultConsentService } from '../users/vault-consent.service';
 import { documentLabel } from './motivation-documents';
+// ⚠️ IMPORTED, NEVER COPIED. These three are the Licence Centre's own rules
+// about when a read date may be written and armed, and a second implementation
+// of them here would drift — the whole failure this module already documents
+// about CREDENTIAL_TO_UPLOAD. The Nest edge runs LicenceCentreModule →
+// MotivationsModule, so a SERVICE from over there cannot be injected; these are
+// pure functions and carry no such edge.
+import { mayArmReadExpiry } from '../licence-centre/credential-auto-date';
+import { recomputeDerivedCompetencies } from '../licence-centre/credential-derive-recompute';
+import { parseIsoDate } from '../licence-centre/licence-dates';
 
 // ────────────────────────────────────────────────────────────────────
 // KEEPING THE PAPERWORK FROM AN APPLICATION.
@@ -146,6 +157,15 @@ const VAULT_KIND: Partial<Record<MotivationUploadKind, CredentialKind>> = {
   // contain, the create rejects, and the swallowed caller never says so.
   // Adopted into a hole, exactly as the note above this map warns.
   [MotivationUploadKind.PROFICIENCY_CERTIFICATE]: CredentialKind.PROFICIENCY,
+  // ⚠️ INERT TODAY, AND WRITTEN ANYWAY — the note above VAULTABLE already
+  // warned about this line and it was never added. CURRENT_LICENCE is
+  // deliberately NOT in VAULTABLE (the operator's call, not ours), so nothing
+  // reaches here; the moment somebody decides otherwise, the cast fallback
+  // would hand Prisma "CURRENT_LICENCE", which CredentialKind does not contain
+  // — the create rejects and the swallowed caller never says so. Adopted into a
+  // hole, exactly as that note describes, discovered by whoever flips the set
+  // and not by whoever wrote it.
+  [MotivationUploadKind.CURRENT_LICENCE]: CredentialKind.FIREARM_LICENCE,
 };
 
 /**
@@ -203,6 +223,108 @@ export class VaultAdoptionService {
   ) {}
 
   /**
+   * The reading already stored against a motivation upload.
+   *
+   * Fail-soft in the module's established way: a blob we cannot open costs the
+   * dates, never the adoption.
+   */
+  private readDetails(blob: string | null): Record<string, string> {
+    if (!blob) return {};
+    try {
+      return decryptJson<Record<string, string>>(blob) ?? {};
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * What to write into the adopted row's date columns.
+   *
+   * ⚠️ THE SAME GUARD THE DOCUMENT CENTRE USES, IMPORTED. mayArmReadExpiry
+   * refuses a reading flagged uncertain, one that is not a firearm licence, one
+   * on a document filling several roles, an expiry before its issue date, a term
+   * longer than any licence runs, and — the one that matters most — a date
+   * ALREADY PAST, because arming that sends a notice about it tonight.
+   *
+   * ⚠️ THE DATE IS WRITTEN EITHER WAY; ONLY THE ARMING IS WITHHELD. That is
+   * the Centre's own rule and it is the point of the split: the member sees a
+   * filled-in box and can correct it, and a refusal costs the reminder rather
+   * than the value. Nothing is invented — a document with no readable date
+   * writes nothing at all, which is a different thing from writing a wrong one.
+   *
+   * ⚠️ neverExpires IS CLEARED WHEREVER A DATE LANDS. A photograph of a safe
+   * arrives pre-ticked (defaultsToNeverExpires) and a date beside a standing
+   * tick violates the model's CHECK constraint and stores two contradictory
+   * answers.
+   */
+  private datesFor(
+    kind: CredentialKind,
+    blob: string | null,
+  ): {
+    write: {
+      issuedOn?: Date;
+      expiresOn?: Date;
+      neverExpires?: boolean;
+      firearmCategory?: string | null;
+      dateSource?: string;
+      dateSourceNote?: string;
+      dateReadConfident?: boolean;
+    };
+    /** A licence landed and armed, so the competencies must be re-dated. */
+    recompute: boolean;
+  } {
+    const details = this.readDetails(blob);
+    const issuedOn = parseIsoDate(details.issued_on ?? details.issue_date ?? null);
+    const expiresOn = parseIsoDate(details.expires_on ?? details.expiry_date ?? null);
+    if (!issuedOn && !expiresOn) return { write: {}, recompute: false };
+
+    const armed = mayArmReadExpiry({
+      kind,
+      // An adopted row never carries extra roles — adoptUpload writes one kind
+      // and no coversKinds — so there is genuinely nothing to declare here.
+      coversKinds: [],
+      expiresOn: expiresOn ? expiresOn.toISOString().slice(0, 10) : null,
+      issuedOn: issuedOn ? issuedOn.toISOString().slice(0, 10) : null,
+      section: details.section ?? null,
+      // ⚠️ EMPTY, AND HONESTLY SO. MotivationUpload does not store the
+      // extractor's per-field confidence — only Credential.readUncertain does —
+      // so we cannot claim the model was sure. That makes this guard STRICTLY
+      // WEAKER here than on the Centre's own upload path, which is the one
+      // difference between the two and is worth knowing: every other test still
+      // applies, and a wrong date is still the member's to correct.
+      lowConfidence: [],
+      now: new Date(),
+    });
+    if (expiresOn && !armed.arm) {
+      this.logger.log(
+        `Adopted ${kind}: date read but not armed — ${armed.reason}`,
+      );
+    }
+
+    return {
+      write: {
+        ...(issuedOn ? { issuedOn } : {}),
+        ...(expiresOn ? { expiresOn, neverExpires: false } : {}),
+        // ⚠️ IN THE CLEAR, SO A COMPETENCY CAN BE DATED OFF IT. The firearm
+        // type lives in the encrypted details, which SQL cannot open, and the
+        // whole derivation is a group-by on this column.
+        ...(kind === CredentialKind.FIREARM_LICENCE
+          ? { firearmCategory: categoryFromText(details.firearm_type ?? '') }
+          : {}),
+        ...(armed.arm
+          ? {
+              dateSource: 'read',
+              dateSourceNote:
+                'We read this date off the document on your application. Change it if it is wrong.',
+              dateReadConfident: true,
+            }
+          : {}),
+      },
+      recompute: armed.arm && kind === CredentialKind.FIREARM_LICENCE,
+    };
+  }
+
+  /**
    * Copy ONE upload into the member's Centre.
    *
    * Called as a fail-soft tail on addUpload, and by the backfill below.
@@ -247,6 +369,8 @@ export class VaultAdoptionService {
     // years later, with nothing in the Centre's own code to explain it.
     const stored = await this.files.write('credentials', bytes, new Date());
 
+    const dates = this.datesFor(vaultKindFor(u.kind), u.extractionEncrypted);
+
     try {
       await this.prisma.credential.create({
         data: {
@@ -274,11 +398,39 @@ export class VaultAdoptionService {
           detailsEncrypted: u.extractionEncrypted,
           extractionOk: u.extractionOk,
           extractedFields: u.extractedFields,
-          // No dates, and no vision call. The document has been read once
-          // already; re-reading it spends money to arrive back here. The
-          // member confirms the dates in the Centre when they want to.
+          // ⚠️ THE DATES COME ACROSS TOO, AND THE OLD NOTE HERE WAS THE
+          // DEFECT. H8. It read "No dates, and no vision call… the member
+          // confirms the dates in the Centre when they want to" — the second
+          // half of which is the thing CLAUDE.md's "Automate It" section was
+          // written to end. A firearm licence adopted from an application landed
+          // in the Centre with no expiry at all, so the reminder sweep could not
+          // see it, so the member got NO renewal reminder for a licence we were
+          // holding a photograph of. For a product whose job is warning somebody
+          // before a licence expires, that is the worst outcome available.
+          //
+          // Nothing is re-read: the reading is already in the row's
+          // extractionEncrypted — which is exactly what the old note was right
+          // about — and this simply stops throwing away the dates inside it.
+          //
+          // ⚠️ WRITTEN ALWAYS, ARMED ONLY WHERE mayArmReadExpiry SAYS SO. That
+          // guard is the only thing standing between an OCR misreading and an
+          // SMS about somebody's firearm licence, and it is the Licence Centre's
+          // own — imported, never reimplemented.
+          ...dates.write,
         },
       });
+      if (dates.recompute) {
+        // A newly-arrived licence re-dates the member's competencies, whose
+        // expiry is the latest licence expiry in each category they cover.
+        // Without this, order decides: a competency adopted before the licence
+        // is dated off the licences that existed at that instant.
+        await recomputeDerivedCompetencies(
+          this.prisma,
+          userId,
+          (blob) => this.readDetails(blob).covers ?? '',
+          this.logger,
+        );
+      }
       return true;
     } catch (err) {
       // The bytes must not outlive a failed row.

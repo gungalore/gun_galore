@@ -23,6 +23,12 @@
 import { useState } from 'react';
 import { motivationsApi, MotivationApiError } from '@/lib/motivations-api';
 import type { TokenGetter } from '@/lib/motivations-api';
+// ⚠️ THE SHARED ROUTINE, NOT A FOURTH COPY. Three identical hand-written
+// versions of "open an authenticated blob in a new tab" existed, each carrying
+// the same two hard-won rules (open the tab synchronously or Safari blocks it;
+// never 'noopener', which returns null and strands a blank tab). One of them
+// was here, twice over. See lib/open-blob-tab.ts.
+import { openBlobTab } from '@/lib/open-blob-tab';
 
 export default function PackFinish({
   token,
@@ -30,6 +36,11 @@ export default function PackFinish({
   reference,
   status,
   outstanding,
+  outstandingLabel,
+  onGoToAnswer,
+  missingDocuments = [],
+  documentLabel,
+  onGoToDocuments,
   saps271Filled,
   onStatus,
 }: {
@@ -39,6 +50,21 @@ export default function PackFinish({
   status: string;
   /** Required answers still missing. Generating without them wastes a run. */
   outstanding: string[];
+  /** A field key in the member's own words. Defaults to the key itself. */
+  outstandingLabel?: (key: string) => string;
+  /** Take them to the step that asks it. Without this the names are inert. */
+  onGoToAnswer?: (key: string) => void;
+  /**
+   * Required document kinds still unattached.
+   *
+   * ⚠️ A MISSING DOCUMENT IS NOT A MISSING ANSWER, and the two are fixed on
+   * different steps. This panel used to see only the answers, so a pack with
+   * every box filled and no ID copy showed a live button, spent one of a small
+   * hourly quota on a flagship model, and came back refused.
+   */
+  missingDocuments?: string[];
+  documentLabel?: (kind: string) => string;
+  onGoToDocuments?: (kind: string) => void;
   /** Did they ask us to fill the SAPS 271? Decides the second button. */
   saps271Filled: boolean;
   onStatus: (status: string) => void;
@@ -47,36 +73,18 @@ export default function PackFinish({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  /**
-   * Open a PDF the server will only hand over with a token.
-   *
-   * ⚠️ NO 'noopener' — the same lesson as viewUpload. Per spec it returns
-   * null, so the tab opens blank and the fallback navigates the member's
-   * current window out from under them.
-   */
-  async function openPdf(mint: () => Promise<string>, filename: string) {
-    const tab = window.open('', '_blank');
-    if (tab) tab.opener = null;
-    try {
-      const url = await mint();
-      if (tab) {
-        tab.location.href = url;
-      } else {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-      }
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      tab?.close();
-      setErr(
-        e instanceof MotivationApiError
-          ? e.message
-          : 'We could not open the document just now.',
-      );
-    }
-  }
+  /** Open a PDF the server will only hand over with a token. */
+  const openPdf = (mint: () => Promise<string>, filename: string) =>
+    openBlobTab({
+      mint,
+      filename,
+      onError: (e) =>
+        setErr(
+          e instanceof MotivationApiError
+            ? e.message
+            : 'We could not open the document just now.',
+        ),
+    });
 
   async function writeIt() {
     setBusy(true);
@@ -109,11 +117,28 @@ export default function PackFinish({
         );
       }
     } catch (e) {
-      setErr(
-        e instanceof MotivationApiError
-          ? e.message
-          : 'We could not start writing it just now.',
-      );
+      // ⚠️ THE SERVER NAMES WHAT IT IS HOLDING OUT FOR, AND NOTHING READ IT.
+      // "Some required answers are still missing" on its own is a dead end on
+      // the one screen with no form on it. A missing DOCUMENT is a different
+      // failure from a missing answer and is fixed on a different step, so the
+      // two are said separately and each one is jumped to.
+      if (e instanceof MotivationApiError && e.missingDocuments?.length) {
+        const names = e.missingDocuments.map(documentLabel ?? ((k) => k));
+        setErr(
+          `Still needed before we can write it: ${names.join(', ')}. They go on the step that asks for them.`,
+        );
+        onGoToDocuments?.(e.missingDocuments[0]);
+      } else if (e instanceof MotivationApiError && e.missing?.length) {
+        const names = e.missing.map(outstandingLabel ?? ((k) => k));
+        setErr(`Still needed before we can write it: ${names.join(', ')}.`);
+        onGoToAnswer?.(e.missing[0]);
+      } else {
+        setErr(
+          e instanceof MotivationApiError
+            ? e.message
+            : 'We could not start writing it just now.',
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -132,7 +157,7 @@ export default function PackFinish({
   if (status === 'COMPLETED') {
     return (
       <div className="space-y-3">
-        <p className="text-[13.5px] font-semibold">Your pack is ready.</p>
+        <p className="text-[13.5px] font-medium">Your pack is ready.</p>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -142,7 +167,7 @@ export default function PackFinish({
                 `${reference}-motivation.pdf`,
               )
             }
-            className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-4 py-[9px] text-[13px] font-semibold text-white"
+            className="min-h-[44px] rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-4 py-[9px] text-[13px] font-medium text-white"
           >
             Open your motivation
           </button>
@@ -157,7 +182,7 @@ export default function PackFinish({
                   `${reference}-saps271.pdf`,
                 )
               }
-              className="rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-4 py-[9px] text-[13px]"
+              className="min-h-[44px] rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-4 py-[9px] text-[13px]"
             >
               Open your pre-filled SAPS 271
             </button>
@@ -168,16 +193,62 @@ export default function PackFinish({
     );
   }
 
-  // ⚠️ NAME THE COUNT RATHER THAN THE BUTTON. Generating with required answers
-  // missing spends a model run to produce a document the member cannot file,
-  // so the door stays shut — but "you cannot continue" without saying what is
-  // outstanding is the dead end the old page had to fix.
-  if (outstanding.length > 0) {
+  // ⚠️ NAME THEM, AND GO TO THEM. Generating with something required missing
+  // spends a model run on a document the member cannot file, so the door stays
+  // shut — but "the steps above show which" was a dead end: this is the LAST
+  // step, one panel is on screen at a time, and there were no steps above. The
+  // member was told a count and left to hunt for it across ten screens.
+  if (outstanding.length > 0 || missingDocuments.length > 0) {
+    const label = outstandingLabel ?? ((k: string) => k);
+    const docLabel = documentLabel ?? ((k: string) => k);
     return (
-      <p className="text-[13.5px] text-[var(--text-secondary)]">
-        {outstanding.length} answer{outstanding.length === 1 ? '' : 's'} still
-        to give. The steps above show which.
-      </p>
+      <div className="text-[13.5px] text-[var(--text-secondary)]">
+        {outstanding.length > 0 && (
+          <>
+            <p>
+              {outstanding.length} answer{outstanding.length === 1 ? '' : 's'}{' '}
+              still to give:
+            </p>
+            <ul className="mt-1.5 flex flex-wrap gap-2">
+              {outstanding.map((k) => (
+                <li key={k}>
+                  <button
+                    type="button"
+                    disabled={!onGoToAnswer}
+                    onClick={() => onGoToAnswer?.(k)}
+                    className="min-h-[44px] rounded-[var(--r-sm)] border border-[var(--border)] px-3 py-2 text-[13px] underline-offset-2 hover:bg-[var(--bg-card-hover)] hover:underline disabled:no-underline"
+                  >
+                    {label(k)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {missingDocuments.length > 0 && (
+          <div className={outstanding.length > 0 ? 'mt-3' : ''}>
+            <p>
+              {missingDocuments.length} document
+              {missingDocuments.length === 1 ? '' : 's'} still needed:
+            </p>
+            <ul className="mt-1.5 flex flex-wrap gap-2">
+              {missingDocuments.map((kind) => (
+                <li key={kind}>
+                  <button
+                    type="button"
+                    disabled={!onGoToDocuments}
+                    onClick={() => onGoToDocuments?.(kind)}
+                    className="min-h-[44px] rounded-[var(--r-sm)] border border-[var(--border)] px-3 py-2 text-[13px] underline-offset-2 hover:bg-[var(--bg-card-hover)] hover:underline disabled:no-underline"
+                  >
+                    {docLabel(kind)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -205,7 +276,7 @@ export default function PackFinish({
         type="button"
         disabled={busy}
         onClick={writeIt}
-        className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-6 py-[11px] text-[13.5px] font-semibold text-white disabled:opacity-50"
+        className="min-h-[44px] rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-6 py-[11px] text-[13.5px] font-medium text-white disabled:opacity-50"
       >
         Write my motivation
       </button>

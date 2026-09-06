@@ -42,17 +42,52 @@ const EMPTY: ProfileSource = {
 };
 
 describe('what the profile can reach', () => {
-  it('offers name, ID, address, postal code and cellphone', () => {
+  it('offers name, ID, address, postal code, cellphone and the postal address', () => {
     const o = profileOffer(T, FULL, {});
     expect(Object.keys(o.values).sort()).toEqual([
       'cellphone',
       'full_name',
       'id_number',
+      'postal_address',
+      'postal_postal_code',
       'residential_address',
       'residential_postal_code',
     ]);
     expect(o.values.full_name).toBe('Jan Pietersen');
     expect(o.values.id_number).toBe('8001015009087');
+  });
+
+  // ── H12 — the postal address ──────────────────────────────────────
+
+  it('H12 — fills the postal address from the residential one', () => {
+    // The 271 prints a postal address and a postal code, and the field's own
+    // help says "Leave blank if post reaches you at the address above" — true
+    // of nearly every applicant, and the reason both boxes came back empty on a
+    // form that has to carry an address for correspondence.
+    const o = profileOffer(T, FULL, {});
+    expect(o.values.postal_address).toBe(o.values.residential_address);
+    expect(o.values.postal_postal_code).toBe('9301');
+    // It says it is a starting point, so the member knows they may change it.
+    expect(o.from.postal_address).toMatch(/somewhere else/i);
+  });
+
+  it('H12 — never overwrites a postal address they have already given', () => {
+    // Somebody with a PO box has a DIFFERENT postal address, and quietly
+    // replacing it with their street address would put the wrong one on a form
+    // they sign. Same rule as every other offer here.
+    const o = profileOffer(T, FULL, {
+      postal_address: 'PO Box 44, Bloemfontein',
+      postal_postal_code: '9300',
+    });
+    expect(o.values.postal_address).toBeUndefined();
+    expect(o.values.postal_postal_code).toBeUndefined();
+  });
+
+  it('H12 — offers no postal address when the profile has no address', () => {
+    // Absent stays absent. Nothing is invented.
+    const o = profileOffer(T, EMPTY, {});
+    expect(o.values.postal_address).toBeUndefined();
+    expect(o.values.postal_postal_code).toBeUndefined();
   });
 
   it('joins the address parts the profile keeps separately', () => {

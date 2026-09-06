@@ -41,34 +41,219 @@ export const DRAFT_KEY = (id: string) => `motivation-draft:${id}`;
  * Corrupt JSON is the same case: something wrote nonsense under our key, and
  * the server's copy is the one to trust.
  */
-export function readDraft(id: string): Record<string, string> {
+/**
+ * One application's unsent state.
+ *
+ * ⚠️ IT IS A RECORD NOW, NOT A BARE ANSWER MAP, and a legacy flat map still
+ * reads. Two review queues used to be component state — what we filed each
+ * uploaded document as, and the values we read off one that conflict with
+ * something typed — and both are questions only a human can settle. Held in
+ * useState they survived exactly as long as the tab did: a refresh mid-review
+ * left six documents filed as whatever we guessed, with nobody ever asked, and
+ * a required-documents list ticking a line the pack does not actually meet.
+ * That is the Document Centre's lost-licences bug in a second costume.
+ */
+export interface DraftRecord {
+  answers: Record<string, string>;
+  /** What we filed each auto-named document as, pending confirmation. */
+  filed: FiledDoc[];
+  /** Values read off a document that disagree with something already typed. */
+  suggestions: DraftSuggestion[];
+  /**
+   * One-shot acknowledgements, by name.
+   *
+   * ⚠️ FOR THINGS THE MEMBER HAS ALREADY DONE ONCE. The seller-card adoption
+   * lived in component state, so a reload re-offered "use these details in my
+   * application" to somebody who had used them — an invitation to overwrite
+   * their own corrections with the same card a second time.
+   */
+  flags: Record<string, boolean>;
+}
+
+export interface FiledDoc {
+  id: string;
+  name: string;
+  kind: string;
+  confident: boolean;
+}
+
+export interface DraftSuggestion {
+  key: string;
+  value: string;
+  label: string;
+  from: string;
+  trusted?: boolean;
+  note?: string;
+}
+
+const EMPTY: DraftRecord = { answers: {}, filed: [], suggestions: [], flags: {} };
+
+/** Only string values survive. A draft is answers; anything else got in by mistake. */
+function strings(v: unknown): Record<string, string> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof x === 'string') out[k] = x;
+  }
+  return out;
+}
+
+function bools(v: unknown): Record<string, boolean> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out: Record<string, boolean> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof x === 'boolean') out[k] = x;
+  }
+  return out;
+}
+
+function filedRows(v: unknown): FiledDoc[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((r) => {
+    if (!r || typeof r !== 'object') return [];
+    const o = r as Record<string, unknown>;
+    if (typeof o.id !== 'string' || typeof o.kind !== 'string') return [];
+    return [
+      {
+        id: o.id,
+        kind: o.kind,
+        name: typeof o.name === 'string' ? o.name : '',
+        // ⚠️ MISSING MEANS NOT SURE. Defaulting the other way would restore a
+        // row as confirmed that nobody ever confirmed.
+        confident: o.confident === true,
+      },
+    ];
+  });
+}
+
+function suggestionRows(v: unknown): DraftSuggestion[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((r) => {
+    if (!r || typeof r !== 'object') return [];
+    const o = r as Record<string, unknown>;
+    if (
+      typeof o.key !== 'string' ||
+      typeof o.value !== 'string' ||
+      typeof o.label !== 'string'
+    ) {
+      return [];
+    }
+    return [
+      {
+        key: o.key,
+        value: o.value,
+        label: o.label,
+        from: typeof o.from === 'string' ? o.from : '',
+        trusted: o.trusted === true,
+        ...(typeof o.note === 'string' ? { note: o.note } : {}),
+      },
+    ];
+  });
+}
+
+/**
+ * Read the whole record, or an empty one.
+ *
+ * ⚠️ NEVER THROWS — see readDraft. A LEGACY FLAT MAP (the shape written before
+ * the review queues joined it) is read as answers, so a member mid-sentence
+ * across the deploy keeps their sentence.
+ */
+export function readRecord(id: string): DraftRecord {
   try {
     const raw = localStorage.getItem(DRAFT_KEY(id));
-    if (!raw) return {};
+    if (!raw) return { ...EMPTY };
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return {};
+      return { ...EMPTY };
     }
-    // Only string values. A draft is answers; anything else got in by mistake
-    // and must not reach a field renderer expecting a string.
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      if (typeof v === 'string') out[k] = v;
+    const rec = parsed as Record<string, unknown>;
+    if (!('answers' in rec)) {
+      // Written by the version before this one: the object IS the answers.
+      return { answers: strings(rec), filed: [], suggestions: [], flags: {} };
     }
-    return out;
+    return {
+      answers: strings(rec.answers),
+      filed: filedRows(rec.filed),
+      suggestions: suggestionRows(rec.suggestions),
+      flags: bools(rec.flags),
+    };
   } catch {
-    return {};
+    return { ...EMPTY };
   }
 }
 
-/** Write the draft, silently doing nothing where storage is unavailable. */
-export function writeDraft(id: string, answers: Record<string, string>): void {
+/** Write the whole record, silently doing nothing where storage is unavailable. */
+function writeRecord(id: string, rec: DraftRecord): void {
   try {
-    localStorage.setItem(DRAFT_KEY(id), JSON.stringify(answers));
+    localStorage.setItem(DRAFT_KEY(id), JSON.stringify(rec));
   } catch {
     // Quota, private mode, or storage disabled. The debounced save is still
     // on its way to the server; losing the belt does not justify an error.
   }
+}
+
+/**
+ * The review queues for one application.
+ *
+ * ⚠️ READ SEPARATELY FROM THE ANSWERS, because they are restored at a
+ * different moment: the answers merge over the server's copy on load, the
+ * queues are restored once the uploads list is known so a row for a document
+ * that has since been deleted can be dropped.
+ */
+export function readReview(id: string): {
+  filed: FiledDoc[];
+  suggestions: DraftSuggestion[];
+} {
+  const rec = readRecord(id);
+  return { filed: rec.filed, suggestions: rec.suggestions };
+}
+
+/** Replace the review queues, leaving the unsent answers untouched. */
+export function writeReview(
+  id: string,
+  review: { filed?: FiledDoc[]; suggestions?: DraftSuggestion[] },
+): void {
+  const cur = readRecord(id);
+  writeRecord(id, {
+    answers: cur.answers,
+    filed: review.filed ?? cur.filed,
+    suggestions: review.suggestions ?? cur.suggestions,
+    flags: cur.flags,
+  });
+}
+
+/** Has this member already done the thing `name` stands for, on this pack? */
+export function readFlag(id: string, name: string): boolean {
+  return readRecord(id).flags[name] === true;
+}
+
+/** Remember that they have. Never throws — see readDraft. */
+export function writeFlag(id: string, name: string, value = true): void {
+  const cur = readRecord(id);
+  writeRecord(id, { ...cur, flags: { ...cur.flags, [name]: value } });
+}
+
+export function readDraft(id: string): Record<string, string> {
+  return readRecord(id).answers;
+}
+
+/**
+ * Write the unsent answers, silently doing nothing where storage is
+ * unavailable.
+ *
+ * ⚠️ IT MERGES INTO THE RECORD RATHER THAN REPLACING IT. This fires on every
+ * keystroke; a blind overwrite would drop the review queues on the first
+ * character typed after a batch of documents went up — which is precisely the
+ * wholesale-replace bug that lost six licences in the Document Centre.
+ */
+export function writeDraft(id: string, answers: Record<string, string>): void {
+  const cur = readRecord(id);
+  writeRecord(id, {
+    answers,
+    filed: cur.filed,
+    suggestions: cur.suggestions,
+    flags: cur.flags,
+  });
 }
 
 /** Drop the draft once the server has the answers. */

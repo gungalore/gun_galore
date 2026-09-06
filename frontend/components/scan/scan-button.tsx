@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import { DocShape } from '@/lib/scan/shapes';
+import type { DocumentScannerProps } from './document-scanner';
 
 // ────────────────────────────────────────────────────────────────────
 // THE WAY IN TO THE SCANNER.
@@ -21,9 +22,16 @@ import { DocShape } from '@/lib/scan/shapes';
 // component in which the picker is absent.
 // ────────────────────────────────────────────────────────────────────
 
-const DocumentScanner = dynamic(() => import('./document-scanner'), {
-  ssr: false,
-});
+// ⚠️ TWO SCANNERS, ONE DOOR. NEXT_PUBLIC_SCANNER_V3=1 opens the new scanner
+// (components/scan-v3, the ground-up rebuild: finds the document itself, no
+// chooser, fires only when the print is in focus). Unset, the site is exactly
+// what it was. Both are dynamic imports, so only the chosen one is ever
+// downloaded; the flag is inlined at build time.
+const SCANNER_V3 = process.env.NEXT_PUBLIC_SCANNER_V3 === '1';
+const DocumentScanner = dynamic<DocumentScannerProps>(
+  () => (SCANNER_V3 ? import('../scan-v3/document-scanner') : import('./document-scanner')),
+  { ssr: false },
+);
 
 // The QR is only ever drawn on a desktop, so its library stays out of the
 // bundle every phone downloads.

@@ -1,5 +1,6 @@
 import { MotivationUploadKind } from '@prisma/client';
 import { BACKFILL_BATCH, VAULTABLE, VaultAdoptionService } from './vault-adoption.service';
+import { encryptJson } from '../common/blob-crypto';
 
 // KEEPING THE PAPERWORK FROM AN APPLICATION.
 //
@@ -344,5 +345,116 @@ describe('the one-off copy of what came before the yes', () => {
     });
     expect((await svc.backfillStep('c1')).done).toBe(true);
     expect(prisma.motivationUpload.findMany).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// H8 — THE DATES COME ACROSS.
+//
+// A firearm licence adopted from an application landed in the Centre with no
+// expiry at all, so the reminder sweep could not see it, so the member got NO
+// renewal reminder for a licence we were holding a photograph of. The old note
+// said "the member confirms the dates in the Centre when they want to" — which
+// is the confirm step CLAUDE.md's "Automate It" section exists to end.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the dates on an adopted document', () => {
+  const ORIGINAL = process.env.ID_HASH_SECRET;
+  beforeAll(() => {
+    process.env.ID_HASH_SECRET = 'test-secret-for-vault-adoption';
+  });
+  afterAll(() => {
+    if (ORIGINAL === undefined) delete process.env.ID_HASH_SECRET;
+    else process.env.ID_HASH_SECRET = ORIGINAL;
+  });
+
+  /** A licence upload whose stored reading carries real dates. */
+  const licenceUpload = (details: Record<string, string>) => ({
+    kind: MotivationUploadKind.CURRENT_LICENCE,
+    storageKey: 'motivations/2026/08/l.enc',
+    purgedAt: null,
+    mimeType: 'image/jpeg',
+    sha256: 'sha-l',
+    extractionEncrypted: encryptJson(details),
+    extractionOk: true,
+    extractedFields: Object.keys(details),
+    motivation: { referenceNumber: 'MO000117' },
+  });
+
+  /**
+   * ⚠️ CURRENT_LICENCE IS NOT IN VAULTABLE, DELIBERATELY — see the note on the
+   * set. The date-writing must still be right for it, because the operator's
+   * decision on whether to admit it is theirs to take and this must not be the
+   * thing that then goes wrong. So the test admits it locally rather than
+   * changing the shipped rule.
+   */
+  const adoptable = (svc: VaultAdoptionService, u: unknown) => {
+    (VAULTABLE as Set<MotivationUploadKind>).add(
+      MotivationUploadKind.CURRENT_LICENCE,
+    );
+    return { svc, u };
+  };
+  afterEach(() => {
+    (VAULTABLE as Set<MotivationUploadKind>).delete(
+      MotivationUploadKind.CURRENT_LICENCE,
+    );
+  });
+
+  it('writes the issue and expiry dates it already holds, and arms them', async () => {
+    // Nothing is re-read: the reading is already on the row. This simply stops
+    // throwing the dates inside it away.
+    const upload = licenceUpload({
+      issued_on: '2025-06-06',
+      expires_on: '2035-06-06',
+      section: 'Section 16',
+      firearm_type: 'RIFLE',
+    });
+    const { svc, prisma } = build({ upload });
+    adoptable(svc, upload);
+
+    expect(await svc.adoptUpload('u1', 'up-1')).toBe(true);
+    const data = prisma.credential.create.mock.calls[0][0].data;
+    expect(data.issuedOn?.toISOString().slice(0, 10)).toBe('2025-06-06');
+    expect(data.expiresOn?.toISOString().slice(0, 10)).toBe('2035-06-06');
+    // A date beside a standing neverExpires tick breaks the model's CHECK
+    // constraint and stores two contradictory answers.
+    expect(data.neverExpires).toBe(false);
+    // Armed, so the reminder sweep can act on it — which is the whole point.
+    expect(data.dateSource).toBe('read');
+    // In the clear, so a competency can be dated off it: the derivation is a
+    // group-by on this column and SQL cannot open the encrypted details.
+    expect(data.firearmCategory).toBeTruthy();
+  });
+
+  it('⚠️ WRITES A DATE ALREADY PAST, AND REFUSES TO ARM IT', () => {
+    // The Licence Centre's own guard, imported rather than reimplemented. The
+    // reminder ladder's last stage fires on anything at or past its expiry, so
+    // arming one that lapsed in 2019 sends a notice about it tonight. The
+    // member still SEES the date and can correct it; only the automatic part is
+    // withheld.
+    const upload = licenceUpload({
+      issued_on: '2014-01-01',
+      expires_on: '2019-01-01',
+      section: 'Section 16',
+    });
+    const { svc, prisma } = build({ upload });
+    adoptable(svc, upload);
+
+    return svc.adoptUpload('u1', 'up-1').then(() => {
+      const data = prisma.credential.create.mock.calls[0][0].data;
+      expect(data.expiresOn?.toISOString().slice(0, 10)).toBe('2019-01-01');
+      expect(data.dateSource).toBeUndefined();
+    });
+  });
+
+  it('writes no dates at all where the document carries none', async () => {
+    // Absent stays absent, which is a different thing from wrong. An ID copy
+    // has no expiry in any sense and must not acquire one.
+    const { svc, prisma } = build();
+    expect(await svc.adoptUpload('u1', 'up-1')).toBe(true);
+    const data = prisma.credential.create.mock.calls[0][0].data;
+    expect(data.issuedOn).toBeUndefined();
+    expect(data.expiresOn).toBeUndefined();
+    expect(data.dateSource).toBeUndefined();
   });
 });

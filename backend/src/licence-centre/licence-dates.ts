@@ -226,31 +226,25 @@ export function dueStage(
 }
 
 /**
- * How long a competency certificate lasts, when the certificate does not say.
+ * ⚠️ `COMPETENCY_YEARS` AND `competencyLapses` LIVED HERE AND ARE GONE.
  *
- * ⚠️ SECTION 10(2) OF THE FIREARMS CONTROL ACT 60 OF 2000, read from the text
- * rather than recalled: "A competency certificate lapses after five years from
- * its date of issue." Most competency certificates print only an issue date,
- * so a member who has just photographed one is looking at a document with no
- * expiry on it and a form asking for one.
+ * They were the five-year competency period, and their doc-comment quoted the
+ * PRE-2011 section 10(2) — "A competency certificate lapses after five years
+ * from its date of issue" — as though it were current law. That wording was
+ * repealed on 10 January 2011 by s9 of Act 28 of 2006 (reference §5.1); what
+ * replaced it ties a competency to the licence it relates to.
  *
- * ⚠️ IT IS A SUGGESTION, NOT A FINDING, and the confirm step is what makes
- * that safe: nothing here arms the reminder sweep until the member has looked
- * at the date and said it is right. We are doing the arithmetic they would
- * otherwise do in their head, and showing our reasoning.
+ * The five years survives as an OPERATING rule for the no-licence case only,
+ * and it lives in ONE place now: FALLBACK_YEARS in common/sa-competency.ts,
+ * beside deriveCertificateExpiry, which is the only thing that may apply it —
+ * and only once the endorsements have actually been read. The last caller here
+ * was a second five-year branch in derivedExpiryFor that fired when the
+ * endorsements could NOT be read, which is a different question with the
+ * opposite answer.
  *
- * ⚠️ NOT APPLIED TO ANY OTHER KIND. Licence validity runs off section 27 and
- * varies by section — two, five or ten years — and dedicated status expiries
- * are set by the association, not by statute. Guessing either would be
- * inventing a deadline.
+ * Do not reintroduce a five-year constant in this file. A date module with a
+ * competency period in it invites exactly the caller that was just removed.
  */
-export const COMPETENCY_YEARS = 5;
-
-export function competencyLapses(issuedOn: Date): Date {
-  const d = new Date(issuedOn.getTime());
-  d.setUTCFullYear(d.getUTCFullYear() + COMPETENCY_YEARS);
-  return d;
-}
 
 /**
  * Is this row's expiry date settled — by the member, or by us?

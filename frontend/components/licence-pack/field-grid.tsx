@@ -17,6 +17,13 @@
 import { useState } from 'react';
 import FieldInput from '@/components/motivation-field-input';
 import { maskSensitive } from '@/lib/mask-sensitive';
+// ⚠️ THE SHARED TONES, NOT A SECOND LADDER. This file had its own two-branch
+// chip — gold when `inferred`, grey otherwise — and it could not tell "we could
+// not fill this" from "we filled it, check it": an empty required box and a
+// value read cleanly off a licence card both rendered as no chip at all, while
+// ReadResult two steps away drew green / gold / grey for the same three cases.
+// One vocabulary, one file. See components/motivation/provenance.tsx.
+import { Pill, toneFor } from '@/components/motivation/provenance';
 import type { MotivationField, ProvenanceMap } from '@/lib/motivations-api';
 
 export default function FieldGrid({
@@ -42,6 +49,7 @@ export default function FieldGrid({
         const p = provenance[f.key];
         const open = editing === f.key;
         const shown = f.sensitive && raw ? maskSensitive(raw, f.key) : raw;
+        const tone = toneFor(p, Boolean(raw));
 
         if (open) {
           return (
@@ -71,7 +79,7 @@ export default function FieldGrid({
             key={f.key}
             type="button"
             onClick={() => setEditing(f.key)}
-            className="flex items-center gap-3 border-b border-[var(--border-divider)] py-2.5 text-left"
+            className="flex min-h-[44px] items-center gap-3 border-b border-[var(--border-divider)] py-2.5 text-left"
           >
             <span className="w-[126px] shrink-0 text-[12.5px] text-[var(--text-tertiary)]">
               {f.label}
@@ -89,25 +97,17 @@ export default function FieldGrid({
             </span>
 
             {/* The chip is the server's own label, never a table here. */}
-            {p && p.source !== 'MEMBER' && (
-              <span
-                className="shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
-                style={
-                  p.inferred
-                    ? {
-                        background: 'var(--gold-wash)',
-                        color: 'var(--gold-strong)',
-                        border: '1px solid var(--gold-line)',
-                      }
-                    : {
-                        background: 'var(--bg-inset)',
-                        color: 'var(--text-secondary)',
-                      }
-                }
-              >
-                {p.inferred ? 'Check this' : p.from}
-              </span>
-            )}
+            <Pill tone={tone}>
+              {tone === 'read'
+                ? (p?.from ?? 'Read')
+                : tone === 'check'
+                  ? 'Check this'
+                  : raw
+                    ? 'You entered this'
+                    : missing.has(f.key)
+                      ? 'Still needed'
+                      : 'Not given'}
+            </Pill>
           </button>
         );
       })}

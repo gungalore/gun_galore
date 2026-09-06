@@ -338,17 +338,55 @@ export function toWalkedIndex(display: number): number | null {
   return n < 0 ? null : n;
 }
 
+/**
+ * Is this step finished?
+ *
+ * ⚠️ NOT `i < current`, WHICH IS WHAT IT USED TO BE. Position ticked a step
+ * green for having been WALKED PAST — so somebody who clicked ahead to type a
+ * competency number came back to four green ticks over four empty steps, and
+ * the one honest signal on the rail said the opposite of the truth. Worse, the
+ * step they were actually on could never go green however much they filled in.
+ *
+ * A step is done when nothing it CLAIMS is outstanding: none of its registry
+ * sections holds a missing required answer, and none of its document kinds is
+ * still required and unattached. A step that claims nothing — the pack, and the
+ * seller's half on "Where it is from" — is never ticked from here, because
+ * nothing on this rail knows whether it is finished. Silence beats a wrong tick.
+ */
+export function stepDone(
+  step: WizardStep,
+  outstandingSections: ReadonlySet<string>,
+  outstandingKinds: ReadonlySet<string>,
+): boolean {
+  const sections = step.sections ?? [];
+  const kinds = (step.documents ?? []).map((d) => d.kind);
+  if (!sections.length && !kinds.length) return false;
+  return (
+    sections.every((s) => !outstandingSections.has(s)) &&
+    kinds.every((k) => !outstandingKinds.has(k))
+  );
+}
+
 export default function WizardRail({
   steps,
   current,
   onGo,
   interactive = true,
   lockedBefore = 0,
+  outstandingSections = [],
+  outstandingKinds = [],
 }: {
   steps: WizardStep[];
   /** Zero-based. */
   current: number;
   onGo: (index: number) => void;
+  /**
+   * Registry sections still holding a required answer, and document kinds
+   * still required and unattached. Empty means "we were told nothing", which
+   * ticks nothing — see stepDone.
+   */
+  outstandingSections?: readonly string[];
+  outstandingKinds?: readonly string[];
   /**
    * Whether the rail can be navigated.
    *
@@ -374,13 +412,18 @@ export default function WizardRail({
    */
   lockedBefore?: number;
 }) {
+  const missingSections = new Set(outstandingSections);
+  const missingKinds = new Set(outstandingKinds);
   return (
     <nav
       aria-label="Application steps"
-      className="flex items-center gap-1.5 overflow-x-auto border-b border-[var(--border)] px-4 py-[13px] sm:px-6"
+      className="flex items-center gap-1.5 overflow-x-auto border-b border-[var(--border)] px-4 py-[7px] sm:px-6"
     >
       {steps.map((step, i) => {
-        const done = i < current;
+        // A step before the walk began was completed before this screen: the
+        // member chose their section to get here, and the tick is the point.
+        const done =
+          i < lockedBefore || stepDone(step, missingSections, missingKinds);
         const now = i === current;
         return (
           <button
@@ -389,13 +432,16 @@ export default function WizardRail({
             onClick={() => onGo(i)}
             disabled={!interactive || i < lockedBefore}
             aria-current={now ? "step" : undefined}
-            className="flex shrink-0 items-center gap-[7px] rounded-md border-0 px-2 py-1 disabled:cursor-default"
+            // ⚠️ 44px TALL, NOT 30. It was a 22px dot with 4px of padding —
+            // under half the minimum target on the one control a member uses
+            // on every step, and the steps sit 6px apart on a phone.
+            className="flex min-h-[44px] shrink-0 items-center gap-[7px] rounded-[8px] border-0 px-2 py-1 disabled:cursor-default"
             style={{
-              background: now ? "rgba(200,16,46,.05)" : "none",
+              background: now ? "var(--red-wash)" : "none",
             }}
           >
             <span
-              className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+              className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[11px] font-medium"
               style={
                 done
                   ? { background: "var(--success)", color: "#fff" }
@@ -412,11 +458,14 @@ export default function WizardRail({
             </span>
             <span
               className="whitespace-nowrap text-[12px]"
+              // 500 is the heaviest weight this site has — see CLAUDE.md, "400
+              // and 500 ONLY". 700 and 600 rendered as 500 anyway on a system
+              // stack with no bold face loaded, so this is what was shipping.
               style={
                 now
-                  ? { fontWeight: 700, color: "var(--text-primary)" }
+                  ? { fontWeight: 500, color: "var(--text-primary)" }
                   : done
-                    ? { fontWeight: 600, color: "var(--text-secondary)" }
+                    ? { fontWeight: 500, color: "var(--text-secondary)" }
                     : { color: "var(--text-tertiary)" }
               }
             >

@@ -3,6 +3,8 @@ import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 // documentStatus. Two surfaces disagreeing about it is how a member gets a
 // green tick on one screen and an amber row on the next.
 import { SAFE_PHOTO_MIN } from './motivation-documents';
+// The one spelling of the key the Licence Centre writes its 517(g) finding to.
+import { COMPETENCY_RENEWS_KEY } from './motivation-fields';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SUBMISSION CHECKLIST — a LIVE, TICKABLE SURFACE, not a PDF page.
@@ -74,6 +76,22 @@ export interface ChecklistContext {
    * indistinguishable from stuck.
    */
   waitingOn?: Record<string, string>;
+  /**
+   * The application's answers, for the handful of rows that only apply to
+   * some applicants.
+   *
+   * ⚠️ READ, NEVER RENDERED. Nothing here puts an answer's VALUE on the
+   * screen: these are somebody's personal details and this list is printed,
+   * shared and screenshotted. It is read to decide whether a row exists at
+   * all — see COMPETENCY_RENEWS_KEY, which the Licence Centre writes when it
+   * can see that renewing this licence also expires the competency behind it.
+   *
+   * Optional, and an omitted map means "no conditional rows". A caller that
+   * has not got the answers to hand shows the unconditional list rather than
+   * guessing — the failure mode is a row missing from a list that says at the
+   * top it is not exhaustive, not a wrong instruction about a form.
+   */
+  answers?: Record<string, string>;
 }
 
 export interface ChecklistItem {
@@ -875,6 +893,76 @@ const S24_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>
 ];
 
 /**
+ * THE SECOND FORM, FOR THE APPLICANTS WHO ACTUALLY NEED IT.
+ *
+ * ⚠️ CONDITIONAL, AND THAT IS THE WHOLE VALUE OF IT. A competency has no
+ * lifespan of its own — s10(2) as amended ties it to the latest-dated licence
+ * in its firearm category — so renewing an ordinary licence usually changes
+ * nothing about it. But when the licence being renewed is the LAST one in that
+ * category the competency expires on the same day, and s10A(1) requires the
+ * competency renewal to be lodged TOGETHER WITH the licence renewal. Miss it
+ * and the licence renewal can be accepted while the competency behind it
+ * lapses, and the whole chain has to be rebuilt.
+ *
+ * ⚠️ SO IT MUST NOT APPEAR FOR EVERYONE. "You may also need a 517(g)" hedged
+ * onto every renewal is noise, and noise is what trains somebody to skim the
+ * one row that mattered. The finding is made in the Licence Centre, where the
+ * member's own licences and certificates are — competencyRenewalNote owns the
+ * rule and is silent unless it is sure of both halves — and arrives here as a
+ * single answer. See COMPETENCY_RENEWS_KEY.
+ *
+ * ⚠️ THE ROW SAYS WHAT TO DO, NOT WHAT WE WORKED OUT. The member is not shown
+ * arithmetic about their portfolio at a counter; they are shown the form to
+ * bring. The Licence Centre's card carries the reasoning.
+ */
+const S24_COMPETENCY_RENEWAL: Omit<
+  ChecklistItem,
+  'done' | 'owner' | 'state' | 'closer'
+> = {
+  // ⚠️ NEVER RENAME. Hand-ticks are stored against this key.
+  key: 's24_competency_517g',
+  label: 'SAPS 517(g) competency renewal',
+  note: 'Your competency in this category runs to this licence, so lodge its renewal together with this one. They are two separate forms with two separate fees, handed in on the same visit. Confirm the form number with your DFO.',
+  verifyBeforeUse: true,
+};
+
+/**
+ * The renewal rows, with the 517(g) in place if this applicant needs it.
+ *
+ * ⚠️ INSERTED BY ANCHOR KEY, NOT BY POSITION. It belongs directly after the
+ * 90-day row — both are about what you lodge and when, while the
+ * acknowledgement row is about what happens afterwards — and destructuring
+ * S24_MUST_BRING by index would reorder itself silently the day a third row is
+ * added there. If the anchor ever goes, the row still lands (at the end)
+ * rather than disappearing: a slightly misplaced instruction beats a missing
+ * one when the thing being missed is a lapsing competency.
+ */
+function s24Bring(
+  answers: Record<string, string>,
+): Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[] {
+  // ⚠️ CASE-INSENSITIVE, DELIBERATELY. The registry's `yesno` fields store
+  // 'Yes'; the value is written by another module and read by this one, and a
+  // capital letter is not a thing anybody should be able to break a
+  // counter-day instruction with. Anything that is not a yes is silence —
+  // absent and "no" are the same answer here, because the finding is only
+  // ever written when we are sure of it.
+  const due = (answers[COMPETENCY_RENEWS_KEY] ?? '').trim().toLowerCase() === 'yes';
+  if (!due) return [...S24_MUST_BRING];
+
+  const out: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'closer'>[] = [];
+  let placed = false;
+  for (const row of S24_MUST_BRING) {
+    out.push(row);
+    if (row.key === 's24_ninety_days') {
+      out.push(S24_COMPETENCY_RENEWAL);
+      placed = true;
+    }
+  }
+  if (!placed) out.push(S24_COMPETENCY_RENEWAL);
+  return out;
+}
+
+/**
  * Build the live checklist.
  *
  * `haveKinds` is what has actually been uploaded and `documentReady` whether the
@@ -990,7 +1078,7 @@ export function buildChecklist(
     licenceType === 'S16_DEDICATED_SPORT'
       ? S16_MUST_BRING
       : []),
-    ...(licenceType === 'S24_RENEWAL' ? S24_MUST_BRING : []),
+    ...(licenceType === 'S24_RENEWAL' ? s24Bring(context.answers ?? {}) : []),
   ];
   const theirs: ChecklistItem[] = bring.map((i) => ({
     ...i,

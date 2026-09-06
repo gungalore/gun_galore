@@ -4,6 +4,16 @@ import { MotivationsScanController } from './motivations-scan.controller';
 import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationsService } from './motivations.service';
+// ⚠️ THE FIVE SERVICES SPLIT OUT OF MotivationsService, plus the small one
+// they all share. They are providers and NOT exports on purpose: every caller
+// outside this module still goes through the facade, which is what keeps the
+// split a file-level change rather than an API change.
+import { MotivationSharedService } from './motivation-shared.service';
+import { MotivationPrefillService } from './motivation-prefill.service';
+import { MotivationDocumentsService } from './motivation-documents.service';
+import { MotivationGenerationService } from './motivation-generation.service';
+import { MotivationRenderService } from './motivation-render.service';
+import { MotivationWitnessesService } from './motivation-witnesses-flow.service';
 import { MotivationPdfService } from './motivation-pdf.service';
 import { MotivationRetentionService } from './motivation-retention.service';
 import { MotivationExtractService } from './motivation-extract.service';
@@ -64,6 +74,12 @@ import { VaultAdoptionService } from './vault-adoption.service';
     // and which is documented above.
     ScanHandoffGuard,
     MotivationsService,
+    MotivationSharedService,
+    MotivationPrefillService,
+    MotivationDocumentsService,
+    MotivationGenerationService,
+    MotivationRenderService,
+    MotivationWitnessesService,
     MotivationQuotaService,
     MotivationPdfService,
     MotivationClaudeService,

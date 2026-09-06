@@ -134,10 +134,10 @@ export default function NewLicenceApplicationPage() {
       <div className="flex-1 px-4 pt-6 sm:px-6">
         <div className="flex flex-col gap-4">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
+            <div className="text-[11px] font-medium uppercase tracking-[.11em] text-[var(--text-tertiary)]">
               Step 1 of {WIZARD_STEPS.length} · {step.fills}
             </div>
-            <h1 className="mb-1.5 mt-1.5 text-[26px] font-bold tracking-[-.02em] text-[var(--text-primary)]">
+            <h1 className="mb-1.5 mt-1.5 text-[26px] font-medium tracking-[-.02em] text-[var(--text-primary)]">
               {step.title}
             </h1>
             <p className="max-w-[78ch] text-[14.5px] text-[var(--text-secondary)]">

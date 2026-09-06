@@ -65,7 +65,7 @@ describe('arming a date we read off a document', () => {
     expect(mayArmReadExpiry(licence({ issuedOn: null })).arm).toBe(false);
   });
 
-  it('⚠️ refuses anything that is not a firearm licence', () => {
+  it('⚠️ refuses a kind that is not on the allowlist', () => {
     // The extractor accepts expires_on for every kind, and the CHECK
     // constraint that once stopped a person-document carrying an expiry was
     // dropped in 20260823090100_credential_provenance_guard. So a proof of
@@ -74,12 +74,111 @@ describe('arming a date we read off a document', () => {
     // firearm document.
     for (const kind of [
       CredentialKind.ADDRESS_CONFIRMATION,
-      CredentialKind.IDENTITY_DOCUMENT,
-      CredentialKind.DEDICATED_DISCIPLINE,
-      CredentialKind.COMPETENCY_CERTIFICATE,
+      CredentialKind.EMPLOYMENT_CONFIRMATION,
+      CredentialKind.SAFE_PHOTOGRAPHS,
+      CredentialKind.OTHER,
     ]) {
       expect(mayArmReadExpiry(licence({ kind })).arm).toBe(false);
     }
+  });
+
+  it('⚠️ NEVER arms the three kinds whose printed date is not an expiry', () => {
+    // A competency prints no expiry at all (§5.2) — its date is DERIVED, which
+    // is mayArmDerivedExpiry's job — and a proficiency and an ID document do
+    // not run out. Anything a reader finds on one of these is another
+    // document's date or a misread, so arming it means reminding somebody
+    // about a deadline that does not exist.
+    for (const kind of [
+      CredentialKind.COMPETENCY_CERTIFICATE,
+      CredentialKind.PROFICIENCY,
+      CredentialKind.IDENTITY_DOCUMENT,
+    ]) {
+      expect(mayArmReadExpiry(licence({ kind })).arm).toBe(false);
+    }
+  });
+
+  // 🚨 DEDICATED STATUS WAS REFUSED, AND IT IS THE ONE DOCUMENT BESIDES A
+  // LICENCE THAT BOTH PRINTS A REAL EXPIRY AND COSTS A FIREARM WHEN MISSED.
+  // Dedicated hunter / dedicated sport shooter is a standing condition of a
+  // section 16 licence: let it lapse and the licence behind it goes with it.
+  // It could never fire a reminder unless the member went back and ticked a
+  // box — the precise failure the operator's "insert it, no further user
+  // interaction required" was aimed at.
+  describe('a dedicated-status certificate', () => {
+    const status = (over: Record<string, unknown> = {}) =>
+      licence({
+        kind: CredentialKind.DEDICATED_DISCIPLINE,
+        // An association sets its own period — usually a year — and prints no
+        // statutory section, so there is no term table to check against.
+        section: null,
+        issuedOn: '2026-03-01',
+        expiresOn: '2027-02-28',
+        ...over,
+      });
+
+    it('arms a confidently-read expiry', () => {
+      expect(mayArmReadExpiry(status()).arm).toBe(true);
+    });
+
+    it('arms one with no issue date, because there is no term to check', () => {
+      // ⚠️ THE SECTION CROSS-CHECK IS A LICENCE-ONLY TEST. Requiring it here
+      // would refuse every dedicated status ever filed, silently — which is
+      // the state this change ends.
+      expect(mayArmReadExpiry(status({ issuedOn: null })).arm).toBe(true);
+    });
+
+    it('still refuses when the reader was unsure', () => {
+      expect(
+        mayArmReadExpiry(status({ lowConfidence: ['expires_on'] })).arm,
+      ).toBe(false);
+    });
+
+    it('still refuses a date already past, or one wildly out', () => {
+      expect(mayArmReadExpiry(status({ expiresOn: '2019-02-28' })).arm).toBe(
+        false,
+      );
+      expect(mayArmReadExpiry(status({ expiresOn: '2060-02-28' })).arm).toBe(
+        false,
+      );
+    });
+
+    it('still refuses one document doing several jobs', () => {
+      // An association pack carries a membership validity, a dedicated-status
+      // validity and a good-standing date on one page.
+      expect(
+        mayArmReadExpiry(
+          status({ coversKinds: [CredentialKind.DEDICATED_DISCIPLINE] }),
+        ).arm,
+      ).toBe(false);
+    });
+
+    it('covers the two retired dedicated kinds too', () => {
+      // Rows filed before the 2026-08-20 consolidation still carry them, and a
+      // document that would be armed today should not go unarmed because of
+      // when it happened to be filed.
+      for (const kind of [
+        CredentialKind.DEDICATED_HUNTER,
+        CredentialKind.DEDICATED_STATUS,
+      ]) {
+        expect(mayArmReadExpiry(status({ kind })).arm).toBe(true);
+      }
+    });
+  });
+
+  // 🚨 THE TEXTRACT READER'S OWN VERDICT WAS COMPUTED AND DISCARDED. It knows
+  // when a material field scored under the floor or a field the kind cannot do
+  // without came back empty; read() dropped it, so this guard was left
+  // checking a `lowConfidence` list that on that path can never name a date —
+  // `expiresOn` is its own field, never a key in `details`.
+  it('⚠️ obeys the reader when it says NOT auto-fillable', () => {
+    expect(mayArmReadExpiry(licence({ autoFillable: false })).arm).toBe(false);
+  });
+
+  it('treats a missing verdict as no opinion, not as a refusal', () => {
+    // The Claude path expresses none — per-field confidence is all it has —
+    // and turning silence into a veto would disarm every document it reads.
+    expect(mayArmReadExpiry(licence({ autoFillable: undefined })).arm).toBe(true);
+    expect(mayArmReadExpiry(licence({ autoFillable: true })).arm).toBe(true);
   });
 
   it('⚠️ refuses a document doing more than one job', () => {

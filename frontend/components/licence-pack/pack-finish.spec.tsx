@@ -51,13 +51,52 @@ describe('⚠️ still missing answers', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('⚠️ NAMES THE COUNT RATHER THAN JUST REFUSING', () => {
-    // "You cannot continue" without saying what is outstanding is the dead
-    // end the old page had to fix — the member is looking at a form where
-    // everything visible is filled in.
-    render(<PackFinish {...base} status="DRAFT" outstanding={['a']} />);
+  it('⚠️ NAMES THEM, AND EACH NAME GOES TO ITS STEP', () => {
+    // "The steps above show which" was a dead end: this is the LAST step, one
+    // panel is on screen at a time, and there were no steps above it. A count
+    // the member cannot act on sends them hunting across ten screens.
+    const onGoToAnswer = vi.fn();
+    render(
+      <PackFinish
+        {...base}
+        status="DRAFT"
+        outstanding={['threat_case']}
+        outstandingLabel={(k) => (k === 'threat_case' ? 'Your case' : k)}
+        onGoToAnswer={onGoToAnswer}
+      />,
+    );
     expect(screen.getByText(/1 answer still to give/i)).toBeInTheDocument();
-    expect(screen.getByText(/steps above show which/i)).toBeInTheDocument();
+    const jump = screen.getByRole('button', { name: 'Your case' });
+    return userEvent
+      .click(jump)
+      .then(() => expect(onGoToAnswer).toHaveBeenCalledWith('threat_case'));
+  });
+
+  it('⚠️ A MISSING DOCUMENT BLOCKS IT TOO, AND IS SAID SEPARATELY', () => {
+    // The gate read answers only, so an application with every box filled and
+    // no ID copy showed a live button, spent one of a small hourly quota on a
+    // flagship model, and came back refused — with the member looking at a
+    // form that had nothing outstanding on it. A document is fixed on a
+    // different step from an answer, so the two are never one list.
+    const onGoToDocuments = vi.fn();
+    render(
+      <PackFinish
+        {...base}
+        status="DRAFT"
+        missingDocuments={['IDENTITY_DOCUMENT']}
+        documentLabel={() => 'A copy of your ID'}
+        onGoToDocuments={onGoToDocuments}
+      />,
+    );
+    expect(screen.getByText(/1 document still needed/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /write my motivation/i }),
+    ).not.toBeInTheDocument();
+    return userEvent
+      .click(screen.getByRole('button', { name: 'A copy of your ID' }))
+      .then(() =>
+        expect(onGoToDocuments).toHaveBeenCalledWith('IDENTITY_DOCUMENT'),
+      );
   });
 });
 

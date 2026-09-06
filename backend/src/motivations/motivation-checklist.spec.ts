@@ -5,6 +5,7 @@ import {
   buildAnnexures,
   buildChecklist,
 } from './motivation-checklist';
+import { COMPETENCY_RENEWS_KEY } from './motivation-fields';
 
 // The checklist is a LIVE surface on the platform and in the PWA, not a PDF
 // page — the pack stays digital until it is printed. So what matters here is
@@ -336,6 +337,11 @@ describe('the renewal deadline', () => {
   const theirsFor = (t: MotivationLicenceType) =>
     buildChecklist(t, []).sections.find((s) => s.key === 'theirs')!;
 
+  /** The renewal's applicant-side list, given what the pack knows. */
+  const withAnswers = (answers: Record<string, string>) =>
+    buildChecklist(MotivationLicenceType.S24_RENEWAL, [], false, { answers })
+      .sections.find((s) => s.key === 'theirs')!;
+
   it('tells a renewal applicant about the 90 days', () => {
     const items = theirsFor(MotivationLicenceType.S24_RENEWAL).items;
     const row = items.find((i) => i.key === 's24_ninety_days');
@@ -375,6 +381,88 @@ describe('the renewal deadline', () => {
       'you will lose',
     ]) {
       expect(text).not.toContain(banned);
+    }
+  });
+
+  it('⚠️ says nothing about a 517(g) by default', () => {
+    // The competency usually survives the renewal untouched: it runs to the
+    // latest-dated licence in its category, so renewing an ordinary one
+    // changes nothing. "You may also need a 517(g)" hedged onto every renewal
+    // is noise, and noise is what trains somebody to skim the row that
+    // mattered.
+    const keys = theirsFor(MotivationLicenceType.S24_RENEWAL).items.map(
+      (i) => i.key,
+    );
+    expect(keys).not.toContain('s24_competency_517g');
+  });
+
+  it('🚨 ADDS THE 517(g) when this licence is the last one holding the competency up', () => {
+    // s10(2) as amended ties a competency to the latest licence in its firearm
+    // category; when the licence being renewed IS that licence, the competency
+    // expires with it and s10A(1) requires the two renewals to be lodged
+    // together. Miss it and the licence renewal can be accepted while the
+    // competency behind it lapses. The finding is made in the Licence Centre,
+    // off the member's own documents, and arrives here as one answer.
+    const items = withAnswers({ [COMPETENCY_RENEWS_KEY]: 'Yes' }).items;
+    const row = items.find((i) => i.key === 's24_competency_517g');
+    expect(row).toBeDefined();
+    expect(row!.label).toMatch(/517\(g\)/);
+    expect(row!.note).toMatch(/lodge its renewal together with this one/i);
+    // Form numbers are on the standing pre-launch verification list.
+    expect(row!.verifyBeforeUse).toBe(true);
+    // It belongs with the applicant, at the counter — we cannot lodge it.
+    expect(row!.owner).toBe('applicant');
+    expect(row!.done).toBe(false);
+  });
+
+  it('⚠️ puts it beside the deadline, not after the acknowledgement', () => {
+    // Both rows are about what you lodge and when; the acknowledgement row is
+    // about what happens afterwards. Reading order is the only thing that
+    // makes a list of counter-day instructions usable.
+    const keys = withAnswers({ [COMPETENCY_RENEWS_KEY]: 'Yes' }).items.map(
+      (i) => i.key,
+    );
+    expect(keys.indexOf('s24_competency_517g')).toBe(
+      keys.indexOf('s24_ninety_days') + 1,
+    );
+    expect(keys.indexOf('s24_competency_517g')).toBeLessThan(
+      keys.indexOf('s24_keep_acknowledgement'),
+    );
+  });
+
+  it('⚠️ treats anything that is not a yes as silence', () => {
+    // The finding is only ever WRITTEN when we are sure of it, so an absent
+    // answer and a "No" mean the same thing — and neither is a reason to
+    // print an instruction about a second form.
+    for (const value of ['', 'No', 'maybe', 'null']) {
+      const keys = withAnswers({ [COMPETENCY_RENEWS_KEY]: value }).items.map(
+        (i) => i.key,
+      );
+      expect(keys).not.toContain('s24_competency_517g');
+    }
+  });
+
+  it('⚠️ survives the registry storing it capitalised', () => {
+    // The value is written by one module and read by another; a capital letter
+    // is not a thing that should be able to break a counter-day instruction.
+    const keys = withAnswers({ [COMPETENCY_RENEWS_KEY]: 'yes' }).items.map(
+      (i) => i.key,
+    );
+    expect(keys).toContain('s24_competency_517g');
+  });
+
+  it('⚠️ never offers the 517(g) row on a first application', () => {
+    // A first-time applicant has no competency running to a licence, so the
+    // answer can never be set — but the row must be gated on the licence type
+    // as well, or a stray answer would surface it on a section 13.
+    for (const t of Object.values(MotivationLicenceType)) {
+      if (t === MotivationLicenceType.S24_RENEWAL) continue;
+      const keys = buildChecklist(t, [], false, {
+        answers: { [COMPETENCY_RENEWS_KEY]: 'Yes' },
+      })
+        .sections.find((s) => s.key === 'theirs')!
+        .items.map((i) => i.key);
+      expect(keys).not.toContain('s24_competency_517g');
     }
   });
 

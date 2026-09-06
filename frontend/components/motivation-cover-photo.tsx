@@ -143,7 +143,7 @@ export default function MotivationCoverPhoto({
   return (
     <div>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-base font-semibold">Photograph on the cover</h3>
+        <h3 className="text-base font-medium">Photograph on the cover</h3>
         <p className="text-xs text-[var(--text-secondary)]">
           {state.firearmLine
             ? `Captioned “${state.firearmLine}”`

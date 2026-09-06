@@ -4348,6 +4348,24 @@ model Motivation {
   /// re-attached on the next load — the member could not remove it. A feature
   /// that undoes somebody's own deletions is worse than no feature.
   autolinkedAt          DateTime?
+
+  /// Vault documents this application has already been offered and no longer
+  /// carries — never offered again.
+  ///
+  /// ⚠️ THE MARKER ABOVE STOPPED BEING ENOUGH THE DAY THE RUN COULD RE-ARM.
+  /// `autolinkedAt` is cleared when a member adds or confirms a Credential, so
+  /// a draft looks at the vault again — which is the point, and which also
+  /// re-opens the exact bug the marker exists to close: auto-link skips a kind
+  /// already attached, so a document the member DELETED is no longer attached
+  /// and comes straight back.
+  ///
+  /// A removed MotivationUpload row is hard-deleted, taking its
+  /// sourceCredentialId with it, so the refusal cannot be derived from what
+  /// survives. This is the record that outlives the row: one credential id per
+  /// entry, written when a vault-sourced document is removed from the pack, and
+  /// consulted by every later run. Deliberately additive-only — a member who
+  /// wants it back attaches it from the library by hand, having seen the date.
+  autolinkSkippedIds    String[]  @default([])
   testimonialConsentAt  DateTime?
   // The applicant's own declaration that the facts are true and they submit it
   // as their own motivation. No PDF renders without this.
@@ -4758,11 +4776,47 @@ model MotivationUpload {
   /// without decrypting anything to find out.
   ocrChars         Int?
 
+  /// THE VAULT DOCUMENT THIS COPY WAS TAKEN FROM.
+  ///
+  /// Written by addFromLibrary when the source was a Credential. Null for a
+  /// photograph taken on this application, and null for a copy of another
+  /// application's upload — there is no vault row behind either.
+  ///
+  /// ⚠️ onDelete: SetNull, NEVER Cascade. The bytes on this row are the
+  /// applicant's own copy, minted fresh at attach time (adoption and
+  /// addFromLibrary both write a new storageKey, never share one). Cascading a
+  /// vault deletion into a lodged application would remove evidence from a pack
+  /// a DFO is holding, because somebody tidied their Document Centre.
+  ///
+  /// ⚠️ AND IT IS ALSO THE AUTOLINK'S MEMORY. autolink() refuses to re-attach a
+  /// credential this application has already seen, and a REMOVED upload row is
+  /// gone — so the record of "we attached this once and they deleted it" lives
+  /// on Motivation.autolinkSkippedIds rather than here. This column answers the
+  /// other half: which rows are still standing, and which of them lost their
+  /// source.
+  sourceCredentialId String?
+  sourceCredential   Credential? @relation("MotivationUploadSource", fields: [sourceCredentialId], references: [id], onDelete: SetNull)
+
+  /// When the vault document behind this copy was deleted.
+  ///
+  /// ⚠️ THE COPY IS STILL GOOD; THE MEMBER SHOULD SIMPLY KNOW. A document
+  /// removed from the Centre cannot be re-picked, re-dated or renewed from
+  /// there, so a pack quietly relying on it has one fewer place to check itself
+  /// against. Surfaced on the row, never as an error.
+  ///
+  /// ⚠️ NOTHING IN THIS MODULE WRITES IT YET. The vault-side delete propagation
+  /// belongs to the Licence Centre, which owns the delete. The column, the
+  /// migration and the read side land first so that wiring is a one-liner.
+  sourceRemovedAt DateTime?
+
   createdAt DateTime  @default(now())
   // Set when the bytes are deleted (retention purge or user erasure) while the
   // row is kept. storageKey is nulled at the same time.
   purgedAt  DateTime?
 
+  // Which vault row a copy came from — the autolink's "have we had this one
+  // already" question, and the delete-propagation sweep's predicate.
+  @@index([sourceCredentialId])
   // Scoped to the motivation, not global: the same ID document legitimately
   // appears in two different people's applications, and in the same person's
   // second one. A bare index could only ever support a read-then-write dedupe,
@@ -5212,7 +5266,15 @@ model Credential {
   /// The member asked us to stop reminding about this one. Their call.
   remindersMuted  Boolean   @default(false)
 
-  /// HOW THIS DOCUMENT GOT HERE. 'member' | 'scan' | 'application'.
+  /// HOW THIS DOCUMENT GOT HERE.
+  /// 'member' | 'scan' | 'application' | 'kyc'.
+  ///
+  /// ⚠️ 'kyc' WAS MISSING FROM THIS LIST AND IS WRITTEN IN PRODUCTION.
+  /// kyc-id-adoption.service.ts files the identity document a member already
+  /// gave to VerifyNow, so the Centre holds it without asking for it twice.
+  /// A doc-comment enumerating the values is the only schema anything has —
+  /// the column is a plain VarChar — so a value missing from it is a value the
+  /// next person filtering on this column will not know to expect.
   ///
   /// Drives the removal copy, which is not the same sentence for a document
   /// somebody filed here by hand as for one we copied out of an application
@@ -5232,6 +5294,13 @@ model Credential {
   /// Set when the bytes have been removed. The row survives so a future sweep
   /// never goes looking for a file that is already gone.
   purgedAt  DateTime?
+
+  /// Copies of this document living on an application.
+  ///
+  /// ⚠️ BACK-REFERENCE ONLY — Prisma will not accept the relation without it.
+  /// Deleting a Credential nulls `MotivationUpload.sourceCredentialId` and
+  /// never touches the copy: see the note on that field.
+  motivationCopies MotivationUpload[] @relation("MotivationUploadSource")
 
   @@unique([userId, sha256])
   @@index([userId])

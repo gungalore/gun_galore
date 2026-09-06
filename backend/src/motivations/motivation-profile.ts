@@ -130,6 +130,39 @@ export function profileOffer(
   if (profile.phone) offer('cellphone', profile.phone, 'your account cellphone number');
   else missing.push('your cellphone number');
 
+  // ── the postal address ───────────────────────────────────────────
+  //
+  // ⚠️ THE FORM ASKS FOR IT AND THE ANSWER IS ALMOST ALWAYS "THE SAME". The
+  // 271 prints a postal address and a postal code; the field's own help says
+  // "Leave blank if post reaches you at the address above", which is true of
+  // nearly every applicant and is also the reason both boxes came back empty
+  // on a printed form that has to carry an address for correspondence.
+  //
+  // ⚠️ AND WE ARE NOT INVENTING ANYTHING. This is the residential address we
+  // just wrote, restated in the box that asks where post reaches them — which
+  // is the answer for anybody without a PO box. Somebody who HAS one types it
+  // over, exactly as they would have typed it into a blank; offer() never
+  // overwrites, so an applicant who has already given a separate postal
+  // address keeps it, and so does anybody returning to a saved draft.
+  //
+  // It rides on the SAME provenance as the address it came from, so the chip
+  // says where it came from and the member can see it was filled in for them
+  // rather than typed by them.
+  if (address) {
+    offer(
+      'postal_address',
+      address,
+      'your account address — change it if post reaches you somewhere else',
+    );
+  }
+  if (profile.addrPostalCode) {
+    offer(
+      'postal_postal_code',
+      profile.addrPostalCode,
+      'your account address — change it if post reaches you somewhere else',
+    );
+  }
+
   return { values, from, missingFromProfile: missing };
 }
 

@@ -40,6 +40,16 @@ export class MotivationApiError extends Error {
      * response body being thrown away.
      */
     readonly missing?: string[],
+    /**
+     * Upload KINDS the server is holding out for, alongside `missing`.
+     *
+     * ⚠️ A DIFFERENT FAILURE FROM `missing`, AND IT NEEDS A DIFFERENT SCREEN.
+     * A missing answer is fixed by typing on the step that owns the field; a
+     * missing DOCUMENT is fixed by photographing something on the documents
+     * step. Folding them into one list would send somebody looking for a text
+     * box that does not exist.
+     */
+    readonly missingDocuments?: string[],
   ) {
     super(message);
   }
@@ -76,12 +86,19 @@ async function request<T>(
       message?: string | string[];
       code?: string;
       missing?: string[];
+      missingDocuments?: string[];
     }>(res, {});
     const message = Array.isArray(body.message)
       ? body.message.join(' ')
       : (body.message ??
         'Something went wrong. Please try again in a moment.');
-    throw new MotivationApiError(message, res.status, body.code, body.missing);
+    throw new MotivationApiError(
+      message,
+      res.status,
+      body.code,
+      body.missing,
+      body.missingDocuments,
+    );
   }
 
   return safeJson<T>(res, (fallback ?? null) as T);
@@ -483,6 +500,33 @@ export interface UploadRow {
    * can actually read — a photograph of a safe extracts nothing by design.
    */
   suspect?: boolean;
+  /**
+   * When the document itself expires, ISO date, or null where it cannot.
+   *
+   * ⚠️ SERVED, NEVER DERIVED FROM THE FILE. A competency certificate carries
+   * its own expiry and a photograph of a safe carries none; only the read
+   * knows which. The row renders what it is given.
+   */
+  expiresOn?: string | null;
+  /**
+   * A note to show ON the row, or null.
+   *
+   * ⚠️ 'red' IS A BLOCK, 'amber' IS NOT. Amber is "this is close" — under 90
+   * days to expiry, a proof of address getting old — and the member may still
+   * have a good reason to send it. Red is "this cannot answer the requirement
+   * any more", and a red row must never tick a required checklist line: a
+   * checklist that goes green on an expired certificate is worse than one that
+   * stays amber, because it stops the member looking.
+   */
+  caution?: { tone: 'amber' | 'red'; text: string } | null;
+  /**
+   * The Document Centre copy this row was taken from has been deleted.
+   *
+   * The bytes on THIS application may still be here, but the source is gone —
+   * so a re-read, a refresh or a renewal has nothing behind it, and the member
+   * needs to be told before a DFO is the one who notices.
+   */
+  sourceRemovedAt?: string | null;
 }
 
 export interface DocumentNeed {
@@ -814,16 +858,30 @@ export const motivationsApi = {
    * application; firing it from an effect that can re-run would silently
    * change what a DFO sees.
    */
-  autolink: (t: TokenGetter, id: string) =>
+  autolink: (
+    t: TokenGetter,
+    id: string,
+    /**
+     * "These are the safe at the address on this application."
+     *
+     * ⚠️ THE SERVER HOLDS THE SAFE PHOTOGRAPHS BACK UNTIL THIS IS TRUE and
+     * says so with `needsPlaceConfirm`. A safe photograph does not go stale
+     * with time — it goes wrong when the applicant moves house, and nothing on
+     * the file says so. Same question LibraryPicker asks; one wording.
+     */
+    placeConfirmed = false,
+  ) =>
     request<{
       attached: { kind: string; title: string }[];
       skipped: { kind: string; title: string; why: string }[];
       reason: 'ok' | 'no-consent' | 'not-editable' | 'already-done';
+      /** Something was held back pending the place tick. Ask, then re-call. */
+      needsPlaceConfirm: boolean;
     }>(
       t,
       `/${id}/autolink`,
-      { method: 'POST' },
-      { attached: [], skipped: [], reason: 'ok' },
+      { method: 'POST', body: JSON.stringify({ placeConfirmed }) },
+      { attached: [], skipped: [], reason: 'ok', needsPlaceConfirm: false },
     ),
 
   addFromLibrary: (
@@ -1140,6 +1198,19 @@ export const motivationsApi = {
    * `readable: false` means the kind yields nothing by design — a photograph
    * of a safe — rather than that the attempt failed.
    */
+  /**
+   * The reading already stored for an attached document. No vision call, so
+   * it is safe to ask for every file a phone hand-off delivers.
+   */
+  readingFor: (t: TokenGetter, id: string, uploadId: string) =>
+    request<{
+      id: string;
+      suggestions: { key: string; value: string; label: string }[];
+    }>(t, `/${id}/uploads/${uploadId}/reading`, {}, {
+      id: uploadId,
+      suggestions: [],
+    }),
+
   rereadUpload: (t: TokenGetter, id: string, uploadId: string) =>
     request<{ ok: boolean; fields: string[]; readable: boolean }>(
       t,

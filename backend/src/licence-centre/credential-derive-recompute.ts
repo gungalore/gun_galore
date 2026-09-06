@@ -6,6 +6,10 @@ import {
   parseEndorsements,
 } from '../common/sa-competency';
 import { mayArmDerivedExpiry } from './credential-auto-date';
+import {
+  competencyCategoriesFrom,
+  competencyRenewalNote,
+} from './licence-renewal';
 import { parseIsoDate } from './licence-dates';
 
 // ────────────────────────────────────────────────────────────────────
@@ -174,5 +178,93 @@ export async function recomputeDerivedCompetencies(
       `Could not re-date competencies for ${userId}: ${(err as Error).message}`,
     );
     return 0;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// THE SAME ARITHMETIC, ASKED THE OTHER WAY ROUND.
+//
+// recomputeDerivedCompetencies asks "given these licences, when does each
+// competency expire?". This asks "given THIS licence expiring, does a
+// competency expire with it?" — which is the question that decides whether a
+// SAPS 517(g) is due alongside the section 24 renewal.
+//
+// ⚠️ IT LIVES HERE RATHER THAN IN licence-renewal.ts BECAUSE IT TOUCHES THE
+// DATABASE. That module is pure by contract — no Nest, no Prisma, no clock —
+// and holds the RULE (competencyRenewalNote). This is the gathering, and it is
+// here rather than copied into both callers: the reminder sweep and the
+// renewal one-tap must never come to different conclusions about the same
+// licence, or a member is told two different things about the same form in the
+// same week.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * "Renew the competency with it, on a SAPS 517(g)" — or null.
+ *
+ * ⚠️ NEVER THROWS. Both callers are doing something more important than this:
+ * one is sending an expiry warning, the other is opening a renewal. Advice
+ * that fails must cost the advice.
+ */
+export async function competencyRenewalAdvice(
+  prisma: PrismaService,
+  userId: string,
+  licence: {
+    id: string;
+    kind: string;
+    firearmCategory: string | null;
+    expiresOn: Date | null;
+  },
+  /** Pull the `covers` line out of a row's encrypted blob. See above. */
+  readCovers: (blob: string | null) => string,
+  logger?: Logger,
+): Promise<string | null> {
+  if (
+    licence.kind !== 'FIREARM_LICENCE' ||
+    !licence.firearmCategory ||
+    !licence.expiresOn
+  ) {
+    return null;
+  }
+  try {
+    const [others, certs] = await Promise.all([
+      prisma.credential.findMany({
+        where: {
+          userId,
+          id: { not: licence.id },
+          firearmCategory: licence.firearmCategory,
+          expiresOn: { not: null },
+          purgedAt: null,
+          // ⚠️ SETTLED DATES ONLY, the same predicate the derivation itself
+          // uses. A date nobody has settled must not be allowed to vouch for a
+          // competency and talk somebody out of filing a form they need.
+          OR: [{ confirmedAt: { not: null } }, { dateSource: { not: null } }],
+        },
+        select: { firearmCategory: true, expiresOn: true },
+      }),
+      prisma.credential.findMany({
+        where: { userId, kind: 'COMPETENCY_CERTIFICATE', purgedAt: null },
+        select: { detailsEncrypted: true },
+      }),
+    ]);
+
+    return competencyRenewalNote({
+      // ⚠️ THE COLUMN ALREADY HOLDS A CATEGORY, NOT PRINTED TEXT. It is
+      // written by categoryFromText when the licence is read, precisely so the
+      // derivation can group licences without decrypting anything.
+      category: licence.firearmCategory as LinkedLicence['category'],
+      expiresOn: licence.expiresOn,
+      otherLicences: others.map((r) => ({
+        category: r.firearmCategory as LinkedLicence['category'],
+        expiresOn: r.expiresOn,
+      })),
+      competencyCategories: competencyCategoriesFrom(
+        certs.map((r) => readCovers(r.detailsEncrypted)),
+      ),
+    });
+  } catch (err) {
+    logger?.warn(
+      `Could not work out the 517(g) advice for credential ${licence.id}: ${(err as Error).message}`,
+    );
+    return null;
   }
 }

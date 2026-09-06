@@ -58,7 +58,13 @@ export default function LicenceCentreOfferPanel({
   if (!offer || done !== null) {
     return done !== null ? (
       <p className="mb-3 rounded border border-[var(--border)] bg-[var(--bg-inset)] p-3 text-sm">
-        Filled in {done} {done === 1 ? 'answer' : 'answers'} from your Licence
+        {/* ⚠️ "Document Centre", THE NAME ON THE DOOR. This said "Licence
+            Centre" eight lines above a link labelled Document Centre and
+            three above a heading reading "Your Document Centre can fill in".
+            The module was renamed when it started keeping paperwork that is
+            not a licence; the old name now reads as a second, missing
+            place. */}
+        Filled in {done} {done === 1 ? 'answer' : 'answers'} from your Document
         Centre. Check each one against the document — we read them off a
         photograph.
       </p>

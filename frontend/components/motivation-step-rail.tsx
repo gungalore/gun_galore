@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import type { StepStatus } from './step-accordion';
 
 // ────────────────────────────────────────────────────────────────────
@@ -43,24 +44,31 @@ export interface RailStep {
  * two layouts — the phone gets the rail, the desktop gets the navigator, and a
  * step that reads "done" in one can never read "started" in the other.
  *
- * ⚠️ THE GREEN IS THE TOKEN NOW. This used to hard-code #22c55e while
- * globals.css defines --success as #2f9e6b — two different greens for the same
- * idea, on the same page, and the mock-up review is what caught it.
+ * ⚠️ EVERY COLOUR HERE IS A TOKEN, DERIVED — NEVER A LITERAL rgba().
+ * The ink was tokenised and the ring and fill were not: they carried
+ * rgba(47,158,107,…) and rgba(212,154,58,…), which are the RETIRED DARK-THEME
+ * green and amber. --success is #1F7A50 and --warning is #8F6E0F on the white
+ * retail theme, so a "complete" circle drew a pale mint ring round dark-green
+ * ink — two different greens for one idea, on one circle. color-mix keeps the
+ * dilution and takes the value from the token, so the next retune reaches all
+ * three at once. (⚠️ NOT `var(--success)18` — a custom property cannot be
+ * alpha-diluted by concatenation; it expands to two tokens and the whole
+ * declaration dies at computed-value time.)
  */
 export function tone(status: StepStatus): { ring: string; fill: string; ink: string } {
   switch (status) {
     case 'complete':
       return {
-        ring: 'rgba(47,158,107,.55)',
-        fill: 'rgba(47,158,107,.16)',
+        ring: 'color-mix(in srgb, var(--success) 55%, transparent)',
+        fill: 'color-mix(in srgb, var(--success) 16%, transparent)',
         ink: 'var(--success)',
       };
     case 'active':
       return { ring: 'var(--red)', fill: 'var(--red)', ink: '#fff' };
     case 'partial':
       return {
-        ring: 'rgba(212,154,58,.5)',
-        fill: 'rgba(212,154,58,.14)',
+        ring: 'color-mix(in srgb, var(--warning) 50%, transparent)',
+        fill: 'color-mix(in srgb, var(--warning) 14%, transparent)',
         ink: 'var(--warning)',
       };
     default:
@@ -95,9 +103,26 @@ export default function MotivationStepRail({
 }) {
   const currentStep = steps[current - 1];
 
+  // ⚠️ ELEVEN STEPS DO NOT FIT AT 390px, AND THE RAIL SCROLLS RATHER THAN
+  // SHRINKS. Eleven flex items across a 358px content box is a 32px circle
+  // with nothing round it — below the 44px minimum and unhittable with a
+  // thumb. So the strip scrolls horizontally at full size and the ACTIVE step
+  // is brought into view whenever it changes, because a progress rail whose
+  // current step is off-screen tells the member nothing at all.
+  const listRef = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const el = listRef.current?.children[current - 1] as HTMLElement | undefined;
+    // `block: 'nearest'` so bringing a step into view never scrolls the PAGE —
+    // the member is reading the form, not the rail.
+    el?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  }, [current]);
+
   return (
     <nav aria-label="Progress" className="mb-5">
-      <ol className="flex w-full items-start justify-between gap-1">
+      <ol
+        ref={listRef}
+        className="flex w-full items-start justify-between gap-1 overflow-x-auto"
+      >
         {steps.map((s, i) => {
           const n = i + 1;
           const t = tone(s.status);
@@ -108,12 +133,16 @@ export default function MotivationStepRail({
                 onClick={() => onJump(n)}
                 aria-current={n === current ? 'step' : undefined}
                 aria-label={`Step ${n}, ${s.label}, ${stateWord(s.status)}`}
-                className="flex w-full flex-col items-center gap-1.5 rounded px-0.5 py-1"
+                // ⚠️ 44px MINIMUM, and it is the BUTTON that has to reach it,
+                // not the circle. A 28px circle with 4px of padding is a 36px
+                // target — under the floor, and the one control on this page
+                // somebody taps while walking.
+                className="flex min-h-[44px] w-full min-w-[44px] flex-col items-center justify-center gap-1.5 rounded px-0.5 py-1.5"
                 style={{ outlineOffset: 2 }}
               >
                 <span
                   aria-hidden="true"
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-medium"
                   style={{
                     border: `1px solid ${t.ring}`,
                     background: t.fill,
@@ -133,7 +162,7 @@ export default function MotivationStepRail({
                   style={{
                     color:
                       n === current ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                    fontWeight: n === current ? 600 : 400,
+                    fontWeight: n === current ? 500 : 400,
                   }}
                 >
                   {s.label}

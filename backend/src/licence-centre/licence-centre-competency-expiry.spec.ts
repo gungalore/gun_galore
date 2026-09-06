@@ -29,8 +29,41 @@ const ISSUED = '2020-03-01';
 
 describe('the competency date the Document Centre offers', () => {
   it('offers five-from-issue to a member with NO licence on file', () => {
-    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, []);
+    // ⚠️ THE ENDORSEMENTS ARGUMENT IS NOT OPTIONAL TO THIS QUESTION ANY MORE,
+    // and that is the whole of H5. "We read the certificate and it covers
+    // handguns, and you hold no handgun licence" is the five-year case. "We
+    // could not read the certificate at all" is a different question with a
+    // different answer, and this function used to give both the same one.
+    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, [], [
+      'handgun',
+    ]);
     expect(out?.on).toBe('2025-03-01');
+  });
+
+  it('⚠️ offers NOTHING when the endorsements could not be read', () => {
+    // 🚨 THE DEFECT. A second five-year branch lived in derivedExpiryFor and
+    // fired on an EMPTY endorsement list — which does not mean "this member
+    // holds no licences", it means "we could not read which firearms this
+    // certificate covers". It then printed "You have no firearm licence on
+    // file" to a member holding seven of them, dated the row five years from
+    // issue off a reading that had just failed, and offered that number for
+    // them to confirm.
+    const out = derivedExpiryFor(
+      'COMPETENCY_CERTIFICATE',
+      null,
+      ISSUED,
+      [
+        { category: 'handgun', expiresOn: new Date('2033-09-30T00:00:00Z') },
+        { category: 'rifle-carbine', expiresOn: new Date('2040-01-01T00:00:00Z') },
+      ],
+      [],
+    );
+    // No date...
+    expect(out?.on).toBeNull();
+    // ...and the honest sentence, which is deriveCertificateExpiry's own.
+    expect(out?.why).toMatch(/could not read which firearms/i);
+    // And above all, NOT the sentence that was false for this member.
+    expect(out?.why ?? '').not.toMatch(/no firearm licence on file/i);
   });
 
   it('⚠️ follows the LATEST licence in the certificate\'s own category', () => {
@@ -174,7 +207,9 @@ describe('the competency date the Document Centre offers', () => {
     // v3 §5.3.1 is explicit — "never present it to a user as the legal
     // position". So it may be stated; it may not be dressed in a section
     // number.
-    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, []);
+    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, [], [
+      'handgun',
+    ]);
     expect(out?.why ?? '').not.toMatch(/section 10|s10\(2\)|Firearms Control Act/i);
   });
 
@@ -196,13 +231,17 @@ describe('the competency date the Document Centre offers', () => {
     // So the copy tells the member there is no date on the card, and does not
     // send them to look for one. §9: any guidance saying "check the expiry on
     // your card" is wrong.
-    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, []);
+    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, [], [
+      'handgun',
+    ]);
     expect(out?.why ?? '').toMatch(/does not print a date/i);
     expect(out?.why ?? '').not.toMatch(/check it against your certificate/i);
   });
 
   it('says WHY, so the member can tell a derivation from a reading', () => {
-    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, []);
+    const out = derivedExpiryFor('COMPETENCY_CERTIFICATE', null, ISSUED, [], [
+      'handgun',
+    ]);
     expect(out?.why).toMatch(/no firearm licence on file/i);
     // The rolling behaviour, however it is worded — the operator's DFO put it
     // as "it renews with the latest firearm license obtained".

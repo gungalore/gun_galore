@@ -5,6 +5,7 @@ import { detectDocument } from '@/lib/scan/detect-client';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DocShape, shapeForKind } from '@/lib/scan/shapes';
+import type { DocumentScannerProps } from '@/components/scan/document-scanner';
 
 // ────────────────────────────────────────────────────────────────────
 // THE PHONE'S HALF OF THE HANDOFF.
@@ -20,8 +21,13 @@ import { DocShape, shapeForKind } from '@/lib/scan/shapes';
 // collected and nothing about whose it is.
 // ────────────────────────────────────────────────────────────────────
 
-const DocumentScanner = dynamic(
-  () => import('@/components/scan/document-scanner'),
+// The same flag ScanButton reads: the new scanner behind the old door.
+const SCANNER_V3 = process.env.NEXT_PUBLIC_SCANNER_V3 === '1';
+const DocumentScanner = dynamic<DocumentScannerProps>(
+  () =>
+    SCANNER_V3
+      ? import('@/components/scan-v3/document-scanner')
+      : import('@/components/scan/document-scanner'),
   { ssr: false },
 );
 

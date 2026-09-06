@@ -31,12 +31,12 @@ export default function Saps271Meter({
 }) {
   return (
     <aside className="lg:border-l lg:border-[var(--border)] lg:pl-6">
-      <div className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
+      <div className="text-[11px] font-medium uppercase tracking-[.11em] text-[var(--text-tertiary)]">
         SAPS 271 — what is filled
       </div>
 
       <div className="mt-[9px] flex items-baseline gap-2">
-        <span className="font-[family-name:var(--font-head)] text-[33px] font-bold leading-none tabular-nums text-[var(--text-primary)]">
+        <span className="font-[family-name:var(--font-head)] text-[33px] font-medium leading-none tabular-nums text-[var(--text-primary)]">
           {coverage.percent}%
         </span>
         <span className="text-[12.5px] text-[var(--text-tertiary)]">
@@ -64,15 +64,22 @@ function SectionRow({ section }: { section: CoverageSection }) {
   const waiting = section.percent === null;
   const pct = section.percent ?? 0;
 
-  // The mockup's own ladder: gold while waiting, green at 100, red while in
-  // progress, and the plain border colour at zero so an untouched section
-  // reads as "not yet" rather than as a failure.
+  // ⚠️ IN PROGRESS IS GOLD, NOT RED — the same rule pack-row.tsx states in
+  // capitals ("WAITING IS GOLD, NEVER RED"), and this panel broke it on every
+  // step. A section half-filled is work in hand, not a failure: painting it in
+  // the one colour this site reserves for errors and primary actions tells a
+  // member who has answered six of ten questions that they have done something
+  // wrong, and it spends red on the eight rows beside the one thing on screen
+  // that might genuinely need it.
+  //
+  // Green at 100, gold while it is being filled, the plain border colour at
+  // zero so an untouched section reads as "not yet" rather than as a failure.
   const fill = waiting
     ? 'var(--gold)'
     : pct === 100
       ? 'var(--success)'
       : pct > 0
-        ? 'var(--red)'
+        ? 'var(--gold)'
         : 'var(--border)';
 
   const ink = waiting
@@ -94,7 +101,7 @@ function SectionRow({ section }: { section: CoverageSection }) {
           {section.label}
         </span>
         <span
-          className="text-[11.5px] font-bold tabular-nums"
+          className="text-[11.5px] font-medium tabular-nums"
           style={{ color: ink }}
         >
           {waiting ? 'waiting' : `${pct}%`}

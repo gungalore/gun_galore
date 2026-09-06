@@ -120,7 +120,7 @@ export interface CredentialRow {
   renewalDue: boolean;
   details: Record<string, string>;
   /** Statute-derived expiry when the document prints none. See the proposal. */
-  derivedExpiry?: { on: string; why: string } | null;
+  derivedExpiry?: { on: string | null; why: string } | null;
   available: boolean;
   mimeType: string;
   byteSize: number;
@@ -210,7 +210,7 @@ export interface CredentialProposal {
    * after issue — and always with the reason, because a date with no reason
    * behind it is indistinguishable from one we claim to have read.
    */
-  derivedExpiry?: { on: string; why: string } | null;
+  derivedExpiry?: { on: string | null; why: string } | null;
 }
 
 async function request<T>(
@@ -519,7 +519,22 @@ export const KIND_LABELS: Record<CredentialKind, string> = {
   SHOOTING_ACTIVITY_LOG: 'Record of hunts and shoots',
 };
 
-/** Colour and words for each state. `unknown` is a real state, not a blank. */
+/**
+ * Colour and words for each state. `unknown` is a real state, not a blank.
+ *
+ * WARNING: THE INK AND ITS TINT MUST BE THE SAME COLOUR, AND THEY WERE NOT.
+ * Every wash and line here was a hardcoded rgba of the RETIRED DARK THEME's
+ * palette — amber 212,154,58 against a --warning that has been #8F6E0F since
+ * the white theme landed, so the "Renewal due" pill printed dark olive text
+ * inside a bright amber ring that belonged to no token on the page. Derived
+ * from the token now, so retuning the token retunes the chip with it.
+ *
+ * ⚠️ color-mix, NEVER `var(--warning)18`. A custom property concatenated with
+ * an alpha suffix expands to two tokens rather than one eight-digit colour, the
+ * declaration dies at computed-value time and the property silently takes its
+ * INITIAL value — `background: transparent`, `border-color: currentColor`.
+ * Forty-four sites did this before the 2026-08-27 sweep.
+ */
 export const STATE_TONE: Record<
   ExpiryState,
   { label: string; colour: string; wash: string; line: string }
@@ -527,20 +542,20 @@ export const STATE_TONE: Record<
   valid: {
     label: 'In date',
     colour: 'var(--success)',
-    wash: 'rgba(47,158,107,0.10)',
-    line: 'rgba(47,158,107,0.38)',
+    wash: 'color-mix(in srgb, var(--success) 10%, transparent)',
+    line: 'color-mix(in srgb, var(--success) 38%, transparent)',
   },
   expiring: {
     label: 'Renewal due',
     colour: 'var(--warning)',
-    wash: 'rgba(212,154,58,0.10)',
-    line: 'rgba(212,154,58,0.38)',
+    wash: 'color-mix(in srgb, var(--warning) 10%, transparent)',
+    line: 'color-mix(in srgb, var(--warning) 38%, transparent)',
   },
   expired: {
     label: 'Expired',
     colour: 'var(--red)',
-    wash: 'rgba(200,16,46,0.10)',
-    line: 'rgba(200,16,46,0.38)',
+    wash: 'color-mix(in srgb, var(--red) 10%, transparent)',
+    line: 'color-mix(in srgb, var(--red) 38%, transparent)',
   },
   unknown: {
     label: 'Date not confirmed',

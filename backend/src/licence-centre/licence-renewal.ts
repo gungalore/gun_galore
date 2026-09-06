@@ -1,7 +1,15 @@
 import { CredentialKind } from '@prisma/client';
+import {
+  type CompetencyCategory,
+  endorsementSpec,
+  type LinkedLicence,
+  parseEndorsements,
+} from '../common/sa-competency';
 import { toIsoDate } from './licence-dates';
 // The form's own vocabulary, owned by the module that owns the form.
 import { normaliseFirearmType } from '../motivations/saps-vocabulary';
+// Field keys belong to the registry, which is the contract for all of them.
+import { COMPETENCY_RENEWS_KEY } from '../motivations/motivation-fields';
 
 // ────────────────────────────────────────────────────────────────────
 // THE RENEWAL LOOP.
@@ -139,5 +147,158 @@ export function renewalPlan(src: RenewalSource): RenewalPlan {
 
 function licenceNumber(d: Record<string, string>): string {
   return (d.licence_number ?? d.reference_number ?? '').trim();
+}
+
+// ────────────────────────────────────────────────────────────────────
+// SAPS 517(g) — THE SECOND FORM NOBODY WAS TOLD ABOUT.
+//
+// ⚠️ THE PRODUCT SAID NOTHING ABOUT THIS ANYWHERE, and it is the one piece of
+// renewal advice that costs a competency when it is missed.
+//
+// A competency has no lifespan of its own. Section 10(2), as amended in 2011,
+// ties it to the licence it relates to — in practice, to the LATEST-dated
+// licence in that firearm category (reference §5.3). So renewing an ordinary
+// licence usually changes nothing about the competency: a longer-dated licence
+// in the same category is still holding it up.
+//
+// But when the licence being renewed is the LAST one in its category, the
+// competency is expiring on the same day, and reference §6.2 is explicit about
+// what follows: "a SAPS 517(g) is required only when the competency is
+// actually expiring — i.e. when the licence being renewed is your longest-dated
+// licence in that firearm class." Section 10A(1) then requires that renewal to
+// be lodged TOGETHER WITH the licence renewal — two forms, two fees, one visit.
+//
+// Miss it and the licence renewal can be accepted while the competency behind
+// it lapses, and the whole chain has to be rebuilt. It is exactly the sort of
+// thing a member finds out at the counter, and we hold every fact needed to
+// tell them beforehand.
+//
+// ⚠️ SILENT UNLESS WE ARE SURE OF BOTH HALVES. An uncategorised licence, or a
+// member whose certificates we could not read, gets no sentence — the advice
+// is only useful if it is right, and "you may also need a 517(g)" hedged onto
+// every reminder is noise that trains people to ignore the ones that matter.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * The one sentence to add to a renewal reminder, or null.
+ *
+ * PURE. Every fact is passed in, including the categories read off the
+ * member's own competency certificates, so this can be tested standing
+ * anywhere in time and with any portfolio.
+ */
+export function competencyRenewalNote(args: {
+  /** The expiring licence's firearm category. Null where we could not read it. */
+  category: CompetencyCategory | null;
+  /** When the expiring licence runs out. */
+  expiresOn: Date | null;
+  /**
+   * Every OTHER licence the member holds — this one excluded by the caller.
+   *
+   * ⚠️ IF THE CALLER FORGETS TO EXCLUDE IT, the row compares equal to itself
+   * and the strict `>` below still answers correctly. That is deliberate: the
+   * failure mode of a mistake here should be silence, not a wrong instruction
+   * about a form.
+   */
+  otherLicences: readonly LinkedLicence[];
+  /** Every category covered by a competency certificate on file. */
+  competencyCategories: readonly CompetencyCategory[];
+}): string | null {
+  const { category, expiresOn } = args;
+  if (!category || !expiresOn) return null;
+  // A muzzle loader takes no licence at all (s3(2)), so there is no licence
+  // renewal to lodge anything alongside — its competency runs its own fixed
+  // ten years under s10(3) and renews on its own timetable.
+  if (category === 'muzzle-loader') return null;
+  // No competency covering this category means nothing to renew with it.
+  if (!args.competencyCategories.includes(category)) return null;
+
+  // ⚠️ STRICTLY LATER, NOT "later or equal". Two licences in the category
+  // expiring on the SAME day both lapse that day, so the competency lapses
+  // with them and the 517(g) is still due. Using >= would have the second
+  // licence silently vouch for the first.
+  const outlasted = args.otherLicences.some(
+    (l) =>
+      l.category === category &&
+      l.expiresOn !== null &&
+      l.expiresOn.getTime() > expiresOn.getTime(),
+  );
+  if (outlasted) return null;
+
+  const word = CATEGORY_WORD[category];
+  return `This is the last ${word} licence you hold, so your ${word} competency runs out with it — renew the competency at the same time, on a SAPS 517(g). The two are lodged together.`;
+}
+
+/**
+ * THE SAME FINDING, AS AN ANSWER THE PACK CAN READ.
+ *
+ * ⚠️ THE ADVICE WAS COMPUTED AND SHOWN NOWHERE. `startRenewal` has returned a
+ * `competencyNote` since the day this module was written, and the only thing
+ * that ever read it was the response body — so a member who tapped Renew,
+ * glanced at the card and came back the next day never saw it again. The
+ * checklist is the surface that survives: it is the list they take to the
+ * counter, and lodging the 517(g) WITH the licence renewal is a
+ * counter-day instruction.
+ *
+ * ⚠️ SO THIS SEEDS A FLAG, NOT THE SENTENCE. The note is prose about a
+ * DIFFERENT form; the earlier decision not to put it in an answer was right,
+ * because `plan.seed` becomes answers on a SAPS 271 the applicant signs as
+ * their own and prose in a box is a statement of fact by them. A Yes/No on a
+ * field the wizard never renders and the writer never sees carries the finding
+ * without putting a word in anybody's mouth.
+ *
+ * ⚠️ THE KEY ITSELF LIVES IN THE REGISTRY and is imported, never restated.
+ * motivation-fields.ts is the contract for what a field key IS; a key spelled
+ * one way here and another way there is dropped by sanitiseAnswers, leaving
+ * nothing but an "ignored unregistered answer keys" line in a log.
+ *
+ * ⚠️ A SNAPSHOT, TAKEN ONCE, AT THE START. The finding moves — renew a
+ * longer-dated licence in the same category and it stops being true — but the
+ * only way to refresh a stored answer is saveAnswers, which stamps every
+ * changed key as the MEMBER's own doing. Attributing our arithmetic to them is
+ * worse than a stale checklist row, and `competencyNote` rides live on both
+ * returns for the surface that can afford to recompute.
+ */
+/**
+ * The seed patch for a renewal, given the advice — usually nothing.
+ *
+ * ⚠️ SILENT IS NOT "No". Absent stays absent: `competencyRenewalNote` returns
+ * null both for "no 517(g) is due" AND for "we could not read enough to say",
+ * and writing "No" would turn the second into a reassurance we have not
+ * earned. Only the confident yes is written.
+ */
+export function competencyRenewalSeed(
+  note: string | null,
+): Record<string, string> {
+  return note ? { [COMPETENCY_RENEWS_KEY]: 'Yes' } : {};
+}
+
+/** How a member would say each category out loud. */
+const CATEGORY_WORD: Record<CompetencyCategory, string> = {
+  handgun: 'handgun',
+  'rifle-carbine': 'rifle',
+  shotgun: 'shotgun',
+  'muzzle-loader': 'muzzle loader',
+};
+
+/**
+ * The categories a stored competency certificate covers.
+ *
+ * ⚠️ THE `covers` LINE IS THE VERBATIM TRANSCRIPTION, not a category. It reads
+ * "S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN" on a real card; parseEndorsements
+ * turns that into endorsements and endorsementSpec into categories. Doing it
+ * here means the two callers — the reminder sweep and the renewal one-tap —
+ * cannot come to different views of the same certificate.
+ */
+export function competencyCategoriesFrom(
+  covers: readonly string[],
+): CompetencyCategory[] {
+  const out = new Set<CompetencyCategory>();
+  for (const line of covers) {
+    for (const e of parseEndorsements(line)) {
+      const spec = endorsementSpec(e);
+      if (spec?.category) out.add(spec.category);
+    }
+  }
+  return [...out];
 }
 

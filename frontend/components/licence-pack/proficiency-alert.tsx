@@ -42,7 +42,7 @@ export default function ProficiencyAlert({
       // Not role="alert": this renders on load, and an assertive live region
       // fires before the member has read the heading it sits under.
       role="note"
-      className={`gg-tile rounded-[10px] px-3.5 py-3 ${className ?? ''}`}
+      className={`gg-tile rounded-[8px] px-3.5 py-3 ${className ?? ''}`}
       style={{
         background: missing ? 'var(--gold-wash)' : 'var(--bg-inset)',
         border: `1px solid ${missing ? 'var(--gold-line)' : 'var(--border-divider)'}`,
@@ -51,14 +51,14 @@ export default function ProficiencyAlert({
       <div className="flex items-start gap-2.5">
         <span
           aria-hidden
-          className="mt-[1px] shrink-0 text-[13px] font-bold leading-none"
+          className="mt-[1px] shrink-0 text-[13px] font-medium leading-none"
           style={{ color: missing ? 'var(--gold-strong)' : 'var(--text-tertiary)' }}
         >
           {missing ? '!' : '?'}
         </span>
         <div className="min-w-0">
           <p
-            className="text-[12.5px] font-semibold"
+            className="text-[12.5px] font-medium"
             style={{ color: missing ? 'var(--gold-strong)' : 'var(--text-secondary)' }}
           >
             {missing

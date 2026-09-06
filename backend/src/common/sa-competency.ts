@@ -1194,7 +1194,8 @@ export function deriveCertificateExpiry(args: {
         (many
           ? `One certificate carries one date, so the ${CATEGORY_WORDS[latest.category]} licence sets it for everything on this certificate. `
           : '') +
-        'Renewing or adding a licence here pushes it out with it.',
+        'Renewing or adding a licence here pushes it out with it.' +
+        bareSideNote(categories, linked),
     };
   }
 
@@ -1204,8 +1205,60 @@ export function deriveCertificateExpiry(args: {
   return {
     on: plusYears(args.issuedOn, FALLBACK_YEARS),
     basis: 'fallback',
-    why: 'You have no licence on file for anything this certificate covers, so there is nothing for it to follow. It runs five years from the date it was issued and then lapses. Licence a firearm it covers and it will follow that licence instead.',
+    /**
+     * ⚠️ THIS SENTENCE MOVED HERE FROM derivedExpiryFor, AND IT HAD TO.
+     * licence-centre.service.ts held a second five-year branch of its own,
+     * reached when parseEndorsements read NOTHING off the certificate — so a
+     * member whose endorsement line was unreadable was told "you have no
+     * firearm licence on file" whether or not they held six. This is now the
+     * only place the five years is stated, and it is only reached once we
+     * know WHICH categories the certificate covers and that none of them has
+     * a licence behind it.
+     *
+     * ⚠️ NO STATUTE IS CITED. As amended, s10(2) ties validity to "the
+     * licence to which the competency certificate relates" — and here there
+     * is none, so the provision is silent rather than supportive. The five
+     * years is the operator's operating rule, confirmed with their DFO on
+     * 2026-08-25, and reference §5.3.1 forbids presenting it as the legal
+     * position.
+     *
+     * ⚠️ AND IT MUST NOT SEND THEM TO LOOK. §5.2/§9: a SAPS 524 prints no
+     * expiry at all, so "check it against your certificate" sends somebody
+     * hunting for something that is not on the paper.
+     */
+    why: 'You have no firearm licence on file for anything this certificate covers, so there is nothing for it to follow: it runs five years from the date it was issued and then lapses. Your certificate does not print a date — there is no expiry on it to check this against. Licence a firearm it covers and the competency follows that licence instead, moving out with every renewal. Worth confirming with your DFO; the police record is what counts.',
   };
+}
+
+/**
+ * The categories this certificate covers that have NO licence behind them.
+ *
+ * ⚠️ TAKING THE MAX IS DELIBERATE AND IT HIDES SOMETHING. deriveCertificateExpiry
+ * gives the whole certificate the LATEST licence expiry across every category
+ * it covers, on the operator's DFO advice — so a rifle-and-shotgun certificate
+ * with four rifle licences and no shotgun licence reads as running to 2035 and
+ * says nothing about the shotgun side at all. If the DFO's rule is ever wrong,
+ * that side is the half that lapses quietly, and the member had no way to know
+ * it was the generous reading.
+ *
+ * So the note names it. It changes no date; it tells the member which part of
+ * their certificate is standing on the other part's licence.
+ */
+function bareSideNote(
+  categories: ReadonlySet<CompetencyCategory>,
+  linked: readonly LinkedLicence[],
+): string {
+  const backed = new Set(linked.map((l) => l.category));
+  const bare = [...categories].filter(
+    (c) => c !== 'muzzle-loader' && !backed.has(c),
+  );
+  if (!bare.length) return '';
+  const words = bare.map((c) => CATEGORY_WORDS[c]);
+  const list =
+    words.length === 1
+      ? words[0]
+      : words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1];
+  return ` The ${list} side of this certificate has no licence behind it and would run five years from issue on its own; the whole certificate takes the later date.`;
 }
 
 /** How a member would say each category out loud. */

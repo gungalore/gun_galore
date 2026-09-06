@@ -1,6 +1,16 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
+import {
+  MotivationLicenceType,
+  MotivationStatus,
+  MotivationUploadKind,
+} from '@prisma/client';
 import { MotivationsService, estimateCostUsd } from './motivations.service';
+import { MotivationSharedService } from './motivation-shared.service';
+import { MotivationPrefillService } from './motivation-prefill.service';
+import { MotivationDocumentsService } from './motivation-documents.service';
+import { MotivationGenerationService } from './motivation-generation.service';
+import { MotivationRenderService } from './motivation-render.service';
+import { MotivationWitnessesService } from './motivation-witnesses-flow.service';
 import { decryptJson, encryptJson, encryptText } from '../common/blob-crypto';
 import {
   sanitiseAnswers,
@@ -8,6 +18,7 @@ import {
   fieldsFor,
   requiredKeys,
 } from './motivation-fields';
+import { documentStatus } from './motivation-documents';
 
 // What matters here: the throttle produces a readable 409 rather than a raw
 // Prisma error, ownership is enforced in the WHERE clause (so someone else's
@@ -30,6 +41,15 @@ function build(
     settings?: Record<string, unknown>;
     /** What the vision extractor returns, for the library-pick tests. */
     extracted?: Array<{ key: string; value: string; label: string }>;
+    /**
+     * The documents attached to the application under test.
+     *
+     * ⚠️ DEFAULT EMPTY, WHICH IS NOW A REFUSAL. H13 — generation checks the
+     * required-document list, so a pack with no documents cannot be generated
+     * at all. Every generation test therefore has to say what is attached, and
+     * `buildReady` below is the one place that says it.
+     */
+    uploads?: Array<{ kind: any; coversKinds: any[] }>;
   } = {},
 ) {
   const prisma = {
@@ -60,16 +80,19 @@ function build(
     motivationUpload: {
       // No uploads by default: the annexure list is empty and the writer is
       // simply not asked to cite.
-      findMany: jest.fn(async (_a?: any): Promise<any[]> => []),
+      findMany: jest.fn(async (_a?: any): Promise<any[]> => opts.uploads ?? []),
       // For the library-pick tests below. Additive — nothing else in this file
       // reaches them, so the defaults cannot move an existing expectation.
       count: jest.fn(async (_a?: any): Promise<number> => 0),
       findFirst: jest.fn(async (_a?: any): Promise<any> => null),
-      create: jest.fn(async ({ data }: any) => ({
+      create: jest.fn(async ({ data }: any): Promise<any> => ({
         id: 'up-1',
         kind: data.kind,
         byteSize: data.byteSize,
       })),
+      // Additive, for the removal tests: a delete is the one write that has to
+      // succeed before the auto-link refusal below it is recorded.
+      delete: jest.fn(async (_a?: any): Promise<any> => ({})),
     },
     credential: {
       findFirst: jest.fn(async (_a?: any): Promise<any> => null),
@@ -199,59 +222,120 @@ function build(
     ),
   };
 
+  // ⚠️ THE SERVICE WAS SPLIT, THE MOCKS DID NOT CHANGE. MotivationsService is
+  // now a facade over five services and one shared helper, so the wiring below
+  // hands the SAME mock objects to whichever of them uses each one — that is
+  // what keeps every assertion in this file (which counts calls on `prisma`,
+  // `quota`, `claude`, `files`…) meaning exactly what it meant before.
+  const shared = new MotivationSharedService(prisma as never);
+
+  // The C.I.P. datasheet. Returns nothing, so no test in this file depends
+  // on 40MB of sheets being on the disk running it — the pack renders one
+  // page shorter and every assertion here is about the body.
+  const cip = { sheetFor: jest.fn(async () => null) };
+  // The 271 renderer — nothing in these tests opts into the form.
+  const saps271 = {
+    build: jest.fn(async () => ({ pdf: Buffer.from('%PDF-'), leftBlank: [] })),
+  };
+  // Section F comes off the seller's signed consent. Null here: no test in
+  // this file has a seller, and a stub that invented one would put a
+  // stranger's particulars into every rendered form.
+  const sellerConsent = { sectionF: jest.fn(async () => null) };
+  // Cover photographs. `find` returns null so no test depends on a file
+  // being on disk, and `fetchAndStore` is stubbed so no test reaches
+  // Wikimedia — a unit suite that makes an outbound request is a unit
+  // suite that fails on an aeroplane.
+  const firearmImages = {
+    find: jest.fn(() => null),
+    fetchAndStore: jest.fn(async () => null),
+  };
+  // Character witnesses. Stubbed to an empty list so no test in this file
+  // reaches the SMS rail — an invite spends a real message, and a unit
+  // suite that sends one is a unit suite with a bill.
+  const witnesses = {
+    list: jest.fn(async () => []),
+    invite: jest.fn(async () => ({})),
+    remove: jest.fn(async () => undefined),
+    signature: jest.fn(async () => null),
+  };
+  // Keeping a copy of an attachment in the member's Document Centre.
+  // ⚠️ Returns false, so no test in this file depends on a consent record
+  // existing — adoption is a fail-soft tail on addUpload and must never
+  // change what the upload itself returns.
+  const vaultAdoption = { adoptUpload: jest.fn(async () => false) };
+  // Whether their documents may be offered across applications. TRUE is
+  // the pre-consent default: reuse is what the product already does, and
+  // it only stops for somebody who has actually said no.
+  // ⚠️ AND mayKeepFor, WHICH AUTO-LINK ASKS FIRST. Reusing vault documents
+  // unasked is new automatic processing and needs a yes; without this stub
+  // every auto-link test dies before it reaches a rule.
+  const vaultConsent = {
+    mayOfferAcross: jest.fn(async () => true),
+    mayKeepFor: jest.fn(async () => true),
+  };
+
+  const prefill = new MotivationPrefillService(
+    prisma as never,
+    quota as never,
+    shared,
+  );
+  const documents = new MotivationDocumentsService(
+    prisma as never,
+    quota as never,
+    files as never,
+    // Extraction proposes values off an uploaded document. Hoisted to a
+    // const and returned from build() so the library-pick tests can assert
+    // WHETHER it was called — that call is a Claude vision request, and
+    // making one per pick when the answer is already in hand is a bill.
+    extract as never,
+    vaultAdoption as never,
+    vaultConsent as never,
+    shared,
+  );
+  const generation = new MotivationGenerationService(
+    prisma as never,
+    quota as never,
+    settings as never,
+    claude as never,
+    firearmImages as never,
+    // The applicant's "it's done" message. Stubbed rather than omitted: the
+    // real one reaches Resend and SMSPortal, and it fires on BOTH terminal
+    // gate branches, so every generation test in this file goes through it.
+    notifications as never,
+    shared,
+  );
+  const render = new MotivationRenderService(
+    prisma as never,
+    quota as never,
+    files as never,
+    pdf as never,
+    settings as never,
+    cip as never,
+    saps271 as never,
+    sellerConsent as never,
+    firearmImages as never,
+    witnesses as never,
+    shared,
+  );
+  const witnessFlow = new MotivationWitnessesService(
+    prisma as never,
+    quota as never,
+    witnesses as never,
+    shared,
+  );
+
   const svc = new MotivationsService(
     prisma as never,
     quota as never,
     refs as never,
     files as never,
-    claude as never,
-    pdf as never,
     settings as never,
-      // Extraction proposes values off an uploaded document. Hoisted to a
-      // const and returned from build() so the library-pick tests can assert
-      // WHETHER it was called — that call is a Claude vision request, and
-      // making one per pick when the answer is already in hand is a bill.
-      extract as never,
-      // The C.I.P. datasheet. Returns nothing, so no test in this file depends
-      // on 40MB of sheets being on the disk running it — the pack renders one
-      // page shorter and every assertion here is about the body.
-      { sheetFor: jest.fn(async () => null) } as never,
-      // The 271 renderer — nothing in these tests opts into the form.
-      { build: jest.fn(async () => ({ pdf: Buffer.from('%PDF-'), leftBlank: [] })) } as never,
-      // Section F comes off the seller's signed consent. Null here: no test in
-      // this file has a seller, and a stub that invented one would put a
-      // stranger's particulars into every rendered form.
-      { sectionF: jest.fn(async () => null) } as never,
-      // Cover photographs. `find` returns null so no test depends on a file
-      // being on disk, and `fetchAndStore` is stubbed so no test reaches
-      // Wikimedia — a unit suite that makes an outbound request is a unit
-      // suite that fails on an aeroplane.
-      {
-        find: jest.fn(() => null),
-        fetchAndStore: jest.fn(async () => null),
-      } as never,
-      // Character witnesses. Stubbed to an empty list so no test in this file
-      // reaches the SMS rail — an invite spends a real message, and a unit
-      // suite that sends one is a unit suite with a bill.
-      {
-        list: jest.fn(async () => []),
-        invite: jest.fn(async () => ({})),
-        remove: jest.fn(async () => undefined),
-        signature: jest.fn(async () => null),
-      } as never,
-      // The applicant's "it's done" message. Stubbed rather than omitted: the
-      // real one reaches Resend and SMSPortal, and it fires on BOTH terminal
-      // gate branches, so every generation test in this file goes through it.
-      notifications as never,
-      // Keeping a copy of an attachment in the member's Document Centre.
-      // ⚠️ Returns false, so no test in this file depends on a consent record
-      // existing — adoption is a fail-soft tail on addUpload and must never
-      // change what the upload itself returns.
-      { adoptUpload: jest.fn(async () => false) } as never,
-      // Whether their documents may be offered across applications. TRUE is
-      // the pre-consent default: reuse is what the product already does, and
-      // it only stops for somebody who has actually said no.
-      { mayOfferAcross: jest.fn(async () => true) } as never,
+    shared,
+    prefill,
+    documents,
+    generation,
+    render,
+    witnessFlow,
   );
   return {
     svc,
@@ -591,6 +675,32 @@ describe('motivation field registry', () => {
   });
 });
 
+/**
+ * Every document a section 16 dedicated-hunter pack is REQUIRED to carry.
+ *
+ * ⚠️ H13. Generation now refuses on a missing document as well as a missing
+ * answer, so a generation test that attaches nothing is testing the document
+ * refusal rather than whatever it meant to test. Built from documentStatus
+ * itself rather than typed out, so adding a required kind cannot silently leave
+ * this list — and every generation test — asserting the wrong thing.
+ *
+ * `minFiles` is honoured: the safe wants three photographs and one does not
+ * satisfy it.
+ */
+function requiredDocs(
+  licenceType: MotivationLicenceType,
+  answers: Record<string, string> = {},
+) {
+  return documentStatus(licenceType, [], answers)
+    .needs.filter((n) => n.tier === 'required')
+    .flatMap((n) =>
+      Array.from({ length: n.minFiles ?? 1 }, () => ({
+        kind: n.kind,
+        coversKinds: [] as MotivationUploadKind[],
+      })),
+    );
+}
+
 describe('MotivationsService.generate', () => {
   const READY = {
     id: 'mo-1',
@@ -618,6 +728,20 @@ describe('MotivationsService.generate', () => {
     return { ...READY, answersEncrypted: encryptJson(answers), ...over };
   }
 
+  /**
+   * A service whose application already carries every required document.
+   *
+   * ⚠️ USED BY EVERY TEST IN HERE THAT EXPECTS GENERATION TO PROCEED. H13
+   * put a document check between the answer check and the CAS, so `build()` on
+   * its own — no uploads — now refuses before Claude is ever called. The two
+   * refusal tests below deliberately keep the bare `build()`.
+   */
+  const buildReady = (o: Parameters<typeof build>[0] = {}) =>
+    build({
+      uploads: requiredDocs(MotivationLicenceType.S16_DEDICATED_HUNTER),
+      ...o,
+    });
+
   it('refuses without the declaration — they are signing this', async () => {
     const { svc, prisma, claude } = build();
     prisma.motivation.findFirst.mockResolvedValueOnce(
@@ -642,7 +766,7 @@ describe('MotivationsService.generate', () => {
   });
 
   it('CAS: a second concurrent click does not spend money twice', async () => {
-    const { svc, prisma, claude } = build();
+    const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     prisma.motivation.updateMany.mockResolvedValueOnce({ count: 0 }); // lost the race
     // A lost race means the OTHER click is mid-generation, so the applicant
@@ -659,7 +783,7 @@ describe('MotivationsService.generate', () => {
 
   it('claims a beta seat BEFORE calling Claude', async () => {
     const order: string[] = [];
-    const { svc, prisma, quota, claude } = build();
+    const { svc, prisma, quota, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     quota.claimBetaSeat = jest.fn(async () => {
       order.push('seat');
@@ -678,7 +802,7 @@ describe('MotivationsService.generate', () => {
   });
 
   it('stores the document encrypted and completes when the gate passes', async () => {
-    const { svc, prisma } = build();
+    const { svc, prisma } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     const res = await svc.generate('c1', 'mo-1');
     expect(res.status).toBe(MotivationStatus.COMPLETED);
@@ -713,7 +837,7 @@ describe('MotivationsService.generate', () => {
     }
 
     it('notifies when the gate passes, naming only the MO reference', async () => {
-      const { svc, prisma, notifications } = build();
+      const { svc, prisma, notifications } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
       await svc.generate('c1', 'mo-1');
       expect(notifications.motivationFinished).toHaveBeenCalledTimes(1);
@@ -730,7 +854,7 @@ describe('MotivationsService.generate', () => {
       // Silence here is the worst outcome of the lot: the applicant is waiting
       // on a page that says it is being written, and it never will be until
       // they come back and answer.
-      const { svc, prisma, claude, notifications } = build();
+      const { svc, prisma, claude, notifications } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
       claude.grade.mockResolvedValueOnce(heldBack());
       const res = await svc.generate('c1', 'mo-1');
@@ -748,7 +872,7 @@ describe('MotivationsService.generate', () => {
       // written first, and the follow-up questions (when there are any) have
       // to be queued before they arrive to answer them.
       const order: string[] = [];
-      const { svc, prisma, claude, notifications } = build();
+      const { svc, prisma, claude, notifications } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
       claude.grade.mockResolvedValueOnce(heldBack());
       prisma.motivation.update.mockImplementation(async ({ data }: any) => {
@@ -772,7 +896,7 @@ describe('MotivationsService.generate', () => {
     it('does not lose the document when the message cannot be sent', async () => {
       // Resend down, SMSPortal down, a hard-bouncing address — the row is
       // already terminal and the document is already written and paid for.
-      const { svc, prisma, notifications } = build();
+      const { svc, prisma, notifications } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
       notifications.motivationFinished.mockRejectedValueOnce(
         new Error('Resend 503'),
@@ -783,7 +907,7 @@ describe('MotivationsService.generate', () => {
 
     it('sends nothing, and still completes, when there is no address on file', async () => {
       // Stale dev-era rows have made this lookup come back thin before.
-      const { svc, prisma, notifications } = build();
+      const { svc, prisma, notifications } = buildReady();
       prisma.user.findUnique.mockResolvedValue({
         id: 'user-1',
         email: null,
@@ -802,7 +926,7 @@ describe('MotivationsService.generate', () => {
     // put THREE copies of the same three questions in front of the applicant
     // — who read it, reasonably, as the system falling apart. Live report,
     // verbatim: "why the fuck are there so many questions from Boet?"
-    const { svc, prisma, claude } = build();
+    const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     claude.grade.mockResolvedValueOnce({
       verdict: {
@@ -839,7 +963,7 @@ describe('MotivationsService.generate', () => {
     // A user message with the same fieldKey CLOSES the question. If the
     // required answer is STILL empty after their reply, asking again is
     // right — the reply evidently did not land in the field.
-    const { svc, prisma, claude } = build();
+    const { svc, prisma, claude } = buildReady();
     const row = readyRow();
     const answers = decryptJson<Record<string, string>>(row.answersEncrypted!);
     delete answers.hunting_history; // required, and missing
@@ -874,7 +998,7 @@ describe('MotivationsService.generate', () => {
   });
 
   it('sends it back for more detail when the gate fails, and asks questions', async () => {
-    const { svc, prisma, claude } = build();
+    const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     claude.grade.mockResolvedValueOnce({
       verdict: {
@@ -898,7 +1022,7 @@ describe('MotivationsService.generate', () => {
   });
 
   it('gives up to an admin once the retry ceiling is hit', async () => {
-    const { svc, prisma, claude } = build({ settings: { motivation_max_gate_cycles: 1 } });
+    const { svc, prisma, claude } = buildReady({ settings: { motivation_max_gate_cycles: 1 } });
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow({ gateCycles: 1 }));
     claude.grade.mockResolvedValueOnce({
       verdict: {
@@ -923,7 +1047,7 @@ describe('MotivationsService.generate', () => {
   // over-strict one.
   // ────────────────────────────────────────────────────────────────
   it('KEEPS the draft when the gate sends it back', async () => {
-    const { svc, prisma, claude } = build();
+    const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     claude.grade.mockResolvedValueOnce({
       verdict: {
@@ -949,7 +1073,7 @@ describe('MotivationsService.generate', () => {
   });
 
   it('keeps the draft even when the retry ceiling is hit', async () => {
-    const { svc, prisma, claude } = build({ settings: { motivation_max_gate_cycles: 1 } });
+    const { svc, prisma, claude } = buildReady({ settings: { motivation_max_gate_cycles: 1 } });
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow({ gateCycles: 1 }));
     claude.grade.mockResolvedValueOnce({
       verdict: {
@@ -970,7 +1094,7 @@ describe('MotivationsService.generate', () => {
     // legal submission. That is our defect, not the applicant's — so it goes
     // to FAILED with an urgent admin alert, never to COMPLETED and never
     // round the ask-the-applicant loop.
-    const { svc, prisma, claude } = build();
+    const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     claude.generate.mockImplementation(async (_p?: any, plan?: any) => ({
       text: (plan?.sections ?? [])
@@ -993,7 +1117,7 @@ describe('MotivationsService.generate', () => {
   });
 
   it('stores the second verifier findings beside the verdict', async () => {
-    const { svc, prisma, claude } = build();
+    const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     claude.verifyDocument.mockResolvedValueOnce({
       issues: ['The joined date contradicts the member-since sentence.'],
@@ -1008,7 +1132,7 @@ describe('MotivationsService.generate', () => {
   });
 
   it('regenerates with a fresh seed when the model ignored the plan', async () => {
-    const { svc, prisma, claude } = build();
+    const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     // First attempt has no planned headings at all.
     claude.generate
@@ -1031,7 +1155,7 @@ describe('MotivationsService.generate', () => {
   it('releases the row when generation throws — never stranded in GENERATING', async () => {
     // Without this a failed generation leaves the motivation uneditable AND
     // un-regenerable, which is the worst possible end state.
-    const { svc, prisma, claude } = build();
+    const { svc, prisma, claude } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
     claude.generate.mockRejectedValueOnce(new Error('overloaded'));
     await expect(svc.generate('c1', 'mo-1')).rejects.toThrow('overloaded');
@@ -1041,7 +1165,7 @@ describe('MotivationsService.generate', () => {
   });
 
   it('does not claim a second seat on a retry', async () => {
-    const { svc, prisma, quota } = build();
+    const { svc, prisma, quota } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(readyRow({ betaSeatNo: 12 }));
     quota.claimBetaSeat = jest.fn();
     await svc.generate('c1', 'mo-1');
@@ -1066,7 +1190,7 @@ describe('MotivationsService.generate', () => {
     const flush = () => new Promise((r) => setImmediate(r));
 
     it('returns GENERATING without waiting for the model', async () => {
-      const { svc, prisma, claude } = build();
+      const { svc, prisma, claude } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
 
       // A generation that never settles. If startGeneration awaited the
@@ -1079,7 +1203,7 @@ describe('MotivationsService.generate', () => {
     });
 
     it('still claims the row before returning, so a second click is refused', async () => {
-      const { svc, prisma, claude } = build();
+      const { svc, prisma, claude } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
       claude.generate.mockImplementation(() => new Promise(() => {}));
       await svc.startGeneration('c1', 'mo-1');
@@ -1090,7 +1214,7 @@ describe('MotivationsService.generate', () => {
     });
 
     it('REFUSES SYNCHRONOUSLY when answers are missing — no false start', async () => {
-      const { svc, prisma, claude } = build();
+      const { svc, prisma, claude } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce({
         ...READY,
         answersEncrypted: encryptJson({ occupation: 'Farmer' }),
@@ -1102,7 +1226,7 @@ describe('MotivationsService.generate', () => {
     });
 
     it('REFUSES SYNCHRONOUSLY without the declaration', async () => {
-      const { svc, prisma, claude } = build();
+      const { svc, prisma, claude } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce(
         readyRow({ declarationAcceptedAt: null }),
       );
@@ -1116,7 +1240,7 @@ describe('MotivationsService.generate', () => {
       // The applicant already has their 202. A rejection with nobody left to
       // catch it is an unhandled rejection, which on some Node configurations
       // takes the whole process down — every other user's request with it.
-      const { svc, prisma, claude } = build();
+      const { svc, prisma, claude } = buildReady();
       prisma.motivation.findFirst.mockResolvedValueOnce(readyRow());
       claude.generate.mockRejectedValue(new Error('overloaded'));
 
@@ -1143,7 +1267,7 @@ describe('MotivationsService.generate', () => {
     // editable nor re-generable. Without this the applicant is stranded on a
     // document that looks permanently busy, with nothing on screen to click.
     it('releases rows claimed longer ago than any real run takes', async () => {
-      const { svc, prisma } = build();
+      const { svc, prisma } = buildReady();
       prisma.motivation.updateMany.mockResolvedValueOnce({ count: 2 });
       const res = await svc.sweepStuckGenerations();
       expect(res.released).toBe(2);
@@ -1158,7 +1282,7 @@ describe('MotivationsService.generate', () => {
     });
 
     it('reports nothing when there is nothing stuck', async () => {
-      const { svc, prisma } = build();
+      const { svc, prisma } = buildReady();
       prisma.motivation.updateMany.mockResolvedValueOnce({ count: 0 });
       expect((await svc.sweepStuckGenerations()).released).toBe(0);
     });
@@ -1259,6 +1383,13 @@ describe('MotivationsService — beta seat accounting and cost', () => {
     completionTokens: null as number | null,
   };
 
+  /** The same document-complete service the generation suite uses — see H13. */
+  const buildReady = (o: Parameters<typeof build>[0] = {}) =>
+    build({
+      uploads: requiredDocs(MotivationLicenceType.S16_DEDICATED_HUNTER),
+      ...o,
+    });
+
   function ready2(over: Partial<typeof READY2> = {}) {
     const answers: Record<string, string> = {};
     for (const k of requiredKeys(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
@@ -1272,7 +1403,7 @@ describe('MotivationsService — beta seat accounting and cost', () => {
     // unaccounted for. That means an outage would otherwise consume a free-beta
     // seat and produce nothing — the applicant loses their place because WE
     // failed. This test is the whole reason releaseBetaSeat exists.
-    const { svc, prisma, claude, quota } = build();
+    const { svc, prisma, claude, quota } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(ready2());
     claude.generate.mockRejectedValueOnce(new Error('overloaded'));
     await expect(svc.generate('c1', 'mo-1')).rejects.toThrow('overloaded');
@@ -1282,7 +1413,7 @@ describe('MotivationsService — beta seat accounting and cost', () => {
   it('does NOT give back a seat it did not claim', async () => {
     // A retry on a motivation that already held a seat must never decrement
     // someone else's.
-    const { svc, prisma, claude, quota } = build();
+    const { svc, prisma, claude, quota } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(ready2({ betaSeatNo: 12 }));
     claude.generate.mockRejectedValueOnce(new Error('overloaded'));
     await expect(svc.generate('c1', 'mo-1')).rejects.toThrow('overloaded');
@@ -1290,7 +1421,7 @@ describe('MotivationsService — beta seat accounting and cost', () => {
   });
 
   it('does not release the seat on a successful generation', async () => {
-    const { svc, prisma, quota } = build();
+    const { svc, prisma, quota } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(ready2());
     await svc.generate('c1', 'mo-1');
     expect(quota.releaseBetaSeat).not.toHaveBeenCalled();
@@ -1299,7 +1430,7 @@ describe('MotivationsService — beta seat accounting and cost', () => {
   it('records a cost — the only per-document spend signal we have', async () => {
     // Org-level spend alerting does not work on this box (the admin key is a
     // regular key), so this column is it.
-    const { svc, prisma } = build();
+    const { svc, prisma } = buildReady();
     prisma.motivation.findFirst.mockResolvedValueOnce(ready2());
     await svc.generate('c1', 'mo-1');
     const data = prisma.motivation.update.mock.calls.at(-1)![0].data;
@@ -2132,5 +2263,459 @@ describe('the pack payload carries the section meter', () => {
 
     const out = await svc.pack('c1', 'mo-1');
     expect(out.coverage.sections.find((s: any) => s.id === 'F')).toBeUndefined();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// C2 / M5 / M6 / M17 — AUTO-LINK, AFTER THE VAULT STARTED DATING ITSELF.
+// ────────────────────────────────────────────────────────────────────
+
+describe('auto-linking the Document Centre', () => {
+  const DRAFT = {
+    id: 'mo-1',
+    licenceType: MotivationLicenceType.S13_SELF_DEFENCE,
+    status: MotivationStatus.DRAFT,
+    autolinkedAt: null as Date | null,
+    autolinkSkippedIds: [] as string[],
+    answersEncrypted: null as string | null,
+  };
+
+  function autolinkCase(
+    over: Partial<typeof DRAFT> = {},
+    creds: any[] = [],
+    uploads: any[] = [],
+  ) {
+    const b = build();
+    b.prisma.motivation.findFirst = jest.fn(async (a: any): Promise<any> =>
+      // openForAttach asks a SECOND time, for a narrower row — both are the
+      // same application.
+      a?.select?.autolinkedAt !== undefined
+        ? { ...DRAFT, ...over }
+        : {
+            id: 'mo-1',
+            status: MotivationStatus.DRAFT,
+            licenceType: DRAFT.licenceType,
+            answersEncrypted: null,
+          },
+    );
+    b.prisma.credential.findMany = jest.fn(async (): Promise<any[]> => creds);
+    b.prisma.motivationUpload.findMany = jest.fn(
+      async (): Promise<any[]> => uploads,
+    );
+    return b;
+  }
+
+  const cred = (over: Record<string, unknown> = {}) => ({
+    id: 'cred-id',
+    kind: 'IDENTITY_DOCUMENT',
+    coversKinds: [],
+    disciplineType: null,
+    title: 'My ID',
+    expiresOn: null,
+    detailsEncrypted: null,
+    extractionOk: false,
+    ...over,
+  });
+
+  it('C2 — asks for SETTLED dates, not confirmed ones', async () => {
+    // ⚠️ THE OLD PREDICATE MADE THIS FEATURE DO NOTHING FOR AN ORDINARY MEMBER.
+    // It required confirmedAt, and the Document Centre has dated and ARMED its
+    // own rows since 2026-08-25 — dateSource set, confirmedAt null. The
+    // operator's vault holds five firearm licences and zero confirmed rows, so
+    // the query came back empty for everybody.
+    const { svc, prisma } = autolinkCase({}, [cred()]);
+    await svc.autolink('c1', 'mo-1');
+    const where = prisma.credential.findMany.mock.calls[0][0].where;
+    const settled = where.AND[0].OR;
+    expect(settled).toEqual([
+      { confirmedAt: { not: null } },
+      { dateSource: { not: null } },
+    ]);
+  });
+
+  it('C2 — ⚠️ DOES NOT BURN THE RUN WHEN THERE WAS NOTHING TO DECIDE', async () => {
+    // The stamp used to go on unconditionally. While the query was returning
+    // nothing, the FIRST load of the documents step spent the one run the
+    // application ever gets against an empty list, and the member could never
+    // get it back — not by uploading, not by confirming, not by reloading.
+    const { svc, prisma } = autolinkCase({}, []);
+    const out = await svc.autolink('c1', 'mo-1');
+    expect(out.attached).toEqual([]);
+    expect(prisma.motivation.update).not.toHaveBeenCalled();
+  });
+
+  it('C2 — stamps the run once a candidate has actually been decided', async () => {
+    // Skipped counts: "we looked at this and deliberately did not attach it" is
+    // a decision, and re-running it would undo the member's deletions.
+    const { svc, prisma } = autolinkCase(
+      {},
+      [cred()],
+      // Already on the pack, from somewhere else — so it is looked at and
+      // deliberately not attached.
+      [{ kind: 'IDENTITY_DOCUMENT', sha256: 'x', sourceCredentialId: null }],
+    );
+    await svc.autolink('c1', 'mo-1');
+    expect(prisma.motivation.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { autolinkedAt: expect.any(Date) } }),
+    );
+  });
+
+  it('C2 — ⚠️ A DELETE STAYS DELETED, EVEN AFTER A RE-ARM', async () => {
+    // This is the operator's "why can't I delete the proof of address?", and
+    // the re-arm below re-opens it unless something outlives the removed row.
+    // The removed upload is hard-deleted, so the refusal lives on the
+    // application: autolinkSkippedIds.
+    const { svc } = autolinkCase({ autolinkSkippedIds: ['cred-id'] }, [cred()]);
+    const out = await svc.autolink('c1', 'mo-1');
+    expect(out.attached).toEqual([]);
+    expect(out.skipped).toEqual([]);
+  });
+
+  it('C2 — never offers a credential this pack already carries', async () => {
+    const { svc } = autolinkCase({}, [cred()], [
+      { kind: 'ADDRESS_CONFIRMATION', sha256: 'x', sourceCredentialId: 'cred-id' },
+    ]);
+    const out = await svc.autolink('c1', 'mo-1');
+    expect(out.attached).toEqual([]);
+  });
+
+  it('C2 — rearmAutolinkFor clears the stamp on OPEN DRAFTS only', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.updateMany.mockResolvedValueOnce({ count: 2 });
+    expect(await svc.rearmAutolinkFor('user-1')).toBe(2);
+    const call = prisma.motivation.updateMany.mock.calls.at(-1)![0];
+    expect(call.data).toEqual({ autolinkedAt: null });
+    // An application that has been generated, paid for or lodged is a fixed set
+    // of evidence; adding a page after the fact changes what a DFO is holding.
+    expect(call.where.status.in).toContain(MotivationStatus.DRAFT);
+    expect(call.where.status.in).not.toContain(MotivationStatus.COMPLETED);
+  });
+
+  it('C2 — rearmAutolinkFor never throws: the caller is an upload path', async () => {
+    const { svc, prisma } = build();
+    prisma.motivation.updateMany.mockRejectedValueOnce(new Error('db down'));
+    await expect(svc.rearmAutolinkFor('user-1')).resolves.toBe(0);
+  });
+
+  it('M6 — holds the safe photographs back and SAYS SO', async () => {
+    const { svc } = autolinkCase({}, [
+      cred({ id: 'safe-1', kind: 'SAFE_PHOTOGRAPHS', title: 'My safe' }),
+    ]);
+    const out = await svc.autolink('c1', 'mo-1');
+    expect(out.attached).toEqual([]);
+    expect(out.needsPlaceConfirm).toBe(true);
+  });
+});
+
+describe('a library copy remembers where it came from', () => {
+  function pickCase() {
+    const b = build();
+    b.prisma.motivation.findFirst = jest.fn(async (): Promise<any> => ({
+      id: 'mo-1',
+      status: 'DRAFT',
+      licenceType: 'S13_SELF_DEFENCE',
+      answersEncrypted: null,
+    }));
+    b.prisma.credential.findFirst = jest.fn(async (): Promise<any> => ({
+      kind: 'IDENTITY_DOCUMENT',
+      storageKey: 'credentials/2026/08/a.enc',
+      mimeType: 'image/jpeg',
+      purgedAt: null,
+      detailsEncrypted: null,
+      extractionOk: true,
+    }));
+    return b;
+  }
+
+  it('M5 — records the Credential the copy was taken from', async () => {
+    // addFromLibrary always knew this and threw it away at the create, so
+    // nothing downstream could answer "is the document behind this page still
+    // in my Centre" — nor, for auto-link, "have we offered this row before".
+    const { svc, prisma } = pickCase();
+    await svc.addFromLibrary('c1', 'mo-1', 'credential', 'cred-7');
+    expect(
+      prisma.motivationUpload.create.mock.calls[0][0].data.sourceCredentialId,
+    ).toBe('cred-7');
+  });
+
+  it('M17 — ⚠️ THE BYTES DO NOT OUTLIVE A FAILED ROW', async () => {
+    // addUpload has had this compensating delete since it was written and this
+    // path never did — so a create that lost the unique race, or hit a dead
+    // connection, left an encrypted file on disk with nothing pointing at it.
+    // Undeletable except by hand, invisible to the retention sweep (which walks
+    // rows), counted against the member's storage for ever.
+    const { svc, prisma, files } = pickCase();
+    prisma.motivationUpload.create = jest.fn(async (_a: any): Promise<any> => {
+      throw new Error('connection lost');
+    });
+    await expect(
+      svc.addFromLibrary('c1', 'mo-1', 'credential', 'cred-7'),
+    ).rejects.toBeTruthy();
+    expect(files.remove).toHaveBeenCalledWith('motivations/2026/08/copy.enc');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// H13 — a pack is not ready because the ANSWERS are done.
+// ────────────────────────────────────────────────────────────────────
+
+describe('generation refuses on a missing document', () => {
+  // ⚠️ BUILT INSIDE A FUNCTION, NOT AT MODULE LOAD. encryptJson needs
+  // ID_HASH_SECRET, which the suite's own beforeAll sets — a top-level call
+  // runs first and takes the whole file down with it.
+  const readyAnswers = () => {
+    const a: Record<string, string> = {};
+    for (const k of requiredKeys(MotivationLicenceType.S16_DEDICATED_HUNTER)) {
+      a[k] = 'A sufficient answer for testing purposes.';
+    }
+    return a;
+  };
+
+  const row = () => ({
+    id: 'mo-1',
+    userId: 'user-1',
+    referenceNumber: 'MO000123',
+    licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
+    status: MotivationStatus.DRAFT,
+    answersEncrypted: encryptJson(readyAnswers()),
+    declarationAcceptedAt: new Date(),
+    variantSeed: 1,
+    gateCycles: 0,
+    betaSeatNo: null,
+    promptTokens: null,
+    completionTokens: null,
+  });
+
+  it('⚠️ NAMES THE DOCUMENTS AND NEVER CALLS CLAUDE', async () => {
+    // Before this, an applicant with every box filled and no identity document,
+    // no proof of address and no competency certificate got a finished,
+    // watermarked, PAID-FOR pack that a DFO cannot accept. The checklist knew —
+    // documentStatus().missingRequired is computed on every load of the
+    // documents step and was read by nothing that could stop this.
+    const { svc, claude, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce(row());
+    await expect(svc.generate('c1', 'mo-1')).rejects.toMatchObject({
+      response: {
+        code: 'motivation-documents-incomplete',
+        missingDocuments: expect.arrayContaining([
+          MotivationUploadKind.IDENTITY_DOCUMENT,
+        ]),
+      },
+    });
+    expect(claude.generate).not.toHaveBeenCalled();
+    // ⚠️ AND THE ROW IS NEVER CLAIMED. A refusal that moved the status to
+    // GENERATING would strand a draft nobody could edit.
+    expect(prisma.motivation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ AFTER THE ANSWER CHECK, because the list DEPENDS on the answers', async () => {
+    // The required-document list is conditional: owning a firearm adds the
+    // current licence, a private transfer adds the seller's licence and a
+    // consent. Run against a half-filled form it would demand documents for a
+    // route the applicant has not chosen, and then stop demanding them once
+    // they answer one more question.
+    const { svc, prisma } = build();
+    prisma.motivation.findFirst.mockResolvedValueOnce({
+      ...row(),
+      answersEncrypted: encryptJson({ occupation: 'Farmer' }),
+    });
+    await expect(svc.generate('c1', 'mo-1')).rejects.toMatchObject({
+      response: { code: 'motivation-incomplete' },
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// The contract every document row now carries about its own validity.
+// ────────────────────────────────────────────────────────────────────
+
+describe('what a listed document says about its own validity', () => {
+  const day = (n: number) =>
+    new Date(Date.now() + n * 86_400_000);
+
+  function listCase(uploads: any[]) {
+    const b = build();
+    b.prisma.motivation.findFirst = jest.fn(async (): Promise<any> => ({
+      id: 'mo-1',
+      licenceType: MotivationLicenceType.S13_SELF_DEFENCE,
+      answersEncrypted: null,
+      uploads,
+    }));
+    b.prisma.motivationUpload.findMany = jest.fn(async (): Promise<any[]> => []);
+    return b;
+  }
+
+  const upload = (over: Record<string, unknown> = {}) => ({
+    id: 'up-1',
+    kind: MotivationUploadKind.GOOD_STANDING_LETTER,
+    coversKinds: [],
+    mimeType: 'image/jpeg',
+    byteSize: 10,
+    createdAt: new Date(),
+    purgedAt: null,
+    storageKey: 'motivations/2026/08/a.enc',
+    extractionOk: true,
+    extractedFields: [],
+    extractionEncrypted: null,
+    sourceCredential: null,
+    sourceRemovedAt: null,
+    ...over,
+  });
+
+  it('⚠️ PREFERS THE VAULT’S CURATED DATE over the raw reading', async () => {
+    // A Credential's expiresOn has been through the Document Centre: read,
+    // arithmetic-checked, possibly corrected by the member, re-derived when a
+    // renewal moves it. The reading on the upload row is one vision call's raw
+    // opinion of a photograph. Showing the raw one would contradict the
+    // reminder the member is already getting about the same document.
+    const { svc } = listCase([
+      upload({
+        sourceCredential: { expiresOn: day(400) },
+        extractionEncrypted: encryptJson({ expires_on: '2020-01-01' }),
+      }),
+    ]);
+    const out: any = await svc.listUploads('c1', 'mo-1');
+    expect(out.files[0].expiresOn).toBe(day(400).toISOString().slice(0, 10));
+    expect(out.files[0].caution).toBeNull();
+  });
+
+  it('falls back to the reading for a page with no vault row behind it', async () => {
+    const { svc } = listCase([
+      upload({ extractionEncrypted: encryptJson({ expires_on: '2020-01-01' }) }),
+    ]);
+    const out: any = await svc.listUploads('c1', 'mo-1');
+    expect(out.files[0].expiresOn).toBe('2020-01-01');
+    expect(out.files[0].caution.tone).toBe('red');
+  });
+
+  it('is amber inside three months — SAPS takes longer than that', async () => {
+    const { svc } = listCase([
+      upload({ sourceCredential: { expiresOn: day(30) } }),
+    ]);
+    const out: any = await svc.listUploads('c1', 'mo-1');
+    expect(out.files[0].caution.tone).toBe('amber');
+  });
+
+  it('says nothing at all about a document with no expiry', async () => {
+    const { svc } = listCase([
+      upload({ kind: MotivationUploadKind.IDENTITY_DOCUMENT }),
+    ]);
+    const out: any = await svc.listUploads('c1', 'mo-1');
+    expect(out.files[0].expiresOn).toBeNull();
+    expect(out.files[0].caution).toBeNull();
+  });
+
+  it('surfaces a source deleted from the Document Centre', async () => {
+    // The copy is still good; the member simply has one fewer place to check it
+    // against. A fact on the row, never an error.
+    const removed = new Date('2026-09-01T10:00:00Z');
+    const { svc } = listCase([upload({ sourceRemovedAt: removed })]);
+    const out: any = await svc.listUploads('c1', 'mo-1');
+    expect(out.files[0].sourceRemovedAt).toBe(removed.toISOString());
+  });
+
+  it('⚠️ NEVER PUTS THE RAW READING ON THE WIRE', async () => {
+    // It is the decrypted-at-rest reading of an identity document. The row
+    // carries the one fact the client needs and nothing else.
+    const { svc } = listCase([
+      upload({ extractionEncrypted: encryptJson({ id_number: '8001015009087' }) }),
+    ]);
+    const out: any = await svc.listUploads('c1', 'mo-1');
+    expect(out.files[0].extractionEncrypted).toBeUndefined();
+  });
+});
+
+describe('removing a document the Document Centre supplied', () => {
+  it('C2 — ⚠️ REMEMBERS THE REFUSAL, BECAUSE THE ROW IS ABOUT TO BE GONE', async () => {
+    const { svc, prisma } = build();
+    prisma.motivationUpload.findFirst = jest.fn(async (): Promise<any> => ({
+      id: 'up-1',
+      storageKey: 'motivations/2026/08/a.enc',
+      sourceCredentialId: 'cred-9',
+      motivation: { status: MotivationStatus.DRAFT },
+    }));
+    prisma.motivationUpload.delete = jest.fn(async () => ({}));
+
+    await svc.removeUpload('c1', 'mo-1', 'up-1');
+
+    // Written AFTER the delete and additively, so nothing here can cost the
+    // member the removal they asked for.
+    expect(prisma.motivation.update).toHaveBeenCalledWith({
+      where: { id: 'mo-1' },
+      data: { autolinkSkippedIds: { push: 'cred-9' } },
+    });
+  });
+
+  it('records nothing for a document they photographed themselves', async () => {
+    const { svc, prisma } = build();
+    prisma.motivationUpload.findFirst = jest.fn(async (): Promise<any> => ({
+      id: 'up-1',
+      storageKey: null,
+      sourceCredentialId: null,
+      motivation: { status: MotivationStatus.DRAFT },
+    }));
+    prisma.motivationUpload.delete = jest.fn(async () => ({}));
+    await svc.removeUpload('c1', 'mo-1', 'up-1');
+    expect(prisma.motivation.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('the stored reading for an attached document', () => {
+  // ⚠️ THE PHONE HAND-OFF READS THIS, NOT rereadUpload. The reading was made
+  // once, on upload; the desktop asks for it afterwards without spending a
+  // second vision call, and gets it in the shape the review screen expects.
+  function readingCase(over: {
+    extractionOk?: boolean;
+    blob?: string | null;
+    missing?: boolean;
+  }) {
+    const b = build({});
+    b.prisma.motivation.findFirst = jest.fn(async (): Promise<any> => ({
+      id: 'mo-1',
+    }));
+    b.prisma.motivationUpload.findFirst = jest.fn(
+      async (): Promise<any> =>
+        over.missing
+          ? null
+          : {
+              id: 'up-1',
+              extractionOk: over.extractionOk ?? true,
+              extractionEncrypted:
+                over.blob === undefined
+                  ? encryptJson({ competency_number: 'CC 123', blank: '  ' })
+                  : over.blob,
+            },
+    );
+    return b;
+  }
+
+  it('returns what was read, dropping blank values, without a vision call', async () => {
+    const { svc, extract } = readingCase({});
+    const res = await svc.readingFor('c1', 'mo-1', 'up-1');
+    expect(res).toEqual({
+      id: 'up-1',
+      suggestions: [
+        { key: 'competency_number', value: 'CC 123', label: 'competency_number' },
+      ],
+    });
+    expect(extract.extract).not.toHaveBeenCalled();
+  });
+
+  it('is empty when the read failed or the blob cannot be opened', async () => {
+    const failed = readingCase({ extractionOk: false });
+    expect(
+      (await failed.svc.readingFor('c1', 'mo-1', 'up-1')).suggestions,
+    ).toEqual([]);
+    const garbage = readingCase({ blob: 'not-a-blob' });
+    expect(
+      (await garbage.svc.readingFor('c1', 'mo-1', 'up-1')).suggestions,
+    ).toEqual([]);
+  });
+
+  it('404s on a document that is not on this application', async () => {
+    const { svc } = readingCase({ missing: true });
+    await expect(svc.readingFor('c1', 'mo-1', 'up-9')).rejects.toThrow(
+      'Document not found',
+    );
   });
 });

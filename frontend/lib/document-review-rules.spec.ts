@@ -8,6 +8,11 @@ import {
   uncertaintyReason,
   refileNeedsPanel,
   settleableInBulk,
+  FiledRow,
+  filedUnsure,
+  needsDateCheck,
+  needsFilingCheck,
+  needsReview,
 } from './document-review-rules';
 
 // ────────────────────────────────────────────────────────────────────
@@ -297,5 +302,72 @@ describe('uncertaintyReason', () => {
   it('is silent when nothing was recorded', () => {
     expect(uncertaintyReason(doc({}))).toBeNull();
     expect(uncertaintyReason(doc({ readUncertain: [] }))).toBeNull();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// What a STORED row still owes the member.
+//
+// The bug these pin: the page decided all of this on the date alone, so a
+// document we filed WITHOUT BEING SURE WHAT IT WAS counted as finished the
+// moment its expiry was read cleanly — off the banner, out of the hand-off
+// queue, and with nothing on the row or the card admitting we had guessed.
+// ────────────────────────────────────────────────────────────────────
+
+function filed(over: Partial<FiledRow> = {}): FiledRow {
+  return {
+    autoFiled: true,
+    namedConfident: true,
+    confirmed: false,
+    dateSource: null,
+    neverExpires: false,
+    ...over,
+  };
+}
+
+describe('what a stored document still owes the member', () => {
+  it('calls a row we named without being sure "not sure"', () => {
+    expect(filedUnsure(filed({ namedConfident: false }))).toBe(true);
+    expect(filedUnsure(filed({ namedConfident: true }))).toBe(false);
+    // The MEMBER chose this box. There is no guess of ours on it.
+    expect(
+      filedUnsure(filed({ autoFiled: false, namedConfident: false })),
+    ).toBe(false);
+  });
+
+  it('⚠️ still asks about the filing of a row whose date we read cleanly', () => {
+    // The whole finding. Date settled by us, type guessed and doubted.
+    const r = filed({ namedConfident: false, dateSource: 'read' });
+    expect(needsDateCheck(r)).toBe(false);
+    expect(needsFilingCheck(r)).toBe(true);
+    expect(needsReview(r)).toBe(true);
+  });
+
+  it('does not treat a date we filled in as an errand', () => {
+    const r = filed({ dateSource: 'derived' });
+    expect(needsDateCheck(r)).toBe(false);
+    expect(needsFilingCheck(r)).toBe(false);
+    expect(needsReview(r)).toBe(false);
+  });
+
+  it('counts an undated row once, never in both lists', () => {
+    const r = filed({ namedConfident: false });
+    expect(needsDateCheck(r)).toBe(true);
+    expect(needsFilingCheck(r)).toBe(false);
+  });
+
+  it('asks about the type of a dateless row, because that is all it has', () => {
+    const r = filed({ neverExpires: true });
+    expect(needsDateCheck(r)).toBe(false);
+    expect(needsFilingCheck(r)).toBe(true);
+  });
+
+  it('leaves a confirmed row alone however it was filed', () => {
+    // A member who has already looked is not asked again — that is nagging,
+    // and it is the reason confirm exists at all.
+    const r = filed({ confirmed: true, namedConfident: false });
+    expect(needsDateCheck(r)).toBe(false);
+    expect(needsFilingCheck(r)).toBe(false);
+    expect(needsReview(r)).toBe(false);
   });
 });

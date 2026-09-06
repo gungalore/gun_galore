@@ -225,6 +225,7 @@ export default function TemplatePreview({
   return (
     <div
       aria-hidden
+      className="gg-tile"
       style={{
         width,
         height: width * ASPECT,
@@ -232,10 +233,18 @@ export default function TemplatePreview({
         position: 'relative',
         overflow: 'hidden',
         background: '#ffffff',
-        // A hairline and a soft drop, so a white page reads as a sheet of
-        // paper against a white card rather than dissolving into it.
+        // A hairline and a shade, so a white page reads as a sheet of paper
+        // against a white card rather than dissolving into it.
+        //
+        // ⚠️ THE DROP SHADOW HERE COULD NEVER RENDER. globals.css opens with
+        // `* { box-shadow: none !important }`, unscoped — so every raw
+        // box-shadow in this app is dead unless the element carries .gg-tile.
+        // The keyline was doing the whole job on its own and the "soft drop"
+        // was a comment describing something nobody has ever seen. .gg-tile is
+        // the house elevation and its --elev tokens are warm-tinted from the
+        // ink, which is what stops a black drop going visibly grey over these
+        // neutrals.
         border: '0.5px solid rgba(0,0,0,0.16)',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.10)',
       }}
     >
       {page === 'cover' && (
@@ -486,7 +495,8 @@ export default function TemplatePreview({
             style={{
               transform: 'rotate(-55deg)',
               fontSize: '3.4em',
-              fontWeight: 700,
+              // 500 is the heaviest weight the house type scale carries.
+              fontWeight: 500,
               letterSpacing: '0.18em',
               color: 'rgba(0,0,0,0.09)',
               whiteSpace: 'nowrap',
