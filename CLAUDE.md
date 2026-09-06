@@ -1939,7 +1939,14 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-06 (night), commit `c5fef53e`.** No migrations.
+**Last deploy: 2026-09-06 (late night), commit `76e43524`.** No migrations.
+**FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's `deploy
+now`; the only commit since `c5fef53e` was this file, so both apps were
+rebuilt on already-shipped code. Dump `alloutdoor-20260906-190415.dump`.
+Health doubled on both ports, warden online, public 200 twice, anonymous
+`/api/bench/*` still 401.
+
+**Previous deploy: 2026-09-06 (night), commit `c5fef53e`.** No migrations.
 **BACKEND ONLY** (`deploy.sh --backend-only`); health doubled. Then
 `bench-import` and `bench-cip-parse` again, after **66 rows were appended to
 `cartridge_reference.csv`** on the box AND in the operator's local copy
