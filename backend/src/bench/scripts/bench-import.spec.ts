@@ -165,3 +165,38 @@ describe('The Bench — the cartridge slug', () => {
     expect(slugify('6,5 Creedmoor')).toBe(slugify('6.5 Creedmoor'));
   });
 });
+
+describe('The Bench — a load row finds its cartridge', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { cipLookupKey, decodeEntities } = require('./bench-import') as typeof import('./bench-import');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { cartridgeKey } = require('../../common/cartridge-key') as typeof import('../../common/cartridge-key');
+
+  it('reads through the HTML entities the scrape left in the file', () => {
+    expect(decodeEntities('.300 H &amp; H Magnum')).toBe('.300 H & H Magnum');
+    expect(cartridgeKey(decodeEntities('.300 H &amp; H Magnum'))).toBe(cartridgeKey('.300 H&H Magnum'));
+  });
+
+  it("finds a C.I.P. sheet under the manual's spelling, without moving the stored key", () => {
+    // What a manual prints -> what the sheet prints. Both sides go through the
+    // lookup; only the sheet's own name is ever keyed for storage.
+    for (const [printed, sheet] of [
+      ['378 Weatherby Magnum', '378 Weath. Mag.'],
+      ['300 Weath. Mag.', '300 Weath. Mag.'],
+      ['6.5x55 Swed. Mauser', '6,5 x 55 SE'],
+      ['6,5 x 55 SE', '6,5 x 55 SE'],
+      ['7.5 X 55mm Schmidt Rubin (7.5mm Swiss)', '7,5 x 55 Suisse'],
+      ['505 Gibbs', '505 Mag. Gibbs'],
+      ['.505 GIBBS - Rimless Magnum', '505 Mag. Gibbs'],
+    ]) {
+      expect(cipLookupKey(printed)).toBe(cipLookupKey(sheet));
+    }
+    // The stored key is cartridgeKey() of the sheet name, untouched by the synonyms.
+    expect(cartridgeKey('300 Weath. Mag.')).toBe('300weathmagnum');
+  });
+
+  it('does not conflate cartridges the synonyms do not name', () => {
+    expect(cipLookupKey('300 Win. Mag.')).not.toBe(cipLookupKey('300 Weath. Mag.'));
+    expect(cipLookupKey('6,5 x 55 SE')).not.toBe(cipLookupKey('6,5 x 57'));
+  });
+});

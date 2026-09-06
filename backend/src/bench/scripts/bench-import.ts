@@ -25,6 +25,7 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { cartridgeKey } from '../../common/cartridge-key';
 import { consolidate, needsReview, pickDisplayName } from '../consolidate';
+import CIP_INDEX from '../../motivations/cip-index.json';
 
 /**
  * ⚠️ CONSTRUCTED INSIDE main(), AFTER THE ARGUMENTS ARE CHECKED. At module
@@ -74,6 +75,45 @@ export function slugify(name: string): string {
     .replace(/[^a-z0-9-]/g, '')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+}
+
+/**
+ * The load CSV carries a few HTML entities from the site scrape — ".300 H
+ * &amp; H Magnum" is 17 Somchem rows — and no key matches through one.
+ */
+export function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ');
+}
+
+/**
+ * Spellings a manual uses for a cartridge the C.I.P. sheet names another way.
+ *
+ * ⚠️ FOR LOOKING UP ONLY, NEVER FOR THE STORED KEY. `BenchCartridge.key` is
+ * cartridgeKey() of the name AS THE SHEET PRINTS IT, the same helper and the
+ * same input the motivations' CartridgeSpec uses, so the two join. Widening
+ * cartridgeKey() itself would move every stored key that contains one of
+ * these words; folding the synonyms in here, on the way to the lookup, moves
+ * nothing. "300 Weath. Mag." and "378 Weatherby Magnum" both look up as
+ * weatherby; the sheet's own spelling is what gets written.
+ */
+const CIP_LOOKUP_SYNONYMS: [RegExp, string][] = [
+  [/\bweath\b\.?/gi, 'weatherby'],
+  [/\bnitro express\b/gi, 'n.e.'],
+  [/\bschmidt[- ]rubin\b/gi, 'suisse'],
+  [/\bswed(ish|\.)?(\s+mauser)?\b/gi, 'se'],
+  [/^\.?505 gibbs\b.*$/i, '505 Mag. Gibbs'],
+];
+
+export function cipLookupKey(name: string): string {
+  let s = decodeEntities(name).replace(/\([^)]*\)/g, ' ');
+  for (const [re, to] of CIP_LOOKUP_SYNONYMS) s = s.replace(re, to);
+  return cartridgeKey(s);
 }
 
 /**
@@ -326,6 +366,13 @@ ${file} is missing expected column(s): ${missing.join(', ')}
 
 interface Report {
   cartridgesWithoutReference: string[];
+  /**
+   * Cartridges the reference file lacks but a C.I.P. sheet covers, created
+   * from the sheet ("printed name -> sheet name"). Their case and maximum
+   * lengths arrive when bench-cip-parse next runs; until then the finder
+   * lists their loads without a COAL check.
+   */
+  cartridgesFromCip: string[];
   unresolvedPowders: string[];
   /**
    * Names that wanted the same slug. Reported rather than thrown: a collision
@@ -364,7 +411,7 @@ async function main(): Promise<void> {
   prisma = new PrismaClient({ adapter: new PrismaPg(process.env.DATABASE_URL!) });
 
   const report: Report = {
-    cartridgesWithoutReference: [], unresolvedPowders: [],
+    cartridgesWithoutReference: [], cartridgesFromCip: [], unresolvedPowders: [],
     slugCollisions: [], rowsWithUnknownMaker: 0,
     singleSourceGroups: 0, wideSpreadGroups: [], counts: {},
   };
@@ -518,9 +565,65 @@ async function main(): Promise<void> {
   const perCartridge = new Map<string, number>();
   const sourceRows: Prisma.BenchSourceLoadCreateManyInput[] = [];
 
+  // ── Three ways a load row finds its cartridge, tried in order ──────────
+  //
+  // 1. Its European name keys straight onto a reference row.
+  // 2. Its printed name is one of the reference file's OWN aliases — the
+  //    file lists ".300 H&H Magnum" and ".380 ACP" beside their European
+  //    names, and until now the import read that column into the alias table
+  //    and then never consulted it. 35 Somchem rows with a blank European
+  //    name were dropped that way, with their cartridge sitting in the file.
+  // 3. A C.I.P. sheet names it. The reference file has 256 rows; the sheet
+  //    pack has 562. 6,5 x 55 SE (607 rows) and the whole Weatherby family
+  //    (2 000+) were being dropped for want of a reference row while a full
+  //    dimension sheet for each sat on the box. The cartridge is created FROM
+  //    the sheet — its name as the sheet prints it, its Pmax in bar as the
+  //    sheet states it — and bench-cip-parse fills the lengths on its next
+  //    run. Nothing is invented: a name with no sheet is still dropped.
+  const keyByAlias = new Map<string, string>();
+  for (const [european, set] of aliasesFor) {
+    for (const printed of set) keyByAlias.set(cartridgeKey(decodeEntities(printed)), cartridgeKey(european));
+  }
+  const cipByLookup = new Map<string, { name: string; pmaxBar: number | null }>();
+  for (const entry of Object.values(CIP_INDEX as Record<string, { name: string; pmaxBar: number | null }>)) {
+    const k = cipLookupKey(entry.name);
+    if (k && !cipByLookup.has(k)) cipByLookup.set(k, entry);
+  }
+  const cipCreated = new Map<string, string>(); // sheet name -> key
+  const cartridgeFromCip = async (sheet: { name: string; pmaxBar: number | null }, printedName: string) => {
+    const key = cartridgeKey(sheet.name);
+    if (!knownKeys.has(key)) {
+      const bar = sheet.pmaxBar;
+      await prisma.benchCartridge.upsert({
+        where: { key },
+        create: {
+          key, name: sheet.name, slug: slugFor(sheet.name, key),
+          pmaxBar: bar, pmaxPsi: bar === null ? null : Math.round(bar * 14.5038),
+        },
+        // Never clobber what bench-cip-parse has since written onto the row.
+        update: {},
+      });
+      knownKeys.add(key);
+      cipCreated.set(sheet.name, key);
+    }
+    if (printedName !== sheet.name) {
+      await prisma.benchCartridgeAlias.upsert({
+        where: { printed: printedName }, create: { printed: printedName, cartridgeKey: key }, update: { cartridgeKey: key },
+      });
+      const line = `${printedName} -> ${sheet.name}`;
+      if (!report.cartridgesFromCip.includes(line)) report.cartridgesFromCip.push(line);
+    }
+    return key;
+  };
+
   for (const r of loadRows) {
-    const printedName = r.cartridge_european?.trim() || r.cartridge_as_printed?.trim() || '';
-    const key = cartridgeKey(printedName);
+    const printedName = decodeEntities(r.cartridge_european?.trim() || r.cartridge_as_printed?.trim() || '');
+    let key = cartridgeKey(printedName);
+    if (key && !knownKeys.has(key)) key = keyByAlias.get(key) ?? key;
+    if (key && !knownKeys.has(key)) {
+      const sheet = cipByLookup.get(cipLookupKey(printedName));
+      if (sheet) key = await cartridgeFromCip(sheet, printedName);
+    }
     if (!key || !knownKeys.has(key)) {
       if (printedName && !report.cartridgesWithoutReference.includes(printedName)) {
         report.cartridgesWithoutReference.push(printedName);
@@ -673,7 +776,9 @@ async function main(): Promise<void> {
     console.log(`  ${got === expected ? 'ok  ' : 'DIFF'} ${name}: ${got} source rows (spec says ${expected})`);
   }
   const somchem = loadRows.filter((r) => (r.source_manual ?? '').startsWith('Somchem')).length;
-  console.log(`  ${somchem === 612 ? 'ok  ' : 'DIFF'} Somchem rows: ${somchem} (spec says 612)\n`);
+  // 657, not the spec's 612: counted in the file on 2026-09-06 — one source
+  // string, twelve powders. The spec's figure predates the file it describes.
+  console.log(`  ${somchem === 657 ? 'ok  ' : 'DIFF'} Somchem rows: ${somchem} (file holds 657)\n`);
 
   console.log(`  cartridges           ${report.counts.cartridges}`);
   console.log(`  powders              ${report.counts.powders}`);
@@ -685,6 +790,7 @@ async function main(): Promise<void> {
   console.log(`  single-source groups ${report.singleSourceGroups}`);
   console.log(`  wide-spread groups   ${report.wideSpreadGroups.length}  (review by hand)`);
   console.log(`  unmatched cartridges ${report.cartridgesWithoutReference.length}`);
+  console.log(`  cartridges from CIP  ${cipCreated.size} created, ${report.cartridgesFromCip.length} names resolved through a sheet`);
   // Printed rather than merely stored: both used to be invisible. Rows with no
   // maker were dropped in silence, and a slug collision ended the run.
   console.log(`  rows w/ unknown maker ${report.rowsWithUnknownMaker}  (grouped under "${UNKNOWN_MAKER}")`);
