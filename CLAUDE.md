@@ -1939,7 +1939,29 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-05 (evening), commit `1a679c6c`.** No migrations.
+**Last deploy: 2026-09-06, commit `df232a52`** (merge of `feat/the-bench`
+`febe41da`). ⚠️ **CARRIED A MIGRATION** — `20260906120000_bench_audit`
+(additive: `BenchPowder.key` with a SQL backfill, `BenchShare`, three indexes,
+and FKs `UserBench.userId` / `BenchLogEntry.userId → User` ON DELETE CASCADE).
+**FULL DEPLOY** (`deploy.sh`, both apps + warden). Pre-deploy dump
+`alloutdoor-20260906-174703.dump` taken before `prisma migrate deploy`. Health
+doubled on both ports, public 200 twice, warden online. Verified signed in on
+the live site afterwards: the spec card opens with "Rimless · United States ·
+2012", a log entry with a blank COAL shows "—" (was `0.00 mm`), a comma charge
+`35,9` is read as 35.9 gr, the log sheet stacks over the load card, and every
+`/api/bench/*` route answers 401 anonymously.
+
+Shipped: **the Bench audit, end to end** — the 15 findings verified live plus
+the 46 from code review (report: the 2026-09-06 session's `bench-audit` file;
+the commit message on `febe41da` lists the areas). Two behaviours changed on
+purpose: the Bench API is now members-only (the page already was; the guest
+bench is deferred per SPEC-BUILD §10), and the migration was applied to a
+fresh database first with an empty `migrate diff` afterwards. ⚠️ The import
+fixes (idempotent source rows, stable powder keys, unknown-maker rows kept,
+spec category order) take effect only on the NEXT `bench-import` run — until
+then production still has split powders such as Alliant RL-15 / RL15.
+
+**Previous deploy: 2026-09-05 (evening), commit `1a679c6c`.** No migrations.
 **FRONTEND ONLY** (`deploy.sh --frontend-only`). Dump
 `alloutdoor-20260905-154111.dump`. Health doubled, public 200 twice,
 `/scan/selftest` on the live site: running, presence 1.000.
