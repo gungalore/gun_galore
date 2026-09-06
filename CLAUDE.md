@@ -1939,7 +1939,17 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (morning), commit `48084d16`.** ⚠️ **CARRIED A
+**Last deploy: 2026-09-07 (morning), commit `e66e5d15`.** FULL DEPLOY
+(`deploy.sh`, no migration) on the operator's `deploy now`. Health doubled,
+warden online, public 200 twice. Shipped, merged from `feat/the-bench`:
+`2bef02fb` — a paired proficiency is ONE entry in the Document Centre list
+(led by the statement of results) and the panel wraps the card with a
+"Statement of results | Certificate" switch; every sentence says statement of
+results / certificate, never front / back (rows under the earlier wording are
+rewritten on load); the filing banner says "we were not sure what type N
+documents are" instead of "filed by us rather than by you".
+
+**Previous deploy: 2026-09-07 (morning), commit `48084d16`.** ⚠️ **CARRIED A
 MIGRATION** — `20260907020000_credential_other_side`, additive only
 (`Credential.otherSideId` TEXT NULL), hand-written per [BC-SCHEMA-DRIFT].
 **FULL DEPLOY** (`deploy.sh`) on the operator's `deploy now`. Dump
