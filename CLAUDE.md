@@ -1939,7 +1939,30 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-06 (late evening), commit `fa304c33`.** No migrations.
+**Last deploy: 2026-09-06 (night), commit `c5fef53e`.** No migrations.
+**BACKEND ONLY** (`deploy.sh --backend-only`); health doubled. Then
+`bench-import` and `bench-cip-parse` again, after **66 rows were appended to
+`cartridge_reference.csv`** on the box AND in the operator's local copy
+(`C:\Users\gerha\Downloads\the-bench\data\`, both backed up as
+`.bak-20260906`): twelve cartridges with figures read out of the SAAMI
+standards themselves (Z299.4-2025 rifle, Z299.3-2022 pistol — the PDFs were
+downloaded and text-extracted, the case length, COAL max and MAP taken from
+each cartridge's own drawing and pressure-table line, `cartridge_name_source`
+= `gg-spec-saami`): 7 mm PRC, 6 mm GT, 22 Creedmoor, 22/27/30/33 Nosler,
+338 Weath. RPM, 6 mm ARC, 280 Ackley Improved, 30 Rem. AR, 327 Federal
+Mag.; plus 54 alias rows (`gg-alias-2026-09-06`) mapping the manuals'
+spellings onto cartridges the file already had (the SAUMs, 7 mm STW, 22 PPC
+USA, 357 Maximum, 44 Rem. Mag. …). `5ba7b974` adds hand-checked sheet-name
+overrides for ten more spellings (Arisaka, 338 RCM, 44 S&W Russian, 50-70
+Govt., 45-90 WM, 32 S&W, 7,63 Mauser, 6,5 x 68, 450 N.E. 3'' 1/4, 30-06
+Ackley Improved). Result: 49 045 source rows (was 46 088), 40 146 loads,
+232 cartridges (all with lengths), unmatched names 177 → 103 (2 506 rows,
+all wildcats or rounds in neither standard — 22 BR Rem. and 338-06 A-Square
+are the two large ones; A-Square is marked obsolete by SAAMI). ⚠️ The
+reference CSV is the operator's data file, not in the repo; the appended
+rows are the only copy of these figures besides this note.
+
+**Previous deploy: 2026-09-06 (late evening), commit `fa304c33`.** No migrations.
 **BACKEND ONLY** (`deploy.sh --backend-only`); dump
 `alloutdoor-20260906-182021.dump`; health doubled. Then **`bench-import` and
 `bench-cip-parse` were run on the box**, in that order. Shipped `a1aa5c54`:
