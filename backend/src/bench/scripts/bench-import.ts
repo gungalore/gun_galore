@@ -131,6 +131,70 @@ function stripPowderMaker(printed: string): { canonical: string; maker: string |
   };
 }
 
+/**
+ * Fold the powders the key backfill could not merge into their base row.
+ *
+ * 20260906_bench_audit gave every powder a canonical key, and where two rows
+ * canonicalised to the same key ("Alliant RL-15" and "RL15" → RL15) it kept
+ * both, suffixing the second as RL15-2 rather than merging in the dark. The
+ * merge is this script's job, because it has the source data in hand — and it
+ * has to happen BEFORE the upsert on the key: the upsert would set the base
+ * row's name to the display form, which is the very name the suffixed row
+ * still holds, and `name` is unique. That is exactly how the first run after
+ * the migration failed on the live box (P2002 on `name` at step 3).
+ *
+ * Everything that points at the duplicate is moved to the base row first —
+ * source rows, aliases, consolidated loads, members' benches — and only then
+ * is the duplicate deleted. A consolidated load that already exists under the
+ * base row (same cartridge, maker, weight, category) is deleted rather than
+ * moved: its source rows are re-folded by step 6 in this same run, so nothing
+ * is lost, and moving it would trip the group's unique index.
+ */
+async function mergeSuffixedPowders(): Promise<number> {
+  const dups = await prisma.benchPowder.findMany({ where: { key: { contains: '-' } } });
+  let merged = 0;
+  for (const dup of dups) {
+    const m = /^(.+)-\d+$/.exec(dup.key);
+    if (!m) continue;
+    const base = await prisma.benchPowder.findUnique({ where: { key: m[1] } });
+    if (!base) {
+      // No row holds the base key: this one simply IS the powder. Take the
+      // key so the upsert below finds it instead of minting a new row.
+      await prisma.benchPowder.update({ where: { id: dup.id }, data: { key: m[1] } });
+      continue;
+    }
+    await prisma.benchSourceLoad.updateMany({ where: { powderId: dup.id }, data: { powderId: base.id } });
+    await prisma.benchPowderAlias.updateMany({ where: { powderId: dup.id }, data: { powderId: base.id } });
+    const loads = await prisma.benchLoad.findMany({ where: { powderId: dup.id } });
+    for (const l of loads) {
+      const clash = await prisma.benchLoad.findUnique({
+        where: {
+          cartridgeKey_bulletMaker_weightGr_bulletCategory_powderId: {
+            cartridgeKey: l.cartridgeKey, bulletMaker: l.bulletMaker, weightGr: l.weightGr,
+            bulletCategory: l.bulletCategory, powderId: base.id,
+          },
+        },
+      });
+      if (clash) {
+        await prisma.benchSourceLoad.updateMany({ where: { loadId: l.id }, data: { loadId: clash.id } });
+        await prisma.benchLoad.delete({ where: { id: l.id } });
+      } else {
+        await prisma.benchLoad.update({ where: { id: l.id }, data: { powderId: base.id } });
+      }
+    }
+    // A member who had the duplicate on the shelf keeps the powder; one who
+    // had both keeps it once.
+    await prisma.$executeRaw`
+      UPDATE "UserBench"
+      SET "powderIds" = ARRAY(SELECT DISTINCT x FROM unnest(array_replace("powderIds", ${dup.id}, ${base.id})) AS x)
+      WHERE ${dup.id} = ANY("powderIds")`;
+    await prisma.benchPowder.delete({ where: { id: dup.id } });
+    console.log(`     merged ${dup.name} (${dup.key}) into ${base.name} (${base.key})`);
+    merged++;
+  }
+  return merged;
+}
+
 /** Makers whose printed forms differ between manuals. */
 const MAKER_ALIASES: Record<string, string> = {
   HDY: 'Hornady', SRA: 'Sierra', SIE: 'Sierra', NOS: 'Nosler', SPR: 'Speer',
@@ -394,6 +458,7 @@ async function main(): Promise<void> {
   report.counts.sourceRowsRead = loadRows.length;
 
   console.log('3/6  powders');
+  report.counts.powdersMerged = await mergeSuffixedPowders();
   const powderIdByKey = new Map<string, string>();
   const printedCounts = new Map<string, Map<string, number>>();
   const makerFor = new Map<string, string>();
@@ -612,6 +677,7 @@ async function main(): Promise<void> {
 
   console.log(`  cartridges           ${report.counts.cartridges}`);
   console.log(`  powders              ${report.counts.powders}`);
+  console.log(`  powders merged       ${report.counts.powdersMerged ?? 0}`);
   console.log(`  source rows read     ${report.counts.sourceRowsRead}`);
   console.log(`  source rows written  ${report.counts.sourceRowsWritten}`);
   console.log(`  consolidated loads   ${report.counts.consolidatedLoads}`);
