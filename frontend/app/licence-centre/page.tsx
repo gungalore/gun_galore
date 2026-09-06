@@ -74,6 +74,7 @@ import {
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 
 import { KIND_GROUPS } from '@/components/document-centre/kinds';
+import { FullName } from '@/components/full-name';
 
 // This page is still named /licence-centre in the URL and in every API call
 // below — the rename to "Document Centre" was copy-only — so the trail names
@@ -1353,9 +1354,9 @@ function DocRow({
           </svg>
         </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13.5px] font-medium">
+        <FullName className="text-[13.5px] font-medium">
           {row.title || KIND_LABELS[row.kind] || row.kind}
-        </span>
+        </FullName>
         <span className="mt-0.5 block truncate text-[11.5px] text-[var(--text-tertiary-on-card)]">
           {KIND_LABELS[row.kind] ?? row.kind}
           {' \u00b7 added '}

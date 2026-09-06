@@ -83,6 +83,7 @@ import { useScrollToTop } from '@/components/shell/shell-scroll';
 // costs nothing and keeps the rename call's empty-204 handling consistent
 // with every other request on this page.
 import { safeJson } from '@/lib/safe-json';
+import { FullName } from '@/components/full-name';
 
 // ────────────────────────────────────────────────────────────────────
 // The motivation wizard.
@@ -2761,9 +2762,9 @@ export default function MotivationWizardPage() {
                   >
                     <summary className="flex cursor-pointer items-center justify-between gap-3 p-3">
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium">
+                        <FullName className="text-sm font-medium">
                           {grp.title}
-                        </span>
+                        </FullName>
                         <span className="block truncate text-xs text-[var(--text-tertiary-on-card)]">
                           {grp.subtitle}
                         </span>
@@ -3461,12 +3462,11 @@ function FieldAttachments({
               className="flex items-center justify-between gap-2 text-xs"
             >
               <span className="min-w-0 flex-1 text-[var(--text-secondary)]">
-                <span className="block truncate">
-                  {/* The annexure letter is what a DFO will look for, so show
-                      it the moment it exists rather than only in the pack. */}
-                  {u.annexure ? `Annexure ${u.annexure} · ` : ''}
-                  {u.label}
-                </span>
+                {/* The annexure letter is what a DFO will look for, so show
+                    it the moment it exists rather than only in the pack. */}
+                <FullName>
+                  {`${u.annexure ? `Annexure ${u.annexure} · ` : ''}${u.label}`}
+                </FullName>
                 {/* The same expiry and cautions the documents list carries —
                     one component, so the two places a document appears cannot
                     say different things about it. */}
