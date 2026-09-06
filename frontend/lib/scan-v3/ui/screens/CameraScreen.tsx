@@ -205,6 +205,8 @@ export function CameraScreen({ detector, pagesCount, onCaptured, onError, onPick
 
   useEffect(() => {
     let cancelled = false;
+    // The element this effect started with: the cleanup must not read the ref afresh.
+    const videoEl = videoRef.current;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const smoother = new QuadSmoother();
     const latch = new StabilityLatch();
@@ -443,10 +445,9 @@ export function CameraScreen({ detector, pagesCount, onCaptured, onError, onPick
       if (timer !== undefined) clearTimeout(timer);
       stopCamera(camRef.current);
       camRef.current = null;
-      const v = videoRef.current;
-      if (v) {
-        v.pause();
-        v.srcObject = null;
+      if (videoEl) {
+        videoEl.pause();
+        videoEl.srcObject = null;
       }
       void lastGates;
     };

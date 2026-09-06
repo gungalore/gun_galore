@@ -4,7 +4,6 @@ import type { CameraError, CameraOpener } from '../camera/camera';
 import { cameraSupport } from '../camera/support';
 import { NullDetector, type Detector } from '../pipeline/detector';
 import { decodeBlob, decodeFile, releaseScratch } from '../pipeline/decode';
-import type { Quad } from '../pipeline/geometry';
 import type { LiveOutline } from '../pipeline/locate';
 import { imageDataToJpeg, nameFiles } from '../pipeline/output';
 import { processStill, recropPage, renderVariant, rotatePage, sealPage, type ScanPage } from '../pipeline/process';
@@ -120,7 +119,7 @@ export function DocumentScanner(props: DocumentScannerProps & DocumentScannerExt
       setStep({ kind: 'pages' });
       void unsupported;
     },
-    [addPage, detector, shape],
+    [addPage, detector, onPageProcessed, shape],
   );
 
   const { input: pickInput, open: openPicker } = usePickFiles((files) => void handleFiles(files));

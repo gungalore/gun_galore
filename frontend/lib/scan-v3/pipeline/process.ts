@@ -6,7 +6,6 @@ import { resizeImageData } from './decode';
 import { imageDataToJpeg } from './output';
 import { applyMode, chooseMode, normalizeIllumination } from './enhance';
 import type { Quad } from './geometry';
-import { scaleQuad } from './geometry';
 import { gradePage } from './quality';
 import { refineQuad, shrinkQuad } from './refine';
 import { chooseRotation, rotateImageData, type Rotation } from './orientation';
