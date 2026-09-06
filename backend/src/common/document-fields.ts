@@ -118,6 +118,10 @@ export const FIELD_ALIASES: Record<string, readonly FieldAlias[]> = {
       vault: 'residential_postal_code',
       motivation: 'residential_postal_code',
     },
+    // The person the bill is made out to. Read so the vault can check the
+    // proof is the member's own (address-proof.ts); the identity document
+    // is the source of the applicant's name on the form, not a utility bill.
+    { vault: 'full_name', motivation: null },
   ],
 
   EMPLOYMENT_CONFIRMATION: [

@@ -837,6 +837,7 @@ function AddPanel({
           // unconfirmed document into the same amber.
           readUncertain: r.readUncertain,
           readNotes: r.readNotes,
+          attention: r.attention,
           // ⚠️ CARRIED THROUGH, NOT DEFAULTED. A safe photograph arrives with
           // "Never expires" already ticked by the server, and a confirm step
           // that started it unticked would show a disabled-looking form
@@ -968,7 +969,8 @@ function AddPanel({
           autoFiled: r.autoFiled === true,
           confident: r.confident === true,
           readUncertain: r.proposed?.lowConfidence ?? [],
-          readNotes: [],
+          readNotes: r.readNotes ?? [],
+          attention: r.attention ?? [],
           neverExpires: r.neverExpires === true,
           issuedOnUnknown: r.issuedOnUnknown === true,
           proposed: r.proposed,

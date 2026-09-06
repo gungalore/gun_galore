@@ -150,6 +150,10 @@ export interface CredentialRow {
    */
   readUncertain: string[];
   readNotes: string[];
+  /** Why the row asks to be looked at ('duplicate', 'name-mismatch', 'stale', ...); the words are in readNotes. */
+  attention: string[];
+  /** The earlier row this one looks like a copy of. */
+  duplicateOf: { id: string; title: string | null } | null;
   /**
    * Who put the expiry date there: null, 'read' or 'derived'.
    *
@@ -172,6 +176,9 @@ export interface AddedCredential {
   autoFiled?: boolean;
   /** Only meaningful when autoFiled: whether we were sure. */
   confident?: boolean;
+  attention?: string[];
+  duplicateOf?: { id: string; title: string } | null;
+  readNotes?: string[];
   /**
    * The two ticks as the row was created with them.
    *

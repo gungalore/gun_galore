@@ -34,10 +34,13 @@ import {
   deriveCertificateExpiry,
   type Endorsement,
   endorsementDisplay,
+  readStatementOfResults,
   type LinkedLicence,
   parseEndorsements,
 } from '../common/sa-competency';
 import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
+import { duplicateNote, findDuplicate } from './credential-duplicates';
+import { assessAddressProof } from './address-proof';
 import { MotivationsService } from '../motivations/motivations.service';
 import {
   competencyRenewalSeed,
@@ -376,6 +379,8 @@ export class LicenceCentreService {
         namedConfident: true,
         readUncertain: true,
         readNotes: true,
+        attention: true,
+        duplicateOfId: true,
         firearmCategory: true,
         firearmSelfLoading: true,
         dateSource: true,
@@ -543,6 +548,7 @@ export class LicenceCentreService {
         expiresOn: r.expiresOn,
       }));
 
+    const titles = new Map(rows.map((r) => [r.id, renamed.get(r.id) ?? r.title]));
     return rows.map((r) => ({
       id: r.id,
       kind: r.kind,
@@ -596,6 +602,12 @@ export class LicenceCentreService {
       // doubted" — correct, since nothing was recorded either way.
       readUncertain: r.readUncertain,
       readNotes: r.readNotes,
+      attention: r.attention,
+      // The title is resolved now, not stored: the original may have been
+      // renamed since, or deleted, in which case the flag still says "a copy".
+      duplicateOf: r.duplicateOfId
+        ? { id: r.duplicateOfId, title: titles.get(r.duplicateOfId) ?? null }
+        : null,
       /**
        * WHO PUT THE DATE THERE.
        *
@@ -923,6 +935,94 @@ export class LicenceCentreService {
      * the member is shown two different deadlines for one certificate
      * depending on how they got there.
      */
+    // ── WHOSE IS IT, IS IT FRESH, IS IT A COPY? ────────────────────────
+    //
+    // Three questions the vault used to leave to the DFO. Every answer still
+    // files the document; what a failed check changes is that the row asks to
+    // be looked at, with the reason in words (readNotes) and a code the UI
+    // keys on (attention). See credential-duplicates.ts and address-proof.ts.
+    const attention: string[] = [];
+    const attentionNotes: string[] = [];
+    const attentionUncertain: string[] = [];
+    let duplicateOf: { id: string; title: string } | null = null;
+    if (reading) {
+      try {
+        if (resolved === 'ADDRESS_CONFIRMATION') {
+          const [profile, identity] = await Promise.all([
+            this.prisma.user.findUnique({
+              where: { id: user.id },
+              select: {
+                firstName: true,
+                lastName: true,
+                addrBuilding: true,
+                addrStreet: true,
+                addrAddress2: true,
+                addrSuburb: true,
+                addrCity: true,
+                addrPostalCode: true,
+              },
+            }),
+            this.prisma.credential.findFirst({
+              where: { userId: user.id, kind: 'IDENTITY_DOCUMENT', purgedAt: null, extractionOk: true },
+              orderBy: { createdAt: 'desc' },
+              select: { detailsEncrypted: true },
+            }),
+          ]);
+          const verdict = assessAddressProof({
+            details: reading.details,
+            issuedOn: reading.issuedOn,
+            profile,
+            identityName: identity ? (this.readDetails(identity.detailsEncrypted).full_name ?? null) : null,
+            today: new Date(),
+          });
+          attention.push(...verdict.attention);
+          attentionNotes.push(...verdict.notes);
+          attentionUncertain.push(...verdict.uncertain);
+        }
+        const others = await this.prisma.credential.findMany({
+          where: { userId: user.id, kind: resolved, purgedAt: null, id: { not: created.id } },
+          select: { id: true, title: true, createdAt: true, issuedOn: true, detailsEncrypted: true },
+        });
+        const match = findDuplicate(
+          { kind: resolved, details: reading.details, issuedOn: reading.issuedOn },
+          others.map((o) => ({
+            id: o.id,
+            title: o.title,
+            createdAt: o.createdAt,
+            kind: resolved,
+            details: this.readDetails(o.detailsEncrypted),
+            issuedOn: o.issuedOn ? toIsoDate(o.issuedOn) : null,
+          })),
+        );
+        if (match) {
+          duplicateOf = { id: match.id, title: match.title };
+          attention.push('duplicate');
+          attentionNotes.push(duplicateNote(match));
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Could not run the attention checks for credential ${created.id}: ${(err as Error).message}`,
+        );
+      }
+      if (attention.length) {
+        await this.prisma.credential
+          .update({
+            where: { id: created.id },
+            data: {
+              attention,
+              duplicateOfId: duplicateOf?.id ?? null,
+              readNotes: { push: attentionNotes },
+              ...(attentionUncertain.length ? { readUncertain: { push: attentionUncertain } } : {}),
+            },
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `Could not flag credential ${created.id}: ${(err as Error).message}`,
+            ),
+          );
+      }
+    }
+
     const licences: LinkedLicence[] = (
       await this.prisma.credential.findMany({
         where: {
@@ -1055,11 +1155,14 @@ export class LicenceCentreService {
       // copied verbatim and never re-checked against the bytes, so the row
       // still falls back to the glyph if the image will not draw.
       mimeType: file.mimetype,
+      attention,
+      duplicateOf,
+      readNotes: [...(reading?.notes ?? []), ...attentionNotes],
       proposed: {
         expiresOn: reading?.expiresOn ?? null,
         issuedOn: reading?.issuedOn ?? null,
         details: reading?.details ?? {},
-        lowConfidence: reading?.lowConfidence ?? [],
+        lowConfidence: [...(reading?.lowConfidence ?? []), ...attentionUncertain],
         /**
          * An expiry we worked out rather than read.
          *
@@ -1970,6 +2073,21 @@ export function derivedCredentialTitle(
     // endorsements, which is what the operator's 2025 card actually carries.
     const name = shown[0] + shown.slice(1).map((d) => ` + ${d.replace(/^Competency - /, '')}`).join('');
     return name.slice(0, MAX_TITLE);
+  }
+  /**
+   * A statement of results is named by the unit standards it awards, the
+   * same way a competency is named by its endorsements: "Proficiency -
+   * Handgun + Manual Rifle". Four of the operator's read as "Proficiency
+   * certificate" four times over, and a motivation could not tell which one
+   * covered the firearm it was for. Null when no unit standard was read.
+   */
+  if (kind === 'PROFICIENCY') {
+    const sor = readStatementOfResults(clean(details.unit_standard));
+    const shown = sor.endorsements
+      .map((e) => endorsementDisplay(e)?.replace(/^Competency - /, ''))
+      .filter((d): d is string => !!d);
+    if (!shown.length) return null;
+    return `Proficiency - ${shown.join(' + ')}`.slice(0, MAX_TITLE);
   }
 
   if (kind !== 'FIREARM_LICENCE') return null;

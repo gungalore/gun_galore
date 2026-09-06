@@ -250,6 +250,25 @@ export default function CredentialCard({
         </div>
       )}
 
+      {/* Why the server says look at this one: a copy of another row, or a
+          proof of address that is not the member's or not recent. The words
+          come from the server (readNotes) so the card and the review screen
+          say the same thing. */}
+      {(row.attention?.length ?? 0) > 0 && (
+        <div className="mt-4 rounded-[10px] border border-[var(--warning)] bg-[var(--bg-inset)] p-3.5">
+          <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--warning)]">
+            {row.attention.includes('duplicate') ? 'Looks like a copy' : 'Worth a look'}
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {row.readNotes.map((n) => (
+              <p key={n} className="text-[12.5px] leading-relaxed text-[var(--text-secondary)]">
+                {n}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
       {nextStep && (
         // What is actually standing between this row and settled, named.
         // "Needs checking" tells somebody nothing about what to do next.

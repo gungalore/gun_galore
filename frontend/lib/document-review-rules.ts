@@ -45,6 +45,8 @@ export interface ReviewItem {
   readUncertain?: string[];
   /** What the reader repaired, already in a sentence. */
   readNotes?: string[];
+  /** Server-side checks that failed: a copy of another row, a proof of address that is not the member's or not recent. */
+  attention?: string[];
 }
 
 /**
@@ -140,6 +142,9 @@ export function settleableInBulk(d: ReviewItem): boolean {
  * reminded about again, and nothing on any screen says so.
  */
 export function needsALook(d: ReviewItem): boolean {
+  // A flagged row asks regardless of how it was filed: a member who declared
+  // "firearm licence" and scanned the same card twice still has two.
+  if ((d.attention?.length ?? 0) > 0) return true;
   if (!d.autoFiled) return false;
   return !d.confident || d.kind === 'SAFE_PHOTOGRAPHS';
 }

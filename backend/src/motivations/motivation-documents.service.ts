@@ -413,12 +413,26 @@ export class MotivationDocumentsService {
       })
       .filter((c): c is NonNullable<typeof c> => c !== null);
 
+    // The unit standards of every proficiency ALREADY on this application, so
+    // the pair rule can add the other half: a handgun statement attached by
+    // hand still wants the 117705 one beside it (operator, 2026-09-07).
+    const attachedIds = new Set(
+      uploads
+        .filter((u) => u.kind === MotivationUploadKind.PROFICIENCY_CERTIFICATE)
+        .map((u) => u.sourceCredentialId)
+        .filter((x): x is string => x !== null),
+    );
+    const attachedProficiencyCovers = credentials
+      .filter((c) => attachedIds.has(c.id))
+      .map((c) => this.readCovers(c.detailsEncrypted, c.extractionOk))
+      .filter(Boolean);
+
     const decision = decideAutolink(
       candidates,
       wanted,
       uploads.map((u) => u.kind),
       new Date(),
-      { needed, placeConfirmed },
+      { needed, placeConfirmed, attachedProficiencyCovers },
     );
 
     // ⚠️ THE APPLICATION IS OPENED ONCE FOR THE WHOLE RUN. M17. This used to
