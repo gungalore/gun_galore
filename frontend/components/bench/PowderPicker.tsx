@@ -27,28 +27,10 @@
  * point of the second column.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { BenchPowder } from '@/lib/bench/api';
 import type { PowderPickerProps } from './contract';
 import { IconX, OverlayShell, usePhone } from './primitives';
-
-/**
- * SPEC §5.4: the overlay frame flips at 768. Same query and the same two
- * signals as LoadCard — the installed app is always the sheet whatever the
- * window reports, and iOS Safari still answers only to its own legacy
- * property.
- */
-
-
-
 
 /**
  * The canonical list is the whole powder table, not the member's bench, so it
@@ -208,8 +190,9 @@ export function PowderPicker({
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search the canonical powder list"
+            placeholder="Search powders"
             autoComplete="off"
+            data-autofocus
             spellCheck={false}
             // 44px is the §9 tap target; 16px is not a taste call either, iOS
             // zooms the whole page in on focus for anything smaller.
@@ -380,19 +363,16 @@ export function PowderPicker({
 
       {/* Main.dc.html only. The phone sheet is short and this is a nicety, so
           the prototype drops it there rather than eat a row of the list. */}
-      {phone ? null : (
-        <div
-          style={{
-            flex: 'none',
-            padding: '10px 20px 16px',
-            fontSize: 11.5,
-            color: 'var(--text-tertiary)',
-          }}
-        >
-          Powder names are matched to the canonical table, so H 4350, H-4350 and H4350 are one
-          powder.
-        </div>
-      )}
+      <div
+        style={{
+          flex: 'none',
+          padding: phone ? '8px 16px 12px' : '10px 20px 16px',
+          fontSize: 11.5,
+          color: 'var(--text-tertiary)',
+        }}
+      >
+        H 4350, H-4350 and H4350 are the same powder.
+      </div>
 
       {/* Filtering never moves focus, so the result count is announced. */}
       <span role="status" aria-live="polite" className="sr-only">

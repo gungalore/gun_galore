@@ -90,19 +90,29 @@ function ChargeTile({
   fps,
   units,
   size,
+  ceiling,
 }: {
   label: string;
   gr: number;
   fps: number | null;
   units: Units;
   size: BenchSize;
+  /**
+   * The max charge.
+   *
+   * ⚠️ THE TWO TILES USED TO DIFFER ONLY BY WEIGHT, AND THE HEAVIER ONE READ AS
+   * THE RECOMMENDED ONE. It is the opposite: it is the ceiling a work-up stops
+   * at. The gold line and the sub-line say so in words as well as in colour —
+   * gold, never red, because red on this screen means "the thing to press".
+   */
+  ceiling?: boolean;
 }) {
   const phone = size === 'mobile';
   return (
     <div
       style={{
         padding: 12,
-        border: '0.5px solid var(--border)',
+        border: `0.5px solid ${ceiling ? 'var(--gold-line)' : 'var(--border)'}`,
         borderRadius: 'var(--r-sm)',
         background: 'var(--bg-inset)',
       }}
@@ -130,6 +140,11 @@ function ChargeTile({
       >
         {velocityText(fps, units)}
       </div>
+      {ceiling && (
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+          ceiling, not a target
+        </div>
+      )}
     </div>
   );
 }
@@ -172,7 +187,11 @@ export function LoadCard({
     } else if (row.flags.includes('COAL_NEAR_MAX')) {
       out.push({ t: 'COAL NEAR MAX', warn: true });
     }
-    if (row.coalHiMm !== null || row.flags.includes('COAL_RANGE')) {
+    /* ⚠️ THE SERVER'S FLAG, NOT `coalHiMm !== null`. The band is set by one
+       rule at one end; re-deriving it from the presence of a high figure gave
+       the card a different answer from the results row behind it and the log
+       in front of it, for the same load. */
+    if (row.flags.includes('COAL_RANGE')) {
       out.push({ t: 'COAL RANGE', warn: false });
     }
     return out;
@@ -218,7 +237,14 @@ export function LoadCard({
         units={units}
         size={size}
       />
-      <ChargeTile label="Max charge" gr={row.maxGr} fps={row.maxFps} units={units} size={size} />
+      <ChargeTile
+        label="Max charge"
+        gr={row.maxGr}
+        fps={row.maxFps}
+        units={units}
+        size={size}
+        ceiling
+      />
     </div>
   );
 
@@ -254,6 +280,19 @@ export function LoadCard({
     </>
   );
 
+  /**
+   * ⚠️ ABOVE THE BUTTONS, AT BODY SIZE. It used to sit in an 11.5px footer bar
+   * in `--text-tertiary` — the smallest, faintest type on a card whose two
+   * biggest figures are a charge window, which is the one sentence on the
+   * screen that has to be read before either of them is acted on. Still once
+   * per card, still SAFETY_LINE verbatim.
+   */
+  const safety = (
+    <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+      {SAFETY_LINE}
+    </p>
+  );
+
   /* ── Phone: bottom sheet ──────────────────────────────────────────── */
 
   if (phone) {
@@ -281,7 +320,9 @@ export function LoadCard({
             // hidden` clips the safety line away instead of letting it scroll.
             flex: '1 1 auto',
             minHeight: 0,
-            padding: '0 16px 28px',
+            // The home indicator sits over the last ~34px of the screen on a
+            // notched iPhone, and this column ends in the two buttons.
+            padding: '0 16px calc(28px + env(safe-area-inset-bottom))',
             display: 'flex',
             flexDirection: 'column',
             gap: 14,
@@ -290,10 +331,8 @@ export function LoadCard({
           {tiles}
           {gauge}
           {chart}
+          {safety}
           <div style={{ display: 'flex', gap: 8 }}>{actions}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
-            {SAFETY_LINE}
-          </div>
         </div>
       </OverlayShell>
     );
@@ -361,27 +400,16 @@ export function LoadCard({
         >
           {tiles}
           {gauge}
-          {/* marginTop:auto pins the actions to the foot of the column so the
-              two halves of the grid finish level whatever height the gauge and
-              the chart settle at. */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>{actions}</div>
+          {/* marginTop:auto pins the safety line and the actions to the foot of
+              the column so the two halves of the grid finish level whatever
+              height the gauge and the chart settle at. */}
+          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {safety}
+            <div style={{ display: 'flex', gap: 8 }}>{actions}</div>
+          </div>
         </div>
 
         <div style={{ padding: '16px 20px', minWidth: 0 }}>{chart}</div>
-      </div>
-
-      <div
-        style={{
-          flex: 'none',
-          padding: '10px 20px',
-          borderTop: '0.5px solid var(--border-divider)',
-          fontSize: 11.5,
-          color: 'var(--text-tertiary)',
-          lineHeight: 1.4,
-          background: 'var(--bg-card-hover)',
-        }}
-      >
-        {SAFETY_LINE}
       </div>
     </OverlayShell>
   );

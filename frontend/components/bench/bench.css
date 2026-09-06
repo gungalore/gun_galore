@@ -669,3 +669,190 @@
     transition-duration: 1ms !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   audit 2026-09-06: results/log
+   ───────────────────────────────────────────────────────────────────── */
+
+/* The charge-vs-velocity line's draw-in.
+   ⚠️ NOT `.draw`. That class wipes by animating `stroke-dashoffset` over a
+   `stroke-dasharray: 700`, and the line is now DASHED on purpose — the two
+   would be fighting over one property, and the dash pattern would lose.
+   The wipe is a clip rectangle scaling out from the start marker instead, so
+   the pattern is untouched. Same 700 ms, same 200 ms lead-in, same easing as
+   the line it replaced. */
+.bench-chart-wipe {
+  animation: bench-chart-wipe 700ms var(--ease-out) 200ms both;
+}
+
+@keyframes bench-chart-wipe {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bench-chart-wipe {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   audit 2026-09-06: spec card
+
+   Four rules, all of them fixing the same class of failure: a value
+   that would not wrap, on a sheet that would therefore scroll
+   sideways. Appended rather than edited in above so the diff against
+   the ported prototype stays readable.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* ⚠️ A FLEX ITEM'S min-width IS `auto`, NOT 0, AND THAT IS THE BUG.
+   `.kv` is a flex row; its middle cell therefore refuses to shrink
+   below the width of its own longest word, so a long value pushed the
+   row — and the 720px sheet — wider than the panel. Two of the "For
+   the reloader" rows are fifty characters ("[chamber L2] vs 41.52 mm
+   (1.635″)") and the measured overflow was 760 against 702. */
+.bench .kv,
+.bench .kv > * {
+  min-width: 0;
+}
+
+/* Let the value drop onto its own line rather than squeezing the label
+   to one word per line. `margin-left: auto` keeps it right-aligned on
+   the wide row and hard right on the wrapped one, so the column reads
+   the same either way. */
+.bench .kv-wrap {
+  flex-wrap: wrap;
+}
+
+.bench .kv-wrap .kv-v {
+  margin-left: auto;
+  overflow-wrap: anywhere;
+}
+
+/* ⚠️ THE SHEET MUST NOT SCROLL SIDEWAYS AT ALL.
+   With a horizontal overflow present, clicking the **inch** tab slid
+   the whole card left to bring the focused control into view: the
+   title read "5 Creedmoor" and the calliper's label read "LLIPER".
+   The wrapping above removes the overflow; this makes the scroll
+   impossible rather than merely unnecessary, which is the difference
+   between a fix and a fix that lasts until the next long value. */
+.bench-sheet {
+  overflow-x: hidden;
+}
+
+/* globals.css has no visually-hidden helper, and the spec card needs
+   one for exactly one string: the dialog title while the name is still
+   a skeleton. */
+.bench .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ────────────────────────────────────────────────────────────────────
+   audit 2026-09-06: page shell
+
+   The finder's own frame: what scrolls, what stays, and the two
+   things the tool bar carries. Appended rather than edited in above
+   so the diff against the ported prototype stays readable.
+   ──────────────────────────────────────────────────────────────────── */
+
+/* 🚨 THE PAGE MUST NOT SCROLL — THE RESULTS PANEL MUST (spec §5.4,
+   BEHAVIOUR §6). Everything scrolled together, so on a three-hundred
+   row answer the tool bar and the bench rail went off the top of the
+   screen: to switch a chip off, or to change the cartridge tab, the
+   member had to scroll all the way back up and then find their place
+   again. ResultsList has always been built to scroll inside itself —
+   its panel already carries `.scroll` and `flex-1 min-h-0` — and had
+   simply never been given a height to do it in. */
+.bench-shell {
+  display: flex;
+  flex-direction: column;
+  /* ⚠️ A FLEX ITEM'S min-height IS `auto`, SO A COLUMN REFUSES TO
+     SHRINK BELOW ITS CONTENT AND THE OVERFLOW MOVES TO THE PAGE.
+     Every level between the height and the scrolling panel needs
+     this or the bound stops at the first one that does not. */
+  min-height: 0;
+}
+
+.bench-row {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  min-height: 0;
+  flex: 1;
+}
+
+/* The desktop bound, spelled exactly as spec §5.4 gives it: the
+   viewport, less the site header, less the tool bar, less the gap
+   under it. --nav-h is globals.css's own desktop header token (62px),
+   so a change there moves this with it. */
+@media (min-width: 1024px) {
+  .bench-row {
+    height: calc(100vh - var(--nav-h) - 64px - 14px);
+  }
+}
+
+/* ⚠️ THE RAIL SCROLLS TOO, AND SEPARATELY. A bench of forty powders is
+   taller than the row, and with the row's height fixed the rail's
+   overflow would simply be cut off — the Add chips at the bottom of
+   the three groups are the controls most likely to be lost that way. */
+.bench-rail-col {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.bench-results-col {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* In the installed app the shell draws its own push header saying
+   "The Bench", the root is a 100dvh flex column, and the row simply
+   takes what is left. */
+html[data-standalone='true'] .bench-row {
+  height: auto;
+}
+
+/* ⚠️ GATED IN CSS, NOT ON useStandalone(). The hook's server snapshot
+   is always false, so the h1 renders on the first frame of an
+   installed app and disappears on hydration — a visible jump directly
+   under a push header carrying the same three words. The attribute is
+   stamped before paint by the inline script in app/layout.tsx, so
+   this applies on the very first frame. */
+html[data-standalone='true'] .bench-h1 {
+  display: none;
+}
+
+/* The Load log button's count (spec §7).
+
+   ⚠️ NOT A box-shadow RING AND NOT AN `::after` — `.bump` already owns
+   this button's ::after for its save pulse, and the global
+   `* { box-shadow: none !important }` would eat a ring anyway. A real
+   element, so the number is real text that scales with the type. */
+.bench .bench-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}

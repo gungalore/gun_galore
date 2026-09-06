@@ -126,10 +126,14 @@ export default function CoalGauge({
   // The clearance stays in millimetres in both unit modes. A 0.13 mm margin
   // rendered as 0.005″ reads as noise, and this line is the one a reloader
   // acts on.
+  // ⚠️ `check.over`, NEVER `check.diff < 0`. A round a hair past the maximum
+  // rounds to -0, and -0 < 0 is false — so the sign test printed "0.00 mm
+  // under the maximum · check" for a round that is over it. coalCheck takes
+  // that decision on the unrounded difference and says so here.
   const verdict =
     check === null
       ? ''
-      : check.diff < 0
+      : check.over
         ? `${Math.abs(check.diff).toFixed(2)} mm over the maximum`
         : `${check.diff.toFixed(2)} mm under the maximum${check.bad ? ' · check' : ''}`;
 
@@ -222,6 +226,17 @@ export default function CoalGauge({
           </span>
         )}
       </div>
+
+      {/* ⚠️ SAID ONCE, WHERE THE COMPARISON IS MADE. The gauge measures against
+          the cartridge's own maximum and nothing else — it knows nothing about
+          the throat this round will be chambered in or the magazine it has to
+          fit. The spec card carries the same caution as "The cartridge
+          standard, not your rifle."; the load card had no counterpart, so a
+          green pin read as "this length is fine in your rifle". */}
+      <p style={{ margin: '6px 0 0', fontSize: 11.5, color: 'var(--text-tertiary)' }}>
+        Measured against the cartridge maximum. Your chamber and magazine decide the usable
+        length.
+      </p>
     </div>
   );
 }

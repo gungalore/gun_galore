@@ -647,6 +647,12 @@ model User {
   motivations Motivation[] @relation("UserMotivations")
   credentials Credential[] @relation("UserCredentials")
 
+  // The Bench: the shelf and the load log go with the account (ON DELETE
+  // CASCADE, 20260906_bench_audit). Declared here so `migrate diff` sees the
+  // constraints the migration added instead of proposing to drop them.
+  bench    UserBench?
+  benchLog BenchLogEntry[]
+
   // Campaign attribution rollup: groupBy(campaignKey) on the admin page.
   @@index([campaignKey])
 }
@@ -5285,6 +5291,17 @@ model BenchCartridgeAlias {
 
 model BenchPowder {
   id      String             @id @default(cuid())
+  /// The canonical form the import upserts on — see powderKey() in
+  /// scripts/bench-import.ts. "H 4350", "H4350" and "Hodgdon H4350" are one
+  /// powder and one key.
+  ///
+  /// ⚠️ THE ID IS ONLY STABLE BECAUSE THIS COLUMN IS. The import used to
+  /// upsert on `name`, which is the most COMMON printed form and therefore
+  /// changes with the data: one more manual spelling it "VARGET" instead of
+  /// "Varget" elects a new display name, mints a NEW row with a new cuid, and
+  /// every UserBench.powderIds pointer at the old one silently stops matching
+  /// — a member's shelf loses a powder through no action of theirs.
+  key     String             @unique
   name    String             @unique
   maker   String?
   aliases BenchPowderAlias[]
@@ -5365,6 +5382,10 @@ model BenchLoad {
 
   @@unique([cartridgeKey, bulletMaker, weightGr, bulletCategory, powderId])
   @@index([powderId])
+  /// The finder's own shape: every results query narrows by cartridge and by
+  /// bullet weight, and the unique key above leads with bulletMaker, which no
+  /// query has matched on since a bullet became a weight in a calibre.
+  @@index([cartridgeKey, weightGr])
 }
 
 /// C.I.P. Tables of Dimensions of Cartridges and Chambers, as printed.
@@ -5442,12 +5463,22 @@ model BenchCipDimension {
   revision   String?
   /// Five sheets have no text layer.
   imageOnly  Boolean @default(false)
+
+  /// The shell-holder family lookup: R1, R and E1 within ±0.05 mm of each
+  /// other. Without it the spec card scans every sheet on every open.
+  @@index([R1, R, E1])
 }
 
 /// What a reloader actually has on the shelf.
+///
+/// `userId` is a real foreign key (ON DELETE CASCADE, 20260906_bench_audit) so
+/// a POPIA erasure erases the shelf and the log with the account. The relation
+/// is declared on both sides, with Prisma's default constraint names, so the
+/// schema and the migration agree and `migrate diff` proposes nothing.
 model UserBench {
   /// User.id (Clerk-backed).
   userId        String   @id
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   powderIds     String[]
   /// [{ maker, weightGr, category, type }]
   bullets       Json
@@ -5458,7 +5489,9 @@ model UserBench {
 
 model BenchLogEntry {
   id           String   @id @default(cuid())
+  /// ON DELETE CASCADE — see the note on UserBench above.
   userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   cartridgeKey String
   bulletLabel  String
   powderName   String
@@ -5475,4 +5508,29 @@ model BenchLogEntry {
   createdAt    DateTime @default(now())
 
   @@index([userId, createdAt])
+  /// The order the list is actually read in. The member sets `shotAt`, so a
+  /// back-dated entry belongs where they dated it, not at the top.
+  @@index([userId, shotAt])
+}
+
+/// A shared finder state: the filters plus a snapshot of the bench they were
+/// read against.
+///
+/// ⚠️ THE SNAPSHOT IS THE POINT. A link that named only the filters would show
+/// the OPENER'S shelf, which is a different answer from the one the sharer was
+/// looking at — and on a members-only page it would be a different person's
+/// shelf every time.
+///
+/// ⚠️ AND IT HOLDS NO LOAD DATA, ONLY POINTERS. Powder ids, cartridge keys,
+/// bullet weights: the loads themselves are re-read from the tables at open
+/// time, so a share can never become a stale copy of the catalogue.
+model BenchShare {
+  /// 22 url-safe random characters — see BenchService.share().
+  token     String   @id
+  payload   Json
+  createdAt DateTime @default(now())
+  /// 90 days out. An expired token is a 404, never a partial answer.
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }

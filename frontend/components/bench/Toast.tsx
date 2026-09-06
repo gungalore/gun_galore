@@ -72,7 +72,27 @@ function IconTick() {
   );
 }
 
-export function Toast({ message, onDone }: ToastProps) {
+/** The failure glyph: a cross on a warning-tinted stroke, same size as the tick. */
+function IconCross() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="color-mix(in srgb, var(--warning) 70%, var(--bg-inset))"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{ flex: 'none' }}
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+export function Toast({ message, onDone, tone = 'ok' }: ToastProps) {
   const bottom = useToastBottom(message !== null);
 
   // The latest onDone without restarting the clock. The page rebuilds its
@@ -125,7 +145,7 @@ export function Toast({ message, onDone }: ToastProps) {
           pointerEvents: 'none',
         }}
       >
-        <IconTick />
+        {tone === 'error' ? <IconCross /> : <IconTick />}
         <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{message}</span>
       </div>
     </div>

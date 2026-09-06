@@ -262,6 +262,7 @@ export function CartridgePicker({
             // that fold() makes it true whether or not anyone reads it.
             placeholder="Search cartridges"
             autoComplete="off"
+            data-autofocus
             spellCheck={false}
             // 44px is the §9 tap target; 16px is not a taste call either, iOS
             // zooms the whole page in on focus for anything smaller.
@@ -425,19 +426,18 @@ export function CartridgePicker({
           line is worth its space here: the names are printed with a decimal
           comma, and a member who does not know that needs telling once that it
           makes no difference what they type. */}
-      {phone ? null : (
-        <div
-          style={{
-            flex: 'none',
-            padding: '10px 20px 16px',
-            fontSize: 11.5,
-            color: 'var(--text-tertiary)',
-          }}
-        >
-          Commas, full stops and spaces are ignored while you search, so 6,5 Creedmoor, 6.5
-          Creedmoor and 65 creedmoor all find the same cartridge.
-        </div>
-      )}
+      <div
+        style={{
+          flex: 'none',
+          padding: phone ? '8px 16px 12px' : '10px 20px 16px',
+          fontSize: 11.5,
+          color: 'var(--text-tertiary)',
+        }}
+      >
+        {phone
+          ? 'Commas, full stops and spaces are ignored: 6,5 and 6.5 find the same cartridge.'
+          : 'Commas, full stops and spaces are ignored while you search, so 6,5 Creedmoor, 6.5 Creedmoor and 65 creedmoor all find the same cartridge.'}
+      </div>
 
       {/* Filtering never moves focus, so the result count is announced. */}
       <span role="status" aria-live="polite" className="sr-only">

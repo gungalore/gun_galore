@@ -318,6 +318,7 @@ export function BulletPicker({
             onChange={(e) => setQ(e.target.value)}
             placeholder="Calibre or weight — try 308 150"
             autoComplete="off"
+            data-autofocus
             spellCheck={false}
             // 44px is the §9 tap target; 16px is not a taste call either, iOS
             // zooms the whole page in on focus for anything smaller.
@@ -583,20 +584,27 @@ export function BulletPicker({
           who came looking for their Hornady and finds no maker anywhere needs
           telling why; nothing here may go on to suggest that one weight's
           charge belongs to another, because it does not. */}
-      {phone ? null : (
-        <div
-          style={{
-            flex: 'none',
-            padding: '10px 20px 16px',
-            fontSize: 11.5,
-            color: 'var(--text-tertiary)',
-          }}
-        >
-          A bullet here is a weight in a calibre — whose name is on the box does not change the
-          row, so every maker&apos;s 150 gr .308&quot; is this one row. The calibre still counts: a
-          150 gr .308&quot; and a 150 gr .277&quot; are different bullets and will not swap.
-        </div>
-      )}
+      <div
+        style={{
+          flex: 'none',
+          padding: phone ? '8px 16px 12px' : '10px 20px 16px',
+          fontSize: 11.5,
+          color: 'var(--text-tertiary)',
+        }}
+      >
+        {phone ? (
+          // One line on the phone: the only place that says why the maker is
+          // not on the row, so it cannot be dropped for the sake of a row of
+          // list.
+          <>A bullet here is a weight in a calibre; the maker&apos;s name does not change the row.</>
+        ) : (
+          <>
+            A bullet here is a weight in a calibre — whose name is on the box does not change the
+            row, so every maker&apos;s 150 gr .308&quot; is this one row. The calibre still counts:
+            a 150 gr .308&quot; and a 150 gr .277&quot; are different bullets and will not swap.
+          </>
+        )}
+      </div>
 
       {/* Filtering never moves focus, so the result count is announced — and
           the announcement carries the FULL match count, not the drawn one, for

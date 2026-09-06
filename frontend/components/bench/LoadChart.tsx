@@ -15,7 +15,7 @@
  * the grid off the numbers.
  */
 
-import type { CSSProperties } from 'react';
+import { useId, type CSSProperties } from 'react';
 import type { LoadChartProps } from '@/components/bench/contract';
 import { MS } from '@/lib/bench/geometry';
 
@@ -56,7 +56,12 @@ const headLabel: CSSProperties = {
 };
 
 const tick: CSSProperties = { fill: 'var(--text-tertiary)' };
-const axis: CSSProperties = { fill: 'var(--text-faint)' };
+/**
+ * ⚠️ NOT `--text-faint`. It is 3.7:1 on the card and fails AA — globals.css
+ * says so itself — and these two words are what tell the reader whether the
+ * axis is m/s or fps. Same for the caption below.
+ */
+const axis: CSSProperties = { fill: 'var(--text-tertiary)' };
 
 export default function LoadChart({
   units,
@@ -67,6 +72,8 @@ export default function LoadChart({
   animate = true,
 }: LoadChartProps) {
   const imperial = units === 'imperial';
+  // Scoped per chart: two cards in one session must not share a clip path.
+  const wipeId = `bench-chart-wipe-${useId().replace(/:/g, '')}`;
 
   // Velocities arrive in fps because that is the unit they were recorded in;
   // the metric reader sees m/s, so the AXIS is converted, not just a label.
@@ -122,6 +129,16 @@ export default function LoadChart({
   const unit = imperial ? 'fps' : 'm/s';
   const drawn = start !== null && max !== null;
 
+  /**
+   * ⚠️ ONE END WITHOUT A VELOCITY USED TO DRAW A LONE DOT AND SAY NOTHING.
+   * There is no line to describe, so the caption was hidden — leaving a single
+   * marker floating in a grid, which reads as a chart that failed rather than
+   * as a load that carries one figure. The caption's place is taken by the
+   * fact instead, and it names WHICH end is missing.
+   */
+  const missingEnd = v0 === null ? 'start' : v1 === null ? 'max' : null;
+  const note = missingEnd === null ? caption : `no velocity given for the ${missingEnd} charge`;
+
   const summary = [
     v0 !== null ? `start ${startGr} gr at ${v0} ${unit}` : null,
     v1 !== null ? `max ${maxGr} gr at ${v1} ${unit}` : null,
@@ -133,9 +150,7 @@ export default function LoadChart({
     <div style={{ padding: '16px 20px' }}>
       <div style={headRow}>
         <div style={headLabel}>Charge vs velocity</div>
-        {/* Only true once both points exist; with one point there is no line
-            to describe. */}
-        {drawn && <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{caption}</div>}
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{note}</div>
       </div>
 
       <svg
@@ -186,18 +201,50 @@ export default function LoadChart({
         </text>
 
         {drawn && (
-          // .draw is the stroke-dashoffset wipe; without it the line is
-          // simply already there.
-          <line
-            className={animate ? 'draw' : undefined}
-            x1={start.x.toFixed(1)}
-            y1={start.y.toFixed(1)}
-            x2={max.x.toFixed(1)}
-            y2={max.y.toFixed(1)}
-            stroke={SERIES}
-            strokeWidth={2}
-            strokeLinecap="round"
-          />
+          /**
+           * ⚠️ DASHED, AND THE DASHES ARE THE ARGUMENT. A solid line between
+           * two points is a claim that everything between them was measured;
+           * these are the only two charges the load carries, and the ground
+           * in between is the reloader's own work-up. The caption says so, but
+           * the line is what the eye reads first.
+           *
+           * ⚠️ AND THAT IS WHY THE WIPE MOVED OFF `.draw`. That class animates
+           * `stroke-dashoffset` over a `stroke-dasharray: 700`, which is the
+           * same property the dash pattern needs — one would silently cancel
+           * the other. The draw-in is a clip rectangle scaling out from the
+           * start point instead: same 700 ms, same easing, same reduced-motion
+           * collapse (bench.css).
+           */
+          <g clipPath={animate ? `url(#${wipeId})` : undefined}>
+            <line
+              x1={start.x.toFixed(1)}
+              y1={start.y.toFixed(1)}
+              x2={max.x.toFixed(1)}
+              y2={max.y.toFixed(1)}
+              stroke={SERIES}
+              strokeWidth={2}
+              strokeDasharray="6 5"
+              strokeLinecap="round"
+            />
+          </g>
+        )}
+
+        {drawn && animate && (
+          <defs>
+            <clipPath id={wipeId}>
+              <rect
+                className="bench-chart-wipe"
+                x={(start.x - 3).toFixed(1)}
+                y={0}
+                width={(max.x - start.x + 6).toFixed(1)}
+                height={H}
+                // fill-box so the scale runs from the rectangle's own left
+                // edge — which is the start marker — rather than from the
+                // origin of the whole 340×220 frame.
+                style={{ transformBox: 'fill-box', transformOrigin: 'left' }}
+              />
+            </clipPath>
+          </defs>
         )}
 
         {points.map((p) => (

@@ -228,3 +228,135 @@ describe('fmtLength', () => {
     expect(fmtLength(25.4, 'imperial')).toBe('1.000″');
   });
 });
+
+/* ── The four head shapes ────────────────────────────────────────────────
+   Until this block the module had ONE fixture, and 6,5 Creedmoor is the
+   friendliest cartridge in the catalogue: rimless, bottlenecked, long enough
+   for the ogive and short enough for the frame. Every shape assertion in the
+   suite above is therefore an assertion about a rimless bottleneck, and three
+   of the four C.I.P. head shapes had never been through `profile()` at all.
+
+   The figures below are the standard published dimensions in millimetres, to
+   the nearest hundredth where they are commonly quoted. They are FIXTURES —
+   the drawing is a pure function of them and what is being tested is that the
+   function survives each shape, not that any figure here is authoritative. */
+
+/** .303 British — RIMMED. The rim stands well proud of the body. */
+const BRITISH_303: Dims = {
+  R: 1.63, R1: 13.72,
+  E: 3.0, E1: 11.2,
+  P1: 11.53, P2: 10.19,
+  L1: 42.14, L2: 46.99, L3: 56.44, L6: 78.11,
+  H1: 8.89, H2: 8.64, G1: 7.92,
+};
+
+/** .284 Winchester — REBATED. The rim is SMALLER than the body it sits under. */
+const WIN_284: Dims = {
+  R: 1.4, R1: 12.01,
+  E: 4.0, E1: 11.0,
+  P1: 13.51, P2: 13.13,
+  L1: 43.0, L2: 45.7, L3: 54.99, L6: 71.12,
+  H1: 8.28, H2: 8.13, G1: 7.21,
+};
+
+/** 9 mm Luger — the short, straight-tapered pistol end of the catalogue. */
+const LUGER_9: Dims = {
+  R: 1.10, R1: 9.96,
+  E: 3.30, E1: 8.80,
+  P1: 9.93, P2: 9.75,
+  L1: 13.55, L2: 17.30, L3: 19.15, L6: 29.69,
+  H1: 9.70, H2: 9.65, G1: 9.03,
+};
+
+describe('profile — every head shape, not just a rimless bottleneck', () => {
+  const monotonic = (P: ReturnType<typeof profile>) => {
+    for (let i = 1; i < P.length; i++) {
+      expect(P[i][0]).toBeGreaterThanOrEqual(P[i - 1][0]);
+    }
+  };
+
+  it('draws a rimmed case with the rim as its widest point', () => {
+    const P = profile(BRITISH_303);
+    monotonic(P);
+    expect(Math.max(...P.map((p) => p[1]))).toBeCloseTo(BRITISH_303.R1 / 2, 5);
+    // And the rim is a real step, not the near-flush head of a rimless case:
+    // this is the shape whose shell holder differs.
+    expect(BRITISH_303.R1 - BRITISH_303.P1).toBeGreaterThan(1);
+  });
+
+  it('draws a rebated case widest at the BODY, not at the rim', () => {
+    // ⚠️ THE ONE SHAPE THAT BREAKS THE "widest at the case head" ASSERTION
+    // the Creedmoor block makes. A rebated case has a rim narrower than the
+    // body above it, so a drawing that assumed the head was the widest point
+    // would clip the body out of its own frame.
+    const P = profile(WIN_284);
+    monotonic(P);
+    const widest = Math.max(...P.map((p) => p[1]));
+    expect(widest).toBeCloseTo(WIN_284.P1 / 2, 5);
+    expect(widest).toBeGreaterThan(WIN_284.R1 / 2);
+  });
+
+  it('draws a belted case — as a rimless one, which is why the card says so', () => {
+    // The belt sits about 5 mm ahead of the head at the rim's own diameter and
+    // NO letter in `Dims` locates it, so it is not drawn. `isBeltedType` in
+    // lib/bench/spec-text.ts is what adds the sentence to the drawing note;
+    // this test pins that the silhouette itself is still sound.
+    const P = profile(H_AND_H);
+    monotonic(P);
+    expect(P[P.length - 1]).toEqual([H_AND_H.L6, 0]);
+  });
+
+  it('draws a short pistol case without folding the nose back on itself', () => {
+    const P = profile(LUGER_9);
+    monotonic(P);
+    expect(Math.max(...P.map((p) => p[0]))).toBe(LUGER_9.L6);
+  });
+
+  it('emits no NaN for any of the four shapes', () => {
+    for (const D of [BRITISH_303, WIN_284, H_AND_H, LUGER_9]) {
+      const r = paths(D, 2, 4, 60);
+      expect(r.casePath).not.toMatch(/NaN/);
+      expect(r.bulletPath).not.toMatch(/NaN/);
+    }
+  });
+
+  it('fits every shape inside the thumbnail box', () => {
+    for (const D of [BRITISH_303, WIN_284, H_AND_H, LUGER_9]) {
+      const t = thumbOf(D);
+      const xs = [...t.casePath.matchAll(/[ML](-?[\d.]+)/g)].map((m) => Number(m[1]));
+      const bxs = [...t.bulletPath.matchAll(/[ML](-?[\d.]+)/g)].map((m) => Number(m[1]));
+      expect(Math.max(...xs, ...bxs)).toBeLessThanOrEqual(128);
+    }
+  });
+});
+
+describe('profile — the seated shank is clamped to the round', () => {
+  it('keeps the 6 mm shank on a cartridge with room for it', () => {
+    // 6,5 Creedmoor has 23 mm of bullet proud of the mouth, so the clamp must
+    // be invisible here: the silhouette is the prototype's, vertex for vertex.
+    const P = profile(CREEDMOOR);
+    expect(P.some((p) => p[0] === CREEDMOOR.L3 + 6 && p[1] === CREEDMOOR.G1 / 2)).toBe(true);
+  });
+
+  it('does not run the shank past the tip when the bullet barely stands proud', () => {
+    // ⚠️ THE BUG THIS GUARDS IS SILENT. Before the clamp, `L6 − L3 < 6` made
+    // the ogive's step length negative: the silhouette walked BACKWARDS from
+    // the shank to the tip and drew a nose pointing the wrong way, with no
+    // error anywhere.
+    const stub: Dims = { ...LUGER_9, L6: LUGER_9.L3 + 3 };
+    const P = profile(stub);
+    for (let i = 1; i < P.length; i++) {
+      expect(P[i][0]).toBeGreaterThanOrEqual(P[i - 1][0]);
+    }
+    expect(Math.max(...P.map((p) => p[0]))).toBe(stub.L6);
+  });
+
+  it('survives a round whose overall length is barely past the case mouth', () => {
+    const flush: Dims = { ...LUGER_9, L6: LUGER_9.L3 + 0.2 };
+    const P = profile(flush);
+    for (let i = 1; i < P.length; i++) {
+      expect(P[i][0]).toBeGreaterThanOrEqual(P[i - 1][0]);
+    }
+    expect(paths(flush, 2, 4, 60).bulletPath).not.toMatch(/NaN/);
+  });
+});
