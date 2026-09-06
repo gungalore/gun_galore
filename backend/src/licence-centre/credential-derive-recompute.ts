@@ -108,13 +108,14 @@ export async function recomputeDerivedCompetencies(
           expiresOn: { not: null },
           purgedAt: null,
         },
-        select: { firearmCategory: true, expiresOn: true },
+        select: { firearmCategory: true, firearmSelfLoading: true, expiresOn: true },
       }),
     ]);
     if (!certs.length) return 0;
 
     const licences: LinkedLicence[] = licenceRows.map((r) => ({
       category: r.firearmCategory as LinkedLicence['category'],
+      selfLoading: r.firearmSelfLoading,
       expiresOn: r.expiresOn,
     }));
 
@@ -239,7 +240,7 @@ export async function competencyRenewalAdvice(
           // competency and talk somebody out of filing a form they need.
           OR: [{ confirmedAt: { not: null } }, { dateSource: { not: null } }],
         },
-        select: { firearmCategory: true, expiresOn: true },
+        select: { firearmCategory: true, firearmSelfLoading: true, expiresOn: true },
       }),
       prisma.credential.findMany({
         where: { userId, kind: 'COMPETENCY_CERTIFICATE', purgedAt: null },
@@ -255,6 +256,7 @@ export async function competencyRenewalAdvice(
       expiresOn: licence.expiresOn,
       otherLicences: others.map((r) => ({
         category: r.firearmCategory as LinkedLicence['category'],
+        selfLoading: r.firearmSelfLoading,
         expiresOn: r.expiresOn,
       })),
       competencyCategories: competencyCategoriesFrom(

@@ -137,14 +137,17 @@ export function chooseRotation(img: ImageData, shape: DocShape): Rotation {
   // Then up versus down from the text.
   const grey = toGrey(base);
   const s = uprightScore(grey, base.width, base.height);
-  // Only turn a page over on clear evidence: members almost always hold it upright,
-  // and a wrong flip is worse than none. A sideways card has to be turned one way
-  // or the other regardless, so the sign alone decides there. A card held
-  // landscape is never turned over: its print is capitals and digits, which
-  // have no ascenders or descenders to read, and the score is noise there (the
-  // same licence card scored +21 and -4 on two crops). Rotate on the review
-  // screen is one tap away if it is wrong.
-  const flip = rot === 90 ? s < 0 : shape !== 'card' && s < -UPRIGHT_MIN_CONFIDENCE;
+  // A page or card held the way it was is never turned over. The text
+  // asymmetry was meant to catch an upside-down page on clear evidence, and on
+  // real documents it is not evidence: on the operator's certificates it scored
+  // -19 on an upright statement of results and -2 on an upright SAPS 524
+  // (boxed fields, watermarks, arched titles), and on licence cards +21 and -4
+  // for the same card. Nine of nineteen finished pages would have been turned
+  // the wrong way. Members almost always hold a document upright, a wrong flip
+  // is worse than none, and Rotate on the review screen is one tap away. A
+  // sideways card still has to be turned one way or the other, so the sign
+  // decides there and nowhere else.
+  const flip = rot === 90 ? s < 0 : false;
   if (flip) rot = ((rot + 180) % 360) as Rotation;
   return rot;
 }

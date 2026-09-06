@@ -418,6 +418,51 @@ describe('the certificate-wide expiry — §5.3 and the DFO reading', () => {
     expect(out.why).not.toMatch(/rifle-carbine|rifle-sl/);
   });
 
+  it('⚠️ a manual-rifle certificate follows a manual rifle, not a semi-automatic one', () => {
+    // The operator's own case: a manual-rifle competency (119651), a
+    // semi-automatic .223 running to 2035 and three bolt rifles, the longest
+    // to 2034. It followed the .223, because only the category was compared.
+    const out = deriveCertificateExpiry({
+      endorsements: ['rifle-mo'],
+      issuedOn: ISSUED,
+      licences: [
+        { category: 'rifle-carbine', selfLoading: true, expiresOn: new Date('2035-09-21T00:00:00Z') },
+        { category: 'rifle-carbine', selfLoading: false, expiresOn: new Date('2034-10-28T00:00:00Z') },
+        { category: 'rifle-carbine', selfLoading: false, expiresOn: new Date('2032-11-28T00:00:00Z') },
+      ],
+    });
+    expect(out.on?.toISOString().slice(0, 10)).toBe('2034-10-28');
+    // And the semi-automatic certificate follows the .223.
+    const sl = deriveCertificateExpiry({
+      endorsements: ['rifle-sl'],
+      issuedOn: ISSUED,
+      licences: [
+        { category: 'rifle-carbine', selfLoading: true, expiresOn: new Date('2035-09-21T00:00:00Z') },
+        { category: 'rifle-carbine', selfLoading: false, expiresOn: new Date('2034-10-28T00:00:00Z') },
+      ],
+    });
+    expect(sl.on?.toISOString().slice(0, 10)).toBe('2035-09-21');
+  });
+
+  it('a rifle whose action we could not read still counts for either rifle endorsement', () => {
+    const out = deriveCertificateExpiry({
+      endorsements: ['rifle-mo'],
+      issuedOn: ISSUED,
+      licences: [{ category: 'rifle-carbine', expiresOn: new Date('2033-01-01T00:00:00Z') }],
+    });
+    expect(out.on?.toISOString().slice(0, 10)).toBe('2033-01-01');
+    expect(out.basis).toBe('licence');
+  });
+
+  it('a manual-rifle certificate with only a semi-automatic rifle on file has nothing to follow', () => {
+    const out = deriveCertificateExpiry({
+      endorsements: ['rifle-mo'],
+      issuedOn: ISSUED,
+      licences: [{ category: 'rifle-carbine', selfLoading: true, expiresOn: new Date('2035-09-21T00:00:00Z') }],
+    });
+    expect(out.basis).toBe('fallback');
+  });
+
   it('says nothing about bare sides when every side has a licence', () => {
     const out = deriveCertificateExpiry({
       endorsements: ['rifle-sl', 'shotgun'],

@@ -5209,6 +5209,13 @@ model Credential {
   ///
   /// It holds a category, never a make, a calibre or a serial.
   firearmCategory String? @db.VarChar(16)
+  /// Whether the licensed firearm is self-loading, read off the card's type
+  /// row ("MANUALLY OPERATED RIFLE" / "S/L RIFLE") the same way the category
+  /// is, and in the clear for the same reason: a competency is endorsed per
+  /// action as well as per category (119651 manual rifle, 119650 self-loading
+  /// rifle), and its expiry must follow a licence it actually covers. NULL
+  /// where the card did not say, or the category has no action split.
+  firearmSelfLoading Boolean?
 
   /// Opaque key into SecureFileStorageService, namespace `credentials`.
   /// Nullable so a row can outlive its bytes after an erasure.
