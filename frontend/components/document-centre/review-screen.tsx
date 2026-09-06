@@ -761,6 +761,7 @@ function ReviewRow({
 
   return (
     <div
+      data-name-card
       className="flex items-center gap-3 rounded-[10px] border p-2.5"
       /* ⚠️ INLINE, AND DERIVED FROM THE TOKEN. Both of these were hardcoded
          rgba(232,181,58,…) — the RETIRED dark theme's amber, matching no

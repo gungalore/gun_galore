@@ -254,7 +254,10 @@ export const WANTED: Record<CredentialKind, string[]> = {
     'status_number',
     'status_type',
   ],
-  PROFICIENCY: ['certificate_number', 'holder_name', 'unit_standard'],
+  // ⚠️ scv_number AND issuer ADDED 2026-09-07. The S/C/V number is printed on
+  // both sides of a proficiency (the provider's certificate and the PFTC
+  // statement behind it) and is what lets the vault file the two as one pair.
+  PROFICIENCY: ['certificate_number', 'holder_name', 'unit_standard', 'scv_number', 'issuer'],
   OTHER: ['reference_number', 'holder_name', 'issuer'],
 
   // ── THE DOCUMENTS WE KEEP RATHER THAN CHASE ────────────────────────
@@ -458,7 +461,30 @@ export class LicenceCentreExtractService {
     }
   }
 
+  /**
+   * Read the document, and for a proficiency say which side it is.
+   *
+   * ⚠️ THE SIDE IS DECIDED ON THE OCR TEXT, WHICHEVER READER WON. A statement
+   * of results names itself in its heading; anything else that classified as a
+   * proficiency is a provider's certificate. The Textract reader records this
+   * itself; the vision fallback drops anything WANTED does not list, so the
+   * side is put back here from the same cached OCR response.
+   */
   async read(args: {
+    kind: CredentialKind;
+    bytes: Buffer;
+    mimeType: string;
+    alsoCovers?: CredentialKind[];
+  }): Promise<CredentialReading> {
+    const r = await this.readInner(args);
+    if (args.kind !== 'PROFICIENCY' || r.details.document_side) return r;
+    const ocr = await this.textract.analyse(args.bytes, args.mimeType);
+    if (!ocr) return r;
+    const back = /statement\s+of\s+results/i.test(textractLines(ocr).join(' '));
+    return { ...r, details: { ...r.details, document_side: back ? 'back' : 'front' } };
+  }
+
+  private async readInner(args: {
     kind: CredentialKind;
     bytes: Buffer;
     mimeType: string;
@@ -717,7 +743,8 @@ function userPrompt(
     DEDICATED_HUNTER: 'a dedicated hunter status certificate',
     PROFESSIONAL_HUNTER:
       'a professional hunter (PH) registration certificate, issued by a provincial nature conservation authority',
-    PROFICIENCY: 'a firearm proficiency or training certificate',
+    PROFICIENCY:
+      'a firearm proficiency certificate - either the PFTC statement of results (the back) or the training provider\'s own certificate (the front), each naming the unit standards passed',
     GOOD_STANDING:
       'a section 16 letter of good standing from a hunting association or sports-shooting organisation. It is a sworn declaration that the member is registered and in good standing, and it usually shows a good-standing reference, the member number, the dedicated status number, the date the status was issued and the date it is valid until',
     OTHER: 'a supporting document',
@@ -755,6 +782,30 @@ function userPrompt(
     'Transcribe these keys where they appear:',
     ...keys.map((k) => `- ${k}`),
     '',
+    ...(kind === 'FIREARM_LICENCE'
+      ? [
+          // The prefix is the action, and the action decides which competency
+          // the licence can carry. A tidied "RIFLE CAL - RIFLE/CARBINE" lost it.
+          'firearm_type is the Type row EXACTLY as printed, including any S/L,',
+          'N/S/L or M/O in front of it - that prefix says whether the firearm is',
+          'self-loading and must not be dropped or expanded.',
+          '',
+        ]
+      : []),
+    ...(kind === 'PROFICIENCY'
+      ? [
+          'unit_standard is EVERY SAQA unit-standard code on the page (117705,',
+          '119649, 119650, 119651, 119652 ...), comma-separated, in print order.',
+          'scv_number is the S/C/V or SCV number, printed like 52BS-A8041.',
+          'certificate_number is the provider\'s own certificate number (TRG 11897,',
+          '19/2025, K/10358-K91835); on a statement of results it is the',
+          'Certificate Number or Authentication Code if either is printed.',
+          'issuer is the training provider\'s name as printed. issued_on is the',
+          'date of issue; on a certificate reading "this 31 day of MARCH 2021"',
+          'that is 2021-03-31.',
+          '',
+        ]
+      : []),
     ...(kind === 'ADDRESS_CONFIRMATION'
       ? [
           // The three things the vault checks a proof of address on. The
@@ -893,7 +944,14 @@ export const CLASSIFY_USER = [
   '',
   '  A member may hold several of these from different associations. That is',
   '  normal - file each one as DEDICATED_DISCIPLINE.',
-  'PROFICIENCY - a firearm proficiency or unit-standard training certificate',
+  'PROFICIENCY - a firearm proficiency or unit-standard training certificate.',
+  '  Two documents both file here: the PFTC "Statement of Results" (the back),',
+  '  and the training provider\'s own certificate (the front), which is a',
+  '  different design per provider - "Certificate", "Certificate of',
+  '  Proficiency", even "Competency Course" - but always names the holder, an',
+  '  ID number, one or more SAQA unit-standard codes (117705, 119649-119652)',
+  '  and an accreditation number (PFTC, SAPS or SASSETA). A provider\'s',
+  '  "competency course" certificate is a PROFICIENCY, not the SAPS competency.',
   '',
   // ── THE SUPPORTING PAPERWORK, which the Centre now keeps alongside the
   // credentials it chases. Named here because a category the enum knows and

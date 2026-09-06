@@ -154,6 +154,8 @@ export interface CredentialRow {
   attention: string[];
   /** The earlier row this one looks like a copy of. */
   duplicateOf: { id: string; title: string | null } | null;
+  /** The other side of a two-sided document: a proficiency's certificate and its statement of results. */
+  otherSide: { id: string; title: string | null } | null;
   /**
    * Who put the expiry date there: null, 'read' or 'derived'.
    *
@@ -178,6 +180,7 @@ export interface AddedCredential {
   confident?: boolean;
   attention?: string[];
   duplicateOf?: { id: string; title: string } | null;
+  otherSide?: { id: string; title: string } | null;
   readNotes?: string[];
   /**
    * The two ticks as the row was created with them.

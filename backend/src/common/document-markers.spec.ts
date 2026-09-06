@@ -120,8 +120,8 @@ describe('every document the operator actually holds', () => {
     ['licence card', LICENCE_CARD, 'CURRENT_LICENCE', 'definitive'],
     ['PFTC statement, 2025', PFTC_NEW, 'PROFICIENCY_CERTIFICATE', 'definitive'],
     ['PFTC statement, 2014', PFTC_OLD, 'PROFICIENCY_CERTIFICATE', 'definitive'],
-    ['One Shot certificate', ONE_SHOT, 'PROFICIENCY_CERTIFICATE', 'strong'],
-    ['Progun certificate', PROGUN, 'PROFICIENCY_CERTIFICATE', 'strong'],
+    ['One Shot certificate', ONE_SHOT, 'PROFICIENCY_CERTIFICATE', 'definitive'],
+    ['Progun certificate', PROGUN, 'PROFICIENCY_CERTIFICATE', 'definitive'],
     ['green identity book', GREEN_ID_BOOK, 'IDENTITY_DOCUMENT', 'definitive'],
   ])('reads a %s', (_label, text, kind, strength) => {
     const v = readMarkers(text);

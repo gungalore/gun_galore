@@ -33,7 +33,7 @@
 
 import type { CredentialKind } from '@prisma/client';
 
-import { sectionFromText } from '../common/sa-competency';
+import { parseUnitStandards, sectionFromText, selfLoadingFromText } from '../common/sa-competency';
 import { readIdNumber } from '../common/sa-id-number';
 
 /** Matches the Claude extractor's contract exactly. Do not diverge. */
@@ -186,11 +186,58 @@ export const FIELD_ALIASES: FieldAlias[] = [
   { field: 'competency_number', match: /^competency certificate number/i },
   { field: 'covers', match: /^type of competency certificate/i },
 
-  // Proficiency / statement of results.
-  { field: 'certificate_number', match: /^certificate number/i },
+  // Proficiency: the PFTC statement of results (the back) and the training
+  // provider's own certificate (the front). Operator, 2026-09-07: "we need the
+  // front and back of the proficiency certificate."
+  //
+  // ⚠️ THE S/C/V NUMBER IS WHAT JOINS THE TWO SIDES. One Shot prints
+  // "S/C/V Numbers: 52BS-A8041" on its certificate and the PFTC statement
+  // behind it prints "SCV Number: 52BS-A8041". Nothing else on the two pages
+  // is guaranteed to agree - the provider's certificate number is its own.
+  { field: 'holder_name', match: /^awarded to/i, kinds: ['PROFICIENCY'] },
+  { field: 'certificate_number', match: /^certificate\s*(number|no\b|nr\b)/i },
+  // Progun prints "CERTIFICATE" and "NUMBER:" on two lines; FORMS pairs the first with the value.
+  { field: 'certificate_number', match: /^certificate$/i, kinds: ['PROFICIENCY'] },
+  { field: 'scv_number', match: /^s\/?c\/?v\s+numbers?/i },
+  { field: 'authentication_code', match: /^authentication code/i, kinds: ['PROFICIENCY'] },
   { field: 'unit_standard', match: /^(saqa id|unit standards? title)/i },
   { field: 'issuer', match: /^(training provider name|provider)/i },
 ];
+
+/* ── Dates as a training provider prints them ───────────────────────── */
+
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+function isoDay(y: string, m: string | number, d: string): string | null {
+  const mm = Number(m);
+  const dd = Number(d);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+  return `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+}
+
+/**
+ * "2025/03/28", "14/04/2025", "31 day of MARCH 2021", "23 January 2014" -
+ * every way the operator's four fronts and four statements print a date.
+ * Day-first when the year is last: this is South Africa.
+ */
+export function parseLooseDate(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const t = s.replace(/\s*\|\s*/g, ' ').trim();
+  let m = t.match(/(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/);
+  if (m) return isoDay(m[1], m[2], m[3]);
+  m = t.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+  if (m) return isoDay(m[3], m[2], m[1]);
+  m = t.match(/(\d{1,2})(?:st|nd|rd|th)?\s+(?:day\s+of\s+)?([A-Za-z]{3,9})\.?,?\s+(\d{4})/);
+  if (m) {
+    const mo = MONTHS.indexOf(m[2].toUpperCase().slice(0, 3)) + 1;
+    if (mo) return isoDay(m[3], mo, m[1]);
+  }
+  return null;
+}
+
+/** Two to five capitalised words and nothing else: a printed name, not an address or a heading. */
+const NAME_LINE = /^[A-Z][A-Za-z'-]{1,}(?: [A-Z][A-Za-z'-]{1,}){1,4}$/;
+const NOT_A_NAME = /^(NAME|ID NUMBER|COMPETENCY COURSE|TRAINING COURSE|CERTIFICATE|RANGE MASTER|ASSESSOR)$/i;
 
 /**
  * Fields a licence card prints once per part as well as once for the firearm.
@@ -264,8 +311,24 @@ const INITIALS_SURNAME = /(?:^|\| )([A-Z]{1,4} [A-Z][A-Z'-]{2,})(?: \||$)/;
  * assumption, which mayArmDerivedExpiry refuses to arm — leaving it with no
  * date at all. Nothing errored anywhere along that chain.
  */
+//
+// ⚠️ AND "Type" MAY SHARE THE LINE. The .223's card came back as one line,
+// "Type S/L: RIFLE CAL - RIFLE/CARBINE", where the fixture card has "Type"
+// on its own line. Anchored to the start of a segment, the rule skipped the
+// whole line, the type was never stored, and the action stayed unknown -
+// which let a self-loading rifle stand in for a manual-rifle competency
+// (operator, 2026-09-07, with the card in hand). The label is optional now.
 const FIREARM_TYPE =
-  /(?:^|\| )((?:S\/L[:\s-]*)?[A-Z\/\s.:-]*(?:RIFLE|SHOTGUN|HANDGUN|PISTOL|REVOLVER|CARBINE|MUZZLE[\s-]?LOADER)[A-Z\/\s.:-]*)(?: \||$)/;
+  /(?:^|\| )(?:[Tt][Yy][Pp][Ee]\s*:?\s*)?((?:(?:N\s*\/\s*)?S\s*\/\s*L[:\s-]*|M\s*\/\s*O[:\s-]*)?[A-Z\/\s.:-]*(?:RIFLE|SHOTGUN|HANDGUN|PISTOL|REVOLVER|CARBINE|MUZZLE[\s-]?LOADER)[A-Z\/\s.:-]*)(?: \||$)/;
+/**
+ * The action, as the type row abbreviates it: S/L (self-loading), N/S/L
+ * (non-self-loading), M/O (manually operated) - and "SIL", which is what OCR
+ * makes of "S/L" on a worn card. Read off the type row's own segment or the
+ * one after a bare "Type" label, so a serial number elsewhere cannot supply it.
+ */
+const ACTION_PREFIX = /\b(N\s*\/\s*S\s*\/\s*L|S\s*\/\s*L|S[I1l]L|M\s*\/\s*O)\b\s*:?/i;
+/** A FORMS key that is the action itself: "S/L:" => "RIFLE CAL - RIFLE/CARBINE". */
+const ACTION_KEY = /^(N\s*\/\s*S\s*\/\s*L|S\s*\/\s*L|S[I1l]L|M\s*\/\s*O)\s*:?$/i;
 /**
  * Reference S4.8.2: a competency certificate number is `C` + 7-8 digits.
  * A value that is not that shape was misread, whatever Textract's
@@ -371,6 +434,15 @@ export function extractDocument(
   for (const p of ps) {
     // Everything is kept, under its own printed label.
     if (p.key) raw[p.key] = p.value;
+    // The type row, when FORMS took the action abbreviation as the key.
+    if (kind === 'FIREARM_LICENCE' && ACTION_KEY.test(p.key)) {
+      put('firearm_type', `${p.key.replace(/\s*:$/, '').replace(/S[I1l]L/i, 'S/L')}: ${p.value}`, p.confidence);
+      continue;
+    }
+    if (kind === 'FIREARM_LICENCE' && /^type$/i.test(p.key) && p.value) {
+      put('firearm_type', p.value, p.confidence);
+      continue;
+    }
     const alias = FIELD_ALIASES.find(
       (a) =>
         a.match.test(p.key) && (!a.kinds || a.kinds.includes(kind)),
@@ -453,6 +525,17 @@ export function extractDocument(
     if (holder) put('holder_name', holder[1].trim(), 99);
     const type = text.match(FIREARM_TYPE);
     if (type) put('firearm_type', type[1].trim(), 99);
+    // The action the card states, if the stored type lost it: from the type
+    // row's own segment, or the segment after a bare "Type".
+    if (details.firearm_type && selfLoadingFromText(details.firearm_type) === null) {
+      const at = ls.findIndex((l) => /^type\b/i.test(l.trim()));
+      const seg = at >= 0 ? (/^type\s*:?$/i.test(ls[at].trim()) ? ls[at + 1] : ls[at]) : undefined;
+      const tok = seg?.match(ACTION_PREFIX);
+      if (tok) {
+        details.firearm_type = `${tok[1].replace(/\s+/g, '').replace(/S[I1l]L/i, 'S/L')}: ${details.firearm_type}`;
+        notes.push('took the action off the type row');
+      }
+    }
   }
 
   // An ID document prints the surname and the forenames as two fields; the
@@ -461,6 +544,34 @@ export function extractDocument(
     const surname = ps.find((q) => /^surname$/i.test(q.key))?.value;
     const fore = ps.find((q) => /^(forenames|names)$/i.test(q.key))?.value;
     if (surname && fore) details.full_name = (fore + ' ' + surname).trim();
+  }
+
+  // ── The proficiency, either side ────────────────────────────────────
+  if (kind === 'PROFICIENCY') {
+    // Every registered unit-standard code on the page, however it is laid
+    // out: a table on the statement, "119652 - Handle and Use a Shotgun" on
+    // One Shot's certificate, "SAQA 119651" on Progun's, two bare numbers on
+    // NSN's. The table pair above gives one row; the page gives them all.
+    const codes = parseUnitStandards(text);
+    if (codes.length > parseUnitStandards(details.unit_standard ?? '').length) {
+      details.unit_standard = codes.join(', ');
+      confidence.unit_standard = 99;
+    }
+    // "This is to certify that | <address line> | GERHARD JOHAN PETRUS FOURIE":
+    // the first thing after the phrase that reads as a name.
+    const at = ls.findIndex((l) => /certify that/i.test(l));
+    if (at >= 0) {
+      const name = ls.slice(at + 1, at + 5).map((l) => l.trim()).find((l) => NAME_LINE.test(l) && !NOT_A_NAME.test(l));
+      if (name) put('holder_name', name, 99);
+    }
+    // "CERTIFICATE | NUMBER: | K/10358-K919835" and "TRG 11897 | CERTIFICATE NO".
+    const after = text.match(/\bcertificate(?: \|)? (?:number|no|nr)\b\.?:?(?: \|)? ([A-Z0-9][A-Z0-9\/-]{3,})/i);
+    if (after) put('certificate_number', after[1], 99);
+    const before = text.match(/\| ([A-Z]{2,4} ?\d{4,7}) \| certificate (?:no|nr|number)\b/i);
+    if (before) put('certificate_number', before[1], 99);
+    // Which side of the document this is. The statement names itself; a
+    // provider's certificate is anything else that classified as a proficiency.
+    details.document_side = /statement\s+of\s+results/i.test(text) ? 'back' : 'front';
   }
 
   let issuedOn: string | null = null;
@@ -477,6 +588,20 @@ export function extractDocument(
   }
   if (issuedOn && kind === 'COMPETENCY_CERTIFICATE') {
     details.competency_issued = issuedOn;
+  }
+  // A proficiency's issue date: the statement's "Date of issue" column, One
+  // Shot's "Date of issue: 2025/03/28", NSN's "23/01/2014" over the word
+  // DATE, Progun's "this 31 day of MARCH 2021" split across two lines.
+  if (!issuedOn && kind === 'PROFICIENCY') {
+    const pair =
+      ps.find((q) => /^date of issue/i.test(q.key)) ??
+      ps.find((q) => /^date issued/i.test(q.key)) ??
+      ps.find((q) => /^date$/i.test(q.key));
+    issuedOn =
+      parseLooseDate(pair?.value) ??
+      parseLooseDate(text.match(/(\d{1,2}\s+day\s+of\s+[A-Za-z]{3,9}(?: \|)? \d{4})/i)?.[1]) ??
+      parseLooseDate(text.match(/(\d{2}\/\d{2}\/\d{4}) \| DATE\b/i)?.[1]) ??
+      parseLooseDate(text.match(/date of issue:?(?: \|)? (\d{4}\/\d{2}\/\d{2}|\d{2}\/\d{2}\/\d{4})/i)?.[1]);
   }
 
   // ── The gate ────────────────────────────────────────────────────────

@@ -935,6 +935,8 @@ export interface LinkedLicence {
    */
   selfLoading?: boolean | null;
   expiresOn: Date | null;
+  /** The licence's name in the vault ("MAUSER .30-06 SPRINGFIELD"), so the note can say which one. */
+  title?: string;
 }
 
 export interface DerivedExpiry {
@@ -1198,13 +1200,26 @@ export function deriveCertificateExpiry(args: {
     l.selfLoading === null ||
     l.selfLoading === undefined ||
     rifleActions.has(l.selfLoading);
-  const linked = args.licences.filter(
+  const carried = args.licences.filter(
     (l) =>
       l.expiresOn &&
       l.category !== 'muzzle-loader' &&
       categories.has(l.category) &&
       carries(l),
   );
+  // ⚠️ A RIFLE WHOSE ACTION WE COULD READ BEATS ONE WE COULD NOT. An unknown
+  // action counts for either endorsement (above) so that a gap in our reading
+  // never shortens a competency - but when the member holds rifles whose
+  // action IS known and matches, those are the licences this certificate
+  // relates to, and the unknown one must not outrun them. The operator's
+  // manual-rifle competency followed a .223 whose card did not print its
+  // action to 2035, past three known manual rifles ending 2034 (2026-09-07).
+  const knownRifle = carried.some(
+    (l) => l.category === 'rifle-carbine' && typeof l.selfLoading === 'boolean',
+  );
+  const linked = knownRifle
+    ? carried.filter((l) => l.category !== 'rifle-carbine' || typeof l.selfLoading === 'boolean')
+    : carried;
 
   if (linked.length) {
     const latest = linked.reduce((a, b) =>
@@ -1212,17 +1227,20 @@ export function deriveCertificateExpiry(args: {
     );
     const on = latest.expiresOn as Date;
     const many = categories.size > 1;
+    // Operator, 2026-09-07: "state which licence will cause the competency
+    // to expire." Named when the vault gave us a name.
+    const which = latest.title
+      ? `your ${latest.title} licence`
+      : `your longest-running licence in ${many ? 'the categories this certificate covers' : 'this category'}`;
     return {
       on,
       basis: 'licence',
       why:
-        `It follows your longest-running licence in ${
-          many ? 'the categories this certificate covers' : 'this category'
-        }, which runs to ${on.toISOString().slice(0, 10)}. ` +
+        `It follows ${which}, which runs to ${on.toISOString().slice(0, 10)}, and expires with it. ` +
         (many
-          ? `One certificate carries one date, so the ${CATEGORY_WORDS[latest.category]} licence sets it for everything on this certificate. `
+          ? `One certificate carries one date, so that ${CATEGORY_WORDS[latest.category]} licence sets it for everything on this certificate. `
           : '') +
-        'Renewing or adding a licence here pushes it out with it.' +
+        'Renewing or adding a licence it covers pushes it out with it.' +
         bareSideNote(categories, linked),
     };
   }

@@ -150,6 +150,9 @@ export const FIELD_ALIASES: Record<string, readonly FieldAlias[]> = {
     { vault: 'certificate_number', motivation: null },
     { vault: 'holder_name', motivation: null },
     { vault: 'unit_standard', motivation: 'competency_for' },
+    // Printed on both sides of the pair; what joins them. Not a form field.
+    { vault: 'scv_number', motivation: null },
+    { vault: 'issuer', motivation: null },
   ],
 
   OTHER: [

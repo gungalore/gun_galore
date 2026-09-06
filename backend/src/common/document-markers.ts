@@ -272,6 +272,34 @@ export const DOCUMENT_MARKERS: readonly DocumentMarker[] = [
   },
   {
     kind: 'PROFICIENCY_CERTIFICATE',
+    strength: 'definitive',
+    name: 'provider-proficiency-certificate',
+    because:
+      'The front of the pair: a training provider\'s own certificate. One Shot ' +
+      'prints "Has completed the following proficiency firearm training", Progun ' +
+      'prints "Certificate of Proficiency", and each carries the unit-standard ' +
+      'code it awards. The phrase alone is a course advert; with a code it is ' +
+      'the certificate (operator, 2026-09-07: four fronts, three providers).',
+    all: [/(proficiency\s+firearm\s+training|certificate\s+of\s+proficiency)/i, UNIT_CODES],
+  },
+  {
+    kind: 'PROFICIENCY_CERTIFICATE',
+    strength: 'definitive',
+    name: 'accredited-provider-course-certificate',
+    because:
+      'NSN\'s certificate says "COMPETENCY COURSE" and never mentions ' +
+      'proficiency, so it needs its own anchor: an accreditation line (SASSETA, ' +
+      'PFTC or SAPS) plus a completion phrase plus a unit-standard code. A SAPS ' +
+      '524 has none of the three; a form applying for training has no code.',
+    all: [
+      /\b(SASSETA|PFTC|SAPS)\s+(ACCREDIT\w*|REG(ISTRATION)?)\b/i,
+      /(has\s+(successfully\s+)?completed|is\s+awarded\s+this\s+certificate|this\s+is\s+to\s+certify)/i,
+      UNIT_CODES,
+    ],
+    never: [/\bSAPS\s*5\d\d\b/i, ...IS_AN_APPLICATION],
+  },
+  {
+    kind: 'PROFICIENCY_CERTIFICATE',
     strength: 'strong',
     name: 'unit-code-beside-its-title',
     because:

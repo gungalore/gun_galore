@@ -250,6 +250,18 @@ export default function CredentialCard({
         </div>
       )}
 
+      {/* The other half of a two-sided proficiency, so the member can see the
+          pair was recognised and that both go onto an application. */}
+      {row.otherSide && (
+        <p className="mt-3 text-[12.5px] text-[var(--text-secondary)]">
+          Filed together with{' '}
+          <span className="font-medium text-[var(--text-primary)]">
+            {row.otherSide.title ?? 'its other side'}
+          </span>
+          . The two go onto an application as one.
+        </p>
+      )}
+
       {/* Why the server says look at this one: a copy of another row, or a
           proof of address that is not the member's or not recent. The words
           come from the server (readNotes) so the card and the review screen
