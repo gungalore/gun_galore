@@ -1939,7 +1939,25 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-06 (later), commit `1db2c067`.** ⚠️ **CARRIED A
+**Last deploy: 2026-09-06 (night), commit `195712dd`.** No migrations.
+**FRONTEND-ONLY** (`deploy.sh --frontend-only`, run twice) on the operator's
+`deploy now`, to switch the new document scanner on. `NEXT_PUBLIC_SCANNER_V3=1`
+was added to `frontend/.env.production` on the box (backup
+`.env.production.bak-2026-09-06` beside it) and the frontend rebuilt so the
+flag is inlined. The first rebuild left the scanner half-dark: the middleware's
+static-extension list had `ort` for the old model but not `onnx`, so
+`/scan/v3/docaligner-lcnet100.onnx` was 307'd to sign-in on the handoff phone;
+`195712dd` adds `onnx` and was deployed on top. Dump
+`alloutdoor-20260906-205917.dump` before the first run. Health doubled both
+runs, public 200 twice, every /scan/v3 asset 200 to a signed-out client.
+
+Shipped: the new document scanner is LIVE for every member, behind ScanButton
+and the phone hand-off (components/scan-v3 wrapping lib/scan-v3). To turn it
+off: remove the line from `.env.production` on the box and rebuild the
+frontend. Upstream is C:\dev\Scanner; its `scripts/sync-website.mjs` re-copies
+lib/scan-v3. Still to do: the pre-scan question in `document-centre-add.tsx`.
+
+**Previous deploy: 2026-09-06 (later), commit `1db2c067`.** ⚠️ **CARRIED A
 MIGRATION** — `20260906150000_motivation_upload_source_credential`, additive
 only (`MotivationUpload.sourceCredentialId` SetNull FK + index,
 `MotivationUpload.sourceRemovedAt`, `Motivation.autolinkSkippedIds` default
