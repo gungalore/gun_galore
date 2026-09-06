@@ -1939,7 +1939,28 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-06 (evening), commit `01d3e39e`.** No migrations.
+**Last deploy: 2026-09-06 (late evening), commit `fa304c33`.** No migrations.
+**BACKEND ONLY** (`deploy.sh --backend-only`); dump
+`alloutdoor-20260906-182021.dump`; health doubled. Then **`bench-import` and
+`bench-cip-parse` were run on the box**, in that order. Shipped `a1aa5c54`:
+a load row now finds its cartridge (1) by European name, (2) through the
+reference file's own alias column, which was read into the alias table and
+never consulted, and (3) through a C.I.P. sheet — a cartridge the reference
+file lacks is CREATED from its sheet (name and Pmax as the sheet prints
+them) and `bench-cip-parse` backfills L3/L6 onto it where blank. Lookup
+synonyms (`cipLookupKey`: Weath./Weatherby, Swed./SE, Nitro Express/N.E.,
+Schmidt Rubin/Suisse, 505 Gibbs) apply on the way to the lookup only; the
+stored key is still `cartridgeKey()` of the sheet's name. HTML entities in
+the CSV are decoded first. Result: 46 088 source rows written (was 42 113),
+37 640 loads (was 34 316), 210 cartridges (33 new from sheets, all with
+lengths: 6,5 x 55 SE 472 loads, 300 Weath. Mag. 482, the rest of the
+Weatherby family, 28/26 Nosler, 6,8 Western, 470 N.E., 404 Riml. N.E. …),
+unmatched names 218 → 177, Somchem 641 of 657 in (the 16 out: 6mm Musgrave
+×6 and 9mm SHORT ×9 have no sheet and no alias, 12 Bore ×1 is a shotgun).
+The Somchem sanity figure in the report is the file's 657; the spec's 612
+was stale.
+
+**Previous deploy: 2026-09-06 (evening), commit `01d3e39e`.** No migrations.
 **FRONTEND ONLY** (`deploy.sh --frontend-only`); dump
 `alloutdoor-20260906-180748.dump`. Health doubled, public 200 twice, and the
 live finder checked signed in: `?tol=15` opens on ± 15 gr, no row prints the
