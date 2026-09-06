@@ -11,6 +11,7 @@ import { join } from 'node:path';
 
 import {
   extractDocument,
+  pickPerPart,
   type TextractResponse,
 } from './textract-document-extract';
 
@@ -212,5 +213,42 @@ describe('nothing is thrown away', () => {
       Object.keys(r.reading.details).length,
     );
     expect(r.raw).toHaveProperty('SAPS Accreditation Number:');
+  });
+});
+
+describe('the make, which the card prints once per part', () => {
+  // The .45-70 Marlin: top box "Make MARLIN"; bottom box barrel NONE,
+  // receiver MARLIN, frame NONE. Textract handed a NONE over first, and the
+  // vault titled it "NONE 45-70 GOVERNMENT".
+  it('takes the firearm\'s make, not a part\'s NONE (doc06, Marlin)', () => {
+    expect(read('doc06', 'FIREARM_LICENCE').reading.details.make).toBe('MARLIN');
+  });
+  it('never titles a rifle NONE when a make is printed (doc05, doc08)', () => {
+    for (const doc of ['doc05', 'doc08']) {
+      const make = read(doc, 'FIREARM_LICENCE').reading.details.make;
+      // The document name rides in the string so a failure says which card.
+      expect(`${doc}: ${make}`).not.toMatch(/: (undefined|none)$/i);
+    }
+  });
+  it('still reads a card whose every Make agrees (doc03, Howa)', () => {
+    expect(read('doc03', 'FIREARM_LICENCE').reading.details.make).toBe('HOWA');
+  });
+  describe('pickPerPart', () => {
+    const pair = (value: string, top?: number) => ({ key: 'Make', value, confidence: 99, top });
+    it('prefers the topmost pair when the response carries geometry', () => {
+      expect(pickPerPart([pair('NONE', 0.7), pair('MARLIN', 0.3), pair('MARLIN', 0.75)])?.top).toBe(0.3);
+      // Even when a lower pair is also named: the top box is the firearm's.
+      expect(pickPerPart([pair('CZ', 0.72), pair('CZ', 0.31)])?.top).toBe(0.31);
+    });
+    it('without geometry, takes the first pair that is not a placeholder', () => {
+      expect(pickPerPart([pair('NONE'), pair('N/A'), pair('MARLIN'), pair('NONE')])?.value).toBe('MARLIN');
+    });
+    it('keeps NONE when every instance says so', () => {
+      expect(pickPerPart([pair('NONE'), pair('NONE')])?.value).toBe('NONE');
+    });
+    it('is a no-op for a single pair', () => {
+      expect(pickPerPart([pair('HOWA')])?.value).toBe('HOWA');
+      expect(pickPerPart([])).toBeUndefined();
+    });
   });
 });

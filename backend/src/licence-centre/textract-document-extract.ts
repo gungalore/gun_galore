@@ -88,6 +88,8 @@ interface Block {
   Confidence?: number;
   EntityTypes?: string[];
   Relationships?: { Type?: string; Ids?: string[] }[];
+  /** Where on the page, as fractions of it. Present on a live response; the test fixtures were stored without it. */
+  Geometry?: { BoundingBox?: { Top?: number; Left?: number; Width?: number; Height?: number } };
 }
 export interface TextractResponse {
   Blocks?: Block[];
@@ -98,6 +100,8 @@ export interface Pair {
   value: string;
   /** Lowest confidence among the VALUE's words. */
   confidence: number;
+  /** The key's top edge, 0 at the top of the page, when Textract said. */
+  top?: number;
 }
 
 export function lines(res: TextractResponse): string[] {
@@ -132,6 +136,7 @@ export function pairs(res: TextractResponse): Pair[] {
         .trim(),
       value: vw.map((w) => w.Text).join(' ').trim(),
       confidence: Math.min(...vw.map((w) => w.Confidence ?? 0)),
+      top: b.Geometry?.BoundingBox?.Top,
     });
   }
   return out;
@@ -163,6 +168,12 @@ export const FIELD_ALIASES: FieldAlias[] = [
   { field: 'id_number', match: /^(identity number|id no|id number|identification)/i },
 
   // Firearm licence.
+  // ⚠️ "Make" AND "Model" ARE PRINTED FOUR TIMES ON THE CARD — once in the
+  // top box for the firearm, and once each for the barrel, receiver and frame
+  // in the bottom box, where a part with no serial of its own reads "Make
+  // NONE". See PRINTED_PER_PART: the first pair Textract hands over is not
+  // reliably the top box, and three of the operator's five rifles came back
+  // titled "NONE 45-70 GOVERNMENT".
   { field: 'make', match: /^make$/i, kinds: ['FIREARM_LICENCE'] },
   { field: 'calibre', match: /^calibre$/i, kinds: ['FIREARM_LICENCE'] },
   { field: 'frame_serial', match: /^frame serial/i, kinds: ['FIREARM_LICENCE'] },
@@ -180,6 +191,26 @@ export const FIELD_ALIASES: FieldAlias[] = [
   { field: 'unit_standard', match: /^(saqa id|unit standards? title)/i },
   { field: 'issuer', match: /^(training provider name|provider)/i },
 ];
+
+/**
+ * Fields a licence card prints once per part as well as once for the firearm.
+ * When Textract returns several pairs for one of these, the firearm's own is
+ * wanted: the one in the top box. That is the topmost pair where the response
+ * carries geometry; failing geometry, the first pair whose value is not the
+ * "NONE" a part without its own serial is printed with. A card where every
+ * instance reads NONE keeps NONE, which is then the truth.
+ */
+const PRINTED_PER_PART: ReadonlySet<string> = new Set(['make', 'model']);
+const PART_PLACEHOLDER = /^(none|n\/a|nil)$/i;
+
+export function pickPerPart(cands: Pair[]): Pair | undefined {
+  if (cands.length <= 1) return cands[0];
+  const named = cands.filter((c) => !PART_PLACEHOLDER.test(c.value.trim()));
+  const pool = named.length ? named : cands;
+  const placed = pool.filter((c) => typeof c.top === 'number');
+  if (placed.length === pool.length) return pool.reduce((a, b) => ((b.top as number) < (a.top as number) ? b : a));
+  return pool[0];
+}
 
 /* ── Line rules, for what FORMS does not label ────────────────────────── */
 
@@ -334,6 +365,9 @@ export function extractDocument(
     confidence[field] = conf;
   };
 
+  // Pairs printed once per part are gathered and chosen from; everything
+  // else keeps its first value, as before.
+  const perPart = new Map<string, Pair[]>();
   for (const p of ps) {
     // Everything is kept, under its own printed label.
     if (p.key) raw[p.key] = p.value;
@@ -341,7 +375,18 @@ export function extractDocument(
       (a) =>
         a.match.test(p.key) && (!a.kinds || a.kinds.includes(kind)),
     );
-    if (alias) put(alias.field, p.value, p.confidence);
+    if (!alias) continue;
+    if (kind === 'FIREARM_LICENCE' && PRINTED_PER_PART.has(alias.field)) {
+      const list = perPart.get(alias.field) ?? [];
+      list.push(p);
+      perPart.set(alias.field, list);
+      continue;
+    }
+    put(alias.field, p.value, p.confidence);
+  }
+  for (const [field, cands] of perPart) {
+    const chosen = pickPerPart(cands);
+    if (chosen) put(field, chosen.value, chosen.confidence);
   }
 
   // ── Lines, for what carries no label ────────────────────────────────
