@@ -81,6 +81,7 @@ export async function recomputeDerivedCompetencies(
           issuedOn: true,
           detailsEncrypted: true,
           extractedFields: true,
+          dateSourceNote: true,
         },
       }),
       prisma.credential.findMany({
@@ -108,7 +109,7 @@ export async function recomputeDerivedCompetencies(
           expiresOn: { not: null },
           purgedAt: null,
         },
-        select: { firearmCategory: true, firearmSelfLoading: true, expiresOn: true },
+        select: { firearmCategory: true, firearmSelfLoading: true, expiresOn: true, title: true },
       }),
     ]);
     if (!certs.length) return 0;
@@ -117,6 +118,7 @@ export async function recomputeDerivedCompetencies(
       category: r.firearmCategory as LinkedLicence['category'],
       selfLoading: r.firearmSelfLoading,
       expiresOn: r.expiresOn,
+      title: r.title,
     }));
 
     let changed = 0;
@@ -151,8 +153,12 @@ export async function recomputeDerivedCompetencies(
         continue;
       }
 
+      // The sentence counts as well as the date: it names the licence now,
+      // and a note that still says "longest-running licence" is stale.
       const same =
-        c.expiresOn !== null && c.expiresOn.getTime() === d.on.getTime();
+        c.expiresOn !== null &&
+        c.expiresOn.getTime() === d.on.getTime() &&
+        c.dateSourceNote === d.why;
       if (same) continue;
 
       await prisma.credential.update({

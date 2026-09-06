@@ -193,6 +193,26 @@ export function findOtherSide(
   return hits[0] ?? null;
 }
 
+/** The attention code for a proficiency side filed without its other side. */
+export const SIDE_MISSING = 'side-missing';
+
+const SIDE_MISSING_NOTES: Record<DocumentSide, string> = {
+  front:
+    "This is the training provider's certificate. A DFO wants the PFTC statement of results behind it as well: scan that page too and the two are filed together.",
+  back:
+    "This is the statement of results. A DFO wants the training provider's certificate in front of it as well: scan that page too and the two are filed together.",
+};
+
+/** What the row says while it waits for its other side. */
+export function sideMissingNote(side: DocumentSide): string {
+  return SIDE_MISSING_NOTES[side];
+}
+
+/** So the note can be taken off again when the other side arrives. */
+export function isSideMissingNote(note: string): boolean {
+  return note === SIDE_MISSING_NOTES.front || note === SIDE_MISSING_NOTES.back;
+}
+
 /** The sentence on the row that completed the pair. */
 export function otherSideNote(match: { title: string }, side: DocumentSide | null): string {
   const what = side === 'back' ? 'the statement of results behind' : side === 'front' ? 'the certificate in front of' : 'the other side of';

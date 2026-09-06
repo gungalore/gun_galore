@@ -186,14 +186,28 @@ export default function LicenceCentrePage() {
     const inFolder =
       openGroup === null ? (rows ?? []) : (folders[openGroup]?.rows ?? []);
     const q = query.trim().toLowerCase();
-    if (!q) return inFolder;
     // Title AND type, because half of these are named off the document
     // ("Howa 6.5 Creedmoor") and half are looked for by what they ARE
     // ("competency"). Matching only one of the two finds neither reliably.
-    return inFolder.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) ||
-        (KIND_LABELS[r.kind] ?? '').toLowerCase().includes(q),
+    const found = q
+      ? inFolder.filter(
+          (r) =>
+            r.title.toLowerCase().includes(q) ||
+            (KIND_LABELS[r.kind] ?? '').toLowerCase().includes(q),
+        )
+      : inFolder;
+    // ⚠️ BY TYPE, THEN BY DATE. The server hands rows back soonest-expiry
+    // first, which put a competency between two licences and a proof of
+    // address between two certificates. Operator, 2026-09-07: "group the list
+    // of scanned docs by type and then by date, not just expiry date." The
+    // date is the one printed on the document; a document with none sorts
+    // by the day it was added. Newest first within a type.
+    const when = (r: CredentialRow) => r.issuedOn ?? r.createdAt.slice(0, 10);
+    return [...found].sort(
+      (a, b) =>
+        (KIND_RANK.get(a.kind) ?? 9999) - (KIND_RANK.get(b.kind) ?? 9999) ||
+        when(b).localeCompare(when(a)) ||
+        b.createdAt.localeCompare(a.createdAt),
     );
   }, [openGroup, rows, folders, query]);
 
@@ -611,8 +625,15 @@ export default function LicenceCentrePage() {
             </p>
           ) : (
             <ul className="mt-2 flex flex-col gap-1">
-              {visible.map((r) => (
+              {visible.map((r, i) => (
                 <li key={r.id}>
+                  {/* A heading where the type changes, so the flat list reads
+                      as folders without opening one. */}
+                  {(i === 0 || visible[i - 1].kind !== r.kind) && (
+                    <p className="px-3.5 pb-1 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)] first:pt-1">
+                      {KIND_LABELS[r.kind] ?? r.kind}
+                    </p>
+                  )}
                   <DocRow
                     row={r}
                     selected={r.id === selectedId}
@@ -1295,6 +1316,11 @@ const NUMBER_DETAIL_KEYS: Partial<Record<CredentialKind, string[]>> = {
   OTHER: ['reference_number'],
 };
 
+/** Where a kind sits in the folder order: folder first, then its place in the folder. */
+const KIND_RANK = new Map<string, number>(
+  KIND_GROUPS.flatMap((g, gi) => g.kinds.map((k, ki) => [k, gi * 100 + ki] as [string, number])),
+);
+
 /** Degrades to a dash — never a blank cell — when a document has no number. */
 function docNumber(row: CredentialRow): string {
   for (const key of NUMBER_DETAIL_KEYS[row.kind] ?? []) {
@@ -1336,6 +1362,7 @@ function DocRow({
       type="button"
       onClick={onSelect}
       aria-current={selected ? 'true' : undefined}
+      data-name-card
       className="grid w-full grid-cols-[minmax(0,1fr)_112px] items-center gap-3 rounded-[10px] px-3.5 py-3 text-left hover:bg-[var(--bg-card-hover)] sm:grid-cols-[minmax(0,1fr)_108px_112px_124px]"
       style={{
         background: selected ? 'var(--bg-card)' : 'transparent',

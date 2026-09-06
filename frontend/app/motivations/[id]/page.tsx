@@ -2760,7 +2760,7 @@ export default function MotivationWizardPage() {
                       );
                     }}
                   >
-                    <summary className="flex cursor-pointer items-center justify-between gap-3 p-3">
+                    <summary data-name-card className="flex cursor-pointer items-center justify-between gap-3 p-3">
                       <span className="min-w-0">
                         <FullName className="text-sm font-medium">
                           {grp.title}

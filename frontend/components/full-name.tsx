@@ -3,27 +3,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // ────────────────────────────────────────────────────────────────────
-// THE WHOLE NAME OF A DOCUMENT WHOSE ROW IS TOO NARROW FOR IT.
+// THE WHOLE NAME OF A DOCUMENT, WHEN THE POINTER RESTS ON ITS CARD.
 //
-// Operator, 2026-09-07: "make all the documents display their full name when
-// the cursor stands still on one for more than 0.75 seconds — and the same for
-// the mobile and PWA, just don't know how we are going to manage that since
-// there is no cursor."
-//
-// One component, two gestures, one dwell:
-//   • a mouse that rests on the name for HOLD_MS opens it; moving off closes it.
-//   • a finger that holds the name for HOLD_MS opens it; lifting closes it.
-//     A finger that moves more than a few pixels is a scroll, not a hold, and
-//     the timer is dropped so a list can be flicked through a name.
-//
-// ⚠️ ONLY WHEN THE NAME IS ACTUALLY CUT SHORT. A name that fits its row has
-// nothing more to show, and a bubble repeating it would be noise on every
-// hover. The check is the browser's own: the text is wider than the box.
-//
-// ⚠️ NO `title` ATTRIBUTE. The native tooltip has its own delay we cannot set,
-// never appears on touch at all, and on iOS a long press over a `title` raises
-// the copy sheet instead. We draw the bubble ourselves, fixed-positioned so a
-// clipped list row cannot clip it too.
+// Operator, 2026-09-07: "if the mouse stands still for longer than 0.75 on
+// the card it must pop up the full name", and the earlier bubble was "way too
+// small". So:
+//   • the listener sits on the CARD - the nearest ancestor marked
+//     data-name-card - not on the name, and it fires when the mouse has not
+//     moved for HOLD_MS anywhere on it; moving again hides it and re-arms;
+//   • on a phone or the PWA a finger held still on the card for HOLD_MS does
+//     the same, and lifting or scrolling hides it;
+//   • it shows whether or not the row cut the name short - the point is the
+//     name, at a size that can be read, wherever the pointer is;
+//   • no native `title`: its delay cannot be set and it never shows on touch.
 // ────────────────────────────────────────────────────────────────────
 
 export const HOLD_MS = 750;
@@ -34,47 +26,83 @@ export function FullName({
   className = '',
   as: Tag = 'span',
 }: {
-  /** The name. A plain string, so we can read it back for the bubble. */
+  /** The name. A plain string, so we can show it again in the bubble. */
   children: string;
-  /** Classes for the clipped element; `truncate` and `block` are added. */
+  /** Classes for the clipped element; `block truncate` are added. */
   className?: string;
   as?: 'span' | 'p';
 }) {
   const ref = useRef<HTMLElement | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const start = useRef<{ x: number; y: number } | null>(null);
-  const [at, setAt] = useState<{ x: number; y: number; w: number } | null>(null);
+  const last = useRef<{ x: number; y: number } | null>(null);
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
 
   const clear = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
-    start.current = null;
   }, []);
 
-  const close = useCallback(() => {
-    clear();
-    setAt(null);
-  }, [clear]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const host: HTMLElement = (el.closest('[data-name-card]') as HTMLElement | null) ?? el;
 
-  const arm = useCallback(
-    (x: number, y: number) => {
+    const hide = () => {
       clear();
-      const el = ref.current;
-      // Nothing to show when the row is wide enough for the whole name.
-      if (!el || el.scrollWidth <= el.clientWidth + 1) return;
-      start.current = { x, y };
-      timer.current = setTimeout(() => {
-        const r = el.getBoundingClientRect();
-        setAt({ x: r.left, y: r.bottom, w: Math.max(r.width, 160) });
-      }, HOLD_MS);
-    },
-    [clear],
-  );
+      last.current = null;
+      setAt(null);
+    };
+    const arm = (x: number, y: number) => {
+      clear();
+      last.current = { x, y };
+      timer.current = setTimeout(() => setAt({ x, y }), HOLD_MS);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') {
+        // Any movement restarts the clock; a shown bubble goes away until the mouse rests again.
+        setAt(null);
+        arm(e.clientX, e.clientY);
+        return;
+      }
+      // A finger that travels is a scroll, not a hold.
+      if (!last.current) return;
+      const dx = e.clientX - last.current.x;
+      const dy = e.clientY - last.current.y;
+      if (dx * dx + dy * dy > MOVE_CANCEL_PX * MOVE_CANCEL_PX) hide();
+    };
+    const onEnter = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') arm(e.clientX, e.clientY);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse') arm(e.clientX, e.clientY);
+    };
+    const onContext = (e: Event) => {
+      // The long-press copy sheet would otherwise land on top of the bubble.
+      if (timer.current || last.current) e.preventDefault();
+    };
+    host.addEventListener('pointerenter', onEnter);
+    host.addEventListener('pointermove', onMove);
+    host.addEventListener('pointerleave', hide);
+    host.addEventListener('pointerdown', onDown);
+    host.addEventListener('pointerup', hide);
+    host.addEventListener('pointercancel', hide);
+    host.addEventListener('contextmenu', onContext);
+    return () => {
+      hide();
+      host.removeEventListener('pointerenter', onEnter);
+      host.removeEventListener('pointermove', onMove);
+      host.removeEventListener('pointerleave', hide);
+      host.removeEventListener('pointerdown', onDown);
+      host.removeEventListener('pointerup', hide);
+      host.removeEventListener('pointercancel', hide);
+      host.removeEventListener('contextmenu', onContext);
+    };
+  }, [clear]);
 
   // Anything that scrolls the page or moves focus takes the bubble with it.
   useEffect(() => {
     if (!at) return;
-    const off = () => close();
+    const off = () => setAt(null);
     window.addEventListener('scroll', off, { capture: true, passive: true });
     window.addEventListener('resize', off);
     window.addEventListener('keydown', off);
@@ -83,58 +111,21 @@ export function FullName({
       window.removeEventListener('resize', off);
       window.removeEventListener('keydown', off);
     };
-  }, [at, close]);
+  }, [at]);
 
-  useEffect(() => clear, [clear]);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    // A mouse is handled by the rest below; this is the finger.
-    if (e.pointerType === 'mouse') return;
-    arm(e.clientX, e.clientY);
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!start.current) return;
-    const dx = e.clientX - start.current.x;
-    const dy = e.clientY - start.current.y;
-    if (dx * dx + dy * dy > MOVE_CANCEL_PX * MOVE_CANCEL_PX) close();
-  };
-  const onPointerEnter = (e: React.PointerEvent) => {
-    if (e.pointerType !== 'mouse') return;
-    arm(e.clientX, e.clientY);
-  };
+  const width = typeof window === 'undefined' ? 480 : Math.min(480, window.innerWidth - 24);
+  const left = at ? Math.max(12, Math.min(at.x - 24, (typeof window === 'undefined' ? 0 : window.innerWidth) - width - 12)) : 0;
 
   return (
     <>
-      <Tag
-        ref={ref as React.RefObject<HTMLSpanElement & HTMLParagraphElement>}
-        className={`block truncate ${className}`}
-        // The long-press context menu (iOS copy sheet, Android selection)
-        // would otherwise land on top of the bubble. Only while a hold is
-        // armed or showing, so ordinary right-clicks elsewhere are untouched.
-        onContextMenu={(e) => {
-          if (timer.current || at) e.preventDefault();
-        }}
-        onPointerEnter={onPointerEnter}
-        onPointerLeave={close}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={close}
-        onPointerCancel={close}
-        style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' } as React.CSSProperties}
-      >
+      <Tag ref={ref as React.RefObject<HTMLSpanElement & HTMLParagraphElement>} className={`block truncate ${className}`}>
         {children}
       </Tag>
       {at && (
         <span
           role="tooltip"
-          className="pointer-events-none fixed z-[70] rounded-[8px] border border-[var(--border)] bg-[var(--bg-card)] px-2.5 py-1.5 text-[12.5px] font-medium leading-snug text-[var(--text-primary)] shadow-lg"
-          style={{
-            left: Math.max(8, Math.min(at.x, window.innerWidth - at.w - 8)),
-            top: at.y + 4,
-            maxWidth: Math.min(360, window.innerWidth - 16),
-            minWidth: Math.min(at.w, window.innerWidth - 16),
-            overflowWrap: 'anywhere',
-          }}
+          className="pointer-events-none fixed z-[70] rounded-[12px] border-2 border-[var(--border-hover)] bg-[var(--bg-card)] px-4 py-3 text-[16px] font-semibold leading-snug text-[var(--text-primary)] shadow-2xl"
+          style={{ left, top: at.y + 18, width: 'max-content', maxWidth: width, overflowWrap: 'anywhere' }}
         >
           {children}
         </span>

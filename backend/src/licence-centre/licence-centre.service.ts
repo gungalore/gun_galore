@@ -39,7 +39,16 @@ import {
   parseEndorsements,
 } from '../common/sa-competency';
 import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
-import { documentSide, duplicateNote, findDuplicate, findOtherSide, otherSideNote } from './credential-duplicates';
+import {
+  SIDE_MISSING,
+  documentSide,
+  duplicateNote,
+  findDuplicate,
+  findOtherSide,
+  isSideMissingNote,
+  otherSideNote,
+  sideMissingNote,
+} from './credential-duplicates';
 import { assessAddressProof } from './address-proof';
 import { MotivationsService } from '../motivations/motivations.service';
 import {
@@ -106,6 +115,131 @@ export class LicenceCentreService {
     });
     if (!user) throw new NotFoundException('User not found');
     return user;
+  }
+
+  /**
+   * Match the two sides of every proficiency the member holds, and say when
+   * one is on its own.
+   *
+   * Operator, 2026-09-07: "just scan the lot and the server matches them. If
+   * the server detects one without the other it must indicate that it needs
+   * it." Three passes, all idempotent, run on every load of the Centre:
+   *
+   *   1. rows read before the reader recorded sides (or read by the vision
+   *      fallback, which drops the side) are read again off their bytes, a few
+   *      per load, so they learn which side they are and pick up the fields
+   *      the reader now knows (a front's unit standards, S/C/V number, date);
+   *   2. unpaired rows are matched (findOtherSide) and linked both ways, and
+   *      the "needs its other side" flag comes off both;
+   *   3. anything still alone, with a known side, is flagged once.
+   */
+  private async settleProficiencySides(userId: string): Promise<void> {
+    const REREAD_CAP = 6;
+    try {
+      const rows = await this.prisma.credential.findMany({
+        where: { userId, kind: 'PROFICIENCY', purgedAt: null },
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          issuedOn: true,
+          storageKey: true,
+          mimeType: true,
+          detailsEncrypted: true,
+          otherSideId: true,
+          attention: true,
+          readNotes: true,
+        },
+      });
+      if (!rows.length) return;
+
+      type Side = {
+        id: string;
+        title: string;
+        createdAt: Date;
+        issuedOn: string | null;
+        details: Record<string, string>;
+        otherSideId: string | null;
+        attention: string[];
+        readNotes: string[];
+      };
+      const items: Side[] = [];
+      let reread = 0;
+      for (const r of rows) {
+        let details = this.readDetails(r.detailsEncrypted);
+        let issuedOn = r.issuedOn ? toIsoDate(r.issuedOn) : null;
+        if (!documentSide(details) && r.storageKey && reread < REREAD_CAP) {
+          reread += 1;
+          try {
+            const bytes = await this.files.read(r.storageKey);
+            const again = await this.extract.read({
+              kind: 'PROFICIENCY',
+              bytes,
+              mimeType: r.mimeType ?? 'image/jpeg',
+            });
+            if (Object.keys(again.details).length) {
+              details = { ...details, ...again.details };
+              issuedOn = issuedOn ?? again.issuedOn;
+              const title = derivedCredentialTitle('PROFICIENCY', details);
+              await this.prisma.credential.update({
+                where: { id: r.id },
+                data: {
+                  detailsEncrypted: encryptJson(details),
+                  extractedFields: Object.keys(details),
+                  extractionOk: true,
+                  ...(r.issuedOn || !again.issuedOn ? {} : { issuedOn: parseIsoDate(again.issuedOn) }),
+                  ...(title && r.title === DEFAULT_TITLE.PROFICIENCY ? { title } : {}),
+                },
+              });
+              if (title && r.title === DEFAULT_TITLE.PROFICIENCY) r.title = title;
+            }
+          } catch (err) {
+            this.logger.warn(`Could not re-read proficiency ${r.id}: ${(err as Error).message}`);
+          }
+        }
+        items.push({ ...r, issuedOn, details });
+      }
+
+      const cleared = (x: Side) => ({
+        attention: x.attention.filter((t) => t !== SIDE_MISSING),
+        readNotes: x.readNotes.filter((n) => !isSideMissingNote(n)),
+      });
+      for (const a of items) {
+        if (a.otherSideId) continue;
+        const match = findOtherSide(
+          { kind: 'PROFICIENCY', details: a.details, issuedOn: a.issuedOn },
+          items.filter((o) => o.id !== a.id).map((o) => ({ ...o, kind: 'PROFICIENCY' as const })),
+        );
+        if (!match) continue;
+        const b = items.find((o) => o.id === match.id);
+        if (!b) continue;
+        a.otherSideId = b.id;
+        b.otherSideId = a.id;
+        for (const x of [a, b]) {
+          const c = cleared(x);
+          const other = x === a ? b : a;
+          const note = otherSideNote(other, documentSide(x.details));
+          x.attention = c.attention;
+          x.readNotes = c.readNotes.includes(note) ? c.readNotes : [...c.readNotes, note];
+          await this.prisma.credential.update({
+            where: { id: x.id },
+            data: { otherSideId: x.otherSideId, attention: x.attention, readNotes: x.readNotes },
+          });
+        }
+      }
+
+      for (const a of items) {
+        if (a.otherSideId || a.attention.includes(SIDE_MISSING)) continue;
+        const side = documentSide(a.details);
+        if (!side) continue;
+        await this.prisma.credential.update({
+          where: { id: a.id },
+          data: { attention: [...a.attention, SIDE_MISSING], readNotes: [...a.readNotes, sideMissingNote(side)] },
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Could not settle proficiency sides: ${(err as Error).message}`);
+    }
   }
 
   private readDetails(encrypted: string | null): Record<string, string> {
@@ -353,6 +487,22 @@ export class LicenceCentreService {
     const user = await this.requireUser(clerkId);
     const now = new Date();
 
+    // ⚠️ BEFORE THE ROWS ARE READ, so this load shows the result.
+    //
+    // The derivation rule can change under stored dates (2026-09-07: a known
+    // rifle action now beats an unknown one, and the note names the licence),
+    // and the proficiency pairing below can rewrite titles and flags. Both
+    // are idempotent and write only what changed, so running them on every
+    // load costs a few reads and settles the vault without a deploy-time
+    // script. recomputeDerivedCompetencies swallows its own failures.
+    await this.settleProficiencySides(user.id);
+    await recomputeDerivedCompetencies(
+      this.prisma,
+      user.id,
+      (blob) => this.readDetails(blob).covers ?? '',
+      this.logger,
+    );
+
     const rows = await this.prisma.credential.findMany({
       where: { userId: user.id },
       orderBy: [{ expiresOn: 'asc' }, { createdAt: 'desc' }],
@@ -547,6 +697,7 @@ export class LicenceCentreService {
           r.firearmCategory) as LinkedLicence['category'],
         selfLoading: actioned.get(r.id) ?? r.firearmSelfLoading,
         expiresOn: r.expiresOn,
+        title: renamed.get(r.id) ?? r.title,
       }));
 
     const titles = new Map(rows.map((r) => [r.id, renamed.get(r.id) ?? r.title]));
@@ -950,6 +1101,7 @@ export class LicenceCentreService {
     const attentionUncertain: string[] = [];
     let duplicateOf: { id: string; title: string } | null = null;
     let otherSide: { id: string; title: string } | null = null;
+    let partnerCleared: { attention: string[]; readNotes: string[] } | null = null;
     if (reading) {
       try {
         if (resolved === 'ADDRESS_CONFIRMATION') {
@@ -986,7 +1138,7 @@ export class LicenceCentreService {
         }
         const others = await this.prisma.credential.findMany({
           where: { userId: user.id, kind: resolved, purgedAt: null, id: { not: created.id } },
-          select: { id: true, title: true, createdAt: true, issuedOn: true, detailsEncrypted: true, otherSideId: true },
+          select: { id: true, title: true, createdAt: true, issuedOn: true, detailsEncrypted: true, otherSideId: true, attention: true, readNotes: true },
         });
         const subject = { kind: resolved, details: reading.details, issuedOn: reading.issuedOn };
         const candidates = others.map((o) => ({
@@ -1004,6 +1156,22 @@ export class LicenceCentreService {
         if (pair) {
           otherSide = { id: pair.id, title: pair.title };
           attentionNotes.push(otherSideNote(pair, documentSide(reading.details)));
+          const partner = others.find((o) => o.id === pair.id);
+          if (partner) {
+            partnerCleared = {
+              attention: partner.attention.filter((t) => t !== SIDE_MISSING),
+              readNotes: partner.readNotes.filter((n) => !isSideMissingNote(n)),
+            };
+          }
+        } else if (resolved === 'PROFICIENCY') {
+          // Operator, 2026-09-07: "if the server detects one without the
+          // other it must indicate that it needs it." The flag comes off the
+          // moment the other page arrives, here or on the next load.
+          const side = documentSide(reading.details);
+          if (side) {
+            attention.push(SIDE_MISSING);
+            attentionNotes.push(sideMissingNote(side));
+          }
         }
         const match = findDuplicate(subject, candidates.filter((c) => c.id !== pair?.id));
         if (match) {
@@ -1019,7 +1187,7 @@ export class LicenceCentreService {
       if (otherSide) {
         // Both rows point at each other; the partner also learns who joined it.
         await this.prisma.credential
-          .update({ where: { id: otherSide.id }, data: { otherSideId: created.id } })
+          .update({ where: { id: otherSide.id }, data: { otherSideId: created.id, ...(partnerCleared ?? {}) } })
           .catch((err) =>
             this.logger.warn(`Could not pair credential ${otherSide?.id}: ${(err as Error).message}`),
           );
@@ -1069,12 +1237,13 @@ export class LicenceCentreService {
           firearmCategory: { not: null },
           expiresOn: { not: null },
         },
-        select: { firearmCategory: true, firearmSelfLoading: true, expiresOn: true },
+        select: { firearmCategory: true, firearmSelfLoading: true, expiresOn: true, title: true },
       })
     ).map((r) => ({
       category: r.firearmCategory as LinkedLicence['category'],
       selfLoading: r.firearmSelfLoading,
       expiresOn: r.expiresOn,
+      title: r.title,
     }));
 
     /**
