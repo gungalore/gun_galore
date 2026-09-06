@@ -1939,7 +1939,26 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (small hours), commit `c6917b28`.** No migrations
+**Last deploy: 2026-09-07 (early), commit `ff66e1e6`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907000000_credential_firearm_action`, additive only
+(`Credential.firearmSelfLoading` BOOLEAN NULL), hand-written per
+[BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`, both apps + warden) on the
+operator's `deploy now`. Dump `alloutdoor-20260906-222108.dump` before
+`prisma migrate deploy`; "All migrations have been successfully applied".
+Health doubled on both ports, warden online, public 200 twice.
+
+Shipped, merged from `feat/the-bench`: `d78aa585` — a rifle competency now
+follows a licence of its own action (119651 manual vs 119650 self-loading);
+the licence's action is stored in the clear beside its category, backfilled
+on the next load of the Document Centre with a re-derivation after, so the
+operator's Manual Rifle competency should move from the semi-automatic
+.223's 2035 to the .30-06's 2034 once the Centre is opened. And `e415f13e` —
+the new scanner no longer turns an upright-held page over (the text
+asymmetry flipped nine of nineteen real certificates), which is what had the
+proficiency certificates upside down and the reader missing competency issue
+dates and proficiency numbers on 2026-09-06 21:50.
+
+**Previous deploy: 2026-09-07 (small hours), commit `c6917b28`.** No migrations
 ("No pending migrations to apply"). **BACKEND-ONLY** (`deploy.sh
 --backend-only`) on the operator's `deploy now`. Ships `8c328e08`, merged from
 `feat/the-bench`: the licence reader now takes the firearm's Make (and Model)
