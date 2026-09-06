@@ -19,7 +19,7 @@
 
 import { useMemo } from 'react';
 
-import { SAFETY_LINE, type LoadCardProps } from './contract';
+import { SAFETY_LINE, projectileName, type LoadCardProps } from './contract';
 import { Btn, IconX, OverlayShell, Tag, type BenchSize, usePhone } from './primitives';
 import CartridgeThumb from './CartridgeThumb';
 import CoalGauge from './CoalGauge';
@@ -207,7 +207,7 @@ export function LoadCard({
         {cartridge.name} · {weightGr} gr
       </div>
       <div id={titleId} className="head" style={{ fontSize: phone ? 18 : 20, marginTop: 2 }}>
-        {row.bulletMaker} {row.bulletType}{' '}
+        {projectileName(row)}{' '}
         <span style={{ color: 'var(--text-tertiary)', fontWeight: 500 }}>with</span> {row.powder}
       </div>
       {tags.length > 0 && (
