@@ -1,18 +1,22 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { toCsv } from '../common/csv.util';
 import { calibreFromG1 } from './bullet-calibre';
 import { resolveTolerance, weightWindow, type WeightToleranceGr } from './bullet-weight';
+import { parseShotAt, type AddLogDto, type PatchLogDto, type PutBenchDto } from './bench.dto';
 import {
   benchBulletKey,
   coalFlags,
+  logFlags,
   THUMB_DIM_FIELDS,
   type BenchView,
   type LoadsResponse,
   type LoadsWhy,
   type PublicLoadGroup,
   type PublicLoadRow,
+  type PublicLogEntry,
 } from './bench.types';
 
 /** What a guest sends instead of a stored bench. */
@@ -156,6 +160,120 @@ interface LoadsAxes {
  * whatever order the sort happened to see them — the exact instability the
  * tie-breaks exist to remove. Cartridges with no sheet sort last, together.
  */
+/**
+ * The most rows one search returns.
+ *
+ * ⚠️ A CAP HERE IS ONLY LEGITIMATE BECAUSE THE ANSWER SAYS IT WAS CAPPED
+ * (`LoadsResponse.truncated`). Everything else on this module is uncapped on
+ * purpose — the pickers filter in the browser, so a silent cut makes a real
+ * powder unfindable — but the results list is different in two ways: it is not
+ * filtered client-side (every control re-queries), and an unbounded findMany
+ * with a nested cartridge per row is one shelf away from dragging the whole
+ * consolidated table across the wire. A bench holding six cartridges and a
+ * loose weight window can reach five figures.
+ *
+ * 600 is well past what anybody reads and well short of what hurts.
+ */
+const LOADS_MAX = 600;
+
+/** Shell-holder chips past this go behind a count — see cartridge(). */
+const SHELL_HOLDER_MAX = 12;
+
+/** The biggest share payload we will store, in bytes of JSON. */
+const SHARE_MAX_BYTES = 8 * 1024;
+
+/** How long a permalink lives. Spec §4. */
+const SHARE_TTL_DAYS = 90;
+
+/**
+ * How long the catalogue-wide aggregates are held.
+ *
+ * ⚠️ ONLY WHAT IS THE SAME FOR EVERY VIEWER. The bullet picker's group-by, the
+ * cartridge list and the unsearched powder list are facts about the imported
+ * catalogue, which changes when the operator runs the import and at no other
+ * time. Nothing bench-relative may be cached here — a count is "what YOU can
+ * build", and one member's answer served to the next is a stranger's shelf
+ * (CLAUDE.md's viewer-varying rule). Five minutes is short enough that a fresh
+ * import shows up while the operator is still watching it.
+ */
+const CATALOGUE_TTL_MS = 5 * 60_000;
+
+/**
+ * The words that may not travel, in any value on any public response.
+ *
+ * 🚨 THE SAME LIST bench.leak.spec.ts ASSERTS, AND FOR THE SAME REASON: which
+ * book a figure was read out of is the book's, not ours. Kept beside the one
+ * function that reads free text off a sheet, because that is the only place a
+ * value can carry a sentence somebody else wrote.
+ */
+const FORBIDDEN_WORDS = ['source', 'manual', 'page', 'cip', 'saami', 'published'];
+
+/**
+ * The tolerances and footnotes maps, with any entry that names where it came
+ * from dropped.
+ *
+ * ⚠️ ENTRY BY ENTRY, NOT ALL OR NOTHING. These are per-dimension annotations
+ * the spec card shows beside each figure; one footnote reading "see the
+ * published table" must not take the other thirteen tolerances with it.
+ */
+function sanitiseAnnotations(value: unknown): Record<string, string> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (v === null || v === undefined) continue;
+    const text = String(v);
+    const haystack = `${k} ${text}`.toLowerCase();
+    if (FORBIDDEN_WORDS.some((w) => haystack.includes(w))) continue;
+    out[k] = text;
+  }
+  // An empty map and an absent one mean the same thing to the card, and null
+  // is the shape it already handles for a cartridge with no sheet.
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * A stored instant as the calendar date it was in South Africa.
+ *
+ * ⚠️ `toISOString().slice(0, 10)` IS UTC, AND EVERY MEMBER OF THIS SITE IS TWO
+ * HOURS AHEAD OF IT. A load fired at half past one on a Sunday morning filed
+ * itself under the Saturday in the CSV they downloaded to keep — and the list
+ * on screen, which formats in the browser's own zone, said Sunday. One record,
+ * two dates, and the one they can print is the wrong one.
+ *
+ * en-CA is not relied on for the ORDER: the parts are read out by name, so a
+ * runtime with a different locale data set cannot silently produce DD-MM-YYYY.
+ */
+const JHB = new Intl.DateTimeFormat('en-ZA', {
+  timeZone: 'Africa/Johannesburg',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function jhbDate(d: Date): string {
+  const parts = new Map(JHB.formatToParts(d).map((p) => [p.type, p.value]));
+  return `${parts.get('year')}-${parts.get('month')}-${parts.get('day')}`;
+}
+
+/**
+ * ⚠️ A CALL, NOT A CONSTANT. Read at module scope the value is frozen at
+ * import time, before dotenv has necessarily finished — the same trap
+ * auctions.service.ts and offers.service.ts both note at their own APP_URL.
+ */
+const appUrl = () => process.env.FRONTEND_URL ?? 'https://alloutdoor.co.za';
+
+/** An empty string a member left blank is not a value; it is a blank. */
+function trimmedOrNull(v: string | null | undefined): string | null {
+  const s = v?.trim();
+  return s ? s : null;
+}
+
+/** Built fresh each time: the caller may keep it, and an empty bench is theirs. */
+function EMPTY_BENCH(): BenchView {
+  return { powders: [], bullets: [], cartridges: [], units: 'metric' };
+}
+
 function compareCalibre(a: number | null, b: number | null): number {
   if (a === b) return 0;
   if (a === null) return 1;
@@ -195,6 +313,41 @@ export class BenchService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * The catalogue-wide answers, held for CATALOGUE_TTL_MS.
+   *
+   * 🚨 NOTHING VIEWER-SPECIFIC MAY EVER BE PUT IN HERE. Every other figure on
+   * this module is "what YOU can build" — one member's answer handed to the
+   * next is a stranger's shelf, which is the exact failure CLAUDE.md's
+   * viewer-varying rule is about. What IS in here is the imported catalogue:
+   * the distinct calibre+weight pairs, the cartridges that have loads, the
+   * powder list. Those change when the operator runs the import and never
+   * between two members.
+   *
+   * ⚠️ AN INSTANCE FIELD, NOT A MODULE-LEVEL Map. Nest holds one BenchService,
+   * so the cache is process-wide in production — but a test that builds a
+   * second service must get a cold one, or a fixture written for one test
+   * answers another.
+   *
+   * The PROMISE is stored rather than its value, so a hundred requests
+   * arriving during one cold group-by share the single query. A rejection is
+   * evicted immediately: a cached failure would outlive the outage that caused
+   * it.
+   */
+  private readonly catalogue = new Map<string, { at: number; value: Promise<unknown> }>();
+
+  private cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const hit = this.catalogue.get(key);
+    if (hit && Date.now() - hit.at < CATALOGUE_TTL_MS) return hit.value as Promise<T>;
+
+    const value = load().catch((err: unknown) => {
+      this.catalogue.delete(key);
+      throw err;
+    });
+    this.catalogue.set(key, { at: Date.now(), value });
+    return value;
+  }
+
+  /**
    * Clerk subject → User.id.
    *
    * ⚠️ THESE ARE NOT THE SAME STRING AND TYPESCRIPT CANNOT TELL THEM APART.
@@ -204,24 +357,40 @@ export class BenchService {
    * more often, nobody's, which looks like "my shelf keeps emptying".
    * Every entry point into this service resolves the sub through here first.
    */
-  private async resolveUserId(clerkSub: string): Promise<string> {
+  private async findUserId(clerkSub: string): Promise<string | null> {
     const user = await this.prisma.user.findUnique({
       where: { clerkId: clerkSub },
       select: { id: true },
     });
-    if (!user) throw new NotFoundException('No member for this session');
-    return user.id;
+    return user?.id ?? null;
+  }
+
+  private async resolveUserId(clerkSub: string): Promise<string> {
+    const userId = await this.findUserId(clerkSub);
+    if (!userId) throw new NotFoundException('No member for this session');
+    return userId;
   }
 
   /* ── The bench itself ──────────────────────────────────────────────── */
 
   async getBench(clerkSub: string): Promise<BenchView> {
-    const userId = await this.resolveUserId(clerkSub);
+    // ⚠️ NO User ROW IS AN EMPTY SHELF, NOT A 404, AND ONLY ON THE READ.
+    // ClerkGuard lazily provisions the row, but it refuses to create one for a
+    // Clerk user with no email — so a signed-in caller can genuinely arrive
+    // here with nothing. Every read on this module goes through here
+    // (BenchController.benchFor is the one door), and a 404 on the results,
+    // the powder chips AND the spec card is a page that looks broken to
+    // somebody whose only problem is that they have not saved a shelf yet.
+    // The WRITES still resolve strictly: without a User row the bench has
+    // nowhere to be stored, and the foreign key would refuse it anyway.
+    const userId = await this.findUserId(clerkSub);
+    if (!userId) return EMPTY_BENCH();
+
     const row = await this.prisma.userBench.findUnique({ where: { userId } });
 
     // A member who has never opened the page gets an empty bench rather than
     // a 404: "you have nothing on your shelf yet" is a state, not an error.
-    if (!row) return { powders: [], bullets: [], cartridges: [], units: 'metric' };
+    if (!row) return EMPTY_BENCH();
 
     const [powders, cartridges] = await Promise.all([
       this.prisma.benchPowder.findMany({
@@ -255,10 +424,13 @@ export class BenchService {
     };
   }
 
-  async putBench(
-    clerkSub: string,
-    body: { powderIds?: string[]; bullets?: unknown; cartridgeKeys?: string[]; units?: string },
-  ): Promise<BenchView> {
+  /**
+   * ⚠️ THE BODY IS A CLASS NOW, WHICH IS THE ONLY REASON IT IS VALIDATED. It
+   * was typed `Record<string, never>` — not a class, so the global
+   * ValidationPipe skipped the route entirely and a non-array `bullets` was a
+   * 500 while 100 000 powder ids were simply stored. See bench.dto.ts.
+   */
+  async putBench(clerkSub: string, body: PutBenchDto): Promise<BenchView> {
     const userId = await this.resolveUserId(clerkSub);
     const data = {
       powderIds: body.powderIds ?? [],
@@ -321,7 +493,11 @@ export class BenchService {
     const candidateKeys = filter.cartridgeKey ? [filter.cartridgeKey] : cartridgeKeys;
     const bulletOr = await this.bulletAxis(bullets, tolerance, candidateKeys);
 
-    const rows = await this.prisma.benchLoad.findMany({
+    // ⚠️ ONE MORE THAN THE CAP, DELIBERATELY. Asking for exactly LOADS_MAX
+    // cannot tell "there were exactly 600" from "there were thousands", and
+    // the answer has to say which — see LoadsResponse.truncated.
+    const found = await this.prisma.benchLoad.findMany({
+      take: LOADS_MAX + 1,
       where: this.benchLoadWhere({ cartridgeKeys, powderIds, bulletOr }, filter),
       // ⚠️ AN EXPLICIT SELECT, NOT AN INCLUDE. sourcesCount and the
       // BenchSourceLoad relation must never reach a response, and the surest
@@ -351,8 +527,15 @@ export class BenchService {
           },
         },
       },
-      orderBy: [{ weightGr: 'asc' }],
+      // ⚠️ AND THE DATABASE ORDER IS TOTAL TOO, BECAUSE `take` MAKES IT
+      // LOAD-BEARING. Ordered by weight alone, which 600 of several thousand
+      // rows come back is decided by whatever order Postgres happened to
+      // produce — so the same search would cut a different set each time.
+      orderBy: [{ weightGr: 'asc' }, { cartridgeKey: 'asc' }, { id: 'asc' }],
     });
+
+    const truncated = found.length > LOADS_MAX;
+    const rows = truncated ? found.slice(0, LOADS_MAX) : found;
 
     // Bench order for cartridges, then weight ascending, then powder name.
     const order = new Map(cartridgeKeys.map((k, i) => [k, i]));
@@ -398,7 +581,20 @@ export class BenchService {
     );
     for (const g of groups) {
       g.weights.sort((a, b) => a.weightGr - b.weightGr);
-      for (const w of g.weights) w.rows.sort((a, b) => a.powder.localeCompare(b.powder));
+      // ⚠️ THE TIE-BREAKS RUN TO THE ID, WHICH IS NOT TIDINESS. One powder at
+      // one weight in one cartridge is several rows — a Hornady, a Sierra, a
+      // Barnes — so the powder name alone leaves them in whatever order the
+      // query happened to produce, and they visibly swap places between one
+      // search and the next in a list the member is scanning by eye. The id is
+      // the last resort that makes the order total.
+      for (const w of g.weights) {
+        w.rows.sort(
+          (a, b) =>
+            a.powder.localeCompare(b.powder) ||
+            a.bulletMaker.localeCompare(b.bulletMaker) ||
+            a.id.localeCompare(b.id),
+        );
+      }
     }
 
     // Only when there is nothing to show. A full screen explains itself, and
@@ -413,7 +609,14 @@ export class BenchService {
     // undefined survives into `Object.keys` and into every `'why' in result`
     // check the client might make, and "there is a diagnosis" must not be
     // true of a search that found loads.
-    return { count: rows.length, groups, ...(why ? { why } : {}) };
+    // `truncated` is spread the same way and for the same reason: a key
+    // present and false still passes `'truncated' in result`.
+    return {
+      count: rows.length,
+      groups,
+      ...(why ? { why } : {}),
+      ...(truncated ? { truncated: true } : {}),
+    };
   }
 
   /**
@@ -532,22 +735,20 @@ export class BenchService {
 
   /* ── The powder picker ─────────────────────────────────────────────── */
 
-  async powders(q: string | undefined, bench: GuestBench | null) {
-    const rows = await this.prisma.benchPowder.findMany({
-      where: q ? { name: { contains: q, mode: 'insensitive' } } : undefined,
-      select: { id: true, name: true, maker: true },
-      orderBy: { name: 'asc' },
-      // ⚠️ NO take, AND NONE MAY BE ADDED — same rule as bullets() below. The
-      // picker filters this list CLIENT-SIDE, so whatever a cap omits is
-      // unreachable no matter what the member types: they get 'Nothing matches
-      // that name' for a powder that exists, and nothing on screen says the
-      // list was shortened. At 300, with 305 imported, the last five were
-      // invisible. Raising the cap to 1000 only moved the trap one import
-      // away; the canonical list is a few hundred rows, so there is no cap
-      // worth paying for. A cap here is only ever acceptable if the picker
-      // TELLS the member the list was cut, the way BulletPicker's draw cap
-      // does.
-    });
+  /**
+   * ⚠️ THE FILTER IS THE THIRD ARGUMENT BECAUSE A CHIP'S COUNT IS A PROMISE
+   * ABOUT WHAT TAPPING IT SHOWS, AND THE FINDER'S CONTROLS ARE PART OF THAT
+   * PROMISE. Counted without the cartridge tab and the weight band, a chip
+   * reads "12 loads" over a screen the member has narrowed to one cartridge
+   * and 150 gr +, and eleven of the twelve are behind controls they can see
+   * are set. Same class of broken promise as counting without the calibre.
+   *
+   * The powder chip itself is deliberately NOT applied: a powder filter would
+   * zero every other row, and the whole list is what the member is choosing
+   * from.
+   */
+  async powders(q: string | undefined, bench: GuestBench | null, filter: LoadsFilter = {}) {
+    const rows = await this.powderCatalogue(q);
     // Rebuilt field by field rather than handed back as Prisma returned it —
     // see getBench(). The spread below is of OUR object, not of a Prisma row.
     const list = rows.map((p) => ({ id: p.id, name: p.name, maker: p.maker }));
@@ -562,20 +763,60 @@ export class BenchService {
     // 150 gr bullet is a .308, and counted at the exact weight while the list
     // runs over ± 5 it reads "4 loads" onto a screen showing nine. Same
     // window, from the same bench — see GuestBench.toleranceGr.
+    //
+    // ⚠️ AND THROUGH benchLoadWhere(), NOT A HAND-ROLLED CLAUSE. This is the
+    // "powders relaxed" question the empty-state diagnosis already asks, so it
+    // is built by the same builder with the powder axis dropped — which is how
+    // the cartridge tab and the weight band reach it without anyone having to
+    // remember them here.
+    const candidateKeys = filter.cartridgeKey ? [filter.cartridgeKey] : bench.cartridgeKeys;
     const counts = await this.prisma.benchLoad.groupBy({
       by: ['powderId'],
-      where: {
-        cartridgeKey: { in: bench.cartridgeKeys },
-        OR: await this.bulletAxis(
-          bench.bullets,
-          resolveTolerance(bench.toleranceGr),
-          bench.cartridgeKeys,
-        ),
-      },
+      where: this.benchLoadWhere(
+        {
+          cartridgeKeys: bench.cartridgeKeys,
+          powderIds: null,
+          bulletOr: await this.bulletAxis(
+            bench.bullets,
+            resolveTolerance(bench.toleranceGr),
+            candidateKeys,
+          ),
+        },
+        // The powder chip is dropped: filtering by one powder would count 0
+        // for every other row on a list whose whole job is choosing between
+        // them.
+        { ...filter, powderId: undefined },
+      ),
       _count: { _all: true },
     });
     const byId = new Map(counts.map((c) => [c.powderId, c._count._all]));
     return list.map((p) => ({ ...p, loadsForBench: byId.get(p.id) ?? 0 }));
+  }
+
+  /**
+   * The canonical powder list, cached — see CATALOGUE_TTL_MS.
+   *
+   * ⚠️ NO take, AND NONE MAY BE ADDED. The picker filters this list
+   * CLIENT-SIDE, so whatever a cap omits is unreachable no matter what the
+   * member types: they get 'Nothing matches that name' for a powder that
+   * exists, and nothing on screen says the list was shortened. At 300, with
+   * 305 imported, the last five were invisible. Raising the cap to 1000 only
+   * moved the trap one import away; the canonical list is a few hundred rows,
+   * so there is no cap worth paying for. A cap here is only ever acceptable if
+   * the picker TELLS the member the list was cut, the way BulletPicker's draw
+   * cap does.
+   */
+  private powderCatalogue(q: string | undefined) {
+    const read = () =>
+      this.prisma.benchPowder.findMany({
+        where: q ? { name: { contains: q, mode: 'insensitive' } } : undefined,
+        select: { id: true, name: true, maker: true },
+        orderBy: { name: 'asc' },
+      });
+    // ⚠️ ONLY THE UNSEARCHED LIST IS CACHED. A key per search term is a map
+    // that grows with whatever anybody types; the picker's own first request
+    // is the unsearched one and is the only call worth holding.
+    return q ? read() : this.cached('powders', read);
   }
 
   /* ── Calibre, which lives on the cartridge ─────────────────────────── */
@@ -728,6 +969,12 @@ export class BenchService {
    * what happened while all three Add buttons opened the powder picker.
    */
   async bullets(): Promise<BenchBulletOptionView[]> {
+    // Cached: the same list for every viewer, and one group-by over ~28 000
+    // consolidated rows on every open of the picker.
+    return this.cached('bullets', () => this.buildBullets());
+  }
+
+  private async buildBullets(): Promise<BenchBulletOptionView[]> {
     const [groups, calibres] = await Promise.all([
       this.prisma.benchLoad.groupBy({
         // ⚠️ NO WHERE, AND THE MAKER FILTER THAT WAS HERE IS GONE WITH THE
@@ -808,6 +1055,11 @@ export class BenchService {
    * empty, and the Bench looks broken rather than unstocked.
    */
   async cartridgeList(): Promise<BenchCartridgeOptionView[]> {
+    // Cached for the same reason bullets() is — see cached().
+    return this.cached('cartridges', () => this.buildCartridgeList());
+  }
+
+  private async buildCartridgeList(): Promise<BenchCartridgeOptionView[]> {
     const counts = await this.prisma.benchLoad.groupBy({
       by: ['cartridgeKey'],
       _count: { _all: true },
@@ -828,7 +1080,14 @@ export class BenchService {
 
   /* ── The spec card ─────────────────────────────────────────────────── */
 
-  async cartridge(key: string, bench: GuestBench | null) {
+  /**
+   * ⚠️ THE FILTER REACHES THE BENCH COUNT, FOR THE REASON IT REACHES THE
+   * POWDER CHIPS. "26 from your bench" is a promise about the list behind the
+   * card, and the finder's weight band is part of that list. The cartridge tab
+   * is NOT taken from the filter — this card is about THIS cartridge, whatever
+   * tab the finder is on.
+   */
+  async cartridge(key: string, bench: GuestBench | null, filter: LoadsFilter = {}) {
     const cartridge = await this.prisma.benchCartridge.findUnique({
       where: { key },
       select: {
@@ -860,20 +1119,40 @@ export class BenchService {
         ? await this.bulletAxis(shelfBullets, resolveTolerance(bench?.toleranceGr), [key])
         : null;
 
-    const shellHolderGroup = await this.shellHolderGroup(key, cartridge.dims);
+    const family = await this.shellHolderGroup(key, cartridge.dims);
 
     const [loadCount, loadsForBench] = await Promise.all([
+      // Every load for the cartridge, unnarrowed: this is the figure that
+      // says the cartridge is worth adding, and narrowing it by the finder's
+      // current view would answer a different question.
       this.prisma.benchLoad.count({ where: { cartridgeKey: key } }),
       bulletOr
         ? this.prisma.benchLoad.count({
-            where: {
-              cartridgeKey: key,
-              powderId: { in: shelfPowders },
-              OR: bulletOr,
-            },
+            where: this.benchLoadWhere(
+              { cartridgeKeys: [key], powderIds: shelfPowders, bulletOr },
+              // The card's own cartridge wins over the finder's tab; the
+              // weight band and the powder chip are the member's current view
+              // and do narrow the list this count describes.
+              { ...filter, cartridgeKey: key },
+            ),
           })
         : Promise.resolve(0),
     ]);
+
+    // ⚠️ CHIPS ARE CAPPED AND THE CAP IS DECLARED. The .473" head family runs
+    // to dozens of cartridges; a card that lists them all buries the sections
+    // under it. Unlike the pickers, nothing here is filtered in the browser,
+    // so a cut list is not a thing the member cannot reach — but they must
+    // still be told there is more, which is what shellHolderMore is for.
+    const shellHolderGroup = family.slice(0, SHELL_HOLDER_MAX);
+    const shellHolderMore = family.length - shellHolderGroup.length;
+
+    // 🚨 THE SHEET'S OWN BAR FIGURE BEATS OUR CONVERSION OF THE PSI ONE.
+    // BenchCartridge.pmaxBar is round(pmaxPsi / 14.5038) — a derived number,
+    // which the schema's own comment forbids showing in a reloading context
+    // where the exact figure exists. When the dimension sheet carries a bar
+    // value it IS the exact figure, and the derived one is off by a bar or two.
+    const sheetBar = (cartridge.dims as { pmaxBar?: number | null } | null)?.pmaxBar ?? null;
 
     // ⚠️ NAMED FIELD BY FIELD RATHER THAN `const { dims, ...rest }`. A rest
     // spread republishes whatever the `select` above happens to hold, so the
@@ -890,8 +1169,16 @@ export class BenchService {
         year: cartridge.year,
         caseLengthMm: cartridge.caseLengthMm,
         maxLengthMm: cartridge.maxLengthMm,
+        /** The reference figure, in psi. */
         pmaxPsi: cartridge.pmaxPsi,
-        pmaxBar: cartridge.pmaxBar,
+        /** The sheet's own bar figure where there is one, else psi / 14.5038. */
+        pmaxBar: sheetBar ?? cartridge.pmaxBar,
+        /**
+         * True when `pmaxBar` above is the conversion rather than a figure
+         * anybody printed. The client may soften how it renders it; it may not
+         * say where either figure came from (the module's copy rule).
+         */
+        pmaxBarDerived: sheetBar === null,
       },
       // ⚠️ rawText is stripped. It is the sheet's own text block, kept for
       // audit, and it is the one field on this model that would put a
@@ -906,6 +1193,8 @@ export class BenchService {
       // computes them; sending a second copy over the wire would be one
       // more place for the drawing and the ruler to disagree.
       shellHolderGroup,
+      /** How many more share this head than the chips above. 0 when none. */
+      shellHolderMore,
       loadCount,
       loadsForBench,
     };
@@ -963,14 +1252,49 @@ export class BenchService {
     return rows.map((c) => ({ key: c.key, name: c.name }));
   }
 
+  /**
+   * The dimension sheet, minus everything that describes the SHEET rather than
+   * the cartridge.
+   *
+   * 🚨 THE MEASUREMENTS ARE OURS TO PUBLISH; THE PAPER THEY WERE READ OFF IS
+   * NOT. `rawText` is the page's own text block. `tab`, `sheetDate` and
+   * `revision` identify the edition it was printed in — the spec (§6.3) says
+   * the header carries "no TAB/revision chips" for exactly that reason — and
+   * `imageOnly` is a fact about our parser, not about the round. Nothing
+   * renders any of them, so the only thing they could ever do is leak.
+   *
+   * ⚠️ tolerances AND footnotes STAY, BECAUSE THEY ARE MEASUREMENTS. A
+   * dimension without its tolerance is a dimension quoted more precisely than
+   * it was ever stated, and the card is meant to show them beside each figure.
+   * But they are free text off the sheet, so a footnote reading "see the
+   * published table on page 214" would carry the one thing that may not
+   * travel — and there is no way to know in advance which footnote does. So
+   * every value in both is read, and any that names its source is dropped
+   * rather than the whole map: losing one footnote costs a reader a caveat,
+   * and losing the tolerances costs them the tolerances.
+   */
   private stripAudit<T extends Record<string, unknown>>(dims: T) {
-    const { rawText, ...safe } = dims as T & { rawText?: string };
-    return safe;
+    const {
+      rawText: _rawText,
+      tab: _tab,
+      sheetDate: _sheetDate,
+      revision: _revision,
+      imageOnly: _imageOnly,
+      tolerances,
+      footnotes,
+      ...safe
+    } = dims as T & Record<string, unknown>;
+
+    return {
+      ...safe,
+      tolerances: sanitiseAnnotations(tolerances),
+      footnotes: sanitiseAnnotations(footnotes),
+    };
   }
 
   /* ── The log ───────────────────────────────────────────────────────── */
 
-  async log(clerkSub: string) {
+  async log(clerkSub: string): Promise<PublicLogEntry[]> {
     const userId = await this.resolveUserId(clerkSub);
     // ⚠️ NO take. This is the member's OWN log, and logCsv() below is built
     // from this method — a cap here silently short-changes the file they
@@ -981,26 +1305,57 @@ export class BenchService {
     // createdAt]; a shelf log is tens of rows, not tens of thousands.
     const rows = await this.prisma.benchLogEntry.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' },
+      // 🚨 THE DATE THE MEMBER FIRED, NOT THE DATE WE WROTE THE ROW. The sheet
+      // offers a date and honours it, so an entry logged for last weekend
+      // sorted to the TOP of the list above everything shot since — the one
+      // list on this module that is the member's own record, ordered by a
+      // column they cannot see. createdAt is kept as the tie-break: two
+      // entries dated the same day belong in the order they were typed.
+      orderBy: [{ shotAt: 'desc' }, { createdAt: 'desc' }],
     });
+    if (!rows.length) return [];
 
-    // The row stores only the key, and a key is not a thing to show someone —
-    // "65creedmoor" is not what they loaded. Resolved here rather than in the
-    // client so the CSV and the list agree.
-    const names = new Map(
-      (
-        await this.prisma.benchCartridge.findMany({
-          where: { key: { in: [...new Set(rows.map((r) => r.cartridgeKey))] } },
-          select: { key: true, name: true },
-        })
-      ).map((c) => [c.key, c.name]),
-    );
+    const loadIds = [...new Set(rows.map((r) => r.loadId).filter((id): id is string => !!id))];
+
+    const [cartridges, loads] = await Promise.all([
+      // The row stores only the key, and a key is not a thing to show someone
+      // — "65creedmoor" is not what they loaded. Resolved here rather than in
+      // the client so the CSV and the list agree. maxLengthMm comes with it:
+      // the COAL flags are computed against the cartridge's own ceiling.
+      this.prisma.benchCartridge.findMany({
+        where: { key: { in: [...new Set(rows.map((r) => r.cartridgeKey))] } },
+        select: { key: true, name: true, maxLengthMm: true },
+      }),
+      // ⚠️ THE WINDOW EACH ENTRY WAS WORKED UP AGAINST. The sheet warns
+      // `ABOVE MAX 41.5` while the member types and the list then showed a
+      // charge two grains over the maximum as an ordinary row — the one place
+      // they go back to read what they did said nothing about it.
+      loadIds.length
+        ? this.prisma.benchLoad.findMany({
+            where: { id: { in: loadIds } },
+            select: { id: true, startGr: true, maxGr: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const byKey = new Map(cartridges.map((c) => [c.key, c]));
+    const byLoad = new Map(loads.map((l) => [l.id, l]));
 
     // userId never goes back out — the caller already knows who they are.
-    return rows.map(({ userId: _omit, ...rest }) => ({
-      ...rest,
-      cartridgeName: names.get(rest.cartridgeKey) ?? rest.cartridgeKey,
-    }));
+    return rows.map(({ userId: _omit, ...rest }) => {
+      const cartridge = byKey.get(rest.cartridgeKey);
+      // ⚠️ A LOAD THAT NO LONGER EXISTS IS A NULL WINDOW, NOT A ZERO ONE. A
+      // re-import can re-consolidate a group away; `startGr: 0` would then put
+      // every entry above its own start charge.
+      const window = rest.loadId ? (byLoad.get(rest.loadId) ?? null) : null;
+      return {
+        ...rest,
+        cartridgeName: cartridge?.name ?? rest.cartridgeKey,
+        startGr: window?.startGr ?? null,
+        maxGr: window?.maxGr ?? null,
+        flags: logFlags(rest, window, cartridge?.maxLengthMm ?? null),
+      };
+    });
   }
 
   /**
@@ -1025,7 +1380,7 @@ export class BenchService {
       csv: toCsv([
         head,
         ...rows.map((r) => [
-          r.shotAt.toISOString().slice(0, 10),
+          jhbDate(r.shotAt),
           r.cartridgeName,
           r.bulletLabel,
           r.powderName,
@@ -1042,33 +1397,103 @@ export class BenchService {
     };
   }
 
-  async addLog(clerkSub: string, body: Record<string, unknown>) {
+  /**
+   * ⚠️ `?? null` AND NEVER `Number(...)`. Velocity and group are ALWAYS posted
+   * as null — the sheet says so on its own footer, "results are added after
+   * the range" — and the old code tested `=== undefined` and then ran
+   * `Number(null)`, which is 0. So every entry ever logged came back reading
+   * 0 m/s and 0 mm, in the list and in the CSV the member downloaded to keep,
+   * and a blank COAL printed as `0.00 mm`. A missing measurement is null all
+   * the way through; zero is a measurement.
+   *
+   * ⚠️ AND THE TWO POINTERS ARE CHECKED. `cartridgeKey` is what the list
+   * resolves a NAME from and what the COAL flags are judged against, and
+   * `loadId` is the window the charge is judged against — a key naming nothing
+   * silently produces an entry with no name and no flags, which looks like the
+   * flags saying the load is fine.
+   */
+  async addLog(clerkSub: string, body: AddLogDto) {
     const userId = await this.resolveUserId(clerkSub);
+
+    const cartridge = await this.prisma.benchCartridge.findUnique({
+      where: { key: body.cartridgeKey },
+      select: { key: true },
+    });
+    if (!cartridge) throw new BadRequestException('Unknown cartridge');
+
+    if (body.loadId) {
+      const load = await this.prisma.benchLoad.findUnique({
+        where: { id: body.loadId },
+        select: { id: true },
+      });
+      if (!load) throw new BadRequestException('Unknown load');
+    }
+
     const row = await this.prisma.benchLogEntry.create({
       data: {
         userId,
-        cartridgeKey: String(body.cartridgeKey ?? ''),
-        bulletLabel: String(body.bulletLabel ?? ''),
-        powderName: String(body.powderName ?? ''),
-        chargeGr: Number(body.chargeGr ?? 0),
-        coalMm: body.coalMm === undefined ? null : Number(body.coalMm),
-        primer: body.primer ? String(body.primer) : null,
-        caseLabel: body.caseLabel ? String(body.caseLabel) : null,
-        loadId: body.loadId ? String(body.loadId) : null,
-        velocityMs: body.velocityMs === undefined ? null : Number(body.velocityMs),
-        groupMm: body.groupMm === undefined ? null : Number(body.groupMm),
-        notes: body.notes ? String(body.notes) : null,
+        cartridgeKey: body.cartridgeKey,
+        bulletLabel: body.bulletLabel,
+        powderName: body.powderName,
+        chargeGr: body.chargeGr,
+        coalMm: body.coalMm ?? null,
+        primer: trimmedOrNull(body.primer),
+        caseLabel: trimmedOrNull(body.caseLabel),
+        loadId: body.loadId ?? null,
+        velocityMs: body.velocityMs ?? null,
+        groupMm: body.groupMm ?? null,
+        notes: trimmedOrNull(body.notes),
         // The sheet offers a date, so it has to be honoured; without this the
         // column defaults to now() and a load logged for last weekend silently
-        // files itself under today. An unparseable value falls back to the
-        // default rather than throwing.
-        ...(body.shotAt && !Number.isNaN(Date.parse(String(body.shotAt)))
-          ? { shotAt: new Date(String(body.shotAt)) }
-          : {}),
+        // files itself under today. parseShotAt has already vetted it — the
+        // DTO rejects an unreadable one at the door rather than falling back
+        // to today, which is a different date from the one they typed.
+        ...(body.shotAt ? { shotAt: parseShotAt(body.shotAt) ?? undefined } : {}),
       },
     });
-    const { userId: _omit, ...rest } = row;
-    return rest;
+
+    // ⚠️ THE SAME SHAPE THE LIST RETURNS, INCLUDING THE FLAGS. The sheet
+    // warned `ABOVE MAX 41.5` while they typed; the row it hands back has to
+    // carry that warning too, or an entry inserted optimistically into the
+    // list is the one row on the screen with nothing on it. PATCH answers the
+    // same way, so a client has one shape to render rather than three.
+    return this.entry(clerkSub, row.id);
+  }
+
+  /** One log row in the list's own shape. */
+  private async entry(clerkSub: string, id: string): Promise<PublicLogEntry> {
+    const row = (await this.log(clerkSub)).find((r) => r.id === id);
+    if (!row) throw new NotFoundException('Unknown log entry');
+    return row;
+  }
+
+  /**
+   * The results, added after the range.
+   *
+   * 🚨 SCOPED BY userId, LIKE THE DELETE. `updateMany` with the id ALONE would
+   * let one member overwrite another's log row by guessing a cuid; a `count`
+   * of 0 back from it is "not yours or not there", and both are a 404 to the
+   * caller — telling the two apart would confirm the row exists.
+   */
+  async patchLog(clerkSub: string, id: string, body: PatchLogDto) {
+    const userId = await this.resolveUserId(clerkSub);
+
+    // ⚠️ EVERY FIELD IS OPTIONAL AND NULLABLE, SO ABSENT AND null MUST NOT
+    // COLLAPSE. `velocityMs: undefined` means "leave it as it was"; null means
+    // "clear the reading I entered". Building the data object from the keys
+    // the member actually sent is the only way to keep those apart.
+    const data: Prisma.BenchLogEntryUpdateManyMutationInput = {};
+    if ('velocityMs' in body) data.velocityMs = body.velocityMs ?? null;
+    if ('groupMm' in body) data.groupMm = body.groupMm ?? null;
+    if ('notes' in body) data.notes = trimmedOrNull(body.notes);
+
+    const { count } = await this.prisma.benchLogEntry.updateMany({
+      where: { id, userId },
+      data,
+    });
+    if (!count) throw new NotFoundException('Unknown log entry');
+
+    return this.entry(clerkSub, id);
   }
 
   async deleteLog(clerkSub: string, id: string) {
@@ -1077,5 +1502,55 @@ export class BenchService {
     // another's log row by guessing a cuid.
     await this.prisma.benchLogEntry.deleteMany({ where: { id, userId } });
     return { ok: true };
+  }
+
+  /* ── The permalink ─────────────────────────────────────────────────── */
+
+  /**
+   * Store a finder state and hand back a link to it.
+   *
+   * 🚨 THE TOKEN IS THE WHOLE ADDRESS, SO IT IS RANDOM AND NOT DERIVED. 16
+   * bytes of crypto randomness — 22 url-safe characters — because a token
+   * built from the payload would let anybody who guessed a common bench read
+   * back the share, and a sequential one would let them walk the table.
+   *
+   * ⚠️ AND IT IS NOT A CAPABILITY. GET /bench/share/:token is behind the same
+   * ClerkGuard as everything else on this module: the link is a shortcut for a
+   * member, not a way to publish the catalogue to somebody who cannot see the
+   * page. Spec §10 defers the guest bench, and the auth wall is why this site
+   * is not blocked.
+   */
+  async share(clerkSub: string, payload: Record<string, unknown>) {
+    await this.resolveUserId(clerkSub);
+
+    // Capped by SIZE rather than by shape: the finder's controls change more
+    // often than this endpoint should, and what a link may not do is store a
+    // megabyte per click.
+    const json = JSON.stringify(payload ?? {});
+    if (Buffer.byteLength(json, 'utf8') > SHARE_MAX_BYTES) {
+      throw new BadRequestException('That is too much to share in one link');
+    }
+
+    const token = randomBytes(16).toString('base64url');
+    const expiresAt = new Date(Date.now() + SHARE_TTL_DAYS * 24 * 60 * 60 * 1000);
+    await this.prisma.benchShare.create({
+      data: { token, payload: payload as Prisma.InputJsonValue, expiresAt },
+    });
+
+    return { token, url: `${appUrl()}/bench?s=${token}` };
+  }
+
+  /**
+   * ⚠️ AN EXPIRED TOKEN IS A 404 AND NOT A PARTIAL ANSWER. Opening a link that
+   * has aged out must land the member on their OWN bench with a "that link has
+   * expired" — never on a half-applied filter set they did not choose and
+   * cannot see the rest of.
+   */
+  async readShare(token: string) {
+    const row = await this.prisma.benchShare.findUnique({ where: { token } });
+    if (!row || row.expiresAt.getTime() <= Date.now()) {
+      throw new NotFoundException('That link has expired');
+    }
+    return { token: row.token, payload: row.payload, expiresAt: row.expiresAt };
   }
 }

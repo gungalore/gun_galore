@@ -17,6 +17,22 @@
 /** A flag the client renders as a mono tag beside a COAL. */
 export type CoalFlag = 'COAL_OVER_MAX' | 'COAL_NEAR_MAX' | 'COAL_RANGE';
 
+/**
+ * A flag on a LOGGED entry: the COAL flags plus where the charge sits in the
+ * load's own window.
+ *
+ * 🚨 THE LOG SHEET WARNS AND THE LOG LIST DID NOT, WHICH IS THE WRONG WAY
+ * ROUND. The sheet shows `ABOVE MAX 41.5` while the member types — and then
+ * the entry lands in a list where a charge two grains over the maximum looks
+ * like every other row. The one place a reloader goes back to read what they
+ * did is the one place that said nothing about it.
+ *
+ * ⚠️ COMPUTED SERVER-SIDE, like the COAL flags and for the same reason: this
+ * is the comparison standing between a reloader and an over-pressure round,
+ * and a stale bundle must not be able to get it wrong.
+ */
+export type LogFlag = CoalFlag | 'ABOVE_MAX' | 'BELOW_START';
+
 export interface PublicLoadRow {
   id: string;
   bulletMaker: string;
@@ -93,6 +109,49 @@ export interface LoadsResponse {
   groups: PublicLoadGroup[];
   /** See LoadsWhy — absent unless the answer was empty and the bench was full. */
   why?: LoadsWhy;
+  /**
+   * The listing hit LOADS_MAX and was cut.
+   *
+   * ⚠️ A CAP IS ONLY ALLOWED BECAUSE THIS FIELD EXISTS. The module's rule is
+   * that nothing may be shortened silently while the browser does the
+   * filtering — that is how five powders went unreachable — so the client MUST
+   * say on screen that the list was cut and how to narrow it. `count` is the
+   * number of rows RETURNED, not the number that matched: a count of the
+   * whole match would need a second query to say something the member cannot
+   * act on.
+   */
+  truncated?: boolean;
+}
+
+/**
+ * One row of GET /bench/log.
+ *
+ * ⚠️ `startGr` / `maxGr` ARE THE LOAD'S WINDOW, NOT THE ENTRY'S. They are null
+ * when the entry was typed free-hand (no `loadId`) or when the load it came
+ * off has since been re-consolidated away — and null must render as "no window
+ * known", never as 0, which would put every entry above its own maximum.
+ */
+export interface PublicLogEntry {
+  id: string;
+  cartridgeKey: string;
+  cartridgeName: string;
+  bulletLabel: string;
+  powderName: string;
+  chargeGr: number;
+  coalMm: number | null;
+  primer: string | null;
+  caseLabel: string | null;
+  loadId: string | null;
+  velocityMs: number | null;
+  groupMm: number | null;
+  notes: string | null;
+  shotAt: Date;
+  createdAt: Date;
+  /** The load's start charge, or null — see above. */
+  startGr: number | null;
+  /** The load's max charge, or null — see above. */
+  maxGr: number | null;
+  flags: LogFlag[];
 }
 
 export interface BenchPowderView {
@@ -206,6 +265,37 @@ export function coalFlags(
 
   if (effective > maxLengthMm) flags.push('COAL_OVER_MAX');
   else if (maxLengthMm - effective <= COAL_NEAR_MAX_MM) flags.push('COAL_NEAR_MAX');
+  return flags;
+}
+
+/**
+ * Flags for one LOGGED entry: its COAL against the cartridge's ceiling, and
+ * its charge against the load's own start–max window.
+ *
+ * ⚠️ THE WINDOW IS THE LOAD'S, SO NO WINDOW MEANS NO CHARGE FLAG. An entry
+ * typed without a load behind it has nothing to be above or below, and
+ * inventing a comparison against the cartridge's other loads would flag a
+ * perfectly worked-up charge as over maximum because a different bullet's is.
+ *
+ * ⚠️ AND THE COMPARISON IS THE SHEET'S, VERBATIM. LogSheet.tsx shows
+ * `ABOVE MAX 41.5` on `chargeGr > row.maxGr` and `BELOW START 35.6` on
+ * `chargeGr < row.startGr` while the member types. The same round must not
+ * change its mind about itself once it is saved.
+ */
+export function logFlags(
+  entry: { chargeGr: number; coalMm: number | null },
+  window: { startGr: number; maxGr: number } | null,
+  maxLengthMm: number | null,
+): LogFlag[] {
+  const flags: LogFlag[] = [
+    // A logged COAL is one figure, never a spanning range, so lo/hi are null
+    // and COAL_RANGE can never be raised here.
+    ...coalFlags({ coalMm: entry.coalMm, coalLoMm: null, coalHiMm: null }, maxLengthMm),
+  ];
+  if (window) {
+    if (entry.chargeGr > window.maxGr) flags.push('ABOVE_MAX');
+    else if (entry.chargeGr < window.startGr) flags.push('BELOW_START');
+  }
   return flags;
 }
 

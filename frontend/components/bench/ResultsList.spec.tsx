@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { LoadsWhy } from '@/lib/bench/api';
+import type { LoadRow, LoadsWhy } from '@/lib/bench/api';
 import type { ShelfNames } from './contract';
-import { explainEmpty } from './ResultsList';
+import { explainEmpty, tagsFor } from './ResultsList';
 
 /**
  * THE BENCH — the sentence an empty results panel has to say.
@@ -180,5 +180,85 @@ describe('the copy names no source', () => {
     ['nothing joining', NONE],
   ])('%s', (_name, w) => {
     expect(said(w)).not.toMatch(BANNED);
+  });
+});
+
+/**
+ * THE BENCH — the row's flags come off the server, not off a re-derivation.
+ *
+ * 🚨 THE THREE SURFACES THAT SHOW A COAL WARNING — the row, the load card and
+ * the log — must agree, and the only way they can is by all reading the same
+ * `flags` array. coalCheck supplies the NUMBER inside the label and nothing
+ * else: it is a formatter here, never the decision. A card that decided for
+ * itself whether a load's COAL is a band said "COAL RANGE" over a row that did
+ * not, for the same load.
+ */
+describe('tagsFor reads the server, and formats the figure', () => {
+  const L6 = 71.76;
+
+  function row(over: Partial<LoadRow> = {}): LoadRow {
+    return {
+      id: 'r1',
+      bulletMaker: 'Hornady',
+      bulletType: 'ELD Match',
+      powder: 'H4350',
+      startGr: 35.6,
+      startFps: 2400,
+      maxGr: 41.5,
+      maxFps: 2700,
+      coalMm: null,
+      coalLoMm: null,
+      coalHiMm: null,
+      flags: [],
+      ...over,
+    };
+  }
+
+  it('says nothing when the server flagged nothing', () => {
+    expect(tagsFor(row({ coalMm: 71.7 }), L6)).toEqual([]);
+  });
+
+  it('puts the millimetres into the label the server asked for', () => {
+    expect(tagsFor(row({ coalMm: 71.63, flags: ['COAL_NEAR_MAX'] }), L6)).toEqual([
+      { t: 'COAL −0.13 MAX', warn: true },
+    ]);
+  });
+
+  /** The longest round in the band is the one that has to chamber. */
+  it('measures the top of a band, not its representative figure', () => {
+    const tags = tagsFor(
+      row({ coalMm: 70.4, coalLoMm: 70.4, coalHiMm: 71.63, flags: ['COAL_NEAR_MAX'] }),
+      L6,
+    );
+    expect(tags[0].t).toBe('COAL −0.13 MAX');
+  });
+
+  /** Without a maximum there are no millimetres to print — but the warning
+      still has to appear, because a warning that vanishes because one figure
+      is missing is the worst of the three outcomes. */
+  it('keeps the warning when the maximum is unknown', () => {
+    expect(tagsFor(row({ coalMm: 71.63, flags: ['COAL_OVER_MAX'] }), null)).toEqual([
+      { t: 'COAL OVER MAX', warn: true },
+    ]);
+  });
+
+  it('shows the band tag when the server sent it', () => {
+    const tags = tagsFor(row({ coalLoMm: 70.4, coalHiMm: 71.2, flags: ['COAL_RANGE'] }), L6);
+    expect(tags).toEqual([{ t: 'COAL RANGE', warn: false }]);
+  });
+
+  /** 🚨 THE HIGH FIGURE IS NOT THE FLAG. A row carrying a coalHiMm the server
+      did not call a range must not grow one here — that disagreement between
+      the row and the card is exactly what the audit found. */
+  it('does not invent the band tag from a high figure', () => {
+    expect(tagsFor(row({ coalMm: 70.4, coalHiMm: 71.2 }), L6)).toEqual([]);
+  });
+
+  it('carries a warning and the band together, warning first', () => {
+    const tags = tagsFor(
+      row({ coalMm: 70.4, coalHiMm: 71.63, flags: ['COAL_NEAR_MAX', 'COAL_RANGE'] }),
+      L6,
+    );
+    expect(tags.map((t) => t.t)).toEqual(['COAL −0.13 MAX', 'COAL RANGE']);
   });
 });

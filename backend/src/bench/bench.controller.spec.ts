@@ -1,4 +1,6 @@
-import { BenchController } from './bench.controller';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { BenchController, WEIGHT_BANDS, weightBand } from './bench.controller';
 import { BenchService, type GuestBench } from './bench.service';
 import { DEFAULT_WEIGHT_TOLERANCE_GR, WEIGHT_TOLERANCES_GR } from './bullet-weight';
 
@@ -41,7 +43,13 @@ function makeBench(stored: unknown[]) {
   };
 }
 
-const SIGNED_IN = { clerkUserId: 'clerk_1' };
+/**
+ * ⚠️ A CLERK SUBJECT, NOT A REQUEST. Every route on this controller is behind
+ * ClerkGuard now — the guest bench is deferred (SPEC-BUILD §10) and the reads
+ * were publishing the whole consolidated catalogue to anybody who could type a
+ * URL — so the handlers take `@CurrentUser()` like the writes always did.
+ */
+const SIGNED_IN = 'clerk_1';
 
 describe('The Bench — the calibre survives the controller', () => {
   it('carries a stored calibre through to the results query', async () => {
@@ -111,94 +119,16 @@ describe('The Bench — the calibre survives the controller', () => {
   });
 });
 
-describe('The Bench — a guest shelf carries its calibres too', () => {
-  /** No Clerk subject: the bench is whatever the query string says. */
-  const GUEST = {};
-
-  function guestController() {
-    const seen: unknown[] = [];
-    const service = {
-      getBench: jest.fn(),
-      loads: jest.fn((bench: unknown) => {
-        seen.push(bench);
-        return Promise.resolve({ count: 0, groups: [] });
-      }),
-    };
-    return {
-      controller: new BenchController(service as unknown as BenchService),
-      handedOver: () => seen[0] as { bullets: { calibreIn: number | null }[] },
-      getBench: service.getBench,
-    };
-  }
-
-  /**
-   * 🚨 THE SPELLING IS bulletKey()'s, IN components/bench/contract.ts:
-   * `${calibreIn ?? ''}|${weightGr}`. The same string is the `off` key, so a
-   * parse that disagrees does not error — it leaves a chip greyed on the
-   * screen and live in the query.
-   */
-  it('reads the calibre-weight key the client now writes', async () => {
-    const { controller, handedOver, getBench } = guestController();
-
-    await controller.loads(GUEST, { bullets: '0.308|150' });
-
-    expect(getBench).not.toHaveBeenCalled();
-    expect(handedOver().bullets).toEqual([{ weightGr: 150, calibreIn: 0.308 }]);
-  });
-
-  it('reads an empty first part as no calibre, which is how it is written', async () => {
-    const { controller, handedOver } = guestController();
-
-    await controller.loads(GUEST, { bullets: '|180' });
-
-    expect(handedOver().bullets).toEqual([{ weightGr: 180, calibreIn: null }]);
-  });
-
-  /**
-   * ⚠️ THE OLD SHAPES ARE STILL READ, AND THAT IS NOT POLITENESS. A link
-   * shared before this change carries `maker|weight|category` or
-   * `maker|weight|category|calibre`; rejecting it would turn a shared bench
-   * into an empty page. Only the weight and the calibre are taken — the maker
-   * and the category are dropped on the floor, which is exactly what the
-   * change means.
-   */
-  it('still reads the old four-part key, keeping only the weight and the calibre', async () => {
-    const { controller, handedOver } = guestController();
-
-    await controller.loads(GUEST, { bullets: 'Hornady|150|SP|0.308' });
-
-    expect(handedOver().bullets).toEqual([{ weightGr: 150, calibreIn: 0.308 }]);
-  });
-
-  it('still reads the old three-part key, as any calibre', async () => {
-    const { controller, handedOver } = guestController();
-
-    await controller.loads(GUEST, { bullets: 'Hornady|150|SP' });
-
-    expect(handedOver().bullets).toEqual([{ weightGr: 150, calibreIn: null }]);
-  });
-
-  it('reads an empty fourth part of an old key as no calibre', async () => {
-    const { controller, handedOver } = guestController();
-
-    await controller.loads(GUEST, { bullets: 'Speer|180|SP|' });
-
-    expect(handedOver().bullets).toEqual([{ weightGr: 180, calibreIn: null }]);
-  });
-
-  /**
-   * ⚠️ Number('') IS 0, NOT NaN. A key with a blank weight would otherwise
-   * parse as a 0 gr bullet and search a window nothing sits in — an empty
-   * screen with nothing on it saying why.
-   */
-  it('drops a key with no readable weight rather than searching for a 0 gr bullet', async () => {
-    const { controller, handedOver } = guestController();
-
-    await controller.loads(GUEST, { bullets: '0.308|,0.264|wide,0.277|140' });
-
-    expect(handedOver().bullets).toEqual([{ weightGr: 140, calibreIn: 0.277 }]);
-  });
-});
+/**
+ * 🚨 THE GUEST SHELF IS GONE FROM THIS CONTROLLER, AND THE TESTS FOR IT WITH
+ * IT. `?powders=` / `?bullets=` / `?cartridges=` let anybody who could type a
+ * URL read the whole consolidated catalogue — every cartridge, every powder,
+ * 28 000 charge ranges — from a page that is itself behind Clerk. The guest
+ * bench is deferred (SPEC-BUILD §10); when it is built it gets its own
+ * decision, its own route, and its own tests. Deleting the parser rather than
+ * leaving it unreachable is deliberate: unreachable code comes back the day
+ * somebody relaxes a guard for an unrelated reason.
+ */
 
 /* ── The finder's three controls ────────────────────────────────────── */
 
@@ -366,35 +296,6 @@ describe('The Bench — the finder narrows the query it says it narrows', () => 
       weightMax: 150,
     });
   });
-
-  it('takes a switched-off entry off a guest shelf too', async () => {
-    const seen: GuestBench[] = [];
-    const service = {
-      getBench: jest.fn(),
-      loads: jest.fn((bench: GuestBench) => {
-        seen.push(bench);
-        return Promise.resolve({ count: 0, groups: [] });
-      }),
-    };
-    const controller = new BenchController(service as unknown as BenchService);
-
-    await controller.loads(
-      {},
-      {
-        powders: 'pwd_n550,pwd_h4350',
-        cartridges: '308win,65creedmoor',
-        bullets: '0.308|150,0.264|139',
-        off: 'pwd_h4350,65creedmoor,0.264|139',
-      },
-    );
-
-    expect(seen[0]).toEqual({
-      powderIds: ['pwd_n550'],
-      cartridgeKeys: ['308win'],
-      bullets: [{ weightGr: 150, calibreIn: 0.308 }],
-      toleranceGr: DEFAULT_WEIGHT_TOLERANCE_GR,
-    });
-  });
 });
 
 /* ── The grain window ───────────────────────────────────────────────── */
@@ -531,19 +432,6 @@ describe('The Bench — the grain window reaches the query', () => {
 
     expect(asked().toleranceGr).toBe(15);
   });
-
-  it('carries the width onto a guest shelf too', async () => {
-    const { controller, asked } = harness();
-
-    await controller.loads({}, { bullets: '0.308|150', tolerance: '10' });
-
-    expect(asked()).toEqual({
-      powderIds: [],
-      cartridgeKeys: [],
-      bullets: [{ weightGr: 150, calibreIn: 0.308 }],
-      toleranceGr: 10,
-    });
-  });
 });
 
 /**
@@ -633,6 +521,123 @@ describe('The Bench — the grain window changes the query, end to end', () => {
     expect(clause()).toEqual({
       weightGr: { gte: 145, lte: 155 },
       cartridgeKey: { in: ['3006'] },
+    });
+  });
+});
+
+/**
+ * 🚨 THE BAND IDS ARE A CONTRACT BETWEEN TWO FILES AND NOTHING CONNECTS THEM.
+ * `WEIGHT_BANDS` in components/bench/contract.ts is a list of string literals;
+ * so is the one in this controller. A rename at either end does not fail to
+ * compile, does not throw and does not log — the band silently narrows
+ * nothing, and the finder answers the same question whichever pill is lit.
+ * That is exactly what shipped: nothing on this side read `?weight=` at all.
+ *
+ * So the client's file is READ, the way api-route-contract.spec.ts reads the
+ * motivation client, and the two lists are compared.
+ */
+describe('The Bench — the weight bands the client sends are the ones the server knows', () => {
+  /** The ids out of the client's own WEIGHT_BANDS array. */
+  function clientBands(): string[] {
+    const src = fs.readFileSync(
+      path.join(__dirname, '../../../frontend/components/bench/contract.ts'),
+      'utf8',
+    );
+    const block = /export const WEIGHT_BANDS[^=]*=\s*\[([\s\S]*?)\];/.exec(src);
+    if (!block) throw new Error('WEIGHT_BANDS not found in components/bench/contract.ts');
+    return [...block[1].matchAll(/id:\s*'([^']+)'/g)].map((m) => m[1]);
+  }
+
+  it('knows every band the client offers, and invents none of its own', () => {
+    const client = clientBands();
+    expect(client).toContain('any');
+
+    // 'any' is the absence of a band — it narrows nothing, which is what an
+    // unknown id does too — so it is deliberately not a key on this side.
+    expect(Object.keys(WEIGHT_BANDS).sort()).toEqual(client.filter((b) => b !== 'any').sort());
+  });
+
+  it('turns every one of them into a range, and narrows nothing on "any"', () => {
+    for (const band of clientBands()) {
+      const range = weightBand(band);
+      if (band === 'any') expect(range).toEqual({});
+      else expect(Object.keys(range).length).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * ⚠️ THE BOUNDS OVERLAP BECAUSE THE LABELS DO. "≤ 100 gr", "100–150 gr" and
+   * "150 gr +" all claim their endpoint, so a 150 gr bullet is in two bands —
+   * which is what a reloader reading those labels expects. Nudging one bound
+   * to make the set disjoint would hide a weight from the band that names it.
+   */
+  it('lets a 150 gr bullet belong to both bands that name 150', () => {
+    expect(weightBand('100to150')).toEqual({ weightMin: 100, weightMax: 150 });
+    expect(weightBand('gte150')).toEqual({ weightMin: 150 });
+  });
+
+  it('narrows nothing on a band nobody offers', () => {
+    expect(weightBand('heavy')).toEqual({});
+    expect(weightBand(undefined)).toEqual({});
+  });
+});
+
+/**
+ * 🚨 THE THREE SURFACES ANSWER ABOUT ONE SCREEN. The results, the powder
+ * chips' counts and the spec card's "loads on your bench" are three claims
+ * about the same narrowed view — and only the results were being narrowed.
+ * A member on the 6,5 Creedmoor tab at 150 gr + read "12 loads" on a powder
+ * chip and tapped through to one.
+ */
+describe('The Bench — the finder narrows the counts as well as the list', () => {
+  function harness() {
+    const seen: { filter: unknown }[] = [];
+    const service = {
+      getBench: jest.fn().mockResolvedValue({
+        powders: [{ id: 'pwd_1', name: 'H4350', maker: 'Hodgdon' }],
+        bullets: [{ weightGr: 150, calibreIn: 0.308 }],
+        cartridges: [{ key: '308win', name: '.308 Winchester' }],
+        units: 'metric',
+      }),
+      loads: jest.fn(() => Promise.resolve({ count: 0, groups: [] })),
+      powders: jest.fn((_q: unknown, _b: unknown, filter: unknown) => {
+        seen.push({ filter });
+        return Promise.resolve([]);
+      }),
+      cartridge: jest.fn((_k: string, _b: unknown, filter: unknown) => {
+        seen.push({ filter });
+        return Promise.resolve({});
+      }),
+    };
+    return {
+      controller: new BenchController(service as unknown as BenchService),
+      filter: () => seen[0].filter,
+    };
+  }
+
+  const QUERY = { cartridge: '308win', weight: '100to150', powderId: 'pwd_1' };
+
+  it('hands the powder chips the same filter the results got', async () => {
+    const { controller, filter } = harness();
+    await controller.powders(SIGNED_IN, QUERY);
+
+    expect(filter()).toEqual({
+      cartridgeKey: '308win',
+      powderId: 'pwd_1',
+      weightMin: 100,
+      weightMax: 150,
+    });
+  });
+
+  it("hands the spec card the same filter", async () => {
+    const { controller, filter } = harness();
+    await controller.cartridge('308win', SIGNED_IN, QUERY);
+
+    expect(filter()).toEqual({
+      cartridgeKey: '308win',
+      powderId: 'pwd_1',
+      weightMin: 100,
+      weightMax: 150,
     });
   });
 });

@@ -24,7 +24,7 @@
  * than copy retyped here.
  */
 
-import { useId, useState, useSyncExternalStore } from 'react';
+import { useId, useState } from 'react';
 
 import { SAFETY_LINE, type LogDraft, type LogSheetProps } from './contract';
 import { Btn, Field, IconX, OverlayShell, Tag, usePhone } from './primitives';
@@ -81,6 +81,44 @@ interface Flag {
   warn: boolean;
 }
 
+/**
+ * A decimal typed with EITHER separator.
+ *
+ * 🚨 `35,6` USED TO LOG AS `35.0 gr`, SILENTLY. `parseFloat` stops at the
+ * comma, so the charge a member typed on a site whose own cartridge names are
+ * written `6,5 Creedmoor` — and on a phone keypad that offers a comma in this
+ * locale — was truncated to a smaller charge, saved, and shown back as if it
+ * were what they had asked for. A HALF-grain error in a load log is not a
+ * cosmetic one.
+ *
+ * ⚠️ AND IT IS A STRICT PARSE, NOT A `replace(/,/g, '.')`. A grouped figure
+ * like `1,234.5` becomes `1.234.5`, which parseFloat happily reads as `1.234`
+ * — the same silent truncation wearing a different hat. Anything that is not
+ * one plain decimal comes back NaN, which disables Save and says so.
+ */
+export function parseDecimal(s: string): number {
+  const t = s.trim().replace(/\s/g, '');
+  if (!/^[+-]?(\d+([.,]\d*)?|[.,]\d+)$/.test(t)) return NaN;
+  return parseFloat(t.replace(',', '.'));
+}
+
+/**
+ * The reading a comma-typed figure was taken as, echoed back under the field.
+ *
+ * The member types `35,6`, the field keeps `35,6` — moving what someone is
+ * typing under their fingers is its own bug — and this line says what the log
+ * will hold. Silent on a figure typed with a point, where there is nothing to
+ * reassure anyone about.
+ */
+function ReadsAs({ typed, value, unit }: { typed: string; value: number; unit: string }) {
+  if (!typed.includes(',') || !Number.isFinite(value)) return null;
+  return (
+    <span className="num" style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+      reads as {value} {unit}
+    </span>
+  );
+}
+
 /* ── Component ──────────────────────────────────────────────────────── */
 
 export default function LogSheet({
@@ -117,10 +155,10 @@ export default function LogSheet({
   /* Backdrop, Escape (top-most only), the focus trap and the return of focus
      all live in OverlayShell; nothing about them is re-implemented here. */
 
-  const chargeGr = parseFloat(charge);
+  const chargeGr = parseDecimal(charge);
   const chargeOk = Number.isFinite(chargeGr) && chargeGr > 0;
   const coalTyped = coal.trim() !== '';
-  const coalMm = coalTyped ? parseFloat(coal) : null;
+  const coalMm = coalTyped ? parseDecimal(coal) : null;
   const coalOk = coalMm === null || Number.isFinite(coalMm);
   /* The date is a plain text field so it matches the other inputs exactly — a
      native date control brings its own furniture into a 36px row. It is still
@@ -137,6 +175,24 @@ export default function LogSheet({
     if (check.bad) flags.push({ t: check.t, warn: true });
   }
   if (Number.isFinite(chargeGr)) {
+    /**
+     * ⚠️ A TYPO AND AN OVERRUN ARE NOT THE SAME EVENT, AND THEY USED TO WEAR
+     * THE SAME TAG. `356` typed for `35.6` — a missed decimal point on a phone
+     * keypad — showed `ABOVE MAX 41.5`, exactly what a deliberate 0.2 gr walk
+     * past the top of the window shows. Past half again the max there is no
+     * reading of the number that is a work-up, so it says so louder and prints
+     * the multiple, which is the fact that makes the mistake obvious.
+     *
+     * It still does not block Save. A log that refuses to hold what actually
+     * went down the barrel is worse than useless — see the file header — and
+     * that rule does not bend for a figure we merely think is unlikely.
+     */
+    if (chargeGr > row.maxGr * 1.5 && row.maxGr > 0) {
+      flags.push({
+        t: `CHECK THIS CHARGE · ${(chargeGr / row.maxGr).toFixed(1)}× the max`,
+        warn: true,
+      });
+    }
     if (chargeGr > row.maxGr) flags.push({ t: `ABOVE MAX ${row.maxGr.toFixed(1)}`, warn: true });
     else if (chargeGr < row.startGr)
       flags.push({ t: `BELOW START ${row.startGr.toFixed(1)}`, warn: false });
@@ -249,14 +305,17 @@ export default function LogSheet({
             </>
           )}
 
-          <Field
-            label="Charge, gr"
-            value={charge}
-            onChange={setCharge}
-            numeric
-            inputMode="decimal"
-            size={size}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
+            <Field
+              label="Charge, gr"
+              value={charge}
+              onChange={setCharge}
+              numeric
+              inputMode="decimal"
+              size={size}
+            />
+            <ReadsAs typed={charge} value={chargeGr} unit="gr" />
+          </div>
 
           {/* The hint sits under the input rather than inside Field, which
               takes a label and a value and nothing else. */}
@@ -269,6 +328,7 @@ export default function LogSheet({
               inputMode="decimal"
               size={size}
             />
+            {coalMm !== null && <ReadsAs typed={coal} value={coalMm} unit="mm" />}
             {coalHint}
           </div>
 
@@ -341,7 +401,9 @@ export default function LogSheet({
         )}
 
         {phone ? (
-          <div style={{ padding: '10px 16px 28px' }}>
+          // Save is the last thing in the sheet, and on a notched iPhone the
+          // home indicator sits over the bottom ~34px.
+          <div style={{ padding: '10px 16px calc(28px + env(safe-area-inset-bottom))' }}>
             <Btn type="submit" red size={size} disabled={!canSave} style={{ width: '100%' }}>
               {saving ? 'Saving…' : 'Save to load log'}
             </Btn>

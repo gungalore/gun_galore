@@ -75,10 +75,25 @@ export function profile(D: Dims): Point[] {
   p.push([D.R, D.E1 / 2], [D.E - 0.9, D.E1 / 2], [D.E, D.P1 / 2]);
   p.push([D.L1, D.P2 / 2], [D.L2, D.H1 / 2], [D.L3, D.H2 / 2]);
   p.push([D.L3, D.G1 / 2]);
-  const shank = D.L3 + 6;
+  /**
+   * ⚠️ THE 6 mm SHANK IS CLAMPED TO THE ROUND'S OWN LENGTH.
+   *
+   * The prototype seated the bullet with a flat 6 mm of full-diameter shank
+   * proud of the case mouth and then curved to the tip. On a rifle round that
+   * is 6 mm out of 20-odd; on a short pistol case — a .380 ACP, a wadcutter
+   * COAL — `L6 − L3` can be under 6, and the shank then ran PAST the tip. The
+   * ogive loop's `len` went negative, the silhouette folded back on itself,
+   * and the drawing came out with a nose pointing the wrong way. Nothing
+   * failed; it just drew a cartridge that does not exist.
+   *
+   * Half a millimetre is kept clear of L6 so the nose is always at least a
+   * short curve rather than a vertical face, and the lower clamp holds the
+   * shank at the case mouth for data so degenerate that L6 is barely past L3.
+   */
+  const shank = Math.max(D.L3, Math.min(D.L3 + 6, D.L6 - 0.5));
   p.push([shank, D.G1 / 2]);
   const n = 14;
-  const len = D.L6 - shank;
+  const len = Math.max(0, D.L6 - shank);
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     p.push([shank + len * t, (D.G1 / 2) * Math.sqrt(1 - t * t) * (1 - 0.04 * t) + 0.35 * (1 - t)]);
@@ -164,6 +179,37 @@ export function thumbOf(D: Dims): Thumb {
   return { casePath: r.casePath, bulletPath: r.bulletPath, thumbBox: '0 0 128 30' };
 }
 
+/* ── Which letters the pictures actually carry ──────────────────────── */
+
+/**
+ * The dimensions the 2D drawing annotates, plus the shoulder arc.
+ *
+ * ⚠️ THE TABLE LISTS THIRTEEN LETTERS AND THE DRAWING ANNOTATES NINE. The
+ * Dimensions rows advertise "hover a row to find it in the drawing", and the
+ * four that no picture carries — R, E, E1, H2 — lit their own row and pointed
+ * at nothing, which reads as a drawing that failed rather than as a figure
+ * with no callout. These sets let the card offer the link on the rows that
+ * have one and leave the rest as plain text.
+ *
+ * ⚠️ KEPT IN STEP WITH `buildRows()` IN CartridgeDrawing2D BY HAND. Deriving
+ * it would mean calling the builder for a set of letters, which needs a full
+ * `Dims`; a comment on both sides is the cheaper honest answer.
+ */
+export const DRAWN_LETTERS_2D: readonly string[] = [
+  'L1', 'L2', 'L3', 'L6', 'R1', 'P1', 'P2', 'H1', 'G1', 'α', 'alpha',
+];
+
+/**
+ * The letters the 3D views carry.
+ *
+ * The same nine dimensions are drawn, and the calliper adds two more: E1 and
+ * H2 have station dots it snaps to, so hovering those rows does light
+ * something. α is not in 3D — there is no arc to light — so it is not here.
+ */
+export const DRAWN_LETTERS_3D: readonly string[] = [
+  'L1', 'L2', 'L3', 'L6', 'R1', 'P1', 'P2', 'H1', 'G1', 'E1', 'H2',
+];
+
 /* ── COAL ───────────────────────────────────────────────────────────── */
 
 /** Within this much of the maximum, a COAL is flagged. */
@@ -175,6 +221,16 @@ export interface CoalCheck {
   bad: boolean;
   /** Millimetres under L6; negative means over. */
   diff: number;
+  /**
+   * Past the maximum.
+   *
+   * ⚠️ READ THIS RATHER THAN `diff < 0`. A round a hair over — 71.7601 against
+   * a 71.76 maximum — rounds to `-0`, and `-0 < 0` is FALSE in JavaScript, so
+   * a caller testing the sign printed "0.00 mm under the maximum · check" over
+   * a round that is over it. The decision is taken on the unrounded difference
+   * here, once, and every surface reads the answer.
+   */
+  over: boolean;
 }
 
 /**
@@ -184,10 +240,17 @@ export interface CoalCheck {
  * asserting the round is unsafe.
  */
 export function coalCheck(coal: number, l6: number): CoalCheck {
-  const diff = Math.round((l6 - coal) * 100) / 100;
-  if (diff < 0) return { t: 'COAL OVER MAX', bad: true, diff };
-  if (diff <= COAL_NEAR_MAX_MM) return { t: `COAL −${diff.toFixed(2)} MAX`, bad: true, diff };
-  return { t: '', bad: false, diff };
+  // ⚠️ THE DECISION IS TAKEN ON THE UNROUNDED DIFFERENCE, THE PRINTING ON THE
+  // ROUNDED ONE. A COAL 0.001 mm over the maximum rounds to `-0`, which is not
+  // less than zero, so a rounded test called it under — and the gauge printed
+  // "0.00 mm under the maximum · check" for a round that will not chamber.
+  const raw = l6 - coal;
+  const diff = Math.round(raw * 100) / 100;
+  if (raw < 0) return { t: 'COAL OVER MAX', bad: true, diff, over: true };
+  if (diff <= COAL_NEAR_MAX_MM) {
+    return { t: `COAL −${diff.toFixed(2)} MAX`, bad: true, diff, over: false };
+  }
+  return { t: '', bad: false, diff, over: false };
 }
 
 /* ── Units ──────────────────────────────────────────────────────────── */

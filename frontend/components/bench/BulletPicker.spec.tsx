@@ -34,6 +34,24 @@ vi.mock('@clerk/nextjs', () => {
   return { useAuth: () => ({ getToken, isLoaded: true, isSignedIn: true }) };
 });
 vi.mock('@/lib/use-standalone', () => ({ useStandalone: () => false }));
+/*
+ * ⚠️ THE PAGE NOW READS THE APP ROUTER, because the finder's filters live in
+ * the query string (audit C4). `useRouter` outside a mounted router throws
+ * "invariant expected app router to be mounted", which is a crash rather than
+ * a failed assertion — so every test that renders the page needs this.
+ *
+ * ⚠️ ONE PARAMS INSTANCE, NOT A FRESH ONE PER CALL. The URL-writing effect
+ * depends on the object it is handed; a new one each render would re-run it
+ * on every render for the whole suite.
+ */
+vi.mock('next/navigation', () => {
+  const params = new URLSearchParams();
+  return {
+    useRouter: () => ({ replace: () => {}, push: () => {}, refresh: () => {} }),
+    usePathname: () => '/bench',
+    useSearchParams: () => params,
+  };
+});
 
 // Imported after the mocks above, which vitest hoists regardless — written in
 // this order so the reason they exist is next to the thing that needs them.

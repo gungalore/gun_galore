@@ -1,3 +1,5 @@
+import { HttpException } from '@nestjs/common';
+import { BenchController } from './bench.controller';
 import { BenchService } from './bench.service';
 import { DEFAULT_WEIGHT_TOLERANCE_GR } from './bullet-weight';
 
@@ -82,6 +84,40 @@ const DIRT = {
 };
 
 /**
+ * A dimension sheet carrying every field that describes the SHEET rather than
+ * the cartridge — and annotations that name where they came from.
+ *
+ * 🚨 THE TOLERANCES AND FOOTNOTES ARE THE HARD CASE, WHICH IS WHY THEY ARE
+ * HERE. They are free text off the page and they must SURVIVE — a dimension
+ * quoted without its tolerance is quoted more precisely than it was ever
+ * stated — so they cannot simply be dropped like `rawText`. What must go is
+ * the individual entry that names its origin, and nothing else: `L1` and `P1`
+ * below are still expected on the far side.
+ */
+const DIRTY_DIMS = {
+  cartridgeKey: '65creedmoor',
+  L3: 48.77,
+  L6: 71.76,
+  pmaxBar: 4351,
+  // The audit field, which must be stripped whole.
+  rawText: 'C.I.P. TDCC sheet — 6,5 Creedmoor, published 2019, page 3',
+  // The edition the figures were printed in. Nothing renders these, and the
+  // spec (§6.3) says the header carries no TAB or revision chips.
+  tab: 'TAB IV',
+  sheetDate: '2019-06-12',
+  revision: 'Rev. 2',
+  imageOnly: false,
+  tolerances: {
+    L1: '-0.20',
+    P1: '-0.10',
+    // Two that must not travel, for two different reasons.
+    L3: 'as published in the 2019 edition',
+    L6: 'see the CIP table, page 3',
+  },
+  footnotes: { P1: '*', G1: 'from the source manual' },
+};
+
+/**
  * Real C.I.P. G1 figures, in millimetres, straight off the sheets.
  *
  * 🚨 THE .270 / .308 PAIR IS THE BUG THIS MODULE EXISTS FOR. One "Hornady
@@ -134,13 +170,7 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
         maxLengthMm: 71.76,
         pmaxPsi: 63092,
         pmaxBar: 4350,
-        dims: {
-          cartridgeKey: '65creedmoor',
-          L3: 48.77,
-          L6: 71.76,
-          // the audit field, which must be stripped
-          rawText: 'C.I.P. TDCC sheet — 6,5 Creedmoor, published 2019, page 3',
-        },
+        dims: DIRTY_DIMS,
       }),
     },
     benchLoad: {
@@ -222,7 +252,12 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
     benchLogEntry: {
       findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       deleteMany: jest.fn(),
+    },
+    benchShare: {
+      create: jest.fn(({ data }: { data: Record<string, unknown> }) => Promise.resolve(data)),
+      findUnique: jest.fn().mockResolvedValue(null),
     },
     ...overrides,
   };
@@ -421,17 +456,14 @@ describe('The Bench — the bullet and cartridge pickers', () => {
     // the file a member downloaded to keep their own record.
     await svc.powders(undefined, null);
     await svc.log('user_2abcCLERKsub');
-    // ⚠️ AND THE RESULTS THEMSELVES. The screen filters them by weight and by
-    // which bench entries are switched off, all in the browser, so a cap here
-    // would hide loads a member can build from a shelf they are looking at.
-    await svc.loads(
-      {
-        powderIds: ['pwd_1'],
-        cartridgeKeys: ['65creedmoor'],
-        bullets: [{ maker: 'Hornady', weightGr: 140, category: 'TIP' }],
-      },
-      {},
-    );
+
+    // 🚨 THE RESULTS LIST IS THE ONE EXCEPTION, AND IT IS EXEMPT ONLY BECAUSE
+    // IT SAYS SO. It is not filtered in the browser — every control re-queries
+    // — and an unbounded findMany with a nested cartridge per row can drag
+    // five figures of rows across the wire for one loose shelf. So it takes
+    // LOADS_MAX and answers `truncated: true`, which is the rule this test
+    // enforces everywhere else: nothing may be shortened SILENTLY. See
+    // bench-results.spec.ts.
 
     // The regression this guards is live history: the powder list was capped
     // at 300 with 305 imported, the picker filters in the browser, and five
@@ -1257,5 +1289,171 @@ describe('The Bench — the clerk-sub / User.id trap', () => {
     expect(prisma.benchLogEntry.deleteMany).toHaveBeenCalledWith({
       where: { id: 'log_9', userId: 'usr_1' },
     });
+  });
+});
+
+/**
+ * 🚨 THE BOUNDARY IS THE CONTROLLER, NOT THE SERVICE, AND EVERY TEST ABOVE
+ * STOPS SHORT OF IT. What travels is the HTTP body: what the controller
+ * returns, what a `@Res()` route writes, and — the one nobody thinks of — what
+ * an exception filter renders when a route throws. `new NotFoundException('the
+ * CIP sheet for this manual page is missing')` would sail past every assertion
+ * in this file, because no service returns it.
+ *
+ * So these run the real controller over the real service, on every route, and
+ * assert the same six words against the answer AND against the error.
+ */
+describe('The Bench — nothing leaks through the controller either', () => {
+  const SUB = 'user_2abcCLERKsub';
+
+  function wired(prisma = makePrisma()) {
+    return { prisma, controller: new BenchController(new BenchService(prisma as never)) };
+  }
+
+  /** The body a caller would actually receive, thrown or returned. */
+  async function body(run: () => Promise<unknown>): Promise<unknown> {
+    try {
+      return await run();
+    } catch (err) {
+      // What the exception filter serialises: Nest renders getResponse(), so
+      // that — not the Error's own name — is what reaches the wire.
+      return err instanceof HttpException
+        ? { status: err.getStatus(), body: err.getResponse() }
+        : { unknown: String(err) };
+    }
+  }
+
+  it.each([
+    ['GET /bench/me', (c: BenchController) => c.me(SUB)],
+    ['GET /bench/loads', (c: BenchController) => c.loads(SUB, {})],
+    ['GET /bench/powders', (c: BenchController) => c.powders(SUB, {})],
+    ['GET /bench/bullets', (c: BenchController) => c.bullets()],
+    ['GET /bench/cartridges', (c: BenchController) => c.cartridges()],
+    ['GET /bench/cartridges/:key', (c: BenchController) => c.cartridge('65creedmoor', SUB, {})],
+    ['GET /bench/log', (c: BenchController) => c.log(SUB)],
+  ])('%s', async (where, call) => {
+    const { controller } = wired();
+    assertNoLeak(await body(() => Promise.resolve(call(controller))), where);
+  });
+
+  /**
+   * ⚠️ THE 404 BODIES, WHICH NO OTHER TEST IN THIS FILE CAN SEE. An error
+   * message is written by hand at the moment somebody is thinking about where
+   * a figure came from, which is exactly when the forbidden words come out.
+   */
+  it.each([
+    [
+      'GET /bench/cartridges/:key — unknown',
+      (c: BenchController) => c.cartridge('nosuchthing', SUB, {}),
+    ],
+    ['GET /bench/share/:token — expired', (c: BenchController) => c.readShare('gone')],
+    [
+      'PATCH /bench/log/:id — not the caller\u2019s',
+      (c: BenchController) => c.patchLog(SUB, 'log_9', { notes: null }),
+    ],
+  ])('%s', async (where, call) => {
+    const prisma = makePrisma({
+      benchCartridge: { ...makePrisma().benchCartridge, findUnique: jest.fn().mockResolvedValue(null) },
+      benchLogEntry: {
+        ...makePrisma().benchLogEntry,
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+    });
+    const { controller } = wired(prisma);
+
+    const out = await body(() => Promise.resolve(call(controller)));
+    // Proves the route really did fail — a 200 here would make the assertion
+    // below vacuous.
+    expect(out).toMatchObject({ status: 404 });
+    assertNoLeak(out, where);
+  });
+
+  /**
+   * ⚠️ THE CSV IS A BODY TOO, AND IT IS THE ONE THAT IS NOT JSON. It goes out
+   * through `@Res()`, so nothing above would ever look at it — and it is built
+   * by hand from column headings a developer typed.
+   */
+  it('GET /bench/log.csv', async () => {
+    const prisma = makePrisma({
+      benchLogEntry: {
+        ...makePrisma().benchLogEntry,
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'log_1',
+            userId: 'usr_1',
+            cartridgeKey: '65creedmoor',
+            bulletLabel: 'Hornady ELD Match 140 gr',
+            powderName: 'H4350',
+            chargeGr: 40.2,
+            coalMm: 71.12,
+            primer: 'CCI 200',
+            caseLabel: 'Lapua',
+            loadId: null,
+            velocityMs: null,
+            groupMm: null,
+            notes: 'chrono at 25 C',
+            shotAt: new Date('2026-09-05T22:30:00.000Z'),
+            createdAt: new Date('2026-09-06T05:00:00.000Z'),
+          },
+        ]),
+      },
+    });
+    const { controller } = wired(prisma);
+
+    const sent: string[] = [];
+    await controller.logCsv(SUB, {
+      setHeader: () => undefined,
+      send: (v: string) => sent.push(v),
+    } as never);
+
+    expect(sent[0]).toContain('H4350');
+    assertNoLeak(sent[0], 'log.csv');
+  });
+
+  /**
+   * The share stores whatever the client hands it, so the check that matters
+   * is that what comes BACK is the payload and a link — not, say, an echo of
+   * the row with its internals.
+   */
+  it('POST /bench/share', async () => {
+    const { controller } = wired();
+    const out = await controller.share(SUB, {
+      payload: { cartridge: '65creedmoor', weight: 'gte150' },
+    });
+
+    expect(out.token).toHaveLength(22);
+    expect(out.url).toBe(`${process.env.FRONTEND_URL ?? 'https://alloutdoor.co.za'}/bench?s=${out.token}`);
+    assertNoLeak(out, 'share');
+  });
+
+  /**
+   * 🚨 THE SHEET'S OWN ANNOTATIONS, WHICH ARE THE HARDEST THING ON THIS
+   * BOUNDARY: they have to travel, and some of them may not.
+   */
+  it('keeps the tolerances that are measurements and drops the ones that are citations', async () => {
+    const { controller } = wired();
+    const out = (await controller.cartridge('65creedmoor', SUB, {})) as {
+      dims: { tolerances: Record<string, string>; footnotes: Record<string, string> | null };
+    };
+
+    // The measurements survive …
+    expect(out.dims.tolerances).toEqual({ L1: '-0.20', P1: '-0.10' });
+    // … the two that name where they came from do not, and neither takes the
+    // others with it.
+    expect(out.dims.footnotes).toEqual({ P1: '*' });
+    assertNoLeak(out, 'cartridge/annotations');
+  });
+
+  it('drops the fields that describe the sheet rather than the cartridge', async () => {
+    const { controller } = wired();
+    const out = (await controller.cartridge('65creedmoor', SUB, {})) as {
+      dims: Record<string, unknown>;
+    };
+
+    for (const audit of ['rawText', 'tab', 'sheetDate', 'revision', 'imageOnly']) {
+      expect(Object.prototype.hasOwnProperty.call(out.dims, audit)).toBe(false);
+    }
+    // And the measurements are all still there.
+    expect(out.dims.L6).toBe(71.76);
   });
 });

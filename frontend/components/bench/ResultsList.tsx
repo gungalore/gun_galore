@@ -31,7 +31,7 @@ import { DIM_KEYS, coalCheck, fmtVelocity, MM_PER_INCH } from '@/lib/bench/geome
 import { CartridgeThumb } from './CartridgeThumb';
 import { BENCH_AXES, SAFETY_LINE, VELOCITY_NOTE } from './contract';
 import type { BenchAxis, ResultsListProps, ShelfNames } from './contract';
-import { Btn, Tag } from './primitives';
+import { Btn, Tag, usePhone } from './primitives';
 
 /* ── Formatting ─────────────────────────────────────────────────────── */
 
@@ -270,7 +270,7 @@ function chargeVelocity(fps: number | null, units: Units): string | null {
   return fps === null ? null : fmtVelocity(fps, units);
 }
 
-interface FlagTag {
+export interface FlagTag {
   t: string;
   warn: boolean;
 }
@@ -282,7 +282,7 @@ interface FlagTag {
  * inside the label. Re-deriving the set here would let the list disagree with
  * the load card and the log over a rounding step.
  */
-function tagsFor(row: LoadRow, maxLengthMm: number | null): FlagTag[] {
+export function tagsFor(row: LoadRow, maxLengthMm: number | null): FlagTag[] {
   const out: FlagTag[] = [];
   const over = row.flags.includes('COAL_OVER_MAX');
   const near = row.flags.includes('COAL_NEAR_MAX');
@@ -360,13 +360,24 @@ function Charge({
   gr,
   velocity,
   weight,
+  label,
 }: {
   gr: number;
   velocity: string | null;
   weight: 500 | 600;
+  /**
+   * "Start charge" / "Max charge", for a reader.
+   *
+   * ⚠️ THE COLUMN HEADING IS NOT ENOUGH HERE. The row is a single <button>, so
+   * a screen reader reads it as one run of text — "35.6 gr · 732 m/s 41.5 gr ·
+   * 810 m/s" — with nothing to say which of the two is the ceiling. The
+   * heading row above is a separate element and is never read alongside it.
+   */
+  label: string;
 }) {
   return (
     <div className="num leading-tight">
+      <span className="sr-only">{label} </span>
       <span style={{ fontWeight: weight }}>{gr.toFixed(1)}</span>{' '}
       <span style={{ color: 'var(--text-tertiary)', fontSize: '11.5px' }}>gr</span>
       {velocity ? (
@@ -475,9 +486,21 @@ export function ResultsList({
   onAddPowder,
   onAddBullet,
   onAddCartridge,
+  onReset,
 }: ResultsListProps) {
   const groups = result?.groups ?? [];
   const isEmpty = !loading && !error && groups.length === 0;
+  /**
+   * ⚠️ ONE ROW PER LOAD, NOT TWO.
+   *
+   * Every row used to mount BOTH variants and hide one with `md:` — so 300
+   * loads built 600 buttons, 600 tag strips and 600 silhouette-free grids, and
+   * the half that could never be seen still cost the same layout and the same
+   * memory. `usePhone` is the same signal every overlay in the module already
+   * flips on (and it answers correctly in the FIRST render, so there is no
+   * frame of the wrong variant to catch).
+   */
+  const phone = usePhone();
 
   // The bare axes, in the rail's order, so the sentence and the button below
   // always name the same one.
@@ -532,30 +555,40 @@ export function ResultsList({
       {/* Count + the one velocity note on the screen. */}
       <div className="flex items-baseline gap-3 px-3 pb-2 md:items-center md:px-0 md:pb-0">
         <div className="text-[13px] md:text-[14px]">
-          {result ? (
+          {/*
+            🚨 "MATCH", NOT "CAN BE BUILT". The finder matches a bench bullet
+            over a ± gr window — five grains by default — so this list
+            routinely holds loads worked up with bullets the member does NOT
+            own: a 150 gr .308 on the shelf brings back 145 and 155 gr loads.
+            "N loads can be built from your bench" told them those were theirs
+            to load, which is one weight's charge offered for another. The
+            window decides what is SHOWN; every row still carries its own
+            bullet weight, and the member loads the one whose bullet they
+            actually have.
+
+            ⚠️ ZERO IS SPELLED OUT, NOT COUNTED. "0 loads match your bench ·
+            0 cartridges" is the same figure said twice with a false second
+            clause — the member HAS cartridges, and the panel below is already
+            explaining which axis starved. A count of nothing is a sentence,
+            not an arithmetic.
+          */}
+          {result && result.count === 0 ? (
+            <span>No loads match your bench</span>
+          ) : result ? (
             <>
               <span className="num" style={{ fontWeight: 600 }}>
                 {result.count}
               </span>
-              {/*
-                🚨 "MATCH", NOT "CAN BE BUILT". The finder matches a bench
-                bullet over a ± gr window — five grains by default — so this
-                list routinely holds loads worked up with bullets the member
-                does NOT own: a 150 gr .308 on the shelf brings back 145 and
-                155 gr loads. "N loads can be built from your bench" told them
-                those were theirs to load, which is one weight's charge offered
-                for another. The window decides what is SHOWN; every row still
-                carries its own bullet weight, and the member loads the one
-                whose bullet they actually have.
-              */}
               <span className="md:hidden"> load{result.count === 1 ? '' : 's'} match your bench</span>
               <span className="hidden md:inline">
                 {' '}
                 load{result.count === 1 ? '' : 's'} match your bench{' '}
               </span>
-              <span className="hidden md:inline" style={{ color: 'var(--text-tertiary)' }}>
-                · {groups.length} cartridge{groups.length === 1 ? '' : 's'}
-              </span>
+              {groups.length > 0 ? (
+                <span className="hidden md:inline" style={{ color: 'var(--text-tertiary)' }}>
+                  · {groups.length} cartridge{groups.length === 1 ? '' : 's'}
+                </span>
+              ) : null}
             </>
           ) : null}
         </div>
@@ -566,6 +599,23 @@ export function ResultsList({
           {VELOCITY_NOTE}
         </div>
       </div>
+
+      {/*
+        ⚠️ A CAP THE SCREEN DOES NOT MENTION IS THE SCREEN LYING ABOUT THE
+        SHELF. The server stops at 600 rows and says so; without this line the
+        member reads a count, scrolls to the end, and believes that is
+        everything their bench can build. It names the two controls that
+        actually narrow it — the cartridge tab and the weight band — rather
+        than saying "refine your search", which is advice with no door.
+      */}
+      {result?.truncated ? (
+        <div
+          className="px-3 pb-1 text-[11.5px] md:px-0 md:pb-0 md:text-[12px]"
+          style={{ color: 'var(--text-tertiary)' }}
+        >
+          Showing the first {result.count} loads — narrow the cartridge or weight to see the rest.
+        </div>
+      ) : null}
 
       {/* The panel scrolls on its own; the page never scrolls under it. */}
       <div
@@ -672,13 +722,31 @@ export function ResultsList({
             {/* Opens the picker for each axis the sentence just named. Nothing
                 is offered when no single addition could help — a door that
                 leads nowhere is worse than no door. */}
-            {offer.length > 0 ? (
+            {offer.length > 0 || onReset ? (
               <div className="flex flex-wrap items-center justify-center gap-2">
                 {offer.map((axis) => (
                   <Btn key={axis} size="mobile" onClick={opener[axis]}>
                     Add a {axis}
                   </Btn>
                 ))}
+                {/*
+                  ⚠️ OFFERED IN EVERY EMPTY STATE, INCLUDING THE ONES THAT
+                  OFFER NO PICKER. The filter state is exactly the one where a
+                  member has switched chips off or narrowed the band and cannot
+                  remember which — and it is the state that deliberately offers
+                  no Add, because adding another powder to a full shelf changes
+                  nothing. Without this it offers nothing at all.
+
+                  ⚠️ AND IT SAYS FILTERS, NOT "bench" OR "search". It puts the
+                  chips back on and the pills back to their defaults; it never
+                  removes anything from the saved bench, and the word has to
+                  keep those two apart.
+                */}
+                {onReset ? (
+                  <Btn size="mobile" onClick={onReset}>
+                    Reset filters
+                  </Btn>
+                ) : null}
               </div>
             ) : null}
           </Centred>
@@ -688,6 +756,7 @@ export function ResultsList({
               key={group.cartridge.key}
               group={group}
               units={units}
+              phone={phone}
               onOpenLoad={onOpenLoad}
               onOpenSpec={onOpenSpec}
             />
@@ -710,11 +779,13 @@ export function ResultsList({
 function Group({
   group,
   units,
+  phone,
   onOpenLoad,
   onOpenSpec,
 }: {
   group: LoadGroup;
   units: Units;
+  phone: boolean;
   onOpenLoad: ResultsListProps['onOpenLoad'];
   onOpenSpec: ResultsListProps['onOpenSpec'];
 }) {
@@ -803,7 +874,14 @@ function Group({
               group={group}
               weightGr={w.weightGr}
               units={units}
-              delayMs={idx++ * 35}
+              phone={phone}
+              /* ⚠️ CAPPED AT TWELVE ROWS OF STAGGER. Uncapped, the prototype's
+                 35 ms per row is a courtesy at 8 rows and a fault at 300: the
+                 last one arrives 10.5 seconds after the first, and the member
+                 is looking at a list that is still filling in long after it
+                 finished loading. Twelve rows is roughly one screen, which is
+                 all the stagger anyone can see. */
+              delayMs={Math.min(idx++, 12) * 35}
               onOpenLoad={onOpenLoad}
             />
           ))}
@@ -820,6 +898,7 @@ function Row({
   group,
   weightGr,
   units,
+  phone,
   delayMs,
   onOpenLoad,
 }: {
@@ -827,6 +906,15 @@ function Row({
   group: LoadGroup;
   weightGr: number;
   units: Units;
+  /**
+   * ⚠️ ONE VARIANT IS RENDERED, AND THE BREAKPOINT CLASSES ARE GONE WITH THE
+   * OTHER. `md:hidden` could not carry this decision on its own: `usePhone` is
+   * also true for the INSTALLED app at any width, and a `md:hidden` wrapper
+   * round the phone card would have hidden the whole list on an installed
+   * tablet. The wrappers are now plain; `.bench .row` still supplies the
+   * desktop grid and the phone card still overrides display inline.
+   */
+  phone: boolean;
   delayMs: number;
   onOpenLoad: ResultsListProps['onOpenLoad'];
 }) {
@@ -866,14 +954,9 @@ function Row({
     letterSpacing: '0.03em',
   };
 
-  return (
-    <>
-      {/* Two variants, one visible.
-          ⚠️ THE WRAPPERS CARRY THE BREAKPOINT, NOT THE BUTTONS. `.bench .row`
-          sets `display` at 0-2-0, which outranks Tailwind's `.hidden`, so
-          `hidden md:grid` on the button itself silently does nothing. The
-          mobile card overrides display inline, where nothing outranks it. */}
-      <div className="hidden md:block">
+  if (!phone) {
+    return (
+      <div>
         <button
           type="button"
           className="row"
@@ -882,8 +965,8 @@ function Row({
         >
           <div>{bullet}</div>
           <div style={{ fontWeight: 500 }}>{row.powder}</div>
-          <Charge gr={row.startGr} velocity={startV} weight={500} />
-          <Charge gr={row.maxGr} velocity={maxV} weight={600} />
+          <Charge gr={row.startGr} velocity={startV} weight={500} label="Start charge" />
+          <Charge gr={row.maxGr} velocity={maxV} weight={600} label="Max charge" />
           <div className="num" style={{ fontSize: '12.5px' }}>
             {coal}
           </div>
@@ -895,8 +978,12 @@ function Row({
           </div>
         </button>
       </div>
+    );
+  }
 
-      <div className="md:hidden">
+  return (
+    <>
+      <div>
         <button
           type="button"
           className="row"

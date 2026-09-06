@@ -40,25 +40,52 @@ const X0 = 52;
 const Y0 = 118;
 
 /**
- * The prototype's scale, and the most the drawing will ever use.
+ * An absolute ceiling on the scale.
  *
- * ⚠️ 6.2 px/mm IS NOT SAFE FOR EVERY CARTRIDGE, WHICH THE PROTOTYPE COULD NOT
- * SHOW: it only ever drew 6,5 Creedmoor. At this scale the frame runs out at
- * L6 ≈ 80.6 mm, so .30-06, .300 Win Mag, 7mm Rem Mag, .375 H&H and .338 Lapua
- * all draw their bullet past x = 560 and are silently clipped — no error, just
- * a cartridge with no tip. These are ordinary cartridges, not exotics.
+ * ⚠️ NOT THE PROTOTYPE'S 6.2 ANY MORE, AND THAT IS THE POINT. The prototype
+ * fixed 6.2 px/mm because it only ever drew 6,5 Creedmoor. Fixed, it fails at
+ * both ends: the frame runs out at L6 ≈ 80.6 mm, so .30-06, .300 Win Mag,
+ * .375 H&H and .338 Lapua drew their bullet past x = 560 and were silently
+ * clipped; and a 9 mm Luger at 29.7 mm drew across a THIRD of the frame with
+ * two-thirds of the box empty beside it.
  *
- * So the scale is derived per cartridge and only ever shrinks. Anything that
- * already fits keeps 6.2 exactly, which is why 6,5 Creedmoor still renders
- * pixel-for-pixel as the prototype drew it.
+ * This ceiling exists only so a freak set of figures cannot magnify to
+ * nonsense. The real limits are computed per cartridge in scaleFor().
  */
-const S_MAX = 6.2;
+const S_MAX = 14;
 /** Room for the tip's stroke and the L6 witness line at the right edge. */
 const RIGHT_PAD = 12;
 
-function scaleFor(l6: number): number {
+/**
+ * The scale, fitted to the frame on all three axes.
+ *
+ * ⚠️ THE LENGTH IS NOT THE ONLY CONSTRAINT, WHICH IS WHY R1 IS AN ARGUMENT.
+ * Fitting on length alone magnifies a short, fat pistol case until its rim
+ * pushes the diameter stack off the top of the viewBox and the length ladder
+ * off the bottom — labels that simply are not there, with nothing logged. The
+ * two vertical budgets are the ladder below (the tighter of the two) and the
+ * three-level stack above; the drawing takes whichever of the three allows
+ * least.
+ *
+ * ⚠️ THIS DRAWING SCALES UP, THE THUMBNAIL DOES NOT, AND THE DIFFERENCE IS
+ * DELIBERATE. A list of thumbnails is a comparison — a .223 and a .338 there
+ * must not draw the same length — so `thumbOf()` keeps its never-scale-up
+ * rule. The spec card shows exactly one cartridge, where relative size is not
+ * information and an empty two-thirds of the frame is just a small drawing.
+ */
+function scaleFor(l6: number, r1: number): number {
   if (!(l6 > 0)) return S_MAX;
-  return Math.min(S_MAX, (VIEW_W - X0 - RIGHT_PAD) / l6);
+  const byLength = (VIEW_W - X0 - RIGHT_PAD) / l6;
+  const half = r1 > 0 ? r1 / 2 : 0;
+  if (half <= 0) return Math.min(S_MAX, byLength);
+  /* Read inside the function, not at module scope: these pitches are declared
+     below and a top-level const referencing them would be a temporal-dead-zone
+     throw on import. */
+  const ladder = LEN_GAP + 3 * LEN_PITCH + 6;
+  const stack = DIA_GAP + 2 * DIA_LEVEL + 12;
+  const byBelow = (VIEW_H - Y0 - ladder) / half;
+  const byAbove = (Y0 - stack) / half;
+  return Math.max(1, Math.min(S_MAX, byLength, byBelow, byAbove));
 }
 
 /** Pitch of the length ladder stacked below the drawing. */
@@ -97,17 +124,8 @@ interface DimRow {
   text: string;
 }
 
-/**
- * ⚠️ MILLIMETRES, ALWAYS.
- *
- * `CartridgeDrawing2DProps` carries no `units`, so the drawing cannot follow
- * the card's mm/inch control and shows the metric figure the backend stores.
- * That is the site's primary unit, so it is the right thing to be stuck on —
- * but it IS stuck. See the handoff note: the fix is one word,
- * `extends UnitProps` on the interface.
- */
-// Follows the spec card's mm/inch toggle; fmtLength shows one unit only,
-// because two per callout is what makes a drawing unreadable.
+/* Follows the spec card's mm/inch toggle; fmtLength shows one unit only,
+   because two per callout is what makes a drawing unreadable. */
 const label = (v: number, units: Units) => fmtLength(v, units);
 
 /** The nine dimension annotations, in the order the drawing stacks them. */
@@ -238,7 +256,7 @@ export function CartridgeDrawing2D({
        one. A partial set renders a plausible, wrong cartridge; the spec
        card's text fallback is the correct outcome instead. */
     if (!canDraw(dims)) return null;
-    const s = scaleFor(dims.L6);
+    const s = scaleFor(dims.L6, dims.R1);
     const p = paths(dims, s, X0, Y0);
     return {
       casePath: p.casePath,
@@ -252,11 +270,9 @@ export function CartridgeDrawing2D({
 
   if (!model) return null;
 
-  /* Only offer the dimensions as controls when the page can actually react.
-     bench.css styles :focus-visible for the shared controls and not for
-     `.dim`, so the lit letter IS the focus indicator here — which means a tab
-     stop with no `onHotChange` behind it would be a stop that shows the
-     keyboard user nothing. */
+  /* Only offer the dimensions as pointer targets when the page can react:
+     `.dim` sets a pointer cursor, and without a handler behind it that cursor
+     is a promise the drawing cannot keep. */
   const interactive = typeof onHotChange === 'function';
   const setHot = (k: string | null) => onHotChange?.(k);
 
@@ -345,25 +361,24 @@ export function CartridgeDrawing2D({
             <g
               key={r.k}
               className="dim"
-              role={interactive ? 'button' : undefined}
-              tabIndex={interactive ? 0 : undefined}
-              aria-label={interactive ? r.text : undefined}
-              aria-pressed={interactive ? isHot : undefined}
+              /**
+               * ⚠️ NOT IN THE TAB ORDER, AND NOT A BUTTON. These nine groups
+               * were `role="button" tabIndex={0}`, which put NINE tab stops
+               * inside one drawing — and every one of them announced a figure
+               * the Dimensions table underneath already carries as a real
+               * button that lights the same letter. A keyboard or screen
+               * reader user therefore lost nothing by their going and is
+               * spared nine stops on the way past; the pointer affordance
+               * they exist for is unaffected, and with no focusable
+               * descendant `aria-hidden` here is legitimate rather than the
+               * hidden-focus violation it would otherwise be.
+               */
+              aria-hidden="true"
               onMouseEnter={() => setHot(r.k)}
               onMouseLeave={() => setHot(null)}
-              onFocus={() => setHot(r.k)}
-              onBlur={() => setHot(null)}
               /* Tap is the mobile equivalent of hover, and it toggles so a
                  second tap can put the drawing back to neutral. */
               onClick={() => setHot(isHot ? null : r.k)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setHot(isHot ? null : r.k);
-                }
-              }}
-              /* `.dim` sets a pointer cursor; without a handler behind it
-                 that cursor is a promise the drawing cannot keep. */
               style={interactive ? undefined : { pointerEvents: 'none' }}
             >
               <line
@@ -410,7 +425,35 @@ export function CartridgeDrawing2D({
         })}
 
         {model.shoulder ? (
-          <g aria-hidden="true">
+          /**
+           * ⚠️ THE ARC IS A TARGET NOW, NOT JUST A LIT MARK. The α row in the
+           * table lights this arc, but the arc could not light the row — the
+           * one dimension on the drawing whose link ran in a single
+           * direction, on a card whose whole point is that the two agree.
+           * `alpha` is accepted alongside `α` everywhere for a caller that
+           * avoids a Greek letter in state, so the letter written here is the
+           * one the table checks for.
+           */
+          <g
+            className="dim"
+            aria-hidden="true"
+            onMouseEnter={() => setHot('α')}
+            onMouseLeave={() => setHot(null)}
+            onClick={() => setHot(alphaHot ? null : 'α')}
+            style={interactive ? undefined : { pointerEvents: 'none' }}
+          >
+            {/* An invisible pad around the LETTER only: one glyph is a target
+                nobody can hit, and a fill of `none` takes no pointer events at
+                all. Kept off the arc itself — a pad wide enough to cover the
+                arc would sit over the L1 rung of the length ladder below and
+                steal its hover, and this group renders last. */}
+            <rect
+              x={(model.shoulder.x - 6).toFixed(1)}
+              y={(model.shoulder.y - 13).toFixed(1)}
+              width={22}
+              height={18}
+              fill="transparent"
+            />
             <path
               d={model.shoulder.d}
               fill="none"

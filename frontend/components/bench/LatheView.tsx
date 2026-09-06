@@ -29,8 +29,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LatheViewProps } from '@/components/bench/contract';
-import { DIM_KEYS, profile, type Dims, type Point } from '@/lib/bench/geometry';
-import { Btn } from './primitives';
+import { DIM_KEYS, fmtLength, profile, type Dims, type Point, type Units } from '@/lib/bench/geometry';
+import { Btn, usePhone } from './primitives';
 
 /* ── Ported constants ───────────────────────────────────────────────────
    Every one of these is the prototype's, in the prototype's units. The
@@ -55,6 +55,21 @@ const TILT_PER_PX = 0.004;
 const FLICK_PER_PX = 0.004;
 /** How near the ring a pointer-down counts as grabbing it rather than spinning. */
 const GRAB_PX = 26;
+/**
+ * The same band, floored in REAL pixels.
+ *
+ * ⚠️ GRAB_PX IS IN THE VIRTUAL 1120-WIDE SPACE, NOT ON THE SCREEN. On a 1120px
+ * desktop canvas the two agree; on a 360px phone the band is 26 × 360/1120 ≈
+ * 8 real pixels — a third of a fingertip, so the ring could not be grabbed at
+ * all and every attempt spun the model instead. 22 px is the floor the band is
+ * widened to in virtual units whenever the canvas is drawn smaller than that.
+ */
+const GRAB_MIN_PX = 22;
+/** The tilt the model rests at, and the amplitude it breathes through. */
+const TILT_REST = 0.28;
+const TILT_SWING = 0.12;
+/** One full breath of the resting tilt. */
+const TILT_PERIOD_MS = 6000;
 /** Within this the calliper snaps to a station. */
 const SNAP_MM = 1.3;
 const SEGMENTS = 96;
@@ -118,10 +133,28 @@ function radiusAt(P: Point[], x: number): number {
  * reads as a case rather than a tube. Only the OUTER profile is dimensioned,
  * which is why nothing in here is ever labelled or measured by the calliper.
  */
-function innerProfile(D: Dims): { pts: Point[]; seat: number } {
+function innerProfile(D: Dims): { pts: Point[]; seat: number } | null {
   const P = profile(D);
-  const web = D.E + 4.2;
-  const seat = D.L3 - 7;
+  /**
+   * ⚠️ THE WEB AND THE SEAT ARE CLAMPED, AND THE SECTION IS SKIPPED IF THEY
+   * STILL MEET.
+   *
+   * The prototype's figures are a rifle case's: a solid web to `E + 4.2` and
+   * the bullet seated 7 mm into the neck. On a short pistol case — anything
+   * with `L3 < E + 11.2` — the seat lands BEHIND the web, so the interior
+   * polygon runs backwards, the cut face becomes a self-intersecting shape,
+   * and the hatch scanline fills it in stripes that cross the case wall. It
+   * renders; it is just not a case.
+   *
+   * Clamped, a short case gets a shallower web and a shallower seat, both in
+   * proportion. Anything still degenerate after that — a case so short the
+   * primer pocket alone would fill it — returns null and the caller draws the
+   * solid uncut rather than a wrong interior.
+   */
+  const web = Math.min(D.E + 4.2, D.L3 * 0.45);
+  const seat = Math.max(D.L3 - 7, web + 1.5);
+  /* 3.2 is the primer pocket's own depth: a web behind it is not a web. */
+  if (!(web > 3.2) || !(seat > web) || !(seat < D.L3)) return null;
   const pts: Point[] = [
     [0, 0],
     [0, 2.7],
@@ -157,12 +190,17 @@ interface DimSpec {
   y: number;
   /** R1 is the only left-aligned label — it would otherwise sit off the head. */
   left: boolean;
-  text: string;
 }
 
-function fmtMm(v: number): string {
-  return `${v.toFixed(2)} mm`;
-}
+/**
+ * ⚠️ THE LABEL TEXT IS NOT ON THE SPEC, DELIBERATELY.
+ *
+ * It used to be, and adding `units` then made `dimSpecs()` unit-dependent —
+ * which made `specs` a new array on every flip of the mm/inch control, which
+ * is a dependency of the scene effect, which would tear down and rebuild the
+ * WebGL context to change nine strings. The geometry here is unit-free; the
+ * text is composed in the JSX where the label actually renders.
+ */
 
 /**
  * The dimension set drawn in 3D, with the prototype's stacking levels.
@@ -182,7 +220,6 @@ function dimSpecs(D: Dims): DimSpec[] {
       val: D[k],
       y: -(D.R1 / 2) - 5 - i * 2.9,
       left: false,
-      text: `${k} = ${fmtMm(D[k])}`,
     });
   });
   const dia: [keyof Dims, number][] = [
@@ -201,7 +238,6 @@ function dimSpecs(D: Dims): DimSpec[] {
       val: D[k],
       y: D.R1 / 2 + 2.4 + lvl[i] * 2.6,
       left: i === 0,
-      text: `${k} = ${fmtMm(D[k])}`,
     });
   });
   return out;
@@ -246,35 +282,46 @@ function noseStart(P: Point[], D: Dims): number {
   return x;
 }
 
-/** The floating readout beside the ring. */
+/**
+ * The calliper readout.
+ *
+ * ⚠️ EVERY FIGURE GOES THROUGH fmtLength, INCLUDING THE DISTANCE FROM THE
+ * HEAD. This whole component printed `mm` regardless of the card's mm/inch
+ * control, so a member reading the table in inches got a 3D view answering in
+ * millimetres — two units for one quantity on one screen. The distance was the
+ * easy one to miss: it is not a dimension off the sheet, it is where the ring
+ * happens to be, and it still has to be in the unit they chose.
+ */
 function readoutOf(
   D: Dims,
   P: Point[],
   cal: number | null,
   snap: string | null,
+  units: Units,
 ): { title: string; sub: string } | null {
   if (cal === null) return null;
+  const from = `${fmtLength(cal, units)} from the head`;
   if (snap) {
     const st = stations(D).find((s) => s.k === snap);
     if (st && st.dia) {
       return {
-        title: `${st.k} = ${fmtMm(D[st.k as keyof Dims])}`,
-        sub: `${cal.toFixed(1)} mm from the head`,
+        title: `${st.k} = ${fmtLength(D[st.k as keyof Dims], units)}`,
+        sub: from,
       };
     }
-    return { title: `${snap} = ${fmtMm(cal)}`, sub: 'from the head' };
+    return { title: `${snap} = ${fmtLength(cal, units)}`, sub: 'from the head' };
   }
   /* No station under the ring, and the ring is on the nose: give the distance
      and say why there is no diameter, rather than printing a modelled one. */
   if (cal > noseStart(P, D)) {
     return {
-      title: `${cal.toFixed(1)} mm from the head`,
+      title: from,
       sub: 'The nose curve is illustrative.',
     };
   }
   return {
-    title: `Ø ${fmtMm(radiusAt(P, cal) * 2)}`,
-    sub: `${cal.toFixed(1)} mm from the head`,
+    title: `Ø ${fmtLength(radiusAt(P, cal) * 2, units)}`,
+    sub: from,
   };
 }
 
@@ -349,10 +396,14 @@ interface Ctl {
   showDims: boolean;
   cal: number | null;
   snap: string | null;
+  /** The letter the TABLE is hovering, which lights the model while it lasts. */
+  hot: string | null;
   psi: number;
   phi: number;
   vel: number;
   auto: boolean;
+  /** True once the member has tilted it themselves — the resting sway stops for good. */
+  tilted: boolean;
   drag: 'spin' | 'cal' | null;
   lx: number;
   ly: number;
@@ -361,7 +412,17 @@ interface Ctl {
 type Paintable = { material: unknown };
 type Disposable = { dispose: () => void };
 
-export default function LatheView({ dims, halfSection }: LatheViewProps) {
+export default function LatheView({
+  dims,
+  halfSection,
+  units,
+  hot,
+  onHotChange,
+  name,
+  slug,
+  onToast,
+}: LatheViewProps) {
+  const phone = usePhone();
   /* A parent that rebuilds an equal-but-new dims object must not tear down the
      WebGL context, so the scene is keyed on the FIGURES, not the reference. */
   const sig = DIM_KEYS.map((k) => dims[k]).join('|');
@@ -370,20 +431,61 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const labelRefs = useRef<Record<string, HTMLSpanElement | null>>({});
-  const readoutRef = useRef<HTMLDivElement | null>(null);
   const ctl = useRef<Ctl>({
     half: false,
     showDims: true,
     cal: null,
     snap: null,
+    hot: null,
     psi: 0.6,
-    phi: 0.28,
+    phi: TILT_REST,
     vel: IDLE_SPIN,
     auto: true,
+    tilted: false,
     drag: null,
     lx: 0,
     ly: 0,
   });
+  /**
+   * "Show all", assigned once the scene exists.
+   *
+   * ⚠️ A REF, NOT STATE. The button has to reach into the renderer — freeze
+   * the pose, force one render and read the drawing buffer — and everything
+   * that can do that is closed over inside the scene effect. Hoisting the
+   * renderer into React state instead would put a live GL context in a
+   * dependency array.
+   */
+  const showAllRef = useRef<(() => void) | null>(null);
+  const glCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  /**
+   * SPEC §9: `aria-label="3D view of <name>; use the slider to measure"`.
+   *
+   * ⚠️ THE NAME ARRIVES AFTER THE CANVAS DOES. The card mounts this view from
+   * data it already holds and the cartridge's own record can still be in
+   * flight, so the label is written imperatively when the canvas is built AND
+   * again whenever the name changes — a dependency on `name` in the scene
+   * effect would tear down the GL context to change a string.
+   */
+  const canvasLabel = name
+    ? `Three-dimensional view of ${name}. Use the calliper slider to measure.`
+    : 'Three-dimensional view of the cartridge. Use the calliper slider to measure.';
+  const canvasLabelRef = useRef(canvasLabel);
+  useEffect(() => {
+    canvasLabelRef.current = canvasLabel;
+    glCanvasRef.current?.setAttribute('aria-label', canvasLabel);
+  }, [canvasLabel]);
+
+  /* What the snapshot needs, kept out of the scene effect's dependencies: a
+     unit flip or a name arriving must not rebuild a WebGL context. */
+  const exportRef = useRef({ units, name, slug });
+  useEffect(() => {
+    exportRef.current = { units, name, slug };
+  }, [units, name, slug]);
+  const onToastRef = useRef(onToast);
+  useEffect(() => {
+    onToastRef.current = onToast;
+  }, [onToast]);
 
   const [failed, setFailed] = useState(false);
   const [showDims, setShowDims] = useState(true);
@@ -392,14 +494,30 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
 
   const P = useMemo(() => profile(D), [D]);
   const specs = useMemo(() => dimSpecs(D), [D]);
-  const readout = useMemo(() => readoutOf(D, P, cal, snap), [D, P, cal, snap]);
+  const readout = useMemo(() => readoutOf(D, P, cal, snap, units), [D, P, cal, snap, units]);
 
   const calText =
     cal === null
       ? 'Slide to measure'
-      : `${snap ? `${snap} · ` : ''}${cal.toFixed(1)} mm from the head`;
+      : `${snap ? `${snap} · ` : ''}${fmtLength(cal, units)} from the head`;
 
-  /** One writer for the calliper, shared by the slider and the ring drag. */
+  /* The snap writes the hot letter out to the card, and the card's own hover
+     writes back in — so the callback must not be a dependency of anything that
+     re-binds the pointer handlers. */
+  const onHotRef = useRef(onHotChange);
+  useEffect(() => {
+    onHotRef.current = onHotChange;
+  }, [onHotChange]);
+
+  /**
+   * One writer for the calliper, shared by the slider and the ring drag.
+   *
+   * ⚠️ IT ALSO SETS THE TABLE'S HOT LETTER (SPEC §6.3: "the letter is set hot
+   * so the table row highlights"). Snapping to P2 and having the P2 row stay
+   * grey was the calliper's only promise the card did not keep. Clearing the
+   * calliper clears it again — a letter left lit by a measurement that is no
+   * longer on screen points at nothing.
+   */
   const applyCal = useCallback(
     (mm: number | null) => {
       const c = ctl.current;
@@ -408,6 +526,7 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
         c.snap = null;
         setCal(null);
         setSnap(null);
+        onHotRef.current?.(null);
         return;
       }
       const s = snapCal(D, mm);
@@ -415,6 +534,7 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
       c.snap = s.letter;
       setCal(s.mm);
       setSnap(s.letter);
+      onHotRef.current?.(s.letter);
     },
     [D],
   );
@@ -433,6 +553,12 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
   useEffect(() => {
     ctl.current.showDims = showDims;
   }, [showDims]);
+
+  /* The letter the table is hovering. The frame loop reads it and lights the
+     matching dimension; the calliper's own snap still takes precedence. */
+  useEffect(() => {
+    ctl.current.hot = hot ?? null;
+  }, [hot]);
 
   /* A new cartridge invalidates the measurement — a ring left at 37.8 mm on a
      different case is a wrong reading, not a stale one. */
@@ -498,7 +624,19 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
 
       let made: import('three').WebGLRenderer | null = null;
       try {
-        made = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        /**
+         * ⚠️ preserveDrawingBuffer IS FOR "Show all", NOT FOR THE VIEW.
+         * Without it the colour buffer is undefined the moment the browser
+         * composites, and the snapshot came back blank or black on some
+         * drivers even though it is taken in the same task as the render. It
+         * costs an extra buffer copy per frame; a spec card that exports a
+         * dimensioned PNG is worth it.
+         */
+        made = new THREE.WebGLRenderer({
+          antialias: true,
+          alpha: true,
+          preserveDrawingBuffer: true,
+        });
       } catch {
         made = null;
       }
@@ -515,7 +653,6 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
         return;
       }
 
-      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
       /* The half section is a clipping plane, not a second geometry. */
       renderer.localClippingEnabled = true;
 
@@ -523,13 +660,23 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
       canvas.style.display = 'block';
       canvas.style.width = '100%';
       canvas.style.height = '100%';
-      canvas.style.touchAction = 'none';
+      /**
+       * ⚠️ pan-y, NOT none.
+       *
+       * `touch-action: none` on a canvas that fills half a phone screen means
+       * the page cannot be scrolled from anywhere over the model — the member
+       * is stuck on the spec card's drawing with the whole table below it out
+       * of reach. pan-y hands vertical gestures back to the browser and keeps
+       * horizontal ones, which is all the model needs: spin is horizontal and
+       * so is the calliper's travel along the axis. The cost is that tilt by
+       * drag is a pointer-device gesture only (see onMove) — the model tilts
+       * itself at rest, and the tilt is a look rather than a measurement.
+       */
+      canvas.style.touchAction = 'pan-y';
       canvas.style.cursor = 'grab';
       canvas.setAttribute('role', 'img');
-      canvas.setAttribute(
-        'aria-label',
-        'Three-dimensional view of the cartridge. Use the calliper slider to measure.',
-      );
+      glCanvasRef.current = canvas;
+      canvas.setAttribute('aria-label', canvasLabelRef.current);
       host.appendChild(canvas);
 
       const geos: Disposable[] = [];
@@ -617,100 +764,118 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
          Everything below shows only in half section and lives in the flat
          group: the cut plane is the model's own z = 0, and spin is pinned to
          zero in that mode so the cut always faces the viewer. */
-      const section = new THREE.Group();
-      section.visible = false;
-      flat.add(section);
-
-      section.add(new THREE.Mesh(latheOf(inner.pts), innerMat));
-
-      const capUpper: Point[] = cp
-        .map((p) => [mx(p[0]), p[1]] as Point)
-        .concat(
-          inner.pts
-            .slice()
-            .reverse()
-            .slice(0, -1)
-            .map((p) => [mx(p[0]), p[1]] as Point),
-        );
-      const capLower: Point[] = capUpper.map((p) => [p[0], -p[1]] as Point);
-      const bulletUp: Point[] = [[mx(inner.seat), D.G1 / 2] as Point].concat(
-        bp.map((p) => [mx(p[0]), p[1]] as Point),
-      );
-      const bulletCap: Point[] = bulletUp.concat(
-        bulletUp
-          .slice(0, -1)
-          .reverse()
-          .map((p) => [p[0], -p[1]] as Point),
-      );
-
-      const shapeOf = (poly: Point[]) => {
-        const s = new THREE.Shape();
-        s.moveTo(poly[0][0], poly[0][1]);
-        for (let i = 1; i < poly.length; i++) s.lineTo(poly[i][0], poly[i][1]);
-        s.closePath();
-        return keep(new THREE.ShapeGeometry(s), geos);
-      };
-
-      /* Flat fills, not lit surfaces: a cut face in a section drawing reads as
-         a filled outline, and lighting it makes it look like another solid. */
-      const capMat = keep(
-        new THREE.MeshBasicMaterial({
-          color: col(BRASS_CUT, 'var(--gold-tag-fill)'),
-          side: THREE.DoubleSide,
-          polygonOffset: true,
-          polygonOffsetFactor: 1,
-          polygonOffsetUnits: 1,
-        }),
-        mats,
-      );
-      const bulletCapMat = keep(
-        new THREE.MeshBasicMaterial({
-          color: col(COPPER_CUT, 'var(--gold)'),
-          side: THREE.DoubleSide,
-          polygonOffset: true,
-          polygonOffsetFactor: 1,
-          polygonOffsetUnits: 1,
-        }),
-        mats,
-      );
-      section.add(new THREE.Mesh(shapeOf(capUpper), capMat));
-      section.add(new THREE.Mesh(shapeOf(capLower), capMat));
-      section.add(new THREE.Mesh(shapeOf(bulletCap), bulletCapMat));
-
+      /* Hoisted above the section: the axis, the dimension web and the ring
+         all build their geometry with it, and the section is now conditional. */
       const lineGeo = (pts: number[]) => {
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
         return keep(g, geos);
       };
-      const loopOf = (poly: Point[], z: number) => {
-        const arr: number[] = [];
-        for (const p of poly) arr.push(p[0], p[1], z);
-        return lineGeo(arr);
-      };
 
-      const edgeMat = keep(
-        new THREE.LineBasicMaterial({ color: col(BRASS_EDGE, 'var(--gold-strong)') }),
-        mats,
-      );
-      const bulletEdgeMat = keep(
-        new THREE.LineBasicMaterial({ color: col(COPPER_EDGE, 'var(--gold-strong)') }),
-        mats,
-      );
-      section.add(new THREE.LineLoop(loopOf(capUpper, 0.06), edgeMat));
-      section.add(new THREE.LineLoop(loopOf(capLower, 0.06), edgeMat));
-      section.add(new THREE.LineLoop(loopOf(bulletCap, 0.06), bulletEdgeMat));
+      const section = new THREE.Group();
+      section.visible = false;
+      flat.add(section);
 
-      /* Hatch the brass only — the bullet is solid, not a wall. */
-      const hatchMat = keep(
-        new THREE.LineBasicMaterial({
-          color: col(BRASS_EDGE, 'var(--gold-strong)'),
-          transparent: true,
-          opacity: 0.55,
-        }),
-        mats,
-      );
-      const hatch = hatchSegments(capUpper, HATCH_MM).concat(hatchSegments(capLower, HATCH_MM));
-      if (hatch.length) section.add(new THREE.LineSegments(lineGeo(hatch), hatchMat));
+      /**
+       * ⚠️ THE SECTION IS SKIPPED WHEN THE INTERIOR CANNOT BE BUILT.
+       *
+       * `innerProfile` returns null for a case so short that the web and the
+       * seated bullet would meet (see its own note). Building the cut anyway
+       * gave a self-intersecting cap polygon, which the hatch scanline fills
+       * in bands across the case wall — a picture that reads as a case with a
+       * hole through it. `hasSection` therefore also decides whether the
+       * clipping plane is applied at all, so Half section falls back to the
+       * uncut solid rather than to an open shell.
+       */
+      const hasSection = inner !== null;
+      if (inner) {
+        section.add(new THREE.Mesh(latheOf(inner.pts), innerMat));
+
+        const capUpper: Point[] = cp
+          .map((p) => [mx(p[0]), p[1]] as Point)
+          .concat(
+            inner.pts
+              .slice()
+              .reverse()
+              .slice(0, -1)
+              .map((p) => [mx(p[0]), p[1]] as Point),
+          );
+        const capLower: Point[] = capUpper.map((p) => [p[0], -p[1]] as Point);
+        const bulletUp: Point[] = [[mx(inner.seat), D.G1 / 2] as Point].concat(
+          bp.map((p) => [mx(p[0]), p[1]] as Point),
+        );
+        const bulletCap: Point[] = bulletUp.concat(
+          bulletUp
+            .slice(0, -1)
+            .reverse()
+            .map((p) => [p[0], -p[1]] as Point),
+        );
+
+        const shapeOf = (poly: Point[]) => {
+          const s = new THREE.Shape();
+          s.moveTo(poly[0][0], poly[0][1]);
+          for (let i = 1; i < poly.length; i++) s.lineTo(poly[i][0], poly[i][1]);
+          s.closePath();
+          return keep(new THREE.ShapeGeometry(s), geos);
+        };
+
+        /* Flat fills, not lit surfaces: a cut face in a section drawing reads
+           as a filled outline, and lighting it makes it look like another
+           solid. */
+        const capMat = keep(
+          new THREE.MeshBasicMaterial({
+            color: col(BRASS_CUT, 'var(--gold-tag-fill)'),
+            side: THREE.DoubleSide,
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1,
+          }),
+          mats,
+        );
+        const bulletCapMat = keep(
+          new THREE.MeshBasicMaterial({
+            color: col(COPPER_CUT, 'var(--gold)'),
+            side: THREE.DoubleSide,
+            polygonOffset: true,
+            polygonOffsetFactor: 1,
+            polygonOffsetUnits: 1,
+          }),
+          mats,
+        );
+        section.add(new THREE.Mesh(shapeOf(capUpper), capMat));
+        section.add(new THREE.Mesh(shapeOf(capLower), capMat));
+        section.add(new THREE.Mesh(shapeOf(bulletCap), bulletCapMat));
+
+        const loopOf = (poly: Point[], z: number) => {
+          const arr: number[] = [];
+          for (const p of poly) arr.push(p[0], p[1], z);
+          return lineGeo(arr);
+        };
+
+        const edgeMat = keep(
+          new THREE.LineBasicMaterial({ color: col(BRASS_EDGE, 'var(--gold-strong)') }),
+          mats,
+        );
+        const bulletEdgeMat = keep(
+          new THREE.LineBasicMaterial({ color: col(COPPER_EDGE, 'var(--gold-strong)') }),
+          mats,
+        );
+        section.add(new THREE.LineLoop(loopOf(capUpper, 0.06), edgeMat));
+        section.add(new THREE.LineLoop(loopOf(capLower, 0.06), edgeMat));
+        section.add(new THREE.LineLoop(loopOf(bulletCap, 0.06), bulletEdgeMat));
+
+        /* Hatch the brass only — the bullet is solid, not a wall. */
+        const hatchMat = keep(
+          new THREE.LineBasicMaterial({
+            color: col(BRASS_EDGE, 'var(--gold-strong)'),
+            transparent: true,
+            opacity: 0.55,
+          }),
+          mats,
+        );
+        const hatch = hatchSegments(capUpper, HATCH_MM).concat(hatchSegments(capLower, HATCH_MM));
+        if (hatch.length) section.add(new THREE.LineSegments(lineGeo(hatch), hatchMat));
+      }
 
       /* ── Overlay: axis, dimensions, stations, ring ──────────────────
          All of it draws over the solid (depthTest off, ascending renderOrder)
@@ -930,7 +1095,7 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
       /* ── Size ───────────────────────────────────────────────────────
          fov is derived, not chosen: at 900 mm the model must span L6 × 1.32
          across the width, which is the prototype's S. */
-      const size = { w: 0, h: 0 };
+      const size = { w: 0, h: 0, dpr: 0 };
       const resize = () => {
         /* ⚠️ clientWidth, NOT getBoundingClientRect. The card animates in on a
            scale transform, and the rect reports the SCALED box — measured on
@@ -938,9 +1103,19 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
            small and nothing would ever resize it back. */
         const w = Math.max(1, host.clientWidth);
         const h = Math.max(1, host.clientHeight);
-        if (w === size.w && h === size.h) return;
+        /**
+         * ⚠️ THE PIXEL RATIO IS RE-READ HERE, NOT SET ONCE AT STARTUP.
+         * devicePixelRatio is not a constant: dragging the window to a second
+         * monitor, or the browser's own zoom, changes it. Set once, the model
+         * stayed at the ratio of whichever screen the card happened to open
+         * on and went visibly soft (or needlessly heavy) on the other.
+         */
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        if (w === size.w && h === size.h && dpr === size.dpr) return;
         size.w = w;
         size.h = h;
+        size.dpr = dpr;
+        renderer.setPixelRatio(dpr);
         renderer.setSize(w, h, false);
         camera.aspect = w / h;
         const visH = (D.L6 * FIT) / camera.aspect;
@@ -1006,11 +1181,40 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
          no motion a permanently spinning model after one tap, which is the
          preference defeated rather than honoured. */
       let reduced = false;
+      /**
+       * ⚠️ SUBSCRIBED, NOT SAMPLED ONCE. The preference is a live media query:
+       * a member who turns "reduce motion" on while a spec card is open — or
+       * whose OS turns it on for them at a low battery — kept a spinning model
+       * until they closed and reopened the card. The listener also has to
+       * settle `auto`, because that is the flag the frame loop reads.
+       */
+      let motionMql: MediaQueryList | null = null;
+      const onMotion = (e: { matches: boolean }) => {
+        reduced = e.matches;
+        ctl.current.auto = !reduced;
+        if (reduced) {
+          ctl.current.vel = 0;
+          ctl.current.tilted = true;
+        }
+      };
       try {
-        reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        motionMql = window.matchMedia('(prefers-reduced-motion: reduce)');
+        reduced = motionMql.matches;
+        motionMql.addEventListener('change', onMotion);
       } catch {
         reduced = false;
+        motionMql = null;
       }
+
+      /**
+       * The ring's grab band in VIRTUAL units, never narrower than
+       * GRAB_MIN_PX on the actual screen.
+       */
+      const grabBand = (): number => {
+        const r = canvas.getBoundingClientRect();
+        if (!r.width) return GRAB_PX;
+        return Math.max(GRAB_PX, (GRAB_MIN_PX * VIRT_W) / r.width);
+      };
 
       const onDown = (ev: PointerEvent) => {
         const c = ctl.current;
@@ -1018,7 +1222,7 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
         c.auto = !reduced;
         c.lx = v.x;
         c.ly = v.y;
-        if (c.cal !== null && Math.abs(v.x - ringVirtX(c.cal)) < GRAB_PX) {
+        if (c.cal !== null && Math.abs(v.x - ringVirtX(c.cal)) < grabBand()) {
           c.drag = 'cal';
         } else {
           c.drag = 'spin';
@@ -1043,7 +1247,19 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
           const dy = v.y - c.ly;
           /* Spin is disabled in half section — the cut must keep facing you. */
           if (!c.half) c.psi += dx * SPIN_PER_PX;
-          c.phi = Math.max(-TILT_MAX, Math.min(TILT_MAX, c.phi + dy * TILT_PER_PX));
+          /**
+           * ⚠️ TILT IS A POINTER GESTURE, NOT A TOUCH ONE. `touch-action:
+           * pan-y` gives vertical movement to the page's scroller, so a
+           * finger dragging up is scrolling and the browser will send
+           * pointercancel part-way through. Tilting on that same dy would
+           * yaw the model by however much of the gesture arrived before the
+           * cancel — a tilt nobody asked for, applied to a model they were
+           * scrolling past.
+           */
+          if (ev.pointerType !== 'touch') {
+            c.phi = Math.max(-TILT_MAX, Math.min(TILT_MAX, c.phi + dy * TILT_PER_PX));
+            if (dy !== 0) c.tilted = true;
+          }
           c.vel = Math.max(-SPIN_CLAMP, Math.min(SPIN_CLAMP, dx * FLICK_PER_PX));
         }
         c.lx = v.x;
@@ -1071,7 +1287,8 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
       let raf = 0;
       let last = 0;
       let appliedHalf: boolean | null = null;
-      let appliedSnap: string | null | undefined = undefined;
+      /** The letter currently painted red — the calliper's, or the table's. */
+      let appliedLit: string | null | undefined = undefined;
       let appliedDims: boolean | null = null;
       const project = (x: number, y: number) => {
         tmpV.set(x, y, 0).applyMatrix4(flat.matrixWorld).project(camera);
@@ -1092,37 +1309,68 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
         /* A flick decays back to the idle rate rather than running forever. */
         if (!c.drag) c.vel += (IDLE_SPIN - c.vel) * Math.min(1, SPIN_EASE * f);
 
+        /**
+         * The resting sway.
+         *
+         * ⚠️ A SOLID OF REVOLUTION SPINNING ABOUT ITS OWN AXIS IS INVISIBLE.
+         * The idle spin is real and does nothing a viewer can see: every
+         * silhouette of a lathed body is the same silhouette. The model
+         * therefore read as a still picture, and nobody discovered it could be
+         * dragged. A ±0.12 rad tilt over six seconds moves the highlight and
+         * the dimension web enough to say "this is live" and not enough to
+         * distract. It stops for good the moment the member tilts it
+         * themselves — their angle is a choice — and never starts under
+         * reduced motion.
+         */
+        if (!reduced && !c.tilted && !c.drag && c.auto) {
+          c.phi = TILT_REST + TILT_SWING * Math.sin((now / TILT_PERIOD_MS) * Math.PI * 2);
+        }
+
         spin.rotation.x = c.half ? 0 : c.psi;
         tilt.rotation.y = c.phi;
         scene.updateMatrixWorld(true);
 
-        if (appliedHalf !== c.half) {
-          appliedHalf = c.half;
-          section.visible = c.half;
+        const cut = c.half && hasSection;
+        if (appliedHalf !== cut) {
+          appliedHalf = cut;
+          section.visible = cut;
           for (const m of [caseMat, bulletMat, innerMat]) {
-            m.clippingPlanes = c.half ? [clip] : null;
+            m.clippingPlanes = cut ? [clip] : null;
             m.needsUpdate = true;
           }
         }
         /* The cut plane rides with the tilt: it must always contain the axis
            AND face the camera, which a fixed world plane stops doing the
            moment the model yaws. */
-        if (c.half) clip.copy(basePlane).applyMatrix4(tilt.matrixWorld);
+        if (cut) clip.copy(basePlane).applyMatrix4(tilt.matrixWorld);
 
-        /* The lit letter follows the snapped station. Repainting is driven by
-           the change, not by the frame: swapping materials every frame would
-           dirty the render lists sixty times a second for nothing. */
-        const snapChanged = appliedSnap !== c.snap;
+        /**
+         * The lit letter: the calliper's snapped station, or — when nothing is
+         * snapped — whichever row the table is hovering.
+         *
+         * ⚠️ THE CALLIPER WINS, AND THAT IS THE WHOLE OF C16. The table's
+         * hover used to be the only writer of the hot letter, so moving the
+         * pointer across the rows put out a station the member had
+         * deliberately measured to, and moving it off set the letter to null
+         * rather than back to the measurement. Reading the snap first means a
+         * hover is a look and the snap is a state.
+         *
+         * Repainting is driven by the change, not by the frame: swapping
+         * materials every frame would dirty the render lists sixty times a
+         * second for nothing.
+         */
+        const lit = c.snap ?? c.hot;
+        const snapChanged = appliedLit !== lit;
         const dimsChanged = appliedDims !== c.showDims;
         if (snapChanged) {
-          appliedSnap = c.snap;
+          appliedLit = lit;
           for (const d of dimParts) {
-            const on = c.snap === d.k;
+            const on = lit === d.k;
             for (const o of d.lines) o.material = on ? dimHotMat : dimMat;
             for (const o of d.heads) o.material = on ? headHotMat : headMat;
             for (const o of d.dash) o.material = on ? dashHotMat : dashMat;
           }
-          for (const d of dots) d.mesh.material = c.snap === d.k ? dotHotMat : dotMat;
+          for (const d of dots) d.mesh.material = lit === d.k ? dotHotMat : dotMat;
         }
         if (dimsChanged) {
           appliedDims = c.showDims;
@@ -1155,32 +1403,112 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
           el.style.display = c.showDims ? '' : 'none';
           if (!c.showDims) continue;
           if (snapChanged || dimsChanged) {
-            el.style.color = c.snap === s.k ? 'var(--red)' : 'var(--text-secondary)';
-            el.style.fontWeight = c.snap === s.k ? '600' : '500';
+            el.style.color = lit === s.k ? 'var(--red)' : 'var(--text-secondary)';
+            el.style.fontWeight = lit === s.k ? '600' : '500';
           }
           const p = project(s.kind === 'len' ? mx(s.val / 2) : mx(s.x), s.y);
           el.style.transform = `translate(${p.x.toFixed(1)}px, ${(p.y - 4).toFixed(1)}px) translate(${
             s.left ? '4px' : '-50%'
           }, -100%)`;
         }
-        const box = readoutRef.current;
-        if (box) {
-          if (c.cal === null) {
-            if (box.style.display !== 'none') box.style.display = 'none';
-          } else {
-            /* Shown BEFORE it is measured — a hidden element measures 0 wide
-               and the box would spend a frame hanging off its anchor. */
-            if (box.style.display === 'none') box.style.display = '';
-            const boxW = box.offsetWidth;
-            const p = project(mx(c.cal), ringRadius + 1.2);
-            const left = Math.min(Math.max(p.x - boxW / 2, 6), Math.max(6, size.w - boxW - 6));
-            box.style.transform = `translate(${left.toFixed(1)}px, ${(p.y - 10).toFixed(
-              1,
-            )}px) translate(0, -100%)`;
-          }
-        }
+        /* ⚠️ THE READOUT IS NO LONGER POSITIONED HERE. It used to float above
+           the ring, which put it straight over the G1 and H1 labels — the two
+           the calliper is most often used to reach, so the box hid the figures
+           it was there to confirm. It now renders as a fixed strip under the
+           model (see the JSX), where it cannot collide with anything and does
+           not have to be re-measured sixty times a second. */
       };
       raf = requestAnimationFrame(tick);
+
+      /**
+       * "Show all" — SPEC §6.3.
+       *
+       * Freeze side-on, dimensions on, calliper cleared, then export a PNG of
+       * exactly what is on screen with the cartridge named in the corner.
+       *
+       * ⚠️ THE HTML LABELS ARE NOT IN THE DRAWING BUFFER, SO THEY ARE DRAWN
+       * AGAIN. The dimension text is a DOM overlay positioned by projecting
+       * anchors each frame (there is no CSS2DRenderer in the bundle); a
+       * straight `canvas.toBlob` therefore produces a picture of arrows and
+       * leader lines with no figures on it — a dimensioned drawing with the
+       * dimensions missing, which is worse than no export. The same
+       * projection that places the spans places the text here, so the PNG and
+       * the screen cannot disagree.
+       */
+      showAllRef.current = () => {
+        const c = ctl.current;
+        c.psi = 0;
+        c.phi = 0;
+        c.vel = 0;
+        c.auto = false;
+        /* The pose is now a decision, so the resting sway stops. */
+        c.tilted = true;
+        c.drag = null;
+        c.showDims = true;
+        setShowDims(true);
+        applyCalRef.current(null);
+
+        spin.rotation.x = 0;
+        tilt.rotation.y = 0;
+        ring.visible = false;
+        dimGroup.visible = true;
+        scene.updateMatrixWorld(true);
+        renderer.render(scene, camera);
+
+        const out = document.createElement('canvas');
+        out.width = canvas.width;
+        out.height = canvas.height;
+        const g2 = out.getContext('2d');
+        if (!g2 || !out.width || !out.height) return;
+
+        /* The renderer is alpha:true, so the buffer has no background of its
+           own — without this the PNG is the model on transparency and reads
+           as a black drawing in most viewers. */
+        g2.fillStyle = col('var(--bg-card-hover)', 'var(--bg-card)').getStyle();
+        g2.fillRect(0, 0, out.width, out.height);
+        g2.drawImage(canvas, 0, 0, out.width, out.height);
+
+        /* Back into CSS pixels, which is the space project() answers in. */
+        const k = out.width / Math.max(1, size.w);
+        g2.scale(k, k);
+        g2.textBaseline = 'alphabetic';
+        g2.font = "500 11px ui-monospace, 'Cascadia Mono', Consolas, monospace";
+        g2.fillStyle = col('var(--text-secondary)').getStyle();
+        for (const s of specs) {
+          const p = project(s.kind === 'len' ? mx(s.val / 2) : mx(s.x), s.y);
+          g2.textAlign = s.left ? 'left' : 'center';
+          g2.fillText(
+            `${s.k} = ${fmtLength(s.val, exportRef.current.units)}`,
+            p.x + (s.left ? 4 : 0),
+            p.y - 4,
+          );
+        }
+
+        const corner = exportRef.current.name;
+        if (corner) {
+          g2.textAlign = 'left';
+          g2.font = "600 14px 'Archivo', system-ui, sans-serif";
+          g2.fillStyle = col('var(--text-primary)').getStyle();
+          g2.fillText(corner, 12, size.h - 12);
+        }
+
+        out.toBlob((blob) => {
+          if (!blob) return;
+          const base = (exportRef.current.slug || 'cartridge')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${base || 'cartridge'}-dimensions.png`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          onToastRef.current?.('Snapshot saved');
+        }, 'image/png');
+      };
 
       cleanup = () => {
         /* ⚠️ A LEAKED GL CONTEXT IS A REAL BUG ON A PHONE. Browsers cap live
@@ -1189,6 +1517,9 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
            the frame, free every buffer, then force the context loss. */
         cancelAnimationFrame(raf);
         ro.disconnect();
+        showAllRef.current = null;
+        glCanvasRef.current = null;
+        motionMql?.removeEventListener('change', onMotion);
         canvas.removeEventListener('pointerdown', onDown);
         canvas.removeEventListener('pointermove', onMove);
         canvas.removeEventListener('pointerup', onUp);
@@ -1217,6 +1548,8 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
   if (failed) throw new Error('LatheView: no WebGL renderer');
   /* A cartridge with no length is nothing to draw, not a failure. */
   if (!(dims.L6 > 0)) return null;
+
+  const btnSize = phone ? 'mobile' : 'desktop';
 
   return (
     <div>
@@ -1252,33 +1585,46 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
                 color: 'var(--text-secondary)',
               }}
             >
-              {s.text}
+              {`${s.k} = ${fmtLength(s.val, units)}`}
             </span>
           ))}
-          <div
-            ref={readoutRef}
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              display: 'none',
-              padding: '6px 10px 7px',
-              border: '0.5px solid var(--border)',
-              borderRadius: 'var(--r-sm)',
-              background: 'var(--bg-card)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <div className="mono num" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--red)' }}>
-              {readout ? readout.title : ''}
-            </div>
-            <div
-              className="mono num"
-              style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px' }}
-            >
-              {readout ? readout.sub : ''}
-            </div>
-          </div>
+        </div>
+      </div>
+
+      {/**
+       * The calliper readout, UNDER the model rather than floating over it.
+       *
+       * ⚠️ IT USED TO SIT ABOVE THE RING, WHICH IS WHERE G1 AND H1 LIVE. Those
+       * two are the bullet diameter and the neck — the stations a reloader
+       * reaches for first — so the box covered the figures it was opened to
+       * confirm, and the only way to read them was to move the calliper away
+       * from them. Down here it collides with nothing, and the strip holds its
+       * height whether or not anything is measured so the controls below do
+       * not jump when the ring lands.
+       */}
+      <div
+        style={{
+          minHeight: 40,
+          marginTop: '8px',
+          padding: '6px 10px 7px',
+          border: '0.5px solid var(--border)',
+          borderRadius: 'var(--r-sm)',
+          background: 'var(--bg-card)',
+        }}
+        /* ⚠️ NOT A LIVE REGION. The slider below already carries this text as
+           `aria-valuetext`, which announces once per committed change; a
+           polite region on the same words would queue an announcement for
+           every 0.1 mm of a drag and read the whole ladder back afterwards. */
+        aria-hidden="true"
+      >
+        <div className="mono num" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--red)' }}>
+          {readout ? readout.title : ''}
+        </div>
+        <div
+          className="mono num"
+          style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px' }}
+        >
+          {readout ? readout.sub : 'Slide the calliper to measure.'}
         </div>
       </div>
 
@@ -1328,8 +1674,12 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
         {/* ⚠️ THE `Btn` PRIMITIVE, NOT A RAW <button className="btn">. A button
             does not inherit font-family and `.bench .btn` does not set one, so
             a hand-rolled one renders its label in the UA's default face beside
-            controls that are all in Public Sans. */}
-        <Btn aria-pressed={showDims} onClick={() => setShowDims((v) => !v)}>
+            controls that are all in Public Sans.
+
+            ⚠️ size="mobile" ON A PHONE, WHICH IS A 44px TARGET (SPEC §9). The
+            three buttons here were the desktop 34px on every screen, under a
+            canvas the same finger is dragging. */}
+        <Btn size={btnSize} aria-pressed={showDims} onClick={() => setShowDims((v) => !v)}>
           <span
             aria-hidden="true"
             style={{
@@ -1343,8 +1693,17 @@ export default function LatheView({ dims, halfSection }: LatheViewProps) {
           />
           Dimensions
         </Btn>
-        <Btn onClick={() => applyCal(null)} disabled={cal === null}>
+        <Btn size={btnSize} onClick={() => applyCal(null)} disabled={cal === null}>
           Clear
+        </Btn>
+        {/* SPEC §6.3: side-on, dimensions on, calliper cleared, exported as
+            `<slug>-dimensions.png` with the cartridge named in the corner. */}
+        <Btn
+          size={btnSize}
+          title="Face the model on, turn the dimensions on and save a picture"
+          onClick={() => showAllRef.current?.()}
+        >
+          Show all
         </Btn>
       </div>
       {/* No hint line here: SpecCard prints one directly beneath this view and

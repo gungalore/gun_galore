@@ -552,8 +552,15 @@ export function OverlayShell({
     const panel = panelRef.current;
     const opener = document.activeElement as HTMLElement | null;
 
+    // A search picker wants the caret in its box, not on its heading: the
+    // audit found members typing into "Add a powder" with nothing happening.
+    // An element inside the panel marked `data-autofocus` wins over the
+    // title; everything else keeps the title-first rule below.
+    const first = panel?.querySelector<HTMLElement>('[data-autofocus]');
     const title = document.getElementById(labelledBy);
-    if (title) {
+    if (first) {
+      first.focus({ preventScroll: true });
+    } else if (title) {
       // A heading is not focusable on its own; -1 makes it a script-only stop
       // so focus can land on the name of the thing that just opened.
       //

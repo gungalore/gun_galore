@@ -22,7 +22,16 @@
 import dynamic from 'next/dynamic';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 
-import { DIM_KEYS, canDraw, type Dims, type Units, MM_PER_INCH } from '@/lib/bench/geometry';
+import {
+  DIM_KEYS,
+  DRAWN_LETTERS_2D,
+  DRAWN_LETTERS_3D,
+  canDraw,
+  type Dims,
+  type Units,
+  MM_PER_INCH,
+} from '@/lib/bench/geometry';
+import { headerMeta, isBeltedType, tolerancesOf, withTolerance } from '@/lib/bench/spec-text';
 
 import { CartridgeDrawing2D } from './CartridgeDrawing2D';
 import type { LatheViewProps, SpecCardProps, SpecView } from './contract';
@@ -131,14 +140,50 @@ function probeWebgl(): boolean {
 
 /* ── Copy ───────────────────────────────────────────────────────────── */
 
+/**
+ * ⚠️ ON ALL THREE VIEWS, NOT JUST THE 2D ONE.
+ *
+ * It was printed under the drawing and dropped the moment the member switched
+ * to 3D — where the same invented ogive is revolved into a solid that looks a
+ * great deal more authoritative than a line drawing does. The caveat has to
+ * follow the thing it is a caveat about.
+ */
 const DRAW_NOTE =
   'Drawn to scale. The bullet ogive is illustrative: only the bullet diameter G1 and the overall length L6 are fixed.';
+
+/**
+ * The half section's extra caveat.
+ *
+ * The web, the primer pocket, the flash hole, the wall taper and the seating
+ * depth are all drawn so the cut reads as a case rather than a tube. Not one of
+ * them is a figure anybody published, and the section is the one view that
+ * looks like it is telling you about the inside.
+ */
+const INTERIOR_NOTE = 'The interior is illustrative.';
+
+/**
+ * ⚠️ THE BELT IS NOT DRAWN, SO THE NOTE SAYS SO.
+ *
+ * A belted case's belt sits about 5 mm ahead of the head at the rim's own
+ * diameter, and no letter in the thirteen locates it — neither its position
+ * nor its length. Drawing it from the rim diameter alone would invent a
+ * feature at the exact point of the case a reloader measures against a shell
+ * holder, so the silhouette shows the head as it shows a rimless one and this
+ * sentence is the honest difference.
+ */
+const BELT_NOTE = 'The belt is not drawn: its position is not one of the figures shown.';
 
 const LATHE_NOTE_DESKTOP =
   'Drag to spin, drag up or down to tilt. The ring snaps to each station and reads the diameter there; a snapped station lights up its row in the table. Half section shows the wall, the web and the seated bullet.';
 
+/**
+ * ⚠️ NO "up or down to tilt" ON THE PHONE ANY MORE. The canvas is
+ * `touch-action: pan-y` so a vertical drag scrolls the page — the alternative
+ * was a half-screen canvas the page could not be scrolled past. An instruction
+ * for a gesture the browser has taken is worse than no instruction.
+ */
 const LATHE_NOTE_PHONE =
-  'Drag to spin, up or down to tilt. Slide the calliper along the axis; it snaps to each station and reads the diameter there. Half section shows the wall, the web and the seated bullet.';
+  'Drag sideways to spin. Slide the calliper along the axis; it snaps to each station and reads the diameter there. Half section shows the wall, the web and the seated bullet.';
 
 const SHELL_NOTE_DESKTOP =
   "Same shell holder as the cartridges above, grouped by rim R1, thickness R and groove E1. No manufacturer's number is claimed.";
@@ -237,7 +282,27 @@ function keyCell(phone: boolean, hot = false): React.CSSProperties {
   };
 }
 
-const VALUE_CELL: React.CSSProperties = { fontWeight: 500, whiteSpace: 'nowrap' };
+/**
+ * ⚠️ NO `white-space: nowrap` HERE, AND THAT IS THE WHOLE OF A2.
+ *
+ * These values are long — `[chamber L2] vs 41.52 mm (1.635″)` is fifty
+ * characters — and pinned to one line they pushed the 720px sheet to a
+ * scrollWidth of 760. The sheet then had a horizontal scrollbar, and because a
+ * focused control gets scrolled into view, clicking the **inch** tab slid the
+ * whole card sideways: the title read "5 Creedmoor" and the calliper's label
+ * read "LLIPER". Nothing was broken; the words had simply gone off the left
+ * edge.
+ *
+ * `anywhere` rather than `break-word`: these strings have long unbroken runs
+ * (`41.52 mm (1.635″)`) that `break-word` will not split until the line is
+ * already overflowing, which is one frame too late for a flex row.
+ */
+const VALUE_CELL: React.CSSProperties = {
+  fontWeight: 500,
+  minWidth: 0,
+  overflowWrap: 'anywhere',
+  textAlign: 'right',
+};
 
 /**
  * One Dimensions row.
@@ -253,6 +318,7 @@ function DimRow({
   hot,
   onHot,
   phone,
+  linked,
 }: {
   k: string;
   label: string;
@@ -260,7 +326,38 @@ function DimRow({
   hot: boolean;
   onHot: (k: string | null) => void;
   phone: boolean;
+  /** Whether the current view carries this letter. See the note below. */
+  linked: boolean;
 }) {
+  /**
+   * ⚠️ A ROW THE PICTURE DOES NOT CARRY IS NOT A BUTTON.
+   *
+   * The table lists thirteen letters; the 2D drawing annotates nine, and R, E,
+   * E1 and H2 have no callout on it at all. As buttons they took the hover,
+   * lit their own row, and pointed at nothing — which reads as a drawing that
+   * failed to respond rather than as a figure with no leader, and the header
+   * beside them promises "hover a row to find it in the drawing". The 3D views
+   * carry two more (E1 and H2 have calliper stations), so the set is decided
+   * per view, not once.
+   *
+   * The alternative was to add leaders for the missing four. Rejected: R and E
+   * are a rim thickness and a groove length measured along an axis at the case
+   * head, where the drawing is already three overlapping annotations deep, and
+   * a fifth leader into that corner would cost more than it explains.
+   */
+  if (!linked) {
+    return (
+      <div className="kv kv-wrap" style={{ cursor: 'default' }}>
+        <span className="mono k" style={keyCell(phone)}>
+          {k}
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>{label}</span>
+        <span className="num kv-v" style={VALUE_CELL}>
+          {value}
+        </span>
+      </div>
+    );
+  }
   return (
     <button
       type="button"
@@ -269,7 +366,7 @@ function DimRow({
       // to do that job; only the letter's own colour is set inline, and only
       // because an inline colour would otherwise beat the stylesheet's — see
       // keyCell().
-      className={cx('kv', hot && 'hot', 'w-full cursor-pointer text-left')}
+      className={cx('kv', 'kv-wrap', hot && 'hot', 'w-full cursor-pointer text-left')}
       style={{ fontFamily: 'inherit' }}
       // ⚠️ CLICK SETS THE LETTER, IT NEVER TOGGLES IT, AND THERE IS NO
       // aria-pressed. Hover and focus have already set the letter by the time
@@ -288,8 +385,8 @@ function DimRow({
       <span className="mono k" style={keyCell(phone, hot)}>
         {k}
       </span>
-      <span style={{ flex: 1 }}>{label}</span>
-      <span className="num" style={VALUE_CELL}>
+      <span style={{ flex: 1, minWidth: 0 }}>{label}</span>
+      <span className="num kv-v" style={VALUE_CELL}>
         {value}
       </span>
     </button>
@@ -303,9 +400,16 @@ export function SpecCard({
   loading,
   error,
   units,
+  name: nameHint,
+  type: typeHint,
+  origin: originHint,
+  year: yearHint,
   onClose,
   onUnitsChange,
   onShowOnly,
+  onOpenCartridge,
+  onRetry,
+  onToast,
 }: SpecCardProps) {
   const titleId = useId();
   const phone = usePhone();
@@ -313,6 +417,16 @@ export function SpecCard({
 
   const [view, setView] = useState<SpecView>('2d');
   const [hot, setHot] = useState<string | null>(null);
+  /**
+   * The letter the calliper is snapped to, which OWNS the hot letter.
+   *
+   * ⚠️ HOVER RELEASES BACK TO THIS, NOT TO NULL. A member measures to P2 in
+   * 3D, the P2 row lights, they run the pointer down the table to read the
+   * rest — and every row they cross used to put their measurement out, with
+   * the last one leaving nothing lit at all. The snap is a state they set on
+   * purpose; a hover is a glance.
+   */
+  const [snapLetter, setSnapLetter] = useState<string | null>(null);
   const [webgl, setWebgl] = useState(false);
   const [latheFailed, setLatheFailed] = useState(false);
 
@@ -373,12 +487,78 @@ export function SpecCard({
     drawnFor.current = cartridgeKey;
   }, [cartridgeKey]);
 
-  const name = cartridge?.name ?? '';
-  const meta = cartridge
-    ? [cartridge.type, cartridge.origin, cartridge.year].filter(Boolean).join(' · ')
-    : '';
+  /**
+   * ⚠️ THE CARD IS RESET ON THE CARTRIDGE, NOT ON MOUNT.
+   *
+   * The page keeps one SpecCard mounted and swaps `spec` underneath it, so a
+   * letter left hot, a view left on Half section and — worst — a `latheFailed`
+   * latched by one bad chunk load all carried over to the next cartridge. The
+   * latch is the sharp one: once set, 3D was hidden for the rest of the
+   * session with nothing on screen to explain why.
+   */
+  const resetFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (resetFor.current === cartridgeKey) return;
+    resetFor.current = cartridgeKey;
+    setHot(null);
+    setSnapLetter(null);
+    setView('2d');
+    setLatheFailed(false);
+  }, [cartridgeKey]);
+
+  /* Leaving 3D takes the calliper with it, so the letter it was holding must
+     go too: a lit row in the 2D drawing with no ring on screen to explain it
+     is a highlight the member cannot account for or clear. */
+  useEffect(() => {
+    if (view === '2d') {
+      setSnapLetter(null);
+      setHot(null);
+    }
+  }, [view]);
+
+  /** A table row or a drawing callout, hovered. Releasing goes back to the snap. */
+  const setHotRow = React.useCallback(
+    (k: string | null) => {
+      setHot(k ?? snapLetter);
+    },
+    [snapLetter],
+  );
+
+  /** The calliper snapped (or was cleared). This is the letter that persists. */
+  const onCalliperHot = React.useCallback((k: string | null) => {
+    setSnapLetter(k);
+    setHot(k);
+  }, []);
+
+  /**
+   * The header, from the group the card was opened from until the fetch lands.
+   *
+   * ⚠️ AND THE TITLE IS NEVER EMPTY. `spec` is null for the length of a round
+   * trip and the title was a skeleton bar, which carries no text — so the
+   * dialog's `aria-labelledby` pointed at nothing and the overlay announced
+   * itself with no name at all. The hint fills that gap in the ordinary case;
+   * "Cartridge" fills it when the card is opened without one.
+   */
+  const name = cartridge?.name ?? nameHint ?? '';
+  const meta = headerMeta(
+    cartridge ?? { type: typeHint, origin: originHint, year: yearHint },
+  );
+  const belted = isBeltedType(cartridge?.type ?? typeHint);
 
   /* ── Rows ────────────────────────────────────────────────────────── */
+
+  /** The printed tolerances, shown beside the figure and never parsed. */
+  const tolerances = useMemo(() => tolerancesOf(raw), [raw]);
+
+  /**
+   * Which letters the picture currently on screen actually carries — see the
+   * note on DimRow. The 3D views add E1 and H2 (calliper stations) and drop α
+   * (there is no arc in 3D).
+   */
+  const drawn = useMemo(
+    () => new Set(view === '2d' ? DRAWN_LETTERS_2D : DRAWN_LETTERS_3D),
+    [view],
+  );
 
   const tableRows = DIM_ROWS.map((r) => ({ ...r, v: num(r.k) })).filter(
     (r): r is { k: string; label: string; v: number } => r.v !== null,
@@ -485,10 +665,21 @@ export function SpecCard({
     viewBody = (
       <>
         <LatheBoundary onFail={() => setLatheFailed(true)}>
-          <LatheView dims={dims} halfSection={view === 'half'} />
+          <LatheView
+            dims={dims}
+            halfSection={view === 'half'}
+            units={units}
+            hot={hot}
+            onHotChange={onCalliperHot}
+            name={name || null}
+            slug={cartridge?.slug ?? null}
+            onToast={onToast}
+          />
         </LatheBoundary>
         <div style={{ ...NOTE, fontSize: phone ? 11 : 11.5, padding: phone ? '8px 6px 0' : '8px 4px 0' }}>
-          {phone ? LATHE_NOTE_PHONE : LATHE_NOTE_DESKTOP}
+          {phone ? LATHE_NOTE_PHONE : LATHE_NOTE_DESKTOP} {DRAW_NOTE}
+          {view === 'half' ? ` ${INTERIOR_NOTE}` : null}
+          {belted ? ` ${BELT_NOTE}` : null}
         </div>
       </>
     );
@@ -499,11 +690,12 @@ export function SpecCard({
           dims={dims}
           units={units}
           hot={hot}
-          onHotChange={setHot}
+          onHotChange={setHotRow}
           animate={animate}
         />
         <div style={{ ...NOTE, fontSize: phone ? 11 : 11.5, padding: phone ? '4px 6px 0' : '0 4px' }}>
           {DRAW_NOTE}
+          {belted ? ` ${BELT_NOTE}` : null}
           {phone ? ' Tap a dimension or a row to link them.' : null}
         </div>
       </>
@@ -518,23 +710,23 @@ export function SpecCard({
           This cartridge is not drawn: the full set of figures is not available.
         </div>
         {cartridge?.caseLengthMm != null ? (
-          <div className="kv" style={{ marginTop: 8, cursor: 'default' }}>
+          <div className="kv kv-wrap" style={{ marginTop: 8, cursor: 'default' }}>
             <span className="mono k" style={keyCell(phone)}>
               L3
             </span>
-            <span style={{ flex: 1 }}>Case length</span>
-            <span className="num" style={VALUE_CELL}>
+            <span style={{ flex: 1, minWidth: 0 }}>Case length</span>
+            <span className="num kv-v" style={VALUE_CELL}>
               {both(cartridge.caseLengthMm, units)}
             </span>
           </div>
         ) : null}
         {cartridge?.maxLengthMm != null ? (
-          <div className="kv" style={{ cursor: 'default' }}>
+          <div className="kv kv-wrap" style={{ cursor: 'default' }}>
             <span className="mono k" style={keyCell(phone)}>
               L6
             </span>
-            <span style={{ flex: 1 }}>Max cartridge length</span>
-            <span className="num" style={VALUE_CELL}>
+            <span style={{ flex: 1, minWidth: 0 }}>Max cartridge length</span>
+            <span className="num kv-v" style={VALUE_CELL}>
               {both(cartridge.maxLengthMm, units)}
             </span>
           </div>
@@ -596,22 +788,30 @@ export function SpecCard({
               key={r.k}
               k={r.k}
               label={r.label}
-              value={both(r.v, units)}
+              /* The printed tolerance rides beside the figure, verbatim —
+                 "37.84 mm (1.490″) −0.20". It is the difference between the
+                 nominal and what a case may actually measure, so a reloader
+                 comparing a fired case against this table needs it on the row
+                 rather than as something the card knows and does not say. */
+              value={withTolerance(both(r.v, units), tolerances[r.k])}
               hot={hot === r.k}
-              onHot={setHot}
+              onHot={setHotRow}
               phone={phone}
+              linked={drawn.has(r.k)}
             />
           ))}
           {alphaText ? (
             /* CartridgeDrawing2D lights its shoulder arc on 'α' or 'alpha',
-               so the angle links to the drawing like every other row. */
+               so the angle links to the drawing like every other row — in 2D.
+               There is no arc in the 3D views, so the link goes with them. */
             <DimRow
               k="α"
               label="Shoulder angle"
-              value={alphaText}
+              value={withTolerance(alphaText, tolerances.alpha ?? tolerances['α'])}
               hot={hot === 'α' || hot === 'alpha'}
-              onHot={setHot}
+              onHot={setHotRow}
               phone={phone}
+              linked={drawn.has('α')}
             />
           ) : null}
         </div>
@@ -627,12 +827,12 @@ export function SpecCard({
         </div>
         <div style={{ ...NOTE, marginBottom: 6 }}>The cartridge standard, not your rifle.</div>
         {reloader.map((r) => (
-          <div key={r.k} className="kv" style={{ cursor: 'default' }}>
+          <div key={r.k} className="kv kv-wrap" style={{ cursor: 'default' }}>
             <span className="mono" style={keyCell(phone)}>
               {r.k}
             </span>
-            <span style={{ flex: 1 }}>{r.label}</span>
-            <span className="num" style={VALUE_CELL}>
+            <span style={{ flex: 1, minWidth: 0 }}>{r.label}</span>
+            <span className="num kv-v" style={VALUE_CELL}>
               {r.v}
             </span>
           </div>
@@ -640,39 +840,89 @@ export function SpecCard({
       </div>
     ) : null;
 
+  const shellMore = spec?.shellHolderMore ?? 0;
+
   const loadsSection = spec ? (
     <div style={{ ...PANEL, padding: 14 }}>
-      {!phone && (
-        <div className="head" style={{ fontSize: 15, marginBottom: 8 }}>
-          Loads
-        </div>
-      )}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+      {/* ⚠️ THE HEADING STAYS ON THE PHONE TOO. It was dropped there to save a
+          line, which left a bare "761" under the drawing note with nothing
+          saying what had been counted. */}
+      <div className="head" style={{ fontSize: 15, marginBottom: 8 }}>
+        Loads
+      </div>
+      {/**
+       * ⚠️ THE CARTRIDGE'S OWN TOTAL IS THE HEADLINE, THE BENCH IS THE
+       * QUALIFIER. This box read "26 loads from your bench" — 26 for a
+       * cartridge with 761, with no hint that the other 735 exist. A reloader
+       * who reads 26 as the whole of what is known for a 6,5 Creedmoor is
+       * being told something false by omission, and the figure was in the
+       * payload all along.
+       */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
         <span className="num head" style={{ fontSize: phone ? 26 : 28, lineHeight: 1 }}>
-          {spec.loadsForBench}
+          {spec.loadCount}
         </span>
-        <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>loads from your bench</span>
+        <span style={{ fontSize: 12.5, color: 'var(--text-tertiary)' }}>
+          {spec.loadCount === 1 ? 'load' : 'loads'}
+        </span>
+        <span style={{ fontSize: 12.5, color: 'var(--text-secondary)', minWidth: 0 }}>
+          {/* Zero is a state worth naming: "0 from your bench" reads like a
+              failure, "none yet" reads like an invitation. */}
+          {spec.loadsForBench > 0
+            ? `${spec.loadsForBench} from your bench`
+            : 'none from your bench yet'}
+        </span>
       </div>
 
       {spec.shellHolderGroup.length > 0 ? (
         <>
-          {/* Plain spans, not the shared Chip: these are labels, and Chip
-              carries the green/grey dot that means "on your bench" — a
-              meaning these do not have. */}
+          {/* ⚠️ BUTTONS, NOT LABELS, AND STILL NOT THE SHARED Chip. Chip
+              carries the green/grey dot that means "on your bench" — a meaning
+              these do not have. What they DO have is a destination: the whole
+              point of the group is "these three take the same shell holder",
+              and the obvious next move is to go and look at one. Without
+              `onOpenCartridge` they fall back to plain labels rather than
+              offering a button that does nothing. */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '10px 0 12px' }}>
-            {spec.shellHolderGroup.map((c) => (
+            {spec.shellHolderGroup.map((c) =>
+              onOpenCartridge ? (
+                <button
+                  key={c.key}
+                  type="button"
+                  className="chip"
+                  style={phone ? { height: 40, fontSize: 12.5 } : undefined}
+                  onClick={() => onOpenCartridge(c.key)}
+                >
+                  {c.name}
+                </button>
+              ) : (
+                <span
+                  key={c.key}
+                  className="chip"
+                  style={
+                    phone
+                      ? { cursor: 'default', height: 30, fontSize: 12.5 }
+                      : { cursor: 'default' }
+                  }
+                >
+                  {c.name}
+                </span>
+              ),
+            )}
+            {shellMore > 0 ? (
+              /* The server caps the group at twelve. Without this the card
+                 would quietly present twelve as the whole list. */
               <span
-                key={c.key}
                 className="chip"
                 style={
                   phone
-                    ? { cursor: 'default', height: 30, fontSize: 12.5 }
-                    : { cursor: 'default' }
+                    ? { cursor: 'default', height: 30, fontSize: 12.5, color: 'var(--text-tertiary)' }
+                    : { cursor: 'default', color: 'var(--text-tertiary)' }
                 }
               >
-                {c.name}
+                +{shellMore} more
               </span>
-            ))}
+            ) : null}
           </div>
           <div style={{ ...NOTE, marginBottom: 12 }}>
             {phone ? SHELL_NOTE_PHONE : SHELL_NOTE_DESKTOP}
@@ -699,9 +949,21 @@ export function SpecCard({
         This cartridge could not load
       </div>
       <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{error}</div>
-      <Btn size={size} style={{ marginTop: 12 }} onClick={onClose}>
-        Close
-      </Btn>
+      {/* ⚠️ A RETRY, BECAUSE THE COMMON CAUSE IS A DROPPED REQUEST. The only
+          way out of this state was Close, which threw away the card and made
+          the member find the cartridge in the list again to try the same
+          request a second time. Retry is offered first and Close stays beside
+          it; without `onRetry` the card is exactly as it was. */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+        {onRetry ? (
+          <Btn red size={size} onClick={onRetry}>
+            Try again
+          </Btn>
+        ) : null}
+        <Btn size={size} onClick={onClose}>
+          Close
+        </Btn>
+      </div>
     </div>
   );
 
@@ -751,7 +1013,8 @@ export function SpecCard({
                 textOverflow: 'ellipsis',
               }}
             >
-              {name}
+              {/* Never empty: the dialog is labelled by this element. */}
+              {name || 'Cartridge'}
             </span>
             <div style={{ marginRight: 4 }}>{unitSeg}</div>
           </div>
@@ -789,10 +1052,19 @@ export function SpecCard({
               style={{ fontSize: 28, letterSpacing: '-0.035em', marginTop: 2, lineHeight: 1.05 }}
             >
               {name || (
-                <span
-                  className="gg-skeleton"
-                  style={{ display: 'inline-block', width: 220, height: 28, borderRadius: 'var(--r-sm)' }}
-                />
+                <>
+                  <span
+                    className="gg-skeleton"
+                    style={{ display: 'inline-block', width: 220, height: 28, borderRadius: 'var(--r-sm)' }}
+                    aria-hidden="true"
+                  />
+                  {/* ⚠️ THE SKELETON HAS NO TEXT, AND THIS ELEMENT IS THE
+                      DIALOG'S accessible name. Without a word in here the
+                      overlay opened announcing nothing at all — the header
+                      hints normally fill the gap, this covers the card being
+                      opened without one. */}
+                  <span className="sr-only">Cartridge</span>
+                </>
               )}
             </div>
             {meta ? (

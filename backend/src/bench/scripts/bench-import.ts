@@ -21,7 +21,7 @@
 import 'dotenv/config';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { cartridgeKey } from '../../common/cartridge-key';
 import { consolidate, needsReview, pickDisplayName } from '../consolidate';
@@ -66,7 +66,7 @@ function parseCsv(text: string): Record<string, string>[] {
 /* ── Normalisers ────────────────────────────────────────────────────── */
 
 /** "6,5 Creedmoor" → "6-5-creedmoor" */
-function slugify(name: string): string {
+export function slugify(name: string): string {
   return name
     .toLowerCase()
     .replace(/,/g, '-')
@@ -77,11 +77,58 @@ function slugify(name: string): string {
 }
 
 /**
- * Canonical powder name: collapse whitespace and dashes, upper-case letters,
- * keep digits. "H 4350" and "H4350" are one powder; "N-160" and "N160" are one.
+ * Makers that appear as a leading word IN A POWDER NAME, and that the
+ * canonical key strips.
+ *
+ * 🚨 THE LIST IS SHORT ON PURPOSE, AND EVERY ADDITION SPLITS OR MERGES REAL
+ * POWDERS. The spec (§3.3 step 2) names exactly one case — "Alliant RL-15" →
+ * RL15 with maker Alliant — and two neighbours prove why it cannot be
+ * generalised: `NORMA 203 B` canonicalises to NORMA203B, because that is the
+ * powder's name; and `IMR 4350` is a DIFFERENT powder from `H4350`, so
+ * stripping IMR would leave "4350", which is nobody's product.
+ *
+ * ⚠️ THE SAME THREE WORDS ARE HARD-CODED IN THE MIGRATION'S BACKFILL
+ * (20260906120000_bench_audit). A prefix stripped here that the SQL keeps —
+ * or the other way round — re-splits the powder at the next import.
  */
-function powderKey(printed: string): string {
-  return printed.toUpperCase().replace(/[\s-]+/g, '').replace(/[^A-Z0-9]/g, '');
+const POWDER_MAKER_PREFIXES: Record<string, string> = {
+  ALLIANT: 'Alliant',
+  HODGDON: 'Hodgdon',
+  VIHTAVUORI: 'Vihtavuori',
+};
+
+/**
+ * Canonical powder name: strip a leading maker word, then collapse whitespace
+ * and dashes, upper-case letters, keep digits. "H 4350" and "H4350" are one
+ * powder; "N-160" and "N160" are one; "Alliant RL-15" and "RL15" are one.
+ *
+ * 🚨 THIS IS THE ID'S STABILITY, WHICH IS WHY IT IS A COLUMN AND NOT JUST A
+ * LOOKUP. The import used to upsert powders on the DISPLAY name — the most
+ * common printed form, which is chosen by frequency — so one more manual
+ * spelling it "VARGET" rather than "Varget" elected a new display name, minted
+ * a new row with a new cuid, and every UserBench.powderIds pointer at the old
+ * one silently stopped matching. A member's shelf loses a powder, and nothing
+ * errors, because an empty bench is a legal bench.
+ */
+export function powderKey(printed: string): string {
+  return stripPowderMaker(printed).canonical;
+}
+
+/**
+ * The canonical key AND the maker the leading word named, if it named one.
+ *
+ * ⚠️ THE MAKER IS RECOVERED, NOT DISCARDED. "Alliant RL-15" with a blank
+ * `powder_manufacturer` column is the only place that row says Alliant, and
+ * "RL15" alone means little to a reloader reading a chip.
+ */
+function stripPowderMaker(printed: string): { canonical: string; maker: string | null } {
+  const [first, ...rest] = printed.trim().split(/[\s-]+/);
+  const maker = POWDER_MAKER_PREFIXES[(first ?? '').toUpperCase()];
+  const body = maker && rest.length ? rest.join(' ') : printed;
+  return {
+    canonical: body.toUpperCase().replace(/[\s-]+/g, '').replace(/[^A-Z0-9]/g, ''),
+    maker: maker ?? null,
+  };
 }
 
 /** Makers whose printed forms differ between manuals. */
@@ -93,26 +140,52 @@ const MAKER_ALIASES: Record<string, string> = {
 /**
  * Bullet category, first match wins.
  *
- * ⚠️ ORDER IS THE SPEC. MONO before SP, because a TTSX is a monolithic that
- * also matches nothing else; HP before SP, because "ELD Match" must not fall
- * through to the soft-point bucket. Anything uncertain becomes OTHER, which
- * forms its own group rather than being guessed into a neighbour's — a
- * mis-grouped bullet would put one projectile's charge range under another's
- * name.
+ * 🚨 THE ORDER IS THE SPEC'S (SPEC-BUILD §3.3 step 4), AND THE ORDER IS THE
+ * DECISION. `bulletCategory` is part of BenchLoad's unique key, so which rule
+ * fires first decides which GROUP a source row is consolidated into — and a
+ * group is one start charge and one max charge. Two rules matching one type
+ * string is not a tie to be broken tidily: it puts one projectile's charge
+ * range under another projectile's name.
+ *
+ * The spec's sequence is: FMJ · then the construction group (MONO for the
+ * solids, TIP for the polymer tips, SP for the rest) · then HP · then CAST ·
+ * else OTHER. So the SP rule sits BEFORE the HP rule, which is what changed:
+ * the code had HP third and SP last, which read "Partition HP" as a hollow
+ * point where the spec reads it as a Partition.
+ *
+ * ⚠️ CHANGING THIS RE-BUCKETS EXISTING LOADS. The unique key moves, so a
+ * re-import writes new BenchLoad rows and the old ones are left with no
+ * sources — which is why step 5 deletes those.
+ *
+ * Anything uncertain becomes OTHER, which forms its own group rather than
+ * being guessed into a neighbour's.
  */
 const CATEGORY_RULES: [RegExp, string][] = [
   [/\b(FMJ|TMJ)\b/i, 'FMJ'],
+  // The construction group, resolved by the sub-table the spec describes.
   [/\b(TTSX|TSX|GMX|CX|Classic Hunter)\b/i, 'MONO'],
   [/\b(ELD-?X|SST|Ballistic ?Tip|V-?MAX|TIP)\b/i, 'TIP'],
+  [/\b(InterLock|Partition|A-?Frame|TOG|SP|Spitzer|SPBT)\b/i, 'SP'],
   [/\b(HPBT|BTHP|ELD-?M|ELD ?Match|Match|Scenar|HP)\b/i, 'HP'],
   [/(\bL\)|\bcast\b|RNGC|LSWC)/i, 'CAST'],
-  [/\b(InterLock|Partition|A-?Frame|TOG|SP|Spitzer|SPBT)\b/i, 'SP'],
 ];
 
-function bulletCategory(rawType: string): string {
+export function bulletCategory(rawType: string): string {
   for (const [re, cat] of CATEGORY_RULES) if (re.test(rawType)) return cat;
   return 'OTHER';
 }
+
+/**
+ * Where a row with no resolvable maker goes.
+ *
+ * 🚨 IT USED TO GO NOWHERE. Consolidation skipped every source row whose
+ * `bulletMaker` was blank (`if (!s.bulletMaker) continue`) and the report did
+ * not count them — so rows were read, written to BenchSourceLoad, and then
+ * silently vanished between step 4 and step 5, with a tidy summary printed
+ * over the hole. The maker is not part of the bullet axis any more, so a row
+ * without one is a perfectly usable load; it just needs a name to group under.
+ */
+const UNKNOWN_MAKER = 'Unknown';
 
 /** Splits a leading maker alias out of the type string. */
 function splitMaker(manufacturer: string, rawType: string): { maker: string | null; type: string } {
@@ -124,9 +197,27 @@ function splitMaker(manufacturer: string, rawType: string): { maker: string | nu
   return { maker: null, type: rawType };
 }
 
-const num = (v: string): number | null => {
+/**
+ * A number off the CSV, in either of the two comma conventions the files mix.
+ *
+ * 🚨 `v.replace(',', '.')` REPLACED THE FIRST COMMA ONLY, and a row it could
+ * not parse was dropped by a guard with nothing printed. "1,234.5" became
+ * "1.234.5" → NaN → null → the row skipped, silently, in a script whose whole
+ * failure mode is printing a tidy report over missing data.
+ *
+ * The two conventions are told apart by shape and never guessed:
+ *   — "1,234.5" — groups of three with a decimal point after: separators.
+ *   — "35,6"    — one comma, digits either side, no point: a decimal comma,
+ *                 which is how this site's own cartridge names are written.
+ * Anything else with a comma in it is not a number, and stays null rather than
+ * being coerced into one.
+ */
+export const num = (v: string): number | null => {
   if (!v || !v.trim()) return null;
-  const n = Number(v.replace(',', '.'));
+  let s = v.trim();
+  if (/^[-+]?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, '');
+  else if (/^[-+]?\d+,\d+$/.test(s)) s = s.replace(',', '.');
+  const n = Number(s);
   return Number.isFinite(n) ? n : null;
 };
 const int = (v: string): number | null => {
@@ -172,6 +263,18 @@ ${file} is missing expected column(s): ${missing.join(', ')}
 interface Report {
   cartridgesWithoutReference: string[];
   unresolvedPowders: string[];
+  /**
+   * Names that wanted the same slug. Reported rather than thrown: a collision
+   * used to surface as a raw P2002 halfway through the loop, with everything
+   * before it committed and everything after it never attempted.
+   */
+  slugCollisions: { name: string; wanted: string; used: string }[];
+  /**
+   * Rows whose bullet maker could not be resolved. They are imported under
+   * "Unknown" — see UNKNOWN_MAKER — rather than dropped, and counted here so
+   * the number is visible rather than a hole in the totals.
+   */
+  rowsWithUnknownMaker: number;
   singleSourceGroups: number;
   wideSpreadGroups: { cartridge: string; powder: string; weightGr: number; startGr: number; maxGr: number }[];
   counts: Record<string, number>;
@@ -198,6 +301,7 @@ async function main(): Promise<void> {
 
   const report: Report = {
     cartridgesWithoutReference: [], unresolvedPowders: [],
+    slugCollisions: [], rowsWithUnknownMaker: 0,
     singleSourceGroups: 0, wideSpreadGroups: [], counts: {},
   };
 
@@ -225,22 +329,47 @@ async function main(): Promise<void> {
     }
   }
 
+  // 🚨 SLUGS COLLIDE, AND A COLLISION USED TO END THE IMPORT MID-LOOP.
+  // slugify() strips the difference between "6,5 Creedmoor" and
+  // "6.5 Creedmoor" — the comma and the stop both become a dash — so two
+  // distinct reference rows can want `6-5-creedmoor`. The unique index then
+  // threw a raw P2002 with half the cartridges written and the rest never
+  // attempted, and the script exited on a stack trace rather than a report.
+  // Resolved deterministically by ORDER OF FIRST SIGHT, so a re-run assigns
+  // the same slug to the same cartridge.
+  const slugTaken = new Map<string, string>();
+  const slugFor = (name: string, key: string): string => {
+    const wanted = slugify(name);
+    if ((slugTaken.get(wanted) ?? key) === key) {
+      slugTaken.set(wanted, key);
+      return wanted;
+    }
+    let n = 2;
+    while ((slugTaken.get(`${wanted}-${n}`) ?? key) !== key) n++;
+    const used = `${wanted}-${n}`;
+    slugTaken.set(used, key);
+    report.slugCollisions.push({ name, wanted, used });
+    return used;
+  };
+
   for (const [european, r] of byEuropean) {
     const key = cartridgeKey(european);
     const psi = int(r.max_pressure_psi ?? '');
+    const slug = slugFor(european, key);
+    // ⚠️ THE UPDATE BRANCH CARRIES type/origin/year TOO. It did not, so a
+    // corrected reference file could never fix the spec-card header: the
+    // cartridge already existed, the update ran, and the three header fields
+    // kept whatever the first import happened to read.
+    const fields = {
+      name: european, slug,
+      type: r.cartridge_type || null, origin: r.origin || null, year: int(r.year ?? ''),
+      caseLengthMm: num(r.case_length_mm ?? ''), maxLengthMm: num(r.max_cartridge_length_mm ?? ''),
+      pmaxPsi: psi, pmaxBar: psi === null ? null : Math.round(psi / 14.5038),
+    };
     await prisma.benchCartridge.upsert({
       where: { key },
-      create: {
-        key, name: european, slug: slugify(european),
-        type: r.cartridge_type || null, origin: r.origin || null, year: int(r.year ?? ''),
-        caseLengthMm: num(r.case_length_mm ?? ''), maxLengthMm: num(r.max_cartridge_length_mm ?? ''),
-        pmaxPsi: psi, pmaxBar: psi === null ? null : Math.round(psi / 14.5038),
-      },
-      update: {
-        name: european, slug: slugify(european),
-        caseLengthMm: num(r.case_length_mm ?? ''), maxLengthMm: num(r.max_cartridge_length_mm ?? ''),
-        pmaxPsi: psi, pmaxBar: psi === null ? null : Math.round(psi / 14.5038),
-      },
+      create: { key, ...fields },
+      update: fields,
     });
     for (const printed of aliasesFor.get(european) ?? []) {
       await prisma.benchCartridgeAlias.upsert({
@@ -271,9 +400,11 @@ async function main(): Promise<void> {
   for (const r of loadRows) {
     const printed = r.powder_name?.trim();
     if (!printed) continue;
-    const k = powderKey(printed);
+    const { canonical: k, maker: fromName } = stripPowderMaker(printed);
     if (!k) { report.unresolvedPowders.push(printed); continue; }
-    const mk = r.powder_manufacturer?.trim();
+    // The column first, then the word the name itself began with — "Alliant
+    // RL-15" is the only place a blank powder_manufacturer row says Alliant.
+    const mk = r.powder_manufacturer?.trim() || fromName;
     if (mk && !makerFor.has(k)) makerFor.set(k, mk);
     const forms = printedCounts.get(k) ?? new Map<string, number>();
     forms.set(printed, (forms.get(printed) ?? 0) + 1);
@@ -286,10 +417,18 @@ async function main(): Promise<void> {
     const display = pickDisplayName(forms);
     // The maker rides along: "H4350" means little without "Hodgdon" beside it.
     const maker = makerFor.get(k) ?? null;
+    // 🚨 UPSERT ON THE KEY, NEVER ON THE DISPLAY NAME. The display name is
+    // chosen by FREQUENCY, so it moves with the data: one more manual
+    // spelling it "VARGET" rather than "Varget" elects a new name, and an
+    // upsert keyed on the name then MINTS A NEW ROW with a new cuid. Every
+    // UserBench.powderIds pointer at the old row silently stops matching, and
+    // the member's shelf quietly loses a powder — nothing errors, because an
+    // empty bench is a legal bench. Keyed on the canonical form, the id
+    // survives the rename and the name simply updates.
     const row = await prisma.benchPowder.upsert({
-      where: { name: display },
-      create: { name: display, maker },
-      update: maker ? { maker } : {},
+      where: { key: k },
+      create: { key: k, name: display, maker },
+      update: { name: display, ...(maker ? { maker } : {}) },
     });
     powderIdByKey.set(k, row.id);
     for (const printed of forms.keys()) {
@@ -312,7 +451,7 @@ async function main(): Promise<void> {
   console.log('4/6  source rows');
   const knownKeys = new Set([...byEuropean.keys()].map((e) => cartridgeKey(e)));
   const perCartridge = new Map<string, number>();
-  let written = 0;
+  const sourceRows: Prisma.BenchSourceLoadCreateManyInput[] = [];
 
   for (const r of loadRows) {
     const printedName = r.cartridge_european?.trim() || r.cartridge_as_printed?.trim() || '';
@@ -333,31 +472,59 @@ async function main(): Promise<void> {
     const maxGr = num(r.max_charge_gr ?? '');
     if (weightGr === null || startGr === null || maxGr === null) continue;
 
-    await prisma.benchSourceLoad.create({
-      data: {
-        cartridgeKey: key, printedName,
-        nameVerified: (r.cartridge_name_source ?? '').trim() === 'verified',
-        bulletMaker: maker, bulletType: type, bulletCategory: bulletCategory(type),
-        weightGr, powderId,
-        startGr, startFps: int(r.start_velocity_fps ?? ''),
-        maxGr, maxFps: int(r.max_velocity_fps ?? ''),
-        coalMm: num(r.coal_mm ?? ''),
-        source: r.source_manual ?? '', sourcePage: int(r.source_page ?? ''),
-        needsReview: r.needs_review || null,
-      },
+    // ⚠️ A ROW WITH NO RESOLVABLE MAKER IS STILL A LOAD. It groups under
+    // "Unknown" rather than being skipped — the maker is not part of the
+    // bullet axis any more, so nothing about the row is unusable. Counted so
+    // the figure is visible instead of a hole between "source rows written"
+    // and "consolidated loads".
+    if (!maker) report.rowsWithUnknownMaker++;
+
+    sourceRows.push({
+      cartridgeKey: key, printedName,
+      nameVerified: (r.cartridge_name_source ?? '').trim() === 'verified',
+      bulletMaker: maker ?? UNKNOWN_MAKER,
+      bulletType: type, bulletCategory: bulletCategory(type),
+      weightGr, powderId,
+      startGr, startFps: int(r.start_velocity_fps ?? ''),
+      maxGr, maxFps: int(r.max_velocity_fps ?? ''),
+      coalMm: num(r.coal_mm ?? ''),
+      source: r.source_manual ?? '', sourcePage: int(r.source_page ?? ''),
+      needsReview: r.needs_review || null,
     });
-    written++;
     perCartridge.set(printedName, (perCartridge.get(printedName) ?? 0) + 1);
   }
-  report.counts.sourceRowsWritten = written;
+
+  // 🚨 THE HEADER SAID "IDEMPOTENT" AND THIS STEP WAS NOT. Every source row
+  // was `create`d on a fresh cuid, so a second run DOUBLED BenchSourceLoad —
+  // and `sourcesCount` with it, which is the figure the single-source warning
+  // and the wide-spread review list are read off. Nothing errored; the report
+  // simply printed twice the truth.
+  //
+  // ⚠️ CLEARED AND REWRITTEN INSIDE ONE TRANSACTION. A delete that commits
+  // over an insert that fails leaves the Bench with no loads at all, and this
+  // script is run by hand against production data. The timeout is generous
+  // because the honest unit of work here is 51 000 rows, not a request.
+  console.log(`      writing ${sourceRows.length} source rows`);
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.benchSourceLoad.deleteMany({});
+      for (let i = 0; i < sourceRows.length; i += 5_000) {
+        await tx.benchSourceLoad.createMany({ data: sourceRows.slice(i, i + 5_000) });
+      }
+    },
+    { timeout: 20 * 60_000, maxWait: 60_000 },
+  );
+  report.counts.sourceRowsWritten = sourceRows.length;
 
   /* 5 ─ Consolidation */
   console.log('5/6  consolidating');
   const sources = await prisma.benchSourceLoad.findMany();
   const groups = new Map<string, typeof sources>();
   for (const s of sources) {
-    if (!s.bulletMaker) continue;
-    const gk = [s.cartridgeKey, s.bulletMaker, s.weightGr, s.bulletCategory, s.powderId].join(' ');
+    // No `continue` on a blank maker: step 4 gives every row one. The guard
+    // that lived here dropped those rows AFTER writing them — read, stored,
+    // and then absent from the answer, uncounted either way.
+    const gk = [s.cartridgeKey, s.bulletMaker, s.weightGr, s.bulletCategory, s.powderId].join(' ');
     (groups.get(gk) ?? groups.set(gk, []).get(gk)!).push(s);
   }
 
@@ -416,6 +583,21 @@ async function main(): Promise<void> {
   }
   report.counts.consolidatedLoads = groups.size;
 
+  // ⚠️ A CONSOLIDATED LOAD WITH NO SOURCES LEFT IS A GHOST, AND IT IS
+  // REACHABLE. Step 4 clears and rewrites BenchSourceLoad, and the group key
+  // includes `bulletCategory` — so a change to the category rules (or a
+  // corrected maker alias) moves a group, the upsert writes the new row, and
+  // the OLD row stays in the table for ever with its old charges, still
+  // matching a member's shelf. Deleting by "no sources" rather than by a set
+  // of ids because that is the actual condition: everything current was just
+  // re-pointed above.
+  //
+  // ⚠️ A BenchLogEntry.loadId pointing at one of these is left dangling on
+  // purpose — the entry is the member's own record of a round they fired, and
+  // the log reads a missing load as "no window known" rather than as zero.
+  const stale = await prisma.benchLoad.deleteMany({ where: { sources: { none: {} } } });
+  report.counts.staleLoadsRemoved = stale.count;
+
   /* 6 ─ Report */
   console.log('6/6  report\n');
   const SANITY: [string, number][] = [
@@ -433,9 +615,14 @@ async function main(): Promise<void> {
   console.log(`  source rows read     ${report.counts.sourceRowsRead}`);
   console.log(`  source rows written  ${report.counts.sourceRowsWritten}`);
   console.log(`  consolidated loads   ${report.counts.consolidatedLoads}`);
+  console.log(`  stale loads removed  ${report.counts.staleLoadsRemoved}`);
   console.log(`  single-source groups ${report.singleSourceGroups}`);
   console.log(`  wide-spread groups   ${report.wideSpreadGroups.length}  (review by hand)`);
   console.log(`  unmatched cartridges ${report.cartridgesWithoutReference.length}`);
+  // Printed rather than merely stored: both used to be invisible. Rows with no
+  // maker were dropped in silence, and a slug collision ended the run.
+  console.log(`  rows w/ unknown maker ${report.rowsWithUnknownMaker}  (grouped under "${UNKNOWN_MAKER}")`);
+  console.log(`  slug collisions      ${report.slugCollisions.length}`);
 
   await fs.writeFile(
     path.join(dir, 'bench-import-report.json'), JSON.stringify(report, null, 2),
@@ -457,6 +644,14 @@ async function main(): Promise<void> {
   }
 }
 
-main()
-  .catch((err) => { console.error(err); process.exit(1); })
-  .finally(() => void prisma?.$disconnect());
+// ⚠️ ONLY WHEN RUN AS A SCRIPT. Without this guard, `import { powderKey }`
+// from a test runs the whole import — which, with no --dir, prints the usage
+// line and calls process.exit(1), killing the jest worker rather than failing
+// a test. The normalisers below are the part with the sharp edges (a maker
+// prefix stripped here and not in the migration re-splits a powder), so they
+// have to be reachable from a spec.
+if (require.main === module) {
+  main()
+    .catch((err) => { console.error(err); process.exit(1); })
+    .finally(() => void prisma?.$disconnect());
+}
