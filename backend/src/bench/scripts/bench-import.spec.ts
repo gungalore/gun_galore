@@ -200,3 +200,31 @@ describe('The Bench — a load row finds its cartridge', () => {
     expect(cipLookupKey('6,5 x 55 SE')).not.toBe(cipLookupKey('6,5 x 57'));
   });
 });
+
+describe('The Bench — printed names a synonym cannot reach', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { cipLookupKey } = require('./bench-import') as typeof import('./bench-import');
+
+  it('maps the hand-checked spellings onto their sheet', () => {
+    for (const [printed, sheet] of [
+      ['6.5 X 50mm Japanese', '6,5 x 51 R (Arisaka)'],
+      ['6.5mm ARISAKA', '6,5 x 51 R (Arisaka)'],
+      ['338 Ruger Compact Magnum', '338 RCM'],
+      ['.44 RUSSIAN', '44 S&W Russian'],
+      ['.50-70 GOVERNMENT', '50-70 Govt.'],
+      ['.45-90 WINCHESTER', '45-90 WM'],
+      ['.32 Smith & Wesson', '32 S&W'],
+      ['.30 MAUSER', '7,63 Mauser'],
+      ['6.5mm x 68 Schuler', '6,5 x 68'],
+      ['450 Nitro Express 3¼"', "450 N.E. 3'' 1/4"],
+      ['30-06 Improved', '30-06 Ackley Improved'],
+    ]) {
+      expect(cipLookupKey(printed)).toBe(cipLookupKey(sheet));
+    }
+  });
+
+  it('leaves a name that is not in the table alone', () => {
+    expect(cipLookupKey('.32 SMITH & WESSON LONG')).not.toBe(cipLookupKey('32 S&W'));
+    expect(cipLookupKey('8mm x 68 Schuler')).not.toBe(cipLookupKey('6,5 x 68'));
+  });
+});
