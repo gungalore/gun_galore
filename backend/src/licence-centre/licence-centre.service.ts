@@ -19,7 +19,10 @@ import {
   mayArmDerivedExpiry,
   mayArmReadExpiry,
 } from './credential-auto-date';
-import { recomputeDerivedCompetencies } from './credential-derive-recompute';
+import {
+  competencyRenewalAdvice,
+  recomputeDerivedCompetencies,
+} from './credential-derive-recompute';
 import {
   cleanAlsoCovers,
   currentKind,
@@ -35,10 +38,14 @@ import {
 } from '../common/sa-competency';
 import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
 import { MotivationsService } from '../motivations/motivations.service';
-import { REFUSAL_COPY, renewalPlan, renewalRefusal } from './licence-renewal';
+import {
+  competencyRenewalSeed,
+  REFUSAL_COPY,
+  renewalPlan,
+  renewalRefusal,
+} from './licence-renewal';
 import { buildAnnexures } from '../motivations/motivation-checklist';
 import {
-  competencyLapses,
   expiryState,
   parseIsoDate,
   toIsoDate,
@@ -109,6 +116,124 @@ export class LicenceCentreService {
       );
       return {};
     }
+  }
+
+  /**
+   * Does this row belong to the set the competency derivation reads?
+   *
+   * ⚠️ THE `coversKinds` HALF IS NOT DECORATION. One document routinely fills
+   * several roles, and a row filed under another kind that COVERS
+   * FIREARM_LICENCE is counted as a licence by every query the derivation
+   * runs — `recomputeDerivedCompetencies` and the two inline licence lookups
+   * all read `{ kind: FIREARM_LICENCE } OR { coversKinds has FIREARM_LICENCE }`.
+   * A trigger that asks only about `kind` therefore misses rows the derivation
+   * would have used, and confirmExpiry asked only about `kind`.
+   */
+  private licenceShaped(row: {
+    kind: CredentialKind | null | undefined;
+    coversKinds?: readonly CredentialKind[] | null;
+  }): boolean {
+    if (!row.kind) return false;
+    return (
+      row.kind === 'FIREARM_LICENCE' ||
+      (row.coversKinds ?? []).includes(CredentialKind.FIREARM_LICENCE)
+    );
+  }
+
+  /**
+   * A COMPETENCY'S DATE MOVES WITH THE LICENCE SET, SO ONE PLACE DECIDES.
+   *
+   * ⚠️ THERE WERE THREE COPIES OF THIS TEST AND A FOURTH SITE WITH NO TEST AT
+   * ALL. `remove()` deleted a licence and never re-dated anything — so a
+   * member who deleted the last rifle licence behind a competency kept the
+   * date it had inherited from it, and went on being reminded on a deadline
+   * whose only support had just been thrown away. It is the exact mirror of
+   * the create path, and it was the one path with nothing.
+   *
+   * Every caller now asks this one question, and each of them passes the row
+   * as it stood BEFORE and AFTER whatever they did — a re-file can move a row
+   * into or out of the licence set, and either direction changes the answer.
+   *
+   * Never throws: recomputeDerivedCompetencies swallows its own failures, and
+   * a re-dating must not take down the delete or the upload that triggered it.
+   */
+  private async recomputeIfLicenceChanged(
+    userId: string,
+    ...rows: {
+      kind: CredentialKind | null | undefined;
+      coversKinds?: readonly CredentialKind[] | null;
+    }[]
+  ): Promise<void> {
+    if (!rows.some((r) => this.licenceShaped(r))) return;
+    await recomputeDerivedCompetencies(
+      this.prisma,
+      userId,
+      (blob) => this.readDetails(blob).covers ?? '',
+      this.logger,
+    );
+  }
+
+  /**
+   * A DOCUMENT JUST BECAME ATTACHABLE, SO LET THE OPEN DRAFTS SEE IT.
+   *
+   * ⚠️ AUTO-ATTACH IS ONE-SHOT PER DRAFT, AND THAT IS WHY THIS EXISTS.
+   * `Motivation.autolinkedAt` is stamped the first time a draft sweeps the
+   * vault, and a stamped draft never sweeps again. So the member who starts an
+   * application on Monday and finally confirms the expiry on their competency
+   * certificate on Thursday had that certificate sitting one screen away from
+   * an application that would never look for it again — and nothing on either
+   * screen said so. Clearing the stamp re-arms the sweep, and the next time
+   * they open the application the document is simply there.
+   *
+   * ⚠️ IT MUST NEVER COST THE UPLOAD. This is the tail of create() and
+   * confirmExpiry(); a member who has just filed a licence must not lose it
+   * because a draft could not be re-armed. rearmAutolinkFor swallows its own
+   * failures and returns 0, and the catch here is belt-and-braces for anything
+   * it cannot — the module edge itself being unavailable.
+   *
+   * Fire-and-forget is NOT used deliberately: it is one indexed updateMany,
+   * and awaiting it means a member who confirms a date and taps straight
+   * through to their application finds the sweep already re-armed rather than
+   * racing it.
+   */
+  private async rearmAutolink(userId: string): Promise<void> {
+    // ⚠️ try/catch, NOT `.catch()` ON THE PROMISE. Fail-open has to mean the
+    // whole call: anything thrown BEFORE a promise exists — the module edge
+    // itself, a service that resolved to undefined — would sail straight past
+    // a rejection handler and take the member's upload with it. There is no
+    // failure here worth losing a document over.
+    try {
+      await this.motivations.rearmAutolinkFor(userId);
+    } catch (err) {
+      this.logger.warn(
+        `Could not re-arm auto-attach for ${userId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Is a SAPS 517(g) due alongside this licence's renewal?
+   *
+   * A thin wrapper: the rule and the gathering are shared with the reminder
+   * sweep (see competencyRenewalAdvice), so the two surfaces cannot come to
+   * different conclusions about the same licence. All this adds is the key.
+   */
+  private competencyRenewalAdvice(
+    userId: string,
+    row: {
+      id: string;
+      kind: CredentialKind;
+      firearmCategory: string | null;
+      expiresOn: Date | null;
+    },
+  ): Promise<string | null> {
+    return competencyRenewalAdvice(
+      this.prisma,
+      userId,
+      row,
+      (blob) => this.readDetails(blob).covers ?? '',
+      this.logger,
+    );
   }
 
   /**
@@ -278,8 +403,19 @@ export class LicenceCentreService {
      * over their correction on every list() would put it back.
      */
     const categorised = new Map<string, string>();
+    /**
+     * ⚠️ DECRYPTED ONCE PER ROW, AND IT WAS THREE TIMES. This loop opened the
+     * blob, then the response builder below opened it AGAIN for `details`, and
+     * a competency opened it a THIRD time for `parseEndorsements`. AES-GCM on
+     * every document on every load of the page, tripled, to answer one
+     * question three times — and a row whose blob will not decrypt logged the
+     * same error three times over, which reads as three separate faults.
+     */
+    const detailsById = new Map<string, Record<string, string>>(
+      rows.map((r) => [r.id, this.readDetails(r.detailsEncrypted)]),
+    );
     for (const r of rows) {
-      const details = this.readDetails(r.detailsEncrypted);
+      const details = detailsById.get(r.id) ?? {};
       if (r.title === DEFAULT_TITLE[r.kind]) {
         const better = derivedCredentialTitle(r.kind, details);
         if (better) renamed.set(r.id, better);
@@ -289,23 +425,61 @@ export class LicenceCentreService {
         if (cat) categorised.set(r.id, cat);
       }
     }
-    if (categorised.size) {
-      await Promise.all(
-        [...categorised].map(([id, firearmCategory]) =>
-          this.prisma.credential
-            .update({ where: { id }, data: { firearmCategory } })
-            .catch(() => undefined),
+    /**
+     * ⚠️ ONE ROUND TRIP FOR BOTH REPAIRS, NOT ONE PER ROW.
+     *
+     * These were two separate `Promise.all` fans of individual updates — a
+     * member with twelve documents opening the page for the first time after
+     * either backfill fired up to twenty-four concurrent statements at the
+     * pool. They are the same kind of write, they run on the same load, and
+     * neither is worth a connection of its own.
+     *
+     * Still swallowed as a whole: a repair is a convenience and must not take
+     * the Centre down with it. The trade against the old per-row `.catch` is
+     * that one bad row now costs the batch its writes — the rows are still
+     * RETURNED correctly either way, and the next load simply tries again.
+     */
+    const repairs = [
+      ...[...categorised].map(([id, firearmCategory]) =>
+        this.prisma.credential.update({
+          where: { id },
+          data: { firearmCategory },
+        }),
+      ),
+      ...[...renamed].map(([id, title]) =>
+        this.prisma.credential.update({ where: { id }, data: { title } }),
+      ),
+    ];
+    if (repairs.length) {
+      await this.prisma.$transaction(repairs).catch((err) =>
+        this.logger.warn(
+          `Could not repair credential rows for ${user.id}: ${(err as Error).message}`,
         ),
       );
     }
-    if (renamed.size) {
-      await Promise.all(
-        [...renamed].map(([id, title]) =>
-          this.prisma.credential
-            .update({ where: { id }, data: { title } })
-            .catch(() => undefined),
-        ),
-      );
+
+    /**
+     * A LICENCE JUST GAINED A CATEGORY, WHICH MAY BE THE FIRST TIME ANY
+     * COMPETENCY COULD BE DATED OFF IT.
+     *
+     * ⚠️ THE BACKFILL ABOVE IS A WRITE, AND NOTHING ACTED ON IT. A licence
+     * with a null category is EXCLUDED from the derivation, never defaulted —
+     * so before this repair ran, every competency it should have dated fell to
+     * the five-year assumption, which is never armed, which means no date and
+     * no reminder. The category then arrived on the first list() and nothing
+     * recomputed, so the competency stayed undated until some later write
+     * happened to trigger one.
+     *
+     * Guarded on `categorised.size`, so this is a once-per-member event on the
+     * first load after the migration and costs nothing on every load after it.
+     * The rows already fetched keep their stored `expiresOn` for this one
+     * response — `derivedExpiry` below is computed live and is correct — so at
+     * worst the stored date catches up on the next load.
+     */
+    if (categorised.size) {
+      await this.recomputeIfLicenceChanged(user.id, {
+        kind: CredentialKind.FIREARM_LICENCE,
+      });
     }
 
     /**
@@ -364,7 +538,8 @@ export class LicenceCentreService {
       // two together would first mention renewal on the last day it can be
       // lodged.
       renewalDue: withinRenewalWindow(r.expiresOn, dateIsSettled(r), now),
-      details: this.readDetails(r.detailsEncrypted),
+      // Read from the one map built above — see the note there.
+      details: detailsById.get(r.id) ?? {},
       // Same statutory arithmetic the upload path offers, so a document that
       // reaches the confirm step FROM THE LIST — which is how every
       // phone-scanned document reaches it — gets the same prefilled date and
@@ -375,7 +550,7 @@ export class LicenceCentreService {
         r.issuedOn ? toIsoDate(r.issuedOn) : null,
         licences,
         r.kind === 'COMPETENCY_CERTIFICATE'
-          ? parseEndorsements(this.readDetails(r.detailsEncrypted).covers ?? '')
+          ? parseEndorsements(detailsById.get(r.id)?.covers ?? '')
           : [],
       ),
       // The row can outlive its bytes after an erasure. Say so rather than
@@ -534,8 +709,13 @@ export class LicenceCentreService {
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
+        // ⚠️ "DOCUMENT CENTRE", WHICH IS WHAT THE PRODUCT IS CALLED. The
+        // module, the class and the route prefix are all still licence-centre
+        // and stay that way — but a member who has never seen the word
+        // "Licence Centre" anywhere in the UI was being told their file was
+        // already in one.
         throw new ConflictException(
-          'That exact file is already in your Licence Centre.',
+          'That exact file is already in your Document Centre.',
         );
       }
       throw err;
@@ -582,6 +762,10 @@ export class LicenceCentreService {
           issuedOn: reading.issuedOn,
           section: reading.details.section ?? null,
           lowConfidence: reading.lowConfidence,
+          // Textract's own verdict, where the Textract reader answered. See
+          // the field on CredentialReading — it used to be computed and thrown
+          // away before it reached here.
+          autoFillable: reading.autoFillable,
           now: new Date(),
         })
       : { arm: false as const };
@@ -589,6 +773,45 @@ export class LicenceCentreService {
       this.logger.log(
         `Credential ${created.id}: date read but not armed — ${armed.reason}`,
       );
+      /**
+       * ⚠️ AND SAY SO TO THE MEMBER, BECAUSE NOTHING ELSE EVER DID.
+       *
+       * This branch is the one place in the Centre where we have a date, do
+       * not trust it, and therefore fire no reminder — the exact row that most
+       * needs a human to look at it. It produced a log line and nothing else:
+       * no inbox row, no badge, no email. The card in the list does show an
+       * unconfirmed state, but only to somebody who opens the page, and the
+       * whole point of the Centre is that they do not have to.
+       *
+       * Worse, confirmExpiry's own comment claims it clears "the 'confirm
+       * this' nudge" — resolveByEntity('credential', …) has been called there
+       * for as long as it has existed, against a notification nothing created.
+       * The resolve half of this loop was already built and wired; only the
+       * row was missing.
+       *
+       * dismissible: TRUE. The member may reasonably decide the date we read
+       * is fine and never touch it — an action-required row they cannot clear
+       * would sit in the inbox for the life of the document. Confirming it
+       * clears the row through resolveByEntity either way.
+       */
+      await this.notifications
+        .persist({
+          userId: user.id,
+          category: 'ACCOUNT',
+          type: 'credential_date_needs_check',
+          title: 'Check a date we read off your document',
+          body: `We read an expiry date off ${clean || derived || DEFAULT_TITLE[resolved]} but we are not sure enough of it to remind you from it. Open it and confirm the date, and we will start watching it.`,
+          url: '/documents',
+          iconKey: 'kyc',
+          linkedType: 'credential',
+          linkedId: created.id,
+          dismissible: true,
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `Could not raise the confirm-date nudge for ${created.id}: ${(err as Error).message}`,
+          ),
+        );
     }
 
     if (reading) {
@@ -732,18 +955,17 @@ export class LicenceCentreService {
      * that existed at that instant — possibly none — and it would stay wrong
      * until they confirmed something. Now the licence corrects it on arrival.
      */
-    if (
-      (resolved === 'FIREARM_LICENCE' ||
-        alsoCovers.includes('FIREARM_LICENCE')) &&
-      armed.arm
-    ) {
-      await recomputeDerivedCompetencies(
-        this.prisma,
-        user.id,
-        (blob) => this.readDetails(blob).covers ?? '',
-        this.logger,
-      );
-    }
+    //
+    // ⚠️ NO LONGER GATED ON `armed.arm`, AND THE GATE WAS A TRAP WAITING. The
+    // recompute reads the licence set from the database, which already filters
+    // to rows carrying a confirmedAt or a dateSource — so an unarmed licence
+    // makes no difference to the answer and the call is a cheap no-op. What
+    // the gate DID do was put a second, different licence-changed test in the
+    // codebase, which is how remove() ended up with none at all.
+    await this.recomputeIfLicenceChanged(user.id, {
+      kind: resolved,
+      coversKinds: alsoCovers,
+    });
 
     if (resolved === 'COMPETENCY_CERTIFICATE' && reading) {
       const endorsements = parseEndorsements(reading.details.covers ?? '');
@@ -772,6 +994,12 @@ export class LicenceCentreService {
         );
       }
     }
+
+    // A new document in the vault is a new candidate for every open draft.
+    // See rearmAutolink — auto-attach is one-shot per application, so without
+    // this a document filed after the application was started is invisible to
+    // it for ever.
+    await this.rearmAutolink(user.id);
 
     return {
       id: created.id,
@@ -971,6 +1199,30 @@ export class LicenceCentreService {
         neverExpires: noExpiry,
         ...(issuedOnUnknown === undefined ? {} : { issuedOnUnknown }),
         confirmedAt: new Date(),
+        /**
+         * ⚠️ THE PROVENANCE IS THE MEMBER'S NOW, SO OURS MUST GO.
+         *
+         * These three columns say WE put the date there — `dateSource` 'read'
+         * or 'derived', a sentence explaining our arithmetic, and whether the
+         * reading was confident. Left standing after a confirm they are simply
+         * false: the member has looked at the date and answered, possibly by
+         * typing a different one, and the card renders provenance from these
+         * columns. It read "We read this date off the document you uploaded"
+         * over a date the member had just corrected by hand — a false record
+         * of who checked what, on a page about firearm licences, and the first
+         * thing anybody would check if a reminder were ever wrong.
+         *
+         * It also mattered to the machinery: recomputeDerivedCompetencies
+         * scopes itself to `dateSource: 'derived'` AND `confirmedAt: null`, so
+         * a stale 'derived' was only ever one dropped condition away from our
+         * arithmetic overwriting a date somebody typed.
+         */
+        dateSource: null,
+        dateSourceNote: null,
+        // Not null — the column is a non-null Boolean defaulting to false, and
+        // false is the right reading anyway: this is no longer OUR confident
+        // reading of anything.
+        dateReadConfident: false,
         // ⚠️ NORMALISED, for the same reason as create(). This is the refile
         // control on the confirm panel, so a stale bundle can put a retired
         // value here too — and unlike an upload, this one lands on a row the
@@ -1037,14 +1289,26 @@ export class LicenceCentreService {
      * changing its mind. It is cheap — two queries and an update only where
      * something actually moved — and it cannot throw.
      */
-    if (before.kind === 'FIREARM_LICENCE' || nextKind === 'FIREARM_LICENCE') {
-      await recomputeDerivedCompetencies(
-        this.prisma,
-        user.id,
-        (blob) => this.readDetails(blob).covers ?? '',
-        this.logger,
-      );
-    }
+    //
+    // ⚠️ BOTH SHAPES, AND `coversKinds` WITH THEM. This asked only about
+    // `kind`, on the row before and after — so a document filed as something
+    // else that COVERS a firearm licence was confirmed, entered the derivation
+    // set (every licence query here reads kind OR coversKinds), and nothing
+    // re-dated a single competency. The before-and-after pair matters too: a
+    // re-file can move a row INTO the licence set or OUT of it, and a row
+    // leaving it is exactly as much of a change as one joining.
+    await this.recomputeIfLicenceChanged(
+      user.id,
+      { kind: before.kind, coversKinds: before.coversKinds },
+      { kind: nextKind, coversKinds: before.coversKinds },
+    );
+
+    // ⚠️ CONFIRMING IS THE MOMENT A DOCUMENT BECOMES USEFUL, not uploading it.
+    // credentialOffer will take an unconfirmed row's make and calibre but not
+    // its date, and the checklist reads a confirmed document differently — so
+    // the sweep that ran while this row was still unconfirmed reached a
+    // different answer from the one it would reach now. See rearmAutolink.
+    await this.rearmAutolink(user.id);
 
     return { confirmed: true, expiresOn: expiry ? toIsoDate(expiry) : null };
   }
@@ -1140,7 +1404,9 @@ export class LicenceCentreService {
 
     const row = await this.prisma.credential.findFirst({
       where: { id, userId: user.id },
-      select: { id: true, storageKey: true },
+      // ⚠️ kind AND coversKinds ARE READ FOR THE RE-DATE BELOW, and they must
+      // be read BEFORE the delete — after it there is no row left to ask.
+      select: { id: true, storageKey: true, kind: true, coversKinds: true },
     });
     if (!row) throw new NotFoundException('Document not found');
 
@@ -1159,10 +1425,63 @@ export class LicenceCentreService {
       }
     }
 
+    /**
+     * TELL THE PACKS BEFORE THE POINTER GOES.
+     *
+     * ⚠️ IT HAS TO HAPPEN BEFORE THE DELETE, AND THAT IS THE WHOLE TRICK. The
+     * relation is onDelete: SetNull, so the instant the credential goes every
+     * `sourceCredentialId` pointing at it becomes null — and a null pointer is
+     * indistinguishable from a copy that never came from the vault at all.
+     * Stamping first means the TIMESTAMP survives the cascade even though the
+     * pointer does not, which is exactly what the row on the documents screen
+     * reads: "deleted from your Document Centre".
+     *
+     * ⚠️ THE COPY ITSELF IS UNTOUCHED. A motivation upload is its own file with
+     * its own retention life (see addFromLibrary — the bytes are copied, never
+     * shared), so a pack that already carries this page still carries it. What
+     * is lost is the ability to re-pick, re-date or renew from the Centre, and
+     * the member is told rather than left to find out.
+     *
+     * ⚠️ `sourceRemovedAt: null` IN THE PREDICATE. A member who deletes one
+     * document, and another six months later, must not have the first stamp
+     * rewritten — and re-stamping would move a date that is already on screen.
+     *
+     * Never fatal: this is a notice, and losing it must not cost somebody the
+     * erasure they asked for. POPIA is the stronger obligation of the two.
+     */
+    await this.prisma.motivationUpload
+      .updateMany({
+        where: { sourceCredentialId: row.id, sourceRemovedAt: null },
+        data: { sourceRemovedAt: new Date() },
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `Credential ${id}: could not mark packs as source-removed: ${(err as Error).message}`,
+        ),
+      );
+
     await this.prisma.credential.delete({ where: { id: row.id } });
     await this.notifications
       .resolveByEntity('credential', id, { userId: user.id })
       .catch(() => undefined);
+
+    /**
+     * A LICENCE JUST LEFT, SO EVERY COMPETENCY DATED OFF IT IS NOW WRONG.
+     *
+     * ⚠️ THIS WAS THE ONE LICENCE WRITE PATH WITH NO RE-DATE AT ALL. create()
+     * had one and confirmExpiry had one; deleting had nothing, and deleting is
+     * the direction that can only ever make a date TOO LATE. A member who
+     * removed the last rifle licence behind a rifle competency kept the expiry
+     * that licence had lent it — the certificate went on reading "in date",
+     * green, and the reminder ladder went on counting down to a deadline whose
+     * only support had been thrown away. The recompute handles this case
+     * explicitly: with the basis gone it hands the date back, clears the stage
+     * stamps and returns the row to asking.
+     *
+     * Awaited, after the delete, so the list this response refreshes is
+     * already correct.
+     */
+    await this.recomputeIfLicenceChanged(user.id, row);
     return { removed: true };
   }
 
@@ -1196,6 +1515,10 @@ export class LicenceCentreService {
         storageKey: true,
         purgedAt: true,
         mimeType: true,
+        // ⚠️ FOR THE 517(g) ADVICE, NOT FOR THE SEED. The category is what
+        // decides whether this is the last licence holding a competency up —
+        // see competencyRenewalNote in licence-renewal.ts.
+        firearmCategory: true,
       },
     });
     if (!row) throw new NotFoundException('Document not found');
@@ -1215,6 +1538,41 @@ export class LicenceCentreService {
 
     const plan = renewalPlan(src);
 
+    /**
+     * IS A SAPS 517(g) DUE WITH THIS RENEWAL?
+     *
+     * ⚠️ NOT SEEDED INTO AN ANSWER, DELIBERATELY. `plan.seed` becomes answers
+     * on a SAPS 271 that the applicant signs as their own — advice about a
+     * DIFFERENT form has no field on it and would be printed as a statement of
+     * fact by the member. This rides on the response instead, so the wizard
+     * can say it beside the pack it is about.
+     *
+     * ⚠️ IT IS ALSO ON BOTH RETURNS. The one-tap is idempotent: tapping again
+     * hands back the existing renewal, and that is the path a member takes
+     * MORE often than the first one — a resumed renewal that quietly dropped
+     * the second-form advice would hide it from exactly the people coming back
+     * to finish the job.
+     */
+    const competencyNote = await this.competencyRenewalAdvice(user.id, row);
+
+    /**
+     * ⚠️ AND THE FINDING GOES IN THE PACK AS WELL, WHICH IS THE HALF THAT WAS
+     * MISSING. The note above rides on this response and nowhere else, so it
+     * was read once — on the card, at the moment of tapping Renew — and never
+     * again. The checklist is the surface that lasts: it is the list they take
+     * to the counter, and "lodge the 517(g) together with this" is a
+     * counter-day instruction.
+     *
+     * ⚠️ A FLAG, NOT THE SENTENCE. The comment above is still right that prose
+     * about another form has no box on a SAPS 271. competencyRenewalSeed writes
+     * a Yes on a field the wizard never renders and the writer never sees —
+     * see COMPETENCY_RENEWS_KEY — so nothing is put in the applicant's mouth.
+     *
+     * Provenance comes free: create() stamps every seeded key, so the answer
+     * is attributed to us rather than looking like something they typed.
+     */
+    const seed = { ...plan.seed, ...competencyRenewalSeed(competencyNote) };
+
     // IDEMPOTENT PER LICENCE. Tapping again — after a browser Back, or on a
     // later visit, since the card never changes state — used to hit the
     // one-per-type constraint and tell them to delete the renewal they were
@@ -1233,6 +1591,7 @@ export class LicenceCentreService {
         referenceNumber: existing.referenceNumber,
         seeded: 0,
         resumed: true,
+        competencyNote,
       };
     }
 
@@ -1246,7 +1605,7 @@ export class LicenceCentreService {
       clerkId,
       'S24_RENEWAL',
       plan.applicationRef,
-      plan.seed,
+      seed,
     );
 
     // Carry the document itself across, so the pack is complete without asking
@@ -1301,8 +1660,9 @@ export class LicenceCentreService {
     return {
       motivationId: motivation.id,
       referenceNumber: motivation.referenceNumber,
-      seeded: Object.keys(plan.seed).length,
+      seeded: Object.keys(seed).length,
       resumed: false,
+      competencyNote,
     };
   }
 
@@ -1427,7 +1787,16 @@ export function derivedExpiryFor(
   licences: readonly LinkedLicence[] = [],
   /** What the certificate covers, read off its own wording. */
   endorsements: readonly Endorsement[] = [],
-): { on: string; why: string } | null {
+  /**
+   * ⚠️ `on` MAY NOW BE NULL, AND THE SENTENCE IS THE POINT OF THAT.
+   *
+   * A certificate whose endorsement line we could not read has no date we can
+   * honestly offer — but it does have something worth saying, and saying
+   * nothing put the member in front of a blank box with the generic "we could
+   * not read anything off that one" beside it. `why` carries the real reason;
+   * the panel shows it and the date box stays empty.
+   */
+): { on: string | null; why: string } | null {
   if (readExpiry || !readIssued) return null;
   if (kind !== 'COMPETENCY_CERTIFICATE') return null;
   const issued = parseIsoDate(readIssued);
@@ -1482,23 +1851,30 @@ export function derivedExpiryFor(
   if (derived.on) {
     return { on: toIsoDate(derived.on), why: derived.why };
   }
-  if (endorsements.length) {
-    // We read the certificate but cannot date it — say nothing rather than
-    // fall through to a fallback that does not apply.
-    return null;
-  }
 
-  return {
-    on: toIsoDate(competencyLapses(issued)),
-    // ⚠️ NO STATUTE IS CITED, AND THAT IS THE CORRECTION. This sentence cited
-    // "section 10(2) of the Firearms Control Act, as amended" as the authority
-    // for five years — in the one case where s10(2) says nothing at all. As
-    // amended it ties validity to "the licence to which the competency
-    // certificate relates", and here there is no such licence; the provision
-    // is silent, not supportive. The five years is the operator's operating
-    // rule, confirmed with their DFO on 2026-08-25, and is stated as ours.
-    why: 'You have no firearm licence on file, so there is nothing for this competency to follow: it runs five years from the date it was issued. Your certificate does not print a date — there is no expiry on it to check this against. Licence a firearm and the competency follows that licence instead, moving out with every renewal. Worth confirming with your DFO; the police record is what counts.',
-  };
+  /**
+   * ⚠️ THERE USED TO BE A SECOND FIVE-YEAR BRANCH HERE, AND IT LIED.
+   *
+   * It fired when `endorsements` was EMPTY — and empty does not mean "this
+   * member holds no licences", it means "we could not read which firearms
+   * this certificate covers". The two are unrelated, so the sentence it
+   * printed ("You have no firearm licence on file…") was flatly false for
+   * anybody holding six. It then dated the row five years from issue on the
+   * strength of a reading that had just failed, and offered that number to
+   * the member as a prefill to CONFIRM.
+   *
+   * deriveCertificateExpiry already answers this case honestly — basis
+   * 'unknown', "We could not read which firearms this certificate covers" —
+   * and its own fallback branch still gives the five years where it is
+   * genuinely the rule: endorsements read, and no licence behind any category
+   * they name. That is now the only place the five years is stated.
+   *
+   * ⚠️ DISPLAY ONLY, so nothing that gets WRITTEN changed. Both write paths
+   * (create() below, and recomputeDerivedCompetencies) call
+   * deriveCertificateExpiry directly, and mayArmDerivedExpiry has always
+   * refused anything but a licence-backed or statutory basis.
+   */
+  return { on: null, why: derived.why };
 }
 
 /**

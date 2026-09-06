@@ -36,7 +36,6 @@ import {
   Suggestion,
   UploadRow,
   PickableKind,
-  AddedUpload,
   LibraryItem,
   TokenGetter,
   SAPS271_OPT_KEY,
@@ -71,6 +70,9 @@ import WizardRail, {
   toWalkedIndex,
   WIZARD_STEPS,
 } from '@/components/licence-pack/wizard-rail';
+// The one reading of "can this document still answer its row?", shared with the
+// live wizard so the two screens cannot disagree about somebody's paperwork.
+import { usableUpload } from '@/components/motivation/upload-panel';
 import { visibleFields } from '@/lib/motivations-api';
 import FieldInput from '@/components/motivation-field-input';
 import PackGroup from '@/components/licence-pack/pack-group';
@@ -96,12 +98,28 @@ export default function LicenceServicesWizardPage() {
   const [missingRequired, setMissingRequired] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Which step the member is on.
+   *
+   * ⚠️ IT USED TO BE LOST ON EVERY REFRESH. `useState(0)` put somebody on the
+   * firearm step after a reload from step nine — and a reload is not rare on a
+   * form this long: iOS discards backgrounded tabs, and the phone hand-off asks
+   * a member to pick their phone up and put it down again. The step is kept in
+   * the URL fragment, which is what WizardStep.key has always said it was for:
+   * shareable, restored on load, and costing no draft schema.
+   *
+   * ⚠️ replaceState, NOT location.hash = — assigning pushes a history entry, so
+   * ten steps would take ten presses of Back to leave the application.
+   */
   const [step, setStep] = useState(0);
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [busyKind, setBusyKind] = useState<string | null>(null);
   const [uploadErr, setUploadErr] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
+  // Read inside callbacks that must not re-create on every list change.
+  const uploadsRef = useRef<UploadRow[]>([]);
+  uploadsRef.current = uploads;
   const [pickable, setPickable] = useState<PickableKind[]>([]);
   /** The one document a lifecycle action is working on, so its row can grey. */
   const [docBusy, setDocBusy] = useState<string | null>(null);
@@ -118,6 +136,17 @@ export default function LicenceServicesWizardPage() {
    */
   const [sellerInvite, setSellerInvite] = useState(false);
   const [messages, setMessages] = useState<FollowUp[]>([]);
+  /**
+   * What the pack still needs in the way of DOCUMENTS.
+   *
+   * ⚠️ IT WAS ON THE UPLOADS RESPONSE ALL ALONG AND NOTHING KEPT IT. The page
+   * read `documents` only to work out whether to offer the seller invite, then
+   * threw it away — so the Generate gate could see missing ANSWERS and was
+   * blind to missing DOCUMENTS, and a member with every box filled and no ID
+   * copy met a live button, spent one of a small hourly quota on a flagship
+   * model, and was refused.
+   */
+  const [documents, setDocuments] = useState<DocumentStatus | null>(null);
 
   const token = useCallback(async () => getToken(), [getToken]);
 
@@ -126,6 +155,30 @@ export default function LicenceServicesWizardPage() {
     setAllowed(ok);
     if (!ok) router.replace(`/motivations/${id}`);
   }, [id, router]);
+
+  /**
+   * Which step this visit started on. Not always the first.
+   *
+   * ⚠️ THE PREFILL BANNER RENDERED ON STEP 0 AND NOWHERE ELSE, so a member
+   * returning to step seven — after a refresh, or from the phone hand-off —
+   * was never told we had filled twenty-three answers in for them. That
+   * sentence is the whole reason the values are allowed to be written without
+   * being asked about (CLAUDE.md, "Automate It — Do Not Ask": say it was filled
+   * in, on the row, in passing). Unsaid, it is just a form somebody else
+   * completed.
+   */
+  const [entryStep, setEntryStep] = useState(0);
+
+  // Restore the step from the URL fragment — see the note on `step`.
+  useEffect(() => {
+    if (!allowed) return;
+    const key = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+    const at = APPLICATION_STEPS.findIndex((s) => s.key === key);
+    if (at > 0) {
+      setStep(at);
+      setEntryStep(at);
+    }
+  }, [allowed]);
 
   useEffect(() => {
     if (!allowed) return;
@@ -143,6 +196,7 @@ export default function LicenceServicesWizardPage() {
         const up = await motivationsApi.uploads(token, id);
         setUploads(up.files);
         setPickable(up.kinds ?? []);
+        setDocuments(up.documents);
         setSellerInvite(sellerConsentOffered(up.documents));
         // ⚠️ THE ONE GAP THAT LEAVES SOMEBODY STUCK RATHER THAN
         // INCONVENIENCED. An unanswered follow-up holds the application at
@@ -187,6 +241,13 @@ export default function LicenceServicesWizardPage() {
     },
     [autosave],
   );
+
+  // ⚠️ A REF, so a callback that must not be rebuilt on every keystroke can
+  // still read what is on screen NOW. Putting `answers` in a dependency list
+  // here would rebuild the phone-arrival handler on every character typed —
+  // and ScanButton holds the handler it was given when its dialog opened.
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
 
   /**
    * ONE UPLOAD, ONE CODE PATH — the same discipline the wizard's own
@@ -249,6 +310,7 @@ export default function LicenceServicesWizardPage() {
         const up = await motivationsApi.uploads(token, id);
         setUploads(up.files);
         setPickable(up.kinds ?? []);
+        setDocuments(up.documents);
         setSellerInvite(sellerConsentOffered(up.documents));
       } catch (ex) {
         setUploadErr(
@@ -323,6 +385,7 @@ export default function LicenceServicesWizardPage() {
     setPack(p);
     setUploads(up.files);
     setPickable(up.kinds ?? []);
+    setDocuments(up.documents);
     setSellerInvite(sellerConsentOffered(up.documents));
     // ⚠️ NOT a separate proficiency state here. This page reads the 117705
     // cover off pack.proficiency, which the refetch above already updated —
@@ -431,15 +494,25 @@ export default function LicenceServicesWizardPage() {
     [id, token],
   );
 
+  /** A field key in the member's own words, for anything that names one. */
+  const labelForKey = useCallback(
+    (key: string) => fields.find((f) => f.key === key)?.label ?? key,
+    [fields],
+  );
+
   /**
    * Reuse a document already on file.
    *
-   * ⚠️ NEVER OVER AN ANSWER THEY TYPED. Lifted verbatim from the old page,
-   * including the reason: unlike a per-field camera — where pressing
-   * "photograph my competency certificate" IS the request to replace what is
-   * in that box — this attaches a whole document and may carry half a dozen
-   * values with it. Overwriting on that basis would quietly undo work they
-   * did by hand.
+   * ⚠️ NEVER OVER AN ANSWER THEY TYPED — and, since 2026-09-06, never into an
+   * answer at all without being seen. This wrote every reading straight into
+   * the empty boxes while an identical value photographed a minute earlier went
+   * through ExtractionReview for confirmation: two doors, two different rules
+   * about a value the member signs for. The dangerous half was this one, being
+   * the silent one. Both route through the review now.
+   *
+   * ⚠️ THE LABEL AND THE SOURCE ARE FILLED IN HERE. The from-library response
+   * carries `{key, value}` with the raw registry key as its label and no source
+   * — enough for a silent write, not enough for a line somebody has to judge.
    */
   const attachFromLibrary = useCallback(
     async (item: LibraryItem, placeConfirmed = false) => {
@@ -450,20 +523,103 @@ export default function LicenceServicesWizardPage() {
         item.sourceId,
         placeConfirmed,
       );
-      setAnswers((cur) => {
-        const next = { ...cur };
-        for (const sg of row.suggestions ?? []) {
-          if (!(next[sg.key] ?? '').trim() && sg.value) next[sg.key] = sg.value;
-        }
-        return next;
-      });
+      const read = (row.suggestions ?? [])
+        .filter((sg) => sg.value)
+        .map((sg) => ({
+          ...sg,
+          label: labelForKey(sg.key),
+          from: sg.from || item.title,
+          // The document was read when it was first attached and its reading
+          // has been stored ever since; nothing here disagrees with it. A
+          // doubted line is one OUR checks flag, and this path has none.
+          trusted: sg.trusted !== false,
+        }));
+      if (read.length) setSuggestions((cur) => mergeReads(cur, read));
       await Promise.all([
         refreshDocs().catch(() => undefined),
         loadLibrary().catch(() => undefined),
       ]);
     },
-    [token, id, refreshDocs, loadLibrary],
+    [token, id, refreshDocs, loadLibrary, labelForKey],
   );
+
+  /**
+   * A document arrived from the member's phone.
+   *
+   * ⚠️ THIS USED TO BE `onFiles(kind, [])` — a call into the upload loop with
+   * nothing to upload. It refreshed the lists, which is half the job, and then
+   * fell out of the loop with an empty `read`: the suggestions are built INSIDE
+   * the per-file loop, so a document the phone sent could never produce one.
+   * The member watched their licence card land on the desktop and was then
+   * asked to type everything printed on it.
+   *
+   * ⚠️ AND THE READING COMES BACK THROUGH THE VAULT, WHICH IS THE ONLY PLACE IT
+   * IS REACHABLE FROM. The phone's own upload response carried the suggestions
+   * — to the phone. Nothing on the server hands the desktop a stored reading
+   * for an attached document (`reread` returns field KEYS and costs a fresh
+   * vision call; the uploads list returns keys too). What it does do is copy
+   * every upload into the Document Centre where consent allows, and the vault
+   * offer serves VALUES with labels and their source. So we ask that, keep the
+   * lines that would fill a box still empty, and put them through the same
+   * review every other reading goes through. Where there is no consent to keep
+   * documents there is nothing to offer, and the member types it — which is
+   * exactly what happened before this existed.
+   */
+  const onScanArrived = useCallback(async () => {
+    setUploadErr(null);
+    try {
+      const before = new Set(uploadsRef.current.map((u) => u.id));
+      await refreshDocs();
+      const [p, d, up] = await Promise.all([
+        motivationsApi.pack(token, id),
+        motivationsApi.get(token, id),
+        motivationsApi.uploads(token, id),
+      ]);
+      setPack(p);
+      setMissingRequired(d.missingRequired ?? []);
+      await loadLibrary().catch(() => undefined);
+
+      // The reading the phone made, fetched off each file it delivered.
+      // Exact, and costs no vision call. The vault offer below stays as the
+      // fallback for a document read before this endpoint existed.
+      const fresh = up.files.filter((u) => !before.has(u.id));
+      const readings = await Promise.all(
+        fresh.map((u) => motivationsApi.readingFor(token, id, u.id)),
+      );
+      const fromFiles = readings
+        .flatMap((r) => r.suggestions)
+        .filter((sg) => sg.value && !(answersRef.current[sg.key] ?? '').trim())
+        .map((sg) => ({
+          key: sg.key,
+          value: sg.value,
+          label: labelForKey(sg.key),
+          from: 'Read off your document',
+          trusted: true,
+        }));
+      if (fromFiles.length) setSuggestions((cur) => mergeReads(cur, fromFiles));
+
+      const offer = await motivationsApi.licenceCentreOffer(token, id);
+      const have = new Set(fromFiles.map((x) => x.key));
+      const read = offer.items
+        .filter(
+          (it) =>
+            it.value &&
+            !have.has(it.key) &&
+            !(answersRef.current[it.key] ?? '').trim(),
+        )
+        .map((it) => ({
+          key: it.key,
+          value: it.value,
+          label: labelForKey(it.key),
+          from: it.from,
+          trusted: true,
+        }));
+      if (read.length) setSuggestions((cur) => mergeReads(cur, read));
+    } catch {
+      // A refresh we could not finish costs the member a reload, never the
+      // documents — they are on the server either way.
+    }
+  }, [token, id, refreshDocs, loadLibrary, labelForKey]);
 
   /**
    * Attach what the Document Centre already holds, once, without being asked.
@@ -525,7 +681,63 @@ export default function LicenceServicesWizardPage() {
     [id, token],
   );
 
-  const missing = useMemo(() => new Set(missingRequired), [missingRequired]);
+  /**
+   * What is still unanswered, RIGHT NOW.
+   *
+   * ⚠️ THE SERVER'S LIST IS A SNAPSHOT AND IT CAN ONLY SHRINK. This screen
+   * trusted `missingRequired` alone, and requiredKeys() on the server is
+   * answer-DEPENDENT: answering "Married" makes spouse_id_number required by a
+   * rule that was not even visible when the page loaded. Crossing items off a
+   * load-time list can never add those, so the wizard showed nothing
+   * outstanding, opened the Generate door, and the server refused with "Some
+   * required answers are still missing" — spending one of a small hourly quota
+   * per doomed press. The same union the live wizard computes, for the same
+   * reason.
+   */
+  const outstanding = useMemo(() => {
+    const empty = (k: string) => !(answers[k] ?? '').trim();
+    const live = visibleFields(fields, answers)
+      .filter((f) => f.required && empty(f.key))
+      .map((f) => f.key);
+    // UNION, never replacement: the server may require something on registry
+    // logic this component does not evaluate. Over-reporting shows a box to
+    // fill; under-reporting is the dead end above.
+    return Array.from(new Set([...missingRequired.filter(empty), ...live]));
+  }, [missingRequired, answers, fields]);
+
+  const missing = useMemo(() => new Set(outstanding), [outstanding]);
+
+  /**
+   * Required DOCUMENTS still outstanding.
+   *
+   * ⚠️ SERVED, AND RE-FILTERED THROUGH WHAT IS ACTUALLY USABLE. The server's
+   * list says what is required; only the row knows an attached certificate has
+   * expired or lost its Document Centre source. Taking the served list alone
+   * would let an expired competency certificate open the Generate door the
+   * attached list has already gone amber over — the two halves of one screen
+   * disagreeing about the same document.
+   */
+  const missingDocs = useMemo(() => {
+    const served = documents?.missingRequired ?? [];
+    const unmet = (documents?.needs ?? [])
+      .filter((n) => n.tier === 'required')
+      .filter((n) => {
+        const files = uploads.filter((u) => u.kind === n.kind);
+        return !(n.have && (files.length === 0 || files.some(usableUpload)));
+      })
+      .map((n) => n.kind);
+    return Array.from(new Set([...served, ...unmet]));
+  }, [documents, uploads]);
+
+  /** An upload kind as the member knows it — never the raw SCREAMING_CASE. */
+  const documentLabelFor = useCallback(
+    (kind: string) =>
+      documents?.needs.find((n) => n.kind === kind)?.label ??
+      pickable.find((k) => k.kind === kind)?.label ??
+      kind,
+    [documents, pickable],
+  );
+
   // ⚠️ `step` INDEXES THE WALK, NOT THE RAIL. An application walks ten steps;
   // the rail draws eleven, because the section was chosen on a screen before
   // this one existed. Everything the member SEES is a display index and goes
@@ -535,6 +747,56 @@ export default function LicenceServicesWizardPage() {
   const steps = APPLICATION_STEPS;
   const current = steps[Math.min(step, steps.length - 1)];
   const last = step === steps.length - 1;
+
+  /** Which registry sections still hold an outstanding answer. Feeds the rail. */
+  const outstandingSections = useMemo(() => {
+    const keys = new Set(outstanding);
+    return Array.from(
+      new Set(fields.filter((f) => keys.has(f.key)).map((f) => f.section)),
+    );
+  }, [outstanding, fields]);
+
+  /**
+   * Go to a step, and say so in the URL.
+   *
+   * ⚠️ AND SCROLL TO THE TOP. One panel is visible at a time on a page that can
+   * be several screens long; changing step from the footer left the member
+   * looking at the bottom of the next step, which reads as a button that did
+   * nothing.
+   */
+  const goStep = useCallback(
+    (next: number) => {
+      const n = Math.max(0, Math.min(APPLICATION_STEPS.length - 1, next));
+      setStep(n);
+      const key = APPLICATION_STEPS[n]?.key;
+      if (key) {
+        window.history.replaceState(null, '', `#${key}`);
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [],
+  );
+
+  /** Which step asks a given field, so a name can be jumped to. */
+  const stepForKey = useCallback(
+    (key: string) => {
+      const section = fields.find((f) => f.key === key)?.section;
+      if (!section) return null;
+      const at = APPLICATION_STEPS.findIndex((s) =>
+        (s.sections ?? []).includes(section),
+      );
+      return at < 0 ? null : at;
+    },
+    [fields],
+  );
+
+  /** Which step asks for a given document. */
+  const stepForKind = useCallback((kind: string) => {
+    const at = APPLICATION_STEPS.findIndex((s) =>
+      (s.documents ?? []).some((d) => d.kind === kind),
+    );
+    return at < 0 ? null : at;
+  }, []);
 
   if (!allowed) return null;
 
@@ -597,13 +859,19 @@ export default function LicenceServicesWizardPage() {
       {/* The whole journey, including the part that happened before this
           screen — ticked, and not a way back: the choice it recorded cannot be
           changed, and the chrome bar above already restates it. */}
+      {/* ⚠️ THE TICKS ARE DERIVED, NOT POSITIONAL. The rail used to go green
+          for every step LEFT BEHIND, so clicking ahead to type one number
+          ticked four empty steps — and the step being worked on could never
+          tick however much went into it. See stepDone in wizard-rail.tsx. */}
       <WizardRail
         steps={WIZARD_STEPS}
         current={toDisplayIndex(step)}
         lockedBefore={DISPLAY_OFFSET}
+        outstandingSections={outstandingSections}
+        outstandingKinds={missingDocs}
         onGo={(i) => {
           const walked = toWalkedIndex(i);
-          if (walked !== null) setStep(walked);
+          if (walked !== null) goStep(walked);
         }}
       />
 
@@ -616,7 +884,7 @@ export default function LicenceServicesWizardPage() {
           }}
         >
           <p className="text-[12.5px] text-[var(--text-primary)]">
-            <span className="font-semibold">Preview.</span> Still being built —
+            <span className="font-medium">Preview.</span> Still being built —
             you cannot upload or scan documents from here yet.{' '}
             <Link href={`/motivations/${id}`} className="underline">
               Classic view
@@ -640,7 +908,7 @@ export default function LicenceServicesWizardPage() {
       <div className="grid flex-1 grid-cols-1 gap-[26px] px-4 pt-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex flex-col gap-4">
           <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
+            <div className="text-[11px] font-medium uppercase tracking-[.11em] text-[var(--text-tertiary)]">
               {/* ⚠️ THE DISPLAY NUMBER, NOT THE WALKED ONE. The firearm is the
                   first step an application walks and the SECOND the member
                   counts — they chose a section to get here, and telling them
@@ -649,7 +917,7 @@ export default function LicenceServicesWizardPage() {
               Step {toDisplayIndex(step) + 1} of {WIZARD_STEPS.length} ·{' '}
               {current.fills}
             </div>
-            <h1 className="mb-1.5 mt-1.5 text-[26px] font-bold tracking-[-.02em] text-[var(--text-primary)]">
+            <h1 className="mb-1.5 mt-1.5 text-[26px] font-medium tracking-[-.02em] text-[var(--text-primary)]">
               {current.title}
             </h1>
             <p className="max-w-[78ch] text-[14.5px] text-[var(--text-secondary)]">
@@ -657,7 +925,8 @@ export default function LicenceServicesWizardPage() {
             </p>
           </div>
 
-          {step === 0 && (
+          {/* On the step this visit STARTED on — see entryStep. */}
+          {step === entryStep && (
             <PrefillBanner
               prefill={pack.prefill}
               provenance={pack.provenance}
@@ -681,13 +950,13 @@ export default function LicenceServicesWizardPage() {
               they sign, out of sight. */}
           {autolinked.length > 0 && (
             <div
-              className="gg-tile rounded-[10px] border px-4 py-3"
+              className="gg-tile rounded-[8px] border px-4 py-3"
               style={{
                 borderColor: 'var(--success-line)',
                 background: 'var(--success-wash)',
               }}
             >
-              <p className="text-[13px] font-semibold">
+              <p className="text-[13px] font-medium">
                 We added {autolinked.length}{' '}
                 {autolinked.length === 1 ? 'document' : 'documents'} from your
                 Document Centre
@@ -699,7 +968,7 @@ export default function LicenceServicesWizardPage() {
               <button
                 type="button"
                 onClick={() => setAutolinked([])}
-                className="mt-1.5 text-[12px] underline underline-offset-2"
+                className="mt-1.5 min-h-[44px] px-1 text-[12px] underline underline-offset-2"
               >
                 Got it
               </button>
@@ -718,9 +987,37 @@ export default function LicenceServicesWizardPage() {
             onDismiss={() => setSuggestions([])}
           />
 
+          {/* ⚠️ MOUNTED ON EVERY STEP, SHOWN ON ONE, AND THAT IS THE FIX. It
+              lived inside the step body, so changing step mid-upload unmounted
+              it: the upload carried on server-side while its review queue —
+              what we filed each document as, the only place a human is asked to
+              confirm it — was destroyed with the component. The Document Centre
+              lost six licences to the same shape of bug, and `filed` is
+              component state precisely because the page below owns nothing
+              about it.
+
+              ⚠️ AND IT HAS TO BE THE FIRST THING ON THE FIRST STEP. Every
+              capture card is bound to one kind, so a member has to know what
+              each scan is before they can hand it over; this is the way out of
+              that. `entryStep === 0 ? 0 : 0` would be wrong — it belongs on the
+              first step an application walks, not on whichever one somebody
+              happens to land on. */}
+          <div className={step === 0 ? 'max-w-[800px]' : 'hidden'}>
+            <BulkCapture
+              pickable={pickable}
+              onAdd={addOne}
+              onRefile={(uid, kind) =>
+                docAction(
+                  uid,
+                  () => motivationsApi.refileUpload(token, id, uid, kind),
+                  'We could not change that document type.',
+                )
+              }
+            />
+          </div>
+
           <StepBody
             stepKey={current.key}
-            first={step === 0}
             sections={current.sections}
             documents={current.documents}
             uploads={uploads}
@@ -748,13 +1045,24 @@ export default function LicenceServicesWizardPage() {
                 'We could not change that document type.',
               )
             }
-            onAdd={addOne}
             library={library}
             keeping={keeping}
             token={token}
             onPickFromLibrary={attachFromLibrary}
             sellerInvite={sellerInvite}
-            outstanding={missingRequired}
+            outstanding={outstanding}
+            outstandingLabel={labelForKey}
+            missingDocuments={missingDocs}
+            documentLabel={documentLabelFor}
+            onGoToAnswer={(key) => {
+              const at = stepForKey(key);
+              if (at !== null) goStep(at);
+            }}
+            onGoToDocuments={(kind) => {
+              const at = stepForKind(kind);
+              if (at !== null) goStep(at);
+            }}
+            onArrived={onScanArrived}
             saps271Filled={(answers[SAPS271_OPT_KEY] ?? '') === SAPS271_FILL}
             onGenerated={(st) => {
               // The pack step re-reads everything: a finished document changes
@@ -792,9 +1100,9 @@ export default function LicenceServicesWizardPage() {
       <div className="sticky bottom-0 z-10 mt-6 flex items-center gap-3.5 border-t border-[var(--border)] bg-[var(--bg-card)] px-4 py-[15px] sm:px-6">
         <button
           type="button"
-          onClick={() => setStep((n) => Math.max(0, n - 1))}
+          onClick={() => goStep(step - 1)}
           disabled={step === 0}
-          className="rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-5 py-[11px] text-[13.5px] font-medium text-[var(--text-secondary)] disabled:opacity-40"
+          className="min-h-[44px] rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-5 py-[11px] text-[13.5px] font-medium text-[var(--text-secondary)] disabled:opacity-40"
         >
           Back
         </button>
@@ -812,10 +1120,10 @@ export default function LicenceServicesWizardPage() {
             // `router.push('/motivations/${id}')` — the single clearest proof
             // the rebuilt wizard could not stand alone. The pack step now
             // finishes the document itself; the button simply stops.
-            last ? undefined : setStep((n) => Math.min(steps.length - 1, n + 1))
+            last ? undefined : goStep(step + 1)
           }
           disabled={last}
-          className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-6 py-[11px] text-[13.5px] font-semibold text-white"
+          className="min-h-[44px] rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-6 py-[11px] text-[13.5px] font-medium text-white"
         >
           {last ? 'Your pack' : 'Continue'}
         </button>
@@ -842,7 +1150,6 @@ function sellerConsentOffered(d: DocumentStatus | undefined): boolean {
 /** What each step actually asks. */
 function StepBody({
   stepKey,
-  first,
   sections,
   documents,
   motivationId,
@@ -856,6 +1163,12 @@ function StepBody({
   onPickFromLibrary,
   onVaultApplied,
   outstanding,
+  outstandingLabel,
+  missingDocuments,
+  documentLabel,
+  onGoToAnswer,
+  onGoToDocuments,
+  onArrived,
   saps271Filled,
   onGenerated,
   sellerInvite,
@@ -863,7 +1176,6 @@ function StepBody({
   onRemove,
   onReread,
   onRefile,
-  onAdd,
   onFiles,
   pack,
   fields,
@@ -874,8 +1186,6 @@ function StepBody({
   onToggleRow,
 }: {
   stepKey: string;
-  /** Is this the first step the application walks? Carries the bulk door. */
-  first: boolean;
   sections?: string[];
   documents?: { kind: string; title: string; subtitle?: string }[];
   motivationId: string;
@@ -890,6 +1200,14 @@ function StepBody({
   onPickFromLibrary: (item: LibraryItem, placeConfirmed?: boolean) => Promise<void>;
   onVaultApplied: (filled: Record<string, string>, missing: string[]) => void;
   outstanding: string[];
+  outstandingLabel: (key: string) => string;
+  /** Required documents still outstanding — they block Generate too. */
+  missingDocuments: string[];
+  documentLabel: (kind: string) => string;
+  onGoToAnswer: (key: string) => void;
+  onGoToDocuments: (kind: string) => void;
+  /** A document landed from the member's phone. */
+  onArrived: () => void;
   saps271Filled: boolean;
   onGenerated: (status: string) => void;
   sellerInvite: boolean;
@@ -897,7 +1215,6 @@ function StepBody({
   onRemove: (id: string) => void;
   onReread: (id: string) => void;
   onRefile: (id: string, kind: string) => Promise<void>;
-  onAdd: (kind: string, file: File) => Promise<AddedUpload | undefined>;
   pack: MotivationPack;
   fields: MotivationField[];
   answers: Record<string, string>;
@@ -937,6 +1254,11 @@ function StepBody({
           reference={pack.referenceNumber}
           status={pack.status}
           outstanding={outstanding}
+          outstandingLabel={outstandingLabel}
+          onGoToAnswer={onGoToAnswer}
+          missingDocuments={missingDocuments}
+          documentLabel={documentLabel}
+          onGoToDocuments={onGoToDocuments}
           saps271Filled={saps271Filled}
           onStatus={onGenerated}
         />
@@ -1002,21 +1324,9 @@ function StepBody({
 
   return (
     <div className="max-w-[800px] space-y-4">
-      {/* ⚠️ THE ONE DOOR THAT DOES NOT ASK WHICH DOCUMENT IT IS, AND IT HAS TO
-          BE THE FIRST THING ON THE FIRST STEP. Every capture card in the
-          wizard is bound to a single kind, so a member has to know what each
-          scan is before they can hand it over. This is the way out of that:
-          somebody with a folder ready gives us the folder and answers
-          questions afterwards, which is the whole point of reading documents
-          at all.
-
-          It used to sit on the section step. That step is gone, so it moved
-          here rather than being lost — `first`, not `stepKey === 'firearm'`,
-          so reordering the wizard cannot strand it behind a step nobody
-          reaches until they have already been asked for everything by hand. */}
-      {first && (
-        <BulkCapture pickable={pickable} onAdd={onAdd} onRefile={onRefile} />
-      )}
+      {/* The bulk door — "send us the whole folder" — is mounted by the PAGE
+          now, so changing step mid-upload cannot unmount it and take its review
+          queue with it. See the note at its mount site. */}
 
       {/* SURFACE TWO OF TWO. Operator, asked where the 117705 alert belongs:
           "alert appears on both." Here it sits ABOVE the capture cards, so a
@@ -1058,20 +1368,34 @@ function StepBody({
         onRemove={onRemove}
         onReread={onReread}
         onRefile={onRefile}
+        // ⚠️ ONLY REACHABLE FROM A ROW WHOSE SOURCE IS GONE. The camera for
+        // this kind is a few inches below, so the link simply takes them to it
+        // rather than opening a second door.
+        onReplace={(kind) =>
+          document
+            .getElementById(`capture-${kind}`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
       />
 
       {/* Capture first — photographing the document is what fills the page. */}
       {documents?.map((d) => (
-        <CaptureCards
-          key={d.kind}
-          motivationId={motivationId}
-          kind={d.kind}
-          title={d.title}
-          subtitle={d.subtitle}
-          busy={busyKind !== null}
-          onFiles={(files) => onFiles(d.kind, files)}
-          onArrived={() => onFiles(d.kind, [])}
-        />
+        <div key={d.kind} id={`capture-${d.kind}`}>
+          <CaptureCards
+            motivationId={motivationId}
+            kind={d.kind}
+            title={d.title}
+            subtitle={d.subtitle}
+            busy={busyKind !== null}
+            onFiles={(files) => onFiles(d.kind, files)}
+            // ⚠️ NOT `onFiles(kind, [])`. That called the upload loop with
+            // nothing to upload: it refreshed the lists and could never produce
+            // a suggestion, because they are built inside the per-file loop. A
+            // member watched their licence card arrive from their phone and was
+            // then asked to type everything printed on it. See onScanArrived.
+            onArrived={onArrived}
+          />
+        </div>
       ))}
 
       {/* ⚠️ "USE ONE I ALREADY HAVE" — the reuse half of the Document Centre,
@@ -1148,6 +1472,7 @@ function StepBody({
       ) : stepFields.length > 0 ? (
         // A document being read: every line with where its value came from.
         <ReadResult
+          stepKey={stepKey}
           section={(sections ?? [])[0] ?? ''}
           fields={stepFields}
           answers={answers}

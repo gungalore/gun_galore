@@ -5,6 +5,7 @@ import {
 } from '@prisma/client';
 import { fieldsFor } from './motivation-fields';
 import { normaliseFirearmType } from './saps-vocabulary';
+import { ENDORSEMENTS, parseEndorsements } from '../common/sa-competency';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT THE LICENCE CENTRE ALREADY KNOWS.
@@ -36,10 +37,41 @@ export interface CredentialSource {
   title: string;
   /** yyyy-mm-dd, or null. */
   expiresOn: string | null;
+  /**
+   * The date PRINTED on the document as its start, yyyy-mm-dd, or null.
+   *
+   * ⚠️ THE VAULT ALREADY HELD THIS AND NOTHING ASKED FOR IT. `competency_issued`
+   * is a required box on the 271 and the Licence Centre reads it off the
+   * certificate at upload — so a member with a photographed competency was
+   * retyping a date we were already storing.
+   *
+   * ⚠️ OPTIONAL, AND ONLY BECAUSE ABSENT AND NULL MEAN THE SAME THING HERE.
+   * A caller that does not hold an issue date and a document that has none are
+   * indistinguishable to every rule below — both offer nothing.
+   */
+  issuedOn?: string | null;
   /** The extraction map: licence_number, make, calibre, frame_serial, … */
   details: Record<string, string>;
   /** ⚠️ FALSE MEANS DO NOT OFFER IT. An unconfirmed date was never checked. */
   confirmed: boolean;
+  /**
+   * The vault stands behind this row's dates.
+   *
+   * ⚠️ CONFIRMED **OR** DATED BY US, AND THE SECOND HALF IS NEW. Until
+   * 2026-08-25 the only way a date became trustworthy was a member ticking a
+   * box, so `confirmed` was the whole test. The Document Centre now writes and
+   * ARMS dates itself — `dateSource` set, `confirmedAt` still null, reminders
+   * firing on it — which is the NORMAL state for a phone upload. Reading only
+   * `confirmed` therefore withheld every date on every ordinary member's vault
+   * while the reminder sweep was already acting on the same value. Same
+   * predicate as the sweep, and as auto-link's candidate query.
+   *
+   * ⚠️ OPTIONAL, AND IT FALLS BACK TO `confirmed`. A caller that has not been
+   * taught about armed dates is asking the old question, and the old answer is
+   * the safe one: a tick is always a settled date, so falling back can only
+   * ever withhold a value, never volunteer one nobody stands behind.
+   */
+  dateSettled?: boolean;
 }
 
 export interface CredentialOfferItem {
@@ -100,6 +132,32 @@ export function isDateKey(key: string): boolean {
   return /(_since|_issued|_expiry|_expires|_date|_on)$/.test(key);
 }
 
+/**
+ * SAPS's own endorsement wording, rendered as the registry's own labels.
+ *
+ * ⚠️ THE OUTPUT IS THE FIELD'S OWN CHOICE LIST, BY CONSTRUCTION. `competency_for`
+ * is a MULTI constrained to `ENDORSEMENT_LABELS`, and the field validator bins
+ * the WHOLE key if any comma part is not a current choice — so a raw copy of a
+ * photographed line would silently discard the answer. Going through
+ * parseEndorsements means the only strings that can leave here are labels the
+ * box already offers.
+ *
+ * ⚠️ AND '' IS THE RIGHT ANSWER FOR AN UNREADABLE LINE. offer() drops empties,
+ * so an unparseable certificate leaves the applicant to tick the boxes — which
+ * is what they would have done anyway, and is a different outcome from us
+ * writing a guess they then sign.
+ *
+ * In registry order and de-duplicated, so two readings of one certificate
+ * produce the same string.
+ */
+function endorsementLabels(covers: string): string {
+  const held = new Set(parseEndorsements(covers ?? ''));
+  if (!held.size) return '';
+  return ENDORSEMENTS.filter((e) => held.has(e.value))
+    .map((e) => e.label)
+    .join(', ');
+}
+
 function first(details: Record<string, string>, ...keys: string[]): string {
   for (const k of keys) {
     const v = (details[k] ?? '').trim();
@@ -140,7 +198,16 @@ export function credentialOffer(
   // edit all of them, which is the answer to the original worry about
   // "filling a signed application with values nobody ever looked at": they
   // are looking at it, labelled, in the wizard.
-  const confirmedById = new Map(credentials.map((c) => [c.id, c.confirmed]));
+  //
+  // ⚠️ AND THE DATE HALF OF THE GATE NOW READS `dateSettled`, NOT `confirmed`.
+  // See the field's own note: the vault arms its own dates, so a phone-uploaded
+  // licence has a date the reminder sweep is already texting people about and a
+  // `confirmedAt` that will stay null forever. Gating the form on the tick
+  // while the sweep gates on the date meant the two disagreed about the same
+  // value.
+  const settledById = new Map(
+    credentials.map((c) => [c.id, c.dateSettled ?? c.confirmed]),
+  );
 
   const keys = new Set(fieldsFor(licenceType).map((f) => f.key));
   const values: Record<string, string> = {};
@@ -156,9 +223,9 @@ export function credentialOffer(
   ) => {
     const v = (value ?? '').trim();
     if (!v || !keys.has(key)) return;
-    // See the note above: a document nobody has confirmed may fill a fact,
-    // never a date.
-    if (!confirmedById.get(credentialId) && isDateKey(key)) return;
+    // See the note above: a document whose dates nobody stands behind may fill
+    // a fact, never a date.
+    if (!settledById.get(credentialId) && isDateKey(key)) return;
     if ((answered[key] ?? '').trim()) return; // theirs wins, always
     if (values[key]) return; // first document to claim a slot keeps it
     values[key] = v;
@@ -206,6 +273,75 @@ export function credentialOffer(
       'competency_number',
       'Competency certificate number',
       number,
+      c.title,
+      c.id,
+    );
+
+    // ── WHAT THE CERTIFICATE COVERS ──────────────────────────────
+    //
+    // ⚠️ THIS USED TO BE REFUSED ON PURPOSE, AND THE REASON HAS BEEN FIXED
+    // RATHER THAN OVERRULED. The old note said the vault's `covers` is free
+    // text off a photograph ("handgun and rifle", "H, R") while
+    // `competency_for` is a MULTI constrained to the registry's endorsement
+    // labels — so mapping one onto the other would put an unmatchable value
+    // into a constrained box on a form somebody signs. Entirely correct as a
+    // description of a RAW copy.
+    //
+    // It is not a copy any more. parseEndorsements reads SAPS's own wording —
+    // including the compound "S/L-RIFLE/CARB/PIST CAL CARB/SHOTGUN" form,
+    // where one action prefix distributes across every type after it — and
+    // returns typed Endorsement values or NOTHING. Rendering those through the
+    // registry's own labels means the box can only ever receive a value it
+    // already offers, and an unreadable line yields '' and is dropped by
+    // offer(). The failure mode the note feared cannot be reached from here.
+    //
+    // ⚠️ AND WITHOUT IT THE ELIGIBILITY BLOCKER COULD NEVER FIRE. The
+    // `competency-missing-endorsement` rule in motivation-eligibility.ts reads
+    // `answers.competency_for` and says nothing when it is empty — deliberately,
+    // "an empty one means we have not read it yet". So a member whose
+    // handgun-only competency cannot cover the rifle they are applying for got
+    // silence from the one check written to catch exactly that, because the
+    // value it reads was never filled in.
+    const covers = endorsementLabels(first(c.details, 'covers'));
+    if (covers) {
+      offer(
+        'competency_for',
+        'What your competency covers',
+        covers,
+        c.title,
+        c.id,
+      );
+    }
+
+    // ── THE TWO DATES ────────────────────────────────────────────
+    //
+    // Operator, 2026-08-25: "if the certificate date is determined by the math
+    // insert it, don't wait for the user to go and confirm it." Both of these
+    // are values the vault already holds, and both were being retyped.
+    //
+    // ⚠️ THE EXPIRY IS THE VAULT'S ARITHMETIC, NOT OURS, AND IT MUST STAY THAT
+    // WAY. A SAPS 524 prints no expiry — it is derived as the latest expiry
+    // among the licences held in the categories the certificate covers, rolls
+    // forward with every renewal, and is recomputed by
+    // recomputeDerivedCompetencies whenever that changes. Deriving it a second
+    // time here would give the member two different deadlines for one
+    // certificate depending on which screen they were looking at. Read the
+    // column; never compute it.
+    //
+    // Both are date keys, so both pass through the settled gate above: a row
+    // whose dates nobody stands behind — neither the member nor our own
+    // arming — supplies neither.
+    offer(
+      'competency_issued',
+      'Competency issued on',
+      c.issuedOn ?? '',
+      c.title,
+      c.id,
+    );
+    offer(
+      'competency_expiry',
+      'Competency expires on',
+      c.expiresOn ?? '',
       c.title,
       c.id,
     );
@@ -402,6 +538,95 @@ export function credentialOffer(
       }
       if (body) seenBodies.add(body.toUpperCase());
       slot++;
+    }
+  }
+
+  // ── where they work ──────────────────────────────────────────────
+  //
+  // ⚠️ THE LETTER WAS ALREADY IN THE VAULT AND FILLED NOTHING. Four boxes on
+  // the 271 — occupation, employer, employer's address, its postal code — and
+  // the one document that answers all four had no branch here at all, so a
+  // member who had uploaded their employment confirmation still typed every
+  // one of them. `occupation` is REQUIRED, which is the part that bites.
+  //
+  // ⚠️ FACTS, NOT DATES. Nothing here is a date key, so the settled gate does
+  // not apply — and it should not: an employment letter's validity is not
+  // arithmetic on a printed date, it is whether the member still works there.
+  // That question is asked separately, on the row, by reuseCaution.
+  for (const c of credentials) {
+    if (c.kind !== 'EMPLOYMENT_CONFIRMATION') continue;
+    offer(
+      'occupation',
+      'Occupation',
+      first(c.details, 'occupation', 'job_title', 'position'),
+      c.title,
+      c.id,
+    );
+    offer(
+      'employer_name',
+      'Employer',
+      first(c.details, 'employer_name', 'employer'),
+      c.title,
+      c.id,
+    );
+    offer(
+      'employer_address',
+      "Employer's address",
+      first(c.details, 'employer_address'),
+      c.title,
+      c.id,
+    );
+    offer(
+      'employer_postal_code',
+      "Postal code for the employer's address",
+      first(c.details, 'employer_postal_code', 'postal_code'),
+      c.title,
+      c.id,
+    );
+  }
+
+  // ── the licence being renewed ────────────────────────────────────
+  //
+  // ⚠️ ONLY ON A RENEWAL, AND ONLY WHEN THERE IS EXACTLY ONE. A section 24
+  // started from the Licence Centre arrives with a seed naming the licence; one
+  // started BY HAND — which is the normal route for somebody who came straight
+  // to the Motivation Centre — arrives with nothing, and both of these are
+  // REQUIRED fields. So the vault answers them.
+  //
+  // Several licences is a question, not a coin toss: `existing_licence_number`
+  // and `licence_expiry` are the two facts that say WHICH firearm this whole
+  // application is about, and picking the wrong one produces a renewal for a
+  // gun the applicant was not renewing. Same rule as auto-link's
+  // several-candidates skip, and for the same reason.
+  //
+  // Both keys are dates or near-dates in the settled sense — `licence_expiry`
+  // is one — so the gate above still applies to it, and it comes off the
+  // vault's own column rather than the details blob, which does not carry it.
+  if (licenceType === 'S24_RENEWAL') {
+    const licences = credentials.filter((c) => LICENCE_KINDS.has(c.kind));
+    if (licences.length === 1) {
+      const c = licences[0];
+      offer(
+        'existing_licence_number',
+        'The licence being renewed',
+        first(c.details, 'licence_number'),
+        c.title,
+        c.id,
+      );
+      offer(
+        'licence_expiry',
+        'Expiry date',
+        c.expiresOn ?? '',
+        c.title,
+        c.id,
+      );
+    } else if (licences.length > 1) {
+      for (const c of licences) {
+        skipped.push({
+          title: c.title,
+          why: 'you hold more than one licence, so only you can say which one this renewal is for',
+        });
+      }
     }
   }
 

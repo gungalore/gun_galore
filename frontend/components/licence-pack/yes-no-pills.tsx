@@ -66,13 +66,20 @@ export default function YesNoPills({
               type="button"
               aria-pressed={on}
               onClick={() => onChange(on ? '' : opt)}
-              className="rounded-[var(--r-sm)] px-[15px] py-1.5 text-[12.5px]"
+              // ⚠️ 44px, ON THE SIX QUESTIONS SIGNED UNDER s120(9)(f). A pill
+              // 12.5px tall with 6px of padding is a 27px target on the one
+              // screen where a mis-tap answers a question about somebody's
+              // criminal record.
+              className="min-h-[44px] rounded-[var(--r-sm)] px-[15px] py-1.5 text-[12.5px]"
               style={
                 on
                   ? {
                       border: '1px solid var(--red)',
-                      background: 'rgba(200,16,46,.05)',
-                      fontWeight: 600,
+                      // ⚠️ THE TOKEN, NOT A HAND-MIXED rgba. A literal here is
+                      // a fourth definition of the brand red that no theme
+                      // change can reach — see globals.css beside --red-wash.
+                      background: 'var(--red-wash)',
+                      fontWeight: 500,
                       color: 'var(--text-primary)',
                     }
                   : {

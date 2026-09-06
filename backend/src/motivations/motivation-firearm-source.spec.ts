@@ -96,11 +96,13 @@ describe('the document tiers are unchanged by the wording', () => {
 // describe an offence.
 // ────────────────────────────────────────────────────────────────────
 describe('the custody fact handed to the writer', () => {
-  // deriveFacts is private; this drives it the way the pack build does.
+  // deriveFacts is private, and it moved to MotivationGenerationService when
+  // motivations.service.ts was split. This drives it the way the pack build does.
   const derive = (source: string): Record<string, string> => {
     const svc = Object.create(
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('./motivations.service').MotivationsService.prototype,
+      require('./motivation-generation.service').MotivationGenerationService
+        .prototype,
     ) as { deriveFacts: (a: Record<string, string>, d?: Date) => Record<string, string> };
     return svc.deriveFacts({ firearm_source: source }, new Date('2026-08-24T00:00:00Z'));
   };
@@ -260,7 +262,8 @@ describe('inheriting a firearm', () => {
     // offence on a document they sign.
     const svc = Object.create(
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      require('./motivations.service').MotivationsService.prototype,
+      require('./motivation-generation.service').MotivationGenerationService
+        .prototype,
     ) as { deriveFacts: (a: Record<string, string>, d?: Date) => Record<string, string> };
     const d = svc.deriveFacts(
       { firearm_source: SOURCE_ESTATE },

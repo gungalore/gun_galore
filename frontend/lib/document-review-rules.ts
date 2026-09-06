@@ -188,6 +188,87 @@ export function refileNeedsPanel(d: ReviewItem, to: CredentialKind): boolean {
  * would eventually disagree; one function keyed on `id` covers both and is
  * pinned by the same tests.
  */
+// ────────────────────────────────────────────────────────────────────
+// WHAT THE VAULT STILL OWES THE MEMBER, per stored row.
+//
+// ⚠️ THE PAGE KEYED ALL OF THIS ON THE DATE, AND THE OTHER HALF OF THE GUESS
+// WAS DROPPED ON THE FLOOR. Every row carries two guesses, not one: what the
+// document IS, and when it runs out. `namedConfident` is stored precisely so
+// "we filed this and were not sure" survives a refresh — and it was read in
+// the review queue and nowhere else. So a document we filed with low
+// confidence, but whose expiry we then read cleanly off the page, counted as
+// settled everywhere: off the banner, out of the hand-off queue, and with
+// nothing on its row or its card saying we had guessed at all.
+//
+// That is the SAFE_PHOTOGRAPHS failure again by a different door. A firearm
+// licence we were unsure about, filed as something with no renewal to chase,
+// is a licence nothing will ever remind on — and the only signal we hold that
+// it might be wrong is the one nobody was reading.
+// ────────────────────────────────────────────────────────────────────
+
+/** The parts of a stored CredentialRow these decisions actually read. */
+export interface FiledRow {
+  /** WE named it, so there is a guess on it worth checking. */
+  autoFiled: boolean;
+  /** Only meaningful while autoFiled. False reads as "not sure", never "sure". */
+  namedConfident: boolean;
+  /** A human has looked at this row and said it is right. */
+  confirmed: boolean;
+  /** Non-null means WE put the date there and nobody has checked it. */
+  dateSource: 'read' | 'derived' | null;
+  neverExpires: boolean;
+}
+
+/**
+ * We chose the box and we were not sure.
+ *
+ * Says nothing about dates. A row can be perfectly dated and still be filed
+ * under the wrong kind — which is the case the page had no name for.
+ */
+export function filedUnsure(
+  r: Pick<FiledRow, 'autoFiled' | 'namedConfident'>,
+): boolean {
+  return r.autoFiled && !r.namedConfident;
+}
+
+/**
+ * Nobody has settled this row's expiry — not the member, not us.
+ *
+ * ⚠️ A DATE WE FILLED IN IS SETTLED. Operator, 2026-08-25: "insert it. No
+ * further user interaction required." The reminder is armed off it, so
+ * counting it as outstanding would put every automatically dated licence back
+ * on the to-do list it was just taken off.
+ */
+export function needsDateCheck(r: FiledRow): boolean {
+  return !r.confirmed && r.dateSource === null && !r.neverExpires;
+}
+
+/**
+ * Is the FILING — the box, not the date — still worth the member's eye?
+ *
+ * Two rows qualify: one nobody has dated and that has no date to give (so the
+ * only thing left to check about it is the type), and one we filed without
+ * being sure of the type, whatever its dates say.
+ *
+ * ⚠️ MUTUALLY EXCLUSIVE WITH needsDateCheck, so the banner cannot count one
+ * document twice and call it two errands.
+ */
+export function needsFilingCheck(r: FiledRow): boolean {
+  if (r.confirmed) return false;
+  if (needsDateCheck(r)) return false;
+  return filedUnsure(r) || r.dateSource === null;
+}
+
+/**
+ * Should this row go back into the review queue after a phone hand-off?
+ *
+ * The union of the two above: anything still carrying a guess of ours that no
+ * human has agreed with.
+ */
+export function needsReview(r: FiledRow): boolean {
+  return needsDateCheck(r) || needsFilingCheck(r);
+}
+
 export function mergeReviewQueue<T extends { id: string }>(
   waiting: readonly T[],
   added: readonly T[],

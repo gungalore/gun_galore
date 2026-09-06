@@ -61,11 +61,15 @@ describe('what it attaches', () => {
     );
   });
 
-  it('⚠️ NEVER attaches safe photographs, however valid they are', () => {
+  it('⚠️ NEVER attaches safe photographs unasked — it asks instead', () => {
     // They look like a person-document, and addFromLibrary already demands an
     // explicit "these are the safe at the address on THIS application" for
     // them: somebody who has moved house and reuses last year's shots ships a
     // pack showing the wrong premises. Only they can answer that.
+    //
+    // M6 — the refusal is now a QUESTION, and the reason says so. It used to
+    // come back as 'not-a-person-document', which is both untrue and a dead
+    // end: it told the member there was nothing they could do about it.
     const out = decideAutolink(
       [cand(MotivationUploadKind.SAFE_PHOTOGRAPHS)],
       [MotivationUploadKind.SAFE_PHOTOGRAPHS],
@@ -73,7 +77,109 @@ describe('what it attaches', () => {
       TODAY,
     );
     expect(out.attach).toEqual([]);
+    expect(out.skipped[0].why).toBe('needs-place-confirm');
+    expect(out.needsPlaceConfirm).toBe(true);
+  });
+
+  it('M6 — attaches the safe photographs once the member confirms the place', () => {
+    const out = decideAutolink(
+      [cand(MotivationUploadKind.SAFE_PHOTOGRAPHS)],
+      [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+      [],
+      TODAY,
+      { placeConfirmed: true },
+    );
+    expect(out.attach.map((a) => a.kind)).toEqual([
+      MotivationUploadKind.SAFE_PHOTOGRAPHS,
+    ]);
+    // Nothing left to ask: the question has been answered.
+    expect(out.needsPlaceConfirm).toBe(false);
+  });
+
+  it('M6 — confirming the place does not open the door to anything else', () => {
+    // The tick answers ONE question, about ONE kind. An association endorsement
+    // still names the wrong firearm whatever the member says about their safe.
+    const out = decideAutolink(
+      [cand(MotivationUploadKind.ASSOCIATION_ENDORSEMENT)],
+      [MotivationUploadKind.ASSOCIATION_ENDORSEMENT],
+      [],
+      TODAY,
+      { placeConfirmed: true },
+    );
+    expect(out.attach).toEqual([]);
     expect(out.skipped[0].why).toBe('not-a-person-document');
+  });
+
+  // ── H10 — the competency has to cover the firearm ────────────────
+  //
+  // Grouping by KIND alone attached a handgun-only competency to a rifle
+  // application. A licence application in a firearm type the competency does
+  // not cover is refused before it is considered, so the pack we assembled is
+  // the thing that says so.
+
+  it('H10 — skips a competency whose endorsements do not cover the firearm', () => {
+    const out = decideAutolink(
+      [
+        cand(MotivationUploadKind.COMPETENCY_CERTIFICATE, {
+          covers: 'HANDGUN',
+        }),
+      ],
+      [MotivationUploadKind.COMPETENCY_CERTIFICATE],
+      [],
+      TODAY,
+      { needed: 'rifle-mo' },
+    );
+    expect(out.attach).toEqual([]);
+    expect(out.skipped[0].why).toBe('endorsement-mismatch');
+  });
+
+  it('H10 — picks the ONE certificate that covers it, out of two', () => {
+    // ⚠️ AND THIS IS WHY THE TEST RUNS BEFORE THE COUNT. Two competency
+    // candidates would otherwise trip the several-candidates refusal — an
+    // ambiguity that does not exist, because only one of them can lawfully back
+    // this application.
+    const out = decideAutolink(
+      [
+        cand(MotivationUploadKind.COMPETENCY_CERTIFICATE, {
+          sourceId: 'handgun',
+          covers: 'HANDGUN',
+        }),
+        cand(MotivationUploadKind.COMPETENCY_CERTIFICATE, {
+          sourceId: 'rifle',
+          covers: 'N/S/L RIFLE/CARBINE',
+        }),
+      ],
+      [MotivationUploadKind.COMPETENCY_CERTIFICATE],
+      [],
+      TODAY,
+      { needed: 'rifle-mo' },
+    );
+    expect(out.attach.map((a) => a.sourceId)).toEqual(['rifle']);
+  });
+
+  it('H10 — an UNREAD covers line is not a refusal', () => {
+    // Three different things are unknown here — the certificate was never read,
+    // the wording did not parse, or the applicant has not described the firearm
+    // — and in none of them do we KNOW the certificate is wrong. Refusing on a
+    // fact we do not hold would withhold the member's own document from their
+    // own application on a guess.
+    const unread = decideAutolink(
+      [cand(MotivationUploadKind.COMPETENCY_CERTIFICATE, { covers: '' })],
+      [MotivationUploadKind.COMPETENCY_CERTIFICATE],
+      [],
+      TODAY,
+      { needed: 'rifle-mo' },
+    );
+    expect(unread.attach).toHaveLength(1);
+
+    const noFirearmYet = decideAutolink(
+      [cand(MotivationUploadKind.COMPETENCY_CERTIFICATE, { covers: 'HANDGUN' })],
+      [MotivationUploadKind.COMPETENCY_CERTIFICATE],
+      [],
+      TODAY,
+      { needed: null },
+    );
+    expect(noFirearmYet.attach).toHaveLength(1);
   });
 
   it('⚠️ NEVER attaches a document that names a firearm', () => {

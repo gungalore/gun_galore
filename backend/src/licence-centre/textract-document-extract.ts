@@ -33,6 +33,7 @@
 
 import type { CredentialKind } from '@prisma/client';
 
+import { sectionFromText } from '../common/sa-competency';
 import { readIdNumber } from '../common/sa-id-number';
 
 /** Matches the Claude extractor's contract exactly. Do not diverge. */
@@ -184,8 +185,32 @@ export const FIELD_ALIASES: FieldAlias[] = [
 
 /** `2022-11-29 -- 2032-11-28` on a licence: valid from, valid to. */
 const VALIDITY_RANGE = /(\d{4}-\d{2}-\d{2})\s*-{1,2}\s*(\d{4}-\d{2}-\d{2})/;
-/** `SECTION 15` / `SECTION 16`. */
-const SECTION = /\bSECTION\s+(\d{1,2})\b/i;
+/**
+ * The licence section, however the card prints it.
+ *
+ * 🚨 THIS REQUIRED THE WHOLE WORD "SECTION" AND A PLAIN NUMBER, AND THAT IS
+ * FOUR MISSES. `\bSECTION\s+(\d{1,2})\b` never matched "SECTION 16A" (the \b
+ * after the digits fails against the A, so the capture died), "S16", "SEC 16"
+ * or "16(1)". A missed section is not a missing field — it is a licence that
+ * can never be auto-dated, because mayArmReadExpiry cross-checks the read
+ * expiry against the section 27 term and refuses outright when there is no
+ * section to check against. The failure is silent at every step: the card
+ * lists fine, the date sits in the box, and no reminder is ever armed.
+ *
+ * ⚠️ AND THE CAPTURE IS NOW THE WHOLE TOKEN, not the digits, because
+ * sectionFromText is what turns it into 'S16A' — the A is the only decoration
+ * that changes anything, and dropping it files a ten-year professional-hunting
+ * licence as an ordinary section 16.
+ *
+ * ⚠️ THE BARE `16(1)` FORM IS LAST AND IS THE RISKY ONE: a two-digit number
+ * followed by a bracketed number is a subsection reference and very little
+ * else, but it is the only alternative here with no anchoring word. The
+ * alternation is ordered so the labelled forms win, and sectionFromText
+ * returns null for any number that is not a section it knows — including 20,
+ * whose term the number alone does not determine.
+ */
+const SECTION =
+  /\b(SECTION\s*\d{1,2}\s*A?|SEC\.?\s*\d{1,2}\s*A?|S\.?\s?\d{1,2}\s*A?|\d{1,2}\s?\(\d{1,2}\))/i;
 /** A 13-digit SA ID, however Textract spaced it. */
 const SA_ID = /\b(\d[\d\s]{11,17}\d)\b/;
 /**
@@ -237,14 +262,19 @@ export const REQUIRED_FOR_AUTOFILL: Partial<Record<CredentialKind, string[]>> = 
 /**
  * Kinds where a date on the page is never an expiry.
  *
- * ⚠️ MIRRORS NO_EXPIRY_ON_THE_PAGE IN THE CLAUDE EXTRACTOR, and must stay in
- * step with it. A competency prints an issue date and no expiry — its expiry
- * is DERIVED from the licences it covers — and an ID document and a
- * proficiency do not run out at all. A confirmed expiry arms the reminder
- * sweep, so inventing one here starts SMSing members about a document that
- * cannot lapse.
+ * ⚠️ THIS WAS TWO SETS — one here, one in the Claude extractor — held in step
+ * by a comment saying they must be. Two readers disagreeing about which
+ * documents can expire is exactly the divergence a comment cannot prevent, and
+ * the cost of the divergence is a reminder about a document that cannot lapse.
+ * It is now declared here, next to the reader that has the tighter reason to
+ * own it, and imported by the other.
+ *
+ * A competency prints an issue date and no expiry (§5.2) — its expiry is
+ * DERIVED from the licences it covers — and an ID document and a proficiency
+ * do not run out at all. A settled expiry arms the reminder sweep, so inventing
+ * one here starts SMSing members about a deadline that does not exist.
  */
-const NO_EXPIRY_ON_THE_PAGE: ReadonlySet<string> = new Set([
+export const NO_EXPIRY_ON_THE_PAGE: ReadonlySet<string> = new Set([
   'COMPETENCY_CERTIFICATE',
   'PROFICIENCY',
   'IDENTITY_DOCUMENT',
@@ -317,9 +347,16 @@ export function extractDocument(
   // ── Lines, for what carries no label ────────────────────────────────
   const text = ls.join(' | ');
 
+  // ⚠️ NORMALISED HERE, NOT LEFT AS THE DIGITS. This stored a bare "15", which
+  // every reader then had to re-parse — and the stored value is also what the
+  // member sees on the card and what travels onto a motivation. sectionFromText
+  // is the one place that knows 'S16' from 'S16A' and that section 20 does not
+  // determine its own term; anything it declines is left absent, which is the
+  // honest answer for a number that is not a licensing section at all.
   const section = text.match(SECTION);
   if (section && kind === 'FIREARM_LICENCE') {
-    put('section', section[1], 99);
+    const parsed = sectionFromText(section[1]);
+    if (parsed) put('section', parsed, 99);
   }
 
   // WARNING: AN ID NUMBER IS THIRTEEN DIGITS, HOWEVER IT WAS PRINTED. A

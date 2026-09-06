@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import SECTIONS from './__fixtures__/registry-sections.json';
 import { WIZARD_STEPS } from '@/components/licence-pack/wizard-rail';
+import { STEP_PLAN } from '@/lib/motivation-step-plan';
 import {
   duplicateClaims,
   emptyClaims,
   homelessSections,
+  type StepLike,
 } from './wizard-coverage';
 
 // ────────────────────────────────────────────────────────────────────
@@ -37,6 +39,21 @@ import {
 
 const TYPES = Object.keys(SECTIONS) as (keyof typeof SECTIONS)[];
 
+// ────────────────────────────────────────────────────────────────────
+// ⚠️ BOTH STEP TABLES, BECAUSE THERE ARE TWO WIZARDS AND ONLY ONE WAS COVERED.
+//
+// This suite imported the PACK screen's WIZARD_STEPS and nothing else — and
+// that screen is behind a flag that is OFF. The wizard members actually walk
+// today, /motivations/[id], has its own table and was guarded by nothing: a
+// registry section added tomorrow could be homeless there and every assertion
+// below would still pass. Its constant moved to lib/motivation-step-plan.ts so
+// it could be imported here; that is the only reason it moved.
+// ────────────────────────────────────────────────────────────────────
+const TABLES: { name: string; steps: StepLike[] }[] = [
+  { name: 'the pack wizard (/licence-services/[id])', steps: WIZARD_STEPS },
+  { name: 'the live wizard (/motivations/[id])', steps: STEP_PLAN },
+];
+
 /** The registry serves fields; the guard only needs their section names. */
 const fieldsOf = (t: keyof typeof SECTIONS) =>
   SECTIONS[t].map((section, i) => ({
@@ -53,30 +70,35 @@ describe('every registry section has a wizard step', () => {
     expect(TYPES).toHaveLength(5);
   });
 
-  it.each(TYPES)('%s — no section is homeless', (type) => {
-    const homeless = homelessSections(fieldsOf(type), WIZARD_STEPS);
-    // Named, not counted: the failure message has to say WHICH question
-    // nobody can answer.
-    expect({ type, homeless }).toEqual({ type, homeless: [] });
-  });
+  for (const table of TABLES) {
+    it.each(TYPES)(`${table.name} · %s — no section is homeless`, (type) => {
+      const homeless = homelessSections(fieldsOf(type), table.steps);
+      // Named, not counted: the failure message has to say WHICH question
+      // nobody can answer.
+      expect({ type, homeless }).toEqual({ type, homeless: [] });
+    });
 
-  it('claims no section the registry never serves', () => {
-    // The gentler failure — a heading with nothing under it — but usually a
-    // typo in a section name, which the other direction cannot catch.
-    const everySection = TYPES.flatMap((t) => fieldsOf(t));
-    expect(emptyClaims(everySection, WIZARD_STEPS)).toEqual([]);
-  });
+    it(`${table.name} — claims no section the registry never serves`, () => {
+      // The gentler failure — a heading with nothing under it — but usually a
+      // typo in a section name, which the other direction cannot catch.
+      const everySection = TYPES.flatMap((t) => fieldsOf(t));
+      expect(emptyClaims(everySection, table.steps)).toEqual([]);
+    });
 
-  it('gives no section two homes', () => {
-    // Two steps asking the same questions is the same answer typed twice and
-    // a member wondering which one counts.
-    expect(duplicateClaims(WIZARD_STEPS)).toEqual([]);
-  });
+    it(`${table.name} — gives no section two homes`, () => {
+      // Two steps asking the same questions is the same answer typed twice and
+      // a member wondering which one counts.
+      expect(duplicateClaims(table.steps)).toEqual([]);
+    });
+  }
 
-  it('⚠️ keeps a home for the three paths the artboard never draws', () => {
+  it.each(TABLES.map((t) => t.name))(
+    '%s — ⚠️ keeps a home for the three paths the artboard never draws',
+    (name) => {
     // The artboard is one section 16 sport shooter. These three are the whole
     // of the S13, S15/S16 and S24 arguments, and each was homeless.
-    const claimed = new Set(WIZARD_STEPS.flatMap((s) => s.sections ?? []));
+    const table = TABLES.find((t) => t.name === name)!;
+    const claimed = new Set(table.steps.flatMap((s) => s.sections ?? []));
     for (const section of [
       'Your circumstances',
       'Experience',
@@ -88,7 +110,8 @@ describe('every registry section has a wizard step', () => {
         claimed: true,
       });
     }
-  });
+  },
+  );
 });
 
 describe('the guard itself', () => {

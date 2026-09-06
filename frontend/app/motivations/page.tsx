@@ -128,7 +128,7 @@ export default function MotivationsPage() {
     return (
       <main className="mx-auto max-w-[var(--content-max)] px-4 py-10">
         <Breadcrumbs trail={MOTIVATIONS_TRAIL} className="mb-6" />
-        <h1 className="text-2xl font-semibold">Motivation Centre</h1>
+        <h1 className="text-2xl font-medium">Motivation Centre</h1>
         <p className="mt-3 text-[var(--text-secondary)]">
           We are still putting this together. It will appear here when it opens.
         </p>
@@ -147,7 +147,7 @@ export default function MotivationsPage() {
         />
       )}
       <Breadcrumbs trail={MOTIVATIONS_TRAIL} className="mb-6" />
-      <h1 className="text-2xl font-semibold">Motivation Centre</h1>
+      <h1 className="text-2xl font-medium">Motivation Centre</h1>
       <p className="mt-2 text-[var(--text-secondary)]">
         We ask you about your circumstances, then prepare a formal motivation
         you sign and hand in with your application — along with a checklist of
@@ -164,7 +164,7 @@ export default function MotivationsPage() {
           <button
             type="button"
             onClick={() => router.push('/licence-services/new')}
-            className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-5 py-[11px] text-[14px] font-semibold text-white"
+            className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-5 py-[11px] text-[14px] font-medium text-white"
           >
             Start a new application
           </button>

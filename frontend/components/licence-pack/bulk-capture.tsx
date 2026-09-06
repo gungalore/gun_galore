@@ -98,7 +98,7 @@ export default function BulkCapture({
   return (
     <div className="max-w-[560px]">
       <label
-        className="gg-tile gg-tile-lift flex cursor-pointer items-center gap-3 rounded-[10px] border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3"
+        className="gg-tile gg-tile-lift flex cursor-pointer items-center gap-3 rounded-[8px] border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3"
         style={busy ? { opacity: 0.6, cursor: 'wait' } : undefined}
       >
         <input
@@ -117,7 +117,7 @@ export default function BulkCapture({
           📎
         </span>
         <span className="min-w-0">
-          <span className="block text-[13.5px] font-semibold">
+          <span className="block text-[13.5px] font-medium">
             Send everything at once
           </span>
           <span className="block text-[12.5px] leading-[1.5] text-[var(--text-secondary)]">
@@ -129,9 +129,14 @@ export default function BulkCapture({
         </span>
       </label>
 
+      {/* ⚠️ `done` IS HOW MANY HAVE FINISHED, so `done + 1` is the one in
+          flight — and after the last file finished it counted one past the
+          end: "Uploading 4 of 3". The honest reading is the one being worked
+          on, capped at the total. */}
       {progress && (
         <p className="mt-2 text-[12.5px]" aria-live="polite">
-          Uploading {progress.done + 1} of {progress.total}…
+          Uploading {Math.min(progress.done + 1, progress.total)} of{' '}
+          {progress.total}…
         </p>
       )}
 
@@ -141,13 +146,13 @@ export default function BulkCapture({
           does not actually meet. Correcting it is one dropdown. */}
       {filed.length > 0 && (
         <div
-          className="mt-3 rounded-[10px] border px-3.5 py-3"
+          className="mt-3 rounded-[8px] border px-3.5 py-3"
           style={{
             borderColor: 'var(--gold-line)',
             background: 'var(--gold-wash)',
           }}
         >
-          <p className="text-[13px] font-semibold">
+          <p className="text-[13px] font-medium">
             Here is what we made of them — change any that are wrong
           </p>
           <ul className="mt-2 space-y-2">
@@ -170,7 +175,7 @@ export default function BulkCapture({
                 <select
                   value={f.kind}
                   aria-label={`Document type for ${f.name}`}
-                  className="rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-2 py-1 text-[13px]"
+                  className="min-h-[44px] rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-2 py-1 text-[13px]"
                   onChange={async (e) => {
                     const next = e.target.value;
                     setFiled((cur) =>
@@ -193,7 +198,7 @@ export default function BulkCapture({
           <button
             type="button"
             onClick={() => setFiled([])}
-            className="mt-2 text-[12px] underline underline-offset-2"
+            className="mt-2 min-h-[44px] px-1 text-[12px] underline underline-offset-2"
           >
             These are right
           </button>

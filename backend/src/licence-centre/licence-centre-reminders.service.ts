@@ -1,8 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { CredentialKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
+import { decryptJson } from '../common/blob-crypto';
+import { competencyRenewalAdvice } from './credential-derive-recompute';
 import {
   REMINDER_STAGES,
   ReminderStage,
@@ -142,6 +145,12 @@ export class LicenceCentreRemindersService {
         id: true,
         title: true,
         expiresOn: true,
+        // ⚠️ READ FOR THE 517(g) ADVICE. See competencyRenewalNote — the
+        // category is what decides whether this is the last licence holding a
+        // competency up, and `kind` is what stops us offering licence advice
+        // about a photograph of a safe.
+        kind: true,
+        firearmCategory: true,
         user: {
           select: {
             id: true,
@@ -207,6 +216,12 @@ export class LicenceCentreRemindersService {
       // now gated on the member's own preference, which is what the settings
       // screen has always implied it was.
 
+      // ⚠️ COMPUTED AFTER THE CLAIM, NEVER BEFORE IT. Two queries per reminder
+      // is cheap; two queries per CANDIDATE ROW is two per member per night
+      // whether or not anything is sent, and the claim is what makes this a
+      // real send.
+      const competencyNote = await this.competencyRenewalNote(c);
+
       await this.notifications
         .credentialExpiring({
           userId: c.user.id,
@@ -235,6 +250,8 @@ export class LicenceCentreRemindersService {
             c.user.notifySmsEnabled &&
             Boolean(c.user.phone),
           emailEnabled: c.user.notifyEmailEnabled !== false,
+          // Null on almost every reminder. See competencyRenewalNote.
+          competencyNote,
         })
         // One bad recipient must not reject the loop — the claim is already
         // stamped, so this is a message lost rather than a sweep lost.
@@ -245,6 +262,45 @@ export class LicenceCentreRemindersService {
         );
     }
     return sent;
+  }
+
+  /**
+   * "Renew the competency with it, on a SAPS 517(g)" — or nothing at all.
+   *
+   * ⚠️ THE PRODUCT HAD NO 517(g) ADVICE ANYWHERE, and this is the moment it is
+   * worth most: the member is being told their licence expires, and for some of
+   * them a second form is due on the same visit or the competency behind the
+   * licence lapses. See the block comment in licence-renewal.ts for the law.
+   *
+   * ⚠️ THE WORK IS SHARED WITH THE RENEWAL ONE-TAP, deliberately — see
+   * competencyRenewalAdvice. Two independent copies of this would eventually
+   * tell a member two different things about the same form in the same week.
+   * All this method adds is the key: the sweep holds no decryption helper of
+   * its own, and the blob is where the endorsement line lives.
+   */
+  private competencyRenewalNote(c: {
+    id: string;
+    kind: CredentialKind;
+    firearmCategory: string | null;
+    expiresOn: Date | null;
+    user: { id: string };
+  }): Promise<string | null> {
+    return competencyRenewalAdvice(
+      this.prisma,
+      c.user.id,
+      c,
+      (blob) => {
+        // A row whose blob will not open is skipped, never fatal: the member
+        // still gets the ordinary reminder, which is the part they are owed.
+        if (!blob) return '';
+        try {
+          return decryptJson<Record<string, string>>(blob).covers ?? '';
+        } catch {
+          return '';
+        }
+      },
+      this.logger,
+    );
   }
 
   /**

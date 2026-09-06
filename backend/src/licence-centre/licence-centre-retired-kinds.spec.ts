@@ -79,6 +79,12 @@ function build() {
     classify: jest.fn(async () => null),
     read: jest.fn(async () => null),
   };
+  // Filing or confirming a document re-arms auto-attach on the member's open
+  // drafts — see rearmAutolink. It is fail-open, so this suite would pass with
+  // `{}` here and never touch the call; the double is supplied so these tests
+  // run the wired path rather than the swallow.
+  const rearm = jest.fn(async () => 0);
+  const motivations = { rearmAutolinkFor: rearm };
   const svc = new LicenceCentreService(
     prisma as never,
     files as never,
@@ -86,9 +92,9 @@ function build() {
     notifications as never,
     quota as never,
     extract as never,
-    {} as never,
+    motivations as never,
   );
-  return { svc, create, update, extract };
+  return { svc, create, update, extract, rearm };
 }
 
 const file = { buffer: Buffer.from('bytes'), mimetype: 'image/jpeg' };

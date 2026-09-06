@@ -1,13 +1,26 @@
 'use client';
 
 import { useAuth } from '@clerk/nextjs';
-import DateField from '@/components/date-field';
 import FilePickerButton from '@/components/file-picker-button';
 import ScanButton from '@/components/scan/scan-button';
 import LibraryPicker from '@/components/library-picker';
 import VaultConsentModal from '@/components/vault-consent';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
-import { clearDraft, readDraft } from '@/lib/motivation-draft';
+import {
+  clearDraft,
+  readDraft,
+  readReview,
+  writeReview,
+} from '@/lib/motivation-draft';
+import { openBlobTab } from '@/lib/open-blob-tab';
+import { VAULT_PREFIXES } from '@/app/licence-services/[id]/vault-prefixes';
+import { STEP_PLAN, vaultStepKey } from '@/lib/motivation-step-plan';
+import Saps271Meter from '@/components/licence-pack/saps271-meter';
+import SuggestedDocuments from '@/components/motivation/suggested-documents';
+import UploadPanel, {
+  UploadRowNotes,
+  usableUpload,
+} from '@/components/motivation/upload-panel';
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
 import FieldInput from '@/components/motivation-field-input';
 import ProficiencyAlert from '@/components/licence-pack/proficiency-alert';
@@ -20,7 +33,6 @@ import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
 import MotivationTemplatePicker from '@/components/motivation-template-picker';
 import MotivationCoverPhoto from '@/components/motivation-cover-photo';
 import MotivationSellerConsent from '@/components/motivation-seller-consent';
-import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Fragment,
@@ -48,13 +60,11 @@ import {
   MotivationDetail,
   MotivationField,
   DocumentStatus,
+  MotivationPack,
   ProficiencyCover,
   LibraryItem,
-  LicenceCentreOffer,
   PickableKind,
-  ProfileOffer,
   Suggestion,
-  AddedUpload,
   UploadRow,
   SAPS271_FILL,
   SAPS271_OPT_KEY,
@@ -66,7 +76,6 @@ import {
   motivationsApi,
   visibleFields,
 } from '@/lib/motivations-api';
-import { mergeReviewQueue } from '@/lib/document-review-rules';
 import { useScrollToTop } from '@/components/shell/shell-scroll';
 // Not motivationsApi's `request()` — lib/motivations-api.ts is a different
 // file's territory in this same review, and its MotivationDetail does not
@@ -128,63 +137,10 @@ import { safeJson } from '@/lib/safe-json';
 // registry section can never silently vanish from the form.
 // ────────────────────────────────────────────────────────────────────
 
-interface StepDef {
-  key: string;
-  /** On the rail. Short enough to sit under a 28px circle. */
-  label: string;
-  /** The heading inside the step body. */
-  title: string;
-  blurb?: string;
-  /** Registry section names, in the order they should appear. */
-  sections: string[];
-}
-
-const STEP_PLAN: StepDef[] = [
-  {
-    key: 'documents',
-    label: 'Documents',
-    title: 'Start with your documents',
-    blurb:
-      'This is the step that saves you the most typing — we read what we can off whatever you upload and fill the rest of the form in for you.',
-    sections: ['The SAPS 271 form'],
-  },
-  {
-    key: 'you',
-    label: 'You & firearm',
-    title: 'You and the firearm',
-    // ⚠️ ORDER IS THE FEATURE. Operator, 2026-08-28: capture the firearm
-    // "before the competency, that way the system can see which firearm it
-    // is and link the correct competency and proficiency certificates".
-    // Competency was part of 'About you' and therefore came first; it has
-    // its own section now purely so it can sit on the far side of the
-    // firearm without dragging name, ID and address along with it.
-    sections: ['About you', 'The firearm', 'Your competency'],
-  },
-  {
-    key: 'owned',
-    label: 'What you own',
-    title: 'Firearms you already own',
-    sections: ['Firearms you already own'],
-  },
-  {
-    key: 'record',
-    label: 'Storage & record',
-    title: 'Storage and your record',
-    sections: ['Storage and safety', 'History'],
-  },
-  {
-    key: 'case',
-    label: 'Your case',
-    title: 'Your case',
-    sections: [
-      'Dedicated status',
-      'Your circumstances',
-      'Experience',
-      'The existing licence',
-    ],
-  },
-  { key: 'prepare', label: 'Prepare', title: 'Prepare your pack', sections: [] },
-];
+// ⚠️ IMPORTED, NOT DECLARED — see lib/motivation-step-plan.ts. It sat here as
+// a module-private constant, so the three coverage suites that guard "every
+// registry section has a step" could only reach the PACK screen's table and
+// the one members actually walk was covered by nothing.
 
 /**
  * Where an unrecognised section goes.
@@ -267,6 +223,10 @@ function PackChecklistGate({
  * between: every row, the safe included, is now simply its own kind. Kept as a
  * function because the call sites read better for it.
  */
+// `vaultStepKey` moved to lib/motivation-step-plan.ts beside the step table it
+// belongs to, so vault-prefix-coverage.spec.ts can hold this wizard to the same
+// promise it already held the pack screen to.
+
 function uploadKindFor(row: ChecklistRow | null): string {
   return row?.kind ?? '';
 }
@@ -283,7 +243,6 @@ export default function MotivationWizardPage() {
   const [detail, setDetail] = useState<MotivationDetail | null>(null);
   const [fields, setFields] = useState<MotivationField[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [offer, setOffer] = useState<ProfileOffer | null>(null);
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [documents, setDocuments] = useState<DocumentStatus | null>(null);
   const [proficiency, setProficiency] = useState<ProficiencyCover | null>(null);
@@ -321,12 +280,34 @@ export default function MotivationWizardPage() {
   // 1-based step on screen. Was "which accordion is open"; it is now "which
   // step the rail is pointing at", and unlike the old accordion it is never 0 —
   // there is always a step showing.
+  // ⚠️ THERE IS NO `furthest` ANY MORE. It was written by go() on every jump
+  // and read by nothing: it existed for the step-locking that stepStatus
+  // deliberately removed ("NOTHING IS EVER LOCKED"), and a piece of state kept
+  // up to date for a rule that no longer exists is a rule waiting to come back
+  // by accident.
   const [expanded, setExpanded] = useState(1);
-  const [furthest, setFurthest] = useState(1);
   const [generating, setGenerating] = useState(false);
   const [testimonialConsent, setTestimonialConsent] = useState(false);
   // Values read off uploaded documents, waiting to be confirmed. NOT answers.
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  /**
+   * What the server named each auto-filed document, pending confirmation.
+   *
+   * ⚠️ LIFTED OUT OF UploadPanel, so it can be RESTORED. It was private state
+   * inside the panel and therefore lasted exactly as long as the tab: a member
+   * who sent eight documents and reloaded before answering came back to a
+   * checklist ticked on our guesses, with the question that would have caught
+   * a wrong one gone. Persisted per application — see lib/motivation-draft.ts.
+   */
+  const [filed, setFiled] = useState<
+    { id: string; name: string; kind: string; confident: boolean }[]
+  >([]);
+  /**
+   * The keys we filled in from the profile on this load, for the Undo.
+   *
+   * Empty is the normal case — it is a passing note, not a task.
+   */
+  const [prefillApplied, setPrefillApplied] = useState<string[]>([]);
 
   // ── The member's own name for this application ───────────────────────
   //
@@ -374,9 +355,79 @@ export default function MotivationWizardPage() {
   const [templateSaving, setTemplateSaving] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
 
+  /**
+   * KEEP THE TWO REVIEW QUEUES ON THE DEVICE.
+   *
+   * ⚠️ WRITTEN ON EVERY CHANGE, NOT ON UNLOAD. `beforeunload` does not fire
+   * reliably on a phone — an app switched away from and killed never gets it —
+   * and these are exactly the questions a member walks away mid-answering.
+   * writeReview merges, so this can never tread on the unsent answers.
+   */
+  const reviewRestored = useRef(false);
+  useEffect(() => {
+    // ⚠️ NOT BEFORE THE RESTORE. Effects run in declaration order, so this one
+    // fires on mount — with both queues still empty — BEFORE the loader has
+    // read them back, and would erase the very rows it exists to keep. The
+    // loader sets the flag the moment it has them.
+    if (!reviewRestored.current) return;
+    writeReview(id, { filed, suggestions });
+  }, [id, filed, suggestions]);
+
+  /**
+   * Is this page still on screen?
+   *
+   * ⚠️ FOR THE SIX-MINUTE GENERATE POLL, which runs inside an onClick and so
+   * has no cleanup of its own. Every long-running loop started from a handler
+   * needs one of these, or it outlives the component that started it.
+   */
+  const pageAlive = useRef(true);
+  useEffect(() => {
+    pageAlive.current = true;
+    return () => {
+      pageAlive.current = false;
+    };
+  }, []);
+
   // A stable getter, so the effects below do not re-run every render just
   // because Clerk handed back a new function identity.
   const token = useCallback(() => getToken(), [getToken]);
+
+  /**
+   * The pack read — WHERE each answer came from, and the SAPS 271 coverage.
+   *
+   * ⚠️ IT IS THE ONLY SOURCE OF PROVENANCE, AND THE WIZARD HAD NONE. Every
+   * value we filled in rendered as a grey box and a pen with nothing saying
+   * whether it was read off the card in the member's hand or carried from a
+   * profile they last touched two years ago — on a form they sign. The server
+   * has persisted this all along; nothing on this screen asked for it.
+   *
+   * Fetched beside the wizard rather than per field, and refreshed at the
+   * three moments it can actually change: load, a prefill being applied, and
+   * arriving at the last step (where the coverage meter reads it).
+   */
+  const [pack, setPack] = useState<MotivationPack | null>(null);
+  /**
+   * The pack read has been ATTEMPTED, whether or not it arrived.
+   *
+   * ⚠️ THE LOCK CAPTURE WAITS ON THIS. Which fields are locked is decided once
+   * and never from a live value — a field that re-locks itself while somebody
+   * is typing in it is the bug the whole treatment exists to prevent — and it
+   * is now decided from the provenance rather than from `docSourced` and a
+   * non-empty box. So the capture has to happen after the answer is in, and a
+   * FAILED read has to release it too, or a member on a bad connection gets a
+   * form where nothing we filled in can be identified at all.
+   */
+  const [packTried, setPackTried] = useState(false);
+  const refreshPack = useCallback(async () => {
+    try {
+      setPack(await motivationsApi.pack(token, id));
+    } catch {
+      // A pack read we cannot make costs the source chips and the meter, never
+      // the form. Both render nothing rather than something invented.
+    } finally {
+      setPackTried(true);
+    }
+  }, [token, id]);
 
   // One-shot restore. Without the ref this re-runs on every answers change and
   // fights the user's typing.
@@ -414,8 +465,62 @@ export default function MotivationWizardPage() {
         applyUploads(up);
         setUploadKinds(up.kinds ?? []);
         setMessages(await motivationsApi.messages(token, id));
+        void refreshPack();
+
+        // ⚠️ THE REVIEW QUEUES COME BACK TOO. "What did we file this as" and
+        // "this reading disagrees with what you typed" are questions only the
+        // member can settle, and they used to live in component state — so a
+        // refresh threw the QUESTION away and left the CONSEQUENCE in place: a
+        // required-documents line ticked by a document filed as something it
+        // is not. Rows whose upload has since gone are dropped, so the queue
+        // can never ask about a document that is not there.
+        const kept = readReview(id);
+        reviewRestored.current = true;
+        if (kept.suggestions.length) {
+          setSuggestions(
+            kept.suggestions.map((sg) => ({ ...sg, trusted: sg.trusted === true })),
+          );
+        }
+        if (kept.filed.length) {
+          const live = new Set(up.files.map((f) => f.id));
+          setFiled(kept.filed.filter((f) => live.has(f.id)));
+        }
+
+        // ── WHAT WE ALREADY HAVE, APPLIED — NOT OFFERED ──────────────
+        //
+        // ⚠️ THE Yes/No CARD IS GONE, AND ITS ABSENCE IS THE FIX. Operator:
+        // "if the certificate date is determined by the math insert it, don't
+        // wait for the user to go and confirm it… no further user interaction
+        // required." A card asking permission to copy a member's own name off
+        // their own profile into their own application is work we invented for
+        // them, and the one who never came back to press Yes typed it all
+        // again. The merge below already protects anything they have typed,
+        // and every filled row now says where it came from with an Undo beside
+        // it — editable beats unasked.
         try {
-          setOffer(await motivationsApi.profileOffer(token, id));
+          const o = await motivationsApi.profileOffer(token, id);
+          if (!alive) return;
+          if (!o.alreadyConsented && o.fields.length) {
+            const before = merged;
+            await motivationsApi.useProfile(token, id);
+            const fresh = await motivationsApi.get(token, id);
+            if (!alive) return;
+            const applied = o.fields
+              .map((f) => f.key)
+              .filter(
+                (k) =>
+                  !(before[k] ?? '').trim() && (fresh.answers[k] ?? '').trim(),
+              );
+            // Typed answers win over anything that arrives, always.
+            setAnswers((a) => ({ ...fresh.answers, ...a }));
+            setDetail((d) =>
+              d ? { ...d, missingRequired: fresh.missingRequired } : fresh,
+            );
+            if (applied.length) {
+              setPrefillApplied(applied);
+              void refreshPack();
+            }
+          }
         } catch {
           /* prefill is a courtesy; never block the wizard on it */
         }
@@ -444,7 +549,7 @@ export default function MotivationWizardPage() {
     return () => {
       alive = false;
     };
-  }, [id, token]);
+  }, [id, token, refreshPack]);
 
   // The mobile push header's title for THIS motivation, not the index's fixed
   // "Motivation Centre" — see lib/shell-routes.ts (only the exact '/motivations'
@@ -671,96 +776,42 @@ export default function MotivationWizardPage() {
    * replacing the page someone is working in.
    */
   const openAuthedPdf = useCallback(
-    async (mint: () => Promise<string>, filename: string) => {
-      const tab = window.open('', '_blank');
-      if (tab) tab.opener = null;
-      try {
-        const url = await mint();
-        if (tab) {
-          tab.location.href = url;
-        } else {
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename;
-          a.click();
-        }
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      } catch (e) {
-        tab?.close();
-        setError(
-          e instanceof MotivationApiError
-            ? e.message
-            : 'We could not open the document just now.',
-        );
-      }
-    },
+    (mint: () => Promise<string>, filename: string) =>
+      openBlobTab({
+        mint,
+        filename,
+        onError: (e) =>
+          setError(
+            e instanceof MotivationApiError
+              ? e.message
+              : 'We could not open the document just now.',
+          ),
+      }),
     [],
   );
 
   const viewUpload = useCallback(
-    async (uploadId: string) => {
-      // ⚠️ NO 'noopener' HERE, AND THAT IS THE WHOLE BUG. Per spec,
-      // window.open with noopener returns NULL — the flag exists precisely to
-      // sever the handle. So `tab` was always null: the blank tab opened and
-      // was never filled, and the fallback then navigated the CURRENT window,
-      // which is exactly what the operator saw.
-      //
-      // Dropping the flag is safe here in a way it would not be for a foreign
-      // URL: this is a same-origin blob: URL we minted ourselves a line later,
-      // so there is no cross-origin document to be handed a window reference.
-      // `opener` is nulled anyway, which gets the flag's actual protection
-      // without giving up the handle we need.
-      const tab = window.open('', '_blank');
-      if (tab) tab.opener = null;
-      try {
-        const url = await motivationsApi.uploadBlobUrl(token, id, uploadId);
-        if (tab) {
-          tab.location.href = url;
-        } else {
-          // Genuinely blocked. Hand it over rather than lose it — a download
-          // beats replacing the page they are working in.
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'document';
-          a.click();
-        }
-        // Long enough for the tab to have loaded it; the blob is pinned until
-        // then and leaked for the life of the tab if we never let go.
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      } catch (e) {
-        tab?.close();
-        setUploadErr(
-          e instanceof MotivationApiError
-            ? e.message
-            : 'We could not open that document.',
-        );
-      }
-    },
+    (uploadId: string) =>
+      openBlobTab({
+        mint: () => motivationsApi.uploadBlobUrl(token, id, uploadId),
+        filename: 'document',
+        onError: (e) =>
+          setUploadErr(
+            e instanceof MotivationApiError
+              ? e.message
+              : 'We could not open that document.',
+          ),
+      }),
     [token, id],
   );
 
-  /**
-   * What the vault could fill, per group, for the pickers under the fields.
-   *
-   * Loaded once beside the wizard rather than per field: the same endpoint
-   * feeds the offer panel, and asking for it twice on one step would be two
-   * decryptions of the same rows to draw two controls.
-   */
-  const [offerChoices, setOfferChoices] = useState<
-    LicenceCentreOffer['choices'] | null
-  >(null);
-  const loadOffer = useCallback(async () => {
-    try {
-      const o = await motivationsApi.licenceCentreOffer(token, id);
-      setOfferChoices(o.choices);
-    } catch {
-      // A vault we cannot read must not stop anybody typing the answer by
-      // hand. The pickers simply do not appear.
-    }
-  }, [token, id]);
-  useEffect(() => {
-    void loadOffer();
-  }, [loadOffer]);
+  // ⚠️ THE PER-GROUP VAULT CHOICES ARE GONE, AND WITH THEM A DECRYPTION EVERY
+  // SIXTY SECONDS. `offerChoices` was fetched at mount and again on every third
+  // poll tick, and nothing on this page ever read it — the per-field pickers it
+  // was loaded for were never built, and LicenceCentreOfferPanel fetches its
+  // own offer. Each call decrypts every credential this member holds to answer
+  // a question nobody asked. Reinstate it WITH the control that reads it, never
+  // before.
 
   /** Documents this member already has, for the "use one I have" pickers. */
   const [library, setLibrary] = useState<LibraryItem[]>([]);
@@ -826,14 +877,24 @@ export default function MotivationWizardPage() {
    * the CLIENT is how the client stops being careful.
    */
   const autolinkRan = useRef(false);
-  useEffect(() => {
-    if (autolinkRan.current) return;
-    autolinkRan.current = true;
-    void (async () => {
+  /**
+   * Something was held back until "this is the safe at THIS address" is ticked.
+   *
+   * ⚠️ THE SERVER REFUSES A SAFE PHOTOGRAPH WITHOUT IT, and said so into
+   * nothing. A safe photograph does not go stale with time — it goes wrong
+   * when the applicant moves house, and no address is stored against the
+   * picture to check it against. So the answer is silence: the documents were
+   * simply not attached, on a screen whose whole promise is that it attaches
+   * what you already have.
+   */
+  const [needsPlaceConfirm, setNeedsPlaceConfirm] = useState(false);
+  const runAutolink = useCallback(
+    async (placeConfirmed: boolean) => {
       try {
-        const res = await motivationsApi.autolink(token, id);
+        const res = await motivationsApi.autolink(token, id, placeConfirmed);
+        setNeedsPlaceConfirm(res.needsPlaceConfirm === true);
         if (!res.attached.length) return;
-        setAutolinked(res.attached);
+        setAutolinked((cur) => [...cur, ...res.attached]);
         // Everything downstream reads from these, so refresh rather than
         // patching the lists by hand and risking a disagreement.
         const up = await motivationsApi.uploads(token, id);
@@ -843,8 +904,14 @@ export default function MotivationWizardPage() {
       } catch {
         // Never costs the page. The member attaches by hand, as before.
       }
-    })();
-  }, [token, id]);
+    },
+    [token, id, applyUploads],
+  );
+  useEffect(() => {
+    if (autolinkRan.current) return;
+    autolinkRan.current = true;
+    void runAutolink(false);
+  }, [runAutolink]);
   const [autolinked, setAutolinked] = useState<
     { kind: string; title: string }[]
   >([]);
@@ -860,16 +927,24 @@ export default function MotivationWizardPage() {
 
   const checklistRows: ChecklistRow[] = useMemo(() => {
     const needs = documents?.needs ?? [];
-    return needs.map((n) => ({
-      ...n,
+    return needs.map((n) => {
       // One row, one kind — including the safe, since 2026-08-23. Several
       // photographs land under the same kind and all of them list here.
-      files: uploads.filter((u) => u.kind === n.kind),
-      reusable: library.filter((l) => l.kind === n.kind),
-    }));
+      const files = uploads.filter((u) => u.kind === n.kind);
+      return {
+        ...n,
+        // ⚠️ A TICK IS A CLAIM ABOUT WHAT A DFO WILL ACCEPT. An expired
+        // certificate or a document whose Document Centre source has been
+        // deleted is attached but cannot answer the line, and a green row over
+        // one is worse than an amber one: it stops the member looking. The
+        // files stay listed — they are still theirs, and the caution beside
+        // each says why it does not count.
+        have: n.have && (files.length === 0 || files.some(usableUpload)),
+        files,
+        reusable: library.filter((l) => l.kind === n.kind),
+      };
+    });
   }, [documents, uploads, library]);
-
-  const selectedRow = checklistRows.find((r) => r.kind === pickedKind) ?? null;
 
   useEffect(() => {
     if (pickedKind) return;
@@ -925,13 +1000,7 @@ export default function MotivationWizardPage() {
       if (document.querySelector('[data-blocking-overlay="true"]')) return;
       tick += 1;
       void refreshUploads().catch(() => undefined);
-      if (tick % 3 === 1) {
-        void loadLibrary().catch(() => undefined);
-        // The offer was fetched once at mount and never again, so a
-        // certificate photographed on a phone left the dropdowns frozen at
-        // page-load state.
-        void loadOffer().catch(() => undefined);
-      }
+      if (tick % 3 === 1) void loadLibrary().catch(() => undefined);
     };
     const onVisible = () => {
       if (document.visibilityState === 'visible') sync();
@@ -947,7 +1016,7 @@ export default function MotivationWizardPage() {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [refreshUploads, loadLibrary, loadOffer]);
+  }, [refreshUploads, loadLibrary]);
 
   /**
    * Photograph the document a field comes off, and fill the field from it.
@@ -1306,6 +1375,10 @@ export default function MotivationWizardPage() {
   const assocHigh = useRef(1);
   assocHigh.current = Math.max(assocHigh.current, assocRowsFilled, assocRowsShown);
   const assocRows = Math.max(1, assocHigh.current);
+  /** The same, for associations. Association 1's keys carry no number. */
+  const assocRowLastFilled = assocRows > 1
+    ? Boolean((answers[`association_${assocRows}_name`] ?? '').trim())
+    : true;
 
   /**
    * Fields that ALREADY had a value when this application loaded — read off a
@@ -1318,10 +1391,27 @@ export default function MotivationWizardPage() {
    * input, always.
    */
   const prefilled = useRef<Set<string> | null>(null);
-  if (prefilled.current === null && fields.length && detail) {
+  if (prefilled.current === null && fields.length && detail && packTried) {
+    // ⚠️ THE PROVENANCE DECIDES, NOT `docSourced` AND A NON-EMPTY BOX. Those
+    // two together say "this field CAN come off a document and has something
+    // in it" — which is also true of a field the member typed by hand into a
+    // returning application, and every one of those was greyed out and
+    // padlocked with no explanation. The server records where each answer
+    // actually came from; `MEMBER` is theirs and is never locked.
+    //
+    // Waits for `packTried` so the capture still happens exactly ONCE, from a
+    // settled answer, rather than re-running as the pack lands and locking a
+    // box somebody is typing in. A read that FAILED releases it too — with no
+    // provenance we fall back to the old rule rather than locking nothing.
+    const prov = pack?.provenance;
     prefilled.current = new Set(
       fields
-        .filter((f) => f.docSourced && (answers[f.key] ?? '').trim())
+        .filter((f) => {
+          if (!(answers[f.key] ?? '').trim()) return false;
+          const p = prov?.[f.key];
+          if (p) return p.source !== 'MEMBER';
+          return f.docSourced;
+        })
         .map((f) => f.key),
     );
   }
@@ -1336,6 +1426,25 @@ export default function MotivationWizardPage() {
   const [busyKind, setBusyKind] = useState<string | null>(null);
   const [uploadErr, setUploadErr] = useState<string | null>(null);
   const ownedRows = Math.max(1, ownedHigh.current);
+
+  /**
+   * Does the LAST row of each repeater have anything in it?
+   *
+   * ⚠️ ONLY AN EMPTY LAST ROW MAY BE REMOVED. The rows are keyed by index —
+   * `existing_firearm_3_calibre` — so removing a filled one would either
+   * strand its answers under a key nothing renders or shift every row after it
+   * into a different key. "Clear this one" already exists for a filled row and
+   * says exactly what it does.
+   */
+  const ownedRowLastFilled = useMemo(
+    () =>
+      fields.some(
+        (f) =>
+          f.key.startsWith(`existing_firearm_${ownedRows}_`) &&
+          (answers[f.key] ?? '').trim(),
+      ),
+    [fields, answers, ownedRows],
+  );
 
   const { sections } = useMemo(() => {
     // Hide the rows beyond the ones in play. They stay in the registry — the
@@ -1401,6 +1510,33 @@ export default function MotivationWizardPage() {
     // the dead end above.
     return Array.from(new Set([...serverOutstanding.filter(empty), ...live]));
   }, [serverOutstanding, answers, sections]);
+  /**
+   * Required documents that are still not answered.
+   *
+   * ⚠️ SERVED, AND RE-FILTERED THROUGH `checklistRows`. The server's list is
+   * what is required; the client's `have` is the one that knows an attached
+   * document has expired or lost its Document Centre source — see the note on
+   * `usableUpload`. Taking only the server's would let an expired competency
+   * certificate open the Generate gate the checklist has already gone amber
+   * over, which is the two halves of one screen disagreeing.
+   */
+  const missingDocs = useMemo(() => {
+    const served = documents?.missingRequired ?? [];
+    const unmet = checklistRows
+      .filter((r) => r.tier === 'required' && !r.have)
+      .map((r) => r.kind);
+    return Array.from(new Set([...served, ...unmet]));
+  }, [documents, checklistRows]);
+
+  /** An upload kind as the member knows it — never the raw SCREAMING_CASE. */
+  const documentLabelFor = useCallback(
+    (kind: string) =>
+      documents?.needs.find((n) => n.kind === kind)?.label ??
+      uploadKinds.find((k) => k.kind === kind)?.label ??
+      kind,
+    [documents, uploadKinds],
+  );
+
   // A question stays open until the applicant has REPLIED to it — a user
   // message with the same fieldKey later in the thread. The old check hid any
   // question whose field had text, but the gate asks about THIN fields, which
@@ -1462,6 +1598,21 @@ export default function MotivationWizardPage() {
     [stepSections],
   );
 
+  /**
+   * Re-read the pack when they reach the last step.
+   *
+   * The coverage meter and the source chips are both computed server-side from
+   * answers that have been changing all the way down the form; a figure
+   * fetched at page load would tell somebody who has just finished that they
+   * are a third of the way through.
+   */
+  useEffect(() => {
+    if (!detail || expanded !== steps.length || steps.length === 0) return;
+    void refreshPack();
+    // Only when they ARRIVE — not on every keystroke that moves `steps`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, steps.length]);
+
   const stepStatus = (
     n: number,
     missing: number,
@@ -1498,7 +1649,6 @@ export default function MotivationWizardPage() {
    */
   const go = (n: number) => {
     setExpanded(n);
-    setFurthest((f) => Math.max(f, n));
     scrollToTop('smooth');
   };
 
@@ -1637,7 +1787,7 @@ export default function MotivationWizardPage() {
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
-              className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)]"
+              className="rounded bg-[var(--red)] min-h-[44px] px-3 py-2 text-sm text-white hover:bg-[var(--red-hover)]"
               onClick={() => {
                 seeded.current[prefillOffer.key] = prefillOffer.text;
                 setAnswer(prefillOffer.key, prefillOffer.text);
@@ -1648,7 +1798,7 @@ export default function MotivationWizardPage() {
             </button>
             <button
               type="button"
-              className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-card-hover)]"
+              className="rounded border border-[var(--border)] min-h-[44px] px-3 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
               onClick={() => setPrefillOffer(null)}
             >
               Keep what I wrote
@@ -1663,6 +1813,9 @@ export default function MotivationWizardPage() {
         locked={
           (prefilled.current?.has(f.key) ?? false) && !unlocked.has(f.key)
         }
+        // WHERE THE VALUE CAME FROM, under the locked box — the server's own
+        // chip text, so the API, the printed pack and the screen cannot drift.
+        provenance={pack?.provenance?.[f.key]}
         onUnlock={() => setUnlocked((u) => new Set(u).add(f.key))}
         onChange={(v) => setAnswer(f.key, v)}
         onPick={pickOption}
@@ -1850,7 +2003,7 @@ export default function MotivationWizardPage() {
       {consentOverlay}
       <main className="mx-auto max-w-3xl px-4 py-6 lg:max-w-6xl">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold">Your firearm licence motivation</h1>
+        <h1 className="text-2xl font-medium">Your firearm licence motivation</h1>
         {/* THE MEMBER'S OWN NAME FOR THIS ONE — see the label state above for
           * why it lives here rather than on `detail`. Purely a list label:
           * it is never read into the answers, the document, or anything the
@@ -1871,13 +2024,13 @@ export default function MotivationWizardPage() {
               }}
               maxLength={80}
               placeholder="Name this application, e.g. Home defence"
-              className="flex-1 rounded border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-1.5 text-sm text-[var(--text-primary)] focus:border-[var(--border-hover)] focus:outline-none"
+              className="flex-1 rounded border border-[var(--border)] bg-[var(--bg-inset)] min-h-[44px] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--border-hover)] focus:outline-none"
             />
             <button
               type="button"
               onClick={() => void saveLabel(labelValue)}
               disabled={labelSaving}
-              className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-60"
+              className="rounded bg-[var(--red)] min-h-[44px] px-3 py-2 text-sm text-white hover:bg-[var(--red-hover)] disabled:opacity-60"
             >
               {labelSaving ? 'Saving…' : 'Save'}
             </button>
@@ -1887,7 +2040,7 @@ export default function MotivationWizardPage() {
                 setRenamingLabel(false);
                 setLabelError(null);
               }}
-              className="rounded border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-card-hover)]"
+              className="rounded border border-[var(--border)] min-h-[44px] px-3 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
             >
               Cancel
             </button>
@@ -1968,7 +2121,18 @@ export default function MotivationWizardPage() {
         * Not an overlay: it must not take a `data-blocking-overlay`, or it
         * would stand the 20s poll down for as long as it is up. */}
       {suggestions.length > 0 && (
-        <div className="mt-4 rounded border border-[rgba(47,158,107,0.38)] bg-[rgba(47,158,107,0.10)] p-3">
+        <div
+          className="mt-4 rounded border p-3"
+          style={{
+            // ⚠️ DERIVED FROM THE TOKEN. These were literal
+            // rgba(47,158,107,…) — the RETIRED dark-theme green — beside ink
+            // drawn in --success (#1F7A50) on the white retail theme: two
+            // greens for one idea, on one card. (⚠️ NOT `var(--success)18`: a
+            // custom property cannot be alpha-diluted by concatenation.)
+            borderColor: 'var(--success-line)',
+            background: 'var(--success-wash)',
+          }}
+        >
           <h3 className="text-sm font-medium">
             We read {suggestions.length}{' '}
             {suggestions.length === 1 ? 'thing' : 'things'} off that
@@ -1992,7 +2156,7 @@ export default function MotivationWizardPage() {
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)]"
+              className="rounded bg-[var(--red)] min-h-[44px] px-3 py-2 text-sm text-white hover:bg-[var(--red-hover)]"
               onClick={async () => {
                 const accept = Object.fromEntries(
                   suggestions.map((sg) => [sg.key, sg.value]),
@@ -2017,7 +2181,7 @@ export default function MotivationWizardPage() {
             </button>
             <button
               type="button"
-              className="rounded border border-[var(--border)] px-3 py-1.5 text-sm"
+              className="rounded border border-[var(--border)] min-h-[44px] px-3 py-2 text-sm"
               onClick={() => setSuggestions([])}
             >
               No, I will type them
@@ -2075,7 +2239,13 @@ export default function MotivationWizardPage() {
         * Green, because this is the one banner on the page that is purely good
         * news: nothing is required of them. */}
       {autolinked.length > 0 && (
-        <div className="mb-4 rounded border border-[rgba(47,158,107,0.38)] bg-[rgba(47,158,107,0.10)] p-3">
+        <div
+          className="mb-4 rounded border p-3"
+          style={{
+            borderColor: 'var(--success-line)',
+            background: 'var(--success-wash)',
+          }}
+        >
           <p className="text-sm font-medium">
             We added {autolinked.length}{' '}
             {autolinked.length === 1 ? 'document' : 'documents'} from your
@@ -2157,7 +2327,7 @@ export default function MotivationWizardPage() {
           — see the note on stepOfSection for why nothing is unmounted. */}
       {steps.map((s) => (
         <div key={`h-${s.def.key}`} hidden={expanded !== s.n} className="mb-4">
-          <h2 className="text-lg font-semibold">{s.def.title}</h2>
+          <h2 className="text-lg font-medium">{s.def.title}</h2>
           {s.def.blurb && (
             <p className="mt-1 text-sm text-[var(--text-secondary)]">
               {s.def.blurb}
@@ -2189,42 +2359,18 @@ export default function MotivationWizardPage() {
             provided the letter has not gone stale, which the server checks
             before it offers them. The endorsement is deliberately never here:
             it names one firearm, so a previous one describes the wrong gun. */}
-        {suggested.length > 0 && !suggestDone && (
-          <div className="mt-3 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3">
-            <p className="text-sm font-medium">
-              You already have {suggested.length === 1 ? 'one' : suggested.length}{' '}
-              of these
-            </p>
-            <ul className="mt-1 text-xs text-[var(--text-secondary)]">
-              {suggested.map((sg) => (
-                <li key={`${sg.source}:${sg.sourceId}`}>
-                  {sg.title} — added {sg.addedOn}
-                </li>
-              ))}
-            </ul>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded bg-[var(--red)] px-3 py-1.5 text-sm text-white hover:bg-[var(--red-hover)]"
-                onClick={async () => {
-                  setSuggestDone(true);
-                  for (const sg of suggested) {
-                    await attachFromLibrary(sg).catch(() => undefined);
-                  }
-                }}
-              >
-                Attach {suggested.length === 1 ? 'it' : 'them'}
-              </button>
-              <button
-                type="button"
-                className="rounded border border-[var(--border)] px-3 py-1.5 text-sm"
-                onClick={() => setSuggestDone(true)}
-              >
-                Not now
-              </button>
-            </div>
-          </div>
-        )}
+        <SuggestedDocuments
+          suggested={suggested}
+          dismissed={suggestDone}
+          needsPlaceConfirm={needsPlaceConfirm}
+          onAttach={attachFromLibrary}
+          onDone={() => setSuggestDone(true)}
+          onDismiss={() => setSuggestDone(true)}
+          onConfirmPlace={() => {
+            setNeedsPlaceConfirm(false);
+            void runAutolink(true);
+          }}
+        />
 
         {documents && documents.needs.length > 0 && (
           <div className="mt-3">
@@ -2415,6 +2561,13 @@ export default function MotivationWizardPage() {
           uploads={uploads}
           kinds={uploadKinds}
           motivationId={id}
+          filed={filed}
+          setFiled={setFiled}
+          // Point them at the checklist line that wants it, ready to shoot.
+          onReplace={(kind) => {
+            setPickedKind(kind);
+            go(1);
+          }}
           onHandoffArrived={refreshUploads}
           onRefile={async (uploadId, nextKind) => {
             await motivationsApi.refileUpload(token, id, uploadId, nextKind);
@@ -2430,68 +2583,39 @@ export default function MotivationWizardPage() {
 
       </section>
 
-      {/* The profile offer — a plain card inside step 1.
+      {/* ⚠️ A PASSING NOTE, NOT A QUESTION. This was a card headed "Use what
+        * we already have?" with a list, a Yes and a No — a confirm step
+        * guarding values we already held, which is work we invented for the
+        * member (CLAUDE.md, "Automate It — Do Not Ask"). The values are
+        * applied on load now; every filled row carries its own source chip and
+        * an edit pen, and this line exists only so the change is never silent.
+        * Editable beats unasked.
         *
-        * ⚠️ IT WAS AN ACCORDION AND MUST NOT BE ONE HERE. The step it lives on
-        * is already the thing being expanded and collapsed; a second header
-        * inside it toggled `expanded` to the value it already had, so the
-        * header looked clickable and did nothing — exactly the "looks tappable
-        * but is not" trap the witness rail refuses. It is one short offer, so
-        * it simply shows. */}
-      {offer && offer.fields.length > 0 && !offer.alreadyConsented && (
-        <section className="mb-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
-          <h3 className="font-medium">Use what we already have?</h3>
-          {offer.note && (
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">
-              {offer.note}
-            </p>
-          )}
-          <div className="mt-3 space-y-3">
-            <p className="text-sm text-[var(--text-secondary)]">
-              We can fill these in from your All Outdoor profile. Nothing is
-              copied until you say so, and anything you have already typed is
-              left alone.
-            </p>
-            <ul className="divide-y divide-[var(--border-divider)] rounded border border-[var(--border)]">
-              {offer.fields.map((f) => (
-                <li key={f.key} className="flex justify-between gap-4 p-3 text-sm">
-                  <span className="text-[var(--text-secondary)]">{f.label}</span>
-                  <span className="text-right">
-                    <span className="font-medium">{f.value}</span>
-                    <span className="block text-xs text-[var(--text-tertiary-on-card)]">
-                      from {f.from}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="rounded bg-[var(--red)] px-4 py-2 text-sm text-white hover:bg-[var(--red-hover)]"
-                onClick={async () => {
-                  const res = await motivationsApi.useProfile(token, id);
-                  const d = await motivationsApi.get(token, id);
-                  setAnswers((a) => ({ ...d.answers, ...a }));
-                  setDetail(d);
-                  setOffer((o) =>
-                    o ? { ...o, alreadyConsented: true } : o,
-                  );
-                  if (res.filled >= 0) go(2);
-                }}
-              >
-                Yes, use these
-              </button>
-              <button
-                type="button"
-                className="rounded border border-[var(--border)] px-4 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
-                onClick={() => go(2)}
-              >
-                No, I will type them
-              </button>
-            </div>
-          </div>
-        </section>
+        * ⚠️ AND IT SAYS SO IN PASSING, NEVER AS A TASK. No button to press, no
+        * step to complete — one sentence and a way back if they disagree. */}
+      {prefillApplied.length > 0 && (
+        <p className="mb-6 text-sm text-[var(--text-secondary)]">
+          Filled in {prefillApplied.length} answer
+          {prefillApplied.length === 1 ? '' : 's'} from your profile and
+          documents.{' '}
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-[var(--text-primary)]"
+            onClick={() => {
+              // Back to empty, which is what they were — useProfile never
+              // writes over an answer that already had something in it. The
+              // lock goes with the value: leaving the key marked would give
+              // them a blank box they cannot type into.
+              for (const k of prefillApplied) {
+                prefilled.current?.delete(k);
+                setAnswer(k, '');
+              }
+              setPrefillApplied([]);
+            }}
+          >
+            Undo
+          </button>
+        </p>
       )}
       </div>
 
@@ -2538,13 +2662,15 @@ export default function MotivationWizardPage() {
                 <LicenceCentreOfferPanel
                   token={token}
                   motivationId={id}
-                  keyPrefixes={
-                    isOwned
-                      ? ['existing_firearm_']
-                      : sec.section === 'Dedicated status'
-                        ? ['association_']
-                        : ['competency_number']
-                  }
+                  // ⚠️ ONE TABLE, IMPORTED — NEVER A TERNARY AT THE MOUNT
+                  // SITE. The ternary this replaces handed "About you" the
+                  // single key `competency_number`, which since the competency
+                  // fields moved out in 2026-08-28 could match nothing at all:
+                  // the panel computed values, shipped them to the browser and
+                  // filtered every one of them out. Exactly the failure the
+                  // dedicated-status half suffered silently for months, and
+                  // exactly why VAULT_PREFIXES exists.
+                  keyPrefixes={VAULT_PREFIXES[vaultStepKey(sec.section)] ?? []}
                   onApplied={(filled, missing) => {
                     // The applicant's own edits win over what arrives, the
                     // same way the profile prefill does above.
@@ -2759,25 +2885,67 @@ export default function MotivationWizardPage() {
                 </div>
               )}
 
+              {/* ⚠️ BUTTONS, NOT CHECKBOXES. These were checkboxes hard-wired
+                  to `checked={false}` — a control that can never show the
+                  state it claims to have: tap it, a row appears, and the box
+                  is still empty. A screen reader is told there is an unchecked
+                  option; a keyboard user presses Space and hears nothing
+                  change. It was never a choice with two states, it was an
+                  action, and an action is a button. */}
               {isOwned && ownedRows < 6 && (
-                <label className="flex items-center gap-2 pt-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={false}
-                    onChange={() => setOwnedRowsShown(ownedRows + 1)}
-                  />
-                  <span>I own another firearm as well</span>
-                </label>
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <button
+                    type="button"
+                    className="min-h-[44px] rounded border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
+                    onClick={() => setOwnedRowsShown(ownedRows + 1)}
+                  >
+                    Add another firearm
+                  </button>
+                  {/* ⚠️ AND A WAY BACK. A row added by mistake could only be
+                      emptied, never removed — six empty firearms in front of
+                      somebody who owns one, with no undo for the tap that put
+                      them there. It takes the LAST row, and only while that
+                      row is empty, because the rows are keyed by index: taking
+                      a filled middle row would shift every answer after it
+                      into a different key. */}
+                  {ownedRows > 1 && !ownedRowLastFilled && (
+                    <button
+                      type="button"
+                      className="min-h-[44px] rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
+                      onClick={() => {
+                        ownedHigh.current = ownedRows - 1;
+                        setOwnedRowsShown(ownedRows - 1);
+                      }}
+                    >
+                      Remove firearm {ownedRows}
+                    </button>
+                  )}
+                </div>
               )}
-              {sec.section === 'Dedicated status' && assocRows < 3 && (
-                <label className="flex items-center gap-2 pt-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={false}
-                    onChange={() => setAssocRowsShown(assocRows + 1)}
-                  />
-                  <span>I belong to another association as well</span>
-                </label>
+              {sec.section === 'Dedicated status' && (
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {assocRows < 3 && (
+                    <button
+                      type="button"
+                      className="min-h-[44px] rounded border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
+                      onClick={() => setAssocRowsShown(assocRows + 1)}
+                    >
+                      Add another association
+                    </button>
+                  )}
+                  {assocRows > 1 && !assocRowLastFilled && (
+                    <button
+                      type="button"
+                      className="min-h-[44px] rounded border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
+                      onClick={() => {
+                        assocHigh.current = assocRows - 1;
+                        setAssocRowsShown(assocRows - 1);
+                      }}
+                    >
+                      Remove association {assocRows}
+                    </button>
+                  )}
+                </div>
               )}
               {isOwned && ownedRows >= 6 && (
                 <p className="pt-2 text-xs text-[var(--text-tertiary-on-card)]">
@@ -2867,6 +3035,22 @@ export default function MotivationWizardPage() {
       )}
 
 
+      {/* ── HOW MUCH OF THE SAPS 271 IS FILLED ────────────────────────
+        *
+        * ⚠️ THE LIVE WIZARD NEVER SHOWED THIS, AND IT IS THE FORM THE MEMBER
+        * IS ACTUALLY FILLING IN. The pack screen has rendered the same meter
+        * from the same served coverage all along; here, the one number that
+        * says how far through the police form they are was computed on the
+        * server and thrown away. Counted in questions that APPLY to them, not
+        * in form boxes — answering no to a history question closes its four
+        * follow-ups. Immediately above Generate, because that is the moment it
+        * answers: "is this actually ready to hand in?" */}
+      {pack && (
+        <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
+          <Saps271Meter coverage={pack.coverage} />
+        </section>
+      )}
+
       {/* 5 — declaration and generate */}
       <section className="mt-6 rounded border border-[var(--border)] bg-[var(--bg-card)] p-4">
         <h2 className="font-medium">Before we prepare it</h2>
@@ -2889,11 +3073,69 @@ export default function MotivationWizardPage() {
             page — we will send you an SMS and an email once it is ready, and
             it will be here when you come back.
           </p>
-        ) : outstanding.length > 0 ? (
-          <p className="mt-2 text-sm text-[var(--text-secondary)]">
-            {outstanding.length} answer{outstanding.length === 1 ? '' : 's'}{' '}
-            still to give. The sections above show which.
-          </p>
+        ) : outstanding.length > 0 || missingDocs.length > 0 ? (
+          <div className="mt-2 text-sm text-[var(--text-secondary)]">
+            {/* ⚠️ "THE SECTIONS ABOVE SHOW WHICH" WAS A DEAD END. This is the
+                LAST step, and every section on the page hides itself unless
+                its own step is the one on screen — so there were no sections
+                above, and the sentence pointed at a blank part of the page.
+                Naming them and making each one a button is the whole fix; the
+                jump helper already existed for the Generate refusal. */}
+            {outstanding.length > 0 && (
+              <>
+                <p>
+                  {outstanding.length} answer
+                  {outstanding.length === 1 ? '' : 's'} still to give:
+                </p>
+                <ul className="mt-1 flex flex-wrap gap-2">
+                  {outstanding.map((k) => (
+                    <li key={k}>
+                      <button
+                        type="button"
+                        className="min-h-[44px] rounded border border-[var(--border)] px-3 py-2 text-sm underline-offset-2 hover:bg-[var(--bg-card-hover)] hover:underline"
+                        onClick={() => {
+                          const n = stepForKey(k);
+                          if (n) go(n);
+                        }}
+                      >
+                        {labelFor(k)}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {/* ⚠️ DOCUMENTS BLOCK GENERATE TOO, AND THE GATE COULD NOT SEE
+                THEM. It read `outstanding` — answers only — so an application
+                with every box filled and no ID copy showed a live Prepare
+                button, spent one of a small hourly quota on a flagship model,
+                and came back refused. The member was looking at a form with
+                nothing outstanding on it. */}
+            {missingDocs.length > 0 && (
+              <div className={outstanding.length > 0 ? 'mt-3' : ''}>
+                <p>
+                  {missingDocs.length} document
+                  {missingDocs.length === 1 ? '' : 's'} still needed:
+                </p>
+                <ul className="mt-1 list-disc pl-5">
+                  {missingDocs.map((kind) => (
+                    <li key={kind}>{documentLabelFor(kind)}</li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  className="mt-2 min-h-[44px] rounded border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
+                  onClick={() => {
+                    setPickedKind(missingDocs[0]);
+                    go(1);
+                  }}
+                >
+                  Take me to the documents
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <>
             <label className="mt-3 flex items-start gap-2 text-sm">
@@ -2938,12 +3180,25 @@ export default function MotivationWizardPage() {
                   // so this cannot spin forever. Nothing is lost by giving up
                   // early anyway — the work continues on the server, and the
                   // status is on the page whenever they come back to it.
+                  //
+                  // ⚠️ AND IT STOPS IF THE PAGE GOES AWAY. This loop lives
+                  // inside an onClick, so nothing tore it down: navigate away
+                  // mid-generation and it went on polling a dead component for
+                  // six minutes — twenty requests against a per-IP budget the
+                  // wizard's own two polls already spend a third of, then a
+                  // setState into a component React had thrown away.
                   const deadline = Date.now() + 6 * 60 * 1000;
                   let d = await motivationsApi.get(token, id);
-                  while (d.status === 'GENERATING' && Date.now() < deadline) {
+                  while (
+                    pageAlive.current &&
+                    d.status === 'GENERATING' &&
+                    Date.now() < deadline
+                  ) {
                     await new Promise((r) => setTimeout(r, 3000));
+                    if (!pageAlive.current) return;
                     d = await motivationsApi.get(token, id);
                   }
+                  if (!pageAlive.current) return;
                   setDetail(d);
                   setMessages(await motivationsApi.messages(token, id));
                   if (d.status === 'COMPLETED') router.refresh();
@@ -2957,7 +3212,23 @@ export default function MotivationWizardPage() {
                   // are still missing" on its own is a dead end — the member
                   // is looking at a form where everything visible is filled
                   // in. The server has always sent the list; nothing read it.
+                  if (!pageAlive.current) return;
+                  // ⚠️ A MISSING DOCUMENT IS NOT A MISSING ANSWER, and the two
+                  // are fixed on different steps. Named and jumped to the same
+                  // way, because "Some required answers are still missing" on
+                  // its own is the dead end this whole branch replaced.
                   if (
+                    e instanceof MotivationApiError &&
+                    e.missingDocuments?.length
+                  ) {
+                    const names = e.missingDocuments.map(documentLabelFor);
+                    setError(
+                      `Still needed before we can write it: ${names.join(', ')}. They go on the documents step.`,
+                    );
+                    setPickedKind(e.missingDocuments[0]);
+                    await refreshUploads().catch(() => undefined);
+                    go(1);
+                  } else if (
                     e instanceof MotivationApiError &&
                     e.missing?.length
                   ) {
@@ -2988,7 +3259,7 @@ export default function MotivationWizardPage() {
                     );
                   }
                 } finally {
-                  setGenerating(false);
+                  if (pageAlive.current) setGenerating(false);
                 }
               }}
             >
@@ -3189,15 +3460,21 @@ function FieldAttachments({
               key={u.id}
               className="flex items-center justify-between gap-2 text-xs"
             >
-              <span className="min-w-0 truncate text-[var(--text-secondary)]">
-                {/* The annexure letter is what a DFO will look for, so show it
-                    the moment it exists rather than only in the pack. */}
-                {u.annexure ? `Annexure ${u.annexure} · ` : ''}
-                {u.label}
+              <span className="min-w-0 flex-1 text-[var(--text-secondary)]">
+                <span className="block truncate">
+                  {/* The annexure letter is what a DFO will look for, so show
+                      it the moment it exists rather than only in the pack. */}
+                  {u.annexure ? `Annexure ${u.annexure} · ` : ''}
+                  {u.label}
+                </span>
+                {/* The same expiry and cautions the documents list carries —
+                    one component, so the two places a document appears cannot
+                    say different things about it. */}
+                <UploadRowNotes row={u} />
               </span>
               <button
                 type="button"
-                className="shrink-0 rounded px-2 py-0.5 text-[var(--text-tertiary-on-card)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
+                className="min-h-[44px] shrink-0 rounded px-3 py-2 text-[var(--text-tertiary-on-card)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
                 onClick={() => onRemove(u.id)}
                 aria-label={`Remove ${u.label}`}
               >
@@ -3230,7 +3507,7 @@ function FollowUpAnswer({ onSubmit }: { onSubmit: (t: string) => Promise<void> }
       <button
         type="button"
         disabled={busy || !text.trim()}
-        className="mt-1 rounded border border-[var(--border)] px-3 py-1.5 text-sm disabled:opacity-50"
+        className="mt-1 rounded border border-[var(--border)] min-h-[44px] px-3 py-2 text-sm disabled:opacity-50"
         onClick={async () => {
           setBusy(true);
           try {
@@ -3247,328 +3524,3 @@ function FollowUpAnswer({ onSubmit }: { onSubmit: (t: string) => Promise<void> }
   );
 }
 
-/**
- * What is attached to one requirement.
- *
- * The point of the line is confirmation: the member should be able to look at
- * a requirement and see, without counting files, that something answers it and
- * which annexure it became.
- */
-function AttachedTo({
-  kind,
-  uploads,
-  onRemove,
-  onView,
-}: {
-  kind: string;
-  uploads: UploadRow[];
-  onRemove: (id: string) => Promise<void>;
-  onView: (id: string) => Promise<void>;
-}) {
-  const mine = uploads.filter((u) => u.kind === kind);
-  if (!mine.length) {
-    // The status said this requirement is met but no row carries the kind —
-    // which happens for a moment after an upload, before the list re-reads.
-    return (
-      <span className="text-xs" style={{ color: 'var(--success)' }}>
-        Attached
-      </span>
-    );
-  }
-  return (
-    <span className="flex flex-wrap items-center gap-2">
-      {mine.map((u) => (
-        <span
-          key={u.id}
-          className="inline-flex items-center gap-2 rounded border px-2 py-1 text-xs"
-          style={{
-            borderColor: 'rgba(47,158,107,0.38)',
-            background: 'rgba(47,158,107,0.10)',
-            color: 'var(--text-primary)',
-          }}
-        >
-          <span aria-hidden style={{ color: 'var(--success)' }}>
-            ✓
-          </span>
-          <span>
-            Attached
-            {u.annexure ? ` \u00b7 Annexure ${u.annexure}` : ''}
-            {u.available ? '' : ' \u00b7 no longer stored'}
-          </span>
-          {/* ⚠️ "ATTACHED" IS NOT PROOF. Every one of these went up as a
-              photograph the member never saw again — and the whole point of
-              the checklist is that a DFO will see it. Being able to open it
-              is how somebody catches the shot of their thumb before SAPS
-              does. Only offered while the file is still stored: after the
-              retention purge the row remains as a record and the bytes are
-              gone. */}
-          {u.available && (
-            <button
-              type="button"
-              className="underline"
-              aria-label={`View ${u.label}`}
-              onClick={() => void onView(u.id)}
-            >
-              View
-            </button>
-          )}
-          <button
-            type="button"
-            className="underline"
-            aria-label={`Remove ${u.label}`}
-            onClick={() => void onRemove(u.id)}
-          >
-            Remove
-          </button>
-        </span>
-      ))}
-    </span>
-  );
-}
-
-function UploadPanel({
-  uploads,
-  kinds,
-  motivationId,
-  onAdd,
-  onRefile,
-  onRemove,
-  onView,
-  onHandoffArrived,
-}: {
-  uploads: UploadRow[];
-  kinds: PickableKind[];
-  motivationId: string;
-  onAdd: (kind: string, file: File) => Promise<AddedUpload | undefined>;
-  onRefile: (uploadId: string, kind: string) => Promise<void>;
-  onRemove: (id: string) => Promise<void>;
-  /** Open one document, so "attached" can be checked rather than believed. */
-  onView: (id: string) => Promise<void>;
-  /** Re-read the pack after a phone sent something straight to the server. */
-  onHandoffArrived: () => Promise<void>;
-}) {
-  // Empty string until the list arrives, and the file input stays disabled
-  // until then — posting an empty kind would 400 with nothing useful to show.
-  /**
-   * THE UPLOAD PATH, lifted out of the file input.
-   *
-   * Named rather than inline so every source of a File — the themed
-   * picker, the per-requirement rows, and next the camera — feeds one
-   * code path with one set of checks.
-   */
-  async function uploadFiles(files: File[]) {
-    if (!files.length) return;
-    setBusy(true);
-    setErr(null);
-    // ⚠️ NOT setFiled([]). This queue is the only screen that asks a human to
-    // confirm what each document is, and the add panel closes after every
-    // hand-off — so clearing here means a second batch wipes the first batch's
-    // unconfirmed rows off the screen. The Document Centre lost six licences
-    // this way; this page had grown the same bug independently.
-    setProgress({ done: 0, total: files.length });
-
-    // ONE AT A TIME, deliberately. Each upload writes an encrypted
-    // file and makes a vision call; firing eight at once would race the
-    // per-minute limit and give no usable progress.
-    const named: typeof filed = [];
-    const failed: string[] = [];
-    for (const [i, file] of files.entries()) {
-      try {
-        // ⚠️ ALWAYS AUTO-NAMED HERE, one file or eight. This panel no longer
-        // asks which document anything is — that question moved to the
-        // checklist above, where the member answers it by choosing a line.
-        // Anything arriving through this path is by definition unlabelled,
-        // and the correction dropdown below catches what we get wrong.
-        const added = await onAdd('', file);
-        if (added?.autoFiled) {
-          named.push({
-            id: added.id,
-            name: file.name,
-            kind: added.kind,
-            confident: added.confident === true,
-          });
-        }
-      } catch (ex) {
-        // One bad file must not abandon the rest of the pack.
-        failed.push(
-          `${file.name}: ${
-            ex instanceof MotivationApiError
-              ? ex.message
-              : 'did not upload'
-          }`,
-        );
-      }
-      setProgress({ done: i + 1, total: files.length });
-    }
-
-    setFiled((cur) => mergeReviewQueue(cur, named));
-    setErr(failed.length ? failed.join(' · ') : null);
-    setBusy(false);
-    setProgress(null);
-  }
-
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  /** Per-file state while a pack is going up: "3 of 8 — competency…". */
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
-    null,
-  );
-  /** What the server named each auto-filed document, pending confirmation. */
-  const [filed, setFiled] = useState<
-    { id: string; name: string; kind: string; confident: boolean }[]
-  >([]);
-
-  return (
-    <div className="mt-3">
-      {/* ⚠️ THE DOCUMENT-TYPE SELECT IS GONE FROM HERE. The checklist above is
-          now a radio list of exactly these kinds — so this was a second
-          control answering a question the member had already answered, three
-          inches higher, and the two could disagree. This panel does one
-          thing: take the whole pack and work out what each file is. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <ScanButton
-          // Follows the picker above; A4 while nothing is chosen, because a
-          // motivation pack is mostly paper.
-          // A pack is mostly paper, and this panel never names one document.
-          shape="a4"
-          // ⚠️ THIS IS THE UPLOAD-ALL. Somebody opening it is holding a pack —
-          // a competency certificate, a licence card, a page of an ID book —
-          // and scanning exactly one thing is the unusual case here, not the
-          // default. "Different document" between shots lets the aim box
-          // change with each one.
-          multiDefault
-          title="Photograph a document"
-          onFiles={uploadFiles}
-          disabled={busy}
-          label="Photograph documents"
-          handoff={{ dest: 'motivation', motivationId }}
-          onHandoffArrived={() => void onHandoffArrived()}
-          fallback={
-            <FilePickerButton
-              accept="image/jpeg,image/png,image/webp,application/pdf"
-              // A PACK GOES UP IN ONE GO. Picking one file at a time and
-              // choosing a type for each is the slowest possible way to hand
-              // over documents somebody already has sitting in a folder.
-              multiple
-              disabled={busy}
-              variant="primary"
-              onFiles={uploadFiles}
-            >
-              Upload all my documents
-            </FilePickerButton>
-          }
-        />
-      </div>
-      <p className="mt-2 text-xs text-[var(--text-tertiary-on-card)]">
-        Send the whole pack in one go and we read each document to work out
-        what it is — no need to say which is which. We show you what we made of
-        them afterwards, and one dropdown fixes anything we got wrong. JPG,
-        PNG, WebP or PDF, up to 10 MB each. On an iPhone, choose the photos
-        from your library rather than from Files.
-      </p>
-
-      {progress && (
-        <p className="mt-2 text-sm" aria-live="polite">
-          Uploading {progress.done + 1} of {progress.total}…
-        </p>
-      )}
-
-      {/* WHAT WE FILED EACH DOCUMENT AS.
-          Shown because the required-documents list counts the TYPE, not the
-          contents — so a document filed wrongly would tick a requirement the
-          pack does not actually meet. Correcting it is one dropdown. */}
-      {filed.length > 0 && (
-        <div className="mt-3 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3">
-          <p className="text-sm font-medium">
-            Here is what we made of them — change any that are wrong
-          </p>
-          <ul className="mt-2 space-y-2">
-            {filed.map((f) => (
-              <li key={f.id} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="min-w-0 flex-1 truncate" title={f.name}>
-                  {f.name}
-                  {!f.confident && (
-                    <span className="ml-2 text-xs text-[var(--warning)]">
-                      not sure
-                    </span>
-                  )}
-                </span>
-                <select
-                  className="rounded border border-[var(--border)] bg-[var(--bg-inset)] px-2 py-1 text-sm text-[var(--text-primary)] [&>option]:bg-[var(--bg-card)] [&>option]:text-[var(--text-primary)]"
-                  value={f.kind}
-                  aria-label={`Document type for ${f.name}`}
-                  onChange={async (e) => {
-                    const next = e.target.value;
-                    setFiled((cur) =>
-                      cur.map((x) =>
-                        x.id === f.id ? { ...x, kind: next, confident: true } : x,
-                      ),
-                    );
-                    await onRefile(f.id, next);
-                  }}
-                >
-                  {kinds.map((k) => (
-                    <option key={k.kind} value={k.kind}>
-                      {k.label}
-                    </option>
-                  ))}
-                </select>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            className="mt-2 text-xs underline"
-            onClick={() => setFiled([])}
-          >
-            These are right
-          </button>
-        </div>
-      )}
-      {err && <p className="mt-2 text-sm text-[var(--red)]">{err}</p>}
-
-      <ul className="mt-3 divide-y divide-[var(--border-divider)] rounded border border-[var(--border)]">
-        {uploads.length === 0 && (
-          <li className="p-3 text-sm text-[var(--text-tertiary-on-card)]">Nothing added yet.</li>
-        )}
-        {uploads.map((u) => (
-          <li key={u.id} className="flex items-center justify-between gap-3 p-3 text-sm">
-            <span>
-              {u.annexure && (
-                <span className="mr-2 rounded bg-[var(--bg-inset)] px-1.5 py-0.5 text-xs">
-                  Annexure {u.annexure}
-                </span>
-              )}
-              {u.label}
-              {!u.available && (
-                <span className="ml-2 text-xs text-[var(--text-tertiary-on-card)]">
-                  (deleted under our retention policy)
-                </span>
-              )}
-            </span>
-            <span className="flex shrink-0 items-center gap-3">
-              {u.available && (
-                <button
-                  type="button"
-                  className="text-xs underline"
-                  aria-label={`View ${u.label}`}
-                  onClick={() => void onView(u.id)}
-                >
-                  View
-                </button>
-              )}
-              <button
-                type="button"
-                className="text-xs underline"
-                aria-label={`Remove ${u.label}`}
-                onClick={() => onRemove(u.id)}
-              >
-                Remove
-              </button>
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}

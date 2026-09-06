@@ -2,7 +2,6 @@ import {
   EXPIRING_WITHIN_DAYS,
   REMINDER_STAGES,
   withinRenewalWindow,
-  competencyLapses,
   daysUntil,
   dueStage,
   expiryState,
@@ -177,42 +176,16 @@ describe('the stage table itself', () => {
   });
 });
 
-describe('competencyLapses', () => {
-  // ⚠️ THIS IS THE FALLBACK, NOT THE RULE — AND THE COMMENT THAT USED TO SIT
-  // HERE QUOTED THE UN-AMENDED ACT. It read: 'SECTION 10(2): "A competency
-  // certificate lapses after five years from its date of issue." Read from the
-  // Act, not recalled.' That IS the original s10(2), and it was replaced by
-  // the Firearms Control Amendment Act 28 of 2006, commenced 10 January 2011.
-  // The current s10(2) says a competency remains valid for the same period as
-  // the LICENCE it relates to — it has no independent lifespan and rolls
-  // forward with every grant or renewal in that firearm type.
-  //
-  // So this arithmetic is right only where a firearm type holds no licence at
-  // all (SA Firearm Competency Reference §5.2), and derivedExpiryFor now
-  // offers it only to a member with no licence on file. The function stays
-  // because the fallback is real; the framing was wrong.
-  it('adds five years to the issue date', () => {
-    expect(toIsoDate(competencyLapses(new Date('2025-06-06T00:00:00Z')))).toBe(
-      '2030-06-06',
-    );
-  });
-
-  it('⚠️ HANDLES 29 FEBRUARY without inventing a day', () => {
-    // 2024-02-29 + 5 years has no 29 February to land on. JavaScript rolls it
-    // to 1 March, which is a real date and one day later than a strict reading
-    // — close enough for a suggestion the member confirms, and worth knowing
-    // rather than discovering.
-    expect(toIsoDate(competencyLapses(new Date('2024-02-29T00:00:00Z')))).toBe(
-      '2029-03-01',
-    );
-  });
-
-  it('does not mutate what it is given', () => {
-    const issued = new Date('2025-06-06T00:00:00Z');
-    competencyLapses(issued);
-    expect(toIsoDate(issued)).toBe('2025-06-06');
-  });
-});
+/**
+ * ⚠️ `competencyLapses` WAS TESTED HERE AND BOTH ARE GONE.
+ *
+ * The block asserted five-from-issue and the 29 February roll-forward. Its own
+ * comment already recorded that the framing was wrong — the five years is not
+ * s10(2) as amended, it is the operating rule for a firearm category holding
+ * no licence — and the last caller has now gone with it. The arithmetic lives
+ * in `plusYears`/`FALLBACK_YEARS` in common/sa-competency.ts, next to the one
+ * function allowed to apply it, and is pinned by sa-competency.spec.ts.
+ */
 
 // ────────────────────────────────────────────────────────────────────
 // NINETY DAYS, AND WHY IT IS NOT THE SAME NUMBER AS THE RENEWAL OFFER.

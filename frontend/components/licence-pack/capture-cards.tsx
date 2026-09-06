@@ -17,32 +17,14 @@
 // No webcam, on any surface.
 // ────────────────────────────────────────────────────────────────────
 
+// ⚠️ ONE GLYPH, IMPORTED. It was drawn here and again in capture-routes.tsx —
+// same viewBox, same six shapes, same 1.7 stroke — on two screens meant to read
+// as the same product. Two copies of an icon are two icons the moment one of
+// them is nudged. See components/motivation/qr-icon.tsx.
+import QrIcon from '@/components/motivation/qr-icon';
 import FilePickerButton from '@/components/file-picker-button';
 import ScanButton from '@/components/scan/scan-button';
 import { shapeForKind } from '@/lib/scan/shapes';
-
-function QrIcon() {
-  return (
-    <svg
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
-      <path d="M14 14h3v3h-3z" />
-      <path d="M20 14v3" />
-      <path d="M17 20h4" />
-    </svg>
-  );
-}
 
 function UploadIcon() {
   return (
@@ -94,7 +76,7 @@ export default function CaptureCards({
             <QrIcon />
           </span>
           <div className="min-w-0">
-            <div className="text-[15px] font-semibold leading-tight">
+            <div className="text-[15px] font-medium leading-tight">
               Open the scanner on your phone
             </div>
             <div className="mt-1 text-[12.5px] leading-snug text-white/80">
@@ -125,7 +107,7 @@ export default function CaptureCards({
             <UploadIcon />
           </span>
           <div className="min-w-0">
-            <div className="text-[15px] font-semibold leading-tight text-[var(--text-primary)]">
+            <div className="text-[15px] font-medium leading-tight text-[var(--text-primary)]">
               Upload a file
             </div>
             <div className="mt-1 text-[12.5px] leading-snug text-[var(--text-tertiary)]">

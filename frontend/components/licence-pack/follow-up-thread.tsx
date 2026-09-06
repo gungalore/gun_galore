@@ -29,8 +29,11 @@ import type { FollowUp } from '@/lib/motivations-api';
 import { openQuestions } from '@/lib/follow-up-rules';
 
 function Answer({
+  question,
   onSubmit,
 }: {
+  /** What the box is for, so it has a name a screen reader can say. */
+  question: string;
   onSubmit: (text: string) => Promise<void>;
 }) {
   const [text, setText] = useState('');
@@ -38,7 +41,13 @@ function Answer({
 
   return (
     <div className="mt-2">
+      {/* ⚠️ A NAME, NOT A PLACEHOLDER, AND NOT NOTHING. The box had neither, so
+          a screen reader announced "edit text, blank" — on the one control
+          standing between the member and their pack. aria-label rather than a
+          visible one: the question is already printed directly above it, and a
+          second copy on screen would be noise for everybody who can see it. */}
       <textarea
+        aria-label={`Your answer to: ${question}`}
         rows={3}
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -60,7 +69,7 @@ function Answer({
             setBusy(false);
           }
         }}
-        className="mt-1.5 rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-4 py-[8px] text-[13px] font-semibold text-white disabled:opacity-45"
+        className="mt-1.5 min-h-[44px] rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-4 py-[8px] text-[13px] font-medium text-white disabled:opacity-45"
       >
         {busy ? 'Saving…' : 'Answer'}
       </button>
@@ -80,13 +89,13 @@ export default function FollowUpThread({
 
   return (
     <div
-      className="gg-tile rounded-[10px] border px-4 py-3.5"
+      className="gg-tile rounded-[8px] border px-4 py-3.5"
       style={{
         borderColor: 'var(--gold-line)',
         background: 'var(--gold-wash)',
       }}
     >
-      <p className="text-[13.5px] font-semibold">
+      <p className="text-[13.5px] font-medium">
         {open.length === 1
           ? 'One thing Boet wants to ask'
           : `${open.length} things Boet wants to ask`}
@@ -103,12 +112,15 @@ export default function FollowUpThread({
         {open.map((q) => (
           <li key={q.id}>
             {q.fieldLabel && (
-              <p className="text-[11px] font-semibold uppercase tracking-[.09em] text-[var(--text-tertiary)]">
+              <p className="text-[11px] font-medium uppercase tracking-[.09em] text-[var(--text-tertiary)]">
                 {q.fieldLabel}
               </p>
             )}
             <p className="mt-0.5 text-[13.5px] font-medium">{q.content}</p>
-            <Answer onSubmit={(text) => onAnswer(q.id, text)} />
+            <Answer
+              question={q.fieldLabel ?? q.content}
+              onSubmit={(text) => onAnswer(q.id, text)}
+            />
           </li>
         ))}
       </ul>

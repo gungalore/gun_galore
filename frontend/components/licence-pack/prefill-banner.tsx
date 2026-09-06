@@ -50,7 +50,7 @@ export default function PrefillBanner({
     >
       <p className="text-[14px] text-[var(--text-primary)]">
         We filled in{' '}
-        <span className="font-semibold">{prefill.filled}</span>{' '}
+        <span className="font-medium">{prefill.filled}</span>{' '}
         {prefill.filled === 1 ? 'answer' : 'answers'} before you typed
         anything.
       </p>

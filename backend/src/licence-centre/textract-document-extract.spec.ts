@@ -51,7 +51,11 @@ describe('firearm licence', () => {
       calibre: '6.5MM CREEDMOOR',
       frame_serial: 'B477423',
       barrel_serial: 'B477423',
-      section: '15',
+      // ⚠️ 'S15', NOT '15'. The reader now normalises what it finds through
+      // sectionFromText, so what is stored is the canonical token every other
+      // module already speaks — and so 'SECTION 16A' cannot be filed as an
+      // ordinary section 16 by losing its A. See the SECTION pattern.
+      section: 'S15',
       holder_name: 'GJP FOURIE',
       firearm_type: 'MANUALLY OPERATED RIFLE',
     });
@@ -74,6 +78,57 @@ describe('firearm licence', () => {
       expect(r.reading.details.section).not.toBe('3086');
       expect(r.reading.details.section).not.toBe('3088');
     }
+  });
+
+  // 🚨 FOUR FORMS THE OLD PATTERN COULD NOT SEE, AND EVERY MISS IS SILENT.
+  // `SECTION\s+(\d{1,2})` needed the whole word and a bare number: the
+  // trailing  killed "SECTION 16A" outright (the boundary fails against the
+  // A), and "S16", "SEC 16" and "16(1)" never stood a chance. A missed section
+  // is not a missing field — mayArmReadExpiry cross-checks the read expiry
+  // against the section 27 term and refuses to arm anything when there is no
+  // section, so the licence lists fine, shows its date, and never reminds.
+  describe('the section, however the card prints it', () => {
+    const card = (section: string) => ({
+      Blocks: [
+        { BlockType: 'LINE', Text: 'LICENCE TO POSSESS A FIREARM' },
+        { BlockType: 'LINE', Text: section },
+        { BlockType: 'LINE', Text: 'HANDGUN' },
+        { BlockType: 'LINE', Text: '2022-11-29 -- 2032-11-28' },
+      ],
+    });
+    const sectionOf = (text: string) =>
+      extractDocument(
+        card(text) as never,
+        'FIREARM_LICENCE' as never,
+        MATERIAL.FIREARM_LICENCE,
+      ).reading.details.section;
+
+    it.each([
+      ['SECTION 15', 'S15'],
+      ['SECTION 16', 'S16'],
+      ['S16', 'S16'],
+      ['SEC 16', 'S16'],
+      ['16(1)', 'S16'],
+    ])('reads %s as %s', (printed, want) => {
+      expect(sectionOf(printed)).toBe(want);
+    });
+
+    it('⚠️ keeps the A on SECTION 16A', () => {
+      // s16A is professional hunting and runs ten years like s16 — but they
+      // are different licences, and a reader that drops the A is a reader that
+      // cannot tell them apart on the next thing that needs to.
+      expect(sectionOf('SECTION 16A')).toBe('S16A');
+      expect(sectionOf('S16A')).toBe('S16A');
+    });
+
+    it('⚠️ stores NOTHING for a number that is not a licensing section', () => {
+      // Section 20 is deliberately unknown to sectionFromText: its term
+      // depends on the KIND of business, so the number alone does not
+      // determine it. Absent is the honest answer; a stored '20' would look
+      // like a section we could cross-check a term against.
+      expect(sectionOf('SECTION 20')).toBeUndefined();
+      expect(sectionOf('SECTION 99')).toBeUndefined();
+    });
   });
 
   it('reads a self-loading type without flattening it', () => {

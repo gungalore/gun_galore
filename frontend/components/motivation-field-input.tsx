@@ -18,14 +18,16 @@
 // ────────────────────────────────────────────────────────────────────
 
 import DateField from '@/components/date-field';
+import { ProvenanceNote } from '@/components/motivation/provenance';
 import { formatLong, parseIso, todayYmd } from '@/lib/date-picker-model';
-import type { MotivationField } from '@/lib/motivations-api';
+import type { AnswerProvenance, MotivationField } from '@/lib/motivations-api';
 
 export default function FieldInput({
   field,
   value,
   missing,
   locked = false,
+  provenance,
   onUnlock,
   onPick,
   onPickMulti,
@@ -36,6 +38,17 @@ export default function FieldInput({
   missing: boolean;
   /** We filled this in. Shown, greyed, with a pen — never taken away. */
   locked?: boolean;
+  /**
+   * Where this value came from, when we put it there.
+   *
+   * ⚠️ WITHOUT IT A LOCKED FIELD IS AN UNEXPLAINED GREY BOX. This control
+   * rendered exactly that for months: a value the member is about to sign
+   * their name under, greyed and padlocked, with nothing saying whether it was
+   * read off the card in their hand or carried from a profile they last
+   * touched two years ago — and no way to tell a reading from a deduction.
+   * The server has persisted this all along.
+   */
+  provenance?: AnswerProvenance;
   onUnlock?: () => void;
   /** Choice fields that seed another field route through here instead. */
   onPick?: (field: MotivationField, value: string) => void;
@@ -75,21 +88,38 @@ export default function FieldInput({
           visible and the pen opens it. POPIA needs it correctable; the
           operator needs it to stop moving while they type. */}
       {locked ? (
+        <>
         <div className="mt-1 flex items-center gap-2">
-          <div className="flex-1 rounded border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-secondary)]">
-            {/* A date reads as a date even while locked. Pure formatting —
-                an unparseable legacy value falls through to its raw text
-                rather than being hidden behind a pretty one. */}
-            {field.kind === 'date' && parseIso(value)
-              ? formatLong(parseIso(value)!)
-              : value}
-          </div>
+          {/* ⚠️ A readOnly INPUT, NOT A DIV, AND THE id IS THE POINT. The label
+              above carries htmlFor={field.key} and that id existed only in the
+              editable branch — so on every locked field the label pointed at
+              nothing, tapping it did nothing, and a screen reader read the
+              value with no name attached to it. The `missing` border could not
+              render either. An input is labelable; a div is not. */}
+          <input
+            id={field.key}
+            type="text"
+            readOnly
+            aria-describedby={provenance ? `${field.key}-from` : undefined}
+            value={
+              // A date reads as a date even while locked. Pure formatting —
+              // an unparseable legacy value falls through to its raw text
+              // rather than being hidden behind a pretty one.
+              field.kind === 'date' && parseIso(value)
+                ? formatLong(parseIso(value)!)
+                : value
+            }
+            className={
+              'flex-1 rounded border bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--text-secondary)] focus:outline-none ' +
+              (missing ? 'border-[var(--warning)]' : 'border-[var(--border)]')
+            }
+          />
           <button
             type="button"
             onClick={onUnlock}
             aria-label={`Edit ${field.label}`}
             title="Edit"
-            className="rounded border border-[var(--border)] px-2 py-2 text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
           >
             <svg
               width="16"
@@ -107,6 +137,14 @@ export default function FieldInput({
             </svg>
           </button>
         </div>
+        {/* WHERE IT CAME FROM, AND WHETHER TO CHECK IT. See
+            components/motivation/provenance.tsx — the chip text is the
+            server's own, so the API, the printed pack and this line cannot
+            drift. */}
+        <span id={`${field.key}-from`}>
+          <ProvenanceNote provenance={provenance} />
+        </span>
+        </>
       ) : (
         <>
       {field.kind === 'long' && (

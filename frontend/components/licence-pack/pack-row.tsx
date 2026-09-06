@@ -71,7 +71,7 @@ export default function PackRow({
         </div>
 
         <span
-          className="shrink-0 rounded-[var(--r-sm)] px-2 py-0.5 text-[11px] font-semibold"
+          className="shrink-0 rounded-[var(--r-sm)] px-2 py-0.5 text-[11px] font-medium"
           style={{ color: look.ink, border: `1px solid ${look.border}` }}
         >
           {item.state === 'done'

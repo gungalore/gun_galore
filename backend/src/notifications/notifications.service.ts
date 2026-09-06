@@ -4361,6 +4361,18 @@ export class NotificationsService {
     stage: 'T180' | 'T120' | 'T100' | 'T30' | 'D0';
     smsEnabled: boolean;
     emailEnabled: boolean;
+    /**
+     * "Renew the competency with it, on a SAPS 517(g)."
+     *
+     * ⚠️ SET ON A MINORITY OF REMINDERS, AND IT IS THE MOST VALUABLE SENTENCE
+     * IN ANY OF THEM. A competency has no life of its own — it runs to the
+     * latest licence in its firearm category — so when the licence expiring is
+     * the LAST one in that category, a second form is due on the same visit or
+     * the competency behind the licence lapses too. Worked out by the sweep
+     * (licence-centre-reminders.service.ts) from the member's own portfolio;
+     * null whenever we are not sure of both halves. Never invent one here.
+     */
+    competencyNote?: string | null;
   }) {
     // ⚠️ THE MEMBER-FACING PATH, WHICH IS NOW /documents. The backend
     // prefix is unchanged; only what a person clicks moved.
@@ -4380,9 +4392,13 @@ export class NotificationsService {
       category: 'ACCOUNT',
       type: gone ? 'licence_centre_expired' : `licence_centre_expiry_${d.stage.replace(/^T/, '')}`,
       title: headline,
-      body: gone
-        ? `${d.title} expired on ${on}. The document as printed always governs.`
-        : `${d.title} expires on ${on} — ${d.daysLeft} days away. Start the renewal well before then.`,
+      body:
+        (gone
+          ? `${d.title} expired on ${on}. The document as printed always governs.`
+          : `${d.title} expires on ${on} — ${d.daysLeft} days away. Start the renewal well before then.`) +
+        // The 517(g) advice rides on every channel, because the visit to the
+        // DFO is one visit and the second form has to be in the same hand.
+        (d.competencyNote ? ` ${d.competencyNote}` : ''),
       url: '/documents',
       iconKey: 'kyc',
       // linkedType + linkedId give the push a stable tag, so a later stage
@@ -4393,11 +4409,19 @@ export class NotificationsService {
     });
 
     if (d.smsEnabled) {
+      // ⚠️ ASCII ONLY, AND SHORT. An em dash or a curly apostrophe drops the
+      // message out of GSM-7 into UCS-2 and halves the segment to 70
+      // characters. The 517(g) clause is written as its own short ASCII
+      // sentence rather than pasting `competencyNote` in, which is written for
+      // a screen and carries an em dash of its own.
+      const also = d.competencyNote
+        ? ' Renew your competency with it (SAPS 517g).'
+        : '';
       await this.sendSms(
         d.phone,
         gone
-          ? `All Outdoor: a document in your Document Centre has expired. Check it: ${url}`
-          : `All Outdoor: a document in your Document Centre expires in ${d.daysLeft} days. Check it: ${url}`,
+          ? `All Outdoor: a document in your Document Centre has expired.${also} Check it: ${url}`
+          : `All Outdoor: a document in your Document Centre expires in ${d.daysLeft} days.${also} Check it: ${url}`,
         `lc-expiry-${d.credentialId}-${d.stage}`,
       );
     }
@@ -4410,7 +4434,14 @@ export class NotificationsService {
           label: gone ? 'Expired' : 'Renewal due',
         },
         headline,
-        body: `Hi ${b(d.name)}, ${b(d.title)} ${gone ? 'expired on' : 'expires on'} ${b(on)}. We remind you; we cannot renew it for you, and the document as printed always governs. If this date is wrong, correct it in your Document Centre.`,
+        // ⚠️ b() escapes, and `competencyNote` is OURS — written in this repo,
+        // never member-typed — so it is not run through it. It is still put in
+        // its own paragraph rather than concatenated into the sentence above:
+        // it is an instruction about a second form, and burying it mid-sentence
+        // beside a date is how it gets skimmed past.
+        body:
+          `Hi ${b(d.name)}, ${b(d.title)} ${gone ? 'expired on' : 'expires on'} ${b(on)}. We remind you; we cannot renew it for you, and the document as printed always governs. If this date is wrong, correct it in your Document Centre.` +
+          (d.competencyNote ? `<br><br>${d.competencyNote}` : ''),
         cta: { label: 'Open Document Centre', url },
         preheader: `${d.title}: ${gone ? 'expired' : 'expiring soon'}`,
       });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import REQUIREMENTS from './__fixtures__/document-requirements.json';
 import { WIZARD_STEPS } from '@/components/licence-pack/wizard-rail';
+import { STEP_PLAN } from '@/lib/motivation-step-plan';
 
 // ────────────────────────────────────────────────────────────────────
 // EVERY DOCUMENT HAS A DOOR.
@@ -35,10 +36,24 @@ import { WIZARD_STEPS } from '@/components/licence-pack/wizard-rail';
 type Need = { kind: string; tier: string; label: string };
 const TYPES = Object.keys(REQUIREMENTS) as (keyof typeof REQUIREMENTS)[];
 
-/** Every document kind the wizard offers a capture card for. */
+/** Every document kind the pack wizard offers a capture card for. */
 const offered = new Set(
   WIZARD_STEPS.flatMap((s) => (s.documents ?? []).map((d) => d.kind)),
 );
+
+// ────────────────────────────────────────────────────────────────────
+// ⚠️ THE TWO WIZARDS ASK FOR DOCUMENTS IN TWO DIFFERENT SHAPES, AND ONLY ONE
+// OF THEM CAN BE ASSERTED THIS WAY.
+//
+// The pack wizard binds a capture card to a kind ON THE STEP that asks it, so
+// a kind with no card is a document nobody can attach — the whole reason this
+// file exists. The live wizard at /motivations/[id] instead renders the SERVED
+// checklist on one step: every kind the server asks for gets a row, so it can
+// never orphan a kind, and the thing that CAN go wrong there is the step
+// disappearing or being renamed out from under the "take me to the documents"
+// jump the Generate gate uses. That is what is asserted for it below.
+// ────────────────────────────────────────────────────────────────────
+const LIVE_DOCUMENTS_STEP = 'documents';
 
 /** What the pack asks for on this licence type, by tier. */
 const needs = (t: keyof typeof REQUIREMENTS): Need[] =>
@@ -88,6 +103,17 @@ describe('every document the pack asks for has a capture card', () => {
     const asked = new Set(TYPES.flatMap((t) => needs(t).map((n) => n.kind)));
     const spurious = [...offered].filter((k) => !asked.has(k));
     expect(spurious).toEqual([]);
+  });
+
+  it('⚠️ THE LIVE WIZARD STILL HAS A STEP THAT TAKES DOCUMENTS', () => {
+    // Its gate names the missing kinds and sends the member to this step. A
+    // rename here without a rename there is a button that jumps to the wrong
+    // screen and a member who cannot find what they were just told to attach.
+    const step = STEP_PLAN.find((s) => s.key === LIVE_DOCUMENTS_STEP);
+    expect(step?.key).toBe(LIVE_DOCUMENTS_STEP);
+    // It carries the SAPS 271 opt-in, which is what turns ~48 form-only fields
+    // on; the checklist beside it is served, so no kind can be orphaned there.
+    expect(step?.sections).toContain('The SAPS 271 form');
   });
 
   it('⚠️ ASKS FOR NO CHARACTER REFERENCE, ON ANY LICENCE TYPE', () => {

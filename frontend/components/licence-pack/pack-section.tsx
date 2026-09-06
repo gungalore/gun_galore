@@ -67,7 +67,7 @@ export default function PackSection({
           two headings stacked on one panel is the duplicate the flat screen
           shipped with. */}
       {title && (
-        <h3 className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
+        <h3 className="text-[11px] font-medium uppercase tracking-[.11em] text-[var(--text-tertiary)]">
           {title}
         </h3>
       )}

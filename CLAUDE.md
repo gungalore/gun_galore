@@ -2109,33 +2109,13 @@ sticky featured strip retired into an in-feed card, card photos 52.5% → 75%,
 tabs now Shop / Saved / Sell / Alerts / Account with Ask Boet as a floating
 launcher.
 
-> ⚠️ **THE BACKEND TYPE-CHECK GATE IS RED, AND IT IS NOT ROT — IT IS
-> WORK IN FLIGHT. DO NOT "FIX" IT.** `npx tsc --noEmit` in `backend/`
-> reports **17 errors in two files**, both spec-only:
->
-> - `licence-centre-competency-expiry.spec.ts` — 8 × TS2345, a `boolean`
->   passed where `readonly LinkedLicence[]` is expected.
-> - `licence-centre-usage.spec.ts` — 9 × TS2339, the mock's intersection
->   collapsing to `never` now that `prisma` is private on
->   `LicenceCentreService`.
->
-> **These belong to the competency→licence expiry-date matching work**
-> being done in a parallel session (operator, 2026-08-25). The signature
-> of `derivedExpiryFor` in `src/common/sa-competency.ts` changed — its
-> fourth argument went from a boolean to `readonly LinkedLicence[]` — and
-> the specs have not caught up yet. The failing test is named "follows the
-> LATEST licence in the certificate's own category", which is that feature.
->
-> So the errors are the expected mid-refactor state of somebody else's
-> branch-in-progress, and editing those files from another session would
-> collide with it. **Leave them to that work.** The gate stays red until it
-> lands; expect it, and do not spend time diagnosing it again.
->
-> This deploy went out over the red gate on the operator's explicit call.
-> That was safe on the merits, not just on authority: `tsconfig.build.json`
-> excludes `**/*spec.ts`, so `nest build` is green and nothing in these
-> files reaches `dist`. It is also NOT the stale-Prisma-types trap —
-> `prisma generate` was run first and changed nothing.
+> **The backend type-check gate is GREEN again (verified 2026-09-06).** This
+> block used to say it was red with 17 spec-only errors from the
+> competency→licence expiry work in flight. That work landed:
+> `derivedExpiryFor` takes `readonly LinkedLicence[]`, both specs were
+> updated, and `npx tsc --noEmit` in `backend/` reports zero errors. If the
+> gate is red now, it is a real error — do not wave it through on the
+> strength of this note.
 
 **⚠️ TURN OFF BEFORE THE FIRST REAL SIGN-UP:
 `ALLOW_LOCAL_ORIGINS=true` in `backend/.env` on the box.** It lets the

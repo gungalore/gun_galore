@@ -87,10 +87,10 @@ export default function MotivationStepNav({
       {/* ── the whole application, in one line ──────────────────── */}
       <div className="mb-4">
         <div className="mb-1.5 flex items-baseline justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
+          <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
             Overall
           </span>
-          <span className="gg-nums text-xs font-semibold text-[var(--text-primary)]">
+          <span className="gg-nums text-xs font-medium text-[var(--text-primary)]">
             {answered} / {answerable}
           </span>
         </div>
@@ -141,7 +141,7 @@ export default function MotivationStepNav({
                   states back in the cascade where the hover can win. Same
                   family of trap as `ring-*` rendering nothing on this site.
                 */
-                className="flex w-full items-center gap-2.5 rounded-[10px] bg-[var(--row-bg)] px-3 py-2.5 text-left hover:bg-[var(--bg-card-hover)]"
+                className="flex min-h-[44px] w-full items-center gap-2.5 rounded-[var(--r-md)] bg-[var(--row-bg)] px-3 py-2.5 text-left hover:bg-[var(--bg-card-hover)]"
                 style={
                   {
                     '--row-bg': isCurrent ? 'var(--bg-card)' : 'transparent',
@@ -152,7 +152,7 @@ export default function MotivationStepNav({
               >
                 <span
                   aria-hidden="true"
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-medium"
                   style={{
                     border: `1px solid ${t.ring}`,
                     background: t.fill,
@@ -164,7 +164,7 @@ export default function MotivationStepNav({
 
                 <span className="min-w-0 flex-1">
                   <span
-                    className="block truncate text-[13.5px] font-semibold"
+                    className="block truncate text-[13.5px] font-medium"
                     style={{
                       color: isCurrent
                         ? 'var(--text-primary)'
@@ -183,7 +183,7 @@ export default function MotivationStepNav({
 
                 <span
                   aria-hidden="true"
-                  className="gg-nums shrink-0 text-[11.5px] font-semibold"
+                  className="gg-nums shrink-0 text-[11.5px] font-medium"
                   style={{
                     color:
                       s.outstanding > 0

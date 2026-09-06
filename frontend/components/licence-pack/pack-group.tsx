@@ -22,7 +22,7 @@ export default function PackGroup({
 
   return (
     <section>
-      <h3 className="text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
+      <h3 className="text-[11px] font-medium uppercase tracking-[.11em] text-[var(--text-tertiary)]">
         {section.title}
       </h3>
 

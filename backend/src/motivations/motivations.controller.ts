@@ -632,8 +632,25 @@ export class MotivationsController {
    */
   @Post(':id/autolink')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  autolink(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.autolink(clerkId, id);
+  autolink(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    /**
+     * "These are the safe at the address on this application."
+     *
+     * M6. Without it the photographs of the safe are held back and the response
+     * says `needsPlaceConfirm`, so the wizard can ask the one question only the
+     * member can answer and call again. It is the SAME tick the library picker
+     * has always required for these kinds — see asksPlace and addFromLibrary.
+     *
+     * ⚠️ Coerced, not trusted: a bare @Body() is not a DTO and the global
+     * ValidationPipe has no forbidNonWhitelisted, so the string "false" would
+     * otherwise arrive here and read as a confirmation. Same handling as
+     * addFromLibrary's, deliberately.
+     */
+    @Body('placeConfirmed') placeConfirmed?: unknown,
+  ) {
+    return this.motivations.autolink(clerkId, id, placeConfirmed === true);
   }
 
   /** Attach one of them, without asking for the file again. */
@@ -701,6 +718,19 @@ export class MotivationsController {
       'Cache-Control': 'private, no-store',
     });
     return new StreamableFile(bytes);
+  }
+
+  /**
+   * The reading we already hold for an attached document — no vision call.
+   * The desktop half of a phone hand-off asks this once the file has landed.
+   */
+  @Get(':id/uploads/:uploadId/reading')
+  readingFor(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Param('uploadId') uploadId: string,
+  ) {
+    return this.motivations.readingFor(clerkId, id, uploadId);
   }
 
   /**

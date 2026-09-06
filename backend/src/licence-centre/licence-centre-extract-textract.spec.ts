@@ -54,6 +54,45 @@ describe('classify', () => {
     expect(out?.kind).toBe('COMPETENCY_CERTIFICATE');
   });
 
+  // 🚨 EVERY MARKER HIT USED TO COME BACK `confident: true`, INCLUDING THE
+  // FUZZY ONES. readMarkers grades its own answer — and it also DOWNGRADES a
+  // definitive marker to 'strong' when it had to match loosely on a smudged
+  // page — so the one signal saying "look at this one" was thrown away at the
+  // point it mattered. `confident: false` is what puts the correction dropdown
+  // in front of the member, and filing an association certificate as the wrong
+  // status once put the operator's SPORT-shooter status on a section 16
+  // application.
+  it('⚠️ is confident only on a DEFINITIVE marker', async () => {
+    const { service } = serving('doc03');
+    const out = await service.classify({ bytes: BYTES, mimeType: 'image/jpeg' });
+    // doc03 heads with "Licence To Possess a Firearm" — the form itself.
+    expect(out).toEqual({
+      kind: 'FIREARM_LICENCE',
+      confident: true,
+      alsoCovers: [],
+    });
+  });
+
+  it('⚠️ asks the member when the marker was only STRONG', async () => {
+    // The green book's identity-page field labels, without the authority line
+    // a cropped photograph loses — strong evidence of an ID, and not the
+    // document declaring itself.
+    const textract = new LicenceCentreTextractService();
+    jest.spyOn(textract, 'analyse').mockResolvedValue({
+      Blocks: [
+        { BlockType: 'LINE', Text: 'SURNAME' },
+        { BlockType: 'LINE', Text: 'FORENAMES' },
+        { BlockType: 'LINE', Text: 'S.A.CITIZEN' },
+      ],
+    });
+    const out = await new LicenceCentreExtractService(textract).classify({
+      bytes: BYTES,
+      mimeType: 'image/jpeg',
+    });
+    expect(out?.kind).toBe('IDENTITY_DOCUMENT');
+    expect(out?.confident).toBe(false);
+  });
+
   // ⚠️ THE FALLBACK IS THE FEATURE, NOT A SAFETY NET NOBODY EXPECTS TO HIT.
   // Proof of address, employment letters and every association certificate
   // whose letterhead is not in the table yet reach Claude by this route.
@@ -93,10 +132,60 @@ describe('read', () => {
     expect(r.details).toMatchObject({
       make: 'HOWA',
       calibre: '6.5MM CREEDMOOR',
-      section: '15',
+      // Normalised by the reader — see textract-document-extract.spec.ts.
+      section: 'S15',
     });
     expect(r.issuedOn).toBe('2022-11-29');
     expect(r.expiresOn).toBe('2032-11-28');
+  });
+
+  // 🚨 `autoFillable` WAS COMPUTED AND THROWN AWAY. extractDocument scores
+  // every material field and knows when one the kind cannot do without came
+  // back empty — and read() spread `got.reading`, which does not carry it. So
+  // the only reader that measures its own work had no way to tell
+  // mayArmReadExpiry not to act, and that guard was left checking a
+  // `lowConfidence` list which on this path can never name a date: `expiresOn`
+  // is its own field and is never a key in `details`.
+  it('⚠️ carries the reader own auto-fill verdict through', async () => {
+    const { service } = serving('doc03');
+    const r = await service.read({
+      kind: 'FIREARM_LICENCE',
+      bytes: BYTES,
+      mimeType: 'image/jpeg',
+      alsoCovers: [],
+    });
+    expect(typeof r.autoFillable).toBe('boolean');
+  });
+
+  it('⚠️ says NOT auto-fillable when a date the kind needs is missing', async () => {
+    // A licence with a make and no validity range: readable enough to store,
+    // nowhere near safe enough to arm a reminder from.
+    const textract = new LicenceCentreTextractService();
+    jest.spyOn(textract, 'analyse').mockResolvedValue({
+      Blocks: [
+        { BlockType: 'LINE', Text: 'MAKE' },
+        {
+          BlockType: 'KEY_VALUE_SET',
+          EntityTypes: ['KEY'],
+          Confidence: 99,
+          Relationships: [
+            { Type: 'VALUE', Ids: ['v1'] },
+            { Type: 'CHILD', Ids: ['k1'] },
+          ],
+          Id: 'k0',
+        },
+      ],
+    });
+    const r = await new LicenceCentreExtractService(textract).read({
+      kind: 'FIREARM_LICENCE',
+      bytes: BYTES,
+      mimeType: 'image/jpeg',
+      alsoCovers: [],
+    });
+    // Either the Textract path answered and said no, or it fell through to the
+    // model (no API key in tests) and expressed no opinion at all. What must
+    // never happen is a confident `true` off a card carrying no dates.
+    expect(r.autoFillable).not.toBe(true);
   });
 
   // Textract will return a street address and a printer's imprint off a

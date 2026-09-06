@@ -90,10 +90,10 @@ export default function SectionChooser({
               onClick={() => onChoose(t.value)}
               className="gg-tile gg-tile-lift w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-3 text-left hover:bg-[var(--bg-card-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <span className="text-[11px] font-semibold uppercase tracking-[.09em] text-[var(--text-tertiary)]">
+              <span className="text-[11px] font-medium uppercase tracking-[.09em] text-[var(--text-tertiary)]">
                 {t.section}
               </span>
-              <span className="block text-[15px] font-semibold text-[var(--text-primary)]">
+              <span className="block text-[15px] font-medium text-[var(--text-primary)]">
                 {t.label}
               </span>
               <span className="block text-[13px] text-[var(--text-secondary)]">

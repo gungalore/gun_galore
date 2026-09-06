@@ -1,5 +1,11 @@
 import { MotivationUploadKind } from '@prisma/client';
-import { CARRIES_FORWARD, priorReadings } from './prior-readings';
+import {
+  CARRIES_FORWARD,
+  carriesForwardAsAnswer,
+  effectiveDay,
+  priorAnswers,
+  priorReadings,
+} from './prior-readings';
 import { VAULTABLE } from './vault-adoption.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -153,5 +159,143 @@ describe('⚠️ an empty string is not an answer', () => {
 
   it('returns nothing at all for a member with no history', () => {
     expect(priorReadings([])).toEqual({ values: {}, from: {} });
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// L7 — the date on the PAGE decides which reading is current.
+// ────────────────────────────────────────────────────────────────────
+
+describe('which of two readings is the current one', () => {
+  it('⚠️ PREFERS THE DATE PRINTED ON THE DOCUMENT over when we filed it', () => {
+    // The failure this fixes: a member moves house in March and only gets round
+    // to photographing the OLD municipal bill in July. Sorted by createdAt the
+    // stale bill is last and newest-wins adopts the address they LEFT — onto an
+    // application they sign, naming where the firearm will be kept.
+    const out = priorReadings([
+      {
+        kind: MotivationUploadKind.ADDRESS_CONFIRMATION,
+        createdAt: new Date('2026-03-01T00:00:00Z'),
+        values: { issue_date: '2026-03-01', residential_address: 'New place' },
+      },
+      {
+        kind: MotivationUploadKind.ADDRESS_CONFIRMATION,
+        createdAt: new Date('2026-07-01T00:00:00Z'),
+        values: { issue_date: '2025-11-02', residential_address: 'Old place' },
+      },
+    ]);
+    expect(out.values.residential_address).toBe('New place');
+  });
+
+  it('falls back to createdAt where the page carries no readable date', () => {
+    // ⚠️ AND A PARTIAL DATE IS NOT A DATE. Coercing "2027" into a day would be
+    // inventing the very fact being ordered on; the upload time is a weaker
+    // answer than the page and a much better one than a guess.
+    const out = priorReadings([
+      {
+        kind: MotivationUploadKind.ADDRESS_CONFIRMATION,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        values: { issue_date: '2026', residential_address: 'First' },
+      },
+      {
+        kind: MotivationUploadKind.ADDRESS_CONFIRMATION,
+        createdAt: new Date('2026-06-01T00:00:00Z'),
+        values: { residential_address: 'Second' },
+      },
+    ]);
+    expect(out.values.residential_address).toBe('Second');
+  });
+
+  it('compares a printed date against another row’s upload time', () => {
+    // The two clocks have to be comparable, or a document with a date always
+    // beats one without regardless of which is actually newer.
+    expect(
+      effectiveDay({
+        kind: MotivationUploadKind.IDENTITY_DOCUMENT,
+        createdAt: new Date('2026-06-01T00:00:00Z'),
+        values: { issue_date: '2019-04-04' },
+      }).toISOString(),
+    ).toBe('2019-04-04T00:00:00.000Z');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// H12 — what they told us last time, on a form they signed.
+// ────────────────────────────────────────────────────────────────────
+
+describe('answers carried forward from a previous application', () => {
+  const at = (iso: string, answers: Record<string, string>) => ({
+    createdAt: new Date(iso),
+    answers,
+  });
+
+  it('carries the history block and the safe, and nothing else', () => {
+    // ⚠️ THE CUT IS THE POINT. The history questions and the safe describe the
+    // PERSON and their premises; the firearm, the seller and the case being
+    // made are true of ONE application, and copying them forward would put last
+    // year's answers on this year's form — a false statement on a document
+    // signed under s120(9)(f), arrived at by helpfulness.
+    const out = priorAnswers([
+      at('2026-01-01T00:00:00Z', {
+        history_conviction: 'No',
+        history_lost_stolen: 'Yes',
+        history_lost_stolen_station: 'Bloemfontein',
+        safe_type: 'SABS 953-1 Category 2',
+        safe_mounted: 'Yes',
+        safe_mounted_to: 'Brick wall',
+        safe_storage_detail: 'Bolted through into the wall of the study.',
+        // None of these may travel.
+        firearm_make: 'CZ',
+        firearm_serial: 'ABC123',
+        motivation_reason: 'I hunt plains game every winter.',
+      }),
+    ]);
+    expect(Object.keys(out.values).sort()).toEqual([
+      'history_conviction',
+      'history_lost_stolen',
+      'history_lost_stolen_station',
+      'safe_mounted',
+      'safe_mounted_to',
+      'safe_storage_detail',
+      'safe_type',
+    ]);
+    expect(out.keys).toEqual(Object.keys(out.values));
+  });
+
+  it('⚠️ NEWEST WINS, AND THE ORDER DOES NOT COME FROM THE QUERY', () => {
+    // Sorted here rather than trusted from an `orderBy`, so a change of query
+    // cannot silently start serving an application from two years ago.
+    const out = priorAnswers([
+      at('2026-06-01T00:00:00Z', { history_conviction: 'Yes' }),
+      at('2024-01-01T00:00:00Z', { history_conviction: 'No' }),
+    ]);
+    expect(out.values.history_conviction).toBe('Yes');
+  });
+
+  it('⚠️ AN EMPTY STRING IS NOT AN ANSWER', () => {
+    // A key present and blank is a question they skipped; letting it through
+    // would overwrite a good older answer with nothing.
+    const out = priorAnswers([
+      at('2024-01-01T00:00:00Z', { history_conviction: 'No' }),
+      at('2026-06-01T00:00:00Z', { history_conviction: '   ' }),
+    ]);
+    expect(out.values.history_conviction).toBe('No');
+  });
+
+  it('survives an application whose answers could not be read', () => {
+    const out = priorAnswers([
+      { createdAt: new Date('2026-01-01T00:00:00Z'), answers: null },
+      at('2026-02-01T00:00:00Z', { history_conviction: 'No' }),
+    ]);
+    expect(out.values.history_conviction).toBe('No');
+  });
+
+  it('covers a history key nobody has written yet', () => {
+    // ⚠️ PREFIX-MATCHED ON PURPOSE. An explicit list would be right on the day
+    // it was written and would silently stop covering the next question
+    // somebody adds — a failure nobody would ever see, because the member just
+    // retypes one more box than last time.
+    expect(carriesForwardAsAnswer('history_something_added_later')).toBe(true);
+    expect(carriesForwardAsAnswer('firearm_make')).toBe(false);
   });
 });

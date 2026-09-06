@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import TemplatePreview, { type PreviewPage } from './motivation-template-preview';
-import { useScrollLock } from '@/lib/use-scroll-lock';
+import { useFocusTrap } from '@/lib/use-focus-trap';
 import type {
   Colourway,
   TemplateCatalogue,
@@ -126,7 +126,7 @@ export default function MotivationTemplatePicker({
   return (
     <section aria-labelledby="tpl-h">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 id="tpl-h" className="text-base font-semibold">
+        <h3 id="tpl-h" className="text-base font-medium">
           How your document looks
         </h3>
         <p className="text-xs text-[var(--text-secondary)]">
@@ -189,7 +189,7 @@ export default function MotivationTemplatePicker({
                 layout={chosenLayout}
                 watermarked={watermarked}
               />
-              <p className="mt-3 flex items-center gap-2 text-sm font-semibold">
+              <p className="mt-3 flex items-center gap-2 text-sm font-medium">
                 {f.name}
                 {active && (
                   <span
@@ -399,27 +399,14 @@ function EnlargedPreview({
   watermarked: boolean;
   onClose: () => void;
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  // The page behind must not scroll under the overlay on iOS.
-  useScrollLock(true);
+  // ⚠️ A REAL TRAP, NOT AN ESCAPE LISTENER. `aria-modal` told a screen reader
+  // nothing outside this mattered while Tab walked straight out of it into the
+  // form behind — where the member could operate the template controls, the
+  // Generate button and the delete link they could not see. The shared hook
+  // does the tab cycle, Escape, the focus restore on close, and the scroll
+  // lock; the hand-rolled pair it replaces did one of the four.
+  const panelRef = useFocusTrap<HTMLDivElement>({ onClose });
   const pages = pagesFor(format);
-
-  // Escape closes, and focus moves into the panel so a screen reader lands on
-  // the dialog rather than staying behind it.
-  const onKey = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    },
-    [onClose],
-  );
-
-  useEffect(() => {
-    document.addEventListener('keydown', onKey);
-    panelRef.current?.focus();
-    return () => {
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onKey]);
 
   return (
     <div
@@ -436,7 +423,7 @@ function EnlargedPreview({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="w-full max-w-[920px] rounded-[12px] outline-none"
+        className="w-full max-w-[920px] rounded-[var(--r-md)] outline-none"
         style={{ background: 'var(--bg-card)', border: '0.5px solid var(--border)' }}
       >
         <header
@@ -447,7 +434,7 @@ function EnlargedPreview({
           }}
         >
           <div>
-            <h4 className="text-sm font-semibold">
+            <h4 className="text-sm font-medium">
               {format.name} · {colour.name}
             </h4>
             <p className="mt-0.5 text-xs text-[var(--text-secondary)]">

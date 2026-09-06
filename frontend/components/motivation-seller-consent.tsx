@@ -1,8 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { motivationsApi } from '@/lib/motivations-api';
+import { readFlag, writeFlag } from '@/lib/motivation-draft';
+
+/** Where "they have already adopted the card" is remembered. */
+const ADOPTED_FLAG = 'sellerCardAdopted';
 
 /** Card firearm keys → how the buyer sees them in the adopt prompt. */
 const ADOPT_LABELS: [string, string][] = [
@@ -76,12 +80,37 @@ export default function MotivationSellerConsent({
   const [cardFirearm, setCardFirearm] = useState<Record<string, string> | null>(
     null,
   );
-  const [adopted, setAdopted] = useState(false);
+  /**
+   * They have already put the card's details on their application.
+   *
+   * ⚠️ PERSISTED, NOT COMPONENT STATE. It was useState, so every reload
+   * re-offered "use these details in my application" to somebody who had used
+   * them — inviting them to overwrite their own corrections with the same card
+   * a second time, and telling them nothing had happened the first.
+   */
+  const [adopted, setAdopted] = useState(() => readFlag(motivationId, ADOPTED_FLAG));
   const [frontId, setFrontId] = useState<string | null>(null);
+
+  /**
+   * ⚠️ EVERY setState AFTER AN await IS GUARDED. This panel polls every 30s
+   * and unmounts the moment the member changes step — and this one lives
+   * inside a checklist row that re-renders on every upload. Writing state into
+   * a component React has already thrown away is a warning today and a leak in
+   * the next runtime; worse here, `send()` below could flip a torn-down panel
+   * to "sent" and lose the message the member needed to read.
+   */
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const refreshStatus = useCallback(async () => {
     try {
       const r = await motivationsApi.sellerConsentStatus(getToken, motivationId);
+      if (!alive.current) return;
       setStatus(r.status);
       setCardFirearm(r.cardFirearm);
       setFrontId(r.licenceFrontUploadId);
@@ -154,8 +183,10 @@ export default function MotivationSellerConsent({
         applicantName,
         firearm: { ...firearm, label: labelToSend },
       });
+      if (!alive.current) return;
       setSent(true);
     } catch (e) {
+      if (!alive.current) return;
       // ⚠️ THE SERVER'S WORDS, NOT OURS. It refuses by name — "fill in the
       // firearm's make and at least one serial number" — and replacing that
       // with "something went wrong" would leave the applicant guessing at a
@@ -175,7 +206,7 @@ export default function MotivationSellerConsent({
   if (status === 'COMPLETED') {
     return (
       <div className="rounded-[var(--r-md)] border border-[var(--border)] p-4">
-        <p className="text-sm font-semibold text-[var(--success)]">
+        <p className="text-sm font-medium text-[var(--success)]">
           The owner has signed
         </p>
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
@@ -184,7 +215,7 @@ export default function MotivationSellerConsent({
 
         {cardFirearm && onAdopt && !adopted && (
           <div className="mt-3 rounded-[var(--r-md)] border border-[var(--border)] p-3">
-            <p className="text-xs font-semibold">
+            <p className="text-xs font-medium">
               Their licence card records this firearm as:
             </p>
             <dl className="mt-2 text-sm">
@@ -220,8 +251,9 @@ export default function MotivationSellerConsent({
               onClick={() => {
                 onAdopt(cardFirearm);
                 setAdopted(true);
+                writeFlag(motivationId, ADOPTED_FLAG);
               }}
-              className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white"
+              className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-medium text-white"
             >
               Use these details in my application
             </button>
@@ -241,7 +273,7 @@ export default function MotivationSellerConsent({
   if (status === 'DECLINED') {
     return (
       <div className="rounded-[var(--r-md)] border border-[var(--border)] p-4">
-        <p className="text-sm font-semibold">The owner declined</p>
+        <p className="text-sm font-medium">The owner declined</p>
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
           They did not agree to the transfer on the link. If that is a mistake,
           speak to them and send it again.
@@ -263,7 +295,7 @@ export default function MotivationSellerConsent({
   if (sent || status === 'INVITED') {
     return (
       <div className="rounded-[var(--r-md)] border border-[var(--border)] p-4">
-        <p className="text-sm font-semibold">Waiting on the owner</p>
+        <p className="text-sm font-medium">Waiting on the owner</p>
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
           {(name || 'They').trim()} {name ? 'has' : 'have'} been sent a link to
           give their consent and photograph their licence. It works for 48
@@ -286,7 +318,7 @@ export default function MotivationSellerConsent({
 
   return (
     <div className="rounded-[var(--r-md)] border border-[var(--border)] p-4">
-      <p className="text-sm font-semibold">
+      <p className="text-sm font-medium">
         Buying from a private owner?
       </p>
       <p className="mt-1 text-xs text-[var(--text-secondary)]">
@@ -366,7 +398,7 @@ export default function MotivationSellerConsent({
           phone.trim().length < 9 ||
           !labelToSend
         }
-        className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+        className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
       >
         {busy ? 'Sending…' : 'Send them the link'}
       </button>

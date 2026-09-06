@@ -37,8 +37,9 @@
 // mistake deserves to know that before they press it, not after.
 // ────────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useFocusTrap } from '@/lib/use-focus-trap';
 import {
   MotivationApiError,
   motivationsApi,
@@ -59,19 +60,20 @@ function ConfirmDialog({
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
-  const panel = useRef<HTMLDivElement>(null);
-
-  // Focus the panel so the keyboard lands inside it, and let Escape out —
-  // but never while the request is in flight, or somebody dismisses a dialog
-  // whose deletion is already happening.
-  useEffect(() => {
-    panel.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) onDismiss();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [busy, onDismiss]);
+  // ⚠️ A REAL TRAP, NOT A .focus() AND A KEY LISTENER. `aria-modal="true"` told
+  // a screen reader nothing outside this dialog mattered while Tab walked
+  // straight out of it into the page behind — where the member could operate
+  // the wizard, and the delete button, on an application this dialog was asking
+  // them about. The trap also restores focus on close and locks the background
+  // scroll. See lib/use-focus-trap.ts.
+  //
+  // Escape is still refused mid-flight: dismissing a dialog whose deletion is
+  // already happening tells somebody it did not happen.
+  const panel = useFocusTrap<HTMLDivElement>({
+    onClose: () => {
+      if (!busy) onDismiss();
+    },
+  });
 
   return (
     <div
@@ -90,10 +92,10 @@ function ConfirmDialog({
         aria-modal="true"
         aria-label="Delete this application"
         tabIndex={-1}
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-[10px] p-5 outline-none sm:rounded-[10px]"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-[8px] p-5 outline-none sm:rounded-[8px]"
         style={{ background: 'var(--bg-card)' }}
       >
-        <h2 className="text-[17px] font-bold text-[var(--text-primary)]">
+        <h2 className="text-[17px] font-medium text-[var(--text-primary)]">
           Delete {reference}?
         </h2>
 
@@ -128,7 +130,7 @@ function ConfirmDialog({
             type="button"
             onClick={onDismiss}
             disabled={busy}
-            className="rounded-[var(--r-sm)] border-0 bg-[var(--text-primary)] px-5 py-[10px] text-[13.5px] font-semibold text-[var(--bg-card)] disabled:opacity-45"
+            className="rounded-[var(--r-sm)] border-0 bg-[var(--text-primary)] px-5 py-[10px] text-[13.5px] font-medium text-[var(--bg-card)] disabled:opacity-45"
           >
             Keep it
           </button>
@@ -136,7 +138,7 @@ function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className="rounded-[var(--r-sm)] border border-[var(--red)] bg-transparent px-5 py-[10px] text-[13.5px] font-semibold text-[var(--red)] disabled:opacity-45"
+            className="rounded-[var(--r-sm)] border border-[var(--red)] bg-transparent px-5 py-[10px] text-[13.5px] font-medium text-[var(--red)] disabled:opacity-45"
           >
             {busy ? 'Deleting…' : 'Delete it'}
           </button>

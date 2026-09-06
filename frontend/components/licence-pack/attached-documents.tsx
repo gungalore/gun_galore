@@ -26,8 +26,12 @@
 // us a second vision call for a document we have already read.
 // ────────────────────────────────────────────────────────────────────
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { PickableKind, UploadRow } from '@/lib/motivations-api';
+// ⚠️ THE LIVE WIZARD'S OWN NOTES COMPONENT, NOT A SECOND ONE. Both screens
+// have to say the same thing about the same document — an expiry read one way
+// here and another way there is two answers to "may I still use this?".
+import { UploadRowNotes, usableUpload } from '@/components/motivation/upload-panel';
 
 export default function AttachedDocuments({
   documents,
@@ -38,6 +42,7 @@ export default function AttachedDocuments({
   onRemove,
   onReread,
   onRefile,
+  onReplace,
 }: {
   documents: UploadRow[];
   /** The kinds this step asks for. Anything else belongs to another step. */
@@ -49,16 +54,36 @@ export default function AttachedDocuments({
   onRemove: (id: string) => void;
   onReread: (id: string) => void;
   onRefile: (id: string, kind: string) => void;
+  /**
+   * Send them somewhere to attach a fresh copy, where there is somewhere.
+   *
+   * Only ever offered on a row whose Document Centre source has been deleted —
+   * the one case where the member cannot fix the row from the row itself.
+   */
+  onReplace?: (kind: string) => void;
 }) {
   const [refiling, setRefiling] = useState<string | null>(null);
+  const selectId = useId();
 
   const mine = documents.filter((d) => kinds.includes(d.kind));
   if (!mine.length) return null;
 
+  // ⚠️ COUNTED, BECAUSE "ATTACHED · 2" OVER TWO EXPIRED CERTIFICATES IS THE
+  // GREEN TICK PROBLEM IN WORDS. A row the pack cannot use must not read as a
+  // requirement met — see usableUpload.
+  const unusable = mine.filter((d) => !usableUpload(d)).length;
+
   return (
     <div className="max-w-[560px]">
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[.11em] text-[var(--text-tertiary)]">
+      <p className="mb-2 text-[11px] font-medium uppercase tracking-[.11em] text-[var(--text-tertiary)]">
         {mine.length === 1 ? 'Attached' : `Attached · ${mine.length}`}
+        {unusable > 0 && (
+          <span className="ml-2 normal-case tracking-normal text-[var(--warning)]">
+            {unusable === 1
+              ? '1 of these cannot answer its row'
+              : `${unusable} of these cannot answer their rows`}
+          </span>
+        )}
       </p>
 
       <ul className="space-y-1.5">
@@ -101,13 +126,27 @@ export default function AttachedDocuments({
                 </p>
               )}
 
-              <div className="mt-2 flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[12.5px]">
+              {/* ⚠️ THE DATE A DFO CHECKS FIRST, AND THIS LIST NEVER CARRIED
+                  IT. The server has always sent `expiresOn`, `caution` and
+                  `sourceRemovedAt` on the row; this screen rendered the kind
+                  and the annexure letter and nothing else — so a complete-
+                  looking step could be a letter of good standing that lapsed
+                  in March, and the member found out at the counter. */}
+              <UploadRowNotes
+                row={d}
+                onReplace={onReplace ? () => onReplace(d.kind) : undefined}
+              />
+
+              {/* ⚠️ 44px TARGETS. These were 12.5px underlined words about
+                  18px tall, four of them in one row, and one of them deletes
+                  a document. */}
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]">
                 {d.available && (
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => onView(d.id)}
-                    className="underline underline-offset-2 text-[var(--text-secondary)]"
+                    className="min-h-[44px] px-1 underline underline-offset-2 text-[var(--text-secondary)]"
                   >
                     View
                   </button>
@@ -117,7 +156,7 @@ export default function AttachedDocuments({
                     type="button"
                     disabled={busy}
                     onClick={() => onReread(d.id)}
-                    className="underline underline-offset-2 text-[var(--text-secondary)]"
+                    className="min-h-[44px] px-1 underline underline-offset-2 text-[var(--text-secondary)]"
                   >
                     Read again
                   </button>
@@ -126,10 +165,11 @@ export default function AttachedDocuments({
                   <button
                     type="button"
                     disabled={busy}
+                    aria-expanded={refiling === d.id}
                     onClick={() =>
                       setRefiling((cur) => (cur === d.id ? null : d.id))
                     }
-                    className="underline underline-offset-2 text-[var(--text-secondary)]"
+                    className="min-h-[44px] px-1 underline underline-offset-2 text-[var(--text-secondary)]"
                   >
                     Change type
                   </button>
@@ -138,7 +178,7 @@ export default function AttachedDocuments({
                   type="button"
                   disabled={busy}
                   onClick={() => onRemove(d.id)}
-                  className="underline underline-offset-2"
+                  className="min-h-[44px] px-1 underline underline-offset-2"
                   style={{ color: 'var(--red)' }}
                 >
                   Remove
@@ -147,10 +187,14 @@ export default function AttachedDocuments({
 
               {refiling === d.id && (
                 <div className="mt-2">
-                  <label className="block text-[11.5px] text-[var(--text-tertiary)]">
+                  <label
+                    htmlFor={`${selectId}-${d.id}`}
+                    className="block text-[11.5px] text-[var(--text-tertiary)]"
+                  >
                     File it as
                   </label>
                   <select
+                    id={`${selectId}-${d.id}`}
                     defaultValue={d.kind}
                     disabled={busy}
                     onChange={(e) => {
@@ -162,7 +206,7 @@ export default function AttachedDocuments({
                       // nothing.
                       if (next && next !== d.kind) onRefile(d.id, next);
                     }}
-                    className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-2 py-1.5 text-[13px]"
+                    className="mt-1 min-h-[44px] w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-2 py-1.5 text-[13px]"
                   >
                     {pickable.map((k) => (
                       <option key={k.kind} value={k.kind}>

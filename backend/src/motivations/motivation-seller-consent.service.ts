@@ -10,6 +10,7 @@ import { SmsService } from '../sms/sms.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { encryptText, tryDecryptText } from '../common/blob-crypto';
+import { parseProvenance, stamp } from '../common/answer-provenance';
 import { selfLoadingFromText } from '../common/sa-competency';
 import { UPLOAD_MAX_BYTES, UPLOAD_MIME } from '../licence-centre/upload-limits';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -1072,8 +1073,96 @@ export class MotivationSellerConsentService {
       },
     });
 
+    // ⚠️ AND THE FIREARM GOES ONTO THE APPLICATION, NOT INTO A SUGGESTION.
+    // H12. cardToApplicationFirearm has always mapped the card onto the
+    // applicant's own answer keys — make, model, type, action, calibre, serial
+    // — and statusFor handed the result back as `cardFirearm` for a panel to
+    // show. So the six facts the SELLER had just read off the government card
+    // and signed for sat beside six empty boxes, waiting for the buyer to
+    // retype them off our transcription of a photograph. Every one of those
+    // keystrokes is a chance to put a wrong serial on a signed application, and
+    // the serial is the field a DFO matches against the licence being
+    // transferred.
+    //
+    // Written here, at the moment the seller signs, because that is when the
+    // fact becomes ours to state.
+    await this.applyCardFirearm(row.id, row.motivationId, merged);
+
     this.logger.log(`Seller consent ${row.id} signed`);
     return { ok: true as const };
+  }
+
+  /**
+   * Put the seller's card onto the buyer's application.
+   *
+   * ⚠️ NEVER OVERWRITES AN ANSWER — the module-wide rule, and it bites hardest
+   * here. The buyer typed a make and a calibre at invite time so the seller
+   * would recognise which gun was meant; replacing those with the card's
+   * wording would silently change what the buyer said after they said it. Where
+   * the two disagree, the disagreement is the useful thing and it belongs in
+   * front of the buyer, not resolved behind them.
+   *
+   * ⚠️ PROVENANCE 'SELLER', WITH THE CONSENT ID. It is the one source in the
+   * provenance union that exists for exactly this, and until now nothing wrote
+   * it. The chip reads "From the seller", which is the honest answer to "why
+   * does this box already have a serial in it".
+   *
+   * ⚠️ AND IT NEVER THROWS. The seller has signed and his consent is
+   * recorded; a failure to prefill the buyer's form is a convenience lost, not
+   * a consent to unwind.
+   */
+  private async applyCardFirearm(
+    consentId: string,
+    motivationId: string,
+    snapshot: Partial<FirearmSnapshot>,
+  ): Promise<void> {
+    try {
+      const mapped = cardToApplicationFirearm(snapshot);
+      if (!Object.keys(mapped).length || !motivationId) return;
+
+      const row = await this.prisma.motivation.findUnique({
+        where: { id: motivationId },
+        select: { id: true, answersEncrypted: true, answerProvenance: true },
+      });
+      if (!row) return;
+
+      const answers = row.answersEncrypted
+        ? (JSON.parse(tryDecryptText(row.answersEncrypted) ?? '{}') as Record<
+            string,
+            string
+          >)
+        : {};
+
+      const written: string[] = [];
+      for (const [key, value] of Object.entries(mapped)) {
+        if ((answers[key] ?? '').trim()) continue;
+        answers[key] = value;
+        written.push(key);
+      }
+      if (!written.length) return;
+
+      let provenance = parseProvenance(row.answerProvenance);
+      provenance = stamp(provenance, written, {
+        source: 'SELLER',
+        from: 'the seller\u2019s licence card',
+        sourceId: consentId,
+      });
+
+      await this.prisma.motivation.update({
+        where: { id: row.id },
+        data: {
+          answersEncrypted: encryptText(JSON.stringify(answers)),
+          answerProvenance: provenance as unknown as object,
+        },
+      });
+      this.logger.log(
+        `Seller consent ${consentId}: filled ${written.length} firearm field(s)`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Seller consent ${consentId}: could not apply the card firearm: ${(err as Error).message}`,
+      );
+    }
   }
 
   /**

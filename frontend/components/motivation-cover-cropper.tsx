@@ -325,7 +325,7 @@ export default function MotivationCoverCropper({
   return (
     <div className="mt-3 rounded border border-[var(--border)] p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 className="text-sm font-semibold">Set the trim</h4>
+        <h4 className="text-sm font-medium">Set the trim</h4>
         <p className="text-xs text-[var(--text-secondary)]">
           Drag the photograph and zoom until the red box holds what you want.
         </p>
@@ -361,21 +361,35 @@ export default function MotivationCoverCropper({
         )}
         {frame && (
           <>
-            {/* Everything outside the frame, dimmed. ⚠️ NO inset-0 ON THIS: it
-                pins all four offsets, the style prop can only override two of
-                them, and the element ends up with no size for the shadow to
-                spread from — which is why the dimming did not appear at all in
-                the first version of this. */}
-            <div
-              className="pointer-events-none absolute"
-              style={{
-                left: frame.x,
-                top: frame.y,
-                width: frame.w,
-                height: frame.h,
-                boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)',
-              }}
-            />
+            {/* EVERYTHING OUTSIDE THE FRAME, DIMMED — IN FOUR PANELS.
+                ⚠️ IT WAS A 9999px SPREAD box-shadow, AND IT COULD NEVER PAINT.
+                globals.css opens with an unscoped
+                `* { box-shadow: none !important }`, so every raw box-shadow in
+                this app is dead unless the element carries .gg-tile — and a
+                .gg-tile here would draw the house card elevation, not a
+                blackout. The dimming has therefore never appeared, and the
+                comment above it blamed an inset-0 that was removed to fix it.
+                Four absolutely-positioned panels around the frame do the same
+                job with plain backgrounds nothing can switch off. */}
+            {(
+              [
+                { left: 0, top: 0, right: 0, height: frame.y },
+                { left: 0, top: frame.y + frame.h, right: 0, bottom: 0 },
+                { left: 0, top: frame.y, width: frame.x, height: frame.h },
+                {
+                  left: frame.x + frame.w,
+                  top: frame.y,
+                  right: 0,
+                  height: frame.h,
+                },
+              ] as const
+            ).map((box, i) => (
+              <div
+                key={`dim-${i}`}
+                className="pointer-events-none absolute"
+                style={{ ...box, background: 'rgba(0,0,0,0.55)' }}
+              />
+            ))}
             <div
               data-testid="crop-frame"
               className="pointer-events-none absolute"
@@ -384,7 +398,10 @@ export default function MotivationCoverCropper({
                 top: frame.y,
                 width: frame.w,
                 height: frame.h,
-                border: '2px solid #e01b24',
+                // ⚠️ THE TOKEN, NOT A LOOKALIKE. #e01b24 is a different red
+                // from the brand's #C8102E and sat one control away from
+                // buttons drawn in the real one.
+                border: '2px solid var(--red)',
               }}
             >
               {/* Thirds, faint — the ordinary cue for placing a subject. */}

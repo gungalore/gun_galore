@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { motivationsApi, type WitnessSummary } from '@/lib/motivations-api';
 
@@ -40,10 +40,32 @@ export default function MotivationWitnesses({
   const [open, setOpen] = useState<string | null>(null);
   const [sigUrl, setSigUrl] = useState<Record<string, string>>({});
 
+  /**
+   * ⚠️ A FAILED LOAD USED TO BE INVISIBLE, FOREVER.
+   *
+   * This had no try at all, and the render below returns null while `rows` is
+   * null — so a dropped request left `rows` null for the life of the page and
+   * the whole witness section simply did not exist. Nothing on screen, nothing
+   * in the console the member can see, and no way to try again: an applicant
+   * whose statements are outstanding is told nothing is outstanding.
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
   const load = useCallback(async () => {
-    const res = await motivationsApi.witnesses(getToken, motivationId);
-    setRows(res.witnesses);
+    try {
+      const res = await motivationsApi.witnesses(getToken, motivationId);
+      setRows(res.witnesses);
+      setLoadFailed(false);
+    } catch {
+      // Only the FIRST load can strand the section — a failed poll leaves the
+      // rows already on screen alone, which is the honest thing to do.
+      setLoadFailed((prev) => prev || rowsRef.current === null);
+    }
   }, [getToken, motivationId]);
+
+  // Read inside `load` rather than closed over, so the callback identity does
+  // not change with the rows and restart the poll on every read.
+  const rowsRef = useRef<WitnessSummary[] | null>(null);
+  rowsRef.current = rows;
 
   useEffect(() => {
     void load();
@@ -78,12 +100,21 @@ export default function MotivationWitnesses({
     };
   }, [pending, load]);
 
-  // Object URLs pin their blob until revoked.
+  // ── Object URLs pin their blob until revoked ──────────────────────
+  //
+  // ⚠️ ON UNMOUNT ONLY, THROUGH A REF. This depended on `sigUrl`, so React ran
+  // the cleanup on every CHANGE as well as on unmount — and the change is a
+  // second signature being opened. Viewing witness 2 revoked witness 1's URL
+  // while its <img> was still pointing at it, and the first signature turned
+  // into a broken image with nothing to say why. The ref is written during
+  // render so the unmount cleanup sees the final set.
+  const sigUrlRef = useRef<Record<string, string>>({});
+  sigUrlRef.current = sigUrl;
   useEffect(
     () => () => {
-      Object.values(sigUrl).forEach((u) => URL.revokeObjectURL(u));
+      Object.values(sigUrlRef.current).forEach((u) => URL.revokeObjectURL(u));
     },
-    [sigUrl],
+    [],
   );
 
   const invite = async (slot: number) => {
@@ -133,7 +164,28 @@ export default function MotivationWitnesses({
     if (url) setSigUrl((s) => ({ ...s, [w.id]: url }));
   };
 
-  if (!rows) return null;
+  // ⚠️ A LOADING SECTION AND A FAILED ONE ARE NOT THE SAME THING, and both
+  // used to render as nothing at all.
+  if (!rows) {
+    if (!loadFailed) return null;
+    return (
+      <div role="alert" className="mt-4 rounded border border-[var(--border)] p-3">
+        <p className="text-sm">
+          We could not load your witnesses just now.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoadFailed(false);
+            void load();
+          }}
+          className="mt-2 min-h-[44px] rounded border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--bg-card-hover)]"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
   const bySlot = new Map(rows.map((r) => [r.slot, r]));
 
   return (
@@ -155,30 +207,43 @@ export default function MotivationWitnesses({
                 className="rounded border border-[var(--border)] p-3"
               >
                 <p className="text-sm font-medium">Witness {slot}</p>
+                {/* ⚠️ REAL LABELS, NOT PLACEHOLDERS. A placeholder is not a
+                    label: it is announced inconsistently, it disappears the
+                    moment a character is typed, and it fails contrast almost
+                    everywhere — so somebody returning to a half-filled pair of
+                    boxes has no way to tell which one wanted the number. */}
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  <input
-                    value={draft[slot]?.name ?? ''}
-                    onChange={(e) =>
-                      setDraft((x) => ({
-                        ...x,
-                        [slot]: { ...(x[slot] ?? { phone: '' }), name: e.target.value },
-                      }))
-                    }
-                    placeholder="Their full name"
-                    className="rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
-                  />
-                  <input
-                    value={draft[slot]?.phone ?? ''}
-                    onChange={(e) =>
-                      setDraft((x) => ({
-                        ...x,
-                        [slot]: { ...(x[slot] ?? { name: '' }), phone: e.target.value },
-                      }))
-                    }
-                    inputMode="tel"
-                    placeholder="Their cell number"
-                    className="rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
-                  />
+                  <label className="block text-sm">
+                    <span className="block font-medium">Their full name</span>
+                    <input
+                      value={draft[slot]?.name ?? ''}
+                      onChange={(e) =>
+                        setDraft((x) => ({
+                          ...x,
+                          [slot]: { ...(x[slot] ?? { phone: '' }), name: e.target.value },
+                        }))
+                      }
+                      autoComplete="name"
+                      placeholder="As it appears on their ID"
+                      className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="block font-medium">Their cell number</span>
+                    <input
+                      value={draft[slot]?.phone ?? ''}
+                      onChange={(e) =>
+                        setDraft((x) => ({
+                          ...x,
+                          [slot]: { ...(x[slot] ?? { name: '' }), phone: e.target.value },
+                        }))
+                      }
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="072 123 4567"
+                      className="mt-1 w-full rounded border border-[var(--border)] bg-[var(--bg-inset)] text-[var(--text-primary)] px-3 py-2 text-sm"
+                    />
+                  </label>
                 </div>
                 {/* ⚠️ THE WARNING GOES HERE, NEXT TO THE BUTTON. */}
                 <p className="mt-2 text-xs text-[var(--text-secondary)]">

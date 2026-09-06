@@ -6,6 +6,7 @@ import { UPLOAD_TO_CREDENTIAL } from './upload-to-credential';
 import { LicenceCentreTextractService } from './licence-centre-textract.service';
 import {
   extractDocument,
+  NO_EXPIRY_ON_THE_PAGE,
   lines as textractLines,
 } from './textract-document-extract';
 import { CredentialKind } from '@prisma/client';
@@ -61,6 +62,28 @@ export interface CredentialReading {
    * looking at their own ID number has the right to be told we changed it.
    */
   notes?: string[];
+  /**
+   * THE TEXTRACT READER'S OWN VERDICT ON WHETHER THIS MAY BE FILLED IN.
+   *
+   * ⚠️ IT WAS COMPUTED AND THEN THROWN AWAY. `extractDocument` returns
+   * `autoFillable` — false when any material field scored under the floor OR a
+   * field the kind cannot do without came back empty — and `read()` spread
+   * `got.reading` and dropped it on the floor. So the one reader that actually
+   * measures its own confidence per field had no way to say "do not act on
+   * this", and `mayArmReadExpiry` was left checking a `lowConfidence` list
+   * that, on the Textract path, could never name a date: `expiresOn` is its
+   * own field on this interface and is never a key in `details`.
+   *
+   * ⚠️ CARRIED AS A SEPARATE VETO RATHER THAN STUFFED INTO `lowConfidence`.
+   * That list is member-facing — it becomes `readUncertain` on the row and the
+   * panel names the fields we doubted, in their words. Pushing 'expires_on'
+   * into it because the ID NUMBER was misread would tell the member we doubted
+   * a date we were in fact sure of.
+   *
+   * `undefined` means "no opinion" and vetoes nothing — which is the Claude
+   * path, where per-field confidence is all there is.
+   */
+  autoFillable?: boolean;
 }
 
 const EMPTY: CredentialReading = {
@@ -143,16 +166,16 @@ export function cleanAlsoCovers(
  * competency card prints its issue date and nothing else, and a proficiency
  * and an ID document do not run out at all.
  *
- * Keep this in step with defaultsToNeverExpires in credential-kinds.ts.
- * They answer two halves of one question — what we STORE and what we SHOW —
- * and a kind in one but not the other is a document that either displays an
- * expiry nobody can confirm or asks for a date it will then discard.
+ * ⚠️ THIS WAS A SECOND COPY OF THE SET IN textract-document-extract.ts, kept
+ * in step by a comment in each file asking the next reader to keep them in
+ * step. It is now imported from there — one declaration, so the two readers
+ * cannot come to different views about which documents expire.
+ *
+ * Keep it in step with defaultsToNeverExpires in credential-kinds.ts. They
+ * answer two halves of one question — what we STORE and what we SHOW — and a
+ * kind in one but not the other is a document that either displays an expiry
+ * nobody can confirm or asks for a date it will then discard.
  */
-const NO_EXPIRY_ON_THE_PAGE: ReadonlySet<string> = new Set([
-  'COMPETENCY_CERTIFICATE',
-  'PROFICIENCY',
-  'IDENTITY_DOCUMENT',
-]);
 
 export const WANTED: Record<CredentialKind, string[]> = {
   FIREARM_LICENCE: [
@@ -344,7 +367,29 @@ export class LicenceCentreExtractService {
         this.logger.log(
           `classified ${kind} from markers (${hit.strength}: ${hit.matched.map((m) => m.name).join(', ')})`,
         );
-        return { kind: currentKind(kind), confident: true, alsoCovers: [] };
+        return {
+          kind: currentKind(kind),
+          /**
+           * ⚠️ `confident` ONLY ON A DEFINITIVE MARKER. This said `true` for
+           * every hit, including the 'strong' ones — and readMarkers also
+           * DOWNGRADES a definitive hit to 'strong' when it had to match
+           * loosely (see document-markers.ts, `wasLoose`), so the one signal
+           * saying "this was a fuzzy match on a smudged page" was thrown away
+           * at the point it mattered.
+           *
+           * `confident: false` is what puts the correction dropdown in front
+           * of the member. A form number IS the document; a unit-standard code
+           * beside its title, or a green book's field labels without its
+           * authority line, is strong evidence and still worth a glance — and
+           * getting this wrong is not cosmetic: a SA Hunters certificate filed
+           * as the wrong status put the operator's SPORT-shooter status on a
+           * section 16 application.
+           *
+           * Mirrors motivation-extract.service.ts, which has always done this.
+           */
+          confident: hit.strength === 'definitive',
+          alsoCovers: [],
+        };
       }
     }
 
@@ -444,7 +489,15 @@ export class LicenceCentreExtractService {
         if (got.notes.length) {
           this.logger.log(`textract read ${args.kind}: ${got.notes.join('; ')}`);
         }
-        return { ...got.reading, notes: got.notes };
+        // ⚠️ `autoFillable` TRAVELS WITH THE READING. See the field on
+        // CredentialReading: it was computed here and discarded, so Textract's
+        // own doubt never reached the one guard that decides whether a date
+        // starts driving reminders.
+        return {
+          ...got.reading,
+          notes: got.notes,
+          autoFillable: got.autoFillable,
+        };
       }
       this.logger.log(
         `textract read ${args.kind} produced nothing storable — falling back`,

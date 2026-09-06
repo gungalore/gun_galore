@@ -75,13 +75,13 @@ export default function ExtractionReview({
 
   return (
     <div
-      className="gg-tile rounded-[10px] border px-4 py-3.5"
+      className="gg-tile rounded-[8px] border px-4 py-3.5"
       style={{
         borderColor: 'var(--success-line)',
         background: 'var(--success-wash)',
       }}
     >
-      <p className="text-[13.5px] font-semibold">
+      <p className="text-[13.5px] font-medium">
         We read {suggestions.length}{' '}
         {suggestions.length === 1 ? 'thing' : 'things'} off that
       </p>
@@ -131,7 +131,7 @@ export default function ExtractionReview({
                     error — the same rule the provenance pills follow. */}
                 {!s.trusted && (
                   <span
-                    className="mt-[1px] shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-semibold"
+                    className="mt-[1px] shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-medium"
                     style={{
                       background: 'var(--gold-wash)',
                       color: 'var(--gold-strong)',
@@ -152,7 +152,7 @@ export default function ExtractionReview({
           type="button"
           disabled={busy || chosen.length === 0}
           onClick={() => onAccept(acceptedFrom(suggestions, ticked))}
-          className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-4 py-[9px] text-[13px] font-semibold text-white disabled:opacity-45"
+          className="rounded-[var(--r-sm)] border-0 bg-[var(--red)] px-4 py-[9px] text-[13px] font-medium text-white disabled:opacity-45"
         >
           {/* The count is on the button because the member chose it. "Use
               these" alone hides how many they are about to sign for. */}
