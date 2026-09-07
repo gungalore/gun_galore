@@ -1967,7 +1967,27 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (08:10), commit `4f9dd5da`.** No migrations.
+**Last deploy: 2026-09-07 (09:35), commit `59f54851`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907120000_ai_usage`, additive only (table `AiUsage` + two
+indexes), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`,
+both apps + warden) on the operator's `deploy now`. Dump
+`alloutdoor-20260907-093127.dump` taken by the script; "All migrations have
+been successfully applied". Health doubled, warden online, public 200 twice.
+
+Shipped, merged from `feat/the-bench`: `4be1f753` + `72a7a464` — **the
+platform's AI moved from the Anthropic API to Gemini.** Every model call now
+goes through `LlmService` (`backend/src/common/llm/`); fifteen services
+migrated; Google Search grounding restored where Anthropic's hosted search
+was; spend metered in our own `AiUsage` ledger under the `gemini` credits key;
+privacy policy, vault consent (version `2026-09-07`, re-asks) and member copy
+name Google. **The default model is `gemini-3.5-flash-lite`**, NOT the
+2.5-flash-lite the operator first asked for: Google refused 2.5 to every key
+created today ("no longer available to new users"), twice, on Google's own
+sample; operator: "use 3.5 flash-lite". `GEMINI_API_KEY` is on the box;
+`LLM_MODEL` is unset (default applies). Anthropic remains the rollback lever
+(`LLM_PROVIDER=anthropic` + `LLM_MODEL`, reload, no deploy).
+
+**Previous deploy: 2026-09-07 (08:10), commit `4f9dd5da`.** No migrations.
 **FRONTEND ONLY** (`deploy.sh --frontend-only`) — the delta is two frontend
 files, so the backend was not rebuilt or reloaded. Dump
 `alloutdoor-20260907-080519.dump` taken by the script. Health doubled, public
