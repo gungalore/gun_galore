@@ -306,11 +306,14 @@ unfinished modules dark in production (see Feature Flags).
   > as dead vars, and a stale comment at
   > `payments/transactions.service.ts:65` still says "the gateway is
   > now Stitch" — both are leftovers, not instructions.
-- **AI: Gemini 2.5 Flash-Lite** via the Google Gen AI API (listing
-  moderation, Ask GG, ballistic bullet lookup, listing-quality scoring,
+- **AI: Gemini 3.5 Flash-Lite** via the Google Gen AI API (listing
+  moderation, listing photo identification, ballistic bullet lookup,
+  listing-quality scoring,
   vision KYC, licence + motivation reading). Operator, 2026-09-07: "we are
   switching from claude API to gemini 2.5 flash-lite api for everything on
-  the website."
+  the website." The Ask GG chat backend was retired on 2026-09-07 (its UI
+  went on 2026-08-26); only `POST /ask-gg/identify-listing` and the admin KB
+  and guide editors remain.
 
   > Every model call goes through ONE adapter — `LlmService` in
   > `backend/src/common/llm/`. No service builds its own client, picks its

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LlmService } from '../common/llm/llm.service';
 import { LlmError, type LlmPart } from '../common/llm/llm.types';
+import { boundedImageUrl, IMAGE_EDGE } from '../common/image-url';
 import type { CrossCheckResult } from './kyc-cross-check';
 
 /**
@@ -346,7 +347,9 @@ export class KycModelService {
             mimeType: input.documentImage.mediaType,
             data: input.documentImage.bytes.toString('base64'),
           }
-        : await this.inlineFromUrl(this.jpegUrl(input.documentUrl!));
+        : // An identity document: 1600, because the ID number and the small
+          // print under it have to survive the resize.
+          await this.inlineFromUrl(this.jpegUrl(input.documentUrl!, IMAGE_EDGE.document));
 
     const userContent: LlmPart[] = [
       ...(typeof input.subjectAgeYears === 'number'
@@ -372,7 +375,8 @@ export class KycModelService {
           type: 'text',
           text: 'South African driving licence card (its photograph is at most five years old — treat it as the most recent likeness):',
         },
-        await this.inlineFromUrl(this.jpegUrl(input.licenceUrl)),
+        // A licence card is a document too — small print, 1600.
+        await this.inlineFromUrl(this.jpegUrl(input.licenceUrl, IMAGE_EDGE.document)),
       );
     }
 
@@ -971,14 +975,19 @@ export class KycModelService {
   }
 
   /**
-   * Force a JPEG delivery variant of a Cloudinary image URL. HEIC uploads
-   * can't be decoded by the model (or by desktop browsers), but Cloudinary
-   * transcodes server-side when an `f_jpg` transformation is in the path.
-   * Non-Cloudinary URLs pass through untouched.
+   * A JPEG delivery variant of a Cloudinary image URL, bounded to the edge
+   * this picture is read at. HEIC uploads can't be decoded by the model (or
+   * by desktop browsers), but Cloudinary transcodes server-side when an
+   * `f_jpg` transformation is in the path. Non-Cloudinary URLs pass through
+   * untouched.
+   *
+   * ⚠️ ONE TRANSFORMATION SEGMENT, NOT TWO. This used to prepend a bare
+   * `f_jpg/`; `boundedImageUrl` already emits `f_jpg` alongside the bound, so
+   * it does both jobs in the one segment. Chaining the old rewrite in front
+   * of it would put two segments in the path for one conversion, and the
+   * second would be the un-bounded original's format hint.
    */
-  private jpegUrl(url: string): string {
-    return url.includes('/image/upload/') && !url.includes('/image/upload/f_jpg')
-      ? url.replace('/image/upload/', '/image/upload/f_jpg/')
-      : url;
+  private jpegUrl(url: string, maxEdge: number): string {
+    return boundedImageUrl(url, maxEdge);
   }
 }

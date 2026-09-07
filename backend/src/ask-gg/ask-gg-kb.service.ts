@@ -3,17 +3,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AskGgKbStatus } from '@prisma/client';
 
 /**
- * Ask GG knowledge-base service (Phase C — search-first flow).
+ * Ask GG knowledge-base service — the desk's own help content.
  *
- *   - Resolved conversations become DRAFT KB entries automatically.
- *     Admin verifies via /admin/ask-gg/kb (Sprint C3).
- *   - VERIFIED entries are searched FIRST when a user asks a new
- *     question. Matches surface as cards above the composer; the
- *     user can click "This helped" (uses the KB answer, skips
- *     the model entirely = zero cost) or "Ask anyway" (proceeds to
- *     the normal model call).
- *   - usefulCount / surfacedCount track entry quality. High-useful
- *     entries rank higher; never-helpful entries can be archived.
+ * ⚠️ NOW AN ADMIN-ONLY STORE (retired 2026-09-07). The KB was built for
+ * the chat's search-first flow: a resolved conversation became a DRAFT
+ * entry, an admin verified it, and a VERIFIED entry then surfaced as a
+ * card above the composer so a matching question cost nothing to answer.
+ * The chat is gone, so the whole read path went with it. What is left is
+ * the verification queue and the verified-expert grants, both of which
+ * the desk still uses.
  *
  * onModuleInit creates a tsvector GENERATED column + GIN index over
  * title + question + answer. Same pattern as ReloadingManualPage —
@@ -21,11 +19,6 @@ import { AskGgKbStatus } from '@prisma/client';
  * DDL idempotently here. If `prisma db push` ever drops the column
  * with `--accept-data-loss`, Postgres re-populates it from the source
  * fields the moment we re-add it (no manual reindex needed).
- *
- * Embeddings (pgvector cosine similarity for semantic matches) are
- * scheduled for a later drop — Postgres FTS gives us solid keyword
- * matching for v1, and the cost-per-question impact comes from any
- * KB hit at all, not from semantic vs lexical quality.
  */
 @Injectable()
 export class AskGgKbService implements OnModuleInit {
@@ -58,179 +51,18 @@ export class AskGgKbService implements OnModuleInit {
     }
   }
 
-  /**
-   * Search VERIFIED KB entries for a user's question. Returns top
-   * hits with a snippet so the frontend can render a preview card.
-   *
-   * Uses weighted FTS (title > question > answer) so a title match
-   * outranks a deep-in-the-answer match. ts_rank gives us numeric
-   * ordering; the limit cap keeps the response small for fast
-   * debounced search-as-you-type.
-   *
-   * Side effect: bumps surfacedCount on every hit so admin can see
-   * which entries are pulling weight in the analytics dashboard.
-   */
-  async searchVerified(
-    query: string,
-    limit = 3,
-  ): Promise<
-    Array<{
-      id: string;
-      title: string;
-      answer: string;
-      snippet: string;
-      category: string | null;
-      usefulCount: number;
-      rank: number;
-    }>
-  > {
-    const trimmed = query.trim();
-    if (trimmed.length < 3) return []; // too short to be meaningful
-    const safeLimit = Math.max(1, Math.min(limit, 10));
-
-    type Row = {
-      id: string;
-      title: string;
-      answer: string;
-      snippet: string;
-      category: string | null;
-      usefulCount: number;
-      rank: number;
-    };
-    const hits = await this.prisma.$queryRawUnsafe<Row[]>(
-      `
-      SELECT
-        "id",
-        "title",
-        "answer",
-        ts_headline(
-          'english',
-          coalesce("answer", ''),
-          websearch_to_tsquery('english', $1),
-          'MaxWords=40, MinWords=20, ShortWord=2, MaxFragments=1'
-        ) AS "snippet",
-        "category",
-        "usefulCount",
-        ts_rank("searchTsv", websearch_to_tsquery('english', $1)) AS "rank"
-      FROM "AskGgKbEntry"
-      WHERE "status" = 'VERIFIED'
-        AND "searchTsv" @@ websearch_to_tsquery('english', $1)
-      ORDER BY "rank" DESC, "usefulCount" DESC, "verifiedAt" DESC
-      LIMIT $2;
-      `,
-      trimmed,
-      safeLimit,
-    );
-
-    // Best-effort surfacedCount bump — fire-and-forget so the response
-    // stays fast. Bulk update via IN clause.
-    if (hits.length > 0) {
-      const ids = hits.map((h) => h.id);
-      this.prisma.askGgKbEntry
-        .updateMany({
-          where: { id: { in: ids } },
-          data: { surfacedCount: { increment: 1 } },
-        })
-        .catch((err) => {
-          this.logger.warn(
-            `surfacedCount bump failed: ${
-              err instanceof Error ? err.message : err
-            }`,
-          );
-        });
-    }
-
-    return hits;
-  }
-
-  /**
-   * Auto-create a DRAFT KB entry from a RESOLVED conversation.
-   * Called by AskGgService.markResolved when outcome=RESOLVED.
-   *
-   * Collapses the conversation to the simplest useful shape:
-   *   title   = conversation.title (already truncated first user msg)
-   *   question = first user message content (full)
-   *   answer  = latest assistant message content
-   *
-   * Admin can fully edit any field during verification. Duplicate
-   * detection: AskGgKbEntry.sourceConversationId is @unique, so
-   * re-marking the same conversation RESOLVED is a no-op (we catch
-   * the unique-violation and log it).
-   */
-  async createDraftFromConversation(conversationId: string): Promise<void> {
-    const conv = await this.prisma.askGgConversation.findUnique({
-      where: { id: conversationId },
-      select: {
-        id: true,
-        title: true,
-        userId: true,
-        messages: {
-          orderBy: { createdAt: 'asc' },
-          select: { role: true, content: true, createdAt: true },
-        },
-      },
-    });
-    if (!conv) {
-      this.logger.warn(
-        `createDraftFromConversation: conversation ${conversationId} not found`,
-      );
-      return;
-    }
-
-    const firstUserMsg = conv.messages.find((m) => m.role === 'user');
-    // Latest assistant message — what actually answered them.
-    const lastAssistant = [...conv.messages]
-      .reverse()
-      .find((m) => m.role === 'assistant');
-
-    if (!firstUserMsg || !lastAssistant) {
-      this.logger.warn(
-        `createDraftFromConversation: conv ${conversationId} missing required messages`,
-      );
-      return;
-    }
-
-    try {
-      await this.prisma.askGgKbEntry.create({
-        data: {
-          sourceConversationId: conv.id,
-          authorId: conv.userId,
-          title: conv.title ?? firstUserMsg.content.slice(0, 80),
-          question: firstUserMsg.content,
-          answer: lastAssistant.content,
-          status: AskGgKbStatus.DRAFT,
-        },
-      });
-      this.logger.log(
-        `Created DRAFT KB entry from conversation ${conversationId}`,
-      );
-    } catch (err) {
-      // Most likely a unique-violation on sourceConversationId — user
-      // re-marked the same conversation RESOLVED. Idempotent: log + skip.
-      this.logger.warn(
-        `Skipped DRAFT creation for ${conversationId}: ${
-          err instanceof Error ? err.message : err
-        }`,
-      );
-    }
-  }
-
-  /** User clicked "This helped" on a KB card — bump usefulCount.
-   *  Cheap aggregate that admin uses to prioritise high-impact
-   *  entries + spot ones that surface but never help (candidates
-   *  for re-write or archive). */
-  async markHelpful(entryId: string): Promise<{ id: string; usefulCount: number }> {
-    try {
-      const updated = await this.prisma.askGgKbEntry.update({
-        where: { id: entryId },
-        data: { usefulCount: { increment: 1 } },
-        select: { id: true, usefulCount: true },
-      });
-      return updated;
-    } catch {
-      throw new NotFoundException('KB entry not found');
-    }
-  }
+  // ⚠️ THE READ PATH IS GONE (retired 2026-09-07). searchVerified(),
+  // createDraftFromConversation() and markHelpful() served the chat: the
+  // KB cards above the composer, the "This helped" counter, and the
+  // RESOLVED-conversation-becomes-a-DRAFT pipeline. The chat came off the
+  // site on 2026-08-26 and its backend a fortnight later, so nothing reads
+  // an entry and nothing creates one automatically any more — the desk
+  // writes and curates them by hand through the admin routes below.
+  //
+  // The FTS column above STAYS. It is a GENERATED column Prisma does not
+  // manage (see the schema-drift trap in CLAUDE.md); it exists in
+  // production, the DDL is idempotent, and dropping it here would be a
+  // silent schema change on boot rather than a cleanup.
 
   // ─── Admin operations (Sprint C3) ────────────────────────────────
 

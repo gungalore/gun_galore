@@ -25,9 +25,9 @@ import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
     ListingQuestionsController,
     SellerQuestionsController,
   ],
-  // PriceEstimateService (resale-value estimator) — exported so the Ask GG
-  // engine can reach it for the estimateResaleValue chat tool (AskGgModule
-  // already imports ListingsModule; no cycle).
+  // PriceEstimateService (resale-value estimator) — exported. ⚠️ It was
+  // exported for the Ask GG chat's estimateResaleValue tool, RETIRED
+  // 2026-09-07; AskGgModule no longer imports this module at all.
   providers: [
     ListingsService,
     // Dependency-free calculator — BUY_NOW listings are priced by marking up

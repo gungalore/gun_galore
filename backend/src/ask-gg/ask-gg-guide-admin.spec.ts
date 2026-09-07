@@ -1,40 +1,23 @@
-// GG site-guide — Wave G5 gate: admin-editable guide overrides.
+// The page-guide ADMIN EDITOR — what is left of the GG site-guide after the
+// Ask Boet panel was retired (2026-09-07).
 //
-// Proves the override OVERLAY is correct and safe: only PUBLISHED rows overlay
-// the shipped default, the auction live-state line always wins the intro, and
-// the admin editor enforces the house rules (never "escrow"; internal '/'-only
-// CTA links) + sane caps. The static GUIDES catalog stays the source of truth
-// for which keys exist.
+// The guide used to be SERVED as well as edited; those tests went with
+// getGuide(). What is pinned here is the half the desk still uses: the editor
+// enforces the house rules (never "escrow"; internal '/'-only CTA links) and
+// sane caps, the static GUIDES catalog stays the source of truth for which
+// keys exist, and publishing is a deliberate second step.
 
-jest.mock('meilisearch', () => ({
-  Meilisearch: class {},
-  MeilisearchApiError: class extends Error {},
-}));
-
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { BadRequestException } from '@nestjs/common';
 import { AskGgGuideService } from './ask-gg-guide.service';
+import { GUIDES } from './guide-content';
 import type { PrismaService } from '../prisma/prisma.service';
 
-const future = new Date(Date.now() + 3 * 24 * 3600 * 1000);
-
-function build(opts: {
-  published?: Array<{
-    key: string;
-    title: string;
-    intro: string | null;
-    points: string[];
-    ctas: unknown;
-  }>;
-  auctionListing?: boolean;
-} = {}) {
-  const published = opts.published ?? [];
-  const findMany = jest.fn(({ where }: { where?: { status?: string } } = {}) =>
-    // The service always queries status=PUBLISHED; return the set only then.
-    Promise.resolve(where?.status === 'PUBLISHED' ? published : []),
-  );
+function build() {
   const prisma = {
     askGgGuideOverride: {
-      findMany,
+      findMany: jest.fn().mockResolvedValue([]),
       findUnique: jest.fn().mockResolvedValue(null),
       upsert: jest.fn((args: { create: { key: string } }) =>
         Promise.resolve({ key: args.create.key, status: 'DRAFT' }),
@@ -44,83 +27,25 @@ function build(opts: {
       ),
       delete: jest.fn().mockResolvedValue({ key: 'x' }),
     },
-    listing: {
-      findUnique: jest.fn().mockResolvedValue(
-        opts.auctionListing
-          ? {
-              listingType: 'AUCTION',
-              status: 'ACTIVE',
-              // Public category — the guide's live auction state is withheld
-              // from anonymous callers on members-only listings (see
-              // public-visibility.spec.ts), which is not what this test is about.
-              publicVisible: true,
-              isExperience: false,
-              currentBid: 1_500_000,
-              endTime: future,
-              reservePrice: 2_000_000,
-            }
-          : null,
-      ),
-    },
   };
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  const guide = new AskGgGuideService(
-    prisma as unknown as PrismaService,
-    {} as any,
-  );
-  /* eslint-enable @typescript-eslint/no-explicit-any */
-  return { guide, prisma, findMany };
+  const guide = new AskGgGuideService(prisma as unknown as PrismaService);
+  return { guide, prisma };
 }
 
-describe('G5 override overlay', () => {
-  it('a PUBLISHED override replaces the shipped default content', async () => {
-    const { guide, findMany } = build({
-      published: [
-        {
-          key: 'dashboard',
-          title: 'My custom dashboard guide',
-          intro: 'A custom intro.',
-          points: ['first custom point', 'second custom point'],
-          ctas: [{ label: 'Do the thing', href: '/my/earnings' }],
-        },
-      ],
-    });
-    const g = await guide.getGuide({ path: '/dashboard' });
-    expect(g.key).toBe('dashboard');
-    expect(g.title).toBe('My custom dashboard guide');
-    expect(g.intro).toBe('A custom intro.');
-    expect(g.points).toEqual(['first custom point', 'second custom point']);
-    expect(g.ctas).toEqual([{ label: 'Do the thing', href: '/my/earnings' }]);
-    // The query is scoped to PUBLISHED — a DRAFT would never reach users.
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { status: 'PUBLISHED' } }),
-    );
+// The compliance lock that used to live in the (deleted) wave-1 spec. It
+// scanned the chat's prompt files; the member-facing copy that survives is the
+// shipped guide catalog and the seeded help-centre content, so it scans those.
+//
+// ⚠️ The catalog is scanned as DATA, not as file text — guide-content.ts opens
+// by stating the house rule, so a raw grep of the source flags the rule itself.
+describe('banned-word scan (compliance lock: "funds held", never the e-word)', () => {
+  it('the shipped guide catalog contains no banned payment term', () => {
+    expect(/escrow/i.test(JSON.stringify(GUIDES))).toBe(false);
   });
 
-  it('no published override → the shipped default is served unchanged', async () => {
-    const { guide } = build({ published: [] });
-    const g = await guide.getGuide({ path: '/dashboard' });
-    expect(g.key).toBe('dashboard');
-    expect(g.title).toBe('Your seller dashboard'); // shipped default
-  });
-
-  it('an auction override cannot change the live current-bid intro', async () => {
-    const { guide } = build({
-      auctionListing: true,
-      published: [
-        {
-          key: 'listing-auction',
-          title: 'Custom auction title',
-          intro: 'THIS SHOULD NOT SHOW',
-          points: ['bid high'],
-          ctas: [],
-        },
-      ],
-    });
-    const g = await guide.getGuide({ path: '/listings/l1', listingId: 'l1' });
-    expect(g.title).toBe('Custom auction title'); // override applied
-    expect(g.intro).toContain('Current bid'); // live state wins the intro
-    expect(g.intro).not.toContain('THIS SHOULD NOT SHOW');
+  it('the seeded help-centre content contains no banned payment term', () => {
+    const f = path.join(__dirname, '..', '..', 'prisma', 'seed-data', 'help-centre.ts');
+    expect(/escrow/i.test(fs.readFileSync(f, 'utf8'))).toBe(false);
   });
 });
 

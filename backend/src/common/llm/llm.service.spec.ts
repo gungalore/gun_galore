@@ -347,7 +347,7 @@ describe('LlmService', () => {
     await svc.complete({
       messages: [],
       maxTokens: 10,
-      purpose: 'askgg.web-sources',
+      purpose: 'motivation.research',
       grounding: { web: true },
     });
     expect(String(log.mock.calls[0][0])).toContain('grounded');

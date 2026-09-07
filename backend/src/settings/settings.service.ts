@@ -159,10 +159,19 @@ export const FLAGS = {
       return Number.isFinite(n) && n > 0 ? n : 100;
     },
   } as FlagDefinition<number>,
-  // ── Ask GG quota caps (Ask GG Everywhere) ──────────────────────────
-  // Moved out of hardcoded consts in ask-gg-quota.service.ts so the
-  // operator can tune spend live from /admin/settings without a deploy.
-  // Defaults mirror the launch spec (OD3). All fail open to defaults.
+  // ── Ask GG quota caps ──────────────────────────────────────────────
+  // Tunable from /admin/settings without a deploy. Defaults mirror the
+  // launch spec (OD3). All fail open to defaults.
+  //
+  // ⚠️ ONLY `ask_gg_free_photo_cap_per_30d` IS STILL READ (retired
+  // 2026-09-07). It caps FREE identifications on the Sell page's photo
+  // helper — the one Ask GG route that survived the chat's removal. The
+  // four MESSAGE caps below metered a chat that no longer exists and are
+  // read by nothing. They are kept as flag definitions so the rows already
+  // in the live Settings table stay recognised rather than turning up as
+  // orphans in /admin/settings; settings-registry-sync.spec.ts pins the
+  // key list. Do not wire a new feature to them — it would inherit a
+  // meaning nobody remembers.
   askGgFreeMsgCapPer30d: {
     key: 'ask_gg_free_msg_cap_per_30d',
     default: 5,
@@ -195,8 +204,8 @@ export const FLAGS = {
       return Number.isFinite(n) && n >= 0 ? n : 5;
     },
   } as FlagDefinition<number>,
-  // W6 two-lane quota — SUPPORT (site/account help) is FREE for every
-  // signed-in tier; this is only the per-day ABUSE cap on that lane.
+  // RETIRED with the chat (see above): the per-day abuse cap on the free
+  // SUPPORT lane of the two-lane quota.
   askGgSupportMsgCapPerDay: {
     key: 'ask_gg_support_msg_cap_per_day',
     default: 20,
