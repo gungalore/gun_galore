@@ -419,6 +419,19 @@ export interface MotivationPdfInput {
   firearmPhoto?: string | Buffer;
   priorNotice?: { title: string; body: string; version: string };
   /**
+   * The press clippings the member chose, printed to look like a cutting —
+   * paper, date, headline, picture, standfirst — never the article body.
+   *
+   * Operator, 2026-09-07: "it must look authentic, no CFR is going to sit and
+   * type in a stupid link we supply him to read the article." So the link
+   * goes small underneath as provenance, never as the thing the reviewer is
+   * asked to use. Lettered as its own generated annexure — see
+   * PRESS_CLIPPINGS in motivation-checklist.ts — and rendered right after the
+   * request for prior notice, the other document we generate rather than
+   * reprint.
+   */
+  pressClippings?: PressClippingPage[];
+  /**
    * The SIGNED character witness statements, one page-set per witness.
    *
    * ⚠️ ONLY THE ONES ACTUALLY SIGNED. A witness who was invited and has not
@@ -574,6 +587,56 @@ export interface AnnexureImagePage {
   height: number;
   /** Whether this copy carries a certification block. See CERTIFICATION. */
   certification?: CertificationLevel;
+}
+
+const CLIPPING_MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/**
+ * "2026-08-30" -> "30 August 2026". No Intl: date formatting behind a locale
+ * is one more thing that can render differently between a developer's
+ * machine and the box, on a document somebody signs. Falls back to the raw
+ * ISO string for anything that does not parse — never throws, and never
+ * invents a date the incident did not carry.
+ */
+function clippingDateLabel(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const month = CLIPPING_MONTHS[Number(m[2]) - 1];
+  return month ? `${Number(m[3])} ${month} ${m[1]}` : iso;
+}
+
+/**
+ * One press clipping, ready to print as its own page.
+ *
+ * ⚠️ NOT AN AnnexureImagePage. That shape is a scanned COPY of a document the
+ * applicant holds — one image, a caption, maybe a stamp block. A clipping is
+ * built from text and (sometimes) a fetched picture, and it must never carry
+ * the article body — see backend/src/news/news.types.ts: "never the body of
+ * the article: it adds nothing a reviewer can check, and reproducing it is
+ * the publisher's right, not ours."
+ */
+export interface PressClippingPage {
+  /** The ONE letter the whole "Press clippings" annexure shares. */
+  letter: string;
+  /** 1-based position among the clippings actually printed. */
+  index: number;
+  total: number;
+  sourceName: string;
+  /** ISO day, as NewsIncident carries it. */
+  publishedOn: string;
+  headline: string;
+  /** The og:description — never the article body. */
+  standfirst: string | null;
+  url: string;
+  /**
+   * The lead picture, already bounded and re-encoded by NewsService — this
+   * renderer only measures and draws it. Absent means no picture and no
+   * placeholder box, never a broken-image icon.
+   */
+  image?: { bytes: Buffer; width: number; height: number };
 }
 
 @Injectable()
@@ -1444,6 +1507,148 @@ export class MotivationPdfService {
         .fillColor(C.ink)
         .text(input.applicantName, MARGIN, doc.y, { width: K.mm(72) });
       K.label(chrome, 'Signature and date', MARGIN, doc.y + 1, K.mm(72));
+      doc.x = MARGIN;
+    }
+
+    // ── Press clippings ─────────────────────────────────────────────
+    //
+    // Operator, 2026-09-07: "it must look authentic, no CFR is going to sit
+    // and type in a stupid link we supply him to read the article." So each
+    // one prints as a cutting — the paper and date, the headline, the
+    // picture, the standfirst — then a thin rule and the link small
+    // underneath as provenance, never as the thing the reviewer is asked to
+    // use. Never the article body: see PressClippingPage.
+    //
+    // ⚠️ ONE CLIPPING PER PAGE, ALWAYS. motivation-annexure-layout.ts could
+    // pack two per page when the picture stays wide enough, but a fixed
+    // one-per-page shape makes the page count predictable — in the spec and
+    // in a real pack — and predictable is worth more here than density: this
+    // is a handful of pages behind an application, not a photo album.
+    //
+    // ⚠️ EVERY CLIPPING SHARES ONE LETTER, printed on every page with its own
+    // "i of n" — the same shape as the safe photographs sharing one letter
+    // across several copies. One entry in the annexure index, several pages
+    // behind it, never a letter per clipping.
+    for (const clip of input.pressClippings ?? []) {
+      doc.addPage();
+      doc.x = MARGIN;
+      doc.y = K.BODY_TOP;
+
+      if (clip.index === 1) {
+        toc.push({
+          heading: `ANNEXURE ${clip.letter} — PRESS CLIPPINGS`,
+          page: doc.bufferedPageRange().count,
+        });
+      }
+
+      const masthead =
+        `Annexure ${clip.letter} — ${clip.sourceName}, ${clippingDateLabel(clip.publishedOn)}` +
+        (clip.total > 1 ? ` (${clip.index} of ${clip.total})` : '');
+      K.label(chrome, masthead, MARGIN, doc.y, contentWidth);
+      doc.y += K.px(8.5) * 1.2 + K.mm(4);
+
+      // The headline, in the pack's heading face — the same sans the other
+      // generated pages (the annexure index, the prior-notice title) use for
+      // a page-level title, never the body face.
+      doc
+        .font(F.sansBold)
+        .fontSize(K.px(15))
+        .fillColor(C.deep)
+        .text(clip.headline, MARGIN, doc.y, {
+          width: contentWidth,
+          lineGap: K.px(2),
+        });
+      // ⚠️ NO heightOfString HERE. pdfkit's own .text() already moved doc.y
+      // to just past what it drew — the same convention every other title
+      // on this page uses (see the ANNEXURES heading above). Adding the
+      // height again would double-count it and leave a headline-sized gap
+      // of blank page under every clipping.
+      doc.y += K.mm(5);
+      doc.x = MARGIN;
+
+      // The standfirst and the closing rule + link are measured BEFORE the
+      // picture is sized, so a long picture can never crowd them off the
+      // bottom of the page — the picture yields, not the text.
+      const standfirst = clip.standfirst?.trim() || undefined;
+      doc.font(B.body).fontSize(K.BODY_SIZE);
+      const standfirstH = standfirst
+        ? doc.heightOfString(standfirst, { width: contentWidth, lineGap: K.px(2) })
+        : 0;
+      const footerH = K.mm(2) + K.px(9) * 1.3;
+      const reserve = (standfirst ? standfirstH + K.mm(4) : 0) + K.mm(2) + footerH;
+
+      if (clip.image && clip.image.width > 0 && clip.image.height > 0) {
+        const ratio = clip.image.height / clip.image.width;
+        let w = contentWidth;
+        let h = w * ratio;
+        const maxH = K.BODY_BOTTOM - doc.y - reserve;
+        if (maxH > 0) {
+          if (h > maxH) {
+            h = maxH;
+            w = ratio > 0 ? h / ratio : contentWidth;
+          }
+          // ⚠️ imgTop CAPTURED BEFORE THE CALL, AND doc.y SET ABSOLUTELY
+          // AFTER IT — never `doc.y += h`. Whether pdfkit's own .image()
+          // moves the cursor for an absolutely-positioned image is not
+          // relied on either way here; an absolute set can never double- or
+          // under-count regardless of what pdfkit did internally.
+          const imgTop = doc.y;
+          try {
+            doc.image(
+              clip.image.bytes,
+              MARGIN + (contentWidth - w) / 2,
+              imgTop,
+              { width: w, height: h },
+            );
+            doc.y = imgTop + h + K.mm(4);
+          } catch {
+            // ⚠️ A FETCHED FILE pdfkit REJECTS MUST NOT KILL THE WHOLE PDF —
+            // same posture as the reprinted copies below. Treated exactly
+            // like a missing picture: no image, no placeholder, doc.y left
+            // where it was.
+          }
+        }
+        // ⚠️ NO PLACEHOLDER, EITHER WAY. If there is genuinely no room left
+        // (a very long headline and standfirst on a small page), the picture
+        // is dropped rather than drawn over the text below it — the same
+        // "no picture, no box" rule that governs a missing fetch, just
+        // reached from the other direction.
+      }
+      doc.x = MARGIN;
+
+      if (standfirst) {
+        doc
+          .font(B.body)
+          .fontSize(K.BODY_SIZE)
+          .fillColor(C.ink)
+          .text(standfirst, MARGIN, doc.y, {
+            width: contentWidth,
+            lineGap: K.px(2),
+          });
+        // Same rule as the headline above: .text() already advanced doc.y.
+        // standfirstH was measured only to RESERVE room before the picture
+        // was sized, not to be added again here.
+        doc.y += K.mm(4);
+        doc.x = MARGIN;
+      }
+
+      const ruleY = doc.y;
+      doc
+        .moveTo(MARGIN, ruleY)
+        .lineTo(MARGIN + contentWidth, ruleY)
+        .lineWidth(0.5)
+        .strokeColor(C.hair)
+        .stroke();
+      doc.y = ruleY + K.mm(2);
+      doc
+        .font(F.sans)
+        .fontSize(K.px(9))
+        .fillColor(C.mut)
+        .text(`${clip.url} — as published`, MARGIN, doc.y, {
+          width: contentWidth,
+          lineBreak: false,
+          ellipsis: true,
+        });
       doc.x = MARGIN;
     }
 

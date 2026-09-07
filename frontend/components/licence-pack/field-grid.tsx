@@ -18,6 +18,8 @@ import { useState } from 'react';
 import FieldInput from '@/components/motivation-field-input';
 import { StationPicker } from '@/components/motivation/station-picker';
 import { PrecinctCard } from '@/components/motivation/precinct-card';
+import { ClippingsPicker } from '@/components/motivation/clippings-picker';
+import { PRESS_CLIPPINGS_KEY } from '@/lib/press-clippings';
 import { maskSensitive } from '@/lib/mask-sensitive';
 // ⚠️ THE SHARED TONES, NOT A SECOND LADDER. This file had its own two-branch
 // chip — gold when `inferred`, grey otherwise — and it could not tell "we could
@@ -67,6 +69,11 @@ export default function FieldGrid({
         // never render as a box of its own — the picker writes it directly.
         if (f.key === POLICE_STATION_PROVINCE_KEY) return null;
 
+        // ⚠️ HIDDEN, THE SAME WAY. `press_clippings` holds the chosen
+        // clipping ids as JSON — ClippingsPicker below is its entire UI, and
+        // it must never render as a box of its own.
+        if (f.key === PRESS_CLIPPINGS_KEY) return null;
+
         const raw = (answers[f.key] ?? '').trim();
         const p = provenance[f.key];
         const open = editing === f.key;
@@ -101,6 +108,15 @@ export default function FieldGrid({
                 <PrecinctCard
                   motivationId={motivationId}
                   policeStation={answers[f.key] ?? ''}
+                  getToken={getToken}
+                />
+              )}
+              {motivationId && (
+                <ClippingsPicker
+                  motivationId={motivationId}
+                  policeStation={answers[f.key] ?? ''}
+                  value={answers[PRESS_CLIPPINGS_KEY] ?? ''}
+                  onChange={(json) => onChange(PRESS_CLIPPINGS_KEY, json)}
                   getToken={getToken}
                 />
               )}

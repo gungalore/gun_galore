@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title type="text">Lowvelder</title>
+  <link rel="alternate" href="https://lowvelder.co.za/"/>
+  <entry>
+    <title type="html">Hijacking on the R40 near White River</title>
+    <link rel="edit" href="https://lowvelder.co.za/edit/1"/>
+    <link rel="alternate" href="https://lowvelder.co.za/2026/09/04/r40-hijacking/"/>
+    <id>tag:lowvelder.co.za,2026:1</id>
+    <published>2026-09-04T05:30:00+02:00</published>
+    <updated>2026-09-04T09:00:00+02:00</updated>
+    <author><name>Marisa du Plessis</name></author>
+    <summary type="html">&lt;p&gt;The driver was unharmed.&lt;/p&gt;</summary>
+  </entry>
+  <entry>
+    <title>Sabie library reopens</title>
+    <link rel="alternate" href="https://lowvelder.co.za/2026/09/03/sabie-library/"/>
+    <updated>2026-09-03T11:00:00+02:00</updated>
+  </entry>
+</feed>

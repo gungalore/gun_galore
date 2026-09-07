@@ -814,6 +814,35 @@ export interface PrecinctFigures {
 }
 
 /**
+ * One thing the local press reported near the station named in
+ * `police_station` — a card in the "Reported near you" clippings picker.
+ *
+ * ⚠️ RENDERS AS THE PAPER PUBLISHED IT, not as our own summary. It prints in
+ * the pack as a clipping — headline, standfirst, picture, the paper's name
+ * and the date — so nothing here is reworded on the way to the screen.
+ */
+export interface NewsIncident {
+  id: string;
+  sourceKey: string;
+  sourceName: string;
+  url: string;
+  headline: string;
+  standfirst: string | null;
+  imageUrl: string | null;
+  author: string | null;
+  publishedOn: string;
+  crimeType: string | null;
+  places: string[];
+  distanceKm: number | null;
+}
+
+/** `GET /motivations/:id/incidents` — same station as `precinct`. */
+export interface IncidentsResult {
+  station: CrimeStatsStation | null;
+  incidents: NewsIncident[];
+}
+
+/**
  * `/crime-stats/*` — a separate resource from `/motivations`, so this is a
  * thin request helper of its own rather than a call to `request()` above.
  *
@@ -903,6 +932,20 @@ export const motivationsApi = {
    */
   precinct: (t: TokenGetter, id: string, signal?: AbortSignal) =>
     request<PrecinctFigures | null>(t, `/${id}/precinct`, { signal }, null),
+
+  /**
+   * What the local press has reported near the same station — the "Reported
+   * near you" clippings picker's fetch. Same contract shape as `precinct`:
+   * nothing on file and a failed request both render the same quiet empty
+   * state, never an error.
+   */
+  incidents: (t: TokenGetter, id: string, signal?: AbortSignal) =>
+    request<IncidentsResult>(
+      t,
+      `/${id}/incidents`,
+      { signal },
+      { station: null, incidents: [] },
+    ),
 
   /**
    * ⚠️ `refused` IS NOT COSMETIC. It names registered fields whose value the

@@ -42,6 +42,7 @@ function build(motivation: unknown, precinct: jest.Mock) {
     {} as never, // notifications
     shared,
     crimeStats as never,
+    {} as never, // news — unused by precinctFor()
   );
   return { svc, prisma };
 }

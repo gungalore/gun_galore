@@ -598,6 +598,50 @@ describe('resolving an upload to its annexure', () => {
   });
 });
 
+describe('PRESS_CLIPPINGS annexure', () => {
+  // ⚠️ ONLY LETTERED WHEN ASKED FOR. Unlike PRIOR_NOTICE_REQUEST — always
+  // built — the clippings annexure is conditional on the member having
+  // actually chosen some, so a pack with none must not reserve a tab that
+  // will print nothing behind it.
+  it('takes no letter unless asked for', () => {
+    const entries = buildAnnexures([], ['PRIOR_NOTICE_REQUEST']);
+    expect(entries.find((e) => e.kind === 'PRESS_CLIPPINGS')).toBeUndefined();
+  });
+
+  it('is lettered, labelled and uncertified when asked for', () => {
+    const entries = buildAnnexures([], [
+      'PRIOR_NOTICE_REQUEST',
+      'PRESS_CLIPPINGS',
+    ]);
+    const entry = entries.find((e) => e.kind === 'PRESS_CLIPPINGS');
+    expect(entry).toMatchObject({
+      label: 'Press clippings',
+      certification: 'none',
+      generated: true,
+    });
+    expect(entry!.letter).toMatch(/^[A-Z]$/);
+    // And it takes a DIFFERENT letter than the prior-notice request — the
+    // exact "one generated document quietly shares another's letter" bug
+    // the safe/association groups exist to prevent for uploads.
+    const pn = entries.find((e) => e.kind === 'PRIOR_NOTICE_REQUEST');
+    expect(entry!.letter).not.toBe(pn!.letter);
+  });
+
+  it('sits after the applicant\'s own incident report, before the tail entries', () => {
+    const entries = buildAnnexures(
+      [MotivationUploadKind.INCIDENT_REPORT, MotivationUploadKind.PREVIOUS_MOTIVATION],
+      ['PRESS_CLIPPINGS'],
+    );
+    const letters = entries.map((e) => e.kind);
+    expect(letters.indexOf(MotivationUploadKind.INCIDENT_REPORT)).toBeLessThan(
+      letters.indexOf('PRESS_CLIPPINGS'),
+    );
+    expect(letters.indexOf('PRESS_CLIPPINGS')).toBeLessThan(
+      letters.indexOf(MotivationUploadKind.PREVIOUS_MOTIVATION),
+    );
+  });
+});
+
 // ────────────────────────────────────────────────────────────────────
 // B4 — THE RICHER ROW: state, closer, captureRoutes.
 //

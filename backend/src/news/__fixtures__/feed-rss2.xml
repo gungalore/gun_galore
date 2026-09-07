@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+  xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>Kempton Express</title>
+    <link>https://kemptonexpress.co.za/</link>
+    <description>Local news for Kempton Park</description>
+    <item>
+      <title>Two arrested after Norkem Park house robbery</title>
+      <link>https://kemptonexpress.co.za/2026/09/06/norkem-park-house-robbery/</link>
+      <pubDate>Sat, 06 Sep 2026 07:15:00 +0200</pubDate>
+      <dc:creator>Thabo Nkosi</dc:creator>
+      <description><![CDATA[<p>The suspects fled in a white bakkie &#8217;before&#8217; police caught them.</p>
+        <a href="https://kemptonexpress.co.za/x">Continue reading</a>]]></description>
+      <content:encoded><![CDATA[<p>FULL ARTICLE BODY WHICH MUST NEVER BE READ.</p>]]></content:encoded>
+      <enclosure url="https://kemptonexpress.co.za/wp-content/uploads/robbery.jpg" type="image/jpeg" length="12345"/>
+    </item>
+    <item>
+      <title>Netball results from the weekend</title>
+      <link>https://kemptonexpress.co.za/2026/09/05/netball-results/</link>
+      <pubDate>Fri, 05 Sep 2026 16:00:00 +0200</pubDate>
+      <description>Birchleigh took the trophy.</description>
+      <media:content url="https://kemptonexpress.co.za/wp-content/uploads/netball.jpg" medium="image"/>
+    </item>
+    <item>
+      <title>A relative link that is not an article</title>
+      <link>/not-absolute</link>
+    </item>
+  </channel>
+</rss>

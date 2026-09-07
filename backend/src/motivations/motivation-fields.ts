@@ -40,7 +40,12 @@ import { ENDORSEMENT_LABELS } from '../common/sa-competency';
 // 2026-09-07: police_station and police_station_province added to
 // S13_SELF_DEFENCE, for the SAPS precinct crime figures a self-defence
 // motivation annexes. See CrimeStatsService.
-export const FIELD_REGISTRY_VERSION = '2026-09-07';
+//
+// 2026-09-07b: press_clippings added to S13_SELF_DEFENCE, holding the up-to-
+// eight NewsIncident ids a member chose to attach as the "Press clippings"
+// annexure. Same day as the line above, hence the suffix — see the rule this
+// comment block states. See PRESS_CLIPPINGS_KEY and NewsService.
+export const FIELD_REGISTRY_VERSION = '2026-09-07b';
 
 // ── THE SAPS 271 IS AN OPT-IN EXTRA, NOT THE PRODUCT ────────────────
 //
@@ -133,6 +138,53 @@ export const COMPETENCY_RENEWS_KEY = 'competency_renews_with_licence';
 export const SAPS271_OPT_KEY = 'fill_saps271';
 export const SAPS271_FILL = 'Fill it in for me';
 export const SAPS271_DEALER = 'My dealer will fill it in';
+
+/**
+ * PRESS CLIPPINGS THE MEMBER CHOSE TO ATTACH BEHIND THEIR OWN CIRCUMSTANCES.
+ *
+ * The value is a JSON array of NewsIncident ids — never text. Nobody types
+ * into this field: the "Your circumstances" step offers a picker built off
+ * `GET /motivations/:id/incidents` (NewsService.incidentsNear, keyed on
+ * `police_station` above), and choosing a clipping there writes the id list
+ * back through the ordinary saveAnswers path, exactly like any other field.
+ * See sanitiseAnswers for the JSON + count validation and
+ * `PRESS_CLIPPINGS_MAX` for the cap.
+ */
+export const PRESS_CLIPPINGS_KEY = 'press_clippings';
+/**
+ * How many clippings a member may attach.
+ *
+ * Not arbitrary generosity: eight is the operator's own limit on how many
+ * incidents get pulled into a pack behind one application — enough to make
+ * the precinct's pattern visible, not so many that the annexure becomes the
+ * document.
+ */
+export const PRESS_CLIPPINGS_MAX = 8;
+
+/**
+ * Read `press_clippings` back off an answers blob.
+ *
+ * Pure and shared: motivation-generation.service.ts (the fact pack) and
+ * motivation-render.service.ts (the printed pack) both need the SAME ids in
+ * the SAME order, or a clipping the writer cited would not be the one that
+ * prints. Never throws — a corrupt or oversized value (which sanitiseAnswers
+ * should already have refused) reads back as no clippings chosen, the same
+ * fail-soft posture as every other prefill/research source in this pipeline.
+ */
+export function parsePressClippingIds(raw: string | undefined): string[] {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return [];
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) return [];
+    const ids = parsed.filter(
+      (x): x is string => typeof x === 'string' && x.trim().length > 0,
+    );
+    return ids.length <= PRESS_CLIPPINGS_MAX ? ids : [];
+  } catch {
+    return [];
+  }
+}
 
 /** The two answers a `yesno` field accepts. Order is deliberate — a wizard
  * should not present "Yes" as the first, easiest tap on a history question. */
@@ -1851,6 +1903,31 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       showIf: { key: SAPS271_OPT_KEY, equals: SAPS271_DEALER },
       maxLength: 60,
     },
+    // ── PRESS CLIPPINGS ──────────────────────────────────────────────
+    //
+    // Operator, 2026-09-07: "pull rss feeds from local papers all over south
+    // africa to give full articles regarding crime in that region of the
+    // applicant" — printed to LOOK like a cutting (paper, date, headline,
+    // picture, standfirst), never the article body, never a link the
+    // applicant is expected to type in. See backend/src/news/news.types.ts.
+    //
+    // ⚠️ NOBODY TYPES INTO THIS BOX. Same two-gate trick as
+    // `police_station_province` immediately above: formOnly hides it on the
+    // fill-in-for-me path, and a showIf that can never be true hides it on
+    // the dealer path too — no answer satisfies both, so no text field for
+    // "paste some article ids" ever appears, on either side. The wizard
+    // writes the value itself, through the ordinary saveAnswers path, once
+    // the member has picked from GET /motivations/:id/incidents.
+    {
+      key: PRESS_CLIPPINGS_KEY,
+      label: 'Press clippings chosen for the annexure',
+      kind: 'short',
+      section: 'Your circumstances',
+      help: `A JSON array of up to ${PRESS_CLIPPINGS_MAX} chosen article ids — written by the picker, not typed.`,
+      formOnly: true,
+      showIf: { key: SAPS271_OPT_KEY, equals: SAPS271_DEALER },
+      maxLength: 4000,
+    },
   ],
   S15_OCCASIONAL_HUNTER: [
     {
@@ -2456,6 +2533,37 @@ export function sanitiseAnswers(
     // HERE, before the cap, so however it arrives it is stored as 13 digits.
     if (/(^|_)id_number$/.test(key)) {
       trimmed = trimmed.replace(/\D/g, '');
+    }
+
+    // press_clippings is a JSON array of ids, never free text, and the two
+    // things that make an array wrong — not JSON, or more than the operator's
+    // limit — are refused rather than silently truncated. Truncating JSON
+    // does not produce a shorter valid answer, it produces a corrupt one, and
+    // a `.slice(0, cap)` a few lines below would do exactly that.
+    if (key === PRESS_CLIPPINGS_KEY) {
+      if (!trimmed) {
+        answers[key] = '';
+        continue;
+      }
+      let ids: string[] | null = null;
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        if (
+          Array.isArray(parsed) &&
+          parsed.every((x) => typeof x === 'string' && x.trim())
+        ) {
+          ids = parsed.map((x) => (x as string).trim());
+        }
+      } catch {
+        ids = null;
+      }
+      if (!ids || ids.length > PRESS_CLIPPINGS_MAX) {
+        rejected.push(key);
+        refused.push(key);
+        continue;
+      }
+      answers[key] = JSON.stringify(ids);
+      continue;
     }
 
     // A choice must be one of the offered choices. This is not defensive

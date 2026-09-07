@@ -5,7 +5,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { MotivationStatus, MotivationUploadKind } from '@prisma/client';
+import {
+  MotivationLicenceType,
+  MotivationStatus,
+  MotivationUploadKind,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { tryDecryptText } from '../common/blob-crypto';
@@ -17,9 +21,12 @@ import { consentFormFor } from './motivation-consent-statement';
 import {
   AnnexureImagePage,
   MotivationPdfService,
+  type PressClippingPage,
   asScheme,
   asFormat,
 } from './motivation-pdf.service';
+import { NewsService } from '../news/news.service';
+import type { NewsIncident } from '../news/news.types';
 import { imageSize, isEmbeddable } from './motivation-annexure-layout';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { type SectionId } from './motivation-structure';
@@ -47,8 +54,10 @@ import {
 } from './motivation-cover-photo';
 import {
   LICENCE_TYPE_LABELS,
+  PRESS_CLIPPINGS_KEY,
   SAPS271_FILL,
   SAPS271_OPT_KEY,
+  parsePressClippingIds,
 } from './motivation-fields';
 import { Saps271Service } from './saps271.service';
 import {
@@ -187,6 +196,7 @@ export class MotivationRenderService {
     private readonly firearmImages: FirearmImageService,
     private readonly witnesses: MotivationWitnessService,
     private readonly shared: MotivationSharedService,
+    private readonly news: NewsService,
   ) {}
 
   /**
@@ -318,6 +328,61 @@ export class MotivationRenderService {
     return { images, notPrinted, pdfs };
   }
 
+  /**
+   * Turn the chosen incidents into printable pages, fetching each picture at
+   * RENDER time — never stored, per the pack-rendering rule that a pack is
+   * rebuilt from source on every download. A picture fetch failing costs
+   * that one clipping its picture, never the clipping or the pack: see
+   * PressClippingPage.image and the "no picture, no placeholder box" rule.
+   *
+   * `undefined` when there is nothing to print, so the caller can pass the
+   * result straight through without an extra empty-array check.
+   */
+  private async buildPressClippings(
+    annexures: AnnexureEntry[],
+    incidents: NewsIncident[],
+  ): Promise<PressClippingPage[] | undefined> {
+    if (!incidents.length) return undefined;
+    const letter = annexures.find((a) => a.kind === 'PRESS_CLIPPINGS')?.letter;
+    // ⚠️ SHOULD NEVER HAPPEN — the caller only reaches PRESS_CLIPPINGS
+    // presence in `annexures` when incidents.length is already truthy — but
+    // if the two ever drift, printing pages with no letter to caption them
+    // is worse than printing nothing.
+    if (!letter) return undefined;
+
+    const pages: PressClippingPage[] = [];
+    for (let i = 0; i < incidents.length; i++) {
+      const incident = incidents[i];
+      let image: PressClippingPage['image'];
+      try {
+        const fetched = await this.news.clippingImage(incident);
+        if (fetched) {
+          image = {
+            bytes: Buffer.from(fetched.data, 'base64'),
+            width: fetched.width,
+            height: fetched.height,
+          };
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Press clipping ${incident.id}: picture fetch failed — ${(err as Error).message}`,
+        );
+      }
+      pages.push({
+        letter,
+        index: i + 1,
+        total: incidents.length,
+        sourceName: incident.sourceName,
+        publishedOn: incident.publishedOn,
+        headline: incident.headline,
+        standfirst: incident.standfirst,
+        url: incident.url,
+        image,
+      });
+    }
+    return pages;
+  }
+
   async renderPdf(clerkId: string, id: string) {
     await this.quota.assertEnabled();
     const user = await this.shared.requireUser(clerkId);
@@ -423,10 +488,46 @@ export class MotivationRenderService {
       this.logger.error(`Motivation ${row.id}: seller consent sheet failed`);
       return undefined;
     });
+
+    // ── Press clippings the member chose, self-defence only ──────────
+    //
+    // ⚠️ FETCHED BEFORE buildAnnexures, NOT AFTER. Whether a PRESS_CLIPPINGS
+    // annexure exists at all decides whether it takes a letter, and that has
+    // to be known before the SAME lettering call the index and every reprint
+    // caption below depend on. See the identical ordering in
+    // MotivationGenerationService, which the writer's citation must agree
+    // with.
+    //
+    // ⚠️ FAIL-SOFT. A bad id, an empty answer or NewsService throwing all
+    // collapse to "no clippings" — the pack renders exactly as it would have
+    // before this feature existed, never a failed download.
+    let pressIncidents: NewsIncident[] = [];
+    if (row.licenceType === MotivationLicenceType.S13_SELF_DEFENCE) {
+      const ids = parsePressClippingIds(answers[PRESS_CLIPPINGS_KEY]);
+      if (ids.length) {
+        try {
+          pressIncidents = await this.news.byIds(ids);
+        } catch (err) {
+          this.logger.warn(
+            `Motivation ${row.id}: press clippings lookup failed — ${(err as Error).message}`,
+          );
+        }
+      }
+    }
+
     // ONE lettering, built once, used by the index AND by the captions on the
     // reprinted copies. See annexureImages.
-    const annexures = buildAnnexures(kinds, ['PRIOR_NOTICE_REQUEST']);
+    const annexures = buildAnnexures(
+      kinds,
+      pressIncidents.length
+        ? ['PRIOR_NOTICE_REQUEST', 'PRESS_CLIPPINGS']
+        : ['PRIOR_NOTICE_REQUEST'],
+    );
     const printable = await this.annexureImages(row.uploads ?? [], annexures);
+    const pressClippings = await this.buildPressClippings(
+      annexures,
+      pressIncidents,
+    );
 
     return this.pdf.render({
       referenceNumber: row.referenceNumber,
@@ -465,6 +566,7 @@ export class MotivationRenderService {
       ownedFirearms: existingFirearms(answers),
       annexures,
       priorNotice,
+      pressClippings,
       // ⚠️ KEYED ON THE HEADING AS IT IS PRINTED — uppercased, colon stripped —
       // because that is the only string the renderer has when it draws one.
       // See sectionMarks on MotivationPdfInput for why this is built from the

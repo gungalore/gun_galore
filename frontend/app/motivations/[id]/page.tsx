@@ -25,6 +25,8 @@ import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
 import FieldInput from '@/components/motivation-field-input';
 import { StationPicker } from '@/components/motivation/station-picker';
 import { PrecinctCard } from '@/components/motivation/precinct-card';
+import { ClippingsPicker } from '@/components/motivation/clippings-picker';
+import { PRESS_CLIPPINGS_KEY } from '@/lib/press-clippings';
 import ProficiencyAlert from '@/components/licence-pack/proficiency-alert';
 import DocumentChecklist, {
   ChecklistRow,
@@ -1789,6 +1791,11 @@ export default function MotivationWizardPage() {
     // never typed anything into.
     if (f.key === POLICE_STATION_PROVINCE_KEY) return null;
 
+    // ⚠️ HIDDEN, THE SAME WAY. `press_clippings` holds the chosen clipping
+    // ids as JSON — see ClippingsPicker just below, which is the field's
+    // entire UI. It must never render as a text box of its own.
+    if (f.key === PRESS_CLIPPINGS_KEY) return null;
+
     if (f.key === 'police_station') {
       return (
         <div key={`${f.key}-w`}>
@@ -1817,6 +1824,13 @@ export default function MotivationWizardPage() {
           <PrecinctCard
             motivationId={id}
             policeStation={answers[f.key] ?? ''}
+            getToken={token}
+          />
+          <ClippingsPicker
+            motivationId={id}
+            policeStation={answers[f.key] ?? ''}
+            value={answers[PRESS_CLIPPINGS_KEY] ?? ''}
+            onChange={(json) => setAnswer(PRESS_CLIPPINGS_KEY, json)}
             getToken={token}
           />
         </div>
