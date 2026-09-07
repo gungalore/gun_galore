@@ -1,0 +1,272 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <title>Kit</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&amp;family=Public+Sans:wght@400;500;600&amp;display=swap">
+  <style>
+:root{
+  --bg:#FFFFFF;--bg-card:#FFFFFF;--bg-card-hover:#FAF9F5;--bg-inset:#F4F2EC;
+  --border:#DDD8CC;--border-hover:#D5CFC2;--border-divider:#EDEAE1;
+  --hairline:rgba(26,22,19,.10);
+  --red:#C8102E;--red-hover:#A00D24;--red-wash:rgba(200,16,46,.09);--red-line:rgba(200,16,46,.25);--link:#B10E28;
+  --text-primary:#1A1613;--text-secondary:#4A443C;--text-tertiary:#7A7267;--text-faint:#9C948A;
+  --success:#1F7A50;--success-line:rgba(31,122,80,.35);--success-wash:rgba(31,122,80,.08);
+  --warning:#8F6E0F;--gold:#A87B14;--gold-strong:#8F6E0F;--gold-line:rgba(168,123,20,.38);--gold-wash:rgba(168,123,20,.10);
+  --info:#2A6FB0;
+  --r-sm:6px;--r-md:8px;--r-lg:12px;
+  --elev-1:0 1px 2px rgba(26,22,19,.07),0 4px 8px rgba(26,22,19,.07),0 10px 24px rgba(26,22,19,.09);
+  --elev-2:0 2px 4px rgba(26,22,19,.08),0 10px 20px rgba(26,22,19,.11),0 22px 48px rgba(26,22,19,.16);
+  --font-sans:'Public Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-head:'Archivo','Public Sans',system-ui,'Segoe UI',sans-serif;
+  --shell-header-h:54px;--nav-h:62px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text-primary);font-family:var(--font-sans);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+a{color:var(--link);text-decoration:none}a:hover{color:var(--red-hover)}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.nums{font-variant-numeric:tabular-nums}
+.h{font-family:var(--font-head);font-weight:500;letter-spacing:-.01em}
+
+/* ── shell (mobile PUSH header, shell-header.tsx) ── */
+.shell{height:54px;display:flex;align-items:center;gap:4px;padding:0 8px;border-bottom:1px solid var(--border-divider);background:var(--bg);position:sticky;top:0;z-index:5}
+.shell .back{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.shell .title{flex:1;min-width:0;font-family:var(--font-head);font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── desktop nav (62px, --nav-h) ── */
+.nav{height:62px;display:flex;align-items:center;gap:24px;padding:0 24px;border-bottom:1px solid var(--border);background:var(--bg)}
+.nav .links{display:flex;gap:22px;font-size:13.5px;color:var(--text-secondary);margin-left:auto}
+.nav .avatar{width:32px;height:32px;border-radius:50%;background:var(--bg-inset);border:1px solid var(--border)}
+
+/* ── sheet header strip (sticky under the shell) ── */
+.strip{position:sticky;top:54px;z-index:4;background:var(--bg);border-bottom:1px solid var(--border-divider)}
+.strip .row1{display:flex;align-items:center;gap:10px;padding:10px 16px 6px}
+.strip .ref{font-size:12.5px;color:var(--text-tertiary);flex-shrink:0}
+.strip .type{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.strip .type{font-size:13.5px;font-weight:500;color:var(--text-primary)}
+.strip .prog{margin-left:auto;flex-shrink:0;border-radius:999px;padding:4px 10px;font-size:11.5px;font-weight:500;white-space:nowrap}
+.prog.left{color:var(--warning);background:color-mix(in srgb,var(--warning) 10%,transparent);border:1px solid color-mix(in srgb,var(--warning) 38%,transparent)}
+.prog.ready{color:var(--success);background:var(--success-wash);border:1px solid var(--success-line)}
+.strip .row2{display:flex;align-items:center;gap:8px;padding:4px 16px 10px}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex-shrink:0;height:30px;display:inline-flex;align-items:center;gap:5px;padding:0 11px;border-radius:999px;border:1px solid var(--border);font-size:12px;color:var(--text-secondary);white-space:nowrap;background:var(--bg)}
+.chip.on{border-color:var(--red);color:var(--text-primary);background:var(--red-wash);font-weight:500}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--warning)}
+.chip .dot.ok{background:var(--success)}
+.pv{flex-shrink:0;height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--border);font-size:12.5px;font-weight:500;color:var(--text-primary);background:var(--bg)}
+.pv.on{border-color:var(--red);background:var(--red-wash)}
+
+/* ── document shelf ── */
+.shelf{padding:12px 0 6px 16px;border-bottom:1px solid var(--border-divider)}
+.shelf .lbl{font-size:11px;font-weight:500;letter-spacing:.11em;text-transform:uppercase;color:var(--text-tertiary);margin:0 0 8px}
+.shelf .scroller{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding-right:16px;padding-bottom:8px}
+.shelf .scroller::-webkit-scrollbar{display:none}
+.doc{flex-shrink:0;width:72px}
+.doc .thumb{position:relative;width:72px;height:92px;border-radius:6px;border:1px solid var(--border);background:var(--bg-inset);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.doc .thumb.img{background:linear-gradient(160deg,#ECE9E1,#DAD5C9)}
+.doc .letter{position:absolute;left:5px;bottom:5px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;font-weight:500;line-height:1;padding:3px 5px;border-radius:4px;background:var(--text-primary);color:#fff}
+.doc .state{position:absolute;right:5px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--success);border:1.5px solid #fff}
+.doc .state.check{background:var(--gold)}
+.doc .name{margin-top:5px;font-size:11px;line-height:1.25;color:var(--text-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.add{flex-shrink:0;width:72px}
+.add .thumb{width:72px;height:92px;border-radius:6px;border:1px dashed var(--border-hover);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--red);font-size:11.5px;font-weight:500;background:var(--bg)}
+.add.large{width:100%}
+.add.large .thumb{width:100%;height:auto;padding:18px 16px;flex-direction:row;justify-content:flex-start;gap:14px;text-align:left}
+.add.large .t1{font-size:14px;font-weight:500;color:var(--text-primary)}
+.add.large .t2{font-size:12.5px;color:var(--text-tertiary);font-weight:400;margin-top:2px}
+
+/* ── sections ── */
+.sec{padding:20px 16px 8px;scroll-margin-top:120px}
+.sec h2{font-family:var(--font-head);font-weight:500;font-size:18px;line-height:1.2;margin:0;letter-spacing:-.01em}
+.sec .blurb{margin:3px 0 6px;font-size:12.5px;color:var(--text-tertiary)}
+.sec .list{display:flex;flex-direction:column}
+
+/* ── item row (sheet-row.tsx) ── */
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:start;padding:11px 0;border-bottom:1px solid var(--border-divider);min-height:44px}
+.row:last-child{border-bottom:0}
+.row .lab{font-size:12.5px;color:var(--text-secondary);line-height:1.3}
+.row .val{font-size:14.5px;font-weight:500;color:var(--text-primary);line-height:1.3;margin-top:2px;overflow-wrap:anywhere}
+.row .src{margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--text-tertiary)}
+.row .act{display:flex;align-items:center;gap:4px;align-self:center}
+.row .act button{min-height:44px;padding:0 8px;font-size:13px;font-weight:500;color:var(--red);border-radius:6px}
+.row .act button:hover{text-decoration:underline}
+.row .act .ghost{color:var(--text-tertiary)}
+.row.suggested .val{color:var(--text-primary)}
+.row.suggested{background:linear-gradient(to right,var(--gold-wash),transparent 60%);margin:0 -16px;padding-left:16px;padding-right:16px;border-radius:0}
+.row .full{grid-column:1 / -1}
+.pill{display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;padding:2px 8px;font-size:10.5px;font-weight:500;line-height:1.4}
+.pill.read{background:var(--success-wash);color:var(--success);border:1px solid var(--success-line)}
+.pill.check{background:var(--gold-wash);color:var(--gold-strong);border:1px solid var(--gold-line)}
+.pill.none{background:var(--bg-inset);color:var(--text-tertiary);border:1px solid transparent}
+.pill.profile{background:var(--bg-inset);color:var(--text-secondary);border:1px solid var(--border)}
+
+/* inputs, open by default on a needs_you row */
+.inp{width:100%;min-height:44px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg-card);padding:10px 12px;font-size:14px;color:var(--text-primary);display:flex;align-items:center;gap:8px}
+.inp.ph{color:var(--text-faint)}
+.inp.sel{justify-content:space-between}
+.inp.ta{min-height:88px;align-items:flex-start;line-height:1.45}
+.inp.miss{border-color:var(--warning)}
+.hint{margin-top:5px;font-size:12px;color:var(--text-tertiary)}
+.need{font-size:11px;font-weight:500;color:var(--warning)}
+.opt{font-size:11px;color:var(--text-tertiary)}
+
+/* yes / no pills (yes-no-pills.tsx) */
+.yn{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--border-divider)}
+.yn:last-child{border-bottom:0}
+.yn .q{flex:1;min-width:0}
+.yn .q p{margin:0;font-size:13.5px;line-height:1.35}
+.yn .q .hp{margin-top:2px;font-size:12px;color:var(--text-tertiary);line-height:1.35}
+.yn .pills{display:flex;gap:8px;flex-shrink:0}
+.yn .p{min-height:44px;padding:6px 15px;border-radius:var(--r-sm);font-size:12.5px;border:1px solid var(--border);color:var(--text-tertiary);display:inline-flex;align-items:center}
+.yn .p.on{border-color:var(--red);background:var(--red-wash);font-weight:500;color:var(--text-primary)}
+.yn .p.miss{border-color:var(--warning)}
+.yn .detail{flex-basis:100%;display:flex;flex-direction:column;gap:8px;padding:2px 0 6px}
+.yn .boxes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+
+/* cards (kind: 'cards') */
+.cards{display:grid;grid-template-columns:repeat(1,minmax(0,1fr));gap:8px;margin-top:6px}
+.cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.card{display:flex;align-items:flex-start;gap:10px;min-height:44px;padding:11px 13px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-card);font-size:13.5px;line-height:1.35;text-align:left;color:var(--text-primary)}
+.card.on{border-color:var(--red);background:var(--red-wash);font-weight:500}
+.card .box{flex-shrink:0;width:18px;height:18px;border-radius:4px;border:1px solid var(--border-hover);margin-top:1px;display:flex;align-items:center;justify-content:center;background:#fff}
+.card.on .box{border-color:var(--red);background:var(--red)}
+.card .rank{margin-left:auto;flex-shrink:0;font-size:10.5px;color:var(--text-tertiary);align-self:center;white-space:nowrap}
+.own{margin-top:10px}
+.own .lab{font-size:12.5px;color:var(--text-secondary)}
+.own .ta{margin-top:5px}
+
+/* overlap / consent / competency cards */
+.note{margin:10px 0 4px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-card);padding:12px 14px;box-shadow:var(--elev-1)}
+.note .k{font-size:11px;font-weight:500;letter-spacing:.11em;text-transform:uppercase;color:var(--text-tertiary)}
+.note .t{margin-top:4px;font-size:14px;line-height:1.4}
+.note .t strong{font-weight:500}
+.note .cards{margin-top:10px}
+.line{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-divider)}
+.line:last-child{border-bottom:0}
+.line .ic{width:20px;height:20px;display:flex;align-items:center;justify-content:center;color:var(--success)}
+.line .t{font-size:13.5px;line-height:1.35}
+.line .s{font-size:12px;color:var(--text-tertiary)}
+
+/* meter, compact (saps271-meter.tsx values) */
+.meter .big{font-family:var(--font-head);font-weight:500;font-size:33px;line-height:1}
+.meter .cap{font-size:12.5px;color:var(--text-tertiary);margin-left:8px}
+.meter .rows{display:flex;flex-direction:column;gap:11px;margin-top:14px}
+.meter .r{display:grid;grid-template-columns:22px minmax(0,1fr) 44px;gap:8px;align-items:center;font-size:12.5px}
+.meter .r .l{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--text-secondary)}
+.meter .bar{height:6px;border-radius:999px;background:var(--bg-inset);overflow:hidden}
+.meter .bar i{display:block;height:100%;background:var(--text-primary);border-radius:999px}
+.meter .bar i.gold{background:var(--gold)}
+.meter .r .n{text-align:right;color:var(--text-tertiary)}
+.meter .r .n.gold{color:var(--gold-strong)}
+
+/* checklist and deliverables */
+.chk{display:flex;flex-direction:column}
+.chk .i{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-divider);font-size:13.5px}
+.chk .i:last-child{border-bottom:0}
+.chk .i .s{font-size:12px;color:var(--text-tertiary)}
+.chk .sq{width:16px;height:16px;border:1px solid var(--border-hover);border-radius:4px}
+.chk .sq.ok{background:var(--success);border-color:var(--success)}
+
+/* footer bar */
+.foot{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border);padding:10px 16px 14px;display:flex;flex-direction:column;gap:6px;align-items:stretch}
+.btn{min-height:44px;border-radius:var(--r-sm);padding:11px 24px;font-size:13.5px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn.red{background:var(--red);color:#fff}
+.btn.red:hover{background:var(--red-hover)}
+.btn.red.off{opacity:.5;cursor:default}
+.btn.line{border:1px solid var(--border);color:var(--text-primary);background:var(--bg-card)}
+.foot .sub{text-align:center;font-size:12px;color:var(--text-tertiary)}
+
+/* preview drawer */
+.drawer{background:var(--bg-card);border-top:1px solid var(--border);border-radius:12px 12px 0 0;box-shadow:var(--elev-2)}
+.drawer .grab{width:36px;height:4px;border-radius:999px;background:var(--border);margin:8px auto 0}
+.drawer .hd{display:flex;align-items:center;gap:10px;padding:10px 16px 8px;border-bottom:1px solid var(--border-divider)}
+.drawer .hd .t{font-family:var(--font-head);font-weight:500;font-size:16px}
+.drawer .hd .s{font-size:12px;color:var(--text-tertiary)}
+.drawer .body{padding:6px 16px 16px}
+.pvsec{padding:10px 0;border-bottom:1px solid var(--border-divider)}
+.pvsec:last-child{border-bottom:0}
+.pvsec h4{margin:0 0 4px;font-family:var(--font-head);font-weight:500;font-size:13.5px}
+.pvsec p{margin:0;font-size:13px;line-height:1.5;color:var(--text-secondary)}
+.pvsec p.thin{color:var(--text-faint);font-style:italic}
+.pvsec mark{background:var(--red-wash);color:var(--text-primary);border-radius:2px;padding:0 2px}
+.pvsec .tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+.pvsec .tbl td{padding:3px 6px 3px 0;border-bottom:1px solid var(--border-divider);color:var(--text-secondary)}
+.pvsec .tbl td:first-child{color:var(--text-tertiary);width:34%}
+
+/* toast */
+.toast{display:inline-flex;align-items:center;gap:10px;background:var(--text-primary);color:#fff;border-radius:var(--r-md);padding:10px 14px;font-size:13px;box-shadow:var(--elev-2)}
+.toast .ok{color:#8FD4AE}
+
+/* list page */
+.tcard{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-card);box-shadow:var(--elev-1);text-align:left;min-height:44px}
+.tcard .n{font-size:14.5px;font-weight:500}
+.tcard .s{font-size:12.5px;color:var(--text-tertiary)}
+.tcard .sec{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--text-tertiary);grid-row:1 / span 2;align-self:center}
+.appl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--border-divider);min-height:44px}
+.appl:last-child{border-bottom:0}
+.appl .n{font-size:14px;font-weight:500}
+.appl .s{font-size:12px;color:var(--text-tertiary)}
+
+/* kit sheet */
+.kit{padding:28px 32px;font-size:13px}
+.kit h1{font-family:var(--font-head);font-weight:500;font-size:22px;margin:0 0 4px}
+.kit .sub{color:var(--text-tertiary);margin:0 0 18px;font-size:13px}
+.spec{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px 24px;align-items:start;padding:16px 0;border-top:1px solid var(--border-divider)}
+.spec .k{font-size:12px;color:var(--text-tertiary);line-height:1.5}
+.spec .k b{display:block;font-weight:500;color:var(--text-primary);font-size:13px;margin-bottom:2px}
+.spec .k code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--bg-inset);padding:1px 4px;border-radius:3px}
+.spec .demo{max-width:420px}
+.spec .demo.wide{max-width:none}
+.swatches{display:flex;flex-wrap:wrap;gap:10px}
+.sw{width:112px}
+.sw i{display:block;height:36px;border-radius:6px;border:1px solid var(--hairline)}
+.sw b{display:block;font-weight:500;font-size:11.5px;margin-top:4px}
+.sw span{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:var(--text-tertiary)}
+</style>
+</helmet>
+<div style="width:900px;min-height:100%;background:var(--bg);margin:0 auto">
+<div class="kit">
+<h1>Licence Centre kit</h1>
+<p class="sub">Every state of the one row component, the chips, the shelf tile and the buttons. Values are the site’s tokens from globals.css; nothing here is new.</p>
+
+<div class="spec"><div class="k"><b>Tokens</b>Ink and surfaces from <code>globals.css</code>. Card = page = white; the only greys are the inset and the borders.</div><div class="demo wide"><div class="swatches"><div class="sw"><i style="background:#FFFFFF"></i><b>--bg / --bg-card</b><span>#FFFFFF</span></div><div class="sw"><i style="background:#F4F2EC"></i><b>--bg-inset</b><span>#F4F2EC</span></div><div class="sw"><i style="background:#DDD8CC"></i><b>--border</b><span>#DDD8CC</span></div><div class="sw"><i style="background:#EDEAE1"></i><b>--border-divider</b><span>#EDEAE1</span></div><div class="sw"><i style="background:#1A1613"></i><b>--text-primary</b><span>#1A1613</span></div><div class="sw"><i style="background:#4A443C"></i><b>--text-secondary</b><span>#4A443C</span></div><div class="sw"><i style="background:#7A7267"></i><b>--text-tertiary</b><span>#7A7267</span></div><div class="sw"><i style="background:#9C948A"></i><b>--text-faint</b><span>#9C948A</span></div><div class="sw"><i style="background:#C8102E"></i><b>--red</b><span>#C8102E</span></div><div class="sw"><i style="background:rgba(200,16,46,.09)"></i><b>--red-wash</b><span>rgba(200,16,46,.09)</span></div><div class="sw"><i style="background:#1F7A50"></i><b>--success</b><span>#1F7A50</span></div><div class="sw"><i style="background:#8F6E0F"></i><b>--gold-strong</b><span>#8F6E0F</span></div><div class="sw"><i style="background:rgba(168,123,20,.10)"></i><b>--gold-wash</b><span>rgba(168,123,20,.10)</span></div><div class="sw"><i style="background:#8F6E0F"></i><b>--warning</b><span>#8F6E0F</span></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Type</b>Archivo 500 for headings (18px section, 24px page, 33px meter). Public Sans for everything else: 14.5/500 value, 13.5 body, 12.5 label, 12 source line, 11 shelf name, 10.5/500 pill. Weights 400 and 500 only.</div><div class="demo "><div class="h" style="font-size:18px">Firearms you own</div><div style="font-size:14.5px;font-weight:500;margin-top:6px">CZ 75 SP-01 · 9mm Parabellum</div><div style="font-size:13.5px;margin-top:4px">I compete with my own equipment instead of borrowing a club pistol.</div><div style="font-size:12.5px;color:var(--text-secondary);margin-top:4px">Type of firearm</div><div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">from your dealer invoice</div></div></div>
+
+<div class="spec"><div class="k"><b>Row · filled</b><code>state: 'filled'</code>. Value in full, never masked. Source line says “from …” using the server’s <code>provenance.from</code>. One action, “Change”, 44px tall, red text.</div><div class="demo "><div class="row filled"><div><div class="lab">SA ID number</div><div class="val">850101 5012 089</div><div class="src"><span>from your identity document</span></div></div><div class="act"><button type="button">Change</button></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Row · filled, inferred</b>Same state, <code>provenance.inferred</code> true. Adds the gold “check this” pill (provenance.tsx <code>toneFor</code>). Never red.</div><div class="demo "><div class="row filled"><div><div class="lab">Association</div><div class="val">SAPSA · member 12345 · DS-0987 since 2021</div><div class="src"><span>from your membership card</span><span class="pill check">check this</span></div></div><div class="act"><button type="button">Change</button></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Row · filled, profile-scoped</b><code>scope: 'profile'</code>. Adds the grey “saved to your profile” pill. Pre-filled on the next application.</div><div class="demo "><div class="row filled"><div><div class="lab">Who holds the key</div><div class="val">Only me</div><div class="src"><span>from your profile</span><span class="pill profile">saved to your profile</span></div></div><div class="act"><button type="button">Change</button></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Row · suggested</b><code>state: 'suggested'</code>. Gold wash fading from the left, value shown, two actions: “Confirm” (red) and “Change” (grey). Confirming writes the value with <code>MEMBER</code> provenance.</div><div class="demo "><div class="row suggested"><div><div class="lab">Action</div><div class="val">Semi-automatic</div><div class="src"><span>Worked out from the model</span><span class="pill check">check this</span></div></div><div class="act"><button type="button">Confirm</button><button type="button" class="ghost">Change</button></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Row · needs_you, text</b><code>state: 'needs_you'</code>. Input rendered open, 44px, placeholder in the shape of the answer. Amber border while required and empty; “Still needed” at the right of the label. Never “You may know it”.</div><div class="demo "><div class="row needs"><div class="full"><div class="lab" style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span>Make</span><span style="display:flex;gap:6px;align-items:center"><span class="need">Still needed</span></span></div><div style="margin-top:6px"><div class="inp ph   miss"><span>Glock, CZ, Taurus</span></div></div></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Row · needs_you, select / date / long</b>Same row; the control changes with <code>kind</code>. Optional rows say “Optional” and carry no amber.</div><div class="demo "><div class="row needs"><div class="full"><div class="lab" style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span>Where it is coming from</span><span style="display:flex;gap:6px;align-items:center"><span class="need">Still needed</span></span></div><div style="margin-top:6px"><div class="inp ph sel  miss"><span>From a dealer, from a private owner, inherited</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></div></div></div></div><div class="row needs"><div class="full"><div class="lab" style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span>Dedicated status held since</span><span style="display:flex;gap:6px;align-items:center"><span class="need">Still needed</span></span></div><div style="margin-top:6px"><div class="inp ph   miss"><span>DD MM YYYY</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 11h18"></path></svg></div></div></div></div><div class="row needs"><div class="full"><div class="lab" style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span>Previous applications refused, or licences cancelled</span><span style="display:flex;gap:6px;align-items:center"><span class="opt">Optional</span></span></div><div style="margin-top:6px"><div class="inp ph  ta "><span>Say so plainly if it has happened, with the reason given.</span></div></div></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Row · cards</b><code>kind: 'cards'</code>. One-column tiles on a phone, two on desktop or for short labels. 44px minimum, 8px radius, checkbox at left; selected = red keyline over the red wash at weight 500. “most likely” marks the top-ranked option only. Optional textarea below, prefilled from the tapped tiles.</div><div class="demo "><div class="row needs"><div class="full"><div class="lab" style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span>Why this pistol</span><span style="display:flex;gap:6px;align-items:center"></span></div><div class="cards "><button type="button" class="card on"><span class="box"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5L20 7"></path></svg></span><span>I compete with my own equipment instead of borrowing a club pistol.</span><span class="rank">most likely</span></button><button type="button" class="card "><span class="box"></span><span>I shoot postal exercises between matches.</span></button></div><div class="own"><div class="lab">In your own words <span class="opt">— optional, prefilled from the cards you tapped</span></div><div class="inp ta own-ta" style="margin-top:5px">I compete with my own equipment instead of borrowing a club pistol.</div></div></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Row · yes / no</b>yes-no-pills.tsx as it exists: 13.5px question, 12px help, pills 12.5px with 6/15 padding, 44px tall. Nothing pre-selected. Amber keyline while unanswered. A “Yes” opens the detail textarea and the four form boxes in a 2-column grid under the row.</div><div class="demo "><div class="yn"><div class="q"><p>Has a firearm of yours ever been lost or stolen?</p></div><div class="pills"><span class="p  ">No</span><span class="p on ">Yes</span></div><div class="detail"><div><div class="lab" style="font-size:12.5px;color:var(--text-secondary)">Tell us what happened</div><div class="inp ta" style="margin-top:5px">A Glock 19 was taken in a house burglary in March 2019 while I was away. It was in the safe; the safe was forced. I reported it the same day.</div></div><div class="boxes"><div class="inp" style="min-height:40px;font-size:13px">Polokwane SAPS</div><div class="inp" style="min-height:40px;font-size:13px">CAS 412/03/2019</div><div class="inp ph" style="min-height:40px;font-size:13px">Which firearm</div><div class="inp ph" style="min-height:40px;font-size:13px">Outcome</div></div></div></div><div class="yn"><div class="q"><p>Has a firearm ever been confiscated from you?</p></div><div class="pills"><span class="p  miss">No</span><span class="p  miss">Yes</span></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Overlap card</b>Appears in Firearm as soon as make and calibre are known. Shadow <code>--elev-1</code> (needs <code>.gg-tile</code>). Ranked options from <code>overlap.suggestedAngle</code>; the confirmed one leads the comparison section.</div><div class="demo "><div class="note"><div class="k">Worked out from your licences</div><div class="t">You already hold a <strong>CZ 75 SP-01 in 9mm Parabellum</strong>. This one will be my</div><div class="cards "><button type="button" class="card on"><span class="box"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5L20 7"></path></svg></span><span>match pistol for Production Optics, with the SP-01 as my practice and backup pistol</span><span class="rank">most likely</span></button><button type="button" class="card "><span class="box"></span><span>backup to the SP-01 at matches</span></button></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Header strip</b>Sticky under the 54px shell. Row 1: reference (mono 12.5 tertiary), type (13.5/500), progress pill at the right (amber “N things left”, green “Ready to write”). Row 2: section chips, 30px, scrollable, active = red keyline on red wash; a dot per chip, amber while the section has anything needed. “Preview” toggle pinned at the right.</div><div class="demo wide"><div class="strip"><div class="row1"><span class="ref mono">MO000066</span><span class="type">Dedicated sports shooter</span><span class="prog left">4 things left</span></div><div class="row2"><div class="chips"><a class="chip " href="#firearm"><span class="dot ok"></span>Firearm</a><a class="chip on" href="#you"><span class="dot "></span>You</a><a class="chip " href="#competency"><span class="dot ok"></span>Competency</a><a class="chip " href="#own"><span class="dot ok"></span>Own</a><a class="chip " href="#premises"><span class="dot ok"></span>Premises</a><a class="chip " href="#case"><span class="dot ok"></span>Your case</a><a class="chip " href="#declarations"><span class="dot ok"></span>Declarations</a><a class="chip " href="#pack"><span class="dot ok"></span>Pack</a></div><button class="pv " type="button"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>Preview</button></div></div><div style="height:8px"></div><div class="strip"><div class="row1"><span class="ref mono">MO000066</span><span class="type">Dedicated sports shooter</span><span class="prog ready">Ready to write</span></div><div class="row2"><div class="chips"><a class="chip " href="#firearm"><span class="dot ok"></span>Firearm</a><a class="chip " href="#you"><span class="dot ok"></span>You</a><a class="chip " href="#competency"><span class="dot ok"></span>Competency</a><a class="chip " href="#own"><span class="dot ok"></span>Own</a><a class="chip " href="#premises"><span class="dot ok"></span>Premises</a><a class="chip " href="#case"><span class="dot ok"></span>Your case</a><a class="chip " href="#declarations"><span class="dot ok"></span>Declarations</a><a class="chip on" href="#pack"><span class="dot ok"></span>Pack</a></div><button class="pv on" type="button"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>Preview</button></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Shelf</b>72 × 92 thumbs, 6px radius, <code>--border</code>, annexure letter bottom-left in a dark tag (mono 10.5), state dot top-right (green read, gold check). Name under it, 11px, two lines. “Add” is a dashed tile; on an empty vault it becomes the wide tile with the QR and the one-line promise.</div><div class="demo wide"><div class="shelf"><p class="lbl">Your documents</p><div class="scroller"><div class="doc"><div class="thumb img"><span class="letter">A</span><span class="state "></span></div><div class="name">Identity document</div></div><div class="doc"><div class="thumb img"><span class="letter">B</span><span class="state "></span></div><div class="name">Proof of address</div></div><div class="doc"><div class="thumb img"><span class="letter">C</span><span class="state "></span></div><div class="name">Competency certificate</div></div><div class="doc"><div class="thumb img"><span class="letter">D</span><span class="state "></span></div><div class="name">Licence · CZ 75 SP-01</div></div><div class="add"><div class="thumb"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg><span>Add</span></div></div></div></div><div class="shelf"><p class="lbl">Your documents</p><div class="scroller"><div class="add large"><div class="thumb"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><path d="M14 14h3v3h-3z"></path><path d="M21 14v7h-7"></path><path d="M17 21h.01"></path></svg><div><div class="t1">Add your ID, licences and certificates</div><div class="t2">Scan with your phone or choose files. We read them and fill this page in.</div></div></div></div></div></div></div></div>
+
+<div class="spec"><div class="k"><b>Footer</b>Sticky bottom. The only red button on the surface. Disabled at 50% with the count under it until nothing is needed.</div><div class="demo "><div class="foot"><button class="btn red off" type="button" disabled="disabled">Write my motivation</button><div class="sub">4 things still needed above</div></div><div class="foot"><button class="btn red" type="button">Write my motivation</button></div></div></div>
+
+<div class="spec"><div class="k"><b>Toast</b>After the shelf reads a document: dark plate, <code>--elev-2</code>, one line. The rows it filled change state under it; the toast does not list them.</div><div class="demo "><div class="toast"><span class="ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8FD4AE" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5L20 7"></path></svg></span>Read your competency certificate · 3 rows filled</div></div></div>
+</div>
+</div>
+</x-dc>
+</body>
+</html>

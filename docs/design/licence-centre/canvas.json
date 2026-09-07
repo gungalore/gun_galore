@@ -1,0 +1,108 @@
+{
+  "pages": [
+    {
+      "id": "screens",
+      "name": "Screens"
+    },
+    {
+      "id": "kit",
+      "name": "Kit"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "List.dc.html",
+      "title": "/licence-centre",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 1180,
+      "page": "screens"
+    },
+    {
+      "file": "Main.dc.html",
+      "title": "/licence-centre/[id] · populated vault",
+      "x": 480,
+      "y": 0,
+      "w": 390,
+      "h": 4560,
+      "page": "screens"
+    },
+    {
+      "file": "EmptyVault.dc.html",
+      "title": "/licence-centre/[id] · empty vault",
+      "x": 960,
+      "y": 0,
+      "w": 390,
+      "h": 1900,
+      "page": "screens"
+    },
+    {
+      "file": "PrivateSale.dc.html",
+      "title": "Firearm · private sale",
+      "x": 1440,
+      "y": 0,
+      "w": 390,
+      "h": 1500,
+      "page": "screens"
+    },
+    {
+      "file": "Preview.dc.html",
+      "title": "Preview drawer",
+      "x": 1920,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "screens"
+    },
+    {
+      "file": "Pack.dc.html",
+      "title": "/licence-centre/[id]/pack",
+      "x": 2400,
+      "y": 0,
+      "w": 390,
+      "h": 1900,
+      "page": "screens"
+    },
+    {
+      "file": "Desktop.dc.html",
+      "title": "Desktop · 760 column + preview",
+      "x": 0,
+      "y": 6600,
+      "w": 1440,
+      "h": 1520,
+      "page": "screens"
+    },
+    {
+      "file": "Kit.dc.html",
+      "title": "Kit · row states and tokens",
+      "x": 0,
+      "y": 0,
+      "w": 900,
+      "h": 2700,
+      "page": "kit"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "read-order",
+      "x": 0,
+      "y": -170,
+      "w": 440,
+      "page": "screens",
+      "text": "Read left to right: list, the sheet with a populated vault, the same sheet for a first-timer, the private-sale variant of the Firearm section, the preview drawer, the pack. Desktop below. The Kit page names every row state with the prop that produces it."
+    },
+    {
+      "id": "sample-data",
+      "x": 480,
+      "y": -110,
+      "w": 380,
+      "page": "screens",
+      "text": "All names, numbers and documents are invented sample data. Nothing is a real member."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "screens"
+  }
+}

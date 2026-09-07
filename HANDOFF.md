@@ -4,7 +4,16 @@ What the last session did, where everything stands, and what the next one should
 pick up. **Rules do not live here — they live in `CLAUDE.md`.** This file is
 state, and it is meant to be overwritten.
 
-Last updated: **2026-09-07**.
+Last updated: **2026-09-08**.
+
+## Next up: the Motivation Centre rebuild (design done, no code yet)
+
+The operator's brief is `MOTIVATION-REBUILD-BRIEF.md` at the repo root (with
+`MOTIVATION-INTAKE-PLAN.md` and `MOTIVATION-UX-REVIEW.md`). On 2026-09-08 a design
+session produced the canvas for the new `/licence-centre` sheet and the build spec
+`docs/design/licence-centre/SPEC-BUILD.md`. **Start with the brief's Phase 0** (a
+file-by-file plan, then stop for sign-off); the spec is for Phase 3. None of those
+files is committed yet — they are untracked in the worktree.
 
 ---
 

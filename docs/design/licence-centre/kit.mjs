@@ -1,0 +1,354 @@
+// Shared kit for the Licence Centre artboards. Every value here is lifted from
+// frontend/app/globals.css, components/document-centre/*, licence-pack/
+// yes-no-pills.tsx, motivation/provenance.tsx and shell-header.tsx.
+
+export const CSS = `
+:root{
+  --bg:#FFFFFF;--bg-card:#FFFFFF;--bg-card-hover:#FAF9F5;--bg-inset:#F4F2EC;
+  --border:#DDD8CC;--border-hover:#D5CFC2;--border-divider:#EDEAE1;
+  --hairline:rgba(26,22,19,.10);
+  --red:#C8102E;--red-hover:#A00D24;--red-wash:rgba(200,16,46,.09);--red-line:rgba(200,16,46,.25);--link:#B10E28;
+  --text-primary:#1A1613;--text-secondary:#4A443C;--text-tertiary:#7A7267;--text-faint:#9C948A;
+  --success:#1F7A50;--success-line:rgba(31,122,80,.35);--success-wash:rgba(31,122,80,.08);
+  --warning:#8F6E0F;--gold:#A87B14;--gold-strong:#8F6E0F;--gold-line:rgba(168,123,20,.38);--gold-wash:rgba(168,123,20,.10);
+  --info:#2A6FB0;
+  --r-sm:6px;--r-md:8px;--r-lg:12px;
+  --elev-1:0 1px 2px rgba(26,22,19,.07),0 4px 8px rgba(26,22,19,.07),0 10px 24px rgba(26,22,19,.09);
+  --elev-2:0 2px 4px rgba(26,22,19,.08),0 10px 20px rgba(26,22,19,.11),0 22px 48px rgba(26,22,19,.16);
+  --font-sans:'Public Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-head:'Archivo','Public Sans',system-ui,'Segoe UI',sans-serif;
+  --shell-header-h:54px;--nav-h:62px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text-primary);font-family:var(--font-sans);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+a{color:var(--link);text-decoration:none}a:hover{color:var(--red-hover)}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.nums{font-variant-numeric:tabular-nums}
+.h{font-family:var(--font-head);font-weight:500;letter-spacing:-.01em}
+
+/* ── shell (mobile PUSH header, shell-header.tsx) ── */
+.shell{height:54px;display:flex;align-items:center;gap:4px;padding:0 8px;border-bottom:1px solid var(--border-divider);background:var(--bg);position:sticky;top:0;z-index:5}
+.shell .back{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.shell .title{flex:1;min-width:0;font-family:var(--font-head);font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── desktop nav (62px, --nav-h) ── */
+.nav{height:62px;display:flex;align-items:center;gap:24px;padding:0 24px;border-bottom:1px solid var(--border);background:var(--bg)}
+.nav .links{display:flex;gap:22px;font-size:13.5px;color:var(--text-secondary);margin-left:auto}
+.nav .avatar{width:32px;height:32px;border-radius:50%;background:var(--bg-inset);border:1px solid var(--border)}
+
+/* ── sheet header strip (sticky under the shell) ── */
+.strip{position:sticky;top:54px;z-index:4;background:var(--bg);border-bottom:1px solid var(--border-divider)}
+.strip .row1{display:flex;align-items:center;gap:10px;padding:10px 16px 6px}
+.strip .ref{font-size:12.5px;color:var(--text-tertiary);flex-shrink:0}
+.strip .type{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.strip .type{font-size:13.5px;font-weight:500;color:var(--text-primary)}
+.strip .prog{margin-left:auto;flex-shrink:0;border-radius:999px;padding:4px 10px;font-size:11.5px;font-weight:500;white-space:nowrap}
+.prog.left{color:var(--warning);background:color-mix(in srgb,var(--warning) 10%,transparent);border:1px solid color-mix(in srgb,var(--warning) 38%,transparent)}
+.prog.ready{color:var(--success);background:var(--success-wash);border:1px solid var(--success-line)}
+.strip .row2{display:flex;align-items:center;gap:8px;padding:4px 16px 10px}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex-shrink:0;height:30px;display:inline-flex;align-items:center;gap:5px;padding:0 11px;border-radius:999px;border:1px solid var(--border);font-size:12px;color:var(--text-secondary);white-space:nowrap;background:var(--bg)}
+.chip.on{border-color:var(--red);color:var(--text-primary);background:var(--red-wash);font-weight:500}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--warning)}
+.chip .dot.ok{background:var(--success)}
+.pv{flex-shrink:0;height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border-radius:var(--r-sm);border:1px solid var(--border);font-size:12.5px;font-weight:500;color:var(--text-primary);background:var(--bg)}
+.pv.on{border-color:var(--red);background:var(--red-wash)}
+
+/* ── document shelf ── */
+.shelf{padding:12px 0 6px 16px;border-bottom:1px solid var(--border-divider)}
+.shelf .lbl{font-size:11px;font-weight:500;letter-spacing:.11em;text-transform:uppercase;color:var(--text-tertiary);margin:0 0 8px}
+.shelf .scroller{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding-right:16px;padding-bottom:8px}
+.shelf .scroller::-webkit-scrollbar{display:none}
+.doc{flex-shrink:0;width:72px}
+.doc .thumb{position:relative;width:72px;height:92px;border-radius:6px;border:1px solid var(--border);background:var(--bg-inset);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.doc .thumb.img{background:linear-gradient(160deg,#ECE9E1,#DAD5C9)}
+.doc .letter{position:absolute;left:5px;bottom:5px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;font-weight:500;line-height:1;padding:3px 5px;border-radius:4px;background:var(--text-primary);color:#fff}
+.doc .state{position:absolute;right:5px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--success);border:1.5px solid #fff}
+.doc .state.check{background:var(--gold)}
+.doc .name{margin-top:5px;font-size:11px;line-height:1.25;color:var(--text-secondary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.add{flex-shrink:0;width:72px}
+.add .thumb{width:72px;height:92px;border-radius:6px;border:1px dashed var(--border-hover);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--red);font-size:11.5px;font-weight:500;background:var(--bg)}
+.add.large{width:100%}
+.add.large .thumb{width:100%;height:auto;padding:18px 16px;flex-direction:row;justify-content:flex-start;gap:14px;text-align:left}
+.add.large .t1{font-size:14px;font-weight:500;color:var(--text-primary)}
+.add.large .t2{font-size:12.5px;color:var(--text-tertiary);font-weight:400;margin-top:2px}
+
+/* ── sections ── */
+.sec{padding:20px 16px 8px;scroll-margin-top:120px}
+.sec h2{font-family:var(--font-head);font-weight:500;font-size:18px;line-height:1.2;margin:0;letter-spacing:-.01em}
+.sec .blurb{margin:3px 0 6px;font-size:12.5px;color:var(--text-tertiary)}
+.sec .list{display:flex;flex-direction:column}
+
+/* ── item row (sheet-row.tsx) ── */
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:start;padding:11px 0;border-bottom:1px solid var(--border-divider);min-height:44px}
+.row:last-child{border-bottom:0}
+.row .lab{font-size:12.5px;color:var(--text-secondary);line-height:1.3}
+.row .val{font-size:14.5px;font-weight:500;color:var(--text-primary);line-height:1.3;margin-top:2px;overflow-wrap:anywhere}
+.row .src{margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--text-tertiary)}
+.row .act{display:flex;align-items:center;gap:4px;align-self:center}
+.row .act button{min-height:44px;padding:0 8px;font-size:13px;font-weight:500;color:var(--red);border-radius:6px}
+.row .act button:hover{text-decoration:underline}
+.row .act .ghost{color:var(--text-tertiary)}
+.row.suggested .val{color:var(--text-primary)}
+.row.suggested{background:linear-gradient(to right,var(--gold-wash),transparent 60%);margin:0 -16px;padding-left:16px;padding-right:16px;border-radius:0}
+.row .full{grid-column:1 / -1}
+.pill{display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;padding:2px 8px;font-size:10.5px;font-weight:500;line-height:1.4}
+.pill.read{background:var(--success-wash);color:var(--success);border:1px solid var(--success-line)}
+.pill.check{background:var(--gold-wash);color:var(--gold-strong);border:1px solid var(--gold-line)}
+.pill.none{background:var(--bg-inset);color:var(--text-tertiary);border:1px solid transparent}
+.pill.profile{background:var(--bg-inset);color:var(--text-secondary);border:1px solid var(--border)}
+
+/* inputs, open by default on a needs_you row */
+.inp{width:100%;min-height:44px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg-card);padding:10px 12px;font-size:14px;color:var(--text-primary);display:flex;align-items:center;gap:8px}
+.inp.ph{color:var(--text-faint)}
+.inp.sel{justify-content:space-between}
+.inp.ta{min-height:88px;align-items:flex-start;line-height:1.45}
+.inp.miss{border-color:var(--warning)}
+.hint{margin-top:5px;font-size:12px;color:var(--text-tertiary)}
+.need{font-size:11px;font-weight:500;color:var(--warning)}
+.opt{font-size:11px;color:var(--text-tertiary)}
+
+/* yes / no pills (yes-no-pills.tsx) */
+.yn{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--border-divider)}
+.yn:last-child{border-bottom:0}
+.yn .q{flex:1;min-width:0}
+.yn .q p{margin:0;font-size:13.5px;line-height:1.35}
+.yn .q .hp{margin-top:2px;font-size:12px;color:var(--text-tertiary);line-height:1.35}
+.yn .pills{display:flex;gap:8px;flex-shrink:0}
+.yn .p{min-height:44px;padding:6px 15px;border-radius:var(--r-sm);font-size:12.5px;border:1px solid var(--border);color:var(--text-tertiary);display:inline-flex;align-items:center}
+.yn .p.on{border-color:var(--red);background:var(--red-wash);font-weight:500;color:var(--text-primary)}
+.yn .p.miss{border-color:var(--warning)}
+.yn .detail{flex-basis:100%;display:flex;flex-direction:column;gap:8px;padding:2px 0 6px}
+.yn .boxes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+
+/* cards (kind: 'cards') */
+.cards{display:grid;grid-template-columns:repeat(1,minmax(0,1fr));gap:8px;margin-top:6px}
+.cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.card{display:flex;align-items:flex-start;gap:10px;min-height:44px;padding:11px 13px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-card);font-size:13.5px;line-height:1.35;text-align:left;color:var(--text-primary)}
+.card.on{border-color:var(--red);background:var(--red-wash);font-weight:500}
+.card .box{flex-shrink:0;width:18px;height:18px;border-radius:4px;border:1px solid var(--border-hover);margin-top:1px;display:flex;align-items:center;justify-content:center;background:#fff}
+.card.on .box{border-color:var(--red);background:var(--red)}
+.card .rank{margin-left:auto;flex-shrink:0;font-size:10.5px;color:var(--text-tertiary);align-self:center;white-space:nowrap}
+.own{margin-top:10px}
+.own .lab{font-size:12.5px;color:var(--text-secondary)}
+.own .ta{margin-top:5px}
+
+/* overlap / consent / competency cards */
+.note{margin:10px 0 4px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-card);padding:12px 14px;box-shadow:var(--elev-1)}
+.note .k{font-size:11px;font-weight:500;letter-spacing:.11em;text-transform:uppercase;color:var(--text-tertiary)}
+.note .t{margin-top:4px;font-size:14px;line-height:1.4}
+.note .t strong{font-weight:500}
+.note .cards{margin-top:10px}
+.line{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-divider)}
+.line:last-child{border-bottom:0}
+.line .ic{width:20px;height:20px;display:flex;align-items:center;justify-content:center;color:var(--success)}
+.line .t{font-size:13.5px;line-height:1.35}
+.line .s{font-size:12px;color:var(--text-tertiary)}
+
+/* meter, compact (saps271-meter.tsx values) */
+.meter .big{font-family:var(--font-head);font-weight:500;font-size:33px;line-height:1}
+.meter .cap{font-size:12.5px;color:var(--text-tertiary);margin-left:8px}
+.meter .rows{display:flex;flex-direction:column;gap:11px;margin-top:14px}
+.meter .r{display:grid;grid-template-columns:22px minmax(0,1fr) 44px;gap:8px;align-items:center;font-size:12.5px}
+.meter .r .l{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--text-secondary)}
+.meter .bar{height:6px;border-radius:999px;background:var(--bg-inset);overflow:hidden}
+.meter .bar i{display:block;height:100%;background:var(--text-primary);border-radius:999px}
+.meter .bar i.gold{background:var(--gold)}
+.meter .r .n{text-align:right;color:var(--text-tertiary)}
+.meter .r .n.gold{color:var(--gold-strong)}
+
+/* checklist and deliverables */
+.chk{display:flex;flex-direction:column}
+.chk .i{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-divider);font-size:13.5px}
+.chk .i:last-child{border-bottom:0}
+.chk .i .s{font-size:12px;color:var(--text-tertiary)}
+.chk .sq{width:16px;height:16px;border:1px solid var(--border-hover);border-radius:4px}
+.chk .sq.ok{background:var(--success);border-color:var(--success)}
+
+/* footer bar */
+.foot{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border);padding:10px 16px 14px;display:flex;flex-direction:column;gap:6px;align-items:stretch}
+.btn{min-height:44px;border-radius:var(--r-sm);padding:11px 24px;font-size:13.5px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn.red{background:var(--red);color:#fff}
+.btn.red:hover{background:var(--red-hover)}
+.btn.red.off{opacity:.5;cursor:default}
+.btn.line{border:1px solid var(--border);color:var(--text-primary);background:var(--bg-card)}
+.foot .sub{text-align:center;font-size:12px;color:var(--text-tertiary)}
+
+/* preview drawer */
+.drawer{background:var(--bg-card);border-top:1px solid var(--border);border-radius:12px 12px 0 0;box-shadow:var(--elev-2)}
+.drawer .grab{width:36px;height:4px;border-radius:999px;background:var(--border);margin:8px auto 0}
+.drawer .hd{display:flex;align-items:center;gap:10px;padding:10px 16px 8px;border-bottom:1px solid var(--border-divider)}
+.drawer .hd .t{font-family:var(--font-head);font-weight:500;font-size:16px}
+.drawer .hd .s{font-size:12px;color:var(--text-tertiary)}
+.drawer .body{padding:6px 16px 16px}
+.pvsec{padding:10px 0;border-bottom:1px solid var(--border-divider)}
+.pvsec:last-child{border-bottom:0}
+.pvsec h4{margin:0 0 4px;font-family:var(--font-head);font-weight:500;font-size:13.5px}
+.pvsec p{margin:0;font-size:13px;line-height:1.5;color:var(--text-secondary)}
+.pvsec p.thin{color:var(--text-faint);font-style:italic}
+.pvsec mark{background:var(--red-wash);color:var(--text-primary);border-radius:2px;padding:0 2px}
+.pvsec .tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+.pvsec .tbl td{padding:3px 6px 3px 0;border-bottom:1px solid var(--border-divider);color:var(--text-secondary)}
+.pvsec .tbl td:first-child{color:var(--text-tertiary);width:34%}
+
+/* toast */
+.toast{display:inline-flex;align-items:center;gap:10px;background:var(--text-primary);color:#fff;border-radius:var(--r-md);padding:10px 14px;font-size:13px;box-shadow:var(--elev-2)}
+.toast .ok{color:#8FD4AE}
+
+/* list page */
+.tcard{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-card);box-shadow:var(--elev-1);text-align:left;min-height:44px}
+.tcard .n{font-size:14.5px;font-weight:500}
+.tcard .s{font-size:12.5px;color:var(--text-tertiary)}
+.tcard .sec{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--text-tertiary);grid-row:1 / span 2;align-self:center}
+.appl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--border-divider);min-height:44px}
+.appl:last-child{border-bottom:0}
+.appl .n{font-size:14px;font-weight:500}
+.appl .s{font-size:12px;color:var(--text-tertiary)}
+
+/* kit sheet */
+.kit{padding:28px 32px;font-size:13px}
+.kit h1{font-family:var(--font-head);font-weight:500;font-size:22px;margin:0 0 4px}
+.kit .sub{color:var(--text-tertiary);margin:0 0 18px;font-size:13px}
+.spec{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px 24px;align-items:start;padding:16px 0;border-top:1px solid var(--border-divider)}
+.spec .k{font-size:12px;color:var(--text-tertiary);line-height:1.5}
+.spec .k b{display:block;font-weight:500;color:var(--text-primary);font-size:13px;margin-bottom:2px}
+.spec .k code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;background:var(--bg-inset);padding:1px 4px;border-radius:3px}
+.spec .demo{max-width:420px}
+.spec .demo.wide{max-width:none}
+.swatches{display:flex;flex-wrap:wrap;gap:10px}
+.sw{width:112px}
+.sw i{display:block;height:36px;border-radius:6px;border:1px solid var(--hairline)}
+.sw b{display:block;font-weight:500;font-size:11.5px;margin-top:4px}
+.sw span{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;color:var(--text-tertiary)}
+`;
+
+export const FONT_LINK =
+  '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&amp;family=Public+Sans:wght@400;500;600&amp;display=swap">';
+
+// ── icons (stroke, 24 grid) ──
+const svg = (d, size = 18, stroke = 'currentColor', w = 1.8) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+export const I = {
+  back: svg('<path d="m15 18-6-6 6-6"></path>', 22, 'var(--text-primary)', 2),
+  plus: svg('<path d="M12 5v14"></path><path d="M5 12h14"></path>', 18, 'currentColor', 2),
+  eye: svg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle>', 15),
+  check: svg('<path d="m5 12 5 5L20 7"></path>', 12, '#fff', 2.6),
+  checkG: svg('<path d="m5 12 5 5L20 7"></path>', 16, 'var(--success)', 2.2),
+  down: svg('<path d="m6 9 6 6 6-6"></path>', 16, 'var(--text-tertiary)', 2),
+  file: svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path>', 18, 'var(--border-hover)', 1.4),
+  qr: svg('<rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><path d="M14 14h3v3h-3z"></path><path d="M21 14v7h-7"></path><path d="M17 21h.01"></path>', 22, 'var(--red)', 1.7),
+  cal: svg('<rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 11h18"></path>', 16, 'var(--text-tertiary)', 1.8),
+  print: svg('<path d="M6 9V3h12v6"></path><rect x="4" y="9" width="16" height="8" rx="2"></rect><path d="M6 14h12v7H6z"></path>', 16, 'currentColor', 1.8),
+  pen: svg('<path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>', 14, 'currentColor', 1.8),
+  chev: svg('<path d="m9 5 7 7-7 7"></path>', 12, 'var(--text-tertiary)', 2.2),
+};
+
+export const pill = (tone, text) => `<span class="pill ${tone}">${text}</span>`;
+
+// ── shelf ──
+export function shelf(docs, { large = false, label = 'Your documents' } = {}) {
+  const tiles = docs
+    .map(
+      (d) => `<div class="doc"><div class="thumb ${d.img ? 'img' : ''}">${d.img ? '' : I.file}<span class="letter">${d.letter}</span><span class="state ${d.check ? 'check' : ''}"></span></div><div class="name">${d.name}</div></div>`,
+    )
+    .join('');
+  const add = large
+    ? `<div class="add large"><div class="thumb">${I.qr}<div><div class="t1">Add your ID, licences and certificates</div><div class="t2">Scan with your phone or choose files. We read them and fill this page in.</div></div></div></div>`
+    : `<div class="add"><div class="thumb">${I.plus}<span>Add</span></div></div>`;
+  return `<div class="shelf"><p class="lbl">${label}</p><div class="scroller">${tiles}${add}</div></div>`;
+}
+
+// ── header strip ──
+export function strip({ ref, type, left, chips, active, previewOn = false }) {
+  const prog = left === 0
+    ? `<span class="prog ready">Ready to write</span>`
+    : `<span class="prog left">${left} thing${left === 1 ? '' : 's'} left</span>`;
+  const cs = chips
+    .map(
+      (c) => `<a class="chip ${c.id === active ? 'on' : ''}" href="#${c.id}">${c.dot ? `<span class="dot ${c.dot === 'ok' ? 'ok' : ''}"></span>` : ''}${c.label}</a>`,
+    )
+    .join('');
+  return `<div class="strip"><div class="row1"><span class="ref mono">${ref}</span><span class="type">${type}</span>${prog}</div><div class="row2"><div class="chips">${cs}</div><button class="pv ${previewOn ? 'on' : ''}" type="button">${I.eye}Preview</button></div></div>`;
+}
+
+export const CHIPS = [
+  { id: 'firearm', label: 'Firearm' },
+  { id: 'you', label: 'You' },
+  { id: 'competency', label: 'Competency' },
+  { id: 'own', label: 'Own' },
+  { id: 'premises', label: 'Premises' },
+  { id: 'case', label: 'Your case' },
+  { id: 'declarations', label: 'Declarations' },
+  { id: 'pack', label: 'Pack' },
+];
+
+// ── rows ──
+export const rowFilled = ({ label, value, from, tone = 'read', profile = false, change = 'Change' }) =>
+  `<div class="row filled"><div><div class="lab">${label}</div><div class="val">${value}</div><div class="src"><span>from ${from}</span>${tone === 'check' ? pill('check', 'check this') : ''}${profile ? pill('profile', 'saved to your profile') : ''}</div></div><div class="act"><button type="button">${change}</button></div></div>`;
+
+export const rowSuggested = ({ label, value, from, profile = false }) =>
+  `<div class="row suggested"><div><div class="lab">${label}</div><div class="val">${value}</div><div class="src"><span>${from}</span>${pill('check', 'check this')}${profile ? pill('profile', 'saved to your profile') : ''}</div></div><div class="act"><button type="button">Confirm</button><button type="button" class="ghost">Change</button></div></div>`;
+
+export const rowInput = ({ label, kind = 'text', placeholder, value = '', hint, required = true, profile = false, missing = required }) => {
+  const cls = `inp ${value ? '' : 'ph'} ${kind === 'select' ? 'sel' : ''} ${kind === 'long' ? 'ta' : ''} ${missing && !value ? 'miss' : ''}`;
+  const trailing = kind === 'select' ? I.down : kind === 'date' ? I.cal : '';
+  const body = `<div class="${cls}"><span>${value || placeholder}</span>${trailing}</div>`;
+  const flag = required ? `<span class="need">Still needed</span>` : `<span class="opt">Optional</span>`;
+  return `<div class="row needs"><div class="full"><div class="lab" style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span>${label}</span><span style="display:flex;gap:6px;align-items:center">${profile ? pill('profile', 'saved to your profile') : ''}${flag}</span></div><div style="margin-top:6px">${body}</div>${hint ? `<div class="hint">${hint}</div>` : ''}</div></div>`;
+};
+
+export const yesNo = ({ q, help, chosen, missing = !chosen, detail }) => {
+  const p = (o) => `<span class="p ${chosen === o ? 'on' : ''} ${missing ? 'miss' : ''}">${o}</span>`;
+  return `<div class="yn"><div class="q"><p>${q}</p>${help ? `<p class="hp">${help}</p>` : ''}</div><div class="pills">${p('No')}${p('Yes')}</div>${detail ?? ''}</div>`;
+};
+
+export const cards = (items, { two = false, ranked = false } = {}) =>
+  `<div class="cards ${two ? 'two' : ''}">${items
+    .map(
+      (c, i) => `<button type="button" class="card ${c.on ? 'on' : ''}"><span class="box">${c.on ? I.check : ''}</span><span>${c.text}</span>${ranked && i === 0 ? `<span class="rank">most likely</span>` : ''}</button>`,
+    )
+    .join('')}</div>`;
+
+export const cardsRow = ({ label, items, two, ranked, own, profile = false, required = true, answered }) => {
+  const flag = answered ? '' : required ? `<span class="need">Still needed</span>` : `<span class="opt">Optional</span>`;
+  return `<div class="row needs"><div class="full"><div class="lab" style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span>${label}</span><span style="display:flex;gap:6px;align-items:center">${profile ? pill('profile', 'saved to your profile') : ''}${flag}</span></div>${cards(items, { two, ranked })}${own ? `<div class="own"><div class="lab">In your own words <span class="opt">— optional, prefilled from the cards you tapped</span></div><div class="inp ta own-ta" style="margin-top:5px">${own}</div></div>` : ''}</div></div>`;
+};
+
+export const section = (id, title, blurb, inner) =>
+  `<section class="sec" id="${id}"><h2>${title}</h2>${blurb ? `<p class="blurb">${blurb}</p>` : ''}<div class="list">${inner}</div></section>`;
+
+export const footer = ({ left }) =>
+  left === 0
+    ? `<div class="foot"><button class="btn red" type="button">Write my motivation</button></div>`
+    : `<div class="foot"><button class="btn red off" type="button" disabled="disabled">Write my motivation</button><div class="sub">${left} thing${left === 1 ? '' : 's'} still needed above</div></div>`;
+
+export const meter = ({ pct, rows, cap = 'of the boxes that apply to you' }) =>
+  `<div class="meter"><div style="display:flex;align-items:baseline"><span class="big nums">${pct}%</span><span class="cap">${cap}</span></div><div class="rows">${rows
+    .map(
+      (r) => `<div class="r"><span class="l">${r.l}</span><span class="bar"><i class="${r.gold ? 'gold' : ''}" style="width:${r.w}%"></i></span><span class="n ${r.gold ? 'gold' : ''}">${r.n}</span></div>`,
+    )
+    .join('')}</div></div>`;
+
+export function page({ title, body, width, bg = 'var(--bg)', extraCss = '' }) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <title>${title}</title>
+  ${FONT_LINK}
+  <style>${CSS}${extraCss}</style>
+</helmet>
+<div style="width:${width}px;min-height:100%;background:${bg};margin:0 auto">
+${body}
+</div>
+</x-dc>
+</body>
+</html>`;
+}
