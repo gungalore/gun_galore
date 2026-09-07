@@ -1939,7 +1939,21 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (08:00), commit `c32dc8e6`.** No migrations
+**Last deploy: 2026-09-07 (08:10), commit `4f9dd5da`.** No migrations.
+**FRONTEND ONLY** (`deploy.sh --frontend-only`) — the delta is two frontend
+files, so the backend was not rebuilt or reloaded. Dump
+`alloutdoor-20260907-080519.dump` taken by the script. Health doubled, public
+200 twice; re-checked independently after the script.
+
+Shipped, merged from `feat/the-bench`: `9a078b99` — a paired training
+certificate and its statement of results count as ONE document everywhere on
+the Document Centre. The list already folded them; the section header still
+said "8 certificates" over four lines and the chips counted pages. One
+`documentsOf()` fold in `lib/document-centre-sections.ts` now feeds the
+summary, count, total, attention count and chips (operator: "once they are
+combined they should be seen as 1 document").
+
+**Previous deploy: 2026-09-07 (08:00), commit `c32dc8e6`.** No migrations
 ("No pending migrations to apply"). **FULL DEPLOY** (`deploy.sh`, both apps +
 warden) on the operator's `deploy now`. Dump `alloutdoor-20260907-075413.dump`
 taken by the script. Health doubled on both ports, warden online, public 200
