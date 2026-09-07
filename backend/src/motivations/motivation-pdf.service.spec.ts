@@ -639,6 +639,164 @@ describe('the certification column on the annexure index', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────
+// PRESS CLIPPINGS — printed to look like a cutting, never the article body.
+//
+// Operator, 2026-09-07: "it must look authentic, no CFR is going to sit and
+// type in a stupid link we supply him to read the article." So this covers
+// exactly what the operator asked for: it is lettered and shows up in the
+// annexure index like every other annexure, it adds one page per clipping,
+// a missing picture drops the picture rather than the page, and nothing
+// beyond the headline and standfirst the writer was given ever reaches the
+// printed page — proved by feeding the renderer a field it was never asked
+// for and confirming it never looks at it.
+// ────────────────────────────────────────────────────────────────────
+describe('the press clippings annexure', () => {
+  const svc = new MotivationPdfService();
+
+  async function pageCount(pdf: Buffer): Promise<number> {
+    const { PDFDocument } = await import('pdf-lib');
+    return (await PDFDocument.load(pdf)).getPageCount();
+  }
+
+  /** A real, tiny, embeddable JPEG — pdfkit rejects anything less. */
+  async function tinyJpeg(): Promise<Buffer> {
+    const sharp = (await import('sharp')).default;
+    return sharp({
+      create: { width: 40, height: 30, channels: 3, background: { r: 180, g: 40, b: 40 } },
+    })
+      .jpeg()
+      .toBuffer();
+  }
+
+  const NELSPRUIT_HEADLINE = 'Armed robbery near Nelspruit leaves two hurt';
+  const MIDDELBURG_HEADLINE = 'House robbery reported in Middelburg';
+  // A field the type does not carry and the renderer must never read. If this
+  // string ever reaches the page, PressClippingPage grew a body field
+  // somewhere and something is feeding it the whole article.
+  const FORBIDDEN_ARTICLE_BODY =
+    'THE FULL ARTICLE TEXT THAT MUST NEVER REACH A PRINTED PACK';
+
+  it('is lettered, appears once in the index, and one page per clipping — never the article body', async () => {
+    const baseAnnexures = buildAnnexures([], ['PRIOR_NOTICE_REQUEST']);
+    const annexures = buildAnnexures([], [
+      'PRIOR_NOTICE_REQUEST',
+      'PRESS_CLIPPINGS',
+    ]);
+    const letter = annexures.find((a) => a.kind === 'PRESS_CLIPPINGS')!.letter;
+    // A different letter than the prior-notice request — the exact
+    // shared-letter bug the annexure lettering tests above guard against.
+    expect(letter).not.toBe(
+      annexures.find((a) => a.kind === 'PRIOR_NOTICE_REQUEST')!.letter,
+    );
+
+    const base = await svc.render({
+      ...makeInput(),
+      annexures: baseAnnexures,
+    } as never);
+    const withClippings = await svc.render({
+      ...makeInput(),
+      annexures,
+      pressClippings: [
+        {
+          letter,
+          index: 1,
+          total: 2,
+          sourceName: 'Lowvelder',
+          publishedOn: '2026-08-30',
+          headline: NELSPRUIT_HEADLINE,
+          standfirst:
+            'Police are appealing for witnesses after an incident on Friday night.',
+          url: 'https://lowvelder.co.za/armed-robbery-nelspruit',
+          image: { bytes: await tinyJpeg(), width: 40, height: 30 },
+          // ⚠️ NOT A REAL FIELD — see FORBIDDEN_ARTICLE_BODY above.
+          articleBody: FORBIDDEN_ARTICLE_BODY,
+        } as never,
+        {
+          letter,
+          index: 2,
+          total: 2,
+          sourceName: 'Middelburg Observer',
+          publishedOn: '2026-07-14',
+          headline: MIDDELBURG_HEADLINE,
+          // No standfirst and no picture — the second clipping the task
+          // asked for.
+          standfirst: null,
+          url: 'https://middelburgobserver.co.za/house-robbery',
+        },
+      ],
+    } as never);
+
+    // ── Page count: exactly one page per clipping, nothing more ──────
+    expect(await pageCount(withClippings.pdf)).toBe(
+      (await pageCount(base.pdf)) + 2,
+    );
+
+    const t = flat((await readPdfAsync(withClippings.pdf)).text);
+
+    // ── The annexure index entry ──────────────────────────────────────
+    expect(t).toContain('Press clippings');
+
+    // ── Both clippings actually printed, papers and headlines ─────────
+    //
+    // ⚠️ THE PAPER NAME IS CHECKED case-insensitively, VIA squash, NOT flat.
+    // It sits inside the small-caps masthead line (K.label), which both
+    // UPPERCASES the text and tracks its letters with characterSpacing —
+    // the same embedded-subset extraction artifact documented at the top of
+    // this file. The headline carries neither and extracts as typed, so it
+    // is checked directly.
+    expect(t).toContain(NELSPRUIT_HEADLINE);
+    expect(squash(t).toLowerCase()).toContain(squash('Lowvelder').toLowerCase());
+    expect(t).toContain(MIDDELBURG_HEADLINE);
+    expect(squash(t).toLowerCase()).toContain(
+      squash('Middelburg Observer').toLowerCase(),
+    );
+
+    // ── Lettered on the page itself, the same letter as the index ─────
+    expect(t).toContain(`Annexure ${letter}`);
+
+    // ── Provenance stays small and secondary: the link prints, but only
+    // as "as published", never as the thing the reviewer is asked to use.
+    expect(t).toContain('lowvelder.co.za/armed-robbery-nelspruit');
+    expect(t).toContain('as published');
+
+    // ── Never the article body ─────────────────────────────────────────
+    expect(t).not.toContain(FORBIDDEN_ARTICLE_BODY);
+  });
+
+  it('drops the picture, never the page, when NewsService found none', async () => {
+    const annexures = buildAnnexures([], [
+      'PRIOR_NOTICE_REQUEST',
+      'PRESS_CLIPPINGS',
+    ]);
+    const letter = annexures.find((a) => a.kind === 'PRESS_CLIPPINGS')!.letter;
+
+    // No `image` key at all — exactly what NewsService.clippingImage()
+    // returning null becomes by the time it reaches the renderer.
+    const { pdf } = await svc.render({
+      ...makeInput(),
+      annexures,
+      pressClippings: [
+        {
+          letter,
+          index: 1,
+          total: 1,
+          sourceName: 'Middelburg Observer',
+          publishedOn: '2026-07-14',
+          headline: MIDDELBURG_HEADLINE,
+          standfirst: 'No picture was available for this report.',
+          url: 'https://middelburgobserver.co.za/house-robbery',
+        },
+      ],
+    } as never);
+
+    expect(pdf.length).toBeGreaterThan(1000);
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).toContain(MIDDELBURG_HEADLINE);
+    expect(t).toContain('No picture was available for this report.');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
 // THE CARTRIDGE DATASHEET, INSIDE THE MOTIVATION.
 //
 // Operator, 2026-08-23: "it not an annexure. Its part of the motivation itself

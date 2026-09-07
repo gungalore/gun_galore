@@ -80,3 +80,88 @@ export interface ClippingImage {
   width: number;
   height: number;
 }
+
+// ────────────────────────────────────────────────────────────────────
+// THE TAGGING CONTRACT — added 2026-09-07 with the poller.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * What a piece is about, in the words a motivation can use.
+ *
+ * ⚠️ THESE ARE SAPS'S CATEGORIES IN PLAIN ENGLISH, NOT A JOURNALIST'S. The
+ * whole value of a clipping beside the precinct figures is that the two can
+ * be read together — "eleven house robberies in the quarter, and here are
+ * three of them" — which only works if a clipping's type is a word the
+ * figures also use. 'other' is deliberately present: a real crime we cannot
+ * classify is still a crime near the applicant.
+ */
+export const NEWS_CRIME_TYPES = [
+  'murder',
+  'attempted murder',
+  'house robbery',
+  'business robbery',
+  'armed robbery',
+  'hijacking',
+  'rape',
+  'assault',
+  'burglary',
+  'other',
+] as const;
+
+export type NewsCrimeType = (typeof NEWS_CRIME_TYPES)[number];
+
+/** One item's verdict, as the model returns it. */
+export interface NewsTag {
+  isCrime: boolean;
+  crimeType: NewsCrimeType | null;
+  /** Place names as PRINTED in the piece — suburb, town, road. Never added to. */
+  places: string[];
+}
+
+/**
+ * The JSON schema handed to LlmService.
+ *
+ * ⚠️ AN ARRAY OF VERDICTS KEYED BY INDEX, not a bare array, because a model
+ * that drops or reorders one item in a batch of twenty would otherwise tag
+ * nineteen articles with the wrong verdicts and there would be no way to tell.
+ * The index is checked on the way back; a verdict whose index we did not ask
+ * about is discarded.
+ */
+export const NEWS_TAG_SCHEMA = {
+  type: 'object',
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          index: { type: 'integer' },
+          isCrime: { type: 'boolean' },
+          crimeType: {
+            type: 'string',
+            enum: [...NEWS_CRIME_TYPES],
+            nullable: true,
+          },
+          places: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['index', 'isCrime'],
+      },
+    },
+  },
+  required: ['items'],
+} as const;
+
+/** What one poll run did, for the admin panel and the loader script. */
+export interface NewsPollOutcome {
+  sourcesTried: number;
+  sourcesOk: number;
+  sourcesFailed: number;
+  itemsSeen: number;
+  itemsNew: number;
+  previewsFound: number;
+  itemsTagged: number;
+  crimeItems: number;
+  deleted: number;
+  /** One line per source. */
+  messages: string[];
+}

@@ -461,6 +461,23 @@ export class MotivationsController {
     return this.generation.precinctFor(clerkId, id);
   }
 
+  /**
+   * Crime reporting near THIS application's station, for the "Your
+   * circumstances" step's press-clippings picker. The member chooses up to
+   * eight and saves the ids back through the ordinary answers path — see
+   * `press_clippings` in motivation-fields.ts and
+   * MotivationGenerationService.incidentsFor().
+   *
+   * `{ station: null, incidents: [] }` (never a 404-shaped refusal) for a
+   * non-self-defence application, an empty station, or a station NewsService
+   * has nothing nearby for. Owner-scoped like every other ':id/...' route
+   * here.
+   */
+  @Get(':id/incidents')
+  incidents(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.generation.incidentsFor(clerkId, id);
+  }
+
   // ── the profile, with permission ──────────────────────────────────
 
   /**

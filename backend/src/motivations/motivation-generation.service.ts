@@ -26,15 +26,22 @@ import {
   CrimeStatsService,
   precinctFactLines,
 } from '../crime-stats/crime-stats.service';
-import { buildAnnexures } from './motivation-checklist';
+import { NewsService, clippingFactLines } from '../news/news.service';
+import type { NewsIncident } from '../news/news.types';
+import {
+  buildAnnexures,
+  type GeneratedAnnexureId,
+} from './motivation-checklist';
 import { FirearmImageService } from './motivation-firearm-image';
 import { packConsistency } from './motivation-verify';
 import {
   FIREARM_SOURCE_KEY,
+  PRESS_CLIPPINGS_KEY,
   SOURCE_DEALER,
   SOURCE_ESTATE,
   SOURCE_PRIVATE,
   missingRequired,
+  parsePressClippingIds,
 } from './motivation-fields';
 import {
   FOLLOW_UP_BATCH,
@@ -97,6 +104,7 @@ export class MotivationGenerationService {
     private readonly notifications: NotificationsService,
     private readonly shared: MotivationSharedService,
     private readonly crimeStats: CrimeStatsService,
+    private readonly news: NewsService,
   ) {}
 
   /**
@@ -459,19 +467,86 @@ export class MotivationGenerationService {
           .catch(() => null);
       }
 
+      // ── PRESS CLIPPINGS the member chose, self-defence only ──────────
+      //
+      // Operator, 2026-09-07: "no CFR is going to sit and type in a stupid
+      // link" — so the clippings the applicant picked from
+      // GET /motivations/:id/incidents are supplied facts, exactly like the
+      // precinct figures above, and cited by annexure letter rather than
+      // pasted as a URL. See backend/src/news/news.types.ts.
+      //
+      // ⚠️ FETCHED BEFORE THE ANNEXURE LIST BELOW, NOT AFTER. The writer has
+      // to cite the SAME letter the printed pack will actually carry, and
+      // that letter depends on whether a PRESS_CLIPPINGS annexure exists at
+      // all — buildAnnexures only reserves a letter for it when told to. So
+      // "were there any clippings" has to be known before that call, not
+      // worked out from it.
+      //
+      // ⚠️ FAIL-SOFT, SAME POSTURE AS THE PRECINCT LOOKUP. A bad id, a
+      // service outage or nothing chosen all collapse to the same outcome:
+      // no clippings block, no PRESS_CLIPPINGS annexure, and the document
+      // argues from threat_circumstances and daily_movements alone.
+      let pressClips: NewsIncident[] = [];
+      if (row.licenceType === MotivationLicenceType.S13_SELF_DEFENCE) {
+        const ids = parsePressClippingIds(answers[PRESS_CLIPPINGS_KEY]);
+        if (ids.length) {
+          try {
+            pressClips = await this.news.byIds(ids);
+          } catch (err) {
+            this.logger.warn(
+              `Motivation ${row.id}: press clippings lookup skipped — ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+
       // The lettered annexure list — from the SAME function that letters the
       // printed pack, so a citation the writer makes can never point at a tab
       // that will not exist.
+      //
+      // ⚠️ 'PRIOR_NOTICE_REQUEST' IS ALWAYS PASSED HERE NOW. It is built
+      // unconditionally at render time (see motivation-prior-notice.ts — it
+      // sits at annexure G in every pack), but this call used to omit it from
+      // the generated list, so every letter from H onward in the FactPack
+      // disagreed with what actually printed. Adding it here is a genuine
+      // correctness fix, not just plumbing for press clippings — it makes the
+      // comment two lines up ("the SAME function that letters the printed
+      // pack") true for the first time.
       const uploadKinds = (
         await this.prisma.motivationUpload.findMany({
           where: { motivationId: row.id },
           select: { kind: true, coversKinds: true },
         })
       ).map((u) => u.kind);
-      const annexures = buildAnnexures(uploadKinds).map((a) => ({
+      const generatedAnnexures: GeneratedAnnexureId[] = pressClips.length
+        ? ['PRIOR_NOTICE_REQUEST', 'PRESS_CLIPPINGS']
+        : ['PRIOR_NOTICE_REQUEST'];
+      const rawAnnexures = buildAnnexures(uploadKinds, generatedAnnexures);
+      const annexures = rawAnnexures.map((a) => ({
         letter: a.letter,
         label: a.label,
       }));
+
+      // ⚠️ EACH LINE ENDS WITH ITS ANNEXURE LETTER, so the writer can close
+      // an argument with "(Annexure X)" rather than inventing its own
+      // reference or leaving the claim uncited. All the clippings share ONE
+      // letter — PRESS_CLIPPINGS is one annexure with several pages under
+      // it, the same shape as the safe photographs — so every line gets the
+      // same letter.
+      let pressClippingsBlock: string | undefined;
+      if (pressClips.length) {
+        const letter = rawAnnexures.find(
+          (a) => a.kind === 'PRESS_CLIPPINGS',
+        )?.letter;
+        if (letter) {
+          pressClippingsBlock = [
+            'PRESS CLIPPINGS — supplied fact, attached as annexure:',
+            ...clippingFactLines(pressClips).map(
+              (line) => `${line} (Annexure ${letter})`,
+            ),
+          ].join('\n');
+        }
+      }
 
       const pack: FactPack = {
         licenceType: row.licenceType,
@@ -480,15 +555,19 @@ export class MotivationGenerationService {
         // Only when there is genuinely an overlap. Passing a note otherwise
         // would have the document argue against a problem it does not have.
         overlapNote: overlap.writerNote ?? undefined,
-        // ⚠️ THE PRECINCT BLOCK RIDES INSIDE `research`, DELIBERATELY — NOT A
-        // NEW FactPack FIELD. renderResearch() already wraps this in
-        // <background-research> untruncated (unlike `derived`, which runs
-        // every value through sanitizePromptValue's 200-char, newline-
-        // collapsing cap — fine for "43" or one sentence, not for nine lines
-        // of crime figures each carrying its own period and source). Put
-        // first so a reader — model or human — meets the verified figures
-        // before the softer, web-searched material, if any.
-        research: [precinctBlock, research].filter(Boolean).join('\n\n') || undefined,
+        // ⚠️ THE PRECINCT AND CLIPPINGS BLOCKS RIDE INSIDE `research`,
+        // DELIBERATELY — NOT NEW FactPack FIELDS. renderResearch() already
+        // wraps this in <background-research> untruncated (unlike `derived`,
+        // which runs every value through sanitizePromptValue's 200-char,
+        // newline-collapsing cap — fine for "43" or one sentence, not for
+        // nine lines of crime figures or clippings each carrying its own
+        // date and source). Put first so a reader — model or human — meets
+        // the verified, supplied facts before the softer, web-searched
+        // material, if any.
+        research:
+          [precinctBlock, pressClippingsBlock, research]
+            .filter(Boolean)
+            .join('\n\n') || undefined,
         annexures,
       };
 
@@ -871,6 +950,58 @@ export class MotivationGenerationService {
         `Motivation ${id}: precinct preview failed — ${(err as Error).message}`,
       );
       return null;
+    }
+  }
+
+  /**
+   * The crime reporting near THIS application's station, for the "Your
+   * circumstances" step's clipping picker — the wizard shows this list, the
+   * member chooses up to `PRESS_CLIPPINGS_MAX` and saves the ids through the
+   * ordinary answers path (see `press_clippings` in motivation-fields.ts).
+   *
+   * `{ station: null, incidents: [] }`, never a thrown error, for every
+   * reason there might be nothing to offer: not a self-defence application,
+   * no station answered yet, or NewsService knows of nothing nearby. Same
+   * fail-soft posture as precinctFor() immediately above, and ownership-
+   * scoped the same way — a wrong id and someone else's id must be
+   * indistinguishable.
+   */
+  async incidentsFor(
+    clerkId: string,
+    id: string,
+  ): Promise<{ station: string | null; incidents: NewsIncident[] }> {
+    const user = await this.shared.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { licenceType: true, answersEncrypted: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (row.licenceType !== MotivationLicenceType.S13_SELF_DEFENCE) {
+      return { station: null, incidents: [] };
+    }
+
+    const answers = this.shared.readAnswers(row.answersEncrypted);
+    const station = (answers.police_station ?? '').trim();
+    if (!station) return { station: null, incidents: [] };
+
+    try {
+      const incidents = await this.news.incidentsNear({
+        station: {
+          name: station,
+          province: (answers.police_station_province ?? '').trim(),
+        },
+        months: 12,
+        limit: 12,
+      });
+      return { station, incidents };
+    } catch (err) {
+      // Same fail-soft posture as every other lookup here — a broken feed
+      // costs the picker its list, never a 500 on a step the member is just
+      // browsing.
+      this.logger.warn(
+        `Motivation ${id}: nearby incidents lookup failed — ${(err as Error).message}`,
+      );
+      return { station, incidents: [] };
     }
   }
 

@@ -16,6 +16,9 @@ import {
   SOURCE_PRIVATE,
   SOURCE_UNDECIDED,
   YES_NO,
+  PRESS_CLIPPINGS_KEY,
+  PRESS_CLIPPINGS_MAX,
+  parsePressClippingIds,
 } from './motivation-fields';
 import { expandFields } from './motivation-field-options';
 import { SHOOTING_DISCIPLINES } from './shooting-disciplines';
@@ -434,6 +437,104 @@ describe('the nearest SAPS station', () => {
     expect(keys).not.toContain('police_station_province');
     // The station itself DOES reach the writer, same as any other short answer.
     expect(keys).toContain('police_station');
+  });
+});
+
+describe('press clippings the applicant chose', () => {
+  it('is registered on self-defence only, and nowhere else', () => {
+    const f = fieldsFor(T).find((x) => x.key === PRESS_CLIPPINGS_KEY);
+    expect(f).toBeDefined();
+
+    for (const type of ALL) {
+      if (type === T) continue;
+      expect(
+        fieldsFor(type).some((x) => x.key === PRESS_CLIPPINGS_KEY),
+      ).toBe(false);
+    }
+  });
+
+  it('⚠️ is never asked, on either SAPS 271 path — the wizard writes it', () => {
+    // Same two-gate trick as police_station_province: formOnly hides it
+    // unless the applicant opted into the form, and showIf then asks for the
+    // DEALER answer, which is never true once they have. No answer satisfies
+    // both, so a text box for this never appears anywhere.
+    const f = fieldsFor(T).find((x) => x.key === PRESS_CLIPPINGS_KEY)!;
+    expect(isVisible(f, {})).toBe(false);
+    expect(isVisible(f, WITH_FORM)).toBe(false);
+  });
+
+  it('never reaches the model raw — the writer sees clippingFactLines instead', () => {
+    const keys = factPackFields(T).map((f) => f.key);
+    expect(keys).not.toContain(PRESS_CLIPPINGS_KEY);
+  });
+
+  it('never demands a choice before a self-defence motivation can generate', () => {
+    expect(requiredKeys(T, {})).not.toContain(PRESS_CLIPPINGS_KEY);
+  });
+
+  describe('sanitiseAnswers validation', () => {
+    it('accepts a JSON array of ids, up to the cap', () => {
+      const ids = Array.from({ length: PRESS_CLIPPINGS_MAX }, (_, i) => `n${i}`);
+      const { answers, refused } = sanitiseAnswers(T, {
+        [PRESS_CLIPPINGS_KEY]: JSON.stringify(ids),
+      });
+      expect(refused).toHaveLength(0);
+      expect(JSON.parse(answers[PRESS_CLIPPINGS_KEY])).toEqual(ids);
+    });
+
+    it('refuses more than the cap, rather than truncating it', () => {
+      // ⚠️ TRUNCATING JSON DOES NOT PRODUCE A SHORTER VALID ANSWER. The
+      // generic maxLength cap elsewhere in this function is a plain
+      // `.slice()`, which on a JSON array is corruption, not trimming.
+      const ids = Array.from(
+        { length: PRESS_CLIPPINGS_MAX + 1 },
+        (_, i) => `n${i}`,
+      );
+      const { answers, refused } = sanitiseAnswers(T, {
+        [PRESS_CLIPPINGS_KEY]: JSON.stringify(ids),
+      });
+      expect(refused).toContain(PRESS_CLIPPINGS_KEY);
+      expect(answers[PRESS_CLIPPINGS_KEY]).toBeUndefined();
+    });
+
+    it('refuses text that is not a JSON array of strings', () => {
+      for (const bad of ['not json', '{"a":1}', '[1,2,3]', '["ok", 5]']) {
+        const { answers, refused } = sanitiseAnswers(T, {
+          [PRESS_CLIPPINGS_KEY]: bad,
+        });
+        expect(refused).toContain(PRESS_CLIPPINGS_KEY);
+        expect(answers[PRESS_CLIPPINGS_KEY]).toBeUndefined();
+      }
+    });
+
+    it('an explicit clear is a legitimate edit, not a refusal', () => {
+      const { answers, refused } = sanitiseAnswers(T, {
+        [PRESS_CLIPPINGS_KEY]: '',
+      });
+      expect(refused).toHaveLength(0);
+      expect(answers[PRESS_CLIPPINGS_KEY]).toBe('');
+    });
+  });
+
+  describe('parsePressClippingIds', () => {
+    it('reads a stored value back as an id list', () => {
+      expect(parsePressClippingIds('["a","b"]')).toEqual(['a', 'b']);
+    });
+
+    it('is empty, never throws, for anything absent or corrupt', () => {
+      expect(parsePressClippingIds(undefined)).toEqual([]);
+      expect(parsePressClippingIds('')).toEqual([]);
+      expect(parsePressClippingIds('not json')).toEqual([]);
+      expect(parsePressClippingIds('{"a":1}')).toEqual([]);
+    });
+
+    it('is empty for an oversized array too — sanitiseAnswers should already have refused it, but this never trusts that', () => {
+      const ids = Array.from(
+        { length: PRESS_CLIPPINGS_MAX + 1 },
+        (_, i) => `n${i}`,
+      );
+      expect(parsePressClippingIds(JSON.stringify(ids))).toEqual([]);
+    });
   });
 });
 

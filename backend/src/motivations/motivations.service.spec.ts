@@ -263,6 +263,16 @@ function build(
     })),
     precinct: jest.fn(async (): Promise<any> => null),
   };
+  // Local crime reporting behind a press-clippings annexure. Stubbed to
+  // "nothing found" so no test in this file depends on it — the whole point
+  // of the press-clippings feature being fail-soft is that a motivation
+  // still works, with no PRESS_CLIPPINGS annexure at all, when this returns
+  // nothing.
+  const news = {
+    incidentsNear: jest.fn(async (): Promise<any[]> => []),
+    byIds: jest.fn(async (): Promise<any[]> => []),
+    clippingImage: jest.fn(async (): Promise<any> => null),
+  };
   // Character witnesses. Stubbed to an empty list so no test in this file
   // reaches the SMS rail — an invite spends a real message, and a unit
   // suite that sends one is a unit suite with a bill.
@@ -321,6 +331,7 @@ function build(
     notifications as never,
     shared,
     crimeStats as never,
+    news as never,
   );
   const render = new MotivationRenderService(
     prisma as never,
@@ -334,6 +345,7 @@ function build(
     firearmImages as never,
     witnesses as never,
     shared,
+    news as never,
   );
   const witnessFlow = new MotivationWitnessesService(
     prisma as never,
@@ -367,6 +379,7 @@ function build(
     notifications,
     extract,
     crimeStats,
+    news,
   };
 }
 
@@ -833,6 +846,109 @@ describe('MotivationsService.generate', () => {
     expect(data.retentionPurgeAt).toBeInstanceOf(Date);
     // Token spend is accumulated across every pass, not just the last one.
     expect(data.promptTokens).toBe(900 + 400);
+  });
+
+  describe('press clippings, self-defence only', () => {
+    // ────────────────────────────────────────────────────────────────
+    // The fact pack the writer sees must cite each chosen clipping by paper,
+    // date and the SAME annexure letter the printed pack will carry — see
+    // the ordering note in MotivationGenerationService.runGeneration(). This
+    // is the pack-building half; the printed page itself is covered in
+    // motivation-pdf.service.spec.ts.
+    // ────────────────────────────────────────────────────────────────
+
+    const T13 = MotivationLicenceType.S13_SELF_DEFENCE;
+    const INCIDENT = {
+      id: 'inc-1',
+      sourceKey: 'lowvelder',
+      sourceName: 'Lowvelder',
+      url: 'https://lowvelder.co.za/a',
+      headline: 'Armed robbery in Nelspruit',
+      standfirst: 'Police are investigating.',
+      imageUrl: null,
+      author: null,
+      publishedOn: '2026-08-30',
+      crimeType: 'armed robbery',
+      places: ['Nelspruit'],
+      distanceKm: 3,
+    };
+
+    function s13Ready(over: Record<string, string> = {}) {
+      const answers: Record<string, string> = {};
+      for (const k of requiredKeys(T13)) {
+        answers[k] = 'A sufficient answer for testing purposes.';
+      }
+      return {
+        id: 'mo-1',
+        userId: 'user-1',
+        referenceNumber: 'MO000123',
+        licenceType: T13,
+        status: MotivationStatus.DRAFT,
+        answersEncrypted: encryptJson({ ...answers, ...over }),
+        declarationAcceptedAt: new Date() as Date | null,
+        variantSeed: 4242,
+        gateCycles: 0,
+        betaSeatNo: null as number | null,
+        promptTokens: null as number | null,
+        completionTokens: null as number | null,
+      };
+    }
+
+    it('cites each clipping by paper, date and its own annexure letter', async () => {
+      const { svc, prisma, claude, news } = build({
+        uploads: requiredDocs(T13),
+      });
+      prisma.motivation.findFirst.mockResolvedValueOnce(
+        s13Ready({ press_clippings: JSON.stringify(['inc-1']) }),
+      );
+      news.byIds.mockResolvedValueOnce([INCIDENT]);
+
+      await svc.generate('c1', 'mo-1');
+
+      expect(news.byIds).toHaveBeenCalledWith(['inc-1']);
+      const pack = claude.generate.mock.calls[0][0];
+      expect(pack.research).toContain(
+        'PRESS CLIPPINGS — supplied fact, attached as annexure:',
+      );
+      const line = (pack.research as string)
+        .split('\n')
+        .find((l: string) => l.includes('Lowvelder'))!;
+      expect(line).toBeDefined();
+      const m = /\(Annexure ([A-Z])\)$/.exec(line);
+      expect(m).not.toBeNull();
+      expect(pack.annexures).toContainEqual({
+        letter: m![1],
+        label: 'Press clippings',
+      });
+    });
+
+    it('never fetches or cites anything when nothing was chosen', async () => {
+      const { svc, prisma, claude, news } = build({
+        uploads: requiredDocs(T13),
+      });
+      prisma.motivation.findFirst.mockResolvedValueOnce(s13Ready());
+
+      await svc.generate('c1', 'mo-1');
+
+      expect(news.byIds).not.toHaveBeenCalled();
+      const pack = claude.generate.mock.calls[0][0];
+      expect(pack.research ?? '').not.toContain('PRESS CLIPPINGS');
+      expect(pack.annexures ?? []).not.toContainEqual(
+        expect.objectContaining({ label: 'Press clippings' }),
+      );
+    });
+
+    it('generates cleanly when the lookup fails — a supplied fact costs the pack a paragraph, never the document', async () => {
+      const { svc, prisma, news } = build({ uploads: requiredDocs(T13) });
+      prisma.motivation.findFirst.mockResolvedValueOnce(
+        s13Ready({ press_clippings: JSON.stringify(['inc-1']) }),
+      );
+      news.byIds.mockRejectedValueOnce(new Error('feed unavailable'));
+
+      await expect(svc.generate('c1', 'mo-1')).resolves.toMatchObject({
+        status: MotivationStatus.COMPLETED,
+      });
+    });
   });
 
   describe('telling the applicant it finished', () => {

@@ -4337,20 +4337,20 @@ model Motivation {
   // Monotonic seat number from the atomic 'MOBETA' ReferenceCounter row.
   // NULL means this was not a free-beta motivation. A seat above the cap is
   // burned rather than reissued — that is what makes the cap race-proof.
-  betaSeatNo            Int?      @unique
-  billedCents           Int       @default(0)
+  betaSeatNo       Int?      @unique
+  billedCents      Int       @default(0)
   /// When the applicant allowed us to fill the SAPS form from their All Outdoor
   /// profile. Null means they were never asked, or said no — either way we do
   /// not touch their profile data. Per motivation, not per account: agreeing
   /// once is not agreeing forever.
-  profileConsentAt      DateTime?
+  profileConsentAt DateTime?
   /// When we auto-attached the member's own Document Centre documents here.
   ///
   /// ⚠️ ONCE PER APPLICATION, NEVER ONCE PER PAGE LOAD. Auto-link skips a kind
   /// already attached, so without this marker a DELETED document was simply
   /// re-attached on the next load — the member could not remove it. A feature
   /// that undoes somebody's own deletions is worse than no feature.
-  autolinkedAt          DateTime?
+  autolinkedAt     DateTime?
 
   /// Vault documents this application has already been offered and no longer
   /// carries — never offered again.
@@ -4817,15 +4817,15 @@ model MotivationUpload {
   // row is kept. storageKey is nulled at the same time.
   purgedAt  DateTime?
 
-  // Which vault row a copy came from — the autolink's "have we had this one
-  // already" question, and the delete-propagation sweep's predicate.
-  @@index([sourceCredentialId])
   // Scoped to the motivation, not global: the same ID document legitimately
   // appears in two different people's applications, and in the same person's
   // second one. A bare index could only ever support a read-then-write dedupe,
   // which is a race — two uploads of one file both miss the read and both
   // insert, and the applicant sees the same certificate twice in the annexures.
   @@unique([motivationId, sha256])
+  // Which vault row a copy came from — the autolink's "have we had this one
+  // already" question, and the delete-propagation sweep's predicate.
+  @@index([sourceCredentialId])
   @@index([motivationId])
 }
 
@@ -5211,7 +5211,7 @@ model Credential {
   /// of a firearm we could not identify.
   ///
   /// It holds a category, never a make, a calibre or a serial.
-  firearmCategory String? @db.VarChar(16)
+  firearmCategory    String?  @db.VarChar(16)
   /// Whether the licensed firearm is self-loading, read off the card's type
   /// row ("MANUALLY OPERATED RIFLE" / "S/L RIFLE") the same way the category
   /// is, and in the clear for the same reason: a competency is endorsed per
@@ -5224,17 +5224,17 @@ model Credential {
   /// of address 'name-missing' | 'name-mismatch' | 'address-mismatch' |
   /// 'date-missing' | 'stale'. The words for each live in readNotes. Empty is
   /// the normal case. Not PII.
-  attention String[] @default([])
+  attention          String[] @default([])
   /// The earlier row this one appears to duplicate (same kind, same printed
   /// identity: serial, certificate number, ID number, address and date). A
   /// plain id, not a relation: the original may be deleted and this row must
   /// stand on its own either way.
-  duplicateOfId String?
+  duplicateOfId      String?
   /// The other side of a two-sided document - for a proficiency, the
   /// provider's certificate (front) and the PFTC statement of results (back)
   /// are two scans that point at each other. Set on both rows. A plain id,
   /// not a relation, for the same reason as duplicateOfId.
-  otherSideId String?
+  otherSideId        String?
 
   /// Opaque key into SecureFileStorageService, namespace `credentials`.
   /// Nullable so a row can outlive its bytes after an erasure.
@@ -5818,4 +5818,134 @@ model CrimeStatsFigure {
   /// The precinct read: every category, every quarter, one station, one
   /// release — a single index range scan.
   @@index([stationId, releaseId])
+}
+
+// ────────────────────────────────────────────────────────────────────
+// LOCAL CRIME REPORTING — PRESS CLIPPINGS NEAR AN APPLICANT.
+//
+// A self-defence motivation is stronger for saying what happened in the
+// applicant's own precinct, and a reviewer believes a newspaper cutting in a
+// way they do not believe a sentence. So we index what South African local
+// papers publish for sharing — headline, standfirst, picture, paper, date —
+// and never the body of an article. See news.types.ts.
+// ────────────────────────────────────────────────────────────────────
+
+/// One newspaper we poll. The checked-in registry (news-sources.ts) is the
+/// truth; these rows are its upserted copy plus the poll's own bookkeeping.
+model NewsSource {
+  id String @id @default(cuid())
+
+  /// Registry key, e.g. "lowvelder". Stable — the upsert matches on it.
+  key String @unique
+
+  name     String
+  homepage String
+
+  /// The RSS/Atom URL, or the Google News search TEMPLATE for kind
+  /// 'google-news' (it carries a {q} placeholder and is never fetched as-is).
+  feedUrl String
+
+  province String
+
+  /// SAPS's district wording where we could map it, so a station with no
+  /// article coordinates can still be matched by the area a title covers.
+  district String?
+
+  towns String[]
+
+  /// Coverage centre. ⚠️ NULLABLE ON PURPOSE: the registry is checked in
+  /// without coordinates (a developer may hold no Maps key), and the poll
+  /// fills them in on its first run. A null centre only costs precision —
+  /// articles still match on their own geocoded place.
+  lat Float?
+  lng Float?
+
+  /// Local 25, regional 80. ⚠️ 0 MEANS NATIONAL — no coverage circle at all,
+  /// so a national title's articles match only on their own coordinates and
+  /// never by "this paper covers here".
+  radiusKm Int @default(25)
+
+  /// 'local' | 'regional' | 'national' | 'google-news'.
+  kind String @default("local")
+
+  /// A feed that has died is disabled rather than deleted — its articles are
+  /// still good clippings, and the row records why it stopped.
+  enabled Boolean @default(true)
+
+  lastPolledAt DateTime?
+  lastError    String?
+
+  /// Articles ever accepted from this source. A title stuck on 0 is a feed
+  /// that parses but yields nothing, which reads differently from an error.
+  itemCount Int @default(0)
+
+  articles NewsArticle[]
+
+  @@index([enabled, kind])
+}
+
+/// One share preview. ⚠️ NEVER ARTICLE BODY TEXT — only what the publisher
+/// puts in its own og: tags for exactly this purpose, plus the link.
+model NewsArticle {
+  id String @id @default(cuid())
+
+  sourceId String
+  source   NewsSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  /// The canonical article URL. Unique: the dedupe key across every feed,
+  /// which matters because Caxton titles syndicate each other's copy.
+  url String @unique
+
+  /// SHA-256 of the url. Not a constraint — a short, index-friendly handle
+  /// for logs and for the loader's "did I already see this" set.
+  urlHash String
+
+  headline   String
+  standfirst String?
+  imageUrl   String?
+  author     String?
+
+  /// The publisher's date. Everything about this feature is a twelve-month
+  /// window, so it is the one field a missing value cannot be tolerated in —
+  /// the poll falls back to the feed's date and finally to now().
+  publishedOn DateTime
+  fetchedAt   DateTime @default(now())
+
+  /// ⚠️ THREE-VALUED. null = not yet tagged (the keyword pre-filter passed it
+  /// to the model and the model has not answered, or the item is queued);
+  /// false = tagged, not crime. A read must ask for `true`, never `not false`.
+  isCrime   Boolean?
+  crimeType String?
+
+  /// Place names as the piece printed them, for the geocode and for display.
+  places String[]
+
+  /// From places[0], or the source centre when the place could not be found.
+  lat Float?
+  lng Float?
+
+  taggedAt DateTime?
+
+  /// The twelve-month window, and the nightly retention delete.
+  @@index([publishedOn])
+  /// "What has this title published lately", the poll's own read.
+  @@index([sourceId, publishedOn])
+  /// A coarse pre-filter for the distance match — Postgres cannot do
+  /// haversine in an index, so the bounding box is what the index serves.
+  @@index([lat, lng])
+}
+
+/// A geocoded place name, cached forever. Place names do not move, and every
+/// miss is a billed Google call — so a name we FAILED to find is cached too,
+/// as a row with null coordinates.
+model NewsPlace {
+  id String @id @default(cuid())
+
+  /// Lower-cased, trimmed. "kempton park" — never the applicant's address.
+  name String @unique
+
+  lat Float?
+  lng Float?
+
+  lookedUpAt DateTime @default(now())
 }
