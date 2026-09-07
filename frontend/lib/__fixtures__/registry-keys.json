@@ -125,10 +125,6 @@
       "section": "The firearm"
     },
     {
-      "key": "barrel_length",
-      "section": "The firearm"
-    },
-    {
       "key": "firearm_fit_reason",
       "section": "The firearm"
     },
@@ -643,10 +639,6 @@
       "section": "The firearm"
     },
     {
-      "key": "barrel_length",
-      "section": "The firearm"
-    },
-    {
       "key": "firearm_fit_reason",
       "section": "The firearm"
     },
@@ -1158,10 +1150,6 @@
     },
     {
       "key": "receiver_make",
-      "section": "The firearm"
-    },
-    {
-      "key": "barrel_length",
       "section": "The firearm"
     },
     {
@@ -1727,10 +1715,6 @@
       "section": "The firearm"
     },
     {
-      "key": "barrel_length",
-      "section": "The firearm"
-    },
-    {
       "key": "firearm_fit_reason",
       "section": "The firearm"
     },
@@ -2286,10 +2270,6 @@
     },
     {
       "key": "receiver_make",
-      "section": "The firearm"
-    },
-    {
-      "key": "barrel_length",
       "section": "The firearm"
     },
     {

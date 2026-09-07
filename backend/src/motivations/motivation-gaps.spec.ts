@@ -79,7 +79,6 @@ describe('finding the gaps', () => {
   it('never asks about an empty OPTIONAL field', () => {
     const keys = findGaps(T, {}).map((g) => g.key);
     expect(keys).not.toContain('employer_name');
-    expect(keys).not.toContain('barrel_length');
   });
 });
 

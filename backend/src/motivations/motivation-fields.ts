@@ -1181,14 +1181,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     maxLength: 60,
   },
   {
-    key: 'barrel_length',
-    label: 'Barrel length',
-    kind: 'short',
-    section: 'The firearm',
-    help: 'Optional. Only where the discipline or the quarry makes it relevant.',
-    maxLength: 40,
-  },
-  {
     key: 'firearm_fit_reason',
     label: 'Why this particular firearm suits the purpose',
     kind: 'long',
