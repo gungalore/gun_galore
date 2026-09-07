@@ -229,7 +229,7 @@ export default function PrivacyPage() {
             ['Cloudinary', 'United States', 'Listing photos and compliance documents you upload'],
             ['Resend', 'United States', 'Email address, content of transactional emails'],
             ['SMSPortal', 'South Africa', 'Phone number, content of transactional SMS'],
-            ['Anthropic (Claude)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation)'],
+            ['Google (Gemini API)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation); documents and photographs you ask us to read — licences, competency and training certificates, ID copies and dealer paperwork — for automated text extraction'],
             ['Amazon Web Services', 'Ireland (eu-west-1)', 'Identity-verification images (ID document, selfie and, where applicable, the official record photograph) for automated text extraction, face match and liveness check'],
           ].map(([op, country, share], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
@@ -250,7 +250,7 @@ export default function PrivacyPage() {
       <h2>8. Cross-border transfers (POPIA § 72)</h2>
       <p>
         Some of the operators above are located outside South Africa
-        (notably Clerk, Cloudinary, Resend and Anthropic in the United
+        (notably Clerk, Cloudinary, Resend and Google in the United
         States, and Amazon Web Services in Ireland). Where personal
         information is transferred across
         borders, we rely on the following POPIA § 72 grounds:

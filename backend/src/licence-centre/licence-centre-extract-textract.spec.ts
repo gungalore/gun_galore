@@ -2,10 +2,10 @@
 //
 // The ORDER of the two readers, which is the whole point of the change.
 //
-// Textract first; Claude only when Textract cannot answer. Classification
+// Textract first; the model only when Textract cannot answer. Classification
 // itself is common/document-markers.ts — this pins the ORDER and the seam,
 // not the marker table. A regression here
-// is invisible in every other test — the Claude path still works, so nothing
+// is invisible in every other test — the model path still works, so nothing
 // fails — it just quietly goes back to paying a model to read a document that
 // says what it is across the top.
 
@@ -14,6 +14,23 @@ import { join } from 'node:path';
 
 import { LicenceCentreExtractService } from './licence-centre-extract.service';
 import { LicenceCentreTextractService } from './licence-centre-textract.service';
+import type { LlmService } from '../common/llm/llm.service';
+
+// ⚠️ NOT CONFIGURED, WHICH IS WHAT THESE TESTS ALWAYS ASSUMED.
+//
+// They used to rely on ANTHROPIC_API_KEY being absent in CI, so the service's
+// constructor left `this.client` null and every model branch short-circuited.
+// That was an environment fact standing in for a test fixture. It is stated
+// here instead: `isConfigured()` is false, so the fallback path is exercised
+// deliberately rather than by luck, and `complete` throws loudly if anything
+// ever reaches it.
+const noModel = () =>
+  ({
+    isConfigured: () => false,
+    complete: jest.fn(async () => {
+      throw new Error('the model must not be called on the Textract path');
+    }),
+  }) as unknown as LlmService;
 
 const DIR = join(__dirname, '__fixtures__', 'textract');
 const fx = (doc: string) =>
@@ -25,7 +42,10 @@ function serving(doc: string | null) {
   const analyse = jest
     .spyOn(textract, 'analyse')
     .mockResolvedValue(doc ? fx(doc) : null);
-  return { service: new LicenceCentreExtractService(textract), analyse };
+  return {
+    service: new LicenceCentreExtractService(textract, noModel()),
+    analyse,
+  };
 }
 
 const BYTES = Buffer.from('not really a jpeg');
@@ -89,7 +109,7 @@ describe('classify', () => {
         { BlockType: 'LINE', Text: 'S.A.CITIZEN' },
       ],
     });
-    const out = await new LicenceCentreExtractService(textract).classify({
+    const out = await new LicenceCentreExtractService(textract, noModel()).classify({
       bytes: BYTES,
       mimeType: 'image/jpeg',
     });
@@ -99,8 +119,8 @@ describe('classify', () => {
 
   // ⚠️ THE FALLBACK IS THE FEATURE, NOT A SAFETY NET NOBODY EXPECTS TO HIT.
   // Proof of address, employment letters and every association certificate
-  // whose letterhead is not in the table yet reach Claude by this route.
-  // Without an API key configured the Claude path returns null, which is what
+  // whose letterhead is not in the table yet reach the model by this route.
+  // With no model configured that path returns null, which is what
   // this asserts: markers declined, and it did NOT invent a kind.
   it('falls through when Textract returns nothing', async () => {
     const { service } = serving(null);
@@ -117,7 +137,7 @@ describe('classify', () => {
         { BlockType: 'LINE', Text: 'MUNICIPAL ACCOUNT' },
       ],
     });
-    const service = new LicenceCentreExtractService(textract);
+    const service = new LicenceCentreExtractService(textract, noModel());
     expect(
       await service.classify({ bytes: BYTES, mimeType: 'image/jpeg' }),
     ).toBeNull();
@@ -180,14 +200,14 @@ describe('read', () => {
         },
       ],
     });
-    const r = await new LicenceCentreExtractService(textract).read({
+    const r = await new LicenceCentreExtractService(textract, noModel()).read({
       kind: 'FIREARM_LICENCE',
       bytes: BYTES,
       mimeType: 'image/jpeg',
       alsoCovers: [],
     });
     // Either the Textract path answered and said no, or it fell through to the
-    // model (no API key in tests) and expressed no opinion at all. What must
+    // model (not configured here) and expressed no opinion at all. What must
     // never happen is a confident `true` off a card carrying no dates.
     expect(r.autoFillable).not.toBe(true);
   });
@@ -201,14 +221,14 @@ describe('read', () => {
     jest.spyOn(textract, 'analyse').mockResolvedValue({
       Blocks: [{ BlockType: 'LINE', Text: 'SOMETHING ILLEGIBLE' }],
     });
-    const service = new LicenceCentreExtractService(textract);
+    const service = new LicenceCentreExtractService(textract, noModel());
     const r = await service.read({
       kind: 'FIREARM_LICENCE',
       bytes: BYTES,
       mimeType: 'image/jpeg',
       alsoCovers: [],
     });
-    // No API key in tests, so the fallback yields the empty reading — the
+    // No model configured here, so the fallback yields the empty reading — the
     // point is that it did NOT return a "successful" read built from a
     // street address.
     expect(r.details).toEqual({});

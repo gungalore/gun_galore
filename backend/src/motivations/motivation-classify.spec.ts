@@ -1,26 +1,36 @@
 import { MotivationUploadKind } from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
 import { RETIRED } from './motivation-documents';
+import type { LlmResponse } from '../common/llm/llm.types';
 
 // Sorting a pack of documents automatically is only safe because of what the
 // classifier REFUSES to do. The required-documents list counts the TYPE of an
 // upload, not its contents — so a confident wrong answer here shows a
 // requirement satisfied while the pack is actually missing it.
 
-const client = (reply: string | Error) => ({
-  messages: {
-    create: jest.fn().mockImplementation(() => {
-      if (reply instanceof Error) return Promise.reject(reply);
-      return Promise.resolve({ content: [{ type: 'text', text: reply }] });
-    }),
-  },
+/** A fake of the shared LLM adapter — one answer, or one failure. */
+const fakeLlm = (reply: string | Error, configured = true) => ({
+  complete: jest.fn().mockImplementation((): Promise<LlmResponse> => {
+    if (reply instanceof Error) return Promise.reject(reply);
+    return Promise.resolve({
+      text: reply,
+      parts: [{ type: 'text', text: reply }],
+      toolCalls: [],
+      stopReason: 'end',
+      usage: { inputTokens: 10, outputTokens: 10 },
+      model: 'test-model-2.5',
+      provider: 'gemini',
+      assistantMessage: { role: 'assistant', content: reply },
+    } as LlmResponse);
+  }),
+  stream: jest.fn(),
+  isConfigured: () => configured,
+  model: 'test-model-2.5',
+  provider: 'gemini' as const,
 });
 
 function svcWith(reply: string | Error): MotivationExtractService {
-  const svc = new MotivationExtractService();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (svc as any).client = client(reply);
-  return svc;
+  return new MotivationExtractService(fakeLlm(reply) as never);
 }
 
 const png = { bytes: Buffer.from('x'), mimeType: 'image/png' };
@@ -76,24 +86,27 @@ describe('naming a document from its contents', () => {
     await expect(svc.classify(png)).resolves.toBeNull();
   });
 
-  it('does nothing at all without an API key', async () => {
-    const svc = new MotivationExtractService();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (svc as any).client = null;
+  it('does nothing at all when the AI service is not configured', async () => {
+    const llm = fakeLlm('{"kind":"OTHER","confidence":"low"}', false);
+    const svc = new MotivationExtractService(llm as never);
     await expect(svc.classify(png)).resolves.toBeNull();
+    expect(llm.complete).not.toHaveBeenCalled();
   });
 
-  it('sends no sampling parameters', async () => {
-    // The guard in common/claude-request-params.spec.ts covers the source;
-    // this covers the call actually made.
-    const svc = svcWith('{"kind":"OTHER","confidence":"low"}');
+  it('sends no sampling parameters, and no budget for reasoning', async () => {
+    // ⚠️ 200 TOKENS IS THE TIGHTEST CEILING IN THE FILE — one small JSON
+    // object. A thinking budget sharing it truncates the answer, which parses
+    // to null, which files the document as "something else": a silent
+    // regression that looks exactly like a model which could not tell.
+    const llm = fakeLlm('{"kind":"OTHER","confidence":"low"}');
+    const svc = new MotivationExtractService(llm as never);
     await svc.classify(png);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const body = ((svc as any).client.messages.create as jest.Mock).mock
-      .calls[0][0];
+    const req = llm.complete.mock.calls[0][0];
     for (const p of ['temperature', 'top_p', 'top_k']) {
-      expect(body[p]).toBeUndefined();
+      expect(req[p]).toBeUndefined();
     }
+    expect(req.thinking).toEqual({ budgetTokens: 0 });
+    expect(req.purpose).toBe('motivation.classify');
   });
 
   it('files every photograph of the safe under the one safe kind', async () => {
@@ -128,10 +141,10 @@ describe('naming a document from its contents', () => {
 describe('reading the page once', () => {
   const withVision = (text: string | null) => {
     const vision = { text: jest.fn().mockResolvedValue(text) };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const svc = new MotivationExtractService(vision as any);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (svc as any).client = client('{"kind":"OTHER","confidence":"low"}');
+    const svc = new MotivationExtractService(
+      fakeLlm('{"kind":"OTHER","confidence":"low"}') as never,
+      vision as never,
+    );
     return { svc, vision };
   };
 
@@ -174,8 +187,10 @@ describe('reading the page once', () => {
 
   it('survives a Vision outage without failing the upload', async () => {
     const vision = { text: jest.fn().mockRejectedValue(new Error('403')) };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const svc = new MotivationExtractService(vision as any);
+    const svc = new MotivationExtractService(
+      fakeLlm('{"kind":"OTHER","confidence":"low"}') as never,
+      vision as never,
+    );
     await expect(svc.ocr(Buffer.from('x'), 'image/png')).resolves.toBeNull();
   });
 });

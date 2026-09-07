@@ -19,7 +19,12 @@ import {
   AskGgAccountToolsService,
   AskGgAccount,
 } from './ask-gg-account-tools.service';
-import { AskGgClaudeService } from './ask-gg-claude.service';
+import { AskGgModelService } from './ask-gg-model.service';
+import {
+  LlmError,
+  type LlmRequest,
+  type LlmResponse,
+} from '../common/llm/llm.types';
 import type { PrismaService } from '../prisma/prisma.service';
 
 const ACCOUNT: AskGgAccount = { clerkId: 'clerk_me', userId: 'u_me' };
@@ -371,32 +376,75 @@ describe('W5 PII gate — every tool output is clean under poisoned inputs', () 
   });
 });
 
+// ─── The LlmService double ───────────────────────────────────────────
+// Ask GG speaks the provider-neutral contract now, so the spec's job is
+// to hand it LlmResponse objects, not an SDK-shaped mock. `complete` is
+// a jest.fn the test scripts turn by turn; `stream` replays the same
+// scripted responses as text deltas + a done event.
+function llmResponse(over: Partial<LlmResponse> = {}): LlmResponse {
+  const parts = over.parts ?? [{ type: 'text' as const, text: over.text ?? '' }];
+  return {
+    text: over.text ?? '',
+    parts,
+    toolCalls: over.toolCalls ?? [],
+    stopReason: over.stopReason ?? 'end',
+    usage: over.usage ?? { inputTokens: 10, outputTokens: 5 },
+    model: 'gemini-2.5-flash-lite',
+    provider: 'gemini',
+    assistantMessage: over.assistantMessage ?? {
+      role: 'assistant',
+      content: parts,
+    },
+    // Grounding is optional on the contract and absent unless a test asks
+    // for it — undefined means "this call was not grounded".
+    ...(over.groundingSources ? { groundingSources: over.groundingSources } : {}),
+    ...(over.webSearchQueries ? { webSearchQueries: over.webSearchQueries } : {}),
+  };
+}
+
+function fakeLlm(script: LlmResponse[] = []) {
+  const queue = [...script];
+  const next = () => queue.shift() ?? llmResponse({ text: 'done' });
+  const complete = jest.fn(async (_req: LlmRequest) => next());
+  return {
+    provider: 'gemini' as const,
+    model: 'gemini-2.5-flash-lite',
+    isConfigured: () => true,
+    complete,
+    // eslint-disable-next-line @typescript-eslint/require-await
+    stream: jest.fn(async function* () {
+      const r = next();
+      if (r.text) yield { type: 'text' as const, delta: r.text };
+      yield { type: 'done' as const, response: r };
+    }),
+    ping: jest.fn(),
+  };
+}
+
 describe('W5 fail-closed + budget gates (handleToolCall)', () => {
-  function makeClaude(accountTools: unknown) {
+  function makeModelSvc(accountTools: unknown, llm = fakeLlm()) {
     /* eslint-disable @typescript-eslint/no-explicit-any */
-    return new AskGgClaudeService(
+    return new AskGgModelService(
       {} as any,
       {} as any,
       {} as any,
       {} as any,
       {} as any,
       accountTools as any,
+      llm as any,
     );
     /* eslint-enable @typescript-eslint/no-explicit-any */
   }
-  const block = {
-    type: 'tool_use',
-    id: 'toolu_1',
-    name: 'getMyPurchases',
-    input: {},
-  };
+  // An LlmToolCall, not an SDK tool_use block. handleToolCall never
+  // reaches the model, so the double only has to exist.
+  const call = { id: 'toolu_1', name: 'getMyPurchases', input: {} };
 
-  it('no authenticated account → is_error, tool never invoked', async () => {
+  it('no authenticated account → isError, tool never invoked', async () => {
     const accountTools = { getMyPurchases: jest.fn() };
-    const svc = makeClaude(accountTools);
+    const svc = makeModelSvc(accountTools);
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
     const out = await (svc as any).handleToolCall(
-      block,
+      call,
       [],
       [],
       { marketplace: 0, platform: 0, account: 0 },
@@ -404,7 +452,11 @@ describe('W5 fail-closed + budget gates (handleToolCall)', () => {
       false,
       undefined, // ← no account
     );
-    expect(out[0].is_error).toBe(true);
+    expect(out[0].isError).toBe(true);
+    // Every result names its own tool — Gemini keys results by name, so a
+    // nameless tool_result is silently unmatched rather than an error.
+    expect(out[0].name).toBe('getMyPurchases');
+    expect(out[0].toolCallId).toBe('toolu_1');
     expect(accountTools.getMyPurchases).not.toHaveBeenCalled();
   });
 
@@ -412,11 +464,11 @@ describe('W5 fail-closed + budget gates (handleToolCall)', () => {
     const accountTools = {
       getMyPurchases: jest.fn().mockResolvedValue({ purchases: [] }),
     };
-    const svc = makeClaude(accountTools);
+    const svc = makeModelSvc(accountTools);
     const budget = { marketplace: 0, platform: 0, account: 4 };
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
     const out = await (svc as any).handleToolCall(
-      block,
+      call,
       [],
       [],
       budget,
@@ -424,7 +476,295 @@ describe('W5 fail-closed + budget gates (handleToolCall)', () => {
       false,
       ACCOUNT,
     );
-    expect(out[0].is_error).toBe(true);
+    expect(out[0].isError).toBe(true);
     expect(accountTools.getMyPurchases).not.toHaveBeenCalled();
+  });
+
+  it('a tool result is echoed back as a user turn of tool_result parts', async () => {
+    const accountTools = {
+      getMyPurchases: jest.fn().mockResolvedValue({ purchases: [] }),
+    };
+    const llm = fakeLlm([
+      llmResponse({
+        toolCalls: [{ id: 'toolu_1', name: 'getMyPurchases', input: {} }],
+        stopReason: 'tool_use',
+        parts: [
+          { type: 'tool_call', id: 'toolu_1', name: 'getMyPurchases', input: {} },
+        ],
+      }),
+      llmResponse({ text: 'Nothing on your account yet.' }),
+    ]);
+    const svc = makeModelSvc(accountTools, llm);
+    const out = await svc.complete([{ role: 'user', content: 'my orders?' }], {
+      account: ACCOUNT,
+    });
+
+    expect(out.content).toBe('Nothing on your account yet.');
+    expect(accountTools.getMyPurchases).toHaveBeenCalled();
+    expect(llm.complete).toHaveBeenCalledTimes(2);
+    // Turn 2 carries: the assistant turn verbatim, then a user turn whose
+    // content is the tool_result parts.
+    const second = llm.complete.mock.calls[1][0];
+    expect(second.purpose).toBe('askgg.tool-turn');
+    const last = second.messages[second.messages.length - 1];
+    expect(last.role).toBe('user');
+    expect(last.content).toEqual([
+      expect.objectContaining({
+        type: 'tool_result',
+        toolCallId: 'toolu_1',
+        name: 'getMyPurchases',
+      }),
+    ]);
+    expect(second.messages[second.messages.length - 2].role).toBe('assistant');
+    // ⚠️ THE TOOL SET STILL DOES NOT VARY BY TIER, AND GROUNDING NEVER RIDES
+    // AN ANSWER TURN. Web search came back on 2026-09-07 — but Gemini 2.5
+    // refuses grounding beside function declarations, so it runs as its own
+    // turn afterwards. A `grounding` flag here would be a bad_request at the
+    // adapter, and a `web_search` in this array would be the old shape.
+    expect((second.tools ?? []).some((t) => t.name === 'web_search')).toBe(
+      false,
+    );
+    expect(second.grounding).toBeUndefined();
+  });
+
+  it('streaming pushes every delta and persists the same text', async () => {
+    const llm = fakeLlm([llmResponse({ text: 'Streamed answer.' })]);
+    const svc = makeModelSvc({}, llm);
+    const deltas: string[] = [];
+    const out = await svc.complete([{ role: 'user', content: 'hi' }], {
+      onText: (d) => deltas.push(d),
+    });
+    expect(deltas.join('')).toBe('Streamed answer.');
+    expect(out.content).toBe('Streamed answer.');
+    expect(llm.stream).toHaveBeenCalled();
+    expect(llm.complete).not.toHaveBeenCalled();
+  });
+
+  it('a provider failure is fail-open: the canned reply, never a throw', async () => {
+    const llm = fakeLlm();
+    llm.complete.mockRejectedValue(
+      new LlmError('rate_limited', 'slow down', 429),
+    );
+    const svc = makeModelSvc({}, llm);
+    const out = await svc.complete([{ role: 'user', content: 'hi' }]);
+    expect(out.content).toContain('temporary problem');
+    expect(out.model).toBe('gemini-2.5-flash-lite');
+  });
+
+  it('an unconfigured provider returns the offline placeholder', async () => {
+    const llm = fakeLlm();
+    llm.isConfigured = () => false;
+    const svc = makeModelSvc({}, llm);
+    const out = await svc.complete([{ role: 'user', content: 'hi' }]);
+    expect(out.content).toContain('temporarily offline');
+    expect(llm.complete).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE GROUNDED SOURCES TURN, END TO END.
+//
+// Web search returned on 2026-09-07 as a SEPARATE FINAL TURN — Gemini 2.5
+// refuses grounding beside function declarations, and every answer turn
+// carries eleven. What has to hold:
+//   • the answer turn is untouched (no grounding, tools intact);
+//   • the sourced section only ever APPENDS, which is what makes it safe to
+//     run after the member has already read the answer;
+//   • a section with no sources behind it is DROPPED, because "what the
+//     sources say" with nothing behind it is the fabrication this feature
+//     was rebuilt to avoid;
+//   • nothing it does can cost the member their answer.
+// ────────────────────────────────────────────────────────────────────
+describe('Ask GG — the grounded sources turn', () => {
+  function makeSvc(llm: ReturnType<typeof fakeLlm>) {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    return new AskGgModelService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      llm as any,
+    );
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  }
+
+  const PRO = { subscriptionTier: 'PRO' as const, lane: 'ADVICE' as const };
+
+  const sourced = (text: string) =>
+    llmResponse({
+      text,
+      groundingSources: [
+        { uri: 'https://hodgdon.com/p', title: 'Hodgdon' },
+        { uri: 'https://6mmbr.com/t' },
+      ],
+    });
+
+  it('appends the section and cites the pages, without a second answer turn', async () => {
+    const llm = fakeLlm([
+      llmResponse({ text: 'Start at the published start charge.' }),
+      sourced('**🌐 What the sources say**\nHodgdon note a mild pressure curve.'),
+    ]);
+    const out = await makeSvc(llm).complete(
+      [{ role: 'user', content: 'is H4350 nice to work with?' }],
+      PRO,
+    );
+
+    expect(out.content).toBe(
+      'Start at the published start charge.\n\n**🌐 What the sources say**\nHodgdon note a mild pressure curve.',
+    );
+    expect(out.citations).toEqual([
+      { sourceType: 'web', title: 'Hodgdon', url: 'https://hodgdon.com/p' },
+      // ⚠️ A chip with no title falls back to the host. A bare uri is ugly;
+      // an empty label is a dead pixel the member cannot click.
+      { sourceType: 'web', title: '6mmbr.com', url: 'https://6mmbr.com/t' },
+    ]);
+
+    // The answer turn carried tools and no grounding; the sources turn is
+    // the exact inverse. Both halves matter: either one wrong is a
+    // bad_request at the adapter.
+    const [answer, sources] = llm.complete.mock.calls.map((c) => c[0]);
+    expect(answer.grounding).toBeUndefined();
+    expect((answer.tools ?? []).length).toBeGreaterThan(0);
+    expect(sources.grounding).toEqual({ web: true });
+    expect(sources.tools).toBeUndefined();
+    expect(sources.json).toBeUndefined();
+    expect(sources.purpose).toBe('askgg.web-sources');
+  });
+
+  it('bills the sources turn into the same rollup', async () => {
+    const llm = fakeLlm([
+      llmResponse({ text: 'Answer.', usage: { inputTokens: 100, outputTokens: 20 } }),
+      llmResponse({
+        text: '**🌐 What the sources say**\nSomething sourced.',
+        usage: { inputTokens: 40, outputTokens: 10 },
+        groundingSources: [{ uri: 'https://a.co' }],
+      }),
+    ]);
+    const out = await makeSvc(llm).complete(
+      [{ role: 'user', content: 'q' }],
+      PRO,
+    );
+    expect(out.promptTokens).toBe(140);
+    expect(out.completionTokens).toBe(30);
+  });
+
+  it('does not run for FREE, for support-restricted, or on the SUPPORT lane', async () => {
+    for (const opts of [
+      { lane: 'ADVICE' as const }, // no tier → FREE
+      { subscriptionTier: 'PRO' as const, restricted: true },
+      { subscriptionTier: 'PRO' as const, lane: 'SUPPORT' as const },
+    ]) {
+      const llm = fakeLlm([llmResponse({ text: 'Answer.' })]);
+      const out = await makeSvc(llm).complete(
+        [{ role: 'user', content: 'q' }],
+        opts,
+      );
+      expect(llm.complete).toHaveBeenCalledTimes(1);
+      expect(out.content).toBe('Answer.');
+      expect(out.citations).toEqual([]);
+    }
+  });
+
+  it('adds nothing on NONE — the honest outcome of a search that found nothing', async () => {
+    const llm = fakeLlm([
+      llmResponse({ text: 'Answer.' }),
+      llmResponse({ text: 'NONE' }),
+    ]);
+    const out = await makeSvc(llm).complete(
+      [{ role: 'user', content: 'q' }],
+      PRO,
+    );
+    expect(out.content).toBe('Answer.');
+    expect(out.citations).toEqual([]);
+  });
+
+  // ⚠️ THE ONE THAT MATTERS. A "what the sources say" section with an empty
+  // source list reads exactly like sourced experience and is not — the same
+  // fabrication the FREE-tier rule has always forbidden. Drop the text.
+  it('drops a sources section that has no sources behind it', async () => {
+    const llm = fakeLlm([
+      llmResponse({ text: 'Answer.' }),
+      llmResponse({
+        text: '**🌐 What the sources say**\nShooters widely report…',
+        groundingSources: [],
+      }),
+    ]);
+    const out = await makeSvc(llm).complete(
+      [{ role: 'user', content: 'q' }],
+      PRO,
+    );
+    expect(out.content).toBe('Answer.');
+    expect(out.citations).toEqual([]);
+  });
+
+  it('never costs the member their answer when the search fails', async () => {
+    const llm = fakeLlm([llmResponse({ text: 'Answer.' })]);
+    llm.complete
+      .mockResolvedValueOnce(llmResponse({ text: 'Answer.' }))
+      .mockRejectedValueOnce(new LlmError('timeout', 'no answer'));
+    const out = await makeSvc(llm).complete(
+      [{ role: 'user', content: 'q' }],
+      PRO,
+    );
+    expect(out.content).toBe('Answer.');
+    expect(out.citations).toEqual([]);
+  });
+
+  // The member has already read the answer by the time this arrives, so it
+  // is pushed as a continuation — never a rewrite of what is on screen.
+  it('streams the section as a continuation of what the member already read', async () => {
+    const llm = fakeLlm([llmResponse({ text: 'Streamed answer.' })]);
+    // The sources turn always goes through complete(), never stream() —
+    // there is no member watching a postscript arrive word by word.
+    llm.complete.mockResolvedValue(
+      sourced('**🌐 What the sources say**\nSourced bit.'),
+    );
+    const deltas: string[] = [];
+    const out = await makeSvc(llm).complete(
+      [{ role: 'user', content: 'q' }],
+      { ...PRO, onText: (d) => deltas.push(d) },
+    );
+    expect(deltas.join('')).toBe(
+      'Streamed answer.\n\n**🌐 What the sources say**\nSourced bit.',
+    );
+    expect(out.content).toBe(deltas.join(''));
+  });
+
+  // ⚠️ THE SEARCH TURN SEES THE QUESTION AND OUR DRAFT, AND NOTHING ELSE.
+  // Not the tool results, not the account rows — the query leaves for
+  // Google, and a member's own order has no business shaping it.
+  it('sends only the question and the draft answer to the search', async () => {
+    const llm = fakeLlm([
+      llmResponse({ text: 'The draft answer.' }),
+      sourced('**🌐 What the sources say**\nx'),
+    ]);
+    await makeSvc(llm).complete(
+      [
+        { role: 'user', content: 'first question' },
+        { role: 'assistant', content: 'earlier reply' },
+        { role: 'user', content: 'what powder for .308?' },
+      ],
+      PRO,
+    );
+    const sent = JSON.stringify(llm.complete.mock.calls[1][0].messages);
+    expect(sent).toContain('what powder for .308?');
+    expect(sent).toContain('The draft answer.');
+    expect(sent).not.toContain('earlier reply');
+  });
+
+  // A charge weight read off a forum, printed under an All Outdoor answer,
+  // reads as though we checked it. Precision forums share over-book loads as
+  // a point of pride. The manuals stay the only source for a load.
+  it('forbids the search turn from publishing a charge weight', async () => {
+    const llm = fakeLlm([
+      llmResponse({ text: 'Answer.' }),
+      sourced('**🌐 What the sources say**\nx'),
+    ]);
+    await makeSvc(llm).complete([{ role: 'user', content: 'q' }], PRO);
+    const system = String(llm.complete.mock.calls[1][0].system);
+    expect(system).toMatch(/NEVER PUBLISH A CHARGE WEIGHT/i);
+    expect(system).toContain('hodgdon.com');
   });
 });

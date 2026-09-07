@@ -116,7 +116,7 @@ export class MotivationQuotaService {
    * (see claimBetaSeat). This is the ONE sanctioned decrement, and it is
    * narrow on purpose: it runs only when a generation that claimed a seat then
    * failed before producing anything. The applicant got no document, so they
-   * must not lose their place in the beta because Anthropic was down.
+   * must not lose their place in the beta because the model provider was down.
    *
    * It cannot go below zero, and it is best-effort: losing a decrement costs
    * one seat out of the cap, while a wrong decrement would hand out a free

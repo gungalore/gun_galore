@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { LlmService } from '../common/llm/llm.service';
 
 /**
  * AdminCreditsService — unified credit/balance fetcher for every paid
@@ -27,7 +28,7 @@ import { PrismaService } from '../prisma/prisma.service';
  *      `{ balance: null, error: 'not configured', ... }` gracefully
  *      WITHOUT making a network call. Local-dev parity — the operator
  *      should never see a confusing "down" report just because they
- *      haven't wired up Anthropic admin keys yet.
+ *      haven't wired up a model key yet.
  *   4. `metadata` carries everything service-specific so the admin UI
  *      can render the raw response (storage used, USD spent today, etc)
  *      without us needing to add columns for every dimension.
@@ -38,7 +39,16 @@ const FETCH_TIMEOUT_MS = 5000;
 // One uniform shape every fetcher returns. Matches what the cron writes
 // to CreditSnapshot (minus the auto-generated id).
 export interface CreditSnapshotResult {
-  service: 'smsportal' | 'verifynow' | 'cloudinary' | 'anthropic' | 'pudo';
+  // ⚠️ 'anthropic' is KEPT alongside 'gemini' only so historical
+  // CreditSnapshot rows written before 2026-09-07 still type-check when
+  // read back for the trend chart. Nothing WRITES 'anthropic' any more.
+  service:
+    | 'smsportal'
+    | 'verifynow'
+    | 'cloudinary'
+    | 'gemini'
+    | 'anthropic'
+    | 'pudo';
   balance: number | null;
   unit: string | null;
   metadata: Record<string, unknown> | null;
@@ -50,7 +60,10 @@ export interface CreditSnapshotResult {
 export class AdminCreditsService {
   private readonly logger = new Logger(AdminCreditsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly llm: LlmService,
+  ) {}
 
   // -------------------------------------------------------------------
   // SMSPortal — credit balance for outbound OTPs + transactional SMS.
@@ -342,135 +355,117 @@ export class AdminCreditsService {
   }
 
   // -------------------------------------------------------------------
-  // Anthropic — usage spend over the last 24h.
+  // AI model spend — read from OUR OWN ledger, not the provider.
   // -------------------------------------------------------------------
-  // Anthropic exposes an Admin API for usage reporting under an
-  // ANTHROPIC_ADMIN_API_KEY (separate from the runtime ANTHROPIC_API_KEY
-  // used by the listing-review agent). The admin key is opt-in — most
-  // organisations don't enable it by default — so we gracefully report
-  // "not configured" when it's missing rather than blocking the cron.
+  // ⚠️ THIS USED TO POLL ANTHROPIC'S ADMIN COST REPORT. Two things killed
+  // that, and the second is the interesting one:
   //
-  // GET https://api.anthropic.com/v1/organizations/usage_report/messages
-  //   Headers:
-  //     x-api-key: <ANTHROPIC_ADMIN_API_KEY>
-  //     anthropic-version: 2023-06-01
-  //   Query:
-  //     starting_at, ending_at (RFC3339 UTC)
+  //   1. The provider changed. Operator, 2026-09-07: "we are switching from
+  //      claude API to gemini 2.5 flash-lite api for everything on the
+  //      website." Gemini has no equivalent per-organisation cost endpoint
+  //      to point this at — spend is a Cloud Billing concern, behind a
+  //      different credential, at a different granularity.
   //
-  // Response shape (best-effort — Anthropic's admin API is relatively
-  // new and the schema is documented as "may evolve"). We extract the
-  // sum of `cost_usd` (or similar) across the returned buckets. If the
-  // shape doesn't match what we expect, we report the raw response in
-  // metadata so the operator can debug rather than getting a silent zero.
+  //   2. Even when it worked it answered the wrong question. It returned
+  //      ONE number for 24 hours of spend across the whole organisation.
+  //      That tells the operator WHAT was spent and never WHERE, so a
+  //      runaway moderation loop and a busy month of motivations looked
+  //      identical — and the number included spend from outside this
+  //      platform entirely, since the org key is not project-scoped.
   //
-  // NOTE: "balance" here is INVERTED vs the other services — it's
-  // SPEND_USD over the last 24h, NOT money remaining. Thresholds for
-  // Anthropic should be configured to fire when spend EXCEEDS the limit
-  // (the threshold-check in TasksService treats balance <= threshold as
-  // the alert condition, so for Anthropic the operator should set
-  // warnThreshold = "max acceptable spend" and we negate the comparison
-  // in the cron — see TasksService for details).
-  async fetchAnthropic(): Promise<CreditSnapshotResult> {
+  // So the number now comes from AiUsage, which LlmService writes one row
+  // to per call. It is OUR arithmetic over OUR calls, priced from the
+  // published rate card (llm.pricing.ts). That makes it approximate where
+  // the provider's own invoice is exact — the pricing constants can go
+  // stale, and a call that never reached LlmService is invisible — but it
+  // is attributable, per-purpose, and it is the same number the alerting
+  // compares against. For the invoice, read the provider's console.
+  //
+  // ⚠️ Anthropic rows are priced at zero on purpose (rollback path only),
+  // so a platform running on LLM_PROVIDER=anthropic reports $0 here. That
+  // is honest rather than wrong: nothing on this page can price it.
+  //
+  // NEVER THROWS, per this file's contract at the top.
+  async fetchGemini(): Promise<CreditSnapshotResult> {
     const fetchedAt = new Date();
-    const adminKey = process.env.ANTHROPIC_ADMIN_API_KEY;
-
-    if (!adminKey) {
-      return {
-        service: 'anthropic',
-        balance: null,
-        unit: 'USD',
-        metadata: null,
-        fetchedAt,
-        error: 'ANTHROPIC_ADMIN_API_KEY not configured',
-      };
-    }
 
     try {
-      // Last-24h window. RFC3339 UTC.
-      //
-      // AUDIT FIX 2026-07-20: this used to call
-      // /v1/organizations/usage_report/messages and sum cost_usd-style
-      // fields — but that endpoint returns TOKEN COUNTS, never dollars,
-      // so the monitor reported $0 forever while looking healthy. The
-      // COST report endpoint is the one that returns money.
-      const endingAt = new Date().toISOString();
-      const startingAt = new Date(
-        Date.now() - 24 * 60 * 60 * 1000,
-      ).toISOString();
-      const url = new URL(
-        'https://api.anthropic.com/v1/organizations/cost_report',
-      );
-      url.searchParams.set('starting_at', startingAt);
-      url.searchParams.set('ending_at', endingAt);
-      url.searchParams.set('bucket_width', '1d');
+      const now = Date.now();
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
-      const res = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'x-api-key': adminKey,
-          'anthropic-version': '2023-06-01',
-          Accept: 'application/json',
-        },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
+      const [today, month, last30, byPurpose, failures] = await Promise.all([
+        this.prisma.aiUsage.aggregate({
+          where: { createdAt: { gte: startOfToday } },
+          _sum: { costUsdMicros: true, inputTokens: true, outputTokens: true },
+          _count: true,
+        }),
+        this.prisma.aiUsage.aggregate({
+          where: { createdAt: { gte: startOfMonth } },
+          _sum: { costUsdMicros: true },
+          _count: true,
+        }),
+        this.prisma.aiUsage.aggregate({
+          where: { createdAt: { gte: thirtyDaysAgo } },
+          _sum: { costUsdMicros: true },
+          _count: true,
+        }),
+        // The whole reason the ledger exists: which feature is spending.
+        this.prisma.aiUsage.groupBy({
+          by: ['purpose'],
+          where: { createdAt: { gte: thirtyDaysAgo } },
+          _sum: { costUsdMicros: true },
+          _count: { _all: true },
+        }),
+        this.prisma.aiUsage.count({
+          where: { createdAt: { gte: thirtyDaysAgo }, ok: false },
+        }),
+      ]);
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        return {
-          service: 'anthropic',
-          balance: null,
-          unit: 'USD',
-          metadata: { httpStatus: res.status, body: text.slice(0, 500) },
-          fetchedAt,
-          error: `HTTP ${res.status} — Admin API may not be enabled on this org`,
-        };
-      }
+      const usd = (micros: number | null | undefined) =>
+        Math.round(((micros ?? 0) / 1_000_000) * 10_000) / 10_000;
 
-      // Cost-report shape: { data: [ { results: [ { currency, amount } ] } ] }
-      // with `amount` a decimal string (USD). Parsed defensively; if the
-      // shape ever drifts we surface the raw payload + an error note
-      // instead of a silent healthy-looking zero.
-      const raw = (await res.json().catch(() => ({}))) as {
-        data?: Array<{
-          results?: Array<{ amount?: string | number; currency?: string }>;
-        }>;
-      };
+      // `balance` is TODAY'S SPEND, matching what the Anthropic row meant
+      // before it — a spend CEILING, not a remaining balance. The threshold
+      // comparison direction depends on that; see DEFAULT_THRESHOLDS below.
+      const spendToday = usd(today._sum.costUsdMicros);
 
-      const buckets = Array.isArray(raw.data) ? raw.data : [];
-      let sawResult = false;
-      let sumSpend = 0;
-      for (const b of buckets) {
-        for (const r of b.results ?? []) {
-          sawResult = true;
-          const v = Number(r.amount);
-          if (Number.isFinite(v)) sumSpend += v;
-        }
-      }
-      // Buckets with zero results = genuinely no spend in the window —
-      // that's a real 0. No buckets at all when we KNOW there was usage
-      // would also be a real (if surprising) 0; only a shape drift where
-      // buckets exist but carry no parsable results is suspicious.
-      const shapeSuspicious = buckets.length > 0 && !sawResult;
+      const perPurpose = byPurpose
+        .map((row) => ({
+          purpose: row.purpose,
+          spend_usd: usd(row._sum.costUsdMicros),
+          calls: row._count._all,
+        }))
+        .sort((a, b) => b.spend_usd - a.spend_usd);
 
       return {
-        service: 'anthropic',
-        balance: shapeSuspicious ? null : sumSpend,
+        service: 'gemini',
+        balance: spendToday,
         unit: 'USD',
         metadata: {
-          raw,
-          spend_today_usd: shapeSuspicious ? null : sumSpend,
-          bucket_count: buckets.length,
-          window_start: startingAt,
-          window_end: endingAt,
+          source: 'AiUsage ledger (own arithmetic, published rate card)',
+          provider: process.env.LLM_PROVIDER ?? 'gemini',
+          model: process.env.LLM_MODEL ?? 'gemini-3.5-flash-lite',
+          spend_today_usd: spendToday,
+          spend_month_to_date_usd: usd(month._sum.costUsdMicros),
+          spend_30d_usd: usd(last30._sum.costUsdMicros),
+          calls_today: today._count,
+          calls_month_to_date: month._count,
+          calls_30d: last30._count,
+          failed_calls_30d: failures,
+          input_tokens_today: today._sum.inputTokens ?? 0,
+          output_tokens_today: today._sum.outputTokens ?? 0,
+          per_purpose_30d: perPurpose,
         },
         fetchedAt,
-        ...(shapeSuspicious
-          ? { error: 'cost_report shape not recognised — see metadata.raw' }
-          : {}),
       };
     } catch (err) {
       return {
-        service: 'anthropic',
+        service: 'gemini',
         balance: null,
         unit: 'USD',
         metadata: null,
@@ -603,7 +598,7 @@ export class AdminCreditsService {
       this.fetchSmsPortal(),
       this.fetchVerifyNow(),
       this.fetchCloudinary(),
-      this.fetchAnthropic(),
+      this.fetchGemini(),
       this.fetchPudo(),
     ]);
 
@@ -611,7 +606,7 @@ export class AdminCreditsService {
       'smsportal',
       'verifynow',
       'cloudinary',
-      'anthropic',
+      'gemini',
       'pudo',
     ];
 
@@ -768,39 +763,20 @@ export class AdminCreditsService {
           detail: r.error ?? `Balance OK: ${r.balance} ${r.unit}`,
         };
       }
-      case 'anthropic': {
-        // Smallest possible /v1/messages call — 1 max_tokens, a single
-        // user message. Bills <$0.001 and validates the runtime
-        // (non-admin) ANTHROPIC_API_KEY at the same time.
-        const apiKey = process.env.ANTHROPIC_API_KEY;
-        if (!apiKey) {
-          return { ok: false, detail: 'ANTHROPIC_API_KEY not configured' };
-        }
-        try {
-          const res = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'x-api-key': apiKey,
-              'anthropic-version': '2023-06-01',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              // Pinned snapshot — an alias can be repointed/retired under us.
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 1,
-              messages: [{ role: 'user', content: 'hi' }],
-            }),
-            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-          });
-          return {
-            ok: res.ok,
-            detail: res.ok
-              ? 'API auth OK (1-token test message billed)'
-              : `HTTP ${res.status}`,
-          };
-        } catch (err) {
-          return { ok: false, detail: (err as Error).message };
-        }
+      case 'gemini': {
+        // A REAL one-token completion through the adapter, so this button
+        // proves exactly what a feature call proves: key, network, model id
+        // and quota. It costs a fraction of a cent. ⚠️ It follows
+        // LLM_PROVIDER, so on the rollback path it tests Anthropic — which
+        // is right, because it is testing "can this platform reach its
+        // model", not "can this platform reach Google".
+        const r = await this.llm.ping();
+        return {
+          ok: r.ok,
+          detail: r.ok
+            ? `${r.provider}/${r.model} answered in ${r.latencyMs}ms`
+            : (r.error ?? 'ping failed'),
+        };
       }
       case 'pudo': {
         const r = await this.fetchPudo();
@@ -848,12 +824,14 @@ export class AdminCreditsService {
         select: { balance: true },
       });
       if (latest?.balance == null) continue;
-      // Anthropic's number is 24h SPEND — alarming means it went ABOVE
-      // the ceiling; everything else is a balance dropping BELOW a floor.
-      const tripped =
-        service === 'anthropic'
-          ? latest.balance >= alarm
-          : latest.balance <= alarm;
+      // ⚠️ The AI row's number is SPEND, not a remaining balance — alarming
+      // means it went ABOVE a ceiling, where everything else is a balance
+      // dropping BELOW a floor. 'anthropic' stays in the test so historical
+      // rows written before the 2026-09-07 provider switch still compare the
+      // right way round on the trend chart.
+      const tripped = SPEND_STYLE_SERVICES.has(service)
+        ? latest.balance >= alarm
+        : latest.balance <= alarm;
       if (tripped) count++;
     }
     return count;
@@ -864,11 +842,14 @@ export class AdminCreditsService {
 // poll. Units are each provider's own credit unit. Override per-service
 // from the /admin/credits page.
 //
-// Anthropic (audit fix 2026-07-20) is a SPEND number (USD over 24h), not
-// a remaining balance — its thresholds are CEILINGS and the cron compares
-// upward for it (see TasksService.checkCreditThreshold). Defaults: warn
-// at $10/day, alarm at $25/day — far above today's normal usage, so a
-// trip means either real growth (nice problem) or a runaway loop / abuse.
+// The AI row (audit fix 2026-07-20; repointed from Anthropic to Gemini on
+// 2026-09-07) is a SPEND number (USD, today so far), not a remaining
+// balance — its thresholds are CEILINGS and the cron compares upward for it
+// (see TasksService.checkCreditThreshold). Defaults: warn at $10/day, alarm
+// at $25/day — far above today's normal usage, so a trip means either real
+// growth (nice problem) or a runaway loop / abuse. Flash-lite is roughly an
+// order of magnitude cheaper per call than the model these numbers were set
+// for, so they are now generous; leave them until real traffic says otherwise.
 // Exported so the credit-poll cron can materialise a default into a real
 // CreditThreshold row on first crossing (the row carries the alert-dedup
 // timestamps) — without this, defaults were display-only and the cron
@@ -880,5 +861,18 @@ export const DEFAULT_THRESHOLDS: Record<
   verifynow: { warn: 100, alarm: 50 },
   smsportal: { warn: 200, alarm: 100 },
   cloudinary: { warn: 15, alarm: 5 },
-  anthropic: { warn: 10, alarm: 25 },
+  gemini: { warn: 10, alarm: 25 },
 };
+
+/**
+ * Services whose `balance` is SPEND (compare upward against a ceiling)
+ * rather than a remaining credit balance (compare downward against a floor).
+ *
+ * ⚠️ Exported because TasksService.checkCreditThreshold makes the same
+ * decision and currently hard-codes `service === 'anthropic'`. That test is
+ * now stale: nothing writes an 'anthropic' row any more, so the AI spend row
+ * would be compared as a FLOOR — i.e. it would alarm while spend is LOW and
+ * go quiet as it climbs, which is exactly backwards. That file is owned by
+ * another change; this set is here so the fix is a one-line import.
+ */
+export const SPEND_STYLE_SERVICES = new Set(['gemini', 'anthropic']);

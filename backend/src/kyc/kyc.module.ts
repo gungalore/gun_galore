@@ -4,13 +4,14 @@ import { KycScanController } from './kyc-scan.controller';
 import { ScanHandoffGuard } from '../auth/scan-handoff.guard';
 import { KycService } from './kyc.service';
 import { VerifyNowService } from './verifynow.service';
-import { ClaudeKycService } from './claude-kyc.service';
+import { KycModelService } from './kyc-model.service';
 import { AwsKycService } from './aws-kyc.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 
 // KYC is self-contained — the service depends on PrismaService (global),
 // NotificationsService (global), SmsService (global) and the locally
-// scoped VerifyNowService + ClaudeKycService (Claude-vision flow).
+// scoped VerifyNowService + KycModelService (the AI identity flow; was
+// ClaudeKycService until the 2026-09-07 provider switch).
 // KycService is exported so TransactionsService can call
 // triggerSellerVerification() / maybeUpgradeKycTier() from the buy path.
 //
@@ -29,7 +30,7 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
     ScanHandoffGuard,
     KycService,
     VerifyNowService,
-    ClaudeKycService,
+    KycModelService,
     AwsKycService,
     SecureFileStorageService,
   ],

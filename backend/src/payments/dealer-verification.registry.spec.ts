@@ -36,6 +36,13 @@ function makeService(flagOn: boolean) {
     {} as never, // zohoBooks
     {} as never, // shipping
     settings as never,
+    // ⚠️ NO MODEL, DELIBERATELY. The auto-registration hook reads the
+    // findings that a previous scan already persisted on the transaction —
+    // it never calls a model itself — so passing one here would only be a
+    // way for this test to reach the network. Before the 2026-09-07 provider
+    // switch the same fact was expressed by the absence of ANTHROPIC_API_KEY
+    // in CI; it is stated now rather than inherited from the environment.
+    { isConfigured: () => false } as never,
   );
   const run = (txId: string) =>
     (svc as unknown as {

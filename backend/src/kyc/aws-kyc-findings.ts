@@ -40,7 +40,7 @@
 // of auto-verifying on a check nobody ran. That is the correct failure
 // direction, and it is visible rather than silent.
 
-import type { KycClaudeFindings } from './claude-kyc.service';
+import type { KycClaudeFindings } from './kyc-model.service';
 import {
   assessDocumentIntegrity,
   type IntegrityAssessment,

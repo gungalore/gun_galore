@@ -102,7 +102,7 @@ export const DESK_SERVICES: DeskService[] = [
     url: 'https://www.verifynow.co.za/',
     group: 'Identity',
     purpose: 'SA ID and vehicle verification. Credit balance lives here.',
-    caution: 'KYC now runs on Claude vision; this is the fallback rail.',
+    caution: 'KYC now runs on AI vision (Gemini); this is the fallback rail.',
   },
 
   /* ── Infrastructure ───────────────────────────────────────────────── */
@@ -166,8 +166,8 @@ export const DESK_SERVICES: DeskService[] = [
     purpose: 'The repository.',
   },
   {
-    name: 'Claude Platform',
-    url: 'https://platform.claude.com/dashboard',
+    name: 'Google AI Studio',
+    url: 'https://aistudio.google.com/',
     group: 'Build & AI',
     purpose: 'API usage and spend for every AI surface on the site.',
   },

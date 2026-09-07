@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { costUsdMicros, isPricedModel } from '../common/llm/llm.pricing';
 import { MotivationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptJson } from '../common/blob-crypto';
@@ -52,6 +53,18 @@ export function estimateCostUsd(
   promptTokens: number,
   completionTokens: number,
 ): number {
+  // The platform model is priced exactly, in the adapter's one price table.
+  // The tiering below is for the Anthropic rollback path only, and it still
+  // errs high on an unknown name — the documented safe direction.
+  if (isPricedModel(model)) {
+    return (
+      costUsdMicros({
+        model,
+        inputTokens: promptTokens,
+        outputTokens: completionTokens,
+      }) / 1_000_000
+    );
+  }
   const tier = /opus/i.test(model)
     ? 'opus'
     : /sonnet/i.test(model)

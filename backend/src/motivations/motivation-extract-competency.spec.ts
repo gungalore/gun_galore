@@ -19,7 +19,7 @@ import { MotivationExtractService } from './motivation-extract.service';
 // looked like the extraction simply did not run.
 //
 // These tests drive the parse step directly, because that is where the bug
-// was — no Anthropic call, no fixture image.
+// was — no model call, no fixture image.
 // ────────────────────────────────────────────────────────────────────
 
 type Parse = (
@@ -28,7 +28,11 @@ type Parse = (
   kind: string,
 ) => { key: string; value: string }[];
 
-const svc = new MotivationExtractService();
+// The model is never called from these tests — parse() is reached directly —
+// so the LLM adapter is a stub that would throw if anything tried.
+const noLlm = () => ({ isConfigured: () => false }) as never;
+
+const svc = new MotivationExtractService(noLlm());
 // The parse step is private by design; reaching it keeps the test honest about
 // WHERE the defect was rather than mocking the model around it.
 const parse = (svc as unknown as { parse: Parse }).parse.bind(svc);
@@ -185,7 +189,7 @@ describe('the multi guard that dropped everything', () => {
 // ────────────────────────────────────────────────────────────────────
 describe('reading a document with no OCR text available', () => {
   it('still parses everything it did before', () => {
-    const bare = new MotivationExtractService();
+    const bare = new MotivationExtractService(noLlm());
     const parseBare = (bare as unknown as { parse: Parse }).parse.bind(bare);
     const out = parseBare(
       model('S/L-RIFLE/CARB/SHOTGUN'),

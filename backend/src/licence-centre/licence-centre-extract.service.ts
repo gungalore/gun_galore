@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 
+import { LlmService } from '../common/llm/llm.service';
+import type { LlmPart } from '../common/llm/llm.types';
 import { readMarkers } from '../common/document-markers';
 import { UPLOAD_TO_CREDENTIAL } from './upload-to-credential';
 import { LicenceCentreTextractService } from './licence-centre-textract.service';
@@ -30,20 +31,22 @@ import { parseIsoDate } from './licence-dates';
 // date themselves, which is exactly what they would have done anyway.
 // ────────────────────────────────────────────────────────────────────
 
-const MODEL =
-  process.env.ANTHROPIC_MODEL_LICENCE_CENTRE ??
-  process.env.ANTHROPIC_MODEL_JUDGE ??
-  'claude-sonnet-4-6';
-
 /**
- * "Which document is this?" runs on the CHEAP model.
+ * ⚠️ THERE IS NO MODEL NAME IN THIS FILE ANY MORE, AND THAT IS THE POINT.
  *
- * Naming a document is a far easier job than reading one, and it happens once
- * per file in a pack. A member emptying a folder of eight documents into the
- * vault should not pay eight Sonnet calls to have them sorted.
+ * It used to hold two: ANTHROPIC_MODEL_LICENCE_CENTRE (falling back to
+ * ANTHROPIC_MODEL_JUDGE, then a Sonnet id) for the read, and
+ * ANTHROPIC_MODEL_SIMPLE (a Haiku id) for the classify — the reasoning being
+ * that naming a document is a far easier job than reading one, and a member
+ * emptying a folder of eight documents into the vault should not pay eight
+ * Sonnet calls to have them sorted.
+ *
+ * That split is gone with the provider switch (operator, 2026-09-07): one
+ * model, LLM_MODEL, for everything. Neither call passes `model`, so both take
+ * LlmService.model and an operator can move the whole platform from the env.
+ * If the classify ever needs its own cheaper model again, it belongs in
+ * LLM_MODEL_<feature> inside the adapter, not in a second const here.
  */
-const MODEL_CLASSIFY =
-  process.env.ANTHROPIC_MODEL_SIMPLE ?? 'claude-haiku-4-5';
 
 export interface CredentialReading {
   /** ISO yyyy-mm-dd, already validated. */
@@ -80,7 +83,7 @@ export interface CredentialReading {
    * into it because the ID NUMBER was misread would tell the member we doubted
    * a date we were in fact sure of.
    *
-   * `undefined` means "no opinion" and vetoes nothing — which is the Claude
+   * `undefined` means "no opinion" and vetoes nothing — which is the model
    * path, where per-field confidence is all there is.
    */
   autoFillable?: boolean;
@@ -327,14 +330,17 @@ export const WANTED: Record<CredentialKind, string[]> = {
 @Injectable()
 export class LicenceCentreExtractService {
   private readonly logger = new Logger(LicenceCentreExtractService.name);
-  private readonly client: Anthropic | null;
 
-  constructor(private readonly textract: LicenceCentreTextractService) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    this.client = apiKey
-      ? new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 })
-      : null;
-  }
+  constructor(
+    private readonly textract: LicenceCentreTextractService,
+    // ⚠️ THE ONE PLACE THE PROVIDER IS NAMED IS INSIDE LlmService. This used
+    // to build its own Anthropic client in the constructor (60s timeout, one
+    // retry) and hold it as `this.client`, null when the key was absent —
+    // which is what every "can we ask a model?" branch below tested. The
+    // timeout travels with each call now (timeoutMs); the retry is the
+    // adapter's business. `isConfigured()` replaces the null check exactly.
+    private readonly llm: LlmService,
+  ) {}
 
   /**
    * NAME THE DOCUMENT.
@@ -408,13 +414,15 @@ export class LicenceCentreExtractService {
       }
     }
 
-    if (!this.client) return null;
+    if (!this.llm.isConfigured()) return null;
 
     let text = '';
     try {
-      const res = await this.client.messages.create({
-        model: MODEL_CLASSIFY,
-        max_tokens: 200,
+      const res = await this.llm.complete({
+        // No `model`: every call takes LlmService.model. See the note at the
+        // top of this file about the two model names that used to live here.
+        maxTokens: 200,
+        timeoutMs: 60_000,
         system: CLASSIFY_SYSTEM,
         messages: [
           {
@@ -425,9 +433,14 @@ export class LicenceCentreExtractService {
             ],
           },
         ],
+        // The prompt ends "Return STRICT JSON and nothing else". Asking the
+        // provider to enforce that is free; the tolerant brace-match below
+        // stays, because a provider that ignores the flag must not take the
+        // classify offline.
+        json: {},
+        purpose: 'vault.classify',
       });
-      const first = res.content.find((b) => b.type === 'text');
-      text = first && 'text' in first ? first.text.trim() : '';
+      text = res.text.trim();
     } catch (err) {
       this.logger.warn(`Credential classify failed: ${(err as Error).message}`);
       return null;
@@ -544,42 +557,19 @@ export class LicenceCentreExtractService {
       );
     }
 
-    if (!this.client) return EMPTY;
-
-    const isPdf = args.mimeType === 'application/pdf';
-    const block = isPdf
-      ? {
-          type: 'document' as const,
-          source: {
-            type: 'base64' as const,
-            media_type: 'application/pdf' as const,
-            data: args.bytes.toString('base64'),
-          },
-        }
-      : {
-          type: 'image' as const,
-          source: {
-            type: 'base64' as const,
-            media_type: (args.mimeType === 'image/png'
-              ? 'image/png'
-              : args.mimeType === 'image/webp'
-                ? 'image/webp'
-                : 'image/jpeg') as 'image/png' | 'image/webp' | 'image/jpeg',
-            data: args.bytes.toString('base64'),
-          },
-        };
+    if (!this.llm.isConfigured()) return EMPTY;
 
     let text = '';
     try {
-      const res = await this.client.messages.create({
-        model: MODEL,
-        max_tokens: 1200,
+      const res = await this.llm.complete({
+        maxTokens: 1200,
+        timeoutMs: 60_000,
         system: SYSTEM_PROMPT,
         messages: [
           {
             role: 'user',
             content: [
-              block,
+              blockFor(args.bytes, args.mimeType),
               {
                 type: 'text',
                 text: userPrompt(args.kind, args.alsoCovers ?? []),
@@ -587,9 +577,10 @@ export class LicenceCentreExtractService {
             ],
           },
         ],
+        json: {},
+        purpose: 'vault.read',
       });
-      const first = res.content.find((b) => b.type === 'text');
-      text = first && 'text' in first ? first.text.trim() : '';
+      text = res.text.trim();
     } catch (err) {
       this.logger.warn(
         `Credential read failed for ${args.kind}: ${(err as Error).message}`,
@@ -863,29 +854,33 @@ function userPrompt(
   ].join('\n');
 }
 
-/** One base64 content block, image or PDF. Shared by read and classify. */
-function blockFor(bytes: Buffer, mimeType: string) {
+/**
+ * One base64 content part, image or PDF. Shared by read and classify.
+ *
+ * ⚠️ read() USED TO BUILD THIS INLINE, a second copy of the same ladder, and
+ * the two were free to drift. There is one declaration now.
+ *
+ * The mime is narrowed rather than passed through: the upload validator
+ * allows jpeg, png, webp and pdf, and anything else arriving here is a
+ * mislabelled file that reads better as a JPEG than as a rejected request.
+ */
+function blockFor(bytes: Buffer, mimeType: string): LlmPart {
   if (mimeType === 'application/pdf') {
     return {
-      type: 'document' as const,
-      source: {
-        type: 'base64' as const,
-        media_type: 'application/pdf' as const,
-        data: bytes.toString('base64'),
-      },
+      type: 'document',
+      mimeType: 'application/pdf',
+      data: bytes.toString('base64'),
     };
   }
   return {
-    type: 'image' as const,
-    source: {
-      type: 'base64' as const,
-      media_type: (mimeType === 'image/png'
+    type: 'image',
+    mimeType:
+      mimeType === 'image/png'
         ? 'image/png'
         : mimeType === 'image/webp'
           ? 'image/webp'
-          : 'image/jpeg') as 'image/png' | 'image/webp' | 'image/jpeg',
-      data: bytes.toString('base64'),
-    },
+          : 'image/jpeg',
+    data: bytes.toString('base64'),
   };
 }
 

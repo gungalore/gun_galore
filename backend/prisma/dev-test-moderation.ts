@@ -2,13 +2,13 @@
 //
 // Verifies all four code paths even without Anthropic credentials:
 //
-//  - No ANTHROPIC_API_KEY            → HUMAN_REVIEW + status PENDING_REVIEW
+//  - No GEMINI_API_KEY            → HUMAN_REVIEW + status PENDING_REVIEW
 //  - High-value listing              → forced HUMAN_REVIEW
 //  - New-seller first firearm        → forced HUMAN_REVIEW
 //  - Local contact-info regex pass   → strips emails, phones, URLs, handles
 //
 // To verify the live Anthropic path:
-//   1. Set ANTHROPIC_API_KEY in backend/.env
+//   1. Set GEMINI_API_KEY in backend/.env
 //   2. Restart the backend
 //   3. Re-run this script — the offline-only assertion will be skipped
 //
@@ -17,6 +17,7 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { ListingModerationService } from '../src/moderation/listing-moderation.service';
+import { LlmService } from '../src/common/llm/llm.service';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg(process.env.DATABASE_URL!),
@@ -25,8 +26,10 @@ const prisma = new PrismaClient({
 async function main() {
   console.log('=== Listing moderation smoke test ===\n');
 
-  // ---- 1. Local regex pass (no Anthropic dependency) ---------------
-  const svc = new ListingModerationService();
+  // ---- 1. Local regex pass (no model dependency) --------------------
+  // Manual DI: the adapter wants the Prisma client for its usage ledger.
+  const llm = new LlmService(prisma as never);
+  const svc = new ListingModerationService(llm);
   console.log('1. Local stripContactInfo() pass');
 
   const samples = [
@@ -54,10 +57,10 @@ async function main() {
     console.log(`     out: ${cleaned}`);
   }
 
-  // ---- 2. Offline behaviour — ANTHROPIC_API_KEY not set ------------
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.log('\n2. Offline-mode behaviour (no ANTHROPIC_API_KEY)');
-    const offline = new ListingModerationService();
+  // ---- 2. Offline behaviour — GEMINI_API_KEY not set ------------
+  if (!process.env.GEMINI_API_KEY) {
+    console.log('\n2. Offline-mode behaviour (no GEMINI_API_KEY)');
+    const offline = new ListingModerationService(llm);
     console.log('   isEnabled:', offline.isEnabled, '(expected false)');
     const result = await offline.moderate({
       title: 'Test',
@@ -72,7 +75,7 @@ async function main() {
     console.log('   decision:', result.decision, '(expected HUMAN_REVIEW)');
     console.log('   confidence:', result.confidence, '(expected 0)');
   } else {
-    console.log('\n2. ANTHROPIC_API_KEY IS set — skipping offline-only test');
+    console.log('\n2. GEMINI_API_KEY IS set — skipping offline-only test');
     console.log('   isEnabled:', svc.isEnabled);
 
     // Run one real moderation call to confirm the round-trip parses.

@@ -210,7 +210,7 @@ export class ListingsController {
   // POST /listings/enhance-description — used by the "Enhance wording"
   // button on /listings/new before the listing exists. Returns the
   // rewritten text plus a flag for whether it changed. Auth-gated so
-  // randoms can't burn through our Anthropic quota.
+  // randoms can't burn through our model quota.
   @Post('enhance-description')
   @UseGuards(ClerkGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })

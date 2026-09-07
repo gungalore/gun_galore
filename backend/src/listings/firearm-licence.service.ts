@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
+import { LlmService } from '../common/llm/llm.service';
+import type { LlmPart } from '../common/llm/llm.types';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 
 /**
@@ -9,7 +10,7 @@ import { sanitizePromptValue } from '../common/prompt-sanitize';
  * Run at listing-create time (synchronously, same as listing moderation)
  * for any isFirearm / licence-controlled category. The seller types the
  * serial and uploads two proof photos (serial stamp on the firearm/barrel,
- * and the firearm licence). Claude vision then confirms:
+ * and the firearm licence). An AI vision review then confirms:
  *
  *   1. The serial in the serial photo matches the typed serial.
  *   2. The serial printed on the LICENCE matches the typed serial.
@@ -23,12 +24,15 @@ import { sanitizePromptValue } from '../common/prompt-sanitize';
  *
  * Plus any serial/holder mismatch or an unreadable licence → BLOCK.
  *
- * The same Sonnet-vision model + 0-100 scoring convention as
- * DealerVerificationService. When the Anthropic key is missing we BLOCK
- * (a firearm listing must not publish unverified).
+ * The same 0-100 scoring convention as DealerVerificationService. When no
+ * model is configured we BLOCK (a firearm listing must not publish
+ * unverified).
+ *
+ * ⚠️ THE MODEL NAME IS GONE. It was ANTHROPIC_MODEL_JUDGE, defaulting to a
+ * Sonnet id, chosen to match the dealer verifier. The two still agree — they
+ * both take LlmService.model now, so agreeing is the default rather than
+ * something two files have to remember. No call here passes `model`.
  */
-
-const MODEL_VISION = process.env.ANTHROPIC_MODEL_JUDGE ?? 'claude-sonnet-4-6';
 
 // Match-confidence floor (same convention as dealer verification).
 const MATCH_FLOOR = 80;
@@ -69,23 +73,24 @@ export interface FirearmLicenceResult {
 @Injectable()
 export class FirearmLicenceService {
   private readonly logger = new Logger(FirearmLicenceService.name);
-  private readonly client: Anthropic | null;
   // Outage-alert damper — one admin alert per window, not one per blocked
   // seller (audit fix 2026-07-20: an API outage silently froze ALL firearm
   // listings with no operator signal).
   private lastOutageAlertAt = 0;
   private static readonly OUTAGE_ALERT_GAP_MS = 6 * 60 * 60 * 1000;
 
-  constructor(private readonly prisma: PrismaService) {
-    const key = process.env.ANTHROPIC_API_KEY;
-    // 60s timeout / 1 retry — a hung vision call must not hold the
-    // listing-create request open for the SDK's 10-min default.
-    this.client = key
-      ? new Anthropic({ apiKey: key, timeout: 60_000, maxRetries: 1 })
-      : null;
-    if (!key) {
+  constructor(
+    private readonly prisma: PrismaService,
+    // ⚠️ WAS AN Anthropic CLIENT BUILT HERE (60s timeout, one retry, null
+    // when ANTHROPIC_API_KEY was absent). `isConfigured()` is the same
+    // question the null check asked; the timeout travels on each call as
+    // `timeoutMs`. The FAIL-CLOSED direction is unchanged and is the whole
+    // point of this service: no model means BLOCK, never a silent pass.
+    private readonly llm: LlmService,
+  ) {
+    if (!this.llm.isConfigured()) {
       this.logger.warn(
-        'ANTHROPIC_API_KEY not set — firearm licence verification will BLOCK all firearm listings',
+        'No model configured — firearm licence verification will BLOCK all firearm listings',
       );
     }
   }
@@ -106,7 +111,7 @@ export class FirearmLicenceService {
           context:
             `Firearm licence verification is failing (${detail.slice(0, 200)}). ` +
             `Every firearm/barrel listing is being BLOCKED at publish until this recovers. ` +
-            `Check the Anthropic API key/status on /admin/health.`,
+            `Check the AI review provider on /admin/health.`,
         },
       })
       .catch(() => undefined);
@@ -118,8 +123,8 @@ export class FirearmLicenceService {
     licencePhotoUrl: string;
     sellerName: string;
   }): Promise<FirearmLicenceResult> {
-    if (!this.client) {
-      this.raiseOutageAlert('ANTHROPIC_API_KEY not configured');
+    if (!this.llm.isConfigured()) {
+      this.raiseOutageAlert('no AI review model configured');
       return {
         gate: 'BLOCK',
         reason:
@@ -345,7 +350,9 @@ export class FirearmLicenceService {
     licencePhotoUrl: string;
     sellerName: string;
   }): Promise<FirearmLicenceFindings> {
-    if (!this.client) throw new Error('Anthropic client not configured');
+    if (!this.llm.isConfigured()) {
+      throw new Error('no AI review model configured');
+    }
 
     const systemPrompt = `You are the firearm-listing licence verifier for All Outdoor, a South African firearms marketplace.
 
@@ -382,10 +389,20 @@ Rules:
 - If photo 2 is not a firearm licence, set is_firearm_licence low.
 - Never invent a serial or date you cannot actually read — use null and score the relevant legibility low.`;
 
-    const userContent: Array<
-      | { type: 'text'; text: string }
-      | { type: 'image'; source: { type: 'url'; url: string } }
-    > = [
+    // ⚠️ THE PHOTOS ARE FETCHED HERE NOW. The Anthropic SDK took an
+    // `{type:'url'}` image source and went and got it itself; the
+    // provider-neutral contract carries base64 bytes only, so the two round
+    // trips moved into this process. They run in PARALLEL — the pair used to
+    // cost nothing on this side, and serialising them would put a second
+    // network hop in front of every firearm listing publish. A fetch failure
+    // throws, and `verify` maps a throw to BLOCK, which is the direction this
+    // service must always fail in.
+    const [serialPhoto, licencePhoto] = await Promise.all([
+      this.inlineFromUrl(args.serialPhotoUrl),
+      this.inlineFromUrl(args.licencePhotoUrl),
+    ]);
+
+    const userContent: LlmPart[] = [
       {
         type: 'text',
         text: [
@@ -400,22 +417,55 @@ Rules:
           'Photo 1: Serial number on the firearm/barrel',
         ].join('\n'),
       },
-      { type: 'image', source: { type: 'url', url: args.serialPhotoUrl } },
+      serialPhoto,
       { type: 'text', text: 'Photo 2: SA firearm licence' },
-      { type: 'image', source: { type: 'url', url: args.licencePhotoUrl } },
+      licencePhoto,
     ];
 
-    const msg = await this.client.messages.create({
-      model: MODEL_VISION,
-      max_tokens: 1200,
+    const res = await this.llm.complete({
+      // No `model`: the platform's LLM_MODEL decides. See the header note.
+      maxTokens: 1200,
+      timeoutMs: 60_000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userContent }],
+      // The prompt already demands a bare JSON object; the tolerant
+      // brace-match below stays as the fallback.
+      json: {},
+      purpose: 'listing.licence-read',
     });
 
-    const block = msg.content.find((b) => b.type === 'text');
-    const raw = (block as { text?: string } | undefined)?.text ?? '';
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('Claude did not return JSON');
+    // ⚠️ A BLOCKED RESPONSE IS AN OUTAGE, NOT A VERDICT — and here that
+    // distinction is only about the ALERT, because both roads end at BLOCK.
+    // Throwing puts it through the same catch a 500 goes through, so the
+    // operator gets the damped "verification is failing" alert instead of
+    // silently freezing every firearm listing on the site.
+    if (res.stopReason === 'safety') {
+      throw new Error('the AI review was blocked by the provider');
+    }
+
+    const match = res.text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('the AI review did not return JSON');
     return JSON.parse(match[0]) as FirearmLicenceFindings;
+  }
+
+  /**
+   * A Cloudinary photo as inline bytes.
+   *
+   * ⚠️ THE PROVIDER USED TO DO THIS FETCH. See the note at the call site.
+   * The URL is kept out of the error text — it is a seller's own upload, and
+   * the message travels into an admin alert.
+   */
+  private async inlineFromUrl(url: string): Promise<LlmPart> {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`could not fetch a proof photo (HTTP ${res.status})`);
+    }
+    const mimeType =
+      res.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg';
+    return {
+      type: 'image',
+      mimeType,
+      data: Buffer.from(await res.arrayBuffer()).toString('base64'),
+    };
   }
 }

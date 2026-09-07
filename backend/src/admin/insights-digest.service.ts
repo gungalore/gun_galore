@@ -1,13 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
+import { LlmService } from '../common/llm/llm.service';
 import { AdminAnalyticsService, AnalyticsPeriod } from './admin-analytics.service';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MODEL =
-  process.env.ANTHROPIC_MODEL_INSIGHTS_DIGEST ?? 'claude-sonnet-4-6';
 
 // The deterministic stats pack — WE compute every number so the narrative
 // can only ever interpret real data, never invent it.
@@ -30,20 +28,12 @@ interface DigestData {
 @Injectable()
 export class InsightsDigestService {
   private readonly logger = new Logger(InsightsDigestService.name);
-  private readonly client: Anthropic | null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly analytics: AdminAnalyticsService,
-  ) {
-    this.client = process.env.ANTHROPIC_API_KEY
-      ? new Anthropic({
-          apiKey: process.env.ANTHROPIC_API_KEY,
-          timeout: 60_000,
-          maxRetries: 1,
-        })
-      : null;
-  }
+    private readonly llm: LlmService,
+  ) {}
 
   // Monday 06:00 — a fresh weekly digest waiting when the operator logs in.
   @Cron('0 6 * * 1')
@@ -71,7 +61,9 @@ export class InsightsDigestService {
         periodDays,
         data: data as object,
         narrative,
-        model: narrative ? MODEL : null,
+        // Stamp the model that actually wrote it, so an old digest still says
+        // what produced it after the platform model changes.
+        model: narrative ? this.llm.model : null,
       },
     });
   }
@@ -130,13 +122,11 @@ export class InsightsDigestService {
     };
   }
 
-  // ── Claude narrative (graceful null if unavailable) ────────────────
+  // ── narrative (graceful null if unavailable) ───────────────────────
   private async writeNarrative(data: DigestData): Promise<string | null> {
-    if (!this.client) return null;
+    if (!this.llm.isConfigured()) return null;
     try {
-      const r = await this.client.messages.create({
-        model: MODEL,
-        max_tokens: 1400,
+      const r = await this.llm.complete({
         system:
           'You are a marketplace analyst for All Outdoor, a South African online ' +
           'marketplace for outdoor, hunting and sport goods (firearms transfer via ' +
@@ -157,16 +147,19 @@ export class InsightsDigestService {
           {
             role: 'user',
             content:
-              'This week\'s All Outdoor data (JSON):\n\n' +
+              "This week's All Outdoor data (JSON):\n\n" +
               JSON.stringify(data, null, 2),
           },
         ],
+        maxTokens: 1400,
+        // No thinking budget set: this is the one call that is asked to WEIGH
+        // the week's numbers against each other, and the operator reads the
+        // reasoning as the product. Every verdict call on the platform pins it
+        // to 0; this one takes the provider default on purpose.
+        timeoutMs: 60_000,
+        purpose: 'admin.insights-digest',
       });
-      const text = r.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n')
-        .trim();
+      const text = r.text.trim();
       return text || null;
     } catch (err) {
       this.logger.warn(`digest narrative unavailable: ${(err as Error).message}`);

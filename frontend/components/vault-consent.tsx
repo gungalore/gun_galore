@@ -97,7 +97,7 @@ export function VaultConsentBody({
       <p className="mt-4 font-medium text-[var(--text-primary)]">Where they go</p>
       <p className="mt-1">
         The files are stored encrypted on our own server. When a document
-        arrives we send the image to Anthropic&rsquo;s Claude service to read
+        arrives we send the image to Google&rsquo;s Gemini service to read
         the dates and numbers printed on it, so the form fills itself in.{' '}
         <strong className="text-[var(--text-primary)]">
           That happens whether or not you say yes here

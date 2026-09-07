@@ -4621,6 +4621,8 @@ function prettyServiceName(slug: string): string {
       return 'Cloudinary';
     case 'anthropic':
       return 'Anthropic';
+    case 'gemini':
+      return 'Gemini API';
     case 'pudo':
       return 'Pudo';
     default:

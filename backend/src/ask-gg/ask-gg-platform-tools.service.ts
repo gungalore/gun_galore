@@ -24,7 +24,7 @@ import { AskGgKbService } from './ask-gg-kb.service';
 //   - free-text fields are clipped so listing text can't flood the prompt
 //   - vocabulary: "funds held", never the banned word
 //
-// All methods return plain JSON-serialisable objects; the Claude wrapper
+// All methods return plain JSON-serialisable objects; the model wrapper
 // stringifies them into tool_results.
 
 const DESCRIPTION_CLIP = 600;

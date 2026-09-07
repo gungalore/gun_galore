@@ -1122,7 +1122,7 @@ export function CheckoutForm({ listing }: { listing: Listing }) {
           use any SAPS-licensed dealer of their choice. After the
           item lands at their dealer they upload 3 photos (SAPS 534
           + stock register last line + firearm with serial visible)
-          and Claude vision verifies before funds release to the
+          and AI vision verifies before funds release to the
           seller. The verification flow lives at
           /transactions/[id]/dealer-verification (built in D1–D6). */}
       {method === 'DEALER_TRANSFER' && (

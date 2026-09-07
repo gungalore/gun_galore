@@ -16,4 +16,6 @@
  * moved underneath it. A version the client can choose is not evidence of
  * anything.
  */
-export const VAULT_CONSENT_VERSION = '2026-08-23';
+// 2026-09-07: the processor the consent names changed (Anthropic → Google
+// Gemini). That is a change in what we do with the documents, so it re-asks.
+export const VAULT_CONSENT_VERSION = '2026-09-07';

@@ -562,7 +562,7 @@ export default function EditListingPage() {
         <span>
           Saving any change re-runs automated moderation. Your listing
           may briefly return to <strong>Pending review</strong> while
-          Claude re-checks it.
+          our AI review re-checks it.
         </span>
       </div>
 

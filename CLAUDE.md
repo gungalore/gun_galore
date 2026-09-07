@@ -306,8 +306,31 @@ unfinished modules dark in production (see Feature Flags).
   > as dead vars, and a stale comment at
   > `payments/transactions.service.ts:65` still says "the gateway is
   > now Stitch" — both are leftovers, not instructions.
-- **AI:** Anthropic API (listing moderation, Ask GG, ballistic
-  bullet lookup, listing-quality scoring)
+- **AI: Gemini 2.5 Flash-Lite** via the Google Gen AI API (listing
+  moderation, Ask GG, ballistic bullet lookup, listing-quality scoring,
+  vision KYC, licence + motivation reading). Operator, 2026-09-07: "we are
+  switching from claude API to gemini 2.5 flash-lite api for everything on
+  the website."
+
+  > Every model call goes through ONE adapter — `LlmService` in
+  > `backend/src/common/llm/`. No service builds its own client, picks its
+  > own model, or parses a provider's response any more; they speak
+  > `LlmRequest`/`LlmResponse` (`llm.types.ts`) and the adapter speaks the
+  > provider's. Env: `GEMINI_API_KEY`, `LLM_PROVIDER` (default `gemini`),
+  > `LLM_MODEL` (default `gemini-3.5-flash-lite`).
+  >
+  > ⚠️ **Anthropic is the ROLLBACK LEVER, not a second supported mode.**
+  > `LLM_PROVIDER=anthropic` plus `LLM_MODEL` and a reload puts the platform
+  > back on the old rail with no deploy. It REQUIRES `LLM_MODEL` — no
+  > Anthropic model id is guessed, because every one this codebase used is a
+  > dated snapshot and snapshots retire. `ANTHROPIC_MODEL_*` and
+  > `ANTHROPIC_ADMIN_API_KEY` are retired and read by nothing.
+  >
+  > Spend is metered by US, not the provider: `LlmService` writes an
+  > `AiUsage` row per call (purpose, tokens, latency, cost in micro-dollars)
+  > and `/admin/credits` reads that ledger per purpose. That is why the AI
+  > row there answers "which feature is spending", which no provider console
+  > could.
 - **Accounting:** Zoho Books (live); Odoo planning is archived
 - **Hosting:** Vultr VPS — Nginx + PM2 (NOT
   Hetzner — operator has corrected this multiple times)
@@ -380,7 +403,8 @@ Frontend (`.env.local`): `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
 
 Backend (`.env`): `DATABASE_URL`, `CLERK_SECRET_KEY`,
 `CLERK_WEBHOOK_SECRET`, `JWT_ADMIN_SECRET`, `VERIFYNOW_API_KEY`,
-`VERIFYNOW_BASE_URL`, `ANTHROPIC_API_KEY`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`,
+`VERIFYNOW_BASE_URL`, `GEMINI_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`,
+`ANTHROPIC_API_KEY` (rollback only), `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`,
 `MEILISEARCH_HOST`, `MEILISEARCH_API_KEY`, `SMSPORTAL_CLIENT_ID`,
 `SMSPORTAL_API_SECRET`, `RESEND_API_KEY`, `PUDO_API_KEY`,
 `TCG_API_KEY`, `TCG_WEBHOOK_SECRET`, `BOBGO_API_KEY`,
@@ -498,7 +522,7 @@ stabilised before the next.
    `PaymentStatus` flow, commission calculation, seller payouts,
    penalties.
 5. **Messaging** — buyer↔seller threaded chat scoped per
-   transaction, with Claude moderation.
+   transaction, with AI moderation.
 6. **Ratings & Trust** — ratings, private Trust Score, seller
    tiers.
 7. **Admin Panel** — Superadmin/Admin roles, verification queue,
@@ -509,8 +533,8 @@ stabilised before the next.
 10. **M2 Auctions** — proxy bidding, increments, snipe protection,
     Buy Now, reserve, strikes.
 11. **Take a Shot** — confidential offers flow.
-12. **Claude AI Listing Moderation** — every new listing reviewed
-    by Claude before going live.
+12. **AI Listing Moderation** — every new listing reviewed by the
+    platform model before going live.
 13. **Webhooks** — TCG + Pudo shipping webhooks.
 14. **PWA Phases A–C** — installability + icons + conservative SW
     with offline fallback (done; see PWA section for state).
@@ -907,7 +931,7 @@ them to enter it themselves on the Peach hosted page.
 - One seller may not post duplicate listings of the same item.
 - Every listing needs real, seller-supplied photos — no stock or
   watermarked images.
-- New listings are reviewed by Claude before going live (see Claude
+- New listings are reviewed by the platform model before going live (see AI
   AI Listing Moderation).
 
 **Listing expiry (LOCKED — Buy Now / Take a Shot only):**
@@ -1052,10 +1076,14 @@ admin can paste the visible chip from the listing detail page.
 
 ---
 
-## Claude AI Listing Moderation
+## AI Listing Moderation
 
-Every new listing is reviewed by Claude via the Anthropic API
-(vision-enabled model) before going live. Four outcomes:
+⚠️ The heading is historical — the roadmap refers to it by this name. The
+model is Gemini now; see the AI line in Tech Stack.
+
+Every new listing is reviewed by the platform's model (Gemini 2.5
+Flash-Lite through `LlmService` — see the AI line in Tech Stack) before going
+live. Four outcomes:
 
 - **APPROVE** — live immediately.
 - **AUTO_FIX_AND_APPROVE** — silently strips contact info (phone,
@@ -1074,8 +1102,8 @@ contact info visible in photos.
 from a new seller; ambiguous ammunition; confidence < 0.85
 (low-confidence APPROVE is bumped to HUMAN_REVIEW as a safety net).
 
-Admin can override any decision. If the Anthropic API fails, the
-listing falls back to HUMAN_REVIEW.
+Admin can override any decision. If the model call fails — for any
+`LlmError` code — the listing falls back to HUMAN_REVIEW.
 
 `Listing` fields: `claudeDecision`, `claudeConfidence`,
 `claudeReasons`, `claudeReviewedAt`, `claudeOriginalDescription`,

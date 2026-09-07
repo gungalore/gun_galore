@@ -2,7 +2,7 @@ process.env.ID_HASH_SECRET = 'test-secret-kyc-spec';
 
 import { BadRequestException } from '@nestjs/common';
 import { KycService } from './kyc.service';
-import { ClaudeKycService, type KycClaudeFindings } from './claude-kyc.service';
+import { KycModelService, type KycClaudeFindings } from './kyc-model.service';
 import { AwsKycService } from './aws-kyc.service';
 import { encryptSaIdNumber } from '../common/id-crypto';
 
@@ -145,10 +145,12 @@ function makeService(o: Overrides = {}) {
       .mockResolvedValue({ url: 'https://res.cloudinary.com/demo/raw/upload/v1/kyc/u1/doc.pdf', publicId: 'p' }),
   };
 
-  // ClaudeKycService is REAL — it still owns statusFromFindings and
+  // KycModelService is REAL — it still owns statusFromFindings and
   // retakeReason, which is exactly what these tests exercise. Only the
-  // scan itself moved to AWS, so that is the only thing stubbed.
-  const claudeKyc = new ClaudeKycService();
+  // scan itself moved to AWS, so that is the only thing stubbed. It is
+  // constructed with NO model: nothing on the verdict path asks for one, and
+  // a real one here would be a way for a test to reach the network.
+  const kycModel = new KycModelService();
   const aws = new AwsKycService();
   const scanMock = jest.spyOn(aws, 'scan');
   if (o.scan instanceof Error) scanMock.mockRejectedValue(o.scan);
@@ -192,7 +194,7 @@ function makeService(o: Overrides = {}) {
     actionTokens as never,
     settings as never,
     cloudinary as never,
-    claudeKyc,
+    kycModel,
     aws,
     files as never,
   );

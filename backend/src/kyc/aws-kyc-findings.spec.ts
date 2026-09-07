@@ -6,14 +6,17 @@
 // scores, which is the only part AWS returns that we cannot capture in a
 // fixture.
 //
-// ClaudeKycService's constructor takes no dependencies, so the verdict can
-// be exercised directly without standing up a Nest module. That is worth
-// preserving — it is what makes this test possible.
+// KycModelService's constructor takes nothing REQUIRED — the model is an
+// optional argument, and none of the verdict methods touch it — so the
+// verdict can be exercised directly without standing up a Nest module. That
+// is worth preserving: it is what makes this test possible, and it is why
+// LlmService was made optional rather than required when the service moved
+// off the Anthropic SDK on 2026-09-07.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { ClaudeKycService } from './claude-kyc.service';
+import { KycModelService } from './kyc-model.service';
 import { crossCheckIdentity } from './kyc-cross-check';
 import {
   buildAwsFindings,
@@ -31,7 +34,7 @@ const fixture = (name: string): TextractResponse =>
 const GREEN_BOOK = fixture('id-green-book');
 const SMART_CARD = fixture('id-smart-card');
 
-const svc = new ClaudeKycService();
+const svc = new KycModelService();
 
 const MATCH: FaceComparison = { similarity: 97, noFaceInTarget: false };
 const NO_FACE: FaceComparison = { similarity: null, noFaceInTarget: true };

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { LlmService } from '../common/llm/llm.service';
 
 /**
  * System Health monitor — pings every external service All Outdoor
@@ -73,7 +74,10 @@ const PROBE_TIMEOUT_MS = 5000;
 export class AdminHealthService {
   private readonly logger = new Logger(AdminHealthService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly llm: LlmService,
+  ) {}
 
   // -------------------------------------------------------------------
   // External service probes — parallel HEAD/GET with 5s timeout.
@@ -161,23 +165,15 @@ export class AdminHealthService {
         method: 'HEAD',
         requiresEnv: ['SMSPORTAL_CLIENT_ID'],
       },
-      {
-        // AUTHENTICATED probe (audit fix 2026-07-20): the old bare HEAD on
-        // the host reported "up" through a revoked key, exhausted credit,
-        // or any auth failure. /v1/models is authenticated but FREE (no
-        // tokens billed) — a 401/403 here means the key is dead and every
-        // AI feature (Ask Boet, KYC, moderation, licence checks) is down.
-        name: 'Anthropic (Claude)',
-        url: 'https://api.anthropic.com/v1/models',
-        category: 'comms',
-        method: 'GET',
-        requiresEnv: ['ANTHROPIC_API_KEY'],
-        headers: {
-          'x-api-key': process.env.ANTHROPIC_API_KEY ?? '',
-          'anthropic-version': '2023-06-01',
-        },
-        authAware: true,
-      },
+      // ⚠️ THE AI PROBE IS NOT IN THIS LIST ANY MORE. It used to be an
+      // authenticated GET on api.anthropic.com/v1/models. That probed a
+      // provider we no longer use (operator, 2026-09-07: Gemini) and, more
+      // to the point, a URL probe can only ever answer "is the host up and
+      // does the key parse" — not "can this platform get an answer out of
+      // the model it is configured for". A wrong LLM_MODEL, an exhausted
+      // quota or a project without the API enabled all pass a /models GET
+      // and fail every real call. So it is now LlmService.ping(), a genuine
+      // one-token completion, appended after this list.
       {
         // Zoho Books — accounting integration. Probes the public API
         // host; we don't use a credential-authenticated probe here
@@ -194,6 +190,48 @@ export class AdminHealthService {
       },
     ];
 
+    const [probes, ai] = await Promise.all([
+      this.probeUrlTargets(targets),
+      this.probeAi(),
+    ]);
+    return [...probes, ai];
+  }
+
+  /**
+   * The AI probe: a real one-token completion through LlmService, not a
+   * URL fetch. Never throws — ping() already swallows everything, and a
+   * health page that 500s is worse than useless.
+   */
+  private async probeAi(): Promise<ServiceProbe> {
+    const result = await this.llm.ping();
+    const configured = this.llm.isConfigured();
+    return {
+      name: `AI model (${result.provider})`,
+      // A label, not a fetched URL — nothing here does an HTTP probe on it.
+      url: result.model || '(no model configured)',
+      category: 'comms',
+      status: !configured ? 'not-configured' : result.ok ? 'up' : 'degraded',
+      latencyMs: result.ok ? result.latencyMs : null,
+      httpStatus: null,
+      detail: !configured
+        ? `Missing env: ${result.provider === 'anthropic' ? 'ANTHROPIC_API_KEY / LLM_MODEL' : 'GEMINI_API_KEY'}`
+        : result.ok
+          ? null
+          : (result.error ?? 'ping failed'),
+    };
+  }
+
+  private probeUrlTargets(
+    targets: Array<{
+      name: string;
+      url: string;
+      category: ServiceProbe['category'];
+      method: 'HEAD' | 'GET';
+      requiresEnv?: string[];
+      headers?: Record<string, string>;
+      authAware?: boolean;
+    }>,
+  ): Promise<ServiceProbe[]> {
     return Promise.all(
       targets.map(async (t): Promise<ServiceProbe> => {
         // Short-circuit when the env this service needs isn't set —

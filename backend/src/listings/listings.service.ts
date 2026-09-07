@@ -1464,13 +1464,13 @@ export class ListingsService {
         sellerFirstFirearmListings: false, // safety-net removed
       });
     } else {
-      // Either the flag is off OR ANTHROPIC_API_KEY isn't loaded. We
+      // Either the flag is off OR no model key is loaded. We
       // PUBLISH ACTIVE in both cases (no more "manual review queued"
       // stalls). If admin wants offline moderation, they enable the
       // flag + set the key; otherwise the marketplace stays open.
       this.logger.warn(
         moderationEnabled
-          ? 'ANTHROPIC_API_KEY not set — publishing listing ACTIVE without moderation'
+          ? 'No model key configured — publishing listing ACTIVE without moderation'
           : 'Moderation flag is OFF — publishing listing ACTIVE',
       );
     }
@@ -3056,7 +3056,7 @@ export class ListingsService {
         // moderation rather than stalling the seller in a review queue.
         this.logger.warn(
           moderationEnabled
-            ? 'ANTHROPIC_API_KEY not set — applying listing edit without moderation'
+            ? 'No model key configured — applying listing edit without moderation'
             : 'Moderation flag is OFF — applying listing edit without moderation',
         );
       }

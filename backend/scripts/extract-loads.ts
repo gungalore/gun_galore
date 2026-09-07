@@ -14,6 +14,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { ReloadingService } from '../src/reloading/reloading.service';
 import { LoadDataExtractionService } from '../src/reloading/load-data-extraction.service';
+import { LlmService } from '../src/common/llm/llm.service';
 
 // Common reloading cartridges the manuals cover. Used when no args are passed.
 const DEFAULT_CARTRIDGES = [
@@ -53,7 +54,11 @@ async function main() {
   });
   // Manual DI — no Nest bootstrap, so no scheduled jobs run.
   const reloading = new ReloadingService(prisma as never);
-  const extractor = new LoadDataExtractionService(prisma as never, reloading);
+  const extractor = new LoadDataExtractionService(
+    prisma as never,
+    reloading,
+    new LlmService(prisma as never),
+  );
 
   console.log(`Extracting loads for ${cartridges.length} cartridge(s)…\n`);
   let total = 0;

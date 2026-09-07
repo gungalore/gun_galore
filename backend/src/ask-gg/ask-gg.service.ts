@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AskGgClaudeService, AskGgChatMessage } from './ask-gg-claude.service';
+import { AskGgModelService, AskGgChatMessage } from './ask-gg-model.service';
 import {
   AskGgQuotaService,
   maxPhotosPerRequest,
@@ -44,7 +44,7 @@ export interface PreparedSend {
   userMessage: AskGgMessage;
   imageUrls: string[];
   escalate: boolean;
-  claudeHistory: AskGgChatMessage[];
+  chatHistory: AskGgChatMessage[];
   /** W4 — server-verified page-context block for the uncached system
    *  tail. Built by AskGgContextService from client-sent ids after
    *  ownership checks; undefined when no (valid) context came in. */
@@ -120,13 +120,13 @@ export function truncateAskGgHistory(
  *   - Conversation lifecycle: create if no ID provided, otherwise
  *     load + verify ownership before appending.
  *   - Per-turn flow: persist user message → build history → call
- *     Claude wrapper → persist assistant message with cost data.
+ *     model wrapper → persist assistant message with cost data.
  *   - Resolve flow: stamp `outcome` when the user responds to the
  *     "did this solve it?" prompt. RESOLVED conversations become
  *     KB draft candidates (wiring lives in Phase C).
  *
  * KB search-first + vision uploads land in later drops. Drop 1 is
- * the smallest end-to-end Claude-backed chat we can ship, now with
+ * the smallest end-to-end model-backed chat we can ship, now with
  * the FREE trial.
  *
  * Sign-in is enforced by ClerkGuard on the controller, so any
@@ -139,7 +139,7 @@ export class AskGgService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly claude: AskGgClaudeService,
+    private readonly askGgModel: AskGgModelService,
     private readonly quota: AskGgQuotaService,
     private readonly kb: AskGgKbService,
     private readonly context: AskGgContextService,
@@ -176,7 +176,7 @@ export class AskGgService {
   /**
    * Preflight a new user message: quota + validation checks, resolve or
    * create the conversation, persist the user message, and build the
-   * Claude history. Throws (403 / 429 / 400 / 404) BEFORE any reply
+   * chat history. Throws (403 / 429 / 400 / 404) BEFORE any reply
    * work, so the SSE controller can surface an HTTP error before it
    * opens a stream. Returns everything `finishReply` needs.
    */
@@ -200,12 +200,18 @@ export class AskGgService {
       (u) => typeof u === 'string' && u.length > 0,
     );
     // M13 — image-host allowlist. Without this, a user could pass any
-    // arbitrary URL into imageUrls and the backend's Anthropic
-    // integration would dereference it on their behalf — a server-side
-    // request forgery primitive (probe internal networks, force
-    // outbound traffic) and a vector for hosting malicious payloads
-    // that Anthropic then fetches. Restrict to https + our own
-    // Cloudinary tenant only; that's where /ask-gg/uploads writes.
+    // arbitrary URL into imageUrls and the backend would dereference it
+    // on their behalf — a server-side request forgery primitive (probe
+    // internal networks, force outbound traffic) and a vector for
+    // hosting malicious payloads. Restrict to https + our own Cloudinary
+    // tenant only; that's where /ask-gg/uploads writes.
+    //
+    // ⚠️ THIS GOT MORE LOAD-BEARING ON 2026-09-07, NOT LESS. The old
+    // Anthropic path took an image URL and fetched it from THEIR
+    // network; the provider-neutral contract takes bytes, so
+    // AskGgModelService now fetches every attachment from OUR box (see
+    // fetchImagePart). The SSRF is ours to prevent, and this allowlist
+    // is the only thing preventing it.
     const ALLOW_HOSTS = new Set(['res.cloudinary.com']);
     for (const url of imageUrls) {
       let parsed: URL;
@@ -301,7 +307,7 @@ export class AskGgService {
       this.context.sanitize(input.pageContext);
 
     // Persist the user message immediately so the conversation history
-    // exists even if Claude errors out later.
+    // exists even if the model errors out later.
     const userMessage = await this.prisma.askGgMessage.create({
       data: {
         conversationId: conversationId!,
@@ -321,8 +327,8 @@ export class AskGgService {
       user.id,
     );
 
-    // Build history for Claude — prior messages in this conversation,
-    // oldest first, including the message we just persisted (so Claude
+    // Build the model's history — prior messages in this conversation,
+    // oldest first, including the message we just persisted (so it
     // sees it as the latest user turn). TRUNCATED (B0): long threads are
     // capped by message count + character volume, keeping the first user
     // message as the topic anchor — input tokens no longer grow unbounded.
@@ -331,7 +337,7 @@ export class AskGgService {
       orderBy: { createdAt: 'asc' },
       select: { role: true, content: true, imageUrls: true },
     });
-    const claudeHistory: AskGgChatMessage[] = truncateAskGgHistory(
+    const chatHistory: AskGgChatMessage[] = truncateAskGgHistory(
       history.map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
@@ -358,7 +364,7 @@ export class AskGgService {
       userMessage,
       imageUrls,
       escalate,
-      claudeHistory,
+      chatHistory,
       contextBlock,
       lane: decision.lane,
       restricted: decision.restricted,
@@ -397,10 +403,10 @@ export class AskGgService {
     prep: PreparedSend,
     onText?: (delta: string) => void,
   ): Promise<AskGgMessage> {
-    // Call Claude. AskGgClaudeService handles its own failures and
+    // Call the model. AskGgModelService handles its own failures and
     // returns a placeholder rather than throwing — keeps the assistant
     // message row creation on the happy path.
-    const reply = await this.claude.complete(prep.claudeHistory, {
+    const reply = await this.askGgModel.complete(prep.chatHistory, {
       escalate: prep.escalate,
       // Phase D ballistics — pass user tier so the calculator tool
       // can refuse FREE users with a friendly upgrade nudge.
@@ -415,6 +421,10 @@ export class AskGgService {
       account: { clerkId: prep.user.clerkId, userId: prep.user.id },
       // W6 — advice quota exhausted: platform/account help only.
       restricted: prep.restricted,
+      // The meter this turn bills to. Read by the model service for ONE
+      // decision — whether the paid grounded sources turn runs — so a
+      // SUPPORT turn about the member's own order never buys a web search.
+      lane: prep.lane,
       onText,
     });
 
@@ -427,7 +437,7 @@ export class AskGgService {
         promptTokens: reply.promptTokens ?? null,
         completionTokens: reply.completionTokens ?? null,
         costUsd: reply.costUsd ?? null,
-        // Reloading-manual / forum citations Claude collected via
+        // Reloading-manual / forum citations collected via
         // tool-use. Stored as Json so the frontend can render chips
         // on every assistant turn, both live and on reload.
         citations:
@@ -653,7 +663,7 @@ export class AskGgService {
       );
     }
 
-    // Build a hierarchical category tree string so Claude can pick the
+    // Build a hierarchical category tree string so the model can pick the
     // most SPECIFIC slug (sub-category preferred over its parent).
     // Top-level categories (parentId === null) appear flush-left;
     // children indented two spaces under their parent.
@@ -674,13 +684,13 @@ export class AskGgService {
     }
     const categoryTree = lines.join('\n');
 
-    const result = await this.claude.identifyFromPhotos(photos, {
+    const result = await this.askGgModel.identifyFromPhotos(photos, {
       ...opts,
       categoryTree,
     });
 
     // Bump the daily usage rollup. Treat as 1 message + 1 photo-ID
-    // (the one-shot still costs Claude vision tokens).
+    // (the one-shot still costs vision tokens).
     const todayUtc = new Date();
     todayUtc.setUTCHours(0, 0, 0, 0);
     await this.prisma.askGgUsage.upsert({

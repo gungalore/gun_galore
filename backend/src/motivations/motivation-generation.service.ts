@@ -11,7 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { encryptText, tryDecryptText } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { applicationBlockers } from './motivation-eligibility';
-import { MotivationClaudeService } from './motivation-claude.service';
+import { MotivationModelService } from './motivation-model.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -66,7 +66,7 @@ const SIMILARITY_CORPUS = 200;
  * true. The only route to a second draft was an admin editing the row by hand.
  *
  * ⚠️ GENERATING IS STILL EXCLUDED, and that is the whole reason this is a CAS.
- * Two clicks must not both call Claude. QUALITY_REVIEW is excluded for the same
+ * Two clicks must not both call the model. QUALITY_REVIEW is excluded for the same
  * reason — a pass is still in flight. FAILED and ABANDONED stay out: an admin
  * owns those.
  *
@@ -88,7 +88,7 @@ export class MotivationGenerationService {
     private readonly prisma: PrismaService,
     private readonly quota: MotivationQuotaService,
     private readonly settings: SettingsService,
-    private readonly claude: MotivationClaudeService,
+    private readonly model: MotivationModelService,
     private readonly firearmImages: FirearmImageService,
     private readonly notifications: NotificationsService,
     private readonly shared: MotivationSharedService,
@@ -100,7 +100,7 @@ export class MotivationGenerationService {
    * Order matters and every step is defensive:
    *   1. flag, ownership, declaration, completeness
    *   2. CAS into GENERATING so two clicks cannot both spend money
-   *   3. claim a beta seat BEFORE any Claude call
+   *   3. claim a beta seat BEFORE any model call
    *   4. build the fact pack in code — the model only arranges what we give it
    *   5. draft, then VERIFY the structure plan was actually followed
    *   6. check sameness against previous documents of this type
@@ -226,7 +226,7 @@ export class MotivationGenerationService {
       });
     }
 
-    // COMPARE-AND-SWAP. Two clicks on Generate must not both call Claude —
+    // COMPARE-AND-SWAP. Two clicks on Generate must not both call the model —
     // that is duplicated spend and a race on the row. Only the request that
     // moves the status out of an editable state proceeds.
     const claimed = await this.prisma.motivation.updateMany({
@@ -325,20 +325,28 @@ export class MotivationGenerationService {
       // The professional motivations are not templates: precinct crime
       // figures behind a self-defence application, pages on the cartridge in
       // a section 16. That material is published, not something to ask the
-      // applicant for — so it is gathered here, by a cheaper model with web
-      // search, and handed to the writer AND the gate (or the gate would
-      // fail every researched sentence as ungrounded).
+      // applicant for — so it was gathered here, by a model with web search,
+      // and handed to the writer AND the gate (or the gate would fail every
+      // researched sentence as ungrounded).
       //
-      // Fail-soft and cached: a research failure costs colour, never the
-      // document, and a retry re-reads the stored brief instead of paying
-      // for the searches again.
+      // ⚠️ IT IS SEARCHED AGAIN as of 2026-09-07 (`grounding: { web: true }`
+      // on the shared contract), after a few hours returning null while the
+      // provider move landed. Nothing in this branch changed across either
+      // direction, and that is the point of it: research is fail-soft and
+      // cached, so a null costs colour and never the document — the pipeline
+      // never had to know whether a search was available.
+      //
+      // A stored brief is reused whichever era wrote it, and there are no bad
+      // ones to worry about: during the gap research() returned null before
+      // reaching the model, so nothing unsearched was ever written to
+      // researchEncrypted. Every stored brief was searched when it was made.
       let researchIn = 0;
       let researchOut = 0;
       let research = row.researchEncrypted
         ? (tryDecryptText(row.researchEncrypted) ?? undefined)
         : undefined;
       if (!research) {
-        const r = await this.claude
+        const r = await this.model
           .research({
             licenceType: row.licenceType,
             answers,
@@ -430,7 +438,7 @@ export class MotivationGenerationService {
       const planOpts = { hasOverlap: !!overlap.writerNote };
       let seed = row.variantSeed;
       let plan = planFor(row.licenceType, seed, planOpts);
-      let attempt = await this.claude.generate(pack, plan);
+      let attempt = await this.model.generate(pack, plan);
       let tokensIn = attempt.usage.promptTokens + researchIn;
       let tokensOut = attempt.usage.completionTokens + researchOut;
 
@@ -456,7 +464,7 @@ export class MotivationGenerationService {
         );
         seed = crypto.randomInt(0, 2 ** 31 - 1);
         plan = planFor(row.licenceType, seed, planOpts);
-        attempt = await this.claude.generate(pack, plan);
+        attempt = await this.model.generate(pack, plan);
         tokensIn += attempt.usage.promptTokens;
         tokensOut += attempt.usage.completionTokens;
         structureOk = followsPlan(attempt.text, plan).ok;
@@ -490,7 +498,7 @@ export class MotivationGenerationService {
         return { status: MotivationStatus.FAILED, score: 0 };
       }
 
-      const graded = await this.claude.grade(pack, attempt.text);
+      const graded = await this.model.grade(pack, attempt.text);
       tokensIn += graded.usage.promptTokens;
       tokensOut += graded.usage.completionTokens;
 
@@ -540,7 +548,7 @@ export class MotivationGenerationService {
       // above — and not more, per the operator.
       let verification: string[] | undefined;
       if (graded.verdict.passed) {
-        const v = await this.claude
+        const v = await this.model
           .verifyDocument({ pack, documentText: attempt.text, annexures })
           .catch(() => null);
         if (v) {
@@ -651,9 +659,9 @@ export class MotivationGenerationService {
         })
         .catch(() => undefined);
 
-      // AND GIVE THE SEAT BACK. The seat is claimed before the first Claude
+      // AND GIVE THE SEAT BACK. The seat is claimed before the first model
       // call so we never spend money we have not accounted for — but that
-      // means an Anthropic outage would otherwise consume a free-beta seat
+      // means a provider outage would otherwise consume a free-beta seat
       // and produce nothing. The applicant did not get a document; they must
       // not lose their place in the beta for our failure.
       //
@@ -664,7 +672,7 @@ export class MotivationGenerationService {
       }
 
       // ⚠️ AND TELL THEM. THIS is the branch that fired on 2026-08-22 and said
-      // nothing: an Anthropic timeout, or a document that came back unusable,
+      // nothing: a model timeout, or a document that came back unusable,
       // put the row back to NEEDS_MORE_INFO and returned the seat — correctly
       // — and then simply rethrew into startGeneration's catch, which logs.
       // The applicant, who is holding a phone waiting for the message we
@@ -851,8 +859,8 @@ export class MotivationGenerationService {
   }
 
   /**
-   * Turn the gate's thin-field list into questions. WE pick the fields; Claude
-   * only phrases them. If it cannot, the field's own help text is the fallback
+   * Turn the gate's thin-field list into questions. WE pick the fields; the
+   * model only phrases them. If it cannot, the field's own help text is the fallback
    * — a plain question beats no question.
    */
   private async queueFollowUps(
@@ -862,7 +870,7 @@ export class MotivationGenerationService {
     answers: Record<string, string>,
   ): Promise<void> {
     // WHAT to ask is worked out in code, for nothing — it is arithmetic over
-    // the field registry. Claude is asked only to WORD the questions, which is
+    // the field registry. The model is asked only to WORD the questions, which is
     // the one part it is genuinely better at.
     // ⚠️ NEVER ASK A QUESTION THAT IS ALREADY ON SCREEN UNANSWERED. Every
     // gate cycle used to queue its follow-ups blind, so three attempts put
@@ -893,7 +901,7 @@ export class MotivationGenerationService {
     // sentences.
     let phrased: Record<string, string> = {};
     try {
-      const res = await this.claude.askFollowUpBatch({
+      const res = await this.model.askFollowUpBatch({
         licenceType,
         gaps: gapBrief(gaps),
       });

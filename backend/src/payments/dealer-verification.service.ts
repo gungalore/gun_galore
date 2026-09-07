@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
+import { LlmService } from '../common/llm/llm.service';
+import type { LlmPart } from '../common/llm/llm.types';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
@@ -28,8 +29,7 @@ import { sanitizePromptValue } from '../common/prompt-sanitize';
  *   3. The firearm itself with its serial number visible, next to a
  *      slip of paper showing the All Outdoor order reference.
  *
- * Claude vision (Sonnet — same model the listing moderator uses)
- * scans all three in a single call and returns a structured JSON
+ * One AI vision call scans all three and returns a structured JSON
  * with per-criterion scores. We compute a weighted average + decide
  * the outcome:
  *
@@ -38,13 +38,20 @@ import { sanitizePromptValue } from '../common/prompt-sanitize';
  *   - Any criterion < 50            → REJECTED (seller must reshoot)
  *
  * The full findings JSON is persisted on the Transaction so the admin
- * panel can re-render Claude's reasoning without burning another
+ * panel can re-render the review's reasoning without burning another
  * vision call.
+ *
+ * ⚠️ THE MODEL NAME IS GONE. It was ANTHROPIC_MODEL_JUDGE, defaulting to a
+ * Sonnet id and deliberately shared with the listing moderator and the
+ * firearm-licence verifier. All three take LlmService.model now, so they
+ * still agree — without three files having to remember to. No call here
+ * passes `model`.
+ *
+ * ⚠️ `PENDING_CLAUDE` BELOW IS A STORED STATUS and does not move. Live rows
+ * carry it, the admin queue filters on it, and the schema comments name it.
+ * It reads as "the automated scan is running"; renaming it to tidy a word
+ * would strand every transaction currently sitting in it.
  */
-
-// Same model the listing moderator uses — Sonnet for vision reasoning.
-const MODEL_VISION =
-  process.env.ANTHROPIC_MODEL_JUDGE ?? 'claude-sonnet-4-6';
 
 // Score thresholds. Mirror the listing-moderation convention.
 const AUTO_APPROVE_FLOOR = 80;
@@ -63,7 +70,7 @@ export interface DealerVerificationFindings {
     dealer_stamp_or_signature: number;  // stamp visible OR signed + printed name visible
     block_letters: number;              // handwriting is in block capitals
     dealer_licence_visible: number;     // dealer's licence number readable on the form
-    extracted_dealer_licence: string | null; // what Claude read; we compare to our Dealer record
+    extracted_dealer_licence: string | null; // what the model read; we compare to our Dealer record
     // Structured dealer identity read off the SAP 534 — used to auto-register
     // the receiving dealer into the SAPS-licensed directory (as an inactive,
     // unverified entry for admin review). All nullable — the model omits what
@@ -107,7 +114,6 @@ export interface DealerVerificationFindings {
 @Injectable()
 export class DealerVerificationService {
   private readonly logger = new Logger(DealerVerificationService.name);
-  private readonly client: Anthropic | null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -124,16 +130,21 @@ export class DealerVerificationService {
     // Dealer auto-registration flag (dealer_auto_register_enabled). Global
     // provider — no module import needed.
     private readonly settings: SettingsService,
+    // ⚠️ WAS AN Anthropic CLIENT BUILT IN THIS CONSTRUCTOR (60s timeout, one
+    // retry, null when ANTHROPIC_API_KEY was absent). `isConfigured()` asks
+    // the same question the null check asked and the fail-closed direction is
+    // unchanged: no model means PENDING_ADMIN_REVIEW, never an automatic
+    // APPROVED — an approval here releases the buyer's money.
+    //
+    // Optional so the registry spec can still construct this service without
+    // standing up the model; nothing on the auto-registration path asks for
+    // one, and `isConfigured()` is false when it is absent, which routes to a
+    // human exactly as a missing key did.
+    private readonly llm?: LlmService,
   ) {
-    const key = process.env.ANTHROPIC_API_KEY;
-    // 60s timeout / 1 retry — a hung vision call must not hold the upload
-    // request open for the SDK's 10-min default (audit fix 2026-07-20).
-    this.client = key
-      ? new Anthropic({ apiKey: key, timeout: 60_000, maxRetries: 1 })
-      : null;
-    if (!key) {
+    if (!this.llm?.isConfigured()) {
       this.logger.warn(
-        'ANTHROPIC_API_KEY not set — dealer verification will queue for admin review',
+        'No model configured — dealer verification will queue for admin review',
       );
     }
   }
@@ -142,7 +153,7 @@ export class DealerVerificationService {
   // Upload + scan flow
   // -------------------------------------------------------------------
   // The controller calls this with the three Multer files. We push
-  // each to Cloudinary, then ask Claude to score the trio against the
+  // each to Cloudinary, then ask the AI review to score the trio against the
   // listing's expected serial + the dealer's expected licence number.
   // -------------------------------------------------------------------
   async uploadAndScore(
@@ -157,7 +168,7 @@ export class DealerVerificationService {
     // Where the firearm has been booked into stock. The seller types
     // these into the upload form alongside the 3 photos. Required —
     // the buyer needs them once verification approves so they know
-    // where the firearm is. Claude vision also uses the dealer name
+    // where the firearm is. The AI review also uses the dealer name
     // to cross-check the SAPS 534 (if the form is well-filled, the
     // dealer name and address should match what the seller typed).
     stockedAtDealer: { name: string; address: string; phone: string },
@@ -203,7 +214,7 @@ export class DealerVerificationService {
       );
     }
     // Reshoot cap — a persistently-failing (or hostile) seller must not loop
-    // upload→REJECTED forever; each cycle costs a Claude vision call + 3
+    // upload→REJECTED forever; each cycle costs an AI vision call + 3
     // Cloudinary uploads. After MAX_REVERIFY_ATTEMPTS we stop auto-scanning,
     // route the tx to a human, and tell the seller support is now reviewing.
     const MAX_REVERIFY_ATTEMPTS = 5;
@@ -254,7 +265,7 @@ export class DealerVerificationService {
     // We no longer require a pre-selected Dealer record on the
     // transaction — the seller chooses any SAPS-licensed dealer and
     // tells us about it via the upload form. The expected-dealer
-    // cross-check Claude vision used to do is now soft (we just pass
+    // cross-check the AI review used to do is now soft (we just pass
     // the seller-supplied name as a hint).
 
     // Upload all 3 photos in parallel. Cloudinary handles HEIF→JPEG
@@ -262,7 +273,7 @@ export class DealerVerificationService {
     // client-side conversion the frontend does.
     // The stamped 534 may be a PDF (dealer scan) or a photo. A PDF is
     // stored raw (byte-for-byte, opens intact for admin) and sent to
-    // Claude as a document block; a photo goes through the image path.
+    // the model as a document part; a photo goes through the image path.
     const saps534IsPdf =
       files.saps534.mimetype === 'application/pdf' ||
       files.saps534.buffer.subarray(0, 5).toString('latin1') === '%PDF-';
@@ -282,9 +293,9 @@ export class DealerVerificationService {
       ]);
 
     // Stamp the URLs + put us into PENDING_CLAUDE while the vision
-    // call runs. If Claude is down, the row stays in
-    // PENDING_ADMIN_REVIEW and admin can review the uploaded photos
-    // manually.
+    // call runs (a stored status — see the header note). If the provider
+    // is down, the row stays in PENDING_ADMIN_REVIEW and admin can review
+    // the uploaded photos manually.
     await this.prisma.transaction.update({
       where: { id: transactionId },
       data: {
@@ -305,28 +316,28 @@ export class DealerVerificationService {
       },
     });
 
-    // Call Claude (no fail-fast — if Claude is unavailable, queue for admin).
+    // Call the model (no fail-fast — if it is unavailable, queue for admin).
     const expectedSerial = await this.findExpectedSerial(transactionId);
     let findings: DealerVerificationFindings | null = null;
     let status: DealerVerificationStatus = 'PENDING_ADMIN_REVIEW';
     let score = 0;
-    // Distinguish "Claude scored it low" from "the call never happened"
+    // Distinguish "the review scored it low" from "the call never happened"
     // in the admin alert — "confidence 0%" on an outage was misleading.
-    let claudeUnavailable = !this.client;
+    let scanUnavailable = !this.llm?.isConfigured();
 
-    if (this.client) {
+    if (this.llm?.isConfigured()) {
       try {
-        findings = await this.runClaudeVisionScan({
+        findings = await this.runVisionScan({
           saps534Url: saps534Upload.url,
           saps534Pdf: saps534IsPdf ? files.saps534.buffer : undefined,
           stockRegisterUrl: stockRegisterUpload.url,
           firearmSerialUrl: firearmSerialUpload.url,
           expectedSerial,
           // We don't have a verified-dealer DB lookup anymore. Pass
-          // the seller-supplied dealer name so Claude can flag a
+          // the seller-supplied dealer name so the review can flag a
           // mismatch (the SAPS 534 should show the same dealer name
           // the seller said booked it in) but we don't fail on it.
-          // expectedDealerLicence stays empty — Claude will just
+          // expectedDealerLicence stays empty — the model will just
           // extract whatever's on the form without comparison.
           expectedDealerLicence: '',
           expectedDealerName: stockedAtDealer.name,
@@ -344,11 +355,16 @@ export class DealerVerificationService {
           status,
         );
       } catch (err) {
+        // ⚠️ EVERY FAILURE LANDS HERE AND EVERY ONE OF THEM QUEUES A HUMAN,
+        // including an LlmError with code 'safety'. A provider declining to
+        // look at the paperwork has told us nothing about whether the firearm
+        // is lawfully booked in, and an approval on this path releases the
+        // buyer's money.
         this.logger.warn(
-          `Dealer verification Claude call failed (queueing for admin): ${(err as Error).message}`,
+          `Dealer verification AI call failed (queueing for admin): ${(err as Error).message}`,
         );
         status = 'PENDING_ADMIN_REVIEW';
-        claudeUnavailable = true;
+        scanUnavailable = true;
       }
     }
 
@@ -397,8 +413,8 @@ export class DealerVerificationService {
         findings?.recommendation_reason,
       );
     } else if (status === 'PENDING_ADMIN_REVIEW') {
-      // FLOW-F4 (H17) — a firearm verification lands here whenever Claude
-      // returns 50-79% on any criterion, the vision call throws, or no API key
+      // FLOW-F4 (H17) — a firearm verification lands here whenever the review
+      // returns 50-79% on any criterion, the vision call throws, or no model
       // is configured (the prompt even says "recommend ADMIN_REVIEW when
       // uncertain"), so it is a designed-for common outcome — yet nothing used
       // to signal the admin. The buyer's funds sit HELD and the promised 48h
@@ -416,9 +432,9 @@ export class DealerVerificationService {
               `Firearm verification ${transactionId.slice(-8).toUpperCase()} ` +
               `(${[tx.listing.make, tx.listing.model].filter(Boolean).join(' ') || 'firearm'}) ` +
               `needs a human decision — ${
-                claudeUnavailable
-                  ? 'the AI check could not run (API unavailable)'
-                  : `Claude confidence ${Math.round(score)}%`
+                scanUnavailable
+                  ? 'the AI check could not run (provider unavailable)'
+                  : `AI review confidence ${Math.round(score)}%`
               }. ` +
               `Buyer's payment is HELD until it's approved. Review the SAPS 534 / ` +
               `stock-register / serial photos in the transaction dossier.`,
@@ -461,7 +477,7 @@ export class DealerVerificationService {
     });
 
     // Send the seller the same email + SMS the auto-path sends, so an
-    // admin override has the same downstream experience as a Claude
+    // admin override has the same downstream experience as an automated
     // pass / reject.
     void this.sendOutcomeEmail(
       transactionId,
@@ -469,7 +485,7 @@ export class DealerVerificationService {
       trimmedReason,
     );
 
-    // Same auto-release-and-notify-buyer the Claude APPROVED path
+    // Same auto-release-and-notify-buyer the automated APPROVED path
     // fires. Idempotent — won't double-release if the auto-path
     // already ran first.
     if (decision === 'APPROVE') {
@@ -481,7 +497,7 @@ export class DealerVerificationService {
   // Internal — auto-release held funds + notify buyer of dealer details
   // -------------------------------------------------------------------
   // Fires whenever a transaction's dealer-verification status becomes
-  // APPROVED (either via auto-Claude or admin override). This is the
+  // APPROVED (either via the automatic scan or an admin override). This is the
   // moment All Outdoor is done with the transaction: the seller gets
   // their payout, the buyer gets the dealer's contact details so they
   // can arrange the inter-dealer transfer themselves.
@@ -503,7 +519,7 @@ export class DealerVerificationService {
       });
       if (!tx) return;
 
-      // Idempotency guard. Both auto-Claude and admin-override paths
+      // Idempotency guard. Both the automatic and admin-override paths
       // call us; the second one in shouldn't re-fire payout.
       if (tx.paymentStatus !== 'HELD') {
         this.logger.log(
@@ -886,13 +902,13 @@ export class DealerVerificationService {
   }
 
   // -------------------------------------------------------------------
-  // Internal — Claude vision scan
+  // Internal — the AI vision scan
   // -------------------------------------------------------------------
-  private async runClaudeVisionScan(args: {
+  private async runVisionScan(args: {
     saps534Url: string;
     // When the seller uploaded the stamped 534 as a PDF, the raw bytes
-    // are passed here and sent to Claude as a document block (no
-    // rasterisation needed — the model reads the PDF directly). When
+    // are passed here and sent as a `document` part (no rasterisation
+    // needed — the model reads the PDF directly). When
     // it's a photo, this is undefined and we use saps534Url as an image.
     saps534Pdf?: Buffer;
     stockRegisterUrl: string;
@@ -904,7 +920,9 @@ export class DealerVerificationService {
     listingModel: string | null;
     orderReference: string;
   }): Promise<DealerVerificationFindings> {
-    if (!this.client) throw new Error('Anthropic client not configured');
+    if (!this.llm?.isConfigured()) {
+      throw new Error('no AI review model configured');
+    }
 
     const systemPrompt = `You are the dealer stock-in verifier for All Outdoor, a South African firearms marketplace.
 
@@ -964,32 +982,29 @@ Rules:
 - Read the firearm TYPE and SERIAL from Section D of the 534. If Section D's serial does not match the expected serial in the user context, score firearm_serial_matches_listing low and add an issue. If the type is blank or unreadable, set firearm_type to null and do not penalise other scores for it.
 - Read the RECEIVING DEALER's identity from the form — their trading name, full street address, city, and province — into extracted_dealer_name / _address / _city / _province. These build our SAPS-licensed dealer directory. Transcribe exactly what is printed; set any field you cannot read cleanly to null (do NOT guess). Reading these does not affect any score.`;
 
-    const saps534Block = args.saps534Pdf
-      ? ({
-          type: 'document' as const,
-          source: {
-            type: 'base64' as const,
-            media_type: 'application/pdf' as const,
-            data: args.saps534Pdf.toString('base64'),
-          },
-        })
-      : ({
-          type: 'image' as const,
-          source: { type: 'url' as const, url: args.saps534Url },
-        });
+    // ⚠️ THE PHOTOS ARE FETCHED HERE NOW. The Anthropic SDK took an
+    // `{type:'url'}` image source and went and got it itself; the
+    // provider-neutral contract carries base64 bytes only, so the round trips
+    // moved into this process. All three run in PARALLEL — they used to cost
+    // nothing on this side, and serialising them would add hops to a request
+    // a seller is already waiting on. A fetch failure throws, and the caller
+    // maps a throw to PENDING_ADMIN_REVIEW: a human, never an approval.
+    //
+    // The PDF path is unchanged — those bytes were always sent inline.
+    const [saps534Block, stockRegisterBlock, firearmSerialBlock] =
+      await Promise.all([
+        args.saps534Pdf
+          ? Promise.resolve<LlmPart>({
+              type: 'document',
+              mimeType: 'application/pdf',
+              data: args.saps534Pdf.toString('base64'),
+            })
+          : this.inlineFromUrl(args.saps534Url),
+        this.inlineFromUrl(args.stockRegisterUrl),
+        this.inlineFromUrl(args.firearmSerialUrl),
+      ]);
 
-    const userContent: Array<
-      | { type: 'text'; text: string }
-      | { type: 'image'; source: { type: 'url'; url: string } }
-      | {
-          type: 'document';
-          source: {
-            type: 'base64';
-            media_type: 'application/pdf';
-            data: string;
-          };
-        }
-    > = [
+    const userContent: LlmPart[] = [
       {
         type: 'text',
         text: [
@@ -1009,29 +1024,63 @@ Rules:
       },
       saps534Block,
       { type: 'text', text: 'Photo 2: Stock register last line' },
-      { type: 'image', source: { type: 'url', url: args.stockRegisterUrl } },
+      stockRegisterBlock,
       { type: 'text', text: 'Photo 3: Firearm with serial + order reference' },
-      { type: 'image', source: { type: 'url', url: args.firearmSerialUrl } },
+      firearmSerialBlock,
     ];
 
-    const msg = await this.client.messages.create({
-      model: MODEL_VISION,
-      max_tokens: 1500,
+    const res = await this.llm.complete({
+      // No `model`: the platform's LLM_MODEL decides. See the header note.
+      maxTokens: 1500,
+      timeoutMs: 60_000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userContent }],
+      // The prompt already demands a bare JSON object; the tolerant
+      // brace-match below stays as the fallback.
+      json: {},
+      purpose: 'dealer.verify',
     });
 
-    const block = msg.content.find((b) => b.type === 'text');
-    const raw = (block as { text?: string } | undefined)?.text ?? '';
-    const match = raw.match(/\{[\s\S]*\}/);
+    // ⚠️ A BLOCKED RESPONSE IS AN OUTAGE, NOT A VERDICT. It throws, so it goes
+    // through the same catch a 500 goes through and lands the transfer in
+    // PENDING_ADMIN_REVIEW with the reason logged. Parsing on would give an
+    // empty findings object, and statusFromFindings reads a missing score as
+    // "not finite" — which is also admin review, but reported to the operator
+    // as though the paperwork had been looked at and doubted.
+    if (res.stopReason === 'safety') {
+      throw new Error('the AI review was blocked by the provider');
+    }
+
+    const match = res.text.match(/\{[\s\S]*\}/);
     if (!match) {
-      throw new Error('Claude did not return JSON');
+      throw new Error('the AI review did not return JSON');
     }
     return JSON.parse(match[0]) as DealerVerificationFindings;
   }
 
+  /**
+   * A Cloudinary photo as inline bytes.
+   *
+   * ⚠️ THE PROVIDER USED TO DO THIS FETCH. See the note at the call site.
+   * The URL is kept out of the error text — it is dealer paperwork, and the
+   * message travels into an admin alert.
+   */
+  private async inlineFromUrl(url: string): Promise<LlmPart> {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`could not fetch a verification photo (HTTP ${res.status})`);
+    }
+    const mimeType =
+      res.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg';
+    return {
+      type: 'image',
+      mimeType,
+      data: Buffer.from(await res.arrayBuffer()).toString('base64'),
+    };
+  }
+
   // -------------------------------------------------------------------
-  // Internal — decide status from Claude's findings
+  // Internal — decide status from the review's findings
   // -------------------------------------------------------------------
   private statusFromFindings(f: DealerVerificationFindings): DealerVerificationStatus {
     // Collect every numeric score so we can apply the threshold rules
@@ -1065,7 +1114,7 @@ Rules:
   }
 
   // Server-side serial cross-check (audit fix 2026-07-20). The numeric
-  // `*_matches_listing` scores are Claude SELF-REPORT — an injection via
+  // `*_matches_listing` scores are model SELF-REPORT — an injection via
   // the photos or seller text could claim 100 everywhere. The extracted_*
   // serial strings are what the model actually READ, so before honouring
   // an APPROVED verdict we re-verify them in code:
@@ -1117,7 +1166,7 @@ Rules:
   // Listing (we capture make / model / calibre but not the serial —
   // the seller types it on the dealer paperwork). When that field
   // ships, this method returns it; today it falls back to null and
-  // Claude skips the cross-check.
+  // the review skips the cross-check.
   private async findExpectedSerial(transactionId: string): Promise<string | null> {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },

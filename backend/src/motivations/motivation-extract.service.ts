@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
+import { LlmService } from '../common/llm/llm.service';
+import { LlmError, type LlmPart } from '../common/llm/llm.types';
 import { fieldsFor } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
@@ -51,20 +52,18 @@ import {
 // transcribes and we verify.
 // ────────────────────────────────────────────────────────────────────
 
-const MODEL =
-  process.env.ANTHROPIC_MODEL_MOTIVATION_EXTRACT ??
-  process.env.ANTHROPIC_MODEL_JUDGE ??
-  'claude-sonnet-4-6';
-
-/**
- * "Which document is this?" runs on the CHEAP model.
- *
- * Naming a document is a far easier job than reading one, and it happens once
- * per file in a pack — a member uploading eight documents should not pay eight
- * Sonnet calls to have them sorted into piles.
- */
-const MODEL_CLASSIFY =
-  process.env.ANTHROPIC_MODEL_SIMPLE ?? 'claude-haiku-4-5';
+// ⚠️ NO MODEL IS NAMED HERE ANY MORE. Every call takes LlmService.model —
+// one platform model, from LLM_MODEL (operator, 2026-09-07: everything moves
+// from the Claude API to Gemini 2.5 Flash-Lite).
+//
+// TWO CHOICES THIS FILE USED TO MAKE, RECORDED SO THEY ARE NOT RE-DERIVED:
+// reading a document ran on the mid tier, and "which document is this?" ran on
+// the CHEAP one — naming a document is a far easier job than reading one, and
+// it happens once per file in a pack, so a member uploading eight documents
+// should not pay eight full-price calls to have them sorted into piles. Both
+// now run on the same model. If sorting ever needs to be cheaper, or reading
+// ever needs to be stronger, `model:` on the request is the one-line lever the
+// contract keeps for exactly this.
 
 /** What each document kind can plausibly yield. Nothing else is accepted. */
 /**
@@ -269,13 +268,20 @@ export interface ExtractedField {
 @Injectable()
 export class MotivationExtractService {
   private readonly logger = new Logger(MotivationExtractService.name);
-  private readonly client: Anthropic | null;
 
-  constructor(private readonly vision?: GoogleVisionOcrService) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    this.client = apiKey
-      ? new Anthropic({ apiKey, timeout: 60_000, maxRetries: 1 })
-      : null;
+  // ⚠️ THE LLM FIRST, THE OCR SECOND, AND THE ORDER IS FORCED. `vision` is
+  // optional (a box with no Vision key still uploads and still reads), and an
+  // optional parameter cannot precede a required one.
+  constructor(
+    private readonly llm: LlmService,
+    private readonly vision?: GoogleVisionOcrService,
+  ) {}
+
+  /** What a failure looked like, for a log line. Codes, never a provider class. */
+  private static why(err: unknown): string {
+    return err instanceof LlmError
+      ? `${err.code}: ${err.message}`
+      : (err as Error).message;
   }
 
   /** Which document kinds are worth scanning at all. */
@@ -338,7 +344,7 @@ export class MotivationExtractService {
     ocrText?: string | null;
   }): Promise<ExtractedField[]> {
     let wanted = EXTRACTABLE[args.kind] ?? [];
-    if (!wanted.length || !this.client) return [];
+    if (!wanted.length || !this.llm.isConfigured()) return [];
 
     // A licence describes ONE firearm, and the applicant may upload several.
     if (args.kind === 'CURRENT_LICENCE') {
@@ -351,28 +357,7 @@ export class MotivationExtractService {
     const asked = registry.filter((f) => wanted.includes(f.key));
     if (!asked.length) return [];
 
-    const isPdf = args.mimeType === 'application/pdf';
-    const block = isPdf
-      ? {
-          type: 'document' as const,
-          source: {
-            type: 'base64' as const,
-            media_type: 'application/pdf' as const,
-            data: args.bytes.toString('base64'),
-          },
-        }
-      : {
-          type: 'image' as const,
-          source: {
-            type: 'base64' as const,
-            media_type: (args.mimeType === 'image/png'
-              ? 'image/png'
-              : args.mimeType === 'image/webp'
-                ? 'image/webp'
-                : 'image/jpeg') as 'image/png' | 'image/webp' | 'image/jpeg',
-            data: args.bytes.toString('base64'),
-          },
-        };
+    const block = contentBlock(args.bytes, args.mimeType);
 
     // ⚠️ TWO ATTEMPTS, BECAUSE ONE IS NOT ENOUGH ON A MARGINAL DOCUMENT.
     //
@@ -409,7 +394,7 @@ export class MotivationExtractService {
 
   /** One read. Returns [] on any failure — the caller decides about retrying. */
   private async attemptRead(
-    block: unknown,
+    block: LlmPart,
     asked: {
       key: string;
       label: string;
@@ -431,29 +416,39 @@ export class MotivationExtractService {
      */
     ocrText: string | null,
   ): Promise<ExtractedField[]> {
-    if (!this.client) return [];
+    if (!this.llm.isConfigured()) return [];
     let text = '';
     try {
-      const res = await this.client.messages.create({
-        model: MODEL,
-        max_tokens: 1200,
-        // ⚠️ NO `temperature` HERE, AND NEVER ADD ONE.
+      const res = await this.llm.complete({
+        maxTokens: 1200,
+        // ⚠️ THINKING OFF. Twelve hundred tokens is a JSON object of
+        // transcribed fields; a thinking budget shares that ceiling and the
+        // whole allowance can go to reasoning, leaving a truncated object that
+        // the fail-soft parse below reads as "could not read anything on this".
+        // The motivation writer lost a live document to exactly that.
+        thinking: { budgetTokens: 0 },
+        // ⚠️ NO `temperature` HERE, AND THINK BEFORE ADDING ONE.
         //
-        // temperature / top_p / top_k were REMOVED from the API on Opus 4.7 and
-        // later, and on Sonnet 5 — which is what ANTHROPIC_MODEL_JUDGE points at
-        // on the live box. Sending one is a 400:
+        // temperature / top_p / top_k were REMOVED from the Anthropic API on
+        // the models this used to run on, and sending one was a 400:
         //   "`temperature` is deprecated for this model."
         //
-        // It cost us two days of silence: every call site below fails soft, so
+        // It cost us two days of silence: every call site here fails soft, so
         // the 400 was caught, logged at warn, and the feature simply did
-        // nothing. Deterministic transcription is the DEFAULT now — there is no
-        // parameter to ask for it.
+        // nothing. Deterministic transcription became the DEFAULT because
+        // there was no parameter to ask for it.
+        //
+        // ⚠️ THAT DEFAULT BELONGED TO THE OLD PROVIDER. The neutral contract
+        // carries `temperature` again and omitting it takes the provider's
+        // default, which is not 0. If a transcriber starts giving different
+        // digits for the same photograph, this is the cause and `temperature:
+        // 0` is the fix — it is a real parameter again, not a 400.
         system: this.systemPrompt(),
         messages: [
           {
             role: 'user',
             content: [
-              block as never,
+              block,
               ...(ocrText
                 ? [
                     {
@@ -481,13 +476,14 @@ export class MotivationExtractService {
             ],
           },
         ],
+        purpose: `motivation.extract.${kind.toLowerCase()}`,
+        timeoutMs: 60_000,
       });
-      const first = res.content.find((b) => b.type === 'text');
-      text = first && 'text' in first ? first.text.trim() : '';
+      text = res.text.trim();
     } catch (err) {
       // FAIL-SOFT. The bytes are stored; the applicant is not blocked.
       this.logger.warn(
-        `Extraction failed for ${kind}: ${(err as Error).message}`,
+        `Extraction failed for ${kind}: ${MotivationExtractService.why(err)}`,
       );
       return [];
     }
@@ -542,14 +538,16 @@ export class MotivationExtractService {
     bytes: Buffer;
     mimeType: string;
   }): Promise<Record<string, string>> {
-    if (!this.client) return {};
+    if (!this.llm.isConfigured()) return {};
 
     const block = contentBlock(args.bytes, args.mimeType);
     let text = '';
     try {
-      const res = await this.client.messages.create({
-        model: MODEL,
-        max_tokens: 800,
+      const res = await this.llm.complete({
+        maxTokens: 800,
+        // Transcription into a fixed JSON shape, like every read in this file:
+        // the budget must be text, not reasoning. See attemptRead().
+        thinking: { budgetTokens: 0 },
         system: firearmIdentityPrompt(),
         messages: [
           {
@@ -563,11 +561,14 @@ export class MotivationExtractService {
             ],
           },
         ],
+        purpose: 'motivation.extract.firearm',
+        timeoutMs: 60_000,
       });
-      const first = res.content.find((b) => b.type === 'text');
-      text = first && 'text' in first ? first.text.trim() : '';
+      text = res.text.trim();
     } catch (err) {
-      this.logger.warn(`Firearm read failed: ${(err as Error).message}`);
+      this.logger.warn(
+        `Firearm read failed: ${MotivationExtractService.why(err)}`,
+      );
       return {};
     }
 
@@ -630,26 +631,34 @@ export class MotivationExtractService {
       }
     }
 
-    if (!this.client) return null;
+    if (!this.llm.isConfigured()) return null;
 
     const block = contentBlock(args.bytes, args.mimeType);
 
     let text = '';
     try {
-      const res = await this.client.messages.create({
-        model: MODEL_CLASSIFY,
-        max_tokens: 200,
+      const res = await this.llm.complete({
+        maxTokens: 200,
+        // ⚠️ THINKING OFF, AND THIS IS THE TIGHTEST CEILING IN THE FILE. Two
+        // hundred tokens is one small JSON object; a thinking budget sharing
+        // it produces a truncated answer, which parses to null, which files
+        // the document as "something else" — a silent regression that looks
+        // exactly like a model that could not tell.
+        thinking: { budgetTokens: 0 },
         system: CLASSIFY_SYSTEM,
         messages: [
           { role: 'user', content: [block, { type: 'text', text: CLASSIFY_USER }] },
         ],
+        purpose: 'motivation.classify',
+        timeoutMs: 60_000,
       });
-      const first = res.content.find((b) => b.type === 'text');
-      text = first && 'text' in first ? first.text.trim() : '';
+      text = res.text.trim();
     } catch (err) {
       // Fail soft, like every other model call here: an unsorted document is
       // a small inconvenience, a failed upload is not.
-      this.logger.warn(`Classification failed: ${(err as Error).message}`);
+      this.logger.warn(
+        `Classification failed: ${MotivationExtractService.why(err)}`,
+      );
       return null;
     }
 
@@ -874,29 +883,32 @@ const CLASSIFIABLE: MotivationUploadKind[] = [
   'OTHER',
 ];
 
-/** One base64 content block, image or PDF. Shared by read and classify. */
-function contentBlock(bytes: Buffer, mimeType: string) {
+/**
+ * One base64 content part, image or PDF. Shared by read and classify.
+ *
+ * ⚠️ THE MIME TYPE IS NARROWED, NOT PASSED THROUGH. A phone sends heic, a
+ * scanner sends tiff, and a browser sometimes sends nothing at all — an
+ * unrecognised type is declared as JPEG because that is what the upload path
+ * has already normalised the bytes to, and a type the provider rejects fails
+ * the whole read rather than one field.
+ */
+function contentBlock(bytes: Buffer, mimeType: string): LlmPart {
   if (mimeType === 'application/pdf') {
     return {
-      type: 'document' as const,
-      source: {
-        type: 'base64' as const,
-        media_type: 'application/pdf' as const,
-        data: bytes.toString('base64'),
-      },
+      type: 'document',
+      mimeType: 'application/pdf',
+      data: bytes.toString('base64'),
     };
   }
   return {
-    type: 'image' as const,
-    source: {
-      type: 'base64' as const,
-      media_type: (mimeType === 'image/png'
+    type: 'image',
+    mimeType:
+      mimeType === 'image/png'
         ? 'image/png'
         : mimeType === 'image/webp'
           ? 'image/webp'
-          : 'image/jpeg') as 'image/png' | 'image/webp' | 'image/jpeg',
-      data: bytes.toString('base64'),
-    },
+          : 'image/jpeg',
+    data: bytes.toString('base64'),
   };
 }
 

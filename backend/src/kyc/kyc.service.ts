@@ -22,7 +22,7 @@ import { SettingsService, FLAGS } from '../settings/settings.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { sniffMime } from '../common/sniff-mime';
-import { ClaudeKycService, type KycClaudeFindings } from './claude-kyc.service';
+import { KycModelService, type KycClaudeFindings } from './kyc-model.service';
 import { AwsKycService, NoFaceInSelfieError } from './aws-kyc.service';
 import type { AwsFindings } from './aws-kyc-findings';
 import {
@@ -80,6 +80,10 @@ export interface CachedBalance {
 export class KycService {
   private readonly log = new Logger(KycService.name);
   // Damper for the kyc-claude-outage admin alert (one per 6h window).
+  // ⚠️ THE ALERT TYPE IS A STORED STRING and stays 'kyc-claude-outage' —
+  // historical, from when the scanner was Claude. Existing rows carry it and
+  // the admin panel filters on it; a new vocabulary would just split the
+  // same alert into two names nobody queries together.
   private lastKycOutageAlertAt = 0;
 
   constructor(
@@ -90,7 +94,7 @@ export class KycService {
     // @Global ActionTokensModule — used to mint the KYC_VERIFY token so
     // the "verify your identity" SMS link works without a Clerk login.
     private actionTokens: ActionTokensService,
-    // Claude-flow additions (all @Global except ClaudeKycService, which
+    // AI-flow additions (all @Global except KycModelService, which
     // kyc.module.ts provides locally).
     private settings: SettingsService,
     // ⚠️ STILL HERE ONLY FOR THE BACKFILL'S SAKE. Nothing in this service
@@ -98,7 +102,12 @@ export class KycService {
     // the encrypted store below. The dependency stays until the last legacy
     // URL has been moved and the columns dropped.
     private cloudinary: CloudinaryService,
-    private claudeKyc: ClaudeKycService,
+    // ⚠️ THE FIELD NAME IS HISTORICAL. Was ClaudeKycService until the
+    // 2026-09-07 provider switch; the service is KycModelService now and this
+    // flow no longer calls a model through it at all — `this.aws.scan` does
+    // the reading, and what survives here is the VERDICT (statusFromFindings,
+    // retakeReason), which is pure arithmetic over the findings.
+    private kycModel: KycModelService,
     private aws: AwsKycService,
     // Where identity documents actually live now. See the `kyc` namespace.
     private files: SecureFileStorageService,
@@ -487,7 +496,7 @@ export class KycService {
     const steps = {
       consent: !!user.kycConsentGivenAt,
       // Legacy users may have kycIdVerifiedAt without a dateOfBirth — the
-      // Claude flow re-runs Details for them (cheap: dup-hash short-circuits
+      // The AI flow re-runs Details for them (cheap: dup-hash short-circuits
       // apply and the Basic credit re-burn is a one-off).
       details: !!user.kycIdVerifiedAt && !!user.dateOfBirth,
       // Either store counts. A member part-way through when identity
@@ -528,10 +537,10 @@ export class KycService {
     };
   }
 
-  // ═══════════════════ Claude-vision KYC flow ════════════════════════
-  // kyc_claude_flow_enabled: ID document upload + live selfie judged by
-  // Claude vision; VerifyNow only runs the 1-credit SA ID (Basic) record
-  // check. See claude-kyc.service.ts + kyc-cross-check.ts for the verdict
+  // ═══════════════════ AI-vision KYC flow ════════════════════════════
+  // kyc_claude_flow_enabled: ID document upload + live selfie judged by an
+  // AI review; VerifyNow only runs the 1-credit SA ID (Basic) record
+  // check. See kyc-model.service.ts + kyc-cross-check.ts for the verdict
   // mechanics. All endpoints throw when the flag is off so the legacy
   // pipeline stays the single source of truth until rollout.
 
@@ -847,7 +856,7 @@ export class KycService {
     // Vision scan — failure NEVER auto-verifies or auto-rejects.
     let findings: AwsFindings | null = null;
     // Kept at 0 and still persisted: the best-of-3 consensus pass belonged
-    // to the Claude flow and has no analogue in AWS, which returns one
+    // to the older AI-vision flow and has no analogue in AWS, which returns one
     // deterministic reading. Dropping the field would silently change the
     // shape of every stored dossier, including the historical ones an
     // admin may still open.
@@ -910,8 +919,8 @@ export class KycService {
               type: 'kyc-claude-outage',
               urgent: true,
               context:
-                `Claude KYC scans are failing (${(err as Error).message.slice(0, 160)}). ` +
-                `New verifications are parking in UNDER_REVIEW — check the Anthropic API on /admin/health.`,
+                `Identity scans are failing (${(err as Error).message.slice(0, 160)}). ` +
+                `New verifications are parking in UNDER_REVIEW — check the AI provider on /admin/health.`,
             },
           })
           .catch(() => undefined);
@@ -940,7 +949,7 @@ export class KycService {
       },
     });
 
-    // Verdict: hard cross-check lies reject even without Claude; a missing
+    // Verdict: hard cross-check lies reject even without a scan; a missing
     // scan otherwise parks for a human; anchored sellers whose HA photo
     // pull failed also park (never silently downgraded).
     let status: 'VERIFIED' | 'REJECTED' | 'UNDER_REVIEW' | 'RETAKE';
@@ -949,7 +958,7 @@ export class KycService {
     } else if (!findings || (tier === 'ANCHORED' && mode === 'standard')) {
       status = 'UNDER_REVIEW';
     } else {
-      status = this.claudeKyc.statusFromFindings(
+      status = this.kycModel.statusFromFindings(
         findings,
         crossCheck,
         mode,
@@ -985,7 +994,7 @@ export class KycService {
           // counted against anyone.
           outcome: 'RETAKE' as const,
           status: user.kycStatus,
-          message: this.claudeKyc.retakeReason(findings),
+          message: this.kycModel.retakeReason(findings),
         };
       }
       // Unreachable: statusFromFindings is only consulted when findings
@@ -1064,7 +1073,7 @@ export class KycService {
           data: {
             type: 'KYC_REVIEW',
             referenceId: user.id,
-            context: `Claude KYC inconclusive for ${user.firstName ?? clerkId} — review the ID document + selfie in the user dossier and approve/reject.`,
+            context: `AI identity review inconclusive for ${user.firstName ?? clerkId} — review the ID document + selfie in the user dossier and approve/reject.`,
             urgent: true,
           },
         });
@@ -1090,7 +1099,7 @@ export class KycService {
     if (newAttempts >= 3) {
       await this.flagForAdminReview(user.id, clerkId, 0);
     }
-    // A sub-50 Claude verdict (or a hard cross-check fail) is a confident
+    // A sub-50 AI verdict (or a hard cross-check fail) is a confident
     // rejection — the 50-69 band already routes borderline cases to a human,
     // so we don't loop these through retries; we point them to support. Copy
     // stays generic (never names the DOB cross-check).
