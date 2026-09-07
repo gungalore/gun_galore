@@ -37,7 +37,9 @@ describe('classify', () => {
       bytes: BYTES,
       mimeType: 'image/jpeg',
     });
-    expect(out).toEqual({
+    // toMatchObject: the answer also says HOW it decided (via, markers,
+    // strength) for the decision ledger, which these tests do not care about.
+    expect(out).toMatchObject({
       kind: 'FIREARM_LICENCE',
       confident: true,
       alsoCovers: [],
@@ -66,7 +68,9 @@ describe('classify', () => {
     const { service } = serving('doc03');
     const out = await service.classify({ bytes: BYTES, mimeType: 'image/jpeg' });
     // doc03 heads with "Licence To Possess a Firearm" — the form itself.
-    expect(out).toEqual({
+    // toMatchObject: the answer also says HOW it decided (via, markers,
+    // strength) for the decision ledger, which these tests do not care about.
+    expect(out).toMatchObject({
       kind: 'FIREARM_LICENCE',
       confident: true,
       alsoCovers: [],

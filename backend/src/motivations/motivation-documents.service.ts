@@ -14,6 +14,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { VaultLogService } from '../common/vault-log.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { encryptJson, decryptJson } from '../common/blob-crypto';
 import { parseProvenance, stamp } from '../common/answer-provenance';
@@ -98,6 +99,7 @@ export class MotivationDocumentsService {
     private readonly vaultAdoption: VaultAdoptionService,
     private readonly vaultConsent: VaultConsentService,
     private readonly shared: MotivationSharedService,
+    private readonly vaultLog: VaultLogService,
   ) {}
 
   // ── the document library ──────────────────────────────────────────
@@ -534,6 +536,45 @@ export class MotivationDocumentsService {
         data: { autolinkedAt: new Date() },
       });
     }
+
+    // The ledger: every candidate's fate, so "why did nothing attach" can be
+    // answered later, across members, without anyone's documents.
+    for (const c of decision.attach) {
+      this.vaultLog?.note({
+        stage: 'autolink',
+        outcome: 'ok',
+        code: 'attached',
+        userId: user.id,
+        motivationId: row.id,
+        credentialId: c.source === 'credential' ? c.sourceId : null,
+        detail: { kind: c.kind, needed: needed ?? null },
+      });
+    }
+    for (const sk of decision.skipped) {
+      this.vaultLog?.note({
+        stage: 'autolink',
+        outcome: 'skipped',
+        code: sk.why,
+        userId: user.id,
+        motivationId: row.id,
+        credentialId: sk.candidate.source === 'credential' ? sk.candidate.sourceId : null,
+        detail: { kind: sk.candidate.kind, needed: needed ?? null },
+      });
+    }
+    this.vaultLog?.note({
+      stage: 'autolink',
+      outcome: decision.attach.length ? 'ok' : 'missed',
+      code: 'run',
+      userId: user.id,
+      motivationId: row.id,
+      detail: {
+        wanted,
+        attached: attached.length,
+        skipped: decision.skipped.length,
+        needsPlaceConfirm: decision.needsPlaceConfirm,
+        candidates: candidates.length,
+      },
+    });
 
     return {
       attached,

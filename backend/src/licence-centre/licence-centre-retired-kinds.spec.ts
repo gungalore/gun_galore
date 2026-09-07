@@ -93,6 +93,8 @@ function build() {
     quota as never,
     extract as never,
     motivations as never,
+    // The decision ledger, silenced: these tests are about what the vault does, not what it writes down.
+    { note: () => undefined } as never,
   );
   return { svc, create, update, extract, rearm };
 }

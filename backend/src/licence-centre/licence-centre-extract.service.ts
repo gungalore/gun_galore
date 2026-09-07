@@ -84,6 +84,8 @@ export interface CredentialReading {
    * path, where per-field confidence is all there is.
    */
   autoFillable?: boolean;
+  /** For the ledger: which reader produced this. Absent when neither did. */
+  reader?: 'textract' | 'model';
 }
 
 const EMPTY: CredentialReading = {
@@ -351,6 +353,10 @@ export class LicenceCentreExtractService {
     confident: boolean;
     /** Other roles this same document satisfies. Usually empty. */
     alsoCovers: CredentialKind[];
+    /** For the ledger: what decided it, and on what. */
+    via?: 'markers' | 'model';
+    markers?: string[];
+    strength?: string;
   } | null> {
     // ── TEXTRACT FIRST, AND IT USUALLY ENDS HERE ──────────────────────
     //
@@ -395,6 +401,9 @@ export class LicenceCentreExtractService {
            */
           confident: hit.strength === 'definitive',
           alsoCovers: [],
+          via: 'markers',
+          markers: hit.matched.map((m) => m.name),
+          strength: hit.strength,
         };
       }
     }
@@ -445,6 +454,7 @@ export class LicenceCentreExtractService {
         // gone with the distinction that needed it — see where
         // UNSURE_BY_DEFAULT used to be defined, below.
         confident: (parsed.confidence ?? '') === 'high',
+        via: 'model',
         // Normalised too: a retired value in also_covers would now be the
         // document's own kind, which cleanAlsoCovers drops.
         alsoCovers: cleanAlsoCovers(
@@ -526,6 +536,7 @@ export class LicenceCentreExtractService {
           ...got.reading,
           notes: got.notes,
           autoFillable: got.autoFillable,
+          reader: 'textract',
         };
       }
       this.logger.log(
@@ -586,7 +597,7 @@ export class LicenceCentreExtractService {
       return EMPTY;
     }
 
-    return this.parse(text, args.kind, args.alsoCovers ?? []);
+    return { ...this.parse(text, args.kind, args.alsoCovers ?? []), reader: 'model' };
   }
 
   private parse(

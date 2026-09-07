@@ -12,6 +12,7 @@ import { KycIdAdoptionService } from './kyc-id-adoption.service';
 import { LicenceCentreRemindersService } from './licence-centre-reminders.service';
 import { LicenceCentreRetentionService } from './licence-centre-retention.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
+import { VaultLogService } from '../common/vault-log.service';
 import { AdminJwtGuard } from '../admin/guards/admin-jwt.guard';
 import { MotivationsModule } from '../motivations/motivations.module';
 
@@ -48,6 +49,7 @@ import { MotivationsModule } from '../motivations/motivations.module';
     LicenceCentreRemindersService,
     LicenceCentreRetentionService,
     SecureFileStorageService,
+    VaultLogService,
     AdminJwtGuard,
   ],
   // Exported only so the Clerk user.deleted handler can remove the encrypted
