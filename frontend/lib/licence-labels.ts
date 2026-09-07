@@ -93,3 +93,31 @@ export const LICENCE_SECTION: Record<string, string> = Object.fromEntries(
 export function licenceLabel(type: string): string {
   return LICENCE_LABEL[type] ?? type;
 }
+
+/**
+ * The section a LICENCE CARD prints, in the words above.
+ *
+ * ⚠️ THE INPUT IS NOT AN ENUM VALUE. `details.section` is whatever the reader
+ * lifted off the card — "13", "S16", "Section 15", "sec. 24(1)" — so this
+ * takes the number out of it and looks the number up. Mirrors
+ * sectionFromText in backend/src/common/sa-competency.ts, deliberately
+ * loosely: that one decides an expiry, this one writes a caption.
+ *
+ * ⚠️ SECTION 16 NAMES NO PURPOSE. Two of the five types are section 16 — the
+ * dedicated hunter and the dedicated sport shooter — and the number on the
+ * card does not say which. It returns "Section 16" alone rather than picking
+ * one, for the same reason the derivation returns null on a section 20: a
+ * caption that guesses is worse than a caption that is short.
+ *
+ * Returns null when there is no readable number, so a caller can leave the
+ * sub-line off entirely rather than print "Section".
+ */
+export function sectionCaption(raw: string | null | undefined): string | null {
+  const t = (raw ?? '').trim().toUpperCase();
+  if (!t || t.length > 40) return null;
+  const m = t.match(/(?:S(?:EC(?:TION)?)?\.?\s*)?(\d{1,2})/);
+  if (!m) return null;
+  const section = `Section ${m[1]}`;
+  const named = LICENCE_TYPES.filter((x) => x.section === section);
+  return named.length === 1 ? `${section} · ${named[0].label.toLowerCase()}` : section;
+}

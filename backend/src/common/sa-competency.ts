@@ -916,6 +916,15 @@ export const MUZZLE_LOADER_YEARS = 10;
 
 export interface LinkedLicence {
   /**
+   * The credential row this licence came from, where the caller has one.
+   *
+   * ⚠️ OPTIONAL, AND NO DERIVATION HERE READS IT. It exists so a caller that
+   * has already computed the licence set can say WHICH licence a derived
+   * competency date follows (credential-firearm-facets.ts) without building a
+   * second, differently-filtered set that could disagree with this one.
+   */
+  id?: string;
+  /**
    * ⚠️ OPTIONAL, AND deriveExpiry NEVER READS IT. The derivation takes the
    * latest expiry in the category; the section only decides how long a licence
    * RUNS, which is already baked into the expiry printed on the card. Making

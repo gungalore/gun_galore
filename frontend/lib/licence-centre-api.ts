@@ -78,6 +78,18 @@ export type ExpiryState =
   | 'unknown'
   | 'no-expiry';
 
+/**
+ * The four things a competency, a licence and a unit standard are all keyed
+ * on. Mirrors `FirearmCategory` in backend/src/common/sa-competency.ts — five
+ * names collapsed to four, because there is no separate unit standard for a
+ * self-loading handgun or a self-loading shotgun.
+ */
+export type FirearmCategory =
+  | 'handgun'
+  | 'rifle-carbine'
+  | 'shotgun'
+  | 'muzzle-loader';
+
 export interface CredentialRow {
   id: string;
   kind: CredentialKind;
@@ -167,6 +179,38 @@ export interface CredentialRow {
   dateSource: 'read' | 'derived' | null;
   /** The sentence saying where the date came from. Safe to show as-is. */
   dateSourceNote: string | null;
+
+  // ── what the document is ABOUT, rather than what it is ──────────────
+  //
+  // ⚠️ EVERY ONE OF THESE IS OPTIONAL, AND THAT IS NOT LAZINESS. The server
+  // that returns them is being deployed separately, so this page has to render
+  // against a list endpoint that has never heard of them: an older server
+  // simply omits the key, every reader below falls through to the behaviour it
+  // had before, and nothing throws. Do not tighten them to required until the
+  // backend they come from is live everywhere.
+
+  /**
+   * Which of the four firearm categories this document is about — a licence's
+   * firearm, a training certificate's unit standard.
+   *
+   * `null` is "the reading did not say", which is a different thing from a
+   * category we would name: it groups under "Category not read" and never
+   * guesses.
+   */
+  category?: FirearmCategory | null;
+  /** Self-loading, where the licence says so. Never inferred from the calibre. */
+  selfLoading?: boolean | null;
+  /**
+   * Every category a competency certificate covers, in the order printed.
+   *
+   * A certificate covering two appears ONCE, under the first, and says so on
+   * its own sub-line. Two rows for one page would be two annexures.
+   */
+  covers?: FirearmCategory[];
+  /** The licence a derived competency expiry was worked out from. */
+  follows?: { id: string; title: string } | null;
+  /** The unit standards a proficiency certificate names. */
+  unitStandards?: { code: string; title: string }[];
 }
 
 /** What came back from adding one document. */
