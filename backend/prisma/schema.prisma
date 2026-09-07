@@ -5709,3 +5709,113 @@ model AiUsage {
   // The per-purpose breakdown, which is the whole reason this table exists.
   @@index([purpose, createdAt])
 }
+
+// ────────────────────────────────────────────────────────────────────
+// SAPS STATION-LEVEL CRIME STATISTICS.
+//
+// SAPS publishes one Excel workbook a quarter on
+// https://www.saps.gov.za/services/crimestats.php — there is no API. Its
+// "RAW Data" sheet is station level: one row per station per crime category,
+// with a count for the same calendar quarter in each of the last five years.
+// The 2025-2026 Q4 workbook carries 1 174 stations × 44 categories = 51 656
+// rows, and five quarters each, so ~258 000 figures per release.
+//
+// We keep OUR OWN COPY per release rather than reading the workbook on
+// demand, because every figure here is a SUPPLIED FACT for the motivation
+// writer. A number in a member's document must stay checkable against a
+// named release long after SAPS has replaced the file on their website.
+// ────────────────────────────────────────────────────────────────────
+
+/// One SAPS workbook we have downloaded and loaded.
+model CrimeStatsRelease {
+  id String @id @default(cuid())
+
+  /// Derived from the file name, e.g. "2025-2026-Q4". Stable across re-runs,
+  /// which is what lets the weekly fetch skip a release it already holds.
+  key String @unique
+
+  sourceUrl String
+
+  /// ⚠️ UNIQUE, AND THAT IS THE SECOND HALF OF THE SKIP RULE. SAPS has
+  /// re-published a corrected workbook under the same file name before. The
+  /// key stops us re-loading the same release; the digest stops us silently
+  /// treating a CHANGED file as one we already have — a differing digest
+  /// under a held key is reported, never merged.
+  fileSha256 String @unique
+
+  /// Human wording for the newest quarter, e.g. "January to March 2026".
+  /// Quoted verbatim in a motivation, so it is stored as SAPS words it.
+  periodLabel String
+
+  /// The newest quarter in the file, e.g. "2026-Q1" (CALENDAR quarter — SAPS
+  /// calls January–March its "4th quarter" because their year starts in April).
+  latestPeriod String
+
+  fetchedAt DateTime @default(now())
+
+  /// Station rows accepted from "RAW Data" (Comp level = "Station").
+  rowCount Int @default(0)
+
+  /// 'loading' | 'ready' | 'failed'. Only 'ready' is ever read by a member
+  /// route: a half-inserted release must not be able to answer a question.
+  status String @default("loading")
+
+  /// The failure, for the admin panel. A failed release is retried on the
+  /// next run — it is left in the table precisely so somebody can see why.
+  error String?
+
+  figures CrimeStatsFigure[]
+
+  /// The "newest ready release" lookup, which every read starts with.
+  @@index([status, latestPeriod])
+}
+
+/// A police station precinct, as SAPS spells it.
+model CrimeStatsStation {
+  id String @id @default(cuid())
+
+  /// SAPS's own spelling, e.g. "Brooklyn". Never carries "SAPS" or
+  /// "Police Station" — see station-name.ts, which strips those off Google's
+  /// spelling to get back to this one.
+  name     String
+  district String
+  province String
+
+  figures CrimeStatsFigure[]
+
+  /// ⚠️ NOT unique on name alone. It happens to be in the 2025-2026 Q4
+  /// workbook (1 174 stations, no repeated name), but SAPS opens and renames
+  /// stations every year and two provinces sharing a name is the ordinary
+  /// case in South African place names. Province is the disambiguator the
+  /// nearest-station lookup already has from the geocode.
+  @@unique([name, province])
+  @@index([province])
+}
+
+/// One count: a station, a crime category and a calendar quarter, as read
+/// from one release. Held per release so a citation names a file.
+model CrimeStatsFigure {
+  id String @id @default(cuid())
+
+  releaseId String
+  release   CrimeStatsRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  stationId String
+  station   CrimeStatsStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  /// SAPS's category wording, e.g. "Robbery at residential premises".
+  category String
+
+  /// SAPS's own numeric code for the category, when the row carries one.
+  code Int?
+
+  /// Calendar quarter, e.g. "2026-Q1".
+  period String
+
+  count Int
+
+  @@unique([releaseId, stationId, category, period])
+  /// The precinct read: every category, every quarter, one station, one
+  /// release — a single index range scan.
+  @@index([stationId, releaseId])
+}

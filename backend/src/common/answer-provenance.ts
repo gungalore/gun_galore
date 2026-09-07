@@ -58,6 +58,17 @@ export type ProvenanceSource =
   /** Synced from the member's association profile — activity logs, membership. */
   | 'ASSOCIATION'
   /**
+   * Worked out by us from another answer, rather than copied off a document,
+   * a profile or an association — e.g. the nearest SAPS station, computed
+   * from `residential_address`. See MotivationPrefillService.stationOffer().
+   *
+   * Its own member because none of the above are honest about it: nothing
+   * was READ off a document uploaded to this application, and there is no
+   * VAULT row or PROFILE field behind it — it is arithmetic (or a lookup)
+   * over an answer the member already gave, on this same application.
+   */
+  | 'DERIVED'
+  /**
    * Typed or corrected by hand.
    *
    * ⚠️ ABSORBING, NOT ONE OF A SET. Every other member of this union describes
@@ -73,6 +84,7 @@ export const PROVENANCE_SOURCES: readonly ProvenanceSource[] = [
   'READ',
   'SELLER',
   'ASSOCIATION',
+  'DERIVED',
   'MEMBER',
 ] as const;
 
@@ -89,6 +101,7 @@ export const SOURCE_LABELS: Record<ProvenanceSource, string> = {
   READ: 'Read from your upload',
   SELLER: 'From the seller',
   ASSOCIATION: 'Synced from your association',
+  DERIVED: 'Worked out from your other answers',
   MEMBER: 'You entered this',
 };
 

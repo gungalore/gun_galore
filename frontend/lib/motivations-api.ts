@@ -763,6 +763,99 @@ export interface SaveAnswersResult {
   refused?: string[];
 }
 
+// ── SAPS crime stats — the station picker and precinct card ─────────
+//
+// The S13 "Your circumstances" step names the SAPS station nearest the
+// applicant's address, then shows what that precinct's own quarterly release
+// says. Three endpoints, none of them under `/motivations`, so they get their
+// own small request helper rather than borrowing the one above that always
+// prefixes `/motivations`.
+
+export interface CrimeStatsStation {
+  name: string;
+  district: string;
+  province: string;
+}
+
+/** What `/crime-stats/stations/nearest` answers for a given address. */
+export interface NearestStationResult {
+  station: CrimeStatsStation | null;
+  /** How the match was made — never shown to the member, useful in support. */
+  how: 'places' | 'name' | null;
+  candidates: CrimeStatsStation[];
+}
+
+export interface PrecinctPeriodCount {
+  period: string;
+  label: string;
+  count: number;
+}
+
+export interface PrecinctCategoryFigures {
+  category: string;
+  latest: PrecinctPeriodCount;
+  sameQuarterLastYear: PrecinctPeriodCount | null;
+  recent: PrecinctPeriodCount[];
+  yearOnYearPct: number | null;
+  lastTwelveMonths: number;
+  note?: string;
+}
+
+/** `GET /motivations/:id/precinct` — null when the station has no figures on file. */
+export interface PrecinctFigures {
+  station: CrimeStatsStation;
+  release: {
+    key: string;
+    periodLabel: string;
+    fetchedOn: string;
+    sourceUrl: string;
+  };
+  categories: PrecinctCategoryFigures[];
+}
+
+/**
+ * `/crime-stats/*` — a separate resource from `/motivations`, so this is a
+ * thin request helper of its own rather than a call to `request()` above.
+ *
+ * Fails to its fallback rather than throwing: a station search or a precinct
+ * lookup that cannot reach the server should leave the box the member is
+ * typing in alone, not crash the step they are on.
+ */
+async function crimeStatsRequest<T>(
+  getToken: TokenGetter,
+  path: string,
+  fallback: T,
+  signal?: AbortSignal,
+): Promise<T> {
+  const token = await getToken();
+  const res = await fetch(`${API_URL}${path}`, {
+    signal,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return fallback;
+  return safeJson<T>(res, fallback);
+}
+
+export const crimeStatsApi = {
+  /** Live search as the member types. `q` is sent as given — debounce lives in the caller. */
+  stations: (t: TokenGetter, q: string, signal?: AbortSignal) =>
+    crimeStatsRequest<{ stations: CrimeStatsStation[] }>(
+      t,
+      `/crime-stats/stations?q=${encodeURIComponent(q)}`,
+      { stations: [] },
+      signal,
+    ),
+
+  /** What the server itself would prefill from an address — not called by the picker directly. */
+  nearestStation: (t: TokenGetter, address: string, signal?: AbortSignal) =>
+    crimeStatsRequest<NearestStationResult>(
+      t,
+      `/crime-stats/stations/nearest?address=${encodeURIComponent(address)}`,
+      { station: null, how: null, candidates: [] },
+      signal,
+    ),
+};
+
 export const motivationsApi = {
   /**
    * Whether the module is open, and whether a new one can be started.
@@ -801,6 +894,15 @@ export const motivationsApi = {
     }),
 
   get: (t: TokenGetter, id: string) => request<MotivationDetail>(t, `/${id}`),
+
+  /**
+   * What the precinct named in `police_station` has actually recorded, per
+   * the latest SAPS quarterly release. Null once there is no station chosen
+   * yet, or none on file for the one that is — both render the same quiet
+   * empty state, never an error.
+   */
+  precinct: (t: TokenGetter, id: string, signal?: AbortSignal) =>
+    request<PrecinctFigures | null>(t, `/${id}/precinct`, { signal }, null),
 
   /**
    * ⚠️ `refused` IS NOT COSMETIC. It names registered fields whose value the

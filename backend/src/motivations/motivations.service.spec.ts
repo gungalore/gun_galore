@@ -249,6 +249,20 @@ function build(
     find: jest.fn(() => null),
     fetchAndStore: jest.fn(async () => null),
   };
+  // The SAPS precinct lookup. Stubbed to "found nothing" so no test in this
+  // file depends on it — the whole point of stationOffer()/precinctFor()
+  // being fail-soft is that a motivation still works when this returns
+  // nothing, and a suite that made a real lookup would need the workbook.
+  const crimeStats = {
+    latestRelease: jest.fn(async (): Promise<any> => null),
+    searchStations: jest.fn(async (): Promise<any[]> => []),
+    nearestStation: jest.fn(async (): Promise<any> => ({
+      station: null,
+      how: null,
+      candidates: [],
+    })),
+    precinct: jest.fn(async (): Promise<any> => null),
+  };
   // Character witnesses. Stubbed to an empty list so no test in this file
   // reaches the SMS rail — an invite spends a real message, and a unit
   // suite that sends one is a unit suite with a bill.
@@ -278,6 +292,7 @@ function build(
     prisma as never,
     quota as never,
     shared,
+    crimeStats as never,
   );
   const documents = new MotivationDocumentsService(
     prisma as never,
@@ -305,6 +320,7 @@ function build(
     // gate branches, so every generation test in this file goes through it.
     notifications as never,
     shared,
+    crimeStats as never,
   );
   const render = new MotivationRenderService(
     prisma as never,
@@ -350,6 +366,7 @@ function build(
     settings,
     notifications,
     extract,
+    crimeStats,
   };
 }
 
@@ -1689,6 +1706,66 @@ describe('provenance', () => {
     });
   });
 
+  describe('the nearest SAPS station, filled from the address', () => {
+    const withAddress = () => {
+      const { svc, prisma, crimeStats } = build();
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        email: 'applicant@example.co.za',
+        phone: '0820000000',
+        firstName: 'Gerhard',
+        addrStreet: '12 Kerk Street',
+        addrSuburb: 'Universitas',
+        addrCity: 'Bloemfontein',
+        addrProvince: 'Free State',
+      });
+      crimeStats.nearestStation.mockResolvedValue({
+        station: {
+          name: 'Park Road',
+          district: 'Bloemfontein',
+          province: 'Free State',
+        },
+        how: 'places',
+        candidates: [],
+      });
+      return { svc, prisma, crimeStats };
+    };
+
+    it('writes the station and its province, stamped DERIVED', async () => {
+      const { svc, prisma } = withAddress();
+      await svc.create('c1', MotivationLicenceType.S13_SELF_DEFENCE);
+
+      const data = prisma.motivation.create.mock.calls[0][0].data;
+      const answers = decryptJson<Record<string, string>>(data.answersEncrypted);
+      expect(answers.police_station).toBe('Park Road');
+      expect(answers.police_station_province).toBe('Free State');
+
+      const map = written(prisma) as any;
+      expect(map.police_station.source).toBe('DERIVED');
+      expect(map.police_station_province.source).toBe('DERIVED');
+    });
+
+    it('never asks CrimeStatsService on any other licence type', async () => {
+      const { svc, crimeStats } = withAddress();
+      await svc.create('c1', MotivationLicenceType.S16_DEDICATED_SPORT);
+      expect(crimeStats.nearestStation).not.toHaveBeenCalled();
+    });
+
+    it('leaves the field blank rather than throw when the lookup fails', async () => {
+      const { svc, prisma, crimeStats } = withAddress();
+      crimeStats.nearestStation.mockRejectedValueOnce(new Error('places down'));
+
+      await expect(
+        svc.create('c1', MotivationLicenceType.S13_SELF_DEFENCE),
+      ).resolves.toBeDefined();
+      const data = prisma.motivation.create.mock.calls[0][0].data;
+      const answers = decryptJson<Record<string, string>>(
+        data.answersEncrypted ?? encryptJson({}),
+      );
+      expect(answers.police_station ?? '').toBe('');
+    });
+  });
+
   describe('saveAnswers', () => {
     const draft = (answers: Record<string, string>, provenance: unknown) => ({
       id: 'mo-1',
@@ -1784,6 +1861,68 @@ describe('provenance', () => {
         svc.saveAnswers('c1', 'mo-1', { firearm_make: 'Brno' }),
       ).resolves.toBeDefined();
       expect(updated(prisma).firearm_make.source).toBe('MEMBER');
+    });
+
+    describe('the nearest SAPS station, kept in step with the address', () => {
+      const s13Draft = (answers: Record<string, string>) => ({
+        id: 'mo-1',
+        licenceType: MotivationLicenceType.S13_SELF_DEFENCE,
+        status: MotivationStatus.DRAFT,
+        answersEncrypted: encryptJson(answers),
+        answerProvenance: null,
+      });
+
+      it('re-derives the station when the address changes and none is stored', async () => {
+        const { svc, prisma, crimeStats } = build();
+        prisma.motivation.findFirst.mockResolvedValueOnce(s13Draft({}));
+        crimeStats.nearestStation.mockResolvedValue({
+          station: { name: 'Brooklyn', district: 'Pretoria', province: 'Gauteng' },
+          how: 'places',
+          candidates: [],
+        });
+
+        await svc.saveAnswers('c1', 'mo-1', {
+          residential_address: '1 Middel Street, Brooklyn, Pretoria',
+        });
+
+        const data = prisma.motivation.update.mock.calls[0][0].data;
+        const answers = decryptJson<Record<string, string>>(data.answersEncrypted);
+        expect(answers.police_station).toBe('Brooklyn');
+        expect(answers.police_station_province).toBe('Gauteng');
+
+        const map = updated(prisma) as any;
+        expect(map.police_station.source).toBe('DERIVED');
+        // The member's own edit is still stamped MEMBER — the derivation is
+        // additive, not a replacement for the normal changed-key logic.
+        expect(map.residential_address.source).toBe('MEMBER');
+      });
+
+      it('never overwrites a station the member already typed', async () => {
+        const { svc, prisma, crimeStats } = build();
+        prisma.motivation.findFirst.mockResolvedValueOnce(
+          s13Draft({ police_station: 'Sunnyside' }),
+        );
+
+        await svc.saveAnswers('c1', 'mo-1', {
+          residential_address: '1 Middel Street, Brooklyn, Pretoria',
+        });
+
+        expect(crimeStats.nearestStation).not.toHaveBeenCalled();
+        const data = prisma.motivation.update.mock.calls[0][0].data;
+        const answers = decryptJson<Record<string, string>>(data.answersEncrypted);
+        expect(answers.police_station).toBe('Sunnyside');
+      });
+
+      it('does nothing when the address was not the field that changed', async () => {
+        const { svc, prisma, crimeStats } = build();
+        prisma.motivation.findFirst.mockResolvedValueOnce(
+          s13Draft({ residential_address: 'Already on file' }),
+        );
+
+        await svc.saveAnswers('c1', 'mo-1', { occupation: 'Farmer' });
+
+        expect(crimeStats.nearestStation).not.toHaveBeenCalled();
+      });
     });
   });
 

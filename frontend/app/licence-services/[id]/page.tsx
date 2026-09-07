@@ -1468,6 +1468,8 @@ function StepBody({
           provenance={pack.provenance}
           missing={missing}
           onChange={onChange}
+          motivationId={motivationId}
+          getToken={token}
         />
       ) : stepFields.length > 0 ? (
         // A document being read: every line with where its value came from.

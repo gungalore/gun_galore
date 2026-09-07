@@ -36,7 +36,11 @@ import { ENDORSEMENT_LABELS } from '../common/sa-competency';
 // the version moves — that is the rule above, and it holds even for a key no
 // applicant ever answers, because "which registry wrote this blob" is exactly
 // the question a stored answer nobody typed makes somebody ask later.
-export const FIELD_REGISTRY_VERSION = '2026-09-06';
+//
+// 2026-09-07: police_station and police_station_province added to
+// S13_SELF_DEFENCE, for the SAPS precinct crime figures a self-defence
+// motivation annexes. See CrimeStatsService.
+export const FIELD_REGISTRY_VERSION = '2026-09-07';
 
 // ── THE SAPS 271 IS AN OPT-IN EXTRA, NOT THE PRODUCT ────────────────
 //
@@ -1801,6 +1805,51 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       section: 'Your circumstances',
       help: 'Alarms, armed response, changed routines, relocation. Shows a firearm is not the first thing you reached for.',
       maxLength: 2000,
+    },
+    // ── SAPS PRECINCT CRIME FIGURES ─────────────────────────────────
+    //
+    // Operator, 2026-09-07: "is it possible for us to pull the per police
+    // station crime stats from SAPS and keep it updated?" The professional
+    // motivations we studied all annex the precinct's own figures behind a
+    // self-defence application — a general "crime is bad" claim carries no
+    // weight (see threat_circumstances' own help text), but SAPS' own count
+    // for the station the applicant actually reports to does. See
+    // MotivationGenerationService, which fetches CrimeStatsService.precinct()
+    // for this station at generation time.
+    //
+    // NOT required — MotivationPrefillService.stationOffer() fills it from
+    // the residential address automatically (CLAUDE.md "Automate It — Do Not
+    // Ask"), and a member who has not yet reached that point, or whose
+    // address does not resolve to a station, must still be able to generate.
+    {
+      key: 'police_station',
+      label: 'Your nearest police station',
+      kind: 'short',
+      section: 'Your circumstances',
+      help: 'The station whose figures will be cited. We fill this in from your address — change it if it is not the one you actually report to.',
+      maxLength: 120,
+    },
+    // ⚠️ A FINDING WE MADE, CARRIED ON THE APPLICATION — NOT A QUESTION. See
+    // COMPETENCY_RENEWS_KEY for the two-gate trick this reuses: formOnly hides
+    // it on the dealer path, and a showIf that can never be true on the fill
+    // path hides it there too — no answer satisfies both, so this is never
+    // asked, on either side, with no new "internal field" concept to keep in
+    // step across the wizard's own mirror of isVisible().
+    //
+    // Written by MotivationPrefillService.stationOffer() the moment it
+    // resolves `police_station`, and read back by CrimeStatsService.precinct()
+    // at generation time. It has to travel WITH the station name: SAPS station
+    // names are unique per province, not nationwide (see CrimeStatsStation),
+    // so "Brooklyn" alone is ambiguous and the wrong province's Brooklyn would
+    // cite the wrong precinct's figures on a signed application.
+    {
+      key: 'police_station_province',
+      label: 'Province of your nearest police station',
+      kind: 'short',
+      section: 'Your circumstances',
+      formOnly: true,
+      showIf: { key: SAPS271_OPT_KEY, equals: SAPS271_DEALER },
+      maxLength: 60,
     },
   ],
   S15_OCCASIONAL_HUNTER: [

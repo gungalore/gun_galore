@@ -32,6 +32,12 @@ export interface CrimeStatsRelease {
   key: string;
   /** The period the release's latest quarter covers, e.g. "January to March 2026". */
   periodLabel: string;
+  /**
+   * The same quarter as a key, e.g. "2026-Q1". CALENDAR, not SAPS's own
+   * numbering - their financial year starts in April, so the file they call
+   * their 4th quarter is January to March.
+   */
+  latestPeriod: string;
   /** ISO day the file was seen on the SAPS page. */
   fetchedOn: string;
   sourceUrl: string;
@@ -54,8 +60,20 @@ export interface PrecinctCategory {
   recent: QuarterCount[];
   /** Latest vs same quarter last year; null when either is missing or zero. */
   yearOnYearPct: number | null;
-  /** Sum of the four most recent quarters. */
+  /** Sum of the four consecutive quarters ending at `latest`. */
   lastTwelveMonths: number;
+  /**
+   * Present when `lastTwelveMonths` is NOT a clean four-quarter year, or when
+   * a quarter came from a release other than the cited one.
+   *
+   * ⚠️ THIS FIELD IS THE HONEST HALF OF `lastTwelveMonths`. One SAPS
+   * workbook compares the SAME calendar quarter across five years - the
+   * 2025-2026 Q4 file holds January-March for 2022 to 2026 and nothing else -
+   * so a release on its own can never produce twelve consecutive months. Quote
+   * the total without the note and a motivation says "over the last four
+   * quarters" about four consecutive Januaries.
+   */
+  note?: string;
 }
 
 export interface PrecinctFigures {

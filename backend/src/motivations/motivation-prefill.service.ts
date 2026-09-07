@@ -4,8 +4,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { MotivationUploadKind } from '@prisma/client';
+import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CrimeStatsService } from '../crime-stats/crime-stats.service';
 import { encryptJson, decryptJson } from '../common/blob-crypto';
 import {
   ProvenanceMap,
@@ -51,6 +52,7 @@ export class MotivationPrefillService {
     private readonly prisma: PrismaService,
     private readonly quota: MotivationQuotaService,
     private readonly shared: MotivationSharedService,
+    private readonly crimeStats: CrimeStatsService,
   ) {}
 
   // ────────────────────────────────────────────────────────────────
@@ -306,6 +308,62 @@ export class MotivationPrefillService {
           : null,
       })),
     );
+  }
+
+  // ── the nearest SAPS station ───────────────────────────────────────
+  //
+  // Operator, 2026-09-07: "is it possible for us to pull the per police
+  // station crime stats from SAPS and keep it updated?" The precinct figures
+  // themselves are fetched at generation time (MotivationGenerationService),
+  // but the STATION has to be on the form before that — a member should see,
+  // and be free to correct, which station will be cited well before they
+  // ever reach Generate.
+  //
+  // Automatic, per CLAUDE.md "Automate It — Do Not Ask": the operator's own
+  // words on that rule are "insert it, don't wait for the user to go and
+  // confirm it... No further user interaction required." A confirm step in
+  // front of a value we can already work out is work invented for the member.
+  //
+  /**
+   * The nearest SAPS station to a self-defence applicant's address.
+   *
+   * `null` on every path that should not overwrite anything: not a
+   * self-defence application, no address yet, `police_station` already has a
+   * value (a member's own correction OR an earlier automatic fill — either
+   * way this must not clobber it), or the lookup found nothing / failed.
+   *
+   * ⚠️ FAIL-SOFT LIKE EVERY OTHER PREFILL SOURCE ABOVE. A Places outage or a
+   * name that matches no station costs the member one text box to fill in
+   * themselves — it must never cost them the ability to start or edit the
+   * application.
+   */
+  async stationOffer(
+    licenceType: MotivationLicenceType,
+    answers: Record<string, string>,
+  ): Promise<{ station: string; province: string; from: string } | null> {
+    if (licenceType !== MotivationLicenceType.S13_SELF_DEFENCE) return null;
+    if ((answers.police_station ?? '').trim()) return null;
+    const address = (answers.residential_address ?? '').trim();
+    if (!address) return null;
+
+    try {
+      const result = await this.crimeStats.nearestStation(address);
+      if (!result.station) return null;
+      return {
+        station: result.station.name,
+        province: result.station.province,
+        // ⚠️ THE MEMBER MUST BE ABLE TO TELL THIS WAS A GUESS. "The one you
+        // report to" is not always the one geographically nearest — see
+        // NearestStationResult.candidates, which the wizard's picker offers
+        // as alternatives.
+        from: 'Nearest SAPS station to your address — change it if it is not the one you report to',
+      };
+    } catch (err) {
+      this.logger.warn(
+        `Nearest-station prefill skipped — ${(err as Error).message}`,
+      );
+      return null;
+    }
   }
 
   private async choicesFor(
