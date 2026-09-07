@@ -642,6 +642,51 @@ export default function LicenceServicesWizardPage() {
   }, [token, id, refreshDocs, loadLibrary, labelForKey]);
 
   /**
+   * The SAPS 271 opt-in un-hides the barrel / frame / receiver / serial
+   * boxes — and the common order is upload the firearm's OWN licence first,
+   * before this question is even reached. The server no longer discards a
+   * reading for arriving early (motivation-documents.service.ts keeps every
+   * readable field regardless of visibility), but nothing offered it back
+   * either: those boxes still looked empty even though a document already on
+   * file answered them. Operator, 2026-09-07: "why can't it just cache the
+   * information until I make a selection".
+   *
+   * Same trick as onScanArrived just above: readingFor costs no vision call,
+   * so it is safe to ask for every attached document, and anything already
+   * stored is offered through the ordinary review rather than written
+   * straight in — same rule as everywhere else a reading meets an answer.
+   */
+  const checkPriorReadings = useCallback(async () => {
+    try {
+      const readings = await Promise.all(
+        uploadsRef.current.map((u) => motivationsApi.readingFor(token, id, u.id)),
+      );
+      const read = readings
+        .flatMap((r) => r.suggestions)
+        .filter((sg) => sg.value && !(answersRef.current[sg.key] ?? '').trim())
+        .map((sg) => ({
+          key: sg.key,
+          value: sg.value,
+          label: labelForKey(sg.key),
+          from: 'Read off a document you already uploaded',
+          trusted: true,
+        }));
+      if (read.length) setSuggestions((cur) => mergeReads(cur, read));
+    } catch {
+      // Same rule as onScanArrived: a refresh that did not finish costs a
+      // reload, never the documents.
+    }
+  }, [token, id, labelForKey]);
+
+  // Fires once per genuine transition to "Fill it in for me" — the ONLY gate
+  // these fields hang off — not on every keystroke elsewhere on the form.
+  const fillSaps271Answer = answers[SAPS271_OPT_KEY];
+  useEffect(() => {
+    if (fillSaps271Answer !== SAPS271_FILL) return;
+    void checkPriorReadings();
+  }, [fillSaps271Answer, checkPriorReadings]);
+
+  /**
    * Attach what the Document Centre already holds, once, without being asked.
    *
    * ⚠️ THE REF IS THE POINT. Effects re-run; a second autolink would attach

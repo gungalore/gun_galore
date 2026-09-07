@@ -1895,6 +1895,16 @@ export class MotivationDocumentsService {
       // ⚠️ AND IT NEVER OVERWRITES THE KIND EXTRACTOR. Those suggestions came
       // from a document we had identified; these came from one we had not. On
       // a key both produced, the identified read wins.
+      // ⚠️ WHAT GETS PERSISTED, NOT JUST WHAT GETS OFFERED RIGHT NOW. Starts
+      // as a copy of `suggestions` and gains every readable firearm field
+      // below, visible or not — see the note inside the loop for why. The
+      // immediate response still only offers what the applicant can see;
+      // `readable` is what survives to the row, so nothing read is thrown
+      // away for having arrived before an unrelated question was answered.
+      // Named apart from the file-storage `stored` above — same word, a
+      // different thing, already taken in this scope.
+      const readable: ExtractedField[] = [...suggestions];
+
       if (
         !opts.skipExtraction &&
         MotivationExtractService.readsFirearm(resolved)
@@ -1905,12 +1915,26 @@ export class MotivationDocumentsService {
             mimeType: file.mimetype,
           });
           const already = new Set(suggestions.map((f) => f.key));
-          // ⚠️ ONLY FIELDS THE APPLICANT CAN ACTUALLY SEE. Six of the firearm
+          // ⚠️ VISIBLE GATES THE OFFER, NOT THE STORE. Six of the firearm
           // fields (the barrel / frame / receiver rows and their makes) are
-          // formOnly, so they exist only once somebody has opted into having
-          // the SAPS 271 filled. Offering a value for a box that is not on
-          // screen produces a "we read 7 things" panel listing fields the
-          // applicant cannot find, which reads as the feature being broken.
+          // formOnly, so they exist as a QUESTION only once somebody has
+          // opted into having the SAPS 271 filled. Offering a value for a box
+          // that is not on screen produces a "we read 7 things" panel listing
+          // fields the applicant cannot find, which reads as the feature
+          // being broken — so the offer below stays gated on `visible`.
+          //
+          // ⚠️ BUT THE COMMON ORDER IS UPLOAD THE FIREARM'S OWN LICENCE
+          // FIRST — before the applicant has even reached the SAPS 271
+          // question — and this used to DROP the invisible fields instead of
+          // just not offering them yet. Nothing re-reads a document once it
+          // is attached, so a serial read off the very first thing an
+          // applicant uploads was gone for good by the time they answered
+          // the question that would have shown it. Operator, 2026-09-07:
+          // "why can't it just cache the information until I make a
+          // selection". `readable` below is that cache — everything readable
+          // is kept regardless of visibility, and GET
+          // :id/uploads/:uploadId/reading (readingFor) already serves the
+          // full stored reading back on demand once a field becomes visible.
           //
           // isVisible also covers the conditional fields generally, so this
           // stays correct if any firearm field later hangs off a showIf.
@@ -1921,7 +1945,7 @@ export class MotivationDocumentsService {
               .map((f) => f.key),
           );
           for (const [key, raw] of Object.entries(firearm)) {
-            if (already.has(key) || !visible.has(key)) continue;
+            if (already.has(key)) continue;
             // ⚠️ AND NEVER THE CARD'S OWN "NOTHING HERE". This loop had no
             // guard at all, so a licence reading "Frame Serial No NONE" — the
             // card being complete, not a serial — became a proposed answer.
@@ -1929,7 +1953,7 @@ export class MotivationDocumentsService {
             // barrel serial NONE". Absent stays absent.
             const value = answerValue(raw);
             if (!value) continue;
-            suggestions.push({
+            const field = {
               key,
               value,
               // Read without knowing what the document is, so it is offered
@@ -1937,7 +1961,9 @@ export class MotivationDocumentsService {
               // trusted outright.
               trusted: false,
               note: 'Read off the document you uploaded — check it against the paperwork.',
-            } as (typeof suggestions)[number]);
+            } as (typeof suggestions)[number];
+            readable.push(field);
+            if (visible.has(key)) suggestions.push(field);
           }
         } catch (err) {
           // Same rule as above: a failed read costs the convenience, never
@@ -1948,8 +1974,8 @@ export class MotivationDocumentsService {
         }
       }
 
-      // PERSIST WHAT WAS ACTUALLY READ — AFTER BOTH PASSES, NOT AFTER THE
-      // FIRST ONE.
+      // PERSIST WHAT WAS ACTUALLY READ — AFTER BOTH PASSES, AND EVERYTHING
+      // READABLE, NOT JUST WHAT IS ON SCREEN RIGHT NOW.
       //
       // ⚠️ MOVED HERE 2026-09-07. This used to write immediately after the
       // kind-based extract() above, before the firearm second pass even ran —
@@ -1964,7 +1990,18 @@ export class MotivationDocumentsService {
       // off extractionOk, so a member whose serial genuinely got read was
       // shown a requirement the system claims is unmet.
       //
-      // Same gate as before — write only where at least one pass was
+      // ⚠️ AND `readable`, NOT `suggestions` — same date, same operator.
+      // Storing only what was OFFERED meant a field hidden behind the SAPS
+      // 271 opt-in was gone the moment this request ended, however
+      // visibility changed afterwards: nothing re-reads a document once it
+      // is attached. `readable` carries every readable field regardless of
+      // visibility; `suggestions` (used for the response returned to THIS
+      // request) stays visibility-gated so the confirmation panel never
+      // lists a box the applicant cannot find. readingFor() serves the full
+      // stored row back once a field becomes visible, from GET
+      // :id/uploads/:uploadId/reading.
+      //
+      // Same attempt-gate as before — write only where at least one pass was
       // actually attempted, so a kind neither reads (a safe photograph, a
       // proof of address) gets no write at all, same as it always has.
       if (
@@ -1976,13 +2013,13 @@ export class MotivationDocumentsService {
           await this.prisma.motivationUpload.update({
             where: { id: created.id },
             data: {
-              extractionOk: suggestions.length > 0,
+              extractionOk: readable.length > 0,
               // KEYS only in the clear — the registry is not PII, the values
               // are. The values themselves are encrypted.
-              extractedFields: suggestions.map((f) => f.key),
-              extractionEncrypted: suggestions.length
+              extractedFields: readable.map((f) => f.key),
+              extractionEncrypted: readable.length
                 ? encryptJson(
-                    Object.fromEntries(suggestions.map((f) => [f.key, f.value])),
+                    Object.fromEntries(readable.map((f) => [f.key, f.value])),
                   )
                 : null,
             },
