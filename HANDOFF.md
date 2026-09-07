@@ -12,12 +12,12 @@ Last updated: **2026-09-07**.
 
 | | |
 |---|---|
-| Production runs | `c647f93` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | `8101c5b3` — one docs commit ahead of the box, which nothing on the server reads |
-| Feature branch | `feat/the-bench` |
+| Production runs | `181d45bd` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `181d45bd` |
+| Feature branch | `feat/the-bench` — same tip as the deploy branch, fast-forwarded in |
 | Migrations | 64, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
-| Last pre-deploy dump | `alloutdoor-20260907-165840.dump` |
+| Last pre-deploy dump | `alloutdoor-20260907-190417.dump` |
 
 **The platform is not trading.** 2 users, 2 listings, **0 transactions**, 1
 motivation, 20 credentials. Nothing has ever been sold. Checkout returns 503
@@ -25,11 +25,8 @@ because `PAYMENT_MODE` and `PAYMENTS_LIVE` are both unset.
 
 ### Worktrees — read this before running git
 
-**One worktree: `C:/dev/gun-galore`.** The `gg-deploy` and `gg-scanner`
-worktrees were removed on 2026-09-07 at the operator's instruction, so a session
-can pick up where the last one left off. Both were clean; no work was lost, and
-every branch survived. Check out whatever branch you need here, including
-`feat/takealot-ux-parity` when you deploy.
+**One worktree: `C:/dev/gun-galore`.** Check out whatever branch you need here,
+including `feat/takealot-ux-parity` when you deploy.
 
 ⚠️ **`feat/scanner-tracking` (df5ce66c) exists only locally and has never been
 pushed.** It is the one branch with no copy anywhere else.
@@ -38,37 +35,33 @@ pushed.** It is the one branch with no copy anywhere else.
 
 ## What the last session did
 
-**Drove sections 15, 16 (hunter and sport) and 24 of the licence builder end to
-end and fixed what four audits found.** Shipped as `e0c153c8`, merged as
-`c647f933`, deployed. Highlights:
+**Two fixes to the motivation pipeline, deployed as `181d45bd`.**
 
-- Section 15 was scored against dedicated status, on the one licence type defined
-  by not having it.
-- A dedicated hunter's papers satisfied a dedicated **sport** application; the
-  discipline was read off the document and then dropped. It is now read from
-  `status_type` and filtered per licence type.
-- The wizard told applicants the association **endorsement** is the sworn
-  statement s16(2) requires. It is the letter of good standing.
-- `discipline_other` was **required and unaskable at the same time** — a multi
-  field compared as a whole string, so picking "something else" beside any real
-  discipline hid the box asking what it is.
-- A renewal was asked where a firearm it already owns is coming from, and offered
-  the SAPS 271 (which is for new licences); answering yes opened ~48 questions and
-  then failed.
-- The renewal seed wrote two retired keys, left model and expiry blank with both
-  in hand, showed two different serials for one firearm, let a card's printed
-  "NONE" through as a serial, and put every unreadable-number licence on the same
-  application reference so the second renewal silently opened the first one's pack.
-- The dedicated-status panel could never reach 100%; a step went green while an
-  expected-tier document was missing; every empty row printed its status twice.
-- The closing paragraph of **every** motivation asked for "a licence under section
-  16 … for dedicated sport shooting" — right for one licence type in five.
+1. **The "firearms already licensed to me" table now prints Make, Calibre,
+   Serial number, Date of expiry** — operator instruction, replacing the old
+   Type and licence-number "Held under" columns. `existingFirearms()` in
+   `motivation-render.service.ts` now reads the serial through
+   `ownedFirearmSerial()` (the one canonical reader, per its own header
+   comment) instead of a raw answer key, and `motivation-pdf.service.ts`'s
+   table definition changed from `make/calibre/type/section` to
+   `make/calibre/serial/expiry`.
 
-**Then rewrote `CLAUDE.md`** from 2,734 lines to ~1,090, verified section by
-section against the running system by a ten-agent audit. It had drifted in both
-directions: documenting Featured Slots (no route since 2026-08-26) and the retired
-dark theme, while barely mentioning The Bench, the Desk, Warden, the Licence
-Centre or the Motivations builder.
+2. **Fixed a resume-to-the-wrong-UI bug.** `NEXT_PUBLIC_LICENCE_SERVICES_ENABLED`
+   is `true` in production, so `PACK_SCREEN_SHIPPED` is `true` — but three links
+   that decide where a "continue this application" click lands checked
+   `PACK_SCREEN_SHIPPED` directly instead of `canOpenPackScreen()`:
+   `app/motivations/page.tsx`'s Centre list, `licence-centre-motivations.tsx`'s
+   Document Centre panel, and `credential-card.tsx`'s section-24 renewal button
+   and its "Used in" link. All three now call `canOpenPackScreen()`, matching
+   `/licence-services/new`. (The redirect-on-mismatch guard already inside
+   `/licence-services/[id]/page.tsx` was correct all along — it wasn't
+   involved in what the operator hit; the raw-flag checks were.)
+
+Full deploy (diff touched `backend/`, so `--frontend-only` was not an option).
+tsc clean both sides, backend tests 4015/4027 passed (8 skipped, 4 todo, 0
+failed), frontend tests 1675/1676 passed (1 skipped, 0 failed), frontend build
+exit 0. `deploy.sh` ran clean end to end: no pending migrations, backend health
+×2, frontend health ×2, warden reloaded and online, public site 200 ×2.
 
 ---
 
@@ -113,12 +106,11 @@ Centre or the Motivations builder.
 
 ### Unverified — someone has to look outside the repo
 
-9. **Whether Absolute Hosting takes any snapshot of this box is unknown.** The
-   old file asserted "Vultr daily snapshots", which was wrong twice over — wrong
-   provider, and unverified. This matters: backups are written to the **same
-   disk** as the originals and there are no off-box copies, so a provider-side
-   snapshot may be the only thing between the operator and total loss. Ask
-   Absolute Hosting what the plan actually includes.
+9. **Whether Absolute Hosting takes any snapshot of this box is unknown.** This
+   matters: backups are written to the **same disk** as the originals and there
+   are no off-box copies, so a provider-side snapshot may be the only thing
+   between the operator and total loss. Ask Absolute Hosting what the plan
+   actually includes.
 10. **UptimeRobot monitors** are asserted but unconfirmed.
 11. **The monthly backup restore test** is asserted and has no log. An untested
     backup regime that a document claims is tested is worse than one that admits
@@ -135,18 +127,32 @@ Centre or the Motivations builder.
 
 ## Traps found the hard way this session
 
+- **A build-time flag being `true` does not mean every entry point checks it the
+  same way.** `PACK_SCREEN_SHIPPED` is `true` in production, but
+  `canOpenPackScreen()` is `PACK_SCREEN_SHIPPED || readPreviewOptIn(search)` —
+  checking the raw flag alone still passes here, so this specific bug was never
+  about the flag's value. It was that three separate `href`/`router.push` call
+  sites had each hand-rolled the same `PACK_SCREEN_SHIPPED ? a : b` ternary
+  instead of importing `canOpenPackScreen()`, and one of them will drift the
+  next time this decision needs a second input. If a fourth entry point to a
+  motivation gets added, grep for `PACK_SCREEN_SHIPPED` used bare before wiring
+  its link.
+- **`npx jest` / `npx tsc` from the wrong cwd fails silently-ish.** Running a
+  git or npm command from `frontend/` when you meant the repo root doesn't
+  error clearly — `git add <path>` just says "did not match any files". Check
+  `pwd` when a path-based command behaves unexpectedly after `cd`-ing for an
+  unrelated build/test step earlier in the session.
 - **`npx jest` is not how the backend runs tests.** `package.json` supplies
   `node --experimental-vm-modules`; without it a PDF spec fails 16 times in a way
   that reads exactly like a real regression. Use `npm test -- <path>`.
+- **The frontend does not use Jest at all — it's vitest**, invoked through
+  `npm test`, not `npx jest`. `npx jest` against this repo pulls a generic
+  babel config from the npx cache and fails to parse `type` imports; it looks
+  like a real syntax error in the test file until you notice the runner.
 - **A `.spec.ts` under `frontend/components/` is never collected.** The vitest
   include is `components/**/*.spec.tsx` — note the x. A component spec written as
   `.spec.ts` reports "No test files found" and passes CI by not existing.
 - **`deploy.sh` runs no tests and no type-check.** The pre-deploy gate is manual.
-- **A gate that contradicts itself was "simplified" and had to be put back.**
-  `competency_renews_with_licence` is hidden by `formOnly` **and** a `showIf`
-  wanting the opposite path. With the 271 opt-in unasked for renewals it looked
-  like one gate would do — but `isVisible` takes no licence type and the key is
-  still accepted, so an answer can arrive and open it.
 
 ---
 
