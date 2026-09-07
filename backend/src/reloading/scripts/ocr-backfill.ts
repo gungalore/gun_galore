@@ -1,8 +1,8 @@
 /**
  * OCR BACKFILL — standalone, NOT wired into app boot.
  *
- * Re-extracts page text from reloading-manual PDFs using Anthropic
- * vision OCR, for manuals where pdf-parse produced nothing (scanned /
+ * Re-extracts page text from reloading-manual PDFs using the platform's
+ * model, for manuals where pdf-parse produced nothing (scanned /
  * image-only PDFs land with zero non-empty extractedText rows). The
  * transcribed text is written back into ReloadingManualPage and the
  * manual is flagged ocr=true + status ACTIVE so Ask GG can search it.
@@ -13,10 +13,18 @@
  *
  *   Env:
  *     DATABASE_URL                 — Postgres connection (required)
- *     ANTHROPIC_API_KEY            — Claude key (required)
- *     ANTHROPIC_MODEL_JUDGE        — model override (default claude-sonnet-4-6)
+ *     GEMINI_API_KEY               — provider key (required)
+ *     LLM_MODEL                    — model override (default gemini-2.5-flash-lite)
  *     RELOADING_MANUALS_STORAGE_DIR — manuals dir (default ../manuals, mirrors the service)
- *     OCR_CHUNK_PAGES              — pages per Claude call (default 15)
+ *     OCR_CHUNK_PAGES              — pages per model call (default 15)
+ *
+ * ⚠️ THIS SCRIPT TALKS TO THE PROVIDER DIRECTLY, and it is the only file in
+ * the migration that does. It boots no Nest container — it owns its own
+ * PrismaClient and runs under ts-node — so it cannot inject LlmService, and
+ * standing one up for a one-shot backfill would mean booting the app. The
+ * shape below is deliberately the smallest possible mirror of what
+ * LlmService.complete does for a document + JSON call. If it drifts from the
+ * adapter, the adapter is right.
  *
  * Idempotent + resumable PER MANUAL: each manual's pages are
  * delete+recreated in one pass (mirrors ReloadingService.retryExtraction).
@@ -29,7 +37,7 @@
 import 'dotenv/config';
 import { PrismaClient, ReloadingManualStatus } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
@@ -37,25 +45,25 @@ import { PDFDocument } from 'pdf-lib';
 const STORAGE_DIR =
   process.env.RELOADING_MANUALS_STORAGE_DIR ??
   path.resolve(process.cwd(), '..', 'manuals');
-const MODEL = process.env.ANTHROPIC_MODEL_JUDGE ?? 'claude-sonnet-4-6';
+const MODEL = process.env.LLM_MODEL ?? 'gemini-2.5-flash-lite';
 const CHUNK_PAGES = Math.max(
   1,
   parseInt(process.env.OCR_CHUNK_PAGES ?? '6', 10) || 6,
 );
 
-// Rough Sonnet pricing (USD per MTok) for the cost note only.
-const PRICE_INPUT_PER_MTOK = 3;
-const PRICE_OUTPUT_PER_MTOK = 15;
+// Rough Gemini 2.5 Flash-Lite pricing (USD per MTok) for the cost note only.
+const PRICE_INPUT_PER_MTOK = 0.1;
+const PRICE_OUTPUT_PER_MTOK = 0.4;
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg(process.env.DATABASE_URL!),
 });
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error('FATAL: ANTHROPIC_API_KEY is not set. Aborting.');
+if (!process.env.GEMINI_API_KEY) {
+  console.error('FATAL: GEMINI_API_KEY is not set. Aborting.');
   process.exit(1);
 }
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const genai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 interface OcrPage {
   page: number;
@@ -102,7 +110,7 @@ function extractJsonArray(raw: string): unknown {
 
 /**
  * OCR a single chunk PDF. `firstPage1` is the absolute 1-indexed page
- * number of the first page in the chunk, so we can ask Claude to return
+ * number of the first page in the chunk, so we can ask the model to return
  * ABSOLUTE page numbers.
  */
 async function ocrChunk(
@@ -127,30 +135,26 @@ Return STRICT JSON ONLY — no markdown fence, no preamble — an array of objec
 
 Use the ABSOLUTE page numbers (${firstPage1}..${lastPage1}), one object per page, in order.`;
 
-  const r = await anthropic.messages.create({
+  const r = await genai.models.generateContent({
     model: MODEL,
-    max_tokens: 16000,
-    messages: [
+    contents: [
       {
         role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: {
-              type: 'base64',
-              media_type: 'application/pdf',
-              data: base64,
-            },
-          },
-          { type: 'text', text: instruction },
+        parts: [
+          { inlineData: { mimeType: 'application/pdf', data: base64 } },
+          { text: instruction },
         ],
       },
     ],
+    config: {
+      maxOutputTokens: 16000,
+      // The prompt demands a JSON array; extractJsonArray above stays as the
+      // salvage path for a truncated one.
+      responseMimeType: 'application/json',
+    },
   });
 
-  const textBlock = r.content.find((b) => b.type === 'text');
-  const raw =
-    textBlock && textBlock.type === 'text' ? textBlock.text.trim() : '';
+  const raw = (r.text ?? '').trim();
   const parsed = extractJsonArray(raw) as Array<{ page?: unknown; text?: unknown }>;
   const pages: OcrPage[] = parsed
     .map((row) => ({
@@ -166,8 +170,8 @@ Use the ABSOLUTE page numbers (${firstPage1}..${lastPage1}), one object per page
 
   return {
     pages,
-    inputTokens: r.usage?.input_tokens ?? 0,
-    outputTokens: r.usage?.output_tokens ?? 0,
+    inputTokens: r.usageMetadata?.promptTokenCount ?? 0,
+    outputTokens: r.usageMetadata?.candidatesTokenCount ?? 0,
   };
 }
 
@@ -317,7 +321,7 @@ async function main(): Promise<void> {
     `OCR backfill starting — model=${MODEL}, chunk=${CHUNK_PAGES} pages, storage=${STORAGE_DIR}`,
   );
   console.log(
-    'COST NOTE: each chunk is a Claude vision call billed at input+output tokens. ' +
+    'COST NOTE: each chunk is a model call billed at input+output tokens. ' +
       'A 200-page manual ≈ 14 calls. Run on a few ids first to gauge spend.',
   );
 

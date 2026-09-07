@@ -5,22 +5,16 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
+import { LlmService } from '../common/llm/llm.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ContactDetailFilterService } from '../moderation/contact-detail-filter.service';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 
-// Two-model split mirrors the listing-moderation service so we keep one
-// env contract across the codebase:
-//   MODEL_SIMPLE — Haiku for cheap binary classification (is this a
-//                  product-info question? yes/no)
-//   MODEL_JUDGE  — Sonnet for the dedup pass (semantic match against
-//                  prior Q&A + answer rewrite)
-const MODEL_SIMPLE =
-  process.env.ANTHROPIC_MODEL_SIMPLE ?? 'claude-haiku-4-5-20251001';
-const MODEL_JUDGE =
-  process.env.ANTHROPIC_MODEL_JUDGE ?? 'claude-sonnet-4-6';
+// ⚠️ The two-model split (a cheap lane for the yes/no moderation pass, a
+// stronger one for the dedup judgement) went with the Anthropic SDK on
+// 2026-09-07. One model now serves the platform — LlmService.model, from
+// LLM_MODEL — so both calls below take it and differ only in maxTokens.
 
 // Auto-answers only re-use seller replies posted within this window.
 // 30 days is the right balance: long enough to absorb a sustained
@@ -104,23 +98,18 @@ interface DedupResult {
 @Injectable()
 export class ListingQuestionsService {
   private readonly logger = new Logger(ListingQuestionsService.name);
-  private readonly client: Anthropic | null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     // Regex floor for Q&A moderation — the deterministic fallback when the
-    // Claude layer is unavailable (ModerationModule is @Global).
+    // model layer is unavailable (ModerationModule is @Global).
     private readonly contactFilter: ContactDetailFilterService,
+    private readonly llm: LlmService,
   ) {
-    const key = process.env.ANTHROPIC_API_KEY;
-    // 60s timeout / 1 retry (audit fix 2026-07-20).
-    this.client = key
-      ? new Anthropic({ apiKey: key, timeout: 60_000, maxRetries: 1 })
-      : null;
-    if (!key)
+    if (!this.llm.isConfigured())
       this.logger.warn(
-        'ANTHROPIC_API_KEY not set — Q&A will publish without moderation',
+        'No model key configured — Q&A falls back to the regex floor',
       );
   }
 
@@ -169,7 +158,7 @@ export class ListingQuestionsService {
   }
 
   // ------------------------------------------------------------------
-  // BUYER — submit a new question. Runs Claude pass 1 (moderation),
+  // BUYER — submit a new question. Runs model pass 1 (moderation),
   // pass 2 (semantic dedup), and only notifies the seller when neither
   // path resolves it.
   // ------------------------------------------------------------------
@@ -210,7 +199,7 @@ export class ListingQuestionsService {
       );
     }
 
-    // ─── Claude pass 1: moderation (Haiku, cheap, binary) ────────────
+    // ─── Model pass 1: moderation (cheap, binary) ────────────────────
     const mod = await this.runModeration(question);
     if (mod.decision === 'REJECT') {
       // Persist the rejected row for audit (admin can see how often
@@ -235,7 +224,7 @@ export class ListingQuestionsService {
       };
     }
 
-    // ─── Claude pass 2: dedup against recent answered Qs ─────────────
+    // ─── Model pass 2: dedup against recent answered Qs ──────────────
     const dedup = await this.runDedup(listing, question);
     if (dedup.match && dedup.answer && dedup.sourceQuestionId) {
       // Confirm the source Q still exists, still belongs to this
@@ -460,10 +449,10 @@ export class ListingQuestionsService {
     return { ok: true };
   }
 
-  // ──────────────────── Claude wiring ─────────────────────────────────
+  // ──────────────────── model wiring ──────────────────────────────────
 
-  // Deterministic floor when the Claude layer can't answer (audit fix
-  // 2026-07-20 — these paths used to blanket-APPROVE, so an Anthropic
+  // Deterministic floor when the model layer can't answer (audit fix
+  // 2026-07-20 — these paths used to blanket-APPROVE, so a provider
   // outage published Q&A with phone numbers/emails intact). The regex
   // can't catch clever evasion (that's the LLM's job) but it guarantees
   // plain contact details never slip through an outage.
@@ -479,15 +468,20 @@ export class ListingQuestionsService {
   }
 
   private async runModeration(text: string): Promise<ModerationResult> {
-    if (!this.client) return this.regexFallback(text);
+    if (!this.llm.isConfigured()) return this.regexFallback(text);
     try {
-      const msg = await this.client.messages.create({
-        model: MODEL_SIMPLE,
-        max_tokens: 200,
+      const msg = await this.llm.complete({
         system: MODERATION_PROMPT,
         messages: [{ role: 'user', content: text }],
+        maxTokens: 200,
+        json: {},
+        thinking: { budgetTokens: 0 },
+        // 60s ceiling kept from the audit fix 2026-07-20 — a buyer is
+        // waiting on this before their question posts.
+        timeoutMs: 60_000,
+        purpose: 'listing.question',
       });
-      const json = extractJson(msg);
+      const json = extractJson(msg.text);
       if (!json) return this.regexFallback(text);
       const decision = json.decision === 'REJECT' ? 'REJECT' : 'APPROVE';
       return {
@@ -510,7 +504,7 @@ export class ListingQuestionsService {
     },
     newQuestion: string,
   ): Promise<DedupResult> {
-    if (!this.client) return { match: false };
+    if (!this.llm.isConfigured()) return { match: false };
 
     const fresh = new Date();
     fresh.setDate(fresh.getDate() - AUTO_ANSWER_FRESHNESS_DAYS);
@@ -547,13 +541,16 @@ export class ListingQuestionsService {
     ].join('\n');
 
     try {
-      const msg = await this.client.messages.create({
-        model: MODEL_JUDGE,
-        max_tokens: 500,
+      const msg = await this.llm.complete({
         system: DEDUP_PROMPT,
         messages: [{ role: 'user', content: userContent }],
+        maxTokens: 500,
+        json: {},
+        thinking: { budgetTokens: 0 },
+        timeoutMs: 60_000,
+        purpose: 'listing.question-dedup',
       });
-      const json = extractJson(msg);
+      const json = extractJson(msg.text);
       if (!json || json.match !== true) return { match: false };
       const answer =
         typeof json.answer === 'string' ? json.answer.trim() : '';
@@ -574,14 +571,7 @@ export class ListingQuestionsService {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-interface AnthropicMessage {
-  content: { type: string; text?: string }[];
-}
-
-function extractJson(msg: AnthropicMessage): Record<string, unknown> | null {
-  const text =
-    msg.content.find((b) => b.type === 'text' && typeof b.text === 'string')
-      ?.text ?? '';
+function extractJson(text: string): Record<string, unknown> | null {
   if (!text) return null;
   // Tolerate models that wrap JSON in code fences or include preamble.
   const match = text.match(/\{[\s\S]*\}/);

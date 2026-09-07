@@ -2,7 +2,7 @@
 //
 // THE HONEST REPLACEMENT FOR AN ARTWORK CHECK.
 //
-// The verdict machinery in claude-kyc.service.ts has an INTEGRITY GATE:
+// The verdict machinery in kyc-model.service.ts has an INTEGRITY GATE:
 //
 //   integrityGates = [selfie_live_capture, document.looks_genuine_sa_id]
 //   if (any < 50) -> REJECTED          // and >= 70 is required to VERIFY

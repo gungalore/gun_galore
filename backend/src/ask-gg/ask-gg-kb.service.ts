@@ -10,8 +10,8 @@ import { AskGgKbStatus } from '@prisma/client';
  *   - VERIFIED entries are searched FIRST when a user asks a new
  *     question. Matches surface as cards above the composer; the
  *     user can click "This helped" (uses the KB answer, skips
- *     Claude entirely = zero cost) or "Ask anyway" (proceeds to
- *     the normal Claude call).
+ *     the model entirely = zero cost) or "Ask anyway" (proceeds to
+ *     the normal model call).
  *   - usefulCount / surfacedCount track entry quality. High-useful
  *     entries rank higher; never-helpful entries can be archived.
  *

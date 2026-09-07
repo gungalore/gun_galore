@@ -354,7 +354,7 @@ export default function DealerVerificationPage() {
           style={{ color: 'var(--text-primary)' }}
         >
           <strong style={{ color: 'var(--red)' }}>BLOCK LETTERS REQUIRED.</strong>{' '}
-          Our verification bot (Claude) reads the SAPS 534 automatically. Unclear,
+          Our verification bot reads the SAPS 534 automatically. Unclear,
           cursive, or mixed-case handwriting will be queued for human review,
           adding up to 48 hours before your payout is released. Ask the dealer
           to fill the form in capital letters.

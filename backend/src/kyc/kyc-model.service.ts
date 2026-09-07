@@ -1,21 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
+import { LlmService } from '../common/llm/llm.service';
+import { LlmError, type LlmPart } from '../common/llm/llm.types';
 import type { CrossCheckResult } from './kyc-cross-check';
 
 /**
- * Claude-vision KYC scanner — the cheap face-match + document OCR that
+ * Model-vision KYC scanner — the cheap face-match + document OCR that
  * replaces VerifyNow's 10-credit facematch in the kyc_claude_flow.
  *
  * One vision call per verdict, shown:
  *   1. The seller's uploaded SA identity document (smart card / green
- *      book) — image URL block, or a base64 `document` block for PDFs.
+ *      book) — inline image bytes, or a `document` part for PDFs.
  *   2. The live selfie captured seconds earlier via getUserMedia.
  *   3. (anchored tier only) The OFFICIAL Home Affairs photo pulled via
  *      the 10-credit VerifyNow product — used for sellers whose listing/
  *      sale value crosses kyc_anchored_threshold_cents. The seller never
  *      sees the difference; only the gates change.
  *
- * Claude is deliberately given NO expected identity data (no ID number,
+ * The model is deliberately given NO expected identity data (no ID number,
  * no name, no DOB): it scores faces + OCRs the document blind, and ALL
  * identity comparison happens server-side in kyc-cross-check.ts. That
  * prevents anchor bias ("the caller told me the name, so I read the
@@ -25,18 +26,31 @@ import type { CrossCheckResult } from './kyc-cross-check';
  *   every gate ≥ 70 and cross-check clean → VERIFIED
  *   any gate 50-69 (none < 50)            → UNDER_REVIEW (admin decides)
  *   any gate < 50, or a hard cross-check fail → REJECTED (email support)
+ *
+ * ⚠️ WAS `claude-kyc.service.ts` / `ClaudeKycService` until 2026-09-07, when
+ * the platform moved off the Anthropic SDK onto LlmService. The names that
+ * are STORED — the `kycClaudeFindings` column, the `kyc-claude-outage` alert
+ * type, the `kyc_claude_flow_enabled` flag — deliberately did NOT change:
+ * they identify rows and settings that already exist, and renaming a stored
+ * value to tidy a word is how a flag silently reads false in production.
  */
 
-// Sonnet 5 — the current-generation vision model. Dedicated to KYC (its own
-// ANTHROPIC_MODEL_KYC env var) so the identity face-match / document-
-// authenticity judgement is decoupled from the dealer-verification model
-// (ANTHROPIC_MODEL_JUDGE) and can be tuned independently.
-const MODEL_VISION = process.env.ANTHROPIC_MODEL_KYC ?? 'claude-sonnet-5';
+// ⚠️ NO MODEL NAME HERE ANY MORE. It used to be ANTHROPIC_MODEL_KYC (default
+// a Sonnet id), deliberately separate from the dealer-verification model
+// (ANTHROPIC_MODEL_JUDGE) so the identity judgement could be tuned on its
+// own. One model now, LLM_MODEL, read through LlmService — no call below
+// passes `model`.
 
 // Auto-approve at 70% certainty; 50-69 goes to a human; below 50 is rejected.
 const AUTO_APPROVE_FLOOR = 70;
 const AUTO_REJECT_CEILING = 50;
 
+/**
+ * ⚠️ THE NAME IS HISTORICAL AND IS LOAD-BEARING. This shape is persisted
+ * verbatim in `Transaction`/`User.kycClaudeFindings` and rendered from there
+ * by the admin dossier, including for rows written years ago. Renaming the
+ * interface would be free; renaming the column would not, so neither moves.
+ */
 export interface KycClaudeFindings {
   face_match: {
     /** Selfie person == person in the DOCUMENT's photo (0-100). */
@@ -92,17 +106,19 @@ export interface KycScanInput {
   /**
    * The identity document as BYTES, which is now the ordinary case.
    *
-   * ⚠️ THE URL BLOCK ONLY EVER WORKED BECAUSE THE FILE WAS PUBLIC. Anthropic
-   * fetches a `{type:'url'}` source itself, so passing one required the ID
-   * document to be reachable by anybody on the internet — which is exactly
-   * what it was, and exactly what has now been fixed. Bytes from our own
-   * encrypted store cannot be linked to, so they are sent inline.
+   * ⚠️ THE URL BLOCK ONLY EVER WORKED BECAUSE THE FILE WAS PUBLIC. The
+   * Anthropic SDK fetched a `{type:'url'}` source itself, so passing one
+   * required the ID document to be reachable by anybody on the internet —
+   * which is exactly what it was, and exactly what has now been fixed. Bytes
+   * from our own encrypted store cannot be linked to, so they are sent
+   * inline.
    *
    * documentUrl stays for rows the backfill has not moved yet, and for the
-   * official Home Affairs photo, which is not ours to store.
+   * official Home Affairs photo, which is not ours to store. It is now
+   * fetched HERE and sent as bytes — see `inlineFromUrl`.
    */
   documentImage?: { bytes: Buffer; mediaType: string };
-  /** Raw PDF bytes when the seller uploaded a PDF (Claude reads natively). */
+  /** Raw PDF bytes when the seller uploaded a PDF (the model reads it natively). */
   documentPdf?: Buffer;
   /** standard = selfie vs document photo. anchored adds the DHA photo gate. */
   mode: 'standard' | 'anchored';
@@ -275,81 +291,64 @@ const SMART_ID_FIRST_YEAR = 2013;
 /** Earliest age at which a South African is issued an ID. */
 const ID_ISSUE_AGE = 16;
 
-type ContentBlock =
-  | { type: 'text'; text: string }
-  | {
-      type: 'image';
-      source: { type: 'base64'; media_type: string; data: string };
-    }
-  | { type: 'image'; source: { type: 'url'; url: string } }
-  | {
-      type: 'document';
-      source: { type: 'base64'; media_type: 'application/pdf'; data: string };
-    };
-
 @Injectable()
-export class ClaudeKycService {
-  private readonly logger = new Logger(ClaudeKycService.name);
-  private readonly client: Anthropic | null;
+export class KycModelService {
+  private readonly logger = new Logger(KycModelService.name);
 
-  constructor() {
-    const key = process.env.ANTHROPIC_API_KEY;
-    // 60s timeout / 1 retry — never hold the KYC request open for the
-    // SDK's 10-min default on a hung call (audit fix 2026-07-20).
-    this.client = key
-      ? new Anthropic({ apiKey: key, timeout: 60_000, maxRetries: 1 })
-      : null;
-    if (!key) {
+  constructor(
+    // ⚠️ WAS AN Anthropic CLIENT BUILT IN THIS CONSTRUCTOR (60s timeout, one
+    // retry, null when ANTHROPIC_API_KEY was absent). The null check that
+    // guarded every scan is `isConfigured()` now; the timeout rides on the
+    // call as `timeoutMs`. Optional so the verdict half of this service —
+    // statusFromFindings / retakeReason / isBorderline, which is what the
+    // live AWS flow actually uses — can still be exercised by a bare `new`.
+    private readonly llm?: LlmService,
+  ) {
+    if (llm && !llm.isConfigured()) {
       this.logger.warn(
-        'ANTHROPIC_API_KEY not set — Claude KYC verdicts will queue for admin review',
+        'No model configured — AI identity verdicts will queue for admin review',
       );
     }
   }
 
   /**
-   * Run the single vision scan. Throws on any failure (no client, API
-   * error, non-JSON reply) — the caller maps a throw to UNDER_REVIEW so a
-   * Claude outage can never auto-verify OR auto-reject anyone.
+   * Run the single vision scan. Throws on any failure (no model configured,
+   * provider error, blocked response, non-JSON reply) — the caller maps a
+   * throw to UNDER_REVIEW so an outage can never auto-verify OR auto-reject
+   * anyone.
    */
   async scan(
     input: KycScanInput,
     lens: Lens = 'BASELINE',
   ): Promise<KycClaudeFindings> {
-    if (!this.client) throw new Error('Claude KYC unavailable — no API key');
+    if (!this.llm?.isConfigured()) {
+      throw new Error('AI identity scan unavailable — no model configured');
+    }
     if (!input.documentUrl && !input.documentPdf && !input.documentImage) {
-      throw new Error('Claude KYC scan called without a document');
+      throw new Error('AI identity scan called without a document');
     }
 
-    const documentBlock: ContentBlock = input.documentPdf
+    const documentBlock: LlmPart = input.documentPdf
       ? {
           type: 'document',
-          source: {
-            type: 'base64',
-            media_type: 'application/pdf',
-            data: input.documentPdf.toString('base64'),
-          },
+          mimeType: 'application/pdf',
+          data: input.documentPdf.toString('base64'),
         }
       : input.documentImage
         ? {
             type: 'image',
-            source: {
-              type: 'base64',
-              // ⚠️ THE REAL TYPE, NOT A FORCED JPEG. The URL path rewrote
-              // Cloudinary's path to /f_jpg/ because a transform was free;
-              // there is no transform on our own store, and Claude reads
-              // jpeg, png and webp natively — which is the whole set the
-              // upload validator allows. Re-encoding would cost quality on
-              // the one image where detail decides the outcome.
-              media_type: input.documentImage.mediaType,
-              data: input.documentImage.bytes.toString('base64'),
-            },
+            // ⚠️ THE REAL TYPE, NOT A FORCED JPEG. The URL path rewrote
+            // Cloudinary's path to /f_jpg/ because a transform was free;
+            // there is no transform on our own store, and the model reads
+            // jpeg, png and webp natively — which is the whole set the
+            // upload validator allows. Re-encoding would cost quality on
+            // the one image where detail decides the outcome.
+            mimeType: input.documentImage.mediaType,
+            data: input.documentImage.bytes.toString('base64'),
           }
-        : {
-            type: 'image',
-            source: { type: 'url', url: this.jpegUrl(input.documentUrl!) },
-          };
+        : await this.inlineFromUrl(this.jpegUrl(input.documentUrl!));
 
-    const userContent: ContentBlock[] = [
+    const userContent: LlmPart[] = [
       ...(typeof input.subjectAgeYears === 'number'
         ? [
             {
@@ -364,10 +363,7 @@ export class ClaudeKycService {
       },
       documentBlock,
       { type: 'text', text: 'Live selfie captured moments ago:' },
-      {
-        type: 'image',
-        source: { type: 'base64', media_type: 'image/jpeg', data: input.selfieBase64 },
-      },
+      { type: 'image', mimeType: 'image/jpeg', data: input.selfieBase64 },
     ];
 
     if (input.licenceUrl) {
@@ -376,30 +372,20 @@ export class ClaudeKycService {
           type: 'text',
           text: 'South African driving licence card (its photograph is at most five years old — treat it as the most recent likeness):',
         },
-        {
-          type: 'image',
-          source: { type: 'url', url: this.jpegUrl(input.licenceUrl) },
-        },
+        await this.inlineFromUrl(this.jpegUrl(input.licenceUrl)),
       );
     }
 
     if (input.mode === 'anchored' && input.haPhotoBase64) {
       userContent.push(
         { type: 'text', text: 'Official record photo:' },
-        {
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: 'image/jpeg',
-            data: input.haPhotoBase64,
-          },
-        },
+        { type: 'image', mimeType: 'image/jpeg', data: input.haPhotoBase64 },
       );
     }
 
-    const msg = await this.client.messages.create({
-      model: MODEL_VISION,
-      max_tokens: 1500,
+    const res = await this.complete({
+      // No `model` and no `temperature`.
+      //
       // temperature 0 — this was previously unset, so it defaulted to 1.0 and
       // the SAME selfie + ID pair could score 68 on one run and 74 on the
       // next. With hard cut-offs at 50 and 70 that sampling noise alone
@@ -408,29 +394,88 @@ export class ClaudeKycService {
       // were nothing but variance. Identity decisions must be reproducible —
       // the same evidence has to give the same verdict every time, including
       // when we re-run a scan to explain a decision afterwards.
-      // ⚠️ NO `temperature` HERE, AND NEVER ADD ONE.
       //
-      // temperature / top_p / top_k were REMOVED from the API on Opus 4.7 and
-      // later, and on Sonnet 5 — which is what ANTHROPIC_MODEL_JUDGE points at
-      // on the live box. Sending one is a 400:
-      //   "`temperature` is deprecated for this model."
-      //
-      // It cost us two days of silence: every call site below fails soft, so
-      // the 400 was caught, logged at warn, and the feature simply did
-      // nothing. Deterministic transcription is the DEFAULT now — there is no
-      // parameter to ask for it.
-      //
-      // ⚠️ This one had been failing since 2026-08-17 — every Claude KYC scan
-      // 400ing and falling through to the catch.
+      // ⚠️ NEVER ADD ONE HERE. On the Anthropic path sending `temperature`
+      // was an outright 400 ("`temperature` is deprecated for this model")
+      // on the models this pointed at, and because every call site fails
+      // soft it cost two days of silence: the 400 was caught, logged at
+      // warn, and the feature simply did nothing, from 2026-08-17. The
+      // parameter is optional on the LlmRequest for callers that genuinely
+      // want sampling; an identity verdict is not one of them, and the
+      // consensus below buys its diversity from the LENS, not the sampler.
+      maxTokens: 1500,
+      timeoutMs: 60_000,
       system: SYSTEM_PROMPT + LENS_INSTRUCTION[lens],
-      messages: [{ role: 'user', content: userContent as never }],
+      messages: [{ role: 'user', content: userContent }],
+      // The prompt already demands a bare JSON object; the tolerant
+      // brace-match below stays as the fallback.
+      json: {},
+      purpose: 'kyc.face-match',
     });
 
-    const block = msg.content.find((b) => b.type === 'text');
-    const raw = (block as { text?: string } | undefined)?.text ?? '';
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('Claude KYC did not return JSON');
+    // ⚠️ A BLOCKED RESPONSE IS AN OUTAGE, NOT A VERDICT. A provider that
+    // refuses to look at a photograph of a person has told us nothing about
+    // whether that person is who they say they are — so it throws, exactly
+    // like a 500, and the caller parks the seller for a human. Never let it
+    // fall through to the parse and come out as an empty low-scoring
+    // findings object, which would REJECT an honest seller for the
+    // provider's caution.
+    if (res.stopReason === 'safety') {
+      throw new Error('AI identity scan was blocked by the provider');
+    }
+
+    const match = res.text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('AI identity scan did not return JSON');
     return JSON.parse(match[0]) as KycClaudeFindings;
+  }
+
+  /**
+   * The model call, with the provider's own failure named in the message.
+   *
+   * ⚠️ EVERY CODE COMES OUT AS A THROW, INCLUDING 'safety'. This replaces a
+   * bare `catch (err)` on `Anthropic.APIError`, and the direction is
+   * deliberately unchanged: `scan` throws, `submitSelfieClaudeVerdict` maps
+   * a throw to UNDER_REVIEW, and a human looks. There is no branch here that
+   * can turn a provider failure into a verdict — a refusal to answer must
+   * never read as "this person failed the check".
+   */
+  private async complete(
+    req: Parameters<LlmService['complete']>[0],
+  ): ReturnType<LlmService['complete']> {
+    try {
+      return await this.llm!.complete(req);
+    } catch (err) {
+      if (err instanceof LlmError) {
+        throw new Error(`AI identity scan failed (${err.code}): ${err.message}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * A remote image as inline bytes.
+   *
+   * ⚠️ THE PROVIDER USED TO DO THIS FETCH. The Anthropic SDK accepted an
+   * `{type:'url'}` image source and went and got it; the provider-neutral
+   * contract carries base64 only (LlmBlob in llm.types.ts), so the round
+   * trip moved here. That is the better place for it anyway — see the note
+   * on `documentImage`: a URL source required the identity document to be
+   * world-readable.
+   *
+   * The URL is never put in the error text. These are identity documents.
+   */
+  private async inlineFromUrl(url: string): Promise<LlmPart> {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Could not fetch the document image (HTTP ${res.status})`);
+    }
+    const mimeType =
+      res.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg';
+    return {
+      type: 'image',
+      mimeType,
+      data: Buffer.from(await res.arrayBuffer()).toString('base64'),
+    };
   }
 
   /**
@@ -682,7 +727,7 @@ export class ClaudeKycService {
   }
 
   /**
-   * Combine Claude's gate scores with the server-side cross-check.
+   * Combine the model's gate scores with the server-side cross-check.
    * Hard cross-check fails always REJECT; soft fails cap at UNDER_REVIEW.
    *
    * RETAKE exists because the gates measure two different things and they
@@ -927,7 +972,7 @@ export class ClaudeKycService {
 
   /**
    * Force a JPEG delivery variant of a Cloudinary image URL. HEIC uploads
-   * can't be decoded by Claude (or by desktop browsers), but Cloudinary
+   * can't be decoded by the model (or by desktop browsers), but Cloudinary
    * transcodes server-side when an `f_jpg` transformation is in the path.
    * Non-Cloudinary URLs pass through untouched.
    */

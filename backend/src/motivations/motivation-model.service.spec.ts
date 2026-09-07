@@ -1,9 +1,16 @@
 import { MotivationLicenceType } from '@prisma/client';
-import { redactToArea,
-  MotivationClaudeService,
+import {
+  redactToArea,
+  researchBrief,
+  MotivationModelService,
   QUALITY_FLOOR,
   GROUNDEDNESS_FLOOR,
-} from './motivation-claude.service';
+} from './motivation-model.service';
+import type {
+  LlmPart,
+  LlmResponse,
+  LlmStopReason,
+} from '../common/llm/llm.types';
 import {
   gateSystemPrompt,
   generationSystemPrompt,
@@ -36,44 +43,76 @@ const PACK: FactPack = {
   derived: { age: '43' },
 };
 
+const MODEL = 'test-model-2.5';
+
 /**
- * @param reply  text for a single text block, OR the whole content array.
- * @param opts   stop_reason, so a truncated response can be simulated.
+ * One answer in the shape of the shared LLM contract.
+ *
+ * ⚠️ `text` IS EVERY TEXT PART JOINED, because that is what the contract
+ * promises and what the service now relies on instead of hunting for a block.
+ * The fake must honour it, or a test would pass against a shape the adapter
+ * never produces.
+ */
+function llmResponse(
+  reply: string | LlmPart[],
+  stopReason: LlmStopReason = 'end',
+): LlmResponse {
+  const parts: LlmPart[] =
+    typeof reply === 'string' ? [{ type: 'text', text: reply }] : reply;
+  const text = parts
+    .map((p) => (p.type === 'text' ? p.text : ''))
+    .join('');
+  return {
+    text,
+    parts,
+    toolCalls: [],
+    stopReason,
+    usage: { inputTokens: 100, outputTokens: 50 },
+    model: MODEL,
+    provider: 'gemini',
+    assistantMessage: { role: 'assistant', content: parts },
+  };
+}
+
+/**
+ * @param reply  text for a single text part, OR the whole parts array.
+ * @param opts   stopReason, so a truncated response can be simulated.
  */
 function build(
-  reply?: string | any[],
+  reply?: string | LlmPart[],
   throws?: Error,
-  opts: { stopReason?: string } = {},
+  opts: { stopReason?: LlmStopReason; configured?: boolean } = {},
 ) {
   const body = () => {
     if (throws) throw throws;
-    return {
-      content: Array.isArray(reply)
-        ? reply
-        : [{ type: 'text', text: reply ?? '' }],
-      stop_reason: opts.stopReason ?? 'end_turn',
-      usage: { input_tokens: 100, output_tokens: 50 },
-    };
+    return llmResponse(reply ?? '', opts.stopReason ?? 'end');
   };
-  const create = jest.fn(async (_args?: any, _opts?: any): Promise<any> => body());
-  // ⚠️ THE WRITER STREAMS; EVERYTHING ELSE DOES NOT. It was moved onto
-  // messages.stream() when an adaptive thinking budget ate an 8 000-token
-  // ceiling alive and the applicant got nothing — see generate(). This mock
-  // had only `create`, so the generation tests would have gone on passing
-  // against a method the writer no longer calls.
-  const stream = jest.fn((_args?: any, _opts?: any) => ({
-    finalMessage: async (): Promise<any> => body(),
-  }));
-  const prisma = { adminAlert: { create: jest.fn(async (): Promise<any> => ({})) } };
-  const svc = new MotivationClaudeService(prisma as never);
-  // Inject a fake client — the real one needs a key we do not have in tests.
-  (svc as unknown as { client: unknown }).client = {
-    messages: { create, stream },
+  const complete = jest.fn(async (_req?: any): Promise<LlmResponse> => body());
+  // ⚠️ THE WRITER STREAMS; EVERYTHING ELSE DOES NOT. It was moved onto a
+  // stream when a thinking budget ate an 8 000-token ceiling alive and the
+  // applicant got nothing — see generate(). A fake with only `complete` would
+  // let the generation tests go on passing against a method the writer does
+  // not call.
+  const stream = jest.fn(async function* (_req?: any) {
+    yield { type: 'done' as const, response: body() };
+  });
+  const llm = {
+    complete,
+    stream,
+    isConfigured: () => opts.configured !== false,
+    model: MODEL,
+    provider: 'gemini' as const,
   };
-  return { svc, create, stream, prisma };
+  // The arg is declared so mock.calls is typed as a one-element tuple; a
+  // zero-arg mock makes calls[0][0] a type error even though it is there.
+  const prisma = {
+    adminAlert: { create: jest.fn(async (_a?: any): Promise<any> => ({})) },
+  };
+  const svc = new MotivationModelService(prisma as never, llm as never);
+  return { svc, complete, stream, prisma, llm };
 }
 
-describe('MotivationClaudeService — the quality gate fails CLOSED', () => {
+describe('MotivationModelService — the quality gate fails CLOSED', () => {
   const good = JSON.stringify({
     completeness: 90,
     specificity: 85,
@@ -100,6 +139,18 @@ describe('MotivationClaudeService — the quality gate fails CLOSED', () => {
     // And it tells an operator, because a silently broken writer during a free
     // beta goes unnoticed for a week.
     expect(prisma.adminAlert.create).toHaveBeenCalled();
+  });
+
+  it('names no provider in the operator alert', async () => {
+    // ⚠️ IT SAID "Check the Anthropic key/status on /admin/health". An admin
+    // reading that after the provider switch goes to the wrong dashboard.
+    const { svc, prisma } = build(undefined, new Error('socket hang up'));
+    await svc.grade(PACK, 'x'.repeat(500));
+    const context = String(
+      prisma.adminAlert.create.mock.calls[0][0].data.context,
+    );
+    expect(context).toMatch(/AI service/i);
+    expect(context).not.toMatch(/anthropic|claude|gemini/i);
   });
 
   it('fails on non-JSON output', async () => {
@@ -186,13 +237,41 @@ describe('MotivationClaudeService — the quality gate fails CLOSED', () => {
     expect(verdict.issues[0].length).toBe(300);
   });
 
-  it('fails closed when no API key is configured at all', async () => {
-    const prisma = { adminAlert: { create: jest.fn() } };
-    const svc = new MotivationClaudeService(prisma as never);
-    (svc as unknown as { client: unknown }).client = null;
+  it('fails closed when the AI service is not configured at all', async () => {
+    const { svc, complete } = build(good, undefined, { configured: false });
     const { verdict, parsed } = await svc.grade(PACK, 'x');
     expect(parsed).toBe(false);
     expect(verdict.passed).toBe(false);
+    // And it never reached the wire — an unconfigured provider is answered in
+    // code, not by a request that will 401.
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('spends the verdict budget on TEXT, never on reasoning', async () => {
+    // ⚠️ A LIVE GATE CALL BURNED ALL 4000 OUTPUT TOKENS REASONING and emitted
+    // 255 characters of truncated JSON, which the fail-closed parse correctly
+    // scored 0 — so no document could pass. A verdict is a judgement
+    // transcribed into a fixed shape; the budget must be text. This used to
+    // read `thinking: { type: 'disabled' }`.
+    const { svc, complete } = build(good);
+    await svc.grade(PACK, 'x'.repeat(500));
+    const req = complete.mock.calls[0][0] as any;
+    expect(req.thinking).toEqual({ budgetTokens: 0 });
+    expect(req.maxTokens).toBe(4000);
+    expect(req.purpose).toBe('motivation.gate');
+  });
+
+  it('sends no sampling parameters', async () => {
+    // They were a 400 on the models this used to run on, every call site fails
+    // soft, and the feature silently did nothing for two days. The parameter
+    // exists again on the neutral contract — leaving it unset is now a
+    // decision rather than a workaround, and it is recorded at the call site.
+    const { svc, complete } = build(good);
+    await svc.grade(PACK, 'x'.repeat(500));
+    const req = complete.mock.calls[0][0] as any;
+    for (const p of ['temperature', 'top_p', 'top_k']) {
+      expect(req[p]).toBeUndefined();
+    }
   });
 });
 
@@ -217,42 +296,49 @@ describe('generation', () => {
     expect(res.text.length).toBe(600);
     expect(res.usage.promptTokens).toBe(100);
     expect(res.usage.completionTokens).toBe(50);
+    // The model that actually answered, not one this file chose — nothing here
+    // names a model any more.
+    expect(res.usage.model).toBe(MODEL);
   });
 
-  it('splits the system prompt so the cacheable half can be cached', async () => {
+  it('keeps the licence-type rules and the applicant apart', async () => {
+    // ⚠️ THE SPLIT OUTLIVED ITS FIRST REASON. It existed so the byte-identical
+    // half could carry `cache_control: { type: 'ephemeral' }`; the neutral
+    // contract has no cache marker and the adapter decides. The split stays
+    // because it also keeps somebody's name out of the block every applicant
+    // of that type receives.
     const { svc, stream } = build('A'.repeat(600));
     await svc.generate(PACK, planFor(PACK.licenceType, 1));
-    const args = stream.mock.calls[0][0] as any;
-    expect(args.system[0].cache_control).toEqual({ type: 'ephemeral' });
-    // The applicant's facts must NOT be in the cached block.
-    expect(args.system[0].text).not.toContain('Jan Pietersen');
-    expect(args.messages[0].content).toContain('Jan Pietersen');
+    const req = stream.mock.calls[0][0] as any;
+    expect(typeof req.system).toBe('string');
+    expect(req.system).not.toContain('Jan Pietersen');
+    expect(req.messages[0].content).toContain('Jan Pietersen');
+    expect(req.purpose).toBe('motivation.generate');
   });
 
   it('leaves the writer room to think AND to write', async () => {
     // ⚠️ THE 2026-08-22 LIVE FAILURE, IN ONE ASSERTION. The call logged both
     // "hit max_tokens (8000 out)" and "too short to be usable" in the same
     // second: an adaptive thinking budget spent the whole allowance and the
-    // document was never written. The ceiling and the thinking mode must both
-    // be explicit, because leaving either to a default is what caused it.
+    // document was never written. The ceiling and the budget must both be
+    // explicit, because leaving either to a default is what caused it — and
+    // the budget must be a small fraction of the ceiling, which is what a
+    // NUMBER buys us that `{ type: 'adaptive' }` never could.
     const { svc, stream } = build('A'.repeat(600));
     await svc.generate(PACK, planFor(PACK.licenceType, 1));
-    const args = stream.mock.calls[0][0] as any;
+    const req = stream.mock.calls[0][0] as any;
     // 2500-4500 words of prose is 3500-6500 tokens BEFORE any thinking.
-    expect(args.max_tokens).toBeGreaterThanOrEqual(16_000);
-    expect(args.thinking).toEqual({ type: 'adaptive' });
-    // ⚠️ NEVER budget_tokens — Opus 5 rejects it with a 400.
-    expect(args.thinking).not.toHaveProperty('budget_tokens');
+    expect(req.maxTokens).toBeGreaterThanOrEqual(16_000);
+    expect(req.thinking.budgetTokens).toBeGreaterThan(0);
+    expect(req.thinking.budgetTokens).toBeLessThan(req.maxTokens / 4);
   });
 
-  it('keeps EVERY text block, not just the first', async () => {
-    // With thinking on, content interleaves thinking and text. Taking the
-    // first text block truncated the document at the model's first pause —
-    // which would have looked like a writing fault forever.
+  it('keeps EVERY text part, not just the first', async () => {
+    // With thinking on, the answer arrives in several parts. Taking the first
+    // truncated the document at the model's first pause — which would have
+    // looked like a writing fault forever.
     const { svc } = build([
-      { type: 'thinking', thinking: 'planning the sections' },
       { type: 'text', text: 'A'.repeat(300) },
-      { type: 'thinking', thinking: 'now the statutory part' },
       { type: 'text', text: 'B'.repeat(300) },
     ]);
     const res = await svc.generate(PACK, planFor(PACK.licenceType, 1));
@@ -260,17 +346,23 @@ describe('generation', () => {
     expect(res.text).toContain('B');
   });
 
-  it('rejects a response that is ALL thinking and no document', async () => {
-    // Exactly what came back at 20:20 SAST: the ceiling reached, no text
-    // block at all. It must fail soft and retryably, never store nothing.
-    const { svc } = build(
-      [{ type: 'thinking', thinking: 'x'.repeat(400) }],
-      undefined,
-      { stopReason: 'max_tokens' },
-    );
+  it('rejects a response that is ALL reasoning and no document', async () => {
+    // Exactly what came back at 20:20 SAST: the ceiling reached, not one text
+    // part. It must fail soft and retryably, never store nothing.
+    const { svc } = build([], undefined, { stopReason: 'max_tokens' });
     await expect(
       svc.generate(PACK, planFor(PACK.licenceType, 1)),
     ).rejects.toThrow(/try again/i);
+  });
+
+  it('refuses before the wire when the AI service is not configured', async () => {
+    const { svc, stream } = build('A'.repeat(600), undefined, {
+      configured: false,
+    });
+    await expect(
+      svc.generate(PACK, planFor(PACK.licenceType, 1)),
+    ).rejects.toThrow(/not available/i);
+    expect(stream).not.toHaveBeenCalled();
   });
 });
 
@@ -479,55 +571,43 @@ describe('the overlap direction in the generation prompt', () => {
 // ────────────────────────────────────────────────────────────────────
 // WHAT MAY LEAVE FOR A SEARCH ENGINE.
 //
-// Research queries travel beyond Anthropic to a web search provider, so the
-// street must be stripped IN CODE before the model sees anything — a prompt
+// Research queries travel beyond us to a web search provider, so the street
+// must be stripped IN CODE before the model sees anything — a prompt
 // instruction alone is a hope, not a control. The first comma-separated
 // component is the house; it never survives, and digits are removed from the
 // rest against unit numbers and postal codes riding along.
+//
+// ⚠️ THE BRIEF IS A PURE FUNCTION, AND IT STAYS ONE. It used to be built
+// inside research() and asserted through the SDK mock. A privacy control
+// that can only be tested through a network double is a control nobody
+// re-checks; these rules are the ones that must never quietly regress, so
+// they are pinned on the function itself, whatever research() is doing.
 // ────────────────────────────────────────────────────────────────────
 describe('what the research brief asks about', () => {
-  // The brief is built inside research() and only reaches the wire, so these
-  // assert on the request the SDK was handed.
-  let seen: { messages: { content: string }[] } | null = null;
-  const briefFor = async (extra: Record<string, unknown>) => {
-    seen = null;
-    const create = jest.fn(async (body: { messages: { content: string }[] }) => {
-      seen = body;
-      return {
-        content: [{ type: 'text', text: 'x'.repeat(200) }],
-        usage: { input_tokens: 1, output_tokens: 1 },
-      };
-    });
-    const svc = new MotivationClaudeService({} as never);
-    (svc as unknown as { client: unknown }).client = {
-      messages: { create },
-    };
-    await svc.research({
+  const briefFor = (extra: Record<string, unknown>) =>
+    researchBrief({
       licenceType: PACK.licenceType,
       answers: { firearm_make: 'Tikka', firearm_calibre: '.270 Win' },
       ...extra,
     } as never);
-    return String(seen!.messages[0].content);
-  };
 
-  it('asks about the HELD cartridge too, and for the comparison', async () => {
+  it('asks about the HELD cartridge too, and for the comparison', () => {
     // ⚠️ WITHOUT THIS THE COMPARISON CAN ONLY BE WRITTEN IN GENERALITIES.
     // The writer now builds the distinction itself instead of waiting for the
     // applicant to supply it, and rule 1 forbids it any figure it was not
     // given — so the other cartridge has to be researched, not recalled.
-    const brief = await briefFor({ heldForComparison: ['.308 Win'] });
+    const brief = briefFor({ heldForComparison: ['.308 Win'] });
     expect(brief).toContain('ALREADY HELD');
     expect(brief).toContain('.308 Win');
     expect(brief).toMatch(/set the two against each other/);
   });
 
-  it('says nothing about a held firearm when there is no overlap', async () => {
-    const brief = await briefFor({ heldForComparison: [] });
-    expect(brief).not.toContain('ALREADY HELD');
+  it('says nothing about a held firearm when there is no overlap', () => {
+    expect(briefFor({ heldForComparison: [] })).not.toContain('ALREADY HELD');
   });
 
-  it('caps the list, so six rows in one class cannot eat the search budget', async () => {
-    const brief = await briefFor({
+  it('caps the list, so six rows in one class cannot eat the search budget', () => {
+    const brief = briefFor({
       heldForComparison: ['.308 Win', '.308 Win', '.30-06', '6.5 CM', '7x57'],
     });
     // Deduped to four, capped at three.
@@ -535,6 +615,135 @@ describe('what the research brief asks about', () => {
     expect(brief).toContain('.30-06');
     expect(brief).toContain('6.5 CM');
     expect(brief).not.toContain('7x57');
+  });
+
+  it('never carries the street, only the area', () => {
+    const brief = briefFor({
+      answers: {
+        firearm_make: 'Tikka',
+        residential_address: '36 Sterappel Crescent, Langeberg Glen, Cape Town',
+      },
+    });
+    expect(brief).not.toContain('Sterappel');
+    expect(brief).toContain('Langeberg Glen');
+  });
+});
+
+describe('research is searched, or it is absent', () => {
+  const args = {
+    licenceType: PACK.licenceType,
+    answers: { firearm_make: 'Tikka', firearm_calibre: '.270 Win' },
+  };
+
+  it('asks the provider to search, and hands back the brief it read', async () => {
+    const { svc, complete } = build('THE FIREARM\nTikka builds the T3x…');
+    const out = await svc.research(args);
+
+    expect(out?.text).toContain('Tikka builds the T3x');
+    const req = complete.mock.calls[0][0] as any;
+    expect(req.grounding).toEqual({ web: true });
+    expect(req.purpose).toBe('motivation.research');
+    // ⚠️ NEITHER OF THESE MAY APPEAR. Gemini 2.5 refuses grounding beside
+    // json mode or function declarations and the adapter throws at the
+    // door — which would turn a thin brief into a failed generation.
+    expect(req.json).toBeUndefined();
+    expect(req.tools).toBeUndefined();
+  });
+
+  // ⚠️ THE ALTERNATIVE IS NOT "LESS RESEARCH". The same brief without a
+  // search is a model RECALLING precinct crime figures and cartridge
+  // histories into a document the applicant SIGNS and files with SAPS —
+  // the invented fact the groundedness floor exists to catch, laundered in
+  // as though it had a source. So every failure returns null, which the
+  // caller already treats as "no brief": it costs colour, never the document.
+  it('returns null when the grounded call fails — never a remembered brief', async () => {
+    const { svc } = build(undefined, new Error('grounding unavailable'));
+    expect(await svc.research(args)).toBeNull();
+  });
+
+  it('returns null on an empty answer rather than an empty brief', async () => {
+    const { svc } = build('   ');
+    expect(await svc.research(args)).toBeNull();
+  });
+
+  it('calls nothing at all when the brief has nothing worth asking', async () => {
+    const { svc, complete, stream } = build('x');
+    const out = await svc.research({
+      licenceType: PACK.licenceType,
+      answers: {},
+    });
+    expect(out).toBeNull();
+    expect(complete).not.toHaveBeenCalled();
+    expect(stream).not.toHaveBeenCalled();
+  });
+
+  // A grounded call that opened nothing is thin, not wrong — the brief
+  // itself says "if a search finds nothing solid, say nothing on that
+  // point". It is kept, and logged, because a RUN of empty ones means the
+  // search is broken rather than that the cases are dull.
+  it('keeps a brief that came back with no sources', async () => {
+    const { svc } = build('THE CARTRIDGE\nGeneral background only.');
+    const out = await svc.research(args);
+    expect(out?.text).toContain('General background');
+  });
+
+  it('reports the tokens the search spent, so the row can bill them', async () => {
+    const { svc } = build('brief');
+    const out = await svc.research(args);
+    expect(out?.usage).toEqual({
+      model: MODEL,
+      promptTokens: 100,
+      completionTokens: 50,
+    });
+  });
+});
+
+describe('the follow-up questions', () => {
+  it('spends its small ceiling on the question, not on reasoning', async () => {
+    // ⚠️ 900 TOKENS IS A HANDFUL OF SENTENCES. A thinking budget sharing it
+    // produces no question at all — and the caller falls back to plain wording
+    // silently, so nobody would ever see it happen.
+    const { svc, complete } = build(
+      JSON.stringify({ questions: [{ key: 'a', question: 'Which association?' }] }),
+    );
+    await svc.askFollowUpBatch({
+      licenceType: PACK.licenceType,
+      gaps: [
+        { key: 'a', label: 'Association', reason: 'thin', wordsSoFar: 0 },
+      ],
+    });
+    const req = complete.mock.calls[0][0] as any;
+    expect(req.thinking).toEqual({ budgetTokens: 0 });
+    expect(req.purpose).toMatch(/^motivation\.followup/);
+  });
+
+  it('keeps only the keys we asked about', async () => {
+    const { svc } = build(
+      JSON.stringify({
+        questions: [
+          { key: 'a', question: 'Which association are you with?' },
+          { key: 'invented', question: 'What is your favourite calibre?' },
+        ],
+      }),
+    );
+    const { questions } = await svc.askFollowUpBatch({
+      licenceType: PACK.licenceType,
+      gaps: [{ key: 'a', label: 'Association', reason: 'thin', wordsSoFar: 0 }],
+    });
+    expect(Object.keys(questions)).toEqual(['a']);
+  });
+
+  it('falls back to nothing — never throws — when the call fails', async () => {
+    const { svc } = build(undefined, new Error('timeout'));
+    await expect(
+      svc.askFollowUpBatch({
+        licenceType: PACK.licenceType,
+        gaps: [{ key: 'a', label: 'Association', reason: 'thin', wordsSoFar: 0 }],
+      }),
+    ).resolves.toEqual({
+      questions: {},
+      usage: { model: MODEL, promptTokens: 0, completionTokens: 0 },
+    });
   });
 });
 

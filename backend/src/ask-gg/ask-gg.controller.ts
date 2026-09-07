@@ -42,7 +42,7 @@ import { AskGgConversationOutcome } from '@prisma/client';
  *
  * All routes are Clerk-authed and tier-gated (MEMBER + PRO only)
  * inside the service. POST /messages gets a stricter throttle bucket
- * because each call is a real Claude API hit costing real money.
+ * because each call is a real model API hit costing real money.
  */
 @Controller('ask-gg')
 @UseGuards(ClerkGuard)
@@ -58,7 +58,7 @@ export class AskGgController {
    * GG site-guide (G4) — the AUTHED guide: the public page guide PLUS the
    * signed-in caller's OWN top-of-mind state for this page (KYC/payout gates,
    * auction win/outbid, offers awaiting action…), composed server-side from
-   * the read-only, PII-gated account shapers. ZERO Claude spend. The clerkId
+   * the read-only, PII-gated account shapers. ZERO model spend. The clerkId
    * comes from ClerkGuard — the model/client can never name another user.
    * Signed-out visitors keep using /ask-gg/public/guide (no overlay).
    */
@@ -333,7 +333,7 @@ export class AskGgController {
  * Ask GG Everywhere (W3) — PUBLIC, read-only Help-Centre search.
  *
  * The site-wide panel shows signed-OUT visitors free instant answers
- * (zero Claude spend) with a sign-in CTA. The main controller is
+ * (zero model spend) with a sign-in CTA. The main controller is
  * class-level Clerk-guarded, so this tiny sibling exposes ONLY the
  * verified-KB search — public platform FAQ content, bounded to 5 rows,
  * throttled per IP. No user data, no writes ("This helped" stays on
@@ -355,7 +355,7 @@ export class AskGgPublicController {
   /**
    * GG site-guide (G2) — the curated "how this page works / how to do well
    * here" playbook for the given page, with LIVE public state injected (an
-   * auction's current bid / reserve-met / time-left). PUBLIC + zero Claude
+   * auction's current bid / reserve-met / time-left). PUBLIC + zero model
    * spend, so it works signed-out and is safe to hit on every page open.
    */
   @Get('guide')

@@ -1,5 +1,6 @@
 import { MotivationUploadKind } from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
+import type { LlmResponse } from '../common/llm/llm.types';
 
 // ────────────────────────────────────────────────────────────────────
 // READING THE FIREARM OFF ANYTHING.
@@ -15,27 +16,35 @@ import { MotivationExtractService } from './motivation-extract.service';
 // application while looking entirely plausible.
 // ────────────────────────────────────────────────────────────────────
 
-function build(reply: unknown, throws?: Error) {
-  const create = jest.fn(async (_args?: any): Promise<any> => {
+function build(reply: unknown, throws?: Error, configured = true) {
+  const complete = jest.fn(async (_req?: any): Promise<LlmResponse> => {
     if (throws) throw throws;
+    const text = typeof reply === 'string' ? reply : JSON.stringify(reply);
     return {
-      content: [
-        {
-          type: 'text',
-          text: typeof reply === 'string' ? reply : JSON.stringify(reply),
-        },
-      ],
-      usage: { input_tokens: 10, output_tokens: 10 },
+      text,
+      parts: [{ type: 'text', text }],
+      toolCalls: [],
+      stopReason: 'end',
+      usage: { inputTokens: 10, outputTokens: 10 },
+      model: 'test-model-2.5',
+      provider: 'gemini',
+      assistantMessage: { role: 'assistant', content: [{ type: 'text', text }] },
     };
   });
-  const svc = new MotivationExtractService();
-  (svc as unknown as { client: unknown }).client = { messages: { create } };
+  const llm = {
+    complete,
+    stream: jest.fn(),
+    isConfigured: () => configured,
+    model: 'test-model-2.5',
+    provider: 'gemini' as const,
+  };
+  const svc = new MotivationExtractService(llm as never);
   (svc as unknown as { logger: unknown }).logger = {
     warn: jest.fn(),
     error: jest.fn(),
     log: jest.fn(),
   };
-  return { svc, create };
+  return { svc, complete };
 }
 
 const fields = (f: { key: string; value: string }[]) => ({ fields: f });
@@ -193,10 +202,26 @@ describe('what a firearm read lands on', () => {
     ).resolves.toEqual({});
   });
 
-  it('returns nothing when there is no client at all', async () => {
-    const bare = new MotivationExtractService();
+  it('returns nothing when the AI service is not configured at all', async () => {
+    const { svc, complete } = build(fields([]), undefined, false);
     await expect(
-      bare.readFirearm({ bytes, mimeType: 'image/jpeg' }),
+      svc.readFirearm({ bytes, mimeType: 'image/jpeg' }),
     ).resolves.toEqual({});
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('asks for the firearm under its own purpose, with no room for reasoning', async () => {
+    // The ledger reads spend per feature, so a second read on the same upload
+    // has to be tellable from the first. And 800 tokens is a JSON object:
+    // a thinking budget sharing it truncates the answer into nothing.
+    const { svc, complete } = build(fields([{ key: 'firearm_make', value: 'CZ' }]));
+    await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
+    const req = complete.mock.calls[0][0] as any;
+    expect(req.purpose).toBe('motivation.extract.firearm');
+    expect(req.thinking).toEqual({ budgetTokens: 0 });
+    expect(req.messages[0].content[0]).toMatchObject({
+      type: 'image',
+      mimeType: 'image/jpeg',
+    });
   });
 });

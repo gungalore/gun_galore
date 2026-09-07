@@ -1,6 +1,7 @@
 import { CredentialKind } from '@prisma/client';
 import { LicenceCentreExtractService } from './licence-centre-extract.service';
 import { LicenceCentreTextractService } from './licence-centre-textract.service';
+import type { LlmService } from '../common/llm/llm.service';
 
 // ────────────────────────────────────────────────────────────────────
 // THE TWO DATES A DOCUMENT CAN GIVE US, AND WHAT WE DO WITH THEM.
@@ -25,7 +26,13 @@ type Parse = (
   lowConfidence: string[];
 };
 
-const svc = new LicenceCentreExtractService(new LicenceCentreTextractService());
+// `parse` is pure — it never reaches either reader — so the model stands in
+// as an unconfigured stub. It used to be absent from the constructor
+// entirely, because the service built its own Anthropic client from the env.
+const svc = new LicenceCentreExtractService(
+  new LicenceCentreTextractService(),
+  { isConfigured: () => false } as unknown as LlmService,
+);
 // Private by design; reaching it keeps the test honest about where the defect
 // was rather than mocking the model around it.
 const parse = (svc as unknown as { parse: Parse }).parse.bind(svc);

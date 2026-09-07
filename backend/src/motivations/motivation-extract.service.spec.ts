@@ -1,28 +1,47 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
+import type { LlmResponse } from '../common/llm/llm.types';
 
 // This reads someone's identity document and proposes what goes on a form they
 // sign. So the tests are about what it REFUSES to do: invent a field, trust a
 // digit it misread, or touch anything about their criminal record.
 
 const T = MotivationLicenceType.S13_SELF_DEFENCE;
+const MODEL = 'test-model-2.5';
 
-function build(reply: unknown, throws?: Error) {
-  const create = jest.fn(async (_args?: any): Promise<any> => {
+/** One answer in the shape of the shared LLM contract. */
+function llmReply(text: string): LlmResponse {
+  return {
+    text,
+    parts: [{ type: 'text', text }],
+    toolCalls: [],
+    stopReason: 'end',
+    usage: { inputTokens: 10, outputTokens: 10 },
+    model: MODEL,
+    provider: 'gemini',
+    assistantMessage: { role: 'assistant', content: [{ type: 'text', text }] },
+  };
+}
+
+function build(reply: unknown, throws?: Error, configured = true) {
+  const complete = jest.fn(async (_req?: any): Promise<LlmResponse> => {
     if (throws) throw throws;
-    return {
-      content: [{ type: 'text', text: typeof reply === 'string' ? reply : JSON.stringify(reply) }],
-      usage: { input_tokens: 10, output_tokens: 10 },
-    };
+    return llmReply(typeof reply === 'string' ? reply : JSON.stringify(reply));
   });
-  const svc = new MotivationExtractService();
-  (svc as unknown as { client: unknown }).client = { messages: { create } };
+  const llm = {
+    complete,
+    stream: jest.fn(),
+    isConfigured: () => configured,
+    model: MODEL,
+    provider: 'gemini' as const,
+  };
+  const svc = new MotivationExtractService(llm as never);
   (svc as unknown as { logger: unknown }).logger = {
     warn: jest.fn(),
     error: jest.fn(),
     log: jest.fn(),
   };
-  return { svc, create };
+  return { svc, complete };
 }
 
 const run = (
@@ -173,30 +192,61 @@ describe('failing softly', () => {
     expect(await run(svc)).toEqual([]);
   });
 
-  it('returns nothing when there is no API key at all', async () => {
-    const svc = new MotivationExtractService();
-    (svc as unknown as { client: unknown }).client = null;
+  it('returns nothing when the AI service is not configured at all', async () => {
+    const { svc, complete } = build({ fields: [] }, undefined, false);
     expect(await run(svc)).toEqual([]);
+    // Answered in code, never by a request that will fail on the wire.
+    expect(complete).not.toHaveBeenCalled();
   });
 
-  it('sends NO sampling parameters — they are a 400 on our models', async () => {
+  it('sends NO sampling parameters', async () => {
     // This test used to assert `temperature: 0`, and that assertion is what
     // made the outage look fine from in here.
     //
-    // temperature / top_p / top_k were removed from the API on Opus 4.7 and
-    // later, and on Sonnet 5 — the model this service actually runs on in
-    // production. Every call 400'd with "`temperature` is deprecated for this
-    // model", the fail-soft catch swallowed it, and extraction silently
-    // returned nothing for two days while the suite stayed green.
+    // temperature / top_p / top_k were removed from the Anthropic API on the
+    // models this service ran on. Every call 400'd with "`temperature` is
+    // deprecated for this model", the fail-soft catch swallowed it, and
+    // extraction silently returned nothing for two days while the suite
+    // stayed green.
     //
-    // Deterministic transcription is the default now; there is no parameter
-    // to ask for it.
-    const { svc, create } = build({ fields: [] });
+    // ⚠️ THE PARAMETER EXISTS AGAIN on the neutral contract, so leaving it
+    // unset is a decision now rather than a workaround — and the decision is
+    // recorded at the call site, along with what to do if a transcriber
+    // starts giving different digits for the same photograph.
+    const { svc, complete } = build({ fields: [] });
     await run(svc);
-    const body = create.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(body).toBeDefined();
+    const req = complete.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(req).toBeDefined();
     for (const param of ['temperature', 'top_p', 'top_k']) {
-      expect(body[param]).toBeUndefined();
+      expect(req[param]).toBeUndefined();
     }
+  });
+
+  it('spends its ceiling on the transcription, not on reasoning', async () => {
+    // ⚠️ 1200 TOKENS IS A JSON OBJECT OF FIELDS. A thinking budget shares that
+    // ceiling, and a truncated object parses to nothing — which reads exactly
+    // like "we could not read anything on this document". The writer lost a
+    // live document to that failure; this is the same trap, one file over.
+    const { svc, complete } = build({ fields: [] });
+    await run(svc);
+    const req = complete.mock.calls[0][0] as any;
+    expect(req.thinking).toEqual({ budgetTokens: 0 });
+    expect(req.maxTokens).toBe(1200);
+    // Spend is read per feature off the ledger, so every call says what it is
+    // for — and this one says which KIND of document it was reading.
+    expect(req.purpose).toBe('motivation.extract.identity_document');
+  });
+
+  it('sends the page as an image part, base64, with its type', async () => {
+    // The SDK's nested `{ source: { type: 'base64', media_type } }` block is
+    // gone; the contract takes the bytes and the type flat. A part the adapter
+    // cannot read fails the whole read, silently, on the fail-soft catch.
+    const { svc, complete } = build({ fields: [] });
+    await run(svc);
+    const req = complete.mock.calls[0][0] as any;
+    const part = req.messages[0].content[0];
+    expect(part.type).toBe('image');
+    expect(part.mimeType).toBe('image/jpeg');
+    expect(typeof part.data).toBe('string');
   });
 });

@@ -3030,7 +3030,10 @@ model CreditSnapshot {
   id        String   @id @default(cuid())
   // Service identifier — matches the `service` column in CreditThreshold.
   // String (not enum) so adding a new service doesn't need a migration.
-  // Known values: 'smsportal' | 'verifynow' | 'cloudinary' | 'anthropic' | 'pudo'
+  // Known values: 'smsportal' | 'verifynow' | 'cloudinary' | 'gemini' | 'pudo'
+  // ⚠️ 'anthropic' appears in rows written before 2026-09-07, when the AI
+  // spend row was polled from Anthropic's org cost report. Nothing writes it
+  // now — the AI row is 'gemini' and is computed from the AiUsage ledger.
   service   String
   balance   Float? // primary numeric metric; NULL when the fetch failed
   unit      String? // 'sms' | 'lookup' | 'ZAR' | 'USD' | 'credits' | 'GB'
@@ -5656,4 +5659,53 @@ model VaultEvent {
   @@index([stage, code, createdAt])
   @@index([credentialId])
   @@index([userId, createdAt])
+}
+
+// ────────────────────────────────────────────────────────────────────
+// One row per model call, written by LlmService.
+//
+// ⚠️ WHY A LEDGER AND NOT THE PROVIDER'S CONSOLE. /admin/credits used to
+// poll Anthropic's organisation cost report for a single 24h number. That
+// told the operator WHAT was spent and never WHERE — a runaway moderation
+// loop and a busy month of motivations look identical from outside. Gemini
+// bills per project with no per-feature breakdown at all, so the only place
+// that can answer "which feature is this?" is here, at the call.
+//
+// Written fire-and-forget: a failed insert is logged and NEVER fails or
+// delays the model call it describes. A missing ledger row costs a line on
+// a spend chart; a model call that 500s because its bookkeeping failed
+// costs a member their motivation.
+// ────────────────────────────────────────────────────────────────────
+model AiUsage {
+  id       String @id @default(cuid())
+  provider String // 'gemini' | 'anthropic'
+  model    String // the exact model id billed, never an alias we resolved
+  // What the call was for, e.g. 'moderation.listing', 'motivation.generate'.
+  // Free text by design: a new feature must not need a migration to appear
+  // on the spend chart.
+  purpose  String
+
+  inputTokens       Int
+  outputTokens      Int
+  // Both are INCLUDED in the counts above, not additional to them — that is
+  // how the providers report them, and splitting them out here would
+  // double-count the bill. Kept for the cache-hit rate and the thinking
+  // spend, which are the two numbers worth tuning.
+  cachedInputTokens Int @default(0)
+  thinkingTokens    Int @default(0)
+
+  // USD × 1 000 000. Integer micro-dollars, because a flash-lite call costs
+  // a fraction of a cent and a Float would drift over a month of summing.
+  // 0 for Anthropic rows — that path is rollback only and its spend is
+  // visible in Anthropic's own console (see llm.pricing.ts).
+  costUsdMicros Int
+  latencyMs     Int
+  ok            Boolean
+  errorCode     String? // the LlmErrorCode when ok = false
+  createdAt     DateTime @default(now())
+
+  // Spend today / this month / last 30 days on /admin/credits.
+  @@index([createdAt])
+  // The per-purpose breakdown, which is the whole reason this table exists.
+  @@index([purpose, createdAt])
 }

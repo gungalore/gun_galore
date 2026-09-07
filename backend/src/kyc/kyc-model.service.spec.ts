@@ -1,4 +1,11 @@
-import { ClaudeKycService, type KycClaudeFindings } from './claude-kyc.service';
+import { KycModelService, type KycClaudeFindings } from './kyc-model.service';
+import type { LlmService } from '../common/llm/llm.service';
+import {
+  LlmError,
+  type LlmRequest,
+  type LlmResponse,
+  type LlmStopReason,
+} from '../common/llm/llm.types';
 import type { CrossCheckResult } from './kyc-cross-check';
 
 function findings(overrides: Partial<{
@@ -44,7 +51,7 @@ const hard: CrossCheckResult = { pass: false, hardFails: ['dob-id-digit-mismatch
 // them from the government's own recent photograph, but the ancient card
 // photo scores badly. Before this split that combination was REJECTED.
 describe('age gap: the official record photo outranks an old document photo', () => {
-  const svc = new ClaudeKycService();
+  const svc = new KycModelService();
 
   it('strong HA match + weak document photo → human review, NOT rejection', () => {
     expect(
@@ -123,7 +130,7 @@ describe('age gap: the official record photo outranks an old document photo', ()
 // therefore relaxes with the age of the reference photo: a middling score on
 // a 29-year-old photo goes to a human instead of being refused outright.
 describe('age-relaxed face floor', () => {
-  const svc = new ClaudeKycService();
+  const svc = new KycModelService();
   const greenBook = (o: Parameters<typeof findings>[0] = {}) => {
     const f = findings(o);
     f.document.document_type = 'GREEN_BOOK';
@@ -190,7 +197,7 @@ describe('age-relaxed face floor', () => {
 // best face evidence available, and the most attractive document to forge or
 // borrow. These tests pin both halves of that.
 describe('driving licence as a recent reference photo', () => {
-  const svc = new ClaudeKycService();
+  const svc = new KycModelService();
   const ID = '8001015009087';
 
   /** Old green book (weak match) + a licence with whatever properties. */
@@ -310,8 +317,8 @@ describe('driving licence as a recent reference photo', () => {
   });
 });
 
-describe('ClaudeKycService borderline consensus', () => {
-  const svc = new ClaudeKycService();
+describe('KycModelService borderline consensus', () => {
+  const svc = new KycModelService();
 
   // Only knife-edge scans pay for three readings. Clear-cut ones must stay
   // at one call, or the cost of the whole flow triples for no benefit.
@@ -344,7 +351,7 @@ describe('ClaudeKycService borderline consensus', () => {
   // The median is the point: it discards a single wild reading rather than
   // averaging it in, so one outlying lens cannot move the verdict.
   it('median of three ignores a lone outlier', async () => {
-    const svcM = new ClaudeKycService();
+    const svcM = new KycModelService();
     const scores = [55, 58, 5]; // charitable/skeptical agree; one wild low
     let i = 0;
     jest
@@ -366,7 +373,7 @@ describe('ClaudeKycService borderline consensus', () => {
   });
 
   it('a failing lens degrades to the surviving readings, never to an error', async () => {
-    const svcM = new ClaudeKycService();
+    const svcM = new KycModelService();
     let call = 0;
     jest.spyOn(svcM, 'scan').mockImplementation(async () => {
       call += 1;
@@ -384,7 +391,7 @@ describe('ClaudeKycService borderline consensus', () => {
   });
 
   it('all extra lenses failing falls back to the baseline reading alone', async () => {
-    const svcM = new ClaudeKycService();
+    const svcM = new KycModelService();
     let call = 0;
     jest.spyOn(svcM, 'scan').mockImplementation(async () => {
       call += 1;
@@ -401,7 +408,7 @@ describe('ClaudeKycService borderline consensus', () => {
   });
 
   it('OCR takes a majority vote — two lenses outvote one misread digit', async () => {
-    const svcM = new ClaudeKycService();
+    const svcM = new KycModelService();
     const ids = ['8001015009087', '8001015009087', '8OO1015009087'];
     let i = 0;
     jest.spyOn(svcM, 'scan').mockImplementation(async () => {
@@ -418,7 +425,7 @@ describe('ClaudeKycService borderline consensus', () => {
   });
 
   it('three disagreeing OCR reads keep the deterministic baseline, not an arbitrary pick', async () => {
-    const svcM = new ClaudeKycService();
+    const svcM = new KycModelService();
     const ids = ['8001015009087', '9001015009087', '7001015009087'];
     let i = 0;
     jest.spyOn(svcM, 'scan').mockImplementation(async () => {
@@ -435,7 +442,7 @@ describe('ClaudeKycService borderline consensus', () => {
   });
 
   it('never synthesises an anchored score that no lens produced', async () => {
-    const svcM = new ClaudeKycService();
+    const svcM = new KycModelService();
     jest
       .spyOn(svcM, 'scan')
       .mockImplementation(async () => findings({ same_person: 60 }));
@@ -448,8 +455,8 @@ describe('ClaudeKycService borderline consensus', () => {
   });
 });
 
-describe('ClaudeKycService.statusFromFindings', () => {
-  const svc = new ClaudeKycService();
+describe('KycModelService.statusFromFindings', () => {
+  const svc = new KycModelService();
 
   it('VERIFIED when all gates ≥70 and cross-check clean', () => {
     expect(svc.statusFromFindings(findings(), clean, 'standard')).toBe('VERIFIED');
@@ -585,26 +592,123 @@ describe('ClaudeKycService.statusFromFindings', () => {
   });
 });
 
-describe('ClaudeKycService.scan failure modes', () => {
-  const OLD_KEY = process.env.ANTHROPIC_API_KEY;
-  afterAll(() => {
-    if (OLD_KEY === undefined) delete process.env.ANTHROPIC_API_KEY;
-    else process.env.ANTHROPIC_API_KEY = OLD_KEY;
+// ────────────────────────────────────────────────────────────────────
+// EVERY WAY THE SCAN CAN FAIL MUST COME OUT AS A THROW.
+//
+// The caller (submitSelfieClaudeVerdict) maps a throw to UNDER_REVIEW, so
+// throwing is what parks a seller for a human. Anything that returns instead
+// — an empty findings object, a zero-scored one — reads as a FAILED check and
+// rejects an honest person for the provider's bad day.
+//
+// ⚠️ THE "no API key" CASE USED TO BE TESTED BY DELETING ANTHROPIC_API_KEY
+// FROM process.env, because the service built its own client in its
+// constructor. The switch is `isConfigured()` now, so the condition is stated
+// rather than staged through the environment.
+// ────────────────────────────────────────────────────────────────────
+
+/** An LlmService stand-in. `answer` is what a successful call returns. */
+function fakeLlm(
+  answer: { text?: string; stopReason?: LlmStopReason } | Error,
+  configured = true,
+) {
+  const complete = jest.fn(async (_req: LlmRequest): Promise<LlmResponse> => {
+    if (answer instanceof Error) throw answer;
+    return {
+      text: answer.text ?? '{}',
+      parts: [{ type: 'text', text: answer.text ?? '{}' }],
+      toolCalls: [],
+      stopReason: answer.stopReason ?? 'end',
+      usage: { inputTokens: 0, outputTokens: 0 },
+      model: 'test-model',
+      provider: 'gemini',
+      assistantMessage: {
+        role: 'assistant',
+        content: [{ type: 'text', text: answer.text ?? '{}' }],
+      },
+    };
+  });
+  return {
+    llm: { isConfigured: () => configured, complete } as unknown as LlmService,
+    complete,
+  };
+}
+
+/** A document as bytes, so no scan in here ever reaches the network. */
+const DOC = {
+  documentImage: { bytes: Buffer.from('jpeg'), mediaType: 'image/jpeg' },
+};
+
+describe('KycModelService.scan failure modes', () => {
+  it('throws when no model is configured (caller maps to UNDER_REVIEW)', async () => {
+    const svc = new KycModelService(fakeLlm({}, false).llm);
+    await expect(
+      svc.scan({ selfieBase64: 'x', ...DOC, mode: 'standard' }),
+    ).rejects.toThrow('no model configured');
   });
 
-  it('throws when no API key is configured (caller maps to UNDER_REVIEW)', async () => {
-    delete process.env.ANTHROPIC_API_KEY;
-    const svc = new ClaudeKycService();
+  it('throws when there is no model at all', async () => {
+    const svc = new KycModelService();
     await expect(
-      svc.scan({ selfieBase64: 'x', documentUrl: 'https://res.cloudinary.com/x/image/upload/doc.jpg', mode: 'standard' }),
-    ).rejects.toThrow('no API key');
+      svc.scan({ selfieBase64: 'x', ...DOC, mode: 'standard' }),
+    ).rejects.toThrow('no model configured');
   });
 
   it('throws when called without any document', async () => {
-    process.env.ANTHROPIC_API_KEY = 'test-key';
-    const svc = new ClaudeKycService();
+    const svc = new KycModelService(fakeLlm({}).llm);
     await expect(
       svc.scan({ selfieBase64: 'x', mode: 'standard' }),
     ).rejects.toThrow('without a document');
+  });
+
+  it('throws when the reply carries no JSON object', async () => {
+    const svc = new KycModelService(fakeLlm({ text: 'I cannot help.' }).llm);
+    await expect(
+      svc.scan({ selfieBase64: 'x', ...DOC, mode: 'standard' }),
+    ).rejects.toThrow('did not return JSON');
+  });
+
+  // ⚠️ A BLOCKED RESPONSE IS AN OUTAGE, NOT A VERDICT. A provider that
+  // refuses to look at a photograph of a person has said nothing about
+  // whether that person is who they claim to be. It must route exactly where
+  // a 500 routes — a human — and never fall through to a parse that would
+  // produce a low-scoring findings object and REJECT an honest seller.
+  it('⚠️ treats a safety block as a failure, not as a low score', async () => {
+    const svc = new KycModelService(
+      fakeLlm({ text: '{"face_match":{}}', stopReason: 'safety' }).llm,
+    );
+    await expect(
+      svc.scan({ selfieBase64: 'x', ...DOC, mode: 'standard' }),
+    ).rejects.toThrow('blocked');
+  });
+
+  // Every LlmError code fails the same way, and the code is recorded in the
+  // message so the outage alert says which one it was.
+  it.each(['rate_limited', 'timeout', 'network', 'safety'] as const)(
+    'a %s provider error throws with the code recorded',
+    async (code) => {
+      const svc = new KycModelService(
+        fakeLlm(new LlmError(code, 'provider said no')).llm,
+      );
+      await expect(
+        svc.scan({ selfieBase64: 'x', ...DOC, mode: 'standard' }),
+      ).rejects.toThrow(code);
+    },
+  );
+
+  it('parses a good reply, and never passes a model name of its own', async () => {
+    const { llm, complete } = fakeLlm({
+      text: 'here you go\n{"overall_confidence":91}',
+    });
+    const out = await new KycModelService(llm).scan({
+      selfieBase64: 'x',
+      ...DOC,
+      mode: 'standard',
+    });
+    expect(out.overall_confidence).toBe(91);
+    const req = complete.mock.calls[0][0];
+    // No `model`: the platform's LLM_MODEL decides, not this file.
+    expect(req.model).toBeUndefined();
+    expect(req.maxTokens).toBe(1500);
+    expect(req.purpose).toBe('kyc.face-match');
   });
 });

@@ -88,19 +88,31 @@ function assertProductionConfig() {
       '⚠️  CLERK_WEBHOOK_SECRET is not set — incoming Clerk webhooks cannot be verified and will be DROPPED (user sync breaks). Set the Svix signing secret from the Clerk dashboard.',
     );
   }
-  // WARN (audit fix 2026-07-20): the Anthropic key powers Ask Boet, KYC
-  // vision, listing/Q&A moderation, licence + dealer + swap verification.
-  // Missing/empty = all of them silently degrade to manual-review/blocked
-  // paths. The file-top comment always called this out; now the boot gate
-  // actually checks it.
-  if (!process.env.ANTHROPIC_API_KEY) {
+  // WARN (audit fix 2026-07-20; repointed at Gemini 2026-09-07): the model
+  // key powers Ask Boet, KYC vision, listing/Q&A moderation, licence +
+  // dealer + swap verification. Missing/empty = all of them silently degrade
+  // to manual-review/blocked paths. The file-top comment always called this
+  // out; the boot gate actually checks it.
+  //
+  // ⚠️ The gate follows LLM_PROVIDER, because warning about the key of a
+  // provider that is not running is worse than not warning at all — it
+  // trains the operator to ignore the line that matters. Gemini is the
+  // provider (operator, 2026-09-07); anthropic is the rollback lever, and it
+  // needs LLM_MODEL as well since no Anthropic model id is ever guessed.
+  if (process.env.LLM_PROVIDER === 'anthropic') {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      log.error(
+        '⚠️  LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set — ALL AI features (Ask Boet, KYC, moderation, firearm-licence/dealer/swap verification) are degraded to manual-review or blocked paths.',
+      );
+    }
+    if (!process.env.LLM_MODEL) {
+      log.error(
+        '⚠️  LLM_PROVIDER=anthropic but LLM_MODEL is not set — no Anthropic model id is guessed (snapshots retire), so every AI call fails as not_configured. Set LLM_MODEL to a current snapshot.',
+      );
+    }
+  } else if (!process.env.GEMINI_API_KEY) {
     log.error(
-      '⚠️  ANTHROPIC_API_KEY is not set — ALL AI features (Ask Boet, Claude KYC, moderation, firearm-licence/dealer/swap verification) are degraded to manual-review or blocked paths.',
-    );
-  }
-  if (!process.env.ANTHROPIC_ADMIN_API_KEY) {
-    log.error(
-      '⚠️  ANTHROPIC_ADMIN_API_KEY is not set — the AI spend monitor on /admin/credits cannot poll usage (no spend alerts).',
+      '⚠️  GEMINI_API_KEY is not set — ALL AI features (Ask Boet, KYC, moderation, firearm-licence/dealer/swap verification) are degraded to manual-review or blocked paths.',
     );
   }
   // WARN: ID_HASH_SECRET keys BOTH sensitive-data paths, and they fail in

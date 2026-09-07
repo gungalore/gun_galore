@@ -1,14 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { LlmService } from '../common/llm/llm.service';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 
 // Resale-value estimator (audit finding: a seller-acquisition magnet nothing
 // else in SA offers). Produces an INDICATIVE, non-binding price range for a
 // secondhand item, from — in priority order:
 //   1. real SOLD comps (aggregate only, POPIA-safe — never individual rows),
-//   2. a web-anchored SA retail price depreciated by condition (leads while
+//   2. a model-recalled SA retail price depreciated by condition (leads while
 //      the comp base is thin — the audit's explicit cold-start strategy),
 //   3. current asking prices of similar ACTIVE listings (weakest — asks, not
 //      realised, discounted to approximate a sale).
@@ -39,7 +39,7 @@ function roundTo50(cents: number): number {
   return Math.round(cents / BUCKET_CENTS) * BUCKET_CENTS;
 }
 
-// Per-user daily ceiling on the billed web-anchor (Haiku + web search),
+// Per-user daily ceiling on the billed web-anchor (one model call),
 // independent of IP or the query string — the real backstop against a
 // denial-of-wallet loop (IP-based throttling + cache-key variation can both be
 // gamed; a per-Clerk-user counter can't). Over the cap → skip the web anchor.
@@ -61,9 +61,23 @@ const CONDITION_DEPRECIATION: Record<string, number> = {
 // don't over-quote the seller.
 const ASK_TO_SALE_FACTOR = 0.9;
 
-// Bound the AI spend: one Haiku + web-search call per DISTINCT item per day.
+// Bound the AI spend: one web-anchor model call per DISTINCT item per day.
 const WEB_ANCHOR_TTL_MS = 24 * 60 * 60 * 1000;
 const WEB_ANCHOR_CACHE_MAX = 500;
+
+// The shape the anchor call must answer in. Passed as LlmRequest.json.schema
+// so the provider enforces it; extractJson below stays as the tolerant parse.
+const WEB_ANCHOR_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    retailZar: {
+      type: ['number', 'null'],
+      description: 'New retail price in whole South African rands, or null.',
+    },
+    note: { type: 'string', description: 'Short source note.' },
+  },
+  required: ['retailZar'],
+};
 
 const DISCLAIMER =
   'Indicative guide only — not a valuation or a guaranteed price. You set your own price.';
@@ -96,8 +110,6 @@ export interface PriceEstimateResult {
 @Injectable()
 export class PriceEstimateService {
   private readonly logger = new Logger(PriceEstimateService.name);
-  private readonly client: Anthropic | null;
-  private readonly model: string;
   // itemKey -> { retailZar (rands, null = looked-up-but-not-found), at }
   private readonly webAnchorCache = new Map<
     string,
@@ -109,13 +121,10 @@ export class PriceEstimateService {
     { day: string; count: number }
   >();
 
-  constructor(private readonly prisma: PrismaService) {
-    this.client = process.env.ANTHROPIC_API_KEY
-      ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-      : null;
-    this.model =
-      process.env.ANTHROPIC_MODEL_PRICE_ESTIMATE ?? 'claude-haiku-4-5-20251001';
-  }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly llm: LlmService,
+  ) {}
 
   async estimate(input: PriceEstimateInput): Promise<PriceEstimateResult> {
     const condition = this.normaliseCondition(input.condition);
@@ -167,8 +176,8 @@ export class PriceEstimateService {
     }
 
     // ── 2. Web-anchored SA retail, depreciated by condition (leads while the
-    // comp base is thin). One cached Haiku + web-search call per item/day,
-    // hard-capped per user.
+    // comp base is thin). One cached model call per item/day, hard-capped
+    // per user.
     const retailZar = await this.webRetailAnchor(input, make, model);
     if (retailZar != null && retailZar > 0) {
       const factor = CONDITION_DEPRECIATION[condition];
@@ -363,12 +372,41 @@ export class PriceEstimateService {
   }
 
   // ── web anchor ─────────────────────────────────────────────────────────
+  //
+  // ⚠️ THE "WEB" IN web-retail IS A REAL SEARCH AGAIN (2026-09-07), AND IT
+  // COSTS TWO CALLS. It was Anthropic's server-side `web_search_20250305` with
+  // max_uses 1; the provider move to Gemini briefly reduced it to the model's
+  // own recall, because the neutral contract had no way to say "search". It
+  // does now — `grounding: { web: true }` — but on Gemini 2.5 that pairs with
+  // NEITHER json mode NOR tools, and the json pairing fails QUIETLY: a search
+  // runs and is billed while groundingChunks comes back empty. So the anchor
+  // is two steps and must stay two steps:
+  //
+  //   1. GROUND. A prose call that searches and reports what SA retailers are
+  //      actually asking, with the shop named. No schema — none is allowed.
+  //   2. EXTRACT. A `json: { schema }` call over step 1's OWN TEXT and nothing
+  //      else, which is the cheap, deterministic half. It reads what step 1
+  //      found; it is explicitly forbidden to supply a price of its own, so a
+  //      failed search cannot be laundered into a recalled number by the
+  //      second model turn.
+  //
+  // ⚠️ BASIS AND CONFIDENCE DO NOT MOVE. This still reports basis
+  // 'web-retail' at confidence 'low', and it should: a grounded NEW retail
+  // price is a good input to a rough SECONDHAND estimate, not a good estimate.
+  // The uncertainty that keeps this 'low' lives in CONDITION_DEPRECIATION —
+  // five hand-set fractions — not in whether the retail figure was searched.
+  // Everything is still bucketed to R50 and labelled indicative under CPA s41.
+  //
+  // Both steps sit inside ONE try/catch and one cache entry: a failure at
+  // either returns null, exactly as before, and the caller falls through to
+  // active asks. The per-user daily budget is charged once per anchor, not
+  // once per call — the second call is an implementation detail of the first.
   private async webRetailAnchor(
     input: PriceEstimateInput,
     make?: string,
     model?: string,
   ): Promise<number | null> {
-    if (!this.client) return null;
+    if (!this.llm.isConfigured()) return null;
     // Seller-typed make/model/title — sanitised (newlines/quotes stripped,
     // capped) before interpolation so a crafted title can't break out of
     // the quoted span or smuggle instructions into the web-search prompt
@@ -402,34 +440,53 @@ export class PriceEstimateService {
 
     let retailZar: number | null = null;
     try {
-      const resp = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 512,
-        tools: [
-          {
-            type: 'web_search_20250305',
-            name: 'web_search',
-            max_uses: 1,
-          } as never,
-        ],
+      // ── step 1: search ──────────────────────────────────────────────
+      const found = await this.llm.complete({
         messages: [
           {
             role: 'user',
             content:
               `You are pricing a piece of outdoor / hunting / fishing / shooting gear for a South African secondhand marketplace. ` +
               `Item: "${descriptor}". ` +
-              `Use web search to find the CURRENT typical NEW retail price in South Africa, in South African Rand (ZAR). ` +
-              `Prefer SA retailers; if only a foreign price exists, convert roughly to ZAR. ` +
-              `Respond with ONLY a JSON object and nothing else: {"retailZar": <number or null>, "note": "<short source note>"}. ` +
-              `retailZar is the new retail price in whole rands (not cents). Use null if you cannot find a credible price.`,
+              `Search the web for what South African retailers are CURRENTLY asking for this item BRAND NEW, and report what you find in a few plain sentences. ` +
+              `Name the retailer beside each price. Prefer South African shops; if you can only find a foreign price, say which country and currency it was in. ` +
+              `If the search turns up nothing credible for this exact item, say so plainly — do not fall back on a price you remember.`,
           },
         ],
+        maxTokens: 700,
+        grounding: { web: true },
+        // ⚠️ NO `thinking: { budgetTokens: 0 }` HERE. This step has to read
+        // several results and pick the ones that are the same item; the
+        // extraction step below is the one that wants no reasoning.
+        purpose: 'listing.price-estimate.search',
+        timeoutMs: 30_000,
       });
-      const text = resp.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n');
-      const parsed = this.extractJson(text);
+
+      // ── step 2: extract ─────────────────────────────────────────────
+      // ⚠️ THE ONLY INPUT IS STEP 1'S TEXT. The descriptor is deliberately
+      // NOT repeated here: give this turn the item and it can answer from
+      // memory when the search found nothing, which is precisely the
+      // recalled price the grounded step exists to replace.
+      const resp = await this.llm.complete({
+        system:
+          'You extract one number from a research note. Use ONLY what the note says. ' +
+          'If the note reports no credible South African retail price, answer null — never supply a price of your own.',
+        messages: [
+          {
+            role: 'user',
+            content:
+              `Research note:\n"""\n${found.text.slice(0, 4000)}\n"""\n\n` +
+              `Give the typical CURRENT new retail price in South Africa in whole South African Rand (not cents). ` +
+              `If the note only carries a foreign price, convert it roughly to ZAR. ` +
+              `Use null if the note reports no credible price. Put the retailer(s) the note names in the note field.`,
+          },
+        ],
+        maxTokens: 512,
+        json: { schema: WEB_ANCHOR_SCHEMA },
+        thinking: { budgetTokens: 0 },
+        purpose: 'listing.price-estimate',
+      });
+      const parsed = this.extractJson(resp.text);
       const val = parsed?.retailZar;
       if (typeof val === 'number' && Number.isFinite(val) && val > 0) {
         retailZar = val;

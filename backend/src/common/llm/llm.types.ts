@@ -78,6 +78,33 @@ export interface LlmRequest {
    */
   json?: { schema?: Record<string, unknown> };
   /**
+   * Ask the PROVIDER to search the web and answer from what it read.
+   *
+   * ⚠️ THIS IS A PROVIDER-HOSTED SEARCH, NOT AN `LlmTool`. `tools` describes
+   * functions WE execute and answer with a `tool_result`; here the provider
+   * issues the queries, reads the pages and resolves the whole thing inside
+   * one turn. There is nothing for us to run and nothing to echo back — which
+   * is exactly why it could not be expressed as a tool and had to become its
+   * own flag.
+   *
+   * ⚠️ ON GEMINI 2.5 IT COMBINES WITH NEITHER `json` NOR `tools`, and the
+   * adapter throws `bad_request` rather than dropping one silently. Google
+   * ships both combinations on the 3-series only ("Gemini 3 lets you combine
+   * Structured Outputs with built-in tools"; "the Gemini API doesn't support
+   * combining search tools with non-search tools in the same generateContent
+   * request"). A caller that needs grounded JSON does two calls — search in
+   * prose, then extract with `json` — and a caller with a tool loop runs the
+   * grounded turn after the loop settles. Anthropic accepts both, so the
+   * rollback path is more permissive than the live one; write for Gemini.
+   *
+   * ⚠️ THERE IS NO DOMAIN ALLOWLIST. Neither provider's hosted search takes
+   * one — Gemini's `GoogleSearch` carries only `excludeDomains`, and the
+   * declarations mark even that "not supported in Gemini API". A caller that
+   * wants preferred sources says so in `system` and treats it as guidance,
+   * never as a control.
+   */
+  grounding?: { web: true };
+  /**
    * Let the model reason before answering. `budgetTokens: 0` turns it off,
    * which is what every verdict/JSON call wants (the budget must be text).
    * Omit for the provider default.
@@ -135,6 +162,20 @@ export interface LlmResponse {
    * loop. Always the same content as `parts`.
    */
   assistantMessage: LlmMessage;
+  /**
+   * The pages the provider actually read for a `grounding: { web: true }`
+   * call, in the order it reported them, deduplicated by uri.
+   *
+   * ⚠️ ABSENT AND EMPTY MEAN DIFFERENT THINGS ONLY BY CONVENTION, so treat
+   * them the same: undefined is "the call was not grounded", [] is "it was,
+   * and the model answered without opening anything". Either way a caller
+   * that promises citations has none to show and must say so rather than
+   * attribute the answer to a source it cannot name.
+   */
+  groundingSources?: Array<{ uri: string; title?: string }>;
+  /** The queries the provider ran on our behalf. Diagnostics only — never
+   *  logged (a query can carry whatever the caller put in the prompt). */
+  webSearchQueries?: string[];
 }
 
 export type LlmStreamEvent =

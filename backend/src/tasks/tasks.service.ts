@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { SPEND_STYLE_SERVICES } from '../admin/admin-credits.service';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { OffersService } from '../offers/offers.service';
 import { AuctionsService } from '../auctions/auctions.service';
@@ -1322,7 +1323,10 @@ export class TasksService {
     if (!threshold || !threshold.enabled) return;
 
     // spend-style services: crossing = value ABOVE threshold.
-    const spendStyle = service === 'anthropic';
+    // ⚠️ THE SET, NOT A NAME. This read `=== 'anthropic'` until 2026-09-07;
+    // the provider switch wrote its spend under 'gemini', and a spend compared
+    // as a FLOOR alarms while spend is low and goes quiet as it climbs.
+    const spendStyle = SPEND_STYLE_SERVICES.has(service);
     const crossed = (value: number, limit: number) =>
       spendStyle ? value >= limit : value <= limit;
 

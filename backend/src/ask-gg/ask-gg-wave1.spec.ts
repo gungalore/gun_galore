@@ -1,5 +1,5 @@
 // meilisearch ships ESM-only — Jest's CJS transform can't parse it, and it
-// rides in transitively (claude service → burn-chart → search.service). The
+// rides in transitively (the model service → burn-chart → search.service). The
 // spec never touches search; stub the module shape.
 jest.mock('meilisearch', () => ({
   Meilisearch: class MeilisearchStub {},
@@ -13,13 +13,13 @@ import {
   shippingHandlingCentsFor,
 } from '../payments/fee.calculator';
 import { AskGgPlatformToolsService } from './ask-gg-platform-tools.service';
-import { buildSystemBlocks } from './ask-gg-claude.service';
+import { buildSystemBlocks } from './ask-gg-model.service';
 import {
   truncateAskGgHistory,
   HISTORY_MAX_MESSAGES,
   HISTORY_MAX_CHARS,
 } from './ask-gg.service';
-import type { AskGgChatMessage } from './ask-gg-claude.service';
+import type { AskGgChatMessage } from './ask-gg-model.service';
 
 // ─── Wave-1 gates: fee parity · banned-word scan · cache identity ·
 //     history truncation ───────────────────────────────────────────────
@@ -106,7 +106,7 @@ describe('computeFees ↔ FeeCalculator parity', () => {
 
 describe('banned-word scan (compliance lock: "funds held", never the e-word)', () => {
   const files = [
-    path.join(__dirname, 'ask-gg-claude.service.ts'),
+    path.join(__dirname, 'ask-gg-model.service.ts'),
     path.join(__dirname, 'ask-gg-platform-tools.service.ts'),
     path.join(__dirname, '..', '..', 'prisma', 'seed-data', 'help-centre.ts'),
   ];
@@ -118,29 +118,35 @@ describe('banned-word scan (compliance lock: "funds held", never the e-word)', (
   }
 });
 
-describe('buildSystemBlocks cache identity (B0)', () => {
-  it('block 1 is byte-identical across escalate/context variants and cached', () => {
+describe('buildSystemBlocks prefix identity (B0)', () => {
+  // ⚠️ The explicit `cache_control: { type: 'ephemeral' }` marker these
+  // tests used to assert went with the Anthropic SDK — Gemini caches an
+  // identical prefix implicitly and LlmRequest.system is one string. The
+  // DISCIPLINE the marker enforced is what actually matters and is what
+  // is asserted now: block 1 never varies, so the cached prefix keeps
+  // hitting, and every dynamic addition lands AFTER it.
+  it('block 1 is byte-identical across escalate/context variants', () => {
     const base = buildSystemBlocks(false);
     const esc = buildSystemBlocks(true);
     const ctx = buildSystemBlocks(false, '## CURRENT PAGE\nuser is on /listings/x');
     const both = buildSystemBlocks(true, '## CURRENT PAGE\nuser is on /listings/x');
     for (const v of [esc, ctx, both]) {
       expect(v[0].text).toBe(base[0].text);
-      expect(v[0].cache_control).toEqual({ type: 'ephemeral' });
+      expect(v[0]).toEqual(base[0]);
     }
   });
 
-  it('dynamic tail is a SECOND block and is never cache-marked', () => {
+  it('dynamic tail is a SECOND block, never spliced into the first', () => {
     expect(buildSystemBlocks(false)).toHaveLength(1);
     const esc = buildSystemBlocks(true);
     expect(esc).toHaveLength(2);
     expect(esc[1].text).toContain('RETRY MODE');
-    expect(esc[1].cache_control).toBeUndefined();
+    expect(esc[0].text).not.toContain('RETRY MODE');
     const both = buildSystemBlocks(true, 'CTX');
     expect(both).toHaveLength(2);
     expect(both[1].text).toContain('CTX');
     expect(both[1].text).toContain('RETRY MODE');
-    expect(both[1].cache_control).toBeUndefined();
+    expect(both[0].text).not.toContain('CTX');
   });
 });
 

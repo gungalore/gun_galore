@@ -259,9 +259,15 @@ export const FLAGS = {
   } as FlagDefinition<boolean>,
 
   // How many motivations are generated free before the beta closes. Clamped
-  // hard: this number is the ONLY thing standing between a fat-fingered entry
-  // and uncapped AI spend, since org-level spend alerting is not functional on
-  // prod (ANTHROPIC_ADMIN_API_KEY is a regular key there).
+  // hard: this number is the FIRST thing standing between a fat-fingered
+  // entry and uncapped AI spend.
+  //
+  // ⚠️ It used to be the ONLY thing: org-level spend alerting was dead on
+  // prod because ANTHROPIC_ADMIN_API_KEY was a regular key there, so nothing
+  // watched the bill. Since 2026-09-07 LlmService writes an AiUsage row per
+  // call and /admin/credits alerts off that ledger per purpose, so a runaway
+  // is now visible as well as capped. The cap still matters — the alert
+  // tells you afterwards, this stops it — but it is no longer alone.
   /**
    * Whether the C.I.P. cartridge datasheet is printed into a motivation.
    *

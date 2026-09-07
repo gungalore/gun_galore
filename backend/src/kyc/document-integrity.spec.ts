@@ -7,7 +7,7 @@
 
 import { assessDocumentIntegrity } from './document-integrity';
 
-// Mirrors claude-kyc.service.ts. Duplicated deliberately: if those move,
+// Mirrors kyc-model.service.ts. Duplicated deliberately: if those move,
 // these tests should fail and force someone to look here.
 const AUTO_APPROVE_FLOOR = 70;
 const AUTO_REJECT_CEILING = 50;

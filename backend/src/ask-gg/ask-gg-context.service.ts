@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
  * each message. The ids are HINTS ONLY: nothing the client sends is
  * shown to the model directly. This service re-fetches everything with
  * lean selects and ownership checks, and emits a compact text block
- * that ask-gg-claude.service.ts injects as the UNCACHED system tail
+ * that ask-gg-model.service.ts injects as the dynamic system tail
  * (latest turn only — buildSystemBlocks block 1 stays byte-identical).
  *
  * Trust rules:

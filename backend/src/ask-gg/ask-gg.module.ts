@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AskGgService } from './ask-gg.service';
 import { OptionalClerkGuard } from '../auth/optional-clerk.guard';
-import { AskGgClaudeService } from './ask-gg-claude.service';
+import { AskGgModelService } from './ask-gg-model.service';
 import { AskGgQuotaService } from './ask-gg-quota.service';
 import { AskGgKbService } from './ask-gg-kb.service';
 import { AskGgController, AskGgPublicController } from './ask-gg.controller';
@@ -26,7 +26,7 @@ import { AskGgLaneService } from './ask-gg-lane.service';
 import { AskGgGuideService } from './ask-gg-guide.service';
 
 @Module({
-  // ReloadingModule exports ReloadingService so AskGgClaudeService can
+  // ReloadingModule exports ReloadingService so AskGgModelService can
   // call searchPages + slicePagesAsPdf when answering reloading
   // questions (Phase D Sprint 2 tool-use loop).
   // ListingsModule (P2.2) exports ListingsService for the marketplace
@@ -63,7 +63,7 @@ import { AskGgGuideService } from './ask-gg-guide.service';
   ],
   providers: [
     AskGgService,
-    AskGgClaudeService,
+    AskGgModelService,
     AskGgQuotaService,
     AskGgKbService,
     AskGgPlatformToolsService,

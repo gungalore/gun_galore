@@ -2,7 +2,7 @@
 // fuzz + PII discipline + cache-safety of the system tail.
 //
 // meilisearch is ESM-only and reaches this spec transitively through
-// ask-gg-claude.service (→ listings → search.service) — same mock as
+// ask-gg-model.service (→ listings → search.service) — same mock as
 // the wave-1 spec.
 jest.mock('meilisearch', () => ({
   Meilisearch: class {},
@@ -10,7 +10,7 @@ jest.mock('meilisearch', () => ({
 }));
 
 import { AskGgContextService } from './ask-gg-context.service';
-import { buildSystemBlocks } from './ask-gg-claude.service';
+import { buildSystemBlocks } from './ask-gg-model.service';
 import type { PrismaService } from '../prisma/prisma.service';
 
 type Mock = jest.Mock;

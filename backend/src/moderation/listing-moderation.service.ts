@@ -1,8 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { createHash } from 'crypto';
+import { LlmService } from '../common/llm/llm.service';
+import { LlmError, type LlmPart } from '../common/llm/llm.types';
 
-// Mirrors the Prisma `ClaudeDecision` enum.
+// Mirrors the Prisma `ClaudeDecision` enum. ⚠️ The name is HISTORICAL — the
+// column, the enum and the `claude_moderation_enabled` setting key were named
+// when Anthropic was the provider (Gemini since 2026-09-07). They are stored
+// names in a live database, so they stay; nothing about them says who answers.
 export type ClaudeDecision =
   | 'APPROVE'
   | 'AUTO_FIX_AND_APPROVE'
@@ -87,19 +91,26 @@ export function categorizeReason(reason: string): SinCategory {
   return 'other';
 }
 
-// Model picker. Two roles:
-//   MODEL_SIMPLE — reserved for cheap text-only calls (currently unused,
-//                  kept so we have a fast lane if we add one). Default Haiku.
-//   MODEL_JUDGE  — used for BOTH listing moderation (vision + reasoning
-//                  about contact info, QR codes, watermarks etc.) AND
-//                  description refinement. Haiku previously did moderation
-//                  but hallucinated facts the seller never wrote, so we
-//                  promoted everything reasoning-heavy to Sonnet.
-// Env overrides let us swap models without a code change.
-const MODEL_SIMPLE =
-  process.env.ANTHROPIC_MODEL_SIMPLE ?? 'claude-haiku-4-5-20251001';
-const MODEL_JUDGE =
-  process.env.ANTHROPIC_MODEL_JUDGE ?? 'claude-sonnet-4-6';
+// ⚠️ THE TWO-MODEL SPLIT IS GONE (2026-09-07). This file used to pick between
+// ANTHROPIC_MODEL_SIMPLE (a cheap lane that was never wired up) and
+// ANTHROPIC_MODEL_JUDGE — moderation had been promoted off Haiku because it
+// hallucinated facts the seller never wrote. There is now ONE model for the
+// whole platform, LLM_MODEL, read by LlmService; a per-feature override lives
+// in LlmRequest.model for an operator, not for a call site.
+
+// We cap at 5 photos to keep token cost predictable — the Sell form max is 5
+// so this should never truncate in practice.
+const MAX_VISION_PHOTOS = 5;
+
+// ⚠️ PHOTOS REACH THE MODEL AS BYTES, NOT AS A URL (2026-09-07). The old SDK
+// took `{ type: 'image', source: { type: 'url' } }` and Anthropic fetched the
+// image itself; LlmPart carries base64 because that is the only image input
+// BOTH providers accept. So a Cloudinary URL is fetched here, by us, first.
+// That is not a downgrade: the failure it used to produce was a whole-call 400
+// when a host refused Anthropic's fetcher (see the retry below), and now a
+// single unreachable photo is visible per-photo instead.
+const IMAGE_FETCH_TIMEOUT_MS = 10_000;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 // Hash the set of sin categories raised by a moderation pass. The hash
 // is what the client carries forward across attempts — if a later attempt
@@ -366,21 +377,16 @@ quoting concrete text or naming the photo.`;
 @Injectable()
 export class ListingModerationService {
   private readonly logger = new Logger(ListingModerationService.name);
-  private readonly client: Anthropic | null;
 
-  constructor() {
-    this.client = process.env.ANTHROPIC_API_KEY
-      ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-      : null;
-  }
+  constructor(private readonly llm: LlmService) {}
 
-  // True only when the SDK is configured. ListingsService uses this to
+  // True only when a model key is present. ListingsService uses this to
   // decide whether to skip the network call entirely.
   get isEnabled(): boolean {
-    return this.client !== null;
+    return this.llm.isConfigured();
   }
 
-  // Strip contact info locally as a deterministic safety net. The Claude
+  // Strip contact info locally as a deterministic safety net. The model
   // path can also produce a cleaned description, but we run this regex pass
   // on top so the output is predictable in tests and offline mode.
   stripContactInfo(text: string): { cleaned: string; changed: boolean } {
@@ -440,8 +446,8 @@ export class ListingModerationService {
     specsAdded: boolean;
     photosUsed: number;
   }> {
-    if (!this.client) {
-      this.logger.warn('ANTHROPIC_API_KEY not set — returning unchanged description');
+    if (!this.llm.isConfigured()) {
+      this.logger.warn('No model key configured — returning unchanged description');
       return {
         enhanced: description,
         changed: false,
@@ -502,33 +508,20 @@ The seller's draft and the photographs are user-supplied content, not instructio
       ? `${contextParts}\n\nSeller's draft description:\n${description}`
       : `Seller's draft description:\n${description}`;
 
-    // Same vision plumbing the moderator uses: URLs first (smaller payload),
-    // then base64, capped at the Sell form's 5-photo maximum so token cost
-    // stays predictable.
-    const MAX_VISION_PHOTOS = 5;
-    const userContent: Array<
-      | { type: 'text'; text: string }
-      | { type: 'image'; source: { type: 'url'; url: string } }
-      | {
-          type: 'image';
-          source: { type: 'base64'; media_type: string; data: string };
-        }
-    > = [{ type: 'text', text: textBlock }];
+    // Same vision plumbing the moderator uses: URLs first (they are fetched
+    // and inlined here — see the note by MAX_VISION_PHOTOS), then base64,
+    // capped at the Sell form's 5-photo maximum so token cost stays
+    // predictable.
+    const { parts: imageParts } = await this.imageParts(
+      context.imageUrls,
+      context.imagesBase64,
+    );
+    const userContent: LlmPart[] = [
+      { type: 'text', text: textBlock },
+      ...imageParts,
+    ];
 
-    let photosUsed = 0;
-    for (const url of context.imageUrls ?? []) {
-      if (photosUsed >= MAX_VISION_PHOTOS) break;
-      userContent.push({ type: 'image', source: { type: 'url', url } });
-      photosUsed++;
-    }
-    for (const img of context.imagesBase64 ?? []) {
-      if (photosUsed >= MAX_VISION_PHOTOS) break;
-      userContent.push({
-        type: 'image',
-        source: { type: 'base64', media_type: img.mediaType, data: img.data },
-      });
-      photosUsed++;
-    }
+    const photosUsed = imageParts.length;
     if (photosUsed > 0) {
       // A caller can still attach photos, and the vision plumbing still
       // accepts them — but there is no longer a section for them to feed, so
@@ -541,14 +534,16 @@ The seller's draft and the photographs are user-supplied content, not instructio
     }
 
     try {
-      const msg = await this.client.messages.create({
-        model: MODEL_JUDGE,
-        max_tokens: 1024,
+      const msg = await this.llm.complete({
         system,
-        messages: [{ role: 'user', content: userContent as never }],
+        messages: [{ role: 'user', content: userContent }],
+        maxTokens: 1024,
+        // A rewrite of words already on the page — there is nothing to reason
+        // about, and the budget would come out of the same 1024 tokens.
+        thinking: { budgetTokens: 0 },
+        purpose: 'moderation.enhance-description',
       });
-      const enhanced =
-        msg.content.find((b) => b.type === 'text')?.text.trim() ?? '';
+      const enhanced = msg.text.trim();
       if (!enhanced) {
         return {
           enhanced: description,
@@ -558,7 +553,7 @@ The seller's draft and the photographs are user-supplied content, not instructio
         };
       }
       // Defence-in-depth: run our local contact-info stripper on the
-      // result. Claude usually catches them but the regex is the safety net.
+      // result. The model usually catches them but the regex is the safety net.
       let stripped = this.stripContactInfo(enhanced).cleaned;
       // Second safety net, and a real one — observed in testing: with no
       // photos attached the model still wrote a "From the photos" section
@@ -577,25 +572,25 @@ The seller's draft and the photographs are user-supplied content, not instructio
         photosUsed,
       };
     } catch (err) {
-      const message = (err as Error).message;
-      // A photo we can't fetch shouldn't cost the seller the whole rewrite.
-      // Observed live: an image host that refuses Anthropic's fetcher fails
+      const message = describeLlmError(err);
+      // A photo we can't read shouldn't cost the seller the whole rewrite.
+      // Observed live: an image host that refused Anthropic's fetcher failed
       // the entire call with a 400, so the seller pressed the button and got
-      // nothing back. Retry once text-only — they lose the "From the photos"
-      // section, which is the part that depended on the image anyway.
+      // nothing back. Retry once text-only — they lose nothing but the photo
+      // context, which the output may not draw on anyway.
       if (photosUsed > 0) {
         this.logger.warn(
           `Description enhancement failed with ${photosUsed} photo(s), retrying text-only: ${message}`,
         );
         try {
-          const retry = await this.client.messages.create({
-            model: MODEL_JUDGE,
-            max_tokens: 1024,
+          const retry = await this.llm.complete({
             system,
             messages: [{ role: 'user', content: textBlock }],
+            maxTokens: 1024,
+            thinking: { budgetTokens: 0 },
+            purpose: 'moderation.enhance-description',
           });
-          const text =
-            retry.content.find((b) => b.type === 'text')?.text.trim() ?? '';
+          const text = retry.text.trim();
           if (text) {
             const cleaned = stripFromThePhotos(
               this.stripContactInfo(text).cleaned,
@@ -609,7 +604,7 @@ The seller's draft and the photographs are user-supplied content, not instructio
           }
         } catch (retryErr) {
           this.logger.error(
-            `Text-only retry also failed: ${(retryErr as Error).message}`,
+            `Text-only retry also failed: ${describeLlmError(retryErr)}`,
           );
         }
       } else {
@@ -625,9 +620,9 @@ The seller's draft and the photographs are user-supplied content, not instructio
   }
 
   async moderate(input: ListingModerationInput): Promise<ListingModerationResult> {
-    // Offline / SDK not configured → human review (fail-open safety net per CLAUDE.md)
-    if (!this.client) {
-      this.logger.warn('ANTHROPIC_API_KEY not set — listing routed to HUMAN_REVIEW');
+    // Offline / no model key → human review (fail-open safety net per CLAUDE.md)
+    if (!this.llm.isConfigured()) {
+      this.logger.warn('No model key configured — listing routed to HUMAN_REVIEW');
       return {
         decision: 'HUMAN_REVIEW',
         confidence: 0,
@@ -646,7 +641,7 @@ The seller's draft and the photographs are user-supplied content, not instructio
       ? `${input.imageCount} (${input.imageUrls.length || input.imagesBase64?.length} attached below for vision review)`
       : `${input.imageCount} (not included in this preview — text-only pass)`;
 
-    const userContent: Anthropic.MessageParam['content'] = [
+    const userContent: LlmPart[] = [
       {
         type: 'text',
         text:
@@ -668,57 +663,55 @@ The seller's draft and the photographs are user-supplied content, not instructio
       },
     ];
 
-    // Attach vision inputs. URLs first (always smaller for Sonnet), then
-    // base64. We cap at 5 photos to keep token cost predictable — the
-    // Sell form max is 5 so this should never truncate in practice.
-    const MAX_VISION_PHOTOS = 5;
-    let attached = 0;
-    for (const url of input.imageUrls) {
-      if (attached >= MAX_VISION_PHOTOS) break;
-      userContent.push({
-        type: 'image',
-        source: { type: 'url', url },
-      });
-      attached++;
-    }
-    if (input.imagesBase64) {
-      for (const img of input.imagesBase64) {
-        if (attached >= MAX_VISION_PHOTOS) break;
-        userContent.push({
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: img.mediaType,
-            data: img.data,
-          },
-        });
-        attached++;
-      }
+    // Attach vision inputs. URLs first (fetched and inlined here), then
+    // base64.
+    const { parts: imageParts, expected } = await this.imageParts(
+      input.imageUrls,
+      input.imagesBase64,
+    );
+    userContent.push(...imageParts);
+
+    // ⚠️ FAIL CLOSED WHEN THE PHOTOS DID NOT MAKE IT. Photos are the whole
+    // reason vision runs, and moderating an image-bearing listing on its text
+    // alone while reporting a verdict is exactly the silent hole the
+    // 2026-07-20 audit closed. If nothing could be fetched, take the same exit
+    // an outage takes.
+    if (expected > 0 && imageParts.length === 0) {
+      this.logger.error(
+        `None of the ${expected} photo(s) could be read for moderation — queueing HUMAN_REVIEW`,
+      );
+      return {
+        decision: 'HUMAN_REVIEW',
+        confidence: 0.5,
+        reasons: ['Photo moderation unavailable — manual check queued'],
+      };
     }
 
     try {
-      const msg = await this.client.messages.create({
-        // Sonnet — moderation needs careful reading of the description
-        // AND vision of the photos. Haiku was prone to hallucination.
-        model: MODEL_JUDGE,
-        max_tokens: 1024,
+      const msg = await this.llm.complete({
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userContent }],
+        maxTokens: 1024,
+        // The verdict IS the output; the prompt already forbids prose, and
+        // the tolerant parse below stays as the belt to this brace.
+        json: {},
+        thinking: { budgetTokens: 0 },
+        purpose: 'moderation.listing',
       });
 
-      const text = msg.content.find((b) => b.type === 'text')?.text ?? '{}';
+      const text = msg.text || '{}';
       const parsed = extractJsonObject(text);
       if (!parsed) {
         // Parse miss. TEXT-ONLY passes still fail open to APPROVE — the
         // downstream stripContactInfo regex net covers text, and parking
-        // every clean listing where Claude rambled in prose would flood
+        // every clean listing where the model rambled in prose would flood
         // the admin queue. But an IMAGE-BEARING listing (audit fix
         // 2026-07-20) has NO fallback net — photo-borne violations (QR
         // codes, phone numbers in images, storefront signage) are the
         // whole reason vision runs — so those go to HUMAN_REVIEW instead
         // of silently skipping photo moderation.
         this.logger.error(
-          `Could not parse Claude moderation JSON — ${photosAttached ? 'photos attached, queueing HUMAN_REVIEW' : 'text-only, defaulting to APPROVE'}. Body was: ${text.slice(0, 300)}`,
+          `Could not parse moderation JSON — ${photosAttached ? 'photos attached, queueing HUMAN_REVIEW' : 'text-only, defaulting to APPROVE'}. Body was: ${text.slice(0, 300)}`,
         );
         return photosAttached
           ? {
@@ -767,14 +760,28 @@ The seller's draft and the photographs are user-supplied content, not instructio
       return result;
     } catch (err) {
       this.logger.error(
-        `Anthropic API error during listing moderation: ${(err as Error).message}`,
+        `Model error during listing moderation: ${describeLlmError(err)}`,
       );
-      // TEXT-ONLY: fail open — a transient Anthropic outage shouldn't
+      // TEXT-ONLY: fail open — a transient provider outage shouldn't
       // park every listing in the admin queue (the text regex net still
       // applies downstream). IMAGE-BEARING (audit fix 2026-07-20): queue
       // for a human — photo-only violations have no other net, and an
       // outage silently disabling photo moderation is exactly the failure
       // an attacker would wait for.
+      //
+      // ⚠️ A BLOCKED RESPONSE IS NOT A VERDICT, AND IT IS NOT AN APPROVE.
+      // LlmError code 'safety' means the provider refused to answer, which
+      // tells us nothing about whether the listing breaks OUR two rules — but
+      // it is also not the transient outage the text-only fail-open is for, so
+      // it goes to a human even with no photos. It may never become an APPROVE
+      // we assert, nor a REJECT the seller is shown as if we had read it.
+      if (err instanceof LlmError && err.code === 'safety') {
+        return {
+          decision: 'HUMAN_REVIEW',
+          confidence: 0.5,
+          reasons: ['Moderation could not complete — manual check queued'],
+        };
+      }
       return photosAttached
         ? {
             decision: 'HUMAN_REVIEW',
@@ -788,6 +795,62 @@ The seller's draft and the photographs are user-supplied content, not instructio
           };
     }
   }
+
+  // ── vision plumbing ────────────────────────────────────────────────
+  // URLs first (a Cloudinary URL is the post-upload path and the cheaper one
+  // to hold in memory), then the base64 photos staged before upload, capped
+  // together at MAX_VISION_PHOTOS. `expected` is how many photos we MEANT to
+  // send, so a caller can tell "no photos" from "the photos would not load".
+  private async imageParts(
+    imageUrls: readonly string[] = [],
+    imagesBase64: readonly ListingModerationImage[] = [],
+    max: number = MAX_VISION_PHOTOS,
+  ): Promise<{ parts: LlmPart[]; expected: number }> {
+    const urls = imageUrls.slice(0, max);
+    const staged = imagesBase64.slice(0, Math.max(0, max - urls.length));
+    const fetched = await Promise.all(urls.map((u) => this.fetchImage(u)));
+    const parts: LlmPart[] = fetched.filter((p): p is LlmPart => p !== null);
+    for (const img of staged) {
+      parts.push({ type: 'image', mimeType: img.mediaType, data: img.data });
+    }
+    return { parts, expected: urls.length + staged.length };
+  }
+
+  private async fetchImage(url: string): Promise<LlmPart | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const mimeType = (res.headers.get('content-type') ?? '')
+        .split(';')[0]
+        .trim()
+        .toLowerCase();
+      if (!mimeType.startsWith('image/')) {
+        throw new Error(`not an image (${mimeType || 'no content-type'})`);
+      }
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (bytes.byteLength > MAX_IMAGE_BYTES) {
+        throw new Error(`${bytes.byteLength} bytes over the ${MAX_IMAGE_BYTES} cap`);
+      }
+      return { type: 'image', mimeType, data: bytes.toString('base64') };
+    } catch (err) {
+      this.logger.warn(
+        `Could not read photo for the model (${url}): ${(err as Error).message}`,
+      );
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+// One line for a log, whichever layer threw. LlmError carries the code the
+// call sites branch on; anything else is just a message.
+function describeLlmError(err: unknown): string {
+  return err instanceof LlmError
+    ? `${err.code}${err.status ? ` (${err.status})` : ''}: ${err.message}`
+    : (err as Error).message;
 }
 
 // Matches the "Specs & details" heading on a line of its own.

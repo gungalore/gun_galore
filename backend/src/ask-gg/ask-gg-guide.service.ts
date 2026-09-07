@@ -17,7 +17,7 @@ import {
 } from './ask-gg-account-tools.service';
 
 // GG site-guide (G2/G3/G4/G5) — resolves the curated page guide for the current
-// page, injecting LIVE state. ZERO Claude calls: the always-on, $0-AI guide.
+// page, injecting LIVE state. ZERO model calls: the always-on, $0-AI guide.
 //
 // TWO SURFACES:
 //  - getGuide()  — PUBLIC (the same info shown on the page). No auth; works
@@ -26,7 +26,7 @@ import {
 //    top-of-mind state on top of the public guide, composed entirely from the
 //    read-only, PII-gated W5 account shapers (usernames only; never bank / PIN
 //    / address / email / real name — see ask-gg-account-tools privacy contract).
-//    Still ZERO Claude. Any failure degrades to the plain public guide.
+//    Still ZERO model calls. Any failure degrades to the plain public guide.
 //
 // G5 — admin-editable overrides: the static GUIDES catalog stays the shipped
 // baseline; a PUBLISHED AskGgGuideOverride row OVERLAYS one key's title/intro/

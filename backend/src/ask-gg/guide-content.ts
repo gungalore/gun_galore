@@ -1,6 +1,6 @@
 // GG site-guide (G2) — the curated "how this page works / how to do well here"
 // playbook library. 100% static content + (in the service) live DB state:
-// ZERO Claude calls. This is what makes GG an always-on guide without burning
+// ZERO model calls. This is what makes GG an always-on guide without burning
 // AI credits.
 //
 // House rules: never the word "escrow" (say "payment held" / "funds held");

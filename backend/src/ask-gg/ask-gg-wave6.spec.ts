@@ -11,9 +11,18 @@ import { ForbiddenException, HttpException } from '@nestjs/common';
 import { AskGgQuotaService } from './ask-gg-quota.service';
 import { AskGgLaneService } from './ask-gg-lane.service';
 import { AskGgAccountToolsService } from './ask-gg-account-tools.service';
-import { buildSystemBlocks } from './ask-gg-claude.service';
+import {
+  buildSystemBlocks,
+  webSourcesPassApplies,
+} from './ask-gg-model.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { SettingsService } from '../settings/settings.service';
+import type { LlmService } from '../common/llm/llm.service';
+import {
+  LlmError,
+  type LlmRequest,
+  type LlmResponse,
+} from '../common/llm/llm.types';
 
 // Settings stub — every flag resolves to its coded default
 // (FREE 5/30d, MEMBER 20/h, PRO 60/h, support 20/day).
@@ -207,21 +216,149 @@ describe('W6 support-restricted system tail — cache safe', () => {
   });
 });
 
+// ────────────────────────────────────────────────────────────────────
+// THE GROUNDED SOURCES TURN — who gets it, and what the answer turn is
+// told about it.
+//
+// Web search came back on 2026-09-07 as a SEPARATE FINAL TURN, because
+// Gemini 2.5 refuses grounding beside function declarations and every Ask
+// GG answer turn carries eleven of them.
+// ────────────────────────────────────────────────────────────────────
+describe('the grounded sources turn — the gate', () => {
+  // The paid capability. ⚠️ An ABSENT tier is FREE, matching the ballistics
+  // gate: a misconfigured caller must never be handed a paid feature.
+  it('is MEMBER and PRO only, and an absent tier is FREE', () => {
+    expect(webSourcesPassApplies({ subscriptionTier: 'MEMBER' })).toBe(true);
+    expect(webSourcesPassApplies({ subscriptionTier: 'PRO' })).toBe(true);
+    expect(webSourcesPassApplies({ subscriptionTier: 'FREE' })).toBe(false);
+    expect(webSourcesPassApplies({})).toBe(false);
+  });
+
+  // The advice meter is spent; a turn only allowed to answer platform
+  // questions has nowhere to put a forum answer.
+  it('never runs in support-restricted mode', () => {
+    expect(
+      webSourcesPassApplies({ subscriptionTier: 'PRO', restricted: true }),
+    ).toBe(false);
+  });
+
+  // ⚠️ THE LANE FAILS TOWARD SPENDING, NOT TOWARD SILENCE. "Where's my
+  // order" needs no forum — but a caller that forgets to pass the lane must
+  // degrade to buying a search nobody needed, never to dropping the feature
+  // a member paid for while everything still looks fine.
+  it('skips the SUPPORT lane, and treats an absent lane as advice', () => {
+    expect(
+      webSourcesPassApplies({ subscriptionTier: 'PRO', lane: 'SUPPORT' }),
+    ).toBe(false);
+    expect(
+      webSourcesPassApplies({ subscriptionTier: 'PRO', lane: 'ADVICE' }),
+    ).toBe(true);
+    expect(webSourcesPassApplies({ subscriptionTier: 'PRO' })).toBe(true);
+  });
+});
+
+describe('the grounded sources turn — what the answer turn is told', () => {
+  // ⚠️ THIS TAIL EXISTS TO STOP ONE CONTRADICTION: without it the model
+  // writes "I can't speak for what other shooters find" directly above a
+  // sourced section quoting three forums.
+  it('warns the answer turn that a sourced section follows, on the tail only', () => {
+    const bare = buildSystemBlocks(false);
+    const withPass = buildSystemBlocks(false, undefined, false, true);
+    expect(withPass[0]).toEqual(bare[0]);
+    const tail = (withPass[withPass.length - 1] as { text: string }).text;
+    expect(tail).toContain('A SOURCED SECTION FOLLOWS YOURS');
+    expect(tail).toMatch(/do not write a sources section yourself/i);
+  });
+
+  // It grants nothing. The answer turn genuinely has no search, and the
+  // standing rule against claiming what shooters report still governs it.
+  it('grants no web access — the no-web-access rule stays in block 1', () => {
+    const block1 = (buildSystemBlocks(false, undefined, false, true)[0] as {
+      text: string;
+    }).text;
+    expect(block1).toContain('NEVER CLAIM WHAT SHOOTERS REPORT');
+    const tail = (
+      buildSystemBlocks(false, undefined, false, true).slice(-1)[0] as {
+        text: string;
+      }
+    ).text;
+    expect(tail).toContain('You still have NO web access');
+  });
+
+  it('says nothing at all when the pass will not run', () => {
+    const blocks = buildSystemBlocks(false, undefined, false, false);
+    expect(JSON.stringify(blocks)).not.toContain('A SOURCED SECTION FOLLOWS');
+  });
+});
+
 describe('W6 lane classifier — fail-safe', () => {
-  const savedKey = process.env.ANTHROPIC_API_KEY;
-  afterAll(() => {
-    if (savedKey !== undefined) process.env.ANTHROPIC_API_KEY = savedKey;
-  });
+  // The provider-neutral double. `configured: false` stands in for what
+  // used to be "no ANTHROPIC_API_KEY" — the classifier asks LlmService,
+  // never an env var.
+  function fakeLlm(opts: { configured?: boolean; text?: string } = {}) {
+    const complete = jest.fn(async (_req: LlmRequest): Promise<LlmResponse> => {
+      const text = opts.text ?? '';
+      return {
+        text,
+        parts: [{ type: 'text', text }],
+        toolCalls: [],
+        stopReason: 'end',
+        usage: { inputTokens: 40, outputTokens: 1 },
+        model: 'gemini-2.5-flash-lite',
+        provider: 'gemini',
+        assistantMessage: { role: 'assistant', content: text },
+      };
+    });
+    return {
+      provider: 'gemini' as const,
+      model: 'gemini-2.5-flash-lite',
+      isConfigured: () => opts.configured !== false,
+      complete,
+      stream: jest.fn(),
+      ping: jest.fn(),
+    };
+  }
+  const make = (llm: ReturnType<typeof fakeLlm>) =>
+    new AskGgLaneService(llm as unknown as LlmService);
 
-  it('no API key → null (quota service advice-first branch takes over)', async () => {
-    delete process.env.ANTHROPIC_API_KEY;
-    const svc = new AskGgLaneService();
+  it('provider not configured → null (quota service advice-first branch takes over)', async () => {
+    const llm = fakeLlm({ configured: false });
+    const svc = make(llm);
     await expect(svc.classify('where is my order', false)).resolves.toBeNull();
+    expect(llm.complete).not.toHaveBeenCalled();
   });
 
-  it('photo-bearing turns are ADVICE without any API call', async () => {
-    delete process.env.ANTHROPIC_API_KEY;
-    const svc = new AskGgLaneService();
+  it('photo-bearing turns are ADVICE without any model call', async () => {
+    const llm = fakeLlm({ configured: false });
+    const svc = make(llm);
     await expect(svc.classify('what is this?', true)).resolves.toBe('ADVICE');
+    expect(llm.complete).not.toHaveBeenCalled();
+  });
+
+  it('an exact single token classifies; the call is 8 tokens with reasoning off', async () => {
+    const llm = fakeLlm({ text: 'SUPPORT\n' });
+    await expect(
+      make(llm).classify('where is my order', false),
+    ).resolves.toBe('SUPPORT');
+    const req = llm.complete.mock.calls[0][0];
+    expect(req.maxTokens).toBe(8);
+    // ⚠️ Reasoning must be OFF: the whole answer is one token and a
+    // thinking budget spends the same allowance.
+    expect(req.thinking).toEqual({ budgetTokens: 0 });
+    expect(req.purpose).toBe('askgg.lane');
+    expect(req.tools).toBeUndefined();
+  });
+
+  it('a chatty reply that ECHOES the user fails safe to null, never to the free lane', async () => {
+    const llm = fakeLlm({ text: 'The user asked SUPPORT-ish things, so: ADVICE' });
+    await expect(
+      make(llm).classify('should I write SUPPORT here', false),
+    ).resolves.toBeNull();
+  });
+
+  it('a provider failure fails safe to null', async () => {
+    const llm = fakeLlm();
+    llm.complete.mockRejectedValue(new LlmError('timeout', 'too slow'));
+    await expect(make(llm).classify('where is my order', false)).resolves.toBeNull();
   });
 });

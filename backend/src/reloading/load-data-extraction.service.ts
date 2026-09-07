@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
+import { LlmService } from '../common/llm/llm.service';
 import { ReloadingService } from './reloading.service';
 import { cartridgeKey } from '../common/cartridge-key';
 
@@ -11,18 +11,16 @@ import { cartridgeKey } from '../common/cartridge-key';
  * powder by cartridge + bullet weight instantly (no per-request PDF reading).
  *
  * Per cartridge: ReloadingService.searchPages() finds the load-table pages
- * across all manuals, then Claude transcribes each page into structured rows.
+ * across all manuals, then the model transcribes each page into structured rows.
  * STRICT rule: transcribe only what is printed — never invent or interpolate
  * charges. Every row keeps its manual + page so the UI cites it. Idempotent
  * upsert on (manual, page, powder, bullet weight, start charge).
  *
  * Admin-triggered (POST /admin/reloading/extract-loads) — runs on prod where
- * the manuals + DB live. One Claude call per candidate page (~40 pages/cartridge,
+ * the manuals + DB live. One model call per candidate page (~40 pages/cartridge,
  * a few cents). Manuals remain AUTHORITATIVE; the internal engine never feeds
  * this table.
  */
-const EXTRACT_MODEL =
-  process.env.ANTHROPIC_MODEL_LOADDATA ?? 'claude-sonnet-4-6';
 const MAX_PAGES_PER_CARTRIDGE = 40;
 
 interface ExtractedRow {
@@ -42,13 +40,11 @@ interface ExtractedRow {
 @Injectable()
 export class LoadDataExtractionService {
   private readonly logger = new Logger(LoadDataExtractionService.name);
-  private readonly client = process.env.ANTHROPIC_API_KEY
-    ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-    : null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly reloading: ReloadingService,
+    private readonly llm: LlmService,
   ) {}
 
   /**
@@ -62,8 +58,8 @@ export class LoadDataExtractionService {
     rowsUpserted: number;
     manuals: string[];
   }> {
-    if (!this.client) {
-      throw new Error('ANTHROPIC_API_KEY missing — cannot extract load data.');
+    if (!this.llm.isConfigured()) {
+      throw new Error('No model key configured — cannot extract load data.');
     }
     const name = cartridge.trim();
     if (!name) throw new Error('cartridge is required.');
@@ -184,14 +180,14 @@ export class LoadDataExtractionService {
   }
 
   /**
-   * Ask Claude to transcribe the printed load table on one manual page into
+   * Ask the model to transcribe the printed load table on one manual page into
    * structured rows for the target cartridge ONLY. Returns [] on no data.
    */
   private async extractRowsFromPage(
     cartridge: string,
     pageText: string,
   ): Promise<ExtractedRow[]> {
-    if (!this.client) return [];
+    if (!this.llm.isConfigured()) return [];
     // Cap page text so a giant page can't blow the token budget.
     const text = pageText.slice(0, 12000);
     const system =
@@ -205,26 +201,25 @@ export class LoadDataExtractionService {
       `- If the page has NO load table for "${cartridge}", return an empty array.\n` +
       `Respond with ONLY a JSON object: {"loads":[{"powderMaker","powderName","bulletMaker","bulletName","bulletWeightGr","startGr","maxGr","startVelFps","maxVelFps","coalMm","primer"}]}. No prose.`;
 
-    const resp = await this.client.messages.create({
-      model: EXTRACT_MODEL,
-      max_tokens: 4000,
+    // ⚠️ THE ASSISTANT PREFILL IS GONE, AND `json` REPLACES IT. This call used
+    // to append `{ role: 'assistant', content: '{' }` and re-attach the "{" to
+    // the reply, an Anthropic trick for forcing raw JSON that Gemini has no
+    // equivalent for. `json: {}` asks the provider for a JSON document
+    // instead; the salvage parse below is unchanged and still the fallback.
+    // No thinking budget is set here on purpose — this is the one call that
+    // reads a whole printed load table, where a mis-associated charge weight
+    // is a dangerous row, not a typo.
+    const resp = await this.llm.complete({
       system,
       messages: [
-        {
-          role: 'user',
-          content: `MANUAL PAGE TEXT:\n\n${text}`,
-        },
-        // Prefill the assistant turn with "{" so it emits raw JSON.
-        { role: 'assistant', content: '{' },
+        { role: 'user', content: `MANUAL PAGE TEXT:\n\n${text}` },
       ],
+      maxTokens: 4000,
+      json: {},
+      purpose: 'reloading.extract',
     });
 
-    const raw =
-      '{' +
-      resp.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('');
+    const raw = resp.text;
     let parsed: { loads?: unknown };
     try {
       // Trim anything after the final closing brace (defensive).

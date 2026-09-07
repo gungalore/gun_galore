@@ -32,7 +32,7 @@ import {
   WitnessPublicController,
 } from './motivations-witness.controller';
 import { Saps271Service } from './saps271.service';
-import { MotivationClaudeService } from './motivation-claude.service';
+import { MotivationModelService } from './motivation-model.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { VaultLogService } from '../common/vault-log.service';
 import { VaultAdoptionService } from './vault-adoption.service';
@@ -41,7 +41,7 @@ import { VaultAdoptionService } from './vault-adoption.service';
  * Firearm-licence motivation writer (Phase 1 — LICENCE-SERVICES-AND-FEED.md).
  *
  * Deploys INERT: motivation_writer_enabled defaults to false, and every
- * service method asserts it, so nothing is reachable and no Anthropic spend is
+ * service method asserts it, so nothing is reachable and no model spend is
  * possible until an admin flips it with a typed-key confirmation and an audit
  * reason.
  *
@@ -84,7 +84,7 @@ import { VaultAdoptionService } from './vault-adoption.service';
     MotivationWitnessesService,
     MotivationQuotaService,
     MotivationPdfService,
-    MotivationClaudeService,
+    MotivationModelService,
     MotivationRetentionService,
     MotivationExtractService,
     GoogleVisionOcrService,

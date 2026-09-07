@@ -9,7 +9,7 @@
 // KNOWS, for free, deterministically.
 //
 // This is the cheap half of the pipeline's verification pair — the model
-// half is MotivationClaudeService.verifyDocument(). Two verifiers per
+// half is MotivationModelService.verifyDocument(). Two verifiers per
 // document, per the operator, and not more.
 // ────────────────────────────────────────────────────────────────────
 

@@ -21,7 +21,7 @@
  * forever with no way for anyone to clear them: the Centre has no re-read
  * button, unlike a motivation upload.
  *
- * ⚠️ THIS ONE SPENDS MONEY. Every document it touches is a Claude vision call.
+ * ⚠️ THIS ONE SPENDS MONEY. Every document it touches is an AI vision call.
  * It is DRY RUN by default and prints exactly what it would read and what that
  * will cost in calls. Use --limit to do a few first.
  *
@@ -51,6 +51,7 @@ import {
   WANTED,
 } from '../src/licence-centre/licence-centre-extract.service';
 import { LicenceCentreTextractService } from '../src/licence-centre/licence-centre-textract.service';
+import { LlmService } from '../src/common/llm/llm.service';
 
 const APPLY = process.argv.includes('--apply');
 const LIMIT = (() => {
@@ -65,7 +66,16 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg(process.env.DATABASE_URL!),
 });
 const files = new SecureFileStorageService();
-const extract = new LicenceCentreExtractService(new LicenceCentreTextractService());
+// ⚠️ THE MODEL IS A CONSTRUCTOR ARGUMENT NOW. The extractor used to build its
+// own Anthropic client from ANTHROPIC_API_KEY; since the 2026-09-07 provider
+// switch it takes LlmService, which is @Global in the app and hand-built
+// here because a script has no Nest container. It writes the usage ledger
+// through Prisma, so it gets this script's own client (a bare PrismaClient
+// rather than the PrismaService wrapper — same tables).
+const extract = new LicenceCentreExtractService(
+  new LicenceCentreTextractService(),
+  new LlmService(prisma as never),
+);
 
 /** Kinds the vault now actually asks something of. */
 function readable(kind: CredentialKind): boolean {

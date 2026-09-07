@@ -9,7 +9,7 @@ import { AS_AT, renderStatute, statutoryTextFor } from './motivation-statute';
 //
 // THE GOVERNING RULE — the model arranges facts, it does not invent them.
 // Every fact comes from the applicant's own answers, assembled here into a
-// delimited pack. Claude is told, explicitly and more than once, that it may
+// delimited pack. The model is told, explicitly and more than once, that it may
 // not add circumstances, qualifications, dates or incidents. A motivation is
 // signed by the applicant and handed to the Registrar; a fabricated detail in
 // it is not a bad paragraph, it is a false declaration on a firearm licence
@@ -130,7 +130,7 @@ export interface FactPack {
   /**
    * Background research WE gathered from published sources — the area's
    * crime context, the firearm's specifications and role, the calibre's
-   * history. See MotivationClaudeService.research().
+   * history. See MotivationModelService.research().
    *
    * ⚠️ NOT APPLICANT MATERIAL AND NOT UNTRUSTED INPUT: we wrote it, from
    * sources we chose, which is why it renders in its own block rather than
@@ -895,7 +895,7 @@ Return only the JSON object.`.trim();
 /**
  * Ask the applicant for more on ONE field.
  *
- * We choose which field — the gate named it. Claude only phrases the question,
+ * We choose which field — the gate named it. The model only phrases the question,
  * in Boet's voice. That split matters: it keeps the interview inside the
  * registry rather than letting the model wander into whatever it feels like
  * asking a firearm applicant.

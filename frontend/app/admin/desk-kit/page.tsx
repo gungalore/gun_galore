@@ -471,7 +471,7 @@ export default function DeskKitFixture() {
           <WardenMessage
             kind="proposal"
             time="13:20"
-            footnote="diagnosis via Claude API · config and log excerpts only, secrets stripped"
+            footnote="diagnosis via the AI service · config and log excerpts only, secrets stripped"
             diff={'-  client_max_body_size 8m;\n+  client_max_body_size 16m;'}
             actions={
               <>

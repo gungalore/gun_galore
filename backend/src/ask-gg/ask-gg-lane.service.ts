@@ -1,13 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
+import { LlmService } from '../common/llm/llm.service';
+import { LlmError } from '../common/llm/llm.types';
 import type { AskGgLaneGuess } from './ask-gg-quota.service';
 
 /**
- * W6 — the two-lane classifier. One tiny Haiku call per user turn
- * (~$0.0003) decides which METER the turn bills to. It never picks the
- * answering model and never blocks a send: any failure, timeout, or
- * unparseable output returns null and the quota service's fail-safe
- * branch takes over (advice-if-room, else support-restricted).
+ * W6 — the two-lane classifier. One tiny model call per user turn
+ * decides which METER the turn bills to. It never picks the answering
+ * model and never blocks a send: any failure, timeout, or unparseable
+ * output returns null and the quota service's fail-safe branch takes
+ * over (advice-if-room, else support-restricted).
  *
  *   SUPPORT — how the platform works, fees, payments/funds held,
  *             shipping, KYC/payouts, the user's own orders/sales/
@@ -19,9 +20,12 @@ import type { AskGgLaneGuess } from './ask-gg-quota.service';
  *   MIXED   — both in one message.
  */
 
-const LANE_MODEL =
-  process.env.ANTHROPIC_MODEL_ASK_GG_LANE ?? 'claude-haiku-4-5-20251001';
-
+// ⚠️ NO MODEL OF ITS OWN ANY MORE. This used to run on the cheapest
+// model in the range (ANTHROPIC_MODEL_ASK_GG_LANE, a Haiku) precisely
+// because it is a one-token classification and the answering model was
+// expensive. The platform now has ONE model — LlmService.model — and the
+// router rides it. What still keeps it cheap is the shape of the call,
+// not the model id: 8 output tokens, no tools, no reasoning budget.
 const LANE_TIMEOUT_MS = 2_500;
 
 const LANE_SYSTEM = `You classify one All Outdoor chat message into exactly one token.
@@ -35,52 +39,51 @@ Reply with ONLY one word: SUPPORT or ADVICE or MIXED.`;
 @Injectable()
 export class AskGgLaneService {
   private readonly logger = new Logger(AskGgLaneService.name);
-  private readonly client: Anthropic | null;
 
-  constructor() {
-    this.client = process.env.ANTHROPIC_API_KEY
-      ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-      : null;
-  }
+  constructor(private readonly llm: LlmService) {}
 
   /** Classify a user turn. Photo-bearing turns are ADVICE by
-   *  definition (photo ID is the advice product) — no API call. */
+   *  definition (photo ID is the advice product) — no model call. */
   async classify(
     content: string,
     hasPhotos: boolean,
   ): Promise<AskGgLaneGuess> {
     if (hasPhotos) return 'ADVICE';
-    if (!this.client) return null;
+    if (!this.llm.isConfigured()) return null;
     const text = content.trim().slice(0, 1_200);
     if (!text) return null;
     try {
       // AbortSignal timeout (audit fix 2026-07-20) — the previous
       // Promise.race left the losing request RUNNING (still billed, and
       // its eventual rejection was unhandled). Aborting cancels it.
-      const res = await this.client.messages.create(
-        {
-          model: LANE_MODEL,
-          max_tokens: 8,
-          system: LANE_SYSTEM,
-          messages: [{ role: 'user', content: text }],
-        },
-        { signal: AbortSignal.timeout(LANE_TIMEOUT_MS), maxRetries: 0 },
-      );
+      const res = await this.llm.complete({
+        system: LANE_SYSTEM,
+        messages: [{ role: 'user', content: text }],
+        maxTokens: 8,
+        // ⚠️ REASONING OFF, EXPLICITLY. The whole answer is 8 tokens, and
+        // a thinking budget is spent from the same allowance — leave it
+        // to the provider default and the router can burn its entire
+        // output budget on reasoning and emit nothing.
+        thinking: { budgetTokens: 0 },
+        purpose: 'askgg.lane',
+        timeoutMs: LANE_TIMEOUT_MS,
+        signal: AbortSignal.timeout(LANE_TIMEOUT_MS),
+      });
       // STRICT single-token parse (audit fix 2026-07-20): `includes()` let
       // a reply that ECHOED the user's text steer the billing meter (write
       // "SUPPORT" in an advice question → free lane). Only an exact
       // first-token match counts; anything chattier fails safe to null.
-      const out =
-        res.content[0]?.type === 'text'
-          ? res.content[0].text.trim().toUpperCase().split(/\s+/)[0]
-          : '';
+      const out = res.text.trim().toUpperCase().split(/\s+/)[0] ?? '';
       if (out === 'SUPPORT') return 'SUPPORT';
       if (out === 'MIXED') return 'MIXED';
       if (out === 'ADVICE') return 'ADVICE';
       return null;
     } catch (err) {
+      // Fail-safe to null on EVERY failure, provider error code included
+      // — the quota service's own branch decides the lane from there.
+      const code = err instanceof LlmError ? ` [${err.code}]` : '';
       this.logger.warn(
-        `lane classify failed (fail-safe → null): ${err instanceof Error ? err.message : err}`,
+        `lane classify failed${code} (fail-safe → null): ${err instanceof Error ? err.message : err}`,
       );
       return null;
     }

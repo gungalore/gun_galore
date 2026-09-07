@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../prisma/prisma.service';
+import { LlmService } from '../common/llm/llm.service';
 
 /**
  * Two-layer contact-detail filter for ANY user-to-user freeform text.
@@ -37,7 +37,7 @@ import { PrismaService } from '../prisma/prisma.service';
  *      phrases ("meet me at", "DM me"). If this trips we block
  *      immediately, no LLM call.
  *
- *   2. **Claude Haiku fallback** — only runs if regex passed. Catches
+ *   2. **Model fallback** — only runs if regex passed. Catches
  *      evasion: spelled-out digits ("zero eight two..."), leetspeak,
  *      splitting a number across non-digit characters, novel platform
  *      names. Fail-OPEN — if the API is down we don't block legit
@@ -47,9 +47,6 @@ import { PrismaService } from '../prisma/prisma.service';
  * adversarial-evasion catcher. Both layers run cheaply enough to add to
  * every freeform write without UX cost.
  */
-
-const MODEL_FILTER =
-  process.env.ANTHROPIC_MODEL_SIMPLE ?? 'claude-haiku-4-5-20251001';
 
 const FILTER_PROMPT = `You decide whether a short message from one All Outdoor user to another is trying to share off-platform contact details or coordinate a deal outside the platform.
 
@@ -167,14 +164,14 @@ const PUBLIC_REASONS: Record<RejectCategory, string> = {
 @Injectable()
 export class ContactDetailFilterService {
   private readonly logger = new Logger(ContactDetailFilterService.name);
-  private readonly client: Anthropic | null;
 
-  constructor(private readonly prisma: PrismaService) {
-    const key = process.env.ANTHROPIC_API_KEY;
-    this.client = key ? new Anthropic({ apiKey: key }) : null;
-    if (!key) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly llm: LlmService,
+  ) {
+    if (!this.llm.isConfigured()) {
       this.logger.warn(
-        'ANTHROPIC_API_KEY not set — contact-detail filter falls back to regex layer only',
+        'No model key configured — contact-detail filter falls back to regex layer only',
       );
     }
   }
@@ -215,7 +212,7 @@ export class ContactDetailFilterService {
       };
     }
 
-    // Layer 2 — Haiku. Fail open (if the API errors, the regex layer
+    // Layer 2 — the model. Fail open (if the API errors, the regex layer
     // already cleared the obvious cases; we'd rather let an edge case
     // through than block legit messages on infra problems).
     const llmHit = await this.llmCheck(text);
@@ -273,7 +270,7 @@ export class ContactDetailFilterService {
 
   // ─── Layer 1 — regex ──────────────────────────────────────────────
   // PUBLIC (audit fix 2026-07-20): the Q&A moderator uses this as its
-  // deterministic fallback when the Claude layer is down, so an outage
+  // deterministic fallback when the model layer is down, so an outage
   // fails closed on contact details instead of blanket-approving.
 
   regexCheck(text: string): RejectCategory | null {
@@ -329,22 +326,23 @@ export class ContactDetailFilterService {
     return null;
   }
 
-  // ─── Layer 2 — Haiku ──────────────────────────────────────────────
+  // ─── Layer 2 — the model ──────────────────────────────────────────
 
   private async llmCheck(text: string): Promise<RejectCategory | null> {
-    if (!this.client) return null;
+    // Fail OPEN, unchanged: no key means no second layer, and layer 1 is
+    // the hard guarantee.
+    if (!this.llm.isConfigured()) return null;
     try {
-      const msg = await this.client.messages.create({
-        model: MODEL_FILTER,
-        max_tokens: 80,
+      const msg = await this.llm.complete({
         system: FILTER_PROMPT,
         messages: [{ role: 'user', content: text }],
+        maxTokens: 80,
+        json: {},
+        thinking: { budgetTokens: 0 },
+        purpose: 'moderation.contact-filter',
       });
 
-      // Anthropic returns a union of content block types. We only want
-      // the text block; cast through a minimal shape to read .text.
-      const block = msg.content.find((b) => b.type === 'text');
-      const raw = (block as { text?: string } | undefined)?.text;
+      const raw = msg.text;
       if (!raw) return null;
 
       const match = raw.match(/\{[\s\S]*\}/);
@@ -371,6 +369,8 @@ export class ContactDetailFilterService {
       // catch-all bucket) so the user still sees a useful reason.
       return 'off-platform-coordination';
     } catch (err) {
+      // Every LlmError code lands here, a 'safety' block included — a refusal
+      // to answer is not a finding, and layer 1 has already run.
       this.logger.warn(
         `Contact-detail LLM check failed (open-fail): ${(err as Error).message}`,
       );
