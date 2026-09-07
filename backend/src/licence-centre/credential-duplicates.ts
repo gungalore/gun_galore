@@ -183,11 +183,17 @@ export function findOtherSide(
     .filter((o) => o.kind === 'PROFICIENCY' && !o.otherSideId && oppositeSides(subject, o))
     .filter((o) => {
       if (numbers(o.details).some((n) => mine.has(n))) return true;
-      if (!myCodes || !myId) return false;
+      if (!myCodes) return false;
       const codes = parseUnitStandards(o.details.unit_standard ?? '').sort().join('+');
-      if (codes !== myCodes || norm(o.details.id_number) !== myId) return false;
+      if (codes !== myCodes) return false;
+      const theirId = norm(o.details.id_number);
       const gap = daysApart(subject.issuedOn, o.issuedOn);
-      return gap === null || gap <= 120;
+      // Both IDs read: they must agree, and the dates must be close or unknown.
+      if (myId && theirId) return myId === theirId && (gap === null || gap <= 120);
+      // One ID missing (a provider certificate that prints none, or one we
+      // could not read): the same codes on dates within four months of each
+      // other is the same course. With no date on either, that is a guess.
+      return gap !== null && gap <= 120;
     })
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   return hits[0] ?? null;

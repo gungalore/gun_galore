@@ -169,7 +169,14 @@ export class LicenceCentreService {
       for (const r of rows) {
         let details = this.readDetails(r.detailsEncrypted);
         let issuedOn = r.issuedOn ? toIsoDate(r.issuedOn) : null;
-        if (!documentSide(details) && r.storageKey && reread < REREAD_CAP) {
+        // Read again: a row that does not know its side, or an unpaired row
+        // that has not been given one more look since the reader improved
+        // (2026-09-07: the NSN certificate's ID number and certificate number
+        // were both missed on the first read, so nothing could pair it). The
+        // pair_reread mark keeps this to once per row.
+        const wantsReread =
+          !documentSide(details) || (!r.otherSideId && !details.pair_reread);
+        if (wantsReread && r.storageKey && reread < REREAD_CAP) {
           reread += 1;
           try {
             const bytes = await this.files.read(r.storageKey);
@@ -178,8 +185,12 @@ export class LicenceCentreService {
               bytes,
               mimeType: r.mimeType ?? 'image/jpeg',
             });
-            if (Object.keys(again.details).length) {
-              details = { ...details, ...again.details };
+            {
+              details = {
+                ...details,
+                ...again.details,
+                pair_reread: new Date().toISOString().slice(0, 10),
+              };
               issuedOn = issuedOn ?? again.issuedOn;
               const title = derivedCredentialTitle('PROFICIENCY', details);
               await this.prisma.credential.update({
