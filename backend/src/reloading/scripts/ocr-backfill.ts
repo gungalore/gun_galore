@@ -14,7 +14,7 @@
  *   Env:
  *     DATABASE_URL                 — Postgres connection (required)
  *     GEMINI_API_KEY               — provider key (required)
- *     LLM_MODEL                    — model override (default gemini-2.5-flash-lite)
+ *     LLM_MODEL                    — model override (default gemini-3.5-flash-lite)
  *     RELOADING_MANUALS_STORAGE_DIR — manuals dir (default ../manuals, mirrors the service)
  *     OCR_CHUNK_PAGES              — pages per model call (default 15)
  *
@@ -45,7 +45,7 @@ import { PDFDocument } from 'pdf-lib';
 const STORAGE_DIR =
   process.env.RELOADING_MANUALS_STORAGE_DIR ??
   path.resolve(process.cwd(), '..', 'manuals');
-const MODEL = process.env.LLM_MODEL ?? 'gemini-2.5-flash-lite';
+const MODEL = process.env.LLM_MODEL ?? 'gemini-3.5-flash-lite';
 const CHUNK_PAGES = Math.max(
   1,
   parseInt(process.env.OCR_CHUNK_PAGES ?? '6', 10) || 6,

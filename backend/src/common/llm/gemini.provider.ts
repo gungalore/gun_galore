@@ -9,7 +9,8 @@
 // api/caching) and cross-checked against the installed @google/genai 2.21.0
 // type declarations, which are the thing that actually has to compile:
 //
-//   • Model id: `gemini-2.5-flash-lite` (docs/models). Newer Flash-Lite
+//   • Model id: `gemini-3.5-flash-lite` (docs/models; 2.5-flash-lite is
+//     refused to keys created after 2026-09-07 — see llm.service.ts). Older Flash-Lite
 //     generations exist (3.1, 3.5); we pin 2.5 because that is what the
 //     operator named. LLM_MODEL overrides without a deploy.
 //   • Media: images and PDFs travel as `inlineData: { mimeType, data }`
@@ -109,7 +110,7 @@ import {
   type LlmUsage,
 } from './llm.types';
 
-const DEFAULT_MODEL = 'gemini-2.5-flash-lite';
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 
 /**
  * The thinking setting in the dialect the model generation understands.

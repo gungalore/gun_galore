@@ -2477,7 +2477,7 @@ Rules:
 // provider's own usage API.
 //
 // ⚠️ KEYED ON THE MODEL ID THE CALL ACTUALLY USED, which is now whatever
-// LlmService.model resolves (LLM_MODEL, default gemini-2.5-flash-lite) —
+// LlmService.model resolves (LLM_MODEL, default gemini-3.5-flash-lite) —
 // so pointing that env var at a model missing from this map silently
 // prices every message at null. The one-shot warning below is what
 // catches that; do not remove it.

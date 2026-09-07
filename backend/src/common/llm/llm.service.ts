@@ -32,7 +32,11 @@ import {
   type LlmUsage,
 } from './llm.types';
 
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-lite';
+// ⚠️ 3.5, NOT 2.5. The operator asked for 2.5-flash-lite; Google refused it to
+// every key created on 2026-09-07 ("no longer available to new users") and
+// pointed at 3.5-flash-lite, which passed every probe. Operator: "use 3.5
+// flash-lite". A default no new key can reach is a trap for the next person.
+const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
 
 // ⚠️ DI tokens for the two providers, deliberately NOT registered anywhere.
 // A constructor parameter typed as an interface emits `Object` as its design

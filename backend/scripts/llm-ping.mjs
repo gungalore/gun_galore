@@ -60,7 +60,7 @@ const fileEnv = readEnvFile(envPath);
 const env = { ...fileEnv, ...process.env };
 
 const apiKey = env.GEMINI_API_KEY;
-const model = env.LLM_MODEL || 'gemini-2.5-flash-lite';
+const model = env.LLM_MODEL || 'gemini-3.5-flash-lite';
 
 if (env.LLM_PROVIDER === 'anthropic') {
   console.log(

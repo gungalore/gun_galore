@@ -317,7 +317,7 @@ unfinished modules dark in production (see Feature Flags).
   > own model, or parses a provider's response any more; they speak
   > `LlmRequest`/`LlmResponse` (`llm.types.ts`) and the adapter speaks the
   > provider's. Env: `GEMINI_API_KEY`, `LLM_PROVIDER` (default `gemini`),
-  > `LLM_MODEL` (default `gemini-2.5-flash-lite`).
+  > `LLM_MODEL` (default `gemini-3.5-flash-lite`).
   >
   > ⚠️ **Anthropic is the ROLLBACK LEVER, not a second supported mode.**
   > `LLM_PROVIDER=anthropic` plus `LLM_MODEL` and a reload puts the platform

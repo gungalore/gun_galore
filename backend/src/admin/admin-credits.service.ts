@@ -449,7 +449,7 @@ export class AdminCreditsService {
         metadata: {
           source: 'AiUsage ledger (own arithmetic, published rate card)',
           provider: process.env.LLM_PROVIDER ?? 'gemini',
-          model: process.env.LLM_MODEL ?? 'gemini-2.5-flash-lite',
+          model: process.env.LLM_MODEL ?? 'gemini-3.5-flash-lite',
           spend_today_usd: spendToday,
           spend_month_to_date_usd: usd(month._sum.costUsdMicros),
           spend_30d_usd: usd(last30._sum.costUsdMicros),

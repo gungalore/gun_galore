@@ -95,7 +95,7 @@ describe('LlmService', () => {
   it('defaults to gemini and flash-lite', () => {
     const { svc } = build();
     expect(svc.provider).toBe('gemini');
-    expect(svc.model).toBe('gemini-2.5-flash-lite');
+    expect(svc.model).toBe('gemini-3.5-flash-lite');
   });
 
   it('switches to anthropic on LLM_PROVIDER, the rollback lever', async () => {
@@ -276,7 +276,7 @@ describe('LlmService', () => {
 
     expect(result.ok).toBe(true);
     expect(result.provider).toBe('gemini');
-    expect(result.model).toBe('gemini-2.5-flash-lite');
+    expect(result.model).toBe('gemini-3.5-flash-lite');
     expect(gemini.calls[0]).toMatchObject({
       maxTokens: 1,
       purpose: 'health.ping',
