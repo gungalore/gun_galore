@@ -1,5 +1,5 @@
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
-import { fieldsFor, requiredKeys } from './motivation-fields';
+import { fieldsFor, OWNED_ROWS, requiredKeys } from './motivation-fields';
 import {
   nextOwnedSlot,
   remapOwnedSlot,
@@ -136,6 +136,25 @@ describe('a second licence fills a second row', () => {
     expect(nextOwnedSlot({ existing_firearm_1_calibre: '   ' })).toBe(1);
   });
 
+  it('⚠️ but a row is TAKEN by any column, not by its calibre', () => {
+    // ⚠️ CALIBRE IS THE WORST COLUMN TO KEY ON, AND IT USED TO BE THE ONLY
+    // ONE. It is the one column where absence has a second meaning: a card
+    // printing "Calibre: -" contributes none, because placeholders stop at the
+    // answer boundary. A row holding a make, a model and a serial number would
+    // then report itself free and the next licence uploaded would be proposed
+    // straight over the top of a firearm that is already on the form. The rule
+    // is now ownedRowTaken in motivation-fields.ts, and credentialOffer asks
+    // the same one.
+    expect(
+      nextOwnedSlot({
+        existing_firearm_1_make: 'Marlin',
+        existing_firearm_1_serial: 'MR90189D',
+      }),
+    ).toBe(2);
+    // Including a draft saved before the two serial boxes collapsed into one.
+    expect(nextOwnedSlot({ existing_firearm_1_barrel_serial: 'B67890' })).toBe(2);
+  });
+
   it('fills a GAP rather than running past it', () => {
     // Row 1 cleared, row 2 kept: the empty row is the one to write into.
     expect(
@@ -146,12 +165,20 @@ describe('a second licence fills a second row', () => {
     ).toBe(1);
   });
 
-  it('proposes nothing once all six rows are full', () => {
+  it('proposes nothing once every row is full', () => {
     const full: Record<string, string> = {};
-    for (let i = 1; i <= 6; i++) full[`existing_firearm_${i}_calibre`] = '.22 LR';
-    // The registry has no seventh row. Silently overwriting row 6 would be
-    // worse than proposing nothing at all.
+    for (let i = 1; i <= OWNED_ROWS; i++) {
+      full[`existing_firearm_${i}_calibre`] = '.22 LR';
+    }
+    // ⚠️ THE REGISTRY OWNS THE NUMBER, AND IT IS NOT SIX. This file declared
+    // six of its own while the form grew to fourteen — the blank SAPS 271's
+    // item 2.1 is fourteen identical rows — so a member's seventh licence was
+    // refused a row that existed. Silently overwriting the last row would be
+    // worse than proposing nothing at all, but so is stopping eight rows early.
     expect(nextOwnedSlot(full)).toBeNull();
+    // And one row short of full still has somewhere to go.
+    delete full[`existing_firearm_${OWNED_ROWS}_calibre`];
+    expect(nextOwnedSlot(full)).toBe(OWNED_ROWS);
   });
 
   it('rewrites every row-1 key onto the row being filled', () => {

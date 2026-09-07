@@ -11,7 +11,7 @@
 // Coordinates are PDF user space: origin BOTTOM-LEFT, points, A4 596x842.
 // `y` is the bottom of the row, so a caller adds its own baseline padding.
 //
-// 188 of 188 fields resolved.
+// 236 of 236 fields resolved.
 // The rest are listed in UNRESOLVED below and are left BLANK on the form: a box
 // the applicant completes by hand is a nuisance, a guessed coordinate is a
 // wrong answer on a signed firearm licence application.
@@ -1547,6 +1547,390 @@ export const SAPS271_COORDS = {
     "y": 204.5,
     "w": 91.4,
     "h": 17.1
+  },
+  "g_owned_7_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 186.4,
+    "w": 72.6,
+    "h": 18.1
+  },
+  "g_owned_7_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 123.8,
+    "y": 186.4,
+    "w": 72.6,
+    "h": 18.1
+  },
+  "g_owned_7_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 200.4,
+    "y": 186.4,
+    "w": 72.5,
+    "h": 18.1
+  },
+  "g_owned_7_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 186.4,
+    "w": 92.4,
+    "h": 18.1
+  },
+  "g_owned_7_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 373.3,
+    "y": 186.4,
+    "w": 89.6,
+    "h": 18.1
+  },
+  "g_owned_7_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 466.9,
+    "y": 186.4,
+    "w": 91.4,
+    "h": 18.1
+  },
+  "g_owned_8_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 167.3,
+    "w": 72.6,
+    "h": 19.1
+  },
+  "g_owned_8_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 123.8,
+    "y": 167.3,
+    "w": 72.6,
+    "h": 19.1
+  },
+  "g_owned_8_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 200.4,
+    "y": 167.3,
+    "w": 72.5,
+    "h": 19.1
+  },
+  "g_owned_8_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 167.3,
+    "w": 92.4,
+    "h": 19.1
+  },
+  "g_owned_8_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 373.3,
+    "y": 167.3,
+    "w": 89.6,
+    "h": 19.1
+  },
+  "g_owned_8_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 466.9,
+    "y": 167.3,
+    "w": 91.4,
+    "h": 19.1
+  },
+  "g_owned_9_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 149.2,
+    "w": 71.6,
+    "h": 18.1
+  },
+  "g_owned_9_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 122.8,
+    "y": 149.2,
+    "w": 72.6,
+    "h": 18.1
+  },
+  "g_owned_9_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 199.4,
+    "y": 149.2,
+    "w": 73.5,
+    "h": 18.1
+  },
+  "g_owned_9_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 149.2,
+    "w": 91.4,
+    "h": 18.1
+  },
+  "g_owned_9_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 372.3,
+    "y": 149.2,
+    "w": 89.6,
+    "h": 18.1
+  },
+  "g_owned_9_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 465.9,
+    "y": 149.2,
+    "w": 92.4,
+    "h": 18.1
+  },
+  "g_owned_10_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 131,
+    "w": 71.6,
+    "h": 18.2
+  },
+  "g_owned_10_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 122.8,
+    "y": 131,
+    "w": 72.6,
+    "h": 18.2
+  },
+  "g_owned_10_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 199.4,
+    "y": 131,
+    "w": 73.5,
+    "h": 18.2
+  },
+  "g_owned_10_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 131,
+    "w": 91.4,
+    "h": 18.2
+  },
+  "g_owned_10_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 372.3,
+    "y": 131,
+    "w": 89.6,
+    "h": 18.2
+  },
+  "g_owned_10_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 465.9,
+    "y": 131,
+    "w": 92.4,
+    "h": 18.2
+  },
+  "g_owned_11_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 112.9,
+    "w": 71.6,
+    "h": 18.1
+  },
+  "g_owned_11_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 122.8,
+    "y": 112.9,
+    "w": 72.6,
+    "h": 18.1
+  },
+  "g_owned_11_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 199.4,
+    "y": 112.9,
+    "w": 73.5,
+    "h": 18.1
+  },
+  "g_owned_11_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 112.9,
+    "w": 91.4,
+    "h": 18.1
+  },
+  "g_owned_11_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 372.3,
+    "y": 112.9,
+    "w": 89.6,
+    "h": 18.1
+  },
+  "g_owned_11_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 465.9,
+    "y": 112.9,
+    "w": 92.4,
+    "h": 18.1
+  },
+  "g_owned_12_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 94.8,
+    "w": 71.6,
+    "h": 18.1
+  },
+  "g_owned_12_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 122.8,
+    "y": 94.8,
+    "w": 72.6,
+    "h": 18.1
+  },
+  "g_owned_12_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 199.4,
+    "y": 94.8,
+    "w": 73.5,
+    "h": 18.1
+  },
+  "g_owned_12_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 94.8,
+    "w": 91.4,
+    "h": 18.1
+  },
+  "g_owned_12_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 372.3,
+    "y": 94.8,
+    "w": 89.6,
+    "h": 18.1
+  },
+  "g_owned_12_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 465.9,
+    "y": 94.8,
+    "w": 92.4,
+    "h": 18.1
+  },
+  "g_owned_13_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 76.7,
+    "w": 71.6,
+    "h": 18.1
+  },
+  "g_owned_13_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 122.8,
+    "y": 76.7,
+    "w": 72.6,
+    "h": 18.1
+  },
+  "g_owned_13_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 199.4,
+    "y": 76.7,
+    "w": 73.5,
+    "h": 18.1
+  },
+  "g_owned_13_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 76.7,
+    "w": 91.4,
+    "h": 18.1
+  },
+  "g_owned_13_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 372.3,
+    "y": 76.7,
+    "w": 89.6,
+    "h": 18.1
+  },
+  "g_owned_13_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 465.9,
+    "y": 76.7,
+    "w": 92.4,
+    "h": 18.1
+  },
+  "g_owned_14_type": {
+    "page": 5,
+    "kind": "text",
+    "x": 47.2,
+    "y": 59.5,
+    "w": 71.6,
+    "h": 17.2
+  },
+  "g_owned_14_calibre": {
+    "page": 5,
+    "kind": "text",
+    "x": 122.8,
+    "y": 59.5,
+    "w": 72.6,
+    "h": 17.2
+  },
+  "g_owned_14_make": {
+    "page": 5,
+    "kind": "text",
+    "x": 199.4,
+    "y": 59.5,
+    "w": 73.5,
+    "h": 17.2
+  },
+  "g_owned_14_barrel_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 276.9,
+    "y": 59.5,
+    "w": 91.4,
+    "h": 17.2
+  },
+  "g_owned_14_frame_serial": {
+    "page": 5,
+    "kind": "text",
+    "x": 372.3,
+    "y": 59.5,
+    "w": 89.6,
+    "h": 17.2
+  },
+  "g_owned_14_licence": {
+    "page": 5,
+    "kind": "text",
+    "x": 465.9,
+    "y": 59.5,
+    "w": 92.4,
+    "h": 17.2
   },
   "g_residential_postal_code": {
     "page": 6,

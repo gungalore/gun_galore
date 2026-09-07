@@ -1,6 +1,7 @@
 import { MotivationLicenceType } from '@prisma/client';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 import { factPackFields, LICENCE_TYPE_LABELS } from './motivation-fields';
+import { disciplineLabel } from './motivation-field-options';
 import type { SectionId, StructurePlan } from './motivation-structure';
 import { AS_AT, renderStatute, statutoryTextFor } from './motivation-statute';
 
@@ -33,9 +34,19 @@ const LEGAL_FRAME: Record<MotivationLicenceType, string> = {
     'Section 13 of the Firearms Control Act 60 of 2000 — a licence to possess a firearm for self-defence. ' +
     'The Registrar must be satisfied the applicant needs THIS firearm for self-defence and that no other means would reasonably suffice. ' +
     'A section 13 licence is for one firearm, a handgun or a shotgun that is not fully automatic.',
+  // ⚠️ THE CAPS BELONG IN THE FRAME, as section 13's own limit already is.
+  // Section 15(3) is the most easily tripped numeric constraint in the Act and
+  // this frame said nothing about it, so the writer argued a section 15 case
+  // with no idea that the applicant may hold four of them, three if they also
+  // hold a section 13, and only ONE handgun. The verbatim subsection does
+  // reach the model in the statute block; naming it here is what makes it
+  // argued rather than merely available. See also: nothing in the product
+  // COUNTS these, because an owned-firearm row has no section column.
   S15_OCCASIONAL_HUNTER:
     'Section 15 of the Firearms Control Act 60 of 2000 — a licence to possess a firearm for occasional hunting or occasional sports shooting. ' +
-    'The applicant must show the firearm suits that stated purpose and that they genuinely pursue it.',
+    'The applicant must show the firearm suits that stated purpose and that they genuinely pursue it. ' +
+    'Section 15(3) caps what may be held on this section: not more than four section 15 licences, reduced to three where a section 13 licence is also held, and only one of them may be a handgun. ' +
+    'A rifle or shotgun licensed under section 15 may not be semi-automatic.',
   S16_DEDICATED_HUNTER:
     'Section 16 of the Firearms Control Act 60 of 2000 — a licence for a dedicated hunter, endorsed by an accredited hunting association. ' +
     'Dedicated status and a real, current record of activity are central: the association endorsement is evidence, not a substitute for the applicant own account.',
@@ -210,8 +221,30 @@ function renderFacts(pack: FactPack): string {
   const fields = factPackFields(pack.licenceType);
   const lines: string[] = [];
 
+  // ⚠️ THE DISCIPLINE IS STORED AS SLUGS AND THE WRITER WAS HANDED THEM.
+  //
+  // `discipline` is a multi field, comma-joined in the registry's own order,
+  // and it stores VALUES, not labels: the prompt read
+  // `<answer field="discipline">ipsc-practical-pistol-handgun, other</answer>`
+  // — and a bare `other` where the applicant chose Something Else and typed
+  // what they actually shoot into `discipline_other`. The brief for the case
+  // section orders the model to "ADDRESS EVERY DISCIPLINE NAMED", so it was
+  // being told to argue from a token nobody outside this codebase has ever
+  // seen, on the one section a section 16 sport application turns on.
+  //
+  // `disciplineLabel` was written for exactly this, with an `otherText`
+  // parameter, and had no callers anywhere in either tree.
+  const asProse = (key: string, value: string): string =>
+    key === 'discipline'
+      ? value
+          .split(',')
+          .map((part) => disciplineLabel(part, pack.answers.discipline_other))
+          .filter(Boolean)
+          .join(', ')
+      : value;
+
   for (const f of fields) {
-    const value = (pack.answers[f.key] ?? '').trim();
+    const value = asProse(f.key, (pack.answers[f.key] ?? '').trim());
     if (!value) continue;
     if (f.kind === 'long') {
       lines.push(
@@ -622,7 +655,7 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
   compliance_history:
     'Licences held, applications made, anything on record, and the applicant\u2019s clean standing where they have stated it. Never assert an absence of a criminal record unless they supplied it \u2014 SAPS verifies this themselves.',
   conclusion:
-    'A short undertaking in my own voice, and then the ask. \u26a0\ufe0f END BY REQUESTING THE LICENCE. Name the section, the make, the calibre and the serial, and state the purpose \u2014 "I respectfully request the Registrar to issue me with a licence under section 16 for the [make] [calibre], serial [no], for dedicated sport shooting." That request is what the document is FOR, and a motivation that never asks reads as an essay somebody attached to a form. \u26a0\ufe0f ASKING IS NOT PREDICTING. Rule 3 forbids saying the application should succeed, is likely to be approved, or meets the threshold. It does not forbid the request itself, and an earlier version of this brief confused the two and struck out the ask along with the prediction. No summary of everything above, and no thanks.',
+    'A short undertaking in my own voice, and then the ask. \u26a0\ufe0f END BY REQUESTING THE LICENCE. Name the section THIS application is made under, the make, the calibre and the serial, and state THIS applicant’s purpose \u2014 "I respectfully request the Registrar to issue me with a licence under section [number] for the [make] [calibre], serial [no], for [the purpose stated in the facts]." ⚠️ THE SECTION NUMBER AND THE PURPOSE COME FROM THE FACTS, NEVER FROM THIS BRIEF. The worked example here named section 16 and dedicated sport shooting, which is right for exactly one of the five licence types and wrong for the other four: a section 13 self-defence applicant, a section 15 occasional hunter, a dedicated HUNTER and a section 24 renewal were each shown a model answer asking for a dedicated sport licence, in the one paragraph whose whole job is to say what is being applied for. That request is what the document is FOR, and a motivation that never asks reads as an essay somebody attached to a form. \u26a0\ufe0f ASKING IS NOT PREDICTING. Rule 3 forbids saying the application should succeed, is likely to be approved, or meets the threshold. It does not forbid the request itself, and an earlier version of this brief confused the two and struck out the ask along with the prediction. No summary of everything above, and no thanks.',
 };
 
 export function generationUserPrompt(

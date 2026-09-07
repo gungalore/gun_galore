@@ -5072,17 +5072,34 @@ model Credential {
   /// case: a document that is, say, a firearm licence AND something else.
   coversKinds CredentialKind[] @default([])
 
-  /// WHICH DISCIPLINE THIS DOCUMENT ATTESTS, in the clear.
+  /// WHICH KIND OF ASSOCIATION DOCUMENT THIS IS, in the clear.
   ///
-  /// 'DEDICATED_SPORT' | 'DEDICATED_HUNTER' | 'PROFESSIONAL_HUNTER' | 'BOTH',
-  /// or one of the four retired kind names for a row the migration moved.
+  /// ⚠️ THE NAME PROMISES A DISCIPLINE AND THE COLUMN HAS NEVER HELD ONE.
+  /// This comment used to read "'DEDICATED_SPORT' | 'DEDICATED_HUNTER' |
+  /// 'PROFESSIONAL_HUNTER' | 'BOTH', or one of the four retired kind names",
+  /// and a reader who believed it would filter a section 16 application on a
+  /// column that cannot answer. What is actually in it, in the order the
+  /// writers arrived:
   ///
-  /// ⚠️ NOT IN detailsEncrypted, deliberately. The extraction already reads
-  /// status_type off the certificate, but that lands inside an AES-GCM blob
-  /// which SQL cannot see — so a migration could not have preserved which of
-  /// the four kinds a row used to be, and no query can group or filter on the
-  /// discipline. This column is the plaintext discriminator that makes both
-  /// possible. It holds a category, never a number and never a name.
+  ///   • Rows the 2026-08-20 backfill moved: the retired CredentialKind NAME
+  ///     ('DEDICATED_STATUS' | 'DEDICATED_HUNTER' | 'PROFESSIONAL_HUNTER' |
+  ///     'GOOD_STANDING') — `COALESCE("disciplineType", "kind"::text)`. Only
+  ///     two of those four say anything about sport or hunting.
+  ///   • Every row filed since 2026-08-24, which is every row a member has
+  ///     added since: 'ASSOCIATION_CARD' or 'GOOD_STANDING_LETTER' — the
+  ///     MotivationUploadKind, written by DISCIPLINE_TYPE in
+  ///     vault-adoption.service.ts. Those name the piece of paper, not the
+  ///     discipline, and that is what the column is genuinely for: the pack
+  ///     must caption a sworn letter as a sworn letter and not as a status
+  ///     certificate.
+  ///   • null everywhere else.
+  ///
+  /// So THE DISCIPLINE IS NOT HERE. It is `status_type` inside
+  /// detailsEncrypted — read off the page, in the reader's own words
+  /// ("dedicated sport shooter, dedicated hunter, both, or professional
+  /// hunter") — and that is what dedicatedStatusFits in
+  /// motivations/motivation-credentials.ts reads. Renaming the column would
+  /// cost a migration on a live table for no behaviour; the comment is the fix.
   disciplineType String?
 
   /// The member's own name for it — "My .308". In the clear so the list can

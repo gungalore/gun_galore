@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { LibraryItem } from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
@@ -19,16 +19,34 @@ import type { LibraryItem } from '@/lib/motivations-api';
 // ⚠️ IT DOES NOT APPEAR WHEN THERE IS NOTHING TO PICK. A dropdown reading
 // "Choose a document…" over an empty list is a control that looks broken. The
 // first application is meant to have upload work in it; the second is not.
+//
+// ⚠️ AND IT SAYS WHICH DOCUMENT IT REUSES. The pack wizard mounts one of these
+// per document a step asks for, and every word in here was generic — so the
+// competency step showed two identical "Use one I already have…" dropdowns and
+// the dedicated step three identical "Nothing saved to reuse yet" ones, with
+// nothing distinguishing them. Operator, 2026-09-07, on a live section 13:
+// "multiple upload areas on one page". `label` is the document's own name from
+// the checklist, so the picker and the capture cards above it cannot describe
+// one document in two ways.
 // ────────────────────────────────────────────────────────────────────
 
 export default function LibraryPicker({
   items,
+  label,
   onPick,
   keeping,
   onTurnOn,
 }: {
   /** Already narrowed to the requirement this sits under. */
   items: LibraryItem[];
+  /**
+   * The document this picker reuses, in the member's own words.
+   *
+   * Optional so the surfaces that mount ONE picker on a screen — where there
+   * is nothing to tell it apart from — are unchanged. Where several sit on one
+   * step it is what stops them reading as the same control repeated.
+   */
+  label?: string;
   onPick: (item: LibraryItem, placeConfirmed: boolean) => Promise<void>;
   /**
    * Are we keeping this member's documents at all?
@@ -65,151 +83,193 @@ export default function LibraryPicker({
   // the way back in.
   if (keeping === false) {
     return (
-      <button
-        type="button"
-        onClick={onTurnOn}
-        className="min-h-[44px] rounded border px-3 py-2 text-sm"
-        style={{
-          borderColor: 'var(--border)',
-          background: 'var(--bg-inset)',
-          color: 'var(--text-secondary)',
-        }}
-      >
-        Turn on saved documents
-      </button>
+      <Labelled label={label}>
+        <button
+          type="button"
+          onClick={onTurnOn}
+          className="min-h-[44px] rounded border px-3 py-2 text-sm"
+          style={{
+            borderColor: 'var(--border)',
+            background: 'var(--bg-inset)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          Turn on saved documents
+        </button>
+      </Labelled>
     );
   }
 
   if (usable.length === 0) {
     return (
-      <select
-        className="gg-datecell min-h-[44px] rounded border px-2 py-2 text-sm"
-        style={{
-          borderColor: 'var(--border)',
-          background: 'var(--bg-inset)',
-          color: 'var(--text-tertiary-on-card)',
-        }}
-        disabled
-        value=""
-        aria-label="Use a document you already have — nothing saved yet"
-      >
-        <option value="">Nothing saved to reuse yet</option>
-      </select>
+      <Labelled label={label}>
+        <select
+          className="gg-datecell min-h-[44px] rounded border px-2 py-2 text-sm"
+          style={{
+            borderColor: 'var(--border)',
+            background: 'var(--bg-inset)',
+            color: 'var(--text-tertiary-on-card)',
+          }}
+          disabled
+          value=""
+          aria-label={
+            label
+              ? `Reuse ${label} — nothing saved yet`
+              : 'Use a document you already have — nothing saved yet'
+          }
+        >
+          <option value="">Nothing saved to reuse yet</option>
+        </select>
+      </Labelled>
     );
   }
 
   return (
-    <span className="inline-flex flex-col">
-      <select
-        className="gg-datecell min-h-[44px] rounded border px-2 py-2 text-sm"
-        style={{
-          borderColor: 'var(--border)',
-          background: 'var(--bg-inset)',
-          color: 'var(--text-primary)',
-        }}
-        disabled={busy}
-        value=""
-        aria-label="Use a document you already have"
-        onChange={async (e) => {
-          const chosen = usable.find(
-            (i) => `${i.source}:${i.sourceId}` === e.target.value,
-          );
-          if (!chosen) return;
-          // ⚠️ A SAFE PHOTOGRAPH WAITS FOR THE PLACE TICK. It is a photograph
-          // of one safe at one dwelling, and somebody who has moved house
-          // would otherwise attach pictures of their old wall without ever
-          // being asked. The server refuses it too — this is the asking.
-          if (chosen.askPlace) {
-            setPending(chosen);
+    <Labelled label={label}>
+      <span className="inline-flex flex-col">
+        <select
+          className="gg-datecell min-h-[44px] rounded border px-2 py-2 text-sm"
+          style={{
+            borderColor: 'var(--border)',
+            background: 'var(--bg-inset)',
+            color: 'var(--text-primary)',
+          }}
+          disabled={busy}
+          value=""
+          aria-label={
+            label ? `Reuse ${label}` : 'Use a document you already have'
+          }
+          onChange={async (e) => {
+            const chosen = usable.find(
+              (i) => `${i.source}:${i.sourceId}` === e.target.value,
+            );
+            if (!chosen) return;
+            // ⚠️ A SAFE PHOTOGRAPH WAITS FOR THE PLACE TICK. It is a photograph
+            // of one safe at one dwelling, and somebody who has moved house
+            // would otherwise attach pictures of their old wall without ever
+            // being asked. The server refuses it too — this is the asking.
+            if (chosen.askPlace) {
+              setPending(chosen);
+              setErr(null);
+              return;
+            }
+            setBusy(true);
             setErr(null);
-            return;
-          }
-          setBusy(true);
-          setErr(null);
-          try {
-            await onPick(chosen, false);
-          } catch {
-            setErr('We could not attach that one.');
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <option value="">
-          {busy ? 'Attaching…' : 'Use one I already have…'}
-        </option>
-        {usable.map((i) => (
-          <option key={`${i.source}:${i.sourceId}`} value={`${i.source}:${i.sourceId}`}>
-            {i.title}
-            {/* When it was added is how somebody tells this year's competency
-                certificate from the one it replaced. */}
-            {` — added ${i.addedOn}`}
+            try {
+              await onPick(chosen, false);
+            } catch {
+              setErr('We could not attach that one.');
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <option value="">
+            {busy ? 'Attaching…' : 'Use one I already have…'}
           </option>
-        ))}
-      </select>
+          {usable.map((i) => (
+            <option key={`${i.source}:${i.sourceId}`} value={`${i.source}:${i.sourceId}`}>
+              {i.title}
+              {/* When it was added is how somebody tells this year's competency
+                  certificate from the one it replaced. */}
+              {` — added ${i.addedOn}`}
+            </option>
+          ))}
+        </select>
 
-      {/* ⚠️ THE PLACE TICK, NOT A DATE. A safe photograph does not go stale
-          with time; it goes wrong when the applicant moves house. There is no
-          address stored against the picture to check it against, so it is
-          asked. */}
-      {pending && (
-        <span className="mt-2 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-xs">
-          <label className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              onChange={async (e) => {
-                if (!e.target.checked) return;
-                const chosen = pending;
-                setPending(null);
-                setBusy(true);
-                try {
-                  await onPick(chosen, true);
-                } catch {
-                  setErr('We could not attach that one.');
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            />
-            <span>
-              These are the safe at the address on this application.
-            </span>
-          </label>
-          <button
-            type="button"
-            className="mt-2 underline text-[var(--text-tertiary)]"
-            onClick={() => setPending(null)}
-          >
-            Cancel
-          </button>
-        </span>
-      )}
-
-      {/* Warnings, never blocks. A four-month-old proof of address is still
-          theirs to send; what must not happen is it going in silently and a
-          DFO being the one to notice. */}
-      {usable.some((i) => i.caution) && (
-        <span className="mt-1 flex flex-col gap-1">
-          {usable
-            .filter((i) => i.caution)
-            .map((i) => (
-              <span
-                key={`c-${i.source}:${i.sourceId}`}
-                className="text-xs"
-                style={{
-                  color:
-                    i.caution!.tone === 'stale'
-                      ? 'var(--warning)'
-                      : 'var(--text-tertiary)',
+        {/* ⚠️ THE PLACE TICK, NOT A DATE. A safe photograph does not go stale
+            with time; it goes wrong when the applicant moves house. There is no
+            address stored against the picture to check it against, so it is
+            asked. */}
+        {pending && (
+          <span className="mt-2 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3 text-xs">
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                onChange={async (e) => {
+                  if (!e.target.checked) return;
+                  const chosen = pending;
+                  setPending(null);
+                  setBusy(true);
+                  try {
+                    await onPick(chosen, true);
+                  } catch {
+                    setErr('We could not attach that one.');
+                  } finally {
+                    setBusy(false);
+                  }
                 }}
-              >
-                {i.caution!.text}
+              />
+              <span>
+                These are the safe at the address on this application.
               </span>
-            ))}
-        </span>
-      )}
-      {err && <span className="mt-1 text-xs text-[var(--red)]">{err}</span>}
+            </label>
+            <button
+              type="button"
+              className="mt-2 underline text-[var(--text-tertiary)]"
+              onClick={() => setPending(null)}
+            >
+              Cancel
+            </button>
+          </span>
+        )}
+
+        {/* Warnings, never blocks. A four-month-old proof of address is still
+            theirs to send; what must not happen is it going in silently and a
+            DFO being the one to notice. */}
+        {usable.some((i) => i.caution) && (
+          <span className="mt-1 flex flex-col gap-1">
+            {usable
+              .filter((i) => i.caution)
+              .map((i) => (
+                <span
+                  key={`c-${i.source}:${i.sourceId}`}
+                  className="text-xs"
+                  style={{
+                    color:
+                      i.caution!.tone === 'stale'
+                        ? 'var(--warning)'
+                        : 'var(--text-tertiary)',
+                  }}
+                >
+                  {i.caution!.text}
+                </span>
+              ))}
+          </span>
+        )}
+        {err && <span className="mt-1 text-xs text-[var(--red)]">{err}</span>}
+      </span>
+    </Labelled>
+  );
+}
+
+/**
+ * The document's name over whichever of the three states is showing.
+ *
+ * ⚠️ NOT A <label>. The three states render a <select>, a disabled <select>
+ * and a <button>, and a <label> wrapping a button is meaningless to a screen
+ * reader — so the accessible name goes on the control itself (see the
+ * aria-labels above) and this is the visible caption only, hidden from the
+ * accessibility tree so it is not read twice.
+ */
+function Labelled({
+  label,
+  children,
+}: {
+  label?: string;
+  children: ReactNode;
+}) {
+  if (!label) return <>{children}</>;
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <span
+        aria-hidden="true"
+        className="text-[12px] text-[var(--text-tertiary)]"
+      >
+        Reuse {label.charAt(0).toLowerCase() + label.slice(1)}
+      </span>
+      {children}
     </span>
   );
 }

@@ -26,13 +26,26 @@ import type { Saps271Coverage, CoverageSection } from '@/lib/motivations-api';
 
 export default function Saps271Meter({
   coverage,
+  licenceType,
 }: {
   coverage: Saps271Coverage;
+  /**
+   * ⚠️ SO THE PANEL DOES NOT NAME A FORM THIS APPLICATION DOES NOT USE. A
+   * section 24 renewal is lodged on the SAPS 518(a); the 271 is an application
+   * for a NEW licence under sections 13 to 20, and the backend throws if asked
+   * to fill one for a renewal. The meter said "SAPS 271 — what is filled" on
+   * every step of one anyway. The sections it counts are real either way, so
+   * the honest fix is to stop claiming the form rather than to hide the meter.
+   *
+   * Optional: a caller that does not know the type keeps the old heading.
+   */
+  licenceType?: string;
 }) {
+  const isRenewal = licenceType === 'S24_RENEWAL';
   return (
     <aside className="lg:border-l lg:border-[var(--border)] lg:pl-6">
       <div className="text-[11px] font-medium uppercase tracking-[.11em] text-[var(--text-tertiary)]">
-        SAPS 271 — what is filled
+        {isRenewal ? 'Your application — what is filled' : 'SAPS 271 — what is filled'}
       </div>
 
       <div className="mt-[9px] flex items-baseline gap-2">
@@ -40,7 +53,9 @@ export default function Saps271Meter({
           {coverage.percent}%
         </span>
         <span className="text-[12.5px] text-[var(--text-tertiary)]">
-          of the boxes that apply to you
+          {isRenewal
+            ? 'of the questions that apply to you'
+            : 'of the boxes that apply to you'}
         </span>
       </div>
 
@@ -51,9 +66,11 @@ export default function Saps271Meter({
       </div>
 
       <p className="mt-[18px] border-t border-[var(--border-divider)] pt-3.5 text-[12px] leading-normal text-[var(--text-tertiary)]">
-        A section counts only the boxes that apply to you. Answering
-        &ldquo;no&rdquo; to a history question closes its follow-ups; an
-        owned-firearm row you never use is not an empty box.
+        {isRenewal
+          ? 'A renewal is lodged on the SAPS 518(a), not the 271, so there is no form for us to fill in here — this counts your answers. '
+          : 'A section counts only the boxes that apply to you. '}
+        Answering &ldquo;no&rdquo; to a history question closes its follow-ups;
+        an owned-firearm row you never use is not an empty box.
       </p>
     </aside>
   );

@@ -1,6 +1,7 @@
 import { MotivationLicenceType } from '@prisma/client';
 import {
   applicationBlockers,
+  endorsementNeed,
   requiredEndorsement,
 } from './motivation-eligibility';
 
@@ -42,9 +43,12 @@ describe('which endorsement a firearm needs', () => {
     // covers handguns whole — so the action changes nothing here. It still
     // matters for SECTION eligibility, which is why it is carried separately;
     // see firearmShape.
-    expect(requiredEndorsement({ firearm_type: 'Handgun', firearm_action: 'Revolver' })).toBe(
-      'handgun',
-    );
+    expect(
+      requiredEndorsement({
+        firearm_type: 'Handgun',
+        firearm_action: 'Revolver',
+      }),
+    ).toBe('handgun');
   });
 
   it('⚠️ says nothing until the applicant has said enough', () => {
@@ -55,18 +59,69 @@ describe('which endorsement a firearm needs', () => {
     expect(requiredEndorsement({ firearm_action: 'Bolt action' })).toBeNull();
   });
 
+  it('⚠️ needs the ACTION only for a rifle', () => {
+    // §2.2 and §12 #3: one unit standard for handguns (119649), one for
+    // shotguns (119652). The action cannot change either answer, so demanding
+    // it withheld a certificate we already held — from every renewal above
+    // all, because a licence card does not print an action and
+    // licence-renewal.ts therefore cannot seed one.
+    expect(requiredEndorsement({ firearm_type: 'Handgun' })).toBe('handgun');
+    expect(requiredEndorsement({ firearm_type: 'Shotgun' })).toBe('shotgun');
+    // The one place it genuinely selects: 119651 manual against 119650
+    // self-loading.
+    expect(endorsementNeed({ firearm_type: 'Rifle' })).toEqual({
+      kind: 'unknown',
+    });
+  });
+
   it('⚠️ refuses to resolve a COMBINATION gun', () => {
     // Rifle and shotgun barrels: no single endorsement covers it, so picking
-    // one would be half an answer on a signed application.
+    // one would be half an answer on a signed application. `requiredEndorsement`
+    // is the NARROW view and still says null...
     expect(
-      requiredEndorsement({ firearm_type: 'Combination', firearm_action: 'Break action' }),
+      requiredEndorsement({
+        firearm_type: 'Combination',
+        firearm_action: 'Break action',
+      }),
     ).toBeNull();
+  });
+
+  it('⚠️ but null is no longer ONE answer — endorsementNeed tells them apart', () => {
+    // The whole fail-open: three different situations all answered null, and
+    // every caller read them as "not yet", so a certificate chosen for an
+    // earlier answer stayed on the form for the life of the application.
+    expect(endorsementNeed({})).toEqual({ kind: 'unknown' });
+    expect(
+      endorsementNeed({
+        firearm_type: 'Combination',
+        firearm_action: 'Break action',
+      }),
+    ).toEqual({ kind: 'several', endorsements: ['rifle-mo', 'shotgun'] });
+    expect(
+      endorsementNeed({
+        firearm_type: 'Combination',
+        firearm_action: 'Semi-automatic (self-loading)',
+      }),
+    ).toEqual({ kind: 'several', endorsements: ['rifle-sl', 'shotgun'] });
+    // Only reachable by registry drift — a type choice renamed without this
+    // following it, or a legacy value in an old draft. It is a decision, not a
+    // silence: whatever certificate is on the form was chosen for something
+    // else.
+    expect(
+      endorsementNeed({
+        firearm_type: 'Trebuchet',
+        firearm_action: 'Bolt action',
+      }),
+    ).toEqual({ kind: 'unmappable' });
   });
 });
 
 describe('what a section will not permit', () => {
   it('⚠️ BLOCKS a self-loading rifle under section 13', () => {
-    const out = applicationBlockers(MotivationLicenceType.S13_SELF_DEFENCE, SL_RIFLE);
+    const out = applicationBlockers(
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      SL_RIFLE,
+    );
     expect(out.map((b) => b.code)).toContain('section-forbids-firearm');
     expect(out[0].message).toMatch(/rifle or carbine cannot be licensed/i);
     // It must say what WOULD work, not only what does not.
@@ -74,7 +129,10 @@ describe('what a section will not permit', () => {
   });
 
   it('blocks a bolt-action rifle under section 13 too — it is the TYPE', () => {
-    const out = applicationBlockers(MotivationLicenceType.S13_SELF_DEFENCE, BOLT_RIFLE);
+    const out = applicationBlockers(
+      MotivationLicenceType.S13_SELF_DEFENCE,
+      BOLT_RIFLE,
+    );
     expect(out.map((b) => b.code)).toContain('section-forbids-firearm');
   });
 
@@ -96,7 +154,9 @@ describe('what a section will not permit', () => {
 
   it('allows a pistol under section 13, semi-automatic or not', () => {
     // s13(1)(b) excludes only the FULLY automatic handgun.
-    expect(applicationBlockers(MotivationLicenceType.S13_SELF_DEFENCE, PISTOL)).toEqual([]);
+    expect(
+      applicationBlockers(MotivationLicenceType.S13_SELF_DEFENCE, PISTOL),
+    ).toEqual([]);
   });
 
   it('⚠️ ALLOWS a semi-automatic pistol under section 15', () => {
@@ -112,11 +172,17 @@ describe('what a section will not permit', () => {
 
   it('blocks a semi-automatic RIFLE or SHOTGUN under section 15', () => {
     for (const f of [SL_RIFLE, SL_SHOTGUN]) {
-      const out = applicationBlockers(MotivationLicenceType.S15_OCCASIONAL_HUNTER, f);
+      const out = applicationBlockers(
+        MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+        f,
+      );
       expect(out.map((b) => b.code)).toContain('section-forbids-firearm');
     }
     expect(
-      applicationBlockers(MotivationLicenceType.S15_OCCASIONAL_HUNTER, BOLT_RIFLE),
+      applicationBlockers(
+        MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+        BOLT_RIFLE,
+      ),
     ).toEqual([]);
   });
 
@@ -133,7 +199,9 @@ describe('what a section will not permit', () => {
     // A renewal inherits the section of the licence being renewed, and we do
     // not hold that as a structured value. Guessing would refuse a perfectly
     // good renewal.
-    expect(applicationBlockers(MotivationLicenceType.S24_RENEWAL, SL_RIFLE)).toEqual([]);
+    expect(
+      applicationBlockers(MotivationLicenceType.S24_RENEWAL, SL_RIFLE),
+    ).toEqual([]);
   });
 });
 
@@ -144,10 +212,13 @@ describe('whether the competency covers it', () => {
     'Rifle or carbine — manually operated (bolt / lever / pump / single shot)';
 
   it('⚠️ BLOCKS when the endorsement held is the wrong one', () => {
-    const out = applicationBlockers(MotivationLicenceType.S16_DEDICATED_HUNTER, {
-      ...SL_RIFLE,
-      competency_for: RIFLE_MO_LABEL,
-    });
+    const out = applicationBlockers(
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+      {
+        ...SL_RIFLE,
+        competency_for: RIFLE_MO_LABEL,
+      },
+    );
     expect(out.map((b) => b.code)).toContain('competency-missing-endorsement');
     // It names the endorsement they actually need.
     expect(out[0].message).toContain('self-loading');
@@ -181,10 +252,13 @@ describe('whether the competency covers it', () => {
   });
 
   it('points at the field the applicant should look at', () => {
-    const out = applicationBlockers(MotivationLicenceType.S16_DEDICATED_HUNTER, {
-      ...SL_RIFLE,
-      competency_for: RIFLE_MO_LABEL,
-    });
+    const out = applicationBlockers(
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+      {
+        ...SL_RIFLE,
+        competency_for: RIFLE_MO_LABEL,
+      },
+    );
     expect(out[0].field).toBe('competency_for');
   });
 
@@ -197,5 +271,134 @@ describe('whether the competency covers it', () => {
       competency_for: RIFLE_MO_LABEL,
     });
     expect(out).toHaveLength(2);
+  });
+});
+
+describe('⚠️ the blocker must never fire on an unread competency', () => {
+  // Operator, 2026-09-07, driving a fresh section 13 on production: a member
+  // who holds exactly the right handgun competency was told it does not cover
+  // his handgun, because the box had been filled from the WRONG certificate
+  // before the application knew which firearm it was for. The upstream fix is
+  // in the vault offer; these pin the half that lives here — silence is the
+  // only thing an unusable `competency_for` may produce.
+  const PISTOL_ANSWERS = {
+    firearm_type: 'Handgun',
+    firearm_action: 'Semi-automatic (self-loading)',
+  };
+  const S13 = MotivationLicenceType.S13_SELF_DEFENCE;
+
+  it('says nothing for an empty, blank or whitespace-only answer', () => {
+    for (const competency_for of ['', '   ', ',', ' , ,']) {
+      expect(
+        applicationBlockers(S13, { ...PISTOL_ANSWERS, competency_for }),
+      ).toEqual([]);
+    }
+  });
+
+  it('says nothing when NOTHING in the answer resolves to an endorsement', () => {
+    // Wording we cannot read is not evidence that they lack the endorsement.
+    // Refusing on it would refuse a member for our own parser.
+    expect(
+      applicationBlockers(S13, {
+        ...PISTOL_ANSWERS,
+        competency_for: 'whatever the clerk wrote here',
+      }),
+    ).toEqual([]);
+  });
+
+  it('names BOTH what is missing and what the certificate covers', () => {
+    const out = applicationBlockers(
+      MotivationLicenceType.S16_DEDICATED_HUNTER,
+      {
+        firearm_type: 'Rifle',
+        firearm_action: 'Semi-automatic (self-loading)',
+        competency_for:
+          'Rifle or carbine — manually operated (bolt / lever / pump / single shot)',
+      },
+    );
+    expect(out[0].message).toContain('self-loading');
+    expect(out[0].message).toContain('manually operated');
+    // ⚠️ AND NEVER AN EMPTY PAIR OF QUOTES. `It needs ""` tells a member
+    // nothing at all, and it is one registry rename away.
+    expect(out[0].message).not.toContain('""');
+  });
+});
+
+describe('⚠️ a firearm we cannot map does not silence every OTHER check', () => {
+  // applicationBlockers used to open with
+  // `if (!requiredEndorsement(answers)) return out;`, so a combination gun —
+  // or a renamed type — skipped the section rule as well, which has nothing to
+  // do with competency.
+  it('still applies the section rule to a firearm with no single endorsement', () => {
+    // A firearm type this registry cannot map, under a section that would
+    // refuse the shape anyway. The endorsement half goes quiet; the section
+    // half must not.
+    const out = applicationBlockers(MotivationLicenceType.S13_SELF_DEFENCE, {
+      firearm_type: 'Rifle',
+      firearm_action: 'Bolt action',
+      competency_for: 'Handgun',
+    });
+    expect(out.map((b) => b.code)).toEqual(
+      expect.arrayContaining(['section-forbids-firearm']),
+    );
+  });
+});
+
+describe('⚠️ a combination gun, on the competency rule', () => {
+  // The reference (§4.2) calls COMB "rifle and shotgun barrels" and offers it
+  // as a SAPS 271 §E.1 type. What it does NOT say anywhere — nor the Act, nor
+  // the Regulations — is that BOTH endorsements are required; §2.2 is explicit
+  // that the whole endorsement system is SAPS administrative practice
+  // "[ACT — by absence]". So the line sits at "covers neither barrel", which is
+  // wrong on any reading, and the stricter rule waits for a DFO.
+  const S13 = MotivationLicenceType.S13_SELF_DEFENCE;
+  const COMB = {
+    firearm_type: 'Combination',
+    firearm_action: 'Break action',
+  };
+
+  it('blocks when the certificate covers NEITHER barrel', () => {
+    const out = applicationBlockers(S13, {
+      ...COMB,
+      competency_for: 'Handgun',
+    });
+    expect(out.map((b) => b.code)).toContain('competency-missing-endorsement');
+  });
+
+  it('⚠️ does NOT block when it covers one of the two', () => {
+    for (const competency_for of [
+      'Rifle or carbine — manually operated (bolt / lever / pump / single shot)',
+      'Shotgun',
+    ]) {
+      expect(
+        applicationBlockers(S13, { ...COMB, competency_for }).map(
+          (b) => b.code,
+        ),
+      ).not.toContain('competency-missing-endorsement');
+    }
+  });
+});
+
+describe('⚠️ the blocker never invites the member to silence it', () => {
+  // `competency_for` is the blocker's ONLY input and it is SAPS 271 item 1.4 —
+  // a declaration the applicant signs. The message used to end "add it to your
+  // Document Centre or tick it above", which is an instruction to make a
+  // compliance warning disappear by declaring something that may not be true.
+  const out = applicationBlockers(MotivationLicenceType.S13_SELF_DEFENCE, {
+    firearm_type: 'Handgun',
+    firearm_action: 'Semi-automatic (self-loading)',
+    competency_for: 'Shotgun',
+  });
+
+  it('points at a real certificate and at the DFO, never at the tickbox', () => {
+    expect(out[0].message).not.toMatch(/tick/i);
+    expect(out[0].message).toContain('Document Centre');
+    expect(out[0].message).toContain('DFO');
+  });
+
+  it('quotes both halves the same way, and never an empty pair', () => {
+    expect(out[0].message).toContain('"Handgun"');
+    expect(out[0].message).toContain('"Shotgun"');
+    expect(out[0].message).not.toContain('""');
   });
 });

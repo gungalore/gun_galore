@@ -2134,6 +2134,11 @@ export class LicenceCentreService {
         title: true,
         expiresOn: true,
         confirmedAt: true,
+        // ⚠️ THE DATE'S PROVENANCE, because renewalRefusal asks dateIsSettled
+        // rather than confirmedAt. A licence we dated and armed ourselves is
+        // chased by the reminder sweep and reads renewalDue: refusing to renew
+        // it was the confirm step "Automate It — Do Not Ask" overturned.
+        dateSource: true,
         detailsEncrypted: true,
         storageKey: true,
         purgedAt: true,
@@ -2148,10 +2153,16 @@ export class LicenceCentreService {
     if (!row) throw new NotFoundException('Document not found');
 
     const src = {
+      // The application reference falls back to this when the card's licence
+      // number could not be read — see renewalPlan.
+      id: row.id,
       kind: row.kind,
       title: row.title,
       expiresOn: row.expiresOn,
       confirmedAt: row.confirmedAt,
+      dateSource: row.dateSource,
+      // Already selected above for the 517(g) advice; it seeds the action too.
+      firearmSelfLoading: row.firearmSelfLoading,
       details: this.readDetails(row.detailsEncrypted),
     };
 

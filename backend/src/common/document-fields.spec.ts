@@ -82,6 +82,57 @@ describe('the values that never used to carry', () => {
   });
 });
 
+describe('the association document', () => {
+  const card = {
+    association: 'SA Hunters',
+    status_number: 'SA115153SS',
+    joined_on: '2015-02-01',
+    status_type: 'dedicated hunter',
+    holder_name: 'A Person',
+  };
+
+  it('⚠️ carries joined_on to the JOIN box, never to dedicated_since', () => {
+    // This alias used to read `{ vault: 'joined_on', motivation:
+    // 'dedicated_since' }`, and `dedicated_since` is labelled "Dedicated
+    // status held since". They are different facts, and for a SAHGCA or NARFO
+    // member routinely different years: you join, and then you qualify. The
+    // second is also what deriveFacts counts `years_dedicated` from, so the
+    // old alias did not merely mislabel a box — it fed the motivation's own
+    // argument the wrong number.
+    const out = toMotivationAnswers('DEDICATED_DISCIPLINE', card);
+    expect(out.association_joined).toBe('2015-02-01');
+    expect(out.dedicated_since).toBeUndefined();
+  });
+
+  it('gives status_type NO box, deliberately — it decides, it does not fill', () => {
+    // It is the only genuine record of WHICH dedicated status a document
+    // awards. `Credential.disciplineType` looks like that column and is not:
+    // the 2026-08-20 backfill wrote CredentialKind names into it and the only
+    // live writer writes MotivationUploadKind names. dedicatedStatusFits in
+    // motivations/motivation-credentials.ts reads status_type to keep a
+    // dedicated hunter's papers out of a dedicated sport shooter's
+    // application.
+    const out = toMotivationAnswers('DEDICATED_DISCIPLINE', card);
+    expect(Object.values(out)).not.toContain('dedicated hunter');
+    const alias = FIELD_ALIASES.DEDICATED_DISCIPLINE.find(
+      (a) => a.vault === 'status_type',
+    );
+    expect(alias).toBeDefined();
+    expect(alias!.motivation).toBeNull();
+  });
+
+  it('⚠️ has no alias for the "valid until" date, and must not grow one', () => {
+    // It is not a detail. The letter of good standing's expiry travels on the
+    // vault's `expires_on` channel and lands in the Credential.expiresOn
+    // COLUMN, which is what the renewal sweep reads and what credentialOffer
+    // reads for `association_expiry`. A details key for the same date would
+    // give one document two expiries free to disagree.
+    for (const a of FIELD_ALIASES.DEDICATED_DISCIPLINE) {
+      expect(a.motivation).not.toBe('association_expiry');
+    }
+  });
+});
+
 describe('a licence fills an owned-firearm row', () => {
   const licence = {
     licence_number: 'L998',
@@ -123,6 +174,51 @@ describe('a licence fills an owned-firearm row', () => {
     expect(out).not.toHaveProperty('existing_firearm_1_barrel_serial');
     expect(out).not.toHaveProperty('existing_firearm_1_calibre');
     expect(out.existing_firearm_1_make).toBe('CZ');
+  });
+
+  it('⚠️ never carries a card placeholder into a box the applicant signs', () => {
+    // ⚠️ THIS BOUNDARY IS NOT REACHED IN PRODUCTION TODAY — see the note on
+    // toMotivationAnswers. The live carry is credentialOffer(), and that is
+    // where the operator's "Firearm 6 — frame serial NONE · barrel serial
+    // NONE" actually came from and where it is actually fixed. This pins the
+    // rule for the day the module is wired, and states the rule the mapping
+    // must obey: a licence card prints NONE in a row that does not apply — the
+    // operator's own Marlin reads "Frame Serial No NONE" — and a NONE that
+    // crosses into `answers` is a false statement on a SAPS 271, which section
+    // 120(9)(f) of the Act makes an offence.
+    //
+    // The card is still stored verbatim; see common/card-placeholder.ts for
+    // why the rule belongs at ANSWER boundaries and nowhere upstream of them.
+    const out = toMotivationAnswers(
+      'FIREARM_LICENCE',
+      {
+        ...licence,
+        frame_serial: 'NONE',
+        barrel_serial: 'N/A',
+        calibre: '-',
+      },
+      6,
+    );
+    expect(out).not.toHaveProperty('existing_firearm_6_frame_serial');
+    expect(out).not.toHaveProperty('existing_firearm_6_barrel_serial');
+    expect(out).not.toHaveProperty('existing_firearm_6_calibre');
+    // The rest of the card is untouched — a placeholder in one row says
+    // nothing about the next.
+    expect(out.existing_firearm_6_make).toBe('CZ');
+    expect(out.existing_firearm_6_licence_no).toBe('L998');
+  });
+
+  it('keeps a real value that merely contains the word', () => {
+    // The test is anchored, so a rifle whose model genuinely reads "None
+    // Series" keeps it, and so does the serial NA1234. A rule that ate those
+    // would be deleting a fact off somebody's licence.
+    const out = toMotivationAnswers(
+      'FIREARM_LICENCE',
+      { ...licence, make: 'None Series', frame_serial: 'NA1234' },
+      1,
+    );
+    expect(out.existing_firearm_1_make).toBe('None Series');
+    expect(out.existing_firearm_1_frame_serial).toBe('NA1234');
   });
 
   it('substitutes the row token literally and only where it appears', () => {

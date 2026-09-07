@@ -1017,7 +1017,13 @@ export const motivationsApi = {
     placeConfirmed = false,
   ) =>
     request<{
-      attached: { kind: string; title: string }[];
+      /**
+       * ONE ENTRY PER DOCUMENT, NOT PER PAGE. A proficiency certificate and
+       * its statement of results are one document with two sides, and
+       * `pages` says so rather than the list carrying "... (other side)" as
+       * a second document. See the banner that counts this list.
+       */
+      attached: { kind: string; title: string; pages?: number }[];
       skipped: { kind: string; title: string; why: string }[];
       reason: 'ok' | 'no-consent' | 'not-editable' | 'already-done';
       /** Something was held back pending the place tick. Ask, then re-call. */
@@ -1603,7 +1609,20 @@ export function visibleFields(
   const wantsForm = (answers[SAPS271_OPT_KEY] ?? '').trim() === SAPS271_FILL;
   return fields.filter((f) => {
     if (f.formOnly && f.key !== SAPS271_OPT_KEY && !wantsForm) return false;
-    return !f.showIf || (answers[f.showIf.key] ?? '').trim() === f.showIf.equals;
+    if (!f.showIf) return true;
+    // ⚠️ A MULTI ANSWER IS A LIST — see isVisible() on the backend, which this
+    // mirrors. `discipline` stores "vlakteskiet-chasa, other", and a gate
+    // written as equality could never open `discipline_other` for a member who
+    // picked Something Else alongside a real discipline. On section 16 sport
+    // that field is required, so it was required and unaskable at once.
+    const chosen = (answers[f.showIf.key] ?? '').trim();
+    return (
+      chosen === f.showIf.equals ||
+      chosen
+        .split(',')
+        .map((part) => part.trim())
+        .includes(f.showIf.equals)
+    );
   });
 }
 

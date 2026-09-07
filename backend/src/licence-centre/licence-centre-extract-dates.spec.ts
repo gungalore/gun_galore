@@ -140,3 +140,108 @@ describe('a date read off a document', () => {
     expect(out.expiresOn).toBeNull();
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE COMPETENCY'S DATE OF ISSUE, WHICH THE VISION PATH ASKED FOR UNDER A
+// NAME IT WOULD THEN DISCARD.
+//
+// Operator's row, 2026-09-06: "Competency issued on: Not on the document —
+// Still needed". The obvious reading is wrong and worth recording, because the
+// obvious fix would have made things worse: nothing MISFILED the date. It was
+// never read.
+//
+// A SAPS 524 is read by Textract, and on the operator's certificate the boxed
+// date came back as seven digits where a date needs eight — boxedDate returns
+// null rather than guess, REQUIRED_FOR_AUTOFILL marks the certificate not
+// auto-fillable, and it reaches the member. All of that is correct.
+//
+// What was not correct is the fallback. `parse` accepts only wantedFor(kind)
+// plus issued_on and expires_on, and the prompt asked for `date_of_issue` — a
+// key on nobody's list. A model doing exactly as it was told had its answer
+// binned on the way home, silently, which looks identical to a document it
+// could not read.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the vision fallback asks for a key it will accept', () => {
+  /** A configured model that records what it was asked. */
+  function asking(reply: unknown) {
+    const complete = jest.fn(async () => ({
+      text: JSON.stringify(reply),
+    }));
+    const textract = new LicenceCentreTextractService();
+    // Null: no Textract answer, so read() falls through to the model. That is
+    // the path under test — on a real SAPS 524 Textract answers first.
+    jest.spyOn(textract, 'analyse').mockResolvedValue(null as never);
+    const service = new LicenceCentreExtractService(textract, {
+      isConfigured: () => true,
+      complete,
+    } as unknown as LlmService);
+    return { service, complete };
+  }
+
+  const asked = (complete: jest.Mock): string =>
+    (complete.mock.calls[0][0] as {
+      messages: { content: { type: string; text?: string }[] }[];
+    }).messages[0].content
+      .filter((c) => c.type === 'text')
+      .map((c) => c.text ?? '')
+      .join('\n');
+
+  it('⚠️ names competency_issued, not a key the parser drops', async () => {
+    const { service, complete } = asking({ fields: [] });
+    await service.read({
+      kind: CredentialKind.COMPETENCY_CERTIFICATE,
+      bytes: Buffer.from('not really a jpeg'),
+      mimeType: 'image/jpeg',
+    });
+    const prompt = asked(complete);
+    expect(prompt).toContain('competency_issued');
+    // The name that could never come home. Asking for it costs a whole vision
+    // call and returns nothing, which reads as an unreadable certificate.
+    expect(prompt).not.toContain('date_of_issue');
+  });
+
+  it('takes the date home when the model answers under that key', async () => {
+    const { service } = asking({
+      fields: [
+        { key: 'competency_issued', value: '2016-10-20', confidence: 'high' },
+        { key: 'issued_on', value: '2016-10-20', confidence: 'high' },
+      ],
+    });
+    const out = await service.read({
+      kind: CredentialKind.COMPETENCY_CERTIFICATE,
+      bytes: Buffer.from('not really a jpeg'),
+      mimeType: 'image/jpeg',
+    });
+    // Both, because both are stored and they are the same date: the column
+    // drives the expiry derivation, the detail carries onto a motivation.
+    expect(out.issuedOn).toBe('2016-10-20');
+    expect(out.details.competency_issued).toBe('2016-10-20');
+  });
+
+  it('⚠️ holds a DETAIL date to the same standard as a column date', () => {
+    // competency_issued is typed `kind: 'date'` in the motivation registry and
+    // rendered in a date input, so prose arriving here is a value the wizard
+    // cannot show and the member cannot correct without noticing. Only
+    // expires_on and issued_on were re-validated; these three are dates too.
+    expect(
+      parse(
+        model([{ key: 'competency_issued', value: '20 OCT 2016' }]),
+        CredentialKind.COMPETENCY_CERTIFICATE,
+      ).details.competency_issued,
+    ).toBeUndefined();
+    expect(
+      parse(
+        model([{ key: 'joined_on', value: 'sometime in 2019' }]),
+        CredentialKind.DEDICATED_DISCIPLINE,
+      ).details.joined_on,
+    ).toBeUndefined();
+    // A real one is untouched.
+    expect(
+      parse(
+        model([{ key: 'competency_issued', value: '2016-10-20' }]),
+        CredentialKind.COMPETENCY_CERTIFICATE,
+      ).details.competency_issued,
+    ).toBe('2016-10-20');
+  });
+});

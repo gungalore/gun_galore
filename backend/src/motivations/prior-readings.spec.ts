@@ -163,6 +163,80 @@ describe('⚠️ an empty string is not an answer', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────
+// THE FOURTH ANSWER BOUNDARY.
+//
+// This fold reads STORED readings — blobs written months before
+// common/card-placeholder.ts existed — and merges them into a NEW
+// application's answers at create time. It is not a per-item offer the member
+// accepts one by one; it is a prefill. So a "NONE" that was correctly kept
+// verbatim by the reader in June becomes a box on a SAPS 271 signed in
+// September unless it is stopped here.
+// ────────────────────────────────────────────────────────────────────
+
+describe('⚠️ a card saying "nothing here" is not an answer either', () => {
+  it('drops the placeholders a stored reading carries', () => {
+    const { values, from } = priorReadings([
+      row('EMPLOYMENT_CONFIRMATION', '2026-01-01', {
+        employer_name: 'Gun Galore (Pty) Ltd',
+        employer_address: 'N/A',
+      }),
+      row('ADDRESS_CONFIRMATION', '2026-02-01', {
+        residential_address: '12 Kudu Street, Centurion',
+        residential_postal_code: '-',
+      }),
+    ]);
+    expect(values.employer_name).toBe('Gun Galore (Pty) Ltd');
+    expect(values.residential_address).toBe('12 Kudu Street, Centurion');
+    expect(values).not.toHaveProperty('employer_address');
+    expect(values).not.toHaveProperty('residential_postal_code');
+    // And no provenance chip for a value that was never offered.
+    expect(from).not.toHaveProperty('employer_address');
+  });
+
+  it('⚠️ does not let a placeholder overwrite a good older reading', () => {
+    // The same failure the blank guard already covered, in the wording a card
+    // actually uses. NIL arriving later must not beat a real number.
+    const { values } = priorReadings([
+      row('COMPETENCY_CERTIFICATE', '2024-01-01', {
+        competency_number: 'C7276902',
+      }),
+      row('COMPETENCY_CERTIFICATE', '2026-01-01', { competency_number: 'NIL' }),
+    ]);
+    expect(values.competency_number).toBe('C7276902');
+  });
+
+  it('⚠️ keeps a real value that merely CONTAINS a placeholder word', () => {
+    // Anchored, so an association genuinely called "None Such Shooting Club"
+    // and the serial NA1234 survive.
+    const { values } = priorReadings([
+      row('ASSOCIATION_CARD', '2026-01-01', {
+        association: 'None Such Shooting Club',
+        status_number: 'NA1234',
+      }),
+    ]);
+    expect(values.association).toBe('None Such Shooting Club');
+    expect(values.status_number).toBe('NA1234');
+  });
+});
+
+describe('⚠️ what the MEMBER typed is not a card', () => {
+  it('carries their own "None" forward untouched', () => {
+    // The one place the two folds differ on purpose. A person who answers
+    // "None" to a history question has answered it; dropping their word
+    // because a licence card uses it to mean an empty row would blank an
+    // answer they gave and signed.
+    const { values } = priorAnswers([
+      {
+        createdAt: at('2026-01-01'),
+        answers: { history_convictions_detail: 'None', safe_type: 'N/A' },
+      },
+    ]);
+    expect(values.history_convictions_detail).toBe('None');
+    expect(values.safe_type).toBe('N/A');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
 // L7 — the date on the PAGE decides which reading is current.
 // ────────────────────────────────────────────────────────────────────
 

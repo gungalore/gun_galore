@@ -2,9 +2,11 @@ import { MotivationLicenceType } from '@prisma/client';
 import { parseEndorsements } from '../common/sa-competency';
 import {
   FIREARM_SOURCE_KEY,
+  OWNED_ROWS,
   SOURCE_DEALER,
   SOURCE_ESTATE,
   SOURCE_PRIVATE,
+  ownedFirearmSerial,
 } from './motivation-fields';
 import { readSaId, splitName } from './sa-id';
 import type { Saps271FieldName } from './saps271-coords';
@@ -28,6 +30,10 @@ import type { Saps271FieldName } from './saps271-coords';
 //             receiver serials, because the frame or receiver IS the firearm in
 //             law. One serial is what an applicant actually has, so it goes to
 //             the frame box for a handgun and the receiver box otherwise.
+//             Item 2.1 — the firearms already owned — has the same shape and
+//             takes the same answer: one serial, into the frame/receiver
+//             column, with the barrel column reported in leftBlank rather
+//             than filled with a number nobody gave us.
 //
 //   WIDOWED.  The form splits Widow and Widower by gender. We do not make
 //             someone pick a gendered word about themselves in a wizard, so
@@ -517,15 +523,94 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
     }
   }
 
-  // ── firearms already owned ──
-  for (let n = 1; n <= 6; n++) {
+  // ── firearms already owned — item 2.1, page 5 ──
+  //
+  // ⚠️ FOURTEEN ROWS, WHICH IS THE PAPER'S NUMBER AND NOT OURS. This loop ran
+  // to six while the registry offered six. The registry then went to fourteen
+  // (operator, 2026-09-07: "all fire arms the applicant owns must be in that
+  // list") and this did not follow, so a member's seventh licence was
+  // collected, stored, offered — and printed nowhere. OWNED_ROWS is imported
+  // rather than restated so the two can never drift again, and
+  // saps271-coords.ts now carries all fourteen rows MEASURED off the blank
+  // form: scripts/saps271-measure.mjs walks the form's own ruling lines, and
+  // asking it for a fifteenth row fails ('"Type" p5 has no row 14'), which is
+  // how we know fourteen is the form's own count rather than a guess at pitch.
+  //
+  // ⚠️ THE FORM HAS NO MODEL COLUMN AND NO EXPIRY COLUMN — do not go looking
+  // for those boxes again. Item 2.1's own printed headers are Type | Calibre |
+  // Make | Barrel Serial No | Frame/receiver Serial No | Licence/permit
+  // authorization No. `existing_firearm_N_model` and `_expiry` are real
+  // answers and they belong to the LISTING (OWNED_LISTING_COLUMNS, printed in
+  // the motivation pack); writing them into the margin of a form somebody
+  // signs is not ours to do.
+  //
+  // ⚠️ ONE SERIAL, AND IT GOES IN THE FRAME/RECEIVER COLUMN. The registry
+  // used to ask for a barrel serial and a frame serial and this printed both.
+  // It now asks ONE question, because the operator's own licence card prints
+  // the same number against the barrel, the receiver AND the frame — and where
+  // they genuinely differ the card says NONE for one of them, which is the
+  // card saying there is nothing there.
+  //
+  // So there is one number and two boxes, and it goes into the one that IS the
+  // firearm in law — exactly the rule this file already applies to the
+  // applied-for firearm at `e_frame_serial` / `e_receiver_serial` above.
+  // Copying it into the barrel box as well would assert a barrel serial we
+  // were never given, on a form where section 120(9)(f) makes a false
+  // statement an offence. The barrel column is reported in leftBlank instead —
+  // once for the table, not once per row.
+  //
+  // ⚠️ READ THROUGH ownedFirearmSerial, NEVER OFF THE KEY. It prefers the
+  // current `_serial` answer and falls back to the two RETIRED keys, so a
+  // draft written before the collapse still prints, and a member who corrected
+  // a serial after that draft was written gets the correction. Reading
+  // `_barrel_serial` directly — which is what this did — prints the stale
+  // number over the fix, and after the collapse it printed nothing at all.
+  let ownedRowsFilled = 0;
+  let ownedRowsWithoutSerial = 0;
+  for (let n = 1; n <= OWNED_ROWS; n++) {
     const p = `existing_firearm_${n}_`;
+    const serialForRow = ownedFirearmSerial(answers, n);
     put(`g_owned_${n}_type` as Saps271FieldName, a(`${p}type`));
     put(`g_owned_${n}_calibre` as Saps271FieldName, a(`${p}calibre`));
     put(`g_owned_${n}_make` as Saps271FieldName, a(`${p}make`));
-    put(`g_owned_${n}_barrel_serial` as Saps271FieldName, a(`${p}barrel_serial`));
-    put(`g_owned_${n}_frame_serial` as Saps271FieldName, a(`${p}frame_serial`));
+    put(`g_owned_${n}_frame_serial` as Saps271FieldName, serialForRow);
     put(`g_owned_${n}_licence` as Saps271FieldName, a(`${p}licence_no`));
+
+    // A row is IN USE once any column this table prints carries something.
+    // `use`, `model` and `expiry` are deliberately not counted: none of them
+    // reaches this table, so a row holding only those would report a missing
+    // serial for a row the form never shows.
+    const inUse =
+      !!a(`${p}type`) ||
+      !!a(`${p}calibre`) ||
+      !!a(`${p}make`) ||
+      !!serialForRow ||
+      !!a(`${p}licence_no`);
+    if (!inUse) continue;
+    ownedRowsFilled++;
+    if (!serialForRow) ownedRowsWithoutSerial++;
+  }
+
+  // ⚠️ SAID OUT LOUD, BECAUSE put() DROPS AN EMPTY IN SILENCE. Every serial
+  // box in this table went blank for a while and nothing anywhere said so —
+  // the applicant would have signed a 271 listing firearms with no serial
+  // numbers, and the panel that exists to tell them what still needs a pen
+  // said nothing. So the two things this table cannot fill now say themselves.
+  if (ownedRowsFilled) {
+    leftBlank.push({
+      field: 'saps271_item_2.1_barrel_serial',
+      because:
+        'we hold one serial number for each firearm you own and it is printed in the frame/receiver column — if your licence prints a different number against the barrel, write that one in beside it',
+    });
+  }
+  if (ownedRowsWithoutSerial) {
+    leftBlank.push({
+      field: 'saps271_item_2.1_frame_serial',
+      because:
+        ownedRowsWithoutSerial === 1
+          ? 'one of the firearms you listed has no serial number yet — add it to that row and it fills in'
+          : `${ownedRowsWithoutSerial} of the firearms you listed have no serial number yet — add them to those rows and they fill in`,
+    });
   }
 
   // ── the six history questions ──
@@ -747,7 +832,34 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
     tick('g_association_yes');
     put('g_association_name', associationName);
     put('g_association_number', a('association_number'));
-    put('g_association_joined', dateDigits(a('dedicated_since')));
+    // ── THE DATE JOINED BOX, AND IT IS NOT `dedicated_since` ──
+    //
+    // ⚠️ THIS BOX USED TO PRINT THE WRONG FACT, AND THE WRONG FACT LOOKED
+    // RIGHT. The printed box asks when the applicant JOINED the association.
+    // The registry had no such question, so this line reached for
+    // `dedicated_since` — a field labelled "Dedicated status held since" —
+    // and credentialOffer was in turn writing that field from the vault's
+    // `joined_on` under an offer line reading "Member since". Three names, two
+    // facts, one box. For a SAHGCA or NARFO member they are routinely years
+    // apart: you join, and then you qualify. `association_joined` is now a
+    // real question of its own; see motivation-fields.
+    //
+    // ⚠️ AND THERE IS NO FALLBACK TO `dedicated_since`. It would put back
+    // exactly the wrong fact this fixes, on a form the applicant signs under
+    // section 120(9)(f) — and CLAUDE.md's own rule for values we fill in
+    // unasked settles it: "never invent one that is simply absent — absent
+    // stays absent, which is a different thing from wrong." A blank box with a
+    // reason the member can act on beats a filled one that misstates the date.
+    const joined = a('association_joined');
+    if (joined) {
+      put('g_association_joined', dateDigits(joined));
+    } else {
+      leftBlank.push({
+        field: 'association_joined',
+        because:
+          'you have not told us when you joined the association — the date your dedicated status was awarded is a different date and does not belong in this box',
+      });
+    }
     // Item 60 — off the letter of good standing's "valid until" date.
     put('g_association_expiry', dateDigits(a('association_expiry')));
   } else if (

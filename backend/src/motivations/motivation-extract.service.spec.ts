@@ -141,6 +141,73 @@ describe('what it refuses', () => {
     expect(await run(svc, MotivationUploadKind.IDENTITY_DOCUMENT)).toEqual([]);
   });
 
+  it('⚠️ refuses a card placeholder as an answer, however faithfully it was read', async () => {
+    // ⚠️ THE MODEL IS DOING AS IT IS TOLD HERE, AND THAT IS THE POINT. The
+    // system prompt orders it to transcribe what it can SEE and forbids
+    // interpretation — and what a licence card prints in a row that does not
+    // apply is the word NONE. The operator's Marlin reads "Frame Serial No
+    // NONE", so a perfect read hands us NONE and the guard, `if (!value)`,
+    // waved it through: the live application came back reading "Firearm 6 —
+    // frame serial NONE · barrel serial NONE", which is a false statement on a
+    // SAPS 271.
+    //
+    // The fix is at THIS boundary, not in the reader: the card is stored as it
+    // was printed, because the seller-consent declaration reproduces the
+    // document. See common/card-placeholder.ts.
+    const { svc } = build({
+      fields: [
+        { key: 'existing_firearm_1_make', value: 'MARLIN', confidence: 'high' },
+        { key: 'existing_firearm_1_serial', value: 'NONE', confidence: 'high' },
+        { key: 'existing_firearm_1_model', value: 'N/A', confidence: 'high' },
+      ],
+    });
+    const out = await run(svc, MotivationUploadKind.CURRENT_LICENCE);
+    expect(out.map((f) => f.key)).toEqual(['existing_firearm_1_make']);
+    expect(out.map((f) => f.value)).not.toContain('NONE');
+  });
+
+  it('⚠️ refuses a date that is not a date, rather than putting it in a date box', async () => {
+    // ⚠️ RULE 4 OF THE PROMPT ASKS FOR YYYY-MM-DD AND A CARD DOES NOT PRINT IT
+    // THAT WAY. A licence prints "2027/06/30" or "30 JUN 2027", and a
+    // transcriber doing exactly as it is told hands one of those straight back.
+    // `existing_firearm_N_expiry` is `kind: 'date'` and renders in a date
+    // input, so a value that is not an ISO day is one the wizard cannot show
+    // and the member cannot correct without first noticing it is wrong — the
+    // same failure the vault side closed with DATE_DETAILS.
+    //
+    // Dropped, never coerced: 06/07 is two different days depending on which
+    // side of the Atlantic printed the card, and picking one is inventing the
+    // fact.
+    const { svc } = build({
+      fields: [
+        { key: 'existing_firearm_1_make', value: 'MARLIN', confidence: 'high' },
+        { key: 'existing_firearm_1_expiry', value: '2027/06/30', confidence: 'high' },
+      ],
+    });
+    const out = await run(svc, MotivationUploadKind.CURRENT_LICENCE);
+    expect(out.map((f) => f.key)).toEqual(['existing_firearm_1_make']);
+  });
+
+  it('⚠️ rejects an ISO-shaped day that does not exist', async () => {
+    const { svc } = build({
+      fields: [
+        { key: 'existing_firearm_1_expiry', value: '2026-02-31', confidence: 'high' },
+      ],
+    });
+    expect(await run(svc, MotivationUploadKind.CURRENT_LICENCE)).toEqual([]);
+  });
+
+  it('keeps a real ISO day', async () => {
+    const { svc } = build({
+      fields: [
+        { key: 'existing_firearm_1_expiry', value: '2031-05-05', confidence: 'high' },
+      ],
+    });
+    const out = await run(svc, MotivationUploadKind.CURRENT_LICENCE);
+    expect(out).toHaveLength(1);
+    expect(out[0].value).toBe('2031-05-05');
+  });
+
   it('rejects a choice value that is not one of the choices', async () => {
     const { svc } = build({
       fields: [
@@ -148,6 +215,65 @@ describe('what it refuses', () => {
       ],
     });
     expect(await run(svc, MotivationUploadKind.CURRENT_LICENCE)).toEqual([]);
+  });
+});
+
+describe('⚠️ what a licence photograph is asked for', () => {
+  // ⚠️ THE FORM PROMISES THESE BOXES ARE FILLED FROM THE DOCUMENT. Every column
+  // of an owned-firearm row except "what you use it for" is declared
+  // `docSourced: 'CURRENT_LICENCE'` in the registry, which the wizard reads as
+  // "a document answers this, stop asking" and read-result renders as "Not on
+  // the document" against an empty one. A key the reader never asks for can
+  // never fill, so the promise has to be kept here or withdrawn there.
+  it('asks for the ONE serial, not the two retired keys', async () => {
+    // ⚠️ THE TWO SERIAL BOXES COLLAPSED INTO ONE ON 2026-09-07 and this list
+    // was not followed. sanitiseAnswers still ACCEPTS the retired keys, so
+    // nothing failed and nothing said anything: the member was told we had read
+    // their licence and the serial landed in a box no screen renders.
+    const { svc, complete } = build({ fields: [] });
+    await run(svc, MotivationUploadKind.CURRENT_LICENCE);
+    const prompt = (complete.mock.calls[0][0] as any).messages[0].content
+      .map((p: any) => p.text ?? '')
+      .join(' ');
+    expect(prompt).toContain('existing_firearm_1_serial');
+    expect(prompt).not.toContain('existing_firearm_1_barrel_serial');
+    expect(prompt).not.toContain('existing_firearm_1_frame_serial');
+  });
+
+  it('asks for the model and the expiry the form says it reads', async () => {
+    // The operator was told the model box would stay empty until we asked for
+    // it. A licence card prints both — their own reads "Model NONE", which is
+    // the card saying this firearm has no model designation, and every card
+    // carries a valid-until date.
+    const { svc, complete } = build({ fields: [] });
+    await run(svc, MotivationUploadKind.CURRENT_LICENCE);
+    const prompt = (complete.mock.calls[0][0] as any).messages[0].content
+      .map((p: any) => p.text ?? '')
+      .join(' ');
+    expect(prompt).toContain('existing_firearm_1_model');
+    expect(prompt).toContain('existing_firearm_1_expiry');
+  });
+
+  it('writes into the first FREE row, by any column', async () => {
+    // ⚠️ NOT BY THE CALIBRE. See nextOwnedSlot: a row holding a make and a
+    // serial is in use, and proposing over it produces a form describing a
+    // firearm that does not exist.
+    const { svc, complete } = build({ fields: [] });
+    await svc.extract({
+      kind: MotivationUploadKind.CURRENT_LICENCE,
+      licenceType: T,
+      bytes: Buffer.from('x'),
+      mimeType: 'image/jpeg',
+      answers: {
+        existing_firearm_1_make: 'Marlin',
+        existing_firearm_1_serial: 'MR90189D',
+      },
+    });
+    const prompt = (complete.mock.calls[0][0] as any).messages[0].content
+      .map((p: any) => p.text ?? '')
+      .join(' ');
+    expect(prompt).toContain('existing_firearm_2_serial');
+    expect(prompt).not.toContain('existing_firearm_1_serial');
   });
 });
 

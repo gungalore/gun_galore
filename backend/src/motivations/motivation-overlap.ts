@@ -1,4 +1,5 @@
 import { MotivationLicenceType } from '@prisma/client';
+import { OWNED_ROWS, ownedFirearmSerial } from './motivation-fields';
 // ────────────────────────────────────────────────────────────────────
 // "YOU ALREADY HAVE ONE OF THOSE."
 //
@@ -705,19 +706,28 @@ export function checkOverlap(
 // those live in the answers rather than in a HeldFirearm.
 // ────────────────────────────────────────────────────────────────────
 
-/** How many existing-firearm rows the registry carries. */
-const OWNED_ROWS = 6;
-
 /**
  * One `existing_firearm_N_*` row, with the identifiers the renewal check needs
  * alongside the two fields the overlap tests compare.
+ *
+ * ⚠️ ONE SERIAL, AND THE ROW COUNT IS THE REGISTRY'S. This file carried its
+ * own `const OWNED_ROWS = 6` and read `barrelSerial` / `frameSerial` straight
+ * off `existing_firearm_N_barrel_serial` / `_frame_serial`. Both keys were
+ * RETIRED on 2026-09-07 (the two questions collapsed into one `_serial`) and
+ * the registry went to fourteen rows, so on a new application every row here
+ * had two empty serials and rows 7 to 14 did not exist — which takes the
+ * SERIAL branch of indexOfRenewedFirearm out of service, and that branch is
+ * what stops a renewal arguing that a firearm does not duplicate itself.
+ *
+ * ⚠️ THIS CHANGES WHAT THE FILE READS AND NOTHING IT CONCLUDES. The
+ * duplicate-calibre argument is what heads off a CFR objection; the tests
+ * below pin its verdicts and they must stay green through this.
  */
 interface OwnedRow {
   held: HeldFirearm;
   make: string;
   licenceNo: string;
-  barrelSerial: string;
-  frameSerial: string;
+  serial: string;
 }
 
 function ownedRows(answers: Record<string, string>): OwnedRow[] {
@@ -746,8 +756,7 @@ function ownedRows(answers: Record<string, string>): OwnedRow[] {
       },
       make,
       licenceNo: at('licence_no'),
-      barrelSerial: at('barrel_serial'),
-      frameSerial: at('frame_serial'),
+      serial: ownedFirearmSerial(answers, n),
     });
   }
   return rows;
@@ -780,10 +789,7 @@ function indexOfRenewedFirearm(
 
   const serial = collapse(answers.firearm_serial ?? '');
   if (serial) {
-    const i = rows.findIndex(
-      (r) =>
-        collapse(r.barrelSerial) === serial || collapse(r.frameSerial) === serial,
-    );
+    const i = rows.findIndex((r) => !!r.serial && collapse(r.serial) === serial);
     if (i >= 0) return i;
   }
 

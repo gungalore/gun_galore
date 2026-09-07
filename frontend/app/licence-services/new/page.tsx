@@ -135,7 +135,14 @@ export default function NewLicenceApplicationPage() {
         <div className="flex flex-col gap-4">
           <div>
             <div className="text-[11px] font-medium uppercase tracking-[.11em] text-[var(--text-tertiary)]">
-              Step 1 of {WIZARD_STEPS.length} · {step.fills}
+              {/* ⚠️ NO TOTAL HERE, DELIBERATELY. This read "Step 1 of 11"
+                  off the UNFILTERED table, and eleven is not the number for
+                  any real application — a section 13 has no dedicated-status
+                  step. Nothing is known before a section is chosen, so the
+                  rail draws the whole journey on purpose (see stepAsks); the
+                  caption must not turn that into a promise. The count appears
+                  as soon as the application exists and the steps are known. */}
+              Step 1 · {step.fills}
             </div>
             <h1 className="mb-1.5 mt-1.5 text-[26px] font-medium tracking-[-.02em] text-[var(--text-primary)]">
               {step.title}

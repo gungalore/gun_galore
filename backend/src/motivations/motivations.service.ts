@@ -20,6 +20,7 @@ import {
   tryDecryptText,
 } from '../common/blob-crypto';
 import {
+  type AnswerProvenance,
   automaticCount,
   automaticSources,
   changedKeys,
@@ -29,7 +30,10 @@ import {
 } from '../common/answer-provenance';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { asLayout } from './motivation-pdf-layouts';
-import { applicationBlockers } from './motivation-eligibility';
+import {
+  applicationBlockers,
+  requiredEndorsement,
+} from './motivation-eligibility';
 import { credentialOffer } from './motivation-credentials';
 import { asScheme, asFormat } from './motivation-pdf.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
@@ -50,7 +54,11 @@ import {
   MotivationSharedService,
   isPaidFor,
 } from './motivation-shared.service';
-import { MotivationPrefillService } from './motivation-prefill.service';
+import {
+  COMPETENCY_KEYS,
+  MotivationPrefillService,
+  VaultCredential,
+} from './motivation-prefill.service';
 import { MotivationDocumentsService } from './motivation-documents.service';
 import { MotivationGenerationService } from './motivation-generation.service';
 import { MotivationRenderService } from './motivation-render.service';
@@ -278,25 +286,65 @@ export class MotivationsService {
 
     let vaultValues: Record<string, string> = {};
     let vaultItems: { key: string; from: string; credentialId: string }[] = [];
+    // ⚠️ HELD OUTSIDE THE try BECAUSE THE PROVENANCE STAMP NEEDS THE ROWS, not
+    // only the values: `dateSource` is what tells an expiry we WORKED OUT from
+    // one we read off a document, and it lives on the row. See stampVault.
+    let vaultRows: VaultCredential[] = [];
     try {
+      // Everything the earlier sources have settled, which is also everything
+      // credentialOffer must not re-offer.
+      const answeredSoFar = {
+        ...prefill.values,
+        ...priorValues,
+        ...priorAnswerValues,
+        ...seed,
+      };
+      // ⚠️ includeUnconfirmed, AND WITHOUT IT THIS FILLS NOTHING. The default
+      // is confirmed-only, and the operator's vault holds five firearm
+      // licences of which ZERO are confirmed — phone uploads arrive
+      // unconfirmed and the confirm prompt only ever ran on the desktop
+      // upload path. That is the normal state, not a corner case, so the
+      // default here meant "What you own" was empty for everybody.
+      //
+      // Safe because credentialOffer now gates PER VALUE rather than per
+      // document: an unconfirmed row may supply a make, a calibre or a
+      // serial, and may not supply a date. The reminder sweep is untouched
+      // — it reads Credential.expiresOn, which this path never writes.
+      vaultRows = await this.prefill.credentialsFor(user.id, {
+        includeUnconfirmed: true,
+      });
       const vaultOffer = credentialOffer(
         licenceType,
-        // ⚠️ includeUnconfirmed, AND WITHOUT IT THIS FILLS NOTHING. The default
-        // is confirmed-only, and the operator's vault holds five firearm
-        // licences of which ZERO are confirmed — phone uploads arrive
-        // unconfirmed and the confirm prompt only ever ran on the desktop
-        // upload path. That is the normal state, not a corner case, so the
-        // default here meant "What you own" was empty for everybody.
-        //
-        // Safe because credentialOffer now gates PER VALUE rather than per
-        // document: an unconfirmed row may supply a make, a calibre or a
-        // serial, and may not supply a date. The reminder sweep is untouched
-        // — it reads Credential.expiresOn, which this path never writes.
-        await this.prefill.credentialsFor(user.id, { includeUnconfirmed: true }),
+        vaultRows,
         // credentialOffer skips what is already answered, so it must see the
         // prior readings too — otherwise it re-offers a field they just
         // filled and the spread below silently prefers the vault's copy.
-        { ...prefill.values, ...priorValues, ...priorAnswerValues, ...seed },
+        answeredSoFar,
+        // ⚠️ NULL ON A NEW APPLICATION, AND THAT IS THE POINT: NO COMPETENCY
+        // IS SEEDED HERE ANY MORE. Operator, 2026-09-07: "the wrong competency
+        // chosen before it even knows which firearm is being applied for." A
+        // brand-new application has no `firearm_type` — the firearm step comes
+        // later — so this is null and credentialOffer offers no certificate at
+        // all. The old behaviour picked the member's longest-running
+        // certificate on a coin toss they never saw, and nothing revisited it;
+        // the firearm step now fills the box, correctly, the moment it can
+        // (see saveAnswers).
+        //
+        // ⚠️ A RENEWAL OF A HANDGUN OR A SHOTGUN GETS ITS COMPETENCY HERE. A
+        // RIFLE OR A COMBINATION GUN DOES NOT, AND THE EARLIER VERSION OF THIS
+        // COMMENT SAID OTHERWISE. It claimed "the renewal seed carries the
+        // firearm off the licence being renewed, so the endorsement IS known
+        // here" — it is not. `renewalPlan` (licence-centre/licence-renewal.ts)
+        // seeds firearm_make, firearm_calibre, firearm_type and firearm_serial
+        // and NOT firearm_action, because a licence card does not print the
+        // action. What makes the handgun and shotgun cases work is the OTHER
+        // half of the fix: `endorsementNeed` no longer demands the action for
+        // those two types, since the v3 collapse left one unit standard for
+        // each (competency reference §2.2). A rifle renewal genuinely waits for
+        // the action, and is then filled by the saveAnswers hook — which also
+        // catches a combination gun, and any application whose firearm arrived
+        // by upload or seller consent rather than by being typed.
+        requiredEndorsement(answeredSoFar),
       );
       vaultValues = vaultOffer.values;
       vaultItems = vaultOffer.items;
@@ -373,6 +421,9 @@ export class MotivationsService {
       seed,
       priorFrom,
       priorAnswerKeys,
+      // So a derived competency expiry is stamped as inferred rather than as
+      // something read off a certificate that does not print one.
+      vaultRows,
     );
     // ⚠️ STAMPED SEPARATELY, LAST — stampOffers' signature is fixed to the
     // four prefill sources above and does not know about the station lookup.
@@ -614,6 +665,25 @@ export class MotivationsService {
     const changed = changedKeys(before, merged);
     let provenance = markMember(parseProvenance(row.answerProvenance), changed);
 
+    // ⚠️ EVERYTHING THIS METHOD WRITES BY ITSELF IS COLLECTED HERE AND HANDED
+    // BACK. Both hooks below fill answers the member never typed, and until
+    // 2026-09-07 neither of them told anybody: `saveAnswers` returned
+    // `{saved, ignored, refused, missingRequired}` and nothing else, while the
+    // wizard's autosave sends the WHOLE answers map on every save. So the
+    // sequence on a real application was — we write the right competency, the
+    // client still holds the wrong one, the next keystroke sends the wrong one
+    // back, `changedKeys` sees it move, `markMember` stamps it MEMBER, and
+    // MEMBER is ABSORBING: from that moment no re-derivation, no vault offer
+    // and no Licence Centre apply may ever touch it again. The wrong
+    // certificate number is then locked onto a form the applicant signs,
+    // wearing a "You entered this" chip they never earned.
+    //
+    // The fix is a contract, not a guard: say what we wrote, so the client can
+    // adopt it before its next send. `useLicenceCentre` already returns
+    // `answers` for exactly this reason.
+    const derivedValues: Record<string, string> = {};
+    const derivedProvenance: Record<string, AnswerProvenance | null> = {};
+
     // ── keep the nearest SAPS station in step with the address ─────────
     //
     // Only when the address itself just moved, and only when nothing already
@@ -627,6 +697,10 @@ export class MotivationsService {
     // of who actually wrote it — that guard cannot tell "the applicant typed
     // this" from "we just derived this", so an automatic fill has to land
     // AFTER the comparison, stamped DERIVED by hand.
+    //
+    // ⚠️ AND WHATEVER IT WRITES IS RECORDED IN `derived` AND RETURNED. See the
+    // return statement: a server-side write the client is not told about is a
+    // write the client's next autosave undoes.
     if (
       row.licenceType === MotivationLicenceType.S13_SELF_DEFENCE &&
       changed.includes('residential_address')
@@ -635,11 +709,98 @@ export class MotivationsService {
       if (station) {
         merged.police_station = station.station;
         merged.police_station_province = station.province;
-        provenance = stamp(
-          provenance,
-          ['police_station', 'police_station_province'],
-          { source: 'DERIVED', from: station.from },
-        );
+        const keys = ['police_station', 'police_station_province'];
+        provenance = stamp(provenance, keys, {
+          source: 'DERIVED',
+          from: station.from,
+        });
+        for (const key of keys) {
+          derivedValues[key] = merged[key];
+          derivedProvenance[key] = provenance[key] ?? null;
+        }
+      }
+    }
+
+    // ── and the competency, now that we know which firearm ─────────────
+    //
+    // ⚠️ THE SAME HOOK, FOR THE SAME REASON, AND ITS ABSENCE IS THE FAULT THE
+    // OPERATOR HIT. Operator, 2026-09-07, on a fresh section 13: "the wrong
+    // competency chosen before it even knows which firearm is being applied
+    // for." create() seeds the vault's answers before `firearm_type` can
+    // exist, and until now this method re-derived exactly ONE thing on a
+    // change — the police station, on an address edit. So the competency was
+    // chosen once, on no information, and never looked at again: the member
+    // set the type to Handgun and the box went on saying "Semi-auto Rifle +
+    // Shotgun" all the way to the eligibility check, which then told them
+    // their competency did not cover their own handgun.
+    //
+    // Both keys, because the endorsement reads both: the action is what
+    // separates a self-loading rifle from a manually operated one, and a
+    // member who fixes only the action has changed which certificate is right.
+    //
+    // ⚠️ AND A SECOND TRIGGER, BECAUSE THIS IS NOT THE ONLY PLACE THE FIREARM
+    // IS WRITTEN. `MotivationDocumentsService.applyExtraction` and
+    // `MotivationSellerConsentService` both write `firearm_type` and
+    // `firearm_action` straight into the answers blob — the dealer-prefilled
+    // SAPS 271 is called "the common real-world case" in the routing spec — and
+    // neither of them passes through this method. applyExtraction has since
+    // grown the same hook of its own; the seller-consent path has not, and a
+    // third door will be opened one day by somebody who has not read this
+    // comment. Since create() no longer picks a certificate before the firearm
+    // is known, keying only on `changed` would leave every one of those members
+    // with four permanently blank competency boxes: a required field that
+    // silently stopped being filled. So the hook ALSO runs while the whole
+    // block is empty and still ours to fill, which catches them on their very
+    // next edit whichever door they came in by. The cost is one indexed
+    // `Credential.findMany` per edit until it succeeds, and it stops the moment
+    // any of the four boxes holds something. It cannot loop for ever on a
+    // member who deliberately cleared a box either — `markMember` stamps a
+    // clear, and competencyOffer refuses a MEMBER key.
+    //
+    // ⚠️ APPLIED AFTER markMember, like the station above, and for the same
+    // reason — anything present in `merged` when changedKeys runs is marked
+    // MEMBER regardless of who wrote it. competencyOffer() decides for itself
+    // what it is allowed to replace, off the provenance map, and returns empty
+    // strings for a certificate the new firearm rules out. A wrong certificate
+    // number left on a form somebody signs is worse than an empty box.
+    const firearmMoved =
+      changed.includes('firearm_type') || changed.includes('firearm_action');
+    const competencyUnfilled =
+      changed.length > 0 &&
+      COMPETENCY_KEYS.every(
+        (key) =>
+          !(merged[key] ?? '').trim() && provenance[key]?.source !== 'MEMBER',
+      );
+    if (firearmMoved || competencyUnfilled) {
+      const competency = await this.prefill.competencyOffer(
+        row.licenceType,
+        user.id,
+        merged,
+        provenance,
+      );
+      if (competency) {
+        provenance = { ...provenance };
+        for (const [key, value] of Object.entries(competency.values)) {
+          // ⚠️ BELT AND BRACES, AND WORTH THE TWO LINES: `stamp()` protects a
+          // MEMBER *provenance entry* and nothing else — it has never guarded
+          // the answer. competencyOffer already refuses a MEMBER key, so this
+          // can only ever be a no-op; it is here because the day somebody
+          // widens that filter, the damage lands on a signed declaration.
+          if (provenance[key]?.source === 'MEMBER') continue;
+          merged[key] = value;
+          derivedValues[key] = value;
+
+          const entry = competency.provenance[key];
+          // ⚠️ AND A BOX WE EMPTIED LOSES ITS CHIP. The map has no "unstamp" —
+          // deliberately, because the one thing it must never do is forget a
+          // MEMBER mark — so a removal is done here, by hand, and only for keys
+          // competencyOffer already established were OURS. Left behind, the
+          // entry would put "From your Document Centre — <the certificate we
+          // just ruled out>" against a blank field.
+          if (entry) provenance[key] = entry;
+          else delete provenance[key];
+          derivedProvenance[key] = entry ?? null;
+        }
       }
     }
 
@@ -675,6 +836,27 @@ export class MotivationsService {
       ignored: rejected,
       refused,
       missingRequired: missingRequired(row.licenceType, merged),
+      /**
+       * WHAT WE WROTE THAT THEY DID NOT SEND. Always present, usually empty.
+       *
+       * ⚠️ THE CLIENT MUST MERGE THIS INTO ITS OWN ANSWERS BEFORE ITS NEXT
+       * SAVE, or it will send back the stale values it still holds and they
+       * will be stamped MEMBER — which is absorbing, and which locks a
+       * certificate we chose onto a form the applicant signs under a chip
+       * saying they typed it.
+       *
+       * `values` — answer key to value. An EMPTY STRING is an instruction:
+       * clear that box. It is how a certificate the firearm now rules out
+       * comes off the form.
+       *
+       * `provenance` — the same keys. An entry to show, or `null` meaning
+       * DELETE the chip for that key.
+       *
+       * `missingRequired` above is computed AFTER these are applied, so the
+       * two always agree: a box this emptied is named there in the same
+       * response.
+       */
+      derived: { values: derivedValues, provenance: derivedProvenance },
     };
   }
 

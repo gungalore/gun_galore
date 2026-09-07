@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import { LlmService } from '../common/llm/llm.service';
 import { LlmError, type LlmPart } from '../common/llm/llm.types';
-import { fieldsFor } from './motivation-fields';
+import { fieldsFor, nextOwnedRow } from './motivation-fields';
 import { readSaId } from './sa-id';
 import { endorsementSpec, parseEndorsements } from '../common/sa-competency';
 import { GoogleVisionOcrService } from '../common/google-vision-ocr.service';
@@ -11,6 +11,7 @@ import {
   firearmIdentityPrompt,
   parseFirearmReading,
 } from '../common/firearm-identity';
+import { answerValue } from '../common/card-placeholder';
 
 // ────────────────────────────────────────────────────────────────────
 // READING WHAT THE APPLICANT ALREADY HAS.
@@ -147,15 +148,31 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
   ASSOCIATION_CARD: [
     'association_name',
     'association_number',
+    // The card prints when the member JOINED. When they qualified for
+    // dedicated status is a different fact and a different box — see
+    // association_joined in the registry.
+    'association_joined',
     'dedicated_since',
   ],
   // The sworn letter carries the same association and dedicated number as the
   // certificate, plus the two dates that make it expire — which is the whole
   // reason it is a separate document rather than another photograph of the
   // status.
+  //
+  // ⚠️ AND THE COMMENT WAS THE ONLY PLACE EITHER DATE APPEARED. This list is
+  // both the question put to the model AND the filter on its answer, so
+  // `association_expiry` — the "valid until" date, SAPS 271 item 60 — was
+  // never asked for and would have been discarded if volunteered. The registry
+  // field carries `docSourced: 'GOOD_STANDING_LETTER'` and help reading
+  // "photograph the letter and we will read it for you", so an empty row told
+  // the member the letter did not carry a date the letter plainly prints. The
+  // vault route to item 60 was fixed separately; this is the
+  // photograph-it-here route.
   GOOD_STANDING_LETTER: [
     'association_name',
     'association_number',
+    'association_joined',
+    'association_expiry',
     'dedicated_since',
   ],
   // ⚠️ IT DESCRIBES THE FIREARM BEING APPLIED FOR, so it fills the firearm
@@ -210,20 +227,34 @@ const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
   ],
   EMPLOYMENT_CONFIRMATION: ['employer_name', 'employer_address'],
   // Written against ROW 1 and remapped to whichever row is free — see
-  // nextOwnedSlot(). The barrel serial is on the licence where the firearm has
-  // a separately-licensed barrel, and it was simply never asked for.
+  // nextOwnedSlot().
+  //
+  // ⚠️ ONE SERIAL, NOT TWO, AND THE TWO IT REPLACES ARE RETIRED KEYS. This
+  // asked for `_barrel_serial` and `_frame_serial` — boxes the wizard stopped
+  // rendering on 2026-09-07 when they collapsed into `_serial`. sanitiseAnswers
+  // still accepts them (LEGACY_BY_KEY), so nothing failed and nothing said
+  // anything: the member was told we had read their licence and the serial
+  // landed in a box no screen shows. See ownedFirearmSerial in
+  // motivation-fields.ts for why the card's one number was ever two boxes.
+  //
+  // ⚠️ AND `model` AND `expiry` ARE ASKED FOR BECAUSE THE FORM CLAIMS THEY ARE.
+  // Both are declared `docSourced: 'CURRENT_LICENCE'` in the registry, which is
+  // a promise to the member — the wizard files them under "from your documents"
+  // and read-result prints "Not on the document" against an empty one. A
+  // licence card prints both (the operator's own reads "Model NONE", which is
+  // the card saying this firearm has no model designation, and every card
+  // carries a valid-until date), so the claim is now true rather than
+  // withdrawn.
   CURRENT_LICENCE: [
     'existing_firearm_1_type',
     'existing_firearm_1_calibre',
     'existing_firearm_1_make',
-    'existing_firearm_1_barrel_serial',
-    'existing_firearm_1_frame_serial',
+    'existing_firearm_1_model',
+    'existing_firearm_1_serial',
+    'existing_firearm_1_expiry',
     'existing_firearm_1_licence_no',
   ],
 };
-
-/** How many firearm rows the registry carries. Mirrors motivation-fields.ts. */
-const OWNED_ROWS = 6;
 
 /**
  * Which "firearms you already own" row a newly-uploaded licence should fill.
@@ -234,17 +265,22 @@ const OWNED_ROWS = 6;
  * licensed firearms — exactly the applicant whose overlap needs explaining —
  * ended up with one row and a motivation that argued the wrong case.
  *
- * A row counts as taken once its CALIBRE is filled, matching the wizard's own
- * definition of a started row and the overlap engine's only required column.
+ * ⚠️ AND "TAKEN" IS THE REGISTRY'S RULE NOW, NOT THIS FILE'S. It used to be
+ * "the CALIBRE is filled", on the grounds that the wizard called that a started
+ * row. Calibre is the WORST column to key on: it is the one where absence has a
+ * second meaning, and it became droppable the day placeholders stopped crossing
+ * the answer boundary — a card reading "Calibre: -" contributes none. A row
+ * holding a make, a model and a serial would then report itself free and this
+ * function would hand the next licence straight over the top of it, producing a
+ * form describing a firearm that does not exist. ownedRowTaken in
+ * motivation-fields.ts is the single rule; credentialOffer asks it too.
  *
- * Returns null when all six are full: the registry has no seventh row, and
- * silently overwriting row 6 would be worse than proposing nothing.
+ * Returns null when all {@link OWNED_ROWS} are full: the registry has no
+ * fifteenth row, and silently overwriting the last would be worse than
+ * proposing nothing.
  */
 export function nextOwnedSlot(answers: Record<string, string>): number | null {
-  for (let i = 1; i <= OWNED_ROWS; i++) {
-    if (!(answers[`existing_firearm_${i}_calibre`] ?? '').trim()) return i;
-  }
-  return null;
+  return nextOwnedRow(answers);
 }
 
 /** Rewrite row-1 keys onto the row actually being filled. */
@@ -579,7 +615,23 @@ export class MotivationExtractService {
 
     const out: Record<string, string> = {};
     for (const [from, to] of Object.entries(FIREARM_KEY_MAP)) {
-      const v = reading.values[from];
+      // ⚠️ THIS IS A READER, AND A READER KEEPS THE CARD VERBATIM. The
+      // card-placeholder rule states it in capitals and this loop is not the
+      // place for it: the answer boundary is the ONE consumer,
+      // motivation-documents.service.ts, which runs answerValue() over every
+      // pair before it becomes a proposed answer. A new consumer that wants a
+      // reading turned into an answer must do the same — what this function
+      // returns is what the page said, which is exactly what the printed
+      // seller-consent declaration is entitled to.
+      //
+      // ⚠️ AND "NONE" NEVER REACHED HERE ANYWAY, whatever an earlier note
+      // claimed. parseFirearmReading in common/firearm-identity.ts drops
+      // none / n/a / unknown / "not visible" before a value is ever written
+      // into `reading.values`, so a guard here could only ever have caught the
+      // wordings that rule does not know (NIL, GEEN, a bare dash) — and those
+      // are caught at the boundary with everything else. Do not weaken the
+      // inner filter on the strength of a duplicate that is no longer here.
+      const v = (reading.values[from] ?? '').trim();
       if (v) out[to] = v;
     }
     if (Object.keys(out).length) {
@@ -757,7 +809,16 @@ than a confident wrong one.`.trim();
       // propose a value against a field that does not exist.
       if (!field) continue;
 
-      let value = row.value.trim();
+      // ⚠️ THE THIRD ANSWER BOUNDARY, AND THE SHORTEST ROUTE TO THE BUG. This
+      // is the direct read: a licence card goes in, `existing_firearm_N_*`
+      // comes out as a proposed answer. The system prompt correctly orders the
+      // model to transcribe what it can SEE, and what a licence card prints in
+      // a row that does not apply is the word NONE — so a faithful transcriber
+      // hands us "frame_serial: NONE" and `if (!value)` waved it through. Every
+      // EXTRACTABLE key is a fact printed on a document (a name, a number, an
+      // address, a serial), never a question whose answer could legitimately BE
+      // "none", so the rule is safe to apply to all of them here.
+      let value = answerValue(row.value);
       if (!value) continue;
 
       // ⚠️ THE COMPETENCY ENDORSEMENTS ARE READ, NOT MATCHED. A certificate
@@ -812,6 +873,25 @@ than a confident wrong one.`.trim();
         value = (matched as string[]).join(', ');
       }
 
+      // ⚠️ A DATE FIELD TAKES A DATE, OR IT TAKES NOTHING. Rule 4 of the system
+      // prompt asks for YYYY-MM-DD and a transcriber mostly obliges, but a
+      // licence card prints "2027/06/30" and "30 JUN 2027" and a model reading
+      // one of those faithfully hands it straight back. The registry renders
+      // `kind: 'date'` in a date input, so a value that is not an ISO day is one
+      // the wizard cannot display and the member cannot correct without first
+      // noticing it is wrong — the identical failure the vault side closed with
+      // DATE_DETAILS in licence-centre-extract.service.ts. Dropped, not
+      // coerced: 06/07 is two different days depending on which side of the
+      // Atlantic printed it, and guessing which is inventing the fact.
+      if (field.kind === 'date' && !isIsoDay(value)) {
+        this.logger.warn(
+          `Extraction for ${kind}: ${row.key} value ${JSON.stringify(
+            value.slice(0, 30),
+          )} is not a yyyy-mm-dd date — dropped`,
+        );
+        continue;
+      }
+
       let trusted = row.confidence === 'high';
       let note: string | undefined;
 
@@ -841,6 +921,20 @@ than a confident wrong one.`.trim();
 
     return out;
   }
+}
+
+/**
+ * yyyy-mm-dd, and a day that actually exists.
+ *
+ * Three lines rather than an import from licence-centre/, so the dependency
+ * between the two modules keeps pointing one way at the source level as well as
+ * in the Nest graph — the same call motivation-credentials.ts makes for
+ * toIsoDay. The round-trip is what rejects 2026-02-31.
+ */
+function isIsoDay(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 }
 
 const UPLOAD_LABEL: Partial<Record<MotivationUploadKind, string>> = {

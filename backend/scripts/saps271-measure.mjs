@@ -441,6 +441,41 @@ function charCells(pageNo, labelText, occurrence = 0) {
 // form's own printed text, so a reissued form that renames a label FAILS LOUDLY
 // here rather than silently writing into the wrong box.
 
+// ── item 2.1, page 5 — the firearms already licensed to the applicant ─
+//
+// FOURTEEN ROWS, GENERATED, BECAUSE THE FORM HAS FOURTEEN. They were written
+// out by hand as six, with a comment reading "Six are mapped: more than almost
+// anyone holds, and an applicant with more can write the rest in by hand". The
+// operator settled that on 2026-09-07: "all fire arms the applicant owns must
+// be in that list." Six mapped rows meant a member with ten licences had four
+// firearms collected, stored, and printable nowhere — the wizard offered them,
+// nothing carried them.
+//
+// ⚠️ THE ROW COUNT IS THE PAPER'S, NOT OURS. tableCell() walks the form's own
+// ruling lines, so a row that does not exist FAILS LOUDLY and is reported as
+// unresolved rather than extrapolated from the pitch of the six above it. If
+// SAPS reissues the form with a different number of rows, this reports it.
+// motivation-fields.ts exports OWNED_ROWS = 14 and the two must agree; the
+// saps271-coverage spec pins that every row the registry offers has coordinates.
+const OWNED_ROWS = 14;
+const OWNED_COLUMNS = [
+  'type',
+  'calibre',
+  'make',
+  'barrel_serial',
+  'frame_serial',
+  'licence',
+];
+const ownedRowSpec = () =>
+  Object.fromEntries(
+    Array.from({ length: OWNED_ROWS }, (_, row) =>
+      OWNED_COLUMNS.map((col, c) => [
+        `g_owned_${row + 1}_${col}`,
+        ['table', 5, 'Type', row, c],
+      ]),
+    ).flat(),
+  );
+
 const SPEC = {
   // Section D — which licence is applied for. The X goes in the last column.
   d_section_13: ['rowEnd', 2, 'Licence to possess a firearm for self-defence'],
@@ -625,51 +660,12 @@ const SPEC = {
   d_holder_main: ['tick', 2, 'Main firearm licence holder'],
   d_holder_additional: ['tick', 2, 'Additional firearm licence holder'],
 
-  // ── Item 2.1, page 5 — firearms already licensed to the applicant ─
-  //
-  // Fourteen ruled rows under one header, no label on any of them. Six are
-  // mapped: more than almost anyone holds, and an applicant with more can
-  // write the rest in by hand rather than have us guess at a row limit.
+  // Item 2.1, page 5 — see ownedRowSpec() above.
   //
   // This table is also what the OVERLAP CHECK reads. Free text could never
   // answer "does the applicant already hold something in this class", which is
   // the question that gets a second rifle refused.
-  g_owned_1_type: ['table', 5, 'Type', 0, 0],
-  g_owned_1_calibre: ['table', 5, 'Type', 0, 1],
-  g_owned_1_make: ['table', 5, 'Type', 0, 2],
-  g_owned_1_barrel_serial: ['table', 5, 'Type', 0, 3],
-  g_owned_1_frame_serial: ['table', 5, 'Type', 0, 4],
-  g_owned_1_licence: ['table', 5, 'Type', 0, 5],
-  g_owned_2_type: ['table', 5, 'Type', 1, 0],
-  g_owned_2_calibre: ['table', 5, 'Type', 1, 1],
-  g_owned_2_make: ['table', 5, 'Type', 1, 2],
-  g_owned_2_barrel_serial: ['table', 5, 'Type', 1, 3],
-  g_owned_2_frame_serial: ['table', 5, 'Type', 1, 4],
-  g_owned_2_licence: ['table', 5, 'Type', 1, 5],
-  g_owned_3_type: ['table', 5, 'Type', 2, 0],
-  g_owned_3_calibre: ['table', 5, 'Type', 2, 1],
-  g_owned_3_make: ['table', 5, 'Type', 2, 2],
-  g_owned_3_barrel_serial: ['table', 5, 'Type', 2, 3],
-  g_owned_3_frame_serial: ['table', 5, 'Type', 2, 4],
-  g_owned_3_licence: ['table', 5, 'Type', 2, 5],
-  g_owned_4_type: ['table', 5, 'Type', 3, 0],
-  g_owned_4_calibre: ['table', 5, 'Type', 3, 1],
-  g_owned_4_make: ['table', 5, 'Type', 3, 2],
-  g_owned_4_barrel_serial: ['table', 5, 'Type', 3, 3],
-  g_owned_4_frame_serial: ['table', 5, 'Type', 3, 4],
-  g_owned_4_licence: ['table', 5, 'Type', 3, 5],
-  g_owned_5_type: ['table', 5, 'Type', 4, 0],
-  g_owned_5_calibre: ['table', 5, 'Type', 4, 1],
-  g_owned_5_make: ['table', 5, 'Type', 4, 2],
-  g_owned_5_barrel_serial: ['table', 5, 'Type', 4, 3],
-  g_owned_5_frame_serial: ['table', 5, 'Type', 4, 4],
-  g_owned_5_licence: ['table', 5, 'Type', 4, 5],
-  g_owned_6_type: ['table', 5, 'Type', 5, 0],
-  g_owned_6_calibre: ['table', 5, 'Type', 5, 1],
-  g_owned_6_make: ['table', 5, 'Type', 5, 2],
-  g_owned_6_barrel_serial: ['table', 5, 'Type', 5, 3],
-  g_owned_6_frame_serial: ['table', 5, 'Type', 5, 4],
-  g_owned_6_licence: ['table', 5, 'Type', 5, 5],
+  ...ownedRowSpec(),
 
   // ── page 6 — postal codes, which the address fields do not carry ──
   // Four cells each, one digit per cell.

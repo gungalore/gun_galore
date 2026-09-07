@@ -18,6 +18,10 @@ import { VaultLogService } from '../common/vault-log.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { encryptJson, decryptJson } from '../common/blob-crypto';
 import { parseProvenance, stamp } from '../common/answer-provenance';
+// "NONE" on a licence card is the card saying there is nothing in that row —
+// never an answer on a form somebody signs. The readers and the vault keep the
+// card verbatim; this is the answer boundary. See card-placeholder.ts.
+import { answerValue } from '../common/card-placeholder';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { requiredEndorsement } from './motivation-eligibility';
 import { decideAutolink } from './motivation-autolink';
@@ -29,7 +33,7 @@ import {
   validLongEnough,
   toIsoDay,
 } from './motivation-credentials';
-import { buildLibrary, NEVER_REUSABLE } from './motivation-library';
+import { buildLibrary, leadsPair, NEVER_REUSABLE } from './motivation-library';
 import { VaultAdoptionService } from './vault-adoption.service';
 import { VaultConsentService } from '../users/vault-consent.service';
 import { buildAnnexures, UPLOAD_KIND_LABELS } from './motivation-checklist';
@@ -50,6 +54,7 @@ import {
   pickableKinds,
 } from './motivation-documents';
 import { EDITABLE, MotivationSharedService } from './motivation-shared.service';
+import { MotivationPrefillService } from './motivation-prefill.service';
 
 // ────────────────────────────────────────────────────────────────────
 // THE DOCUMENTS ON AN APPLICATION — the library the member picks from,
@@ -87,6 +92,23 @@ const AUTOLINK_CONCURRENCY = 3;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOADS = 16;
 
+/**
+ * One application, opened once for a run of attachments.
+ *
+ * Named because two methods take it now — the copy itself and the pair
+ * ride-along above it — and a run must not re-read the row between them.
+ * See openForAttach.
+ */
+type AttachContext = {
+  userId: string;
+  row: {
+    id: string;
+    status: MotivationStatus;
+    licenceType: MotivationLicenceType;
+    answersEncrypted: string | null;
+  };
+};
+
 @Injectable()
 export class MotivationDocumentsService {
   private readonly logger = new Logger(MotivationDocumentsService.name);
@@ -100,6 +122,27 @@ export class MotivationDocumentsService {
     private readonly vaultConsent: VaultConsentService,
     private readonly shared: MotivationSharedService,
     private readonly vaultLog: VaultLogService,
+    /**
+     * The competency re-derivation, borrowed from the prefill service.
+     *
+     * ⚠️ BECAUSE applyExtraction IS ONE OF THE THREE WRITERS OF THE FIREARM,
+     * AND THE ONLY HOOK WAS ON ANOTHER. `requiredEndorsement` reads
+     * `firearm_type` and `firearm_action`, and this method writes both — off a
+     * dealer-prefilled SAPS 271 or an association endorsement, which the
+     * routing spec calls the common real-world case. saveAnswers re-derives
+     * the competency when either changes; a firearm that arrived by DOCUMENT
+     * did not, so the member's four competency boxes kept whatever was chosen
+     * before anything knew which firearm this was — the exact fault the
+     * operator hit on a fresh section 13, arriving by a second door.
+     *
+     * ⚠️ OPTIONAL IN THE SIGNATURE, INJECTED IN PRACTICE. Nest resolves it
+     * from MotivationsModule like every other provider; the `?` is so a spec
+     * that builds this service by hand for something else entirely does not
+     * have to know about it. `?.` below means the worst case is the behaviour
+     * that existed before, never a crash. No import cycle: the prefill service
+     * knows nothing about this one.
+     */
+    private readonly prefill?: MotivationPrefillService,
   ) {}
 
   // ── the document library ──────────────────────────────────────────
@@ -147,6 +190,16 @@ export class MotivationDocumentsService {
           // The date PRINTED on the document, which is what a proof of address
           // is judged on — not when it was photographed.
           issuedOn: true,
+          // ⚠️ THE OTHER PAGE, AND WITHOUT IT THE PICKER DOUBLED EVERY
+          // PROFICIENCY. Two Credential rows, one document: the certificate
+          // and its statement of results share a title and a day, and their
+          // hashes differ by definition, so buildLibrary's sha256 fold could
+          // never see them. Operator, 2026-09-07: "the proficiencies are still
+          // double in that dropdown."
+          otherSideId: true,
+          // WHICH page it is, for the fold's lead rule. Read below, only for a
+          // row that actually has a partner — see readSide.
+          detailsEncrypted: true,
         },
       }),
       this.prisma.motivationUpload.findMany({
@@ -172,15 +225,27 @@ export class MotivationDocumentsService {
           storageKey: true,
           purgedAt: true,
           sha256: true,
+          // ⚠️ THE UPLOAD HALF OF THE PAIR FOLD, AND ITS ABSENCE LEFT THE
+          // OPERATOR'S DOUBLE LIVE ON THE COMMONEST PATH. The auto-link query
+          // 190 lines below has always selected it; this one did not, so
+          // buildLibrary could not tell that two copies on an earlier
+          // application were two pages of ONE proficiency and listed both.
+          // Anyone who has filed a single application before is in that state.
+          sourceCredentialId: true,
         },
       }),
     ]);
 
     const now = new Date();
     const items = buildLibrary(
-      credentials.map((c) => ({
+      // ⚠️ THE BLOB STAYS HERE. motivation-library promises "rows in, list
+      // out, no Prisma, no decryption", so the side is read on this side of
+      // the boundary and handed over already resolved — and only for a page
+      // that has a partner, because it is the only page the fold asks about.
+      credentials.map(({ detailsEncrypted, ...c }) => ({
         ...c,
         issuedOn: c.issuedOn ? toIsoDay(c.issuedOn) : null,
+        documentSide: c.otherSideId ? this.readSide(detailsEncrypted) : null,
       })),
       uploads,
       row.id,
@@ -346,6 +411,9 @@ export class MotivationDocumentsService {
           disciplineType: true,
           title: true,
           expiresOn: true,
+          // The pair's tie-breaker, for two pages the reader never labelled.
+          // See leadsPair.
+          createdAt: true,
           // The competency's own "covers" wording, for the endorsement test.
           detailsEncrypted: true,
           extractionOk: true,
@@ -398,22 +466,36 @@ export class MotivationDocumentsService {
     // and its statement of results both cover the same firearm, so both
     // would pass the gate and decideAutolink would see two candidates and
     // attach neither. The statement (the back) stands for the pair; when it
-    // is attached, the front goes on with it below (operator, 2026-09-07).
-    const pairOf = new Map<string, { other: string; side: string | null }>();
-    for (const c of credentials) {
-      if (c.otherSideId) pairOf.set(c.id, { other: c.otherSideId, side: this.readSide(c.detailsEncrypted, c.extractionOk) });
-    }
-    const present = new Set(credentials.filter((c) => !refuse.has(c.id)).map((c) => c.id));
-    const standsForPair = (id: string): boolean => {
-      const p = pairOf.get(id);
-      if (!p || !present.has(p.other)) return true;
-      if (p.side === 'front') return false;
-      if (p.side === 'back') return true;
-      return id < p.other;
+    // is attached, the front goes on with it (operator, 2026-09-07).
+    //
+    // ⚠️ ONE RULE, SHARED WITH THE PICKER, AND THE LOCAL COPY THIS REPLACES
+    // COULD DROP BOTH PAGES. It read only its OWN side: a page the reader
+    // never labelled, paired with a front, fell through to `id < other` — and
+    // where that came out false the front had already said no, so neither page
+    // stood for the pair and the proficiency vanished from the run. leadsPair
+    // reads both sides, and is the same function buildLibrary and the Document
+    // Centre's list decide with.
+    const byId = new Map(
+      credentials
+        .filter((c) => !refuse.has(c.id))
+        .map((c) => [
+          c.id,
+          {
+            id: c.id,
+            createdAt: c.createdAt,
+            documentSide: this.readSide(c.detailsEncrypted),
+          },
+        ]),
+    );
+    const standsForPair = (c: (typeof credentials)[number]): boolean => {
+      const mine = byId.get(c.id);
+      const other = c.otherSideId ? byId.get(c.otherSideId) : undefined;
+      if (!mine || !other) return true;
+      return leadsPair(mine, other);
     };
 
     const candidates = credentials
-      .filter((c) => !refuse.has(c.id) && standsForPair(c.id))
+      .filter((c) => !refuse.has(c.id) && standsForPair(c))
       .map((c) => {
         // The slot it actually belongs in — disciplineType beats the primary
         // kind, so a sworn good standing letter is not offered as a card.
@@ -469,14 +551,39 @@ export class MotivationDocumentsService {
     // is a request nginx cuts off at 60s. Unbounded, a member with a full Centre
     // fires eight concurrent model calls and meets the API's own rate limit,
     // which fails the whole run instead of one document.
-    const attached: { kind: string; title: string }[] = [];
+    // ⚠️ ONE ENTRY PER DOCUMENT, NOT PER PAGE. A proficiency is a certificate
+    // and its statement of results, and the operator's rule for the Document
+    // Centre is explicit — "once they are combined they should be seen as 1
+    // document" (2026-09-07). This list is what the wizard's banner counts and
+    // names, and it read "We added 4 documents from your Document Centre: ID
+    // document, Proof of address, Proficiency - Handgun, Proficiency - Handgun
+    // (other side)" on the operator's live section 16. Three documents, four
+    // lines, the same proficiency twice. `pages` carries the second side
+    // instead, so nothing is lost and nothing is double-counted.
+    const attached: { kind: string; title: string; pages?: number }[] = [];
+    /**
+     * Documents that went on with a page missing.
+     *
+     * ⚠️ MERGED INTO `skipped` BELOW RATHER THAN LOGGED AND FORGOTTEN. The
+     * skipped list is the one place this run says why something is not on the
+     * pack — "so 'why is my competency not on here' has an answer the member
+     * can read rather than a silence they have to guess at" — and a half
+     * document is exactly that question asked about a page.
+     */
+    const partial: { kind: string; title: string; why: string }[] = [];
+    /**
+     * The rows this run is allowed to touch at all — the gated candidate query
+     * above, by id. Passed to the pair ride-along so a partner faces the same
+     * settled-date rule its lead did. See otherSideOf.
+     */
+    const gated = new Set(credentials.map((c) => c.id));
     const queue = [...decision.attach];
     const worker = async () => {
       for (;;) {
         const c = queue.shift();
         if (!c) return;
         try {
-          await this.attachOne(
+          const done = await this.attachWithOtherSide(
             { userId: user.id, row: openRow },
             c.source,
             c.sourceId,
@@ -484,19 +591,35 @@ export class MotivationDocumentsService {
             // decideAutolink refuses it otherwise — and attachOne's own
             // asksPlace check is the boundary, so the answer travels with it.
             placeConfirmed,
+            // ⚠️ AND THE REFUSALS APPLY TO THE OTHER PAGE TOO. A member who
+            // deleted the certificate must not have it handed back by the
+            // statement of results riding in beside it — "why can't I delete
+            // the proof of address?", one page along. The picker passes no
+            // refusals, because there the member is doing the asking.
+            //
+            // ⚠️ AND `only` IS THE SETTLED-DATE GATE THIS RUN ALREADY APPLIED.
+            // `credentials` is the gated candidate query above — confirmedAt
+            // or dateSource, "a date somebody stands behind" — and looking the
+            // partner up from the whole vault walked past it. See otherSideOf.
+            { refuse, only: gated },
           );
-          attached.push({ kind: c.kind, title: c.title });
-          // The other side of a paired proficiency rides along.
-          const p = pairOf.get(c.sourceId);
-          if (c.source === 'credential' && p && present.has(p.other) && !refuse.has(p.other)) {
-            try {
-              await this.attachOne({ userId: user.id, row: openRow }, 'credential', p.other, placeConfirmed);
-              attached.push({ kind: c.kind, title: `${c.title} (other side)` });
-            } catch (err) {
-              this.logger.warn(
-                `Motivation ${row.id}: could not auto-attach the other side of ${c.kind}: ${(err as Error).message}`,
-              );
-            }
+          attached.push({
+            kind: c.kind,
+            title: c.title,
+            ...(done.alsoAttached.length
+              ? { pages: 1 + done.alsoAttached.length }
+              : {}),
+          });
+          // ⚠️ SAID OUT LOUD, NOT ONLY LOGGED. A two-page document that
+          // arrived as one page is the failure the ride-along exists to
+          // prevent; when it happens anyway the member has to be able to see
+          // it, and `skipped` is the list the wizard already reads.
+          if (done.alsoFailed) {
+            partial.push({
+              kind: c.kind,
+              title: `${c.title} (other side)`,
+              why: done.alsoFailed.reason,
+            });
           }
         } catch (err) {
           // ⚠️ ONE FAILURE MUST NOT COST THE REST. A purged file or a
@@ -580,11 +703,14 @@ export class MotivationDocumentsService {
       attached,
       // Said out loud, so "why is my competency not on here" has an answer
       // the member can read rather than a silence they have to guess at.
-      skipped: decision.skipped.map((s) => ({
-        kind: s.candidate.kind,
-        title: s.candidate.title,
-        why: s.why,
-      })),
+      skipped: [
+        ...decision.skipped.map((s) => ({
+          kind: s.candidate.kind,
+          title: s.candidate.title,
+          why: s.why as string,
+        })),
+        ...partial,
+      ],
       needsPlaceConfirm: decision.needsPlaceConfirm,
       reason: 'ok' as const,
     };
@@ -643,9 +769,19 @@ export class MotivationDocumentsService {
    * test, which reads an empty string as "we have not read this" and therefore
    * does not refuse. See competencyCovers — unknown is a yes, deliberately.
    */
-  /** Which side of a two-sided proficiency this is, as the reader recorded it. */
-  private readSide(blob: string | null, ok: boolean): string | null {
-    if (!ok || !blob) return null;
+  /**
+   * Which side of a two-sided proficiency this is, as the reader recorded it.
+   *
+   * ⚠️ IT DOES NOT ASK extractionOk, AND THAT IS DELIBERATE. That column
+   * answers "did anything read off this document at all"; a blob that
+   * decrypts and names a side has plainly been read, whatever the column says
+   * about the rest of it. The Document Centre's own `pageSide` reads the blob
+   * with no such gate — and a fold that disagreed with the Centre about which
+   * page leads would offer the member a different line from the one they
+   * recognise.
+   */
+  private readSide(blob: string | null): 'front' | 'back' | null {
+    if (!blob) return null;
     try {
       const d = decryptJson<Record<string, string>>(blob) ?? {};
       const s = (d.document_side ?? '').trim().toLowerCase();
@@ -691,7 +827,281 @@ export class MotivationDocumentsService {
     await this.quota.assertEnabled();
     const user = await this.shared.requireUser(clerkId);
     const row = await this.openForAttach(user.id, id);
-    return this.attachOne({ userId: user.id, row }, source, sourceId, placeConfirmed);
+    return this.attachWithOtherSide(
+      { userId: user.id, row },
+      source,
+      sourceId,
+      placeConfirmed,
+    );
+  }
+
+  /**
+   * Attach a library document AND the other page of it, where there is one.
+   *
+   * ⚠️ THE FOLD MUST NOT LOSE THE OTHER PAGE. The picker now shows a two-page
+   * proficiency as ONE line — see buildLibrary — so the page the member cannot
+   * see has to come with the one they pick. Without this the doubling is gone
+   * and something far worse takes its place: a certificate filed with no
+   * statement of results behind it, in front of a DFO, over the applicant's
+   * signature. A cosmetic double is a nuisance; an incomplete pack is a wasted
+   * trip to a police station.
+   *
+   * ⚠️ THE PARTNER IS FOUND FROM THE VAULT, NOT FROM THE REQUEST. The caller
+   * names one document; which page rides with it is ours to decide, and a
+   * client-supplied second id would be a second thing to check ownership of.
+   *
+   * ⚠️ AND ITS FAILURE COSTS ONE PAGE, NEVER BOTH. The member asked for the
+   * document in front of them: a full store, a purged partner or a dead
+   * connection is a reason to log and hand back what did attach, not to
+   * refuse the pick they made.
+   */
+  private async attachWithOtherSide(
+    ctx: AttachContext,
+    source: 'credential' | 'upload',
+    sourceId: string,
+    placeConfirmed = false,
+    opts: {
+      /**
+       * Vault rows this application must never be offered again — auto-link's
+       * record of what the member has already removed. Empty for the picker.
+       */
+      refuse?: ReadonlySet<string>;
+      /**
+       * The only vault rows a partner may be taken from, where the caller has
+       * already gated its own candidates.
+       *
+       * ⚠️ THIS IS THE SETTLED-DATE GATE, RESTORED. autolink()'s candidate
+       * query admits a credential only on `confirmedAt` OR `dateSource` — "a
+       * date somebody stands behind" — and the comment above that query says
+       * why: the freshness rule needs one, and "answering it anyway is how a
+       * stale document gets attached silently". The ride-along looked its
+       * partner up from the whole vault and walked straight past it. Handing
+       * the gated set down restores the `present.has(p.other)` test the local
+       * pair rule used to make, without writing the predicate down twice.
+       *
+       * ⚠️ THE PICKER PASSES NOTHING, DELIBERATELY, and it is the same
+       * distinction `refuse` already draws: there the member is doing the
+       * asking, has the document in front of them, and the freshness note is
+       * printed beside it.
+       *
+       * ⚠️ AND THE GATE COSTS SOMETHING THE OPERATOR SHOULD KNOW ABOUT.
+       * PROFICIENCY is not in ARMABLE_KINDS (credential-auto-date.ts), so a
+       * proficiency row carries `dateSource: null` until somebody confirms it,
+       * and confirmExpiry stamps ONE row rather than both sides. So inside an
+       * auto-link run the second page rides along only where both pages have
+       * been confirmed. The picker — where the fold actually lives, and where
+       * the member can see what they picked — is unaffected.
+       */
+      only?: ReadonlySet<string>;
+    } = {},
+  ) {
+    /**
+     * The vault row this pick is anchored to: the pick itself when it is a
+     * credential, and the row a copy was taken from when it is an upload.
+     *
+     * ⚠️ RESOLVED BEFORE ANYTHING IS WRITTEN, which is the whole difference
+     * between a document arriving whole and arriving half. See the ceiling.
+     *
+     * ⚠️ AND THE UPLOAD BRANCH IS NOT DEAD CODE. buildLibrary now lists a
+     * paired document from the vault, so the picker should not send an upload
+     * that has a partner — but this route is directly callable, a stale client
+     * holds yesterday's list, and `suggested` is built from the same array. A
+     * filter the client applies is a convenience; this is the check.
+     */
+    const anchor =
+      source === 'credential'
+        ? sourceId
+        : await this.vaultPageBehind(ctx.userId, sourceId);
+    const other = anchor
+      ? await this.otherSideOf(ctx.userId, anchor, opts)
+      : null;
+
+    const alsoAttached: { id: string; kind: MotivationUploadKind; label: string }[] =
+      [];
+    /**
+     * The page that did NOT come across, in words a member could read.
+     *
+     * ⚠️ RETURNED BECAUSE THE TRUTH HAS TO EXIST SOMEWHERE. A silently
+     * half-attached document is the failure this method exists to prevent, so
+     * when the second page fails anyway the caller is told rather than left to
+     * infer it from a count. Auto-link folds `alsoAttached` into the banner
+     * the member reads; the picker does not render this field yet — one line
+     * of copy, in a component this file does not own.
+     */
+    let alsoFailed: { reason: 'unavailable' | 'error'; message: string } | null =
+      null;
+
+    if (!anchor || !other) {
+      const single = await this.attachOne(ctx, source, sourceId, placeConfirmed);
+      return { ...single, alsoAttached, alsoFailed };
+    }
+
+    // ⚠️ ROOM FOR THE WHOLE DOCUMENT, DECIDED BEFORE EITHER PAGE IS WRITTEN.
+    // attachOne checks the ceiling per page, which is right for one document
+    // and silent for two: at 15 of 16 the member picks a two-page proficiency,
+    // gets the certificate, gets no error — and with the picker hiding a
+    // folded entry it believes is already here, no way to add the page that
+    // was refused. All or nothing, and the message names the limit either way.
+    if (!(await this.roomForPair(ctx, anchor, other))) {
+      throw new ConflictException(
+        `An application can carry ${MAX_UPLOADS} documents, and that one is two pages. Remove one before adding it.`,
+      );
+    }
+
+    const first = await this.attachOne(ctx, source, sourceId, placeConfirmed);
+    /** The lead's reading, and the follower's where it answered anything else. */
+    let suggestions: { key: string; value: string; label: string }[] = [
+      ...first.suggestions,
+    ];
+
+    try {
+      const partner = await this.attachOne(
+        ctx,
+        'credential',
+        other,
+        placeConfirmed,
+      );
+      alsoAttached.push({
+        id: partner.id,
+        kind: partner.kind,
+        label: partner.label,
+      });
+      // ⚠️ AND WHAT THE SECOND PAGE SAID IS NOT THROWN AWAY. Only `first`
+      // spreads into the response, so the partner's reading used to be dropped
+      // on the floor — harmless while the follower is the provider's
+      // certificate and the lead carries the unit standards, and wrong the
+      // moment leadsPair picks the other way round (two pages recorded as the
+      // same side fall through to the date and the id). The lead still wins
+      // every key it answered: the member picked THAT page.
+      const known = new Set(suggestions.map((sg) => sg.key));
+      const extra: { key: string; value: string; label: string }[] = [
+        ...partner.suggestions,
+      ];
+      suggestions = [
+        ...suggestions,
+        ...extra.filter((sg) => !known.has(sg.key)),
+      ];
+    } catch (err) {
+      // ⚠️ ITS FAILURE COSTS ONE PAGE, NEVER BOTH. The member asked for the
+      // document in front of them: a purged partner or a dead connection is a
+      // reason to hand back what did attach, not to refuse the pick they made.
+      alsoFailed = {
+        reason: err instanceof GoneException ? 'unavailable' : 'error',
+        message:
+          'We could not attach the second page of that document — add it from your Document Centre.',
+      };
+      this.logger.warn(
+        `Motivation ${ctx.row.id}: could not attach the other page of ${sourceId}: ${(err as Error).message}`,
+      );
+    }
+    return { ...first, suggestions, alsoAttached, alsoFailed };
+  }
+
+  /**
+   * The vault row a motivation upload was copied from, where we can tell.
+   *
+   * By id where the copy recorded one; otherwise by CONTENT, because an upload
+   * ADOPTED into the vault carries no sourceCredentialId — the copy went the
+   * other way — and both rows hash the same plaintext bytes. The same join
+   * buildLibrary makes in memory, made here against the database because this
+   * route is reachable without ever having read the list.
+   *
+   * Narrowed to a row that HAS a partner: this is only ever asked to find a
+   * second page, and it keeps the query off every ordinary one-page pick.
+   */
+  private async vaultPageBehind(
+    userId: string,
+    uploadId: string,
+  ): Promise<string | null> {
+    const up = await this.prisma.motivationUpload.findFirst({
+      where: { id: uploadId, motivation: { userId } },
+      select: { sourceCredentialId: true, sha256: true },
+    });
+    if (!up) return null;
+    if (up.sourceCredentialId) return up.sourceCredentialId;
+    const byBytes = await this.prisma.credential.findFirst({
+      where: { userId, sha256: up.sha256, otherSideId: { not: null } },
+      select: { id: true },
+    });
+    return byBytes?.id ?? null;
+  }
+
+  /**
+   * Is there room on this pack for both pages of one document?
+   *
+   * ⚠️ A PAGE ALREADY ON THE PACK COSTS NO SLOT. attachOne hands back the row
+   * that already exists rather than writing a second one, so the question is
+   * how many of the two are NEW — which is what keeps re-adding a deleted page
+   * possible at fifteen of sixteen, the exact repair the fold made necessary.
+   */
+  private async roomForPair(
+    ctx: AttachContext,
+    firstCredentialId: string,
+    otherCredentialId: string,
+  ): Promise<boolean> {
+    const motivationId = ctx.row.id;
+    const [pages, count] = await Promise.all([
+      this.prisma.credential.findMany({
+        // Ownership is a WHERE clause here as it is everywhere else in this
+        // module: `firstCredentialId` can be a client-supplied id.
+        where: {
+          userId: ctx.userId,
+          id: { in: [firstCredentialId, otherCredentialId] },
+        },
+        select: { sha256: true },
+      }),
+      this.prisma.motivationUpload.count({ where: { motivationId } }),
+    ]);
+    const shas = pages.map((x) => x.sha256).filter((x): x is string => !!x);
+    // No hashes to compare — a vault row that predates the column, or a
+    // partner we could not read. Ask for two slots, which is the safe way to
+    // be wrong: it refuses at the ceiling rather than half-attaching.
+    if (!shas.length) return count + 2 <= MAX_UPLOADS;
+    const here = await this.prisma.motivationUpload.findMany({
+      where: { motivationId, sha256: { in: shas } },
+      select: { sha256: true },
+    });
+    const have = new Set(here.map((h) => h.sha256));
+    const needed = shas.filter((x) => !have.has(x)).length;
+    return count + needed <= MAX_UPLOADS;
+  }
+
+  /**
+   * The other page of a vault document, where it is still attachable.
+   *
+   * Ownership is a WHERE clause in BOTH halves: `otherSideId` is a plain id
+   * copied off a row, so the partner is looked up as this member's own
+   * document or not at all. Purged bytes mean there is nothing to copy, which
+   * is a reason to attach one page rather than to fail the pick.
+   */
+  private async otherSideOf(
+    userId: string,
+    credentialId: string,
+    opts: { refuse?: ReadonlySet<string>; only?: ReadonlySet<string> } = {},
+  ): Promise<string | null> {
+    const mine = await this.prisma.credential.findFirst({
+      where: { id: credentialId, userId },
+      select: { otherSideId: true },
+    });
+    if (!mine?.otherSideId) return null;
+    // ⚠️ BOTH REFUSALS ARE ASKED BEFORE THE QUERY, AND BEFORE ANY BYTES MOVE.
+    // `refuse` is what this application has already been given and the member
+    // removed — "why can't I delete the proof of address?", one page along.
+    // `only` is the caller's own gate on which rows are candidates at all,
+    // which for auto-link is the settled-date rule. Neither is a display
+    // filter: this is the boundary.
+    if (opts.refuse?.has(mine.otherSideId)) return null;
+    if (opts.only && !opts.only.has(mine.otherSideId)) return null;
+    const other = await this.prisma.credential.findFirst({
+      where: {
+        id: mine.otherSideId,
+        userId,
+        storageKey: { not: null },
+        purgedAt: null,
+      },
+      select: { id: true },
+    });
+    return other?.id ?? null;
   }
 
   /**
@@ -731,15 +1141,7 @@ export class MotivationDocumentsService {
    * MAX_UPLOADS by as many documents as it has in flight.
    */
   private async attachOne(
-    ctx: {
-      userId: string;
-      row: {
-        id: string;
-        status: MotivationStatus;
-        licenceType: MotivationLicenceType;
-        answersEncrypted: string | null;
-      };
-    },
+    ctx: AttachContext,
     source: 'credential' | 'upload',
     sourceId: string,
     placeConfirmed = false,
@@ -876,8 +1278,17 @@ export class MotivationDocumentsService {
           // endorsements reach the member through credentialOffer, which owns
           // the alias table and offers rather than writes.
           const wanted = new Set(MotivationExtractService.wantedFor(kind));
+          // ⚠️ AND "NONE" IS NOT A VALUE. A licence card prints NONE in a row
+          // that does not apply to that firearm — the operator's own Glock
+          // card reads "Model NONE" — and the old `&& v` guard tested only for
+          // emptiness, so the word travelled from the vault into a suggestion
+          // and on into a SAPS 271 the applicant signs. The card keeps its
+          // wording; the ANSWER does not get one. See card-placeholder.ts.
           const kept = Object.fromEntries(
-            Object.entries(details).filter(([k, v]) => wanted.has(k) && v),
+            Object.entries(details)
+              .filter(([k]) => wanted.has(k))
+              .map(([k, v]) => [k, answerValue(v)] as const)
+              .filter(([, v]) => v !== ''),
           );
           if (Object.keys(kept).length > 0) {
             // ok is already true whenever the vault read it; restating it here
@@ -1123,11 +1534,27 @@ export class MotivationDocumentsService {
     if (extraction.ok && extraction.blob) {
       try {
         const read = decryptJson<Record<string, string>>(extraction.blob);
-        suggestions = Object.entries(read ?? {}).map(([key, value]) => ({
-          key,
-          value,
-          label: key,
-        }));
+        // ⚠️ AND THIS IS AN ANSWER BOUNDARY, WITH NO TEST ON IT AT ALL — not
+        // for a placeholder, not even for emptiness. What comes back here is
+        // handed to the wizard, which writes it straight in
+        // (`setAnswer(sg.key, sg.value, { onlyIfEmpty: true })`), so a licence
+        // read as "Frame Serial No NONE" — the card being complete, not a
+        // serial — became a box on a SAPS 271 the applicant signs. Seen live
+        // on 2026-09-07: "Firearm 6 — frame serial NONE · barrel serial NONE".
+        //
+        // ⚠️ THE GUARD HAS TO BE HERE, NOT ONLY WHERE THE BLOB WAS WRITTEN.
+        // For an upload source this is `extractionEncrypted` as it was stored,
+        // possibly long before card-placeholder.ts existed, and CURRENT_LICENCE
+        // is not in NEVER_REUSABLE — so those readings cross applications. The
+        // same reasoning readingFor() already carries, on the same blobs.
+        // Absent stays absent. See card-placeholder.ts.
+        suggestions = Object.entries(read ?? {})
+          .map(([key, value]) => ({
+            key,
+            value: typeof value === 'string' ? answerValue(value) : '',
+            label: key,
+          }))
+          .filter((sg) => sg.value !== '');
       } catch {
         // A blob we cannot read costs a convenience, not the attachment.
       }
@@ -1200,9 +1627,18 @@ export class MotivationDocumentsService {
         const read = decryptJson<Record<string, string>>(
           up.extractionEncrypted,
         );
+        // ⚠️ THE EMPTINESS TEST WAS NOT ENOUGH. A stored reading can hold the
+        // word the card prints for "nothing here" — NONE, N/A, a dash — and
+        // this list is offered straight into the member's answers. Cards read
+        // before card-placeholder.ts existed still carry those values, so the
+        // guard has to be here at the offer, not only where they are written.
         suggestions = Object.entries(read ?? {})
-          .filter(([, value]) => typeof value === 'string' && value.trim())
-          .map(([key, value]) => ({ key, value, label: key }));
+          .map(([key, value]) => ({
+            key,
+            value: typeof value === 'string' ? answerValue(value) : '',
+            label: key,
+          }))
+          .filter((s) => s.value !== '');
       } catch {
         // A blob we cannot read costs the convenience, never the document.
       }
@@ -1498,8 +1934,15 @@ export class MotivationDocumentsService {
               .filter((f) => isVisible(f, answersNow))
               .map((f) => f.key),
           );
-          for (const [key, value] of Object.entries(firearm)) {
+          for (const [key, raw] of Object.entries(firearm)) {
             if (already.has(key) || !visible.has(key)) continue;
+            // ⚠️ AND NEVER THE CARD'S OWN "NOTHING HERE". This loop had no
+            // guard at all, so a licence reading "Frame Serial No NONE" — the
+            // card being complete, not a serial — became a proposed answer.
+            // Seen live on 2026-09-07: "Firearm 6 — frame serial NONE ·
+            // barrel serial NONE". Absent stays absent.
+            const value = answerValue(raw);
+            if (!value) continue;
             suggestions.push({
               key,
               value,
@@ -1631,6 +2074,60 @@ export class MotivationDocumentsService {
         source: 'READ',
         from: 'a document you uploaded',
       });
+    }
+
+    // ── and the competency, now that a document has named the firearm ──
+    //
+    // ⚠️ THE SAME HOOK saveAnswers CARRIES, ON THE DOOR IT WAS MISSING FROM.
+    // Operator, 2026-09-07: "the wrong competency chosen before it even knows
+    // which firearm is being applied for." A firearm reaches an application
+    // three ways — the member types it, a seller consent writes it, or a
+    // document is read and confirmed here — and only the first re-derived the
+    // certificate. So a member whose firearm arrived on a dealer-prefilled
+    // SAPS 271 or an association endorsement kept whatever competency was
+    // chosen on no information, all the way to the eligibility check, which
+    // then told them their certificate did not cover their own firearm.
+    //
+    // Both keys, because requiredEndorsement reads both: the action is what
+    // separates a self-loading rifle from a manually operated one.
+    //
+    // ⚠️ AND IT MAY CLEAR A BOX. competencyOffer returns empty strings for a
+    // certificate the new firearm rules out, and it decides for itself what it
+    // is allowed to replace off the provenance map — MEMBER is theirs for
+    // ever. A wrong certificate number left on a form somebody signs is worse
+    // than an empty box they are asked to fill.
+    if (
+      this.prefill &&
+      ('firearm_type' in clean || 'firearm_action' in clean)
+    ) {
+      const competency = await this.prefill.competencyOffer(
+        row.licenceType,
+        user.id,
+        merged,
+        provenance,
+      );
+      if (competency) {
+        provenance = { ...provenance };
+        for (const [key, value] of Object.entries(competency.values)) {
+          // ⚠️ BELT AND BRACES, AND WORTH THE TWO LINES: `stamp()` protects a
+          // MEMBER *provenance entry* and nothing else — it has never guarded
+          // the answer. competencyOffer already refuses a MEMBER key, so this
+          // can only ever be a no-op; it is here because the day somebody
+          // widens that filter, the damage lands on a signed declaration.
+          if (provenance[key]?.source === 'MEMBER') continue;
+          merged[key] = value;
+          // ⚠️ AND A BOX WE EMPTIED LOSES ITS CHIP. The map has no "unstamp" —
+          // deliberately, because the one thing it must never do is forget a
+          // MEMBER mark — so a removal is done here, by hand, and only for
+          // keys competencyOffer already established were OURS. Left behind,
+          // the entry would put "From your Document Centre — <the certificate
+          // we just ruled out>" against a blank field. The same handling
+          // saveAnswers does, because it is the same offer.
+          const entry = competency.provenance[key];
+          if (entry) provenance[key] = entry;
+          else delete provenance[key];
+        }
+      }
     }
 
     await this.prisma.motivation.update({

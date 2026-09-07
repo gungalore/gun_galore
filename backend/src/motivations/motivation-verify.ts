@@ -13,6 +13,7 @@
 // document, per the operator, and not more.
 // ────────────────────────────────────────────────────────────────────
 
+import { OWNED_ROWS, ownedFirearmSerial } from './motivation-fields';
 import { readSaId } from './sa-id';
 
 export interface AnnexureRef {
@@ -389,14 +390,27 @@ export function packConsistency(
   // does not match the answer, the writer substituted one. Owned-firearm
   // serials legitimately appear, so only the labelled applied-for form is
   // policed.
+  //
+  // ⚠️ THE ALLOWLIST IS WHAT KEEPS THIS CHECK HONEST, SO IT MUST NEVER GO
+  // QUIETLY EMPTY. It read `existing_firearm_N_frame_serial` /
+  // `_barrel_serial` over a hardcoded [1..6]. Both keys were RETIRED on
+  // 2026-09-07 when the two questions collapsed into one `_serial`, and the
+  // row count went to fourteen — so on every application written since, the
+  // allowlist was EMPTY. This check does not fail open when that happens, it
+  // fails LOUD and wrong: a motivation that correctly names the member's own
+  // second rifle by its serial gets that serial reported as invented, and a
+  // reviewer is sent to look for a fabrication that is not there. Rows 7 to 14
+  // were never allowlisted at all, even before the collapse.
+  // ownedFirearmSerial() reads the current key and both retired ones, and
+  // OWNED_ROWS is imported so the range cannot drift from the registry again.
   if (serial) {
     for (const m of text.matchAll(/Serial\s*(?:Number|No)\.?\s*:?\s*([A-Z0-9-]{4,})/gi)) {
       const found = squash(m[1]);
-      const owned = [1, 2, 3, 4, 5, 6].some((n) =>
-        [
-          answers[`existing_firearm_${n}_frame_serial`],
-          answers[`existing_firearm_${n}_barrel_serial`],
-        ].some((v) => v && squash(v) === found),
+      const owned = Array.from({ length: OWNED_ROWS }, (_, i) => i + 1).some(
+        (n) => {
+          const held = ownedFirearmSerial(answers, n);
+          return !!held && squash(held) === found;
+        },
       );
       if (found !== squash(serial) && !owned) {
         issues.push(

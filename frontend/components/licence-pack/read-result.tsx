@@ -31,6 +31,11 @@ import FieldInput from '@/components/motivation-field-input';
 // live wizard therefore had no way to say where a value came from — see
 // components/motivation/provenance.tsx.
 import { Pill, toneFor } from '@/components/motivation/provenance';
+// ⚠️ THE SAME TALLY THE FOOTER HINT USES. The header and the footer sat on one
+// screen counting different things and contradicting each other — see
+// step-answers.ts, which records both sentences the operator photographed.
+import { answerHeading, tallyAnswers } from './step-answers';
+import { emptyAnswerLabel } from './empty-answer';
 import type {
   MotivationField,
   ProvenanceMap,
@@ -38,12 +43,12 @@ import type {
 
 export default function ReadResult({
   stepKey,
-  section,
   fields,
   answers,
   provenance,
   missing,
   onChange,
+  attachedKinds,
 }: {
   /**
    * Which step is being reviewed.
@@ -56,27 +61,42 @@ export default function ReadResult({
    * kept off somebody's document is not a decoration to repeat.
    */
   stepKey: string;
-  /** The registry section this panel is reviewing. */
-  section: string;
+  /* ⚠️ THERE IS NO `section` PROP. It was passed and destructured and never
+     read: the step's own heading above this panel already names what is being
+     reviewed, and the count in the header is derived from the fields handed in
+     rather than from a section name. A prop nobody reads is a prop that drifts
+     from the fields beside it. */
   fields: MotivationField[];
   answers: Record<string, string>;
   provenance: ProvenanceMap;
   missing: Set<string>;
   onChange: (key: string, value: string) => void;
+  /**
+   * The MotivationUploadKinds this application actually holds. Without it an
+   * empty row cannot tell "the document is here and does not carry this" from
+   * "the document has not reached us", and says the first about both. See
+   * empty-answer.ts for the ten false sentences that came of it.
+   */
+  attachedKinds?: ReadonlySet<string>;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
 
   if (!fields.length) return null;
 
-  const filled = fields.filter((f) => (answers[f.key] ?? '').trim());
+  // ⚠️ THE ANSWERS TOO, so "one more is optional" means one still on offer
+  // rather than one already given. See step-answers.ts.
+  const tally = tallyAnswers(fields, missing, answers);
 
   return (
     <div className="max-w-[800px] rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)]">
       <div className="border-b border-[var(--border-divider)] px-4 py-3 text-[11px] font-medium uppercase tracking-[.11em] text-[var(--text-tertiary)]">
-        {/* ⚠️ COUNTED, NOT WRITTEN. The mockup's "11 of the 15" is a caption on
-            a picture; here it is what this member actually has. */}
-        We have {filled.length} of the {fields.length} answers this section asks
-        for
+        {/* ⚠️ COUNTED, NOT WRITTEN, AND COUNTING WHAT THE FOOTER COUNTS. The
+            mockup's "11 of the 15" is a caption on a picture; here it is what
+            this member actually has, in the same arithmetic as the hint in the
+            footer bar. It used to count every field in the section including
+            the optional ones, so "3 of the 4" sat above "Nothing outstanding
+            here." on one screen. */}
+        {answerHeading(tally)}
       </div>
 
       <div>
@@ -122,10 +142,15 @@ export default function ReadResult({
                     {/* ⚠️ AN EMPTY BOX SAYS WHOSE IT IS. "Not read" on a line
                         only the member can answer would be blaming the
                         document for a question it was never asked. */}
-                    {value || (f.docSourced ? 'Not on the document' : 'You may know it')}
+                    {value || emptyAnswerLabel(f, attachedKinds)}
                   </span>
 
-                  {/* The server's own words — never a label table here. */}
+                  {/* The server's own words — never a label table here.
+                      ⚠️ AND AN EMPTY OPTIONAL ROW IS NOT "STILL NEEDED". Every
+                      empty row wore that pill, so a step whose footer read
+                      "Nothing outstanding here." still showed rows demanding
+                      an answer — the same contradiction as the header. Only a
+                      key the page is actually still missing says so. */}
                   <Pill tone={tone}>
                     {tone === 'read'
                       ? (p?.from ?? 'Read')
@@ -133,7 +158,9 @@ export default function ReadResult({
                         ? 'Check this'
                         : value
                           ? 'You entered this'
-                          : 'Still needed'}
+                          : missing.has(f.key)
+                            ? 'Still needed'
+                            : 'Optional'}
                   </Pill>
                 </button>
               )}

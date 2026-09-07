@@ -26,9 +26,15 @@ import FieldInput from '@/components/motivation-field-input';
 import { visibleFields, type MotivationField } from '@/lib/motivations-api';
 import {
   groupRows,
+  rowInUse,
   rowIndex,
   rowsToShow,
 } from '@/lib/owned-firearm-rows';
+// ⚠️ THE SAME LINE THE PREFILL OFFER PRINTS. Two screens list the firearms
+// somebody already owns and they must list them identically — see
+// owned-firearm-summary.ts for the operator's instruction and the columns that
+// stay on the form without appearing on the line.
+import { ownedFirearmSummary } from './owned-firearm-summary';
 
 export default function PackSection({
   title,
@@ -138,11 +144,22 @@ function RepeatingRows({
   return (
     <div className="mt-3 space-y-2">
       {shown.map(([n, fs]) => {
-        // Collapsed, a row is what identifies the firearm; expanded, it is the
-        // seven boxes the registry actually asks for.
-        const make = answers[`existing_firearm_${n}_make`] ?? '';
-        const calibre = answers[`existing_firearm_${n}_calibre`] ?? '';
-        const summary = [make, calibre].filter(Boolean).join(' · ');
+        // Collapsed, a row is what identifies the firearm; expanded, it is
+        // every box the registry actually asks for.
+        //
+        // ⚠️ FOUR VALUES, AND ONLY THESE FOUR. Operator, 2026-09-07: "when
+        // listing the fire arms I already own it should only be the make,
+        // model, serial number and expiry date listed, nothing else." The row
+        // used to read make and calibre.
+        const summary = ownedFirearmSummary(n, answers);
+        // ⚠️ "DOES THIS ROW HOLD ANYTHING?" IS NOT "DOES IT HAVE A LINE?".
+        // The line is make, model, serial and expiry only, so a row carrying a
+        // type and a calibre and nothing else — a draft saved before the
+        // registry collapsed the serial columns, or a card read that got the
+        // calibre and not the make — reads "Firearm 3" with an "Add" beside
+        // it, over data that is already there. The row would be lying about
+        // being empty. `rowInUse` is the same rule that decided to render it.
+        const used = rowInUse(fs, answers);
         const isOpen = open === n;
 
         return (
@@ -160,7 +177,7 @@ function RepeatingRows({
                 {summary || `Firearm ${n}`}
               </span>
               <span className="text-[12px] text-[var(--text-tertiary)]">
-                {isOpen ? 'Close' : summary ? 'Edit' : 'Add'}
+                {isOpen ? 'Close' : used ? 'Edit' : 'Add'}
               </span>
             </button>
 

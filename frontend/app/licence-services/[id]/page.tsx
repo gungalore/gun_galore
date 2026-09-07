@@ -50,7 +50,10 @@ import {
   canOpenPackScreen,
   clearPreviewOptIn,
 } from '@/lib/licence-services-preview';
-import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
+import {
+  adoptServerAnswers,
+  useMotivationAutosave,
+} from '@/hooks/use-motivation-autosave';
 import LibraryPicker from '@/components/library-picker';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
 import { licenceCentreApi } from '@/lib/licence-centre-api';
@@ -64,12 +67,21 @@ import ExtractionReview from '@/components/licence-pack/extraction-review';
 import { mergeReads } from '@/lib/extraction-review-rules';
 import ProficiencyAlert from '@/components/licence-pack/proficiency-alert';
 import WizardRail, {
-  APPLICATION_STEPS,
   DISPLAY_OFFSET,
+  stepsFor,
   toDisplayIndex,
   toWalkedIndex,
   WIZARD_STEPS,
+  type StepProgress,
 } from '@/components/licence-pack/wizard-rail';
+// One tally of a step's answers, so the header inside the panel and the hint in
+// the footer bar cannot contradict each other — see step-answers.ts.
+import {
+  NO_ANSWERS,
+  outstandingHint,
+  stepFieldsFor,
+  tallyAnswers,
+} from '@/components/licence-pack/step-answers';
 // The one reading of "can this document still answer its row?", shared with the
 // live wizard so the two screens cannot disagree about somebody's paperwork.
 import { usableUpload } from '@/components/motivation/upload-panel';
@@ -169,17 +181,6 @@ export default function LicenceServicesWizardPage() {
    */
   const [entryStep, setEntryStep] = useState(0);
 
-  // Restore the step from the URL fragment — see the note on `step`.
-  useEffect(() => {
-    if (!allowed) return;
-    const key = decodeURIComponent(window.location.hash.replace(/^#/, ''));
-    const at = APPLICATION_STEPS.findIndex((s) => s.key === key);
-    if (at > 0) {
-      setStep(at);
-      setEntryStep(at);
-    }
-  }, [allowed]);
-
   useEffect(() => {
     if (!allowed) return;
     let alive = true;
@@ -232,6 +233,25 @@ export default function LicenceServicesWizardPage() {
     answers,
     ready: Boolean(pack),
     onResponse: (res) => setMissingRequired(res.missingRequired ?? []),
+    // ⚠️ THE SERVER RE-DERIVES WHILE IT SAVES, AND WE MUST TAKE WHAT IT WROTE.
+    // Changing `firearm_type` makes it rewrite the competency block to the
+    // certificate that actually covers that firearm. Holding our stale copy
+    // and posting it back on the next keystroke makes the server read it as
+    // something the MEMBER typed — and MEMBER is absorbing, so the wrong
+    // certificate number would be locked onto a signed SAPS 271. See the
+    // header of use-motivation-autosave.ts. `adoptServerAnswers` compares
+    // against what was SENT, so anything typed during the round trip stands.
+    onAdopt: (adopted, sent, provenance) => {
+      setAnswers((cur) => adoptServerAnswers(cur, sent, adopted));
+      if (!provenance) return;
+      // The chip under each value says where it came from; leaving it on the
+      // old certificate would be a true-looking label on a replaced answer.
+      setPack((cur) =>
+        cur
+          ? { ...cur, provenance: { ...cur.provenance, ...provenance } }
+          : cur,
+      );
+    },
   });
 
   const setAnswer = useCallback(
@@ -729,6 +749,34 @@ export default function LicenceServicesWizardPage() {
     return Array.from(new Set([...served, ...unmet]));
   }, [documents, uploads]);
 
+  /**
+   * What holds a step's TICK back — required documents and expected ones.
+   *
+   * ⚠️ A GREEN TICK OVER A PACK A DFO WILL HAND BACK. The rail was given
+   * `missingDocs`, which is required-tier only, so the section 16
+   * dedicated-status step went fully green with the association's endorsement
+   * absent — a document that is `expected`, and whose own tier exists
+   * precisely because "optional — but it helps" was the wrong thing to tell a
+   * member about a paper they are not getting in without. The operator's rule
+   * for a tick is "green only when the section is filled in enough to complete
+   * a full motivation", and an expected document missing does not meet it.
+   *
+   * ⚠️ SEPARATE FROM `missingDocs`, DELIBERATELY. That set gates Generate and
+   * the "N of M" counter, and the backend excludes expected documents from
+   * `requiredTotal` on purpose — an expected paper must not BLOCK the pack.
+   * This one only decides whether a tick is honest.
+   */
+  const tickBlockingDocs = useMemo(() => {
+    const unmet = (documents?.needs ?? [])
+      .filter((n) => n.tier === 'required' || n.tier === 'expected')
+      .filter((n) => {
+        const files = uploads.filter((u) => u.kind === n.kind);
+        return !(n.have && (files.length === 0 || files.some(usableUpload)));
+      })
+      .map((n) => n.kind);
+    return Array.from(new Set([...missingDocs, ...unmet]));
+  }, [documents, uploads, missingDocs]);
+
   /** An upload kind as the member knows it — never the raw SCREAMING_CASE. */
   const documentLabelFor = useCallback(
     (kind: string) =>
@@ -738,16 +786,6 @@ export default function LicenceServicesWizardPage() {
     [documents, pickable],
   );
 
-  // ⚠️ `step` INDEXES THE WALK, NOT THE RAIL. An application walks ten steps;
-  // the rail draws eleven, because the section was chosen on a screen before
-  // this one existed. Everything the member SEES is a display index and goes
-  // through toDisplayIndex; everything that picks a question or a document is
-  // a walked index. See wizard-rail.tsx — both are `number` and nothing in the
-  // types will catch a swap.
-  const steps = APPLICATION_STEPS;
-  const current = steps[Math.min(step, steps.length - 1)];
-  const last = step === steps.length - 1;
-
   /** Which registry sections still hold an outstanding answer. Feeds the rail. */
   const outstandingSections = useMemo(() => {
     const keys = new Set(outstanding);
@@ -755,6 +793,179 @@ export default function LicenceServicesWizardPage() {
       new Set(fields.filter((f) => keys.has(f.key)).map((f) => f.section)),
     );
   }, [outstanding, fields]);
+
+  /**
+   * What this application asks at all — the half the rail was never told.
+   *
+   * ⚠️ THE WHOLE REGISTRY FOR THE LICENCE TYPE, NOT `visibleFields`. A field
+   * behind an unmet showIf is still a question this type asks; gating on the
+   * current answers would make a step leave the rail under somebody mid-form.
+   */
+  const askedSections = useMemo(
+    () => Array.from(new Set(fields.map((f) => f.section))),
+    [fields],
+  );
+
+  /**
+   * ⚠️ EVERY TIER, PLUS WHAT IS ALREADY ATTACHED. The checklist's `required`
+   * list would hide the step that asks for a document which merely
+   * STRENGTHENS the application — and those are precisely the ones nobody
+   * attaches unprompted. The uploaded kinds are unioned in so a document the
+   * member has already given us can never lose the step it lives on.
+   */
+  const askedKinds = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...(documents?.needs ?? []).map((n) => n.kind),
+          ...uploads.map((u) => u.kind),
+        ]),
+      ),
+    [documents, uploads],
+  );
+
+  /**
+   * ⚠️ THE OUTSTANDING HALVES ARE DELIBERATELY EMPTY HERE. `stepsFor` reads
+   * only what this licence type ASKS — which of its steps exist cannot depend
+   * on how far the member has got. Feeding it the outstanding sets as well
+   * would rebuild the step list on every keystroke, and with it `goStep`,
+   * `stepForKey` and `stepForKind`. The rail component is handed both halves
+   * and derives the ticks itself.
+   */
+  /**
+   * Every registry key this application serves.
+   *
+   * ⚠️ THE WHOLE SERVED SET, NOT `visibleFields` — the same rule as
+   * askedSections. A step must not leave the rail because a showIf closed
+   * mid-sentence. It filters the steps that claim a question rather than a
+   * section: today that is "Where it is from", which a renewal is not served
+   * `firearm_source` for and should never see.
+   */
+  const askedKeys = useMemo(() => new Set(fields.map((f) => f.key)), [fields]);
+
+  const railPlan = useMemo<StepProgress>(
+    () => ({
+      askedSections: new Set(askedSections),
+      askedKinds: new Set(askedKinds),
+      askedKeys,
+      outstandingSections: new Set(),
+      outstandingKinds: new Set(),
+    }),
+    [askedSections, askedKinds, askedKeys],
+  );
+
+  /**
+   * The steps this licence type actually has.
+   *
+   * ⚠️ A SECTION 16 STEP WAS RENDERING INSIDE A SECTION 13 — "Your
+   * association and your status", which asks a self-defence applicant nothing,
+   * drew three capture pairs and was ticked green. See stepAsks in
+   * wizard-rail.tsx.
+   *
+   * ⚠️ THE SECTION STEP CAN NEVER BE FILTERED OUT: it claims no sections and
+   * no documents, and stepAsks always keeps those. So DISPLAY_OFFSET still
+   * holds and the walked list is the rail list minus its first entry — which
+   * is what toDisplayIndex/toWalkedIndex assume.
+   */
+  const railSteps = useMemo(() => stepsFor(WIZARD_STEPS, railPlan), [railPlan]);
+
+  // ⚠️ `step` INDEXES THE WALK, NOT THE RAIL. An application walks the rail
+  // minus its first entry, because the section was chosen on a screen before
+  // this one existed. Everything the member SEES is a display index and goes
+  // through toDisplayIndex; everything that picks a question or a document is
+  // a walked index. See wizard-rail.tsx — both are `number` and nothing in the
+  // types will catch a swap.
+  const steps = useMemo(() => railSteps.slice(DISPLAY_OFFSET), [railSteps]);
+  const current = steps[Math.min(step, steps.length - 1)];
+
+  /**
+   * The step's document doors, minus the ones THIS application never asks for.
+   *
+   * ⚠️ `stepAsks` FILTERS WHOLE STEPS, AND NOTHING FILTERED THE CARDS INSIDE
+   * ONE. So a section 15 "Your case" step — which legitimately survives for its
+   * activity log — also drew a door for an incident report, a document that is
+   * STRENGTHENS for section 13 alone. It can never reach that member's
+   * checklist, and its subtitle ("Only if something has actually happened.
+   * Never invent one…") reads as a prompt on an application it has no bearing
+   * on. Same class as a section 16 step appearing inside a section 13, one
+   * level down.
+   *
+   * ⚠️ AND IT NEVER HIDES A DOOR BEFORE IT KNOWS. `askedKinds` is derived from
+   * the documents response; until that has arrived every door stands, because
+   * hiding all of them for a moment is worse than showing one too many.
+   * `askedKinds` already unions in what is uploaded, so a document the member
+   * has given us can never lose the card it lives on.
+   */
+  const stepDocuments = useMemo(() => {
+    const all = current?.documents ?? [];
+    if (!documents) return all;
+    const asked = new Set(askedKinds);
+    return all.filter((d) => asked.has(d.kind));
+  }, [current, documents, askedKinds]);
+  const last = step === steps.length - 1;
+
+  /**
+   * The first step of THIS application that mounts a Document Centre panel.
+   *
+   * ⚠️ WHERE THE UNPLACEABLE "we could not use this" NOTES GO. The server's
+   * `skipped` entries carry no answer key yet, so no panel can claim them —
+   * and dropping them, which is what filtering by key prefix does today, took
+   * every one of those sentences off the screen. They are the only place a
+   * member is told a document they handed us was read and discarded. One panel
+   * shows them; picked by the member's own walk order rather than by a guess
+   * at what each note is about, and derived from the filtered step list so a
+   * licence type without that step still has a home for them.
+   */
+  const firstVaultStep = useMemo(
+    () => steps.find((s) => VAULT_PREFIXES[s.key])?.key ?? null,
+    [steps],
+  );
+
+  /**
+   * WHERE THE MEMBER IS, AS A KEY.
+   *
+   * ⚠️ `step` IS AN INDEX INTO A LIST THAT MOVES UNDER IT. `askedKinds`
+   * unions the kinds already uploaded, and `pickableKinds()` on the server
+   * offers every non-retired kind through the bulk door and the refile menu —
+   * so a section 13 member CAN legitimately file an association card. That
+   * kind lands in `askedKinds`, `stepsFor` puts the dedicated step back on the
+   * rail, the list goes from ten to eleven, and `step` — unchanged — now
+   * points somewhere else: somebody working on "Your case" attaches one
+   * document and is moved, silently, to "Dedicated status", with the heading,
+   * the blurb, the questions and the capture cards all swapped under them.
+   * Removing the upload moves them back. It is the exact failure the rail's
+   * own warning names: "it silently renders the wrong step's questions under
+   * the right step's heading."
+   *
+   * The union itself is right and stays — a document somebody has already
+   * given us must never lose the step it lives on. What was wrong was holding
+   * a POSITION in a list that is allowed to grow. The key is stable; the index
+   * is re-derived from it whenever the list changes.
+   */
+  const heldKey = useRef<string | null>(null);
+  useEffect(() => {
+    const held = heldKey.current;
+    // First settled render: adopt whatever step we are on as the held one.
+    if (held === null) {
+      heldKey.current = current?.key ?? null;
+      return;
+    }
+    const at = steps.findIndex((s) => s.key === held);
+    if (at < 0) {
+      // The step the member was standing on has left the rail — a document
+      // removed, or the checklist changing under them. Stay where the index
+      // lands rather than jumping to the start, and adopt that as the new held
+      // key so this cannot oscillate. Clamped, because a shorter list leaves
+      // `step` pointing past the end: `current` falls back to the last step
+      // while `last` stays false, so Continue would be live on the final
+      // screen and Back would step to nowhere.
+      const clamped = Math.max(0, Math.min(step, steps.length - 1));
+      if (clamped !== step) setStep(clamped);
+      heldKey.current = current?.key ?? null;
+      return;
+    }
+    if (at !== step) setStep(at);
+  }, [steps, step, current]);
 
   /**
    * Go to a step, and say so in the URL.
@@ -766,15 +977,18 @@ export default function LicenceServicesWizardPage() {
    */
   const goStep = useCallback(
     (next: number) => {
-      const n = Math.max(0, Math.min(APPLICATION_STEPS.length - 1, next));
+      const n = Math.max(0, Math.min(steps.length - 1, next));
       setStep(n);
-      const key = APPLICATION_STEPS[n]?.key;
+      const key = steps[n]?.key;
+      // ⚠️ THE KEY IS THE POSITION. See `heldKey` — an index into a list that
+      // grows when a document is filed is not somewhere a member can stand.
+      heldKey.current = key ?? null;
       if (key) {
         window.history.replaceState(null, '', `#${key}`);
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     },
-    [],
+    [steps],
   );
 
   /** Which step asks a given field, so a name can be jumped to. */
@@ -782,21 +996,61 @@ export default function LicenceServicesWizardPage() {
     (key: string) => {
       const section = fields.find((f) => f.key === key)?.section;
       if (!section) return null;
-      const at = APPLICATION_STEPS.findIndex((s) =>
-        (s.sections ?? []).includes(section),
-      );
+      const at = steps.findIndex((s) => (s.sections ?? []).includes(section));
       return at < 0 ? null : at;
     },
-    [fields],
+    [fields, steps],
   );
 
   /** Which step asks for a given document. */
-  const stepForKind = useCallback((kind: string) => {
-    const at = APPLICATION_STEPS.findIndex((s) =>
-      (s.documents ?? []).some((d) => d.kind === kind),
-    );
-    return at < 0 ? null : at;
-  }, []);
+  const stepForKind = useCallback(
+    (kind: string) => {
+      const at = steps.findIndex((s) =>
+        (s.documents ?? []).some((d) => d.kind === kind),
+      );
+      return at < 0 ? null : at;
+    },
+    [steps],
+  );
+
+  /**
+   * Restore the step from the URL fragment — see the note on `step`.
+   *
+   * ⚠️ AFTER THE PLAN IS KNOWN, NOT BEFORE. `step` indexes the FILTERED
+   * list, and this used to run on `allowed` alone — before the fields and the
+   * checklist had loaded, when every step was still on the rail. A fragment
+   * naming a step this licence type does not have would then land on whatever
+   * took its index once the filter applied: the right heading over somebody
+   * else's questions. Resolved by key, once, against the list that is real.
+   */
+  const restored = useRef(false);
+  useEffect(() => {
+    if (!allowed || restored.current) return;
+    // ⚠️ `loading`, AND NOTHING ELSE. This used to bail only when BOTH halves
+    // of the plan were empty — and the load fills them at different moments.
+    // The uploads response sets `documents` and the uploads themselves, then
+    // AWAITS the messages call; React flushes that batch at the await, so
+    // there is a real render where `askedKinds` is full and `askedSections` is
+    // still `[]`. `known()` is true there, `stepsFor` filters on kinds alone,
+    // and on a section 13 the intermediate list is missing BOTH `owned` and
+    // `declarations`. The effect fired on that render, latched for good, and
+    // resolved the fragment against a list that never existed: `#about`
+    // landed on "What you own", `#case` on "About you", `#pack` on "Storage",
+    // and `#owned` on nothing at all — so a refresh or a return from the phone
+    // hand-off dropped the member back to the firearm step. `setLoading(false)`
+    // runs in the same batch as `setFields`, so waiting for it is waiting for
+    // the whole plan.
+    if (loading) return;
+    restored.current = true;
+    const key = decodeURIComponent(window.location.hash.replace(/^#/, ''));
+    const at = steps.findIndex((s) => s.key === key);
+    if (at > 0) {
+      setStep(at);
+      setEntryStep(at);
+      // The restore is a move like any other — see `heldKey`.
+      heldKey.current = steps[at].key;
+    }
+  }, [allowed, loading, steps]);
 
   if (!allowed) return null;
 
@@ -864,11 +1118,14 @@ export default function LicenceServicesWizardPage() {
           ticked four empty steps — and the step being worked on could never
           tick however much went into it. See stepDone in wizard-rail.tsx. */}
       <WizardRail
-        steps={WIZARD_STEPS}
+        steps={railSteps}
         current={toDisplayIndex(step)}
         lockedBefore={DISPLAY_OFFSET}
+        askedSections={askedSections}
+        askedKinds={askedKinds}
+        askedKeys={askedKeys}
         outstandingSections={outstandingSections}
-        outstandingKinds={missingDocs}
+        outstandingKinds={tickBlockingDocs}
         onGo={(i) => {
           const walked = toWalkedIndex(i);
           if (walked !== null) goStep(walked);
@@ -914,7 +1171,10 @@ export default function LicenceServicesWizardPage() {
                   counts — they chose a section to get here, and telling them
                   that was step nothing would be a lie about their own
                   progress. */}
-              Step {toDisplayIndex(step) + 1} of {WIZARD_STEPS.length} ·{' '}
+              {/* ⚠️ COUNTS THE STEPS THIS APPLICATION HAS, not the whole
+                  table. A section 13 has no dedicated-status step, so "of 11"
+                  was promising a screen that would never arrive. */}
+              Step {toDisplayIndex(step) + 1} of {railSteps.length} ·{' '}
               {current.fills}
             </div>
             <h1 className="mb-1.5 mt-1.5 text-[26px] font-medium tracking-[-.02em] text-[var(--text-primary)]">
@@ -1018,8 +1278,9 @@ export default function LicenceServicesWizardPage() {
 
           <StepBody
             stepKey={current.key}
+            firstVaultStep={firstVaultStep}
             sections={current.sections}
-            documents={current.documents}
+            documents={stepDocuments}
             uploads={uploads}
             pickable={pickable}
             docBusy={docBusy}
@@ -1063,7 +1324,16 @@ export default function LicenceServicesWizardPage() {
               if (at !== null) goStep(at);
             }}
             onArrived={onScanArrived}
-            saps271Filled={(answers[SAPS271_OPT_KEY] ?? '') === SAPS271_FILL}
+            // ⚠️ THE LICENCE TYPE DECIDES, NOT ONLY THE ANSWER. A renewal is
+            // lodged on the SAPS 518(a); the 271 is an application for a NEW
+            // licence, and the server refuses to render one for a section 24.
+            // New renewals are no longer offered the question at all, but a
+            // draft saved before that still holds the answer — and would still
+            // have been shown a button that could only fail.
+            saps271Filled={
+              pack.licenceType !== 'S24_RENEWAL' &&
+              (answers[SAPS271_OPT_KEY] ?? '') === SAPS271_FILL
+            }
             onGenerated={(st) => {
               // The pack step re-reads everything: a finished document changes
               // the checklist, the coverage meter and the status chip at once.
@@ -1090,7 +1360,10 @@ export default function LicenceServicesWizardPage() {
           />
         </div>
 
-        <Saps271Meter coverage={pack.coverage} />
+        <Saps271Meter
+                coverage={pack.coverage}
+                licenceType={pack.licenceType}
+              />
       </div>
 
       {/* ── footer ──────────────────────────────────────────────── */}
@@ -1111,7 +1384,14 @@ export default function LicenceServicesWizardPage() {
               mockup's HINTS array is nine written lines because it is a
               picture; on a real application the only honest hint is what this
               member still has outstanding. */}
-          {hintFor(current.sections, fields, missing)}
+          {hintFor(
+            current.sections,
+            current.documents,
+            fields,
+            answers,
+            missing,
+            missingDocs,
+          )}
         </div>
         <button
           type="button"
@@ -1150,6 +1430,7 @@ function sellerConsentOffered(d: DocumentStatus | undefined): boolean {
 /** What each step actually asks. */
 function StepBody({
   stepKey,
+  firstVaultStep,
   sections,
   documents,
   motivationId,
@@ -1186,6 +1467,8 @@ function StepBody({
   onToggleRow,
 }: {
   stepKey: string;
+  /** Which step shows the skipped notes that name no answer key. */
+  firstVaultStep: string | null;
   sections?: string[];
   documents?: { kind: string; title: string; subtitle?: string }[];
   motivationId: string;
@@ -1223,13 +1506,30 @@ function StepBody({
   openRow: string | null;
   onToggleRow: (key: string) => void;
 }) {
+  /**
+   * What this application ACTUALLY HOLDS — not what it asks for.
+   *
+   * ⚠️ A ROW SAYS "NOT ON THE DOCUMENT" ONLY WHERE THE DOCUMENT IS HERE.
+   * Without this the panels below claimed a document lacked a value on steps
+   * where no such document had ever been attached: ten rows in a row on the
+   * operator's live section 16 association step, 2026-09-07, with no
+   * association letter on the application at all. See
+   * components/licence-pack/empty-answer.ts.
+   */
+  const attachedKinds = useMemo(
+    () => new Set(uploads.map((u) => u.kind)),
+    [uploads],
+  );
+
   // ⚠️ THERE IS NO 'section' BRANCH ANY MORE, AND ITS ABSENCE IS THE POINT.
   //
   // It restated the licence type under the heading "Step 1 of 11" — the same
   // number the chooser at /licence-services/new had just used, saying what the
   // chrome bar says on every single step. Operator, 2026-08-30: "remove step1
   // out of the process… essentially Step2 on the frontend is step 1 in the
-  // backend." APPLICATION_STEPS is that ten; the rail still draws eleven.
+  // backend." `railSteps.slice(DISPLAY_OFFSET)` is that walk; the rail draws
+  // the section step too — and both are now filtered to the steps this licence
+  // type actually has, so a section 13 counts to ten rather than eleven.
   //
   // The choice itself remains unchangeable — `Motivation.licenceType` is
   // written exactly once, by create(), and no route can change it. The field
@@ -1318,9 +1618,8 @@ function StepBody({
     );
   }
 
-  const stepFields = (sections ?? []).flatMap((sec) =>
-    visibleFields(fields, answers).filter((f) => f.section === sec),
-  );
+  // The one selection, shared with the footer hint so the counts agree.
+  const stepFields = stepFieldsFor(sections, fields, answers);
 
   return (
     <div className="max-w-[800px] space-y-4">
@@ -1352,6 +1651,15 @@ function StepBody({
           motivationId={motivationId}
           keyPrefixes={VAULT_PREFIXES[stepKey]!}
           onApplied={onVaultApplied}
+          // ⚠️ ONE PANEL SHOWS THE UNPLACEABLE NOTES, AND IT IS THIS ONE. The
+          // server's `skipped` entries carry no answer key yet, so filtering
+          // them by this step's prefixes — right, and what stops a firearm
+          // sentence appearing under Competency — took every one of them off
+          // the screen. They are the only place a member is told a document
+          // they handed us was read and discarded. Shown on the FIRST vault
+          // step this application walks, so the choice is the member's own
+          // order rather than a guess at what each note is about.
+          showUnplaced={stepKey === firstVaultStep}
         />
       )}
 
@@ -1408,6 +1716,13 @@ function StepBody({
         <LibraryPicker
           key={`lib-${d.kind}`}
           items={library.filter((i) => i.kind === d.kind)}
+          // ⚠️ THE DOCUMENT'S NAME, BECAUSE THERE ARE SEVERAL OF THESE ON A
+          // STEP. Unlabelled, the competency step showed two identical "Use one
+          // I already have…" dropdowns and the dedicated step three identical
+          // "Nothing saved to reuse yet" ones — photographed by the operator on
+          // 2026-09-07. The label is the same string the capture cards above it
+          // carry, so the two cannot describe one document in two ways.
+          label={d.title}
           keeping={keeping}
           onPick={onPickFromLibrary}
         />
@@ -1470,17 +1785,18 @@ function StepBody({
           onChange={onChange}
           motivationId={motivationId}
           getToken={token}
+          attachedKinds={attachedKinds}
         />
       ) : stepFields.length > 0 ? (
         // A document being read: every line with where its value came from.
         <ReadResult
           stepKey={stepKey}
-          section={(sections ?? [])[0] ?? ''}
           fields={stepFields}
           answers={answers}
           provenance={pack.provenance}
           missing={missing}
           onChange={onChange}
+          attachedKinds={attachedKinds}
         />
       ) : null}
     </div>
@@ -1496,17 +1812,28 @@ function StepBody({
  */
 function hintFor(
   sections: string[] | undefined,
+  documents: { kind: string }[] | undefined,
   fields: MotivationField[],
+  answers: Record<string, string>,
   missing: Set<string>,
+  missingDocuments: string[],
 ): string {
-  if (!sections?.length) return '';
-  const mine = fields.filter(
-    (f) => sections.includes(f.section) && missing.has(f.key),
+  // ⚠️ DOCUMENTS COUNT, AND A STEP CAN ASK FOR THEM WITHOUT ASKING A SINGLE
+  // QUESTION. Returning early on `!sections` left the capture-only steps with
+  // a blank hint over a document the pack is still waiting for.
+  const docsLeft = (documents ?? []).filter((d) =>
+    missingDocuments.includes(d.kind),
+  ).length;
+  if (!sections?.length) {
+    return docsLeft > 0 ? outstandingHint(NO_ANSWERS, docsLeft) : '';
+  }
+  // ⚠️ THE SAME FIELDS AND THE SAME TALLY THE PANEL HEADER USES. This
+  // counted the raw registry while the header counted the visible fields, and
+  // the two captions sat on one screen disagreeing — see step-answers.ts.
+  return outstandingHint(
+    tallyAnswers(stepFieldsFor(sections, fields, answers), missing),
+    docsLeft,
   );
-  if (!mine.length) return 'Nothing outstanding here.';
-  return mine.length === 1
-    ? 'One answer still needed.'
-    : `${mine.length} answers still needed.`;
 }
 
 function SaveState({ state, refused }: { state: string; refused: string[] }) {

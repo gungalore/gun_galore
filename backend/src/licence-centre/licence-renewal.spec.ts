@@ -26,13 +26,17 @@ import {
 // words in an applicant's mouth on a document they sign as their own.
 
 const base: RenewalSource = {
+  id: 'cred-308',
   kind: 'FIREARM_LICENCE',
   title: 'My .308',
   expiresOn: new Date('2027-03-15T00:00:00.000Z'),
   confirmedAt: new Date('2026-08-19T00:00:00.000Z'),
+  dateSource: null,
+  firearmSelfLoading: null,
   details: {
     licence_number: 'ZA1234567',
     make: 'Musgrave',
+    model: 'K98',
     calibre: '.308 Winchester',
     firearm_type: 'Rifle',
     frame_serial: 'MG55512',
@@ -86,10 +90,14 @@ describe('when a renewal cannot start', () => {
     expect(seed.existing_licence_number).toBeUndefined();
     expect(seed.firearm_make).toBe('Musgrave');
     expect(seed.licence_expiry).toBe('2027-03-15');
-    // No number means no per-licence reference, so a second renewal would
-    // collide on the one-per-type constraint. Accepted: the alternative was
-    // no renewal at all.
-    expect(applicationRef).toBe('');
+    // ⚠️ THIS USED TO ASSERT '' — "no number means no per-licence reference,
+    // so a second renewal would collide on the one-per-type constraint.
+    // Accepted: the alternative was no renewal at all." It was not the only
+    // alternative, and the collision was worse than it sounds: the second
+    // renewal did not fail, it silently RESUMED the first licence's pack,
+    // seeded with the other firearm's make, calibre and serial. The credential
+    // row's own id is unique per document and stable across taps.
+    expect(applicationRef).toBe('LIC-ROW-cred-308');
   });
 
   it('allows a real one', () => {
@@ -125,6 +133,8 @@ describe('what the renewal opens with', () => {
     expect(seed.firearm_calibre).toBe('.308 Winchester');
     expect(seed.firearm_type).toBe('Rifle');
     expect(seed.firearm_serial).toBe('MG55512');
+    // The card prints a model and the vault now reads one.
+    expect(seed.firearm_model).toBe('K98');
   });
 
   it('normalises what is printed on the card onto the registry choices', () => {
@@ -148,9 +158,94 @@ describe('what the renewal opens with', () => {
     expect(seed.existing_firearm_1_make).toBe('Musgrave');
     expect(seed.existing_firearm_1_calibre).toBe('.308 Winchester');
     expect(seed.existing_firearm_1_type).toBe('Rifle');
-    expect(seed.existing_firearm_1_frame_serial).toBe('MG55512');
-    expect(seed.existing_firearm_1_barrel_serial).toBe('BR99001');
     expect(seed.existing_firearm_1_licence_no).toBe('ZA1234567');
+  });
+
+  // ⚠️ THE OPERATOR'S FOUR COLUMNS, ON THE KEYS THE WIZARD ACTUALLY RENDERS.
+  //
+  // This wrote `_frame_serial` and `_barrel_serial`, RETIRED on 2026-09-07 and
+  // excluded from fieldsFor — so the one serial box rendered empty while the
+  // number sat where no screen looks. `_model` and `_expiry` were never
+  // written, though the model is on the card and the expiry was in hand. Row 1
+  // is ownedRowTaken, so the vault could never come back and fill them.
+  it('⚠️ fills make, model, serial and expiry — not two retired serial keys', () => {
+    const { seed } = renewalPlan(base);
+    expect(seed.existing_firearm_1_model).toBe('K98');
+    expect(seed.existing_firearm_1_serial).toBe('MG55512');
+    expect(seed.existing_firearm_1_expiry).toBe('2027-03-15');
+    expect(seed.existing_firearm_1_frame_serial).toBeUndefined();
+    expect(seed.existing_firearm_1_barrel_serial).toBeUndefined();
+  });
+
+  // One firearm, one number. The applied-for box took the frame serial and the
+  // owned-row summary reads the barrel one, so a card printing both showed two
+  // different serials for one firearm on one application.
+  it('shows one serial, and the same one, in both places', () => {
+    const { seed } = renewalPlan(base);
+    expect(seed.existing_firearm_1_serial).toBe(seed.firearm_serial);
+  });
+
+  // ⚠️ A CARD PRINTS "NONE" AGAINST A COMPONENT THAT CARRIES NO NUMBER, and
+  // the seed guarded with trim() alone. An applicant would have signed a SAPS
+  // 271 declaring a serial number of NONE.
+  it('⚠️ never seeds a placeholder the card printed', () => {
+    const { seed } = renewalPlan({
+      ...base,
+      details: { ...base.details, frame_serial: 'NONE', model: 'NONE' },
+    });
+    expect(seed.existing_firearm_1_model).toBeUndefined();
+    // Frame says nothing, so the barrel's number is the firearm's number.
+    expect(seed.firearm_serial).toBe('BR99001');
+    expect(seed.existing_firearm_1_serial).toBe('BR99001');
+  });
+
+  // ⚠️ TWO UNREADABLE LICENCES MUST NOT SHARE ONE APPLICATION REFERENCE. A
+  // missing licence number is deliberately not a refusal — glare loses the
+  // number while the expiry reads fine — and an empty ref put every such
+  // renewal on the same (userId, S24_RENEWAL, '') key, so tapping Renew on the
+  // second silently opened the first licence's pack.
+  it('⚠️ falls back to the document id when the number could not be read', () => {
+    const noNumber = {
+      ...base,
+      details: { ...base.details, licence_number: '' },
+    };
+    const a = renewalPlan(noNumber).applicationRef;
+    const b = renewalPlan({ ...noNumber, id: 'cred-shotgun' }).applicationRef;
+    expect(a).not.toBe('');
+    expect(a).not.toBe(b);
+  });
+
+  // ⚠️ THE ACTION IS A FACT WE HOLD, AND THE WIZARD WAS ASKING FOR IT. Without
+  // it endorsementNeed answers "unknown" for a rifle and the member is told
+  // "we will fill your competency in as soon as you have said which firearm
+  // this application is for" — on a renewal, about a firearm named off their
+  // own licence.
+  it('⚠️ seeds the action off what the Licence Centre read', () => {
+    expect(
+      renewalPlan({ ...base, firearmSelfLoading: true }).seed.firearm_action,
+    ).toBe('Semi-automatic (self-loading)');
+  });
+
+  // Six manual actions and the card names none of them. Absent stays absent.
+  it('guesses no action when the firearm is not self-loading', () => {
+    expect(
+      renewalPlan({ ...base, firearmSelfLoading: false }).seed.firearm_action,
+    ).toBeUndefined();
+    expect(
+      renewalPlan({ ...base, firearmSelfLoading: null }).seed.firearm_action,
+    ).toBeUndefined();
+  });
+
+  // The date was filled in and armed by us rather than ticked by the member.
+  // Every other consumer treats that as settled; this one refused it.
+  it('⚠️ renews a licence we dated ourselves', () => {
+    expect(
+      renewalRefusal({ ...base, confirmedAt: null, dateSource: 'DERIVED' }),
+    ).toBeNull();
+    // Still refused when nobody stands behind the date at all.
+    expect(
+      renewalRefusal({ ...base, confirmedAt: null, dateSource: null }),
+    ).toBe('no-confirmed-date');
   });
 
   it('LEAVES THE ARGUMENT EMPTY', () => {

@@ -5,9 +5,10 @@ import {
   type LinkedLicence,
   parseEndorsements,
 } from '../common/sa-competency';
-import { toIsoDate } from './licence-dates';
+import { dateIsSettled, toIsoDate } from './licence-dates';
 // The form's own vocabulary, owned by the module that owns the form.
 import { normaliseFirearmType } from '../motivations/saps-vocabulary';
+import { answerValue } from '../common/card-placeholder';
 // Field keys belong to the registry, which is the contract for all of them.
 import { COMPETENCY_RENEWS_KEY } from '../motivations/motivation-fields';
 
@@ -27,10 +28,26 @@ import { COMPETENCY_RENEWS_KEY } from '../motivations/motivation-fields';
 
 /** What the vault holds about one document, decrypted. */
 export interface RenewalSource {
+  /**
+   * The credential row's own id. The application reference falls back to it
+   * when the card's licence number could not be read — see applicationRef.
+   */
+  id: string;
   kind: CredentialKind;
   title: string;
   expiresOn: Date | null;
   confirmedAt: Date | null;
+  /**
+   * How the expiry date got there: confirmed by the member, or filled in and
+   * armed by us. See dateIsSettled, and renewalRefusal below for why this
+   * matters more than confirmedAt alone.
+   */
+  dateSource: string | null;
+  /**
+   * Whether the licence describes a self-loading firearm, as the Licence
+   * Centre read it off the card. Null where it could not be told.
+   */
+  firearmSelfLoading: boolean | null;
   /** Decrypted detail map — licence_number, make, calibre, serials, … */
   details: Record<string, string>;
 }
@@ -62,8 +79,17 @@ export function renewalRefusal(src: RenewalSource): RenewalRefusal | null {
   if (src.kind !== 'FIREARM_LICENCE') return 'not-a-licence';
 
   // The expiry date IS the application: section 24 turns on when the current
-  // licence runs out, and an unconfirmed date is one nobody has checked.
-  if (!src.expiresOn || !src.confirmedAt) return 'no-confirmed-date';
+  // licence runs out.
+  //
+  // ⚠️ SETTLED, NOT CONFIRMED. This asked for `confirmedAt` alone while every
+  // other consumer had moved to `dateIsSettled` — "confirmed by the member, OR
+  // filled in and armed by us". So on an auto-dated licence the reminder sweep
+  // fired at T-180, T-120, T-100, T-30 and on the day, `renewalDue` was true,
+  // the competency expiry was derived off it — and the Renew button was not
+  // offered, and this endpoint answered "Confirm the expiry date on this
+  // document first." That is precisely the confirm step guarding a value we
+  // already hold that CLAUDE.md's "Automate It — Do Not Ask" overturned.
+  if (!src.expiresOn || !dateIsSettled(src)) return 'no-confirmed-date';
 
   // ⚠️ NOT REFUSED FOR A MISSING LICENCE NUMBER, deliberately.
   //
@@ -98,8 +124,15 @@ export function renewalPlan(src: RenewalSource): RenewalPlan {
   const d = src.details;
   const seed: Record<string, string> = {};
 
+  // ⚠️ answerValue, NOT trim. The vault stores what the card printed and is
+  // right to; a South African licence prints NONE against a component that
+  // carries no number. Trim alone let that through, and every other answer
+  // boundary in the product now guards it — this one imported nothing. A rifle
+  // whose frame row reads NONE would have opened a renewal with
+  // `firearm_serial: 'NONE'`, which is briefed to the writer and policed by
+  // motivation-verify against the finished document.
   const put = (key: string, value: string | undefined | null) => {
-    const v = (value ?? '').trim();
+    const v = answerValue(value);
     if (v) seed[key] = v;
   };
 
@@ -115,20 +148,59 @@ export function renewalPlan(src: RenewalSource): RenewalPlan {
   // firearm_calibre and friends, and every one of them is required. Seeding
   // only the 271 keys meant the card promised "already carrying the
   // firearm's details" and then presented five blank required boxes.
+  // ⚠️ ONE SERIAL, CHOSEN ONCE, SO TWO SCREENS CANNOT SHOW TWO NUMBERS. The
+  // applied-for box took the frame number while the owned-row summary reads
+  // `serial || barrel_serial || frame_serial` — the BARREL — so one firearm
+  // showed two serials on one application wherever the card printed both.
+  // answerValue does the falling through: a frame row reading NONE is not a
+  // number, so the barrel's is used.
+  const serial = answerValue(d.frame_serial) || answerValue(d.barrel_serial);
+
+  // ⚠️ THE ACTION IS A FACT WE ALREADY HOLD, AND IT WAS BEING ASKED FOR.
+  //
+  // `firearm_action` is required, and a licence card does not print one — the
+  // Licence Centre works self-loading out from the card's own wording and
+  // stores it. Without it `endorsementNeed` answers "unknown" for a rifle, so
+  // credentialOffer offers no competency and posts "we will fill your
+  // competency in as soon as you have said which firearm this application is
+  // for". On a renewal that sentence is addressed to somebody whose firearm we
+  // named from their own licence two lines above.
+  //
+  // ⚠️ ONLY THE 'true' CASE CAN BE WRITTEN. Not self-loading leaves six manual
+  // actions — bolt, lever, pump, single shot, revolver, break — and the card
+  // says which none of them. Absent stays absent; guessing would put a word on
+  // a signed form that no document supports.
+  if (src.firearmSelfLoading === true) {
+    put('firearm_action', 'Semi-automatic (self-loading)');
+  }
+
   put('firearm_make', d.make);
+  put('firearm_model', d.model);
   put('firearm_calibre', d.calibre);
   put('firearm_type', normaliseFirearmType(d.firearm_type));
-  put('firearm_serial', d.frame_serial);
+  put('firearm_serial', serial);
 
   // The renewal form asks about the firearm itself, and the licence names it.
   // These are the same keys the overlap engine reads, so a renewal that also
   // mentions other owned firearms lines up with the rest of the registry.
+  // ⚠️ `_serial`, `_model` AND `_expiry` — the operator's four columns.
+  //
+  // This wrote `_frame_serial` and `_barrel_serial`, both RETIRED on
+  // 2026-09-07 and deliberately excluded from fieldsFor, so the wizard's one
+  // serial box rendered EMPTY while the number sat in a key no screen shows.
+  // `_model` and `_expiry` were never written at all, though the model is on
+  // the card and the expiry was in hand ten lines above. Row 1 is
+  // ownedRowTaken, so credentialOffer skips it by identifier match and the
+  // vault could never come back and fill the blanks: three of the four columns
+  // the operator asked for were empty for the one firearm the application is
+  // about.
   put('existing_firearm_1_licence_no', number);
   put('existing_firearm_1_make', d.make);
+  put('existing_firearm_1_model', d.model);
   put('existing_firearm_1_calibre', d.calibre);
   put('existing_firearm_1_type', normaliseFirearmType(d.firearm_type));
-  put('existing_firearm_1_frame_serial', d.frame_serial);
-  put('existing_firearm_1_barrel_serial', d.barrel_serial);
+  put('existing_firearm_1_serial', serial);
+  if (src.expiresOn) put('existing_firearm_1_expiry', toIsoDate(src.expiresOn));
 
   // ⚠️ `continued_use` IS DELIBERATELY LEFT EMPTY. It is the only question on
   // a renewal that carries an argument — what they have actually done with the
@@ -141,7 +213,16 @@ export function renewalPlan(src: RenewalSource): RenewalPlan {
     // The licence number is the natural reference: it is what the member and
     // the DFO both call this application, and it keeps two renewals for two
     // different firearms from colliding on the one-per-type constraint.
-    applicationRef: number ? `LIC-${number}` : '',
+    //
+    // ⚠️ AND IT FALLS BACK TO THE DOCUMENT'S OWN ID RATHER THAN TO ''. A
+    // missing licence number is expressly not a refusal above — glare loses
+    // the number while the expiry reads fine — and an empty ref put every such
+    // renewal on the same (userId, S24_RENEWAL, '') key. startRenewal's
+    // idempotency findFirst keys on exactly that triple, so a member with two
+    // unreadable licences tapped Renew on the second and was silently opened
+    // into the FIRST licence's pack, already seeded with the other firearm's
+    // make, calibre and serial, with nothing on screen saying so.
+    applicationRef: number ? `LIC-${number}` : `LIC-ROW-${src.id}`,
   };
 }
 
