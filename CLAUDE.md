@@ -1970,7 +1970,554 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-08-27, commit `60736d8`.** ⚠️ **THIS ONE CARRIED A
+**Last deploy: 2026-09-07 (16:58), commit `c647f933`.** No migrations —
+`prisma migrate deploy` reported "No pending migrations to apply", and the only
+`schema.prisma` edits are comments recording what `Credential.disciplineType`
+actually stores. **FULL DEPLOY** (`deploy.sh`): the merge touches 43 backend
+files, so both apps were rebuilt and reloaded. Dump
+`alloutdoor-20260907-165840.dump` taken before anything was touched. Artefacts
+verified (`dist/src/main.js`, `.next/BUILD_ID` non-empty before each reload),
+health doubled on :3001 and :3000, warden online, public 200 twice.
+
+Shipped in `c647f933`: **sections 15, 16 and 24 driven end to end**, the way
+section 13 was. Four audits found the same class of fault one section along.
+
+- **A section 15 was scored against dedicated status** — "G4 Dedicated status,
+  2 still needed" on the one type sold as "for someone who hunts or shoots,
+  WITHOUT dedicated status". The panel row's `from` list swept up the Experience
+  fields beside the association ones. Experience fills no box on the 271 at all,
+  so it is off the panel; G4 now appears only where a Dedicated status field does.
+- **A dedicated HUNTER's papers satisfied a dedicated SPORT application**, though
+  s1 defines a sports person by membership of a sports-shooting organisation. The
+  discipline was read off the document into `status_type` and then dropped on the
+  floor. ⚠️ `Credential.disciplineType` does NOT hold it — the 2026-08-20 backfill
+  wrote CredentialKind names and everything since 2026-08-24 holds an UPLOAD kind.
+  `status_type` in the detail blob is the only real record. Unknown still passes,
+  as `competencyCovers` does.
+- **The step said the ENDORSEMENT is the sworn statement s16(2) requires.** It is
+  the letter of good standing, which the backend has said in capitals in two
+  files since it was written. The endorsement comes from the Hunters Forum
+  guidelines of 2005: a DFO will insist on it, the Act does not name it.
+- ⚠️ **A required field could never be shown.** `discipline` is `kind: 'multi'`,
+  stored comma-joined, and its gate compared the WHOLE string — so picking
+  "something else" beside any real discipline hid the box asking what it is and
+  dropped it out of `requiredKeys` with it. `isVisible` and its frontend mirror
+  now see into a list. Exact match is still tried first, so nothing that worked
+  changed.
+- **A renewal was asked what it cannot use**: where a firearm it already owns is
+  coming from, and the SAPS 271, which is for NEW licences (a renewal is lodged
+  on the 518(a)). Answering yes un-hid ~48 questions and then 409'd. Both are in
+  the new `NOT_ASKED_BY_TYPE`. ⚠️ **Asked is not accepted** — `fieldByKey` reads
+  the UNFILTERED list on purpose, or the wizard's next autosave would delete an
+  older draft's answer and show an error about it.
+- ⚠️ **A gate that contradicts itself was simplified and had to be put back.**
+  `competency_renews_with_licence` is hidden by `formOnly` AND a `showIf` that
+  wants the opposite path. With the opt-in unasked it looked like one gate would
+  do — but `isVisible` takes no licence type and the key is still accepted, so
+  an answer can arrive and open it. The contradiction is robust precisely because
+  it does not depend on what is served.
+- Also: the completeness panel could never reach 100% for a one-association
+  member (three slots counted for everybody, 54% on a complete section); the step
+  drew all three flat, seven empty rows including three identical label pairs;
+  a step went green while an `expected`-tier document was missing; every empty row
+  printed its status twice; rows said "Not on the document" where no such document
+  had ever been attached; steps drew upload doors for kinds never asked for; the
+  closing paragraph of EVERY motivation asked for "a licence under section 16 …
+  for dedicated sport shooting", right for one type in five; and the vault now
+  reads a firearm model, which is what kept make/model/serial/expiry from ever
+  showing one.
+
+> **TWO TEST-RUNNER TRAPS, both of which hide green.**
+>
+> 1. **`npx jest` is NOT how this backend runs tests.** `package.json` uses
+>    `node --experimental-vm-modules`, and without it `saps271-render.spec.ts`
+>    fails 16 times on "A dynamic import callback was invoked without
+>    --experimental-vm-modules" — which reads exactly like a real regression.
+>    Use `npm test -- <path>`.
+> 2. **A `.spec.ts` under `frontend/components/` is never collected.** The vitest
+>    include is `lib/**/*.spec.ts` and `components/**/*.spec.tsx` — note the x.
+>    A new component spec written as `.spec.ts` reports "No test files found"
+>    and passes CI by not existing.
+
+Left undone deliberately, both because they change what somebody signs: section
+15 covers occasional SPORTS shooters in law and every question it asks is about
+hunting (`intended_quarry` is required and asks what they intend to hunt), and
+section 24 does not vary its document set by the section the original licence was
+issued under, which s24(3) arguably requires.
+
+**Last deploy: 2026-09-07 (12:20), commit `b401f112`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907190000_news` (NewsSource, NewsArticle, NewsPlace;
+additive, hand-written). **FULL DEPLOY** (`deploy.sh`), clean this time:
+NewsModule registered JwtModule + AdminJwtGuard from day one and its boot
+spec (and CrimeStatsModule's) ran in the pre-deploy gate. Dump
+`alloutdoor-20260907-121814.dump`. Health doubled, warden online, public 200
+twice; `/api/news/incidents` answers 401 unauthenticated.
+
+Shipped, merged from `feat/the-bench`: `bb635e88` — **local crime clippings
+for self-defence motivations.** Operator: pull local papers' crime reporting
+for the applicant's region, past year, printed as a cutting — "just the
+picture and headline and subscript … it must look authentic, no CFR is going
+to sit and type in a stupid link". A registry of 74 feeds (66 local/regional
+across all nine provinces, 7 national; every one re-verified FROM THE BOX —
+News24, TimesLIVE, GroundUp, IOL and EWN block or 404 and are excluded) plus
+a Google News search fallback. Nightly poll 02:50: feed → share preview from
+the page head only (never the body) → keyword pre-filter → Gemini tag
+(`news.tag`, 20 per call) → place geocode cache → twelve-month retention.
+First poll on the box: 74/74 sources, 1,083 items, 1,068 previews, 600
+tagged (per-run cap; second run picks up the rest), 43 crime. The wizard's
+"Reported near you" cards tick up to eight; the pack prints each chosen
+clipping as a page (paper + date, headline, picture fetched at render time,
+standfirst, link small underneath) lettered into the annexure index, and the
+writer gets them as supplied facts to cite by paper, date and letter.
+Lettering also gained the prior-notice request the index was missing.
+Registry version `2026-09-07b`. Admin: `/admin/news/{sources,poll}`; loader
+`npm run news:poll`.
+
+**Previous deploy: 2026-09-07 (11:20), commit `1a7f3446`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907160000_crime_stats` (three tables, additive,
+hand-written). ⚠️ **AND IT TOOK THE BACKEND DOWN FOR FOUR MINUTES.** The
+first full deploy (`45bf5bc0`, 11:15) applied the migration, then the
+backend crash-looped on reload: `CrimeStatsModule` mounted an
+AdminJwtGuard controller without registering `JwtModule` or providing the
+guard. tsc and 3,700 unit tests were green. `deploy.sh` STOPPED at "backend
+unhealthy after reload" — but pm2 `reload` in fork mode had already
+replaced the old process, so there was no old version left serving. Fixed
+forward in `1a7f3446` (JwtModule + AdminJwtGuard, same recipe as
+licence-centre.module.ts) with `deploy.sh --backend-only`, healthy at
+11:19; then `--frontend-only` for the half the first run never reached.
+**`crime-stats.module.spec.ts` now compiles the module the way the app does
+so this class of failure fails in jest.** ⚠️ Lesson for every new module
+with an admin controller: JwtModule.register({}) in imports AND
+AdminJwtGuard in providers, and a boot spec. Dumps
+`alloutdoor-20260907-111427.dump` (before the migration) and `-111819`.
+
+Shipped, merged from `feat/the-bench`: `d6f73891` — **SAPS station-level
+crime statistics, kept updated, cited in self-defence motivations.** Weekly
+fetch (Sun 03:40) of the SAPS quarterly workbook through `saps-http.ts`
+(SAPS omits its Sectigo intermediate; we supply it, fingerprint pinned —
+plain fetch/curl fail on the box). First load run by hand: **five releases,
+1,179 stations, 1,290,300 figures**, quarters 2021-Q2..2026-Q2 continuous.
+Self-defence motivations gain `police_station` (nearest via Geocoding +
+Places, IP-restricted server key `alloutdoor-backend-server` created in the
+`gun-galore-dealer-scans` project, on the box as GOOGLE_MAPS_API_KEY);
+the wizard shows a station picker and a precinct card; at generation the
+precinct's figures go into the pack as supplied facts with period and
+release, and the grounded area research is skipped. Admin:
+`/admin/crime-stats/{releases,fetch}`; loader `npm run crime-stats:load`.
+TypeScript is 5.9 now (came with exceljs).
+
+**Previous deploy: 2026-09-07 (10:15), commit `dc7a596d`.** No migrations.
+**FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's `deploy
+now`. Dump `alloutdoor-20260907-101257.dump` taken by the script. Health
+doubled, warden online, public 200 twice; re-checked independently, and
+`POST /api/ask-gg/identify-listing` still answers (401 unauthenticated) while
+`POST /api/ask-gg/messages` is 404.
+
+Shipped, merged from `feat/the-bench`: `a3be5099` — **three cuts to model
+spend, nothing taken from the answers** (operator: "keep the things that
+would make a motivation a quality product alive and good"). (1) Images are
+bounded before the model sees them: Cloudinary URLs via `boundedImageUrl`
+(1280 for listing photographs, 1600 for documents so small print survives)
+and the Sell page's identify upload via `boundedImageBytes` (sharp). (2)
+Motivation generation now clears Gemini's implicit-cache floor — the statute
+block moved to the head of the user message, content byte-identical, pinned
+by `motivation-prompt-cache.spec.ts`; every other prompt was measured and is
+too small to cache. (3) **The Ask GG chat backend is retired** (−8,059 lines):
+its UI went 2026-08-26 but the API, tool loop, streaming and history were still
+mounted and spending. `POST /ask-gg/identify-listing` survives as
+`ListingIdentifyService` (quota metered on its own usage rows), plus the admin
+KB and guide editors. No schema change.
+
+**Previous deploy: 2026-09-07 (09:35), commit `59f54851`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907120000_ai_usage`, additive only (table `AiUsage` + two
+indexes), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`,
+both apps + warden) on the operator's `deploy now`. Dump
+`alloutdoor-20260907-093127.dump` taken by the script; "All migrations have
+been successfully applied". Health doubled, warden online, public 200 twice.
+
+Shipped, merged from `feat/the-bench`: `4be1f753` + `72a7a464` — **the
+platform's AI moved from the Anthropic API to Gemini.** Every model call now
+goes through `LlmService` (`backend/src/common/llm/`); fifteen services
+migrated; Google Search grounding restored where Anthropic's hosted search
+was; spend metered in our own `AiUsage` ledger under the `gemini` credits key;
+privacy policy, vault consent (version `2026-09-07`, re-asks) and member copy
+name Google. **The default model is `gemini-3.5-flash-lite`**, NOT the
+2.5-flash-lite the operator first asked for: Google refused 2.5 to every key
+created today ("no longer available to new users"), twice, on Google's own
+sample; operator: "use 3.5 flash-lite". `GEMINI_API_KEY` is on the box;
+`LLM_MODEL` is unset (default applies). Anthropic remains the rollback lever
+(`LLM_PROVIDER=anthropic` + `LLM_MODEL`, reload, no deploy).
+
+**Previous deploy: 2026-09-07 (08:10), commit `4f9dd5da`.** No migrations.
+**FRONTEND ONLY** (`deploy.sh --frontend-only`) — the delta is two frontend
+files, so the backend was not rebuilt or reloaded. Dump
+`alloutdoor-20260907-080519.dump` taken by the script. Health doubled, public
+200 twice; re-checked independently after the script.
+
+Shipped, merged from `feat/the-bench`: `9a078b99` — a paired training
+certificate and its statement of results count as ONE document everywhere on
+the Document Centre. The list already folded them; the section header still
+said "8 certificates" over four lines and the chips counted pages. One
+`documentsOf()` fold in `lib/document-centre-sections.ts` now feeds the
+summary, count, total, attention count and chips (operator: "once they are
+combined they should be seen as 1 document").
+
+**Previous deploy: 2026-09-07 (08:00), commit `c32dc8e6`.** No migrations
+("No pending migrations to apply"). **FULL DEPLOY** (`deploy.sh`, both apps +
+warden) on the operator's `deploy now`. Dump `alloutdoor-20260907-075413.dump`
+taken by the script. Health doubled on both ports, warden online, public 200
+twice; re-checked independently after the script.
+
+Shipped, merged from `feat/the-bench`: `9cd9142d` — **the Document Centre is
+arranged around the member's firearms.** The three folders (which split the
+one live vault 18 / 2 / 0) and the flat type-headed list are gone. On one
+scroll: attention chips that filter (renewals due, dates to check, in a
+motivation), one search that also matches details and unit standards, and
+seven collapsible sections in a fixed order — Your firearms (one row per
+licence, grouped by category, soonest expiry first, named by title or make +
+calibre, with the section and the SAPS 517(g) line), Competency (grouped by
+what it covers, saying which licence its date follows), Training certificates
+(grouped by unit-standard category, certificate + results folded), About you,
+Dedicated status and associations, Safe and storage (thumbnail grid), Anything
+else. Copies fold under their original; open state is remembered; an empty
+section's Add opens the add panel on its own kind. The list endpoint now
+returns `category`, `selfLoading`, `covers`, `follows` and titled
+`unitStandards` per row (all already computed for competency dating). Pure
+grouping logic lives in `frontend/lib/document-centre-sections.ts` (34 tests).
+⚠️ Not looked at in a browser before shipping — behind sign-in; verified by
+tsc, vitest, eslint and the build. Page folding still covers proficiency
+pairs only.
+
+**Previous deploy: 2026-09-07 (07:00), commit `7f138203`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907030000_vault_event`, additive only (new table
+`VaultEvent` + 4 indexes), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY**
+(`deploy.sh`) on the operator's `deploy now`. Dump
+`alloutdoor-20260907-070156.dump` taken by the script; "All migrations have
+been successfully applied". Health doubled, warden online, public 200 twice.
+
+Shipped, merged from `feat/the-bench`: `35eb0c98` — the NSN proficiency pair
+now matches (every 13–19-digit run is tried and the ID checksum decides, so
+a SASSETA reg number no longer eats the ID; the number-before-label rule
+reaches two lines and runs first; "US Completed On" dates a 2014 statement;
+pairing tolerates one missing ID within 120 days; unpaired rows get one more
+re-read, marked `pair_reread`). `45482741` — THE DECISION LEDGER:
+`VaultLogService` (common/vault-log.service.ts) writes one `VaultEvent` per
+automatic step (classify/read/name/date/derive/pair/duplicate/address/
+autolink/settle) and per member correction (refiled/renamed/date-changed/
+deleted/confirmed); NO document contents (scrubbed); fire-and-forget. Read at
+`GET /api/admin/licence-centre/ledger` (filterable) and `/ledger/summary`.
+Query it before guessing why a vault step did not fire.
+
+**Previous deploy: 2026-09-07 (morning), commit `e66e5d15`.** FULL DEPLOY
+(`deploy.sh`, no migration) on the operator's `deploy now`. Health doubled,
+warden online, public 200 twice. Shipped, merged from `feat/the-bench`:
+`2bef02fb` — a paired proficiency is ONE entry in the Document Centre list
+(led by the statement of results) and the panel wraps the card with a
+"Statement of results | Certificate" switch; every sentence says statement of
+results / certificate, never front / back (rows under the earlier wording are
+rewritten on load); the filing banner says "we were not sure what type N
+documents are" instead of "filed by us rather than by you".
+
+**Previous deploy: 2026-09-07 (morning), commit `48084d16`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907020000_credential_other_side`, additive only
+(`Credential.otherSideId` TEXT NULL), hand-written per [BC-SCHEMA-DRIFT].
+**FULL DEPLOY** (`deploy.sh`) on the operator's `deploy now`. Dump
+`alloutdoor-20260907-002319.dump` taken by the script; "All migrations have
+been successfully applied", column present. Health doubled on both ports,
+warden online, public 200 twice.
+
+Shipped, merged from `feat/the-bench`: `e32bb55f` — the Textract reader reads
+the training provider's proficiency certificate (the front: One Shot, Progun,
+NSN) and records which side every proficiency is; two definitive front
+markers; the two sides are paired on a shared number (S/C/V, label-blind) or
+same codes + same ID within 120 days, linked both ways (`otherSideId`), never
+flagged as copies, attached to a motivation as one. `6de9de72` — sides are
+settled SERVER-SIDE on every load of the Centre (rows without a side are
+re-read, ≤6/load; unpaired rows are matched; a lonely side is flagged
+`side-missing` until its other page arrives); a known rifle action beats an
+unknown one in deriveCertificateExpiry and the note names the licence ("It
+follows your MAUSER .30-06 SPRINGFIELD licence…"); recompute runs on every
+load and compares the sentence too; the full-name bubble listens on the whole
+row (`data-name-card`) and is 16px; the list orders by type then the
+document's own date with type headings. `4591d037` — the licence type rule
+accepts "Type" on the same line, an "S/L:" FORMS key, OCR's "SIL"; rifles in
+the vault whose stored type never said their action are re-read (≤3/load), so
+the operator's .223 learns it is self-loading on the next load.
+
+**Previous deploy: 2026-09-07 (morning), commit `0125c39a`.** FRONTEND-ONLY
+(`deploy.sh --frontend-only`) on the operator's `deploy now`. No migration.
+Health doubled, public 200 twice. Shipped, merged from `feat/the-bench`:
+`fc9e293e` — clipped document names in the Document Centre list, the review
+screen and the motivation document rows show the whole name in a bubble after
+a 750 ms mouse hover or, on a phone/PWA, a 750 ms hold (components/full-name.tsx);
+only when the browser actually cut the text short, no native `title`.
+
+**Previous deploy: 2026-09-07 (morning), commit `8401f432`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907010000_credential_attention`, additive only
+(`Credential.attention` TEXT[] NOT NULL DEFAULT {} and
+`Credential.duplicateOfId` TEXT NULL), hand-written per [BC-SCHEMA-DRIFT].
+**FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's
+`deploy now`. Dump `alloutdoor-20260906-224935.dump` taken by the script
+before `prisma migrate deploy`; "All migrations have been successfully
+applied", `migrate status` up to date at 58, both columns present. Health
+doubled on both ports, warden online, public 200 twice.
+
+Shipped, merged from `feat/the-bench`: `5a76c9c2` — a proof of address is
+read for the name it is made out to and checked against the profile and ID
+(name), the profile address or postal code (address) and ADDRESS_FRESH_DAYS
+(date); every outcome files, a failed check flags the row (`attention` codes
++ words in `readNotes`, address-proof.ts). A statement of results is titled
+by its unit standards ("Proficiency - Handgun + Manual Rifle") and gated on
+the firearm like a competency. A second scan of the same document (serial,
+certificate number, ID number, address+date) is flagged as a copy of the
+earlier row, never refused (credential-duplicates.ts). Autolink: a
+proficiency slot wants the firearm's own standard AND 117705; separate
+certificates both attach, a half-attached slot gets its other half, two
+candidates for either half go back to the member.
+
+**Previous deploy: 2026-09-07 (early), commit `ff66e1e6`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907000000_credential_firearm_action`, additive only
+(`Credential.firearmSelfLoading` BOOLEAN NULL), hand-written per
+[BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`, both apps + warden) on the
+operator's `deploy now`. Dump `alloutdoor-20260906-222108.dump` before
+`prisma migrate deploy`; "All migrations have been successfully applied".
+Health doubled on both ports, warden online, public 200 twice.
+
+Shipped, merged from `feat/the-bench`: `d78aa585` — a rifle competency now
+follows a licence of its own action (119651 manual vs 119650 self-loading);
+the licence's action is stored in the clear beside its category, backfilled
+on the next load of the Document Centre with a re-derivation after, so the
+operator's Manual Rifle competency should move from the semi-automatic
+.223's 2035 to the .30-06's 2034 once the Centre is opened. And `e415f13e` —
+the new scanner no longer turns an upright-held page over (the text
+asymmetry flipped nine of nineteen real certificates), which is what had the
+proficiency certificates upside down and the reader missing competency issue
+dates and proficiency numbers on 2026-09-06 21:50.
+
+**Previous deploy: 2026-09-07 (small hours), commit `c6917b28`.** No migrations
+("No pending migrations to apply"). **BACKEND-ONLY** (`deploy.sh
+--backend-only`) on the operator's `deploy now`. Ships `8c328e08`, merged from
+`feat/the-bench`: the licence reader now takes the firearm's Make (and Model)
+from the card's top box rather than the first "Make" Textract hands over, which
+on three of the operator's five rifles was a part's "NONE" and titled the
+vault rows "NONE 45-70 GOVERNMENT". Topmost pair where geometry is present,
+else the first non-placeholder; all-NONE stays NONE. 21 licence-centre suites,
+318 tests. Health doubled, public 200 twice. Rows already in the vault keep
+their old titles until renamed or re-read.
+
+Seen on the same cards and NOT changed: a calibre under the 95% floor still
+holds the read dates back, and the review screen's "These N are right" button
+posts confirms that render as "Date confirmed: By you".
+
+**Previous deploy: 2026-09-06 (night), commit `195712dd`.** No migrations.
+**FRONTEND-ONLY** (`deploy.sh --frontend-only`, run twice) on the operator's
+`deploy now`, to switch the new document scanner on. `NEXT_PUBLIC_SCANNER_V3=1`
+was added to `frontend/.env.production` on the box (backup
+`.env.production.bak-2026-09-06` beside it) and the frontend rebuilt so the
+flag is inlined. The first rebuild left the scanner half-dark: the middleware's
+static-extension list had `ort` for the old model but not `onnx`, so
+`/scan/v3/docaligner-lcnet100.onnx` was 307'd to sign-in on the handoff phone;
+`195712dd` adds `onnx` and was deployed on top. Dump
+`alloutdoor-20260906-205917.dump` before the first run. Health doubled both
+runs, public 200 twice, every /scan/v3 asset 200 to a signed-out client.
+
+Shipped: the new document scanner is LIVE for every member, behind ScanButton
+and the phone hand-off (components/scan-v3 wrapping lib/scan-v3). To turn it
+off: remove the line from `.env.production` on the box and rebuild the
+frontend. Upstream is C:\dev\Scanner; its `scripts/sync-website.mjs` re-copies
+lib/scan-v3. Still to do: the pre-scan question in `document-centre-add.tsx`.
+
+**Previous deploy: 2026-09-06 (later), commit `1db2c067`.** ⚠️ **CARRIED A
+MIGRATION** — `20260906150000_motivation_upload_source_credential`, additive
+only (`MotivationUpload.sourceCredentialId` SetNull FK + index,
+`MotivationUpload.sourceRemovedAt`, `Motivation.autolinkSkippedIds` default
+`{}`), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`, both
+apps + warden). Dump `alloutdoor-20260906-201102.dump` taken before
+`prisma migrate deploy`; `migrate status` reads "up to date" (56 migrations).
+Health doubled on both ports, warden online, public 200 twice.
+
+Shipped: the merge of `feat/the-bench` — the **44-finding audit fix for the
+Document Centre and the Motivation Centre** (`fc4f7fbc`: competency re-dating
+on every licence change, auto-attach that sees system-dated documents and
+re-arms, prefill from the vault/profile/previous motivation with provenance
+shown, document gate on Generate, expiry cautions on the pack, the motivations
+service split into a facade over six services, both page files split into
+components) — plus two scanner commits another session had landed on that
+branch (`bd69117e`, `435e19b2`), the new document scanner behind
+`NEXT_PUBLIC_SCANNER_V3`, which is unset on the box and therefore dark.
+
+Behaviour changes to watch: auto-attach now attaches vault documents whose
+date WE set (`dateSource`), not only member-confirmed ones; generation refuses
+with `missingDocuments` when a required document is absent;
+`FIELD_REGISTRY_VERSION` was bumped for the hidden 517(g) answer.
+
+**Previous deploy: 2026-09-06 (late night), commit `76e43524`.** No migrations.
+**FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's `deploy
+now`; the only commit since `c5fef53e` was this file, so both apps were
+rebuilt on already-shipped code. Dump `alloutdoor-20260906-190415.dump`.
+Health doubled on both ports, warden online, public 200 twice, anonymous
+`/api/bench/*` still 401.
+
+**Previous deploy: 2026-09-06 (night), commit `c5fef53e`.** No migrations.
+**BACKEND ONLY** (`deploy.sh --backend-only`); health doubled. Then
+`bench-import` and `bench-cip-parse` again, after **66 rows were appended to
+`cartridge_reference.csv`** on the box AND in the operator's local copy
+(`C:\Users\gerha\Downloads\the-bench\data\`, both backed up as
+`.bak-20260906`): twelve cartridges with figures read out of the SAAMI
+standards themselves (Z299.4-2025 rifle, Z299.3-2022 pistol — the PDFs were
+downloaded and text-extracted, the case length, COAL max and MAP taken from
+each cartridge's own drawing and pressure-table line, `cartridge_name_source`
+= `gg-spec-saami`): 7 mm PRC, 6 mm GT, 22 Creedmoor, 22/27/30/33 Nosler,
+338 Weath. RPM, 6 mm ARC, 280 Ackley Improved, 30 Rem. AR, 327 Federal
+Mag.; plus 54 alias rows (`gg-alias-2026-09-06`) mapping the manuals'
+spellings onto cartridges the file already had (the SAUMs, 7 mm STW, 22 PPC
+USA, 357 Maximum, 44 Rem. Mag. …). `5ba7b974` adds hand-checked sheet-name
+overrides for ten more spellings (Arisaka, 338 RCM, 44 S&W Russian, 50-70
+Govt., 45-90 WM, 32 S&W, 7,63 Mauser, 6,5 x 68, 450 N.E. 3'' 1/4, 30-06
+Ackley Improved). Result: 49 045 source rows (was 46 088), 40 146 loads,
+232 cartridges (all with lengths), unmatched names 177 → 103 (2 506 rows,
+all wildcats or rounds in neither standard — 22 BR Rem. and 338-06 A-Square
+are the two large ones; A-Square is marked obsolete by SAAMI). ⚠️ The
+reference CSV is the operator's data file, not in the repo; the appended
+rows are the only copy of these figures besides this note.
+
+**Previous deploy: 2026-09-06 (late evening), commit `fa304c33`.** No migrations.
+**BACKEND ONLY** (`deploy.sh --backend-only`); dump
+`alloutdoor-20260906-182021.dump`; health doubled. Then **`bench-import` and
+`bench-cip-parse` were run on the box**, in that order. Shipped `a1aa5c54`:
+a load row now finds its cartridge (1) by European name, (2) through the
+reference file's own alias column, which was read into the alias table and
+never consulted, and (3) through a C.I.P. sheet — a cartridge the reference
+file lacks is CREATED from its sheet (name and Pmax as the sheet prints
+them) and `bench-cip-parse` backfills L3/L6 onto it where blank. Lookup
+synonyms (`cipLookupKey`: Weath./Weatherby, Swed./SE, Nitro Express/N.E.,
+Schmidt Rubin/Suisse, 505 Gibbs) apply on the way to the lookup only; the
+stored key is still `cartridgeKey()` of the sheet's name. HTML entities in
+the CSV are decoded first. Result: 46 088 source rows written (was 42 113),
+37 640 loads (was 34 316), 210 cartridges (33 new from sheets, all with
+lengths: 6,5 x 55 SE 472 loads, 300 Weath. Mag. 482, the rest of the
+Weatherby family, 28/26 Nosler, 6,8 Western, 470 N.E., 404 Riml. N.E. …),
+unmatched names 218 → 177, Somchem 641 of 657 in (the 16 out: 6mm Musgrave
+×6 and 9mm SHORT ×9 have no sheet and no alias, 12 Bore ×1 is a shotgun).
+The Somchem sanity figure in the report is the file's 657; the spec's 612
+was stale.
+
+**Previous deploy: 2026-09-06 (evening), commit `01d3e39e`.** No migrations.
+**FRONTEND ONLY** (`deploy.sh --frontend-only`); dump
+`alloutdoor-20260906-180748.dump`. Health doubled, public 200 twice, and the
+live finder checked signed in: `?tol=15` opens on ± 15 gr, no row prints the
+word "Unknown". Shipped `4efae552`: loads the powder-maker manuals print with
+no bullet brand are named by type alone ("Spitzer 120 gr"), never as made by
+"Unknown" — the import's group key for them (`UNKNOWN_MAKER` in
+`components/bench/contract.ts`).
+
+**Same evening, commit `1bed422c`, BACKEND ONLY** (`deploy.sh --backend-only`,
+dump `alloutdoor-20260906-180223.dump`, health doubled) — then
+**`bench-import` was run on the box** (`node dist/src/bench/scripts/
+bench-import.js --dir /home/alloutdoor/data/bench`, dump
+`alloutdoor-20260906-175845.dump` taken first). The first attempt failed at
+step 3 (P2002 on `BenchPowder.name`): the key backfill had left eight
+suffixed duplicates (RL15 / RL15-2 …) and the upsert on the key renamed the
+base row to the name the duplicate still held. `c260f5b0` adds the merge
+step; the re-run merged all 8, matched the three spec sanity counts exactly
+(868 / 1 901 / 1 717), wrote 42 113 source rows and 34 316 consolidated
+loads (was 28 589 — 6 773 rows the old import dropped for having no bullet
+maker are now kept), and reported Somchem at 657 rows against the spec's
+612. Report at `/home/alloutdoor/data/bench/bench-import-report.json`.
+
+**Previous deploy: 2026-09-06 (afternoon), commit `df232a52`** (merge of
+`feat/the-bench` `febe41da`). ⚠️ **CARRIED A MIGRATION** — `20260906120000_bench_audit`
+(additive: `BenchPowder.key` with a SQL backfill, `BenchShare`, three indexes,
+and FKs `UserBench.userId` / `BenchLogEntry.userId → User` ON DELETE CASCADE).
+**FULL DEPLOY** (`deploy.sh`, both apps + warden). Pre-deploy dump
+`alloutdoor-20260906-174703.dump` taken before `prisma migrate deploy`. Health
+doubled on both ports, public 200 twice, warden online. Verified signed in on
+the live site afterwards: the spec card opens with "Rimless · United States ·
+2012", a log entry with a blank COAL shows "—" (was `0.00 mm`), a comma charge
+`35,9` is read as 35.9 gr, the log sheet stacks over the load card, and every
+`/api/bench/*` route answers 401 anonymously.
+
+Shipped: **the Bench audit, end to end** — the 15 findings verified live plus
+the 46 from code review (report: the 2026-09-06 session's `bench-audit` file;
+the commit message on `febe41da` lists the areas). Two behaviours changed on
+purpose: the Bench API is now members-only (the page already was; the guest
+bench is deferred per SPEC-BUILD §10), and the migration was applied to a
+fresh database first with an empty `migrate diff` afterwards. ⚠️ The import
+fixes (idempotent source rows, stable powder keys, unknown-maker rows kept,
+spec category order) take effect only on the NEXT `bench-import` run — until
+then production still has split powders such as Alliant RL-15 / RL15.
+
+**Previous deploy: 2026-09-05 (evening), commit `1a679c6c`.** No migrations.
+**FRONTEND ONLY** (`deploy.sh --frontend-only`). Dump
+`alloutdoor-20260905-154111.dump`. Health doubled, public 200 twice,
+`/scan/selftest` on the live site: running, presence 1.000.
+
+Shipped: from the operator's first real scans with the working detector —
+robust corner refinement on the still (`corner-refine.ts`, fixes the skew
+iPhone A4), halo-suppressed sharpening scaled to the source's sharpness (the
+Samsung's grey fringe), and photometric crease suppression. See the Document
+Scanner section. ⚠️ Crease suppression was verified on a fold pressed into a
+real page, not on a real fold; inside the corrected band mid-grey decoration
+can lighten slightly.
+
+**Previous deploy: 2026-09-05 (later afternoon), commit `214a0ffa`.** No migrations.
+**FRONTEND ONLY** (`deploy.sh --frontend-only`); the backend kept serving.
+Dump `alloutdoor-20260905-142041.dump`. Health doubled, public 200 twice, and
+**`https://alloutdoor.co.za/scan/selftest` run from the desktop browser
+pane: status running, presence 1.000, corners on the drawn test document.**
+
+Shipped: the fix for the previous deploy — the detector never loaded on
+either phone (both reports: live detector `unavailable`) because webpack had
+rewritten the runtime's dynamic import; the worker now `importScripts` the
+runtime from `/scan/v2/`. Plus the self-test page, "unavailable because …"
+in the diagnostics report, and the operator's 60% fill gate for auto-capture
+(linear, capped per shape at the aim box). See the Document Scanner section.
+
+**Previous deploy: 2026-09-05 (afternoon), commit `53a5f3ba`.** No migrations.
+**FULL DEPLOY** via `deploy.sh` (both apps + warden). Pre-deploy dump
+`alloutdoor-20260905-133307.dump`. Backend and frontend each health-checked
+twice on the box, public 200 twice, pm2 all online. Verified afterwards that
+`/scan/v2/doccornernet_lean.ort`, `…/ort-wasm-simd-threaded.mjs` and
+`….wasm` are served publicly with the right content types — the `.mjs` is the
+one the middleware would have 307'd before this deploy.
+
+Shipped: **the scanner rebuilt to Scanbot parity** (`523b6121` on
+`feat/scanner-tracking`, merged via `feat/the-bench`): DocCornerNet replaces
+DocQuadNet256 with a second pass on the aim region; the filter set; magnetic
+lines in the crop editor; Android full-resolution stills; the quality gate;
+tray reopen and reorder; tap-to-focus and zoom; onnxruntime-web 1.29. See the
+Document Scanner section for the decisions that must stay made.
+
+⚠️ **Untested on a phone.** The new worker, runtime and asset path have run
+only under tsc, 1180 unit tests and a production build. First thing to check
+on a real device: that the live box appears at all (the diagnostics panel's
+"live detector" block says `running` and names the winning pass).
+
+**Previous deploy: 2026-09-05, commit `acf041ec`.** ⚠️ **CARRIED A MIGRATION** —
+`20260905090000_credential_read_provenance`, additive and defaulted (two
+`TEXT[]` columns on `Credential`, no backfill). **FULL DEPLOY** via
+`deploy.sh` (both apps + warden). Pre-deploy dump
+`alloutdoor-20260905-093016.dump` taken by the script before
+`prisma migrate deploy` ran. Backend and frontend each health-checked twice on
+the box, public 200 twice, pm2 all online.
+
+Shipped: the **scanner tracking fix** (`ebedf18a`, `31066cf3` — see the
+Document Scanner section for the decisions that must stay made) merged from
+`feat/scanner-tracking` via `feat/the-bench`, plus the licence-centre
+read-provenance work already on `feat/the-bench` (`4e6955b1`, `79e43019`).
+
+> The stale-Prisma-types trap bit locally on this one: `tsc` in the deploy
+> worktree reported four errors in `licence-centre.service.ts` on the two new
+> columns until `npx prisma generate` was run. Not a code fault. `deploy.sh`
+> runs generate before the backend build on the box, so the box was fine.
+
+⚠️ **Untested on a phone.** Every scanner change was verified by type-check
+and 1138 unit tests, not by holding a document under a camera. Two things to
+check first on a real device: whether the live box is now smooth, and whether
+auto-capture fires while the hand is still moving (the shutter-gate tick runs
+more often than `MOTION_STILL` was tuned on).
+
+**Previous deploy: 2026-08-27, commit `60736d8`.** ⚠️ **THIS ONE CARRIED A
 MIGRATION** — `20260825200000_transaction_fee_model`, the first non-frontend-only
 deploy since the fee model was deliberately held back on 2026-08-26. **FULL
 DEPLOY** (`deploy.sh`, both apps). Pre-deploy dump

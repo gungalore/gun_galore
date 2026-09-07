@@ -283,9 +283,13 @@ export default clerkMiddleware(async (auth, request) => {
 // to sign-in on a signed-out phone (the handoff page), and the model fails
 // with a JavaScript syntax error on `<!DOCTYPE` instead of the magic-word
 // message above. Same trap, one extension over.
+// ⚠️ AND onnx, FOR THE NEW SCANNER (2026-09-06). Its model is
+// /scan/v3/docaligner-lcnet100.onnx. Without the extension here the file was
+// 307'd to sign-in on the handoff phone, and the new scanner opened with a
+// manual shutter and no outline: the same trap as ort and mjs, one file over.
 export const config = {
   matcher: [
-    '/((?!_next|[^?]*\\.(?:html?|css|m?js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|webmanifest|wasm|ort)).*)',
+    '/((?!_next|[^?]*\\.(?:html?|css|m?js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|webmanifest|wasm|ort|onnx)).*)',
     '/(api|trpc)(.*)',
   ],
 };
