@@ -219,14 +219,53 @@ function isRenewal(r: CredentialRow): boolean {
   return r.state === 'expiring' || r.state === 'expired';
 }
 
+/**
+ * One document, with every page the vault holds of it.
+ *
+ * ⚠️ EVERY NUMBER ON THIS PAGE COUNTS THESE, NEVER ROWS. A training
+ * certificate and its statement of results are two rows and one document;
+ * the list already folded them into one line, and the header above it still
+ * said "8 certificates" over four lines because the sentence was built from
+ * the rows. Operator, 2026-09-07: "once they are combined they should be seen
+ * as 1 document." So the fold happens here, once, and the chips, the summary,
+ * the count and the total all read off the same result. A page whose partner
+ * is not in the list (filtered out, or never uploaded) stands as a document
+ * of its own — otherwise it would vanish with its partner.
+ */
+export interface Document {
+  /** The row that stands for it in the list. */
+  lead: CredentialRow;
+  /** Every row of it, the lead included. */
+  pages: CredentialRow[];
+}
+
+export function documentsOf(rows: readonly CredentialRow[]): Document[] {
+  const byId = new Map(rows.map((r) => [r.id, r] as const));
+  const out: Document[] = [];
+  for (const r of rows) {
+    const partner = r.otherSide ? byId.get(r.otherSide.id) : undefined;
+    if (partner && !leadsPair(r, partner)) continue;
+    out.push({ lead: r, pages: partner ? [r, partner] : [r] });
+  }
+  return out;
+}
+
+/** A document is due, or unchecked, when any page of it is. */
+function docNeeds(d: Document, test: (r: CredentialRow) => boolean): boolean {
+  return d.pages.some(test);
+}
+
 export function chipCounts(
   rows: readonly CredentialRow[],
   usage: UsageMap,
 ): ChipCounts {
+  const docs = documentsOf(rows);
   return {
-    renewals: rows.filter(isRenewal).length,
-    dates: rows.filter(needsDateCheck).length,
-    motivations: rows.filter((r) => (usage[r.id]?.length ?? 0) > 0).length,
+    renewals: docs.filter((d) => docNeeds(d, isRenewal)).length,
+    dates: docs.filter((d) => docNeeds(d, needsDateCheck)).length,
+    motivations: docs.filter((d) =>
+      docNeeds(d, (r) => (usage[r.id]?.length ?? 0) > 0),
+    ).length,
   };
 }
 
@@ -295,9 +334,9 @@ export interface SectionView {
    * Empty for every section but 'safe'.
    */
   photos: RowNode[];
-  /** Rows showing, after the chips and the search box. */
+  /** Documents showing, after the chips and the search box. Pages fold. */
   count: number;
-  /** Rows the section holds, before either. */
+  /** Documents the section holds, before either. Pages fold. */
   total: number;
   /** It holds something, and the filters matched none of it. */
   emptied: boolean;
@@ -371,15 +410,15 @@ function plural(n: number, noun: [string, string]): string {
 
 function summaryFor(
   section: DocSection,
-  kept: readonly CredentialRow[],
+  docs: readonly Document[],
   emptied: boolean,
 ): string {
   if (emptied) return 'None of these here';
-  if (kept.length === 0) return section.emptyLine;
-  const parts = [plural(kept.length, section.noun)];
-  const due = kept.filter(isRenewal).length;
+  if (docs.length === 0) return section.emptyLine;
+  const parts = [plural(docs.length, section.noun)];
+  const due = docs.filter((d) => docNeeds(d, isRenewal)).length;
   if (due > 0) parts.push(due === 1 ? '1 renewal due' : `${due} renewals due`);
-  const dates = kept.filter(needsDateCheck).length;
+  const dates = docs.filter((d) => docNeeds(d, needsDateCheck)).length;
   if (dates > 0) {
     parts.push(dates === 1 ? '1 date to check' : `${dates} dates to check`);
   }
@@ -407,7 +446,6 @@ export function buildSections({
   query = '',
 }: BuildOptions): SectionView[] {
   const all = rows ?? [];
-  const byId = new Map(all.map((r) => [r.id, r] as const));
 
   const placed = new Map<DocSectionId, CredentialRow[]>(
     SECTIONS.map((s) => [s.id, [] as CredentialRow[]]),
@@ -423,12 +461,8 @@ export function buildSections({
     );
 
     // ── one document, not two pages ──────────────────────────────
-    const here = new Set(kept.map((r) => r.id));
-    const unpaired = kept.filter((r) => {
-      if (!r.otherSide || !here.has(r.otherSide.id)) return true;
-      const partner = byId.get(r.otherSide.id);
-      return partner ? leadsPair(r, partner) : true;
-    });
+    const docs = documentsOf(kept);
+    const unpaired = docs.map((d) => d.lead);
 
     // ── a copy folds under its original ──────────────────────────
     //
@@ -496,16 +530,19 @@ export function buildSections({
 
     const count = standing.length + photos.length;
     const emptied = filtering && held.length > 0 && count === 0;
+    const heldDocs = documentsOf(held);
     return {
       section,
       groups,
       photos: photos.sort((a, b) => byExpiry(a.row, b.row)),
       count,
-      total: held.length,
+      total: heldDocs.length,
       emptied,
-      summary: summaryFor(section, kept, emptied),
-      attention: held.filter((r) =>
-        rowMatchesChips(r, ['renewals', 'dates', 'motivations'], usage),
+      summary: summaryFor(section, docs, emptied),
+      attention: heldDocs.filter((d) =>
+        docNeeds(d, (r) =>
+          rowMatchesChips(r, ['renewals', 'dates', 'motivations'], usage),
+        ),
       ).length,
     };
   });
