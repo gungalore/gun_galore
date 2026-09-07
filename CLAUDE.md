@@ -1,720 +1,412 @@
 # All Outdoor — Claude Code Context
 
-## What This Is
+## How to use this file
 
-**All Outdoor** (formerly Gun Galore) is South Africa's new-and-secondhand
-outdoor store. Signed in, it is the full verified firearms, hunting and
-outdoor marketplace it has always been.
+**Rules, not history.** Standing decisions, hard constraints, and traps that have
+already cost a session or an outage. When a decision changes, edit the rule in
+place. Do not append a session trail — that is what `git log` and `HANDOFF.md`
+are for.
 
-The two audiences are the point — see **Public vs Members** below before
-touching anything a signed-out visitor can reach.
+**Where the code and this file disagree, the code wins** — tell the operator, then
+fix the rule here.
+
+**Detail lives elsewhere.** `docs/INDEX.md` is the map of every document in the
+repo and says which ones still describe the running system. Read it before
+concluding something is undocumented.
+
+Last full audit of this file against the running system: **2026-09-07**.
+
+---
+
+## What this is
+
+**All Outdoor** is South Africa's new-and-secondhand outdoor store, and — behind a
+login — a verified firearms, hunting and outdoor marketplace. It also runs a
+licence-application service (SAPS motivations, a document vault) and The Bench, a
+reloading load finder.
+
+**The registered entity is ALLOUTDOOR (PTY) LTD, Reg. 2026/639713/07.** That is
+the name in the ECT § 43 disclosure. GunGalore (Pty) Ltd (Reg. 2026/393321/07) is
+a **separate, wound-down company** and must not appear anywhere user-facing. The
+live domain is **alloutdoor.co.za**; the rebrand is done, not planned.
 
 Brand strings live in `frontend/lib/brand.ts` and `backend/src/common/brand.ts`.
-Never hard-code the name. `GunGalore (Pty) Ltd` is the REGISTERED entity and
-stays verbatim in the ECT § 43 footer; `gungalore.co.za` is still the live
-domain (alloutdoor.co.za migration is planned, not done).
+Never hard-code the name.
 
-The platform is delivered as four modules, built in order. Each
-module must be fully stable before the next begins:
+**The platform is not trading.** As of 2026-09-07 production holds 2 users, 2
+listings, **0 transactions**, 1 motivation. Nothing has ever been sold. Several
+rules below are affordable *because* of that; if that changes, they need
+revisiting.
 
-- **M1 — Secondhand Marketplace** (build first)
-- **M2 — Auctions**
-- **M3 — New Store**
-- **M4 — Swap**
+---
 
-This document is the single source of truth for Claude Code. It
-records decisions and rules — not session history. When a decision
-changes, edit the rule in place; do not append a narrative.
+## Absolute rules — never break these
+
+1. **"Escrow" never appears in user-facing copy.** It is a regulated SA financial
+   term All Outdoor is not registered for. Use `paymentStatus`, "funds held",
+   "payment protected", "payment released". ⚠️ The guard that *blocks* the word
+   (and its tests) is the mechanism, not a violation — do not "clean it up".
+2. **A firearm never travels by courier or locker.** Enforced in
+   `shipping.service.ts`. Two lawful routes: `DEALER_TRANSFER` (buyer picks the
+   receiving SAPS-licensed dealer at checkout) and `PRIVATE_ARRANGE` (both parties
+   attend a dealer in person, no pre-picked dealer). Every firearm listing must
+   offer DEALER_TRANSFER; PRIVATE_ARRANGE is opt-in by the seller and sits behind
+   a hard consent screen.
+3. **Air rifles are NOT firearms** under SA law. No licence; they ship as a normal
+   accessory. Category slug `air-rifles`.
+4. **Live ammunition, primers and propellant are banned platform-wide.** Empty and
+   once-fired brass and projectiles/bullets are allowed.
+5. **KYC is a seller-only gate.** No code path may check `kycStatus` on someone
+   buying, bidding or making an offer.
+6. **No wallet.** No user balance, stored credit or ledger. Money moves
+   per-transaction through the gateway.
+7. **Never expose real names to other users.** Public surfaces show `username`
+   only — never `firstName`/`lastName`, never initials, never an `@` prefix.
+   Fallback: "Anonymous bidder" / "Anonymous seller". Real names exist only inside
+   KYC, paid-transaction internals (dealer paperwork, dispatch addresses),
+   PRIVATE_ARRANGE post-consent contact reveal, admin surfaces, and a user seeing
+   their own data.
+8. **Never name a competitor** in user-facing copy. Say "scheduled auction sites",
+   "retail stores". WhatsApp and Facebook groups may be named.
+9. **Secrets live only in `.env`.** Never in this file, a prompt, a commit
+   message, or chat. This file names variables, never values. An exposed secret is
+   a compromised secret — rotate it.
+10. **Never `prisma db push`.** See the schema-drift trap under the deploy command.
+11. **Never enter or store raw card numbers.** Cardholder data lives only on the
+    gateway's hosted page. Seller *bank* details are stored deliberately
+    (`User.bankAccountNumber` and friends) because the payout rail needs them.
+
+There is **no public dealer directory**. There *is* a public seller storefront —
+see Public vs Members.
 
 ---
 
 ## Public vs Members — read before changing any public read path
 
-Meta's crawlers and moderators were blocking the site, killing WhatsApp
-Business comms. Regulated stock is now behind the login. Signed in, nothing
-changed.
-
-**Meta restricted the site a SECOND time (2026-08-21).** The first gate was
-keyed on OUR vocabulary — it hid everything called "firearm" and every slug
-carrying a weapon word. Meta's commerce policy itemises product families by
-name, and four of ours were still public, sitemapped, and serving an og:title
-reading "<X> for sale": knives, archery, paintball, and weapon accessories
-(scope mounts). Gated by `20260821120000_gate_meta_prohibited_categories`.
-`cleaning-equipment` went with them — not on Meta's list, but a gun-cleaning
-tree wearing a neutral name.
-
-**Do not restate a regulated-goods rule on a public page.** The site-wide
-footer used to carry "does not sell ammunition", which put the word on all 135
-pages including the homepage and the tents page. The prohibitions live in the
-members-only Regulated Items Annex (`/members/regulated-items`) and are
-enforced in code; a public page gets a neutral pointer, never the vocabulary.
-Applies to worked examples too — `/fees` priced "a rifle scope" for years.
-
-**`gungalore.co.za` is retired and answers 410 on every host** (apex, www,
-ballistics, ballistic-hunter). It used to 301 into alloutdoor.co.za, which is a
-live machine-readable edge from the flagged predecessor to the successor. DNS
-stays up because the MX records carry the operator's mailbox — kill the zone
-and you kill their email.
+Meta restricted the site twice for regulated goods. Regulated stock now sits
+behind the login. Signed in, nothing changed.
 
 **This is an auth wall, NOT cloaking.** Every signed-out visitor gets identical
-content regardless of user-agent. Never branch on user-agent, never special-case
-a crawler. Serving a crawler something different from a logged-out human is what
-turns a block into a permanent ban.
+content regardless of user-agent. Never branch on user-agent; never special-case a
+crawler. Serving a crawler something different from a logged-out human is what
+turns a block into a ban.
 
 **The mechanism.** `Category.publicVisible` (source of truth) and
-`Listing.publicVisible` (snapshot, set at create and re-snapshotted on category
-change). Both `@default(false)` — an ALLOWLIST. A category added later is
+`Listing.publicVisible` (snapshot, set at create, re-snapshotted on category
+change). Both `@default(false)` — an **allowlist**. A category added later is
 invisible until someone publishes it, so the failure mode is "we forgot to show
-the tents", never "we leaked the rifles". Keep it that way.
+the tents", never "we leaked the rifles".
 
-**Public roots:** camping-outdoor, overlanding, fishing, optics, knives,
-hunting, archery-bowhunting, paintball, cleaning-equipment,
-outdoor-clothing-footwear.
+**Public roots:** camping-outdoor, overlanding, fishing, optics, knives, hunting,
+archery-bowhunting, paintball, cleaning-equipment, outdoor-clothing-footwear.
 **Members-only roots:** firearms, gun-smithing-parts, reloading-components,
 reloading-equipment, air-rifles, self-defence, shooting-accessories, ammo.
-**Carve-outs** (`membersOnly: true` on a child of a public parent):
+**Carve-outs** (`membersOnly: true` under a public parent):
 archery--crossbows, optics--{rifle,handgun,rimfire-rifle,rangefinding-rifle,
 air-rifle}-scopes, hunting--shooting-sticks-and-bipods.
 
 **Rules when touching this:**
 
 - Anonymity comes from `OptionalClerkGuard` (never rejects, stamps
-  `request.clerkUserId`). A public read path with NO guard at all is a leak —
-  `categories.controller.ts` was exactly that.
-- Adding a new public read path? It must go through the same gate. Grep
-  `publicOnly(` in `listings.service.ts` for every existing site. Remember the
-  non-obvious ones: the featured rail (renders on EVERY page), seller reviews
-  (they embed listing titles), and the Ask Boet guide.
-- `findById` returns **404**, not 403 and not a "sign in to view" page — that
-  would confirm the item exists.
+  `request.clerkUserId`). A public read path with **no guard at all** is a leak.
+- Every public read path goes through the same gate. Grep `publicOnly(` in
+  `listings.service.ts`. ⚠️ Remember the non-obvious ones: seller reviews (they
+  embed listing titles), and **the public seller storefront** —
+  `GET /api/sellers/:clerkId` + `/sellers/[clerkId]` is anonymous-reachable and
+  renders that seller's listings, so its browse call must stay behind
+  `publicOnly()`.
+- `findById` returns **404**, never 403 and never "sign in to view" — that would
+  confirm the item exists.
 - **Never `revalidate`/`force-cache` a fetch whose result varies by viewer.**
-  Next's data cache is SHARED and the browser HTTP cache keys on URL, not on the
-  auth header — either one will serve one audience's catalogue to the other. Use
-  `viewerFetch` / `useViewerFetch` (both force `no-store` and forward the token).
-- `sitemap.ts` must stay **anonymous and uncached** (`force-dynamic`). Adding a
-  token there republishes the whole firearm taxonomy. `revalidate` there is also
-  wrong for a second reason: Next's fetch cache lives in `.next/cache` and
-  survives a rebuild, so a deploy prerenders the file from a pre-deploy snapshot.
-- **No weapon word may appear in a public category name or slug.** A gate that
-  hides the Firearms tree but publishes `optics--handgun-scopes` has not done its
-  job — the scanner reads the URL, not the intent. `assertNoWeaponWordInPublic`
-  in `prisma/seed.ts` fails the seed if you try. To publish something it matches,
-  rename the category to what it actually is; do not weaken the pattern.
-- `publicVisible` must be in `STATIC_LISTING_FILTERABLE_ATTRIBUTES` or Meili
+  Next's data cache is SHARED and the browser cache keys on URL, not on the auth
+  header. Use `viewerFetch` / `useViewerFetch` (both force `no-store`).
+- `sitemap.ts` stays **anonymous and uncached** (`force-dynamic`). A token there
+  republishes the firearm taxonomy; `revalidate` there also survives a rebuild in
+  `.next/cache` and prerenders from a pre-deploy snapshot.
+- **No weapon word in a public category name or slug.** A gate that hides Firearms
+  but publishes `optics--handgun-scopes` has not done its job — the scanner reads
+  the URL. `assertNoWeaponWordInPublic` in `prisma/seed.ts` fails the seed. To
+  publish something it matches, rename the category; never weaken the pattern.
+- `publicVisible` must stay in `STATIC_LISTING_FILTERABLE_ATTRIBUTES` or Meili
   rejects the anonymous query outright.
-
-**Ammunition is banned outright** — never listed, sold or traded, and the site
-says so publicly. Reloading components remain listable but members-only.
 
 `backend/src/listings/public-visibility.spec.ts` locks all of this. If a change
 makes those tests fail, the change is wrong.
+
+**`gungalore.co.za` is retired.** Its hosts no longer answer (Cloudflare returns
+522). ⚠️ **The DNS zone must stay up** — the MX records carry the operator's
+mailbox. Kill the zone and you kill their email.
 
 ---
 
 ## COMMAND: "deploy now"
 
-When the user types **"deploy now"**, execute this full sequence in
-order. Do not skip steps. Report the result of each step before
-moving to the next. If any step fails, STOP immediately, report
-exactly what failed, and wait for the user's instruction.
+When the operator types **"deploy now"**, run this in order, reporting each step.
+If any step fails, STOP, report exactly what failed, and wait.
 
-> ⚠️ **CORRECTED 2026-08-19.** This section previously named the branch
-> `feat/hunt-ballistics-range-estimator`, the host `ssh gungalore`, the path
-> `/home/gungalore/app` and the services `gungalore-*`. **Every one of those
-> was the RETIRED box.** Following it would have deployed to a machine dozens
-> of commits behind, applying a REPLACED migration baseline over a live
-> database. It is corrected below.
-
-**THERE ARE TWO BOXES. Only one of them is production.**
-
-| | |
-|---|---|
-| ✅ **`ssh alloutdoor`** | **LIVE** — alloutdoor.co.za. Deploy here. |
-| ❌ `ssh gungalore` | **ALIAS DELETED 2026-08-29.** Was the RETIRED pre-replatform box. Deploying there applies a replaced migration baseline over a live DB. The command now fails to resolve — that is the intent. Do not recreate it. |
-
-**Check every single time**, before touching anything:
-
-```bash
-ssh alloutdoor "cd /home/alloutdoor/app && git rev-parse --abbrev-ref HEAD && git log -1 --oneline"
-```
-
-The branch must read `feat/takealot-ux-parity` and the commit must be an
-ancestor of what you are about to push. If either looks unfamiliar, STOP.
+**There is one production box.** `ssh alloutdoor` — alloutdoor.co.za, app at
+`/home/alloutdoor/app`, user `alloutdoor`, branch `feat/takealot-ux-parity`.
+The retired `gungalore` alias was **deleted** from `~/.ssh/config` on 2026-08-29
+and must not be recreated; deploying there would apply a replaced migration
+baseline over a live database. ⚠️ The KEY is still `~/.ssh/gungalore_deploy` and
+is **still in use** by the `alloutdoor` block — never delete it while tidying up
+"gungalore" references.
 
 **Deploy branch (LOCKED): `feat/takealot-ux-parity`.** NOT `main`.
-`git push origin main` succeeds and ships **nothing** — production does not
-track it. Push and pull the branch **by name**.
+`git push origin main` succeeds and ships nothing.
 
-**NOTE ON pm2 COMMANDS**
-Use `pm2 reload [service] --update-env` — a zero-downtime rolling restart; the
-old process keeps serving until the new one is ready. Only `pm2 restart` if a
-process is frozen, a reload has hung past 60 seconds, or you are told to.
-Never `pm2 restart` in an automated deploy.
-
-**⚠️ NEVER GATE A RESTART ON A SHARED `/tmp` MARKER.** A stale marker from an
-earlier deploy makes the restart fire mid-build and serves 500s. Wait on the
-BUILD PROCESS itself (`pgrep`) plus a unique per-deploy log, and curl TWICE
-afterwards.
-
-**STEP 1 — VERIFY CODE IS CLEAN**
-`cd backend && npx tsc --noEmit`
-`cd ../frontend && npx tsc --noEmit`
-Both must report zero errors.
-
-⚠️ Do NOT pipe tsc into `tail` or `head` and read `$?` — that reads the PIPE's
-exit code, not tsc's, and reports a clean build over a broken one. Use
+**STEP 1 — verify code is clean.**
+`cd backend && npx tsc --noEmit`, then `cd ../frontend && npx tsc --noEmit`.
+⚠️ Do NOT pipe tsc into `tail`/`head` and read the exit code — that reads the
+pipe's status and reports a clean build over a broken one. Use
 `npx tsc --noEmit >/dev/null 2>&1 && echo CLEAN`.
 
-**STEP 2 — PRODUCTION BUILD CHECK**
-`cd frontend && npm run build`. Run it DETACHED and poll a log — an attached
-prod build can outlive a tool timeout and leave you unsure whether it finished.
+**STEP 2 — run the tests.** `npm test` in both.
+⚠️ **`deploy.sh` runs no tests and no type-check** — this step is the only gate,
+and it is manual.
+⚠️ Backend tests need `npm test`, not `npx jest`: `package.json` supplies
+`node --experimental-vm-modules`, and without it a PDF spec fails 16 times in a
+way that reads exactly like a real regression.
 
-**STEP 3 — COMMIT TO GIT**
-`git add .`, `git status` (show what is being committed), `git commit`.
+**STEP 3 — production build check.** `cd frontend && npm run build`.
+⚠️ Run it in the **FOREGROUND** and read its exit code directly. Detaching and
+polling a log is the pattern that took the site down on 2026-08-19 and was
+deliberately removed. If it risks a tool timeout, raise the timeout — do not
+detach. There is no `wait-for-build.sh`; do not go looking for one, and do not
+hand-roll a wait loop.
 
-**STEP 4 — PUSH TO GITHUB**
-`git push origin feat/takealot-ux-parity`. Do NOT touch main.
+**STEP 4 — commit.** Stage deliberately. Do not `git add .` — the tree carries
+scratch from other workstreams.
 
-**STEP 5 — DEPLOY TO SERVER**
+**STEP 5 — deploy.** `bash infra/deploy/deploy.sh [--backend-only|--frontend-only]`
+from the worktree that has the deploy branch checked out. It hardcodes
+`HOST=alloutdoor`, refuses a dirty tree, pushes the branch, verifies the box's
+branch and HEAD, **takes a pre-deploy database backup** (`~/bin/backup.sh`, and it
+prints the dump name — that is your rollback point), then for each app: `npm
+install`, `prisma migrate deploy`, `prisma generate`, build, artefact check,
+`pm2 reload`, and **two** health checks. Warden is a third, non-fatal stage.
 
-> **Use the script.** `bash infra/deploy/deploy.sh` does every step below,
-> refuses to reload a build that has not cleanly finished, refuses the wrong
-> box, and curls twice. The manual sequence is kept for reference and for the
-> day something needs doing by hand.
->
-> ⚠️ **Do NOT hand-roll a "wait for the build" loop.** One was written with
-> `grep -c ... || echo 0`, which emits `"0
-0"` when there is no match — so it
-> broke on its first iteration and reloaded pm2 onto a half-written `.next`.
-> That took the site down on 2026-08-19. `infra/deploy/wait-for-build.sh` does
-> it properly and has tests.
+**Full deploy or one side?** If the diff touches any `backend/` or `prisma/` file
+it is a full deploy. A frontend-only diff can use `--frontend-only`, and the
+backend then keeps serving untouched.
 
-`ssh alloutdoor`, user `alloutdoor`, project at `/home/alloutdoor/app`, pm2
-services `alloutdoor-backend` and `alloutdoor-frontend`.
+⚠️ **The two artefact checks are what prevent the 2026-08-19 failure.** After any
+build that exits 0, verify `test -s backend/dist/src/main.js` and
+`test -s frontend/.next/BUILD_ID` before reloading. `.next` existing proves
+nothing — it is present throughout the build.
 
-**SCHEMA-DRIFT TRAP (DO NOT FORGET).** Three services (Ask GG KB,
-reloading-manual FTS, listings FTS) add `tsvector GENERATED` columns + GIN
-indexes at boot via raw DDL. These columns are NOT in `schema.prisma`. Running
-`npx prisma db push --accept-data-loss` drops them and the next boot does not
-recreate the indexes cleanly. **For routine deploys, never run db push.** Run
-`npx prisma generate` only. When schema.prisma genuinely changes, write a real
-migration and run `npx prisma migrate deploy`. See `[BC-SCHEMA-DRIFT]` in
-LAUNCH-CHECKLIST.md.
+⚠️ **`prisma generate` ALWAYS runs before `npm run build`.** `nest build`
+type-checks against the *generated* client, and a stale one lets pm2 reload the
+old `dist/` with no visible error.
 
-```
-cd /home/alloutdoor/app
-git stash --include-untracked            # parks any legacy local edits
-git pull --ff-only origin feat/takealot-ux-parity
-git log -1 --oneline                     # MUST match what you pushed
+⚠️ **SCHEMA-DRIFT TRAP.** Two services add `tsvector GENERATED` columns and GIN
+indexes at boot via raw DDL — the Ask GG KB (`AskGgKbEntry.searchTsv`) and the
+reloading-manual FTS (`ReloadingManualPage.textTsv`, plus a pg_trgm index on
+`extractedText`). These columns are **not** in `schema.prisma`.
+`prisma db push --accept-data-loss` drops them. For routine deploys run
+`prisma generate` only; for a real schema change write a migration and run
+`prisma migrate deploy`.
 
-cd backend
-npm install                              # in case package.json shifted
-npx prisma migrate deploy                # ONLY when a migration was added
-npx prisma generate                      # regenerate client — NEVER db push (tsvector trap)
-npm run build
-pm2 reload alloutdoor-backend --update-env
-sleep 5
-curl -f http://localhost:3001/api/health && echo "BACKEND OK"
+⚠️ **`pm2 reload` is NOT zero-downtime here.** All three processes run
+`exec_mode: 'fork', instances: 1`, so reload is a restart. Keep using reload (it
+signals node for a graceful shutdown), but know the consequence: a **failed build**
+is safe — deploy.sh dies before touching pm2 and the old version keeps serving —
+whereas a **failed health check after reload is an outage**, because the old
+process is already gone. Do not `pm2 restart` automatically; stop and report.
 
-cd ../frontend
-npm install
-npm run build
-pm2 reload alloutdoor-frontend --update-env
-sleep 5
-curl -fs http://localhost:3000 > /dev/null && echo "FRONTEND OK"
-pm2 list
-```
+**STEP 6 — verify health.** `curl localhost:3001/api/health`, `curl localhost:3000`,
+and the public site — each twice. `pm2 list` must show **three** services online:
+`alloutdoor-backend`, `alloutdoor-frontend`, `warden`.
 
-**Critical gotcha** (cost half a deploy on 2026-05-26): `nest build` reports
-TypeScript errors against STALE Prisma types, and `pm2 reload` then silently
-reloads the OLD compiled `dist/`. So always run `npx prisma generate` BEFORE
-`npm run build` whenever the schema changed, and watch the build output — any
-TS error means the backend did NOT update.
+**STEP 7 — update `HANDOFF.md`**, not this file. Record what shipped and anything
+the next session must know.
 
-⚠️ Do NOT mask the build's exit code with `| tail`. Capture it explicitly.
+**STEP 8 — commit and push that.**
 
-If a health check fails after a reload: do NOT `pm2 restart` automatically.
-Stop and report. The old version keeps serving on a failed reload, so there is
-no emergency.
+**STEP 9 — final report.** What deployed, and the health result.
 
-**STEP 6 — VERIFY HEALTH**
-Confirm `curl localhost:3001/api/health` and `localhost:3000` both
-respond, and `pm2 list` shows both services online.
-
-**STEP 7 — UPDATE BUILD STATUS**
-Update the "Current Status" section at the bottom of this file.
-
-**STEP 8 — COMMIT THE STATUS UPDATE**
-Commit and push the CLAUDE.md change.
-
-**STEP 9 — FINAL REPORT**
-Summarise what was deployed and the health-check result.
-
-`pm2 save` and `pm2 startup` are configured so services auto-start
-on reboot.
+`pm2 save` / `pm2 startup` are configured, so services auto-start on reboot.
 
 ---
 
-## Working Method — Opus Review + Claude Code Loop
+## The box
 
-This project is built with a two-role pattern. Keep to it:
+- **Production: `ssh alloutdoor`** (Vultr VPS, Nginx + PM2). Always use the alias —
+  `ssh user@<IP>` bypasses the operator's key config.
+- **Three pm2 services:** `alloutdoor-backend`, `alloutdoor-frontend`, `warden`.
+- **Ports:** 3000 frontend, 3001 backend, 5432 Postgres, 7700 Meilisearch.
+- Node v22, npm 10. 64 Prisma migrations, all applied.
+- **Cloudflare sits in front with an Origin Certificate.** The origin IP is
+  deliberately not written down anywhere in this repo — publishing it lets anyone
+  bypass the WAF. It lives in the password manager and in `~/.ssh/config`.
+- Nginx has **one** site plus a catch-all `server_name _;` returning **444**, so
+  anything that is not alloutdoor.co.za, bare-IP scans included, gets the
+  connection dropped.
+- **Encrypted identity documents** live at `/var/lib/alloutdoor/secure-uploads`
+  (`SECURE_UPLOAD_DIR`, mode 0700) — **outside** the app dir, so deploys never
+  touch them, and **not** in a `pg_dump`.
+- The marketing landing page at `/var/www/html` is separate — **never touch it**.
+- Ballistics is its own app on the same box (`~/ballistics-app/`, own DB, own pm2
+  services, own nginx block). The marketplace stays the marketplace.
+- **No staging.** Work hits production after local type-check, tests and build.
 
-- **Planning / review (Opus):** specs each phase, writes the build
-  prompt, and reviews completed work before it is committed.
-- **Execution (Claude Code):** implements one phase at a time from
-  the written prompt.
+### Backups and recovery
 
-Build one phase at a time. A phase is not "done" until it is
-reviewed, type-checks clean, and builds. Do not start the next
-phase until the current one is stable. Feature flags keep
-unfinished modules dark in production (see Feature Flags).
-
----
-
-## Tech Stack
-
-- **Frontend:** Next.js 16 (App Router) + TypeScript + Tailwind
-- **Backend:** NestJS + TypeScript
-- **ORM:** Prisma
-- **Database:** PostgreSQL
-- **Search:** Meilisearch
-- **Auth:** Clerk (buyers + sellers); custom JWT (admin)
-- **Images:** Cloudinary
-- **SMS:** SMSPortal
-- **Email:** Resend
-- **KYC:** VerifyNow
-- **Shipping:** Pudo (lockers) + The Courier Guy / TCG (door).
-  **Bob Go** is replacing BOTH — built and deployed but INERT behind the
-  `bobgo_enabled` flag (default OFF). It sits behind the EXISTING enum
-  slots: `PUDO` = pickup-point, `TCG` = door. So `shippingMethod` now
-  names the SHAPE of the delivery, not the company; route post-booking
-  work on `Transaction.carrierProvider`. ⚠️ Bob Go answers **HTTP 201
-  before a courier has agreed** — every booking starts unconfirmed
-  (`pending-rates`). Branch on `submission`, never on "it didn't throw".
-  See `BOBGO-MIGRATION.md`.
-- **Payments:** **Peach Payments** — Checkout V2 + Payouts + BANV.
-  Deployed but INERT until `PEACH_*` creds are set and
-  `PAYMENT_MODE=paygate` + `PAYMENTS_LIVE=true`. See
-  `payments/peach.service.ts`, `PeachModule`, and the four `peach*`
-  columns on `Transaction`.
-
-  > ⚠️ This line used to read "Stitch Express (only) … do NOT
-  > reintroduce Peach", which has been backwards since 2026-07-23.
-  > Stitch was evaluated and dropped; Peach is the rail. A developer
-  > trusting the old text would rip out the live payment integration.
-  > `STITCH_CLIENT_ID` / `STITCH_CLIENT_SECRET` still sit in the env
-  > as dead vars, and a stale comment at
-  > `payments/transactions.service.ts:65` still says "the gateway is
-  > now Stitch" — both are leftovers, not instructions.
-- **AI: Gemini 3.5 Flash-Lite** via the Google Gen AI API (listing
-  moderation, listing photo identification, ballistic bullet lookup,
-  listing-quality scoring,
-  vision KYC, licence + motivation reading). Operator, 2026-09-07: "we are
-  switching from claude API to gemini 2.5 flash-lite api for everything on
-  the website." The Ask GG chat backend was retired on 2026-09-07 (its UI
-  went on 2026-08-26); only `POST /ask-gg/identify-listing` and the admin KB
-  and guide editors remain.
-
-  > Every model call goes through ONE adapter — `LlmService` in
-  > `backend/src/common/llm/`. No service builds its own client, picks its
-  > own model, or parses a provider's response any more; they speak
-  > `LlmRequest`/`LlmResponse` (`llm.types.ts`) and the adapter speaks the
-  > provider's. Env: `GEMINI_API_KEY`, `LLM_PROVIDER` (default `gemini`),
-  > `LLM_MODEL` (default `gemini-3.5-flash-lite`).
-  >
-  > ⚠️ **Anthropic is the ROLLBACK LEVER, not a second supported mode.**
-  > `LLM_PROVIDER=anthropic` plus `LLM_MODEL` and a reload puts the platform
-  > back on the old rail with no deploy. It REQUIRES `LLM_MODEL` — no
-  > Anthropic model id is guessed, because every one this codebase used is a
-  > dated snapshot and snapshots retire. `ANTHROPIC_MODEL_*` and
-  > `ANTHROPIC_ADMIN_API_KEY` are retired and read by nothing.
-  >
-  > Spend is metered by US, not the provider: `LlmService` writes an
-  > `AiUsage` row per call (purpose, tokens, latency, cost in micro-dollars)
-  > and `/admin/credits` reads that ledger per purpose. That is why the AI
-  > row there answers "which feature is spending", which no provider console
-  > could.
-- **Accounting:** Zoho Books (live); Odoo planning is archived
-- **Hosting:** Vultr VPS — Nginx + PM2 (NOT
-  Hetzner — operator has corrected this multiple times)
-- **Error monitoring:** Sentry
-- **Uptime monitoring:** UptimeRobot
-
-**Ports:** 3000 frontend, 3001 backend, 5432 PostgreSQL,
-7700 Meilisearch.
+- Nightly **02:10 SAST** via the `alloutdoor` user's crontab
+  (`infra/backup/backup.sh`, deployed to `~/bin/backup.sh`). **14-day** retention.
+- It backs up **three trees**: `db/`, `uploads/` (the encrypted secure-upload tree)
+  and `cip/`. A `pg_dump` alone is not a complete backup — identity documents,
+  licence scans and safe photographs live on disk, and restoring the database
+  alone leaves rows whose bytes are gone.
+- ⚠️ **A restore is impossible without `ID_HASH_SECRET`.** The uploads archive is
+  AES-256-GCM encrypted with a key derived from it. That value lives only in the
+  password manager, deliberately not beside the ciphertext; rotating it makes
+  every existing archive permanently unreadable.
+- ⚠️ **Backups are written to the same disk as the originals.** They protect
+  against a bad migration or a wrong DELETE, **not** against losing the machine.
+  Off-box copies do not exist.
+- **How a failure is noticed:** a run that FAILED writes a `BACKUP_FAILED`
+  AdminAlert via psql (so it works when Node is what is down); a run that NEVER
+  HAPPENED shows as a stale `cron:lastrun` heartbeat on `/admin/health`.
+- **There is no Sentry.** Error and job-failure surfacing is in-house — AdminAlert
+  rows into `/admin/alerts`, heartbeats on `/admin/health`, and Warden. Nothing
+  pages anyone; somebody has to look.
 
 ---
 
-## Server Layout (Vultr)
+## Environment variables and secrets
 
-⚠️ **TWO BOXES, and only one is production.** Corrected 2026-08-19 — this
-section described the retired one as if it were live.
+Values come from `.env` only. This section names variables, never values.
 
-- ✅ **PRODUCTION: `ssh alloutdoor`.** App at `/home/alloutdoor/app`, pm2
-  services `alloutdoor-backend` / `alloutdoor-frontend`, branch
-  `feat/takealot-ux-parity`. Serves **alloutdoor.co.za**.
-- ❌ **RETIRED: `ssh gungalore`** — the pre-replatform box, dozens of commits
-  behind. Deploying to it applies a REPLACED migration baseline over a live
-  database.
-  **The alias was DELETED from `~/.ssh/config` on 2026-08-29**, at the
-  operator's instruction: the host had stopped answering, and an alias that
-  quietly succeeds against the wrong machine is worse than one that fails.
-  `ssh gungalore` now falls through to a hostname that does not resolve.
-  **Do not recreate it.** `infra/deploy/deploy.sh` hardcodes `HOST=alloutdoor`
-  and refuses anything else.
-  ⚠️ The KEY is still `~/.ssh/gungalore_deploy` and is STILL IN USE — the
-  `alloutdoor` block authenticates with it. Never delete it while tidying up
-  "gungalore" references.
-- Always use the alias form (`ssh alloutdoor "..."`). `ssh user@<IP>` bypasses
-  the operator's local key config and prompts for a password they don't have.
-- Encrypted identity documents live at `/var/lib/alloutdoor/secure-uploads`
-  (`SECURE_UPLOAD_DIR`, mode 0700) — OUTSIDE the app dir, so deploys never
-  touch it. It is NOT in a pg_dump; see `infra/backup/`.
-- The marketing landing page at `/var/www/html` is separate —
-  **never touch it**.
-- Both boxes are Vultr. Never Hetzner. No global IPv6.
-- Ballistic Calculator is its own app on the same VPS — code lives
-  at `~/ballistics-app/` (own Postgres DB, own pm2 services, own
-  Nginx block at `ballistics.gungalore.co.za`). The marketplace
-  stays the marketplace; ballistics is independent.
-- Short-link domain: `gg.co.za` (for SMS action links).
-- Staging not currently provisioned — work hits prod after local
-  build + type-check passes. Re-evaluate before public launch.
+**Frontend**: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
+`NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL`,
+`NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL`,
+`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `NEXT_PUBLIC_SCANNER_V3`,
+`NEXT_PUBLIC_DISABLE_PWA` (absent in production, which is the correct resting
+state — do not read its absence as the switch being broken).
 
----
+**Backend**: `DATABASE_URL`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`,
+`JWT_ADMIN_SECRET`, `ID_HASH_SECRET`, `HEALTH_PING_SECRET`, `VERIFYNOW_API_KEY`,
+`VERIFYNOW_BASE_URL`, `VERIFYNOW_MODE`, `GEMINI_API_KEY`, `LLM_PROVIDER`,
+`LLM_MODEL`, `ANTHROPIC_API_KEY` (rollback only), `CLOUDINARY_CLOUD_NAME`,
+`CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `MEILISEARCH_HOST`,
+`MEILISEARCH_API_KEY`, `SMSPORTAL_CLIENT_ID`, `SMSPORTAL_API_SECRET`,
+`RESEND_API_KEY`, `PUDO_API_KEY`, `BOBGO_API_KEY`, `BOBGO_BASE_URL`,
+`BOBGO_WEBHOOK_SECRET`, `GOOGLE_MAPS_API_KEY`, `GOOGLE_VISION_API_KEY`,
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`,
+`AWS_KYC_LIVENESS_ROLE_ARN`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+`VAPID_SUBJECT`, `WARDEN_TOKEN`, `WARDEN_BASE_URL`,
+`RELOADING_MANUALS_INBOX_DIR`, `RELOADING_MANUALS_STORAGE_DIR`, the
+`ZOHO_BOOKS_*` set, `COMING_SOON_GATE`, `ALLOW_LOCAL_ORIGINS`, and for Peach:
+**`PEACH_CLIENT_ID`, `PEACH_CLIENT_SECRET`, `PEACH_MERCHANT_ID`,
+`PEACH_ENTITY_ID`, `PEACH_SECRET`, `PEACH_ENV`**.
 
-## Environment Variables & Secrets — Absolute Rule
+⚠️ **The Peach names matter.** `PEACH_ACCESS_TOKEN` and `PEACH_BASE_URL` are read
+by nothing — hosts are hardcoded per environment. An operator setting the wrong
+names at go-live gets a silent mock, because missing credentials do not stop the
+boot. None of the six are set on production today, which is a second, independent
+reason the rail is inert.
 
-**Secrets live only in `.env` files. Never anywhere else.**
+⚠️ **`ALLOW_LOCAL_ORIGINS`** lets the production API accept credentialed requests
+from localhost and LAN origins, so a developer can run the frontend locally
+against real data. It warns on every boot and raises a Desk card. It is currently
+**false**. Never turn it on once the platform carries real members.
 
-- `.gitignore` excluding `.env`, `.env.local`, and any credential
-  files MUST be the first commit of the new repository, before any
-  secret exists near the project.
-- Never paste a secret value into this file, into a prompt, into a
-  commit message, or into chat. This file references variable
-  **names** only.
-- If a secret is ever exposed, treat it as compromised and rotate
-  it immediately.
-
-**Variable names used by the project (values come from `.env`):**
-
-Frontend (`.env.local`): `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
-`CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_SIGN_IN_URL`,
-`NEXT_PUBLIC_CLERK_SIGN_UP_URL`,
-`NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL`,
-`NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL`, `NEXT_PUBLIC_API_URL`.
-
-Backend (`.env`): `DATABASE_URL`, `CLERK_SECRET_KEY`,
-`CLERK_WEBHOOK_SECRET`, `JWT_ADMIN_SECRET`, `VERIFYNOW_API_KEY`,
-`VERIFYNOW_BASE_URL`, `GEMINI_API_KEY`, `LLM_PROVIDER`, `LLM_MODEL`,
-`ANTHROPIC_API_KEY` (rollback only), `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`,
-`MEILISEARCH_HOST`, `MEILISEARCH_API_KEY`, `SMSPORTAL_CLIENT_ID`,
-`SMSPORTAL_API_SECRET`, `RESEND_API_KEY`, `PUDO_API_KEY`,
-`TCG_API_KEY`, `TCG_WEBHOOK_SECRET`, `BOBGO_API_KEY`,
-`BOBGO_BASE_URL`, `BOBGO_WEBHOOK_SECRET`, `GOOGLE_MAPS_API_KEY`,
-`ODOO_API_KEY`, `ODOO_URL`, `ODOO_DB`, `PEACH_ENTITY_ID`,
-`PEACH_ACCESS_TOKEN`, `PEACH_BASE_URL`.
-
-The `deploy now` webhook prompts may auto-read `TCG_WEBHOOK_SECRET`
-from the server `.env` — that is fine; it is read on the server,
-never printed.
+`STITCH_CLIENT_ID` / `STITCH_CLIENT_SECRET` are dead vars from a rejected
+evaluation. `ODOO_*` and `TCG_*` are gone.
 
 ---
 
-## Automate It — Do Not Ask
+## Tech stack
 
-**If the system can determine a value, WRITE it.** Never park it in a confirm
-step and wait for the member to come back and tick a box.
+- **Frontend:** Next.js 16 (App Router) + TypeScript + Tailwind.
+  ⚠️ **Turbopack is opted OUT** — both `dev` and `build` pass `--webpack`.
+  Anything reasoning "Turbopack in dev" is wrong here.
+- **Backend:** NestJS + TypeScript. **ORM:** Prisma 7. **DB:** PostgreSQL.
+- **Search:** Meilisearch. **Images:** Cloudinary.
+- **Auth:** Clerk (buyers + sellers); custom JWT (admin).
+- **SMS:** SMSPortal. **Email:** Resend. **KYC:** VerifyNow (+ AWS for liveness).
+- **Shipping:** Pudo (lockers) + **Bob Go** (door). See Shipping.
+- **Payments:** Peach — built, **inert**. See Money.
+- **Accounting:** Zoho Books (live). Odoo was the earlier plan and is archived —
+  do not build against it.
+- **AI:** Gemini 3.5 Flash-Lite through the Google Gen AI API.
+  ⚠️ **Every model call goes through ONE adapter** — `LlmService` in
+  `backend/src/common/llm/`. No service builds its own client, picks its own model
+  or parses a provider response; they speak `LlmRequest`/`LlmResponse`.
+  Env: `GEMINI_API_KEY`, `LLM_PROVIDER` (default `gemini`), `LLM_MODEL`.
+  **Anthropic is the ROLLBACK LEVER, not a second supported mode:**
+  `LLM_PROVIDER=anthropic` plus an explicit `LLM_MODEL` and a reload puts the
+  platform back with no deploy. It REQUIRES `LLM_MODEL` — no Anthropic model id is
+  guessed, because every one this codebase used is a dated snapshot.
+  Spend is metered by us, not the provider: `LlmService` writes an `AiUsage` row
+  per call (purpose, tokens, latency, cost) and `/admin/credits` reads that ledger.
 
-> Operator, 2026-08-25: "if the certificate date is determined by the math
-> insert it, don't wait for the user to go and confirm it. Same for the
-> licenses, they all have an expiry date, insert it. No further user
-> interaction required. Thats why we are designing this system, for automation
-> and ease of use!"
+**Prisma 7 notes (do not revert):** generator is `prisma-client-js` (not
+`prisma-client`, which emits ESM incompatible with Nest's CommonJS output);
+`PrismaService` passes `adapter: new PrismaPg(DATABASE_URL)` to `super()` because
+Prisma 7's WASM engine requires an explicit driver adapter; CLI config lives in
+`backend/prisma.config.ts`.
 
-This overturned a "safety rail" in the Document Centre: `Credential.confirmedAt`
-was null until the member said the dates were right, and the reminder sweep
-ignored every row without it. Defensible in isolation, and it meant a member
-who uploaded a firearm licence and never went back to tick a box got **no
-renewal reminder at all**. A cautious blank is not safer than a good answer.
-For a product whose whole job is warning somebody before a licence expires,
-silence is the worst outcome available.
-
-Applying it:
-
-- **Fill it in, arm it, let them change it.** Editable beats unasked.
-- **Gate on OUR confidence, not on their attention.** Do not write a reading we
-  are unsure of, and never invent one that is simply absent — absent stays
-  absent, which is a different thing from wrong.
-- **Record provenance** whenever a value is written for them, so a later
-  recomputation can tell its own arithmetic from something they typed, and
-  never overwrites theirs.
-- **Say it was filled in**, on the row, in passing — never as a task.
-- Look for the same pattern elsewhere. Any confirm step guarding a value we
-  already hold is work we invented for the member.
-
-## Absolute Rules — Never Break These
-
-1. **The word "escrow" never appears anywhere** — not in code, UI,
-   comments, or docs. Use: `paymentStatus`, "funds held", "payment
-   protected", "payment released".
-2. **Firearms and barrels are dealer transfer ONLY.** No courier,
-   no Pudo locker, no meet-up — ever. This is hardcoded; the backend
-   forces it regardless of any UI input.
-3. **Air rifles are NOT firearms** under SA law. No licence needed;
-   they ship as a normal accessory. Category slug: `air-rifles`.
-4. **Every notification fires on both channels** — SMS (SMSPortal)
-   and email (Resend) — simultaneously, for every notifiable event.
-5. **KYC is a seller-only gate** (see KYC Policy). No code path may
-   check `kycStatus` on a user who is buying, bidding, or making an
-   offer.
-6. **Live ammunition, primers and propellant are banned
-   platform-wide.** Empty/once-fired brass and projectiles/bullets
-   are allowed.
-7. **Never name a competitor** in any user-facing copy (see
-   Marketing).
-8. Feature flags stay `false` until a module is fully ready.
-9. **No wallet.** There is no user balance, stored credit, or
-   ledger. All money moves per-transaction through the paygate.
-10. **No public seller profile page** and **no dealer directory
-    page.** Seller reputation surfaces only as the tier badge and
-    rating on the listing itself.
-11. **Never expose real names to other users.** All public-facing
-    surfaces (bid history, listing seller card, offers, reviews,
-    Q&A, featured-slot occupants, "high bidder" displays, /my/sales
-    buyer attribution) show the user's `username` only — never
-    `firstName` / `lastName` / initials, never with an `@` prefix.
-    Real names exist only inside KYC flows, paid-transaction
-    internals (dealer transfer paperwork, dispatch addresses),
-    PRIVATE_ARRANGE post-consent contact-reveal, admin panels, and
-    the signed-in user seeing their own data. Fallback for users
-    without a username: "Anonymous bidder" / "Anonymous seller" —
-    never a first name. Usernames exist specifically to stop
-    platform users finding each other on social media and bypassing
-    Gun Galore.
+⚠️ **Every module that mounts a guarded controller must resolve that guard's
+dependencies itself.** Nest resolves a controller's `@UseGuards` classes inside
+the controller's **own** module; a guard registered globally elsewhere does not
+cover it. `AdminJwtGuard` injects `JwtService`, `PrismaService` and `Reflector`, so
+any module with an admin controller needs `JwtModule.register({})` in `imports`
+and `AdminJwtGuard` in `providers`. Getting this wrong crash-loops the backend at
+boot while `tsc` and every unit test stay green — it took the site down for four
+minutes on 2026-09-07. **Give every such module a boot spec** that compiles the
+module the way the app does; `news.module.spec.ts` and `crime-stats.module.spec.ts`
+are the pattern.
 
 ---
 
-## The Four Modules
+## What is live, what is inert, what is gone
 
-| Module | Name | Notes |
-|--------|------|-------|
-| M1 | Secondhand Marketplace | Buy Now + Take a Shot listings. Build first. |
-| M2 | Auctions | Full proxy-bid auction system. |
-| M3 | New Store | New-goods retail store. |
-| M4 | Swap | Item-for-item swap module. |
+**Live and trading-shaped:** the storefront (Buy Now + Auction), offers, the cart
+and checkout flow (503 today), messaging, ratings and seller tiers, wishlist and
+saved searches, notifications (email + SMS + in-app inbox + web push), the Desk,
+the Licence Centre / Document Centre, the Motivations builder, The Bench, crime
+stats, news clippings, complaints, the reloading corpus, Warden.
 
-Listing types across the platform: `BUY_NOW`, `AUCTION`,
-`TAKE_A_SHOT`.
+**Built but INERT, behind a switch:**
+- **Payments (Peach).** `PAYMENT_MODE` and `PAYMENTS_LIVE` are both unset, so
+  every checkout returns **503**. Going live = credentials + both flags.
+- **Bob Go door delivery.** `bobgo_enabled` defaults **false**, and with it off
+  there is no door rail at all — a door quote is refused outright. Its live value
+  is a DB row and cannot be read from the repo; check the box before touching
+  delivery.
+- **Peach BANV** (bank verification). `isBanvEnabled()` gates it; until it is on,
+  an admin reviews the bank-holder name against the KYC identity by hand before
+  the first payout. **Do not claim automated AVS in user-facing copy.**
 
----
+**Gone — do not rebuild against it, do not go looking for it:**
+- **Featured Slots** (paid ad placement) — removed 2026-08-26. Six `FeaturedSlot*`
+  Prisma models and `Listing.isFeatured` survive orphaned on purpose.
+- **Swop / M4 Swap** — removed from code and routes; `SwapProposal` / `Swap`
+  models survive. **M3 New Store** was never built.
+- **Take a Shot as a listing mode** — since 2026-08-27 it is the "also accept
+  offers" toggle on a Buy Now or Auction listing, not a third mode. The
+  `TAKE_A_SHOT` enum value survives.
+- **Hunting Packages / Experiences, AO PRO, Ask Boet chat, Daily Deals,
+  the prize draw, Load Lab** (replaced by The Bench).
+- **The Courier Guy (TCG)** — retired 2026-09-04. The `TCG` enum value survives
+  and now names the **door shape**, served by Bob Go.
+- **Manual EFT pay-in**, **Stitch**, **Odoo**, **Sentry**, the legacy `/admin`
+  dashboard, the 63-file email template pack.
 
-## Build Roadmap (Phased)
-
-Build in this order. Each phase is specced, built, reviewed, and
-stabilised before the next.
-
-1. **Foundation** — repo, `.gitignore`, Next.js + NestJS scaffold,
-   Prisma schema, Postgres, Clerk auth, Meilisearch, Cloudinary.
-2. **M1 Listings** — create/edit/browse/search listings, listing
-   detail, categories, photos, listing-quality scoring.
-3. **Shipping** — Pudo locker API (L2L, ~2,700 lockers, 24h cache),
-   TCG door API, dealer-transfer routing for firearms, buyer
-   delivery-address collection, address standardisation.
-4. **Payments** — Peach Checkout V2 hosted checkout,
-   `PaymentStatus` flow, commission calculation, seller payouts,
-   penalties.
-5. **Messaging** — buyer↔seller threaded chat scoped per
-   transaction, with AI moderation.
-6. **Ratings & Trust** — ratings, private Trust Score, seller
-   tiers.
-7. **Admin Panel** — Superadmin/Admin roles, verification queue,
-   moderation queue, overrides.
-8. **KYC** — VerifyNow seller verification, bank verification.
-9. **Notifications** — SMSPortal + Resend on every event;
-   single-use SMS action tokens.
-10. **M2 Auctions** — proxy bidding, increments, snipe protection,
-    Buy Now, reserve, strikes.
-11. **Take a Shot** — confidential offers flow.
-12. **AI Listing Moderation** — every new listing reviewed by the
-    platform model before going live.
-13. **Webhooks** — TCG + Pudo shipping webhooks.
-14. **PWA Phases A–C** — installability + icons + conservative SW
-    with offline fallback (done; see PWA section for state).
-15. **SEO**.
-16. **Odoo accounting integration**.
-17. **M3 New Store**, then **M4 Swap** — after M1/M2 are live and
-    stable.
-
-PWA Phase D (web push notifications) and Phase E (install-prompt
-UX polish, image + API caching strategies layered onto the
-conservative SW) are deferred to their own later phases.
+⚠️ **An orphaned Prisma model is not evidence a feature is live.** Several removed
+features deliberately kept their tables, and live sweeps still read those columns
+to stay correctly scoped. Check for a route and a controller before believing in a
+feature. Equally, do not drop those models without a migration review.
 
 ---
 
-## UI Design — Apply to Every Screen
+## Money
 
-The visual reference is the **Claude Design handoff mockup** (dark
-theme, in the `gun-galore-website` bundle). Recreate it
-pixel-perfectly in React/Next.js. Match the visual output; do not
-copy the prototype's internal structure.
+### Commission
 
-**Design tokens** (canonical file: `colors_and_type.css` from the
-handoff; mirror into `/docs/design/`):
-
-- **Surfaces:** bg `#0f0f0f`, deep bg `#0a0a0a`, card `#1a1a1a`,
-  card hover `#202020`, inset `#131313`.
-- **Borders:** `#2a2a2a` (0.5px card borders), hover `#3a3a3a`,
-  dividers `#1e1e1e`. All borders are 0.5px solid (1px + `scale(.5)`
-  fallback if 0.5px is not honoured).
-- **Brand red `#C8102E`** (hover `#a00d24`) — the only chromatic
-  colour. Used ONLY for: prices, primary CTAs, active states, the
-  logo dot, and live badges. Nowhere else.
-- **Text:** `#f5f5f5` primary, `#a0a0a0` secondary, `#6b6b6b`
-  tertiary.
-- **Status:** success `#2f9e6b`, warning `#d49a3a`.
-- **Type:** system font stack. Weights **400 and 500 ONLY** — never
-  600/700. Letter-spacing −0.01em body.
-- **No gradients. No glow. No drop shadows BY DEFAULT** — but tiles
-  opt in via `.gg-tile` (2026-08-28, operator: "all the tiles on the
-  website looks stale and boring, can we give them like a shade or
-  small 3D effect"). The page canvas went white the same week, which
-  removed the fill contrast that used to separate a card from the page
-  and left a 1px border doing the whole job. See the gotcha below.
-- **Border-radius max 8px** (cards/buttons/inputs 6px; photo badges
-  4px; tiny tags / verified pill 3px; sell CTA banner 8px).
-- **Mobile-first**, ~390px base; content max-width 1280px.
-
-**CSS gotchas that fail SILENTLY — both have already produced dead code:**
-
-- `* { box-shadow: none !important }` sits at the top of `globals.css`.
-  It is unscoped, so **every** `box-shadow` anywhere in the app — inline
-  styles and keyframes included — is dead **unless the element carries
-  `.gg-tile`**. Do not write a raw `box-shadow` expecting it to render.
-  To give a surface depth, add `.gg-tile` (resting elevation) and
-  `.gg-tile-lift` (hover raise); both use `--elev-1` / `--elev-2`, which
-  are warm-tinted from the ink rather than black — `rgba(0,0,0,…)` goes
-  visibly grey over these neutrals.
-
-  **Do NOT "fix" this by deleting the kill switch.** Thirty `box-shadow`
-  declarations are already written across the app by people who knew none
-  of them could render, including `0 30px 80px -20px rgba(0,0,0,.7)`, a
-  `rgba(0,0,0,0.55)` drop sized for the retired dark theme, and a
-  `ggw-pulse` keyframe that throbs a red glow. Removing the line switches
-  all of them on at once, on a white site.
-
-  Note also that `.gg-tile` declares its own `transition`, and
-  `globals.css` loads after `@tailwind utilities` — so it BEATS a
-  `transition-colors` utility on the same element. Any card gaining
-  `.gg-tile` must have `transition-colors` removed, or its existing hover
-  tint silently stops animating.
-- A `body:has(...)` rule scores only **(0,1,1)** and therefore loses to
-  `html:not([data-standalone='true']) body` in `globals.css`, which is
-  (0,1,2) and matches on every browser-mode page. Source order does not
-  help. Prefix with `html:not([data-standalone='true'])` to reach
-  (0,2,2). Symptom when you get this wrong: a page that will not scroll
-  its last inch, with nothing logged anywhere.
-
-**Listing card:** 4:3 photo, category badge top-left, condition
-badge top-right, price in red, seller tier badge + rating.
-
-**Navigation:** sticky top bar — logo + primary nav (Home, Sell,
-and when signed in: Your bids, Transactions, Messages
-icon with unread badge, avatar → dashboard). A module launcher
-offers Marketplace / Auctions. Primary nav is always
-visible, never hidden in a hamburger on desktop.
-
-**Routes from the mockup that are NOT built:** `wallet`, `seller`,
-`dealers` — these features are dropped. Every other route maps to a
-feature in this document.
-
-### Page background + reveal animation (HOUSE STANDARD)
-
-Every signed-in page (Sell, Profile, Edit Profile, surface views like
-Marketplace/Auctions/Take a Shot, Dashboard, all
-sub-pages we add later) wraps its `<main>` with these two components:
-
-```tsx
-<main className="relative ..." style={{ zIndex: 1 }}>
-  <PageBackground imageSrc="/<scene>.jpg" opacity={0.18} />
-  <PageReveal>
-    {/* sections, each with `data-reveal` */}
-  </PageReveal>
-</main>
-```
-
-- `<PageBackground>` is a faint full-viewport photo with a dark tint
-  and radial vignette. Use whichever scene fits the route (`/setting.jpg`
-  for settings, `/marketplace.jpg` for the marketplace surface, etc.).
-  Opacity `0.18` is the house value — don't bump without a reason.
-- `<PageReveal>` defaults to `delay=0.5`, `duration=2.5`, `variant="random"`.
-  Don't pass these unless a specific page needs to override. The random
-  variant means the user sees a fresh keyframe (`slide-up`,
-  `scale-in`, `slide-right`, or `blur-in`) per page-load.
-- Mark every direct-child block that should animate with the
-  `data-reveal` attribute. The scoped CSS matches by `:nth-of-type` and
-  ramps each element's `animation-delay` by `stagger` (default 0.18s).
-
----
-
-## Logo Rules — Never Break These
-
-- The **All Outdoor** wordmark is operator-supplied artwork (2026-08-12), traced
-  to vector: Table Mountain, a kudu, a bakkie and an acacia over the ALL Outdoor
-  lockup. Four files, all the SAME 56 paths:
-  - `logo.svg` — **PRIMARY**, warm off-white `#f0ede4`. The UI is DARK-ONLY
-    (`--bg #0f0f0f`), so the operator's dark green would be invisible on it.
-    Use it where the mark is drawn **≥120px tall**: the hero, share cards, print.
-  - `logo-nav.svg` — the **wordmark only**, 2.66:1. Use it everywhere the mark
-    is drawn SMALL: nav bar (36px mobile / 44px desktop), nav drawer, checkout
-    header, sign-in, sign-up, error, not-found, offline, KYC, profile edit.
-    Windowed out of the same artwork by **two** nested `<svg>` viewports —
-    "ALL" and "Outdoor" separately, because the scene sits in the gap between
-    them and no single rectangle isolates the type.
-  - `logo-dark.svg` — the original green `#3c4227`, for LIGHT surfaces only
-    (print, documents). Not used anywhere in the app today.
-  - `logo-mark.svg` — the square icon tile. Table Mountain + kudu + bakkie,
-    cut out by **viewBox only** so it can never drift from the wordmark.
-- ⚠️ **Never render `logo.svg` small.** It is 1.5:1, so at a 36px height it
-  draws 54px wide and the wordmark lands at ~7px — an illegible smudge. This
-  shipped on every page for a while before anyone measured it. Small = `logo-nav.svg`.
-- The only text-free window in the artwork is **x 634–1134, y 240–700**: "ALL"
-  ends at x=624 and "Outdoor" occupies everything below y=700 out to x=1134.
-  Any new crop must stay inside it. Measure a new crop by rasterising the band
-  and scanning pixel rows — the bounds in `logo-nav.svg`'s header were once off
-  by a unit and opened a window inside the artwork.
-- A nested `<svg>` clips to its **viewport, not its viewBox**. Size the viewport
-  to the viewBox aspect or letterboxing reveals the artwork sitting alongside —
-  the first cut of the mark rendered a stray "L".
-- `favicon.ico`'s 16/32/48 frames are a **simplified Table Mountain silhouette**,
-  not the full mark: traced line art dissolves below ~64px. 64/128/256 carry the
-  real mark.
-- ⚠️ The artwork contains a recognisable **Toyota Hilux with the Toyota badge and
-  HILUX wordmark** — a third party's trademark inside our logo. A legal question
-  for the operator, not a code one. Flagged, not changed.
-- The old Gun Galore mark set the wordmark inside a
-  **bullet/cartridge outline** — a firearm motif on every page, in the app icon
-  and in every share unfurl. Never reinstate it, and keep any replacement free of
-  weapon imagery: the logo is the one asset that appears everywhere, including in
-  contexts the auth wall does not cover.
-- The eight PNG icons in `frontend/public/` are generated from these. Regenerate
-  all of them together or the install prompt and the tab icon disagree.
-- `app/manifest.ts` has NO screenshots. The three that were there were live prod
-  captures showing the old logo and hero, displayed full size in Android's
-  install dialog. Recapture SIGNED OUT before re-adding.
-- On centred pages: width 100%, max-width 300px, never a fixed
-  height (preserve the 5:1 ratio).
-- In the nav bar: 44px tall, top-left.
-- Module marks (`marketplace-logo.svg`, `auction-logo.svg`,
-  `used-marketplace-logo.svg`) are used as-is.
-
----
-
-## Commission Model
-
-Marginal tiers, tax-bracket style — implemented in
-`backend/src/payments/fee.calculator.ts`. Reduced 2026-05-20 by 1pp
-across the board and a R30 minimum platform fee was added.
+Marginal tiers, tax-bracket style (`backend/src/payments/fee.calculator.ts`):
 
 | Band | Rate |
 |------|------|
@@ -723,2012 +415,678 @@ across the board and a R30 minimum platform fee was added.
 | R20,001 – R100,000 | 5% |
 | Above R100,000 | 3% |
 
-- **Minimum platform fee:** R10 per sale (lowered from R30 on
-  2026-08-15 — R30 existed to cover VerifyNow KYC at ~R28/seller, a
-  cost that no longer exists). Floor never exceeds the listing price
-  itself. Under the markup model the floor is VISIBLE on the price
-  tag: a R50 ask lists at R64.14 (was R84.94 at the old floor).
+Minimum platform fee **R10** per sale, never more than the listing price itself.
+Top Seller tier gets a 0.5% discount.
 
-### BUY NOW — the fee is built INTO the price (operator 2026-08-15)
+⚠️ **Commission runs in TWO directions on the same columns, so read
+`Transaction.feeModel` before describing any sale.** `feeModelFor()` snapshots it
+at checkout.
 
-**The seller lists for free and receives their full asking price.** Our
-commission and the Peach fee are added ON TOP to produce the price the
-buyer sees. Same percentages, opposite direction from the old model.
+- **`BUYNOW_MARKUP`** — the seller lists for free and receives their full asking
+  price; commission and the gateway fee are added ON TOP to make the buyer-facing
+  price. `Listing.price` is what the buyer sees and pays. `Listing.sellerAskCents`
+  is the seller's take-home and is **owner-gated — never add it to
+  `PUBLIC_LISTING_SELECT`**, it is our margin per item. Checkout recomputes
+  FORWARD from the ask (the markup is banded, floored and discounted, so it is not
+  reliably invertible). Multi-buy is priced per unit and multiplied. **Nothing is
+  added at checkout but delivery** — no processing-fee row, it is already inside
+  the price. The compare-at "was" price validates against the marked-up price, or
+  a "was" could sit below the live price, which is a misleading discount claim
+  under CPA s41.
+- **`SELLER_DEDUCT`** — auctions and offers. A bid discovers the price, so there
+  is nothing to mark up: commission comes out of the seller and the **buyer** pays
+  the gateway fee, surfaced as a **"Transaction fee"** row (never "processing fee"
+  or "service fee"). Buy Now *on an auction* follows the auction rules.
 
-```
-ask                                    R450.00   Listing.sellerAskCents
-+ commission (bands above, min R30)    R 40.50
-= subtotal                             R490.50
-+ Peach on the subtotal                R 21.47   (4.025% + R1.73 incl VAT)
-= Listing.price                        R511.97   what the buyer sees & pays
-```
+**Delivery carries a 10% margin, quoted INCLUSIVE** — the buyer sees one figure
+and pays exactly that. Never render it as "quote + 10%" or a separate handling
+row. The split is server-side only (`Transaction.shippingCost` = carrier
+remittance, `shippingHandlingCents` = ours) because they are different obligations
+at payout. The gateway fee is charged on the item plus the **carrier** rate, never
+on our own delivery margin.
 
-- `Listing.price` keeps its meaning: **the buyer-facing price**. Every
-  card, search result, PDP and cart reads it unchanged.
-- `Listing.sellerAskCents` is the seller's take-home. **OWNER-GATED —
-  never add it to `PUBLIC_LISTING_SELECT`**, it is our margin per item.
-- `POST /listings` still takes `price`; for BUY_NOW that field MEANS the
-  ask and the server marks it up. Never send a marked-up number.
-- Checkout uses `FeeCalculator.breakdownBuyNow()` and recomputes FORWARD
-  from the ask — the markup is banded, floored and Top-Seller-discounted,
-  so it is not reliably invertible.
-- Multi-buy is priced PER UNIT and multiplied. Re-banding the line would
-  make two cost less than twice the card price.
-- **Nothing is added at checkout but delivery.** No processing-fee row
-  on a Buy Now order summary — it is already inside the price and a row
-  would double-count it to the reader.
-- **Delivery carries a 10% margin** (was a flat R15/waybill; changed
-  2026-08-15). It is QUOTED INCLUSIVE — the buyer sees ONE delivery
-  figure in the picker and pays exactly that. Never render it as
-  "quote + 10%" or as a separate Handling row. The split is kept
-  server-side only (`Transaction.shippingCost` = carrier remittance,
-  `shippingHandlingCents` = ours) because they are different
-  obligations at payout. The gateway fee is charged on the item plus
-  the CARRIER rate — never on our own delivery margin, which is why
-  `/shipping/delivery-options` also returns `carrierRateCents`.
-- The compare-at ("was") price validates against the MARKED-UP price, not
-  the ask. Otherwise a "was" could sit below the live price — a
-  misleading discount claim under CPA s41.
-- Known residual: Peach bills on the final amount, not the subtotal we
-  mark up, so ~R0.86 per R450 sale is unrecovered (0.17%). Pinned by test.
+### Payments (Peach) — deployed, inert
 
-### AUCTIONS & OFFERS — unchanged direction
+Checkout V2 (pay-in) + Payouts + BANV. Stitch, PayFast, Ozow, iKhokha, Yoco and
+KoraPay were all evaluated and rejected. **There is no Stitch code in this repo.**
 
-A bid discovers the price, so there is nothing to mark up.
+- **Pay-in:** `createCheckout()` → hosted page → `/checkout/complete?id=…` →
+  `getPaymentStatus()` verifies AND matches the bound transaction and amount →
+  flip `PaymentStatus`. DECIMAL ZAR on pay-in, integer cents on payouts — do not
+  mix them. 3DS/OTP happens on Peach's page; the buyer is always present.
+- **Webhooks:** four routes on `transactions.controller.ts`
+  (`/webhook/peach`, `-dispute`, `-banv`, `-payout`), HMAC verified.
+  ⚠️ **A bad signature returns 200 `{received: true}`** with the handler skipped
+  and `alertWebhookSignatureFailure()` raised — **not** a 401. No DB writes occur.
+  Anyone grepping logs for 401s to diagnose a signature mismatch will find nothing.
+- **Idempotency:** `peachMerchantRef`, `peachPayoutId` and `peachPaymentId` are
+  `@unique` to block replay. ⚠️ `peachCheckoutId` is **not** unique — it is the
+  primary webhook match, with `peachMerchantRef` as the fallback.
+- **Pay-out:** ⚠️ **nothing pays a seller automatically.** Dealer-verification
+  APPROVED (firearms) or buyer Confirm-Delivery (non-firearms) make a payout DUE
+  (they stamp `releasedAt`); an admin then runs the batch —
+  `ManualPaymentsService.runDuePayouts()` → `peach.createPayout()`, gated on
+  `PAYMENTS_LIVE`, stamping `paidOutAt` only on rows Peach accepts and re-queueing
+  on a Failed webhook.
+- **Refunds:** `peach.refundPayment(...)` is called BEFORE flipping the row to
+  `REFUNDED`. Money moves first, ledger second — never the other way around.
+- **`PaymentStatus`:** `HELD`, `PENDING_ADMIN_VERIFICATION`, `RELEASED`,
+  `DISPUTED`, `REFUNDED`.
 
-- Commission is **deducted from the seller** exactly as before.
-- The **BUYER pays the gateway fee**, surfaced as a **"Transaction fee"**
-  row. Never label it "processing fee" or "service fee".
-- Top Seller tier gets a 0.5% commission discount. Under the Buy Now
-  markup that discount now surfaces as a CHEAPER listing rather than a
-  bigger payout, since the seller already receives 100%.
-- **Buy Now ON AN AUCTION follows the AUCTION rules** (operator
-  2026-08-15) — not marked up, commission out of the seller, buyer pays
-  the Transaction fee. `Listing.buyNowPrice` is stored and validated
-  but nothing purchases it yet; the rule is recorded on the schema
-  field and at the fee branch for whoever builds it.
+### KYC — seller-only
 
----
-
-## Seller Tiers, Trust Score & Penalties (LOCKED)
-
-**Tiers** (auto-upgrade; reputation badge only; do NOT cap listing
-volume; no upfront deposit):
-
-- **New** — 0 sales
-- **Established** — 3+ sales, 50+ score
-- **Trusted** — 10+ sales, 70+ score
-- **Top Seller** — 25+ sales, 85+ score (0.5% commission discount)
-- **Dealer** — admin-set, sticky
-
-**Private Trust Score (0–100)** — visible only on the seller's own
-dashboard. Never shown publicly. Components: completed sales 25,
-rating average 25, delivery success 20, confirmation speed 15,
-listing quality 10 (Claude assessment), account age 5.
-
-**Cancellation penalty escalation** — applied only AFTER a failure,
-each requiring admin approval. All of the seller's listings are
-suspended until the fine is paid (via the paygate or deducted from
-the next payout):
-
-- 1st failure within 6 months — R150
-- 2nd — R300 + tier reset to New
-- 3rd — permanent ban
+- Buyers, bidders and offer-makers **never** need KYC, in any module.
+- The seller gate fires from the shared checkout core
+  (`backend/src/payments/transactions.service.ts:612-618`, inside
+  `reserveAndCreateLine()`) when a buyer **starts** checkout. It is
+  fire-and-forget and idempotent, and both single-item and multi-item checkout go
+  through that core.
+- **The payout hard gate** is seller `kycStatus === VERIFIED` **and**
+  `profileCompletedAt` set. `collectDue` skips anyone failing it and surfaces them
+  as blocked money in the admin payouts-due preview rather than silently omitting
+  them. `bankVerifiedAt` joins the gate only once BANV is live.
+- ⚠️ **`VERIFYNOW_MODE` defaults to sandbox and production boot only LOGS an
+  error** — the hard throw was deferred. A production box can and does boot with
+  sandbox KYC, which means identity checks pass on canned data. This is a real open
+  item, not a solved one.
+- Never use the word "KYC" in user-facing text — say "Verified" / "Verification".
 
 ---
 
-## KYC Policy (LOCKED)
+## Shipping
 
-KYC is a **seller-only gate**.
+- **Firearms / barrels:** `DEALER_TRANSFER` or `PRIVATE_ARRANGE` only, enforced
+  server-side. Never a courier, never a locker.
+- **Non-firearms:** Pudo locker-to-locker, or door delivery through the `TCG` enum
+  slot now served by Bob Go. `shippingMethod` names the **shape** of the delivery,
+  not the company — route post-booking work on `Transaction.carrierProvider`.
+- **`COLLECTION`** is a real method: buyer collects in person, forced for
+  collection-only categories (trailers, oversized or dangerous goods) and rejected
+  for everything else. Funds stay HELD until the buyer confirms collection, and
+  contact details are revealed only after payment.
+- **`ON_SITE_SERVICE`** — a future-dated on-site service with no parcel.
+- ⚠️ **Bob Go answers HTTP 201 before a courier has agreed.** Every booking starts
+  unconfirmed (`pending-rates`). Branch on `submission`, never on "it did not
+  throw". See `BOBGO-MIGRATION.md`.
+- ⚠️ **The payout gate depends on a correct status map.** Exactly two carrier
+  slugs reach Prisma `DELIVERED`, and `DELIVERED` starts the clock that releases
+  the seller's money. Bob Go aggregates many providers, so its vocabulary is its
+  own. Enumerate it from the sandbox before adding a map row — mapping "in the
+  locker, buyer has not opened it" to DELIVERED pays sellers for goods buyers never
+  received.
+- ⚠️ **Bob Go returns rand with decimals into a codebase that is integer cents
+  from the quote boundary onward.** Both sides are `number`, so types will not
+  catch it. One missed conversion is a 100× error on every shipping charge.
 
-- Buyers, bidders and offer-makers **never** need KYC to transact —
-  anywhere, in any module.
-- Seller KYC is triggered ONLY at `sellerConfirmSale()` in
-  `payments.service.ts`, after Peach confirms payment. The
-  equivalent gate for Take a Shot is in `offers.service.ts` →
-  `acceptOffer()`. **Not** at listing submission.
-- Bank-account verification happens at first payout.
-- Never use the word "KYC" in user-facing text — use "Verified" /
-  "Verification".
+**Webhooks** are public routes, no JWT:
+- **Pudo** → `/api/shipping/webhook/pudo` (tracking status; no auth key).
+- **Bob Go** → `/api/shipping/webhook/bobgo/<secret>/<group>/<action>` — the topic
+  AND the secret travel in the PATH, because subscriptions are registered one
+  topic at a time and we choose the URL, so each self-identifies without relying
+  on custom headers. Five of seven topics registered. Register with
+  `PATCH /webhooks` — **not POST**, which returns 200 and silently creates nothing.
 
----
-
-## Payments
-
-**Provider: Peach Payments.** Checkout V2 (pay-in) + Payouts + BANV.
-
-> ⚠️ **This section said the opposite until 2026-08-12** — "Stitch
-> Express only … Peach is the rejected legacy provider". That was
-> backwards from 2026-07-23 onward and a developer trusting it would
-> have deleted the live integration. It nearly happened. **There is no
-> Stitch code in this repo**: no service, no module, no webhook route.
-> `src/payments/` contains `peach.service.ts`, `peach.module.ts`,
-> `peach-signature.ts`, `peach-banks.ts`. If you find "Stitch" anywhere
-> outside a historical note, it is a leftover, not an instruction.
-
-Stitch was evaluated and dropped. PayFast, Ozow, iKhokha, Yoco, KoraPay
-and direct bank APIs are also rejected. `STITCH_CLIENT_ID` /
-`STITCH_CLIENT_SECRET` still sit in the env as dead vars.
-
-**Deployed but INERT.** The site is not trading. Manual EFT was stripped
-2026-07-16 and checkout returns 503. Two gates in
-`src/payments/payment-mode.ts`: `PAYMENT_MODE=paygate` and
-`PAYMENTS_LIVE=true` (`assertPaymentsLive()` guards every entry point).
-Without `PEACH_*` creds the service runs as a mock. Go-live = creds +
-both flags.
-
-**NEVER use the word "escrow"** in user-facing copy, internal copy,
-or notifications. It is a regulated SA financial term All Outdoor is
-not registered for. Use "funds held" / "payment held" / "held until
-delivery confirmed" instead. This applies everywhere — Terms,
-listing detail, transaction page, emails, SMS, admin panel.
-
-**Peach integration shape** (`peach.service.ts`):
-
-- **Pay-in:** `createCheckout()` → Peach Checkout V2 → buyer pays →
-  `/checkout/complete?id=…` → `getPaymentStatus(checkoutId)` verifies
-  AND matches the bound transaction + amount → flip `PaymentStatus`.
-  DECIMAL ZAR on pay-in, integer cents on payouts — don't mix them.
-- **Webhooks:** four routes on `transactions.controller.ts`, all
-  fail-closed (bad signature = 401, no DB writes):
-  `/api/payments/webhook/peach` (payment),
-  `/webhook/peach-dispute`, `/webhook/peach-banv`, `/webhook/peach-payout`.
-  HMAC verified by `peach-signature.ts` (golden-vector tested; the
-  raw-vs-hex key question is unresolved until the first sandbox txn).
-- **Idempotency columns on `Transaction`:** `peachPaymentId`,
-  `peachCheckoutId`, `peachMerchantRef`, `peachPayoutId` — each
-  `@unique` to block replay — plus `peachResultCode`.
-- **Pay-out:** `createPayout()` to the seller's verified bank account.
-  Triggered on dealer-verification APPROVED (firearms) or buyer
-  Confirm-Delivery (non-firearms). See dealer-verification flow.
-- **Refunds:** `peach.refundPayment(...)` is called BEFORE flipping the
-  row to `REFUNDED`. Money moves first, ledger flips second — never the
-  other way around.
-- **`PaymentStatus` enum:** `HELD`, `PENDING_ADMIN_VERIFICATION`,
-  `RELEASED`, `DISPUTED`, `REFUNDED`.
-- **3DS/OTP:** Peach handles cardholder authentication on its hosted
-  page. Buyer is always present (cardholder-initiated, no
-  recurring/tokenisation in scope for v1).
-- **Bank verification: MANUAL today.** Peach BANV (`verifyBankAccount`,
-  `getBankVerificationResult`, `parseBanvWebhook`) is built and deployed
-  but **inert** — `isBanvEnabled()` gates it, and once live
-  `bankVerifiedAt` gates payouts. Until then `completeProfile` captures
-  bank details as entered (`bankVerifiedAt: null`, `bankAvsResult: null`)
-  and an **admin reviews the bank-holder name against the KYC-verified
-  identity by hand before the first payout**. VerifyNow does ID lookup +
-  face-match (KYC) only, never bank AVS. **Do not claim automated AVS in
-  any user-facing copy** until BANV is switched on — the legal pages say
-  "manual review before first payout" (memory: `project_avs_kyc_ordering`).
-- **`VERIFYNOW_MODE=production`** at boot — asserted by config
-  guard; sandbox is rejected outside dev. Operator memory:
-  `feedback_env_mode_changes` — never flip sandbox↔production
-  without explicit confirmation.
-- `scripts/stitch-redirect-setup.cjs` is **dead** — a leftover from the
-  evaluation. Peach redirect URLs are configured in the Peach dashboard.
-
-**Prohibited:** never enter or store raw card/bank numbers. If a
-user pastes card details into chat or a form, refuse and instruct
-them to enter it themselves on the Peach hosted page.
+Handlers are idempotent, share `findTransactionByTrackingNumber`, map provider
+status to internal `shippingStatus`, fire notifications, always return 200, and
+handle unknown tracking numbers gracefully. ⚠️ Absolute URLs registered with a
+provider must point at **alloutdoor.co.za**.
 
 ---
 
-## Shipping Rules
+## Listings, offers, auctions, moderation
 
-- **Firearms / barrels:** dealer transfer ONLY. Buyer selects their
-  receiving SAPS-licensed dealer during checkout. No courier, no
-  locker, no meet-up. Backend enforces this.
-- **Non-firearms:** Pudo locker-to-locker or TCG door delivery.
-- Local meet-up is retired — the backend forces
-  `offersLocalMeetup: false`.
-- Pudo: live locker API, locker-to-locker model, ~2,700 lockers,
-  24-hour cache. TCG: live door API.
-- Buyer delivery address is collected in the buy flow; addresses
-  are standardised.
+- Required firearm fields per the listing schema. One seller may not post
+  duplicate listings of the same item. Every listing needs real seller-supplied
+  photos — no stock or watermarked images.
+- **Ageing:** non-auction listings age on `Listing.lastRenewedAt` (seeded from
+  `createdAt`, bumped only by an explicit renew/relist — **never** by
+  `updatedAt`, which offer counters and moderation edits touch). A daily 04:00
+  cron nudges at **75 days** and flips to `EXPIRED` and de-indexes at **90**, via
+  `notifications.listingStale({kind})`. Auctions and deal listings are excluded.
+  ⚠️ **`Listing.expiresAt` is a different field** — the 24h pay window on a won
+  auction or accepted offer. Never write it at publish.
+- **Offers:** at most **30% under** the asking price (refused outright — nothing
+  stored, no attempt consumed), and **one offer per buyer per listing**. Sellers
+  have an auto-accept threshold and a separate `autoDeclineThreshold` that rejects
+  a recorded offer.
+- **Auctions:** proxy bidding with a stored max; increments R50/100/250/500/1000;
+  a bid in the final 2 minutes extends the end by 2 minutes; Buy Now only while
+  there are zero bids; `reserveMet` flips when `currentBid >= reservePrice` and the
+  reserve amount is never shown. eBay-style dual-row history: when a bid triggers
+  an existing proxy, two `Bid` rows are written in one transaction and `bidCount`
+  increments by 2. Ties go to the earlier bidder. `maxAmount` is never public.
+- **Seller failure is strikes, not fines.** Three counters on `User` —
+  `auctionStrikes` (3 = bidding suspended), `dispatchStrikes`, and
+  `sellerRejectStrikes` (3 = `sellingBannedAt`: no new listings, buying
+  unaffected, lifted only by an admin). **There is no fine system** — no Penalty
+  model, no admin approval step, no paygate deduction.
+- **Seller tiers** (badge only; no listing-volume cap, no deposit): New (0 sales),
+  Established (3+ / 50+ score), Trusted (10+ / 70+), Top Seller (25+ / 85+, 0.5%
+  commission discount), Dealer (admin-set, sticky). The **private Trust Score**
+  (0–100) is visible only on the seller's own dashboard, never publicly.
 
----
+**Moderation.** Every new listing is reviewed by the platform model before going
+live: APPROVE, AUTO_FIX_AND_APPROVE (silently strips contact info; original kept),
+REJECT (seller sees `publicReason`), HUMAN_REVIEW. Hard reject: live ammunition /
+primers / propellant, hate speech, sexual content, no photos or stock/watermarked
+photos, duplicate listing, contact info visible in photos.
 
-## Listing Rules
-
-- Required firearm fields: as defined in the listing schema
-  (make, model, calibre, condition, type, etc.).
-- One seller may not post duplicate listings of the same item.
-- Every listing needs real, seller-supplied photos — no stock or
-  watermarked images.
-- New listings are reviewed by the platform model before going live (see AI
-  AI Listing Moderation).
-
-**Listing expiry (LOCKED — Buy Now / Take a Shot only):**
-
-- A listing expires **60 days** after it goes live. Set an
-  `expiresAt` timestamp at publish.
-- A daily cron flips expired listings to state `EXPIRED`.
-- The `listing-expiring` email fires at **day 53** (7-day warning);
-  `listing-expired` fires at expiry. Both SMS + email per the
-  notification rule.
-- The seller can relist from an expired listing.
-- Auctions are NOT subject to this — they have
-  their own fixed end times. The 60-day rule applies only to
-  `BUY_NOW` and `TAKE_A_SHOT` listings.
-
----
-
-## Auction System (M2)
-
-- **Creation:** starting bid, optional hidden reserve, duration
-  3/5/7/14 days, optional Buy Now price, optional Featured (R150).
-- **Proxy bidding:** buyer sets a MAX bid; the system bids the
-  minimum increment on their behalf and auto-counters up to that
-  max. `maxAmount` is never exposed publicly.
-- **Increments** (tiered by current bid level): R50 / R100 / R250 /
-  R500 / R1,000.
-- **Snipe protection:** a bid in the final 2 minutes extends
-  `endTime` by 2 minutes; repeats as needed.
-- **Buy Now** is available only while the auction has zero bids.
-- **`reserveMet`** flips true when `currentBid >= reservePrice`; the
-  reserve amount is never shown.
-- **Auction end** (cron, every minute): reserve met → highest
-  bidder wins, 24h to pay; reserve not met → seller may accept /
-  counter / relist; no bids → seller relists.
-- **Non-payment** → strike; the offer passes to the next bidder
-  above reserve only. Three strikes → suspension.
-- Watchlist + alerts supported.
-
-### Proxy resolution rules (LOCKED)
-
-- **eBay-style dual-row history.** When a bid triggers an existing
-  proxy to counter, the system writes TWO `Bid` rows in the same
-  transaction: the new bidder's actual attempt + a separate row for
-  the proxy holder's auto-counter (attributed to them, not the
-  loser). Symmetrically, when a new bidder beats an existing proxy,
-  the system writes the loser's "last stand" row at their max
-  BEFORE the winner's row. `bidCount` increments by 2 on dual-row
-  events so the count matches visible rows. Legacy pre-fix rows
-  (where `amount > maxAmount`) are detectable via the
-  `wasCountered` flag exposed in the auction state API.
-- **One-shot ("Place Bid") respects existing proxies.** Posting
-  R150 cannot defeat a stored max of R500 — the proxy auto-counters
-  and the one-shot bidder is outbid at the visible amount the
-  proxy can reach. Place Bid only wins if its amount strictly
-  exceeds `prevHighMax`.
-- **Ties (equal max) go to the earlier bidder.** Falls through to
-  the proxy-counter branch; both rows recorded at the tied amount.
-- **OUTBID banner** on listing detail when the signed-in user
-  previously bid but is no longer the high bidder. Copy
-  distinguishes "matched your max — ties go to whoever bid first"
-  vs "went above your max", so the user knows which raise will help.
-- **Cancel proxy:** `POST /api/auctions/:listingId/cancel-proxy`
-  writes a new Bid row with `amount = maxAmount = current visible`,
-  leaving the user as high bidder but with zero proxy headroom.
-  Reversible — they re-raise via Auto Bid.
-- **Per-user proxy state:** `GET /api/auctions/:listingId/me`
-  returns `{ hasBid, maxAmount, isHighBidder, proxyActive }`.
-  Drives the green "Auto Bid · ACTIVE · R{maxAmount} (Raise)"
-  button label on the listing detail page.
-- **Current high bidder name** is included in `getAuctionState`
-  response as `currentBidderName` (username only — never real name).
-  Drives the "High bidder: You ✓ / @username" line under the
-  current bid amount.
-
----
-
-## Featured Slots (Ad Surface)
-
-A paid placement system, separate from the M2 auction module —
-sellers bid for one of 10 rotating advertising slots that surface
-on every browse page (rail) and the homepage. Built across
-`backend/src/featured/` + `frontend/app/featured/` +
-`frontend/components/featured-rail.tsx`.
-
-### Slot lifecycle
-
-`VACANT → AUCTION_RUNNING → BIND_WINDOW → OCCUPIED → VACANT` —
-managed by the per-minute `featuredTick` cron in
-`tasks.service.ts`.
-
-- **Auction opens** the moment a slot becomes vacant (no scheduled
-  pre-auction). `closesAt` starts as null — the 24h countdown only
-  begins on the first bid (`bidWindowSec`, default 86400).
-- **Subsequent bids do NOT reset the timer.** Highest bid wins at
-  the timer's expiry.
-- **Bind window** opens for 15 min (`bindWindowSec`, default 900)
-  after the auction closes. The winner picks one of their ACTIVE
-  listings — any `listingType` (BUY_NOW / AUCTION / TAKE_A_SHOT) is
-  valid. If they don't bind, the slot cascades to the runner-up.
-- **Featured duration** is tiered by bid amount: R100 = 1d,
-  R200 = 2d, R300 = 5d, R400 = 7d, R500 = 14d. Bid amount snaps
-  DOWN to the nearest tier. Stored as `t1AmountCents/t1DurationSec`
-  … `t5AmountCents/t5DurationSec` in `FeaturedSlotConfig`.
-- **Sold listing frees the slot early** — cron detects SOLD
-  listings bound to a slot and flips the slot to VACANT before
-  `featuredUntil`.
-
-### Frontend surfaces
-
-- **Featured rail** (`<FeaturedRail>`) — vertical scrolling
-  sidebar on browse pages, mobile becomes horizontal scroller.
-  Continuous CSS keyframe scroll, hover-paused.
-- **Homepage grid** — replaces the live-listings grid on the bare
-  landing page (`showHero` branch). Horizontal scroll, all 10
-  slots rendered always (empty slots show "Featured spot
-  available — Place a bid →" placeholder).
-- **Seller bid page** (`/featured/bid`) — slot grid, tier table,
-  bid modal with stepper, bind modal with 50px-tall row picker
-  styled like the rail card.
-- **Admin panel** (`/admin/featured`) — slot overview, per-slot
-  detail with force-evict / manual-award / shift-until /
-  close-auction-early, revenue dashboard, settings, banned bidders,
-  audit log.
-
-### Admin: manual award accepts EITHER form
-
-`POST /api/admin/featured/slots/:id/manual-award` accepts the
-listing's CUID or its human-readable `referenceNumber`
-(`UM000123` / `AU000045` / `TS000007`). Backend resolves either —
-admin can paste the visible chip from the listing detail page.
-
----
-
----
-
-## Take a Shot (Confidential Offers)
-
-- Buyer submits a confidential offer; amount is private.
-- Seller has 48 hours to respond; one counter allowed.
-- Optional auto-accept threshold set by the seller.
-- Accepting an offer triggers the seller-KYC gate (as for a sale).
-
----
-
-## AI Listing Moderation
-
-⚠️ The heading is historical — the roadmap refers to it by this name. The
-model is Gemini now; see the AI line in Tech Stack.
-
-Every new listing is reviewed by the platform's model (Gemini 2.5
-Flash-Lite through `LlmService` — see the AI line in Tech Stack) before going
-live. Four outcomes:
-
-- **APPROVE** — live immediately.
-- **AUTO_FIX_AND_APPROVE** — silently strips contact info (phone,
-  email, social handles, URLs, redirects) from the description; no
-  seller notification; original kept in `claudeOriginalDescription`.
-- **REJECT** — seller sees `publicReason`.
-- **HUMAN_REVIEW** — sent to the admin queue.
-
-**Hard reject:** live ammunition / primers / propellant (empty
-brass, once-fired brass, projectiles/bullets are allowed);
-hate speech / extremist content; sexual content; no photos /
-stock / watermarked photos; duplicate listing by the same seller;
-contact info visible in photos.
-
-**Human review:** listings ≥ R20,000; the first 3 firearm listings
-from a new seller; ambiguous ammunition; confidence < 0.85
-(low-confidence APPROVE is bumped to HUMAN_REVIEW as a safety net).
-
-Admin can override any decision. If the model call fails — for any
-`LlmError` code — the listing falls back to HUMAN_REVIEW.
-
-`Listing` fields: `claudeDecision`, `claudeConfidence`,
-`claudeReasons`, `claudeReviewedAt`, `claudeOriginalDescription`,
-`claudeAutoFixApplied`, plus admin-override fields.
-
-Settings: `claude_moderation_enabled` (default true),
-`claude_confidence_threshold` (0.85),
-`new_seller_firearm_review_count` (3),
-`high_value_review_threshold` (20000).
-
----
-
-## Shipping Webhooks
-
-Both providers are configured on the provider side; the backend
-handlers must exist as **public routes — no JWT**.
-
-- **TCG** → `https://gungalore.co.za/api/shipping/webhook/tcg`
-  Events: shipment note, shipment tracking event, invoice
-  generated, parcel tracking event, shipment file upload.
-  Auth: `TCG_WEBHOOK_SECRET` header.
-- **Pudo** → `https://gungalore.co.za/api/shipping/webhook/pudo`
-  Tracking status changes. No auth key.
-- **Bob Go** → `/api/shipping/webhook/bobgo/<secret>/<group>/<action>`
-  Seven topics exist; five are registered: `shipment_submission_status/
-  updated`, `tracking/updated`, `shipment_charged_amount/updated`,
-  `shipment_charged_weight/updated`, `shipment_health_status/updated`.
-  The topic AND the secret travel in the PATH — subscriptions are
-  registered one topic at a time and we choose the URL, so each one
-  self-identifies and authenticates without relying on custom headers
-  (unverified on Bob Go). Auth: `BOBGO_WEBHOOK_SECRET`.
-  Register with `PATCH /webhooks` (NOT POST — POST returns 200 and
-  silently creates nothing).
-
-Both handlers: idempotent, use a shared
-`findTransactionByTrackingNumber` helper, map provider status to
-the internal `shippingStatus`, fire notifications, always return
-200, and handle unknown tracking numbers gracefully.
+⚠️ **Moderation fails OPEN for text-only listings, and that decides what reaches
+the public catalogue.** Flag off or no model key → publish ACTIVE. Model call
+throws on a text-only listing → publish ACTIVE. Model call throws on a listing
+**with photos** → PENDING_REVIEW. `LlmError` code `safety` → PENDING_REVIEW even
+with no photos. The old value-based and new-seller safety nets (R20,000 threshold,
+first three firearm listings, confidence floor) were **deleted** — a R500,000
+rifle does not get a human look. Three settings keys survive in the admin UI
+(`claude_confidence_threshold`, `new_seller_firearm_review_count`,
+`high_value_review_threshold`) that **are read by nothing**, and the
+`claude_moderation_enabled` hint claims the opposite of what the code does.
 
 ---
 
 ## Notifications
 
-Three channels, one source of truth in `NotificationsService` —
-every transactional event fires whichever of these apply:
+Three channels, one source of truth in `NotificationsService`:
 
 1. **Email** (Resend) — every event, every recipient.
-2. **SMS** (SMSPortal) — every event with a verified phone on file.
-   Action SMSes embed single-use cryptographic tokens with 48-hour
-   expiry; format: `Gun Galore: [msg]. [action]: gg.co.za/s/TOKEN`.
-3. **In-app inbox** (`Notification` Prisma model, see "Notifications
-   inbox" section below) — persisted row per recipient. Drives the
-   bell badge on the bottom tab bar and the `/notifications` page.
+2. **SMS** (SMSPortal) — every event with a verified phone. Action SMSes embed
+   single-use tokens with 48h expiry.
+3. **In-app inbox** (`Notification` model) — drives the bell badge and
+   `/notifications`.
+4. **Web push** — shipped. `backend/src/push/` wraps `web-push`; browser opts in →
+   `POST /push/subscribe` → `persist()` writes the inbox row and, **for
+   action-required events only**, calls `push.sendToUser()`. A 410 from the
+   gateway deletes the subscription row. iOS Safari 16.4+ only delivers to an
+   installed PWA.
 
-All three fan out from the same `NotificationsService` method (e.g.
-`offerReceived`, `bidOutbid`, `newSaleSeller`). The in-app `persist()`
-call is additive — failures there never block the email/SMS dispatch.
+⚠️ **Every transactional email is rendered by ONE in-code helper** —
+`renderEmail()` in `notifications.service.ts`, from an `EmailContent` object
+(headline, body, optional status pill, labelled rows, one CTA, footnote,
+preheader) with theme tokens inlined. **There are no per-event template files.**
 
----
+**Resolved-by-action, not read-on-open.** Opening the inbox or tapping an item
+does **not** clear it. A notification stays, and counts toward the badge, until the
+user **acts** on the underlying entity or explicitly dismisses an informational
+item. `dismissible: false` rows can only be cleared by the server-side resolve
+hook. Badge query is `WHERE userId=? AND resolvedAt IS NULL`.
 
-## Notifications inbox (in-app feed)
-
-User-facing inbox of every transactional event, reachable from the
-bell icon in the bottom tab bar (`Alerts` tab) or directly at
-`/notifications`. Backs the Phase D push delivery layer when we ship
-it — push will fire a notification AND persist the same row.
-
-### Resolved-by-action semantics (not "read on open")
-
-Per explicit operator spec: opening the inbox or tapping an item does
-**NOT** clear it. A notification stays in the inbox — and counts
-toward the bell badge — until the user **acts** on the underlying
-entity (accepts the offer, dispatches the sale, places a higher
-bid…) OR explicitly dismisses an informational item that has no
-action.
-
-Schema (`Notification` model in `backend/prisma/schema.prisma`):
-
-- `category: NotificationCategory` — `BUYER | SELLER | ACCOUNT`. Drives
-  the tab the row appears in.
-- `linkedType` + `linkedId` — pointer to the underlying entity
-  (`offer | transaction | bid | listing`).
-- `dismissible: Boolean` — `true` for informational rows (× button
-  shows in the inbox), `false` for action-required rows (can ONLY
-  clear via the server-side resolve hook).
-- `resolvedAt` + `resolvedBy` — `'user_action' | 'dismissed' |
-  'auto_expired'`. Bell-badge query is
-  `WHERE userId=? AND resolvedAt IS NULL`.
-
-### Service API (`backend/src/notifications/notifications.service.ts`)
-
-- `persist({ userId, category, type, title, body, url?, iconKey?,
-  linkedType?, linkedId?, dismissible? })` — writes a row. Fail-open
-  (logs errors, never throws).
-- `persistByEmail(email, opts)` — same but does a `User.findUnique`
-  by email first. Most existing event methods take emails (their
-  original purpose was email/SMS) so this is the common call site.
-- `resolveByEntity(linkedType, linkedId, { userId?, resolvedBy? })` —
-  stamps `resolvedAt` on every matching unresolved row. Called from
-  action handlers across the codebase whenever the user takes the
-  action a notification was waiting on. Pass `userId` to scope to a
-  single recipient.
-
-### Feed endpoints (`notifications-feed.controller.ts`)
-
-All Clerk-guarded. Throttle: 120/min/user (bell badge polls every
-60s across multiple tabs/devices).
-
-- `GET /notifications/me/active-count` →
-  `{ buyer, seller, account, total }`. Polled by the bell badge.
-- `GET /notifications/me?category=&status=active|resolved|all&limit=&before=`
-  → paginated descending-by-createdAt feed. `status` defaults to
-  `active` (resolvedAt IS NULL). `before` is a cursor for "Load more".
-- `POST /notifications/me/dismiss` body `{ ids: string[] }` →
-  resolves the rows ONLY where `dismissible=true`. Action-required
-  rows are silently filtered.
-
-### Currently wired events
-
-| Event method | Category | Linked entity | Dismissible | Resolves on |
-|---|---|---|---|---|
-| `bidOutbid` | BUYER | listing | no | New bid by this user on the same listing |
-| `auctionWon` | BUYER | listing | no | Buyer pays |
-| `offerAccepted` | BUYER | offer | yes | Manual dismiss (no offerId on Transaction model) |
-| `offerCountered` | BUYER | offer | no | Buyer accepts/rejects/counters back |
-| `offerRejected` | BUYER | offer | yes | Manual dismiss |
-| `itemDispatched` | BUYER | transaction | no | Buyer confirms delivery |
-| `offerReceived` | SELLER | offer | no | Seller accepts/rejects/counters |
-| `newSaleSeller` | SELLER | transaction | no | Seller marks dispatched |
-| `paymentReleasedSeller` | SELLER | transaction | yes | Manual dismiss |
-| `listingApproved` | SELLER | listing | yes | Manual dismiss |
-| `listingRejected` | SELLER | listing | yes | Manual dismiss |
-| Admin broadcast | ACCOUNT | — | yes | Manual dismiss |
-
-`resolveByEntity` call sites: `OffersService.{accept,reject,counter,
-acceptCounter,rejectCounter}`, `AuctionsService.placeBid`,
-`TransactionsService.{confirmDispatch,confirmDelivery,markPaid}`,
-`AdminService.refundTransaction`.
-
-### Frontend surfaces
-
-- `frontend/components/bottom-tab-bar.tsx` — Alerts tab (bell icon)
-  with active-count red badge top-right when total > 0 (or `9+`).
-  Badge polls `/notifications/me/active-count` every 60s. Gated to
-  standalone mode (no polling in browser tabs). Critically: opening
-  the inbox does NOT drop the badge — only acting on entities or
-  dismissing informational rows does.
-- `frontend/app/notifications/page.tsx` — three tabs (Buyer / Seller
-  / Account) with their own per-tab active-count pill. `?tab=…`
-  URL-driven. "Show resolved" toggle flips to history.
-- `frontend/components/notifications-list.tsx` — fetches the feed,
-  optimistic dismiss with rollback, "Load more" cursor paging.
-- `frontend/components/notification-item.tsx` — icon + title + body
-  + relative time. Dismissible rows show a `×` button; action-
-  required rows show a faint "Act" pill (no dismiss button).
-- `frontend/lib/notifications.ts` — typed fetch helpers. All
-  resilient — return `[]` / `{0,0,0,0}` on network/HTTP errors so
-  the UI degrades gracefully if the backend is briefly unreachable.
-
-### Long-tail events not yet wired
-
-Email + SMS fire as before, but no inbox row yet for:
-`bidPlaced`, `counterAccepted`, `counterRejected`,
-`auctionEndedForSeller`, `shippingDispatched`/`Out`/`Delivered`,
-`orderConfirmedBuyer`, `refundIssuedBuyer`,
-`dealerVerificationApproved`/`Rejected`, `shippingFailed`,
-`firearmStockedAtDealerBuyer`, `dispatchNudgeSeller`,
-`listingRemovedByAdmin`. Each is a one-line `persistByEmail` away
-when prioritised.
+API: `persist(...)`, `persistByEmail(email, ...)`, and
+`resolveByEntity(linkedType, linkedId, {userId?, resolvedBy?})`, called from action
+handlers across the codebase. Feed endpoints are Clerk-guarded and throttled
+120/min/user (the badge polls every 60s across tabs).
 
 ---
 
-## Email Templates
+## UI — the white theme
 
-The Claude Design handoff ships **63 finished HTML email
-templates**, one per platform event, in 11 groups (Account,
-Verification, Listings, Auctions, Offers, Payments, Fulfillment,
-Disputes, Engagement, Penalties, Platform).
+The canonical token source is **`frontend/app/globals.css`**, which carries the
+rationale inline. The old dark theme and the "Claude Design handoff mockup" are
+both retired.
 
-**Rules:**
+- **Surfaces:** `--bg` **#FFFFFF**, deep #FFFFFF, card #FFFFFF, card hover
+  #FAF9F5, inset #F4F2EC. The page canvas is white (operator, 2026-08-27: "white
+  back ground only on the whole website"). The page ground is `--bg` and has no
+  other name.
+- **Text:** `--text-primary` #1A1613 (16.4:1), `--text-secondary` #4A443C (9.0:1),
+  `--text-tertiary` #7A7267 (4.5:1), `--text-faint` #9C948A (3.0:1 — large text
+  and disabled states only, never body copy).
+- **Brand red `--red` #C8102E** (hover #A00D24) — prices, primary CTAs, active
+  states, live badges. ⚠️ **The logo's red is a different value, #E01B24**, and
+  stays that on every ground. Do not "fix" either to match the other, and never
+  recolour a logo path to `var(--red)`.
+- Borders 0.5px; border-radius max 8px; system font stack; weights 400 and 500
+  only; mobile-first ~390px; content max-width 1280px.
+- **Tiles opt into depth** via `.gg-tile` (+ `.gg-tile-lift` on hover), using
+  `--elev-1`/`--elev-2`, which are warm-tinted from the ink because `rgba(0,0,0,…)`
+  goes visibly grey over these neutrals.
 
-- They live at
-  `backend/src/modules/notifications/templates/emails/`.
-- They are **final, production assets** — table-based, MSO/Outlook
-  fallbacks, inline-SVG logo, dark theme. Use them **as-is**. Do
-  NOT restyle, redesign, or regenerate them.
-- Each template uses bracketed placeholders — `[First Name]`,
-  `[Email]`, `[Date]`, `[link]`, etc. The notification service
-  loads the file and substitutes real values at send time.
-- All 63 are kept in the repo so they are available. A template is
-  only *wired* when a built feature needs it; unused templates sit
-  dormant — that is expected and fine.
+### CSS traps that fail SILENTLY — every one has already produced dead code
 
-**Do NOT wire (no backing feature — leave dormant):**
+- ⚠️ **`* { box-shadow: none !important }` sits at the top of `globals.css`.** It
+  is unscoped, so **every** `box-shadow` anywhere — inline styles and keyframes
+  included — is dead unless the element carries `.gg-tile`. **Do not delete the
+  kill switch:** thirty `box-shadow` declarations are already written by people who
+  knew none could render, including a `rgba(0,0,0,0.55)` drop sized for the retired
+  dark theme and a keyframe that throbs a red glow. Removing the line switches all
+  of them on at once, on a white site.
+- ⚠️ `.gg-tile` declares its own `transition`, and `globals.css` loads after
+  `@tailwind utilities`, so it **beats** a `transition-colors` utility on the same
+  element. A card gaining `.gg-tile` must have `transition-colors` removed or its
+  hover tint silently stops animating.
+- ⚠️ **An undefined `var()` with no fallback kills the WHOLE declaration** at
+  computed-value time, so the property takes its INITIAL value: `background` →
+  transparent, `border-radius` → 0, `border-color` → currentColor, and one bad
+  stop drops an entire gradient. A `var()` **with** a fallback is fine.
+- ⚠️ **You cannot alpha-dilute a custom property by concatenation.** `var(--red)`
+  + `18` expands to two tokens, not one 8-digit colour, and dies the same way. Use
+  `--red-wash` / `--red-line` / `--gold-wash`, or
+  `color-mix(in srgb, var(--x) N%, transparent)`.
+- ⚠️ **The page ground lives on `<html>`, and `<body>` must stay transparent.**
+  `html`'s background propagates to the canvas and is painted before everything
+  including negative-z-index layers; `body`'s does not propagate once `html` has
+  one, and paints as an ordinary in-flow block *above* them.
+- ⚠️ A `body:has(...)` rule scores only (0,1,1) and loses to
+  `html:not([data-standalone='true']) body`, which is (0,1,2). Source order does
+  not help. Prefix to reach (0,2,2). Symptom: a page that will not scroll its last
+  inch, with nothing logged anywhere.
 
-- `subscription-statement.html` ("Monthly statement") — Gun Galore
-  has **no subscription, billing, or statement model**. Commission
-  is per-transaction, absorb-only. This file exists for
-  completeness only. **Do not build any billing/statement feature
-  to feed it.**
-- `otp-2fa.html`, `new-device-login.html` — two-factor and
-  new-device alerts are handled by Clerk's built-in flows. These
-  branded versions stay dormant unless a custom flow is later
-  chosen.
-- `saved-search-results.html` — saved-search is not yet a scoped
-  feature; this template plugs in if/when it is built.
+### The theme-sync build gate
 
----
+⚠️ **One colour is named in three files** — `--bg` in `globals.css`,
+`background_color` + `theme_color` in `app/manifest.ts`, and `viewport.themeColor`
+in `app/layout.tsx`. They drifted twice. `frontend/scripts/theme-sync.cjs` runs in
+`npm run build` and **fails the build** when they disagree. It is not advisory.
+The Desk is deliberately exempt.
 
-## PWA
+### Logos
 
-Built in phases. Library choice: **Serwist** (not Workbox/next-pwa,
-neither plays nicely with Next 16 + App Router). Theme color `#0f0f0f`
-(not brand red — the dark background reads better as the
-Android status bar / Chrome tab tint).
+Six files in three light/dark pairs. **The app renders the `-dark` variants
+everywhere**, because on a white page the ink must be dark: `logo-nav-dark.svg`
+(the wordmark lockup, #111111 ink plus the #E01B24 road) and `logo-mark-dark.svg`
+(the AO monogram — an A whose counter is a snow-capped peak, an O, and a red road
+running out of it). The white-ink `logo.svg` / `logo-nav.svg` / `logo-mark.svg`
+are for dark grounds only.
 
-### Phase A — Installable (done)
-
-- `app/manifest.ts` → `/manifest.webmanifest`. `name`,
-  `short_name`, `description`, `start_url: '/'`, `display:
-  'standalone'`, `orientation: 'portrait'`, `theme_color:
-  '#0f0f0f'`, `background_color: '#0f0f0f'`, `lang: 'en-ZA'`,
-  `categories: ['shopping', 'sports', 'lifestyle']`.
-- `app/layout.tsx` exports `metadata` + `viewport` with
-  `appleWebApp` (iOS Add-to-Home-Screen), `applicationName`,
-  `formatDetection.telephone = false`, `viewport.themeColor` for
-  both colour schemes, and the `icons` block (favicon + apple-
-  touch-icon emission).
-
-### Phase B — Real icons (done)
-
-Five PNG variants generated from a single source image by
-`frontend/scripts/generate-pwa-icons.ts` (uses `sharp`, already a
-transitive dep via Next):
-
-- `public/icon-192.png`, `public/icon-512.png` (standard, alpha
-  preserved).
-- `public/icon-maskable-192.png`, `public/icon-maskable-512.png`
-  (inner-80% safe zone, brand `#0f0f0f` fills the outer 20% so
-  Android adaptive masks crop cleanly).
-- `public/apple-icon-180.png` (inner-90%, brand bg padded — iOS
-  rounds corners itself).
-
-Source dropped at `frontend/public/icon-source.png` (or `.svg`,
-`.jpg`, `.jpeg`, or `frontend/icon-source.*`). Script overwrites
-outputs in place — re-run any time the brand mark changes.
-
-### Phase C — Service worker (CONSERVATIVE, done)
-
-- Packages: `@serwist/next`, `serwist`.
-- `app/sw.ts` is the source worker, compiled to `public/sw.js` at
-  build time via the Serwist Webpack plugin.
-- **Conservative caching only** — Serwist's `defaultCache`
-  (Google Fonts + fingerprinted JS/CSS bundles). NO HTML caching,
-  NO API caching, NO image caching at this stage. Minimal risk
-  surface — avoids the "buyer saw stale auction price" failure
-  mode.
-- Offline fallback at `/offline` (precached, served for any
-  navigation that fails when offline). Brand-styled, no API calls.
-- `skipWaiting + clientsClaim + navigationPreload` enabled — new
-  SW versions activate on next nav, not after every tab closes.
-- `next.config.mjs` wraps with `withSerwist`. Empty
-  `turbopack: {}` config silences the Next-16 "build is using
-  Turbopack with a webpack config" conflict. SW is **disabled in
-  dev** (`NODE_ENV !== 'production'`) — Turbopack doesn't run the
-  Webpack plugin AND caching in dev would break HMR.
-- **Remote kill switch:** set `NEXT_PUBLIC_DISABLE_PWA=true` in
-  `frontend/.env.production` and `pm2 restart gungalore-frontend`.
-  The flag does two things in one flip:
-    1. `next.config.mjs` skips SW generation entirely (the next
-       build emits no `/sw.js`).
-    2. `<SwKillSwitch />` (mounted in `app/layout.tsx`) detects the
-       flag on every page load and runs
-       `navigator.serviceWorker.getRegistrations()` → `unregister()`
-       for each, then `caches.delete()` for each cache key. So
-       previously-installed SWs are evicted on the user's next visit
-       without them having to manually clear site data.
-  Recovery procedure: set the env back to `false` (or remove the
-  line entirely) and `pm2 restart gungalore-frontend`. The next
-  build re-registers the worker; users' next visit picks it up.
-
-### Phase C polish — feels like an app (done)
-
-After Phase C the site is installable + offline-capable. Phase C
-polish layers on the visual + interaction cues that distinguish "PWA
-opened fullscreen" from "native iOS app":
-
-- **Standalone-mode detection** — `frontend/lib/use-standalone.ts`
-  hook (SSR-safe via `useSyncExternalStore`) + inline pre-paint
-  script in `app/layout.tsx` that sets
-  `<html data-standalone="true">` before first frame. CSS gates the
-  rest off that attribute, so server HTML matches for browser users
-  and installed-PWA users with no flash. The same script rewrites
-  the viewport meta to lock pinch-zoom + double-tap-zoom in
-  standalone mode (`maximum-scale=1, user-scalable=no`) — installed
-  users get a fixed native-window feel; browser users keep zoom for
-  accessibility.
-- **Bottom tab bar** — `frontend/components/bottom-tab-bar.tsx`,
-  5-tab nav (**Shop / Alerts / Sell / Wishlist / More**) anchored to
-  the bottom with `env(safe-area-inset-bottom)` padding for the home
-  indicator. Sell is the raised circular FAB in the centre.
-  - **Shop** opens a bottom-sheet picker with four rows: All listings,
-    Marketplace, Auctions, Take a Shot. Active row
-    highlighted in brand red.
-  - **Alerts** routes to `/notifications` with a red active-count
-    badge (see "Notifications inbox" section above).
-  - **Wishlist** routes to `/wishlist`. Heart icon, red count badge
-    when items are saved (caps at "50+"). Replaces the old "My" tab —
-    "My" destinations now live in the More sheet.
-  - **More** sheet is headed by a Profile card (avatar + username +
-    "View profile" chevron pulled from Clerk's `useUser()`), then
-    sections: **My account** (Dashboard, Profile, My listings/orders/
-    sales/offers/bids, Received offers, Sign out),
-    **Shop** (Take a Shot), **Legal** (Terms, Privacy,
-    Refund, legal index). Sections are separated by thin dividers and
-    every row has a trailing chevron so it reads as iOS-Settings-style
-    navigation.
-  - Visible only in standalone mode. Browser-mobile users keep the
-    existing hamburger drawer in `nav.tsx`.
-  - **Hides on scroll-down** (`lib/use-scroll-direction.ts`) — slides
-    off-screen when the user scrolls down (more reading room), back
-    in when they scroll up. Sheet-open state overrides the hide.
-- **Sticky featured strip** — `frontend/components/sticky-featured-
-  strip.tsx`, mounted in the layout and visible only in standalone
-  on the shopping surface (`/`). Sits
-  above the bottom tab bar; hides on scroll-down in sync with it.
-  140×64pt cards by default; latest spec is 30% larger (182×83pt).
-- **Sticky search bar** — `frontend/components/mobile-search-bar.tsx`
-  shown at the top of every applicable page in standalone mode.
-  Hidden on focus-flow routes via a denylist (`/admin`, `/checkout`,
-  `/sign-in`, `/sign-up`, `/listings/new`, `/kyc/verify`, `/offline`,
-  `/notifications`, `*/dealer-verification`).
-- **Top nav hidden in standalone** — `public-chrome.tsx` wraps the
-  Nav in a `data-public-nav` div + Footer in `data-public-footer`,
-  both hidden via `globals.css` when standalone. The bottom tab bar
-  + sticky search bar replace them.
-- **All-listings entry** — `Shop → All listings` routes to
-  `/?sort=newest`. `showHero` on the homepage excludes when a `sort`
-  param is set, so the user lands on the actual listings grid
-  (sorted server-side per `BrowseListingsDto.sort` =
-  `newest|price_asc|price_desc`) instead of the curated landing.
-  The homepage's big Featured marquee section also hides in
-  standalone (CSS gates on `data-featured-home-section`) — the
-  sticky featured strip already covers featured in standalone, so
-  the inline marquee would be redundant.
-- **iOS splash images** — generated by `pwa-asset-generator` into
-  `frontend/public/splash/apple-splash-*.jpeg`, wired via
-  `<link rel="apple-touch-startup-image">` in `layout.tsx`. Kills
-  the white-flash on PWA launch on every supported iPhone + iPad.
-  Plus an animated install walkthrough modal
-  (`components/install-animation.tsx`) shows the "tap Share → Add to
-  Home Screen" gesture flow when iOS Safari users tap "How" on the
-  install-prompt CTA — pixel-art Windows pointing-hand cursor flies
-  in, halo + step badge, 4-scene loop. Built from a Claude Design
-  prototype handoff.
-- **CSS polish** in `globals.css`: `-webkit-tap-highlight-color`
-  transparent (no grey flash), `overscroll-behavior-y: none`
-  (no page rubber-band), `font-size: 16px` on mobile inputs (no
-  iOS zoom-on-focus), `env(safe-area-inset-*)` paddings,
-  `touch-action: pan-x pan-y` in standalone mode (belt-and-braces
-  zoom block). `--text-tertiary-on-card: #8a8a8a` token gives WCAG-AA
-  contrast for tertiary text on `--bg-card` (used in the footer; the
-  raw `--text-tertiary` fails AA at 3.7:1).
-- **Online/offline + SW-update banners** —
-  `components/connection-status-banner.tsx` watches `navigator.onLine`
-  via `useSyncExternalStore`, debounces the first drop by 500ms,
-  shows a red "You're offline" sticky bar + a green "Back online"
-  toast on recovery. `components/sw-update-banner.tsx` listens for
-  `updatefound` + `controllerchange` on the service-worker
-  registration; when a fresh SW activates with a previous controller
-  in place (i.e. an update, not a first install) it pops a bottom-
-  anchored "An update is available — Reload" banner. Tapping Reload
-  hard-refreshes so the new bundles load (Serwist's
-  `skipWaiting: true` already activates the new SW; the page just
-  needs a refresh to pick up the new JS).
-- **Web Share + clipboard fallback** —
-  `components/share-listing-button.tsx` wraps `navigator.share()` with
-  a `navigator.clipboard.writeText()` fallback + 2s toast. Mounted on
-  `/listings/[id]` next to the Wishlist button.
-- **View transitions** — `::view-transition-old/new(root)` keyframes
-  in `globals.css`, gated on standalone. Will fire once we enable
-  Next 16's `experimental: { viewTransition: true }` flag and wrap
-  the layout in `<ViewTransition>`. Currently a no-op; rules are
-  harmless in the meantime.
-- **Manifest** — `app/manifest.ts` includes `id: '/'`, `scope: '/'`,
-  and a `shortcuts` array (Browse / Sell / Auctions) for Android's
-  long-press app-icon menu.
-- `middleware.ts` adds `/offline` and `/sw.js` to the public
-  routes list so Clerk doesn't `protect-rewrite` them.
-- `tsconfig.json` includes `webworker` lib so the SW source
-  type-checks.
-
-### Out of scope (later phases)
-
-- **Image + API caching strategies** — to be added incrementally
-  after the conservative SW is shipped + tested. Plan:
-  stale-while-revalidate for Cloudinary images, network-first
-  short cache for `/api/*` GETs, network-only for writes, never
-  touch anything containing `clerk`.
-- **Web push delivery** — the persistent `Notification` model + the
-  in-app inbox are SHIPPED (see "Notifications inbox" section
-  above). Push delivery itself (VAPID + `PushSubscription` table +
-  opt-in UX + service-worker push handler) is the next layer; once
-  built, it will fire write-row AND push using the same payload.
-- **Install-prompt UX with deferral logic** — currently shows
-  immediately when beforeinstallprompt fires (Android/desktop) or
-  when the user is in iOS Safari + has dismissed nothing. 14-day
-  dismissal via localStorage already in place; deferred-trigger
-  logic (e.g. "after 3 visits") not built.
-- **Custom notification sounds** — operator chose default OS sound
-  when push lands. No custom mp3 plumbing.
+- On centred pages: width 100%, max-width 300px, never a fixed height.
+- ⚠️ A transparent favicon is invisible on a tab strip the colour of its own ink.
+  `app/icon.svg` is theme-aware and preferred.
+- Regenerate the PNG icon set together or the install prompt and the tab icon
+  disagree.
+- `app/manifest.ts` has **no screenshots**; the three that were there were live
+  captures of a retired hero. Recapture SIGNED OUT before re-adding.
+- Keep any replacement free of weapon imagery — the logo is the one asset that
+  appears everywhere, including where the auth wall does not reach.
 
 ---
 
-## Odoo Accounting
+## PWA and the mobile shell
 
-**Live accounting: Zoho Books** (not Odoo). The Zoho Books
-integration shipped in Phase ZB-1 through ZB-11 — commission
-invoices on dealer-verification APPROVED, paid-marker on payout
-fired, credit notes on refund, invoices on featured-slot bids won,
-admin retry button per row, and queue-depth health monitoring. See
-`backend/src/zoho-books/`. Odoo
-was the earlier plan and is archived — do not build new code
-against it.
+**Serwist** (not Workbox/next-pwa). `app/sw.ts` compiles to `public/sw.js` at build
+time. SW is disabled in dev.
 
-Peach payment fees → expenses; users → contacts (FICA records);
-featured fees → revenue; SMS / email costs → expenses. VAT201,
-monthly P&L, balance sheet, cash flow all run
-out of Books once VAT registration crosses R1M turnover (see
-Feature Flags `VAT_REGISTERED`).
-
----
-
-## Admin Panel
-
-- Roles: **Superadmin** and **Admin**. Admin auth uses a custom JWT
-  (`JWT_ADMIN_SECRET`), separate from Clerk.
-- Verification working hours: Mon–Thu 08:00–17:00, Fri 08:00–14:00.
-- Queues: seller verification, listing moderation (Claude outcomes),
-  penalty approvals, disputes.
-- Superadmin-only: audit CSV exports.
-
----
-
-## Document Scanner (`frontend/lib/scan`, `frontend/components/scan`)
-
-Camera capture for the Licence Centre and the Motivation Centre. Pure
-modules (no DOM) so the hard parts are testable in node: `detect` finds
-the quad, `warp` rectifies, `enhance` cleans, `aim` sizes the box,
-`magnifier` places the loupe, `exposure` decides what to warn about.
-
-- **The detector is DocCornerNet, and it runs twice per frame** (2026-09-05).
-  DocQuadNet256 was replaced after a benchmark over the operator's 33 real
-  photographs (`scan-fixtures/iphone74` + `real`, judged by eye against
-  overlays): it found the document in 18; DocCornerNet-lean found it in 29,
-  and 31 with the second pass. It is 1.9 MB against 13.4, ~12 ms against
-  ~60, MIT (`backend/models/NOTICE.doccornernet`), and — the part the old
-  heatmap heads could never do — it says whether a document is there at all.
-  The second pass runs the same model on the AIM-BOX REGION: on a card lying
-  on a white sheet the full-frame pass finds the sheet, the aim pass finds
-  the card, and `pickCandidate` in `lib/scan/doccorner.ts` chooses by the two
-  priors only we hold, the chosen shape's aspect and where the box was.
-  ⚠️ `doccorner.ts` is mirrored in `backend/src/scan/` for the server
-  fallback route, which returns every candidate and lets the client pick, so
-  both paths answer identically. The worker also detects on the captured
-  STILL (`LiveDetector.detectStill`); the server is only asked when the
-  browser could not load the runtime. Inputs are STRETCHED to 224², not
-  letterboxed. Assets live under `/scan/v2/` with ORT web 1.29; bump the
-  path, never overwrite a file in place (the service worker caches by URL).
-  ⚠️ **The runtime is NOT bundled into the worker.** `doccorner.worker.ts`
-  `importScripts` the runtime's own classic build (`ort.wasm.min.js`) from
-  `/scan/v2/`. onnxruntime-web 1.19+ loads its WebAssembly through a dynamic
-  `import()` of `ort-wasm-simd-threaded.mjs`; bundled by webpack that import
-  becomes a chunk loader that can never resolve a `/scan/` URL, and the
-  runtime reports "no available backend" on every phone — which is what both
-  of the operator's phones did on the first deploy of this model. The four
-  files under `/scan/v2/` must come from the same onnxruntime-web version as
-  package.json. **`/scan/selftest`** (public, no camera) loads the detector,
-  runs it on a drawn document and prints the runtime's own error text — open
-  it on the phone before chasing anything else, and paste the page.
-- **Auto-capture needs the document to fill the frame** (operator,
-  2026-09-05: "at least 60% coverage before auto trigger can fire").
-  `MIN_FILL` in `guidance.ts` is a LINEAR share — the larger of width over
-  frame width and height over frame height (`linearFill`) — because a
-  landscape card in a portrait viewfinder can never reach 60% of the AREA.
-  `minFillFor` in `aim.ts` caps the requirement at 95% of the shape's own aim
-  box, since the card box is drawn small on purpose (the lens will not focus
-  closer). One number feeds both the guidance ("Move closer") and the
-  shutter gate (`'small'`), so caption and ring cannot disagree. With no
-  locked document the shutter waits; the manual shutter never waits.
-- **Android takes a real photograph.** `capture.ts takeStill` asks
-  `ImageCapture.takePhoto()` for the sensor's photo mode and crops the same
-  visible region; on a 50 MP phone that is twice the A4 resolution the video
-  frame gives. iOS has no such API and silently uses the frame. The decode
-  cap is 4096 to keep that detail; the OUTPUT cap is 3600 because
-  `enhance()` holds ~7 Float32 planes of the page (see `framing.ts`). The
-  A4 figure is limited by physics, not caps: a portrait viewfinder shows a
-  1698-wide crop of the 4032×3024 track, so a page filling the box spans
-  ~1390 px for 210 mm — 168 dpi on every phone. Only the stills path or a
-  landscape capture changes that.
-- **The still's corners are refined by robust line fits, not the model's
-  guess** (`lib/scan/corner-refine.ts`, 2026-09-05). The model answers on a
-  224px view, ~30px of error on a 3000px still, and the old `refineEdges`
-  (60px window, plain least squares, no outlier rejection) left the iPhone's
-  A4 visibly skew. Now: 64 gradient profiles per side within a band of 3.5%
-  of the short edge, exhaustive-pair RANSAC, TLS refit, 55% support floor,
-  lines intersected for corners. Two tests are load-bearing and were found
-  on the fixtures: a candidate must be a real boundary (its flanks differ)
-  AND its document-facing flank must match the document's own interior
-  tone, or a line of print or a ruler 10px out wins on strength. A side that
-  finds nothing keeps the detector's line; the guards drop the weakest side
-  and re-intersect rather than discarding all four. Measured over 18 real
-  photographs: 15 better, 2 unchanged, 1 worse (a capture the model had
-  already rejected). ~30ms at 3000px. The report prints per-side support.
-- **Sharpening is halo-suppressed and scaled to the source's sharpness**
-  (`enhance.ts sharpenPlan`/`unsharp`). The Samsung's softer source came
-  back with a grey fringe round every glyph: the unsharp mask overshoots on
-  the dark side and CLAHE amplified the lens's own bleed. The darkening half
-  is now capped at 2 levels on paper (unclamped on ink), and gain, radius,
-  passes, deadzone and the CLAHE mix follow the measured Laplacian
-  sharpness. A crisp source keeps exactly the old settings, pinned by test.
-- **Creases are suppressed photometrically** (`enhance.ts suppressCreases`):
-  a long, thin, faint band (6–45 levels under the paper, ≥45% of the width,
-  within ±3°) with a soft skirt is lifted to the interpolated paper level,
-  leaving ink that crosses it untouched. It runs in every filter mode.
-  ⚠️ Geometric dewarping (Scanbot's Document Enhancer) is NOT this — the
-  fold's shading goes, its bend stays. No fixture has a real page-spanning
-  fold; it was verified on a fold pressed into a real rectified page.
-- **Magnetic lines in the crop editor** (`lib/scan/magnetic.ts`): a dropped
-  corner or edge snaps to the nearest strong straight edge within ~3% of the
-  short side, with the candidates drawn while dragging and a Snap toggle to
-  turn it off. Scored by support × step × proximity², because a black ruler
-  beside a white page measures 1.4× the page's own edge and would win on
-  strength alone.
-- **A poor page is stopped at the door.** `screens/quality-gate.tsx` asks
-  once — take it again, or keep it anyway — for a fresh capture that grades
-  poor; a reopened tray page is never asked twice. The tray reopens a page
-  (raw photograph, result and turns travel with it) into the same slot, and
-  reorders with the arrows.
-- **The member picks the shape first** — Card / A4 / Green ID book /
-  Something else — and only then does the camera open. `shapes.ts` holds
-  the real millimetres, MEASURED against a 150 mm ruler in the operator's
-  own photographs, not taken from a spec. Card is ID-1 (85.6 × 54); the
-  green ID book page is passport format (88 × 125).
-- **The aim box is sized to what a phone can do.** Across 18 real photos
-  the document covered 20–58% of frame area and never more — near focus
-  stops you getting closer. A box drawn bigger than that is one nobody
-  can fill.
-- ⚠️ **Detection passing ≠ detection correct.** On the operator's
-  IMG_4947 the detector chose the patterned fabric and the ruler over the
-  licence card and scored it 0.68 against a floor of 0.55. The card is
-  never even a candidate: seeds land elsewhere and `growQuad` walks
-  outward to the outermost ridge, which is the mat. This is not a scoring
-  bug to re-weight — see the skipped regression in `detect.spec.ts`,
-  which records what was tried (aim-weighted re-ranking; capping the
-  growth walk) and why both were reverted.
-- **So the aim box constrains the crop** rather than fixing detection, and
-  the corner editor is the safety net. A wrong crop the member can see
-  and fix beats a clever one they cannot.
-- **Automatic capture is ON by default, with a toggle** (operator, 2026-08-25).
-  It was removed entirely earlier that day and then RE-SPECIFIED, not revived —
-  the decision lives in `lib/scan/autocapture.ts` with tests.
-
-  > **The two failures that killed the first version, and what fixes them.**
-  > *"It never captured"* — the gate required the DETECTED quad to agree with
-  > the aim box, and on a real licence card the detector never sees the card
-  > (the skipped regression in `detect.spec.ts`: the card is never a candidate;
-  > the mat is). *"The images came out skew or outside the focus lines"* — the
-  > CROP also came from the detector's quad.
-  >
-  > The second is already dead: `processCapture` crops exactly the aim box, so
-  > a capture can only produce the rectangle the member aimed with. The first is
-  > fixed by removing the detector from the decision — it holds neither the crop
-  > nor the trigger. The gate asks three questions about the FRAME: is a
-  > document in the box (`inkiness` over the aim box, floor `INK_AT` = 0.06, the
-  > same number `verdicts()` already uses for "we may have caught the mat"), can
-  > it be read (`exposureProblem`), is it still (frame-pixel motion ≤ 4 for
-  > 1100ms). Three gates, not four — every extra gate is another way to never
-  > fire.
-  >
-  > **Rules that survived and are all paid for:** 1100ms not 700 (at 700 it
-  > fired mid-positioning); stillness on frame pixels never on the detected quad
-  > (a patterned carpet stalls that clock for ever); **the manual shutter must
-  > never switch auto off** (doom loop: auto feels slow → you press → auto is
-  > off for the session → auto never works); the ring round the shutter fills so
-  > a shot is never a surprise.
-  >
-  > ⚠️ `INK_AT` **has not been calibrated against the eighteen photographs** —
-  > they are gitignored and were not on the machine. If it fires on an empty
-  > desk, raise it; if it sits there on a real document, lower it.
-  > `scripts/scan-diag.cjs` reports ink per photograph.
-- **The live box: the model runs on its own clock and its answer is applied
-  the moment it lands** (2026-09-05). The smoother was never the problem. Its
-  bench assumes 15 detections a second; the phone was supplying 3–5, because
-  the worker was only asked for a frame from the shutter-gate tick, which
-  re-armed 100–200ms AFTER its own ~95ms of work and whose back-off never
-  came back down. Three things moved and must stay moved: `modelTick` in
-  `document-scanner.tsx` asks the worker at `LIVE_FPS` and resolves straight
-  into `applyDetection`; the classical `detectQuad` runs ONLY while the model
-  is not `running` (two detectors alternating is a stutter no filter removes,
-  and it was most of the main-thread cost); and `readCorners` refines the
-  heatmap argmax to a sub-cell centroid (`refinePeak`, mirrored in
-  `backend/src/scan/`), because one heatmap cell is ~6 CSS px and an integer
-  readout can only ever twitch between cells. `LiveDetector.detect()` returns
-  `null` for a DROPPED frame and `LIVE_MISS` for "ran, nothing there" — the
-  tracker decays on the second and must not on the first. The overlay canvas
-  is sized in device pixels and drawn in CSS pixels (`setTransform(dpr…)`).
-  ⚠️ The shutter-gate tick now costs less and therefore runs more often, so
-  `MOTION_STILL` sees smaller per-sample motion than it was tuned on; watch
-  for auto-capture firing on a hand that is still moving.
-- **Glare / too bright / too dark hold on screen until resolved** — they
-  are the only failures no processing recovers. `exposure.ts` (`exposureProblem`)
-  is the single source for both the held alert and the viewfinder hint, so the
-  scanner can never warn at the top of the screen and say "take the photo" at
-  the bottom. It did exactly that until 2026-08-25.
-- **Desktop opens no camera.** A laptop webcam focuses at half a metre and
-  cannot resolve a licence serial. `pointer:coarse && maxTouchPoints > 0` is
-  the handheld test (`enumerateDevices` reports a webcam, so it cannot answer
-  this); on a desktop the primary action is a QR code — `SCAN_HANDOFF`
-  ActionToken, 15-minute TTL, `/scan/handoff?t=`, phone uploads through
-  `ScanHandoffGuard` AS the authorising member. ⚠️ That token is a write
-  credential to their vault and is NOT consumed until the phone says it is
-  finished (a scan session is several files), so the short TTL is the only
-  thing bounding it. Both the licence and motivation scan controllers are
-  SEPARATE from their parents — a method guard runs in addition to the
-  class-level ClerkGuard, never instead, so the phone would 401.
-- `scripts/scan-diag.cjs` and `scripts/aim-check.cjs` run the REAL
-  compiled detector over a folder of photographs. ⚠️ Those photographs
-  carry a name, an ID number and serials — they live in `scan-fixtures/`,
-  which is gitignored, and must never be committed. Regressions get
-  rebuilt as synthetic scenes.
+- **Caching is no longer conservative, and order is load-bearing** —
+  `[...networkOnlyRoutes, ...imageCaching, ...defaultCache]`, first match wins.
+  Network-only comes first so admin, API and auth can never be intercepted; then
+  images, stale-while-revalidate because their URLs are immutable; then
+  `defaultCache`. **`/api/*` is network-only permanently** — that is a decision,
+  not a gap.
+- ⚠️ **`skipWaiting: false, clientsClaim: false` ON PURPOSE — do not flip them
+  back.** A new SW waits; the old one keeps serving the open session from intact
+  caches; `sw-update-banner.tsx` detects the waiting worker and posts
+  `SKIP_WAITING` only when the user taps Reload. Setting them true seizes a live
+  session mid-flow.
+- Offline fallback at `/offline`, precached.
+- **Remote kill switch:** `NEXT_PUBLIC_DISABLE_PWA=true` in
+  `frontend/.env.production` on the box, **then a rebuild** (the generation half is
+  build-time), then `pm2 reload alloutdoor-frontend --update-env`.
+  `<SwKillSwitch />` unregisters existing workers and deletes caches on the user's
+  next visit.
+- **The mobile shell** is `components/shell/app-shell.tsx`, mounted in
+  `app/layout.tsx`: `ShellHeader` (two archetypes — ROOT with wordmark, wishlist,
+  cart and avatar; PUSH with a back chevron and title) plus `BottomTabBar`.
+  Tabs: **Shop / Saved / Sell / Alerts / Account**, Sell the raised centre FAB.
+  ⚠️ **It is a route ALLOWLIST, not a display-mode check** — `isTabRoute()` in
+  `lib/shell-routes.ts`.
+- Standalone detection: `lib/use-standalone.ts` plus a pre-paint script that sets
+  `<html data-standalone="true">` before the first frame, so server HTML matches
+  for both audiences with no flash. The same script locks pinch-zoom in standalone
+  only; browser users keep zoom for accessibility.
+- iOS splash images are wired via `apple-touch-startup-image`.
+- `middleware.ts` keeps `/offline` and `/sw.js` public so Clerk does not rewrite
+  them; `tsconfig.json` includes the `webworker` lib.
 
 ---
 
-## Feature Flags
+## The Desk (`/admin`)
 
-All feature flags default to `false` and flip to `true` only when a
-module is fully ready. Examples: per-module launch flags,
-`claude_moderation_enabled`.
+**The Desk is the admin.** It replaced a 32-page legacy panel with five surfaces —
+Desk (the pile), Ledger, People, Pulse, Site — as tabs on desktop and bottom tabs
+on a phone. `/admin` is a **redirect** to `/admin/desk`.
 
-`VAT_REGISTERED` flag defaults `false`; flip it at R1,000,000
-turnover.
+⚠️ **THE CUTOVER WAS FRONTEND-ONLY. `backend/src/admin/` is NOT legacy — it is the
+Desk's own API.** Deleting it, or "finishing the cutover" by removing it, breaks
+every Desk surface. What was deleted is the admin *frontend*:
+`frontend/app/admin/(protected)`, `frontend/components/admin`,
+`frontend/lib/admin-auth.ts`.
 
-Other thresholds: community valuation activates after 500 verified
-users; the "Build My Setup" configurator activates after 100
-firearm listings.
+**Three admin roles**, not two: `SUPERADMIN` ("Full admin" — the only tier that
+may write), `MONITORING_ADMIN` (read-only), and `ADMIN` (the legacy column default,
+treated as read-only).
+
+⚠️ **`AdminJwtGuard` is authentication AND authorization in one guard, on
+purpose** — it is the only way a route authenticates as an admin, so coverage is
+structural: a controller added later inherits the check by the act of
+authenticating. `GET`/`HEAD`/`OPTIONS` are open to any active admin; **every other
+method is SUPERADMIN-only**. `SuperadminGuard` is applied to exactly three routes
+(create admin, change role, deactivate admin).
+
+⚠️ **The CSV exports are open to any active admin, read-only ones included.** If
+that is wrong, gate the route — do not leave a claim of a control that is not
+there.
+
+⚠️ **`/admin(.*)` is a PUBLIC route in `middleware.ts` on purpose** — the admin
+runs its own JWT, not Clerk — so nothing upstream turns a signed-out visitor away.
+The session gate lives in the layout, not the pages. It shipped once with
+`requireDeskToken()` exported and called by nobody: a stranger got the operator's
+chrome, the board names and a screenful of 401s.
+
+**The Desk has its own theme**, deliberately unlike the white shop so the operator
+can never mistake one for the other. It is gated by `html:has([data-desk])`;
+nothing in `components/desk/tokens.css` may leak to `:root`. It overrides
+`themeColor` and has its own PWA icons and **its own manifest** — the shop
+manifest declares `id`/`start_url`/`scope` all `/`, so "Add to Home Screen" from
+the Desk used to install the *shop*. **The Desk's palette rule: colour is only ever
+state.**
+
+**Build gates that fail the build** (there is no CI, so `next build` is the only
+real gate and these stand in front of it):
+`npm run build` = `desk-guard && desk-cutover && theme-sync && next build`.
+- `frontend/scripts/desk-guard.cjs` — the deleted legacy admin paths must stay
+  deleted, plus its other rules.
+- `frontend/scripts/desk-cutover.cjs` — reads `frontend/lib/desk-cutover.ts`, the
+  cutover map of 29 legacy routes each marked replaced / retired / partial / none.
+
+**Warden** is a standalone Node daemon at `warden/`, running under pm2 as the
+**third service**, deployed by `deploy.sh` (which skips it gracefully on a box
+without it). It is **not** part of the Nest backend and imports nothing from it. It
+measures the box on a 60s loop — disk, TLS, nginx, pm2, database, backups, env
+presence, cron freshness — and surfaces proposals the operator approves or
+declines. `backend/src/desk/warden.*` is only a **proxy**; the daemon is the thing.
+Env: `WARDEN_TOKEN`, `WARDEN_BASE_URL`. It fails closed on a missing or short
+token by exiting at boot, so "still online a few seconds after reload" is a real
+check.
 
 ---
 
-## Backups & Disaster Recovery
+## The licence stack
 
-- Vultr daily snapshots (built-in product on the VPS plan).
-- Automated daily `pg_dump` cron to object storage, 30-day
-  retention, 02:00.
-- UptimeRobot monitors the frontend and `/api/health`.
-- Sentry for error monitoring.
-- Test backups monthly by restoring to a test database.
-- Recovery: server dead → restore Vultr snapshot; DB corrupted →
-  stop backend, restore `pg_dump`; bad deploy → roll back to the
-  git tag.
-- Full HA (hot standby / managed DB) is deferred until meaningful
-  GMV.
+Three surfaces that share a vault: the **Document Centre** (member-facing at
+`/documents`), the **Motivations builder** (`/motivations/[id]` and
+`/licence-services/[id]`), and the **scanner**.
+
+⚠️ **The member-facing route is `/documents`, but the backend prefix is still
+`licence-centre`** (`@Controller('licence-centre')`). The rename left that split
+behind; both names are live and mean the same thing.
+
+### The five licence types
+
+`MotivationLicenceType` is the spine — every registry section, document tier,
+checklist and PDF branch keys off it:
+
+| Value | What it is |
+|---|---|
+| `S13_SELF_DEFENCE` | self-defence |
+| `S15_OCCASIONAL_HUNTER` | occasional hunter **or occasional sports shooter** |
+| `S16_DEDICATED_HUNTER` | dedicated hunter, accredited hunting association |
+| `S16_DEDICATED_SPORT` | dedicated sports shooter, accredited sport-shooting body |
+| `S24_RENEWAL` | renewal of a licence already held |
+
+⚠️ **A section 24 renewal is lodged on the SAPS 518(a), not the SAPS 271.** The 271
+is an application for a NEW licence under sections 13–20. This product does not
+fill in the 518(a); an S24 pack ships the motivation alone and says so. The 271
+itself is an **opt-in extra**, not the product — one early question decides it, and
+answering yes un-hides roughly forty-eight form-only questions.
+
+### Document tiers — four, not three
+
+`DocumentTier = 'required' | 'expected' | 'strengthens' | 'extra'`.
+
+- **required** — SAPS will not process without it. It does **not** mean we refuse
+  to proceed; we never block someone drafting because a copy is at the police
+  station being certified.
+- **expected** — the tier exists because two could not tell the truth. No statute
+  behind it, and you are not getting in without it. Calling it "optional but it
+  helps" sends someone to a counter to be turned away.
+- **strengthens** — genuinely optional, genuinely helps.
+- **extra** — anything else the member attaches.
+
+⚠️ A document kind must appear in a tier for its licence type, or the checklist and
+the picker disagree: `documentStatus()` omits the row, the label falls back to raw
+SCREAMING_CASE, and the picker files it under "something else you would like to
+attach".
+
+### Where things live
+
+- `backend/src/motivations/motivation-fields.ts` is **the contract** between the
+  form, the interview, the fact pack and the quality gate. A key appears in four
+  places, so it is defined exactly once there.
+- `NOT_ASKED_BY_TYPE` removes a common question from one licence type.
+  ⚠️ **It filters what is ASKED, never what is ACCEPTED** — `fieldByKey` searches
+  the unfiltered list on purpose, or the wizard's next autosave (which resends the
+  whole blob) deletes an older draft's answer and shows the member an error.
+- A wizard step is a **union of whole registry sections**, never part of one, so a
+  `showIf` pair can never be split across steps.
+- `backend/src/common/card-placeholder.ts` — a licence card prints "NONE" against a
+  component that carries no number. That is the card being complete, not a serial
+  called NONE. Apply `answerValue()` at **answer boundaries only**; readers and the
+  vault keep the card verbatim, because the printed seller-consent declaration
+  reproduces what the card says.
+- **ActionToken purposes:** `SCAN_HANDOFF` (desktop → phone camera, 15-minute TTL;
+  ⚠️ it is a write credential to the member's vault and is **not** consumed until
+  the phone says it is finished, so the short TTL is the only thing bounding it),
+  `WITNESS_STATEMENT` (a character witness completes and signs, one hour) and
+  `SELLER_CONSENT` (the current licence holder consents in writing to a named
+  applicant applying over a named firearm). ⚠️ Unlike SCAN_HANDOFF, the last two
+  are opened by **someone who is not the member**.
+
+### The scanner
+
+⚠️ **There are TWO scanners behind `NEXT_PUBLIC_SCANNER_V3=1` (build-time,
+inlined — any other value, unset included, keeps V2), reached through one
+door** (`components/scan/scan-button.tsx` and `/scan/handoff`).
+Off → `lib/scan` + `components/scan` (DocCornerNet, assets under `/scan/v2/`,
+the member picks a shape). On → `lib/scan-v3` + `components/scan-v3`
+(DocAligner LCNet-100, `/scan/v3/`).
+
+⚠️ **`lib/scan-v3` and `components/scan-v3` are a VENDORED COPY of an out-of-repo
+project. Never edit them here — the next sync silently reverts it.** Change the
+upstream project and re-run its sync script.
+
+Rules that survive from the V2 work:
+
+- **Detection passing ≠ detection correct.** On a real licence card the detector
+  can pick the mat or a ruler and score it confidently. This is not a scoring bug
+  to re-weight; see the skipped regression in `detect.spec.ts`, which records what
+  was tried and why it was reverted.
+- **So the aim box constrains the crop** rather than fixing detection, and the
+  corner editor is the safety net. A wrong crop the member can see and fix beats a
+  clever one they cannot.
+- **The aim box is sized to what a phone can do** — across real photographs a
+  document covered 20–58% of frame area and never more, because near focus stops
+  you getting closer. A box drawn bigger is one nobody can fill.
+- **Assets live under a versioned path — bump the path, never overwrite a file in
+  place.** The service worker caches by URL. Applies to `/scan/v2/` and `/scan/v3/`.
+- ⚠️ **The ONNX runtime is NOT bundled into the worker.** The worker
+  `importScripts` the runtime's own classic build. Bundled by webpack, its dynamic
+  `import()` becomes a chunk loader that can never resolve a `/scan/` URL and the
+  runtime reports "no available backend" on every phone. The runtime files must
+  come from the same version as `package.json`.
+- **`/scan/selftest`** (public, no camera) loads the detector, runs it on a drawn
+  document and prints the runtime's own error text. Open it on the phone before
+  chasing anything else.
+- **Desktop opens no camera** — a laptop webcam cannot resolve a licence serial.
+  The handheld test is `pointer:coarse && maxTouchPoints > 0`; on a desktop the
+  primary action is the QR hand-off.
+- **Glare / too bright / too dark hold on screen until resolved** — they are the
+  only failures no processing recovers, and one module answers both the held alert
+  and the viewfinder hint so the two can never disagree.
+- ⚠️ **The test photographs carry a name, an ID number and serials.** They live in
+  `scan-fixtures/`, which is gitignored, and must never be committed. Regressions
+  get rebuilt as synthetic scenes.
+
+**Backend `scan/`** is the server-side fallback: **one route**, `POST /scan/detect`,
+guarded by `ScanHandoffGuard` **only** — deliberately a separate controller from
+the licence-centre one, because that controller's ClerkGuard would 401 the phone.
 
 ---
 
-## Marketing Copy Rules
+## The Bench
 
-- **Never name a competitor.** Refer to "scheduled auction sites",
-  "retail stores", "other SA auction sites". WhatsApp and Facebook
-  groups MAY be named directly.
-- Marketing pages planned: `/buy-and-sell`, `/auctions`,
-  `/about`, plus homepage cards and footer nav.
-- A temporary welcome page may be served at `/welcome`.
+One screen at `/bench`, members only, reached from Account. It is the **reverse
+load finder**: "what can I load from what is on my shelf". A member keeps a bench —
+powders, bullets, cartridges they own — and the screen answers with consolidated
+loads. It replaced Load Lab.
+
+⚠️ **Members-only, no-store, including the reads.** Every `/api/bench` route takes
+`ClerkGuard` and every method carries `@NoStore()`. `@Header` is method-only in
+Nest, so this cannot be declared once on the controller: a route added without it
+is a viewer-varying response the browser will hand to the next person on that
+machine. A guest bench is deferred and gets its own decision.
+
+⚠️ **No provenance, anywhere.** Operator ruling 2026-09-02: nothing on any Bench
+surface may name where a figure comes from — no "manual", no "CIP", no "SAAMI", no
+"published", no source counts. This is a **copyright boundary**, not tidiness. Say
+"start charge" and "max charge". Makers stay.
+
+⚠️ **A bullet is a WEIGHT IN A CALIBRE, never a brand.** The bullet axis matches on
+weight within a tolerance and on the calibre the cartridge implies, and on nothing
+else. Operator: "a 150gr bullet of any manufacturer would yield almost the exact
+same pressures and speeds. this is the whole point of the Bench."
+
+⚠️ **Consolidation is the one place where being wrong is a safety problem.**
+Several manuals publish the same combination with different ranges. The Bench shows
+**one** row per combination: start = the **lowest** start any source gives, max =
+the **highest** max — the widest safe-published window. Never an average (that
+invents a number nobody tested) and never a single source's range.
+
+- **Safety flags are computed server-side, always.** COAL flags and
+  above-max/below-start log flags never come from the client, because a stale
+  bundle must not be able to get that comparison wrong.
+- **`benchFor()` is the one door** from a member's stored shelf into loads,
+  powders and cartridge, and it rebuilds each bullet field by field — a field left
+  out there is silently absent everywhere downstream with nothing failing.
+- **An empty answer must explain itself.** Results are an AND across three axes, so
+  one starving axis empties the page while the other two are full; a correct empty
+  screen and a broken one look identical. `LoadsResponse.why` carries the three
+  counts.
+- **Caps say so:** `LOADS_MAX = 600`, fetched as `take: MAX + 1` so "exactly 600"
+  can be told from "thousands", and the response sets `truncated` so the client
+  says the list was cut.
+- **Data model:** eleven additive models under a `// ─── The Bench ───` banner —
+  `BenchCartridge` (+ `BenchCartridgeAlias`), `BenchPowder` (+ alias),
+  `BenchBulletMaker`, `BenchSourceLoad` (**internal**, one row per CSV row, never
+  exposed), `BenchLoad` (**public**, the consolidated row), `BenchCipDimension`,
+  `BenchLogEntry`.
+- **A load row resolves its cartridge in three steps:** by European name, then
+  through the reference file's own alias column, then through a C.I.P. sheet; a
+  cartridge the reference file lacks is created from its sheet.
+- ⚠️ **The import and C.I.P. parse are standalone scripts, not wired into boot.**
+  The operator runs them on the box after a backend deploy, in that order. Both are
+  idempotent. **Any import fix is inert until the next run.**
+- ⚠️ **The three Bench source files live only on the operator's machine and on the
+  box — never in the repo** — and the hand-appended SAAMI-derived rows exist
+  nowhere else.
+- **Frontend:** `app/bench/page.tsx` is the only stateful thing; everything under
+  `components/bench/` is presentational and implements `contract.ts` — change a
+  shape there first. Overlays are a **stack**, not an enum.
+
+Spec: `docs/design/the-bench/SPEC-BUILD.md`.
 
 ---
 
-## Git Commit Format
+## Other modules
 
-Clear, specific messages describing what changed in the session.
-Work on a feature branch; `deploy now` merges it into `main`.
+- **`crime-stats/`** — SAPS station-level figures for section 13 packs. A figure
+  reaches a motivation **only** because a named release contains it; the writer is
+  otherwise forbidden from recalling any statistic.
+- **`news/`** — a nightly 02:50 poll of ~74 South African newspaper feeds; crime
+  reports near the applicant's precinct, past twelve months, printed as cuttings
+  cited by paper, date and annexure letter.
+- **`complaints/`** — the formal complaints register. Every complaint gets a
+  `CO`-prefixed case number. ⚠️ **A buyer lodging one of the three payout-affecting
+  categories holds the seller's money**, so this module is on the money path.
+- **`reloading/`** — admin-only manual corpus. The operator SCPs PDFs into
+  `RELOADING_MANUALS_INBOX_DIR`, hits `POST /admin/reloading/scan`, and the service
+  SHA-256-dedupes and stores under random hex filenames.
+- **`ballistics/`** — see the separate app on the box.
+- **`ask-gg/`** — the chat backend was retired 2026-09-07. Only
+  `POST /ask-gg/identify-listing` and the admin KB and guide editors remain.
+
+**Feature flags** live in `FLAGS` in `backend/src/settings/settings.service.ts`
+(34 keys — booleans, numbers and strings, mixed defaults), edited through the admin
+settings surface. Env-var switches (`PAYMENT_MODE`, `PAYMENTS_LIVE`,
+`ZOHO_BOOKS_ENABLED`, `LLM_PROVIDER`, …) are separate and are **not** in that
+registry. `VAT_REGISTERED` flips at R1,000,000 turnover.
+
+---
+
+## Automate it — do not ask
+
+> Operator, 2026-08-25: "if the certificate date is determined by the math insert
+> it, don't wait for the user to go and confirm it. Same for the licenses, they all
+> have an expiry date, insert it. No further user interaction required. Thats why
+> we are designing this system, for automation and ease of use!"
+
+A cautious blank is not safer than a good answer. For a product whose job is
+warning somebody before a licence expires, silence is the worst outcome available.
+
+- **Fill it in, arm it, let them change it.** Editable beats unasked.
+- **Gate on OUR confidence, not on their attention.** Do not write a reading we are
+  unsure of, and never invent one that is simply absent — **absent stays absent**,
+  which is a different thing from wrong.
+- **Record provenance** whenever a value is written for them, so a later
+  recomputation can tell its own arithmetic from something they typed, and never
+  overwrites theirs.
+- **Say it was filled in**, on the row, in passing — never as a task.
+- Any confirm step guarding a value we already hold is work we invented for the
+  member.
 
 ---
 
 ## Operational ops
 
-### Category seeding (`backend/scripts/seed-categories.mjs`)
+### Category seeding
 
-`prisma/seed.ts` re-introduces 5 TEST dealers + the seed admin user,
-so it's NOT safe to run against production. Use this script instead
-when production needs the canonical category tree (14 parents +
-~110 sub-categories) refreshed:
+⚠️ **DO NOT RUN `backend/scripts/seed-categories.mjs` until it is reconciled with
+`prisma/seed.ts`.** The script deactivates **every** category and re-activates only
+its own list, and its list is four parents short — Overlanding, Hunting, Outdoor
+Clothing & Footwear and Archery & Bowhunting would be left `isActive=false` along
+with everything under them. Its usage comment also still says `ssh gungalore`,
+which is the alias that was deleted precisely because it could resolve to the
+retired box. Production currently holds 189 Category rows.
 
-```
-ssh alloutdoor "cd /home/alloutdoor/app/backend && node scripts/seed-categories.mjs"
-```
-
-- Idempotent — upserts by slug. Safe to re-run when the tree changes.
-- Deactivates ALL existing categories first, then re-activates the
-  canonical set. Anything admin-added via `/admin/categories` that
-  isn't in the canonical list will be left `isActive=false` (still
-  FK-valid for old listings, just hidden from pickers — manually
-  re-enable in the admin panel if needed).
-- Only touches `Category` table. No dealers, admins, users, listings,
-  or transactions affected.
-
-Production was seeded fresh on 2026-05-24 (0 → 129 categories).
-The dev seed script (`prisma/seed.ts`) is for local dev only.
+`prisma/seed.ts` re-introduces test dealers and a seed admin, so it is **not** safe
+against production either.
 
 ### Profile-completion verify-success fallback
 
-`ProfileCompletionModal` (`frontend/components/profile-completion-
-modal.tsx`) is the hard-wall modal after first listing publish. iOS
-Safari has an aggressive request-cancellation pattern in PWAs —
-the POST to `/users/me/profile-complete` can drop the response
-even when the server actually succeeded (we've seen "Load failed"
-twice in a row while backend logged two `Profile completed` events).
-
-Two-layer hardening:
-
-1. `keepalive: true` on the fetch — tells iOS Safari to hold the
-   request open across short backgrounding events.
-2. On any thrown network error, re-fetch `/users/me` and check
-   `profileCompletedAt`. If set, treat as success (close modal,
-   clear localStorage draft, fire `onComplete`) instead of showing
-   a confusing error to a user whose data is already saved.
-
-The user only sees an error now if the server genuinely didn't
-accept the data (a 4xx response with a `message` body, shown
-verbatim) OR if both the POST AND the verification GET fail.
+iOS Safari can drop the response to `POST /users/me/profile-complete` in a PWA even
+when the server succeeded. Two layers: `keepalive: true` on the fetch, and on any
+thrown network error re-fetch `/users/me` and treat `profileCompletedAt` being set
+as success. The member sees an error only if the server genuinely refused, or if
+both the POST and the verification GET fail.
 
 ---
 
-## Deferred / Optional — only build if a user actually asks
+## Git
 
-Items consciously dropped from the active plan because the cost-to-
-build doesn't match the demonstrated demand. Documented here so we
-don't accidentally re-derive them, and so the next pass knows they
-were considered + rejected (not forgotten).
+Clear, specific messages describing what changed. Work on a feature branch and
+merge it into the deploy branch **`feat/takealot-ux-parity`** — never into `main`;
+production does not track main and a push there ships nothing.
 
-- **Ask GG — Business / VAT receipts** (was E4). Adding `businessName`
-  + `vatNumber` to Subscription so Zoho receipts carry SARS-compliant
-  fields. Pro perk in the original plan. Operator call 2026-05-26:
-  too niche to ship pre-launch; the same outcome is achievable by
-  the dealer manually telling the operator their VAT number once and
-  the operator updating the Zoho contact directly. Revisit if 3+
-  Pro subscribers ask in writing.
-
-- **Ask GG — Priority routing** (was E5). Pro requests jumping a
-  queue read first by the Claude-call worker. Needs real queue
-  infra (BullMQ or similar) that we don't have today. Operator call
-  2026-05-26: deferred — nobody's complained about Ask GG latency,
-  Sonnet is already fast, and the Opus escalate-button covers the
-  "I need a better answer" pressure point. Revisit if median Ask GG
-  latency exceeds 6s OR if Pro users complain.
-
-- **Ask GG — Bulk photo identification 5→20** (was E3 original).
-  Bumped from 5 to 20 photos per Pro request for "estate clearance"
-  use case. Operator call 2026-05-26: 20-photo Claude vision calls
-  cost ~$0.20 and the realistic use cases are thin. Settled at Pro
-  cap = **10/request** (Member stays at 5). Revisit only if a dealer
-  asks specifically for bulk intake processing.
-
-- **Ask GG — Prime Ad reserve discount.** Was in early plan as
-  Pro 25% off `FeaturedAuction.reserveCents`. Operator call
-  2026-05-26: there IS no second ad system + no `reserveCents`
-  field — it was vapor. The featured-slot bid discount (E2 shipped)
-  is the only featured-pricing perk. Do not reintroduce without a
-  concrete second product to discount.
+⚠️ **The repo has three worktrees.** `C:/dev/gun-galore` (feature work),
+`C:/dev/gg-deploy` (the deploy branch — you cannot check that branch out anywhere
+else), and `C:/dev/gg-scanner`. Run `deploy.sh` from the worktree that holds the
+deploy branch.
 
 ---
 
-## Recent build context
-
-This section replaces the long per-session trail that used to live
-here. For the full history, run `git log` — for the current state of
-the launch, read these two files (both tracked in this repo):
-
-- **`AUDIT-2026-06-10.md`** — 40-agent end-to-end code audit of the
-  current `feat/hunt-ballistics-range-estimator` branch. Findings
-  are batched A–G (critical money path, raffle integrity, headers,
-  PWA, checkout UX, featured/attestations, reliability + POPIA).
-  This is the canonical "what's wrong" snapshot.
-- **`LAUNCH-CHECKLIST.md`** — open Tier 0/1/2 items that must be
-  done before flipping the public switch. Includes operator-only
-  destructive actions, schema-drift cleanup, firearm attestation
-  persistence, and the remaining `[FIX-*]` tasks. This is the
-  canonical "what's left" list.
-
-### Headline state (2026-06-12)
-
-- ~~**Payments: Stitch Express, fully live.** Peach has been removed
-  from the code-path (search the codebase for `peach` — only
-  comments noting the migration should remain).~~
-  **❌ SUPERSEDED — do not act on the struck-through line.** It was
-  true for about six weeks in 2026-06. Stitch was dropped on
-  2026-07-23 and **Peach is the rail**; following that instruction
-  today deletes the live payment integration. See the Payments
-  section above, which is the current truth.
-- **KYC SMS link tokenization** (`ActionToken` purpose
-  `KYC_VERIFY`): KYC verification can be triggered from a single-
-  tap SMS link via the dual-auth `KycOrTokenGuard`. Mirrors the
-  offer / counter / dispatch / auction-bid token pattern.
-- **40-agent audit + 21 batch fixes shipped** to prod (payments +
-  CSP/COOP headers + raffle race + offer checkout UX + featured
-  slots + firearm attestation gate). Items left over are tracked
-  in LAUNCH-CHECKLIST.md, NOT here.
-- **Firearm 18+/competency attestation:** server-side gate in
-  `backend/src/payments/transactions.service.ts` enforces
-  `firearmAttestation18Plus === true` on checkout DTOs that touch
-  firearm listings. Persistence column was reverted from the last
-  deploy — see LAUNCH-CHECKLIST.md `[FIX-7]` for the migration
-  follow-up.
-- **Security headers** are configured in `frontend/next.config.mjs`
-  `headers()`: `X-Frame-Options: DENY`, `Content-Security-Policy:
-  frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`,
-  `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-
-  Policy`. Don't relax these without operator sign-off.
-- **Schema-drift trap (READ THIS):** three services (Ask GG KB,
-  reloading-manual FTS, listings FTS) add `tsvector GENERATED`
-  columns + GIN indexes at boot via raw DDL in their
-  `onModuleInit`. These columns are NOT declared in `schema.prisma`.
-  Running `npx prisma db push --accept-data-loss` would drop them.
-  The deploy block above has been updated to use `prisma generate`
-  only; for real schema changes use `prisma migrate deploy` with a
-  written migration. See `[BC-SCHEMA-DRIFT]` and `[FIX-9]` in
-  LAUNCH-CHECKLIST.md for the proper declaration follow-up.
-
-### Operator memory shortcuts
-
-These are also in the auto-memory store but worth pinning here so
-they survive any future memory wipe:
-
-- **Never use the word "escrow"** — regulated SA financial term.
-  Use "funds held" / "payment held" everywhere.
-- **Never expose real names to other users** — username only on
-  public surfaces, no `@` prefix.
-- **Production server is Vultr, NOT Hetzner** (<ORIGIN_IP — see password manager>).
-- **SSH via the `alloutdoor` alias** only — never
-  `alloutdoor@<ORIGIN_IP — see password manager>` (bypasses the alias config).
-  The `gungalore` alias was deleted 2026-08-29; see the retired-box warning
-  above.
-- **Ballistic Calculator is its own app** at
-  `ballistics.gungalore.co.za` (own DB, pm2 services, nginx block,
-  lives at `~/ballistics-app/`).
-- **Pudo is on production mode** as of 2026-05-20.
-- **Always provide full ready-to-run PowerShell commands** to the
-  operator (they don't write code).
-- **Don't flip sandbox↔production env mode** without confirmation.
-
-**Prisma 7 notes (do not revert):**
-- Generator: `prisma-client-js` (NOT `prisma-client` — that generates ESM
-  which is incompatible with NestJS CommonJS output).
-- Runtime connection: `PrismaService` passes `adapter: new PrismaPg(DATABASE_URL)`
-  to `super()`. Prisma 7's WebAssembly engine requires an explicit driver
-  adapter; `new PrismaClient()` with no args throws.
-- CLI config: `backend/prisma.config.ts` (Prisma 7 requirement — `url` is
-  not allowed in `schema.prisma` datasource block).
-
-**Production status — LIVE since 2026-06-24.** Site is public
-(`COMING_SOON_GATE=off`), payments run in **manual EFT mode**
-(`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
-legal docs finalised (draft notices removed).
-
-**Last deploy: 2026-09-07 (16:58), commit `c647f933`.** No migrations —
-`prisma migrate deploy` reported "No pending migrations to apply", and the only
-`schema.prisma` edits are comments recording what `Credential.disciplineType`
-actually stores. **FULL DEPLOY** (`deploy.sh`): the merge touches 43 backend
-files, so both apps were rebuilt and reloaded. Dump
-`alloutdoor-20260907-165840.dump` taken before anything was touched. Artefacts
-verified (`dist/src/main.js`, `.next/BUILD_ID` non-empty before each reload),
-health doubled on :3001 and :3000, warden online, public 200 twice.
-
-Shipped in `c647f933`: **sections 15, 16 and 24 driven end to end**, the way
-section 13 was. Four audits found the same class of fault one section along.
-
-- **A section 15 was scored against dedicated status** — "G4 Dedicated status,
-  2 still needed" on the one type sold as "for someone who hunts or shoots,
-  WITHOUT dedicated status". The panel row's `from` list swept up the Experience
-  fields beside the association ones. Experience fills no box on the 271 at all,
-  so it is off the panel; G4 now appears only where a Dedicated status field does.
-- **A dedicated HUNTER's papers satisfied a dedicated SPORT application**, though
-  s1 defines a sports person by membership of a sports-shooting organisation. The
-  discipline was read off the document into `status_type` and then dropped on the
-  floor. ⚠️ `Credential.disciplineType` does NOT hold it — the 2026-08-20 backfill
-  wrote CredentialKind names and everything since 2026-08-24 holds an UPLOAD kind.
-  `status_type` in the detail blob is the only real record. Unknown still passes,
-  as `competencyCovers` does.
-- **The step said the ENDORSEMENT is the sworn statement s16(2) requires.** It is
-  the letter of good standing, which the backend has said in capitals in two
-  files since it was written. The endorsement comes from the Hunters Forum
-  guidelines of 2005: a DFO will insist on it, the Act does not name it.
-- ⚠️ **A required field could never be shown.** `discipline` is `kind: 'multi'`,
-  stored comma-joined, and its gate compared the WHOLE string — so picking
-  "something else" beside any real discipline hid the box asking what it is and
-  dropped it out of `requiredKeys` with it. `isVisible` and its frontend mirror
-  now see into a list. Exact match is still tried first, so nothing that worked
-  changed.
-- **A renewal was asked what it cannot use**: where a firearm it already owns is
-  coming from, and the SAPS 271, which is for NEW licences (a renewal is lodged
-  on the 518(a)). Answering yes un-hid ~48 questions and then 409'd. Both are in
-  the new `NOT_ASKED_BY_TYPE`. ⚠️ **Asked is not accepted** — `fieldByKey` reads
-  the UNFILTERED list on purpose, or the wizard's next autosave would delete an
-  older draft's answer and show an error about it.
-- ⚠️ **A gate that contradicts itself was simplified and had to be put back.**
-  `competency_renews_with_licence` is hidden by `formOnly` AND a `showIf` that
-  wants the opposite path. With the opt-in unasked it looked like one gate would
-  do — but `isVisible` takes no licence type and the key is still accepted, so
-  an answer can arrive and open it. The contradiction is robust precisely because
-  it does not depend on what is served.
-- Also: the completeness panel could never reach 100% for a one-association
-  member (three slots counted for everybody, 54% on a complete section); the step
-  drew all three flat, seven empty rows including three identical label pairs;
-  a step went green while an `expected`-tier document was missing; every empty row
-  printed its status twice; rows said "Not on the document" where no such document
-  had ever been attached; steps drew upload doors for kinds never asked for; the
-  closing paragraph of EVERY motivation asked for "a licence under section 16 …
-  for dedicated sport shooting", right for one type in five; and the vault now
-  reads a firearm model, which is what kept make/model/serial/expiry from ever
-  showing one.
-
-> **TWO TEST-RUNNER TRAPS, both of which hide green.**
->
-> 1. **`npx jest` is NOT how this backend runs tests.** `package.json` uses
->    `node --experimental-vm-modules`, and without it `saps271-render.spec.ts`
->    fails 16 times on "A dynamic import callback was invoked without
->    --experimental-vm-modules" — which reads exactly like a real regression.
->    Use `npm test -- <path>`.
-> 2. **A `.spec.ts` under `frontend/components/` is never collected.** The vitest
->    include is `lib/**/*.spec.ts` and `components/**/*.spec.tsx` — note the x.
->    A new component spec written as `.spec.ts` reports "No test files found"
->    and passes CI by not existing.
-
-Left undone deliberately, both because they change what somebody signs: section
-15 covers occasional SPORTS shooters in law and every question it asks is about
-hunting (`intended_quarry` is required and asks what they intend to hunt), and
-section 24 does not vary its document set by the section the original licence was
-issued under, which s24(3) arguably requires.
-
-**Last deploy: 2026-09-07 (12:20), commit `b401f112`.** ⚠️ **CARRIED A
-MIGRATION** — `20260907190000_news` (NewsSource, NewsArticle, NewsPlace;
-additive, hand-written). **FULL DEPLOY** (`deploy.sh`), clean this time:
-NewsModule registered JwtModule + AdminJwtGuard from day one and its boot
-spec (and CrimeStatsModule's) ran in the pre-deploy gate. Dump
-`alloutdoor-20260907-121814.dump`. Health doubled, warden online, public 200
-twice; `/api/news/incidents` answers 401 unauthenticated.
-
-Shipped, merged from `feat/the-bench`: `bb635e88` — **local crime clippings
-for self-defence motivations.** Operator: pull local papers' crime reporting
-for the applicant's region, past year, printed as a cutting — "just the
-picture and headline and subscript … it must look authentic, no CFR is going
-to sit and type in a stupid link". A registry of 74 feeds (66 local/regional
-across all nine provinces, 7 national; every one re-verified FROM THE BOX —
-News24, TimesLIVE, GroundUp, IOL and EWN block or 404 and are excluded) plus
-a Google News search fallback. Nightly poll 02:50: feed → share preview from
-the page head only (never the body) → keyword pre-filter → Gemini tag
-(`news.tag`, 20 per call) → place geocode cache → twelve-month retention.
-First poll on the box: 74/74 sources, 1,083 items, 1,068 previews, 600
-tagged (per-run cap; second run picks up the rest), 43 crime. The wizard's
-"Reported near you" cards tick up to eight; the pack prints each chosen
-clipping as a page (paper + date, headline, picture fetched at render time,
-standfirst, link small underneath) lettered into the annexure index, and the
-writer gets them as supplied facts to cite by paper, date and letter.
-Lettering also gained the prior-notice request the index was missing.
-Registry version `2026-09-07b`. Admin: `/admin/news/{sources,poll}`; loader
-`npm run news:poll`.
-
-**Previous deploy: 2026-09-07 (11:20), commit `1a7f3446`.** ⚠️ **CARRIED A
-MIGRATION** — `20260907160000_crime_stats` (three tables, additive,
-hand-written). ⚠️ **AND IT TOOK THE BACKEND DOWN FOR FOUR MINUTES.** The
-first full deploy (`45bf5bc0`, 11:15) applied the migration, then the
-backend crash-looped on reload: `CrimeStatsModule` mounted an
-AdminJwtGuard controller without registering `JwtModule` or providing the
-guard. tsc and 3,700 unit tests were green. `deploy.sh` STOPPED at "backend
-unhealthy after reload" — but pm2 `reload` in fork mode had already
-replaced the old process, so there was no old version left serving. Fixed
-forward in `1a7f3446` (JwtModule + AdminJwtGuard, same recipe as
-licence-centre.module.ts) with `deploy.sh --backend-only`, healthy at
-11:19; then `--frontend-only` for the half the first run never reached.
-**`crime-stats.module.spec.ts` now compiles the module the way the app does
-so this class of failure fails in jest.** ⚠️ Lesson for every new module
-with an admin controller: JwtModule.register({}) in imports AND
-AdminJwtGuard in providers, and a boot spec. Dumps
-`alloutdoor-20260907-111427.dump` (before the migration) and `-111819`.
-
-Shipped, merged from `feat/the-bench`: `d6f73891` — **SAPS station-level
-crime statistics, kept updated, cited in self-defence motivations.** Weekly
-fetch (Sun 03:40) of the SAPS quarterly workbook through `saps-http.ts`
-(SAPS omits its Sectigo intermediate; we supply it, fingerprint pinned —
-plain fetch/curl fail on the box). First load run by hand: **five releases,
-1,179 stations, 1,290,300 figures**, quarters 2021-Q2..2026-Q2 continuous.
-Self-defence motivations gain `police_station` (nearest via Geocoding +
-Places, IP-restricted server key `alloutdoor-backend-server` created in the
-`gun-galore-dealer-scans` project, on the box as GOOGLE_MAPS_API_KEY);
-the wizard shows a station picker and a precinct card; at generation the
-precinct's figures go into the pack as supplied facts with period and
-release, and the grounded area research is skipped. Admin:
-`/admin/crime-stats/{releases,fetch}`; loader `npm run crime-stats:load`.
-TypeScript is 5.9 now (came with exceljs).
-
-**Previous deploy: 2026-09-07 (10:15), commit `dc7a596d`.** No migrations.
-**FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's `deploy
-now`. Dump `alloutdoor-20260907-101257.dump` taken by the script. Health
-doubled, warden online, public 200 twice; re-checked independently, and
-`POST /api/ask-gg/identify-listing` still answers (401 unauthenticated) while
-`POST /api/ask-gg/messages` is 404.
-
-Shipped, merged from `feat/the-bench`: `a3be5099` — **three cuts to model
-spend, nothing taken from the answers** (operator: "keep the things that
-would make a motivation a quality product alive and good"). (1) Images are
-bounded before the model sees them: Cloudinary URLs via `boundedImageUrl`
-(1280 for listing photographs, 1600 for documents so small print survives)
-and the Sell page's identify upload via `boundedImageBytes` (sharp). (2)
-Motivation generation now clears Gemini's implicit-cache floor — the statute
-block moved to the head of the user message, content byte-identical, pinned
-by `motivation-prompt-cache.spec.ts`; every other prompt was measured and is
-too small to cache. (3) **The Ask GG chat backend is retired** (−8,059 lines):
-its UI went 2026-08-26 but the API, tool loop, streaming and history were still
-mounted and spending. `POST /ask-gg/identify-listing` survives as
-`ListingIdentifyService` (quota metered on its own usage rows), plus the admin
-KB and guide editors. No schema change.
-
-**Previous deploy: 2026-09-07 (09:35), commit `59f54851`.** ⚠️ **CARRIED A
-MIGRATION** — `20260907120000_ai_usage`, additive only (table `AiUsage` + two
-indexes), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`,
-both apps + warden) on the operator's `deploy now`. Dump
-`alloutdoor-20260907-093127.dump` taken by the script; "All migrations have
-been successfully applied". Health doubled, warden online, public 200 twice.
-
-Shipped, merged from `feat/the-bench`: `4be1f753` + `72a7a464` — **the
-platform's AI moved from the Anthropic API to Gemini.** Every model call now
-goes through `LlmService` (`backend/src/common/llm/`); fifteen services
-migrated; Google Search grounding restored where Anthropic's hosted search
-was; spend metered in our own `AiUsage` ledger under the `gemini` credits key;
-privacy policy, vault consent (version `2026-09-07`, re-asks) and member copy
-name Google. **The default model is `gemini-3.5-flash-lite`**, NOT the
-2.5-flash-lite the operator first asked for: Google refused 2.5 to every key
-created today ("no longer available to new users"), twice, on Google's own
-sample; operator: "use 3.5 flash-lite". `GEMINI_API_KEY` is on the box;
-`LLM_MODEL` is unset (default applies). Anthropic remains the rollback lever
-(`LLM_PROVIDER=anthropic` + `LLM_MODEL`, reload, no deploy).
-
-**Previous deploy: 2026-09-07 (08:10), commit `4f9dd5da`.** No migrations.
-**FRONTEND ONLY** (`deploy.sh --frontend-only`) — the delta is two frontend
-files, so the backend was not rebuilt or reloaded. Dump
-`alloutdoor-20260907-080519.dump` taken by the script. Health doubled, public
-200 twice; re-checked independently after the script.
-
-Shipped, merged from `feat/the-bench`: `9a078b99` — a paired training
-certificate and its statement of results count as ONE document everywhere on
-the Document Centre. The list already folded them; the section header still
-said "8 certificates" over four lines and the chips counted pages. One
-`documentsOf()` fold in `lib/document-centre-sections.ts` now feeds the
-summary, count, total, attention count and chips (operator: "once they are
-combined they should be seen as 1 document").
-
-**Previous deploy: 2026-09-07 (08:00), commit `c32dc8e6`.** No migrations
-("No pending migrations to apply"). **FULL DEPLOY** (`deploy.sh`, both apps +
-warden) on the operator's `deploy now`. Dump `alloutdoor-20260907-075413.dump`
-taken by the script. Health doubled on both ports, warden online, public 200
-twice; re-checked independently after the script.
-
-Shipped, merged from `feat/the-bench`: `9cd9142d` — **the Document Centre is
-arranged around the member's firearms.** The three folders (which split the
-one live vault 18 / 2 / 0) and the flat type-headed list are gone. On one
-scroll: attention chips that filter (renewals due, dates to check, in a
-motivation), one search that also matches details and unit standards, and
-seven collapsible sections in a fixed order — Your firearms (one row per
-licence, grouped by category, soonest expiry first, named by title or make +
-calibre, with the section and the SAPS 517(g) line), Competency (grouped by
-what it covers, saying which licence its date follows), Training certificates
-(grouped by unit-standard category, certificate + results folded), About you,
-Dedicated status and associations, Safe and storage (thumbnail grid), Anything
-else. Copies fold under their original; open state is remembered; an empty
-section's Add opens the add panel on its own kind. The list endpoint now
-returns `category`, `selfLoading`, `covers`, `follows` and titled
-`unitStandards` per row (all already computed for competency dating). Pure
-grouping logic lives in `frontend/lib/document-centre-sections.ts` (34 tests).
-⚠️ Not looked at in a browser before shipping — behind sign-in; verified by
-tsc, vitest, eslint and the build. Page folding still covers proficiency
-pairs only.
-
-**Previous deploy: 2026-09-07 (07:00), commit `7f138203`.** ⚠️ **CARRIED A
-MIGRATION** — `20260907030000_vault_event`, additive only (new table
-`VaultEvent` + 4 indexes), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY**
-(`deploy.sh`) on the operator's `deploy now`. Dump
-`alloutdoor-20260907-070156.dump` taken by the script; "All migrations have
-been successfully applied". Health doubled, warden online, public 200 twice.
-
-Shipped, merged from `feat/the-bench`: `35eb0c98` — the NSN proficiency pair
-now matches (every 13–19-digit run is tried and the ID checksum decides, so
-a SASSETA reg number no longer eats the ID; the number-before-label rule
-reaches two lines and runs first; "US Completed On" dates a 2014 statement;
-pairing tolerates one missing ID within 120 days; unpaired rows get one more
-re-read, marked `pair_reread`). `45482741` — THE DECISION LEDGER:
-`VaultLogService` (common/vault-log.service.ts) writes one `VaultEvent` per
-automatic step (classify/read/name/date/derive/pair/duplicate/address/
-autolink/settle) and per member correction (refiled/renamed/date-changed/
-deleted/confirmed); NO document contents (scrubbed); fire-and-forget. Read at
-`GET /api/admin/licence-centre/ledger` (filterable) and `/ledger/summary`.
-Query it before guessing why a vault step did not fire.
-
-**Previous deploy: 2026-09-07 (morning), commit `e66e5d15`.** FULL DEPLOY
-(`deploy.sh`, no migration) on the operator's `deploy now`. Health doubled,
-warden online, public 200 twice. Shipped, merged from `feat/the-bench`:
-`2bef02fb` — a paired proficiency is ONE entry in the Document Centre list
-(led by the statement of results) and the panel wraps the card with a
-"Statement of results | Certificate" switch; every sentence says statement of
-results / certificate, never front / back (rows under the earlier wording are
-rewritten on load); the filing banner says "we were not sure what type N
-documents are" instead of "filed by us rather than by you".
-
-**Previous deploy: 2026-09-07 (morning), commit `48084d16`.** ⚠️ **CARRIED A
-MIGRATION** — `20260907020000_credential_other_side`, additive only
-(`Credential.otherSideId` TEXT NULL), hand-written per [BC-SCHEMA-DRIFT].
-**FULL DEPLOY** (`deploy.sh`) on the operator's `deploy now`. Dump
-`alloutdoor-20260907-002319.dump` taken by the script; "All migrations have
-been successfully applied", column present. Health doubled on both ports,
-warden online, public 200 twice.
-
-Shipped, merged from `feat/the-bench`: `e32bb55f` — the Textract reader reads
-the training provider's proficiency certificate (the front: One Shot, Progun,
-NSN) and records which side every proficiency is; two definitive front
-markers; the two sides are paired on a shared number (S/C/V, label-blind) or
-same codes + same ID within 120 days, linked both ways (`otherSideId`), never
-flagged as copies, attached to a motivation as one. `6de9de72` — sides are
-settled SERVER-SIDE on every load of the Centre (rows without a side are
-re-read, ≤6/load; unpaired rows are matched; a lonely side is flagged
-`side-missing` until its other page arrives); a known rifle action beats an
-unknown one in deriveCertificateExpiry and the note names the licence ("It
-follows your MAUSER .30-06 SPRINGFIELD licence…"); recompute runs on every
-load and compares the sentence too; the full-name bubble listens on the whole
-row (`data-name-card`) and is 16px; the list orders by type then the
-document's own date with type headings. `4591d037` — the licence type rule
-accepts "Type" on the same line, an "S/L:" FORMS key, OCR's "SIL"; rifles in
-the vault whose stored type never said their action are re-read (≤3/load), so
-the operator's .223 learns it is self-loading on the next load.
-
-**Previous deploy: 2026-09-07 (morning), commit `0125c39a`.** FRONTEND-ONLY
-(`deploy.sh --frontend-only`) on the operator's `deploy now`. No migration.
-Health doubled, public 200 twice. Shipped, merged from `feat/the-bench`:
-`fc9e293e` — clipped document names in the Document Centre list, the review
-screen and the motivation document rows show the whole name in a bubble after
-a 750 ms mouse hover or, on a phone/PWA, a 750 ms hold (components/full-name.tsx);
-only when the browser actually cut the text short, no native `title`.
-
-**Previous deploy: 2026-09-07 (morning), commit `8401f432`.** ⚠️ **CARRIED A
-MIGRATION** — `20260907010000_credential_attention`, additive only
-(`Credential.attention` TEXT[] NOT NULL DEFAULT {} and
-`Credential.duplicateOfId` TEXT NULL), hand-written per [BC-SCHEMA-DRIFT].
-**FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's
-`deploy now`. Dump `alloutdoor-20260906-224935.dump` taken by the script
-before `prisma migrate deploy`; "All migrations have been successfully
-applied", `migrate status` up to date at 58, both columns present. Health
-doubled on both ports, warden online, public 200 twice.
-
-Shipped, merged from `feat/the-bench`: `5a76c9c2` — a proof of address is
-read for the name it is made out to and checked against the profile and ID
-(name), the profile address or postal code (address) and ADDRESS_FRESH_DAYS
-(date); every outcome files, a failed check flags the row (`attention` codes
-+ words in `readNotes`, address-proof.ts). A statement of results is titled
-by its unit standards ("Proficiency - Handgun + Manual Rifle") and gated on
-the firearm like a competency. A second scan of the same document (serial,
-certificate number, ID number, address+date) is flagged as a copy of the
-earlier row, never refused (credential-duplicates.ts). Autolink: a
-proficiency slot wants the firearm's own standard AND 117705; separate
-certificates both attach, a half-attached slot gets its other half, two
-candidates for either half go back to the member.
-
-**Previous deploy: 2026-09-07 (early), commit `ff66e1e6`.** ⚠️ **CARRIED A
-MIGRATION** — `20260907000000_credential_firearm_action`, additive only
-(`Credential.firearmSelfLoading` BOOLEAN NULL), hand-written per
-[BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`, both apps + warden) on the
-operator's `deploy now`. Dump `alloutdoor-20260906-222108.dump` before
-`prisma migrate deploy`; "All migrations have been successfully applied".
-Health doubled on both ports, warden online, public 200 twice.
-
-Shipped, merged from `feat/the-bench`: `d78aa585` — a rifle competency now
-follows a licence of its own action (119651 manual vs 119650 self-loading);
-the licence's action is stored in the clear beside its category, backfilled
-on the next load of the Document Centre with a re-derivation after, so the
-operator's Manual Rifle competency should move from the semi-automatic
-.223's 2035 to the .30-06's 2034 once the Centre is opened. And `e415f13e` —
-the new scanner no longer turns an upright-held page over (the text
-asymmetry flipped nine of nineteen real certificates), which is what had the
-proficiency certificates upside down and the reader missing competency issue
-dates and proficiency numbers on 2026-09-06 21:50.
-
-**Previous deploy: 2026-09-07 (small hours), commit `c6917b28`.** No migrations
-("No pending migrations to apply"). **BACKEND-ONLY** (`deploy.sh
---backend-only`) on the operator's `deploy now`. Ships `8c328e08`, merged from
-`feat/the-bench`: the licence reader now takes the firearm's Make (and Model)
-from the card's top box rather than the first "Make" Textract hands over, which
-on three of the operator's five rifles was a part's "NONE" and titled the
-vault rows "NONE 45-70 GOVERNMENT". Topmost pair where geometry is present,
-else the first non-placeholder; all-NONE stays NONE. 21 licence-centre suites,
-318 tests. Health doubled, public 200 twice. Rows already in the vault keep
-their old titles until renamed or re-read.
-
-Seen on the same cards and NOT changed: a calibre under the 95% floor still
-holds the read dates back, and the review screen's "These N are right" button
-posts confirms that render as "Date confirmed: By you".
-
-**Previous deploy: 2026-09-06 (night), commit `195712dd`.** No migrations.
-**FRONTEND-ONLY** (`deploy.sh --frontend-only`, run twice) on the operator's
-`deploy now`, to switch the new document scanner on. `NEXT_PUBLIC_SCANNER_V3=1`
-was added to `frontend/.env.production` on the box (backup
-`.env.production.bak-2026-09-06` beside it) and the frontend rebuilt so the
-flag is inlined. The first rebuild left the scanner half-dark: the middleware's
-static-extension list had `ort` for the old model but not `onnx`, so
-`/scan/v3/docaligner-lcnet100.onnx` was 307'd to sign-in on the handoff phone;
-`195712dd` adds `onnx` and was deployed on top. Dump
-`alloutdoor-20260906-205917.dump` before the first run. Health doubled both
-runs, public 200 twice, every /scan/v3 asset 200 to a signed-out client.
-
-Shipped: the new document scanner is LIVE for every member, behind ScanButton
-and the phone hand-off (components/scan-v3 wrapping lib/scan-v3). To turn it
-off: remove the line from `.env.production` on the box and rebuild the
-frontend. Upstream is C:\dev\Scanner; its `scripts/sync-website.mjs` re-copies
-lib/scan-v3. Still to do: the pre-scan question in `document-centre-add.tsx`.
-
-**Previous deploy: 2026-09-06 (later), commit `1db2c067`.** ⚠️ **CARRIED A
-MIGRATION** — `20260906150000_motivation_upload_source_credential`, additive
-only (`MotivationUpload.sourceCredentialId` SetNull FK + index,
-`MotivationUpload.sourceRemovedAt`, `Motivation.autolinkSkippedIds` default
-`{}`), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`, both
-apps + warden). Dump `alloutdoor-20260906-201102.dump` taken before
-`prisma migrate deploy`; `migrate status` reads "up to date" (56 migrations).
-Health doubled on both ports, warden online, public 200 twice.
-
-Shipped: the merge of `feat/the-bench` — the **44-finding audit fix for the
-Document Centre and the Motivation Centre** (`fc4f7fbc`: competency re-dating
-on every licence change, auto-attach that sees system-dated documents and
-re-arms, prefill from the vault/profile/previous motivation with provenance
-shown, document gate on Generate, expiry cautions on the pack, the motivations
-service split into a facade over six services, both page files split into
-components) — plus two scanner commits another session had landed on that
-branch (`bd69117e`, `435e19b2`), the new document scanner behind
-`NEXT_PUBLIC_SCANNER_V3`, which is unset on the box and therefore dark.
-
-Behaviour changes to watch: auto-attach now attaches vault documents whose
-date WE set (`dateSource`), not only member-confirmed ones; generation refuses
-with `missingDocuments` when a required document is absent;
-`FIELD_REGISTRY_VERSION` was bumped for the hidden 517(g) answer.
-
-**Previous deploy: 2026-09-06 (late night), commit `76e43524`.** No migrations.
-**FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's `deploy
-now`; the only commit since `c5fef53e` was this file, so both apps were
-rebuilt on already-shipped code. Dump `alloutdoor-20260906-190415.dump`.
-Health doubled on both ports, warden online, public 200 twice, anonymous
-`/api/bench/*` still 401.
-
-**Previous deploy: 2026-09-06 (night), commit `c5fef53e`.** No migrations.
-**BACKEND ONLY** (`deploy.sh --backend-only`); health doubled. Then
-`bench-import` and `bench-cip-parse` again, after **66 rows were appended to
-`cartridge_reference.csv`** on the box AND in the operator's local copy
-(`C:\Users\gerha\Downloads\the-bench\data\`, both backed up as
-`.bak-20260906`): twelve cartridges with figures read out of the SAAMI
-standards themselves (Z299.4-2025 rifle, Z299.3-2022 pistol — the PDFs were
-downloaded and text-extracted, the case length, COAL max and MAP taken from
-each cartridge's own drawing and pressure-table line, `cartridge_name_source`
-= `gg-spec-saami`): 7 mm PRC, 6 mm GT, 22 Creedmoor, 22/27/30/33 Nosler,
-338 Weath. RPM, 6 mm ARC, 280 Ackley Improved, 30 Rem. AR, 327 Federal
-Mag.; plus 54 alias rows (`gg-alias-2026-09-06`) mapping the manuals'
-spellings onto cartridges the file already had (the SAUMs, 7 mm STW, 22 PPC
-USA, 357 Maximum, 44 Rem. Mag. …). `5ba7b974` adds hand-checked sheet-name
-overrides for ten more spellings (Arisaka, 338 RCM, 44 S&W Russian, 50-70
-Govt., 45-90 WM, 32 S&W, 7,63 Mauser, 6,5 x 68, 450 N.E. 3'' 1/4, 30-06
-Ackley Improved). Result: 49 045 source rows (was 46 088), 40 146 loads,
-232 cartridges (all with lengths), unmatched names 177 → 103 (2 506 rows,
-all wildcats or rounds in neither standard — 22 BR Rem. and 338-06 A-Square
-are the two large ones; A-Square is marked obsolete by SAAMI). ⚠️ The
-reference CSV is the operator's data file, not in the repo; the appended
-rows are the only copy of these figures besides this note.
-
-**Previous deploy: 2026-09-06 (late evening), commit `fa304c33`.** No migrations.
-**BACKEND ONLY** (`deploy.sh --backend-only`); dump
-`alloutdoor-20260906-182021.dump`; health doubled. Then **`bench-import` and
-`bench-cip-parse` were run on the box**, in that order. Shipped `a1aa5c54`:
-a load row now finds its cartridge (1) by European name, (2) through the
-reference file's own alias column, which was read into the alias table and
-never consulted, and (3) through a C.I.P. sheet — a cartridge the reference
-file lacks is CREATED from its sheet (name and Pmax as the sheet prints
-them) and `bench-cip-parse` backfills L3/L6 onto it where blank. Lookup
-synonyms (`cipLookupKey`: Weath./Weatherby, Swed./SE, Nitro Express/N.E.,
-Schmidt Rubin/Suisse, 505 Gibbs) apply on the way to the lookup only; the
-stored key is still `cartridgeKey()` of the sheet's name. HTML entities in
-the CSV are decoded first. Result: 46 088 source rows written (was 42 113),
-37 640 loads (was 34 316), 210 cartridges (33 new from sheets, all with
-lengths: 6,5 x 55 SE 472 loads, 300 Weath. Mag. 482, the rest of the
-Weatherby family, 28/26 Nosler, 6,8 Western, 470 N.E., 404 Riml. N.E. …),
-unmatched names 218 → 177, Somchem 641 of 657 in (the 16 out: 6mm Musgrave
-×6 and 9mm SHORT ×9 have no sheet and no alias, 12 Bore ×1 is a shotgun).
-The Somchem sanity figure in the report is the file's 657; the spec's 612
-was stale.
-
-**Previous deploy: 2026-09-06 (evening), commit `01d3e39e`.** No migrations.
-**FRONTEND ONLY** (`deploy.sh --frontend-only`); dump
-`alloutdoor-20260906-180748.dump`. Health doubled, public 200 twice, and the
-live finder checked signed in: `?tol=15` opens on ± 15 gr, no row prints the
-word "Unknown". Shipped `4efae552`: loads the powder-maker manuals print with
-no bullet brand are named by type alone ("Spitzer 120 gr"), never as made by
-"Unknown" — the import's group key for them (`UNKNOWN_MAKER` in
-`components/bench/contract.ts`).
-
-**Same evening, commit `1bed422c`, BACKEND ONLY** (`deploy.sh --backend-only`,
-dump `alloutdoor-20260906-180223.dump`, health doubled) — then
-**`bench-import` was run on the box** (`node dist/src/bench/scripts/
-bench-import.js --dir /home/alloutdoor/data/bench`, dump
-`alloutdoor-20260906-175845.dump` taken first). The first attempt failed at
-step 3 (P2002 on `BenchPowder.name`): the key backfill had left eight
-suffixed duplicates (RL15 / RL15-2 …) and the upsert on the key renamed the
-base row to the name the duplicate still held. `c260f5b0` adds the merge
-step; the re-run merged all 8, matched the three spec sanity counts exactly
-(868 / 1 901 / 1 717), wrote 42 113 source rows and 34 316 consolidated
-loads (was 28 589 — 6 773 rows the old import dropped for having no bullet
-maker are now kept), and reported Somchem at 657 rows against the spec's
-612. Report at `/home/alloutdoor/data/bench/bench-import-report.json`.
-
-**Previous deploy: 2026-09-06 (afternoon), commit `df232a52`** (merge of
-`feat/the-bench` `febe41da`). ⚠️ **CARRIED A MIGRATION** — `20260906120000_bench_audit`
-(additive: `BenchPowder.key` with a SQL backfill, `BenchShare`, three indexes,
-and FKs `UserBench.userId` / `BenchLogEntry.userId → User` ON DELETE CASCADE).
-**FULL DEPLOY** (`deploy.sh`, both apps + warden). Pre-deploy dump
-`alloutdoor-20260906-174703.dump` taken before `prisma migrate deploy`. Health
-doubled on both ports, public 200 twice, warden online. Verified signed in on
-the live site afterwards: the spec card opens with "Rimless · United States ·
-2012", a log entry with a blank COAL shows "—" (was `0.00 mm`), a comma charge
-`35,9` is read as 35.9 gr, the log sheet stacks over the load card, and every
-`/api/bench/*` route answers 401 anonymously.
-
-Shipped: **the Bench audit, end to end** — the 15 findings verified live plus
-the 46 from code review (report: the 2026-09-06 session's `bench-audit` file;
-the commit message on `febe41da` lists the areas). Two behaviours changed on
-purpose: the Bench API is now members-only (the page already was; the guest
-bench is deferred per SPEC-BUILD §10), and the migration was applied to a
-fresh database first with an empty `migrate diff` afterwards. ⚠️ The import
-fixes (idempotent source rows, stable powder keys, unknown-maker rows kept,
-spec category order) take effect only on the NEXT `bench-import` run — until
-then production still has split powders such as Alliant RL-15 / RL15.
-
-**Previous deploy: 2026-09-05 (evening), commit `1a679c6c`.** No migrations.
-**FRONTEND ONLY** (`deploy.sh --frontend-only`). Dump
-`alloutdoor-20260905-154111.dump`. Health doubled, public 200 twice,
-`/scan/selftest` on the live site: running, presence 1.000.
-
-Shipped: from the operator's first real scans with the working detector —
-robust corner refinement on the still (`corner-refine.ts`, fixes the skew
-iPhone A4), halo-suppressed sharpening scaled to the source's sharpness (the
-Samsung's grey fringe), and photometric crease suppression. See the Document
-Scanner section. ⚠️ Crease suppression was verified on a fold pressed into a
-real page, not on a real fold; inside the corrected band mid-grey decoration
-can lighten slightly.
-
-**Previous deploy: 2026-09-05 (later afternoon), commit `214a0ffa`.** No migrations.
-**FRONTEND ONLY** (`deploy.sh --frontend-only`); the backend kept serving.
-Dump `alloutdoor-20260905-142041.dump`. Health doubled, public 200 twice, and
-**`https://alloutdoor.co.za/scan/selftest` run from the desktop browser
-pane: status running, presence 1.000, corners on the drawn test document.**
-
-Shipped: the fix for the previous deploy — the detector never loaded on
-either phone (both reports: live detector `unavailable`) because webpack had
-rewritten the runtime's dynamic import; the worker now `importScripts` the
-runtime from `/scan/v2/`. Plus the self-test page, "unavailable because …"
-in the diagnostics report, and the operator's 60% fill gate for auto-capture
-(linear, capped per shape at the aim box). See the Document Scanner section.
-
-**Previous deploy: 2026-09-05 (afternoon), commit `53a5f3ba`.** No migrations.
-**FULL DEPLOY** via `deploy.sh` (both apps + warden). Pre-deploy dump
-`alloutdoor-20260905-133307.dump`. Backend and frontend each health-checked
-twice on the box, public 200 twice, pm2 all online. Verified afterwards that
-`/scan/v2/doccornernet_lean.ort`, `…/ort-wasm-simd-threaded.mjs` and
-`….wasm` are served publicly with the right content types — the `.mjs` is the
-one the middleware would have 307'd before this deploy.
-
-Shipped: **the scanner rebuilt to Scanbot parity** (`523b6121` on
-`feat/scanner-tracking`, merged via `feat/the-bench`): DocCornerNet replaces
-DocQuadNet256 with a second pass on the aim region; the filter set; magnetic
-lines in the crop editor; Android full-resolution stills; the quality gate;
-tray reopen and reorder; tap-to-focus and zoom; onnxruntime-web 1.29. See the
-Document Scanner section for the decisions that must stay made.
-
-⚠️ **Untested on a phone.** The new worker, runtime and asset path have run
-only under tsc, 1180 unit tests and a production build. First thing to check
-on a real device: that the live box appears at all (the diagnostics panel's
-"live detector" block says `running` and names the winning pass).
-
-**Previous deploy: 2026-09-05, commit `acf041ec`.** ⚠️ **CARRIED A MIGRATION** —
-`20260905090000_credential_read_provenance`, additive and defaulted (two
-`TEXT[]` columns on `Credential`, no backfill). **FULL DEPLOY** via
-`deploy.sh` (both apps + warden). Pre-deploy dump
-`alloutdoor-20260905-093016.dump` taken by the script before
-`prisma migrate deploy` ran. Backend and frontend each health-checked twice on
-the box, public 200 twice, pm2 all online.
-
-Shipped: the **scanner tracking fix** (`ebedf18a`, `31066cf3` — see the
-Document Scanner section for the decisions that must stay made) merged from
-`feat/scanner-tracking` via `feat/the-bench`, plus the licence-centre
-read-provenance work already on `feat/the-bench` (`4e6955b1`, `79e43019`).
-
-> The stale-Prisma-types trap bit locally on this one: `tsc` in the deploy
-> worktree reported four errors in `licence-centre.service.ts` on the two new
-> columns until `npx prisma generate` was run. Not a code fault. `deploy.sh`
-> runs generate before the backend build on the box, so the box was fine.
-
-⚠️ **Untested on a phone.** Every scanner change was verified by type-check
-and 1138 unit tests, not by holding a document under a camera. Two things to
-check first on a real device: whether the live box is now smooth, and whether
-auto-capture fires while the hand is still moving (the shutter-gate tick runs
-more often than `MOTION_STILL` was tuned on).
-
-**Previous deploy: 2026-08-27, commit `60736d8`.** ⚠️ **THIS ONE CARRIED A
-MIGRATION** — `20260825200000_transaction_fee_model`, the first non-frontend-only
-deploy since the fee model was deliberately held back on 2026-08-26. **FULL
-DEPLOY** (`deploy.sh`, both apps). Pre-deploy dump
-`alloutdoor-20260827-105627.dump` taken before `prisma migrate deploy` ran.
-Both apps rebuilt, artefacts verified (`dist/src/main.js`, `.next/BUILD_ID`
-non-empty before each reload), health doubled on :3001 and :3000, public 200
-twice.
-
-Shipped in `60736d8`: **the Winkel rebuild** — 255 files, +2,642/−37,546. The
-storefront is Buy Now + Auction only; Swop, Hunting Packages, AO PRO, Featured
-listings and Ask Boet are gone from code and routes (Prisma models deliberately
-kept); Load Lab survives, ungated, in the account. The white retail theme is
-live. Plus the fee model, the new moonlit hero plate, the black-ink logo, and
-the CSS-token fixes below.
-
-The migration is additive and needs no backfill: `CREATE TYPE "FeeModel"` plus
-`ADD COLUMN "feeModel" NOT NULL DEFAULT 'SELLER_DEDUCT'`. SELLER_DEDUCT is the
-correct reading for every pre-existing row — the markup model shipped
-2026-08-15 and this platform has not traded (PAYMENTS_LIVE unset, checkout 503).
-
-> **TWO SILENT CSS-VARIABLE TRAPS WERE FIXED HERE. Both are invisible to the
-> toolchain — not tsc, not the build, not the browser console.**
->
-> 1. **An undefined `var()` with no fallback kills the WHOLE declaration** at
->    computed-value time, so the property takes its INITIAL value: `background`
->    → `transparent`, `border-radius` → `0`, `border-color` → `currentColor`,
->    and one bad stop drops an entire gradient. Six properties were referenced
->    but never defined in any commit (`--bg-page`, `--radius`, `--brand`,
->    `--amber`, `--green`, `--foreground`/`--background`). A `var()` WITH a
->    fallback is fine — do not report those as broken.
-> 2. **You cannot alpha-dilute a custom property by concatenation.**
->    `var(--red)` + `18` expands to two tokens, not one 8-digit colour, so it
->    dies the same way. 44 sites did this. Use `--red-wash` / `--red-line` /
->    `--gold-wash`, or `color-mix(in srgb, var(--x) N%, transparent)`.
->
-> ⚠️ Restoring a tinted fill re-opens the ink's contrast: these chips derive
-> both ink and a tint of itself, and `--text-tertiary` is exactly 4.5:1 on
-> white, so any tint behind it fails. The neutral chip colour is now
-> `--text-secondary`.
-
-Verified live after this deploy: the homepage carries the new plate at
-`?v=20260827` and the `-dark` logo files, "Shop with confidence" is gone, and
-every route that genuinely existed and was removed returns **404** rather than
-redirecting to sign-in (`/my/swaps`, `/raffle`, `/subscribe`, `/ask-gg`,
-`/featured/bid`). Note that **307 is the baseline for ANY unknown path** while
-logged out, so a 307 on a URL that never existed is not a missing matcher —
-check the route actually existed before chasing it.
-
-**Last deploy: 2026-08-27, commit `22dcedb`.** No migrations pending.
-**FRONTEND ONLY** (`deploy.sh --frontend-only`) — the delta is nine frontend
-files and no `backend/` or `prisma/` file, so the backend was never rebuilt or
-reloaded and kept serving throughout (35h uptime across the deploy). Build
-verified, `BUILD_ID` non-empty before the reload, health doubled, public 200
-twice. The changed chunk was then fetched from the public site and checked for
-the new code rather than trusting the build log.
-
-Shipped in `22dcedb`: **the scanner, kept working now the site around it is
-white.** The Winkel rebuild touched 207 files and not one was a scan file, so
-the scanner went into a white-theme site exactly as it left a dark one.
-
-> **THE PRIME SUSPECT WAS WRONG, AND THAT IS THE USEFUL PART.** The theme
-> inversion does NOT make the camera overlay illegible. Every screen the camera
-> draws on is a hardcoded `background: '#000'` with `color: '#fff'`,
-> `DocumentScanner` portals to `document.body` so no theme context reaches it
-> even in principle, and `aim-frame.tsx` uses no CSS variables at all. **Do not
-> go looking for invisible text in the scanner — there is none.**
-
-What actually broke, and what changed:
-
-- **`--warning` came with the theme.** Retuned `#d49a3a` → `#8F6E0F` so it would
-  carry on a white card — right for a card, wrong on the viewfinder's fixed
-  black, where contrast drops ~8.5:1 → ~4.4:1 and the accent whose only job is
-  to flag "this photo is too dark to read" goes quiet exactly when needed. Now
-  `OVERLAY_WARNING` in `frontend/lib/scan/overlay.ts`, which also records the
-  rule: **painted over video means a constant, painted on a page means a token.**
-  On the dark theme production still runs the value is unchanged, so it shipped
-  as a visual no-op and is already correct for when the white theme lands.
-- **`/scan/handoff` passed `shape: 'any'`** when the hand-off named no kind. The
-  scanner derives "has the member chosen?" from `shape !== undefined`, so that
-  laundered "the computer did not say" into "the member said: Something else" —
-  pre-ticked, ring and all, carrying the weakest aim prior we have, on the one
-  screen where the member cannot see what the desktop knew. Two live callers
-  reach it that way. Now `undefined`.
-- **The Motivation Centre had independently grown the wholesale-replace bug**
-  that cost the Document Centre six licences (`setFiled([])` then
-  `setFiled(named)`). `mergeReviewQueue` is now generic over `{ id: string }` and
-  both queues use the one tested function. ⚠️ The test pins the generic at
-  compile time; it CANNOT catch a caller reverting to a wholesale set.
-- Three consistency fixes: a checklist row wanting three photographs opens ready
-  for three; the Document Centre names the document in the camera heading; and
-  `subtitle`/`skipChoose`/`staticAim` are plumbed through `ScanButton`, giving
-  the safe-photograph guidance somewhere to go — its comment said "there is
-  nowhere later to say it", and now it rides into the camera header.
-
-**The `deploy.sh` trap recorded on 2026-08-26 is DEFUSED.** Local
-`feat/takealot-ux-parity` was left at the fee-model commit `0d7a137`; it now
-matches `origin` and production. The script was used normally for this deploy.
-The check is still worth doing every time: `git rev-parse feat/takealot-ux-parity`
-against `origin/` and against what you actually intend to ship.
-
-**Still not deployed, deliberately: the fee model AND the whole Winkel rebuild.**
-Both live on `feat/winkel-rebuild` (pushed). Production tracks
-`feat/takealot-ux-parity`, so neither can reach the box until merged. The fee
-model carries a 29-line migration touching the live money path and needs its own
-deploy with `prisma migrate deploy` and a backend rebuild.
-
-⚠️ **`INK_AT` has still never met a real licence card.** Auto-capture has been
-live since `3de9ec1` and the threshold remains uncalibrated against real use.
-
-**Last deploy: 2026-08-26, commit `3de9ec1`.** No migrations pending.
-**FRONTEND ONLY** — the commit touches no `backend/` or `prisma/` file, so the
-backend was never rebuilt or reloaded and kept serving throughout. Frontend
-built on the box (`BUILD_ID` verified non-empty before the reload), reloaded,
-health checks doubled on :3000 and :3001, public 200 twice.
-
-Shipped in `3de9ec1`: **automatic capture, re-specified** — see the Document
-Scanner section. On by default with a toggle; the gate asks three questions
-about the FRAME (ink over the aim box, exposure, 1100ms stillness) and never
-consults the detector, because the detector demonstrably cannot see a licence
-card. `INK_AT = 0.10` is deliberately weak and NOT yet calibrated against real
-use — raise it if it fires on an empty desk, lower it if it sits still on a
-real document.
-
-> ⚠️ **TWO TRAPS FOUND IN THE REPO DURING THIS DEPLOY. Read before the next one.**
->
-> 1. **Local `feat/takealot-ux-parity` was left at `0d7a137`** (the fee-model
->    commit), NOT at what production runs. `infra/deploy/deploy.sh` does
->    `git push origin feat/takealot-ux-parity` from the LOCAL branch of that
->    name and then gates on `git rev-parse HEAD` — so running it from that
->    state would have pushed the fee model **and its migration** to a live
->    database, while reporting success. This deploy therefore bypassed the
->    script and pulled `origin/feat/takealot-ux-parity` (`3de9ec1`) on the box
->    directly. **Before using the script again, check
->    `git rev-parse feat/takealot-ux-parity` against `origin/` and against what
->    you actually intend to ship.**
-> 2. The working tree carried **uncommitted "Winkel" white-theme work**
->    (`globals.css`, `layout.tsx` — `#0f0f0f` → `#F6F5F1`). It was not
->    committed, not tested and not deployed; production is still the dark
->    theme. Only `CLAUDE.md` was staged for the deploy record.
-
-**Not deployed, and deliberately so: the fee model (`0d7a137`).** It carries a
-29-line migration and reaches `transactions.service.ts`, `receipt.service.ts`,
-`zoho-books.service.ts` and `notifications.service.ts` — the live money path.
-It needs its own deploy with `prisma migrate deploy` and a backend rebuild.
-Keep it separate from a frontend-only ship.
-
-Shipped in `5faf095`: **the Document Centre stopped losing documents between
-batches.** `uploadFiles` assigned the review queue wholesale
-(`setQueue(added)`), and the add panel closes after every hand-off — so six
-licences added one at a time were six upload calls, each wiping the review
-of the five before it. Operator: "took scans of 6 licenses. 2 made it
-through." Nothing was lost from the server; the documents lost their place in
-the only screen that asks a human to confirm the type and the dates, so they
-sat unconfirmed and unfiled — for an expiry reminder, the same as absent.
-`mergeReviewQueue` in `lib/document-review-rules.ts` now always merges,
-de-duplicated by id, and is pinned by a test that was confirmed to fail
-against the old behaviour. Upload progress became a real bar (per document,
-because the vision read after each upload is most of the wait).
-
-Shipped in the previous deploy `5f53384`: auto-capture removed from the
-document scanner (manual shutter only — see the Document Scanner section);
-the scanner's work-destroying paths fixed (failed re-cut announced as
-success, × and Escape binning scanned pages, Apply flashing the live camera,
-one failed upload discarding the rest of a batch); the corner editor's
-teleporting grab, upscaled loupe and bow-tie crop; and the mobile redesign —
-sticky featured strip retired into an in-feed card, card photos 52.5% → 75%,
-tabs now Shop / Saved / Sell / Alerts / Account with Ask Boet as a floating
-launcher.
-
-> **The backend type-check gate is GREEN again (verified 2026-09-06).** This
-> block used to say it was red with 17 spec-only errors from the
-> competency→licence expiry work in flight. That work landed:
-> `derivedExpiryFor` takes `readonly LinkedLicence[]`, both specs were
-> updated, and `npx tsc --noEmit` in `backend/` reports zero errors. If the
-> gate is red now, it is a real error — do not wave it through on the
-> strength of this note.
-
-**⚠️ TURN OFF BEFORE THE FIRST REAL SIGN-UP:
-`ALLOW_LOCAL_ORIGINS=true` in `backend/.env` on the box.** It lets the
-PRODUCTION API accept credentialed requests from `localhost` and LAN
-origins, so a developer can run the frontend locally and have the data
-land on the real server. It exists because the site is not carrying real
-members yet and there was no other way to exercise the Document Centre
-against a real backend — local dev had no backend running and a database
-25 migrations behind, so every scan uploaded into nothing, silently.
-Unset the variable and `pm2 reload alloutdoor-backend --update-env`; the
-code refuses local origins in production by default, so nothing else
-needs deploying. The backend WARNs about it on every boot while it is on.
-
-Pending external items (operator track — none of these are coding
-work, but the platform can't fully launch without them; see
-LAUNCH-CHECKLIST.md for the authoritative list):
-
-- **VERIFYNOW_MODE=production (CRITICAL — site is public).** KYC
-  identity checks are currently running against SANDBOX data, so
-  sellers are NOT genuinely ID-verified. Set `VERIFYNOW_MODE=production`
-  + the production VerifyNow API key in `backend/.env` and reload the
-  backend. Accepted as a known gap at the 2026-06-24 go-live.
-- **Peach** live merchant + payout-bank account fully configured
-  (sandbox→production cutover; redirect URLs are set in the Peach
-  dashboard — `scripts/stitch-redirect-setup.cjs` is dead code).
-  Under the NEW entity, ALLOUTDOOR (PTY) LTD.
-- Attorney review of `/terms`, `/privacy`, `/aml-policy`,
-  `/refund-policy`, `/firearms-compliance`.
-- Email forwarding for `sellers@` / `support@`
-  at gungalore.co.za.
-- Register the `gg.co.za` short-link domain (used in SMS action
-  links).
-- DNS + nginx + certbot for `ballistics.gungalore.co.za`
-  (`[BC-OPS]` in LAUNCH-CHECKLIST.md).
-
-Do not append new session trails here — keep this file as rules,
-not history. When work concludes, update LAUNCH-CHECKLIST.md (open
-items) or AUDIT-2026-06-10.md (findings) instead.
+## Where the rest of the documentation is
+
+**`docs/INDEX.md`** maps every document in the repo and says which still describe
+the running system. Start there. Particularly:
+
+- `README.md` — getting it running locally, and the domain glossary.
+- `ALLOUTDOOR-REPLATFORM.md` — the clean-slate build under the new company, its
+  open operator decisions and its top three risks. Live work.
+- `docs/ARCHITECTURE.md`, `docs/ENVIRONMENT.md` — integration table and per-service
+  failure modes.
+- `BOBGO-MIGRATION.md` — the courier cutover.
+- `DOCUMENT-CENTRE.md`, `LICENCE-APPLICATION-REBUILD.md`,
+  `LICENCE-SERVICES-AND-FEED.md`, `MOTIVATION-*.md`, `SAPS271-PREFILL.md` — the
+  licence stack in depth.
+- `docs/design/the-bench/SPEC-BUILD.md` — The Bench.
+- `HANDOFF.md` — what the last session did and what the next one should know.
+
+Everything under `docs/history/` was true on the date printed at the top and has
+not been maintained. Read it for the argument, not the status.

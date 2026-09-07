@@ -24,6 +24,7 @@ Two rules before you read anything here:
 |---|---|
 | [`README.md`](../README.md) | You have just cloned the repo and need it running locally. Stack, ports, env, the domain glossary (SAPS dealer transfers, the selling modes, KYC, PUDO). |
 | [`CLAUDE.md`](../CLAUDE.md) | You need the house rules and the standing decisions: what is legally load-bearing, what wording is banned, what must never be changed without an operator call. It is written for an AI agent and it is long, but it is the most current document in the repo. |
+| [`HANDOFF.md`](../HANDOFF.md) | You are starting a session and need the current state rather than the rules: what production runs, what the last session did, the open items, and the traps found the hard way. Overwritten each time; `CLAUDE.md` holds anything durable. |
 | [`ALLOUTDOOR-REPLATFORM.md`](../ALLOUTDOOR-REPLATFORM.md) | The in-flight cutover: moving the marketplace off the Vultr VPS to Absolute Hosting, `gungalore.co.za` → `alloutdoor.co.za`. Live work, not history. |
 
 ## Current reference
