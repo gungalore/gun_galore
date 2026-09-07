@@ -12,12 +12,12 @@ Last updated: **2026-09-07**.
 
 | | |
 |---|---|
-| Production runs | `181d45bd` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `181d45bd` |
+| Production runs | `64dc4fce` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `64dc4fce` |
 | Feature branch | `feat/the-bench` — same tip as the deploy branch, fast-forwarded in |
 | Migrations | 64, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
-| Last pre-deploy dump | `alloutdoor-20260907-190417.dump` |
+| Last pre-deploy dump | `alloutdoor-20260907-192524.dump` |
 
 **The platform is not trading.** 2 users, 2 listings, **0 transactions**, 1
 motivation, 20 credentials. Nothing has ever been sold. Checkout returns 503
@@ -35,7 +35,7 @@ pushed.** It is the one branch with no copy anywhere else.
 
 ## What the last session did
 
-**Two fixes to the motivation pipeline, deployed as `181d45bd`.**
+**Three fixes to the motivation pipeline, deployed as `181d45bd` then `64dc4fce`.**
 
 1. **The "firearms already licensed to me" table now prints Make, Calibre,
    Serial number, Date of expiry** — operator instruction, replacing the old
@@ -57,11 +57,25 @@ pushed.** It is the one branch with no copy anywhere else.
    `/licence-services/[id]/page.tsx` was correct all along — it wasn't
    involved in what the operator hit; the raw-flag checks were.)
 
-Full deploy (diff touched `backend/`, so `--frontend-only` was not an option).
-tsc clean both sides, backend tests 4015/4027 passed (8 skipped, 4 todo, 0
-failed), frontend tests 1675/1676 passed (1 skipped, 0 failed), frontend build
-exit 0. `deploy.sh` ran clean end to end: no pending migrations, backend health
-×2, frontend health ×2, warden reloaded and online, public site 200 ×2.
+3. **The "What you own" step's collapsed firearm row, and the Document Centre
+   prefill offer's collapsed row, now show Calibre instead of Model** — the
+   same operator instruction as (1), applied to the two frontend screens that
+   share `owned-firearm-summary.ts`'s `firearmLine()`. Changing which column
+   counts toward the identifying line also changes which firearms
+   `offerRows()` treats as having "nothing to collapse" (a firearm known only
+   by calibre now collapses instead of showing raw columns) — the three tests
+   built around a type-and-calibre-only firearm were rewritten around
+   type-and-licence-number instead, which is still genuinely outside the line.
+
+(1) and (2) were a full deploy (diff touched `backend/`, so `--frontend-only`
+was not an option): tsc clean both sides, backend tests 4015/4027 passed (8
+skipped, 4 todo, 0 failed), frontend tests 1675/1676 passed (1 skipped, 0
+failed), frontend build exit 0, `deploy.sh` clean end to end — no pending
+migrations, backend health ×2, frontend health ×2, warden reloaded and online,
+public site 200 ×2.
+
+(3) was frontend-only: tsc clean, frontend tests 1675/1676 passed, build exit
+0, `deploy.sh --frontend-only` clean — frontend health ×2, public site 200 ×2.
 
 ---
 
