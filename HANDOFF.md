@@ -12,12 +12,12 @@ Last updated: **2026-09-07**.
 
 | | |
 |---|---|
-| Production runs | `4c7af57b` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `4c7af57b` |
+| Production runs | `404dd6f9` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `404dd6f9` |
 | Feature branch | `feat/the-bench` — same tip as the deploy branch, fast-forwarded in |
 | Migrations | 64, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
-| Last pre-deploy dump | `alloutdoor-20260907-211448.dump` |
+| Last pre-deploy dump | `alloutdoor-20260907-215338.dump` |
 
 **The platform is not trading.** 2 users, 2 listings, **0 transactions**, 1
 motivation, 20 credentials. Nothing has ever been sold. Checkout returns 503
@@ -34,6 +34,52 @@ pushed.** It is the one branch with no copy anywhere else.
 ---
 
 ## What the last session did
+
+**Two more fixes to the same thread, deployed as `67d53ba4` then `404dd6f9`.**
+
+1. **A field read off the very first document an applicant uploads was
+   silently discarded if it arrived before an unrelated later question was
+   answered — deployed as `67d53ba4`.** The common order is upload the
+   firearm's own licence first, then decide "who fills the SAPS 271" much
+   later — but `firearm_serial`/`barrel_serial`/`frame_serial`/
+   `receiver_serial` only exist on screen once that question is answered
+   "Fill it in for me" (they are `formOnly`). `readFirearm()`'s output was
+   filtered by that visibility BEFORE anything was offered or stored, so a
+   serial read off the first upload was gone for good by the time the
+   question was answered — nothing re-reads a document once it is attached.
+   Operator: "why can't it just cache the information until I make a
+   selection because the fucking selection is the last mother fucking thing
+   on the god damn list."
+
+   Fix, `motivation-documents.service.ts`: every readable field is now kept
+   (`readable`) regardless of current visibility; only the immediate
+   upload-response `suggestions` stay visibility-gated, so the confirmation
+   panel still never lists a box the applicant cannot find. And on the
+   frontend, `licence-services/[id]/page.tsx` now checks every attached
+   document's stored reading (`GET :id/uploads/:uploadId/reading` — no
+   vision call, the same endpoint the phone hand-off already used) the
+   moment "Fill it in for me" is answered, and offers anything still
+   unanswered through the same review panel.
+
+2. **Removed `barrel_length` from the motivation form — deployed as
+   `404dd6f9`.** Operator: not necessary. Was already optional (no
+   required-field cascade). Registry field + the frontend's frozen
+   `registry-keys.json` fixture only; everything else matching "barrel
+   length" in a repo-wide search turned out to be an unrelated concept —
+   the comprehensive-pack PDF spec-sheet feature (`firearmSpec`),
+   shooting-discipline rule text, and marketplace listing-question prompts
+   each use the same words for a different thing.
+
+Full deploy both times (diff touched `backend/`): tsc clean both sides,
+backend tests 4020/4032 passed, frontend tests 1675/1676 passed, frontend
+build exit 0, `deploy.sh` clean end to end each time — backups
+`alloutdoor-20260907-211448.dump` then `alloutdoor-20260907-215338.dump`, no
+pending migrations, backend health ×2, frontend health ×2, warden reloaded
+and online, public site 200 ×2.
+
+---
+
+## What the session before that did
 
 **The extraction-result DB write happened before the firearm second pass
 finished, so a genuinely successful read still showed as unread — deployed
@@ -75,7 +121,7 @@ and online, public site 200 ×2.
 
 ---
 
-## What the session before that did
+## What two sessions ago did
 
 **`readFirearm()` now reads a licence card off AWS Textract first, Gemini as
 fallback — deployed as `d90fbdcf`.**
@@ -117,7 +163,7 @@ frontend health ×2, warden reloaded and online, public site 200 ×2.
 
 ---
 
-## What two sessions ago did
+## What three sessions ago did
 
 **Three fixes to the motivation pipeline, deployed as `181d45bd` then `64dc4fce`.**
 
@@ -225,6 +271,21 @@ public site 200 ×2.
 
 ## Traps found the hard way this session
 
+- **One variable serving two jobs — "what to offer right now" and "what to
+  persist" — means a filter added for the first reason silently breaks the
+  second.** `readFirearm()`'s consumer in `addUpload()` pushed every field
+  into one `suggestions` array, gated by `visible` so the confirmation panel
+  never listed a box the applicant could not find on screen. That gate had
+  nothing to do with persistence, but because the SAME array was what got
+  encrypted and stored, a field that was true and correctly read was thrown
+  away before it ever reached the database — not shown late, gone. This is
+  the second bug this exact function produced from one array doing two
+  jobs (see the "session before that" entry below for the first). Once
+  found once, it is worth checking every other place a "what did we read"
+  value and a "what do we show" value share one variable.
+
+## Traps found the hard way the session before that
+
 - **A fix that changes what a function RETURNS is not verified until you trace
   what the CALLER does with it.** `readFirearm()` was fixed and *did* correctly
   read 8 fields via Textract — confirmed in the pm2 log — and it was tempting
@@ -245,7 +306,7 @@ public site 200 ×2.
   is not established — but don't conclude a query is permanently blocked from
   two denials; retry with the verified-working command form before escalating.
 
-## Traps found the hard way two sessions ago
+## Traps found the hard way three sessions ago
 
 - **A build-time flag being `true` does not mean every entry point checks it the
   same way.** `PACK_SCREEN_SHIPPED` is `true` in production, but
