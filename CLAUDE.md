@@ -1970,7 +1970,35 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (11:20), commit `1a7f3446`.** ⚠️ **CARRIED A
+**Last deploy: 2026-09-07 (12:20), commit `b401f112`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907190000_news` (NewsSource, NewsArticle, NewsPlace;
+additive, hand-written). **FULL DEPLOY** (`deploy.sh`), clean this time:
+NewsModule registered JwtModule + AdminJwtGuard from day one and its boot
+spec (and CrimeStatsModule's) ran in the pre-deploy gate. Dump
+`alloutdoor-20260907-121814.dump`. Health doubled, warden online, public 200
+twice; `/api/news/incidents` answers 401 unauthenticated.
+
+Shipped, merged from `feat/the-bench`: `bb635e88` — **local crime clippings
+for self-defence motivations.** Operator: pull local papers' crime reporting
+for the applicant's region, past year, printed as a cutting — "just the
+picture and headline and subscript … it must look authentic, no CFR is going
+to sit and type in a stupid link". A registry of 74 feeds (66 local/regional
+across all nine provinces, 7 national; every one re-verified FROM THE BOX —
+News24, TimesLIVE, GroundUp, IOL and EWN block or 404 and are excluded) plus
+a Google News search fallback. Nightly poll 02:50: feed → share preview from
+the page head only (never the body) → keyword pre-filter → Gemini tag
+(`news.tag`, 20 per call) → place geocode cache → twelve-month retention.
+First poll on the box: 74/74 sources, 1,083 items, 1,068 previews, 600
+tagged (per-run cap; second run picks up the rest), 43 crime. The wizard's
+"Reported near you" cards tick up to eight; the pack prints each chosen
+clipping as a page (paper + date, headline, picture fetched at render time,
+standfirst, link small underneath) lettered into the annexure index, and the
+writer gets them as supplied facts to cite by paper, date and letter.
+Lettering also gained the prior-notice request the index was missing.
+Registry version `2026-09-07b`. Admin: `/admin/news/{sources,poll}`; loader
+`npm run news:poll`.
+
+**Previous deploy: 2026-09-07 (11:20), commit `1a7f3446`.** ⚠️ **CARRIED A
 MIGRATION** — `20260907160000_crime_stats` (three tables, additive,
 hand-written). ⚠️ **AND IT TOOK THE BACKEND DOWN FOR FOUR MINUTES.** The
 first full deploy (`45bf5bc0`, 11:15) applied the migration, then the
