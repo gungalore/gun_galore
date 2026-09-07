@@ -9,8 +9,8 @@ import type { Response } from 'express';
 
 /**
  * Catches every 429 (TOO_MANY_REQUESTS) — both @nestjs/throttler's
- * ThrottlerException and our custom HttpException 429s (e.g.
- * AskGgQuotaService fair-use pause) — and sets the HTTP `Retry-After`
+ * ThrottlerException and our own custom HttpException 429s (the Ask GG
+ * fair-use pause was one, retired 2026-09-07) — and sets the HTTP `Retry-After`
  * header (RFC 7231 §7.1.3) on the response before delegating to the
  * default Nest exception handler.
  *

@@ -28,7 +28,8 @@ import { ManualPaymentsModule } from '../manual-payments/manual-payments.module'
  * Shipping behind it for one audit write. It is stateless over the @Global()
  * PrismaService, so a second instance is a second reference, not a second
  * source of truth — same as RatingsModule, AskGgModule and ReloadingModule
- * already do.
+ * already do. (AskGgModule is now just the admin KB + guide editors and the
+ * Sell page's photo identifier; the chat behind it was retired 2026-09-07.)
  */
 @Module({
   imports: [JwtModule.register({}), ManualPaymentsModule],

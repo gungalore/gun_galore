@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
+import { boundedImageUrl, IMAGE_EDGE } from '../common/image-url';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ZohoBooksService } from '../zoho/zoho-books.service';
@@ -1066,7 +1067,12 @@ Rules:
    * message travels into an admin alert.
    */
   private async inlineFromUrl(url: string): Promise<LlmPart> {
-    const res = await fetch(url);
+    // ⚠️ 1600, NOT THE ORIGINAL. Every photo through here is paperwork — a
+    // SAPS 534, a stock-register line, a stamped serial — so it keeps the
+    // document edge: the small print is the whole evidence. The original was
+    // only ever costing tokens; the model reads it in 768px tiles either way.
+    const src = boundedImageUrl(url, IMAGE_EDGE.document);
+    const res = await fetch(src);
     if (!res.ok) {
       throw new Error(`could not fetch a verification photo (HTTP ${res.status})`);
     }

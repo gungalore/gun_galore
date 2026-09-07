@@ -17,10 +17,11 @@ import { ReloadingAdminController } from './reloading-admin.controller';
  * rows. A Postgres tsvector + GIN index on the page text makes
  * Sprint 2's search instant across the full corpus.
  *
- * Sprint 2: tool-use wiring in AskGgClaudeService so users can ask
- * load-data / reloading-theory questions, Claude searches the FTS
- * index, fetches the relevant pages from disk via pdf-lib, reads
- * the actual table, and answers with citation.
+ * ⚠️ Sprint 2 wired this FTS index into the Ask GG chat's tool loop so a
+ * member could ask a load-data question and get an answer with a citation
+ * off the real manual page. That chat was RETIRED 2026-09-07 and AskGgModule
+ * no longer imports this module; the index now serves the admin scan tools
+ * and The Bench.
  */
 @Module({
   imports: [

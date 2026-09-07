@@ -28,9 +28,10 @@ import { AskGgKbStatus } from '@prisma/client';
  *   POST   /admin/ask-gg/kb/:id/unarchive flip ARCHIVED → DRAFT
  *   DELETE /admin/ask-gg/kb/:id           hard delete (reason required)
  *
- * Sits next to AskGgController in the same module — they share the
- * same backing service but use different guards (ClerkGuard vs
- * AdminJwtGuard).
+ * ⚠️ The member-facing half of this KB is gone (retired 2026-09-07):
+ * entries were drafted from resolved chat conversations and surfaced as
+ * cards above the composer. Nothing reads them now; the desk writes and
+ * verifies them by hand through the routes above.
  */
 @Controller('admin/ask-gg/kb')
 @UseGuards(AdminJwtGuard)

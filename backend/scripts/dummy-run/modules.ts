@@ -29,7 +29,6 @@ import { DealerVerificationService } from '../../src/payments/dealer-verificatio
 import { AuctionsService } from '../../src/auctions/auctions.service';
 import { OffersService } from '../../src/offers/offers.service';
 import { TasksService } from '../../src/tasks/tasks.service';
-import { AskGgService } from '../../src/ask-gg/ask-gg.service';
 import { PriceEstimateService } from '../../src/listings/price-estimate.service';
 import { ManualPaymentsService } from '../../src/manual-payments/manual-payments.service';
 import { AdminService } from '../../src/admin/admin.service';
@@ -567,14 +566,11 @@ export async function moduleOrders(ctx: Ctx) {
 // ─────────────────────────────────────────────────────────────────────────
 export async function moduleContentSmoke(ctx: Ctx) {
   const rep = ctx.rep;
-  const { buyer } = ctx.actors;
-  const askGg = svc(ctx, AskGgService);
   const priceEst = svc(ctx, PriceEstimateService);
 
-  await checkAsync(rep, 'CONTENT: Ask-GG quota read returns without AI', async () => {
-    const q: any = await askGg.getQuota(buyer.clerkId);
-    assert(q, 'no quota response');
-  });
+  // The Ask GG quota read was checked here until 2026-09-07. Both it and the
+  // service behind it went with the chat backend; the only /ask-gg route left
+  // is the Sell page's photo identifier, which cannot run AI-off.
   await checkAsync(rep, 'CONTENT: price-estimate returns gracefully (no Anthropic)', async () => {
     const e: any = await priceEst.estimate({ title: 'Test scope', condition: 'GOOD' } as any);
     assert(e, 'no estimate response');

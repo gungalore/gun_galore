@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
+import { boundedImageUrl, IMAGE_EDGE } from '../common/image-url';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 
 /**
@@ -456,7 +457,12 @@ Rules:
    * the message travels into an admin alert.
    */
   private async inlineFromUrl(url: string): Promise<LlmPart> {
-    const res = await fetch(url);
+    // ⚠️ 1600, NOT THE ORIGINAL. Both photos through here are read for their
+    // small print — the licence card's expiry date and the stamped serial on
+    // the firearm — so they keep the document edge, not the 1280 a product
+    // shot gets.
+    const src = boundedImageUrl(url, IMAGE_EDGE.document);
+    const res = await fetch(src);
     if (!res.ok) {
       throw new Error(`could not fetch a proof photo (HTTP ${res.status})`);
     }
