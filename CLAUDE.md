@@ -1970,6 +1970,81 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
+**Last deploy: 2026-09-07 (16:58), commit `c647f933`.** No migrations —
+`prisma migrate deploy` reported "No pending migrations to apply", and the only
+`schema.prisma` edits are comments recording what `Credential.disciplineType`
+actually stores. **FULL DEPLOY** (`deploy.sh`): the merge touches 43 backend
+files, so both apps were rebuilt and reloaded. Dump
+`alloutdoor-20260907-165840.dump` taken before anything was touched. Artefacts
+verified (`dist/src/main.js`, `.next/BUILD_ID` non-empty before each reload),
+health doubled on :3001 and :3000, warden online, public 200 twice.
+
+Shipped in `c647f933`: **sections 15, 16 and 24 driven end to end**, the way
+section 13 was. Four audits found the same class of fault one section along.
+
+- **A section 15 was scored against dedicated status** — "G4 Dedicated status,
+  2 still needed" on the one type sold as "for someone who hunts or shoots,
+  WITHOUT dedicated status". The panel row's `from` list swept up the Experience
+  fields beside the association ones. Experience fills no box on the 271 at all,
+  so it is off the panel; G4 now appears only where a Dedicated status field does.
+- **A dedicated HUNTER's papers satisfied a dedicated SPORT application**, though
+  s1 defines a sports person by membership of a sports-shooting organisation. The
+  discipline was read off the document into `status_type` and then dropped on the
+  floor. ⚠️ `Credential.disciplineType` does NOT hold it — the 2026-08-20 backfill
+  wrote CredentialKind names and everything since 2026-08-24 holds an UPLOAD kind.
+  `status_type` in the detail blob is the only real record. Unknown still passes,
+  as `competencyCovers` does.
+- **The step said the ENDORSEMENT is the sworn statement s16(2) requires.** It is
+  the letter of good standing, which the backend has said in capitals in two
+  files since it was written. The endorsement comes from the Hunters Forum
+  guidelines of 2005: a DFO will insist on it, the Act does not name it.
+- ⚠️ **A required field could never be shown.** `discipline` is `kind: 'multi'`,
+  stored comma-joined, and its gate compared the WHOLE string — so picking
+  "something else" beside any real discipline hid the box asking what it is and
+  dropped it out of `requiredKeys` with it. `isVisible` and its frontend mirror
+  now see into a list. Exact match is still tried first, so nothing that worked
+  changed.
+- **A renewal was asked what it cannot use**: where a firearm it already owns is
+  coming from, and the SAPS 271, which is for NEW licences (a renewal is lodged
+  on the 518(a)). Answering yes un-hid ~48 questions and then 409'd. Both are in
+  the new `NOT_ASKED_BY_TYPE`. ⚠️ **Asked is not accepted** — `fieldByKey` reads
+  the UNFILTERED list on purpose, or the wizard's next autosave would delete an
+  older draft's answer and show an error about it.
+- ⚠️ **A gate that contradicts itself was simplified and had to be put back.**
+  `competency_renews_with_licence` is hidden by `formOnly` AND a `showIf` that
+  wants the opposite path. With the opt-in unasked it looked like one gate would
+  do — but `isVisible` takes no licence type and the key is still accepted, so
+  an answer can arrive and open it. The contradiction is robust precisely because
+  it does not depend on what is served.
+- Also: the completeness panel could never reach 100% for a one-association
+  member (three slots counted for everybody, 54% on a complete section); the step
+  drew all three flat, seven empty rows including three identical label pairs;
+  a step went green while an `expected`-tier document was missing; every empty row
+  printed its status twice; rows said "Not on the document" where no such document
+  had ever been attached; steps drew upload doors for kinds never asked for; the
+  closing paragraph of EVERY motivation asked for "a licence under section 16 …
+  for dedicated sport shooting", right for one type in five; and the vault now
+  reads a firearm model, which is what kept make/model/serial/expiry from ever
+  showing one.
+
+> **TWO TEST-RUNNER TRAPS, both of which hide green.**
+>
+> 1. **`npx jest` is NOT how this backend runs tests.** `package.json` uses
+>    `node --experimental-vm-modules`, and without it `saps271-render.spec.ts`
+>    fails 16 times on "A dynamic import callback was invoked without
+>    --experimental-vm-modules" — which reads exactly like a real regression.
+>    Use `npm test -- <path>`.
+> 2. **A `.spec.ts` under `frontend/components/` is never collected.** The vitest
+>    include is `lib/**/*.spec.ts` and `components/**/*.spec.tsx` — note the x.
+>    A new component spec written as `.spec.ts` reports "No test files found"
+>    and passes CI by not existing.
+
+Left undone deliberately, both because they change what somebody signs: section
+15 covers occasional SPORTS shooters in law and every question it asks is about
+hunting (`intended_quarry` is required and asks what they intend to hunt), and
+section 24 does not vary its document set by the section the original licence was
+issued under, which s24(3) arguably requires.
+
 **Last deploy: 2026-09-07 (12:20), commit `b401f112`.** ⚠️ **CARRIED A
 MIGRATION** — `20260907190000_news` (NewsSource, NewsArticle, NewsPlace;
 additive, hand-written). **FULL DEPLOY** (`deploy.sh`), clean this time:
