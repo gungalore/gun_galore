@@ -1970,7 +1970,29 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (09:35), commit `59f54851`.** ⚠️ **CARRIED A
+**Last deploy: 2026-09-07 (10:15), commit `dc7a596d`.** No migrations.
+**FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's `deploy
+now`. Dump `alloutdoor-20260907-101257.dump` taken by the script. Health
+doubled, warden online, public 200 twice; re-checked independently, and
+`POST /api/ask-gg/identify-listing` still answers (401 unauthenticated) while
+`POST /api/ask-gg/messages` is 404.
+
+Shipped, merged from `feat/the-bench`: `a3be5099` — **three cuts to model
+spend, nothing taken from the answers** (operator: "keep the things that
+would make a motivation a quality product alive and good"). (1) Images are
+bounded before the model sees them: Cloudinary URLs via `boundedImageUrl`
+(1280 for listing photographs, 1600 for documents so small print survives)
+and the Sell page's identify upload via `boundedImageBytes` (sharp). (2)
+Motivation generation now clears Gemini's implicit-cache floor — the statute
+block moved to the head of the user message, content byte-identical, pinned
+by `motivation-prompt-cache.spec.ts`; every other prompt was measured and is
+too small to cache. (3) **The Ask GG chat backend is retired** (−8,059 lines):
+its UI went 2026-08-26 but the API, tool loop, streaming and history were still
+mounted and spending. `POST /ask-gg/identify-listing` survives as
+`ListingIdentifyService` (quota metered on its own usage rows), plus the admin
+KB and guide editors. No schema change.
+
+**Previous deploy: 2026-09-07 (09:35), commit `59f54851`.** ⚠️ **CARRIED A
 MIGRATION** — `20260907120000_ai_usage`, additive only (table `AiUsage` + two
 indexes), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY** (`deploy.sh`,
 both apps + warden) on the operator's `deploy now`. Dump
