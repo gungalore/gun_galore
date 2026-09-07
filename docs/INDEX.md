@@ -25,7 +25,7 @@ Two rules before you read anything here:
 | [`README.md`](../README.md) | You have just cloned the repo and need it running locally. Stack, ports, env, the domain glossary (SAPS dealer transfers, the selling modes, KYC, PUDO). |
 | [`CLAUDE.md`](../CLAUDE.md) | You need the house rules and the standing decisions: what is legally load-bearing, what wording is banned, what must never be changed without an operator call. It is written for an AI agent and it is long, but it is the most current document in the repo. |
 | [`HANDOFF.md`](../HANDOFF.md) | You are starting a session and need the current state rather than the rules: what production runs, what the last session did, the open items, and the traps found the hard way. Overwritten each time; `CLAUDE.md` holds anything durable. |
-| [`ALLOUTDOOR-REPLATFORM.md`](../ALLOUTDOOR-REPLATFORM.md) | The in-flight cutover: moving the marketplace off the Vultr VPS to Absolute Hosting, `gungalore.co.za` → `alloutdoor.co.za`. Live work, not history. |
+| [`ALLOUTDOOR-REPLATFORM.md`](../ALLOUTDOOR-REPLATFORM.md) | The clean-slate build under the new company. **The marketplace move is DONE** — production is the Absolute Hosting box and `alloutdoor.co.za` is live. What is still open is section 7 (three applications left on the old Vultr box, and `ballistics.gungalore.co.za` hanging off a domain being allowed to lapse) and section 8 (operator decisions: Bob Go billing, the carrier enum rename, whether to delete hunt-ballistics). Read sections 7, 8 and the top-three-risks; treat the phased build in section 5 as executed. |
 
 ## Current reference
 

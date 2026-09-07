@@ -179,7 +179,7 @@ hand-roll a wait loop.
 scratch from other workstreams.
 
 **STEP 5 — deploy.** `bash infra/deploy/deploy.sh [--backend-only|--frontend-only]`
-from the worktree that has the deploy branch checked out. It hardcodes
+with the deploy branch checked out. It hardcodes
 `HOST=alloutdoor`, refuses a dirty tree, pushes the branch, verifies the box's
 branch and HEAD, **takes a pre-deploy database backup** (`~/bin/backup.sh`, and it
 prints the dump name — that is your rollback point), then for each app: `npm
@@ -231,8 +231,15 @@ the next session must know.
 
 ## The box
 
-- **Production: `ssh alloutdoor`** (Vultr VPS, Nginx + PM2). Always use the alias —
-  `ssh user@<IP>` bypasses the operator's key config.
+- **Production: `ssh alloutdoor`** — a VPS at **Absolute Hosting**, Nginx + PM2.
+  Always use the alias; `ssh user@<IP>` bypasses the operator's key config.
+  ⚠️ **NOT Vultr.** Vultr is the OLD box (see below) and the operator has had to
+  correct this more than once. The machine reports plain QEMU/KVM with a
+  `DataSourceNoCloud` cloud-init seed, which is how you can tell from the box
+  itself rather than from a document.
+- **Specs:** 4 vCPU, 8 GB RAM, 8 GB swap, 96 GB disk (~26 GB used). That answers
+  the replatform doc's open question about whether the frontend build would fit
+  beside Postgres and Meilisearch: it does.
 - **Three pm2 services:** `alloutdoor-backend`, `alloutdoor-frontend`, `warden`.
 - **Ports:** 3000 frontend, 3001 backend, 5432 Postgres, 7700 Meilisearch.
 - Node v22, npm 10. 64 Prisma migrations, all applied.
@@ -246,8 +253,21 @@ the next session must know.
   (`SECURE_UPLOAD_DIR`, mode 0700) — **outside** the app dir, so deploys never
   touch them, and **not** in a `pg_dump`.
 - The marketing landing page at `/var/www/html` is separate — **never touch it**.
-- Ballistics is its own app on the same box (`~/ballistics-app/`, own DB, own pm2
-  services, own nginx block). The marketplace stays the marketplace.
+- ⚠️ **The old Vultr box is still running, and three applications live on it** —
+  the Ballistic Calculator (`~/ballistics-app/`, `ballistics.gungalore.co.za`, own
+  database, own pm2 processes, own nginx site), ballistic-hunter, and
+  pvrescue.co.za. None of them is on the production box. Keep the old machine for
+  at least three months after go-live: it is the fallback build machine and it
+  holds the only original copies of the reloading PDFs until the rsync is
+  verified. Its `ssh gungalore` alias was deleted, so it is not reachable by name
+  from here.
+- ⚠️ `ballistics.gungalore.co.za` is a subdomain of the domain being allowed to
+  lapse. It needs its own home before that happens — cheap now, an outage later.
+- **The hunt-ballistics code is still compiled into the marketplace backend**
+  (`HuntBallisticsModule` in `app.module.ts`, plus `HuntPdf`, `HuntPdfPage` and
+  `RangeEstimate` in `schema.prisma`). "Ballistics stays behind" is not automatic.
+  Deleting it is a pure subtraction with no relations into the rest of the graph;
+  that decision is still open.
 - **No staging.** Work hits production after local type-check, tests and build.
 
 ### Backups and recovery
@@ -1064,10 +1084,12 @@ Clear, specific messages describing what changed. Work on a feature branch and
 merge it into the deploy branch **`feat/takealot-ux-parity`** — never into `main`;
 production does not track main and a push there ships nothing.
 
-⚠️ **The repo has three worktrees.** `C:/dev/gun-galore` (feature work),
-`C:/dev/gg-deploy` (the deploy branch — you cannot check that branch out anywhere
-else), and `C:/dev/gg-scanner`. Run `deploy.sh` from the worktree that holds the
-deploy branch.
+**One worktree: `C:/dev/gun-galore`.** Operator instruction, 2026-09-07 — the
+`gg-deploy` and `gg-scanner` worktrees were removed so a session can pick up
+where the last one left off. Do not create another; check the branch you need out
+here instead, including `feat/takealot-ux-parity` when you deploy.
+
+⚠️ `feat/scanner-tracking` exists **only locally** and has never been pushed.
 
 ---
 

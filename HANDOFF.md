@@ -25,18 +25,14 @@ because `PAYMENT_MODE` and `PAYMENTS_LIVE` are both unset.
 
 ### Worktrees — read this before running git
 
-The repo has **three** worktrees and the deploy branch can only be checked out in
-one of them:
+**One worktree: `C:/dev/gun-galore`.** The `gg-deploy` and `gg-scanner`
+worktrees were removed on 2026-09-07 at the operator's instruction, so a session
+can pick up where the last one left off. Both were clean; no work was lost, and
+every branch survived. Check out whatever branch you need here, including
+`feat/takealot-ux-parity` when you deploy.
 
-| Path | Branch | Use |
-|---|---|---|
-| `C:/dev/gun-galore` | `feat/the-bench` | feature work — you are probably here |
-| `C:/dev/gg-deploy` | `feat/takealot-ux-parity` | the deploy branch; run `deploy.sh` here |
-| `C:/dev/gg-scanner` | `feat/scanner-tracking` | scanner work |
-
-`git checkout feat/takealot-ux-parity` in the main worktree **fails** — it is
-already checked out in `gg-deploy`. That is not a problem to solve, it is the
-layout.
+⚠️ **`feat/scanner-tracking` (df5ce66c) exists only locally and has never been
+pushed.** It is the one branch with no copy anywhere else.
 
 ---
 
@@ -117,10 +113,12 @@ Centre or the Motivations builder.
 
 ### Unverified — someone has to look outside the repo
 
-9. **Vultr daily snapshots** are asserted but unconfirmed. This matters: backups
-   are written to the **same disk** as the originals and there are no off-box
-   copies, so a snapshot may be the only thing between the operator and total
-   loss.
+9. **Whether Absolute Hosting takes any snapshot of this box is unknown.** The
+   old file asserted "Vultr daily snapshots", which was wrong twice over — wrong
+   provider, and unverified. This matters: backups are written to the **same
+   disk** as the originals and there are no off-box copies, so a provider-side
+   snapshot may be the only thing between the operator and total loss. Ask
+   Absolute Hosting what the plan actually includes.
 10. **UptimeRobot monitors** are asserted but unconfirmed.
 11. **The monthly backup restore test** is asserted and has no log. An untested
     backup regime that a document claims is tested is worse than one that admits

@@ -51,7 +51,7 @@ and the things it cannot do for you.
 
 | | |
 |---|---|
-| Host | `ssh alloutdoor` — Vultr VPS, user `alloutdoor` |
+| Host | `ssh alloutdoor` — VPS at **Absolute Hosting** (not Vultr; Vultr is the retired old box), user `alloutdoor` |
 | Checkout | `/home/alloutdoor/app` |
 | Processes | `alloutdoor-backend` (:3001), `alloutdoor-frontend` (:3000) |
 | Health | `http://localhost:3001/api/health`, `http://localhost:3000` |
