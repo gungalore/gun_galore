@@ -1939,7 +1939,33 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (07:00), commit `7f138203`.** ⚠️ **CARRIED A
+**Last deploy: 2026-09-07 (08:00), commit `c32dc8e6`.** No migrations
+("No pending migrations to apply"). **FULL DEPLOY** (`deploy.sh`, both apps +
+warden) on the operator's `deploy now`. Dump `alloutdoor-20260907-075413.dump`
+taken by the script. Health doubled on both ports, warden online, public 200
+twice; re-checked independently after the script.
+
+Shipped, merged from `feat/the-bench`: `9cd9142d` — **the Document Centre is
+arranged around the member's firearms.** The three folders (which split the
+one live vault 18 / 2 / 0) and the flat type-headed list are gone. On one
+scroll: attention chips that filter (renewals due, dates to check, in a
+motivation), one search that also matches details and unit standards, and
+seven collapsible sections in a fixed order — Your firearms (one row per
+licence, grouped by category, soonest expiry first, named by title or make +
+calibre, with the section and the SAPS 517(g) line), Competency (grouped by
+what it covers, saying which licence its date follows), Training certificates
+(grouped by unit-standard category, certificate + results folded), About you,
+Dedicated status and associations, Safe and storage (thumbnail grid), Anything
+else. Copies fold under their original; open state is remembered; an empty
+section's Add opens the add panel on its own kind. The list endpoint now
+returns `category`, `selfLoading`, `covers`, `follows` and titled
+`unitStandards` per row (all already computed for competency dating). Pure
+grouping logic lives in `frontend/lib/document-centre-sections.ts` (34 tests).
+⚠️ Not looked at in a browser before shipping — behind sign-in; verified by
+tsc, vitest, eslint and the build. Page folding still covers proficiency
+pairs only.
+
+**Previous deploy: 2026-09-07 (07:00), commit `7f138203`.** ⚠️ **CARRIED A
 MIGRATION** — `20260907030000_vault_event`, additive only (new table
 `VaultEvent` + 4 indexes), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY**
 (`deploy.sh`) on the operator's `deploy now`. Dump
