@@ -25,7 +25,7 @@ first per the brief §7. This spec assumes `GET /motivations/:id/sheet` and
 
 | Artboard | Route / thing | Frame | Notes |
 |---|---|---|---|
-| `List.dc.html` | `/licence-centre` | 390 | Your applications, then the five licence-type cards from `lib/licence-labels.ts` `LICENCE_TYPES` (label, section, blurb verbatim). |
+| `List.dc.html` | `/licence-centre/applications` (brief §0 E: `/licence-centre` itself stays the Document Centre) | 390 | Your applications, then the five licence-type cards from `lib/licence-labels.ts` `LICENCE_TYPES` (label, section, blurb verbatim). |
 | `Main.dc.html` | `/licence-centre/[id]` | 390 | The sheet. S16 sport, populated vault, dealer route. Every section, every row state. **This is the reference screen.** |
 | `EmptyVault.dc.html` | `/licence-centre/[id]` | 390 | Same page, first-timer: shelf empty with the wide Add tile, every row `needs_you`. No onboarding wizard exists. |
 | `PrivateSale.dc.html` | Firearm section only | 390 | `firearm_source = From a private owner`: the seller-consent card under the source row, with the signed Part F line. Rest of the sheet unchanged. |
@@ -94,7 +94,7 @@ phone                                     desktop (≥1024)
 
 - The shell header is the app's own (`isTabRoute` is false for these routes, so it is
   the PUSH archetype: back chevron + title). `lib/shell-routes.ts` already maps
-  `/licence-centre` → "Licence Centre"; add `/licence-centre/:id/pack` → "Your pack".
+  `/licence-centre` → "Licence Centre" (the Document Centre); add `/licence-centre/applications` → "Applications" and `/licence-centre/:id/pack` → "Your pack".
 - The strip's `top` is `var(--shell-header-h)` on the phone and `0` on desktop.
 - Section anchors: `id="firearm" | "you" | "competency" | "own" | "premises" | "case" |
   "declarations" | "pack"`, each with `scroll-margin-top: 120px` so a chip tap lands
@@ -291,16 +291,17 @@ section. When a read completes: the toast, and the rows it filled change state i
 2. `sheet-header.tsx`, `document-shelf.tsx`, `sheet-footer.tsx`, `sheet-toast.tsx` —
    spec: the three counts in §6 agree for every `missing` list.
 3. `app/licence-centre/[id]/page.tsx` — fetch `sheet`, render the eight sections in
-   order, autosave, preview refetch. Playwright: populated vault, S16 sport, reach an
-   enabled "Write my motivation" in ≤ 20 interactions (brief §7 Phase 3 gate; the
-   acceptance target is 12 taps and zero typing, brief §8).
+   order, autosave, preview refetch. RTL interaction-count spec (brief §0 G): a populated
+   fixture vault, S16 sport, reaches an enabled "Write my motivation" in ≤ 12 taps and
+   zero typing. There is no Playwright in this repo; do not add it.
 4. `overlap-card.tsx`, `consent-card.tsx`, `competency-lines.tsx`, `pack-summary.tsx`.
-   Playwright: private-sale variant shows the consent card and the F line.
+   RTL spec: the private-sale variant renders the consent card and the Part F line.
 5. `preview-panel.tsx` — drawer on the phone, aside on desktop. Spec: a tapped card's
    sentence appears marked in the preview after the debounce.
-6. `app/licence-centre/page.tsx` (list) and `app/licence-centre/[id]/pack/page.tsx`.
-   Playwright: empty vault, S13, complete the sheet end to end.
-7. `lib/shell-routes.ts` title for the pack route; `HANDOFF.md` entry; stop.
+6. `app/licence-centre/applications/page.tsx` (list) and
+   `app/licence-centre/[id]/pack/page.tsx`. RTL spec: empty vault, S13, fill every
+   `needs_you` row and the button enables.
+7. `lib/shell-routes.ts` titles for the applications and pack routes; `HANDOFF.md` entry; stop.
    **Phase 4 (deletions and redirects) is a separate sign-off.**
 
 ---

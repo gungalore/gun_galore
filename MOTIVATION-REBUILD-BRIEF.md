@@ -11,6 +11,27 @@ Opus without a yes; minimal diffs inside reused code.
 
 ---
 
+## 0. Amendments after Phase 0 (2026-09-08)
+
+Phase 0 found six places where the code disagrees with this brief. These rulings
+override the sections they name. Items marked **operator** still need a yes.
+
+| # | Finding | Ruling |
+|---|---|---|
+| E | `/licence-centre` is already the Document Centre (`app/licence-centre/page.tsx`; `/documents` re-exports it; reminder emails and `notification-module.ts` deep-link to it). | The Document Centre keeps `/licence-centre` and `/documents`. The new list page is **`/licence-centre/applications`**. The sheet stays `/licence-centre/[id]`, the pack `/licence-centre/[id]/pack`. §6 and §3 redirects read accordingly: `/motivations` and `/licence-services/new` → `/licence-centre/applications`; `/motivations/[id]` and `/licence-services/[id]` → `/licence-centre/[id]`. Add the shell title for `/licence-centre/applications` ("Applications") and `/licence-centre/:id/pack` ("Your pack"). |
+| F | Removing the `formOnly` branch un-hides `police_station_province`, `press_clippings` and `competency_renews_with_licence`, which are hidden today by a contradiction with the `fill_saps271` showIf. | Those three get an explicit **`internal: true`** in the registry: accepted, never asked, never in the sheet. `fill_saps271` stays accepted for old blobs (§3). The frontend `visibleFields()` mirror of `isVisible()` is **retired**; the sheet endpoint's server-computed `state` is the only visibility. |
+| — | Phase 1 cannot be backend-only: `frontend/lib/__fixtures__/registry-sections.json`, `registry-keys.json` and `visibleFields()` are hand-maintained mirrors read by four specs. | Phase 1 carries a **non-visual frontend appendix**: regenerate the two fixtures, retire `visibleFields()`, re-point the four specs. No screen changes. §7 Phase 1 reads accordingly. |
+| G | There is no Playwright in the repo. | §7 Phase 3 and §8 use **RTL interaction-count specs** under the existing `npm test` (Vitest): (a) S16 sport with a populated fixture vault reaches an enabled "Write my motivation" in ≤ 12 taps and zero typing; (b) an empty-vault S13 fills every `needs_you` row and the button enables; (c) the private-sale variant renders the consent card and the Part F line. The fixture vault is invented data, never a real ID number. |
+| §9.3 | `research()` already goes through `common/llm` with Gemini grounding. | The structured, cached targets in §5.5 **replace** the free-text research brief — one research path, a cache hit costs no call. **Operator** may veto; default is replace. |
+| H | The twelve fixed headings do not map onto the fourteen `SectionId`s. | First step of Phase 2, before `HEADING_ALTERNATES` collapses: produce the 14 → 12 mapping and get sign-off. Starting rule: PAJA and Annexures are pack assembly rendered from data, not writer sections; the purpose triple (`the_quarry` / `the_discipline` / `the_threat`) writes the applying paragraphs under "Application under section N", after the quoted statute; `the_firearm` splits into "Firearm applied for" and "The calibre". |
+| I | The four prefill-offer endpoints (`profile-offer`, `use-profile`, `licence-centre-offer`, `use-licence-centre`) are what the old screens still call. | They die in **Phase 4**, not Phase 1. Phase 1 adds the sheet endpoint beside them. §3 backend list reads accordingly. |
+| J | The five Phase 2 sample PDFs are generated from the operator's own vault and carry a real name, ID number, address and serials; `docs/history/` is pushed. | They go to **`scan-fixtures/motivation-samples/`**, which is already gitignored, never to `docs/history/`. Nothing generated from a real vault is ever committed. §7 Phase 2 reads accordingly. |
+| §9.1 | `MotivationMessage` drop without export. | **Operator.** Count first, read-only, using the psql pattern in CLAUDE.md: `select count(*) from "MotivationMessage";`. If it is a handful of rows, drop without export. |
+| §9.4 | 518(a) for S24. | Out of scope. Confirmed unless the operator says otherwise. |
+| HANDOFF 1 | S15 not serving occasional sports shooters is fixed as a side effect (`intended_quarry` stops being required). | **Operator** to confirm it lands here. Proposed: yes. |
+
+---
+
 ## 1. What we are building
 
 One new frontend surface, `/licence-centre`, that replaces BOTH existing motivation
