@@ -21,7 +21,6 @@ import { Breadcrumbs, type Crumb } from '@/components/breadcrumbs';
 */
 import {
   ReviewItem,
-  filedUnsure,
   mergeReviewQueue,
   needsDateCheck,
   needsFilingCheck,
@@ -31,12 +30,28 @@ import {
   CredentialKind,
   CredentialRow,
   CredentialUsage,
-  KIND_LABELS,
   LicenceApiError,
-  STATE_TONE,
-  formatDate,
   licenceCentreApi,
 } from '@/lib/licence-centre-api';
+/*
+  ⚠️ THE GROUPING IS PURE AND IT LIVES IN lib/, FOR THE SAME REASON THE REVIEW
+  RULES DO. Placing a row in a section, folding a two-page document into one
+  row, folding a copy under its original and deciding what opens by default
+  are four ways to make a document disappear from the only screen that lists
+  it — and none of them was testable while it lived in here, because this file
+  cannot be imported without a DOM. See document-centre-sections.spec.ts.
+*/
+import {
+  ChipId,
+  buildSections,
+  chipCounts,
+  defaultOpenSections,
+  pageLabel,
+} from '@/lib/document-centre-sections';
+import DocumentSection from '@/components/document-centre/section';
+import DocumentRow from '@/components/document-centre/document-row';
+import { DocThumb } from '@/components/document-centre/doc-thumb';
+import { DocSectionId } from '@/components/document-centre/kinds';
 
 // ────────────────────────────────────────────────────────────────────
 // THE LICENCE & COMPETENCY CENTRE.
@@ -74,7 +89,16 @@ import {
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 
 import { KIND_GROUPS } from '@/components/document-centre/kinds';
-import { FullName } from '@/components/full-name';
+
+/**
+ * Which sections the member has folded by hand.
+ *
+ * ⚠️ PER BROWSER, NOT PER MEMBER, AND THAT IS DELIBERATE. It holds nothing
+ * about any document — only which of seven fixed headings were shut — so
+ * there is nothing here worth keying to an account, and a value keyed to one
+ * would have to be fetched before the page could draw.
+ */
+const OPEN_KEY = 'document-centre:open-sections';
 
 // This page is still named /licence-centre in the URL and in every API call
 // below — the rename to "Document Centre" was copy-only — so the trail names
@@ -108,23 +132,38 @@ export default function LicenceCentrePage() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ── FOLDERS, FILES, DETAIL ─────────────────────────────────────
+  // ── SECTIONS, ROWS, DETAIL ─────────────────────────────────────
   //
-  // Operator, 2026-08-24: "Folder on the left with the files in each on the
-  // right." null = the All documents folder, otherwise an index into FOLDERS.
-  const [openGroup, setOpenGroup] = useState<number | null>(null);
+  // ⚠️ THE FOLDER RAIL IS GONE, AND ITS REPLACEMENT IS NOT A REDESIGN FOR ITS
+  // OWN SAKE. Three folders split the only real vault 18 / 2 / 0: everything
+  // a member came for was in the first one, as a flat list of eighteen rows
+  // under five type headings. On a phone the rail pushed the documents below
+  // the fold to say so. Sections that summarise themselves shut answer "is
+  // anything wrong in here" without opening, and the firearm — not the form's
+  // name for the piece of paper — leads the list.
+  //
+  // ⚠️ THE THREE STAT TILES WENT WITH IT. They counted three things and did
+  // nothing when tapped; the same three counts are the chips above, which
+  // filter every section. A count you can tap to see the rows it counts is
+  // worth more than the number.
+  const [chips, setChips] = useState<ChipId[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** The detail column, so a phone can be scrolled to it on selection. */
   const detailRef = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState('');
   /**
-   * ⚠️ THE SEARCH BOX ITSELF IS THE THING THAT DID NOT FIT. A fixed 216px
-   * field, a title and two labelled buttons were one `flex flex-wrap` row
-   * with no mobile variant, so a 390px screen wrapped them onto extra lines.
-   * Below `md` the box collapses behind this toggle instead; `query` and
-   * `setQuery` above are unchanged, so nothing about what search DOES moves.
+   * The add controls, so an empty section's Add link can put the member in
+   * front of them.
+   *
+   * The link scrolls the controls into view AND opens them on the section's
+   * own kind — a member who tapped Add under "Safe and storage" has already
+   * answered "what are you adding?".
    */
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const addRef = useRef<HTMLDivElement | null>(null);
+  const [addPreset, setAddPreset] = useState<{
+    kind: CredentialKind;
+    at: number;
+  } | null>(null);
   /**
    * Which applications each document is already in.
    *
@@ -135,98 +174,66 @@ export default function LicenceCentrePage() {
   const [usage, setUsage] = useState<Record<string, CredentialUsage[]>>({});
 
   /**
-   * The folders, and every row placed in exactly one of them.
+   * ⚠️ WHICH SECTIONS ARE OPEN, AND WHY IT IS REMEMBERED PER BROWSER.
    *
-   * ⚠️ A ROW WHOSE KIND IS IN NO GROUP STILL HAS TO APPEAR. KIND_GROUPS lists
-   * the kinds the ADD menu offers; the retired ones (the four association
-   * kinds, the three separate safe photographs) are in none of them, and a
-   * member holding one would otherwise be unable to see their own document.
-   * The old flat list had a comment making exactly this point about KINDS —
-   * the folders inherit the same duty. Anything unplaced falls into the last
-   * folder, which is "Anything else".
-   */
-  /** Licences close enough to their expiry that the page says so. */
-  const attention = useMemo(
-    () =>
-      (rows ?? []).filter((r) => r.state === 'expiring' || r.state === 'expired')
-        .length,
-    [rows],
-  );
-
-  /**
-   * How many documents already sit inside a motivation.
+   * Two open by default — Your firearms and Competency — plus anything
+   * holding a row an attention chip points at. A member who shuts one is
+   * telling us something durable about how they read this page, so the
+   * toggles are kept; nothing about a document is stored, only which headings
+   * were folded, which is why a page-wide key rather than a per-member one is
+   * honest here.
    *
-   * ⚠️ BUILT FROM `usage`, WHICH THE PAGE ALREADY FETCHES — see the note on
-   * that state above. Nothing new is requested for this count; a document
-   * with no entry in `usage` (the fetch has not resolved, or it failed) reads
-   * as not-yet-used, the same as every other reader of this state on the
-   * page, rather than as a fact we are certain of.
+   * ⚠️ EVERY READ AND WRITE IS WRAPPED. localStorage throws outright in a
+   * browser set to block site data, and a page that will not render because
+   * it could not remember a chevron is worse than one that forgets.
    */
-  const inUseCount = useMemo(
-    () => (rows ?? []).filter((r) => (usage[r.id]?.length ?? 0) > 0).length,
-    [rows, usage],
-  );
-
-  const folders = useMemo(() => {
-    const all = rows ?? [];
-    const placed = KIND_GROUPS.map((g) => ({
-      label: g.label,
-      rows: all.filter((r) => g.kinds.includes(r.kind)),
-    }));
-    const known = new Set(KIND_GROUPS.flatMap((g) => g.kinds));
-    const orphans = all.filter((r) => !known.has(r.kind));
-    if (orphans.length > 0 && placed.length > 0) {
-      const last = placed[placed.length - 1];
-      last.rows = [...last.rows, ...orphans];
+  const [openSections, setOpenSections] = useState<DocSectionId[] | null>(null);
+  const [manual, setManual] = useState<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const raw = window.localStorage.getItem(OPEN_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch {
+      return {};
     }
-    return placed;
-  }, [rows]);
+  });
 
   const rowsById = useMemo(
     () => new Map((rows ?? []).map((r) => [r.id, r] as const)),
     [rows],
   );
 
-  const visible = useMemo(() => {
-    const inFolder =
-      openGroup === null ? (rows ?? []) : (folders[openGroup]?.rows ?? []);
-    const q = query.trim().toLowerCase();
-    // Title AND type, because half of these are named off the document
-    // ("Howa 6.5 Creedmoor") and half are looked for by what they ARE
-    // ("competency"). Matching only one of the two finds neither reliably.
-    const found = q
-      ? inFolder.filter(
-          (r) =>
-            r.title.toLowerCase().includes(q) ||
-            (KIND_LABELS[r.kind] ?? '').toLowerCase().includes(q),
-        )
-      : inFolder;
-    // ⚠️ BY TYPE, THEN BY DATE. The server hands rows back soonest-expiry
-    // first, which put a competency between two licences and a proof of
-    // address between two certificates. Operator, 2026-09-07: "group the list
-    // of scanned docs by type and then by date, not just expiry date." The
-    // date is the one printed on the document; a document with none sorts
-    // by the day it was added. Newest first within a type.
-    const when = (r: CredentialRow) => r.issuedOn ?? r.createdAt.slice(0, 10);
-    const sorted = [...found].sort(
-      (a, b) =>
-        (KIND_RANK.get(a.kind) ?? 9999) - (KIND_RANK.get(b.kind) ?? 9999) ||
-        when(b).localeCompare(when(a)) ||
-        b.createdAt.localeCompare(a.createdAt),
-    );
-    // ⚠️ A PAIRED PROFICIENCY IS ONE ENTRY. The statement of results and the
-    // provider's certificate are two files and two rows on the server, and
-    // one document to the member (operator, 2026-09-07: "the proficiency
-    // front and back should be in the same container"). The statement leads
-    // the pair; the certificate is reached from the panel's page switch.
-    const here = new Set(sorted.map((r) => r.id));
-    return sorted.filter((r) => {
-      if (!r.otherSide || !here.has(r.otherSide.id)) return true;
-      const p = rowsById.get(r.otherSide.id);
-      if (!p) return true;
-      return leadsPair(r, p);
-    });
-  }, [openGroup, rows, folders, query, rowsById]);
+  /** The counts the chips carry, off every row rather than the filtered ones. */
+  const counts = useMemo(() => chipCounts(rows ?? [], usage), [rows, usage]);
+
+  /**
+   * The whole list: placed, filtered, folded, grouped, sorted, summarised.
+   *
+   * See lib/document-centre-sections.ts. Nothing about this is decided here.
+   */
+  const views = useMemo(
+    () => buildSections({ rows: rows ?? [], usage, chips, query }),
+    [rows, usage, chips, query],
+  );
+
+  /**
+   * Every row on screen, in the order it is drawn.
+   *
+   * ⚠️ THE COPIES AND THE PHOTOGRAPHS ARE IN IT. They are selectable — a copy
+   * is where the delete lives and a photograph is a document like any other —
+   * so a list that left them out would let the panel land on a row nobody can
+   * see, and would re-pick the moment they tapped one.
+   */
+  const visible = useMemo(
+    () =>
+      views.flatMap((v) => [
+        ...v.groups.flatMap((g) =>
+          g.rows.flatMap((n) => [n.row, ...n.copies]),
+        ),
+        ...v.photos.flatMap((n) => [n.row, ...n.copies]),
+      ]),
+    [views],
+  );
 
   /** The other page of the selected pair, when it is in the vault. */
   const partner = useMemo(() => {
@@ -237,17 +244,70 @@ export default function LicenceCentrePage() {
   useEffect(() => setShowPartner(false), [selectedId]);
 
   /**
-   * What the folder heading says under its name.
-   *
-   * Counted off the SAME rows the list is showing, so a search that hides the
-   * one expiring licence does not leave "1 needs renewing" hanging over a
-   * result set that no longer contains it.
+   * ⚠️ THE DEFAULTS ARE COMPUTED ONCE THE ROWS ARRIVE, NOT ON EVERY BUILD.
+   * `views` changes as the member types in the search box, and re-deriving
+   * the open set from it would slam sections open and shut under the cursor.
    */
-  const needsRenewing = useMemo(
-    () => visible.filter((r) => r.state === 'expiring' || r.state === 'expired')
-      .length,
-    [visible],
+  useEffect(() => {
+    if (rows === null || openSections !== null) return;
+    setOpenSections(defaultOpenSections(views));
+  }, [rows, views, openSections]);
+
+  const isOpen = useCallback(
+    (id: DocSectionId) =>
+      manual[id] ?? (openSections ?? ['firearms', 'competency']).includes(id),
+    [manual, openSections],
   );
+
+  const toggleSection = useCallback(
+    (id: DocSectionId, open: boolean) => {
+      setManual((prev) => {
+        const next = { ...prev, [id]: open };
+        try {
+          window.localStorage.setItem(OPEN_KEY, JSON.stringify(next));
+        } catch {
+          // A browser that will not keep this still has to render the page.
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const toggleChip = useCallback((c: ChipId) => {
+    setChips((prev) =>
+      prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c],
+    );
+  }, []);
+
+  /**
+   * Open a document in the panel.
+   *
+   * ⚠️ AND ON A PHONE THE DETAIL IS BELOW THE WHOLE LIST. The two columns
+   * stack under `lg`, so tapping a row changes something a long way further
+   * down the page and reads as nothing happening at all. Only on the stacked
+   * layout — on desktop the panel is already in view and scrolling would be a
+   * jolt for no reason.
+   */
+  const select = useCallback((id: string) => {
+    setSelectedId(id);
+    // ⚠️ THE PAGE-LEVEL ERROR BELONGS TO THE DOCUMENT THAT RAISED IT. It is
+    // rendered once, under the list, so a failed delete on one document
+    // otherwise sits there accusing the next one the member opens.
+    setError(null);
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia('(max-width: 1023px)').matches
+    ) {
+      detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
+
+  /** An empty section's Add link. See the note on `addRef`. */
+  const openAddFor = useCallback((kind: CredentialKind) => {
+    addRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setAddPreset({ kind, at: Date.now() });
+  }, []);
 
   /**
    * ⚠️ THE SELECTION IS RESOLVED, NEVER STORED AS A ROW. Holding the row
@@ -402,11 +462,12 @@ export default function LicenceCentrePage() {
       )}
 
       {/*
-        ── THE THREE COLUMNS ──────────────────────────────────────────
+        ── ONE SCROLL, AND A PANEL ────────────────────────────────────
 
-        Folders, that folder’s files, and the selected file’s detail. Below
-        `lg` they stack in that order, which is also the order somebody works
-        in — pick a folder, pick a document, act on it.
+        Chips, search, then every section stacked in a fixed order. The detail
+        column stays exactly where it was on desktop and below the list on a
+        phone, which is also the order somebody works in — find the document,
+        act on it.
 
         ⚠️ THE DETAIL COLUMN RENDERS THE EXISTING CredentialCard UNCHANGED. It
         already owns date confirmation, the renewal hand-off, refiling and
@@ -414,145 +475,80 @@ export default function LicenceCentrePage() {
         it fixed. Re-implementing that anatomy to fit a narrower column would
         have re-opened all of them.
       */}
-      <div className="mt-8 lg:grid lg:grid-cols-[228px_minmax(0,1fr)_368px] lg:items-start lg:gap-6">
+      <div className="mt-8 lg:grid lg:grid-cols-[minmax(0,1fr)_368px] lg:items-start lg:gap-6">
 
-        {/* ── folders ──────────────────────────────────────── */}
-        <nav aria-label="Folders" className="lg:sticky lg:top-4">
-          <FolderRow
-            label="All documents"
-            count={rows?.length ?? 0}
-            selected={openGroup === null}
-            onSelect={() => setOpenGroup(null)}
-          />
-          {folders.map((f, i) => (
-            <div key={f.label}>
-              <FolderRow
-                label={f.label}
-                count={f.rows.length}
-                selected={openGroup === i}
-                onSelect={() => setOpenGroup(i)}
+        <section className="min-w-0">
+          {/* ── the attention chips ────────────────────────────────
+              ⚠️ TAPPABLE, WHICH IS THE WHOLE DIFFERENCE FROM THE TILES THEY
+              REPLACE. Three counts sat above this list doing nothing when
+              tapped; the member could see that one licence needed renewing
+              and still had to find it by eye. Multi-select, and several
+              selected is a UNION — see rowMatchesChips. */}
+          {rows !== null && rows.length > 0 && (
+            <div
+              role="group"
+              aria-label="Filter documents"
+              className="flex flex-wrap items-center gap-2"
+            >
+              <Chip
+                label={
+                  counts.renewals === 1
+                    ? '1 renewal due'
+                    : counts.renewals + ' renewals due'
+                }
+                on={chips.includes('renewals')}
+                /* ⚠️ AMBER ONLY ABOVE ZERO. A chip reading "0 renewals due"
+                   in the same amber as one reading "3" tells a member
+                   something is wrong when nothing is. */
+                warn={counts.renewals > 0}
+                onToggle={() => toggleChip('renewals')}
               />
-              {/* The kinds inside the open folder — a count per type, so the
-                  shape of what you hold is readable without opening anything. */}
-              {openGroup === i && f.rows.length > 0 && (
-                <ul className="mb-1 ml-6 flex flex-col gap-px pb-1">
-                  {[...new Set(f.rows.map((r) => r.kind))].map((k) => (
-                    <li
-                      key={k}
-                      className="flex items-center gap-2 rounded-[6px] px-3 py-1.5"
-                    >
-                      <span
-                        aria-hidden
-                        className="h-1 w-1 shrink-0 rounded-full"
-                        style={{ background: 'var(--border-hover)' }}
-                      />
-                      <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-secondary)]">
-                        {KIND_LABELS[k] ?? k}
-                      </span>
-                      <span className="gg-nums text-[11px] text-[var(--text-tertiary)]">
-                        {f.rows.filter((r) => r.kind === k).length}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-
-          {/* ── what is actually outstanding ──────────────────────────
-              The reference this was drawn from puts a storage meter here.
-              Nothing on this page has a size worth watching; what goes wrong
-              with these documents is that they lapse, or that nobody has ever
-              confirmed the date we read off them. */}
-          {rows !== null && (needDate.length > 0 || attention > 0) && (
-            <div className="mt-5 border-t border-[var(--border-divider)] pt-4">
-              <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
-                Needs attention
-              </p>
-              <div className="flex flex-col gap-2">
-                {attention > 0 && (
-                  <span className="flex items-center gap-2 text-[12.5px] text-[var(--warning)]">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
-                      <circle cx="12" cy="12" r="9" />
-                      <path d="M12 7.5v5M12 16.4v.01" />
-                    </svg>
-                    {attention === 1 ? '1 renewal due' : `${attention} renewals due`}
-                  </span>
-                )}
-                {needDate.length > 0 && (
-                  <span className="flex items-center gap-2 text-[12.5px] text-[var(--text-secondary)]">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
-                      <circle cx="12" cy="12" r="9" />
-                      <path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.4M12 17.4v.01" />
-                    </svg>
-                    {needDate.length === 1
-                      ? '1 date not confirmed'
-                      : `${needDate.length} dates not confirmed`}
-                  </span>
-                )}
-              </div>
+              <Chip
+                label={
+                  counts.dates === 1
+                    ? '1 date to check'
+                    : counts.dates + ' dates to check'
+                }
+                on={chips.includes('dates')}
+                onToggle={() => toggleChip('dates')}
+              />
+              <Chip
+                label={'In a motivation · ' + counts.motivations}
+                on={chips.includes('motivations')}
+                onToggle={() => toggleChip('motivations')}
+              />
             </div>
           )}
-        </nav>
 
-        {/* ── the files in that folder ──────────────────────────── */}
-        <section className="mt-6 min-w-0 lg:mt-0">
-          {/* ⚠️ THE TITLE STACKS ABOVE THE CONTROLS BELOW `md`, RATHER THAN
-              WRAPPING INTO THEM. A folder name plus a document count is
-              already two lines on a phone; sharing a row with a search box
-              and two buttons was what produced the wrap this replaces. At
-              `md` and up the two go back to sitting side by side — nothing
-              about the desktop row changes. */}
-          <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
-            <div className="min-w-0 md:flex-1">
-              <h2 className="text-lg font-semibold">
-                {openGroup === null ? 'All documents' : folders[openGroup].label}
-              </h2>
-              <p className="mt-0.5 text-[12.5px] text-[var(--text-tertiary-on-card)]">
-                <span className="gg-nums">{visible.length}</span>{' '}
-                {visible.length === 1 ? 'document' : 'documents'}
-                {needsRenewing > 0 && (
-                  <> · {needsRenewing} needs renewing</>
-                )}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* ⚠️ ICON BELOW `md`, WHERE THE FIXED 216px BOX IS WHAT DID NOT
-                  FIT. It toggles the full-width field below; `md:hidden` takes
-                  it out entirely once the box beside it has room to sit inline. */}
-              <button
-                type="button"
-                onClick={() => setMobileSearchOpen((v) => !v)}
-                aria-expanded={mobileSearchOpen}
-                aria-controls="doc-search-mobile"
+          {/* ── search, and the way in ─────────────────────────────
+              ⚠️ ONE FIELD, FULL WIDTH, NO MOBILE TOGGLE. The toggle existed
+              because a fixed 216px box shared a flex row with a heading and
+              two buttons and wrapped on a 390px screen. The heading and the
+              folder name have gone with the rail, so the field simply fits.
+              `query` and its matching are unchanged — except that it now
+              searches the reading as well, so a calibre or a licence number
+              finds the row. */}
+          <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center">
+            <label className="flex min-h-[44px] flex-1 items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-3">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by name, number or calibre"
                 aria-label="Search documents"
-                className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] md:hidden"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="m20 20-3.5-3.5" />
-                </svg>
-              </button>
+                className="w-full bg-transparent text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
+              />
+            </label>
 
-              <label className="hidden min-h-[38px] w-[216px] items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-3 md:flex">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="m20 20-3.5-3.5" />
-                </svg>
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search documents"
-                  aria-label="Search documents"
-                  className="w-full bg-transparent text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
-                />
-              </label>
-
+            <div ref={addRef} className="flex items-center gap-2">
               <AddPanel
                 token={token}
                 onAdded={refresh}
+                preset={addPreset}
                 /* ⚠️ null WHILE WE DO NOT KNOW. `rows === null` is "still
                    loading" and `maxCredentials === 0` is "status has not
                    answered" — neither may be allowed to render as a full
@@ -564,134 +560,104 @@ export default function LicenceCentrePage() {
                 }
               />
             </div>
-
-            {/* Same field as the one above — one `query` state, two markups —
-                shown only below `md` and only once the icon has been tapped. */}
-            {mobileSearchOpen && (
-              <label
-                id="doc-search-mobile"
-                className="flex min-h-[38px] w-full items-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--bg-inset)] px-3 md:hidden"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="m20 20-3.5-3.5" />
-                </svg>
-                <input
-                  autoFocus
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search documents"
-                  aria-label="Search documents"
-                  className="w-full bg-transparent text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:outline-none"
-                />
-              </label>
-            )}
           </div>
 
-          {/* ── the three counts the board puts above the list ────────────
-              ⚠️ ONLY WHEN THERE IS SOMETHING TO COUNT. Three tiles reading
-              zero above an already-empty folder would repeat the empty state
-              below in a louder voice. */}
-          {rows !== null && rows.length > 0 && (
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              <DocStat label="In the vault" value={rows.length} />
-              <DocStat
-                label={attention === 1 ? 'Renewal due' : 'Renewals due'}
-                value={attention}
-                warn
-              />
-              <DocStat
-                label={inUseCount === 1 ? 'In a motivation' : 'In motivations'}
-                value={inUseCount}
-              />
-            </div>
-          )}
-
-          {/* Column headings, because three of the four things on a row are
-              different KINDS of fact and the middle one is a date. */}
-          {rows !== null && visible.length > 0 && (
-            <div className="mt-4 grid grid-cols-[minmax(0,1fr)_112px] gap-3 border-b border-[var(--border-divider)] px-3.5 pb-2 sm:grid-cols-[minmax(0,1fr)_108px_112px_124px]">
-              <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
-                Document
-              </span>
-              {/* The licence or competency number — a monospaced column so a
-                  member can find the right document without opening each one.
-                  See docNumber() below the row it feeds. */}
-              <span className="hidden text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)] sm:block">
-                Number
-              </span>
-              <span className="hidden text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)] sm:block">
-                Expires
-              </span>
-              <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
-                State
-              </span>
-            </div>
-          )}
-
           {loadFailed ? (
-            <div className="mt-2 rounded-[10px] border border-[var(--border)] p-4 text-sm">
+            <div className="mt-4 rounded-[8px] border border-[var(--border)] p-4 text-sm">
               <p>We could not load your documents just now.</p>
               <button
                 type="button"
-                className="mt-2 rounded-[6px] border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-card-hover)]"
+                className="mt-2 min-h-[44px] rounded-[6px] border border-[var(--border)] px-3 text-sm hover:bg-[var(--bg-card-hover)]"
                 onClick={() => void refresh()}
               >
                 Try again
               </button>
             </div>
           ) : rows === null ? (
-            <p className="mt-2 text-sm text-[var(--text-tertiary-on-card)]">
+            <p className="mt-4 text-sm text-[var(--text-tertiary-on-card)]">
               Loading…
             </p>
-          ) : visible.length === 0 ? (
-            <p className="mt-2 text-sm text-[var(--text-tertiary-on-card)]">
-              {rows.length === 0
-                ? 'Nothing here yet. Add your first licence or competency certificate above.'
-                : 'Nothing filed in this folder yet.'}
-            </p>
           ) : (
-            <ul className="mt-2 flex flex-col gap-1">
-              {visible.map((r, i) => (
-                <li key={r.id}>
-                  {/* A heading where the type changes, so the flat list reads
-                      as folders without opening one. */}
-                  {(i === 0 || visible[i - 1].kind !== r.kind) && (
-                    <p className="px-3.5 pb-1 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-[var(--text-tertiary)] first:pt-1">
-                      {KIND_LABELS[r.kind] ?? r.kind}
-                    </p>
+            <div className="mt-4">
+              {rows.length === 0 && (
+                <p className="text-sm text-[var(--text-tertiary-on-card)]">
+                  Nothing here yet. Each section below says what belongs in it.
+                </p>
+              )}
+              {views.map((v) => (
+                <DocumentSection
+                  key={v.section.id}
+                  view={v}
+                  open={isOpen(v.section.id)}
+                  onToggle={() =>
+                    toggleSection(v.section.id, !isOpen(v.section.id))
+                  }
+                  onAdd={
+                    v.section.addKind
+                      ? () => openAddFor(v.section.addKind as CredentialKind)
+                      : null
+                  }
+                >
+                  {/* ⚠️ THE SAFE IS A GRID AND ONE ROW, NOT FIVE ROWS.
+                      Operator, 2026-08-23: "I dont like the safe picture being
+                      seperate four uploads, looks shit." Four rows all called
+                      "Photographs of my safe" say nothing a 4-across grid does
+                      not say at a glance. */}
+                  {v.photos.length > 0 && (
+                    <ul className="grid grid-cols-4 gap-1.5 p-1.5">
+                      {v.photos.map((n) => (
+                        <li key={n.row.id}>
+                          <button
+                            type="button"
+                            onClick={() => select(n.row.id)}
+                            aria-current={
+                              n.row.id === selectedId ? 'true' : undefined
+                            }
+                            aria-label={n.row.title || 'Photograph of your safe'}
+                            className="block w-full rounded-[4px] p-0.5"
+                            style={{
+                              border:
+                                '1px solid ' +
+                                (n.row.id === selectedId
+                                  ? 'var(--border-hover)'
+                                  : 'transparent'),
+                            }}
+                          >
+                            <DocThumb
+                              token={token}
+                              id={n.row.id}
+                              mimeType={n.row.mimeType}
+                              className="aspect-[4/3] w-full rounded-[4px]"
+                            />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   )}
-                  <DocRow
-                    row={r}
-                    selected={r.id === selectedId}
-                    onSelect={() => {
-                      setSelectedId(r.id);
-                      // ⚠️ THE PAGE-LEVEL ERROR BELONGS TO THE DOCUMENT THAT
-                      // RAISED IT. It is rendered once, under the list, so a
-                      // failed delete on one document otherwise sits there
-                      // accusing the next one the member opens.
-                      setError(null);
-                      // ⚠️ AND ON A PHONE THE DETAIL IS BELOW THE WHOLE LIST.
-                      // The three columns stack under `lg`, so tapping a row
-                      // changes something ~1000px further down the page and
-                      // reads as nothing happening at all. Only on the stacked
-                      // layout — on desktop the panel is already in view and
-                      // scrolling would be a jolt for no reason.
-                      if (
-                        typeof window !== 'undefined' &&
-                        window.matchMedia('(max-width: 1023px)').matches
-                      ) {
-                        detailRef.current?.scrollIntoView({
-                          behavior: 'smooth',
-                          block: 'start',
-                        });
-                      }
-                    }}
-                  />
-                </li>
+
+                  {v.groups.map((g) => (
+                    <div key={g.key}>
+                      {g.label && (
+                        <p className="px-3 pb-1 pt-3 text-[10.5px] font-medium uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
+                          {g.label} · {g.rows.length}
+                        </p>
+                      )}
+                      <ul className="flex flex-col gap-0.5">
+                        {g.rows.map((n) => (
+                          <DocumentRow
+                            key={n.row.id}
+                            node={n}
+                            section={v.section.id}
+                            selectedId={selectedId}
+                            onSelect={select}
+                          />
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </DocumentSection>
               ))}
-            </ul>
+            </div>
           )}
           {error && <p className="mt-3 text-sm text-[var(--red)]">{error}</p>}
         </section>
@@ -804,9 +770,12 @@ function AddPanel({
   token,
   onAdded,
   remaining,
+  preset,
 }: {
   token: () => Promise<string | null>;
   onAdded: () => Promise<void>;
+  /** A section's Add link opening the controls on its own kind. */
+  preset: { kind: CredentialKind; at: number } | null;
   /**
    * Room left in the vault, or null while we do not know.
    *
@@ -1166,6 +1135,7 @@ function AddPanel({
         busy={busy || full}
         onFiles={(files, declared) => void uploadFiles(files, declared)}
         onHandoffArrived={() => void queueHandoffArrivals()}
+        preset={preset}
       />
       {/* ⚠️ ONLY NEAR THE END, AND NEVER OVER AN EMPTY VAULT. A running
           "4 of 60" beside the Add button is a limit announced to people who
@@ -1244,285 +1214,57 @@ function AddPanel({
   );
 }
 
-// ── the folder rail ──────────────────────────────────────────────
-
-function FolderRow({
-  label,
-  count,
-  selected,
-  onSelect,
-}: {
-  label: string;
-  count: number;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-current={selected ? 'true' : undefined}
-      className="flex w-full items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-left hover:bg-[var(--bg-card-hover)]"
-      style={{
-        background: selected ? 'var(--bg-card)' : 'transparent',
-        border: `1px solid ${selected ? 'var(--border)' : 'transparent'}`,
-        outlineOffset: 2,
-      }}
-    >
-      <svg
-        width="17"
-        height="17"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={selected ? 'var(--red)' : 'var(--text-tertiary)'}
-        strokeWidth={selected ? 1.9 : 1.7}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-        className="shrink-0"
-      >
-        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-      </svg>
-      <span
-        className="min-w-0 flex-1 truncate text-[13.5px] font-semibold"
-        style={{
-          color: selected ? 'var(--text-primary)' : 'var(--text-secondary)',
-        }}
-      >
-        {label}
-      </span>
-      <span
-        className="gg-nums shrink-0 text-xs"
-        style={{
-          color: selected ? 'var(--text-primary)' : 'var(--text-tertiary)',
-          fontWeight: selected ? 600 : 400,
-        }}
-      >
-        {count}
-      </span>
-    </button>
-  );
-}
-
-// ── one number above the list ───────────────────────────────────
+// ── one filter chip ──────────────────────────
 
 /**
- * How many documents, how many need a renewal, how many already sit inside a
- * motivation — the board's three tiles above the list.
+ * One of the three counts above the list, made tappable.
  *
- * ⚠️ `warn` ONLY TINTS WHEN THE COUNT IS ABOVE ZERO. A tile reading "0
- * renewals due" in the same amber as one reading "3" would tell a member
- * something is wrong when nothing is — the colour is meant to carry urgency,
- * not to mark which tile this is.
+ * ⚠️ `aria-pressed`, NOT `aria-current` OR A CHECKBOX. It is a toggle
+ * button that stays where it is and changes what is below it, which is
+ * exactly what aria-pressed describes; aria-current would claim it is a
+ * location, and a checkbox would promise a form.
+ *
+ * ⚠️ AND THE WARN TONE IS A TINT PLUS INK FROM THE SAME TOKEN. Never
+ * `var(--warning)18` — a custom property concatenated with an alpha suffix
+ * expands to two tokens, the declaration dies at computed-value time and the
+ * property silently takes its INITIAL value. Forty-four sites did this before
+ * the 2026-08-27 sweep.
  */
-function DocStat({
+function Chip({
   label,
-  value,
+  on,
   warn = false,
+  onToggle,
 }: {
   label: string;
-  value: number;
+  on: boolean;
   warn?: boolean;
+  onToggle: () => void;
 }) {
-  const tone = STATE_TONE.expiring;
-  const lit = warn && value > 0;
-  return (
-    <div
-      className="gg-tile rounded-[10px] border px-3.5 py-3"
-      style={{
-        borderColor: lit ? tone.line : 'var(--border)',
-        background: lit ? tone.wash : 'var(--bg-card)',
-      }}
-    >
-      <p
-        className="gg-nums text-xl font-semibold"
-        style={{ color: lit ? tone.colour : 'var(--text-primary)' }}
-      >
-        {value}
-      </p>
-      <p className="mt-0.5 text-[11px] leading-tight text-[var(--text-tertiary-on-card)]">
-        {label}
-      </p>
-    </div>
-  );
-}
-
-// ── one row in the file list ────────────────────────────────────
-//
-// Presentational and deliberately thin: it names the document, says when it
-// runs out and what state that puts it in, and nothing else. Everything you
-// can DO to a document lives in the detail column, which is CredentialCard.
-
-/**
- * The one key per kind that holds a licence or competency number, for the
- * monospaced column on the row.
- *
- * ⚠️ NOT "the first value in details". `details` is a flat bag, and one
- * document can carry several numbers that are not interchangeable — a
- * hunting association's letter alone holds a good-standing reference, a
- * membership number AND a dedicated status number (see WANTED in
- * licence-centre-extract.service.ts on the backend, which these keys mirror).
- * Reading the wrong one into this column would put the wrong reference in
- * front of a member who trusts the column enough not to open the document.
- *
- * ⚠️ AN ID COPY, A PROOF OF ADDRESS AND A SAFE PHOTOGRAPH HAVE NO ENTRY HERE
- * AT ALL, deliberately — none of them carries a licence or competency number.
- * An identity document's `id_number` is a different kind of number and does
- * not belong in a column about licences.
- */
-const NUMBER_DETAIL_KEYS: Partial<Record<CredentialKind, string[]>> = {
-  FIREARM_LICENCE: ['licence_number'],
-  COMPETENCY_CERTIFICATE: ['competency_number'],
-  DEDICATED_DISCIPLINE: [
-    'status_number',
-    'membership_number',
-    'good_standing_number',
-    'registration_number',
-  ],
-  DEDICATED_STATUS: ['status_number'],
-  DEDICATED_HUNTER: ['status_number'],
-  PROFESSIONAL_HUNTER: ['registration_number'],
-  GOOD_STANDING: ['good_standing_number', 'membership_number', 'status_number'],
-  PROFICIENCY: ['certificate_number'],
-  OTHER: ['reference_number'],
-};
-
-/** Which page of a proficiency a row is, as the reader recorded it. */
-function pageSide(r: CredentialRow): 'front' | 'back' | null {
-  const s = (r.details?.document_side ?? '').toLowerCase();
-  return s === 'front' || s === 'back' ? s : null;
-}
-
-/** What the member calls the page: the statement of results, or the certificate. */
-function pageLabel(r: CredentialRow): string {
-  const s = pageSide(r);
-  return s === 'back' ? 'Statement of results' : s === 'front' ? 'Certificate' : r.title;
-}
-
-/** Of a pair, the row that stands for both in the list: the statement, else the older. */
-function leadsPair(r: CredentialRow, other: CredentialRow): boolean {
-  const s = pageSide(r);
-  const t = pageSide(other);
-  if (s === 'back') return true;
-  if (s === 'front') return false;
-  if (t === 'back') return false;
-  if (t === 'front') return true;
-  return r.createdAt < other.createdAt || (r.createdAt === other.createdAt && r.id < other.id);
-}
-
-/** Where a kind sits in the folder order: folder first, then its place in the folder. */
-const KIND_RANK = new Map<string, number>(
-  KIND_GROUPS.flatMap((g, gi) => g.kinds.map((k, ki) => [k, gi * 100 + ki] as [string, number])),
-);
-
-/** Degrades to a dash — never a blank cell — when a document has no number. */
-function docNumber(row: CredentialRow): string {
-  for (const key of NUMBER_DETAIL_KEYS[row.kind] ?? []) {
-    const v = row.details[key];
-    if (v && v.trim()) return v.trim();
-  }
-  return '—';
-}
-
-function DocRow({
-  row,
-  selected,
-  onSelect,
-}: {
-  row: CredentialRow;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const tone = STATE_TONE[row.state];
-
-  /**
-   * What goes in the expires column.
-   *
-   * ⚠️ THREE OUTCOMES, NOT TWO. A document the member has ANSWERED "never
-   * expires" for and one nobody has supplied a date for both have a null
-   * expiry and are opposites — the first is settled, the second is
-   * outstanding. That distinction is written up on CredentialRow and it is the
-   * reason a member holding nine photographs of a safe was once told nine
-   * documents needed their dates checked.
-   */
-  const expiry = row.neverExpires
-    ? '\u2014'
-    : row.expiresOn
-      ? formatDate(row.expiresOn)
-      : 'Not set';
-
   return (
     <button
       type="button"
-      onClick={onSelect}
-      aria-current={selected ? 'true' : undefined}
-      data-name-card
-      className="grid w-full grid-cols-[minmax(0,1fr)_112px] items-center gap-3 rounded-[10px] px-3.5 py-3 text-left hover:bg-[var(--bg-card-hover)] sm:grid-cols-[minmax(0,1fr)_108px_112px_124px]"
+      aria-pressed={on}
+      onClick={onToggle}
+      className="min-h-[44px] rounded-[6px] px-3 text-[12.5px] font-medium"
       style={{
-        background: selected ? 'var(--bg-card)' : 'transparent',
-        border: `1px solid ${selected ? 'var(--border)' : 'transparent'}`,
+        color: warn ? 'var(--warning)' : 'var(--text-secondary)',
+        background: on
+          ? 'var(--bg-inset)'
+          : warn
+            ? 'color-mix(in srgb, var(--warning) 10%, transparent)'
+            : 'var(--bg-card)',
+        border: `1px solid ${
+          on
+            ? 'var(--text-secondary)'
+            : warn
+              ? 'color-mix(in srgb, var(--warning) 38%, transparent)'
+              : 'var(--border)'
+        }`,
         outlineOffset: 2,
       }}
     >
-      <span className="flex min-w-0 items-center gap-3">
-        <span
-          aria-hidden
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-[var(--border)] bg-[var(--bg-inset)]"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary-on-card)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <path d="M14 2v6h6" />
-          </svg>
-        </span>
-      <span className="min-w-0 flex-1">
-        <FullName className="text-[13.5px] font-medium">
-          {row.title || KIND_LABELS[row.kind] || row.kind}
-        </FullName>
-        <span className="mt-0.5 block truncate text-[11.5px] text-[var(--text-tertiary-on-card)]">
-          {KIND_LABELS[row.kind] ?? row.kind}
-          {row.otherSide ? ' \u00b7 statement of results + certificate' : ''}
-          {' \u00b7 added '}
-          {formatDate(row.createdAt.slice(0, 10))}
-        </span>
-        {/* ⚠️ SAYING WE GUESSED, WHERE WE GUESSED. `namedConfident` was stored
-            precisely so this survives a refresh, and it was read in the review
-            queue and nowhere else — so a document we filed without being sure
-            looked, on this list, exactly like one the member had filed
-            themselves. A wrong box on a firearm licence is a renewal nothing
-            will ever remind on. The row IS the way to change it: tapping it
-            opens the card, which carries the type control. */}
-        {filedUnsure(row) && !row.confirmed && (
-          <span className="mt-1 block truncate text-[11px] font-semibold text-[var(--warning)]">
-            Filed as {KIND_LABELS[row.kind] ?? row.kind} — not sure, tap to
-            change
-          </span>
-        )}
-      </span>
-      </span>
-
-      {/* The licence or competency number, monospaced so a column of them
-          lines up — see docNumber() above for which key answers it per kind. */}
-      <span className="hidden truncate font-mono text-xs text-[var(--text-secondary)] sm:block">
-        {docNumber(row)}
-      </span>
-
-      <span className="gg-nums hidden text-xs text-[var(--text-secondary)] sm:block">
-        {expiry}
-      </span>
-
-      {/* State carries a word, never only a colour — same rule the step rail
-          follows, and the reason every one of these has a label. */}
-      <span
-        className="justify-self-start rounded-full px-2.5 py-1 text-[11px] font-semibold"
-        style={{
-          color: tone.colour,
-          background: tone.wash,
-          border: `1px solid ${tone.line}`,
-        }}
-      >
-        {tone.label}
-      </span>
+      {label}
     </button>
   );
 }
-

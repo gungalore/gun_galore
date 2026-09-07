@@ -40,6 +40,10 @@ import {
   type LinkedLicence,
   parseEndorsements,
 } from '../common/sa-competency';
+import {
+  type DatedLicence,
+  firearmFacets,
+} from './credential-firearm-facets';
 import { defaultsToNeverExpires, isPhotograph } from './credential-kinds';
 import {
   SIDE_MISSING,
@@ -774,7 +778,7 @@ export class LicenceCentreService {
      * the member's answer; letting one date a competency would build a
      * derivation on a guess and then remind on it.
      */
-    const licences: LinkedLicence[] = rows
+    const licences: DatedLicence[] = rows
       .filter(
         (r) =>
           (r.kind === 'FIREARM_LICENCE' ||
@@ -787,6 +791,13 @@ export class LicenceCentreService {
           dateIsSettled(r),
       )
       .map((r) => ({
+        // ⚠️ THE ID AND THE FILING DATE RIDE ALONG SO `follows` CAN NAME A ROW.
+        // Neither reaches any derivation (see LinkedLicence.id): this is the
+        // set s10(2) was applied to, so naming out of it can only ever point
+        // at a licence that really did set the date. Rebuilding a second set
+        // for the pointer is how the prose and the pointer come to disagree.
+        id: r.id,
+        createdAt: r.createdAt,
         category: (categorised.get(r.id) ??
           r.firearmCategory) as LinkedLicence['category'],
         selfLoading: actioned.get(r.id) ?? r.firearmSelfLoading,
@@ -795,79 +806,114 @@ export class LicenceCentreService {
       }));
 
     const titles = new Map(rows.map((r) => [r.id, renamed.get(r.id) ?? r.title]));
-    return rows.map((r) => ({
-      id: r.id,
-      kind: r.kind,
-      coversKinds: r.coversKinds,
-      title: renamed.get(r.id) ?? r.title,
-      issuedOn: r.issuedOn ? toIsoDate(r.issuedOn) : null,
-      expiresOn: r.expiresOn ? toIsoDate(r.expiresOn) : null,
-      confirmed: r.confirmedAt !== null,
-      // ⚠️ WHAT THE MEMBER SAID ABOUT THE DATES, not what the kind implies.
-      // The card needs both: a ticked box is a settled answer and renders
-      // neutral, while a blank one that was never ticked is still outstanding.
-      neverExpires: r.neverExpires,
-      issuedOnUnknown: r.issuedOnUnknown,
-      remindersMuted: r.remindersMuted,
-      state: expiryState(r.expiresOn, dateIsSettled(r), now, r.neverExpires),
-      // ⚠️ DELIBERATELY NOT `state === 'expiring'`. The card turns amber at 90
-      // days, which is the section 24(1) deadline itself; the renewal is
-      // offered at six months so there is still time to act on it. Tying the
-      // two together would first mention renewal on the last day it can be
-      // lodged.
-      renewalDue: withinRenewalWindow(r.expiresOn, dateIsSettled(r), now),
-      // Read from the one map built above — see the note there.
-      details: detailsById.get(r.id) ?? {},
-      // Same statutory arithmetic the upload path offers, so a document that
-      // reaches the confirm step FROM THE LIST — which is how every
-      // phone-scanned document reaches it — gets the same prefilled date and
-      // the same explanation as one uploaded at the desk.
-      derivedExpiry: derivedExpiryFor(
-        r.kind,
-        r.expiresOn ? toIsoDate(r.expiresOn) : null,
-        r.issuedOn ? toIsoDate(r.issuedOn) : null,
-        licences,
-        r.kind === 'COMPETENCY_CERTIFICATE'
-          ? parseEndorsements(detailsById.get(r.id)?.covers ?? '')
-          : [],
-      ),
-      // The row can outlive its bytes after an erasure. Say so rather than
-      // let a download fail with something puzzling.
-      available: r.storageKey !== null && r.purgedAt === null,
-      mimeType: r.mimeType,
-      byteSize: r.byteSize,
-      createdAt: r.createdAt,
-      // ⚠️ THE ONLY REASON THE REVIEW SCREEN SURVIVES A REFRESH. Rebuilt
-      // from this list rather than from whatever the upload happened to
-      // return, so the documents we were unsure about stay the documents we
-      // were unsure about. See the model for what these two mean.
-      autoFiled: r.autoFiled,
-      namedConfident: r.namedConfident,
-      // Why this one might want a look, and what we changed on it. Empty on
-      // every row filed before this was stored, which reads as "nothing was
-      // doubted" — correct, since nothing was recorded either way.
-      readUncertain: r.readUncertain,
-      readNotes: r.readNotes,
-      attention: r.attention,
-      // The title is resolved now, not stored: the original may have been
-      // renamed since, or deleted, in which case the flag still says "a copy".
-      duplicateOf: r.duplicateOfId
-        ? { id: r.duplicateOfId, title: titles.get(r.duplicateOfId) ?? null }
-        : null,
-      otherSide: r.otherSideId
-        ? { id: r.otherSideId, title: titles.get(r.otherSideId) ?? null }
-        : null,
+    return rows.map((r) => {
       /**
-       * WHO PUT THE DATE THERE.
+       * WHAT THIS DOCUMENT SAYS ABOUT A FIREARM — see credential-firearm-facets.
        *
-       * ⚠️ THE CARD MUST NOT SAY "By you" ABOUT OUR READING. Attributing a
-       * date we filled in to the member, by name, on a page about firearm
-       * licences, is a false record of who checked what — and the first thing
-       * they would check if the reminder were ever wrong.
+       * ⚠️ COMPUTED FROM THE REPAIRED VALUES, NOT THE STORED COLUMNS. The
+       * category and action backfills above are written in the same request
+       * and the row still carries the old null; passing `r.firearmCategory`
+       * here would show a licence as uncategorised on the very load that
+       * worked its category out, and group it nowhere.
        */
-      dateSource: r.dateSource,
-      dateSourceNote: r.dateSourceNote,
-    }));
+      const facets = firearmFacets(
+        {
+          kind: r.kind,
+          coversKinds: r.coversKinds,
+          firearmCategory: categorised.get(r.id) ?? r.firearmCategory,
+          firearmSelfLoading: actioned.get(r.id) ?? r.firearmSelfLoading,
+          expiresOn: r.expiresOn,
+          dateSource: r.dateSource,
+          details: detailsById.get(r.id) ?? {},
+        },
+        licences,
+      );
+      return {
+        id: r.id,
+        kind: r.kind,
+        coversKinds: r.coversKinds,
+        title: renamed.get(r.id) ?? r.title,
+        issuedOn: r.issuedOn ? toIsoDate(r.issuedOn) : null,
+        expiresOn: r.expiresOn ? toIsoDate(r.expiresOn) : null,
+        confirmed: r.confirmedAt !== null,
+        // ⚠️ WHAT THE MEMBER SAID ABOUT THE DATES, not what the kind implies.
+        // The card needs both: a ticked box is a settled answer and renders
+        // neutral, while a blank one that was never ticked is still outstanding.
+        neverExpires: r.neverExpires,
+        issuedOnUnknown: r.issuedOnUnknown,
+        remindersMuted: r.remindersMuted,
+        state: expiryState(r.expiresOn, dateIsSettled(r), now, r.neverExpires),
+        // ⚠️ DELIBERATELY NOT `state === 'expiring'`. The card turns amber at 90
+        // days, which is the section 24(1) deadline itself; the renewal is
+        // offered at six months so there is still time to act on it. Tying the
+        // two together would first mention renewal on the last day it can be
+        // lodged.
+        renewalDue: withinRenewalWindow(r.expiresOn, dateIsSettled(r), now),
+        // Read from the one map built above — see the note there.
+        details: detailsById.get(r.id) ?? {},
+        // Same statutory arithmetic the upload path offers, so a document that
+        // reaches the confirm step FROM THE LIST — which is how every
+        // phone-scanned document reaches it — gets the same prefilled date and
+        // the same explanation as one uploaded at the desk.
+        derivedExpiry: derivedExpiryFor(
+          r.kind,
+          r.expiresOn ? toIsoDate(r.expiresOn) : null,
+          r.issuedOn ? toIsoDate(r.issuedOn) : null,
+          licences,
+          r.kind === 'COMPETENCY_CERTIFICATE'
+            ? parseEndorsements(detailsById.get(r.id)?.covers ?? '')
+            : [],
+        ),
+        // The row can outlive its bytes after an erasure. Say so rather than
+        // let a download fail with something puzzling.
+        available: r.storageKey !== null && r.purgedAt === null,
+        mimeType: r.mimeType,
+        byteSize: r.byteSize,
+        createdAt: r.createdAt,
+        // ⚠️ THE ONLY REASON THE REVIEW SCREEN SURVIVES A REFRESH. Rebuilt
+        // from this list rather than from whatever the upload happened to
+        // return, so the documents we were unsure about stay the documents we
+        // were unsure about. See the model for what these two mean.
+        autoFiled: r.autoFiled,
+        namedConfident: r.namedConfident,
+        // Why this one might want a look, and what we changed on it. Empty on
+        // every row filed before this was stored, which reads as "nothing was
+        // doubted" — correct, since nothing was recorded either way.
+        readUncertain: r.readUncertain,
+        readNotes: r.readNotes,
+        attention: r.attention,
+        // The title is resolved now, not stored: the original may have been
+        // renamed since, or deleted, in which case the flag still says "a copy".
+        duplicateOf: r.duplicateOfId
+          ? { id: r.duplicateOfId, title: titles.get(r.duplicateOfId) ?? null }
+          : null,
+        otherSide: r.otherSideId
+          ? { id: r.otherSideId, title: titles.get(r.otherSideId) ?? null }
+          : null,
+        /**
+         * WHO PUT THE DATE THERE.
+         *
+         * ⚠️ THE CARD MUST NOT SAY "By you" ABOUT OUR READING. Attributing a
+         * date we filled in to the member, by name, on a page about firearm
+         * licences, is a false record of who checked what — and the first thing
+         * they would check if the reminder were ever wrong.
+         */
+        dateSource: r.dateSource,
+        dateSourceNote: r.dateSourceNote,
+        /**
+         * ⚠️ THE FIREARM GROUPING, AND THE ROW IS THE ONLY PLACE IT CAN LIVE.
+         * Every one of these five is read out of an AES-GCM blob or off a
+         * column the page never sees, so a Document Centre grouped by firearm
+         * cannot be drawn without them. See credential-firearm-facets.ts for
+         * what each one means and, more to the point, when each one is null.
+         */
+        category: facets.category,
+        selfLoading: facets.selfLoading,
+        covers: facets.covers,
+        follows: facets.follows,
+        unitStandards: facets.unitStandards,
+      };
+    });
   }
 
   async create(

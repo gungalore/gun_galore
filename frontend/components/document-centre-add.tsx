@@ -88,9 +88,23 @@ export default function DocumentCentreAdd({
   busy,
   onFiles,
   onHandoffArrived,
+  preset = null,
 }: {
   groups: readonly KindGroupSpec[];
   busy: boolean;
+  /**
+   * Open straight onto a type, from outside.
+   *
+   * An empty section's Add link already knows what belongs in it, so the
+   * menu's own question ("what are you adding?") would be asking the member
+   * to repeat themselves. `at` is a nonce: the same kind asked for twice in a
+   * row must open twice, and an object that never changes cannot say so.
+   *
+   * ⚠️ IT LANDS ON THE SECOND STEP, NEVER THE FILE DIALOG. Browsers only
+   * honour a programmatic file dialog inside a user gesture, and this arrives
+   * from an effect. The step shows "Choose files", which is a gesture.
+   */
+  preset?: { kind: CredentialKind; at: number } | null;
   /** The page's existing uploader. `kind` is an override, '' means classify. */
   onFiles: (files: File[], kind: CredentialKind | '') => void | Promise<void>;
   onHandoffArrived: () => void;
@@ -104,6 +118,20 @@ export default function DocumentCentreAdd({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const uploadRef = useRef<HTMLButtonElement | null>(null);
   const scanRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!preset) return;
+    setMode('upload');
+    setChosen(preset.kind);
+    // The panel is positioned off the upload button; a keyboard user arriving
+    // from the section link should land inside it, not on the link they left.
+    const id = window.setTimeout(() => {
+      wrapRef.current
+        ?.querySelector<HTMLElement>('[aria-label="How would you like to add it?"] button')
+        ?.focus();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [preset]);
 
   useEffect(() => {
     if (!mode) return;
