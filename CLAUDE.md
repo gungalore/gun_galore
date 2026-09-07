@@ -1939,7 +1939,27 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (morning), commit `e66e5d15`.** FULL DEPLOY
+**Last deploy: 2026-09-07 (07:00), commit `7f138203`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907030000_vault_event`, additive only (new table
+`VaultEvent` + 4 indexes), hand-written per [BC-SCHEMA-DRIFT]. **FULL DEPLOY**
+(`deploy.sh`) on the operator's `deploy now`. Dump
+`alloutdoor-20260907-070156.dump` taken by the script; "All migrations have
+been successfully applied". Health doubled, warden online, public 200 twice.
+
+Shipped, merged from `feat/the-bench`: `35eb0c98` — the NSN proficiency pair
+now matches (every 13–19-digit run is tried and the ID checksum decides, so
+a SASSETA reg number no longer eats the ID; the number-before-label rule
+reaches two lines and runs first; "US Completed On" dates a 2014 statement;
+pairing tolerates one missing ID within 120 days; unpaired rows get one more
+re-read, marked `pair_reread`). `45482741` — THE DECISION LEDGER:
+`VaultLogService` (common/vault-log.service.ts) writes one `VaultEvent` per
+automatic step (classify/read/name/date/derive/pair/duplicate/address/
+autolink/settle) and per member correction (refiled/renamed/date-changed/
+deleted/confirmed); NO document contents (scrubbed); fire-and-forget. Read at
+`GET /api/admin/licence-centre/ledger` (filterable) and `/ledger/summary`.
+Query it before guessing why a vault step did not fire.
+
+**Previous deploy: 2026-09-07 (morning), commit `e66e5d15`.** FULL DEPLOY
 (`deploy.sh`, no migration) on the operator's `deploy now`. Health doubled,
 warden online, public 200 twice. Shipped, merged from `feat/the-bench`:
 `2bef02fb` — a paired proficiency is ONE entry in the Document Centre list
