@@ -451,8 +451,8 @@ describe('template choice', () => {
       {
         make: 'CZ 452',
         calibre: '.22 LR',
-        type: 'Bolt-action rifle',
-        section: 'Licence 4000112233',
+        serial: 'B742119',
+        expiry: '30/04/2031',
       },
     ],
     firearmSpec: [

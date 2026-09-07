@@ -8,6 +8,7 @@ import {
   type MotivationSummary,
   type TokenGetter,
 } from '@/lib/motivations-api';
+import { canOpenPackScreen } from '@/lib/licence-services-preview';
 
 // ────────────────────────────────────────────────────────────────────
 // MOTIVATIONS, IN THE LICENCE CENTRE.
@@ -86,6 +87,14 @@ export default function LicenceCentreMotivations({
   const ready = rows.filter((r) => r.status === 'COMPLETED');
   const rest = rows.filter((r) => r.status !== 'COMPLETED');
 
+  // ⚠️ canOpenPackScreen(), NOT the raw build flag — see the identical note in
+  // app/motivations/page.tsx. A member whose tab opted into the pack-screen
+  // preview started their application there; sending them back through this
+  // panel to the retired /motivations/[id] wizard would be the same
+  // two-interfaces bug from a second door.
+  const motivationHref = (mid: string) =>
+    canOpenPackScreen() ? `/licence-services/${mid}` : `/motivations/${mid}`;
+
   return (
     <section className="mt-8">
       <h2 className="text-sm font-medium uppercase tracking-wide text-[var(--text-tertiary-on-card)]">
@@ -116,11 +125,11 @@ export default function LicenceCentreMotivations({
                 // bare <a href> to the API would 401. The motivation's own
                 // page already has the download, the reading copy and the
                 // template picker on it.
-                <Link href={`/motivations/${r.id}`} className="underline">
+                <Link href={motivationHref(r.id)} className="underline">
                   Open and download
                 </Link>
               ) : (
-                <Link href={`/motivations/${r.id}`} className="underline">
+                <Link href={motivationHref(r.id)} className="underline">
                   Continue
                 </Link>
               )}

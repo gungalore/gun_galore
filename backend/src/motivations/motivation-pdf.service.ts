@@ -359,7 +359,7 @@ export interface MotivationPdfInput {
   /** The applicant's ID number, printed on the cover as the DFO expects. */
   idNumber?: string;
   /** Firearms already held, for the comparison table. */
-  ownedFirearms?: { make: string; calibre: string; type: string; section: string }[];
+  ownedFirearms?: { make: string; calibre: string; serial: string; expiry: string }[];
   /** Manufacturer specifications for the firearm applied for. */
   firearmSpec?: { label: string; value: string }[];
   /**
@@ -1247,10 +1247,10 @@ export class MotivationPdfService {
         // Widths sum to contentWidth (451.28) by construction; a column that
         // overflows would silently overprint its neighbour rather than wrap.
         const cols: { head: string; w: number; key: keyof (typeof owned)[0] }[] = [
-          { head: 'Make and model', w: 168, key: 'make' },
-          { head: 'Calibre', w: 92, key: 'calibre' },
-          { head: 'Type', w: 106, key: 'type' },
-          { head: 'Held under', w: contentWidth - 366, key: 'section' },
+          { head: 'Make and model', w: 158, key: 'make' },
+          { head: 'Calibre', w: 88, key: 'calibre' },
+          { head: 'Serial number', w: 110, key: 'serial' },
+          { head: 'Date of expiry', w: contentWidth - 356, key: 'expiry' },
         ];
 
         const headTop = doc.y;

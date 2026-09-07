@@ -54,8 +54,8 @@ async function main() {
       idNumber: '8001015009087',
       firearmLine: 'Marlin 1895 lever-action rifle, .45-70 Government, serial MR44120',
       ownedFirearms: [
-        { make: 'Howa 1500', calibre: '6.5mm Creedmoor', type: 'Rifle', section: 'Section 16' },
-        { make: 'Beretta 686', calibre: '12 Gauge', type: 'Shotgun', section: 'Section 16' },
+        { make: 'Howa 1500', calibre: '6.5mm Creedmoor', serial: 'H55219', expiry: '30/04/2031' },
+        { make: 'Beretta 686', calibre: '12 Gauge', serial: 'BR90042', expiry: '15/11/2029' },
       ],
       firearmSpec: [
         { label: 'Action', value: 'Lever action' },

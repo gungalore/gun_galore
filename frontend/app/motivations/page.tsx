@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from '@clerk/nextjs';
-import { PACK_SCREEN_SHIPPED } from '@/lib/licence-services-preview';
+import { canOpenPackScreen } from '@/lib/licence-services-preview';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { MotivationSummary, motivationsApi } from '@/lib/motivations-api';
@@ -75,9 +75,15 @@ export default function MotivationsPage() {
    * The NEW-application half of this rule moved to /licence-services/new,
    * which decides where a freshly created row opens. It is the same rule; it
    * just belongs beside the create() call rather than here.
+   *
+   * ⚠️ canOpenPackScreen(), NOT THE RAW BUILD FLAG. A member whose tab opted
+   * into the preview started their application on the pack screen; checking
+   * only PACK_SCREEN_SHIPPED here ignored that opt-in and sent them back to
+   * the retired /motivations/[id] wizard the moment they left and came back
+   * to continue it — the same application, two different interfaces.
    */
   const packHref = (mid: string) =>
-    PACK_SCREEN_SHIPPED ? `/licence-services/${mid}` : `/motivations/${mid}`;
+    canOpenPackScreen() ? `/licence-services/${mid}` : `/motivations/${mid}`;
   // ── MAY WE KEEP YOUR DOCUMENTS? ─────────────────────────────────────
   //
   // Operator, 2026-08-22: "we also need to launch a window asking the user for

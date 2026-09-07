@@ -55,6 +55,7 @@ import {
 import {
   LICENCE_TYPE_LABELS,
   OWNED_ROWS,
+  ownedFirearmSerial,
   PRESS_CLIPPINGS_KEY,
   SAPS271_FILL,
   SAPS271_OPT_KEY,
@@ -123,24 +124,18 @@ function saDate(raw: string): string {
  * shortfall — it understates the statutory precondition being checked.
  * OWNED_ROWS is imported so this can never sit behind the registry again.
  *
- * ⚠️ MODEL AND EXPIRY NOW PRINT; THE SERIAL STILL DOES NOT, AND THAT IS A
- * COLUMN PROBLEM. Operator, 2026-09-07: "when listing the fire arms I already
- * own it should only be the make, model, serial number and expiry date
- * listed." The model was already promised — the column head reads "Make and
- * model" and only the make was ever passed — and the expiry rides in the
- * "Held under" column beside the licence number it belongs to, which is where
- * a DFO looks for it. The SERIAL has nowhere to go: motivation-pdf.service.ts
- * fixes four columns and their widths (make / calibre / type / section), and
- * calibre and type cannot be spent on it — the duplicate-calibre argument is
- * read off this table. A fifth column is a change to that file.
+ * ⚠️ FOUR COLUMNS: MAKE, CALIBRE, SERIAL, EXPIRY. Operator, 2026-09-07:
+ * "Make, Calibre, Serial Number, Date of expiry" — replacing the earlier
+ * Type / "Held under" (licence number) columns. Type and the licence number
+ * are dropped from this table; the serial and expiry each get their own
+ * column instead of riding beside the licence number.
  *
  * The old note here read "SERIALS ARE NOT PRINTED HERE ... a serial in a table
  * on a motivation is a line a reviewer has to check against a licence that is
- * already annexed, and getting it wrong is worse than omitting it". Half of
- * that reasoning has expired: since 2026-09-07 there is ONE serial per firearm
- * and ownedFirearmSerial() is the single reader for it, so the 271, the vault
- * and this table cannot disagree about a number any more. The other half
- * stands — the annexed licence copy is the evidence, this table is the summary.
+ * already annexed, and getting it wrong is worse than omitting it". That
+ * reasoning has expired: since 2026-09-07 there is ONE serial per firearm and
+ * ownedFirearmSerial() is the single reader for it, so the 271, the vault and
+ * this table cannot disagree about a number any more.
  *
  * A row with no make AND no calibre is skipped rather than printed as a row
  * of dashes: the interview lets an applicant start firearm 2 and abandon it,
@@ -151,30 +146,22 @@ function saDate(raw: string): string {
  */
 export function existingFirearms(
   answers: Record<string, string>,
-): { make: string; calibre: string; type: string; section: string }[] {
-  const out: { make: string; calibre: string; type: string; section: string }[] =
+): { make: string; calibre: string; serial: string; expiry: string }[] {
+  const out: { make: string; calibre: string; serial: string; expiry: string }[] =
     [];
   for (let i = 1; i <= OWNED_ROWS; i++) {
     const make = (answers[`existing_firearm_${i}_make`] ?? '').trim();
     const model = (answers[`existing_firearm_${i}_model`] ?? '').trim();
     const calibre = (answers[`existing_firearm_${i}_calibre`] ?? '').trim();
-    const type = (answers[`existing_firearm_${i}_type`] ?? '').trim();
-    const licence = (answers[`existing_firearm_${i}_licence_no`] ?? '').trim();
+    const serial = ownedFirearmSerial(answers, i);
     const expiry = (answers[`existing_firearm_${i}_expiry`] ?? '').trim();
     if (!make && !calibre) continue;
     out.push({
       // The column is headed "Make and model"; it was fed the make alone.
       make: [make, model].filter(Boolean).join(' ') || '—',
       calibre: calibre || '—',
-      type: type || '—',
-      // The licence NUMBER, not the section, when we have it — that is what a
-      // DFO looks up. "Licensed" alone when we do not, rather than a guess at
-      // which section it was issued under. The expiry is appended rather than
-      // given a column of its own: it is a fact ABOUT that licence, and the
-      // table has four columns.
-      section:
-        (licence ? `Licence ${licence}` : 'Licensed') +
-        (expiry ? `, expires ${saDate(expiry)}` : ''),
+      serial: serial || '—',
+      expiry: expiry ? saDate(expiry) : '—',
     });
   }
   return out;

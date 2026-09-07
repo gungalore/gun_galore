@@ -19,8 +19,7 @@ const row = (n: number, over: Record<string, string> = {}) => ({
   [`existing_firearm_${n}_make`]: 'CZ',
   [`existing_firearm_${n}_model`]: '550',
   [`existing_firearm_${n}_calibre`]: '.308 Winchester',
-  [`existing_firearm_${n}_type`]: 'Rifle',
-  [`existing_firearm_${n}_licence_no`]: `40091178${n}`,
+  [`existing_firearm_${n}_serial`]: `B74211${n}`,
   [`existing_firearm_${n}_expiry`]: '2031-04-30',
   ...over,
 });
@@ -49,13 +48,11 @@ describe('the owned-firearms table in the pack', () => {
     expect(one.make).toBe('CZ');
   });
 
-  it('prints the licence expiry beside the licence it belongs to', () => {
-    // The table has four fixed columns, so the expiry rides with the licence
-    // number rather than being dropped — it is a fact ABOUT that licence, and
-    // a DFO reading "Held under" is exactly who wants to know it.
-    expect(existingFirearms(row(1))[0].section).toBe(
-      'Licence 400911781, expires 30/04/2031',
-    );
+  it('prints the serial number and the formatted expiry in their own columns', () => {
+    // Operator, 2026-09-07: "Make, Calibre, Serial Number, Date of expiry."
+    const one = existingFirearms(row(1))[0];
+    expect(one.serial).toBe('B742111');
+    expect(one.expiry).toBe('30/04/2031');
   });
 
   it('leaves a date it cannot read exactly as it was given', () => {
@@ -65,14 +62,15 @@ describe('the owned-firearms table in the pack', () => {
     const odd = existingFirearms(
       row(1, { existing_firearm_1_expiry: '03/04/2029' }),
     )[0];
-    expect(odd.section).toBe('Licence 400911781, expires 03/04/2029');
+    expect(odd.expiry).toBe('03/04/2029');
   });
 
-  it('says "Licensed" rather than guessing a section, and adds no comma for a missing date', () => {
+  it('prints a dash rather than guessing a missing serial or expiry', () => {
     const bare = existingFirearms(
-      row(1, { existing_firearm_1_licence_no: '', existing_firearm_1_expiry: '' }),
+      row(1, { existing_firearm_1_serial: '', existing_firearm_1_expiry: '' }),
     )[0];
-    expect(bare.section).toBe('Licensed');
+    expect(bare.serial).toBe('—');
+    expect(bare.expiry).toBe('—');
   });
 
   it('still skips an abandoned row', () => {
