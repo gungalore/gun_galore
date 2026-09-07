@@ -1,7 +1,21 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { MotivationUploadKind } from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
 import type { LlmResponse } from '../common/llm/llm.types';
 import { answerValue } from '../common/card-placeholder';
+
+// Real Textract responses off the operator's own documents, shared with
+// textract-document-extract.spec.ts — not invented fixtures.
+const TEXTRACT_FIXTURES = join(
+  __dirname,
+  '..',
+  'licence-centre',
+  '__fixtures__',
+  'textract',
+);
+const textractFixture = (doc: string): unknown =>
+  JSON.parse(readFileSync(join(TEXTRACT_FIXTURES, `${doc}.json`), 'utf8'));
 
 // ────────────────────────────────────────────────────────────────────
 // READING THE FIREARM OFF ANYTHING.
@@ -50,6 +64,39 @@ function build(reply: unknown, throws?: Error, configured = true) {
 
 const fields = (f: { key: string; value: string }[]) => ({ fields: f });
 const bytes = Buffer.from('x');
+
+/** Same shape as build(), plus a fake Textract that answers with `ocr`. */
+function buildWithTextract(ocr: unknown, llmReply: unknown = fields([])) {
+  const complete = jest.fn(async (_req?: any): Promise<LlmResponse> => {
+    const text = typeof llmReply === 'string' ? llmReply : JSON.stringify(llmReply);
+    return {
+      text,
+      parts: [{ type: 'text', text }],
+      toolCalls: [],
+      stopReason: 'end',
+      usage: { inputTokens: 10, outputTokens: 10 },
+      model: 'test-model-2.5',
+      provider: 'gemini',
+      assistantMessage: { role: 'assistant', content: [{ type: 'text', text }] },
+    };
+  });
+  const llm = {
+    complete,
+    stream: jest.fn(),
+    isConfigured: () => true,
+    model: 'test-model-2.5',
+    provider: 'gemini' as const,
+  };
+  const analyse = jest.fn(async () => ocr);
+  const textract = { analyse, enabled: () => true };
+  const svc = new MotivationExtractService(llm as never, undefined, textract as never);
+  (svc as unknown as { logger: unknown }).logger = {
+    warn: jest.fn(),
+    error: jest.fn(),
+    log: jest.fn(),
+  };
+  return { svc, complete, analyse };
+}
 
 describe('which kinds get a firearm read', () => {
   it('reads the kinds that could describe a firearm', () => {
@@ -263,6 +310,41 @@ describe('what a firearm read lands on', () => {
     ).resolves.toEqual({});
   });
 
+  it('retries once when the first attempt reads nothing, same as extract()', async () => {
+    // A licence card that plainly prints Make, Calibre, Type AND Serial Number
+    // came back with only the first three live, on the one call this used to
+    // make. extract()'s attemptRead already retries because a single vision
+    // pass is inconsistent; this reader had no second chance at all.
+    const { svc, complete } = build(fields([]));
+    const reply = (f: { key: string; value: string }[]): LlmResponse => ({
+      text: JSON.stringify(fields(f)),
+      parts: [],
+      toolCalls: [],
+      stopReason: 'end',
+      usage: { inputTokens: 10, outputTokens: 10 },
+      model: 'test-model-2.5',
+      provider: 'gemini',
+      assistantMessage: { role: 'assistant', content: [] },
+    });
+    complete.mockResolvedValueOnce(reply([]));
+    complete.mockResolvedValueOnce(
+      reply([
+        { key: 'firearm_make', value: 'GLOCK' },
+        { key: 'firearm_calibre', value: '9MM PAR (9X19MM)' },
+        { key: 'firearm_type', value: 'HANDGUN' },
+        { key: 'firearm_serial', value: 'ZABA01892' },
+      ]),
+    );
+    const out = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(out).toEqual({
+      firearm_make: 'GLOCK',
+      firearm_calibre: '9MM PAR (9X19MM)',
+      firearm_type: 'HANDGUN',
+      firearm_serial: 'ZABA01892',
+    });
+  });
+
   it('returns nothing when the AI service is not configured at all', async () => {
     const { svc, complete } = build(fields([]), undefined, false);
     await expect(
@@ -284,5 +366,66 @@ describe('what a firearm read lands on', () => {
       type: 'image',
       mimeType: 'image/jpeg',
     });
+  });
+});
+
+describe('reading via Textract first', () => {
+  it('reads a real licence card off Textract and never calls Gemini', async () => {
+    // doc03: the same card textract-document-extract.spec.ts pins as
+    // make HOWA, calibre 6.5MM CREEDMOOR, frame/barrel serial B477423,
+    // firearm_type MANUALLY OPERATED RIFLE.
+    const { svc, complete, analyse } = buildWithTextract(textractFixture('doc03'));
+    const out = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
+    expect(analyse).toHaveBeenCalledWith(bytes, 'image/jpeg');
+    expect(out).toMatchObject({
+      firearm_make: 'HOWA',
+      firearm_calibre: '6.5MM CREEDMOOR',
+      frame_serial: 'B477423',
+      barrel_serial: 'B477423',
+      firearm_type: 'MANUALLY OPERATED RIFLE',
+    });
+    // The whole point: a card Textract can read costs no vision-model call.
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('never carries the holder’s name, ID or the licence section across', async () => {
+    // extractDocument() reads holder_name and section off this same card —
+    // the allowlist in firearmFromTextract is what keeps them out of a
+    // Section E read. Same rule as parseFirearmReading, pinned the same way.
+    const { svc } = buildWithTextract(textractFixture('doc03'));
+    const out = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
+    expect(out).not.toHaveProperty('holder_name');
+    expect(out).not.toHaveProperty('section');
+    expect(out).not.toHaveProperty('id_number');
+  });
+
+  it('falls through to Gemini when Textract has nothing useful', async () => {
+    // null: what analyse() returns whenever AWS is not configured or the
+    // call failed — the same "no reader, no crash" contract as everywhere
+    // else in this file.
+    const { svc, complete } = buildWithTextract(
+      null,
+      fields([
+        { key: 'firearm_make', value: 'CZ' },
+        { key: 'firearm_calibre', value: '.223 REM' },
+      ]),
+    );
+    const out = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(out).toEqual({ firearm_make: 'CZ', firearm_calibre: '.223 REM' });
+  });
+
+  it('falls through to Gemini when Textract reads the page but nothing firearm-shaped', async () => {
+    // A document Textract can OCR — an ID book, a proof of address — but
+    // that carries none of TEXTRACT_TO_FIREARM_KEY. Useful is judged on the
+    // firearm fields specifically, not on whether Textract returned anything
+    // at all.
+    const { svc, complete } = buildWithTextract(
+      { Blocks: [{ BlockType: 'LINE', Text: 'MUNICIPALITY OF CAPE TOWN' }] },
+      fields([{ key: 'firearm_make', value: 'Beretta' }]),
+    );
+    const out = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(out).toEqual({ firearm_make: 'Beretta' });
   });
 });

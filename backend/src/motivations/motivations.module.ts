@@ -36,6 +36,12 @@ import { MotivationModelService } from './motivation-model.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { VaultLogService } from '../common/vault-log.service';
 import { VaultAdoptionService } from './vault-adoption.service';
+// ⚠️ A SECOND, INDEPENDENT REGISTRATION — see the note beside the import in
+// motivation-extract.service.ts. Not routed through LicenceCentreModule: that
+// module imports THIS one for the renewal one-tap, and a spec asserts the
+// edge stays one-way. SecureFileStorageService and VaultLogService above are
+// already provided in both modules the same way.
+import { LicenceCentreTextractService } from '../licence-centre/licence-centre-textract.service';
 
 /**
  * Firearm-licence motivation writer (Phase 1 — LICENCE-SERVICES-AND-FEED.md).
@@ -88,6 +94,7 @@ import { VaultAdoptionService } from './vault-adoption.service';
     MotivationRetentionService,
     MotivationExtractService,
     GoogleVisionOcrService,
+    LicenceCentreTextractService,
     CipSheetService,
     Saps271Service,
     FirearmImageService,

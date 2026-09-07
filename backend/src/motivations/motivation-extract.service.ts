@@ -12,6 +12,16 @@ import {
   parseFirearmReading,
 } from '../common/firearm-identity';
 import { answerValue } from '../common/card-placeholder';
+// ⚠️ A FILE IMPORT, NOT A MODULE IMPORT. LicenceCentreModule imports
+// MotivationsModule for the renewal one-tap and a spec asserts that edge stays
+// one-way — importing LicenceCentreModule here would create the cycle that
+// guards against. This imports the concrete provider CLASS instead and
+// motivations.module.ts registers it as its own, second, independent
+// instance, exactly like SecureFileStorageService and VaultLogService already
+// are in both modules. extractDocument is a pure function with no Nest
+// wiring at all.
+import { LicenceCentreTextractService } from '../licence-centre/licence-centre-textract.service';
+import { extractDocument } from '../licence-centre/textract-document-extract';
 
 // ────────────────────────────────────────────────────────────────────
 // READING WHAT THE APPLICANT ALREADY HAS.
@@ -128,6 +138,48 @@ const FIREARM_KEY_MAP: Record<string, string> = {
   receiver_serial: 'receiver_serial',
   receiver_make: 'receiver_make',
 };
+
+/**
+ * The Textract FORMS keys that carry a firearm's identity, and where each one
+ * lands in readFirearm()'s shape. Only material for a card-shaped document —
+ * an invoice or a seller's letter carries no labelled key/value pairs Textract
+ * can pick these off, and the caller falls through to Gemini for those.
+ *
+ * ⚠️ THE ALLOWLIST IS THE PRIVACY CONTROL, same rule as parseFirearmReading.
+ * extractDocument() also reads holder_name, id_number and section off a
+ * FIREARM_LICENCE — those are never copied across. This step fills Section E,
+ * never Section F; see firearmIdentityPrompt for why.
+ *
+ * No barrel_make / frame_make / receiver_make / firearm_action: Textract's
+ * FIELD_ALIASES do not carry a per-part make (PRINTED_PER_PART picks the ONE
+ * firearm-level "make" pair, not each of the three) and fold the action into
+ * firearm_type rather than a field of its own. Gemini fills those when the
+ * Textract read is otherwise empty; when it is not, the applicant types them.
+ */
+const TEXTRACT_TO_FIREARM_KEY: Record<string, string> = {
+  make: 'firearm_make',
+  model: 'firearm_model',
+  calibre: 'firearm_calibre',
+  serial_number: 'firearm_serial',
+  firearm_type: 'firearm_type',
+  frame_serial: 'frame_serial',
+  barrel_serial: 'barrel_serial',
+  receiver_serial: 'receiver_serial',
+};
+
+/** Passed to extractDocument() as `material` — see its docstring. */
+const TEXTRACT_FIREARM_MATERIAL = Object.keys(TEXTRACT_TO_FIREARM_KEY);
+
+function firearmFromTextract(
+  details: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [from, to] of Object.entries(TEXTRACT_TO_FIREARM_KEY)) {
+    const v = details[from];
+    if (v) out[to] = v;
+  }
+  return out;
+}
 
 const EXTRACTABLE: Partial<Record<MotivationUploadKind, string[]>> = {
   IDENTITY_DOCUMENT: ['full_name', 'id_number'],
@@ -305,12 +357,13 @@ export interface ExtractedField {
 export class MotivationExtractService {
   private readonly logger = new Logger(MotivationExtractService.name);
 
-  // ⚠️ THE LLM FIRST, THE OCR SECOND, AND THE ORDER IS FORCED. `vision` is
-  // optional (a box with no Vision key still uploads and still reads), and an
-  // optional parameter cannot precede a required one.
+  // ⚠️ THE LLM FIRST, THE OCR SECOND, AND THE ORDER IS FORCED. `vision` and
+  // `textract` are both optional (a box with no key still uploads and still
+  // reads), and an optional parameter cannot precede a required one.
   constructor(
     private readonly llm: LlmService,
     private readonly vision?: GoogleVisionOcrService,
+    private readonly textract?: LicenceCentreTextractService,
   ) {}
 
   /** What a failure looked like, for a log line. Codes, never a provider class. */
@@ -574,9 +627,58 @@ export class MotivationExtractService {
     bytes: Buffer;
     mimeType: string;
   }): Promise<Record<string, string>> {
+    // ── TEXTRACT FIRST, SAME PATTERN AS THE LICENCE CENTRE ────────────
+    //
+    // A SAPS licence card is a FORM: Make, Calibre, Serial Number and the
+    // three component rows come back as clean labelled key/value pairs, read
+    // deterministically and for a fraction of a vision-model call. Only when
+    // it comes back with nothing useful — a dealer invoice, a private
+    // seller's letter, a printed advert, a photograph of a box — does this
+    // fall through to Gemini below. `analyse()` never throws and returns
+    // null wherever AWS is not configured, so this costs nothing when the
+    // box has no Textract key.
+    const ocr = await this.textract?.analyse(args.bytes, args.mimeType);
+    if (ocr) {
+      const got = extractDocument(
+        ocr,
+        'FIREARM_LICENCE',
+        TEXTRACT_FIREARM_MATERIAL,
+      );
+      const out = firearmFromTextract(got.reading.details);
+      if (Object.keys(out).length) {
+        this.logger.log(
+          `Firearm read (textract) filled ${Object.keys(out).length} field(s): ${Object.keys(out).join(', ')}`,
+        );
+        return out;
+      }
+    }
+
     if (!this.llm.isConfigured()) return {};
 
     const block = contentBlock(args.bytes, args.mimeType);
+
+    // ⚠️ TWO ATTEMPTS, SAME REASON AS extract()'s attemptRead loop: a single
+    // vision call on a real photograph is inconsistent — measured elsewhere in
+    // this file at roughly one attempt in three landing everything visible.
+    // This call had no retry at all, so a card that plainly prints a serial
+    // number could come back with three fields (make, calibre, type) and stop
+    // there, with nothing to fall back on.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const out = await this.attemptReadFirearm(block);
+      if (Object.keys(out).length) {
+        this.logger.log(
+          `Firearm read filled ${Object.keys(out).length} field(s): ${Object.keys(out).join(', ')}`,
+        );
+        return out;
+      }
+    }
+    return {};
+  }
+
+  /** One firearm-read attempt. Returns {} on any failure — the caller retries. */
+  private async attemptReadFirearm(
+    block: LlmPart,
+  ): Promise<Record<string, string>> {
     let text = '';
     try {
       const res = await this.llm.complete({
@@ -633,11 +735,6 @@ export class MotivationExtractService {
       // inner filter on the strength of a duplicate that is no longer here.
       const v = (reading.values[from] ?? '').trim();
       if (v) out[to] = v;
-    }
-    if (Object.keys(out).length) {
-      this.logger.log(
-        `Firearm read filled ${Object.keys(out).length} field(s): ${Object.keys(out).join(', ')}`,
-      );
     }
     return out;
   }
