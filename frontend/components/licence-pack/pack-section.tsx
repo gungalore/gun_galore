@@ -147,16 +147,15 @@ function RepeatingRows({
         // Collapsed, a row is what identifies the firearm; expanded, it is
         // every box the registry actually asks for.
         //
-        // ⚠️ FOUR VALUES, AND ONLY THESE FOUR. Operator, 2026-09-07: "when
-        // listing the fire arms I already own it should only be the make,
-        // model, serial number and expiry date listed, nothing else." The row
-        // used to read make and calibre.
+        // ⚠️ FOUR VALUES, AND ONLY THESE FOUR. Operator, 2026-09-07: "Make,
+        // Calibre, Serial number and Date of expiry." The row used to read
+        // make and model.
         const summary = ownedFirearmSummary(n, answers);
         // ⚠️ "DOES THIS ROW HOLD ANYTHING?" IS NOT "DOES IT HAVE A LINE?".
-        // The line is make, model, serial and expiry only, so a row carrying a
-        // type and a calibre and nothing else — a draft saved before the
-        // registry collapsed the serial columns, or a card read that got the
-        // calibre and not the make — reads "Firearm 3" with an "Add" beside
+        // The line is make, calibre, serial and expiry only, so a row carrying
+        // a type and a licence number and nothing else — a draft saved before
+        // the registry collapsed the serial columns, or a card read that got
+        // the type and not the make — reads "Firearm 3" with an "Add" beside
         // it, over data that is already there. The row would be lying about
         // being empty. `rowInUse` is the same rule that decided to render it.
         const used = rowInUse(fs, answers);

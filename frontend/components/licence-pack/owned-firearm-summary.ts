@@ -1,18 +1,19 @@
 // ────────────────────────────────────────────────────────────────────
 // HOW A FIREARM SOMEBODY ALREADY OWNS IS LISTED.
 //
-// Operator, 2026-09-07: "when listing the fire arms I already own it should
-// only be the make, model, serial number and expiry date listed, nothing else."
+// Operator, 2026-09-07: "Make, Calibre, Serial number and Date of expiry" —
+// replacing the model column an earlier instruction the same day asked for.
+// This is also the printed pack's own table (motivation-render.service.ts's
+// existingFirearms()), so the two must not drift apart.
 //
 // Two screens list them and they must list them the same way: the collapsed row
 // on the "What you own" step, and the Document Centre prefill offer, which
 // printed SEVEN lines per firearm — type, calibre, make, use, two serials and a
 // licence number — so three licences filled the panel with twenty-one rows.
 //
-// ⚠️ THE OTHER COLUMNS ARE NOT REMOVED, THEY ARE NOT LISTED. Type, calibre, use
-// and the licence number remain registry fields and still go onto the form: the
-// SAPS 271 asks for them, and the duplicate-calibre argument in a motivation is
-// built out of the calibres. They are simply not how a person recognises their
+// ⚠️ THE OTHER COLUMNS ARE NOT REMOVED, THEY ARE NOT LISTED. Type, model, use
+// and the licence number remain registry fields and still go onto the form —
+// the SAPS 271 asks for them. They are simply not how a person recognises their
 // own firearm on a list.
 //
 // ⚠️ READ DEFENSIVELY, IN BOTH DIRECTIONS. The registry is mid-change: a single
@@ -90,7 +91,7 @@ export function firearmLine(cols: Record<string, string | undefined>): string {
     answerValue(cols.frame_serial);
   return [
     answerValue(cols.make),
-    answerValue(cols.model),
+    answerValue(cols.calibre),
     serial,
     answerValue(cols.expiry),
   ]
@@ -106,7 +107,7 @@ export function ownedFirearmSummary(
   const at = (col: string) => answers[`existing_firearm_${slot}_${col}`] ?? '';
   return firearmLine({
     make: at('make'),
-    model: at('model'),
+    calibre: at('calibre'),
     serial: at('serial'),
     frame_serial: at('frame_serial'),
     barrel_serial: at('barrel_serial'),
@@ -140,9 +141,9 @@ export interface OfferRow {
  *
  * ⚠️ AND A FIREARM WITH NO LINE IS NOT COLLAPSED AT ALL. See the header: the
  * offer only carries the answers the member has NOT already given, so a firearm
- * whose make and serial they typed themselves can arrive here as nothing but a
- * type and a calibre. Collapsing that produced a row with an empty value beside
- * a button that would still write both answers.
+ * whose make, calibre and serial they typed themselves can arrive here as
+ * nothing but a type and a licence number. Collapsing that produced a row with
+ * an empty value beside a button that would still write both answers.
  */
 export function offerRows(
   items: readonly { key: string; label: string; value: string }[],

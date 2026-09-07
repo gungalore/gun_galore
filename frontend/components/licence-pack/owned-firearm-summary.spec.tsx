@@ -7,10 +7,10 @@ import {
 } from './owned-firearm-summary';
 
 // ────────────────────────────────────────────────────────────────────
-// MAKE, MODEL, SERIAL, EXPIRY. NOTHING ELSE.
+// MAKE, CALIBRE, SERIAL, EXPIRY. NOTHING ELSE.
 //
-// Operator, 2026-09-07: "when listing the fire arms I already own it should
-// only be the make, model, serial number and expiry date listed, nothing else."
+// Operator, 2026-09-07: "Make, Calibre, Serial number and Date of expiry" —
+// replacing the model column an earlier instruction the same day asked for.
 //
 // Two screens list them — the collapsed row on "What you own", and the Document
 // Centre prefill offer, which was printing seven rows per firearm. This is the
@@ -22,28 +22,28 @@ describe('the line', () => {
     expect(
       firearmLine({
         make: 'Glock',
-        model: '17',
+        calibre: '9mmP',
         serial: 'ABC123',
         expiry: '2029-04-30',
       }),
-    ).toBe('Glock · 17 · ABC123 · 2029-04-30');
+    ).toBe('Glock · 9mmP · ABC123 · 2029-04-30');
   });
 
   it('⚠️ LISTS NOTHING ELSE, however much it is handed', () => {
-    // Type, calibre, use and the licence number still go onto the form. They
+    // Type, model, use and the licence number still go onto the form. They
     // are just not how somebody recognises their own firearm.
     expect(
       firearmLine({
         make: 'CZ',
-        model: '75',
+        calibre: '9mmP',
         serial: 'S1',
         expiry: '2030-01-01',
         type: 'Pistol',
-        calibre: '9mmP',
+        model: '75',
         use: 'Self-defence',
         licence_no: '1234567',
       }),
-    ).toBe('CZ · 75 · S1 · 2030-01-01');
+    ).toBe('CZ · 9mmP · S1 · 2030-01-01');
   });
 
   it('⚠️ FALLS BACK TO THE OLD SERIAL COLUMNS', () => {
@@ -76,7 +76,7 @@ describe('the line', () => {
       firearmLine({ make: 'Glock', barrel_serial: 'NONE', frame_serial: 'ZABA01892' }),
     ).toBe('Glock · ZABA01892');
     // And it is never printed as a value of its own.
-    expect(firearmLine({ make: 'Sako', model: 'NONE', serial: 'N/A' })).toBe(
+    expect(firearmLine({ make: 'Sako', calibre: 'NONE', serial: 'N/A' })).toBe(
       'Sako',
     );
     // Anchored: a serial that merely starts with those letters survives.
@@ -98,7 +98,7 @@ describe('the line', () => {
         existing_firearm_3_calibre: '.45-70',
         existing_firearm_2_make: 'Not this one',
       }),
-    ).toBe('Marlin · 1895 · MR44 · 2031-06-30');
+    ).toBe('Marlin · .45-70 · MR44 · 2031-06-30');
   });
 });
 
@@ -119,7 +119,7 @@ describe('the prefill offer, collapsed', () => {
       {
         key: 'existing_firearm_1',
         label: 'Firearm 1',
-        value: 'Glock · 17 · ABC123',
+        value: 'Glock · 9mmP · ABC123',
         collapsed: true,
       },
     ]);
@@ -170,21 +170,21 @@ describe('⚠️ A FIREARM WITH NO LINE IS NOT COLLAPSED', () => {
 
   it('shows the columns that WILL be written, rather than a blank row', () => {
     // The offer only carries answers the member has NOT already given, so a
-    // firearm whose make and serial they typed themselves arrives as a type
-    // and a calibre — no make, no model, no serial, no expiry, nothing for the
-    // four-value line to draw. Collapsing it produced "Firearm 3" with an
-    // empty value beside a button that would still write both answers, over a
-    // panel whose header promises the opposite.
+    // firearm whose make, calibre and serial they typed themselves arrives as
+    // a type and a licence number — no make, no calibre, no serial, no expiry,
+    // nothing for the four-value line to draw. Collapsing it produced
+    // "Firearm 3" with an empty value beside a button that would still write
+    // both answers, over a panel whose header promises the opposite.
     const rows = offerRows([
       item('existing_firearm_3_type', 'Rifle'),
-      item('existing_firearm_3_calibre', '.308'),
+      item('existing_firearm_3_licence_no', '1234567'),
     ]);
     expect(rows).toEqual([
       { key: 'existing_firearm_3_type', label: 'existing_firearm_3_type', value: 'Rifle' },
       {
-        key: 'existing_firearm_3_calibre',
-        label: 'existing_firearm_3_calibre',
-        value: '.308',
+        key: 'existing_firearm_3_licence_no',
+        label: 'existing_firearm_3_licence_no',
+        value: '1234567',
       },
     ]);
     expect(rows.some((r) => r.collapsed)).toBe(false);
@@ -218,12 +218,12 @@ describe('⚠️ A FIREARM WITH NO LINE IS NOT COLLAPSED', () => {
 
   it('an uncollapsed firearm still holds its position', () => {
     const rows = offerRows([
-      item('existing_firearm_1_calibre', '9mmP'),
+      item('existing_firearm_1_licence_no', '1234567'),
       item('competency_number', '1234'),
       item('existing_firearm_1_type', 'Pistol'),
     ]);
     expect(rows.map((r) => r.key)).toEqual([
-      'existing_firearm_1_calibre',
+      'existing_firearm_1_licence_no',
       'existing_firearm_1_type',
       'competency_number',
     ]);
