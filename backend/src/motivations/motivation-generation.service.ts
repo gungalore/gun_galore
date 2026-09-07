@@ -22,6 +22,10 @@ import {
   SIMILARITY_REGENERATE_THRESHOLD,
 } from './motivation-structure';
 import { type FactPack } from './motivation-prompts';
+import {
+  CrimeStatsService,
+  precinctFactLines,
+} from '../crime-stats/crime-stats.service';
 import { buildAnnexures } from './motivation-checklist';
 import { FirearmImageService } from './motivation-firearm-image';
 import { packConsistency } from './motivation-verify';
@@ -92,6 +96,7 @@ export class MotivationGenerationService {
     private readonly firearmImages: FirearmImageService,
     private readonly notifications: NotificationsService,
     private readonly shared: MotivationSharedService,
+    private readonly crimeStats: CrimeStatsService,
   ) {}
 
   /**
@@ -320,6 +325,56 @@ export class MotivationGenerationService {
       // follow-up ranking if the gate sends this back.
       const overlap = overlapFromAnswers(row.licenceType, answers);
 
+      // ── SAPS precinct crime figures, self-defence only ──────────────
+      //
+      // Operator, 2026-09-07: "is it possible for us to pull the per police
+      // station crime stats from SAPS and keep it updated?" This is the SAME
+      // material the professional motivations we studied annex — see
+      // researchBrief()'s own note on this — except VERIFIED against our own
+      // quarterly copy of the SAPS workbook rather than found by a grounded
+      // search. See CrimeStatsService.precinct() and precinctFactLines().
+      //
+      // ⚠️ FETCHED FRESH ON EVERY ATTEMPT, NOT CACHED LIKE research() BELOW.
+      // The lookup is a local read, not a paid model call, so there is
+      // nothing to save by caching it — and a member who corrects
+      // `police_station` between gate cycles should get THAT station's
+      // figures on the retry, not whichever one was true when this motivation
+      // was first drafted.
+      //
+      // ⚠️ A MISS COSTS THE DOCUMENT THESE FIGURES, NEVER THE DOCUMENT. Same
+      // fail-soft posture as every other prefill/research source in this
+      // file: no station answered, no station known to CrimeStatsService, or
+      // the lookup throwing are all the same outcome — write nothing here and
+      // let the writer argue from what threat_circumstances and
+      // daily_movements actually say.
+      let precinctBlock: string | undefined;
+      if (row.licenceType === MotivationLicenceType.S13_SELF_DEFENCE) {
+        const station = (answers.police_station ?? '').trim();
+        if (station) {
+          try {
+            const figures = await this.crimeStats.precinct(
+              station,
+              (answers.police_station_province ?? '').trim() || undefined,
+            );
+            if (figures) {
+              precinctBlock = [
+                // ⚠️ THIS HEADING IS WHAT RULE 1 IN generationSystemPrompt()
+                // NAMES — change one and the other goes stale. It also tells
+                // renderResearch's own reader that the lines under it are not
+                // the applicant's words and not a web search: precinctFactLines
+                // already carries its own period and source on every line.
+                'SAPS PRECINCT CRIME FIGURES — supplied fact, not web research:',
+                ...precinctFactLines(figures),
+              ].join('\n');
+            }
+          } catch (err) {
+            this.logger.warn(
+              `Motivation ${row.id}: precinct crime figures skipped — ${(err as Error).message}`,
+            );
+          }
+        }
+      }
+
       // ── background research, once per motivation ───────────────────
       //
       // The professional motivations are not templates: precinct crime
@@ -363,6 +418,11 @@ export class MotivationGenerationService {
                     ...overlap.verdict.withTypes,
                   ]
                 : [],
+            // See researchBrief()'s own note: a verified precinct block above
+            // makes the crime-context ask redundant, so drop it rather than
+            // pay a grounded search to approximate a number we already hold
+            // exactly.
+            hasPrecinctFigures: !!precinctBlock,
           })
           .catch(() => null);
         if (r) {
@@ -420,7 +480,15 @@ export class MotivationGenerationService {
         // Only when there is genuinely an overlap. Passing a note otherwise
         // would have the document argue against a problem it does not have.
         overlapNote: overlap.writerNote ?? undefined,
-        research,
+        // ⚠️ THE PRECINCT BLOCK RIDES INSIDE `research`, DELIBERATELY — NOT A
+        // NEW FactPack FIELD. renderResearch() already wraps this in
+        // <background-research> untruncated (unlike `derived`, which runs
+        // every value through sanitizePromptValue's 200-char, newline-
+        // collapsing cap — fine for "43" or one sentence, not for nine lines
+        // of crime figures each carrying its own period and source). Put
+        // first so a reader — model or human — meets the verified figures
+        // before the softer, web-searched material, if any.
+        research: [precinctBlock, research].filter(Boolean).join('\n\n') || undefined,
         annexures,
       };
 
@@ -760,6 +828,50 @@ export class MotivationGenerationService {
   async generate(clerkId: string, id: string) {
     const prepared = await this.prepareGeneration(clerkId, id);
     return this.runGeneration(prepared);
+  }
+
+  /**
+   * Read-only preview for the wizard's "Your circumstances" step: the SAPS
+   * precinct figures that WOULD be annexed for the station currently on the
+   * application, so the member sees them before they ever reach Generate
+   * rather than discovering them for the first time in a finished document.
+   *
+   * `null`, never a thrown error, for every reason there might be nothing to
+   * show: not a self-defence application, no station answered yet, or
+   * CrimeStatsService knows no precinct for it. Ownership-scoped like every
+   * other read in this module — a wrong id and someone else's id must be
+   * indistinguishable, so this uses the same `findFirst` + `userId` shape as
+   * findOne(), never an if-statement after the fetch.
+   */
+  async precinctFor(clerkId: string, id: string) {
+    const user = await this.shared.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { licenceType: true, answersEncrypted: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (row.licenceType !== MotivationLicenceType.S13_SELF_DEFENCE) {
+      return null;
+    }
+
+    const answers = this.shared.readAnswers(row.answersEncrypted);
+    const station = (answers.police_station ?? '').trim();
+    if (!station) return null;
+
+    try {
+      return await this.crimeStats.precinct(
+        station,
+        (answers.police_station_province ?? '').trim() || undefined,
+      );
+    } catch (err) {
+      // Same fail-soft posture as the fetch inside runGeneration — a broken
+      // lookup costs the preview, never a 500 on a step the member is just
+      // reading.
+      this.logger.warn(
+        `Motivation ${id}: precinct preview failed — ${(err as Error).message}`,
+      );
+      return null;
+    }
   }
 
   /**

@@ -25,6 +25,7 @@ import {
   changedKeys,
   markMember,
   parseProvenance,
+  stamp,
 } from '../common/answer-provenance';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { asLayout } from './motivation-pdf-layouts';
@@ -317,6 +318,39 @@ export class MotivationsService {
       ...seed,
     });
 
+    // ── and the nearest SAPS station, for a self-defence application ──
+    //
+    // Operator, 2026-09-07: "is it possible for us to pull the per police
+    // station crime stats from SAPS and keep it updated?" The precinct
+    // figures themselves are fetched at generation time
+    // (MotivationGenerationService), but the STATION belongs on the form now
+    // — a member should see, and be free to correct, which one will be cited
+    // long before they ever reach Generate. See
+    // MotivationPrefillService.stationOffer(), which already refuses to run
+    // for anything but self-defence and already refuses to overwrite a value
+    // that is somehow already here.
+    //
+    // ⚠️ AFTER `seeded`, NOT FOLDED INTO THE SPREAD ABOVE. The lookup needs
+    // the address this precedence chain has JUST resolved — profile, prior
+    // readings, prior answers, vault, seed — so it has to run once that
+    // chain has already produced its answer, not before it.
+    let stationValues: Record<string, string> = {};
+    let stationFrom = '';
+    if (licenceType === MotivationLicenceType.S13_SELF_DEFENCE) {
+      const station = await this.prefill.stationOffer(licenceType, seeded);
+      if (station) {
+        stationValues = {
+          police_station: station.station,
+          police_station_province: station.province,
+        };
+        stationFrom = station.from;
+        Object.assign(
+          seeded,
+          sanitiseAnswers(licenceType, stationValues).answers,
+        );
+      }
+    }
+
     // ── where every one of those values came from ──────────────────
     //
     // ⚠️ STAMPED IN THE SAME PRECEDENCE ORDER AS THE VALUES, so the last
@@ -327,7 +361,7 @@ export class MotivationsService {
     // ⚠️ AND ONLY FOR KEYS THAT SURVIVED sanitiseAnswers. It can reject a key
     // even from a trusted offer, and a provenance entry for a value that was
     // never written is a chip on an empty field.
-    const provenance = this.prefill.stampOffers(
+    let provenance = this.prefill.stampOffers(
       {},
       seeded,
       prefill.from,
@@ -340,6 +374,18 @@ export class MotivationsService {
       priorFrom,
       priorAnswerKeys,
     );
+    // ⚠️ STAMPED SEPARATELY, LAST — stampOffers' signature is fixed to the
+    // four prefill sources above and does not know about the station lookup.
+    // 'DERIVED' rather than any of those four: nothing here was read off a
+    // document or copied from the profile, it is arithmetic (a lookup) over
+    // an answer the member already gave.
+    if (stationValues.police_station) {
+      provenance = stamp(
+        provenance,
+        ['police_station', 'police_station_province'],
+        { source: 'DERIVED', from: stationFrom },
+      );
+    }
 
     if (Object.keys(seeded).length) {
       this.logger.log(
@@ -565,10 +611,37 @@ export class MotivationsService {
     // And MEMBER is absorbing: from that moment no vault re-sync or profile
     // re-consent could ever fill those fields again. Only a value that
     // actually differs is the member's doing.
-    const provenance = markMember(
-      parseProvenance(row.answerProvenance),
-      changedKeys(before, merged),
-    );
+    const changed = changedKeys(before, merged);
+    let provenance = markMember(parseProvenance(row.answerProvenance), changed);
+
+    // ── keep the nearest SAPS station in step with the address ─────────
+    //
+    // Only when the address itself just moved, and only when nothing already
+    // sits in `police_station` — a value the member typed or corrected was
+    // just stamped MEMBER above and stationOffer() refuses to touch it
+    // anyway, so this can never clobber a deliberate answer. See
+    // MotivationPrefillService.stationOffer() and the same hook in create().
+    //
+    // ⚠️ APPLIED AFTER markMember, NOT FOLDED INTO `merged` BEFORE IT. Anything
+    // present in `merged` when changedKeys runs gets marked MEMBER regardless
+    // of who actually wrote it — that guard cannot tell "the applicant typed
+    // this" from "we just derived this", so an automatic fill has to land
+    // AFTER the comparison, stamped DERIVED by hand.
+    if (
+      row.licenceType === MotivationLicenceType.S13_SELF_DEFENCE &&
+      changed.includes('residential_address')
+    ) {
+      const station = await this.prefill.stationOffer(row.licenceType, merged);
+      if (station) {
+        merged.police_station = station.station;
+        merged.police_station_province = station.province;
+        provenance = stamp(
+          provenance,
+          ['police_station', 'police_station_province'],
+          { source: 'DERIVED', from: station.from },
+        );
+      }
+    }
 
     await this.prisma.motivation.update({
       where: { id: row.id },

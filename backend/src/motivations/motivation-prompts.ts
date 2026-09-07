@@ -309,6 +309,10 @@ ABSOLUTE RULES
    the cartridge plays are worth more than a page of specifications nobody
    supplied — the page is the only part a reviewer can check, and it is the
    part that fails.
+   ⚠️ A SECTION HEADED "SAPS PRECINCT CRIME FIGURES" INSIDE THE BACKGROUND
+   RESEARCH IS SUPPLIED FACT, NOT SOMETHING YOU FOUND: quote its numbers
+   exactly, with the period and source it states, and never extrapolate a
+   trend, a risk level or a conclusion the figures themselves do not state.
 2. Write in the FIRST PERSON, as the applicant. Never refer to a service, a
    platform, an assistant or a drafter. The document must read as the
    applicant's own account.

@@ -398,6 +398,45 @@ describe('the SAPS 271 opt-in', () => {
   });
 });
 
+describe('the nearest SAPS station', () => {
+  it('is a real, visible, optional question on self-defence only', () => {
+    const f = fieldsFor(T).find((x) => x.key === 'police_station');
+    expect(f).toBeDefined();
+    expect(f!.required).toBeUndefined();
+    expect(f!.formOnly).toBeUndefined();
+    expect(isVisible(f!, {})).toBe(true);
+
+    for (const type of ALL) {
+      if (type === T) continue;
+      expect(fieldsFor(type).some((x) => x.key === 'police_station')).toBe(
+        false,
+      );
+    }
+  });
+
+  it('never demands a station before a self-defence motivation can generate', () => {
+    expect(requiredKeys(T, {})).not.toContain('police_station');
+  });
+
+  it('⚠️ the province companion is NEVER asked, on either SAPS 271 path', () => {
+    // Same contradiction as COMPETENCY_RENEWS_KEY: formOnly hides it unless
+    // the applicant opted into the form, and showIf then asks for the DEALER
+    // answer — which is never true once they have opted in. No answer
+    // satisfies both, so isVisible is false whichever way fill_saps271 goes.
+    const f = fieldsFor(T).find((x) => x.key === 'police_station_province')!;
+    expect(f).toBeDefined();
+    expect(isVisible(f, {})).toBe(false);
+    expect(isVisible(f, WITH_FORM)).toBe(false);
+  });
+
+  it('never reaches the model — it exists only to disambiguate the station name', () => {
+    const keys = factPackFields(T).map((f) => f.key);
+    expect(keys).not.toContain('police_station_province');
+    // The station itself DOES reach the writer, same as any other short answer.
+    expect(keys).toContain('police_station');
+  });
+});
+
 describe('ID numbers typed like a human types them', () => {
   it('survives spaces, which used to truncate the last digits off', () => {
     // "8001 0150 0908 7" hit the 13-character cap four digits early, failed

@@ -28,6 +28,7 @@ import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationsService } from './motivations.service';
+import { MotivationGenerationService } from './motivation-generation.service';
 import { RETIRED } from './motivation-documents';
 import {
   FIELD_REGISTRY_VERSION,
@@ -81,6 +82,12 @@ export class MotivationsController {
   constructor(
     private readonly quota: MotivationQuotaService,
     private readonly motivations: MotivationsService,
+    // ⚠️ INJECTED DIRECTLY, NOT THROUGH THE MotivationsService FACADE — the
+    // same pattern motivations-witness.controller.ts already uses for
+    // MotivationWitnessService. precinctFor() below is a read the generation
+    // pipeline already owns (it fetches the same figures at Generate time),
+    // and it needs nothing the facade adds.
+    private readonly generation: MotivationGenerationService,
   ) {}
 
   /**
@@ -437,6 +444,21 @@ export class MotivationsController {
   @Get(':id/pack')
   pack(@CurrentUser() clerkId: string, @Param('id') id: string) {
     return this.motivations.pack(clerkId, id);
+  }
+
+  /**
+   * The SAPS precinct crime figures for the station currently on THIS
+   * self-defence application — so the "Your circumstances" step can show the
+   * member what will actually be cited before they ever reach Generate.
+   *
+   * Returns `null` (never a 404-shaped refusal) for a non-self-defence
+   * application, an empty station, or a station CrimeStatsService has no
+   * figures for — see MotivationGenerationService.precinctFor(). Owner-scoped
+   * like every other ':id/...' route here.
+   */
+  @Get(':id/precinct')
+  precinct(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.generation.precinctFor(clerkId, id);
   }
 
   // ── the profile, with permission ──────────────────────────────────

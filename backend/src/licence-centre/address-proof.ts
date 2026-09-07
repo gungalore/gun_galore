@@ -48,7 +48,9 @@ export interface AddressProofAssessment {
 const WORD = /[A-Z0-9]+/g;
 
 function words(v: string | null | undefined): string[] {
-  return ((v ?? '').toUpperCase().match(WORD) ?? []).filter((w) => w.length >= 2);
+  return ((v ?? '').toUpperCase().match(WORD) ?? ([] as string[])).filter(
+    (w) => w.length >= 2,
+  );
 }
 
 /** Surname tokens: everything in the profile surname that is a real word (a double-barrel gives two). */

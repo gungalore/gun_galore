@@ -862,6 +862,16 @@ export interface ResearchArgs {
    * privacy rule that governs the rest of this brief.
    */
   heldForComparison?: string[];
+  /**
+   * We already hold VERIFIED SAPS precinct figures for this application —
+   * see CrimeStatsService.precinct() / precinctFactLines(), assembled into
+   * the fact pack in MotivationGenerationService. When true, the crime-context
+   * ask below is dropped entirely: paying a grounded search to go find,
+   * approximately, what our own quarterly workbook already states exactly
+   * would spend the search budget on a WORSE version of a fact we already
+   * have, and rule 1 already tells the writer to prefer the precise figure.
+   */
+  hasPrecinctFigures?: boolean;
 }
 
 /**
@@ -895,9 +905,18 @@ export function researchBrief(args: ResearchArgs): string {
     .slice(0, 3)
     .map((h) => sanitizePromptValue(h, 60))
     .join('; ');
-  if (!firearm && !area) return '';
 
-  const wantArea = args.licenceType === 'S13_SELF_DEFENCE';
+  // ⚠️ SUPPRESSED, NOT JUST UNRENDERED, WHEN WE ALREADY HOLD VERIFIED
+  // FIGURES. `wantArea` used to be pure licence-type; a SAPS precinct lookup
+  // in the fact pack makes the crime-context ask redundant AND worse — we
+  // would be paying a search to approximate a number our own workbook
+  // already states exactly. Folded into the SAME flag the early-return and
+  // the AREA block both read, so a precinct hit and an empty firearm/
+  // discipline/held section together mean nothing is worth asking at all.
+  const wantArea =
+    args.licenceType === 'S13_SELF_DEFENCE' && !args.hasPrecinctFigures;
+  if (!firearm && !(wantArea && area)) return '';
+
   return [
     'Prepare a short research brief for a South African firearm licence',
     'motivation. Search the web for what you do not reliably know. Cite the',

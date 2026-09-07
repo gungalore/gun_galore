@@ -627,6 +627,47 @@ describe('what the research brief asks about', () => {
     expect(brief).not.toContain('Sterappel');
     expect(brief).toContain('Langeberg Glen');
   });
+
+  // ⚠️ WE ALREADY HOLD VERIFIED SAPS FIGURES — PAYING A SEARCH TO GUESS AN
+  // APPROXIMATION OF THEM IS STRICTLY WORSE, NOT JUST REDUNDANT.
+  describe('when the fact pack already carries precinct figures', () => {
+    const withAddress = {
+      answers: {
+        firearm_make: 'Glock',
+        residential_address: '12 Kerk Street, Brooklyn, Pretoria',
+      },
+    };
+
+    it('drops the crime-context ask', () => {
+      const brief = briefFor({ ...withAddress, hasPrecinctFigures: true });
+      expect(brief).not.toContain('THE AREA');
+      expect(brief).not.toContain('Brooklyn');
+    });
+
+    it('keeps asking about the firearm and cartridge', () => {
+      const brief = briefFor({ ...withAddress, hasPrecinctFigures: true });
+      expect(brief).toContain('THE FIREARM');
+      expect(brief).toContain('Glock');
+    });
+
+    it('still asks about the area when precinct figures are ABSENT', () => {
+      const brief = briefFor({ ...withAddress, hasPrecinctFigures: false });
+      expect(brief).toContain('THE AREA');
+      expect(brief).toContain('Brooklyn');
+    });
+
+    it('⚠️ asks nothing at all when the area was the only thing on offer', () => {
+      // No firearm, no discipline, nothing held — with the figures already
+      // known, a self-defence brief with just an address has nothing left to
+      // search for, so it must not spend a grounded call finding that out.
+      const brief = researchBrief({
+        licenceType: MotivationLicenceType.S13_SELF_DEFENCE,
+        answers: { residential_address: '12 Kerk Street, Brooklyn, Pretoria' },
+        hasPrecinctFigures: true,
+      });
+      expect(brief).toBe('');
+    });
+  });
 });
 
 describe('research is searched, or it is absent', () => {

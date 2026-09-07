@@ -23,6 +23,8 @@ import UploadPanel, {
 } from '@/components/motivation/upload-panel';
 import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
 import FieldInput from '@/components/motivation-field-input';
+import { StationPicker } from '@/components/motivation/station-picker';
+import { PrecinctCard } from '@/components/motivation/precinct-card';
 import ProficiencyAlert from '@/components/licence-pack/proficiency-alert';
 import DocumentChecklist, {
   ChecklistRow,
@@ -1773,8 +1775,55 @@ export default function MotivationWizardPage() {
   const groupOpenInit = useRef<Record<string, boolean>>({});
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({});
 
+  /**
+   * The hidden half of the station picker — see PROVINCE_KEY below. It must
+   * never render as an input of its own; the picker writes it directly.
+   */
+  const POLICE_STATION_PROVINCE_KEY = 'police_station_province';
+
   /** One registry field, with the "replace what you wrote?" offer above it. */
-  const renderField = (f: MotivationField) => (
+  const renderField = (f: MotivationField) => {
+    // ⚠️ HIDDEN. The province rides along with `police_station` (see the
+    // StationPicker case just below) — showing it as its own box would ask
+    // the applicant a question the picker already answered, in a field they
+    // never typed anything into.
+    if (f.key === POLICE_STATION_PROVINCE_KEY) return null;
+
+    if (f.key === 'police_station') {
+      return (
+        <div key={`${f.key}-w`}>
+          <StationPicker
+            id={f.key}
+            label={f.label}
+            help={f.help}
+            required={f.required}
+            value={answers[f.key] ?? ''}
+            missing={outstanding.includes(f.key)}
+            provenance={pack?.provenance?.[f.key]}
+            getToken={token}
+            onChangeText={(text) => {
+              setAnswer(f.key, text);
+              // An unverified name is not a verified match — the precinct
+              // lookup keys off the province to disambiguate stations that
+              // share a name, so a hand-typed edit clears it rather than
+              // leaving a stale province paired with a new name.
+              setAnswer(POLICE_STATION_PROVINCE_KEY, '');
+            }}
+            onSelectStation={(station) => {
+              setAnswer(f.key, station.name);
+              setAnswer(POLICE_STATION_PROVINCE_KEY, station.province);
+            }}
+          />
+          <PrecinctCard
+            motivationId={id}
+            policeStation={answers[f.key] ?? ''}
+            getToken={token}
+          />
+        </div>
+      );
+    }
+
+    return (
     <div key={`${f.key}-w`}>
       {/* WE ASK BEFORE REPLACING. The applicant has written their own words in
           this box, so a new discipline choice offers its rules rather than
@@ -1850,7 +1899,8 @@ export default function MotivationWizardPage() {
         />
       )}
     </div>
-  );
+    );
+  };
 
   /**
    * A section's fields, with the repeating ones bundled into collapsibles.
