@@ -393,3 +393,56 @@ describe('what opens by default', () => {
     expect(open).toContain('about-you');
   });
 });
+
+describe('a paired document counts once, everywhere', () => {
+  // Operator, 2026-09-07: "the training certificate shows 8. but there are
+  // four which is the Statement of results and the certificate that is
+  // actually 1 document each. So once they are combined they should be seen
+  // as 1 document." The list folded them; the header sentence and the chips
+  // were still built from the rows.
+  function pairs(n: number): CredentialRow[] {
+    const out: CredentialRow[] = [];
+    for (let i = 0; i < n; i += 1) {
+      const front = row({
+        kind: 'PROFICIENCY',
+        details: { document_side: 'front' },
+        createdAt: `2026-03-0${i + 1}T00:00:00.000Z`,
+        expiresOn: null,
+        neverExpires: false,
+        confirmed: false,
+        dateSource: null,
+      });
+      const back = row({
+        kind: 'PROFICIENCY',
+        details: { document_side: 'back' },
+        createdAt: `2026-03-0${i + 1}T01:00:00.000Z`,
+        otherSide: { id: front.id, title: null },
+        expiresOn: null,
+        neverExpires: false,
+        confirmed: false,
+        dateSource: null,
+      });
+      front.otherSide = { id: back.id, title: null };
+      out.push(front, back);
+    }
+    return out;
+  }
+
+  it('says four certificates over eight paired rows, and totals four', () => {
+    const v = section(pairs(4), 'training');
+    expect(v.count).toBe(4);
+    expect(v.total).toBe(4);
+    expect(v.summary.startsWith('4 certificates')).toBe(true);
+  });
+
+  it('counts the pair once on the chips, even when both pages want a date', () => {
+    const rows = pairs(2);
+    expect(chipCounts(rows, {}).dates).toBe(2);
+  });
+
+  it('still counts a lone page whose partner is not in the list', () => {
+    const [front] = pairs(1);
+    const alone = { ...front, otherSide: { id: 'gone', title: null } };
+    expect(section([alone], 'training').total).toBe(1);
+  });
+});
