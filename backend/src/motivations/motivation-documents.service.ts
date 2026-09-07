@@ -1868,20 +1868,6 @@ export class MotivationDocumentsService {
             // Already read above — this is what saves the second call.
             ocrText,
           });
-          await this.prisma.motivationUpload.update({
-            where: { id: created.id },
-            data: {
-              extractionOk: suggestions.length > 0,
-              // KEYS only in the clear — the registry is not PII, the values
-              // are. The values themselves are encrypted.
-              extractedFields: suggestions.map((f) => f.key),
-              extractionEncrypted: suggestions.length
-                ? encryptJson(
-                    Object.fromEntries(suggestions.map((f) => [f.key, f.value])),
-                  )
-                : null,
-            },
-          });
         } catch (err) {
           this.logger.warn(
             `Motivation ${row.id}: extraction failed for upload ${created.id}: ${(err as Error).message}`,
@@ -1958,6 +1944,52 @@ export class MotivationDocumentsService {
           // the upload.
           this.logger.warn(
             `Motivation ${row.id}: firearm read failed for upload ${created.id}: ${(err as Error).message}`,
+          );
+        }
+      }
+
+      // PERSIST WHAT WAS ACTUALLY READ — AFTER BOTH PASSES, NOT AFTER THE
+      // FIRST ONE.
+      //
+      // ⚠️ MOVED HERE 2026-09-07. This used to write immediately after the
+      // kind-based extract() above, before the firearm second pass even ran —
+      // so a document where extract() failed or found nothing (every
+      // SELLER_LICENCE, which extract() does not read at all, and any
+      // FIREARM_SOURCE_PROOF whose extract() call came back unparseable) was
+      // permanently stored as extractionOk: false, extractedFields: [],
+      // whatever readFirearm() went on to find. Seen live: a licence card
+      // read 8 firearm fields through readFirearm() and correctly offered
+      // several of them on screen, while the stored row still said the
+      // document could not be read. The checklist reads its amber straight
+      // off extractionOk, so a member whose serial genuinely got read was
+      // shown a requirement the system claims is unmet.
+      //
+      // Same gate as before — write only where at least one pass was
+      // actually attempted, so a kind neither reads (a safe photograph, a
+      // proof of address) gets no write at all, same as it always has.
+      if (
+        !opts.skipExtraction &&
+        (MotivationExtractService.canExtract(resolved) ||
+          MotivationExtractService.readsFirearm(resolved))
+      ) {
+        try {
+          await this.prisma.motivationUpload.update({
+            where: { id: created.id },
+            data: {
+              extractionOk: suggestions.length > 0,
+              // KEYS only in the clear — the registry is not PII, the values
+              // are. The values themselves are encrypted.
+              extractedFields: suggestions.map((f) => f.key),
+              extractionEncrypted: suggestions.length
+                ? encryptJson(
+                    Object.fromEntries(suggestions.map((f) => [f.key, f.value])),
+                  )
+                : null,
+            },
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Motivation ${row.id}: could not persist extraction result for upload ${created.id}: ${(err as Error).message}`,
           );
         }
       }
