@@ -1970,7 +1970,40 @@ they survive any future memory wipe:
 (`PAYMENT_MODE=manual`; IMAP scan + FNB statement reconciliation),
 legal docs finalised (draft notices removed).
 
-**Last deploy: 2026-09-07 (10:15), commit `dc7a596d`.** No migrations.
+**Last deploy: 2026-09-07 (11:20), commit `1a7f3446`.** ⚠️ **CARRIED A
+MIGRATION** — `20260907160000_crime_stats` (three tables, additive,
+hand-written). ⚠️ **AND IT TOOK THE BACKEND DOWN FOR FOUR MINUTES.** The
+first full deploy (`45bf5bc0`, 11:15) applied the migration, then the
+backend crash-looped on reload: `CrimeStatsModule` mounted an
+AdminJwtGuard controller without registering `JwtModule` or providing the
+guard. tsc and 3,700 unit tests were green. `deploy.sh` STOPPED at "backend
+unhealthy after reload" — but pm2 `reload` in fork mode had already
+replaced the old process, so there was no old version left serving. Fixed
+forward in `1a7f3446` (JwtModule + AdminJwtGuard, same recipe as
+licence-centre.module.ts) with `deploy.sh --backend-only`, healthy at
+11:19; then `--frontend-only` for the half the first run never reached.
+**`crime-stats.module.spec.ts` now compiles the module the way the app does
+so this class of failure fails in jest.** ⚠️ Lesson for every new module
+with an admin controller: JwtModule.register({}) in imports AND
+AdminJwtGuard in providers, and a boot spec. Dumps
+`alloutdoor-20260907-111427.dump` (before the migration) and `-111819`.
+
+Shipped, merged from `feat/the-bench`: `d6f73891` — **SAPS station-level
+crime statistics, kept updated, cited in self-defence motivations.** Weekly
+fetch (Sun 03:40) of the SAPS quarterly workbook through `saps-http.ts`
+(SAPS omits its Sectigo intermediate; we supply it, fingerprint pinned —
+plain fetch/curl fail on the box). First load run by hand: **five releases,
+1,179 stations, 1,290,300 figures**, quarters 2021-Q2..2026-Q2 continuous.
+Self-defence motivations gain `police_station` (nearest via Geocoding +
+Places, IP-restricted server key `alloutdoor-backend-server` created in the
+`gun-galore-dealer-scans` project, on the box as GOOGLE_MAPS_API_KEY);
+the wizard shows a station picker and a precinct card; at generation the
+precinct's figures go into the pack as supplied facts with period and
+release, and the grounded area research is skipped. Admin:
+`/admin/crime-stats/{releases,fetch}`; loader `npm run crime-stats:load`.
+TypeScript is 5.9 now (came with exceljs).
+
+**Previous deploy: 2026-09-07 (10:15), commit `dc7a596d`.** No migrations.
 **FULL DEPLOY** (`deploy.sh`, both apps + warden) on the operator's `deploy
 now`. Dump `alloutdoor-20260907-101257.dump` taken by the script. Health
 doubled, warden online, public 200 twice; re-checked independently, and
