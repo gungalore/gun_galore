@@ -29,8 +29,9 @@
 #
 # ── THE OTHER TWO RECURRING MISTAKES ───────────────────────────────
 #
-#   DEPLOYING TO THE RETIRED BOX. `ssh gungalore` still answers, and deploying
-#   there applies a replaced migration baseline over a live database. This only
+#   DEPLOYING TO THE RETIRED BOX. `ssh gungalore` no longer resolves — the alias
+#   was deleted because deploying there applies a replaced migration baseline
+#   over a live database. This only
 #   ever talks to `alloutdoor`, and refuses if the branch or HEAD is not what
 #   was just pushed.
 #

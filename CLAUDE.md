@@ -242,6 +242,18 @@ the next session must know.
   beside Postgres and Meilisearch: it does.
 - **Three pm2 services:** `alloutdoor-backend`, `alloutdoor-frontend`, `warden`.
 - **Ports:** 3000 frontend, 3001 backend, 5432 Postgres, 7700 Meilisearch.
+- ⚠️ **`psql "$DATABASE_URL"` FAILS, and it does not look like a syntax error.**
+  The URL carries Prisma's `?schema=…` query string, which libpq rejects with
+  `invalid URI query parameter: "schema"` — which reads like a permission or
+  connection problem and has been reported as "the database is blocking me".
+  Strip the query string:
+
+  ```bash
+  ssh alloutdoor 'cd /home/alloutdoor/app/backend && DB=$(grep -m1 ^DATABASE_URL .env | sed "s/^DATABASE_URL=//; s/^\"//; s/\"$//; s/?.*$//") && psql "$DB" -c "select count(*) from \"User\";"'
+  ```
+
+  Postgres itself is not the constraint: `max_connections` is 100 against ~6 in
+  use.
 - Node v22, npm 10. 64 Prisma migrations, all applied.
 - **Cloudflare sits in front with an Origin Certificate.** The origin IP is
   deliberately not written down anywhere in this repo — publishing it lets anyone

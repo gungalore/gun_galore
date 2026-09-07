@@ -43,8 +43,9 @@ artefact is checked too — `.next/BUILD_ID` for the frontend, never `.next`,
 because the directory exists throughout the build and an *empty* BUILD_ID is
 exactly the state the site was reloaded into.
 
-**2. Deploying to the retired box.** `ssh gungalore` still answers, and
-deploying there applies a replaced migration baseline over a live database. The
+**2. Deploying to the retired box.** `ssh gungalore` no longer resolves — the
+alias was deleted precisely because deploying there applies a replaced migration
+baseline over a live database. Anything still telling you to use it is stale. The
 script only ever talks to `alloutdoor`, and refuses if the box is not on
 `feat/takealot-ux-parity` or if its HEAD does not match what was just pushed.
 

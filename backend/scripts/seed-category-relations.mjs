@@ -5,7 +5,8 @@
 // Idempotent — safe to re-run. Run locally (dev DB):
 //   cd backend && node scripts/seed-category-relations.mjs
 // On production:
-//   ssh gungalore "cd ~/app/backend && node scripts/seed-category-relations.mjs"
+//   ssh alloutdoor "cd /home/alloutdoor/app/backend && node scripts/seed-category-relations.mjs"
+//   (the `gungalore` alias was deleted and no longer resolves)
 
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';

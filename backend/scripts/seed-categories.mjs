@@ -21,7 +21,16 @@
 //   cd backend && node scripts/seed-categories.mjs
 //
 // Run on production:
-//   ssh gungalore "cd ~/app/backend && node scripts/seed-categories.mjs"
+//   ssh alloutdoor "cd /home/alloutdoor/app/backend && node scripts/seed-categories.mjs"
+//
+// ⚠️ THE ALIAS ABOVE USED TO SAY `gungalore`, WHICH NO LONGER RESOLVES — it was
+// deleted so it could never quietly reach the retired box.
+//
+// ⚠️ AND DO NOT RUN THIS UNTIL IT IS RECONCILED WITH prisma/seed.ts. It
+// deactivates EVERY category and re-activates only its own list, and that list
+// is four parents short — Overlanding, Hunting, Outdoor Clothing & Footwear and
+// Archery & Bowhunting would be left isActive=false along with everything under
+// them.
 
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';

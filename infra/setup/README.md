@@ -12,10 +12,17 @@ Written for the case nobody wants: the production box is gone and you are
 rebuilding it. It is also the recipe for a staging box, which does not currently
 exist and probably should.
 
-Production today is a self-built **Vultr** VPS at `<OLD_ORIGIN_IP>` — 4 vCPU,
-7.7 GB RAM, Ubuntu 24.04.4 LTS. Not Hetzner; the operator has corrected that
-more than once. The app lives at `/home/gungalore/app` and runs as the
-unprivileged `gungalore` user.
+> ⚠️ **STALE FROM HERE DOWN — THIS DESCRIBES THE OLD BOX.** Production moved to
+> a VPS at **Absolute Hosting** (4 vCPU, 8 GB RAM), reached as `ssh alloutdoor`,
+> app at `/home/alloutdoor/app`, running as `alloutdoor`. The `gungalore` alias
+> was **deleted** and no longer resolves, so every `ssh gungalore` in this file
+> will fail with "Could not resolve hostname". The old Vultr box still runs the
+> Ballistic Calculator, ballistic-hunter and pvrescue.co.za. Read this file for
+> the provisioning *recipe*, never for the current addresses or user names.
+
+The original text follows, describing the retired box: a self-built **Vultr** VPS
+— 4 vCPU, 7.7 GB RAM, Ubuntu 24.04.4 LTS. The app lived at
+`/home/gungalore/app` and ran as the unprivileged `gungalore` user.
 
 Everything below is a one-time setup step. The repeatable part — shipping code
 to a box that already exists — is [`docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md).
@@ -114,8 +121,9 @@ Host gungalore
     IdentityFile ~/.ssh/your_deploy_key
 ```
 
-Always `ssh gungalore`. Never `ssh gungalore@<OLD_ORIGIN_IP>` — that form skips
-the alias, does not find the key, and prompts for a password nobody has.
+Always use the ALIAS, never `user@<IP>` — that form skips the alias, does not
+find the key, and prompts for a password nobody has. ⚠️ On the current box the
+alias is **`alloutdoor`**; `gungalore` was deleted and does not resolve.
 
 ---
 
