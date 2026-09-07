@@ -545,6 +545,8 @@ describe('a section 24 renewal', () => {
   });
 
   it('identifies it by serial when the licence number is not on the row', () => {
+    // The RETIRED `_frame_serial` key — a draft saved before the two serial
+    // questions collapsed into one still has to identify its own renewal.
     const r = overlapFromAnswers(S24, {
       ...renewing,
       existing_firearm_1_type: 'Handgun',
@@ -552,6 +554,57 @@ describe('a section 24 renewal', () => {
       existing_firearm_1_frame_serial: 'abc 12345',
     });
     expect(r.needsJustification).toBe(false);
+  });
+
+  // ⚠️ NO MAKE ANYWHERE IN THE NEXT TWO, ON PURPOSE. The last-resort
+  // type+calibre+make test would otherwise identify the renewal on its own and
+  // both tests would pass whether the serial branch worked or not — which is
+  // exactly how the first drafts of them passed against the broken reader. A
+  // twin in a second row is what turns "the row was not found" into a visible
+  // verdict: an unfound renewal returns `clear` for the WHOLE check, so a real
+  // second firearm stops being argued about at all.
+  it('identifies the renewal by the serial key the registry now asks for', () => {
+    // ⚠️ THE BRANCH THAT WENT OUT OF SERVICE. This file read
+    // `_barrel_serial` / `_frame_serial` directly; both were retired on
+    // 2026-09-07 in favour of one `_serial`, so on every application written
+    // since, the serial branch could never match — and an unmatched renewal
+    // falls through to -1, which waives the entire overlap check.
+    const r = overlapFromAnswers(S24, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm',
+      firearm_serial: 'ABC12345',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '9mm',
+      existing_firearm_1_serial: 'abc 12345',
+      existing_firearm_2_type: 'Handgun',
+      existing_firearm_2_calibre: '9mm',
+      existing_firearm_2_licence_no: 'LIC-11223344',
+    });
+    // Row 1 is the renewal and goes; row 2 is a real second firearm and the
+    // duplicate-calibre ground is still raised about it.
+    expect(r.verdict.kind).toBe('overlap');
+    expect(r.needsJustification).toBe(true);
+    expect(r.writerNote).toMatch(/This is a renewal/);
+  });
+
+  it('reaches a renewal sitting in a row beyond the old six', () => {
+    // The registry offers fourteen rows; this file capped its own loop at six,
+    // so a member whose renewal landed in row 7 or later was invisible to
+    // every test in this module — the removal above AND the duplicate-calibre
+    // argument the module exists to make.
+    const r = overlapFromAnswers(S24, {
+      firearm_type: 'Handgun',
+      firearm_calibre: '9mm',
+      firearm_serial: 'ABC12345',
+      existing_firearm_1_type: 'Handgun',
+      existing_firearm_1_calibre: '9mm',
+      existing_firearm_1_licence_no: 'LIC-11223344',
+      existing_firearm_14_type: 'Handgun',
+      existing_firearm_14_calibre: '9mm',
+      existing_firearm_14_serial: 'abc 12345',
+    });
+    expect(r.verdict.kind).toBe('overlap');
+    expect(r.needsJustification).toBe(true);
   });
 
   it('identifies it by type, calibre and make when there is no number at all', () => {

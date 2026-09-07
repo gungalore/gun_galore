@@ -115,6 +115,18 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
 /**
  * Taken from the builder as it stood BEFORE the blocks were reordered, over
  * `packFor(type, 'a')` and `planFor(type, 7)`.
+ *
+ * ⚠️ RE-BASELINED ONCE, DELIBERATELY, ON 2026-09-07. The conclusion brief
+ * carried a worked example reading "a licence under section 16 … for dedicated
+ * sport shooting" — correct for one licence type and wrong for the other four,
+ * in the one paragraph whose job is to say what is being applied for. Fixing it
+ * is a content change, which is exactly what these hashes exist to catch, so
+ * the baseline was moved rather than the assertion weakened.
+ *
+ * The line COUNTS are unchanged in every type, which is the check that the
+ * re-baseline was a rewording and not a loss: 106 / 106 / 102 / 102 / 94, the
+ * same numbers this table has always held. If you find yourself editing these
+ * hashes again, edit the counts only when you meant to add or remove a line.
  */
 const BEFORE_THE_REORDER: Record<
   MotivationLicenceType,
@@ -122,23 +134,23 @@ const BEFORE_THE_REORDER: Record<
 > = {
   S13_SELF_DEFENCE: {
     lines: 106,
-    sha: '6a07b33d74ccdc8263ac66a4492f6a7e8a85eb79b3b79cb584c6995f49ce0568',
+    sha: '2d32378bdcde90ee74c486cd6151407d016fe690dd371096df8035498cf0f3e0',
   },
   S15_OCCASIONAL_HUNTER: {
     lines: 106,
-    sha: '3ce415fdc2e395b8ba7b18f4ce6b8347161f2653810c61356fec7dd939f7e6bd',
+    sha: '00b2ca49b048880e0ed0b5ee461ec381bd8b17ad265c5aba68dc43aceb5f36ef',
   },
   S16_DEDICATED_HUNTER: {
     lines: 102,
-    sha: '4342d7f3ca92c72c0d2248cca1d15ec8ac0a97568ddf5f6048f85c2486000e92',
+    sha: '20de2d4b60c7d47a6180d2bd89868ee88f59c6e7d45a1a24fb5c5ec6d529abf1',
   },
   S16_DEDICATED_SPORT: {
     lines: 102,
-    sha: '1196c0bafaef43467958f98f1b55219f218c45b7e7199c01ca12245a50a497c4',
+    sha: 'cbf5250305a30de65c94c33f9c442a30c28ea4371e45563ce32a52df34b0ac1e',
   },
   S24_RENEWAL: {
     lines: 94,
-    sha: '7062286933a043d73fde6b856ff904a54204d4975fced98509375ebb3deaaabd',
+    sha: '615adc7704805c61076ff2fede25f7f562f0458235ae4bbb8b038ff33571a9ed',
   },
 };
 

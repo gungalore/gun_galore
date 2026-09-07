@@ -57,10 +57,63 @@ export interface TextractReading {
    * kept rather than thrown away. It goes into the encrypted blob alongside.
    */
   raw: Record<string, string>;
-  /** What was repaired on the way, for the audit row. */
+  /**
+   * What was repaired on the way, for the audit row.
+   *
+   * ⚠️ REPAIRS ONLY — THIS IS NOT A PLACE TO PUT A WARNING. Both consumers
+   * read it as "things we changed on your document": the service counts it as
+   * `repairs`, and the confirm panel prints every entry after the words "We
+   * corrected something as we read it". A sentence about something we could
+   * NOT read renders there as a claim that we altered it. See `unread`.
+   */
   notes: string[];
   /** Every material field cleared AUTO_FILL_FLOOR. */
   autoFillable: boolean;
+  /**
+   * FIELDS THIS KIND OF DOCUMENT ALWAYS CARRIES, THAT WE DID NOT GET.
+   *
+   * ⚠️ THE DIFFERENCE BETWEEN "THE DOCUMENT DOES NOT CARRY THIS" AND "WE COULD
+   * NOT READ IT", which nothing downstream could tell apart. The operator's
+   * competency row read "Competency issued on: Not on the document", and that
+   * is a false statement about their own certificate: a SAPS 524 ALWAYS prints
+   * a date of issue (reference §5.2) — an EXPIRY is the thing it does not
+   * carry. What actually happened is that `boxedDate` got seven digits where a
+   * date needs eight and returned null rather than guess, which is correct and
+   * must stay. Only the sentence was wrong.
+   *
+   * ⚠️ IT WAS ALREADY COMPUTED AND THEN THROWN AWAY, exactly like
+   * `autoFillable` before it: `missing` was calculated below, collapsed into a
+   * boolean and discarded, so the one reader that knows WHICH field it failed
+   * on could only say "not auto-fillable". Named fields let the member be told
+   * which line on the paper to look at instead of being told their document is
+   * deficient.
+   *
+   * The names are REQUIRED_FOR_AUTOFILL's, which mixes detail keys
+   * (`competency_issued`) with column names (`issuedOn`, `expiresOn`), because
+   * that is what a document's indispensable fields are called on this reading.
+   * A consumer showing these to a member maps them to its own labels.
+   *
+   * ⚠️ THREE ANSWERS, NOT TWO, AND THE TYPE CARRIES THE THIRD. This was
+   * `string[]`, and a docblock warned at length that empty meant two different
+   * things — "we checked and got everything" for the kinds REQUIRED_FOR_AUTOFILL
+   * names, and "we hold no view at all" for every other kind. A warning is not
+   * a type. The natural consumer rule ("if `unread` names the field say we could
+   * not read it, otherwise say it is not on the document") would then print the
+   * exact false sentence this field exists to kill, on a dedicated-status card
+   * whose joined_on Textract missed.
+   *
+   * So:
+   *   undefined  — no opinion. We do not know what this kind must carry.
+   *   []         — we know, we checked, and we got all of it.
+   *   ['x', …]   — we know, we checked, and we did not get x.
+   *
+   * ⚠️ AND `undefined` IS NOT A LICENCE TO SAY "NOT ON THE DOCUMENT" EITHER.
+   * It means we have no view — a consumer with nothing else to go on should say
+   * so ("we could not find it — check the paperwork"), never assert an absence
+   * on the member's document. The same shape and the same rule as
+   * CredentialReading.unread, which this feeds.
+   */
+  unread?: string[];
 }
 
 /**
@@ -637,7 +690,11 @@ export function extractDocument(
 
   const present = (f: string) =>
     f === 'issuedOn' ? !!issuedOn : f === 'expiresOn' ? !!expiresOn : !!details[f];
-  const missing = (REQUIRED_FOR_AUTOFILL[kind] ?? []).filter((f) => !present(f));
+  // ⚠️ THE ABSENT ENTRY AND THE EMPTY ONE ARE DIFFERENT ANSWERS. `?? []` here
+  // would have collapsed "we hold no view on what a good-standing letter must
+  // carry" into "we checked it and nothing is missing". See `unread`.
+  const indispensable = REQUIRED_FOR_AUTOFILL[kind];
+  const missing = (indispensable ?? []).filter((f) => !present(f));
 
   return {
     reading: { expiresOn, issuedOn, details, lowConfidence },
@@ -645,5 +702,8 @@ export function extractDocument(
     confidence,
     raw,
     autoFillable: lowConfidence.length === 0 && missing.length === 0,
+    // The names behind the boolean, not a second calculation — and undefined
+    // where there is no boolean to explain. See `unread`.
+    unread: indispensable ? missing : undefined,
   };
 }

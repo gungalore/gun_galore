@@ -64,17 +64,6 @@ function sectionOf(t: MotivationLicenceType): LicenceSection | null {
 }
 
 /**
- * The endorsement a firearm needs, from what the applicant said it is.
- *
- * ⚠️ CLASSIFICATION, NOT CALIBRE — spec §3, and the reference calls it out
- * because it is commonly misread: a pistol calibre carbine fires a handgun
- * cartridge and needs the RIFLE endorsement. Our registry asks for the type
- * directly ("Rifle"), so we inherit that correctly for free; the trap only
- * exists for anyone tempted to infer type from the calibre string.
- *
- * Returns null when the applicant has not said enough yet.
- */
-/**
  * What the applicant says the firearm IS, in the two terms the Act turns on.
  *
  * ⚠️ THE ACTION IS NOW CARRIED SEPARATELY, and that is the point. Section
@@ -106,25 +95,124 @@ export function firearmShape(
   return { category, selfLoading: action === 'Semi-automatic (self-loading)' };
 }
 
+/**
+ * What certificate (or certificates) this firearm needs — in the FOUR states
+ * the question actually has.
+ *
+ * ⚠️ `Endorsement | null` COULD NOT SAY THIS, AND THE MISSING STATE COST A
+ * MEMBER A WRONG CERTIFICATE ON A SIGNED FORM. `requiredEndorsement` returned
+ * null for three different situations and every caller read it as one:
+ *
+ *   • nothing said yet — leave the boxes exactly as they are;
+ *   • a COMBINATION gun — rifle and shotgun barrels, so no single
+ *     certificate is "the" one (SAPS 271 §E.1 offers it as a type, and it is
+ *     the type nothing here could map);
+ *   • a firearm type this registry no longer recognises.
+ *
+ * Reading the last two as "leave it alone" is fail-open: a member who had a
+ * rifle certificate written in and then switched to Combination kept the
+ * rifle certificate — including its tick in SAPS 271 item 1.4 — with nothing
+ * ever coming back to look. Only the FIRST state means "change nothing"; the
+ * other two mean "we cannot choose", and that has to take a certificate we
+ * chose OFF the form.
+ *
+ * ⚠️ AND THE ACTION IS ONLY NEEDED FOR A RIFLE. §2.2 of the competency
+ * reference: there is no separate unit standard for a self-loading handgun or
+ * a self-loading shotgun — 119649 covers handguns whole, 119652 shotguns
+ * whole. So `firearm_type: 'Handgun'` settles the endorsement on its own, and
+ * demanding `firearm_action` as well withheld a certificate we already held
+ * from every renewal (licence-renewal.ts seeds the type off the licence card
+ * and cannot seed an action, because the card does not print one).
+ */
+export type EndorsementNeed =
+  /**
+   * They have not said enough yet. Change nothing.
+   *
+   * ⚠️ A CLEARED `firearm_type` LANDS HERE, AND THAT IS THE RIGHT ANSWER, not
+   * a second fail-open. Blanking the type says nothing about the certificate —
+   * and the type is REQUIRED, so the member has to answer it again, which
+   * re-derives. Wiping four boxes mid-edit would cost them work to buy
+   * nothing: a certificate cannot reach a signed SAPS 271 without a firearm
+   * type printed beside it.
+   */
+  | { kind: 'unknown' }
+  /** Exactly one certificate answers it. */
+  | { kind: 'one'; endorsement: Endorsement }
+  /**
+   * More than one, and ALL of them — a combination gun has a rifle barrel and
+   * a shotgun barrel. No single certificate settles it, so nothing may be
+   * written on the strength of matching just one of them without saying so.
+   */
+  | { kind: 'several'; endorsements: readonly Endorsement[] }
+  /**
+   * They said, and we cannot map what they said.
+   *
+   * Only reachable by registry drift — a `firearm_type` choice added or
+   * renamed without this function following it, or a legacy value in an old
+   * draft. It is NOT "unknown": a certificate chosen for some earlier answer
+   * is now attached to a firearm we cannot vouch for, and it has to come off.
+   */
+  | { kind: 'unmappable' };
+
+/** The rifle endorsement, which is the one place the action decides. */
+function rifleEndorsement(action: string): Endorsement | null {
+  if (!action) return null;
+  return action === 'Semi-automatic (self-loading)' ? 'rifle-sl' : 'rifle-mo';
+}
+
+export function endorsementNeed(
+  answers: Record<string, string>,
+): EndorsementNeed {
+  const type = (answers.firearm_type ?? '').trim();
+  const action = (answers.firearm_action ?? '').trim();
+  if (!type) return { kind: 'unknown' };
+
+  switch (type) {
+    // ⚠️ THE ACTION IS NOT CONSULTED. See EndorsementNeed: the v3 collapse
+    // left one handgun endorsement and one shotgun endorsement, so the action
+    // cannot change the answer and waiting for it only withholds a certificate
+    // we already hold.
+    case 'Handgun':
+      return { kind: 'one', endorsement: 'handgun' };
+    case 'Shotgun':
+      return { kind: 'one', endorsement: 'shotgun' };
+    case 'Rifle': {
+      const rifle = rifleEndorsement(action);
+      // The one type where the action genuinely selects between two unit
+      // standards — 119651 manual against 119650 self-loading.
+      return rifle ? { kind: 'one', endorsement: rifle } : { kind: 'unknown' };
+    }
+    case 'Combination': {
+      const rifle = rifleEndorsement(action);
+      return rifle
+        ? { kind: 'several', endorsements: [rifle, 'shotgun'] }
+        : { kind: 'unknown' };
+    }
+    default:
+      return { kind: 'unmappable' };
+  }
+}
+
+/**
+ * The single endorsement a firearm needs, or null where there is not exactly
+ * one.
+ *
+ * ⚠️ THE NARROW VIEW, KEPT BECAUSE `credentialOffer` TAKES ONE ENDORSEMENT.
+ * Anything that has to tell "we do not know" apart from "we cannot choose"
+ * must call `endorsementNeed` instead — this collapses both to null, which is
+ * the shape that let a ruled-out certificate stay on the form.
+ *
+ * ⚠️ CLASSIFICATION, NOT CALIBRE — spec §3, and the reference calls it out
+ * because it is commonly misread: a pistol calibre carbine fires a handgun
+ * cartridge and needs the RIFLE endorsement. Our registry asks for the type
+ * directly ("Rifle"), so we inherit that correctly for free; the trap only
+ * exists for anyone tempted to infer type from the calibre string.
+ */
 export function requiredEndorsement(
   answers: Record<string, string>,
 ): Endorsement | null {
-  const shape = firearmShape(answers);
-  if (!shape) return null;
-
-  // ⚠️ THE ACTION ONLY SELECTS AMONG RIFLES. Matching on it for every
-  // category was correct while handgun and shotgun were each split in two;
-  // after the v3 collapse those endorsements carry selfLoading null, so
-  // `null === false` failed and a manually operated handgun matched NOTHING
-  // — which makes requiredEndorsement return null, which short-circuits
-  // applicationBlockers before a single check runs. The competency cover
-  // warning would simply have stopped existing for handguns and shotguns.
-  const hit = ENDORSEMENTS.find((e) =>
-    e.category === shape.category
-      ? e.category !== 'rifle-carbine' || e.selfLoading === shape.selfLoading
-      : false,
-  );
-  return hit?.value ?? null;
+  const need = endorsementNeed(answers);
+  return need.kind === 'one' ? need.endorsement : null;
 }
 
 /**
@@ -138,12 +226,16 @@ export function applicationBlockers(
   answers: Record<string, string>,
 ): Blocker[] {
   const out: Blocker[] = [];
-  const needed = requiredEndorsement(answers);
-  if (!needed) return out;
-
   const section = sectionOf(licenceType);
 
   // ── 1. Does this section permit this firearm at all? ──────────────
+  //
+  // ⚠️ NO LONGER BEHIND AN EARLY `return` ON THE ENDORSEMENT. This function
+  // used to open with `if (!requiredEndorsement(answers)) return out;`, so a
+  // firearm whose endorsement we could not name — a combination gun, a type
+  // the registry has since renamed — silently skipped EVERY check below,
+  // including the one that has nothing to do with competency. The two
+  // questions are independent and are asked independently.
   const shape = firearmShape(answers);
   if (section && shape) {
     // ⚠️ THE SHAPE, NOT THE ENDORSEMENT. See firearmShape: the endorsement
@@ -175,16 +267,78 @@ export function applicationBlockers(
     .map((s) => endorsementFromLabel(s.trim()))
     .filter((e): e is Endorsement => !!e);
 
-  if (held.length && !held.includes(needed)) {
-    const label = ENDORSEMENTS.find((e) => e.value === needed)?.label ?? '';
+  const need = endorsementNeed(answers);
+  // 'unknown' — they have not said enough. 'unmappable' — they said something
+  // we cannot map, so we do not know what to require either; the upstream fix
+  // for that is to CLEAR the certificate we chose, not to refuse them here.
+  const wanted: readonly Endorsement[] =
+    need.kind === 'one'
+      ? [need.endorsement]
+      : need.kind === 'several'
+        ? need.endorsements
+        : [];
+
+  // ⚠️ AND `held.length` IS LOAD-BEARING, NOT A TIDINESS CHECK. This blocker
+  // fired on the operator's own section 13 on 2026-09-07 — a member who holds
+  // exactly the right handgun competency, told that it does not cover his
+  // handgun — because the box had been filled from the WRONG certificate
+  // before the application knew which firearm it was for. The fix for that is
+  // upstream (the vault offer now re-chooses the certificate the moment
+  // `firearm_type` lands); the fix HERE is that an unread, unreadable or
+  // cleared `competency_for` can only ever produce silence, never a refusal.
+  // A wrong "no" on this screen sends somebody to their DFO over nothing.
+  //
+  // ⚠️ AND FOR A COMBINATION GUN THE TEST IS "COVERS NONE OF THEM", NOT
+  // "COVERS ALL OF THEM" — DELIBERATELY, AND THE REASON IS THAT WE CANNOT
+  // SOURCE THE STRICTER RULE. A combination gun has a rifle barrel and a
+  // shotgun barrel (competency reference §4.2, `COMB`), and common sense says
+  // both endorsements are needed — but neither the Act, the Regulations nor
+  // the reference says so anywhere, and the reference is explicit that the
+  // whole type-endorsement system is SAPS administrative practice with no
+  // statutory basis (§2.2, "[ACT — by absence]"). Refusing an application on a
+  // rule we invented is the failure this file's own header forbids: "NEVER
+  // SILENT, AND NEVER GUESSED... we do not refuse somebody for a box they have
+  // not reached yet." Covering NEITHER barrel is wrong on any reading, so that
+  // is where the line sits until a DFO settles the rest — the same standard
+  // the derived-expiry rule was held to.
+  const covered = wanted.some((e) => held.includes(e));
+  if (wanted.length && held.length && !covered) {
+    // ⚠️ NAME WHAT IS MISSING, AND NAME IT EVEN IF THE REGISTRY MOVES. An
+    // endorsement we can no longer label is still an endorsement they need,
+    // and `It needs ""` is a sentence that tells the member nothing at all.
+    const labelFor = (e: Endorsement) =>
+      ENDORSEMENTS.find((x) => x.value === e)?.label ?? e;
+    const needsLabel = wanted.map((e) => `"${labelFor(e)}"`).join(' and ');
+    // What the certificate on file DOES cover, in the same words the box uses.
+    // Without it the member is told they are wrong and not what we read.
+    // Quoted the same way as the half above it, so one sentence does not
+    // change register halfway through.
+    const heldLabels = ENDORSEMENTS.filter((e) => held.includes(e.value))
+      .map((e) => `"${e.label}"`)
+      .join(', ');
+    // A `multi` answer can legitimately name more than one certificate's
+    // endorsements, so the noun has to agree with what is actually ticked.
+    const yours =
+      held.length > 1
+        ? `what is ticked on your application covers ${heldLabels}`
+        : `your application says your competency covers ${heldLabels}`;
     out.push({
       code: 'competency-missing-endorsement',
       field: 'competency_for',
       message:
-        `Your competency does not cover this firearm. It needs "${label}". ` +
-        'A licence application in a firearm type your competency does not ' +
-        'cover is refused before it is considered, so this is worth settling ' +
-        'with your DFO first.',
+        `Your competency does not cover this firearm. It needs ${needsLabel}, ` +
+        `and ${yours}. ` +
+        // ⚠️ THIS USED TO INVITE THEM TO TICK THE BOX AND MAKE THE WARNING GO
+        // AWAY. `competency_for` is the blocker's only input AND it is SAPS
+        // 271 item 1.4 — a declaration the applicant signs — so "tick it
+        // above" was, in one sentence, an instruction to silence a compliance
+        // warning by declaring something that may not be true. The onward path
+        // is a real certificate in the Document Centre, or the DFO. Never the
+        // tickbox.
+        'If you hold a second certificate that does cover it, add it to your ' +
+        'Document Centre and we will read it in. A licence application in a ' +
+        'firearm type your competency does not cover is refused before it is ' +
+        'considered, so this is worth settling with your DFO first.',
     });
   }
 

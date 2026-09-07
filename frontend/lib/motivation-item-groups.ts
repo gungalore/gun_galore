@@ -63,16 +63,27 @@ export function nameKeyFor(section: string, slot: string): string | null {
 /** The keys making up an item's one-line summary, in order, per slot. */
 export function summaryKeysFor(section: string, slot: string): string[] {
   if (section === OWNED_SECTION) {
-    // ⚠️ MAKE AND CALIBRE, AND NOTHING ELSE. Operator, 2026-08-28, on
-    // licences pulled through from the Licence Centre: "Just the calibre and
-    // make as it is in the licence centre. When clicked upon it can expand and
-    // show all the firearm details."
+    // ⚠️ MODEL, SERIAL, EXPIRY — AND THE MAKE IS THE ROW'S TITLE, so the four
+    // the operator asked for are all on the line and none is printed twice.
     //
-    // The make is the row's TITLE (see nameKeyFor), so listing it here too
-    // would print it twice. `type` came out: it is one of the details the
-    // expansion shows, and on a collapsed line "Rifle" mostly repeats what the
-    // calibre already implies to anyone reading this list.
-    return [`existing_firearm_${slot}_calibre`];
+    // Operator, 2026-09-07: "when listing the fire arms I already own it
+    // should only be the make, model, serial number and expiry date listed,
+    // nothing else." That SUPERSEDES 2026-08-28's "just the calibre and make
+    // as it is in the licence centre", which is why the calibre has gone from
+    // this line. The calibre is not removed from the application — it remains
+    // a registry field, it still prints on the SAPS 271, and the
+    // duplicate-calibre argument in the motivation is built out of it. It is
+    // simply not how a person picks their own firearm out of a list.
+    //
+    // ⚠️ THREE SERIAL KEYS, IN PRECEDENCE ORDER, AND ONLY THE FIRST IS SHOWN.
+    // `_serial` is replacing `_frame_serial` / `_barrel_serial`; a draft saved
+    // before that change still holds the old pair, and listing all three would
+    // print the same number three times. summaryLineFor resolves it.
+    return [
+      `existing_firearm_${slot}_model`,
+      `existing_firearm_${slot}_serial`,
+      `existing_firearm_${slot}_expiry`,
+    ];
   }
   if (section === ASSOCIATION_SECTION) {
     return [
@@ -125,3 +136,46 @@ export function partitionKeys(section: string, keys: string[]): Partitioned[] {
   }
   return out;
 }
+
+
+/**
+ * The one line under a repeating row's title.
+ *
+ * ⚠️ NOT `summaryKeysFor(...).map(val)`, WHICH IS WHAT THE PAGE USED TO DO.
+ * Two things that mapping cannot express, and both put something wrong in
+ * front of a member:
+ *  - PRECEDENCE. An owned firearm's serial lives in `_serial` on a new answer
+ *    set and in `_frame_serial` / `_barrel_serial` on a draft saved before the
+ *    collapse. Mapping every key prints the same number up to three times;
+ *    mapping only the new one shows a blank line for an older draft.
+ *  - PLACEHOLDERS. A licence card prints NONE where a firearm has no separate
+ *    frame serial, and NONE is a non-empty string, so `.filter(Boolean)` keeps
+ *    it. The operator's own Glock card reads "Model NONE".
+ *
+ * `val` is the page's key-to-value getter, so this stays pure and testable.
+ */
+export function summaryLineFor(
+  section: string,
+  slot: string,
+  val: (key: string) => string,
+): string {
+  const clean = (v: string) => {
+    const t = (v ?? '').trim();
+    return PLACEHOLDER.test(t) ? '' : t;
+  };
+  if (section === OWNED_SECTION) {
+    const at = (col: string) => clean(val(`existing_firearm_${slot}_${col}`));
+    const serial = at('serial') || at('barrel_serial') || at('frame_serial');
+    return [at('model'), serial, at('expiry')].filter(Boolean).join(' · ');
+  }
+  return summaryKeysFor(section, slot).map(val).map(clean).filter(Boolean).join(' · ');
+}
+
+/**
+ * What a card prints to mean "nothing here". A deliberate second copy of the
+ * server's rule in backend/src/common/card-placeholder.ts — the browser bundle
+ * has no import path to backend/. Anchored, so a real value that merely
+ * contains one of these words is untouched.
+ */
+const PLACEHOLDER =
+  /^(?:none|n\.?\/?a\.?|nil|null|not\s*applicable|geen|unknown|onbekend|[-–—.]+)$/i;

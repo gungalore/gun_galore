@@ -9,7 +9,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CrimeStatsService } from '../crime-stats/crime-stats.service';
 import { encryptJson, decryptJson } from '../common/blob-crypto';
 import {
+  AnswerProvenance,
   ProvenanceMap,
+  ProvenanceSource,
+  StampInput,
   parseProvenance,
   stamp,
 } from '../common/answer-provenance';
@@ -18,13 +21,21 @@ import {
   uploadKindsFor,
   CredentialChoices,
   credentialChoices,
+  CredentialOffer,
+  CredentialOfferItem,
   CredentialSource,
   credentialOffer,
   toIsoDay,
 } from './motivation-credentials';
 import {
+  type EndorsementNeed,
+  endorsementNeed,
+  requiredEndorsement,
+} from './motivation-eligibility';
+import {
   FIELD_REGISTRY_VERSION,
   fieldByKey,
+  fieldsFor,
   missingRequired,
   sanitiseAnswers,
 } from './motivation-fields';
@@ -43,6 +54,130 @@ import { EDITABLE, MotivationSharedService } from './motivation-shared.service';
 // asked for again: their profile, their Document Centre credentials, and
 // what they answered on a previous application.
 // ────────────────────────────────────────────────────────────────────
+
+/**
+ * A vault row as the PREFILL sees it: the pure offer's `CredentialSource`,
+ * plus the one column the offer does not need and the provenance does.
+ *
+ * ⚠️ EXTENDED HERE RATHER THAN ON `CredentialSource` ITSELF. That interface
+ * describes what the pure offer reads to decide a VALUE, and `dateSource`
+ * changes no value — it only changes what we say about one. Keeping it on this
+ * side of the seam means the pure function's contract stays "what may I
+ * write?" and this service keeps "and how do I describe what I wrote?".
+ * Structurally it is still a `CredentialSource`, so every existing caller —
+ * credentialOffer, credentialChoices — takes one unchanged.
+ */
+export type VaultCredential = CredentialSource & {
+  /**
+   * How the vault came by this row's EXPIRY, or null when nobody has dated it.
+   *
+   * 'read'    — printed on the document and read off it.
+   * 'derived' — WORKED OUT. A competency certificate carries no printed expiry
+   *             at all (sa-competency-reference §5.2/§5.3): it is the latest
+   *             expiry among the licences in the categories the certificate
+   *             covers, and it moves every time one of those licences renews.
+   *
+   * ⚠️ THE COLUMN DESCRIBES THE EXPIRY, NOT EVERY DATE ON THE ROW. A derived
+   * competency still has an ISSUE date read straight off the card. See
+   * EXPIRY_KEY below, which is why only one of the two is ever flagged.
+   */
+  dateSource: string | null;
+};
+
+/**
+ * The answer keys that hold a document's EXPIRY.
+ *
+ * ⚠️ NARROWER THAN `isDateKey`, DELIBERATELY. `dateSource` says how we came by
+ * the row's expiry and nothing else, so flagging `competency_issued` off it
+ * would tell the member that a date printed on their certificate in ink was
+ * something we inferred.
+ */
+const EXPIRY_KEY = /(_expiry|_expires)$/;
+
+/**
+ * The four boxes one competency certificate fills.
+ *
+ * ⚠️ EXPORTED SO THE RE-DERIVATION TRIGGER AND THE RE-DERIVATION ITSELF READ
+ * THE SAME LIST. saveAnswers asks "is this whole block still empty and ours?"
+ * before it calls in here; two hand-written copies of the block would let the
+ * question and the answer drift.
+ */
+export const COMPETENCY_KEYS = [
+  'competency_number',
+  'competency_for',
+  'competency_issued',
+  'competency_expiry',
+] as const;
+
+/**
+ * Provenance sources a re-derivation may overwrite.
+ *
+ * ⚠️ THIS SET IS THE WHOLE SAFETY OF THE RE-DERIVATION, AND IT IS THE ONLY
+ * GUARD THERE IS. Anything we wrote we may write again; anything the member
+ * wrote is theirs for good.
+ *
+ * ⚠️ `stamp()` DOES NOT BACK THIS UP, WHATEVER AN EARLIER COMMENT HERE
+ * CLAIMED. It refuses to overwrite a MEMBER *provenance entry* — read it: the
+ * only thing it touches is the map. The ANSWER is written by the caller, one
+ * line earlier, and nothing downstream of this filter looks at provenance
+ * again. So a key that reaches `values` gets written, MEMBER mark or not, and
+ * the mark then survives on top of a value the member never typed — a chip
+ * reading "You entered this" over a number we chose. This filter is not
+ * belt-and-braces. It is the belt, and there are no braces.
+ */
+const REPLACEABLE: ReadonlySet<ProvenanceSource> = new Set<ProvenanceSource>([
+  'VAULT',
+  'DERIVED',
+]);
+
+/**
+ * What the re-derivation decided, for one competency block.
+ *
+ * ⚠️ RETURNED TO THE CALLER RATHER THAN WRITTEN AND FORGOTTEN. A server-side
+ * write the client is not told about is a write the client's next autosave
+ * undoes — the wizard sends the WHOLE answers map on every save, so a value it
+ * does not hold is a value it overwrites with the stale one it does, and
+ * `markMember` then stamps that stale value MEMBER, which is absorbing. See
+ * MotivationsService.saveAnswers, which forwards this to the client as
+ * `derived`.
+ */
+export interface CompetencyRederivation {
+  /**
+   * Every competency box being written, whether or not the value moved.
+   *
+   * ⚠️ AN EMPTY STRING IS AN INSTRUCTION, NOT AN ABSENCE: clear that box. A
+   * certificate the firearm now rules out has to come OFF the form — an empty
+   * required box is a question the member can answer, where a wrong
+   * certificate number on a signed SAPS 271 is one they never think to check.
+   *
+   * ⚠️ AND UNCHANGED KEYS ARE IN HERE TOO, ON PURPOSE. The block is stamped as
+   * a block: if only three of the four values moved, filtering the fourth out
+   * would leave it wearing the OLD certificate's chip, so one screen would
+   * cite two different documents for one certificate.
+   */
+  values: Record<string, string>;
+  /**
+   * Provenance for the same keys. `null` means REMOVE the entry — a box we
+   * just emptied must not keep a chip naming the certificate we ruled out, and
+   * the map has no "unstamp" (deliberately: the one thing it must never do is
+   * forget a MEMBER mark).
+   */
+  provenance: Record<string, AnswerProvenance | null>;
+}
+
+/** Two provenance entries say the same thing — `at` aside, which always moves. */
+function sameProvenance(
+  a: AnswerProvenance | null | undefined,
+  b: AnswerProvenance | null | undefined,
+): boolean {
+  if (!a || !b) return !a && !b;
+  return (
+    a.source === b.source &&
+    (a.sourceId ?? '') === (b.sourceId ?? '') &&
+    a.from === b.from &&
+    !!a.inferred === !!b.inferred
+  );
+}
 
 @Injectable()
 export class MotivationPrefillService {
@@ -135,7 +270,7 @@ export class MotivationPrefillService {
   async credentialsFor(
     userId: string,
     opts: { includeUnconfirmed?: boolean } = {},
-  ): Promise<CredentialSource[]> {
+  ): Promise<VaultCredential[]> {
     const rows = await this.prisma.credential.findMany({
       // ⚠️ THE CONFIRMATION GATE PROTECTS DATES, NOT NUMBERS. confirmedAt
       // exists so the reminder sweep never acts on an expiry nobody has
@@ -213,6 +348,14 @@ export class MotivationPrefillService {
         details,
         confirmed: r.confirmedAt !== null,
         dateSettled: r.confirmedAt !== null || r.dateSource !== null,
+        // ⚠️ CARRIED, NOT COLLAPSED INTO `dateSettled`. Both of these read the
+        // same column and they answer different questions: dateSettled asks
+        // "may this date be written at all?", dateSource asks "and what do we
+        // tell the member about it?". Folding the second into the first is how
+        // a competency expiry that is OUR ARITHMETIC came to be shown with a
+        // green "read off your document" pill naming a certificate that prints
+        // no expiry anywhere on it. See stampVault.
+        dateSource: r.dateSource,
       };
     });
   }
@@ -366,6 +509,193 @@ export class MotivationPrefillService {
     }
   }
 
+  // ── the competency that matches the firearm ────────────────────────
+  //
+  // ⚠️ THE FAULT THIS EXISTS FOR, IN THE OPERATOR'S OWN WORDS (2026-09-07,
+  // driving a fresh section 13 on production): "the wrong competency chosen
+  // before it even knows which firearm is being applied for."
+  //
+  // They are describing an ORDERING problem, not a matching one. create()
+  // seeds the competency boxes from the vault at the moment the application is
+  // made — which is before `firearm_type` and `firearm_action` can possibly
+  // exist — and the vault's tie-break is "longest-running expiry wins". So a
+  // member holding a rifle-and-shotgun certificate and a handgun certificate
+  // got whichever ran longest written onto a handgun application, and NOTHING
+  // EVER CAME BACK TO LOOK AGAIN. saveAnswers re-derived exactly one thing on
+  // a change — the police station, on an address edit — and the competency was
+  // not on that list. The wrong certificate then sat there through the whole
+  // wizard and the eligibility check told the member their competency did not
+  // cover their own handgun.
+  //
+  // Per CLAUDE.md "Automate It — Do Not Ask", the answer is not a confirm
+  // step in front of the competency box. It is to work it out again the moment
+  // we learn the thing that decides it, write it, show it, and leave it
+  // editable — the same shape as the station hook this sits beside.
+
+  /**
+   * The competency boxes as they should read now the firearm is known.
+   *
+   * `null` means CHANGE NOTHING, and it is returned on exactly four paths: the
+   * applicant has not said enough about the firearm yet, every box is already
+   * somebody else's to hold, the vault could not be read, or nothing we would
+   * write differs from what is there. Anything else comes back as a block of
+   * values and a block of provenance — and a value may be an EMPTY STRING,
+   * which is an instruction to clear that box.
+   *
+   * ⚠️ "WE CANNOT CHOOSE" IS NOT "LEAVE IT ALONE", AND CONFLATING THEM WAS THE
+   * FAIL-OPEN. `requiredEndorsement` answered null for three different
+   * situations and this method read all three as "not yet": a member who had a
+   * rifle certificate written in and then switched to Combination — a real
+   * SAPS 271 §E.1 choice — kept the rifle certificate, ticks and all, for the
+   * life of the application. `endorsementNeed` separates them, and only
+   * `unknown` leaves the boxes standing.
+   *
+   * ⚠️ WHICH CERTIFICATE IS credentialOffer's DECISION, NOT THIS METHOD'S, AND
+   * THERE MUST GO ON BEING EXACTLY ONE OF THOSE. This method decides WHETHER we
+   * may act and WHAT WE MAY REPLACE; the pure offer decides which document
+   * answers the firearm, including the combination gun's own rule (a
+   * certificate covering both halves, or none). Writing a second selection rule
+   * here — "try the rifle barrel, then the shotgun" — would put two answers to
+   * one question on the same screen and let them disagree over a signed form.
+   * So the fourth argument is the narrow `Endorsement | null` the offer takes,
+   * and the answers go through unaltered so its own combination branch can see
+   * the firearm type.
+   *
+   * The consequence for a combination gun, either way round: if no certificate
+   * qualifies, the offer fills nothing and the boxes are CLEARED — whatever
+   * stood there was chosen for a firearm this is not. What is still missing is
+   * the eligibility blocker's job to say, not this method's.
+   *
+   * ⚠️ WE MAY ONLY REPLACE WHAT WE WROTE. Provenance decides, per key: VAULT or
+   * DERIVED is ours and may be re-derived; anything else recorded — MEMBER
+   * above all — is theirs, EMPTY OR NOT. An empty box carrying a MEMBER mark is
+   * a box the member deliberately cleared, and refilling it is the same offence
+   * as overwriting a typed value. A key with no entry at all is UNKNOWN: not
+   * ours either, so we may fill it only while it is empty.
+   *
+   * ⚠️ FAIL-SOFT LIKE EVERY OTHER PREFILL SOURCE. A vault we cannot read costs
+   * the member one box they fill themselves; it must never cost them the
+   * ability to save the answer they just typed.
+   */
+  async competencyOffer(
+    licenceType: MotivationLicenceType,
+    userId: string,
+    answers: Record<string, string>,
+    provenance: ProvenanceMap,
+  ): Promise<CompetencyRederivation | null> {
+    const need: EndorsementNeed = endorsementNeed(answers);
+    // The one state that means "we have not been told yet". Every other state
+    // is a decision, including the two that decide we cannot choose.
+    if (need.kind === 'unknown') return null;
+
+    // ⚠️ ONLY BOXES THIS LICENCE TYPE ACTUALLY ASKS. All four live in
+    // COMMON_FIELDS today, so this filter removes nothing — it is here so that
+    // moving one into a per-type block later cannot make us write an answer for
+    // a field the form does not have, which sanitiseAnswers would then refuse
+    // on the member's next save and report to them as an error.
+    const asked = new Set(fieldsFor(licenceType).map((f) => f.key));
+    const keys = COMPETENCY_KEYS.filter((key) => asked.has(key));
+
+    const replaceable = keys.filter((key) => {
+      const source = provenance[key]?.source;
+      // Recorded provenance settles it outright, in both directions — see the
+      // note above on a deliberately cleared box.
+      if (source) return REPLACEABLE.has(source);
+      return !(answers[key] ?? '').trim();
+    });
+    if (!replaceable.length) return null;
+
+    let credentials: VaultCredential[];
+    try {
+      credentials = await this.credentialsFor(userId, {
+        // Same as create() and useLicenceCentre: phone uploads arrive
+        // unconfirmed and that is the ordinary state of a member's vault.
+        // credentialOffer still gates DATES per value.
+        includeUnconfirmed: true,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Competency re-derivation skipped — ${(err as Error).message}`,
+      );
+      return null;
+    }
+
+    // Blank the boxes we are allowed to replace, so the offer will fill them
+    // again — credentialOffer refuses any key that already holds a value
+    // ("theirs wins, always"), which is exactly the behaviour we want for the
+    // keys we are NOT allowed to touch.
+    const answered = { ...answers };
+    for (const key of replaceable) answered[key] = '';
+
+    // ⚠️ ONE CALL, AND THE NARROW ARGUMENT. `needed` is null for a combination
+    // gun and for a type we cannot map — which is exactly the two states that
+    // brought us here rather than returning early — and credentialOffer answers
+    // both from the answers it is handed. Null offers nothing where it cannot
+    // choose, and nothing is what turns this pass into a CLEAR.
+    const offer: CredentialOffer = credentialOffer(
+      licenceType,
+      credentials,
+      answered,
+      need.kind === 'one' ? need.endorsement : null,
+    );
+
+    // Through sanitiseAnswers like every other write — the vault's contents
+    // were read off a photograph by a model and still have to satisfy the
+    // registry. An empty offer sanitises to nothing, which is what turns this
+    // into a clear.
+    const { answers: clean, refused } = sanitiseAnswers(
+      licenceType,
+      offer.values,
+    );
+    // ⚠️ THE REFUSED LIST IS NOT DISCARDED. saveAnswers treats a refusal as "a
+    // DEFECT UNTIL PROVEN OTHERWISE" and logs it loudly, because a REGISTERED
+    // field refusing its own value means the form and the validator have
+    // drifted. The identical event here used to be swallowed, and its silent
+    // consequence was worse than a missing log line: the key fell out of
+    // `clean`, which this method reads as "the vault has nothing", which BLANKS
+    // a required box on a SAPS 271. A refused key is left exactly as it was,
+    // and said out loud.
+    const refusedSet = new Set(refused);
+    if (refused.length) {
+      this.logger.error(
+        `Competency re-derivation: REFUSED values for registered fields ${refused.join(', ')} — the vault and the registry disagree, so those boxes were left alone`,
+      );
+    }
+
+    const items = new Map(offer.items.map((i) => [i.key, i]));
+    const derivedIds = new Set(
+      credentials.filter((c) => c.dateSource === 'derived').map((c) => c.id),
+    );
+
+    const values: Record<string, string> = {};
+    const stamped: Record<string, AnswerProvenance | null> = {};
+    for (const key of replaceable) {
+      if (refusedSet.has(key)) continue;
+      const next = (clean[key] ?? '').trim();
+      values[key] = next;
+      const item = next ? items.get(key) : undefined;
+      // ⚠️ THROUGH stamp() RATHER THAN BUILT BY HAND, so the one rule about a
+      // DERIVED expiry wearing `inferred` lives in exactly one place —
+      // vaultInput — and cannot drift between this path and stampVault.
+      stamped[key] = item
+        ? (stamp({}, [key], this.vaultInput(item, derivedIds))[key] ?? null)
+        : null;
+    }
+
+    // Nothing to say. A no-op block would re-stamp four entries with a fresh
+    // timestamp on every keystroke and hand the client a `derived` payload to
+    // apply for no reason.
+    const moved = Object.entries(values).some(
+      ([key, value]) => value !== (answers[key] ?? '').trim(),
+    );
+    const restamped = Object.entries(stamped).some(
+      ([key, entry]) => !sameProvenance(provenance[key], entry),
+    );
+    if (!moved && !restamped) return null;
+
+    return { values, provenance: stamped };
+  }
+
   private async choicesFor(
     userId: string,
     credentials: CredentialSource[],
@@ -473,7 +803,19 @@ export class MotivationPrefillService {
     // Document Centre we can use" and then had eleven boxes filled in anyway.
     // A preview that disagrees with the thing it previews is worse than no
     // preview: it teaches people not to read it.
-    const offer = credentialOffer(row.licenceType, credentials, answers);
+    //
+    // ⚠️ AND THE FOURTH ARGUMENT IS WHICH FIREARM. credentialOffer picks the
+    // competency certificate that COVERS it — "longest-running expiry wins" is
+    // the right rule only among the certificates that qualify, and before the
+    // firearm step is answered there is no right certificate to show at all.
+    // A preview that offers a rifle certificate for a handgun application is
+    // the fault the operator hit, one screen earlier.
+    const offer = credentialOffer(
+      row.licenceType,
+      credentials,
+      answers,
+      requiredEndorsement(answers),
+    );
 
     return {
       empty: offer.empty,
@@ -540,8 +882,10 @@ export class MotivationPrefillService {
     }
 
     const answers = this.shared.readAnswers(row.answersEncrypted);
-    const offer = credentialOffer(
-      row.licenceType,
+    // Held in a const because the provenance stamp below needs the ROWS, not
+    // only the values: `dateSource` is what tells a derived expiry from a read
+    // one, and it lives on the row.
+    const credentials = await this.credentialsFor(user.id, {
       // ⚠️ includeUnconfirmed, TO MATCH create(). These two fill the same
       // fields from the same vault through the same pure function, and leaving
       // them different meant a NEW application picked up the member's licences
@@ -554,8 +898,14 @@ export class MotivationPrefillService {
       // now handled where it belongs: credentialOffer gates PER VALUE, so an
       // unconfirmed document supplies facts and never a date. The reminder
       // sweep reads Credential.expiresOn, which this path does not write.
-      await this.credentialsFor(user.id, { includeUnconfirmed: true }),
+      includeUnconfirmed: true,
+    });
+    const offer = credentialOffer(
+      row.licenceType,
+      credentials,
       answers,
+      // Which firearm — see licenceCentreOffer, whose preview this applies.
+      requiredEndorsement(answers),
     );
 
     // Through sanitiseAnswers like every other write. The vault's contents are
@@ -570,6 +920,7 @@ export class MotivationPrefillService {
       parseProvenance(row.answerProvenance),
       clean,
       offer.items,
+      credentials,
     );
 
     await this.prisma.motivation.update({
@@ -726,22 +1077,92 @@ export class MotivationPrefillService {
     return out;
   }
 
-  /** Stamp the vault's contribution, one entry per offered value. */
+  /**
+   * Stamp the vault's contribution, one entry per offered value.
+   *
+   * ⚠️ AND A DERIVED EXPIRY IS MARKED `inferred`, WHICH IS THE SECOND FAULT
+   * THE OPERATOR FOUND. A competency certificate prints no expiry date
+   * anywhere on it — SAPS does not put one there. Ours is arithmetic: the
+   * latest expiry among the member's licences in the categories the
+   * certificate covers (sa-competency-reference §5.2/§5.3, and
+   * deriveCertificateExpiry, which owns the rule). The vault records that
+   * honestly as `dateSource: 'derived'`; this method used to throw that away
+   * and stamp a plain VAULT entry, so the wizard showed a worked-out date
+   * with a green "read off your document" pill naming a document it is not
+   * printed on. A member checking their certificate finds no such date and
+   * reasonably concludes we invented it — which we did, correctly, and should
+   * have said so.
+   *
+   * `AnswerProvenance.inferred` is what says so. It has existed since the
+   * provenance column was written and NOTHING in production ever set it, which
+   * is why the amber "check this" state has never once appeared on a real
+   * application.
+   */
   private stampVault(
     map: ProvenanceMap,
     written: Record<string, string>,
     items: readonly { key: string; from: string; credentialId: string }[],
+    /**
+     * The vault rows those items came off, so an expiry we WORKED OUT can be
+     * told apart from one we READ.
+     *
+     * ⚠️ OPTIONAL, AND ABSENT MEANS "READ". A caller that does not hold the
+     * rows is making the claim it has always made; the flag can only ever be
+     * added by somebody who actually knows, never assumed by a default.
+     */
+    sources: readonly { id: string; dateSource?: string | null }[] = [],
   ): ProvenanceMap {
+    const derived = new Set(
+      sources.filter((c) => c.dateSource === 'derived').map((c) => c.id),
+    );
     let out = map;
     for (const item of items ?? []) {
       if (!(item.key in written)) continue;
-      out = stamp(out, [item.key], {
-        source: 'VAULT',
-        sourceId: item.credentialId,
-        from: item.from,
-      });
+      out = stamp(out, [item.key], this.vaultInput(item, derived));
     }
     return out;
+  }
+
+  /**
+   * What a vault-sourced answer's provenance says — the ONE place that rule
+   * lives.
+   *
+   * Extracted so `competencyOffer`, which builds its block of entries directly
+   * rather than folding them into an existing map, cannot drift from
+   * `stampVault`. Two copies of "is this expiry ours or the document's?" is
+   * exactly one copy too many.
+   */
+  private vaultInput(
+    item: { key: string; from: string; credentialId: string },
+    derivedIds: ReadonlySet<string>,
+  ): StampInput {
+    // Only the EXPIRY. See EXPIRY_KEY: the same certificate's issue date is
+    // printed in ink and was read, and calling that inferred would be a lie in
+    // the other direction.
+    const workedOut =
+      EXPIRY_KEY.test(item.key) && derivedIds.has(item.credentialId);
+    return {
+      source: 'VAULT',
+      sourceId: item.credentialId,
+      // ⚠️ AND THE CHIP SAYS WHERE IT ACTUALLY CAME FROM, WHICH IS NOT THE
+      // DOCUMENT. `ProvenanceNote` renders exactly one string — "from
+      // {from}" — so naming the certificate beside an amber "check this" told
+      // a member to go and check a date against a card SAPS does not print it
+      // on. The expiry is OUR ARITHMETIC: the latest expiry among their
+      // licences in the categories the certificate covers
+      // (sa-competency-reference §5.2/§5.3), rolling forward with every
+      // renewal. Saying so is the difference between a member finding nothing
+      // and concluding we invented it, and a member knowing what to check.
+      //
+      // ⚠️ `sourceId` STILL POINTS AT THE CERTIFICATE, and `source` is still
+      // VAULT, because both are true: there IS a vault row, and it IS that
+      // row's expiry. Only the sentence changes, because only the sentence was
+      // wrong.
+      from: workedOut
+        ? 'your longest-running licence in that firearm type — your certificate does not print an expiry'
+        : item.from,
+      inferred: workedOut,
+    };
   }
 
   /**
@@ -762,6 +1183,11 @@ export class MotivationPrefillService {
     priorFrom: Record<string, MotivationUploadKind> = {},
     /** Answers carried forward from the member's own previous application. */
     priorAnswerKeys: readonly string[] = [],
+    /**
+     * The vault rows behind `vaultItems`, so a derived expiry is stamped as
+     * inferred rather than as something read off the document. See stampVault.
+     */
+    vaultRows: readonly { id: string; dateSource?: string | null }[] = [],
   ): ProvenanceMap {
     let out = this.stampProfile(map, written, profileFrom);
 
@@ -800,7 +1226,7 @@ export class MotivationPrefillService {
       });
     }
 
-    out = this.stampVault(out, written, vaultItems);
+    out = this.stampVault(out, written, vaultItems, vaultRows);
 
     // The only non-empty seed today is a renewal, built by licence-renewal.ts
     // from the licence being renewed — so VAULT is truthful. It carries no

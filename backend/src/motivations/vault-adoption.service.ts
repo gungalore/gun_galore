@@ -106,6 +106,23 @@ export const VAULTABLE: ReadonlySet<MotivationUploadKind> = new Set([
   // statement to apply for a rifle. Losing it means going back to a training
   // provider for a reprint of a course passed a decade ago.
   MotivationUploadKind.PROFICIENCY_CERTIFICATE,
+  // ⚠️ ASSOCIATION_ENDORSEMENT IS NOT HERE AND CANNOT SIMPLY BE ADDED. It
+  // looks like the same pull-but-never-save omission as the five above, and an
+  // audit on 2026-09-07 flagged it as one. It is not: the rule at the head of
+  // this list is that every member has a CredentialKind OF THE SAME NAME, and
+  // there is no endorsement kind — CredentialKind has none, and the classifier
+  // has no concept of one. Adding the enum value is a schema change with a
+  // migration, not a one-line set entry.
+  //
+  // ⚠️ AND THE DOCUMENT CENTRE ALREADY INVITES ONE. Its association section
+  // tells the member a section 16 application needs "the status certificate, a
+  // letter of good standing and the endorsement", with addKind
+  // DEDICATED_DISCIPLINE — so an endorsement filed there is stored as a
+  // dedicated-status document and is then offered into association_name,
+  // association_number and dedicated_since, and auto-suggested as an
+  // ASSOCIATION_CARD, which S16_AUTO_ATTACH forbids in capitals because an
+  // endorsement names ONE firearm. Whoever closes this must close both halves.
+  //
   // ⚠️ CURRENT_LICENCE IS DELIBERATELY NOT HERE, AND IT WAS TRIED. A firearm
   // licence is pullable from the Centre and looks like the same omission, but
   // the spec below already ruled on it: it is tied to one firearm, and the

@@ -181,6 +181,26 @@ describe('read', () => {
     expect(typeof r.autoFillable).toBe('boolean');
   });
 
+  // ⚠️ AND SO ARE THE NAMES BEHIND IT, for the same reason and one step
+  // further on. A false `autoFillable` says something was missing; it cannot
+  // say WHICH, so a blank box downstream can only guess why it is blank — and
+  // it guessed wrong, telling the operator their competency's date of issue was
+  // "Not on the document". A SAPS 524 always prints one (§5.2). The reader
+  // knew it had declined a seven-digit date, and had no way to say so.
+  it('⚠️ carries the names of the fields it could not read', async () => {
+    const { service } = serving('doc12');
+    const r = await service.read({
+      kind: 'COMPETENCY_CERTIFICATE',
+      bytes: BYTES,
+      mimeType: 'image/jpeg',
+      alsoCovers: [],
+    });
+    expect(r.unread).toEqual(['competency_issued']);
+    // The certificate itself read fine — this is one unreadable field, not an
+    // unreadable document.
+    expect(r.details.competency_number).toBe('C7276902');
+  });
+
   it('⚠️ says NOT auto-fillable when a date the kind needs is missing', async () => {
     // A licence with a make and no validity range: readable enough to store,
     // nowhere near safe enough to arm a reminder from.

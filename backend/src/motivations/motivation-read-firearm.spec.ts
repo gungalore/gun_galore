@@ -1,6 +1,7 @@
 import { MotivationUploadKind } from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
 import type { LlmResponse } from '../common/llm/llm.types';
+import { answerValue } from '../common/card-placeholder';
 
 // ────────────────────────────────────────────────────────────────────
 // READING THE FIREARM OFF ANYTHING.
@@ -168,6 +169,66 @@ describe('what a firearm read lands on', () => {
       frame_make: 'GLOCK',
       receiver_serial: 'R-9',
       receiver_make: 'MARLIN',
+    });
+  });
+
+  it('⚠️ IS A READER, so it hands back what the page said', async () => {
+    // ⚠️ THE PLACEHOLDER RULE DOES NOT LIVE HERE, AND THE FILE IT IMPORTS SAYS
+    // SO IN CAPITALS: "THE READERS AND THE VAULT KEEP THE CARD VERBATIM"
+    // (common/card-placeholder.ts). readFirearm reads a document; the ANSWER
+    // boundary is its one consumer, motivation-documents.service.ts, which
+    // runs answerValue() over every pair before any of it is proposed as an
+    // answer. A guard here is a duplicate, and a reader that quietly edits the
+    // page is the thing the seller-consent declaration cannot use.
+    //
+    // Two rules, one job, and the INNER one is narrower on purpose:
+    // firearm-identity's parser already drops none / n/a / unknown before a
+    // value is written, so NONE never reaches this map at all. What survives
+    // to here is the wordings that rule does not know — NIL, a bare dash,
+    // "Not applicable" — and they are stopped at the boundary with everything
+    // else.
+    const { svc } = build(
+      fields([
+        { key: 'firearm_make', value: 'MARLIN' },
+        { key: 'firearm_model', value: 'NIL' },
+        { key: 'frame_serial', value: '-' },
+        { key: 'barrel_make', value: 'Not applicable' },
+        { key: 'receiver_serial', value: 'MR90189D' },
+      ]),
+    );
+    const out = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
+    expect(out).toEqual({
+      firearm_make: 'MARLIN',
+      firearm_model: 'NIL',
+      frame_serial: '-',
+      barrel_make: 'Not applicable',
+      receiver_serial: 'MR90189D',
+    });
+  });
+
+  it('⚠️ and the boundary is what turns that into nothing', async () => {
+    // The other half of the same rule, pinned here so the two halves cannot
+    // drift apart unnoticed: everything the reader hands back goes through
+    // answerValue before it can become a proposed answer, and what is left is
+    // the firearm.
+    const { svc } = build(
+      fields([
+        { key: 'firearm_make', value: 'MARLIN' },
+        { key: 'firearm_model', value: 'NIL' },
+        { key: 'frame_serial', value: '-' },
+        { key: 'barrel_make', value: 'Not applicable' },
+        { key: 'receiver_serial', value: 'MR90189D' },
+      ]),
+    );
+    const read = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
+    const asAnswers = Object.fromEntries(
+      Object.entries(read)
+        .map(([k, v]) => [k, answerValue(v)] as const)
+        .filter(([, v]) => v),
+    );
+    expect(asAnswers).toEqual({
+      firearm_make: 'MARLIN',
+      receiver_serial: 'MR90189D',
     });
   });
 

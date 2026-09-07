@@ -87,6 +87,20 @@ export interface CredentialReading {
    * path, where per-field confidence is all there is.
    */
   autoFillable?: boolean;
+  /**
+   * Fields this kind of document ALWAYS carries that this read did not get.
+   *
+   * ⚠️ SO A BLANK BOX CAN SAY WHICH KIND OF BLANK IT IS. "Not on the document"
+   * is what the member was shown against their competency's date of issue, and
+   * it is untrue: a SAPS 524 always prints one (reference §5.2; the EXPIRY is
+   * what it lacks). The reader knew — it declined a seven-digit date rather
+   * than guess — and had no way to say so. See TextractReading.unread for the
+   * full account.
+   *
+   * `undefined` on the model path, which has no notion of a field a document
+   * must carry. Undefined is "no opinion", never "nothing is missing".
+   */
+  unread?: string[];
   /** For the ledger: which reader produced this. Absent when neither did. */
   reader?: 'textract' | 'model';
 }
@@ -182,12 +196,36 @@ export function cleanAlsoCovers(
  * nobody can confirm or asks for a date it will then discard.
  */
 
+/**
+ * The WANTED keys that are dates rather than text, and are therefore held to
+ * the same strict yyyy-mm-dd as the two date COLUMNS.
+ *
+ * Kept beside WANTED so adding a date-shaped key is one edit and not two: a
+ * date that misses this set is stored as whatever prose the model returned.
+ */
+const DATE_DETAILS: ReadonlySet<string> = new Set([
+  'competency_issued',
+  'joined_on',
+  'issue_date',
+]);
+
 export const WANTED: Record<CredentialKind, string[]> = {
   FIREARM_LICENCE: [
     'licence_number',
     'holder_name',
     'firearm_type',
     'make',
+    // ⚠️ WANTED IS BOTH THE QUESTION AND THE FILTER, so a key missing from
+    // here is a value the reader is never asked for AND would have discarded
+    // anyway. 'model' was missing, and the cost was paid on three screens at
+    // once: the operator's owned-firearm listing is make / model / serial /
+    // expiry by their own instruction and could never show a model for any
+    // vault-read licence; `existing_firearm_N_model` carries
+    // docSourced: 'CURRENT_LICENCE', so an empty one told the member the
+    // document did not carry a model when nobody had looked; and a section 24
+    // renewal, whose whole point is that we already hold the licence, still
+    // had to be asked for the model of the firearm being renewed.
+    'model',
     'calibre',
     'frame_serial',
     'barrel_serial',
@@ -549,6 +587,9 @@ export class LicenceCentreExtractService {
           ...got.reading,
           notes: got.notes,
           autoFillable: got.autoFillable,
+          // Which indispensable field this read did not get, by name. The
+          // boolean above says only that something was missing.
+          unread: got.unread,
           reader: 'textract',
         };
       }
@@ -682,6 +723,20 @@ export class LicenceCentreExtractService {
         continue;
       }
 
+      // ⚠️ A DATE IN `details` IS STILL A DATE. Only expires_on and issued_on
+      // were re-validated above, and these three are dates too: they are read
+      // as details because they carry a MEANING the two columns do not (when
+      // this competency was issued, when a membership began, when an ID card
+      // was printed), not because they are freer text. `competency_issued` is
+      // typed `kind: 'date'` in the motivation registry and rendered in a date
+      // input, so "20 OCT 2016" arriving here is a value the wizard cannot show
+      // and a member cannot correct without noticing. Same posture as the
+      // column branch: if it does not parse strictly, we have no date.
+      if (DATE_DETAILS.has(key) && !parseIsoDate(value)) {
+        this.logger.warn(`Credential read gave an unusable ${key}`);
+        continue;
+      }
+
       out.details[key] = value;
       if ((f?.confidence ?? '').toLowerCase() === 'low') {
         out.lowConfidence.push(key);
@@ -732,15 +787,32 @@ function wantedFor(
   ];
 }
 
-function userPrompt(
+/**
+ * ⚠️ EXPORTED FOR THE SPEC, like CLASSIFY_USER above it. A prompt is the only
+ * part of a reader with no other way to be checked: nothing type-checks a
+ * sentence, and the DEDICATED_DISCIPLINE label silently lost the letter of
+ * good standing's "valid until" guidance in the 2026-08-20 consolidation and
+ * nobody noticed for three weeks.
+ */
+export function userPrompt(
   kind: CredentialKind,
   alsoCovers: readonly CredentialKind[] = [],
 ): string {
   const label: Record<CredentialKind, string> = {
     FIREARM_LICENCE: 'a South African firearm licence card or certificate',
     COMPETENCY_CERTIFICATE: 'a SAPS competency certificate',
+    // ⚠️ THE "VALID UNTIL" SENTENCE IS LOAD-BEARING AND IT WENT MISSING IN THE
+    // CONSOLIDATION. The retired GOOD_STANDING label below still says a letter
+    // of good standing "shows ... the date the status was issued and the date
+    // it is valid until" — and RETIRED_KINDS normalises GOOD_STANDING forward
+    // to this kind at classify time, so that sentence has not been shown to a
+    // model since 2026-08-20. This is the ONE date item 60 of the SAPS 271
+    // asks for; `association_expiry` on the motivation registry promises the
+    // member "photograph the letter and we will read it for you", and a reader
+    // that was never told where the date is on the page is how that promise
+    // goes unkept.
     DEDICATED_DISCIPLINE:
-      'a document from a shooting or hunting association about one of its members — a membership certificate, a dedicated sport shooter or dedicated hunter status certificate, a section 16 letter of good standing, or a professional hunter registration. ONE DOCUMENT OFTEN DOES SEVERAL OF THOSE JOBS AT ONCE: read everything on it. Say which discipline it awards in status_type (dedicated sport shooter, dedicated hunter, both, or professional hunter), and set good_standing to yes ONLY where the document itself says the member is in good standing. The numbers are NOT the same number — a status number, a membership number and a good-standing reference can all appear on one page, so read each into its own field and leave any that is absent blank rather than repeating another',
+      'a document from a shooting or hunting association about one of its members — a membership certificate, a dedicated sport shooter or dedicated hunter status certificate, a section 16 letter of good standing, or a professional hunter registration. ONE DOCUMENT OFTEN DOES SEVERAL OF THOSE JOBS AT ONCE: read everything on it. Say which discipline it awards in status_type (dedicated sport shooter, dedicated hunter, both, or professional hunter), and set good_standing to yes ONLY where the document itself says the member is in good standing. On a letter of good standing the membership or status is stated to run between two dates: the later of them — the "valid until", "valid to" or "expires" date — is expires_on, and the earlier one is issued_on. The numbers are NOT the same number — a status number, a membership number and a good-standing reference can all appear on one page, so read each into its own field and leave any that is absent blank rather than repeating another',
     DEDICATED_STATUS: 'a dedicated sport shooter status certificate',
     DEDICATED_HUNTER: 'a dedicated hunter status certificate',
     PROFESSIONAL_HUNTER:
@@ -842,9 +914,26 @@ function userPrompt(
           // the stamp is the nearest date on the page.
           'This document has NO EXPIRY DATE. Do not look for one and do not',
           'infer one. Leave expires_on out entirely.',
-          'Read date_of_issue from the boxed yyyy-mm-dd row labelled "Date of',
-          'issue". IGNORE the official date stamp - that is when the copy was',
-          'printed, which is often years after it was issued.',
+          // ⚠️ THE KEY NAMES ARE THE ONES IN THE LIST ABOVE, AND THIS LINE USED
+          // TO NAME ONE THAT IS NOT. It said "read date_of_issue", which is not
+          // a key this kind allows — parse() drops anything outside
+          // wantedFor(kind) + issued_on + expires_on, silently. So a model that
+          // did exactly as it was told had its answer binned on the way back,
+          // and the certificate arrived with no issue date at all. Naming a key
+          // here that the parser does not accept is the one mistake this prompt
+          // can make that looks identical to an unreadable document.
+          //
+          // Both keys are asked for because both are stored and they are the
+          // same date: `issued_on` becomes Credential.issuedOn (what the expiry
+          // derivation and the reminder sweep read) and `competency_issued`
+          // becomes the detail that carries onto a motivation. The Textract
+          // reader already writes both from one reading; this keeps the vision
+          // fallback answering identically.
+          'The date of issue is printed one digit per box in a yyyy-mm-dd row',
+          'labelled "Date of issue". Return it as BOTH competency_issued and',
+          'issued_on, the same date in each.',
+          'IGNORE the official date stamp - that is when the copy was printed,',
+          'which is often years after it was issued.',
         ]
       : [
           'The expiry date matters more than anything else here: it is what a',

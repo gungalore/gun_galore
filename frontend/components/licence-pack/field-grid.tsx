@@ -21,6 +21,7 @@ import { PrecinctCard } from '@/components/motivation/precinct-card';
 import { ClippingsPicker } from '@/components/motivation/clippings-picker';
 import { PRESS_CLIPPINGS_KEY } from '@/lib/press-clippings';
 import { maskSensitive } from '@/lib/mask-sensitive';
+import { emptyAnswerLabel } from './empty-answer';
 // ⚠️ THE SHARED TONES, NOT A SECOND LADDER. This file had its own two-branch
 // chip — gold when `inferred`, grey otherwise — and it could not tell "we could
 // not fill this" from "we filled it, check it": an empty required box and a
@@ -45,6 +46,7 @@ export default function FieldGrid({
   onChange,
   motivationId,
   getToken,
+  attachedKinds,
 }: {
   fields: MotivationField[];
   answers: Record<string, string>;
@@ -58,6 +60,12 @@ export default function FieldGrid({
    */
   motivationId?: string;
   getToken?: TokenGetter;
+  /**
+   * The MotivationUploadKinds this application actually holds. Lets an empty
+   * row tell "the document is here and does not carry it" from "the document
+   * has not reached us". Omit and the older wording stands. See empty-answer.
+   */
+  attachedKinds?: ReadonlySet<string>;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   if (!fields.length) return null;
@@ -173,7 +181,16 @@ export default function FieldGrid({
                   : { fontStyle: 'italic', color: 'var(--text-tertiary)' }
               }
             >
-              {shown || (missing.has(f.key) ? 'Still needed' : 'Not given')}
+              {/* ⚠️ NOT THE PILL'S WORDS AGAIN. This column and the chip
+                  beside it both read `missing.has(f.key)`, so every empty row
+                  printed its own status twice — "Your hunting record · Still
+                  needed · Still needed", "Shooting disciplines you compete in ·
+                  Not given · Not given", seen on the operator's live section 16
+                  on 2026-09-07. The chip carries the status. This column says
+                  WHOSE box it is, exactly as ReadResult does two steps away: a
+                  document we read did not carry it, or it is the member's own
+                  to answer. */}
+              {shown || emptyAnswerLabel(f, attachedKinds)}
             </span>
 
             {/* The chip is the server's own label, never a table here. */}
@@ -186,7 +203,7 @@ export default function FieldGrid({
                     ? 'You entered this'
                     : missing.has(f.key)
                       ? 'Still needed'
-                      : 'Not given'}
+                      : 'Optional'}
             </Pill>
           </button>
         );

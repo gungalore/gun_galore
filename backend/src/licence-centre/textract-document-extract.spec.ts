@@ -140,6 +140,10 @@ describe('firearm licence', () => {
 
   it('a clean licence auto-fills', () => {
     expect(read('doc03', 'FIREARM_LICENCE').autoFillable).toBe(true);
+    // And names nothing as unread. A licence IS a kind REQUIRED_FOR_AUTOFILL
+    // speaks for, so empty here is the real claim "we got both dates" rather
+    // than the silence it means on a kind we hold no view about.
+    expect(read('doc03', 'FIREARM_LICENCE').unread).toEqual([]);
   });
 });
 
@@ -168,6 +172,39 @@ describe('competency certificate', () => {
     const r = read('doc12', 'COMPETENCY_CERTIFICATE');
     expect(r.reading.issuedOn).toBeNull();
     expect(r.autoFillable).toBe(false);
+  });
+
+  // ⚠️ WHICH KIND OF BLANK IT IS, AND THE MEMBER WAS TOLD THE WRONG ONE.
+  // Their row read "Competency issued on: Not on the document", which is untrue
+  // of a SAPS 524 — reference §5.2: it always prints a date of issue, and an
+  // EXPIRY is the thing it does not carry. So the member is left looking for a
+  // missing field on a certificate that has none missing, when what they needed
+  // to hear is "we could not read it, please type it in".
+  //
+  // The reader knew all along: it declined a seven-digit date on purpose. The
+  // names were computed as `missing`, collapsed into `autoFillable: false` and
+  // dropped — the same defect `autoFillable` itself had before it was carried.
+  it('names the field it could not read, so a blank can say which kind it is', () => {
+    const r = read('doc12', 'COMPETENCY_CERTIFICATE');
+    expect(r.unread).toEqual(['competency_issued']);
+  });
+
+  // ⚠️ AND THE THIRD ANSWER, WHICH THE TYPE USED TO SWALLOW. `unread` was
+  // `string[]`, so a kind REQUIRED_FOR_AUTOFILL says nothing about came back
+  // `[]` — indistinguishable from "we checked and got everything". The obvious
+  // consumer rule ("if unread names it, say we could not read it; otherwise say
+  // it is not on the document") would then print the exact false sentence this
+  // field was built to kill, on a proficiency statement or a dedicated-status
+  // card. undefined is now "we hold no view", and it is a view a consumer must
+  // not turn into an assertion about the member's paperwork either.
+  it('⚠️ says undefined, not [], where it holds no view on the document', () => {
+    expect(read('doc02', 'PROFICIENCY').unread).toBeUndefined();
+    expect(read('doc18', 'IDENTITY_DOCUMENT').unread).toBeUndefined();
+    // The two kinds it DOES speak for still answer with a list, empty or not.
+    expect(read('doc03', 'FIREARM_LICENCE').unread).toEqual([]);
+    expect(read('doc12', 'COMPETENCY_CERTIFICATE').unread).toEqual([
+      'competency_issued',
+    ]);
   });
 
   // The same 14-digit corruption the KYC extractor was built for, hit again

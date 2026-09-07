@@ -54,6 +54,7 @@ import {
 } from './motivation-cover-photo';
 import {
   LICENCE_TYPE_LABELS,
+  OWNED_ROWS,
   PRESS_CLIPPINGS_KEY,
   SAPS271_FILL,
   SAPS271_OPT_KEY,
@@ -95,39 +96,85 @@ const DISCLAIMER_TEXT =
   'best of my knowledge.';
 
 /**
+ * An ISO date as a South African reader expects it, and anything else verbatim.
+ *
+ * ⚠️ NEVER GUESSES. `kind: 'date'` fields store ISO, but a value that arrived
+ * some other way is printed exactly as it was given rather than reinterpreted —
+ * reading 03/04/2029 as one order or the other is how a licence expiry becomes
+ * a different licence expiry on a document somebody files.
+ */
+function saDate(raw: string): string {
+  const s = (raw ?? '').trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : s;
+}
+
+/**
  * The firearms the applicant already holds, read out of the numbered answer
  * fields and into a table the PDF can print.
  *
- * ⚠️ MAKE AND CALIBRE ARE THE IDENTITY, SERIALS ARE NOT PRINTED HERE. The
- * interview collects barrel and frame serials and the licence number for each
- * existing firearm, because the SAPS 271 asks for them — but a serial in a
- * table on a motivation is a line a reviewer has to check against a licence
- * that is already annexed, and getting it wrong is worse than omitting it.
- * The annexed licence copy is the evidence; this table is the summary.
+ * ⚠️ EVERY ROW THE REGISTRY OFFERS, NOT THREE. This looped `i <= 3` while
+ * the registry carried six rows and the 271 printed six — so an applicant with
+ * four licences had the fourth collected, printed on their form, argued about
+ * by the overlap check, and MISSING from the one table in the pack a DFO reads
+ * to see what they already hold. That is the table's whole job (section 13
+ * caps a self-defence applicant at one firearm and section 15(3) caps an
+ * occasional sport shooter at four), so an undercount is not a cosmetic
+ * shortfall — it understates the statutory precondition being checked.
+ * OWNED_ROWS is imported so this can never sit behind the registry again.
+ *
+ * ⚠️ MODEL AND EXPIRY NOW PRINT; THE SERIAL STILL DOES NOT, AND THAT IS A
+ * COLUMN PROBLEM. Operator, 2026-09-07: "when listing the fire arms I already
+ * own it should only be the make, model, serial number and expiry date
+ * listed." The model was already promised — the column head reads "Make and
+ * model" and only the make was ever passed — and the expiry rides in the
+ * "Held under" column beside the licence number it belongs to, which is where
+ * a DFO looks for it. The SERIAL has nowhere to go: motivation-pdf.service.ts
+ * fixes four columns and their widths (make / calibre / type / section), and
+ * calibre and type cannot be spent on it — the duplicate-calibre argument is
+ * read off this table. A fifth column is a change to that file.
+ *
+ * The old note here read "SERIALS ARE NOT PRINTED HERE ... a serial in a table
+ * on a motivation is a line a reviewer has to check against a licence that is
+ * already annexed, and getting it wrong is worse than omitting it". Half of
+ * that reasoning has expired: since 2026-09-07 there is ONE serial per firearm
+ * and ownedFirearmSerial() is the single reader for it, so the 271, the vault
+ * and this table cannot disagree about a number any more. The other half
+ * stands — the annexed licence copy is the evidence, this table is the summary.
  *
  * A row with no make AND no calibre is skipped rather than printed as a row
  * of dashes: the interview lets an applicant start firearm 2 and abandon it,
  * and half a row on a submission reads as carelessness.
+ *
+ * Exported for its spec only — it is pure, and the alternative is asserting
+ * about a table through a whole PDF render.
  */
-function existingFirearms(
+export function existingFirearms(
   answers: Record<string, string>,
 ): { make: string; calibre: string; type: string; section: string }[] {
   const out: { make: string; calibre: string; type: string; section: string }[] =
     [];
-  for (let i = 1; i <= 3; i++) {
+  for (let i = 1; i <= OWNED_ROWS; i++) {
     const make = (answers[`existing_firearm_${i}_make`] ?? '').trim();
+    const model = (answers[`existing_firearm_${i}_model`] ?? '').trim();
     const calibre = (answers[`existing_firearm_${i}_calibre`] ?? '').trim();
     const type = (answers[`existing_firearm_${i}_type`] ?? '').trim();
     const licence = (answers[`existing_firearm_${i}_licence_no`] ?? '').trim();
+    const expiry = (answers[`existing_firearm_${i}_expiry`] ?? '').trim();
     if (!make && !calibre) continue;
     out.push({
-      make: make || '—',
+      // The column is headed "Make and model"; it was fed the make alone.
+      make: [make, model].filter(Boolean).join(' ') || '—',
       calibre: calibre || '—',
       type: type || '—',
       // The licence NUMBER, not the section, when we have it — that is what a
       // DFO looks up. "Licensed" alone when we do not, rather than a guess at
-      // which section it was issued under.
-      section: licence ? `Licence ${licence}` : 'Licensed',
+      // which section it was issued under. The expiry is appended rather than
+      // given a column of its own: it is a fact ABOUT that licence, and the
+      // table has four columns.
+      section:
+        (licence ? `Licence ${licence}` : 'Licensed') +
+        (expiry ? `, expires ${saDate(expiry)}` : ''),
     });
   }
   return out;
@@ -995,6 +1042,21 @@ export class MotivationRenderService {
    * Available from the moment they opt in, not only after generation: the
    * whole point is that the form and the motivation are separate deliverables,
    * and leftBlank tells them exactly which boxes still need a pen.
+   *
+   * ⚠️ EXCEPT THAT NOBODY IS TOLD ANYTHING YET, AND THE LINE ABOVE HAS BEEN
+   * WRONG FOR AS LONG AS IT HAS BEEN THERE. `leftBlank` is built, returned
+   * from here — and DROPPED at motivations.controller.ts:415, which
+   * destructures `{ pdf, filename }` and streams the PDF. The route returns a
+   * file, so there is nowhere in this response for it to go; it needs an
+   * endpoint of its own (or a header) and a panel to render it.
+   *
+   * So every entry the map records — "mark Marital status yourself", "you have
+   * not answered this history question", and now the barrel-serial column of
+   * item 2.1 — reaches the member as an EMPTY BOX ON A PDF and nothing else.
+   * That is worth fixing and it is not a reason to stop recording them: the
+   * facts are pinned by saps271-owned-firearms.spec.ts and the day a panel
+   * exists it is already correct. Do not "simplify" leftBlank away on the
+   * grounds that nothing reads it.
    */
   async renderSaps271(clerkId: string, id: string) {
     await this.quota.assertEnabled();
@@ -1010,6 +1072,23 @@ export class MotivationRenderService {
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
+
+    // ⚠️ A RENEWAL IS A DIFFERENT FORM, AND THE ANSWER CANNOT OVERRIDE THAT.
+    //
+    // This gate read the opt-in and nothing else, while saps271Map throws for
+    // a section 24 further down ("the SAPS 271 is an application for a NEW
+    // licence (sections 13-20); a section 24 renewal uses a different form")
+    // — a bare Error, surfaced as a 409, AFTER the member had answered the
+    // roughly forty-eight extra questions the opt-in un-hides. A renewal uses
+    // the SAPS 518(a), which this product does not fill in.
+    //
+    // Refused here, by name, before any of that. Old drafts can still hold the
+    // answer, which is exactly why the licence type decides rather than it.
+    if (row.licenceType === MotivationLicenceType.S24_RENEWAL) {
+      throw new ConflictException(
+        'A section 24 renewal is lodged on the SAPS 518(a), not the SAPS 271, so there is no form for us to fill in here. Your motivation goes with it as it stands.',
+      );
+    }
 
     const answers = this.shared.readAnswers(row.answersEncrypted);
     if ((answers[SAPS271_OPT_KEY] ?? '') !== SAPS271_FILL) {

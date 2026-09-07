@@ -2,7 +2,14 @@ import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 import {
   allowedValues,
   factPackFields,
+  fieldByKey,
+  allFieldsFor,
   fieldsFor,
+  OWNED_LISTING_COLUMNS,
+  OWNED_ROWS,
+  ownedFirearmSerial,
+  ownedRowTaken,
+  nextOwnedRow,
   isVisible,
   missingRequired,
   requiredKeys,
@@ -96,7 +103,18 @@ describe('field registry integrity', () => {
     // applicant reached the station with a blank box.
     for (const t of ALL) {
       const fields = fieldsFor(t);
-      const byKey = new Map(fields.map((f) => [f.key, f]));
+      // ⚠️ PARENTS ARE LOOKED UP IN THE UNFILTERED SET, and the difference is
+      // deliberate. NOT_ASKED_BY_TYPE removes fill_saps271 from a renewal, and
+      // competency_renews_with_licence is gated on it — by a showIf that
+      // CONTRADICTS its own formOnly, so that the field is never asked on
+      // either path. That clause is still well-formed: it names a real field
+      // and a value that field can really hold, which is exactly what this
+      // test is for. Checking it against the SERVED list instead would report
+      // a deliberate, robust construction as the typo it was written to avoid
+      // being mistaken for — and would push somebody to delete a gate.
+      const byKey = new Map(
+        allFieldsFor(t).map((f) => [f.key, f]),
+      );
       for (const f of fields) {
         if (!f.showIf) continue;
         const parent = byKey.get(f.showIf.key);
@@ -316,6 +334,31 @@ describe('isVisible', () => {
     // Married but NOT opted in: still hidden — the field only exists for the form.
     expect(isVisible(spouse, { marital_status: 'Married' })).toBe(false);
     expect(isVisible(spouse, {})).toBe(false);
+  });
+
+  // ⚠️ REQUIRED AND UNASKABLE AT THE SAME TIME.
+  //
+  // `discipline` is kind: 'multi' and is stored comma-joined in the registry's
+  // own order. `discipline_other` — "Name the discipline" — is gated on
+  // `equals: 'other'`, and "vlakteskiet-chasa, other" is not that string. So a
+  // section 16 sports shooter who picked Something Else ALONGSIDE a real
+  // discipline could never be shown the box, while the field stayed
+  // required: true and quietly dropped out of requiredKeys.
+  it('⚠️ sees a value inside a multi answer, not only a multi answer of one', () => {
+    const sport = fieldsFor(MotivationLicenceType.S16_DEDICATED_SPORT);
+    const other = sport.find((x) => x.key === 'discipline_other');
+    expect(other).toBeDefined();
+    expect(other!.showIf).toMatchObject({ key: 'discipline', equals: 'other' });
+
+    // On its own it always worked.
+    expect(isVisible(other!, { discipline: 'other' })).toBe(true);
+    // Beside a real discipline it did not.
+    expect(
+      isVisible(other!, { discipline: 'vlakteskiet-chasa, other' }),
+    ).toBe(true);
+    // And a list without it still closes the gate.
+    expect(isVisible(other!, { discipline: 'vlakteskiet-chasa' })).toBe(false);
+    expect(isVisible(other!, { discipline: '' })).toBe(false);
   });
 });
 
@@ -903,12 +946,47 @@ describe('what the writer must see despite formOnly', () => {
 describe('where the firearm is coming from', () => {
   it('is asked on BOTH SAPS 271 paths', () => {
     for (const t of ALL) {
+      // ⚠️ EXCEPT ON A RENEWAL, WHICH IS ASKED NEITHER QUESTION. This test ran
+      // over all five and asserted the source question everywhere, so it was
+      // pinning the bug: a section 24 applicant already holds the licence, and
+      // "where is this firearm coming from?" asked them to account for a
+      // transfer that is not happening. The rest of the backend had said so all
+      // along — motivation-documents skips the private-sale branch for S24 by
+      // name, EXPECTED.S24_RENEWAL is empty, and the checklist says in capitals
+      // that a renewal has no source document. See NOT_ASKED_BY_TYPE.
+      if (t === MotivationLicenceType.S24_RENEWAL) continue;
       for (const fill of [SAPS271_FILL, SAPS271_DEALER]) {
         const keys = fieldsFor(t)
           .filter((f) => isVisible(f, { [SAPS271_OPT_KEY]: fill }))
           .map((f) => f.key);
         expect(keys).toContain(FIREARM_SOURCE_KEY);
       }
+    }
+  });
+
+  // ⚠️ AND THE RENEWAL IS ASKED NEITHER THE SOURCE NOR THE FORM.
+  //
+  // The SAPS 271 is an application for a NEW licence under sections 13 to 20;
+  // a renewal is lodged on the SAPS 518(a). Answering "fill it in for me"
+  // un-hid roughly forty-eight formOnly questions — postal address, both
+  // telephones, marital status, spouse name and identity number, the six
+  // history questions, the fourteen-row owned table — and the render then
+  // threw, surfacing as a 409, once every one of them had been answered.
+  it('⚠️ asks a renewal neither the source nor the SAPS 271', () => {
+    const keys = fieldsFor(MotivationLicenceType.S24_RENEWAL).map((f) => f.key);
+    expect(keys).not.toContain(FIREARM_SOURCE_KEY);
+    expect(keys).not.toContain(SAPS271_OPT_KEY);
+  });
+
+  // ⚠️ ASKED IS NOT ACCEPTED. A draft saved before this still holds those keys,
+  // and the wizard's next autosave resends the whole blob — so a key that has
+  // stopped being asked must still be findable, or the member's own answer is
+  // dropped and they are shown an error about it.
+  it('still finds a question it has stopped asking, so old drafts survive', () => {
+    for (const key of [FIREARM_SOURCE_KEY, SAPS271_OPT_KEY]) {
+      expect(
+        fieldByKey(MotivationLicenceType.S24_RENEWAL, key),
+      ).toBeDefined();
     }
   });
 
@@ -1056,5 +1134,200 @@ describe('which fields accept attachments', () => {
         expect(Boolean(f.attachKind && f.docSourced)).toBe(false);
       }
     }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE FIREARMS THE APPLICANT ALREADY OWNS.
+//
+// Operator, 2026-09-07, on their own Section 13: "all fire arms the applicant
+// owns must be in that list", and "when listing the fire arms I already own it
+// should only be the make, model, serial number and expiry date listed,
+// nothing else."
+// ────────────────────────────────────────────────────────────────────
+describe('the owned-firearms table', () => {
+  const owned = (t: MotivationLicenceType) =>
+    fieldsFor(t).filter((f) => f.key.startsWith('existing_firearm_'));
+
+  it('⚠️ CARRIES FOURTEEN ROWS, WHICH IS WHAT THE FORM CARRIES', () => {
+    // It carried six, and the note explaining why said an applicant with more
+    // "can write the remainder in by hand". Nobody wrote anything in by hand:
+    // the offer reported each leftover licence as not fitting. Item 2.1 on
+    // page 5 of the blank SAPS 271 is fourteen identical rows.
+    expect(OWNED_ROWS).toBe(14);
+    const keys = owned(T).map((f) => f.key);
+    expect(keys).toContain('existing_firearm_14_make');
+    expect(keys).not.toContain('existing_firearm_15_make');
+  });
+
+  it('gives every row the identical set of columns', () => {
+    // ⚠️ THE REASON THEY ARE GENERATED. Six hand-written rows had already
+    // drifted — row 1 carried help text rows 2 to 6 did not, so five sixths of
+    // applicants never saw the guidance.
+    const columnsOf = (n: number) =>
+      owned(T)
+        .filter((f) => f.key.startsWith(`existing_firearm_${n}_`))
+        .map((f) => f.key.slice(`existing_firearm_${n}_`.length))
+        .sort();
+    const first = columnsOf(1);
+    expect(first).toEqual(
+      ['calibre', 'expiry', 'licence_no', 'make', 'model', 'serial', 'type', 'use'],
+    );
+    for (let n = 2; n <= OWNED_ROWS; n++) expect(columnsOf(n)).toEqual(first);
+    // And identically defined, not merely identically named.
+    for (let n = 2; n <= OWNED_ROWS; n++) {
+      for (const col of first) {
+        const a = fieldByKey(T, `existing_firearm_1_${col}`)!;
+        const b = fieldByKey(T, `existing_firearm_${n}_${col}`)!;
+        expect({ ...b, key: '' }).toEqual({ ...a, key: '' });
+      }
+    }
+  });
+
+  it('every column the operator asked to see is a real field', () => {
+    for (const col of OWNED_LISTING_COLUMNS) {
+      expect(fieldByKey(T, `existing_firearm_1_${col}`)).toBeDefined();
+    }
+  });
+
+  it('⚠️ KEEPS type, calibre AND use, though they are not in the listing', () => {
+    // A request about a SUMMARY ROW must not delete the fields the argument
+    // is made of: motivation-overlap.ts classifies the calibre to raise the
+    // duplicate-calibre refusal ground before the Registrar does, the 271
+    // prints the type, and `_use` is the fact the whole comparison rests on.
+    for (const col of ['type', 'calibre', 'use']) {
+      expect(fieldByKey(T, `existing_firearm_1_${col}`)).toBeDefined();
+    }
+  });
+
+  it('asks for ONE serial, and never reaches the writer with it', () => {
+    // A licence prints the same number against the barrel, the receiver and
+    // the frame — the operator's Glock card reads ZABA01892 three times — so
+    // two boxes asked two questions with one answer. And a serial, a licence
+    // number and another licence's expiry date are registry identifiers with
+    // no narrative use whatever.
+    const packKeys = factPackFields(T).map((f) => f.key);
+    expect(packKeys).toContain('existing_firearm_1_calibre');
+    expect(packKeys).toContain('existing_firearm_1_model');
+    for (const col of ['serial', 'barrel_serial', 'frame_serial', 'licence_no', 'expiry']) {
+      expect(packKeys).not.toContain(`existing_firearm_1_${col}`);
+    }
+  });
+
+  describe('the two serial keys that were collapsed into one', () => {
+    it('⚠️ IS STILL ACCEPTED, SO A SAVED DRAFT STILL LOADS', () => {
+      // The wizard resends the WHOLE answers blob on every autosave, so a key
+      // that stopped being registered fails sanitiseAnswers on every keystroke
+      // anywhere in the form — the member sees "we could not store your
+      // answer" for ever and the value they typed is dropped.
+      const { answers, rejected } = sanitiseAnswers(T, {
+        existing_firearm_1_barrel_serial: 'B67890',
+        existing_firearm_1_frame_serial: 'F12345',
+      });
+      expect(rejected).toEqual([]);
+      expect(answers.existing_firearm_1_barrel_serial).toBe('B67890');
+      expect(answers.existing_firearm_1_frame_serial).toBe('F12345');
+    });
+
+    it('is never asked, never served and never counted', () => {
+      const keys = fieldsFor(T).map((f) => f.key);
+      expect(keys).not.toContain('existing_firearm_1_barrel_serial');
+      expect(keys).not.toContain('existing_firearm_1_frame_serial');
+      expect(requiredKeys(T, WITH_FORM)).not.toContain(
+        'existing_firearm_1_barrel_serial',
+      );
+    });
+
+    it('reads back through ownedFirearmSerial, in either shape', () => {
+      expect(ownedFirearmSerial({ existing_firearm_1_serial: 'S-1' }, 1)).toBe(
+        'S-1',
+      );
+      expect(
+        ownedFirearmSerial({ existing_firearm_1_barrel_serial: 'B-1' }, 1),
+      ).toBe('B-1');
+      // ⚠️ A PLACEHOLDER FALLS THROUGH TO THE NEXT KEY. "NONE" on a card is
+      // the card saying there is nothing there, not a serial — and plenty of
+      // rifles genuinely have no frame number.
+      expect(
+        ownedFirearmSerial(
+          {
+            existing_firearm_1_barrel_serial: 'NONE',
+            existing_firearm_1_frame_serial: 'F-1',
+          },
+          1,
+        ),
+      ).toBe('F-1');
+      expect(
+        ownedFirearmSerial({ existing_firearm_1_frame_serial: 'N/A' }, 1),
+      ).toBe('');
+      expect(ownedFirearmSerial({}, 1)).toBe('');
+    });
+  });
+
+  // ────────────────────────────────────────────────────────────────
+  // WHAT MARKS A ROW TAKEN — ONE RULE, BECAUSE THREE READERS DISAGREEING
+  // ABOUT IT OVERWRITES A FIREARM.
+  //
+  // nextOwnedSlot decided it on the CALIBRE alone; credentialOffer tested ten
+  // columns. Calibre is the one column where absence has a second meaning, and
+  // it became droppable the day placeholders stopped crossing the answer
+  // boundary — so a row carrying a make, a model and a serial could report
+  // itself free and the next licence would be written over the top of it.
+  // ────────────────────────────────────────────────────────────────
+  describe('which owned-firearm rows are in use', () => {
+    it('counts a row taken by ANY of its columns, not just the calibre', () => {
+      expect(ownedRowTaken({ existing_firearm_1_make: 'Marlin' }, 1)).toBe(true);
+      expect(ownedRowTaken({ existing_firearm_1_model: '1895' }, 1)).toBe(true);
+      expect(ownedRowTaken({ existing_firearm_1_serial: 'MR90189D' }, 1)).toBe(
+        true,
+      );
+      expect(ownedRowTaken({ existing_firearm_1_expiry: '2031-05-05' }, 1)).toBe(
+        true,
+      );
+      expect(ownedRowTaken({ existing_firearm_1_use: 'plains game' }, 1)).toBe(
+        true,
+      );
+    });
+
+    it('⚠️ counts the RETIRED serial keys, so an old draft is not written over', () => {
+      // A row saved before the two serial boxes collapsed holds these and no
+      // `_serial`. A row that looks empty because we asked about the wrong key
+      // is a row somebody will put a different firearm into.
+      expect(
+        ownedRowTaken({ existing_firearm_3_barrel_serial: 'B-1' }, 3),
+      ).toBe(true);
+      expect(ownedRowTaken({ existing_firearm_3_frame_serial: 'F-1' }, 3)).toBe(
+        true,
+      );
+    });
+
+    it('⚠️ does NOT run the placeholder rule — a card word is still somebody having been here', () => {
+      // Everywhere else in this file a placeholder is nothing. Here the
+      // question is not "is this value true" but "is this row free", and the
+      // conservative answer is safe in both directions: at worst the member
+      // gets a fresh row, which they can see and fix. Overwriting is the
+      // failure that is invisible.
+      expect(ownedRowTaken({ existing_firearm_1_calibre: 'NONE' }, 1)).toBe(
+        true,
+      );
+      expect(ownedRowTaken({ existing_firearm_1_calibre: '   ' }, 1)).toBe(
+        false,
+      );
+      expect(ownedRowTaken({}, 1)).toBe(false);
+    });
+
+    it('hands back the first free row, and null once every row is used', () => {
+      expect(nextOwnedRow({})).toBe(1);
+      // A gap is filled rather than run past.
+      expect(
+        nextOwnedRow({
+          existing_firearm_2_make: 'Glock',
+          existing_firearm_3_make: 'CZ',
+        }),
+      ).toBe(1);
+      const full: Record<string, string> = {};
+      for (let n = 1; n <= OWNED_ROWS; n++) full[`existing_firearm_${n}_make`] = 'X';
+      expect(nextOwnedRow(full)).toBeNull();
+    });
   });
 });

@@ -21,7 +21,10 @@ import UploadPanel, {
   UploadRowNotes,
   usableUpload,
 } from '@/components/motivation/upload-panel';
-import { useMotivationAutosave } from '@/hooks/use-motivation-autosave';
+import {
+  adoptServerAnswers,
+  useMotivationAutosave,
+} from '@/hooks/use-motivation-autosave';
 import FieldInput from '@/components/motivation-field-input';
 import { StationPicker } from '@/components/motivation/station-picker';
 import { PrecinctCard } from '@/components/motivation/precinct-card';
@@ -33,6 +36,10 @@ import DocumentChecklist, {
 } from '@/components/document-checklist';
 import { shapeForKind } from '@/lib/scan/shapes';
 import LicenceCentreOfferPanel from '@/components/licence-centre-offer-panel';
+// ⚠️ HOW MANY OWNED-FIREARM ROWS THERE ARE IS THE REGISTRY'S ANSWER, NEVER A
+// LITERAL. See ownedRowCap — `6` was written into three places on this screen
+// and the registry went to fourteen.
+import { ownedRowCap } from '@/components/licence-pack/owned-firearm-summary';
 import MotivationChecklistPanel from '@/components/motivation-checklist-panel';
 import MotivationTemplatePicker from '@/components/motivation-template-picker';
 import MotivationCoverPhoto from '@/components/motivation-cover-photo';
@@ -57,6 +64,7 @@ import {
   nameKeyFor,
   slotOfKey,
   summaryKeysFor,
+  summaryLineFor,
 } from '@/lib/motivation-item-groups';
 import {
   FollowUp,
@@ -235,6 +243,36 @@ function PackChecklistGate({
 function uploadKindFor(row: ChecklistRow | null): string {
   return row?.kind ?? '';
 }
+
+/**
+ * The sections the Document Centre offer panel is mounted on.
+ *
+ * Only where the vault can actually answer something: the competency, the
+ * firearms already licensed to them, dedicated status, and their own details.
+ * Anywhere else it would be noise.
+ *
+ * ⚠️ MOVED WITH THE FIELDS, 2026-08-28. The competency number used to live in
+ * "About you", which is why the mount site named that section. The fields are
+ * in 'Your competency' now, and leaving the list alone would have reproduced
+ * the exact bug below — values computed, shipped to the browser, then filtered
+ * out against a section that cannot contain them.
+ *
+ * ⚠️ THE DEDICATED-STATUS HALF NEVER RENDERED, for months. The panel was
+ * mounted on "About you" and handed the key prefix `association_` — but those
+ * fields live in their own "Dedicated status" section and always have. Silent
+ * since the day it was written.
+ *
+ * ⚠️ A LIST, NOT A CHAIN OF `||` AT THE MOUNT SITE, because a second reader
+ * has appeared: `showUnplaced` has to name the FIRST of these sections this
+ * application serves, and two copies of these four names is exactly how the
+ * two failures above happened.
+ */
+const VAULT_PANEL_SECTIONS: string[] = [
+  OWNED_SECTION,
+  'About you',
+  'Your competency',
+  'Dedicated status',
+];
 
 export default function MotivationWizardPage() {
   const { getToken, userId: clerkUserId } = useAuth();
@@ -681,6 +719,30 @@ export default function MotivationWizardPage() {
     // Every 200, refused or not — what is outstanding is true either way.
     onResponse: (res) =>
       setDetail((d) => (d ? { ...d, missingRequired: res.missingRequired } : d)),
+    // ⚠️ THE SERVER RE-DERIVES WHILE IT SAVES, AND WE MUST TAKE WHAT IT WROTE.
+    // Changing `firearm_type` makes it rewrite the competency block to the
+    // certificate that actually covers that firearm. Holding our stale copy
+    // and posting it back on the next keystroke makes the server read it as
+    // something the MEMBER typed — and MEMBER is absorbing: never re-offered,
+    // never re-derived, never replaced. The wrong certificate number would be
+    // locked onto a signed SAPS 271 wearing a "You entered this" chip nobody
+    // earned. See the header of use-motivation-autosave.ts.
+    //
+    // `adoptServerAnswers` compares against what was SENT, not against what is
+    // on screen when the reply lands, so anything typed during the round trip
+    // stands — the same "MEMBER always wins" rule every other write on this
+    // page keeps.
+    onAdopt: (adopted, sent, provenance) => {
+      setAnswers((cur) => adoptServerAnswers(cur, sent, adopted));
+      if (!provenance) return;
+      // The chip under a value says where it came from; leaving it on the
+      // ruled-out certificate is a true-looking label on a replaced answer.
+      setPack((cur) =>
+        cur
+          ? { ...cur, provenance: { ...cur.provenance, ...provenance } }
+          : cur,
+      );
+    },
     // Only a clean save. The overlap check is computed server-side from the
     // calibres, so a change to any of them can turn the question on or off.
     onSaved: async () => {
@@ -1323,23 +1385,51 @@ export default function MotivationWizardPage() {
   );
 
   /**
-   * How many firearms-you-already-own rows to show.
+   * How many owned-firearm rows exist AT ALL, per the served registry.
    *
-   * The SAPS 271 has room for fourteen and the registry carries six, but
-   * rendering six empty rows of six columns is thirty-six boxes in front of
-   * someone who probably owns one firearm — which reads as a demand rather than
-   * a form. Operator, 2026-08-19: start with one, and add another on request.
+   * ⚠️ THIS WAS THE LITERAL `6`, IN THREE PLACES, AND THE REGISTRY WENT TO
+   * FOURTEEN. Item 2.1 of the blank SAPS 271 is fourteen identical rows —
+   * measured, not assumed — and `OWNED_ROWS` in motivation-fields.ts followed
+   * it on 2026-09-07. This screen did not. The Document Centre offer then
+   * filled rows 7 to 14 from the member's own licences into answers that no
+   * screen rendered, nobody could correct, and the "Add another firearm"
+   * button refused to reach — while the line at the bottom went on saying six
+   * was as many as the form could print. Whatever the registry serves is what
+   * a member can see and edit; there is no second copy of the number.
    *
-   * A row counts as started once its calibre is filled, since that is the
-   * column the overlap check actually needs.
+   * 0 while the fields are loading, which the callers read as "offer nothing
+   * yet" rather than as a cap of one.
+   */
+  const ownedCap = useMemo(() => ownedRowCap(fields), [fields]);
+
+  /**
+   * The last owned-firearm row that has anything in it.
+   *
+   * Rendering every row at once is a wall of empty boxes in front of someone
+   * who probably owns one firearm — which reads as a demand rather than a
+   * form. Operator, 2026-08-19: start with one, and add another on request.
+   *
+   * ⚠️ ANY COLUMN, NOT THE CALIBRE. This asked only whether
+   * `existing_firearm_N_calibre` was filled, "since that is the column the
+   * overlap check actually needs" — which was a reason to REQUIRE the calibre,
+   * never a reason to hide a row that holds something else. The Document
+   * Centre offer writes make, model, serial and expiry off a licence card, and
+   * a row carrying those and no calibre was filled, saved, and then rendered
+   * by nothing after a reload: its data unreachable, and `takenRow` on the
+   * server skipping over it on every later offer. The pack screen's own
+   * `rowInUse` has always read it this way; this is the same rule.
    */
   const ownedRowsFilled = useMemo(() => {
     let n = 0;
-    for (let i = 1; i <= 6; i++) {
-      if ((answers[`existing_firearm_${i}_calibre`] ?? '').trim()) n = i;
+    for (const f of fields) {
+      const m = /^existing_firearm_(\d+)_/.exec(f.key);
+      if (!m) continue;
+      if (!(answers[f.key] ?? '').trim()) continue;
+      const r = Number(m[1]);
+      if (r > n) n = r;
     }
     return n;
-  }, [answers]);
+  }, [answers, fields]);
   const [ownedRowsShown, setOwnedRowsShown] = useState(1);
 
   /**
@@ -1469,6 +1559,29 @@ export default function MotivationWizardPage() {
     });
     return { sections: groupBySection(visible) };
   }, [shown, ownedRows, assocRows, detail?.overlap?.needsJustification]);
+
+  /**
+   * Which Document Centre panel shows the notes that name no answer key.
+   *
+   * ⚠️ EXACTLY ONE, AND NOT NONE. The server's `skipped` entries — "we could
+   * not read a certificate number off it", "it does not cover the firearm this
+   * application is for" — carry no answer key today, so filtering them by each
+   * panel's own key prefixes (which is right, and is what stops a firearm
+   * sentence appearing under Competency) took every one of those sentences off
+   * the screen. They are the only place a member is told a document they handed
+   * us was read and discarded, and the operator's complaint was repetition, not
+   * concealment.
+   *
+   * The FIRST section this application actually serves that has a panel, so the
+   * choice follows the member's own order down the page rather than guessing
+   * what each note is about. When the server puts a key on each entry, every
+   * note lands on its own panel and this stops mattering.
+   */
+  const firstVaultSection = useMemo(
+    () => sections.find((x) => VAULT_PANEL_SECTIONS.includes(x.section))
+      ?.section,
+    [sections],
+  );
   /**
    * What is still unanswered, RIGHT NOW.
    *
@@ -2018,10 +2131,8 @@ export default function MotivationWizardPage() {
           return (k && val(k)) || `${noun} ${slot}`;
         },
         (slot) =>
-          summaryKeysFor(sec.section, slot)
-            .map(val)
-            .filter(Boolean)
-            .join(' · ') || 'Nothing filled in yet — tap to add',
+          summaryLineFor(sec.section, slot, val) ||
+          'Nothing filled in yet — tap to add',
       );
     }
 
@@ -2703,27 +2814,9 @@ export default function MotivationWizardPage() {
               <h3 className="mb-3 font-medium">{sec.section}</h3>
             )}
             <div className="space-y-4">
-              {/* WHAT THEY HAVE ALREADY TOLD US. Only in the sections the
-                  vault can actually answer: the competency, the firearms
-                  already licensed to them, and dedicated status. Anywhere else
-                  it would be noise. */}
-              {(isOwned ||
-                sec.section === 'About you' ||
-                // ⚠️ MOVED WITH THE FIELDS, 2026-08-28. The competency number
-                // used to live in "About you", which is why this mount named
-                // that section. The fields are in 'Your competency' now, and
-                // leaving this list alone would have reproduced the exact bug
-                // the note below describes — values computed, shipped, then
-                // filtered out against a section that cannot contain them.
-                sec.section === 'Your competency' ||
-                // ⚠️ THE DEDICATED-STATUS HALF NEVER RENDERED. The panel was
-                // mounted on "About you" and handed the key prefix
-                // `association_` — but those fields live in their own
-                // "Dedicated status" section and always have, so the offer
-                // computed the values, shipped them to the browser, and
-                // filtered every one of them out against a section that could
-                // not contain them. Silent since the day it was written.
-                sec.section === 'Dedicated status') && (
+              {/* WHAT THEY HAVE ALREADY TOLD US — see VAULT_PANEL_SECTIONS,
+                  which is also what decides where the unplaceable notes go. */}
+              {VAULT_PANEL_SECTIONS.includes(sec.section) && (
                 <LicenceCentreOfferPanel
                   token={token}
                   motivationId={id}
@@ -2736,6 +2829,7 @@ export default function MotivationWizardPage() {
                   // dedicated-status half suffered silently for months, and
                   // exactly why VAULT_PREFIXES exists.
                   keyPrefixes={VAULT_PREFIXES[vaultStepKey(sec.section)] ?? []}
+                  showUnplaced={sec.section === firstVaultSection}
                   onApplied={(filled, missing) => {
                     // The applicant's own edits win over what arrives, the
                     // same way the profile prefill does above.
@@ -2745,7 +2839,17 @@ export default function MotivationWizardPage() {
                     );
                     // A vault row that filled row 2 has to be visible, or the
                     // answer is saved into a box nobody can see.
-                    const rows = [1, 2, 3, 4, 5, 6].filter((r) =>
+                    //
+                    // ⚠️ AND THAT IS EXACTLY WHAT `[1,2,3,4,5,6]` DID TO ROWS
+                    // 7 TO 14. The offer writes as many rows as the registry
+                    // has; a list that stops at six leaves everything past it
+                    // filled, saved, invisible and — because the server marks a
+                    // row taken once it holds a value — skipped over by every
+                    // later offer too.
+                    const rows = Array.from(
+                      { length: ownedCap },
+                      (_, i) => i + 1,
+                    ).filter((r) =>
                       Object.keys(filled).some(
                         (k) =>
                           k.startsWith(`existing_firearm_${r}_`) &&
@@ -2957,7 +3061,7 @@ export default function MotivationWizardPage() {
                   option; a keyboard user presses Space and hears nothing
                   change. It was never a choice with two states, it was an
                   action, and an action is a button. */}
-              {isOwned && ownedRows < 6 && (
+              {isOwned && ownedCap > 0 && ownedRows < ownedCap && (
                 <div className="flex flex-wrap gap-2 pt-2">
                   <button
                     type="button"
@@ -3012,10 +3116,16 @@ export default function MotivationWizardPage() {
                   )}
                 </div>
               )}
-              {isOwned && ownedRows >= 6 && (
+              {/* ⚠️ THE NUMBER IS NOT WRITTEN DOWN HERE EITHER. This read
+                  "as many as we can print on the form" beside a hard-coded
+                  six, which stopped being true the moment the registry went to
+                  fourteen — untrue in both directions at once: it refused rows
+                  the form has, and it claimed a limit the form does not
+                  impose. */}
+              {isOwned && ownedCap > 0 && ownedRows >= ownedCap && (
                 <p className="pt-2 text-xs text-[var(--text-tertiary-on-card)]">
-                  That is as many as we can print on the form. If you own more,
-                  write the rest in by hand.
+                  That is every row the SAPS 271 has. If you own more, write the
+                  rest in by hand.
                 </p>
               )}
             </div>

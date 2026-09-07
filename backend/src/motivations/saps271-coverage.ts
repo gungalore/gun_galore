@@ -1,5 +1,10 @@
 import { MotivationLicenceType } from '@prisma/client';
-import { MotivationField, fieldsFor, isVisible } from './motivation-fields';
+import {
+  MotivationField,
+  OWNED_ROWS,
+  fieldsFor,
+  isVisible,
+} from './motivation-fields';
 
 // ────────────────────────────────────────────────────────────────────
 // HOW FAR ALONG THE APPLICATION IS, SECTION BY SECTION.
@@ -13,7 +18,7 @@ import { MotivationField, fieldsFor, isVisible } from './motivation-fields';
 // ⚠️ THE UNIT IS THE QUESTION, NOT THE BOX. This is the whole design and it
 // was got wrong once.
 //
-// The obvious implementation counts boxes on the SAPS 271 — there are 144
+// The obvious implementation counts boxes on the SAPS 271 — there are 236
 // mapped, so "38 of 61" writes itself. It is the wrong denominator, because
 // one question fills wildly different numbers of boxes: marital status ticks
 // one of five, an identity number fills a thirteen-cell character row, and a
@@ -101,7 +106,19 @@ const PANEL: { id: string; label: string; from: string[] }[] = [
   { id: 'G1', label: 'Your competency', from: ['Your competency'] },
   { id: 'G2', label: 'Firearms you own', from: ['Firearms you already own'] },
   { id: 'G3', label: 'About you', from: ['About you', 'Your circumstances'] },
-  { id: 'G4', label: 'Dedicated status', from: ['Dedicated status', 'Experience'] },
+  // ⚠️ 'Experience' IS NOT PART OF THIS ROW, AND ITS ABSENCE IS THE POINT.
+  // It was, and a section 15 application — whose own blurb reads "for someone
+  // who hunts or shoots, WITHOUT dedicated status" — duly showed
+  // "G4 Dedicated status · 0% · 2 still needed" on every step. Seen on the
+  // operator's live section 15, 2026-09-07. S15 has no 'Dedicated status'
+  // field at all; what it has is three 'Experience' fields, and this row
+  // swept them up under a heading that contradicts the licence type.
+  //
+  // The letter was wrong too. Items 55–60 are the association block. Not one
+  // Experience answer reaches any SAPS 271 box — they feed the motivation
+  // annexure — so a panel headed "of the boxes that apply to you" was
+  // counting questions the form never asks. See EXCLUDED_SECTIONS.
+  { id: 'G4', label: 'Dedicated status', from: ['Dedicated status'] },
   { id: 'S', label: 'Safe and storage', from: ['Storage and safety'] },
   { id: 'H', label: 'Declarations', from: ['History'] },
 ];
@@ -112,12 +129,26 @@ const PANEL: { id: string; label: string; from: string[] }[] = [
  * asks. Counting it would let a member raise their completeness by choosing a
  * setting.
  */
-const EXCLUDED_SECTION = 'The SAPS 271 form';
+const EXCLUDED_SECTIONS = new Set([
+  'The SAPS 271 form',
+  // ⚠️ EXPERIENCE FILLS NO BOX ON THIS FORM. The hunting history, the quarry
+  // and the places hunted are the motivation annexure's material (item 61's
+  // attachment), not fields of the 271. Counting them here inflated a meter
+  // that promises to count "the boxes that apply to you", and under the wrong
+  // letter at that — see the G4 row above.
+  'Experience',
+]);
 
 const OWNED_SECTION = 'Firearms you already own';
 const OWNED_PREFIX = 'existing_firearm_';
-/** Rows the 271 map fills today. The paper form holds 26; we map six. */
-const OWNED_ROWS = 6;
+
+const DEDICATED_SECTION = 'Dedicated status';
+
+/** `association_2_name` → 2. Slot one is unnumbered, so anything else → null. */
+function associationSlotOf(key: string): number | null {
+  const m = /^association_([23])_/.exec(key);
+  return m ? Number(m[1]) : null;
+}
 
 /** `existing_firearm_3_make` → 3. Anything else → null. */
 function ownedRowOf(key: string): number | null {
@@ -132,11 +163,19 @@ const answered = (answers: Record<string, string>, key: string) =>
 /**
  * Which owned-firearm rows count.
  *
- * ⚠️ THE ONE PLACE isVisible IS NOT ENOUGH. The registry carries six fixed
- * rows of seven fields and none of them is conditional, so isVisible says all
- * forty-two apply — always. An applicant who owns one firearm would then sit
- * at a seventh of a section for ever, through no fault of their own, which is
- * exactly the misleading number this whole module exists to avoid.
+ * ⚠️ THE ONE PLACE isVisible IS NOT ENOUGH. The registry carries OWNED_ROWS
+ * fixed rows and none of their fields is conditional, so isVisible says every
+ * one of them applies — always. An applicant who owns one firearm would then
+ * sit at a fraction of a section for ever, through no fault of their own,
+ * which is exactly the misleading number this whole module exists to avoid.
+ *
+ * ⚠️ AND THE ROW COUNT IS IMPORTED, NEVER RESTATED. This file carried its own
+ * `const OWNED_ROWS = 6` beside a comment claiming the paper form holds 26.
+ * Both numbers were wrong: item 2.1 is FOURTEEN rows, measured off the blank
+ * form by scripts/saps271-measure.mjs, and the registry now offers fourteen.
+ * While the copy stood, a member's seventh to fourteenth firearm was answered
+ * and stored and was invisible to this panel, which told them the section was
+ * complete when eight rows of it had never been counted.
  *
  * A row counts once it is IN USE. When none is, the first one counts: the
  * applicant is being asked for their first firearm, and a section with nothing
@@ -153,6 +192,37 @@ function applicableOwnedRows(answers: Record<string, string>): Set<number> {
     }
   }
   if (!used.size) used.add(1);
+  return used;
+}
+
+/**
+ * Which association slots count.
+ *
+ * ⚠️ THE SECOND PLACE isVisible IS NOT ENOUGH, AND IT WAS MISSED. The rule
+ * above was written for owned firearms and never extended to associations,
+ * although the shape is identical: the registry carries three association
+ * slots, none of their fields is conditional, so isVisible said all ten
+ * questions applied to everybody. The wizard hides slots two and three behind
+ * "add another association" — operator, 2026-08-20 — so a member in ONE
+ * association was scored against six questions they are never shown.
+ *
+ * Measured before this fix, with every question the applicant CAN see answered:
+ *
+ *   S16_DEDICATED_SPORT   G4  7 of 13   54%
+ *   S16_DEDICATED_HUNTER  G4  6 of 14   43%
+ *
+ * A complete section that reads 54% for ever is exactly the misleading number
+ * this module exists to avoid, and it is what the operator was looking at when
+ * they asked why "Firearms you own" sat at 69%.
+ *
+ * Slot one always counts — it is the association being applied on.
+ */
+function applicableAssociationSlots(answers: Record<string, string>): Set<number> {
+  const used = new Set<number>([1]);
+  for (const [key, value] of Object.entries(answers)) {
+    const slot = associationSlotOf(key);
+    if (slot !== null && (value ?? '').trim() !== '') used.add(slot);
+  }
   return used;
 }
 
@@ -186,9 +256,10 @@ export function saps271Coverage(
   context: CoverageContext = {},
 ): Saps271Coverage {
   const fields = fieldsFor(licenceType).filter(
-    (f: MotivationField) => f.section !== EXCLUDED_SECTION,
+    (f: MotivationField) => !EXCLUDED_SECTIONS.has(f.section),
   );
   const ownedRows = applicableOwnedRows(answers);
+  const associationSlots = applicableAssociationSlots(answers);
 
   /** Does this question apply to this applicant, right now? */
   const applies = (f: MotivationField): boolean => {
@@ -197,6 +268,11 @@ export function saps271Coverage(
       const row = ownedRowOf(f.key);
       // `overlap_justification` lives in this section and belongs to no row.
       if (row !== null && !ownedRows.has(row)) return false;
+    }
+    if (f.section === DEDICATED_SECTION) {
+      const slot = associationSlotOf(f.key);
+      // Slot one's fields are unnumbered and always apply.
+      if (slot !== null && !associationSlots.has(slot)) return false;
     }
     return true;
   };

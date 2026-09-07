@@ -3,9 +3,16 @@ import {
   MotivationLicenceType,
   MotivationUploadKind,
 } from '@prisma/client';
-import { fieldsFor } from './motivation-fields';
+import { fieldsFor, ownedRowTaken, OWNED_ROWS } from './motivation-fields';
+import { competencyCovers } from './motivation-upload-row';
+import { endorsementNeed } from './motivation-eligibility';
 import { normaliseFirearmType } from './saps-vocabulary';
-import { ENDORSEMENTS, parseEndorsements } from '../common/sa-competency';
+import {
+  type Endorsement,
+  ENDORSEMENTS,
+  parseEndorsements,
+} from '../common/sa-competency';
+import { answerValue, isCardPlaceholder } from '../common/card-placeholder';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT THE LICENCE CENTRE ALREADY KNOWS.
@@ -101,8 +108,16 @@ const LICENCE_KINDS = new Set(['FIREARM_LICENCE']);
 const COMPETENCY_KINDS = new Set(['COMPETENCY_CERTIFICATE']);
 
 
-/** How many `existing_firearm_N_*` rows the registry carries. */
-export const OWNED_ROWS = 6;
+/**
+ * How many `existing_firearm_N_*` rows the registry carries.
+ *
+ * ⚠️ RE-EXPORTED, NOT DECLARED. It was declared here and the registry it
+ * describes lives in motivation-fields.ts, so the two could disagree — and a
+ * disagreement in this direction is silent: the loop below simply stops
+ * offering at six while the form shows fourteen empty rows. The registry owns
+ * the number.
+ */
+export { OWNED_ROWS };
 
 /**
  * A Date to yyyy-mm-dd, in UTC.
@@ -127,9 +142,17 @@ export function toIsoDay(d: Date): string {
  * "unconfirmed documents do not supply dates", and a rule that has to be
  * remembered every time somebody adds an offer() call is a rule that will be
  * forgotten. Anything that looks like a date is treated as one.
+ *
+ * ⚠️ `_joined` WAS MISSING AND THE HOLE WAS ALREADY OPEN. `association_2_joined`
+ * and `association_3_joined` have been in the registry since 2026-08-20, are
+ * `kind: 'date'`, and are filled by credentialOffer off the vault's `joined_on`
+ * — and not one of them matched this pattern, so the settled gate skipped them
+ * and a date off a document nobody stands behind went onto the form. It was
+ * invisible because the rule this function enforces is spelled out only here.
+ * Adding slot one's `association_joined` would have widened it by a third.
  */
 export function isDateKey(key: string): boolean {
-  return /(_since|_issued|_expiry|_expires|_date|_on)$/.test(key);
+  return /(_since|_issued|_expiry|_expires|_date|_joined|_on)$/.test(key);
 }
 
 /**
@@ -158,9 +181,21 @@ function endorsementLabels(covers: string): string {
     .join(', ');
 }
 
+/**
+ * The first key that carries a real reading, skipping the ones the card
+ * filled in to say there is nothing there.
+ *
+ * ⚠️ THE PLACEHOLDER TEST BELONGS IN THE FALLBACK CHAIN, NOT ONLY AT THE END
+ * OF IT. `first(details, 'frame_serial', 'serial')` on a card reading
+ * "Frame Serial No NONE" used to return NONE and stop — so the fallback key,
+ * which may well hold a real number, was never consulted. Skipping the
+ * placeholder is what makes the chain a chain. See common/card-placeholder:
+ * the readers and the vault keep the card verbatim; this is the answer
+ * boundary, where NONE stops being a value.
+ */
 function first(details: Record<string, string>, ...keys: string[]): string {
   for (const k of keys) {
-    const v = (details[k] ?? '').trim();
+    const v = answerValue(details[k]);
     if (v) return v;
   }
   return '';
@@ -168,14 +203,206 @@ function first(details: Record<string, string>, ...keys: string[]): string {
 
 
 /**
+ * Which dedicated status a document actually awards.
+ *
+ * 'unknown' is a real answer and the common one — see dedicatedStatusFits.
+ */
+export type DedicatedDiscipline =
+  | 'sport'
+  | 'hunter'
+  | 'professional'
+  | 'both'
+  | 'unknown';
+
+/**
+ * Read the discipline off a vault reading.
+ *
+ * ⚠️ IT COMES OUT OF `status_type` IN THE DETAILS BLOB, AND NOWHERE ELSE.
+ * `Credential.disciplineType` looks like the column for this and is not: its
+ * schema comment claimed 'DEDICATED_SPORT' | 'DEDICATED_HUNTER' |
+ * 'PROFESSIONAL_HUNTER' | 'BOTH', but the 2026-08-20 backfill wrote
+ * CredentialKind NAMES into it, and since 2026-08-24 the only writer —
+ * DISCIPLINE_TYPE in vault-adoption.service.ts — writes 'ASSOCIATION_CARD' or
+ * 'GOOD_STANDING_LETTER', which are UPLOAD kinds and say nothing about sport
+ * or hunting. So for every document filed since that date the column cannot
+ * answer this question, and reading it would be reading a different fact. The
+ * schema comment has been corrected to say what is actually stored.
+ *
+ * `status_type` is what the reader is asked for in as many words — "Say which
+ * discipline it awards in status_type (dedicated sport shooter, dedicated
+ * hunter, both, or professional hunter)" — and it is the only genuine record.
+ * It rides in `details`, which credentialOffer is already handed whole, so
+ * there is nothing to plumb.
+ *
+ * ⚠️ 'professional hunter' IS TESTED BEFORE 'hunter', AND THE PHRASE IS
+ * STRIPPED BEFORE THE SEARCH. A PH registration reads "professional hunter",
+ * which contains "hunter" — and treating that as dedicated-hunter status would
+ * reinstate the exact false claim DEDICATED_KINDS was written to prevent.
+ */
+export function dedicatedDisciplineOf(
+  doc: Pick<CredentialSource, 'kind' | 'details'>,
+): DedicatedDiscipline {
+  const raw = first(doc.details, 'status_type').toLowerCase();
+  // ⚠️ THE RETIRED KINDS ARE A FALLBACK, NEVER AN OVERRIDE. Before the
+  // 2026-08-20 consolidation the discipline WAS the kind — DEDICATED_STATUS is
+  // labelled "a dedicated sport shooter status certificate" and DEDICATED_HUNTER
+  // "a dedicated hunter status certificate" in the reader's own prompt — so a
+  // row filed under one of those names is a genuine record of the discipline
+  // and the only one such a row has. The migration rewrote every kind it found,
+  // so this should be unreachable in production; it costs one line and it is
+  // the difference between reading a legacy row correctly and reading it as
+  // "we do not know". A `status_type` that was actually read always wins.
+  if (!raw) {
+    if (doc.kind === 'DEDICATED_HUNTER') return 'hunter';
+    if (doc.kind === 'DEDICATED_STATUS') return 'sport';
+    return 'unknown';
+  }
+  const professional = /\bprofessional\b/.test(raw) || /\bph\b/.test(raw);
+  // Strip the PH wording so its "hunter" cannot be read as hunting status.
+  const rest = raw
+    .replace(/professional\s+hunter/g, ' ')
+    .replace(/\bprofessional\b/g, ' ')
+    .replace(/\bph\b/g, ' ');
+  if (/\bboth\b/.test(rest)) return 'both';
+  const sport = /sport/.test(rest);
+  const hunter = /hunt/.test(rest);
+  if (sport && hunter) return 'both';
+  if (sport) return 'sport';
+  if (hunter) return 'hunter';
+  if (professional) return 'professional';
+  return 'unknown';
+}
+
+/**
+ * May this document evidence the dedicated status THIS application claims?
+ *
+ * ⚠️ A DEDICATED HUNTER'S PAPERS CANNOT EVIDENCE A DEDICATED SPORT SHOOTER,
+ * AND UNTIL NOW THEY DID. The loop below tested `DEDICATED_KINDS.has(c.kind)`
+ * and nothing else, and all three association kinds sit in that set — so a
+ * member holding SAHGCA dedicated-HUNTER papers who applied under
+ * S16_DEDICATED_SPORT got `association_name` filled from them, under a label
+ * reading "Your sport-shooting association", and reached a SAPS 271 claiming
+ * sport status on hunting evidence. Section 1 of the Firearms Control Act
+ * defines a "dedicated sports person" as a member of an accredited
+ * SPORTS-SHOOTING organisation; a hunting association is not one, and the form
+ * is signed under section 120(9)(f).
+ *
+ * ⚠️ UNKNOWN IS A YES, AND 'both' IS A YES, exactly as competencyCovers
+ * already decides the identical question about a competency certificate. Three
+ * things can leave us without a discipline: the document did not print one,
+ * the reader did not get it, or it was read and says something we do not
+ * recognise. In none of those do we KNOW the document is wrong, and refusing a
+ * member's own paper on a fact we do not hold would block honest applicants —
+ * which is the worse of the two failures by far, because the member cannot see
+ * why. We refuse only what we have READ and can name.
+ */
+export function dedicatedStatusFits(
+  licenceType: MotivationLicenceType,
+  doc: Pick<CredentialSource, 'kind' | 'details'>,
+): boolean {
+  const discipline = dedicatedDisciplineOf(doc);
+  if (discipline === 'unknown' || discipline === 'both') return true;
+  if (licenceType === 'S16_DEDICATED_SPORT') return discipline === 'sport';
+  if (licenceType === 'S16_DEDICATED_HUNTER') return discipline === 'hunter';
+  // No other licence type has an association block at all, so there is nothing
+  // to protect and nothing to explain.
+  return true;
+}
+
+/**
+ * Does this document read as a section 16 LETTER OF GOOD STANDING?
+ *
+ * ⚠️ ASKED OF THE PAGE, NOT OF THE ROW. `Credential.disciplineType` does hold
+ * 'GOOD_STANDING_LETTER' for documents adopted out of an application, but it
+ * is not on CredentialSource and the one caller that could plumb it —
+ * motivation-prefill.service.ts — does not. The reader is already asked for
+ * both of these off the paper itself: `good_standing_number` is the letter's
+ * own reference (the operator's SA Hunters letter carries GS00124584), and
+ * `good_standing` is set to yes ONLY where the document says the member is in
+ * good standing. Either is the document telling us what it is.
+ */
+function readsAsGoodStanding(details: Record<string, string>): boolean {
+  if (first(details, 'good_standing_number')) return true;
+  return /^(y|yes|true)$/i.test(first(details, 'good_standing'));
+}
+
+/**
+ * The document for `body` that best answers "valid until", or null.
+ *
+ * ⚠️ IT MUST CARRY A DATE TO BE A CANDIDATE AT ALL. A dedicated status
+ * certificate does not print an expiry, so the majority of these rows have a
+ * null `expiresOn` and offering one would put nothing in the box while
+ * claiming a source for it.
+ *
+ * A letter of good standing wins over anything else with a date, because that
+ * is the document item 60 asks about; among equals the longest-running date
+ * wins, which is the operator's own rule from 2026-08-28 for the competency
+ * block and holds for the same reason — a renewed letter supersedes last
+ * year's.
+ */
+function bestDatedFor(
+  dedicated: readonly CredentialSource[],
+  body: string,
+): CredentialSource | null {
+  const want = body.trim().toUpperCase();
+  const mine = dedicated.filter(
+    (c) =>
+      Boolean(c.expiresOn) &&
+      first(c.details, 'association', 'issuer').trim().toUpperCase() === want,
+  );
+  if (!mine.length) return null;
+  return [...mine].sort((a, b) => {
+    const byKind =
+      (readsAsGoodStanding(a.details) ? 0 : 1) -
+      (readsAsGoodStanding(b.details) ? 0 : 1);
+    if (byKind) return byKind;
+    // yyyy-mm-dd compares correctly as a string; latest first.
+    if (a.expiresOn === b.expiresOn) return 0;
+    return (a.expiresOn ?? '') < (b.expiresOn ?? '') ? 1 : -1;
+  })[0];
+}
+
+/** Why we would not take association details off this document, in their words. */
+function wrongDisciplineReason(
+  licenceType: MotivationLicenceType,
+  discipline: DedicatedDiscipline,
+): string {
+  const wanted =
+    licenceType === 'S16_DEDICATED_SPORT'
+      ? 'a dedicated SPORT SHOOTER, and that has to come from an accredited sports-shooting organisation'
+      : 'a dedicated HUNTER, and that has to come from an accredited hunting association';
+  const says =
+    discipline === 'professional'
+      ? 'it is a professional hunter registration, which is a provincial occupational licence and not dedicated status at all'
+      : discipline === 'hunter'
+        ? 'it awards dedicated HUNTER status'
+        : 'it awards dedicated SPORT SHOOTER status';
+  return `${says}. This application is for ${wanted}`;
+}
+
+/**
  * Build the offer.
  *
  * @param answered  what the applicant has already typed. Never overwritten.
+ * @param needed    the endorsement the firearm being applied for requires, or
+ *                  NULL when the application has not said what firearm it is
+ *                  for yet. See the competency block: null offers no
+ *                  competency at all, rather than picking one.
+ *
+ * ⚠️ `needed` IS NOT OPTIONAL, AND IT IS THE FOURTH ARGUMENT ON PURPOSE. A
+ * default would have made every caller that has not been taught about it
+ * quietly pass "we do not know the firearm" for ever — and "quietly stopped
+ * offering the competency" is precisely the failure this argument was added
+ * to end. The compiler names every call site instead. Callers get it from
+ * requiredEndorsement(answers) in motivation-eligibility.ts, and must RE-RUN
+ * the offer when firearm_type or firearm_action changes, because the answer
+ * to "which certificate" changes with it.
  */
 export function credentialOffer(
   licenceType: MotivationLicenceType,
   credentials: CredentialSource[],
   answered: Record<string, string>,
+  needed: Endorsement | null,
 ): CredentialOffer {
   // ⚠️ THE CONFIRMED GATE IS PER-VALUE NOW, NOT PER-DOCUMENT, AND THE
   // DIFFERENCE IS WHY "What you own" WAS EMPTY. Operator, 2026-08-28: "what
@@ -221,7 +448,15 @@ export function credentialOffer(
     from: string,
     credentialId: string,
   ) => {
-    const v = (value ?? '').trim();
+    // ⚠️ THE ANSWER BOUNDARY, AND THE ONLY ONE THAT MATTERS IN THIS FILE.
+    // Every value below reaches a box on a SAPS 271 the applicant signs, and
+    // the guard here used to be `if (!v)` — emptiness only. A licence card
+    // prints NONE where a row does not apply, so "Firearm 6 — frame serial
+    // NONE · barrel serial NONE" was offered, accepted and written; seen on
+    // the operator's own application on 2026-09-07. `first()` already skips
+    // placeholders on the way in; this catches everything that does not come
+    // through it — an expiry column, an issue date, a caller's own string.
+    const v = answerValue(value);
     if (!v || !keys.has(key)) return;
     // See the note above: a document whose dates nobody stands behind may fill
     // a fact, never a date.
@@ -233,34 +468,162 @@ export function credentialOffer(
   };
 
   // ── the competency number ────────────────────────────────────────
-  // ⚠️ LONGEST-RUNNING EXPIRY WINS, AND THE SORT IS WHAT DECIDES IT.
-  // Operator, 2026-08-28, asked directly which of several competency
-  // certificates should be chosen: "longest-running expiry wins."
   //
-  // offer() is FIRST-WINS by design — "first document to claim a slot keeps
-  // it" — so before this the winner was whichever certificate happened to sit
-  // earliest in the array. That is not a rule, it is an accident of query
-  // order, and it was invisible: both certificates are the member's own and
-  // both numbers look right, so a wrong pick reaches an application unnoticed.
-  // Ordering the candidates makes first-wins express the operator's rule
-  // instead of the database's.
+  // ⚠️ THE FIREARM CHOOSES THE CERTIFICATE. THE DATES ONLY BREAK A TIE.
   //
-  // ⚠️ A NULL EXPIRY SORTS LAST, NOT FIRST. A certificate whose date we could
-  // not read is not evidence of a long life, and treating a blank as "runs
-  // forever" would let the least-known document beat a dated one.
-  const byLongestExpiry = credentials
-    .filter((c) => COMPETENCY_KINDS.has(c.kind))
-    .sort((a, b) => {
-      // yyyy-mm-dd compares correctly as a string — which is why the vault
-      // stores it that way. No Date parsing, no timezone to get wrong.
-      if (a.expiresOn === b.expiresOn) return 0;
-      if (!a.expiresOn) return 1;
-      if (!b.expiresOn) return -1;
-      return a.expiresOn < b.expiresOn ? 1 : -1;
-    });
+  // Operator, 2026-09-07, driving a fresh Section 13 (self-defence, handgun)
+  // on production: "the wrong competency chosen before it even knows which
+  // firearm is being applied for". The panel filled competency_number,
+  // competency_for, competency_issued and competency_expiry off a "Semi-auto
+  // Rifle + Shotgun" certificate while a "Competency - Handgun" sat unused in
+  // the same vault — and then refused to revise it, because offer() is
+  // "theirs wins, always" and a written answer looks exactly like a typed one.
+  //
+  // The cause was structural, not a scoring accident. This function never
+  // asked what firearm the application was for, so it ranked the candidates
+  // on the only fact it had: whose expiry ran longest. That rule is still the
+  // operator's — "longest-running expiry wins", 2026-08-28 — but it was
+  // answering a question that comes SECOND. A certificate that does not cover
+  // the firearm cannot be the right one however long it runs.
+  //
+  // ⚠️ AND A NULL `needed` OFFERS NOTHING AT ALL. create() builds the rows
+  // before firearm_type can exist, so "which firearm" is genuinely unknown on
+  // the first pass. Guessing there is what produced the wrong certificate on a
+  // form somebody signs; the auto-attach path already refuses to guess in the
+  // identical situation (decideAutolink's several-candidates skip). The
+  // caller re-runs the offer once the firearm is described.
+  //
+  // ⚠️ THE EXCLUSION TEST IS competencyCovers, THE SAME ONE AUTO-LINK USES,
+  // and it is deliberately generous: unknown is a yes. A certificate whose
+  // `covers` line was never read, or read and parsed to nothing, is NOT
+  // evidence of the wrong firearm, and withholding somebody's own document on
+  // a fact we do not hold would be the opposite failure. We drop a certificate
+  // only when we have READ its endorsements and they demonstrably lack the one
+  // this application needs.
+  //
+  // ⚠️ AND A DEMONSTRABLY COVERING CERTIFICATE BEATS AN UNREADABLE ONE, even
+  // a longer-running unreadable one. Both are permitted candidates; only one
+  // of them is known to be right.
+  const competencies = credentials.filter((c) => COMPETENCY_KINDS.has(c.kind));
 
-  for (const c of byLongestExpiry) {
-    if (!COMPETENCY_KINDS.has(c.kind)) continue;
+  // ⚠️ AN ENDORSEMENT SET, NOT ONE ENDORSEMENT, AND THE SECOND MEMBER OF IT IS
+  // THE COMBINATION GUN.
+  //
+  // `needed` is `Endorsement | null`, so it cannot say "two" and cannot say
+  // "we could not map what they told us" — it collapses both into the same
+  // null that also means "they have not told us yet". A combination gun is one
+  // of the four choices on the REQUIRED `firearm_type` field and has a rifled
+  // barrel AND a smooth bore, so requiredEndorsement correctly refuses to name
+  // one endorsement for it and returns null forever. The result was that a
+  // member applying for a combination gun never got the competency number we
+  // were already holding, and was told, permanently, "we will fill your
+  // competency in as soon as you have said which firearm this application is
+  // for" — a sentence asking them to do something they had already done. That
+  // is the shape CLAUDE.md's "Automate It — Do Not Ask" forbids.
+  //
+  // ⚠️ AND THE ANSWER IS ASKED OF THE ONE FUNCTION THAT CAN GIVE IT, NOT
+  // RE-DERIVED HERE. motivation-eligibility.ts's own note says it: "Anything
+  // that has to tell 'we do not know' apart from 'we cannot choose' must call
+  // endorsementNeed instead". A second copy of the type-to-endorsement mapping
+  // in this file is exactly the drift that produces two answers to one
+  // question. `needed` stays the caller's explicit statement and still wins
+  // where it names one; endorsementNeed fills the case it cannot express.
+  const need = endorsementNeed(answered);
+  const needsAll: readonly Endorsement[] = needed
+    ? [needed]
+    : need.kind === 'several'
+      ? need.endorsements
+      : [];
+
+  /** 0 = we read it and it covers everything needed; 1 = we could not read it. */
+  const coverRank = (c: CredentialSource): number => {
+    const held = parseEndorsements(first(c.details, 'covers'));
+    return needsAll.length && needsAll.every((e) => held.includes(e)) ? 0 : 1;
+  };
+
+  const chosen = !needsAll.length
+    ? []
+    : competencies
+        .filter((c) =>
+          needsAll.every((e) =>
+            competencyCovers(first(c.details, 'covers'), e),
+          ),
+        )
+        .sort((a, b) => {
+          const byCover = coverRank(a) - coverRank(b);
+          if (byCover) return byCover;
+          // yyyy-mm-dd compares correctly as a string — which is why the vault
+          // stores it that way. No Date parsing, no timezone to get wrong.
+          //
+          // ⚠️ A NULL EXPIRY SORTS LAST, NOT FIRST. A certificate whose date we
+          // could not read is not evidence of a long life, and treating a blank
+          // as "runs forever" would let the least-known document beat a dated
+          // one.
+          if (a.expiresOn === b.expiresOn) return 0;
+          if (!a.expiresOn) return 1;
+          if (!b.expiresOn) return -1;
+          return a.expiresOn < b.expiresOn ? 1 : -1;
+        });
+
+  // ⚠️ ONE LINE FOR THE WHOLE BLOCK, NEVER ONE PER CERTIFICATE. The member is
+  // owed an explanation for an empty competency section — going quiet is what
+  // makes a prefill look broken — but three certificates must not produce
+  // three copies of the same sentence run together on one line.
+  if (!needsAll.length && competencies.length) {
+    // ⚠️ TWO REASONS, AND ONLY ONE OF THEM ASKS THE MEMBER FOR ANYTHING. The
+    // first is true and actionable: they have not finished describing the
+    // firearm, and the moment they do the offer re-runs and fills the block.
+    // The second is ours, not theirs — a firearm we cannot map to an
+    // endorsement — and telling them to answer a question they have already
+    // answered is worse than saying nothing. Say what is actually true.
+    skipped.push({
+      title: competencies.map((c) => c.title).join(', '),
+      // ⚠️ 'unmappable' IS OURS, 'unknown' IS THEIRS. Only the second is
+      // something the member can act on. The first is registry drift — a
+      // firearm_type choice we can no longer map — and telling them to answer
+      // a question they have answered is worse than admitting we are stuck.
+      // ('one' with a null `needed` is a caller deliberately withholding the
+      // firearm, which today only create() does, and it does it before any
+      // firearm answer exists — so it lands on the 'unknown' wording, which is
+      // true for it.)
+      why:
+        need.kind === 'unmappable'
+          ? 'we could not work out which competency this firearm needs — please type the certificate number and its dates off the certificate itself'
+          : 'we will fill your competency in as soon as you have said which firearm this application is for — the right certificate depends on it',
+    });
+  }
+  for (const c of competencies) {
+    if (!needsAll.length || chosen.includes(c)) continue;
+    skipped.push({
+      title: c.title,
+      // A combination gun needs two endorsements, and "it does not cover the
+      // firearm" would leave somebody holding a perfectly good shotgun
+      // competency wondering what was wrong with it.
+      why:
+        needsAll.length > 1
+          ? 'it covers only part of what a combination firearm needs — a rifle and a shotgun endorsement'
+          : 'it does not cover the firearm this application is for',
+    });
+  }
+
+  // ⚠️ ONE CERTIFICATE FILLS ALL FOUR BOXES, OR NONE OF THEM DO.
+  //
+  // This used to loop every covering certificate and lean on offer()'s
+  // first-wins-per-key rule to sort it out. That is fine while one document
+  // answers everything and silently wrong the moment it does not: certificate A
+  // supplies the NUMBER, A's dates are held back by the settled gate or simply
+  // were not read, and B — a different piece of paper, possibly an expired one —
+  // supplies competency_issued and competency_expiry. The applicant then signs a
+  // SAPS 271 naming one certificate beside another certificate's dates. Every
+  // value on it is true of some document; the statement the form makes is false.
+  // The association block guards exactly this and says so: "two true facts
+  // making one false statement".
+  //
+  // So the ranking above now chooses THE certificate, and the first one that
+  // yields a number is it. The rest are reported rather than quietly mined for
+  // spare parts.
+  let used: CredentialSource | null = null;
+  for (const c of chosen) {
     const number = first(c.details, 'competency_number', 'certificate_number');
     if (!number) {
       skipped.push({
@@ -269,6 +632,14 @@ export function credentialOffer(
       });
       continue;
     }
+    if (used) {
+      skipped.push({
+        title: c.title,
+        why: `we filled the form from your ${used.title} — the certificate number and its dates have to come off the same certificate`,
+      });
+      continue;
+    }
+    used = c;
     offer(
       'competency_number',
       'Competency certificate number',
@@ -349,14 +720,25 @@ export function credentialOffer(
 
   // ── the firearms already licensed to them ────────────────────────
   //
+  // Operator, 2026-09-07: "all fire arms the applicant owns must be in that
+  // list", and "the marlin should also be already added, it shouldnt be like
+  // it is now". Both of those are this loop.
+  //
   // ⚠️ ROWS ARE FILLED FROM THE FIRST FREE SLOT, and a slot counts as taken
-  // if the applicant has typed ANY of its six columns. Writing a make into
-  // row 2 while row 2's serial belongs to a different firearm would produce a
-  // form describing a gun that does not exist.
-  const takenRow = (n: number) =>
-    ['type', 'calibre', 'make', 'barrel_serial', 'frame_serial', 'licence_no'].some(
-      (col) => (answered[`existing_firearm_${n}_${col}`] ?? '').trim() !== '',
-    );
+  // if the applicant has typed ANY of its columns. Writing a make into row 2
+  // while row 2's serial belongs to a different firearm would produce a form
+  // describing a gun that does not exist.
+  //
+  // ⚠️ THE LEGACY SERIAL KEYS COUNT AS FILLED TOO. A draft written before the
+  // two serial boxes collapsed into one holds `_barrel_serial` and
+  // `_frame_serial` and no `_serial`; a row that looks empty because we asked
+  // about the wrong key is a row we would fill on top of.
+  //
+  // ⚠️ AND THE RULE IS THE REGISTRY'S, NOT THIS FILE'S. The ten columns were
+  // written out here while nextOwnedSlot in motivation-extract.service.ts asked
+  // about the CALIBRE alone, so the two paths that fill this grid disagreed
+  // about which rows were free. ownedRowTaken is the one answer both ask.
+  const takenRow = (n: number) => ownedRowTaken(answered, n);
 
   /**
    * Is this firearm ALREADY on the form?
@@ -369,51 +751,131 @@ export function credentialOffer(
    * in row 1, and the offer proposing the identical make, calibre and serial
    * as "Firearm 2".
    *
-   * Matched on the identifiers that belong to exactly one firearm. A frame
-   * serial reading NONE is NOT one of them — plenty of rifles carry no frame
-   * number and the licence says so, which would make every such firearm a
+   * ⚠️ AND IT NOW RUNS BEFORE THE ROW CAP, WHICH IS THE WHOLE POINT OF THE
+   * ORDER. It used to run last, so a firearm that was already on the form was
+   * first counted against the fourteen rows and could be reported as not
+   * fitting — the operator's panel offered to add the MARLIN .45-70 as Firearm
+   * 6 while the Marlin sat at position 2, and named three other
+   * already-listed firearms as leftovers. A licence already on the form must
+   * be invisible to this loop: not offered, and not counted.
+   *
+   * Matched on the identifiers that belong to exactly one firearm, and a
+   * placeholder is not one of them — plenty of rifles carry no frame number
+   * and the licence says NONE, which would otherwise make every such firearm a
    * duplicate of every other.
+   *
+   * ⚠️ MAKE + CALIBRE IS THE LAST RESORT, AND ONLY AGAINST A ROW WITH NO
+   * NUMBERS AT ALL. It is how the Marlin case is caught: a card that prints
+   * NONE for both serials and whose licence number never read leaves nothing
+   * else to compare. The cost is a member who owns two identical firearms and
+   * has typed neither serial nor licence number for the first — they are told
+   * one is already listed and add the second by hand. That is the cheaper of
+   * the two mistakes: the other one puts a firearm on a signed declaration
+   * twice.
+   *
+   * ⚠️ AND THE ROWS THIS RUN HAS JUST FILLED COUNT AS ON THE FORM. They are
+   * not in `answered` — nothing has been saved yet — so a vault holding the
+   * same licence twice (a re-photographed card, an adopted duplicate) put it
+   * into row 1 and then, finding row 1 "free" by the only test there was,
+   * into row 2. The offer would have proposed one Marlin as two firearms
+   * before the applicant ever touched it.
    */
   const norm = (v: string) => v.trim().toUpperCase();
-  const NOT_A_SERIAL = new Set(['', 'NONE', 'N/A', 'NA', '-']);
-  const alreadyOnForm = (licence: string, frame: string, barrel: string) => {
-    for (let n = 1; n <= OWNED_ROWS; n++) {
-      const has = (col: string) =>
-        norm(answered[`existing_firearm_${n}_${col}`] ?? '');
-      const l = has('licence_no');
-      const b = has('barrel_serial');
-      const f = has('frame_serial');
-      if (licence && l && l === norm(licence)) return true;
-      if (barrel && !NOT_A_SERIAL.has(norm(barrel)) && b === norm(barrel)) {
-        return true;
+  /** What identifies one firearm, from either side of the comparison. */
+  interface OnForm {
+    /** Which row it is, so the member can be pointed at it. */
+    row: number;
+    licence: string;
+    /** Every serial the row carries, placeholders already dropped. */
+    serials: string[];
+    make: string;
+    calibre: string;
+  }
+  const onForm: OnForm[] = [];
+  for (let n = 1; n <= OWNED_ROWS; n++) {
+    const at = (col: string) => norm(answered[`existing_firearm_${n}_${col}`] ?? '');
+    onForm.push({
+      row: n,
+      licence: at('licence_no'),
+      // Whichever of the three keys a draft happens to hold — a row saved
+      // before the collapse has `_barrel_serial` and no `_serial`.
+      serials: ['serial', 'barrel_serial', 'frame_serial']
+        .map((col) => answered[`existing_firearm_${n}_${col}`] ?? '')
+        .filter((v) => !isCardPlaceholder(v))
+        .map(norm),
+      make: at('make'),
+      calibre: at('calibre'),
+    });
+  }
+  /**
+   * Null when this firearm is not on the form; otherwise HOW it was matched.
+   *
+   * ⚠️ 'guess' IS NOT 'identifier', AND THE CALLER MUST TELL THEM APART. A
+   * licence-number or serial match is a fact: the same firearm, nothing to say.
+   * The make-and-calibre last resort is an inference about two rows with no
+   * numbers on either of them, and it is right about the Marlin and wrong about
+   * a member who owns two identical rifles. Returning one boolean for both is
+   * what let the second rifle disappear off a signed declaration in silence.
+   *
+   * ⚠️ IDENTIFIERS ARE TESTED ACROSS EVERY ROW BEFORE ANY GUESS IS. Otherwise a
+   * firearm that genuinely matches row 4 by serial could be reported as a
+   * guessed duplicate of row 1 and get a note nobody needs.
+   */
+  const alreadyOnForm = (
+    licence: string,
+    serial: string,
+    make: string,
+    calibre: string,
+  ): { how: 'identifier' | 'guess'; row: number } | null => {
+    for (const r of onForm) {
+      if (licence && r.licence && r.licence === norm(licence)) {
+        return { how: 'identifier', row: r.row };
       }
-      if (frame && !NOT_A_SERIAL.has(norm(frame)) && f === norm(frame)) {
-        return true;
+      if (serial && r.serials.includes(norm(serial))) {
+        return { how: 'identifier', row: r.row };
       }
     }
-    return false;
+    for (const r of onForm) {
+      if (
+        !r.licence &&
+        !r.serials.length &&
+        Boolean(make && calibre) &&
+        r.make === norm(make) &&
+        r.calibre === norm(calibre)
+      ) {
+        return { how: 'guess', row: r.row };
+      }
+    }
+    return null;
   };
+
+  /**
+   * Firearms that did not fit, named ONCE at the end of the run.
+   *
+   * ⚠️ ONE MESSAGE, NOT ONE PER LICENCE. The old loop pushed a skipped entry
+   * per leftover, each reading "the form has room for 6 firearms and they are
+   * all filled" — so a member with four extra licences got that sentence four
+   * times, rendered as a run-on line, saying nothing about WHICH firearms were
+   * left out. With fourteen rows this should now be unreachable; it is kept
+   * because "unreachable" is what the six-row version was assumed to be.
+   */
+  const overflow: string[] = [];
 
   let row = 1;
   for (const c of credentials) {
     if (!LICENCE_KINDS.has(c.kind)) continue;
-    while (row <= OWNED_ROWS && takenRow(row)) row++;
-    if (row > OWNED_ROWS) {
-      skipped.push({
-        title: c.title,
-        why: `the form has room for ${OWNED_ROWS} firearms and they are all filled`,
-      });
-      continue;
-    }
 
     const make = first(c.details, 'make');
+    const model = first(c.details, 'model');
     const calibre = first(c.details, 'calibre');
-    const frame = first(c.details, 'frame_serial', 'serial');
-    const barrel = first(c.details, 'barrel_serial');
+    // One number. A licence card usually prints the same serial against the
+    // barrel, the receiver and the frame; where it differs, the barrel is the
+    // one the card prints first. See ownedFirearmSerial in motivation-fields.
+    const serial = first(c.details, 'barrel_serial', 'frame_serial', 'serial');
     const licence = first(c.details, 'licence_number');
     const type = normaliseFirearmType(first(c.details, 'firearm_type', 'type'));
 
-    if (!make && !calibre && !frame && !licence) {
+    if (!make && !calibre && !serial && !licence) {
       skipped.push({
         title: c.title,
         why: 'we could not read a make, calibre or serial off it',
@@ -421,18 +883,74 @@ export function credentialOffer(
       continue;
     }
 
-    // Already listed. Not "skipped" — nothing is missing and nothing needs
-    // saying; the firearm is on the form, which is the whole point.
-    if (alreadyOnForm(licence, frame, barrel)) continue;
+    // Already listed. Tested BEFORE the row cap so it can never be counted as a
+    // leftover either.
+    //
+    // ⚠️ AN IDENTIFIER MATCH SAYS NOTHING; A GUESS HAS TO. Matching on a licence
+    // number or a serial is a fact — nothing is missing, the firearm is on the
+    // form, and a note about it would be noise. Matching on make and calibre
+    // alone is an inference drawn about a row carrying no numbers at all, and
+    // the doc block on alreadyOnForm has always claimed the member "is told one
+    // is already listed and adds the second by hand". Nobody was told: it was
+    // the same silent `continue`. So a member who genuinely owns two identical
+    // rifles, neither with a readable serial or licence number — precisely the
+    // Marlin's shape this rule was written for — lost the second one off a
+    // signed declaration with no trace on any screen. Now the trade-off is
+    // actually the one the comment describes.
+    const listed = alreadyOnForm(licence, serial, make, calibre);
+    if (listed?.how === 'identifier') continue;
+    if (listed?.how === 'guess') {
+      skipped.push({
+        title: c.title,
+        why: `it looks like the firearm already listed as Firearm ${listed.row} — the same make and calibre, and neither carries a serial or licence number to tell them apart. If you own two of them, add the second one by hand`,
+      });
+      continue;
+    }
 
+    while (row <= OWNED_ROWS && takenRow(row)) row++;
+    if (row > OWNED_ROWS) {
+      overflow.push(c.title);
+      continue;
+    }
+
+    // In the order the operator asked for them to be listed: make, model,
+    // serial, expiry. Type, calibre, use and the licence number follow —
+    // still asked, still stored, still what motivation-overlap argues from,
+    // and not part of the summary line.
     const p = `existing_firearm_${row}_`;
+    offer(`${p}make`, `Firearm ${row} — make`, make, c.title, c.id);
+    offer(`${p}model`, `Firearm ${row} — model`, model, c.title, c.id);
+    offer(`${p}serial`, `Firearm ${row} — serial number`, serial, c.title, c.id);
+    // A date key, so the settled gate applies: a licence nobody has checked
+    // fills the make and the serial and leaves the expiry to the member.
+    offer(
+      `${p}expiry`,
+      `Firearm ${row} — licence expires`,
+      c.expiresOn ?? '',
+      c.title,
+      c.id,
+    );
     offer(`${p}type`, `Firearm ${row} — type`, type, c.title, c.id);
     offer(`${p}calibre`, `Firearm ${row} — calibre`, calibre, c.title, c.id);
-    offer(`${p}make`, `Firearm ${row} — make`, make, c.title, c.id);
-    offer(`${p}frame_serial`, `Firearm ${row} — frame serial`, frame, c.title, c.id);
-    offer(`${p}barrel_serial`, `Firearm ${row} — barrel serial`, barrel, c.title, c.id);
     offer(`${p}licence_no`, `Firearm ${row} — licence number`, licence, c.title, c.id);
+    // Now on the form as far as the rest of this run is concerned. See the
+    // note on alreadyOnForm: a vault holding the same card twice would
+    // otherwise list one firearm as two.
+    onForm.push({
+      row,
+      licence: norm(licence),
+      serials: serial ? [norm(serial)] : [],
+      make: norm(make),
+      calibre: norm(calibre),
+    });
     row++;
+  }
+
+  if (overflow.length) {
+    skipped.push({
+      title: overflow.join(', '),
+      why: `the form has room for ${OWNED_ROWS} firearms and they are all filled`,
+    });
   }
 
   // ── dedicated status — one SLOT per association ──────────────────
@@ -448,8 +966,22 @@ export function credentialOffer(
   // same body (a certificate and last year's) are one membership, and listing
   // it twice on a signed form is a false claim of two.
   {
+    // ⚠️ THE FIRST SLOT'S DATE IS `association_joined`, NOT `dedicated_since`,
+    // AND THAT IS A CORRECTION, NOT A RENAME. This loop wrote the vault's
+    // `joined_on` — the day the member joined the body — into a box labelled
+    // "Dedicated status held since", under an offer line reading "Member
+    // since". For a SAHGCA or NARFO member those are routinely years apart:
+    // you join, and then you qualify. It was written unasked, shown with
+    // vault provenance, and printed into the 271's association block; and
+    // `dedicated_since` is also what deriveFacts counts `years_dedicated`
+    // from, so the motivation itself argued from a join date.
+    //
+    // Slots two and three were always right — the registry has called them
+    // "Member there since" from the day they were added. Slot one now has a
+    // field of the same shape, and `dedicated_since` keeps its own meaning and
+    // is asked of the member, because no document in the vault carries it.
     const slots: [string, string, string][] = [
-      ['association_name', 'association_number', 'dedicated_since'],
+      ['association_name', 'association_number', 'association_joined'],
       ['association_2_name', 'association_2_number', 'association_2_joined'],
       ['association_3_name', 'association_3_number', 'association_3_joined'],
     ];
@@ -458,9 +990,30 @@ export function credentialOffer(
         .map(([nameKey]) => (answered[nameKey] ?? '').trim().toUpperCase())
         .filter(Boolean),
     );
-    let slot = 0;
+    // Every association document that may speak for THIS application. See
+    // dedicatedStatusFits: a dedicated hunter's papers are not evidence of
+    // sport-shooting status, and the reverse.
+    const dedicated: CredentialSource[] = [];
     for (const c of credentials) {
       if (!DEDICATED_KINDS.has(c.kind)) continue;
+      if (!dedicatedStatusFits(licenceType, c)) {
+        // ⚠️ SAID OUT LOUD, NEVER A SILENT `continue`. A member whose only
+        // association document is refused must be told which document and
+        // why, or the association block simply sits empty and the prefill
+        // looks broken — the same failure the competency block above was
+        // rewritten to end.
+        skipped.push({
+          title: c.title,
+          why: wrongDisciplineReason(licenceType, dedicatedDisciplineOf(c)),
+        });
+        continue;
+      }
+      dedicated.push(c);
+    }
+    /** Papers from a body already on the form. They may still carry the date. */
+    const sameBody: CredentialSource[] = [];
+    let slot = 0;
+    for (const c of dedicated) {
       const body = first(c.details, 'association', 'issuer').trim();
       // ⚠️ NO NAME, NO SLOT. A document whose association we could not read
       // would offer a membership number with nothing to attribute it to — an
@@ -472,7 +1025,18 @@ export function credentialOffer(
         });
         continue;
       }
-      if (seenBodies.has(body.toUpperCase())) continue;
+      if (seenBodies.has(body.toUpperCase())) {
+        // ⚠️ THE SECOND PAPER FROM ONE BODY IS STILL A DOCUMENT WE LOOKED AT.
+        // It used to `continue` in silence, which was the visible half of the
+        // item-60 bug: the status certificate takes slot 0 and carries no
+        // expiry (the certificate does not print one), the letter of good
+        // standing from the same body hits this line, and the member is told
+        // nothing while the box the letter exists to fill sits empty. The
+        // date itself is now taken below, from whichever of the body's
+        // documents actually carries one.
+        sameBody.push(c);
+        continue;
+      }
       // Advance past slots the applicant has already filled by hand.
       while (
         slot < slots.length &&
@@ -506,38 +1070,78 @@ export function credentialOffer(
         c.title,
         c.id,
       );
-      // ── ITEM 60 — THE MEMBERSHIP'S "VALID UNTIL" DATE ──────────
-      //
-      // Operator, 2026-08-28: "Expiry dat of accredited associasian should
-      // also be inserted from the letter of good standing date. that should
-      // have a valid until date."
-      //
-      // ⚠️ FROM expiresOn, NOT FROM details. It is the column the vault
-      // writes off the page and the renewal sweep already reads; the details
-      // blob does not carry it.
-      //
-      // ⚠️ AND FROM *THIS* DOCUMENT, WHICH IS WHY IT LIVES IN THIS LOOP AND
-      // NOT IN A SWEEP OF ITS OWN. A member may hold a discipline document
-      // from each of three bodies — the schema says so in as many words, and
-      // it is the normal case. Picking the longest-running expiry across all
-      // of them would print body A's name in item 56 beside body B's date in
-      // item 60: two true facts making one false statement, on a form signed
-      // under section 120(9)(f).
-      //
-      // Only the first slot: the 271 prints one expiry box, for the
-      // association in items 56-59. Associations two and three have name,
-      // number and joined date on the form and no expiry to put anywhere.
-      if (slot === 0) {
+      if (body) seenBodies.add(body.toUpperCase());
+      slot++;
+    }
+
+    // ── ITEM 60 — THE MEMBERSHIP'S "VALID UNTIL" DATE ────────────────
+    //
+    // Operator, 2026-08-28: "Expiry dat of accredited associasian should also
+    // be inserted from the letter of good standing date. that should have a
+    // valid until date."
+    //
+    // ⚠️ IT IS CHOSEN PER BODY, NOT TAKEN OFF WHICHEVER DOCUMENT HAPPENED TO
+    // BE FIRST, AND THAT IS THE BUG. This used to sit inside the loop above,
+    // guarded by `slot === 0`, and the loop dedupes on the association NAME
+    // with the `continue` firing BEFORE this offer. Credentials arrive
+    // `orderBy: { createdAt: 'asc' }` with no preference for the document that
+    // carries a date, so the ordinary case broke it: the status certificate is
+    // uploaded first, takes slot 0 and carries NO expiry — a dedicated status
+    // certificate does not print one, which validLongEnough already says in as
+    // many words — and the letter of good standing from the SAME body, the one
+    // document whose whole purpose is the validity window, hit the dedup and
+    // contributed nothing. Item 60 stayed blank while the vault held the date.
+    //
+    // ⚠️ FROM expiresOn, NOT FROM details. It is the column the vault writes
+    // off the page and the renewal sweep already reads; the details blob does
+    // not carry it.
+    //
+    // ⚠️ AND ONLY FROM THIS BODY'S OWN DOCUMENTS. A member may hold a
+    // discipline document from each of three bodies — the schema says so in as
+    // many words, and it is the normal case. Picking the longest-running expiry
+    // across ALL of them would print body A's name in item 56 beside body B's
+    // date in item 60: two true facts making one false statement, on a form
+    // signed under section 120(9)(f). Grouping by body first is what keeps the
+    // name and the date on one membership.
+    //
+    // Only the first slot: the 271 prints one expiry box, for the association
+    // in items 56-59. Associations two and three have name, number and joined
+    // date on the form and no expiry to put anywhere.
+    //
+    // ⚠️ AND THE BODY IS READ BACK FROM THE ANSWER, so a member who typed
+    // their association in by hand still gets the date. Their name seeds
+    // `seenBodies`, so every one of their own documents for that body takes
+    // the dedup branch — under the old code that meant the expiry could never
+    // be offered to precisely the member who had done the most work.
+    //
+    // ⚠️ `||` AND NOT `??`. The re-derivation path in
+    // motivation-prefill.service.ts BLANKS the keys it is allowed to replace
+    // (`answered[key] = ''`) and re-runs the offer, so an empty string here
+    // means "unanswered", exactly as offer() itself reads it. `??` would take
+    // that '' as the answer and never look at the name this run just filled.
+    const slotOneBody =
+      (answered['association_name'] ?? '').trim() ||
+      (values['association_name'] ?? '').trim();
+    if (slotOneBody) {
+      const dated = bestDatedFor(dedicated, slotOneBody);
+      if (dated) {
         offer(
           'association_expiry',
           'Association membership valid until',
-          c.expiresOn ?? '',
-          c.title,
-          c.id,
+          dated.expiresOn ?? '',
+          dated.title,
+          dated.id,
         );
       }
-      if (body) seenBodies.add(body.toUpperCase());
-      slot++;
+    }
+
+    // Anything from a body already on the form that gave nothing at all.
+    for (const c of sameBody) {
+      if (items.some((i) => i.credentialId === c.id)) continue;
+      skipped.push({
+        title: c.title,
+        why: 'you are already listed as a member of that association, and this document adds nothing the form asks for',
+      });
     }
   }
 
@@ -646,6 +1250,16 @@ export function credentialOffer(
  * not dedicated status under section 16, it is issued by a different
  * authority, and filing it as association membership would put a wrong claim
  * in somebody's application.
+ *
+ * ⚠️ MEMBERSHIP OF THIS SET IS NOT ENOUGH ON ITS OWN, AND TREATING IT AS
+ * ENOUGH WAS A REAL FAULT. All three kinds here evidence "dedicated status" of
+ * SOME sort, and the offer loop tested nothing else — so dedicated-HUNTER
+ * papers filled the sport shooter's association block, under a label reading
+ * "Your sport-shooting association", on an application signed under section
+ * 120(9)(f). The discipline is a second question with its own answer; see
+ * dedicatedStatusFits, which every caller taking association details must ask.
+ * The 2026-08-20 consolidation is what made the two questions separate: before
+ * it, the kind WAS the discipline.
  */
 const DEDICATED_KINDS = new Set([
   'DEDICATED_DISCIPLINE',

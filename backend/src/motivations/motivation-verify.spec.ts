@@ -62,8 +62,37 @@ describe('packConsistency', () => {
   });
 
   it('does NOT flag an owned firearm’s serial', () => {
-    // ZA2226548 appears as "Serial No: ..." and belongs to existing_firearm_1.
+    // ZA2226548 appears as "Serial No: ..." and belongs to existing_firearm_1,
+    // through the RETIRED `_barrel_serial` key. A draft saved before the two
+    // serial questions collapsed still has to be allowlisted.
     expect(packConsistency(CLEAN, ANSWERS, ANNEXURES)).toEqual([]);
+  });
+
+  it('does NOT flag an owned serial held under the key the registry now asks', () => {
+    // ⚠️ THE ALLOWLIST HAD GONE EMPTY. It read `_frame_serial` /
+    // `_barrel_serial` over a hardcoded [1..6]; both keys were retired on
+    // 2026-09-07 in favour of one `_serial`. On every application written
+    // since, this check reported the member's OWN firearm — correctly named in
+    // their own motivation — as an invented serial, and sent a reviewer
+    // looking for a fabrication that was not there.
+    const answers = {
+      ...ANSWERS,
+      existing_firearm_1_barrel_serial: undefined as unknown as string,
+      existing_firearm_1_serial: 'ZA2226548',
+    };
+    expect(packConsistency(CLEAN, answers, ANNEXURES)).toEqual([]);
+  });
+
+  it('allowlists a firearm in a row beyond the old six', () => {
+    // Rows 7 to 14 were never allowlisted, even before the collapse: the form
+    // holds fourteen and the loop stopped at six. A member with ten licences
+    // had their tenth reported as invented.
+    const answers = {
+      ...ANSWERS,
+      existing_firearm_1_barrel_serial: undefined as unknown as string,
+      existing_firearm_14_serial: 'ZA2226548',
+    };
+    expect(packConsistency(CLEAN, answers, ANNEXURES)).toEqual([]);
   });
 
   it('catches a missing ID number', () => {

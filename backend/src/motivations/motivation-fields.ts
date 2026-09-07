@@ -4,6 +4,7 @@ import {
   disciplinesInScope,
 } from './shooting-disciplines';
 import { ENDORSEMENT_LABELS } from '../common/sa-competency';
+import { answerValue } from '../common/card-placeholder';
 
 // ────────────────────────────────────────────────────────────────────
 // What we ask an applicant, per licence type.
@@ -45,7 +46,16 @@ import { ENDORSEMENT_LABELS } from '../common/sa-competency';
 // eight NewsIncident ids a member chose to attach as the "Press clippings"
 // annexure. Same day as the line above, hence the suffix — see the rule this
 // comment block states. See PRESS_CLIPPINGS_KEY and NewsService.
-export const FIELD_REGISTRY_VERSION = '2026-09-07b';
+//
+// 2026-09-07c: the owned-firearms table. OWNED_ROWS 6 → 14 (the form's own
+// number), `existing_firearm_N_model` and `_expiry` added, and
+// `_barrel_serial` + `_frame_serial` COLLAPSED into a single `_serial`. The
+// two old keys are retired rather than removed — a blob written before today
+// still holds them, sanitiseAnswers still accepts them, and
+// ownedFirearmSerial() reads them back. That is exactly the "re-meant" case
+// the rule above is about: `_serial` is a key that has never existed, and
+// `_barrel_serial` is a key that has stopped being asked.
+export const FIELD_REGISTRY_VERSION = '2026-09-07c';
 
 // ── THE SAPS 271 IS AN OPT-IN EXTRA, NOT THE PRODUCT ────────────────
 //
@@ -352,6 +362,368 @@ export interface MotivationField {
 }
 
 /** Asked for every licence type. */
+// ── FIREARMS ALREADY LICENSED TO THE APPLICANT (SAPS 271 item 2.1) ─
+//
+// These are the form's own columns, and they are now the ONLY place the
+// applicant states what they already hold — the prose duplicate that used to
+// sit in 'Storage and safety' is gone; see the note there. They exist for a
+// second reason that matters more: THE OVERLAP CHECK READS THEM.
+//
+// "I already have a .308" cannot be answered from free text, and it is the
+// question that gets a second medium-game rifle refused — see
+// motivation-overlap.ts. A structured calibre is what lets us raise the
+// objection before the Registrar does.
+//
+// ⚠️ THESE ARE NOT formOnly, THOUGH THEY LOOK LIKE IT — and they were.
+// They do fill boxes on the SAPS 271, but motivation-overlap.ts reads the
+// calibre, make and type off them and its verdict is rendered straight into
+// the writer's prompt. "Does this applicant already hold something that
+// does this job" is the question that gets a second medium-game rifle
+// refused, and the Registrar asks it whether or not we filled the form in.
+//
+// Marked formOnly, the whole section vanished on the dealer path: an
+// applicant whose dealer completes the 271 was never asked what he already
+// owns, the overlap note came out empty, and the document could not answer
+// the objection. The quality gate then marked it down for that very gap.
+// Seen live on MO000017.
+
+/** The wizard section every owned-firearm field belongs to. */
+export const OWNED_SECTION = 'Firearms you already own';
+
+/**
+ * How many owned-firearm rows the registry carries.
+ *
+ * ⚠️ FOURTEEN, AND IT USED TO BE SIX. The note that stood here read: "Six
+ * rows. The form has fourteen; almost nobody holds six, and an applicant with
+ * more can write the remainder in by hand rather than have us guess at a limit
+ * and silently drop the seventh." Both halves were wrong on the operator's own
+ * Section 13 application, driven live on 2026-09-07. They hold more than six;
+ * and nothing was written in by hand, because the offer does not put a pen in
+ * anybody's hand — it reported the leftovers, ONE MESSAGE PER LICENCE, as "the
+ * form has room for 6 firearms and they are all filled", rendered as a run-on
+ * line the member could do nothing about.
+ *
+ * Operator, 2026-09-07: "all fire arms the applicant owns must be in that
+ * list."
+ *
+ * Fourteen is the FORM'S number, not a guess of ours: item 2.1 on page 5 of
+ * the blank SAPS 271 is fourteen identical rows — measured, not assumed, by
+ * backend/scripts/saps271-measure.mjs.
+ *
+ * ⚠️ THREE OTHER COPIES OF THIS CONSTANT EXIST AND MUST FOLLOW IT.
+ * motivation-overlap.ts, saps271-coverage.ts and motivation-extract.service.ts
+ * each declare their own `const OWNED_ROWS = 6`. Until they import this one, a
+ * member's seventh firearm is listed on their form and invisible to the
+ * duplicate-calibre argument, to the completeness panel and to the extractor.
+ */
+export const OWNED_ROWS = 14;
+
+/**
+ * What a LIST of the firearms somebody already owns shows, in order.
+ *
+ * Operator, 2026-09-07: "when listing the fire arms I already own it should
+ * only be the make, model, serial number and expiry date listed, nothing
+ * else."
+ *
+ * ⚠️ A LISTING, NOT THE FIELD SET, AND THE DIFFERENCE IS LOAD-BEARING. Type,
+ * calibre and use are still asked and still stored: motivation-overlap.ts
+ * classifies the calibre to argue the duplicate-calibre refusal ground, the
+ * SAPS 271 prints the type, and `existing_firearm_N_use` carries the fact the
+ * whole comparison rests on (see its own note below). Dropping them as FIELDS
+ * to satisfy a request about a SUMMARY ROW would delete the argument along
+ * with the clutter. They simply do not belong in a four-column summary.
+ */
+export const OWNED_LISTING_COLUMNS = [
+  'make',
+  'model',
+  'serial',
+  'expiry',
+] as const;
+
+/**
+ * The serial for one owned-firearm row, reading drafts written before the
+ * collapse.
+ *
+ * ⚠️ ONE SERIAL, BECAUSE THE CARD PRINTS ONE NUMBER THREE TIMES. The
+ * operator's Glock licence reads ZABA01892 against the barrel, the receiver
+ * AND the frame. Two boxes therefore asked two questions with one answer, and
+ * on the firearms where they genuinely differ the card says NONE for one of
+ * them — which is the card saying there is nothing there, not a serial.
+ *
+ * ⚠️ AND THE OLD KEYS STILL HOLD ANSWERS. `existing_firearm_N_barrel_serial`
+ * and `_frame_serial` are RETIRED, not deleted — see LEGACY_OWNED_FIELDS — so
+ * a draft saved before today still loads and still reads back here. Barrel
+ * before frame only because a licence prints the barrel number first; a
+ * placeholder in either falls through to the other.
+ *
+ * ⚠️ EVERY READER OF AN OWNED-FIREARM SERIAL MUST COME THROUGH THIS. At the
+ * time of writing three do not: saps271-map.ts (which prints the two boxes on
+ * the form), motivation-verify.ts and motivation-overlap.ts still read the two
+ * legacy keys directly.
+ */
+export function ownedFirearmSerial(
+  answers: Record<string, string>,
+  n: number,
+): string {
+  const p = `existing_firearm_${n}_`;
+  return (
+    answerValue(answers[`${p}serial`]) ||
+    answerValue(answers[`${p}barrel_serial`]) ||
+    answerValue(answers[`${p}frame_serial`])
+  );
+}
+
+/**
+ * Every column one owned-firearm row can hold, including the retired ones.
+ *
+ * ⚠️ THE RETIRED SERIALS ARE ON THIS LIST ON PURPOSE. A draft saved before the
+ * two serial boxes collapsed into `_serial` holds `_barrel_serial` and
+ * `_frame_serial` and nothing else; a row that looks empty because we asked
+ * about the wrong key is a row somebody will write a different firearm over.
+ */
+export const OWNED_ROW_COLUMNS = [
+  ...OWNED_LISTING_COLUMNS,
+  'type',
+  'calibre',
+  'use',
+  'licence_no',
+  'barrel_serial',
+  'frame_serial',
+] as const;
+
+/**
+ * Is this owned-firearm row in use?
+ *
+ * ⚠️ ONE RULE, BECAUSE THREE READERS DISAGREEING ABOUT THIS OVERWRITES A
+ * FIREARM. Until now `nextOwnedSlot` in motivation-extract.service.ts decided a
+ * row was taken by its CALIBRE alone ("matching the wizard's own definition of
+ * a started row") while credentialOffer tested ten columns. Calibre is the one
+ * column where absence has a second meaning: it is now droppable at the answer
+ * boundary — a card printing "Calibre: -" contributes none — so a row carrying
+ * a make, a model and a serial could report itself free and the next licence
+ * uploaded would be proposed straight over the top of it, producing a form
+ * describing a firearm that does not exist.
+ *
+ * ⚠️ AND IT DELIBERATELY DOES NOT RUN answerValue. Everywhere else in this file
+ * a placeholder is nothing; here it is EVIDENCE THAT SOMEBODY HAS BEEN IN THIS
+ * ROW. The question is not "is this value true" but "is this row free", and the
+ * conservative answer is the safe one in both directions: at worst the member
+ * gets a fresh row for a firearm, which they can see and fix. Overwriting is
+ * the failure that is invisible.
+ */
+export function ownedRowTaken(
+  answers: Record<string, string>,
+  n: number,
+): boolean {
+  return OWNED_ROW_COLUMNS.some(
+    (col) => (answers[`existing_firearm_${n}_${col}`] ?? '').trim() !== '',
+  );
+}
+
+/**
+ * The first owned-firearm row nothing has been written into, or null when all
+ * {@link OWNED_ROWS} are in use.
+ *
+ * Null rather than a wrap-around: the registry has no fifteenth row, and
+ * silently overwriting row 14 would be worse than proposing nothing.
+ */
+export function nextOwnedRow(answers: Record<string, string>): number | null {
+  for (let n = 1; n <= OWNED_ROWS; n++) {
+    if (!ownedRowTaken(answers, n)) return n;
+  }
+  return null;
+}
+
+/**
+ * One row of the owned-firearms table.
+ *
+ * ⚠️ GENERATED, AND THAT IS THE POINT. Fourteen rows of eight columns is 112
+ * literals nobody keeps in step, and the six that were written by hand had
+ * already drifted — row 1 carried help text and a comment block that rows 2 to
+ * 6 did not, so five sixths of the applicants never saw the guidance.
+ *
+ * The first four columns are OWNED_LISTING_COLUMNS, in the operator's order,
+ * so the summary row is simply the head of the row.
+ */
+function ownedFirearmRow(n: number): MotivationField[] {
+  const p = `existing_firearm_${n}_`;
+  return [
+    {
+      key: `${p}make`,
+      docSourced: 'CURRENT_LICENCE',
+      label: 'Make',
+      kind: 'short',
+      section: OWNED_SECTION,
+      sensitive: true,
+      maxLength: 60,
+    },
+    {
+      // ⚠️ TWO READERS FILL THIS BOX AND ONLY ONE OF THEM ASKS FOR IT YET.
+      // `docSourced: 'CURRENT_LICENCE'` is a promise to the member — the wizard
+      // files the field under "from your documents" and read-result prints "Not
+      // on the document" against an empty one — so a reader that never asks
+      // makes the form say something untrue about their licence.
+      //
+      // ✅ The IN-WIZARD photograph now asks: EXTRACTABLE.CURRENT_LICENCE in
+      // motivation-extract.service.ts lists `existing_firearm_1_model`. A card
+      // does print it; the operator's own Marlin reads "Model NONE", which is
+      // the card saying this firearm has no model designation, and the
+      // placeholder stops at the answer boundary rather than in this box.
+      //
+      // ✅ AND SO DOES THE VAULT, since 2026-09-07. WANTED in
+      // licence-centre-extract.service.ts asked a firearm licence for
+      // licence_number, holder_name, firearm_type, make, calibre, the two
+      // serials and the section — no model — and WANTED is both the question
+      // AND the filter, so a model that reader volunteered was discarded on
+      // the way back and credentialOffer's `first(c.details, 'model')` found
+      // nothing. 'model' is on that list now, with its alias in
+      // common/document-fields.ts, so both readers fill this box.
+      key: `${p}model`,
+      docSourced: 'CURRENT_LICENCE',
+      label: 'Model',
+      kind: 'short',
+      section: OWNED_SECTION,
+      sensitive: true,
+      maxLength: 60,
+    },
+    {
+      key: `${p}serial`,
+      docSourced: 'CURRENT_LICENCE',
+      label: 'Serial number',
+      kind: 'short',
+      section: OWNED_SECTION,
+      help: 'One number. A licence usually prints the same serial for the barrel, the receiver and the frame.',
+      sensitive: true,
+      maxLength: 60,
+    },
+    {
+      // The date on the member's OWN licence for this firearm — not the
+      // application's. It comes off the vault row's expiry column, which is
+      // the same column the renewal sweep reads, so the form and the reminder
+      // can never disagree about one firearm — and, since 2026-09-07, off an
+      // in-wizard licence photograph too (EXTRACTABLE.CURRENT_LICENCE), which
+      // is what its `docSourced` has always claimed.
+      //
+      // ⚠️ THE ONE COLUMN OF THIS ROW THAT IS NOT `sensitive`, DELIBERATELY.
+      // `sensitive` drives maskSensitive in the wizard's field grid, and it is
+      // there for numbers that identify a firearm or a person — a serial, a
+      // licence number, a make and calibre pair. A licence expiry date
+      // identifies nobody, and masking it would hide the single fact this row
+      // exists to let the member check against the card in their hand.
+      key: `${p}expiry`,
+      docSourced: 'CURRENT_LICENCE',
+      label: 'Licence expires on',
+      kind: 'date',
+      section: OWNED_SECTION,
+      // A firearm licence runs two to ten years, so the current decade page is
+      // where it belongs and a decade strip would be noise.
+      focusOffsetYears: 0,
+    },
+    {
+      key: `${p}type`,
+      docSourced: 'CURRENT_LICENCE',
+      label: 'Type',
+      kind: 'choice',
+      section: OWNED_SECTION,
+      choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
+      sensitive: true,
+    },
+    {
+      key: `${p}calibre`,
+      docSourced: 'CURRENT_LICENCE',
+      label: 'Calibre',
+      kind: 'short',
+      section: OWNED_SECTION,
+      help: 'Exactly as it appears on the licence.',
+      sensitive: true,
+      maxLength: 60,
+    },
+    {
+      // ⚠️ NOT docSourced, AND IT NEVER CAN BE. A licence copy carries make,
+      // calibre and serial; nothing on it says what the firearm is used for.
+      // This is the one fact in the block that has to come from the person.
+      //
+      // ⚠️ AND IT IS THE FACT THE WHOLE COMPARISON RESTS ON. The writer is
+      // told to argue, per firearm, why the one already held cannot do this
+      // job — and until this field existed it saw only type, calibre and make.
+      // "A .308 bolt-action" cannot be argued against a purpose; "bushveld
+      // plains game to 250 m" can. Demanding the paragraph without supplying
+      // this would have aimed pure invention pressure at rule 1, which is the
+      // trap this field exists to close.
+      //
+      // ⚠️ RULE 8 PUTS IT HERE RATHER THAN IN THE WRITER'S HANDS. What
+      // somebody USES a firearm for is history — verifiable, checkable,
+      // theirs. The DISTINCTION between two firearms is rationale and stays
+      // the writer's job (see ARGUE_IT). Those are different things and only
+      // the second may be inferred.
+      //
+      // Optional, and never a follow-up question. It sits in the form beside a
+      // row we have usually already read off an uploaded licence, so somebody
+      // who has uploaded nothing never sees it. Two words are enough.
+      key: `${p}use`,
+      label: 'What you use it for',
+      kind: 'short',
+      section: OWNED_SECTION,
+      help: 'A few words is plenty — "bushveld plains game", "clay targets", "carried for self-defence".',
+      maxLength: 120,
+    },
+    {
+      key: `${p}licence_no`,
+      docSourced: 'CURRENT_LICENCE',
+      label: 'Licence or permit no',
+      kind: 'short',
+      section: OWNED_SECTION,
+      sensitive: true,
+      maxLength: 60,
+    },
+  ];
+}
+
+const OWNED_FIREARM_FIELDS: readonly MotivationField[] = Array.from(
+  { length: OWNED_ROWS },
+  (_, i) => ownedFirearmRow(i + 1),
+).flat();
+
+/**
+ * Keys that are still ACCEPTED but are never asked, never served and never
+ * offered.
+ *
+ * ⚠️ THE SAME DISCIPLINE AS retiredChoices, ONE LEVEL UP. The wizard resends
+ * the WHOLE answers blob on every autosave, so a stored key that stopped being
+ * registered fails sanitiseAnswers on every keystroke anywhere in the form —
+ * the member gets "we could not store your answer" for ever, and the value
+ * they typed into the old box is dropped on the floor.
+ *
+ * `existing_firearm_N_barrel_serial` and `_frame_serial` were collapsed into
+ * `_serial` on 2026-09-07. Drafts saved before that hold them, and
+ * ownedFirearmSerial reads them back. They are kept OUT of fieldsFor so
+ * nothing renders a third serial box, and reachable through fieldByKey so
+ * sanitiseAnswers keeps accepting them.
+ */
+const LEGACY_OWNED_FIELDS: readonly MotivationField[] = Array.from(
+  { length: OWNED_ROWS },
+  (_, i) => i + 1,
+).flatMap((n) => [
+  {
+    key: `existing_firearm_${n}_barrel_serial`,
+    label: 'Barrel serial no',
+    kind: 'short' as const,
+    section: OWNED_SECTION,
+    sensitive: true as const,
+    maxLength: 60,
+  },
+  {
+    key: `existing_firearm_${n}_frame_serial`,
+    label: 'Frame / receiver serial no',
+    kind: 'short' as const,
+    section: OWNED_SECTION,
+    sensitive: true as const,
+    maxLength: 60,
+  },
+]);
+
+const LEGACY_BY_KEY = new Map(LEGACY_OWNED_FIELDS.map((f) => [f.key, f]));
+
 const COMMON_FIELDS: readonly MotivationField[] = [
   {
     // First on purpose: the answer decides whether half the registry exists.
@@ -1272,423 +1644,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     formOnly: true,
     maxLength: 200,
   },
-  // ── FIREARMS ALREADY LICENSED TO THE APPLICANT (SAPS 271 item 2.1) ─
-  //
-  // These are the form's own six columns, and they are now the ONLY place the
-  // applicant states what they already hold — the prose duplicate that used to
-  // sit in 'Storage and safety' is gone; see the note there. They exist for a
-  // second reason that matters more: THE OVERLAP CHECK READS THEM.
-  //
-  // "I already have a .308" cannot be answered from free text, and it is the
-  // question that gets a second medium-game rifle refused — see
-  // motivation-overlap.ts. A structured calibre is what lets us raise the
-  // objection before the Registrar does.
-  //
-  // Six rows. The form has fourteen; almost nobody holds six, and an applicant
-  // with more can write the remainder in by hand rather than have us guess at
-  // a limit and silently drop the seventh.
-  //
-  // ⚠️ THESE ARE NOT formOnly, THOUGH THEY LOOK LIKE IT — and they were.
-  // They do fill boxes on the SAPS 271, but motivation-overlap.ts reads the
-  // calibre, make and type off them and its verdict is rendered straight into
-  // the writer's prompt. "Does this applicant already hold something that
-  // does this job" is the question that gets a second medium-game rifle
-  // refused, and the Registrar asks it whether or not we filled the form in.
-  //
-  // Marked formOnly, the whole section vanished on the dealer path: an
-  // applicant whose dealer completes the 271 was never asked what he already
-  // owns, the overlap note came out empty, and the document could not answer
-  // the objection. The quality gate then marked it down for that very gap.
-  // Seen live on MO000017.
-  {
-    key: 'existing_firearm_1_type',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Type',
-    kind: 'choice',
-    section: 'Firearms you already own',
-    choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
-    sensitive: true,
-  },
-  {
-    key: 'existing_firearm_1_calibre',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Calibre',
-    kind: 'short',
-    section: 'Firearms you already own',
-    help: 'Exactly as it appears on the licence.',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_1_make',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Make',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_1_use',
-    // ⚠️ NOT docSourced, AND IT NEVER CAN BE. A licence copy carries make,
-    // calibre and serial; nothing on it says what the firearm is used for.
-    // This is the one fact in the block that has to come from the person.
-    //
-    // ⚠️ AND IT IS THE FACT THE WHOLE COMPARISON RESTS ON. The writer is told
-    // to argue, per firearm, why the one already held cannot do this job —
-    // and until now it saw only type, calibre and make. "A .308 bolt-action"
-    // cannot be argued against a purpose; "bushveld plains game to 250 m" can.
-    // Demanding the paragraph without supplying this would have aimed pure
-    // invention pressure at rule 1, which is the trap this field exists to
-    // close.
-    //
-    // ⚠️ RULE 8 PUTS IT HERE RATHER THAN IN THE WRITER'S HANDS. What somebody
-    // USES a firearm for is history — verifiable, checkable, theirs. The
-    // DISTINCTION between two firearms is rationale and stays the writer's
-    // job (see ARGUE_IT). Those are different things and only the second may
-    // be inferred.
-    //
-    // Optional, and never a follow-up question. It sits in the form beside a
-    // row we have usually already read off an uploaded licence, so somebody
-    // who has uploaded nothing never sees it. Two words are enough.
-    label: 'What you use it for',
-    kind: 'short',
-    section: 'Firearms you already own',
-    help: 'A few words is plenty — "bushveld plains game", "clay targets", "carried for self-defence".',
-    maxLength: 120,
-  },
-  {
-    key: 'existing_firearm_1_barrel_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Barrel serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_1_frame_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Frame / receiver serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_1_licence_no',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Licence or permit no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_2_type',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Type',
-    kind: 'choice',
-    section: 'Firearms you already own',
-    choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
-    sensitive: true,
-  },
-  {
-    key: 'existing_firearm_2_calibre',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Calibre',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_2_make',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Make',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_2_use',
-    label: 'What you use it for',
-    kind: 'short',
-    section: 'Firearms you already own',
-    maxLength: 120,
-  },
-  {
-    key: 'existing_firearm_2_barrel_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Barrel serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_2_frame_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Frame / receiver serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_2_licence_no',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Licence or permit no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_3_type',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Type',
-    kind: 'choice',
-    section: 'Firearms you already own',
-    choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
-    sensitive: true,
-  },
-  {
-    key: 'existing_firearm_3_calibre',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Calibre',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_3_make',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Make',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_3_use',
-    label: 'What you use it for',
-    kind: 'short',
-    section: 'Firearms you already own',
-    maxLength: 120,
-  },
-  {
-    key: 'existing_firearm_3_barrel_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Barrel serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_3_frame_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Frame / receiver serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_3_licence_no',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Licence or permit no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_4_type',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Type',
-    kind: 'choice',
-    section: 'Firearms you already own',
-    choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
-    sensitive: true,
-  },
-  {
-    key: 'existing_firearm_4_calibre',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Calibre',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_4_make',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Make',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_4_use',
-    label: 'What you use it for',
-    kind: 'short',
-    section: 'Firearms you already own',
-    maxLength: 120,
-  },
-  {
-    key: 'existing_firearm_4_barrel_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Barrel serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_4_frame_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Frame / receiver serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_4_licence_no',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Licence or permit no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_5_type',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Type',
-    kind: 'choice',
-    section: 'Firearms you already own',
-    choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
-    sensitive: true,
-  },
-  {
-    key: 'existing_firearm_5_calibre',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Calibre',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_5_make',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Make',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_5_use',
-    label: 'What you use it for',
-    kind: 'short',
-    section: 'Firearms you already own',
-    maxLength: 120,
-  },
-  {
-    key: 'existing_firearm_5_barrel_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Barrel serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_5_frame_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Frame / receiver serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_5_licence_no',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Licence or permit no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_6_type',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Type',
-    kind: 'choice',
-    section: 'Firearms you already own',
-    choices: ['Rifle', 'Shotgun', 'Handgun', 'Combination'],
-    sensitive: true,
-  },
-  {
-    key: 'existing_firearm_6_calibre',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Calibre',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_6_make',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Make',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_6_use',
-    label: 'What you use it for',
-    kind: 'short',
-    section: 'Firearms you already own',
-    maxLength: 120,
-  },
-  {
-    key: 'existing_firearm_6_barrel_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Barrel serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_6_frame_serial',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Frame / receiver serial no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
-  {
-    key: 'existing_firearm_6_licence_no',
-    docSourced: 'CURRENT_LICENCE',
-    label: 'Licence or permit no',
-    kind: 'short',
-    section: 'Firearms you already own',
-    sensitive: true,
-    maxLength: 60,
-  },
+  ...OWNED_FIREARM_FIELDS,
   {
     key: 'overlap_justification',
     label: 'Anything you want us to lead with (optional)',
@@ -1978,8 +1934,42 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       maxLength: 60,
     },
     {
+      key: 'association_joined',
+      docSourced: 'ASSOCIATION_CARD',
+      // ⚠️ THIS BOX EXISTS BECAUSE THE ONE BELOW WAS BEING FILLED WITH IT.
+      // The 271's association block asks when the applicant JOINED the body.
+      // Nothing on the form asked that, so saps271-map printed
+      // `dedicated_since` — "Dedicated status held since" — into it, and
+      // credentialOffer wrote `dedicated_since` from the vault's `joined_on`
+      // under an offer line reading "Member since". Three different names for
+      // two different facts, collapsed into one box on a form signed under
+      // section 120(9)(f). For a SAHGCA or NARFO member they are routinely
+      // years apart: you join, and then you qualify.
+      //
+      // Associations two and three have had "Member there since" from the day
+      // they were added. This is the same question for slot one, and it is
+      // what the vault's `joined_on` now fills.
+      //
+      // NOT required. It is one box on the form, the applicant may not
+      // remember the day, and a new required field would block applications
+      // that were complete yesterday. Left blank it prints blank — see
+      // saps271-map, which says so on the row rather than reaching for the
+      // nearest date on the form.
+      label: 'Member of that association since',
+      kind: 'date',
+      section: 'Dedicated status',
+      help: 'The day you joined the association — which for most members is earlier than the day the dedicated status itself was awarded.',
+      focusOffsetYears: -10,
+      reach: 'far',
+    },
+    {
       key: 'dedicated_since',
-    docSourced: 'ASSOCIATION_CARD',
+      docSourced: 'ASSOCIATION_CARD',
+      // ⚠️ THE DAY THE STATUS WAS AWARDED, NEVER THE DAY THEY JOINED. See
+      // `association_joined` immediately above. This is also what
+      // deriveFacts counts `years_dedicated` from, so a join date here does
+      // not merely mislabel a box — it makes the motivation itself argue
+      // from the wrong number.
       label: 'Dedicated status held since',
       kind: 'date',
       section: 'Dedicated status',
@@ -2155,8 +2145,42 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       maxLength: 60,
     },
     {
+      key: 'association_joined',
+      docSourced: 'ASSOCIATION_CARD',
+      // ⚠️ THIS BOX EXISTS BECAUSE THE ONE BELOW WAS BEING FILLED WITH IT.
+      // The 271's association block asks when the applicant JOINED the body.
+      // Nothing on the form asked that, so saps271-map printed
+      // `dedicated_since` — "Dedicated status held since" — into it, and
+      // credentialOffer wrote `dedicated_since` from the vault's `joined_on`
+      // under an offer line reading "Member since". Three different names for
+      // two different facts, collapsed into one box on a form signed under
+      // section 120(9)(f). For a SAHGCA or NARFO member they are routinely
+      // years apart: you join, and then you qualify.
+      //
+      // Associations two and three have had "Member there since" from the day
+      // they were added. This is the same question for slot one, and it is
+      // what the vault's `joined_on` now fills.
+      //
+      // NOT required. It is one box on the form, the applicant may not
+      // remember the day, and a new required field would block applications
+      // that were complete yesterday. Left blank it prints blank — see
+      // saps271-map, which says so on the row rather than reaching for the
+      // nearest date on the form.
+      label: 'Member of that association since',
+      kind: 'date',
+      section: 'Dedicated status',
+      help: 'The day you joined the association — which for most members is earlier than the day the dedicated status itself was awarded.',
+      focusOffsetYears: -10,
+      reach: 'far',
+    },
+    {
       key: 'dedicated_since',
-    docSourced: 'ASSOCIATION_CARD',
+      docSourced: 'ASSOCIATION_CARD',
+      // ⚠️ THE DAY THE STATUS WAS AWARDED, NEVER THE DAY THEY JOINED. See
+      // `association_joined` immediately above. This is also what
+      // deriveFacts counts `years_dedicated` from, so a join date here does
+      // not merely mislabel a box — it makes the motivation itself argue
+      // from the wrong number.
       label: 'Dedicated status held since',
       kind: 'date',
       section: 'Dedicated status',
@@ -2356,6 +2380,15 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       // ⚠️ THE TWO GATES CONTRADICT EACH OTHER ON PURPOSE — formOnly wants the
       // fill path, showIf wants the dealer path, and no answer is both. See
       // COMPETENCY_RENEWS_KEY. Changing either one alone un-hides it.
+      //
+      // ⚠️ AND BOTH STAY EVEN THOUGH A RENEWAL IS NO LONGER ASKED fill_saps271
+      // AT ALL (see NOT_ASKED_BY_TYPE). Dropping the showIf on the reasoning
+      // that formOnly alone now suffices was tried on 2026-09-07 and is wrong:
+      // isVisible takes a field and the answers, never a licence type, so it
+      // cannot know the opt-in is unasked — and fieldByKey deliberately still
+      // ACCEPTS the key, so an answer can exist in a draft or arrive on the
+      // wire. One gate then opens. The contradiction is robust precisely
+      // because it does not depend on what is served.
       formOnly: true,
       showIf: { key: SAPS271_OPT_KEY, equals: SAPS271_DEALER },
     },
@@ -2381,18 +2414,83 @@ export const LICENCE_TYPE_LABELS: Record<MotivationLicenceType, string> = {
 };
 
 /** Every field for a licence type, common first, in wizard order. */
-export function fieldsFor(
+/**
+ * Common questions a given licence type is NOT asked.
+ *
+ * ⚠️ COMMON_FIELDS IS NOT COMMON TO ALL FIVE, AND TWO OF ITS QUESTIONS WERE
+ * BEING PUT TO A RENEWAL THAT CANNOT USE EITHER.
+ *
+ *   firearm_source   "Where is this firearm coming from?" — of somebody who
+ *                    already holds the licence for it. Everything downstream
+ *                    already knew: motivation-documents skips the private-sale
+ *                    branch for S24 by name, EXPECTED.S24_RENEWAL is empty, and
+ *                    the checklist says in capitals that "a renewal has no
+ *                    source document … asking where it is coming from would be
+ *                    asking them to prove a transfer that is not happening".
+ *                    Only the screens the member sees were missed.
+ *
+ *   fill_saps271     The SAPS 271 is an application for a NEW licence under
+ *                    sections 13 to 20; a renewal is lodged on the SAPS 518(a).
+ *                    Answering yes un-hid roughly forty-eight formOnly
+ *                    questions — postal address, both telephones, marital
+ *                    status, spouse name and identity number, the six history
+ *                    questions, the fourteen-row owned table — and the render
+ *                    then threw, surfacing as a 409, once all of them were
+ *                    answered. The field help even read "most dealers complete
+ *                    the SAPS 271 with you WHEN YOU BUY THE FIREARM".
+ *
+ * ⚠️ THIS FILTERS WHAT IS ASKED, NEVER WHAT IS ACCEPTED. fieldByKey below
+ * deliberately searches the UNFILTERED list, so a draft saved before this — or
+ * one carrying either key for any other reason — still loads and still saves.
+ * Dropping it there instead would make the wizard's next autosave, which
+ * resends the whole blob, delete the applicant's own answer and show them an
+ * error about it. Same rule as LEGACY_OWNED_FIELDS.
+ */
+const NOT_ASKED_BY_TYPE: Partial<
+  Record<MotivationLicenceType, ReadonlySet<string>>
+> = {
+  S24_RENEWAL: new Set<string>([FIREARM_SOURCE_KEY, SAPS271_OPT_KEY]),
+};
+
+/**
+ * Every field this licence type DEFINES, including the ones it is not asked.
+ *
+ * ⚠️ NOT FOR RENDERING — fieldsFor is. This is for the two callers that must
+ * see a question the type has stopped asking: fieldByKey, so an older draft
+ * still saves, and the registry-integrity suite, which checks that a showIf
+ * clause is well-formed rather than that it is reachable.
+ */
+export function allFieldsFor(
   type: MotivationLicenceType,
 ): readonly MotivationField[] {
   return [...COMMON_FIELDS, ...(TYPE_FIELDS[type] ?? [])];
 }
 
-/** Fast lookup by key, for merging an interview answer back into the blob. */
+export function fieldsFor(
+  type: MotivationLicenceType,
+): readonly MotivationField[] {
+  const skip = NOT_ASKED_BY_TYPE[type];
+  const all = allFieldsFor(type);
+  return skip ? all.filter((f) => !skip.has(f.key)) : all;
+}
+
+/**
+ * Fast lookup by key, for merging an interview answer back into the blob.
+ *
+ * ⚠️ IT ALSO FINDS RETIRED KEYS, AND THAT IS WHAT KEEPS OLD DRAFTS ALIVE.
+ * sanitiseAnswers decides what it will accept by asking this function, so a
+ * key that has stopped being ASKED must still be findable here or the wizard's
+ * next autosave — which resends the whole blob — drops the applicant's own
+ * answer and shows them an error about it. See LEGACY_OWNED_FIELDS.
+ */
 export function fieldByKey(
   type: MotivationLicenceType,
   key: string,
 ): MotivationField | undefined {
-  return fieldsFor(type).find((f) => f.key === key);
+  // ⚠️ THE UNFILTERED LIST, DELIBERATELY — see NOT_ASKED_BY_TYPE. A question
+  // this type has stopped being ASKED must still be findable here, or the
+  // wizard's next autosave drops an answer an older draft already holds.
+  return allFieldsFor(type).find((f) => f.key === key) ?? LEGACY_BY_KEY.get(key);
 }
 
 /**
@@ -2418,7 +2516,25 @@ export function isVisible(
     return false;
   }
   if (!field.showIf) return true;
-  return (answers[field.showIf.key] ?? '').trim() === field.showIf.equals;
+  const chosen = (answers[field.showIf.key] ?? '').trim();
+  if (chosen === field.showIf.equals) return true;
+  // ⚠️ A MULTI ANSWER IS A LIST, AND EQUALITY CANNOT SEE INTO IT.
+  //
+  // `discipline` became kind: 'multi' and is stored comma-joined in the
+  // registry's own order — "vlakteskiet-chasa, other". `discipline_other`
+  // ("Name the discipline") is gated on `equals: 'other'`, which that string
+  // is not. So a member who picked Something Else AND any real discipline
+  // could never be asked to name it, and on the section 16 sport path that
+  // field is `required: true` — required and unaskable at the same time, which
+  // also drops it silently out of requiredKeys.
+  //
+  // Exact match is tried first so nothing that worked changes: this only ever
+  // opens a gate that was wrongly shut. A single-choice answer is never a
+  // comma-joined list, so there is nothing for it to widen.
+  return chosen
+    .split(',')
+    .map((part) => part.trim())
+    .includes(field.showIf.equals);
 }
 
 /**
@@ -2450,13 +2566,18 @@ export function requiredKeys(
  * ⚠️ `formOnly` USED TO DO TWO JOBS AT ONCE — hide a field in the wizard, and
  * withhold it from the prompt — and the owned-firearms table needed those two
  * answers to differ. It has to be ASKED on the dealer path, because
- * motivation-overlap reads it and the writer argues from it; but a frame
- * serial, a barrel serial and a licence number are registry identifiers with
- * no narrative use whatever. Type, calibre and make stay, because "you already
- * own a .223 bolt rifle" is the whole overlap argument. The numbers do not.
+ * motivation-overlap reads it and the writer argues from it; but a serial and
+ * a licence number are registry identifiers with no narrative use whatever,
+ * and neither is the date another licence happens to expire on. Type, calibre,
+ * make and MODEL stay, because "you already own a Glock 17 in 9mm" is the
+ * whole overlap argument. The numbers and the dates do not.
+ *
+ * The two legacy serial keys stay listed even though they are no longer asked:
+ * a blob written before the collapse still carries them, and the fact pack is
+ * built from the stored answers.
  */
 const NEVER_PROMPTED =
-  /^(existing_firearm_\d+_(frame_serial|barrel_serial|licence_no)|firearm_source)$/;
+  /^(existing_firearm_\d+_(serial|frame_serial|barrel_serial|licence_no|expiry)|firearm_source)$/;
 
 /**
  * formOnly fields the writer MUST see anyway.

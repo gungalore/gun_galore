@@ -79,7 +79,16 @@ describe('the filled form', () => {
       safe_mounted_to: 'Wall',
       association_name: 'SAHGCA',
       association_number: '108828',
-      dedicated_since: '2019-04-01',
+      // ⚠️ THE "DATE JOINED" BOX IS FED BY `association_joined`, NOT BY
+      // `dedicated_since`. This fixture used to carry only the second, and the
+      // assertion below duly saw 20190401 land in item 59 — because the map
+      // reached for the field labelled "Dedicated status held since" to answer
+      // a box printed "Date joined". They are different facts and for most
+      // members different years: you join, and then you qualify. Both are kept
+      // here, with different dates, so the render test can prove the JOIN date
+      // is what reaches the box.
+      association_joined: '2019-04-01',
+      dedicated_since: '2022-08-15',
       association_expiry: '2027-03-31',
     },
     safeAnnexureLetter: 'F',
@@ -149,6 +158,11 @@ describe('the filled form', () => {
     // Joined and expires are different dates in adjacent boxes; a single
     // date written into both would be a plausible-looking coordinate error.
     expect(flat).toContain('20190401');
+    // ⚠️ AND THE DEDICATED-SINCE DATE REACHES NO BOX ON THIS FORM. It used to
+    // reach this one. The 271 asks when the applicant JOINED; when the status
+    // was awarded is a different question that the form does not ask and the
+    // motivation annexure argues from.
+    expect(flat).not.toContain('20220815');
   });
 
   it('leaves the estate declaration block on page 5 empty', () => {
@@ -257,4 +271,86 @@ describe('the owner-type X lands in its own box', () => {
     const xs = await routeMarks('Not decided yet');
     expect(xs).toEqual([]);
   }, 60_000);
+});
+
+describe('all fourteen owned firearms reach the paper', () => {
+  const svc = new Saps271Service();
+
+  // ⚠️ THE COORDINATES FOR ROWS 7-14 DID NOT EXIST UNTIL 2026-09-07, and the
+  // map looped to six anyway. Operator, 2026-09-07: "all fire arms the
+  // applicant owns must be in that list." Rows 7 to 14 were collected from the
+  // member's vault, stored, and printed nowhere.
+  //
+  // This is the one assertion that can prove they now land: the values are
+  // drawn and read back out of the rendered PDF, so a coordinate measured onto
+  // the wrong band — text half a centimetre into the next row, which looks
+  // filled and says something untrue — cannot pass.
+  let page5: { s: string; x: number; y: number }[];
+
+  beforeAll(async () => {
+    let answers: Record<string, string> = {};
+    for (let n = 1; n <= 14; n++) {
+      answers = {
+        ...answers,
+        [`existing_firearm_${n}_type`]: 'Rifle',
+        [`existing_firearm_${n}_make`]: `MAKE${n}`,
+        [`existing_firearm_${n}_serial`]: `SERIAL${n}`,
+      };
+    }
+    const { pdf } = await svc.build({
+      licenceType: MotivationLicenceType.S16_DEDICATED_SPORT,
+      answers,
+    });
+    page5 = await marks(pdf, 5);
+  }, 60_000);
+
+  it('prints every serial, on page 5', () => {
+    const printed = page5.map((m) => m.s);
+    for (let n = 1; n <= 14; n++) expect(printed).toContain(`SERIAL${n}`);
+  });
+
+  it('puts each serial on its own line, in order down the page', () => {
+    // Fourteen distinct baselines, descending. Two rows sharing one would mean
+    // a row measured onto its neighbour's band — the silent failure.
+    const ys = Array.from({ length: 14 }, (_, i) => {
+      const hit = page5.find((m) => m.s === `SERIAL${i + 1}`);
+      expect(hit).toBeDefined();
+      return hit!.y;
+    });
+    expect(new Set(ys).size).toBe(14);
+    for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeLessThan(ys[i - 1]);
+  });
+
+  it('keeps each firearm’s make beside its own serial', () => {
+    // The make and the serial of one firearm share a row; a row that drifted
+    // would pair MAKE7 with SERIAL8 and read as a different firearm.
+    for (let n = 1; n <= 14; n++) {
+      const make = page5.find((m) => m.s === `MAKE${n}`);
+      const serial = page5.find((m) => m.s === `SERIAL${n}`);
+      expect(make).toBeDefined();
+      expect(Math.abs(make!.y - serial!.y)).toBeLessThan(3);
+      // Make is the third column, the frame/receiver serial the fifth.
+      expect(make!.x).toBeLessThan(serial!.x);
+    }
+  });
+
+  it('leaves the barrel column empty on every row', () => {
+    // One answer must not become two assertions: we hold one serial and it
+    // goes in the column that IS the firearm in law. Nothing is drawn in the
+    // Barrel Serial No column, which the form rules from x 276.9 to ≈369.
+    //
+    // ⚠️ THE FRAME COLUMN'S OWN x MOVES BY A POINT HALFWAY DOWN THE TABLE
+    // (373.3 for rows 1-8, 372.3 for rows 9-14). That is the paper, not a
+    // rounding error — the measuring script reads the form's ruling lines, and
+    // extrapolating a constant pitch from the first six rows would have
+    // smoothed it away. So this asserts a COLUMN, never one exact x.
+    const serialXs = page5
+      .filter((m) => /^SERIAL\d+$/.test(m.s))
+      .map((m) => m.x);
+    expect(serialXs).toHaveLength(14);
+    for (const x of serialXs) {
+      expect(x).toBeGreaterThan(370);
+      expect(x).toBeLessThan(465);
+    }
+  });
 });

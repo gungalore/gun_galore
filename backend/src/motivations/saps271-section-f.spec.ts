@@ -336,6 +336,35 @@ describe('boxes that were measured and never filled', () => {
     // ⚠️ SEVEN BOXES AND THE WORD "association" APPEARED NOWHERE IN THE FILL
     // LOGIC. The Act requires a sworn statement from the chairperson of an
     // accredited association; the form asks which one; we sent it blank.
+    //
+    // ⚠️ THE JOINED BOX IS FED FROM `association_joined`. This test used to
+    // supply `dedicated_since: '2019-04-01'` and assert it arrived in
+    // g_association_joined — which is what the map did, and it was wrong: the
+    // printed box reads "Date joined" and that field is labelled "Dedicated
+    // status held since". For a SAHGCA or NARFO member they are years apart.
+    const out = build({
+      licenceType: S16,
+      answers: {
+        association_name: 'SA Hunters',
+        association_number: '108828',
+        association_joined: '2019-04-01',
+        dedicated_since: '2022-08-15',
+      },
+    });
+    expect(out.ticks).toContain('g_association_yes');
+    expect(out.text.g_association_name).toBe('SA Hunters');
+    expect(out.text.g_association_number).toBe('108828');
+    expect(out.text.g_association_joined).toBe('20190401');
+  });
+
+  it('⚠️ leaves "date joined" BLANK rather than printing the dedicated-since date', () => {
+    // The failure this replaces: an applicant who answered only "Dedicated
+    // status held since" had that date printed into a box asking when they
+    // JOINED. Both facts are true of them and the statement the form made was
+    // not. CLAUDE.md's rule for anything we fill in unasked settles it —
+    // "never invent one that is simply absent — absent stays absent, which is
+    // a different thing from wrong" — so the box goes blank and the member is
+    // told which question is still open.
     const out = build({
       licenceType: S16,
       answers: {
@@ -344,10 +373,9 @@ describe('boxes that were measured and never filled', () => {
         dedicated_since: '2019-04-01',
       },
     });
-    expect(out.ticks).toContain('g_association_yes');
-    expect(out.text.g_association_name).toBe('SA Hunters');
-    expect(out.text.g_association_number).toBe('108828');
-    expect(out.text.g_association_joined).toBe('20190401');
+    expect(out.text.g_association_joined).toBeUndefined();
+    expect(Object.values(out.text)).not.toContain('20190401');
+    expect(out.leftBlank.map((b) => b.field)).toContain('association_joined');
   });
 
   it('never ticks "no association" just because nothing was answered', () => {

@@ -258,9 +258,34 @@ const STRENGTHENS: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   // The shooting log is the difference between saying you hunt and showing
   // it. Nothing in the Act asks for one; the packs that get taken seriously
   // all carry one.
-  S15_OCCASIONAL_HUNTER: ['PROFICIENCY_CERTIFICATE', 'SHOOTING_ACTIVITY_LOG'],
-  S16_DEDICATED_HUNTER: ['PROFICIENCY_CERTIFICATE', 'SHOOTING_ACTIVITY_LOG'],
-  S16_DEDICATED_SPORT: ['PROFICIENCY_CERTIFICATE', 'SHOOTING_ACTIVITY_LOG'],
+  // ⚠️ CURRENT_LICENCE IS ON THIS TIER SO THE TWO SURFACES AGREE. The pack
+  // checklist has always listed it under RECOMMENDED for these three types,
+  // and it appeared in none of the three tiers here — so documentStatus()
+  // omitted the row entirely, documentLabelFor fell through to a fallback, and
+  // pickableKinds() filed a firearm licence at tier 'extra', next to
+  // "Something else you would like to attach". Exactly the shape already
+  // written up above for the renewal's competency certificate.
+  //
+  // ⚠️ STRENGTHENS, NEVER REQUIRED HERE. The required case is CONDITIONAL and
+  // is added below when the applicant has told us they own something —
+  // "a first-time applicant owns nothing and is never asked for one". That
+  // rule stands; this tier only means the row is known about and honestly
+  // labelled when it does appear.
+  S15_OCCASIONAL_HUNTER: [
+    'PROFICIENCY_CERTIFICATE',
+    'SHOOTING_ACTIVITY_LOG',
+    'CURRENT_LICENCE',
+  ],
+  S16_DEDICATED_HUNTER: [
+    'PROFICIENCY_CERTIFICATE',
+    'SHOOTING_ACTIVITY_LOG',
+    'CURRENT_LICENCE',
+  ],
+  S16_DEDICATED_SPORT: [
+    'PROFICIENCY_CERTIFICATE',
+    'SHOOTING_ACTIVITY_LOG',
+    'CURRENT_LICENCE',
+  ],
   S24_RENEWAL: ['PROFICIENCY_CERTIFICATE', 'SHOOTING_ACTIVITY_LOG'],
 };
 
@@ -284,7 +309,11 @@ const LABELS: Record<MotivationUploadKind, string> = {
   SAFE_PHOTO: 'Photographs of your safe (added before the split)',
   SAFE_INSTALLATION: 'The safe bolted to the wall or floor',
   CHARACTER_REFERENCE: 'A character reference',
-  SHOOTING_ACTIVITY_LOG: 'Your record of hunts or competitions',
+  // ⚠️ NEUTRAL, AND THE CHECKLIST'S OWN WORDING. "Hunts or competitions" put
+  // hunting to a dedicated sports shooter and competitions to an occasional
+  // hunter, and this label reaches the refile dropdown, the bulk picker and
+  // the finished pack — three places one document was named two ways.
+  SHOOTING_ACTIVITY_LOG: 'Your record of shooting activities',
   FIREARM_SOURCE_PROOF: 'Where this firearm is coming from',
   SELLER_LICENCE: "The current owner's licence",
   EXECUTOR_APPOINTMENT: 'Your letter of appointment as executor',
@@ -352,7 +381,7 @@ export function sourceProofWhy(source: string): string {
 
 const WHY: Partial<Record<MotivationUploadKind, string>> = {
   SHOOTING_ACTIVITY_LOG:
-    'Your log of hunts or competitions \u2014 dates, where, what discipline or species. This is the annexure that shows you actually do the thing you are applying to do, rather than saying you intend to. Nothing in the Act asks for it; the packs that get taken seriously all carry one.',
+    'Your log of the shooting you actually do \u2014 dates, where, and the discipline or the quarry, whichever applies to you. This is the annexure that shows you actually do the thing you are applying to do, rather than saying you intend to. Nothing in the Act asks for it; the packs that get taken seriously all carry one.',
   FIREARM_SOURCE_PROOF:
     'Either the dealer\u2019s invoice or quote, or a letter from the person who currently owns the firearm saying they agree to you applying for a licence over it. A DFO reads this to answer one question \u2014 whose firearm is this \u2014 and an application that cannot answer it stalls.',
   SELLER_LICENCE:

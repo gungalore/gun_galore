@@ -51,6 +51,25 @@ export interface WizardStep {
    * the checklist so the two screens cannot describe one document differently.
    */
   documents?: { kind: string; title: string; subtitle?: string }[];
+  /**
+   * Individual registry keys this step exists for, where naming a whole
+   * section would be wrong.
+   *
+   * ⚠️ WRITTEN FOR "WHERE IT IS FROM", WHICH A RENEWAL SHOULD NEVER SEE. That
+   * step claims no section and no document — it is the seller's half of the
+   * paperwork — so `stepAsks` kept it for every licence type, deliberately:
+   * "a step that claims neither sections nor documents is a stage, not a
+   * question set". On a section 24 that stage does not exist. The applicant
+   * already holds the firearm, and the step told them "a dealer sale and a
+   * private transfer need different paperwork at the counter" about a transfer
+   * that is not happening. The backend has known this all along — the
+   * checklist says in capitals that a renewal has no source document — and it
+   * was only the two screens the member sees that were missed.
+   *
+   * A step with `keys` is filtered on them: if this application serves none of
+   * them, the step is not on the rail. Its own question is what it claims.
+   */
+  keys?: string[];
 }
 
 /**
@@ -112,6 +131,10 @@ export const WIZARD_STEPS: WizardStep[] = [
     title: "Where this firearm is coming from",
     blurb:
       "A dealer sale and a private transfer need different paperwork at the counter. On a private sale we send the current owner his own half of the form, and it runs while you carry on here.",
+    // The one question this stage exists for. A renewal is not served it, so
+    // the stage goes with it rather than asking somebody where a firearm they
+    // already own is coming from.
+    keys: ["firearm_source"],
       },
   {
     key: "competency",
@@ -191,25 +214,48 @@ export const WIZARD_STEPS: WizardStep[] = [
       "A section 16 application rests on this: an accredited association, your membership, and a letter saying you are in good standing.",
     sections: ["Dedicated status"],
     documents: [
+      // ⚠️ THE DEDICATED STATUS CERTIFICATE, NOT AN ORDINARY MEMBERSHIP CARD.
+      // This read "Your association membership / The card or certificate", and
+      // an association issues both: an ordinary membership card, and a separate
+      // dedicated-status certificate carrying the dedicated number. Only the
+      // second one evidences a section 16 application, and the checklist has
+      // always said so — "Your dedicated status certificate … the one with your
+      // dedicated number on it". A member photographing the wrong card at this
+      // door has no way to know from the wording that it is the wrong one.
       {
         kind: "ASSOCIATION_CARD",
-        title: "Your association membership",
-        subtitle: "The card or certificate.",
+        title: "Your dedicated status certificate",
+        subtitle:
+          "The one with your dedicated number on it — not an ordinary membership card.",
       },
+      // ⚠️ THIS IS THE DOCUMENT SECTION 16(2) ACTUALLY NAMES. The Act requires
+      // "a sworn statement or solemn declaration from the chairperson … stating
+      // that the applicant is a registered member" — a statement about
+      // MEMBERSHIP, which is this letter. The sentence used to sit on the
+      // endorsement card below, where it was untrue.
       {
         kind: "GOOD_STANDING_LETTER",
         title: "Your letter of good standing",
-        subtitle: "We read the valid-until date off it.",
+        subtitle:
+          "The sworn statement from the chairperson that section 16(2) asks for. We read the valid-until date off it.",
       },
       // ⚠️ EXPECTED ON BOTH SECTION 16 PATHS AND IT HAD NO DOOR. The pack
       // listed it on the final checklist and no step ever asked for it, so a
       // member was told the application wants an association endorsement and
       // given nowhere to attach one.
+      // ⚠️ NOT A REQUIREMENT OF THE ACT, AND THE COPY MUST NOT SAY IT IS.
+      // This card claimed to be "the sworn statement from the chairperson that
+      // section 16(2) asks for". It is not — that is the letter of good
+      // standing above, and the backend says so in capitals in two files. The
+      // endorsement comes from the Hunters Forum guidelines of 2 September
+      // 2005. It matters and a DFO will insist on it; it is not the statutory
+      // element, and an applicant who fetched this one and skipped the letter
+      // had missed the thing section 16(2) actually requires.
       {
         kind: "ASSOCIATION_ENDORSEMENT",
         title: "Your association's endorsement",
         subtitle:
-          "The endorsement for THIS firearm — the sworn statement from the chairperson that section 16(2) asks for.",
+          "The association confirming THIS firearm suits your discipline. The Act does not list it; a DFO will still expect it.",
       },
     ],
   },
@@ -239,9 +285,15 @@ export const WIZARD_STEPS: WizardStep[] = [
     // rail — the documents-side twin of the nineteen orphaned questions this
     // step was created to house.
     documents: [
+      // ⚠️ NEUTRAL WORDING — the checklist's own, "Your record of shooting
+      // activities". This said "hunts or competitions", which is put to a
+      // dedicated SPORTS shooter on the one step their application turns on,
+      // and rendered three times over: as the heading, lower-cased in the
+      // library picker ("Reuse your record of hunts or competitions") and in
+      // the file button's label.
       {
         kind: "SHOOTING_ACTIVITY_LOG",
-        title: "Your record of hunts or competitions",
+        title: "Your record of shooting activities",
         subtitle:
           "Whatever you keep — a club printout, a logbook page, a score sheet. It is the evidence behind what you have just told us.",
       },
@@ -307,6 +359,11 @@ export const WIZARD_STEPS: WizardStep[] = [
 // journey and see that the first part of it is behind them. The application
 // walks the other ten.
 //
+// ⚠️ ELEVEN IS THE TABLE, NOT THE JOURNEY ANY ONE MEMBER WALKS. A licence
+// type that asks nothing on a step does not get that step — a section 13 has
+// no dedicated-status step and counts to ten, not eleven. Run the table
+// through `stepsFor` and number off the RESULT; see stepAsks below.
+//
 // ⚠️ THE TWO INDEXES ARE NOT INTERCHANGEABLE AND NOTHING IN THE TYPES SAYS SO
 // — they are both `number`. Convert with the two functions below rather than
 // adding or subtracting 1 at a call site: an off-by-one here does not throw,
@@ -314,7 +371,16 @@ export const WIZARD_STEPS: WizardStep[] = [
 // heading.
 // ────────────────────────────────────────────────────────────────────
 
-/** The steps an application actually walks. The section is not one of them. */
+/**
+ * The steps an application walks, before the licence type is known. The
+ * section is not one of them.
+ *
+ * ⚠️ THIS IS THE UNFILTERED TABLE AND IT IS NOT WHAT A MEMBER WALKS. It
+ * exists so DISPLAY_OFFSET and the index conversions below have something
+ * fixed to be defined against. A screen driving a real application must slice
+ * `stepsFor(WIZARD_STEPS, plan)` instead, or it puts a section 16 step inside a
+ * section 13 and numbers it "of 11".
+ */
 export const APPLICATION_STEPS: WizardStep[] = WIZARD_STEPS.slice(1);
 
 /** How many display steps sit before the first one an application walks. */
@@ -338,6 +404,135 @@ export function toWalkedIndex(display: number): number | null {
   return n < 0 ? null : n;
 }
 
+// ─────────────────────────────────────────────────────────────────
+// WHAT THIS APPLICATION ACTUALLY ASKS, AND WHAT OF IT IS STILL OUTSTANDING.
+//
+// ⚠️ THE RAIL USED TO BE TOLD ONLY THE SECOND HALF, AND IT TICKED EVERYTHING.
+// `stepDone` read `sections.every(s => !outstanding.has(s))`, so an EMPTY
+// outstanding set — which is what "the application has not loaded yet" and
+// "this member has answered nothing" both look like — ticked every step that
+// claimed anything. On /licence-services/new, before a section is even chosen,
+// eight of eleven steps showed a green tick; on the operator's live section 13,
+// "Dedicated status" and "Declarations" were ticked before a single question
+// was answered. The prop's own doc comment said "empty means we were told
+// nothing, which ticks nothing" — and the function did the opposite.
+//
+// Operator, 2026-09-07: "check the green tick marks should only be green when
+// the section is filled in enough to complete a full motivation."
+//
+// So the rail is now told BOTH halves. `asked*` is what this licence type
+// serves: the registry sections behind its fields, and the document kinds its
+// checklist asks for. Nothing known ticks nothing, and a step this licence type
+// asks nothing for is not a finished step — it is not a step.
+// ─────────────────────────────────────────────────────────────────
+
+export interface StepProgress {
+  /**
+   * Every registry section this application serves a field for.
+   *
+   * ⚠️ THE WHOLE REGISTRY FOR THE LICENCE TYPE, NOT `visibleFields`. A section
+   * gated behind a showIf would appear and vanish as answers are typed, and a
+   * step must not leave the rail under somebody mid-sentence.
+   */
+  askedSections: ReadonlySet<string>;
+  /** Every document kind this application asks for, at ANY tier. */
+  askedKinds: ReadonlySet<string>;
+  /**
+   * Every registry key this application serves — for steps that claim a
+   * question rather than a whole section. See WizardStep.keys.
+   *
+   * Optional: a caller that does not supply it leaves key-claiming steps
+   * showing, which is the behaviour before this existed.
+   */
+  askedKeys?: ReadonlySet<string>;
+  /** Sections still holding a required answer that is empty. */
+  outstandingSections: ReadonlySet<string>;
+  /** Documents still required and not usably attached. */
+  outstandingKinds: ReadonlySet<string>;
+}
+
+/** Before the application has loaded. Ticks nothing, hides nothing. */
+export const NOTHING_KNOWN: StepProgress = {
+  askedSections: new Set(),
+  askedKinds: new Set(),
+  outstandingSections: new Set(),
+  outstandingKinds: new Set(),
+};
+
+/** Have we been told what this application asks at all? */
+function known(p: StepProgress): boolean {
+  return p.askedSections.size > 0 || p.askedKinds.size > 0;
+}
+
+/** The sections and kinds this step claims that THIS licence type asks. */
+function liveClaims(
+  step: WizardStep,
+  p: StepProgress,
+): { sections: string[]; kinds: string[] } {
+  return {
+    sections: (step.sections ?? []).filter((s) => p.askedSections.has(s)),
+    kinds: (step.documents ?? [])
+      .map((d) => d.kind)
+      .filter((k) => p.askedKinds.has(k)),
+  };
+}
+
+/**
+ * Does this step's own question exist for this application?
+ *
+ * True for every step that claims no keys, so nothing changes for the nine
+ * that do not — and true when the caller supplied no key set at all, because
+ * "we were told nothing" must never delete a step.
+ */
+function keysAsked(step: WizardStep, p: StepProgress): boolean {
+  const keys = step.keys ?? [];
+  if (!keys.length || !p.askedKeys) return true;
+  return keys.some((k) => p.askedKeys!.has(k));
+}
+
+/**
+ * Does this step ask this applicant anything?
+ *
+ * ⚠️ A SECTION 16 STEP WAS RENDERING INSIDE A SECTION 13. Step 7 of the
+ * operator's self-defence application was "Your association and your status",
+ * whose own blurb reads "A section 16 application rests on this: an accredited
+ * association, your membership, and a letter saying you are in good standing."
+ * Dedicated status has nothing to do with a self-defence licence: the registry
+ * serves no field for it and the checklist asks for none of its three
+ * documents. It drew three capture pairs, asked nothing, and was ticked green.
+ *
+ * ⚠️ A STEP THAT CLAIMS NEITHER SECTIONS NOR DOCUMENTS IS A STAGE, NOT A
+ * QUESTION SET, and always shows: the section chosen before this screen, the
+ * seller's half of the paperwork, and the pack itself. Filtering those out
+ * would delete the beginning and the end of the journey.
+ */
+export function stepAsks(step: WizardStep, p: StepProgress): boolean {
+  // A step that names its own question is filtered on it, whether or not it
+  // claims a section — see WizardStep.keys and the renewal's "Where it is from".
+  if (!keysAsked(step, p)) return false;
+  const claims =
+    (step.sections ?? []).length + (step.documents ?? []).length > 0;
+  if (!claims) return true;
+  // Nothing known yet — draw the whole journey rather than flicker it in.
+  if (!known(p)) return true;
+  const live = liveClaims(step, p);
+  return live.sections.length > 0 || live.kinds.length > 0;
+}
+
+/**
+ * The steps this licence type actually has, in rail order.
+ *
+ * ⚠️ THE CALLER MUST RENUMBER OFF THIS LIST, never off the full table. "Step
+ * 7 of 11" has to count the steps that exist, or the member is being told about
+ * a screen they will never see.
+ */
+export function stepsFor(
+  steps: readonly WizardStep[],
+  p: StepProgress,
+): WizardStep[] {
+  return steps.filter((s) => stepAsks(s, p));
+}
+
 /**
  * Is this step finished?
  *
@@ -347,23 +542,24 @@ export function toWalkedIndex(display: number): number | null {
  * the one honest signal on the rail said the opposite of the truth. Worse, the
  * step they were actually on could never go green however much they filled in.
  *
- * A step is done when nothing it CLAIMS is outstanding: none of its registry
- * sections holds a missing required answer, and none of its document kinds is
- * still required and unattached. A step that claims nothing — the pack, and the
- * seller's half on "Where it is from" — is never ticked from here, because
- * nothing on this rail knows whether it is finished. Silence beats a wrong tick.
+ * A step is done when everything it asks THIS applicant is in: every registry
+ * section it covers holds all of its required answers, and every document it
+ * asks for that is required is usably attached.
+ *
+ * Three things are never ticked, and each silence is deliberate:
+ *   · nothing known yet — the rail has been told nothing, so it says nothing;
+ *   · a step that claims nothing — the pack, and the seller's half on "Where
+ *     it is from" — because nothing here knows whether it is finished;
+ *   · a step this licence type asks nothing for — it should not be on the rail
+ *     at all (see stepAsks), and a tick would dress that bug up as progress.
  */
-export function stepDone(
-  step: WizardStep,
-  outstandingSections: ReadonlySet<string>,
-  outstandingKinds: ReadonlySet<string>,
-): boolean {
-  const sections = step.sections ?? [];
-  const kinds = (step.documents ?? []).map((d) => d.kind);
-  if (!sections.length && !kinds.length) return false;
+export function stepDone(step: WizardStep, p: StepProgress): boolean {
+  if (!known(p)) return false;
+  const live = liveClaims(step, p);
+  if (!live.sections.length && !live.kinds.length) return false;
   return (
-    sections.every((s) => !outstandingSections.has(s)) &&
-    kinds.every((k) => !outstandingKinds.has(k))
+    live.sections.every((s) => !p.outstandingSections.has(s)) &&
+    live.kinds.every((k) => !p.outstandingKinds.has(k))
   );
 }
 
@@ -373,6 +569,9 @@ export default function WizardRail({
   onGo,
   interactive = true,
   lockedBefore = 0,
+  askedSections = [],
+  askedKinds = [],
+  askedKeys,
   outstandingSections = [],
   outstandingKinds = [],
 }: {
@@ -381,9 +580,28 @@ export default function WizardRail({
   current: number;
   onGo: (index: number) => void;
   /**
+   * What this application asks: the registry sections behind its fields, and
+   * the document kinds its checklist asks for at any tier.
+   *
+   * ⚠️ BOTH EMPTY MEANS "WE WERE TOLD NOTHING", WHICH TICKS NOTHING — see
+   * stepDone. That is the state on /licence-services/new, where the rail is
+   * drawn over a section nobody has chosen yet, and the state for the first
+   * moment of every application, before the fields and checklist have loaded.
+   */
+  askedSections?: readonly string[];
+  askedKinds?: readonly string[];
+  /**
+   * Every registry key this application serves, for steps that claim a
+   * question rather than a section. See WizardStep.keys.
+   *
+   * ⚠️ UNDEFINED, NOT EMPTY, WHEN UNKNOWN. An empty set would mean "this
+   * application serves no keys at all" and would delete every key-claiming
+   * step; undefined means nobody has said, and those steps stay.
+   */
+  askedKeys?: ReadonlySet<string>;
+  /**
    * Registry sections still holding a required answer, and document kinds
-   * still required and unattached. Empty means "we were told nothing", which
-   * ticks nothing — see stepDone.
+   * still required and unattached.
    */
   outstandingSections?: readonly string[];
   outstandingKinds?: readonly string[];
@@ -412,8 +630,13 @@ export default function WizardRail({
    */
   lockedBefore?: number;
 }) {
-  const missingSections = new Set(outstandingSections);
-  const missingKinds = new Set(outstandingKinds);
+  const progress: StepProgress = {
+    askedSections: new Set(askedSections),
+    askedKinds: new Set(askedKinds),
+    askedKeys,
+    outstandingSections: new Set(outstandingSections),
+    outstandingKinds: new Set(outstandingKinds),
+  };
   return (
     <nav
       aria-label="Application steps"
@@ -422,8 +645,7 @@ export default function WizardRail({
       {steps.map((step, i) => {
         // A step before the walk began was completed before this screen: the
         // member chose their section to get here, and the tick is the point.
-        const done =
-          i < lockedBefore || stepDone(step, missingSections, missingKinds);
+        const done = i < lockedBefore || stepDone(step, progress);
         const now = i === current;
         return (
           <button

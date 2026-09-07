@@ -1,4 +1,5 @@
 import { MotivationUploadKind } from '@prisma/client';
+import { answerValue } from '../common/card-placeholder';
 
 // ────────────────────────────────────────────────────────────────────
 // WHAT WE ALREADY READ OFF THIS MEMBER'S DOCUMENTS, LAST TIME.
@@ -117,6 +118,21 @@ export function effectiveDay(row: StoredReading): Date {
  * ⚠️ AN EMPTY STRING IS NOT AN ANSWER. Extraction returns '' for a field it
  * looked for and did not find, and letting that through would overwrite a
  * good older reading with a blank.
+ *
+ * ⚠️ AND NEITHER IS THE WORD THE CARD PRINTS TO MEAN THE SAME THING. This is
+ * an ANSWER BOUNDARY — the fourth, and the last one to be found. What comes
+ * in here is `MotivationUpload.extractionEncrypted`, a stored READING of a
+ * document, and what goes out is merged into a new application's answers at
+ * create time. So a competency card read in June whose employer line said
+ * "N/A", or an address proof whose postal code read "-", prefills a box on a
+ * SAPS 271 the applicant signs in September.
+ *
+ * The sibling path guards exactly this at motivation-documents.service.ts:
+ * "Cards read before card-placeholder.ts existed still carry those values, so
+ * the guard has to be here at the offer, not only where they are written."
+ * That reasoning is why the guard cannot live only at the writer: the rows
+ * being folded here were written months before the rule existed, and the vault
+ * keeps them verbatim on purpose. See common/card-placeholder.ts.
  */
 export function priorReadings(rows: readonly StoredReading[]): {
   values: Record<string, string>;
@@ -133,9 +149,11 @@ export function priorReadings(rows: readonly StoredReading[]): {
 
   for (const row of usable) {
     for (const [key, value] of Object.entries(row.values ?? {})) {
-      const trimmed = (value ?? '').trim();
-      if (!trimmed) continue;
-      values[key] = trimmed;
+      // See the note above: a blank and a card's "nothing here" are the same
+      // absence to a form, and answerValue collapses them into one.
+      const answer = answerValue(value);
+      if (!answer) continue;
+      values[key] = answer;
       from[key] = row.kind;
     }
   }
@@ -211,6 +229,16 @@ export function carriesForwardAsAnswer(key: string): boolean {
  * ⚠️ AN EMPTY STRING IS NOT AN ANSWER. A key present and blank is a question
  * they skipped, and letting it through would overwrite a good older answer with
  * a blank — the exact bug the readings fold already guards against.
+ *
+ * ⚠️ AND THE CARD-PLACEHOLDER RULE DELIBERATELY DOES **NOT** APPLY HERE, which
+ * is the one place in this file the two folds differ. priorReadings folds what
+ * a DOCUMENT said, and "NONE" printed in a row that does not apply is the card
+ * saying there is nothing there. This folds what the MEMBER typed on a form
+ * they signed, and a person who answers "None" to "what were you charged with"
+ * has answered the question. Dropping their word because a licence card uses it
+ * differently would silently blank an answer they gave. See
+ * common/card-placeholder.ts: the rule is for readings crossing into answers,
+ * and these were already answers.
  *
  * @param rows  one entry per previous application, answers already decrypted.
  */

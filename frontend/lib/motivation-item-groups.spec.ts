@@ -6,6 +6,7 @@ import {
   nameKeyFor,
   slotOfKey,
   summaryKeysFor,
+  summaryLineFor,
   partitionKeys,
 } from './motivation-item-groups';
 
@@ -69,13 +70,21 @@ describe('a section that does not repeat', () => {
 });
 
 describe('the header of a collapsed item', () => {
-  it('names a firearm by its make and summarises by calibre ALONE', () => {
-    // Operator, 2026-08-28: "Just the calibre and make as it is in the licence
-    // centre." The make is the title, so the summary carries the calibre and
-    // stops — `type` is one of the details behind the expansion.
+  it('names a firearm by its make and summarises by model, serial and expiry', () => {
+    // Operator, 2026-09-07: "when listing the fire arms I already own it should
+    // only be the make, model, serial number and expiry date listed, nothing
+    // else." The make is the title, so the line carries the other three.
+    //
+    // ⚠️ THIS REPLACES 2026-08-28's "just the calibre and make", which this
+    // test pinned until today. The calibre has left the LINE, not the
+    // application: it is still a registry field, it still prints on the SAPS
+    // 271, and motivation-overlap still argues the duplicate-calibre refusal
+    // ground out of it.
     expect(nameKeyFor(OWNED_SECTION, '2')).toBe('existing_firearm_2_make');
     expect(summaryKeysFor(OWNED_SECTION, '2')).toEqual([
-      'existing_firearm_2_calibre',
+      'existing_firearm_2_model',
+      'existing_firearm_2_serial',
+      'existing_firearm_2_expiry',
     ]);
   });
 
@@ -173,5 +182,70 @@ describe('partitionKeys — an item sits where its first field sits', () => {
     const keys = ['full_name', 'id_number', 'occupation'];
     const out = partitionKeys('About you', keys);
     expect(out).toEqual(keys.map((key) => ({ kind: 'plain', key })));
+  });
+});
+
+
+describe('the line under a collapsed firearm', () => {
+  const line = (answers: Record<string, string>) =>
+    summaryLineFor(OWNED_SECTION, '1', (k) => answers[k] ?? '');
+
+  it('shows model, serial and expiry, and never the make (it is the title)', () => {
+    expect(
+      line({
+        existing_firearm_1_make: 'GLOCK',
+        existing_firearm_1_model: '17',
+        existing_firearm_1_serial: 'ZABA01892',
+        existing_firearm_1_expiry: '2035-08-19',
+      }),
+    ).toBe('17 · ZABA01892 · 2035-08-19');
+  });
+
+  it('reads a draft saved before the serial keys were collapsed', () => {
+    // ⚠️ The precedence is what stops the same number printing three times:
+    // a card prints one serial into the barrel, receiver and frame rows.
+    expect(
+      line({
+        existing_firearm_1_barrel_serial: 'B123',
+        existing_firearm_1_frame_serial: 'B123',
+      }),
+    ).toBe('B123');
+  });
+
+  it('prefers a correction in the new key over a stale legacy one', () => {
+    expect(
+      line({
+        existing_firearm_1_serial: 'RIGHT',
+        existing_firearm_1_barrel_serial: 'STALE',
+      }),
+    ).toBe('RIGHT');
+  });
+
+  it('never prints what the card says to mean nothing here', () => {
+    // The operator's own Glock card reads "Model NONE", and a rifle with no
+    // separate frame serial reads "Frame Serial No NONE".
+    expect(
+      line({
+        existing_firearm_1_model: 'NONE',
+        existing_firearm_1_frame_serial: 'NONE',
+        existing_firearm_1_expiry: '2031-04-30',
+      }),
+    ).toBe('2031-04-30');
+  });
+
+  it('keeps a real value that merely contains a placeholder word', () => {
+    expect(line({ existing_firearm_1_model: 'None Series' })).toBe('None Series');
+  });
+
+  it('is empty when there is nothing to show, so the caller can say so', () => {
+    expect(line({ existing_firearm_1_calibre: '.308' })).toBe('');
+  });
+
+  it('leaves an association row reading its own number', () => {
+    expect(
+      summaryLineFor(ASSOCIATION_SECTION, '1', (k) =>
+        k === 'association_number' ? 'SAG-4471' : '',
+      ),
+    ).toBe('SAG-4471');
   });
 });
