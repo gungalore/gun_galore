@@ -9,6 +9,8 @@ import {
 } from '@nestjs/common';
 import { CredentialKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { VaultLogService, readingShape } from '../common/vault-log.service';
+import { WANTED as WANTED_FIELDS } from './licence-centre-extract.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { FLAGS, SettingsService } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -106,6 +108,8 @@ export class LicenceCentreService {
     // The renewal one-tap. One-way dependency: nothing in motivations/ reaches
     // back into the Centre.
     private readonly motivations: MotivationsService,
+    // The decision ledger. Last, and fire-and-forget: see vault-log.service.ts.
+    private readonly vaultLog: VaultLogService,
   ) {}
 
   /** @CurrentUser() gives the CLERK id; everything here keys on our own. */
@@ -169,7 +173,14 @@ export class LicenceCentreService {
       for (const r of rows) {
         let details = this.readDetails(r.detailsEncrypted);
         let issuedOn = r.issuedOn ? toIsoDate(r.issuedOn) : null;
-        if (!documentSide(details) && r.storageKey && reread < REREAD_CAP) {
+        // Read again: a row that does not know its side, or an unpaired row
+        // that has not been given one more look since the reader improved
+        // (2026-09-07: the NSN certificate's ID number and certificate number
+        // were both missed on the first read, so nothing could pair it). The
+        // pair_reread mark keeps this to once per row.
+        const wantsReread =
+          !documentSide(details) || (!r.otherSideId && !details.pair_reread);
+        if (wantsReread && r.storageKey && reread < REREAD_CAP) {
           reread += 1;
           try {
             const bytes = await this.files.read(r.storageKey);
@@ -178,8 +189,12 @@ export class LicenceCentreService {
               bytes,
               mimeType: r.mimeType ?? 'image/jpeg',
             });
-            if (Object.keys(again.details).length) {
-              details = { ...details, ...again.details };
+            {
+              details = {
+                ...details,
+                ...again.details,
+                pair_reread: new Date().toISOString().slice(0, 10),
+              };
               issuedOn = issuedOn ?? again.issuedOn;
               const title = derivedCredentialTitle('PROFICIENCY', details);
               await this.prisma.credential.update({
@@ -193,6 +208,18 @@ export class LicenceCentreService {
                 },
               });
               if (title && r.title === DEFAULT_TITLE.PROFICIENCY) r.title = title;
+              this.vaultLog?.note({
+                stage: 'settle',
+                outcome: again.reader ? 'ok' : 'missed',
+                code: again.reader ? 'reread' : 'reread-empty',
+                userId,
+                credentialId: r.id,
+                detail: {
+                  side: documentSide(details),
+                  ...readingShape(details, (WANTED_FIELDS as Record<string, string[]>).PROFICIENCY ?? []),
+                  hasIssuedOn: !!issuedOn,
+                },
+              });
             }
           } catch (err) {
             this.logger.warn(`Could not re-read proficiency ${r.id}: ${(err as Error).message}`);
@@ -227,6 +254,14 @@ export class LicenceCentreService {
             data: { otherSideId: x.otherSideId, attention: x.attention, readNotes: x.readNotes },
           });
         }
+        this.vaultLog?.note({
+          stage: 'pair',
+          outcome: 'ok',
+          code: 'paired-on-load',
+          userId,
+          credentialId: a.id,
+          detail: { otherSideId: b.id, side: documentSide(a.details) },
+        });
       }
 
       // Rows paired under earlier wording say it the current way.
@@ -247,6 +282,18 @@ export class LicenceCentreService {
         await this.prisma.credential.update({
           where: { id: a.id },
           data: { attention: [...a.attention, SIDE_MISSING], readNotes: [...a.readNotes, sideMissingNote(side)] },
+        });
+        this.vaultLog?.note({
+          stage: 'pair',
+          outcome: 'missed',
+          code: 'side-missing',
+          userId,
+          credentialId: a.id,
+          detail: {
+            side,
+            ...readingShape(a.details, (WANTED_FIELDS as Record<string, string[]>).PROFICIENCY ?? []),
+            hasIssuedOn: !!a.issuedOn,
+          },
         });
       }
     } catch (err) {
@@ -878,6 +925,7 @@ export class LicenceCentreService {
     let resolved: CredentialKind = currentKind(kind ?? 'OTHER');
     let autoFiled = false;
     let confident = false;
+    let classified: { via: 'markers' | 'model'; markers: string[]; strength: string | null } | null = null;
     // Other roles this same document fills. An association membership
     // certificate routinely IS the letter of good standing and the dedicated
     // status proof as well, under one date — see coversKinds on the model.
@@ -891,6 +939,7 @@ export class LicenceCentreService {
         resolved = guess.kind;
         confident = guess.confident;
         alsoCovers = guess.alsoCovers;
+        classified = { via: guess.via ?? 'model', markers: guess.markers ?? [], strength: guess.strength ?? null };
       }
     }
 
@@ -986,6 +1035,54 @@ export class LicenceCentreService {
       ? null
       : derivedCredentialTitle(resolved, reading?.details ?? {});
 
+    // ── THE LEDGER: how this document was decided, step by step ──────
+    if (autoFiled) {
+      this.vaultLog?.note({
+        stage: 'classify',
+        outcome: classified ? (classified.via === 'markers' ? 'ok' : 'fallback') : 'missed',
+        code: classified
+          ? classified.via === 'markers'
+            ? `markers-${classified.strength ?? 'unknown'}`
+            : confident
+              ? 'model-confident'
+              : 'model-unsure'
+          : 'no-verdict',
+        userId: user.id,
+        credentialId: created.id,
+        detail: { kind: resolved, confident, markers: classified?.markers ?? [], alsoCovers },
+      });
+    }
+    if (!isPhotograph(resolved)) {
+      const wanted = (WANTED_FIELDS as Record<string, string[]>)[resolved] ?? [];
+      const shape = readingShape(reading?.details, wanted);
+      this.vaultLog?.note({
+        stage: 'read',
+        outcome: !reading || !reading.reader ? 'missed' : shape.missing.length ? 'partial' : 'ok',
+        code: !reading || !reading.reader ? 'no-reading' : reading.reader,
+        userId: user.id,
+        credentialId: created.id,
+        detail: {
+          kind: resolved,
+          ...shape,
+          lowConfidence: reading?.lowConfidence ?? [],
+          autoFillable: reading?.autoFillable ?? null,
+          repairs: reading?.notes?.length ?? 0,
+          hasIssuedOn: !!reading?.issuedOn,
+          hasExpiresOn: !!reading?.expiresOn,
+        },
+      });
+      if (!clean && !derived) {
+        this.vaultLog?.note({
+          stage: 'name',
+          outcome: 'missed',
+          code: 'generic-title',
+          userId: user.id,
+          credentialId: created.id,
+          detail: { kind: resolved, present: shape.present },
+        });
+      }
+    }
+
     /**
      * May we act on the date we just read, or only show it?
      *
@@ -1013,6 +1110,14 @@ export class LicenceCentreService {
       this.logger.log(
         `Credential ${created.id}: date read but not armed — ${armed.reason}`,
       );
+      this.vaultLog?.note({
+        stage: 'date',
+        outcome: 'skipped',
+        code: 'read-not-armed',
+        userId: user.id,
+        credentialId: created.id,
+        detail: { kind: resolved, reason: armed.reason },
+      });
       /**
        * ⚠️ AND SAY SO TO THE MEMBER, BECAUSE NOTHING ELSE EVER DID.
        *
@@ -1231,6 +1336,45 @@ export class LicenceCentreService {
           `Could not run the attention checks for credential ${created.id}: ${(err as Error).message}`,
         );
       }
+      if (reading) {
+        const shape = readingShape(reading.details, (WANTED_FIELDS as Record<string, string[]>)[resolved] ?? []);
+        if (resolved === 'PROFICIENCY') {
+          this.vaultLog?.note({
+            stage: 'pair',
+            outcome: otherSide ? 'ok' : attention.includes(SIDE_MISSING) ? 'missed' : 'skipped',
+            code: otherSide ? 'paired-on-upload' : attention.includes(SIDE_MISSING) ? 'side-missing' : 'side-unknown',
+            userId: user.id,
+            credentialId: created.id,
+            detail: {
+              side: documentSide(reading.details),
+              present: shape.present,
+              hasIssuedOn: !!reading.issuedOn,
+              otherSideId: otherSide?.id ?? null,
+            },
+          });
+        }
+        if (duplicateOf) {
+          this.vaultLog?.note({
+            stage: 'duplicate',
+            outcome: 'flagged',
+            code: 'looks-like-copy',
+            userId: user.id,
+            credentialId: created.id,
+            detail: { kind: resolved, duplicateOfId: duplicateOf.id },
+          });
+        }
+        const addressCodes = attention.filter((t) => t !== 'duplicate' && t !== SIDE_MISSING);
+        if (resolved === 'ADDRESS_CONFIRMATION') {
+          this.vaultLog?.note({
+            stage: 'address',
+            outcome: addressCodes.length ? 'flagged' : 'ok',
+            code: addressCodes.length ? addressCodes.join('+') : 'checks-passed',
+            userId: user.id,
+            credentialId: created.id,
+            detail: { present: shape.present, hasIssuedOn: !!reading.issuedOn },
+          });
+        }
+      }
       if (otherSide) {
         // Both rows point at each other; the partner also learns who joined it.
         await this.prisma.credential
@@ -1340,6 +1484,14 @@ export class LicenceCentreService {
       const d = deriveCertificateExpiry({ endorsements, issuedOn, licences });
       const ok = mayArmDerivedExpiry(d.basis);
       if (d.on && ok.arm) {
+        this.vaultLog?.note({
+          stage: 'derive',
+          outcome: 'ok',
+          code: d.basis,
+          userId: user.id,
+          credentialId: created.id,
+          detail: { endorsements, licences: licences.length },
+        });
         await this.prisma.credential
           .update({
             where: { id: created.id },
@@ -1359,6 +1511,14 @@ export class LicenceCentreService {
         this.logger.log(
           `Credential ${created.id}: competency date derived but not armed — ${ok.reason}`,
         );
+        this.vaultLog?.note({
+          stage: 'derive',
+          outcome: 'skipped',
+          code: 'derived-not-armed',
+          userId: user.id,
+          credentialId: created.id,
+          detail: { basis: d.basis, reason: ok.reason, licences: licences.length },
+        });
       }
     }
 
@@ -1642,6 +1802,36 @@ export class LicenceCentreService {
       },
     });
 
+    // The member's answer is the ground truth the automation is measured on.
+    if (nextKind && nextKind !== before.kind) {
+      this.vaultLog?.note({
+        stage: 'member',
+        outcome: 'corrected',
+        code: 'refiled',
+        userId: user.id,
+        credentialId: id,
+        detail: { from: before.kind, to: nextKind },
+      });
+    }
+    if (dateChanged) {
+      this.vaultLog?.note({
+        stage: 'member',
+        outcome: 'corrected',
+        code: 'date-changed',
+        userId: user.id,
+        credentialId: id,
+        detail: { kind: nextKind ?? before.kind, hadExpiry: before.expiresOn !== null, nowHasExpiry: expiry !== null },
+      });
+    }
+    this.vaultLog?.note({
+      stage: 'member',
+      outcome: 'ok',
+      code: 'confirmed',
+      userId: user.id,
+      credentialId: id,
+      detail: { kind: nextKind ?? before.kind, dateChanged, refiled: !!nextKind && nextKind !== before.kind },
+    });
+
     // Clear the "confirm this" nudge and any expiry reminder standing against
     // the old date. A dismissible:false row can only be cleared this way.
     await this.notifications
@@ -1706,6 +1896,14 @@ export class LicenceCentreService {
     await this.prisma.credential.update({
       where: { id },
       data: { title: next },
+    });
+    this.vaultLog?.note({
+      stage: 'member',
+      outcome: 'corrected',
+      code: 'renamed',
+      userId: user.id,
+      credentialId: id,
+      detail: { kind: row.kind, cleared: !clean },
     });
     return { title: next };
   }
@@ -1777,9 +1975,17 @@ export class LicenceCentreService {
       where: { id, userId: user.id },
       // ⚠️ kind AND coversKinds ARE READ FOR THE RE-DATE BELOW, and they must
       // be read BEFORE the delete — after it there is no row left to ask.
-      select: { id: true, storageKey: true, kind: true, coversKinds: true },
+      select: { id: true, storageKey: true, kind: true, coversKinds: true, attention: true, otherSideId: true },
     });
     if (!row) throw new NotFoundException('Document not found');
+    this.vaultLog?.note({
+      stage: 'member',
+      outcome: 'corrected',
+      code: 'deleted',
+      userId: user.id,
+      credentialId: id,
+      detail: { kind: row.kind, attention: row.attention, wasPaired: !!row.otherSideId },
+    });
 
     if (row.storageKey) {
       try {

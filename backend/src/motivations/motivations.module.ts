@@ -34,6 +34,7 @@ import {
 import { Saps271Service } from './saps271.service';
 import { MotivationClaudeService } from './motivation-claude.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
+import { VaultLogService } from '../common/vault-log.service';
 import { VaultAdoptionService } from './vault-adoption.service';
 
 /**
@@ -77,6 +78,7 @@ import { VaultAdoptionService } from './vault-adoption.service';
     MotivationSharedService,
     MotivationPrefillService,
     MotivationDocumentsService,
+    VaultLogService,
     MotivationGenerationService,
     MotivationRenderService,
     MotivationWitnessesService,

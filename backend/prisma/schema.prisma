@@ -5626,3 +5626,34 @@ model BenchShare {
 
   @@index([expiresAt])
 }
+
+/// THE VAULT'S DECISION LEDGER. One row per automatic step the Document
+/// Centre took or declined to take - classification, reading, naming, dating,
+/// derivation, pairing, duplicates, address checks, motivation autolink - and
+/// per correction a member made afterwards. Operator, 2026-09-07: "keep a log
+/// on the server ... so we can troubleshoot it and build the module smarter
+/// over time." See common/vault-log.service.ts.
+///
+/// ⚠️ NO DOCUMENT CONTENTS. `detail` holds field NAMES, marker names,
+/// strengths, counts, kinds, reasons and day gaps, scrubbed on the way in.
+/// Never a value read off a page. Not a relation to Credential: the ledger
+/// must outlive the row it describes.
+model VaultEvent {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  userId       String?
+  credentialId String?
+  motivationId String?
+  /// classify | read | name | date | derive | pair | duplicate | address | autolink | settle | member
+  stage        String
+  /// ok | fallback | partial | missed | flagged | skipped | corrected | error
+  outcome      String
+  /// A short slug to group on: 'markers-definitive', 'no-verdict', 'side-missing', 'several-candidates', 'refiled'.
+  code         String
+  detail       Json?
+
+  @@index([createdAt])
+  @@index([stage, code, createdAt])
+  @@index([credentialId])
+  @@index([userId, createdAt])
+}

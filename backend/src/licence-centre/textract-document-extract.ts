@@ -165,7 +165,7 @@ export const FIELD_ALIASES: FieldAlias[] = [
   // Identity, shared across several kinds.
   { field: 'holder_name', match: /^(initials and surname|learner name|name of (learner|holder))/i },
   { field: 'full_name', match: /^(surname|forenames|names)$/i, kinds: ['IDENTITY_DOCUMENT'] },
-  { field: 'id_number', match: /^(identity number|id no|id number|identification)/i },
+  { field: 'id_number', match: /^(identity number|national id number|id no|id number|identification)/i },
 
   // Firearm licence.
   // ⚠️ "Make" AND "Model" ARE PRINTED FOUR TIMES ON THE CARD — once in the
@@ -289,8 +289,17 @@ const VALIDITY_RANGE = /(\d{4}-\d{2}-\d{2})\s*-{1,2}\s*(\d{4}-\d{2}-\d{2})/;
  */
 const SECTION =
   /\b(SECTION\s*\d{1,2}\s*A?|SEC\.?\s*\d{1,2}\s*A?|S\.?\s?\d{1,2}\s*A?|\d{1,2}\s?\(\d{1,2}\))/i;
-/** A 13-digit SA ID, however Textract spaced it. */
-const SA_ID = /\b(\d[\d\s]{11,17}\d)\b/;
+/**
+ * A 13-digit SA ID, however Textract spaced it.
+ *
+ * ⚠️ GLOBAL, AND EVERY MATCH IS TRIED. The first 13-to-19-character run of
+ * digits on a page is not always the ID: NSN's certificate prints its SASSETA
+ * registration "0419 0400 2286" above the holder's number, that matched
+ * first, failed the checksum, and the certificate was filed with no ID at
+ * all - which is why it could not be paired with its statement of results
+ * (operator, 2026-09-07). The checksum decides, not the position.
+ */
+const SA_ID = /\b(\d[\d\s]{11,17}\d)\b/g;
 /**
  * `GJP FOURIE` - initials then surname, printed bare on a licence card with
  * no label beside it, so FORMS never sees it as a value. Per reference
@@ -486,8 +495,12 @@ export function extractDocument(
   // stands if the shortened number passes the checksum, so it is arithmetic
   // rather than a guess - and confidence cannot catch it, because a wrong
   // read scores within a tenth of a point of a right one.
-  const idCandidate = details.id_number ?? text.match(SA_ID)?.[1] ?? '';
-  const read = readIdNumber(idCandidate);
+  const idCandidates = details.id_number
+    ? [details.id_number]
+    : [...text.matchAll(SA_ID)].map((m) => m[1]);
+  const read =
+    idCandidates.map((c) => readIdNumber(c)).find((r) => r.id) ??
+    readIdNumber(idCandidates[0] ?? '');
   if (read.id) {
     details.id_number = read.id;
     if (confidence.id_number === undefined) confidence.id_number = 99;
@@ -564,11 +577,17 @@ export function extractDocument(
       const name = ls.slice(at + 1, at + 5).map((l) => l.trim()).find((l) => NAME_LINE.test(l) && !NOT_A_NAME.test(l));
       if (name) put('holder_name', name, 99);
     }
-    // "CERTIFICATE | NUMBER: | K/10358-K919835" and "TRG 11897 | CERTIFICATE NO".
-    const after = text.match(/\bcertificate(?: \|)? (?:number|no|nr)\b\.?:?(?: \|)? ([A-Z0-9][A-Z0-9\/-]{3,})/i);
-    if (after) put('certificate_number', after[1], 99);
-    const before = text.match(/\| ([A-Z]{2,4} ?\d{4,7}) \| certificate (?:no|nr|number)\b/i);
+    // "TRG 11897 | CERTIFICATE NO": NSN prints the date and the number on one
+    // baseline and their labels on the next, so the number sits one or two
+    // segments before its label. Tried FIRST, because there the label is
+    // followed by the next field's label ("CERTIFICATE NO | RANGE MASTER"),
+    // which the rule below would otherwise take for the number.
+    const before = text.match(/\| ([A-Z]{2,4} ?\d{4,7}) \|(?: [^|]{1,24} \|)? certificate (?:no|nr|number)\b/i);
     if (before) put('certificate_number', before[1], 99);
+    // "CERTIFICATE | NUMBER: | K/10358-K919835". A number has a digit in it;
+    // a bare word after the label is another label.
+    const after = text.match(/\bcertificate(?: \|)? (?:number|no|nr)\b\.?:?(?: \|)? ((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]{3,})/i);
+    if (after) put('certificate_number', after[1], 99);
     // Which side of the document this is. The statement names itself; a
     // provider's certificate is anything else that classified as a proficiency.
     details.document_side = /statement\s+of\s+results/i.test(text) ? 'back' : 'front';
@@ -596,11 +615,14 @@ export function extractDocument(
     const pair =
       ps.find((q) => /^date of issue/i.test(q.key)) ??
       ps.find((q) => /^date issued/i.test(q.key)) ??
+      // The 2014 statement dates each unit standard under "US Completed On".
+      ps.find((q) => /^us completed on/i.test(q.key)) ??
       ps.find((q) => /^date$/i.test(q.key));
     issuedOn =
       parseLooseDate(pair?.value) ??
       parseLooseDate(text.match(/(\d{1,2}\s+day\s+of\s+[A-Za-z]{3,9}(?: \|)? \d{4})/i)?.[1]) ??
-      parseLooseDate(text.match(/(\d{2}\/\d{2}\/\d{4}) \| DATE\b/i)?.[1]) ??
+      parseLooseDate(text.match(/(\d{2}\/\d{2}\/\d{4}) \|(?: [^|]{1,24} \|)? DATE\b/i)?.[1]) ??
+      parseLooseDate(text.match(/US Completed On(?: \|)?(?: [^|]{1,80} \|)* (\d{4}\/\d{2}\/\d{2})/i)?.[1]) ??
       parseLooseDate(text.match(/date of issue:?(?: \|)? (\d{4}\/\d{2}\/\d{2}|\d{2}\/\d{2}\/\d{4})/i)?.[1]);
   }
 

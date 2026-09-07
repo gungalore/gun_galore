@@ -291,6 +291,8 @@ function build(
     vaultAdoption as never,
     vaultConsent as never,
     shared,
+    // The decision ledger, silenced: these tests are about what the vault does, not what it writes down.
+    { note: () => undefined } as never,
   );
   const generation = new MotivationGenerationService(
     prisma as never,

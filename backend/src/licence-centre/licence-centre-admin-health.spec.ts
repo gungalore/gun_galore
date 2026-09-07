@@ -42,6 +42,8 @@ function makeService(groups: { kind: CredentialKind; count: number }[]) {
     stub,
     stub,
     stub,
+    // The decision ledger, silenced: these tests are about what the vault does, not what it writes down.
+    { note: () => undefined } as never,
   );
   return { service, calls };
 }
