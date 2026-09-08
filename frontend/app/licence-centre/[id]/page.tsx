@@ -829,17 +829,10 @@ export default function LicenceCentreSheetPage() {
               ⚠️ THE SAME `missing` LIST AS THE PILL, THE CHIP DOTS AND THE
               FOOTER — a fourth view of one number, not a fourth number. A fold
               that could hide a "Still needed" without saying so would be a
-              form lying about how much is left.
+              form lying about how much is left. SheetSection draws the pill;
+              this passes the number and nothing else.
             */
-            meta={
-              s.missing.length ? (
-                <span className="text-[var(--warning)]">
-                  {s.missing.length} still needed
-                </span>
-              ) : (
-                <span className="text-[var(--success)]">Done</span>
-              )
-            }
+            missingCount={s.missing.length}
           >
             {/*
               ⚠️ THE CONSENT AND OVERLAP CARDS ARE EMITTED FROM renderRows NOW,

@@ -405,3 +405,63 @@ describe('the residential address gets Google’s picker', () => {
     expect(screen.getByRole('textbox')).toBeDefined();
   });
 });
+
+describe('⚠️ the row stays open while the member types in it', () => {
+  // The page merges pending edits back over the server's values, so a keystroke
+  // changes `item.value`. The reset effect could not tell that apart from a
+  // document read moving the value underneath the editor — so every Change row
+  // shut on the first letter. Operator, 2026-09-08: "when I press the first
+  // letter to type it closes the type window and I have to click change again
+  // for every letter."
+  it('a Change row survives its own keystroke', async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SheetRow item={filled({ value: 'CZ' })} onChange={onChange} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }));
+    await userEvent.type(screen.getByRole('textbox'), 'X');
+
+    // What the page does next: merge the keystroke in and re-render.
+    rerender(<SheetRow item={filled({ value: 'CZX' })} onChange={onChange} />);
+    expect(screen.getByRole('textbox')).toBeDefined();
+  });
+
+  it('⚠️ A needs_you ROW DOES NOT COLLAPSE WHEN THE SAVE LANDS', async () => {
+    // That row is open because of its STATE, so the moment the debounced save
+    // came back and the state flipped to `filled`, the control collapsed into a
+    // value with a Change button — mid-word.
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SheetRow item={needsYou({ key: 'firearm_make' })} onChange={onChange} />,
+    );
+    await userEvent.type(screen.getByRole('textbox'), 'M');
+    rerender(
+      <SheetRow
+        item={filled({ key: 'firearm_make', value: 'M' })}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByRole('textbox')).toBeDefined();
+  });
+
+  it('still settles back once they press Done', async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SheetRow item={filled({ value: 'CZ' })} onChange={onChange} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }));
+    await userEvent.type(screen.getByRole('textbox'), 'X');
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    rerender(<SheetRow item={filled({ value: 'CZX' })} onChange={onChange} />);
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('a row nobody is editing is untouched by a value landing on it', () => {
+    const { rerender } = render(
+      <SheetRow item={filled({ value: 'CZ' })} onChange={vi.fn()} />,
+    );
+    rerender(<SheetRow item={filled({ value: 'MAUSER' })} onChange={vi.fn()} />);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByText('MAUSER')).toBeDefined();
+  });
+});

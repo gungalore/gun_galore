@@ -16,6 +16,7 @@ const base = {
   id: 'own',
   title: 'Firearms you own',
   blurb: 'What you already hold.',
+  missingCount: 0,
 };
 
 describe('SheetSection', () => {
@@ -25,7 +26,7 @@ describe('SheetSection', () => {
         {...base}
         open={false}
         onOpenChange={vi.fn()}
-        meta={<span>3 still needed</span>}
+        missingCount={3}
       >
         <input aria-label="Make" />
       </SheetSection>,
@@ -92,5 +93,55 @@ describe('SheetSection', () => {
       </SheetSection>,
     );
     expect(screen.getByRole('button').className).toContain('min-h-[44px]');
+  });
+});
+
+
+describe('the state pill', () => {
+  // ⚠️ ONE PILL VOCABULARY. It is the same shape, weight and tokens as the
+  // progress figure in the sticky strip; a second vocabulary on one screen is a
+  // second thing to learn. Operator, 2026-09-08: "Done should be in a green
+  // pill and x still needed in an amber pill."
+  it('reads Done in green when nothing is outstanding', () => {
+    render(
+      <SheetSection {...base} missingCount={0} open={false} onOpenChange={vi.fn()}>
+        <p>rows</p>
+      </SheetSection>,
+    );
+    const pill = screen.getByText('Done');
+    expect(pill.className).toContain('--success-wash');
+    expect(pill.className).toContain('rounded-full');
+  });
+
+  it('counts in amber when something is', () => {
+    render(
+      <SheetSection {...base} missingCount={4} open={false} onOpenChange={vi.fn()}>
+        <p>rows</p>
+      </SheetSection>,
+    );
+    const pill = screen.getByText('4 still needed');
+    expect(pill.className).toContain('--warning');
+    expect(pill.className).toContain('rounded-full');
+  });
+
+  it('⚠️ SAYS SO EVEN WHILE CLOSED, so a fold cannot hide outstanding work', () => {
+    render(
+      <SheetSection {...base} missingCount={2} open={false} onOpenChange={vi.fn()}>
+        <input aria-label="Make" />
+      </SheetSection>,
+    );
+    expect(screen.getByText('2 still needed')).toBeDefined();
+    expect(screen.queryByLabelText('Make')).toBeNull();
+  });
+
+  it('⚠️ NEVER MIXES var(--warning) WITH AN ALPHA BY CONCATENATION', () => {
+    // `var(--warning)18` is two tokens, not a colour, and it takes the whole
+    // declaration down with it. color-mix or nothing — CLAUDE.md's CSS traps.
+    render(
+      <SheetSection {...base} missingCount={1} open={false} onOpenChange={vi.fn()}>
+        <p>rows</p>
+      </SheetSection>,
+    );
+    expect(screen.getByText('1 still needed').className).toContain('color-mix');
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SheetItem } from './contract';
 import CardsRow from './cards-row';
 import { sourceLine } from './source-line';
@@ -245,11 +245,47 @@ export default function SheetRow({
    */
   const [editing, setEditing] = useState(false);
 
+  /**
+   * The member has typed in THIS row since it opened.
+   *
+   * ⚠️ WITHOUT THIS, THE ROW SHUT ITSELF ON THE FIRST LETTER. The page merges
+   * pending edits back over the server's values, so a keystroke changes
+   * `item.value` — and the effect below, written to close an editor when a
+   * document read moved the value underneath it, could not tell that apart from
+   * the member's own typing. Operator, 2026-09-08: "when I press the first
+   * letter to type it closes the type window and I have to click change again
+   * for every letter."
+   *
+   * ⚠️ AND IT KEEPS A `needs_you` ROW OPEN ONCE THE SAVE LANDS. That row is
+   * open because of its STATE, not because of `editing` — so the moment the
+   * debounced save came back and the state flipped to `filled`, the control
+   * collapsed into a value with a Change button, mid-word. Setting `editing` on
+   * the first keystroke is what carries it through that transition.
+   */
+  const touched = useRef(false);
+
   // A row that changes state under us — a document read landing, say — closes
   // its editor rather than sitting open over a value that has moved.
+  //
+  // ⚠️ NEVER WHILE THE MEMBER IS IN IT. A read that lands mid-sentence must not
+  // take the sentence with it; their text wins until they leave the row.
   useEffect(() => {
+    if (touched.current) return;
     setEditing(false);
   }, [item.state, item.value]);
+
+  /** Every edit from this row's control comes through here. */
+  const edit = (v: string) => {
+    touched.current = true;
+    setEditing(true);
+    onChange(v);
+  };
+
+  /** They are finished with the row: let it settle back to whatever it is now. */
+  const finished = () => {
+    touched.current = false;
+    setEditing(false);
+  };
 
   if (item.state === 'na') return null;
 
@@ -291,7 +327,7 @@ export default function SheetRow({
             </span>
           </div>
           <div className="mt-[6px]">
-            <Control item={item} value={item.value} onChange={onChange} />
+            <Control item={item} value={item.value} onChange={edit} />
           </div>
           {item.help && !editing && !helpIsInsideTheControl(item.kind) ? (
             <div className="mt-[5px] text-[12px] text-[var(--text-tertiary)]">
@@ -301,7 +337,7 @@ export default function SheetRow({
           {editing ? (
             <button
               type="button"
-              onClick={() => setEditing(false)}
+              onClick={finished}
               className="mt-1 min-h-[44px] rounded-[6px] px-2 text-[13px] font-medium text-[var(--red)] hover:underline"
             >
               Done

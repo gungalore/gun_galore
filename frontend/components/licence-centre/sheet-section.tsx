@@ -40,13 +40,18 @@ export interface SheetSectionProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
-   * The right-hand state on the header.
+   * How many required answers this section still owes.
    *
-   * ⚠️ A FOLD MUST NOT HIDE A "Still needed". The page passes this from the
-   * same `missing` list the progress pill, the chip dots and the footer read,
-   * so a closed section still says how much of it is outstanding.
+   * ⚠️ A NUMBER, NOT A RENDERED NODE. It was `meta?: React.ReactNode` and every
+   * caller built its own span, which is how two sections end up with two
+   * different ideas of what "done" looks like. The pill is drawn here, once,
+   * so every section's reads the same and lines up in the same place.
+   *
+   * ⚠️ AND A FOLD MUST NOT HIDE A "Still needed". This comes from the same
+   * `missing` list the progress pill, the chip dots and the footer read, so a
+   * closed section still says how much of it is outstanding.
    */
-  meta?: React.ReactNode;
+  missingCount: number;
   children: React.ReactNode;
 }
 
@@ -56,9 +61,10 @@ export default function SheetSection({
   blurb,
   open,
   onOpenChange,
-  meta,
+  missingCount,
   children,
 }: SheetSectionProps) {
+  const done = missingCount === 0;
   return (
     <section
       id={id}
@@ -96,11 +102,27 @@ export default function SheetSection({
               </span>
             ) : null}
           </span>
-          {meta ? (
-            <span className="flex-shrink-0 text-[11px] font-medium">
-              {meta}
-            </span>
-          ) : null}
+          {/*
+            ⚠️ THE SAME PILL AS THE PROGRESS FIGURE IN THE STRIP, deliberately.
+            Green for done, amber for outstanding, the same radius, the same
+            weight, the same tokens — a second pill vocabulary on one screen is
+            a second thing to learn. Operator, 2026-09-08: "Done should be in a
+            green pill and x still needed in an amber pill."
+
+            ⚠️ color-mix FOR THE AMBER, NEVER `var(--warning)` + AN ALPHA. That
+            concatenation is two tokens, not a colour, and it takes the whole
+            declaration down with it — see the CSS traps in CLAUDE.md. There is
+            no --warning-wash to reach for.
+          */}
+          <span
+            className={`flex min-h-[26px] flex-shrink-0 items-center whitespace-nowrap rounded-full border px-[11px] text-[12px] font-medium leading-none ${
+              done
+                ? 'border-[var(--success-line)] bg-[var(--success-wash)] text-[var(--success)]'
+                : 'border-[color-mix(in_srgb,var(--warning)_38%,transparent)] bg-[color-mix(in_srgb,var(--warning)_12%,transparent)] text-[var(--warning)]'
+            }`}
+          >
+            {done ? 'Done' : `${missingCount} still needed`}
+          </span>
         </button>
       </h2>
 
