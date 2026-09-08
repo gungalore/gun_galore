@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motivationsApi } from '@/lib/motivations-api';
 import type {
+  CredentialSlot,
   PreviewSection,
   SheetItem,
   SheetResponse,
@@ -19,11 +20,13 @@ import SheetFooter from '@/components/licence-centre/sheet-footer';
 import SheetToast from '@/components/licence-centre/sheet-toast';
 import ConsentCard from '@/components/licence-centre/consent-card';
 import CompetencyLines from '@/components/licence-centre/competency-lines';
+import CredentialPair from '@/components/licence-centre/credential-pair';
+import LibraryPicker from '@/components/library-picker';
 import PackSummary from '@/components/licence-centre/pack-summary';
 import PreviewPanel from '@/components/licence-centre/preview-panel';
 import AddPanel from '@/components/licence-centre/add-panel';
 import DeleteApplication from '@/components/licence-pack/delete-application';
-import type { PickableKind } from '@/lib/motivations-api';
+import type { LibraryItem, PickableKind } from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
 // THE REVIEW SHEET — one scrolling page per application.
@@ -169,6 +172,21 @@ export default function LicenceCentreSheetPage() {
 
   /** A save into the Document Centre is in flight. */
   const [keeping, setKeeping] = useState(false);
+
+  /**
+   * The competency/proficiency reuse picker: which slot asked, and the list.
+   *
+   * ⚠️ FETCHED ON THE TAP, NOT WITH THE SHEET. The sheet carries a COUNT of
+   * what the Document Centre holds — enough to decide whether the door is
+   * worth drawing — and `GET :id/library` is the list, with the two-page
+   * proficiency fold and the across-applications consent already applied.
+   * Loading it on every sheet read would pay for machinery most members never
+   * open.
+   */
+  const [pickerKind, setPickerKind] = useState<CredentialSlot['kind'] | null>(
+    null,
+  );
+  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
 
   /**
    * ⚠️ THE ANSWERS THE SERVER LAST CONFIRMED, HELD SEPARATELY FROM THE SHEET.
@@ -520,27 +538,6 @@ export default function LicenceCentreSheetPage() {
   const renderRows = (sectionId: string) => {
     const mine = items.filter((i) => i.section === sectionId);
 
-    // ⚠️ COMPETENCY IS LINES, NOT ROWS, WHEN THE VAULT HAS IT. See
-    // CompetencyLines: the screen this replaces showed two scanner blocks, two
-    // reuse dropdowns listing nine credentials, and a warning about
-    // unreadable proficiency codes — all true, none of it the member's
-    // business. The upload door only appears when we hold nothing.
-    if (sectionId === 'competency') {
-      const known = mine.filter(
-        (i) => i.state === 'filled' || i.state === 'suggested',
-      );
-      if (known.length) {
-        return (
-          <CompetencyLines
-            items={mine}
-            covered={!mine.some((i) => i.state === 'needs_you' && i.required)}
-            onAdd={() => setAdding(true)}
-            onChange={onChange}
-          />
-        );
-      }
-    }
-
     // ⚠️ "Your pack" HAS NO REGISTRY FIELDS — it is the 271's completeness and
     // the take-to-SAPS list, both computed on the server.
     if (sectionId === 'pack') {
@@ -609,6 +606,101 @@ export default function LicenceCentreSheetPage() {
         }
       />
     );
+
+    /*
+      ⚠️ COMPETENCY IS LINES, NOT ROWS, WHEN THE VAULT HAS IT. See
+      CompetencyLines: the screen this replaces showed two scanner blocks, two
+      reuse dropdowns listing nine credentials, and a warning about unreadable
+      proficiency codes — all true, none of it the member's business.
+
+      ⚠️ AND THE DOCUMENTS SIT UNDER THE ANSWERS, NOT INSTEAD OF THEM. What we
+      read OFF the certificate is one thing; whether the certificate and its
+      statement of results are actually in the pack is another, and the section
+      showed only the first — so a member who had never uploaded a statement of
+      results saw a section that looked finished. CredentialPair renders in
+      BOTH states, which is the half that was missing: it was previously
+      reachable only through CompetencyLines' `onAdd`, and only when the vault
+      held nothing at all.
+    */
+    if (sectionId === 'competency') {
+      const known = mine.filter(
+        (i) => i.state === 'filled' || i.state === 'suggested',
+      );
+      return (
+        <>
+          {known.length ? (
+            <CompetencyLines
+              items={mine}
+              covered={!mine.some((i) => i.state === 'needs_you' && i.required)}
+              onAdd={() => setAdding(true)}
+              onChange={onChange}
+            />
+          ) : (
+            visible.map(row)
+          )}
+          <CredentialPair
+            credentials={sheet.credentials}
+            onScan={() => {
+              setAutoScan(true);
+              setAdding(true);
+            }}
+            onUpload={async (files) => {
+              setBusy(true);
+              try {
+                for (const f of files) await onAddFile('', f);
+                await load();
+                setToast(
+                  files.length === 1
+                    ? 'Added one document.'
+                    : `Added ${files.length} documents.`,
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
+            onAddFromCentre={async (kind) => {
+              /* A second tap on the same door closes it. */
+              if (pickerKind === kind) {
+                setPickerKind(null);
+                return;
+              }
+              setPickerKind(kind);
+              try {
+                const r = await motivationsApi.library(getToken, id);
+                setLibraryItems(r.items);
+              } catch {
+                setLibraryItems([]);
+                setToast('We could not read your Licence Centre just now.');
+              }
+            }}
+            picker={
+              pickerKind
+                ? {
+                    kind: pickerKind,
+                    node: (
+                      <LibraryPicker
+                        items={libraryItems.filter((i) => i.kind === pickerKind)}
+                        onPick={async (item, placeConfirmed) => {
+                          await motivationsApi.addFromLibrary(
+                            getToken,
+                            id,
+                            item.source,
+                            item.sourceId,
+                            placeConfirmed,
+                          );
+                          setPickerKind(null);
+                          await load();
+                          setToast(`Added ${item.title} to this application.`);
+                        }}
+                      />
+                    ),
+                  }
+                : null
+            }
+          />
+        </>
+      );
+    }
 
     // ⚠️ THE LICENCE CARD'S COMPONENT ROWS FOLD, AND NOBODY TYPES THEM. Barrel,
     // frame and receiver each carry a serial and a make on the SAPS 271 because
@@ -828,21 +920,23 @@ export default function LicenceCentreSheetPage() {
   return (
     <>
       {/*
-        ⚠️ THE TWO-COLUMN GRID EXISTS ONLY WHILE THE PREVIEW IS OPEN, and the
-        sheet centres itself the rest of the time. This shipped as `lg:mx-0` on
-        `main` with no grid parent anywhere — SPEC-BUILD §3's "1280 content
-        column, grid 760px | 1fr, gap 40" was never built, and `.gg-shell-pane`
-        measures 0 wide — so on a wide screen the whole sheet sat pinned to the
-        left edge. Measured live at a 2133px viewport: main 760px at x=0, with
-        1,373px of empty white beside it.
+        ⚠️ THE TWO-COLUMN GRID IS THE PAGE ON A WIDE SCREEN, NOT A MODE IT CAN
+        BE PUT INTO. SPEC-BUILD §3 — "1280 content column, grid 760px | 1fr,
+        gap 40" — and the operator's own mockup both show the sheet on the left
+        and "What your motivation will say" beside it, always. It shipped as
+        `lg:mx-0` on `main` with no grid parent anywhere, so on a wide screen
+        the sheet sat pinned to the left edge with 1,373px of empty white beside
+        it; then as a grid that only existed while a toggle was on, which put
+        the live preview behind a button most members never pressed. Operator,
+        2026-09-08: "I see we don't have the live example generate on the left,
+        lets build it."
+
+        ⚠️ AND `previewOpen` NOW MEANS THE PHONE DRAWER ONLY. There is no room
+        for a second column at 390px, so the toggle and the bottom sheet stay —
+        they simply have nothing to do at `lg`, where the panel is already on
+        screen.
       */}
-      <div
-        className={
-          previewOpen
-            ? 'lg:mx-auto lg:grid lg:max-w-[1280px] lg:grid-cols-[760px_minmax(0,1fr)] lg:items-start lg:gap-10'
-            : ''
-        }
-      >
+      <div className="lg:mx-auto lg:grid lg:max-w-[1280px] lg:grid-cols-[minmax(0,760px)_minmax(0,1fr)] lg:items-start lg:gap-10">
       <main className="mx-auto w-full max-w-[760px] pb-4">
         <SheetHeader
           reference={sheet.application.referenceNumber}
@@ -987,19 +1081,31 @@ export default function LicenceCentreSheetPage() {
         </div>
       </main>
 
-      {/* Desktop: the preview is docked and sticky. Phone: a bottom sheet. */}
+      {/*
+        ⚠️ TWO MOUNTS, NOT ONE THAT CHANGES SHAPE. A single element that is a
+        fixed bottom sheet on a phone and a sticky grid child at `lg` has to
+        drop `position: fixed` at the breakpoint, and a `fixed` ancestor is
+        exactly what stops `position: sticky` sticking — so the docked column
+        scrolled away with the page. They are separate elements with separate
+        lifetimes: the phone drawer exists only while `previewOpen`, and the
+        desktop column is simply part of the page.
+      */}
       {previewOpen ? (
         <>
           <div
             className="fixed inset-0 z-[5] bg-[rgba(26,22,19,0.32)] lg:hidden"
             onClick={() => setPreviewOpen(false)}
           />
-          <aside className="fixed inset-x-0 bottom-0 z-[5] max-h-[640px] overflow-y-auto rounded-t-[var(--r-lg)] border-t border-[var(--border)] bg-[var(--bg-card)] lg:sticky lg:top-5 lg:z-0 lg:max-h-[calc(100vh-6rem)] lg:rounded-[var(--r-lg)] lg:border">
-            <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-[var(--border)] lg:hidden" />
+          <aside className="fixed inset-x-0 bottom-0 z-[5] max-h-[640px] overflow-y-auto rounded-t-[var(--r-lg)] border-t border-[var(--border)] bg-[var(--bg-card)] lg:hidden">
+            <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-[var(--border)]" />
             <PreviewPanel preview={sheet.preview as PreviewSection[]} />
           </aside>
         </>
       ) : null}
+
+      <aside className="sticky top-5 hidden max-h-[calc(100vh-4rem)] overflow-y-auto rounded-[var(--r-lg)] border border-[var(--border)] bg-[var(--bg-card)] lg:block">
+        <PreviewPanel preview={sheet.preview as PreviewSection[]} />
+      </aside>
       </div>
 
       <SheetToast message={toast} onDismiss={() => setToast(null)} />

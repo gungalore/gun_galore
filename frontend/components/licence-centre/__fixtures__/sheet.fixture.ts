@@ -144,6 +144,28 @@ export const sheet = (over: Partial<SheetResponse> = {}): SheetResponse => ({
     },
   ],
   needs: { needs: [] },
+  // The competency/proficiency pair, empty — a first-time applicant holds
+  // neither, which is the state the section has to render correctly before any
+  // other. Specs that care override it.
+  credentials: {
+    neededLabel: 'Handgun',
+    competency: {
+      kind: 'COMPETENCY_CERTIFICATE',
+      label: 'SAPS competency certificate',
+      blurb: 'The certificate SAPS issued you.',
+      held: [],
+      inCentre: 0,
+    },
+    proficiency: {
+      kind: 'PROFICIENCY_CERTIFICATE',
+      label: 'Proficiency — statement of results',
+      blurb: 'The training provider’s statement of results.',
+      held: [],
+      inCentre: 0,
+    },
+    knowledge: { state: 'CONFIRMED', alert: null },
+    pairNote: null,
+  },
   coverage: {},
   overlap: { verdict: { kind: 'clear' }, prompt: null, suggestedAngle: null },
   preview: [],

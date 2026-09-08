@@ -43,6 +43,10 @@ function build(
     uploads?: { id: string; kind: string; mimeType: string; extractionOk: boolean }[];
     licenceType?: MotivationLicenceType;
     seller?: { status: string; invitedName?: string } | null;
+    /** Document Centre rows, for the competency/proficiency pair. */
+    credentials?: { id: string; kind: string; otherSideId: string | null }[];
+    /** Statements of results, for the 117705 read. */
+    statements?: { ocrTextEncrypted: string | null }[];
   } = {},
 ) {
   const prisma = {
@@ -81,6 +85,17 @@ function build(
             }
           : null,
       ),
+    },
+    // The Document Centre, for the competency/proficiency pair. Default empty:
+    // a first-time applicant holds nothing, which is the state the section has
+    // to render correctly before any other.
+    credential: {
+      findMany: jest.fn(async (): Promise<any> => opts.credentials ?? []),
+    },
+    // Every proficiency statement this member has ever handed in, for the
+    // 117705 read. See MotivationSharedService.proficiencyFor.
+    motivationUpload: {
+      findMany: jest.fn(async (): Promise<any> => opts.statements ?? []),
     },
   };
   const shared = new MotivationSharedService(prisma as never);
@@ -434,5 +449,79 @@ describe('the seller half reaches the sheet', () => {
     const { svc } = build({ firearm_source: 'From a dealer' });
     const sheet = await svc.sheetFor('clerk_1', 'mo-1');
     expect(sections(sheet.coverage).find((x) => x.id === 'F')).toBeUndefined();
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE COMPETENCY/PROFICIENCY PAIR.
+//
+// The pure rules live in motivation-credential-slots.spec.ts. What is asserted
+// here is the half that only the service can get wrong: which Document Centre
+// rows count as ONE document, and what "already on this application" removes
+// from the offer.
+// ────────────────────────────────────────────────────────────────────
+describe('the Document Centre count behind the pair', () => {
+  const handgun = { firearm_type: 'Handgun', firearm_action: 'Semi-automatic' };
+
+  it('⚠️ A TWO-PAGE PROFICIENCY IS ONE DOCUMENT, NOT TWO', async () => {
+    // Operator, 2026-09-07: "the proficiencies are still double in that
+    // dropdown." The certificate and its statement of results are two
+    // Credential rows joined by otherSideId and one thing to attach; counting
+    // rows offers "2 in your Licence Centre" over a list showing one.
+    const { svc } = build(handgun, {
+      credentials: [
+        { id: 'c-a', kind: 'PROFICIENCY', otherSideId: 'c-b' },
+        { id: 'c-b', kind: 'PROFICIENCY', otherSideId: 'c-a' },
+      ],
+    });
+    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    expect(sheet.credentials.proficiency.inCentre).toBe(1);
+  });
+
+  it('⚠️ BUT A LONE FOLLOWER STILL COUNTS — its lead was deleted, it is still a document', async () => {
+    const { svc } = build(handgun, {
+      credentials: [{ id: 'c-b', kind: 'PROFICIENCY', otherSideId: 'c-a' }],
+    });
+    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    expect(sheet.credentials.proficiency.inCentre).toBe(1);
+  });
+
+  it('⚠️ DOES NOT OFFER WHAT IS ALREADY ATTACHED HERE', async () => {
+    const { svc } = build(handgun, {
+      credentials: [
+        { id: 'c-1', kind: 'COMPETENCY_CERTIFICATE', otherSideId: null },
+      ],
+      uploads: [
+        {
+          id: 'u-1',
+          kind: 'COMPETENCY_CERTIFICATE',
+          mimeType: 'image/jpeg',
+          extractionOk: true,
+          sourceCredentialId: 'c-1',
+        } as never,
+      ],
+    });
+    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    expect(sheet.credentials.competency.inCentre).toBe(0);
+    expect(sheet.credentials.competency.held).toHaveLength(1);
+    expect(sheet.credentials.competency.held[0].origin).toBe('vault');
+  });
+
+  it('asks for the statement of results when only the certificate is here', async () => {
+    const { svc } = build(handgun, {
+      uploads: [
+        {
+          id: 'u-1',
+          kind: 'COMPETENCY_CERTIFICATE',
+          mimeType: 'image/jpeg',
+          extractionOk: true,
+          sourceCredentialId: null,
+        } as never,
+      ],
+    });
+    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    expect(sheet.credentials.neededLabel).toBe('Handgun');
+    expect(sheet.credentials.pairNote).toContain('statement of results');
+    expect(sheet.credentials.competency.held[0].origin).toBe('member');
   });
 });

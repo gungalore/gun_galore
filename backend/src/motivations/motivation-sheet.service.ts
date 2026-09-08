@@ -23,6 +23,11 @@ import {
 import { ServedField, expandFields } from './motivation-field-options';
 import { UPLOAD_KIND_LABELS, buildAnnexures } from './motivation-checklist';
 import { documentStatus } from './motivation-documents';
+import { requiredEndorsement } from './motivation-eligibility';
+import {
+  credentialSlots,
+  type SheetCredentials,
+} from './motivation-credential-slots';
 import { overlapFromAnswers } from './motivation-overlap';
 import { saps271Coverage } from './saps271-coverage';
 import { previewFor, type PreviewSection } from './motivation-preview';
@@ -131,6 +136,17 @@ export interface SheetResponse {
    * appearance of a first-timer, not an error state.
    */
   needs: ReturnType<typeof documentStatus>;
+  /**
+   * The competency and its proficiency, as one pair.
+   *
+   * ⚠️ ITS OWN BLOCK BECAUSE THE PAIR IS NOT A FIELD. The registry carries
+   * four competency ANSWERS — number, covers, issued, expiry — and no
+   * question at all about the two DOCUMENTS behind them, so a member who had
+   * never uploaded a statement of results saw a section that looked finished.
+   * Operator, 2026-09-08: "the proficiency needs to be added with the
+   * competency from the same catogory. One can't be without the other."
+   */
+  credentials: SheetCredentials;
   coverage: ReturnType<typeof saps271Coverage>;
   overlap: ReturnType<typeof overlapFromAnswers>;
   preview: PreviewSection[];
@@ -251,7 +267,12 @@ const SECTIONS: { id: string; title: string; blurb: string }[] = [
   },
   {
     id: 'competency',
-    title: 'Competency',
+    // ⚠️ THE WORD "PROFICIENCY" IS IN THE TITLE ON PURPOSE. The section
+    // carried four competency ANSWERS and never named the statement of results
+    // behind them, so the operator asked for a proficiency section three times
+    // while looking straight at the section it belongs in. The chip strip
+    // scrolls; a longer chip costs nothing.
+    title: 'Competency and proficiency',
     // ⚠️ TRUE IN BOTH STATES. It read "there is usually nothing to do here"
     // above a row marked "Still needed", which is the page arguing with
     // itself. This says what we do without promising what is left.
@@ -346,6 +367,85 @@ export class MotivationSheetService {
     }
     if (!answerValue(answers[field.key] ?? '').trim()) return 'needs_you';
     return provenance[field.key]?.inferred ? 'suggested' : 'filled';
+  }
+
+  /**
+   * The competency/proficiency pair, and what the Document Centre could add.
+   *
+   * ⚠️ A COUNT, NOT A LIST. `GET :id/library` is the list, and it folds a
+   * two-page proficiency into one entry, hides what is already attached and
+   * respects the across-applications consent. Rebuilding any of that here
+   * would be a second implementation of the machinery whose absence produced
+   * the operator's "the proficiencies are still double in that dropdown". All
+   * this decides is whether the door is worth showing.
+   *
+   * ⚠️ AND THE FOLD IS WHY THE COUNT IS NOT `prisma.count()`. A proficiency
+   * certificate and its statement of results are TWO Credential rows joined
+   * by `otherSideId` and ONE document; counting rows would offer a member with
+   * one proficiency "2 in your Licence Centre" and then show them one entry.
+   */
+  private async credentialsFor(
+    userId: string,
+    answers: Record<string, string>,
+    ctx: {
+      uploads: {
+        kind: string;
+        extractionOk: boolean | null;
+        sourceCredentialId: string | null;
+      }[];
+      letterFor: (kind: string) => string | null;
+    },
+  ): Promise<SheetCredentials> {
+    const [rows, knowledge] = await Promise.all([
+      this.prisma.credential.findMany({
+        where: {
+          userId,
+          purgedAt: null,
+          kind: { in: ['COMPETENCY_CERTIFICATE', 'PROFICIENCY'] },
+        },
+        select: { id: true, kind: true, otherSideId: true },
+      }),
+      this.shared.proficiencyFor(userId),
+    ]);
+
+    // What is already on this application, so the Centre count is what is
+    // LEFT to add rather than what exists.
+    const here = new Set(
+      ctx.uploads
+        .map((u) => u.sourceCredentialId)
+        .filter((v): v is string => !!v),
+    );
+
+    const countFor = (kind: 'COMPETENCY_CERTIFICATE' | 'PROFICIENCY') => {
+      const mine = rows.filter((r) => r.kind === kind && !here.has(r.id));
+      const ids = new Set(mine.map((r) => r.id));
+      let n = 0;
+      for (const r of mine) {
+        // Only the page whose id sorts first counts, and only when its
+        // partner is present — a lone follower whose lead was deleted is
+        // still a document the member can attach.
+        if (r.otherSideId && ids.has(r.otherSideId) && r.otherSideId < r.id) {
+          continue;
+        }
+        n++;
+      }
+      return n;
+    };
+
+    return credentialSlots({
+      needed: requiredEndorsement(answers),
+      attached: ctx.uploads.map((u) => ({
+        kind: u.kind,
+        letter: ctx.letterFor(u.kind),
+        origin: u.sourceCredentialId ? ('vault' as const) : ('member' as const),
+        unread: !u.extractionOk,
+      })),
+      inCentre: {
+        COMPETENCY_CERTIFICATE: countFor('COMPETENCY_CERTIFICATE'),
+        PROFICIENCY_CERTIFICATE: countFor('PROFICIENCY'),
+      },
+      knowledge: { state: knowledge.state, alert: knowledge.alert },
+    });
   }
 
   async sheetFor(clerkId: string, id: string): Promise<SheetResponse> {
@@ -454,6 +554,11 @@ export class MotivationSheetService {
     const annexures = buildAnnexures((row.uploads ?? []).map((u) => u.kind));
     const byKind = new Map(annexures.map((a) => [a.kind, a.letter]));
 
+    const credentials = await this.credentialsFor(user.id, answers, {
+      uploads: row.uploads ?? [],
+      letterFor: (kind: string) => byKind.get(kind as never) ?? null,
+    });
+
     return {
       application: {
         id: row.id,
@@ -502,6 +607,7 @@ export class MotivationSheetService {
         (row.uploads ?? []).map((u) => u.kind),
         answers,
       ),
+      credentials,
       // ⚠️ WITH THE SELLER, WHICH THIS SHIPPED WITHOUT. saps271Coverage only
       // pushes section F when it is TOLD where the seller's half stands, so
       // with no context the sheet had no F row at all: the pack meter showed

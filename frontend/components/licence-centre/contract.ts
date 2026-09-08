@@ -154,6 +154,53 @@ export interface SheetDocument {
   origin: 'vault' | 'member';
 }
 
+/**
+ * One page of a competency or proficiency, already on this application.
+ *
+ * ⚠️ MIRRORS backend/src/motivations/motivation-credential-slots.ts. Same rule
+ * as everything else here: the server owns the shape.
+ */
+export interface CredentialHeld {
+  letter: string | null;
+  origin: 'vault' | 'member';
+  /** We could not read it. Gold, never red — the same rule as SheetDocument. */
+  unread: boolean;
+}
+
+export interface CredentialSlot {
+  kind: 'COMPETENCY_CERTIFICATE' | 'PROFICIENCY_CERTIFICATE';
+  label: string;
+  blurb: string;
+  held: CredentialHeld[];
+  /**
+   * How many documents of this kind the Document Centre holds that are not
+   * already here.
+   *
+   * ⚠️ A COUNT, NOT A LIST, AND THE LIST IS A SEPARATE FETCH. `GET :id/library`
+   * folds a two-page proficiency into one entry and respects the
+   * across-applications consent; this only decides whether the door is worth
+   * drawing.
+   */
+  inCentre: number;
+}
+
+/**
+ * The competency and its proficiency, as one pair.
+ *
+ * Operator, 2026-09-08: "the proficiency needs to be added with the competency
+ * from the same catogory. One can’t be without the other."
+ */
+export interface SheetCredentials {
+  /** "Handgun" — the class this application needs, or null. */
+  neededLabel: string | null;
+  competency: CredentialSlot;
+  proficiency: CredentialSlot;
+  /** Unit standard 117705, across everything the member has ever given us. */
+  knowledge: { state: 'CONFIRMED' | 'MISSING' | 'UNREAD'; alert: string | null };
+  /** One sentence when one half is here and the other is not. */
+  pairNote: string | null;
+}
+
 /** One section of the live preview. See backend motivation-preview.ts. */
 export interface PreviewSection {
   id: string;
@@ -187,6 +234,7 @@ export interface SheetResponse {
   needs: {
     needs: { kind: string; label: string; tier: string; why: string; have: boolean }[];
   };
+  credentials: SheetCredentials;
   coverage: unknown;
   overlap: {
     verdict: { kind: string; withCalibres?: string[]; withTypes?: string[] };

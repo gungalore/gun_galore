@@ -120,11 +120,17 @@ export default function SheetHeader({
             </a>
           ))}
         </div>
+        {/*
+          ⚠️ THE PHONE'S CONTROL ONLY. At `lg` the preview is a docked column
+          that is always on screen, so a toggle there would either do nothing
+          or take away the thing it names. There is no room for a second column
+          at 390px, which is what the drawer is for.
+        */}
         <button
           type="button"
           onClick={onTogglePreview}
           aria-pressed={previewOpen}
-          className={`inline-flex h-[30px] flex-shrink-0 items-center gap-[5px] rounded-[var(--r-sm)] border px-[10px] text-[12px] ${
+          className={`inline-flex h-[30px] flex-shrink-0 items-center gap-[5px] rounded-[var(--r-sm)] border px-[10px] text-[12px] lg:hidden ${
             previewOpen
               ? 'border-[var(--red)] bg-[var(--red-wash)] font-medium text-[var(--text-primary)]'
               : 'border-[var(--border)] bg-[var(--bg)] text-[var(--text-secondary)]'
