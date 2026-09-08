@@ -408,6 +408,48 @@ rule working as designed: renaming a manufacturer is the failure, leaving one
 shouty is merely untidy. A calibre normaliser is a separate job from a
 case-fixer and would want the Bench's cartridge aliases behind it.
 
+### The section it invented — 2026-09-08, `aa5d159b`
+
+Operator, reading his own generated motivation: **"Howa in 6.5mm Creedmoor is
+section 15."** The paragraph said "all licensed under section 16".
+
+⚠️ **THE ARSENAL CARRIED NO SECTIONS AT ALL.** It has always been make, model,
+calibre, type, serial and expiry — and rule 11, as written that morning, told
+the model to name "the section it is licensed under" for every held firearm. It
+did the only thing left and took the section of the APPLICATION. That is rule
+12's own crime, asserting a fact nobody supplied, written into the prompt by
+hand.
+
+**The vault has always known.** `section` is in `WANTED.FIREARM_LICENCE` and has
+been read off every licence card scanned since the Licence Centre shipped;
+nothing had ever joined it to the owned-firearm rows.
+`owned-firearm-sections.ts` does — **by SERIAL and never by make-and-calibre**,
+because two of a battery can share both and picking the wrong one writes the
+wrong section. A card placeholder ("NONE") is not a serial. Two cards
+disagreeing about one serial means one was misread, so the row gets nothing.
+
+Three guards, because absent must stay absent:
+
+1. The prompt forbids taking a section from the application, from the other
+   firearms, or as a blanket "all licensed under section N".
+2. The validator refuses a section number no card and no application carries.
+3. ⚠️ **NAMING THE RIGHT NUMBER IS NOT THE SAME AS BEING ENTITLED TO NAME IT.**
+   "all licensed under section 16" passes (2) whenever the application IS a
+   section 16 — the operator's exact sentence. So with no card section
+   supplied, the paragraph may mention a section ONCE: the closing statutory
+   line. It relaxes on its own the moment a card supplies one, which is the
+   correct shape — the constraint is about what we do not know.
+
+**Verified live.** The regeneration reads:
+
+> I hold a Mauser in .30-06 Springfield and a Nordiske Precision in 223 REM
+> under section 16, a Marlin in .45-70 Government, a Howa in 6.5mm Creedmoor
+> under section 15, and a CZ in 6.35mm Browning under section 16.
+
+Per-firearm, off the cards. ⚠️ **And the Marlin carries NO section, which is the
+feature working** — its card did not match by serial, so nothing is claimed
+about it.
+
 ### ⚠️ What the corpus asks for that is NOT built
 
 `exercise_eligibility` is available and **unfed**. The prompt tells the model to
