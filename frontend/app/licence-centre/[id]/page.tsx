@@ -235,6 +235,7 @@ export default function LicenceCentreSheetPage() {
   const [areas, setAreas] = useState<{
     station: string | null;
     withinKm: number;
+    answered: boolean;
     areas: DangerArea[];
   } | null>(null);
   const [savingAreas, setSavingAreas] = useState(false);
@@ -1023,6 +1024,7 @@ export default function LicenceCentreSheetPage() {
             areas={areas.areas}
             station={areas.station}
             withinKm={areas.withinKm}
+            answered={areas.answered}
             busy={savingAreas}
             onSave={async (ticked) => {
               setSavingAreas(true);

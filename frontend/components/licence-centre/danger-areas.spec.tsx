@@ -31,13 +31,18 @@ const area = (over: Partial<DangerArea> = {}): DangerArea => ({
   ...over,
 });
 
-function mount(areas: DangerArea[], station: string | null = 'Kraaifontein') {
+function mount(
+  areas: DangerArea[],
+  station: string | null = 'Kraaifontein',
+  answered = false,
+) {
   const onSave = vi.fn();
   render(
     <DangerAreas
       areas={areas}
       station={station}
       withinKm={50}
+      answered={answered}
       onSave={onSave}
     />,
   );
@@ -68,6 +73,31 @@ describe('the list', () => {
   it('marks an area on the route once it is', () => {
     mount([area({ onRoute: true })]);
     expect(screen.getByText('on your route')).toBeTruthy();
+  });
+});
+
+describe('the commute pre-tick', () => {
+  it('⚠️ PRE-TICKS AN AREA ON THE ROUTE, BEFORE THEY HAVE ANSWERED', () => {
+    // Operator: "think we should auto generate the dangerous areas with the
+    // routes." Maps says they drive through it, so the tick is our answer
+    // until they give one.
+    mount([area({ onRoute: true })], 'Kraaifontein', false);
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('⚠️ AND STOPS THE MOMENT THEY HAVE ANSWERED, or it undoes their decision', () => {
+    // A member who UNTICKS an on-route area has said something: Maps drew a
+    // road they do not take. `onRoute` is still true on the next load, so
+    // without this the tick would come back for ever — the same failure as
+    // "why can't I delete the proof of address?", arriving as a helpful
+    // default.
+    mount([area({ onRoute: true, ticked: false })], 'Kraaifontein', true);
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('leaves an area off the route alone either way', () => {
+    mount([area({ onRoute: false })], 'Kraaifontein', false);
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
   });
 });
 

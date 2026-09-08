@@ -109,6 +109,48 @@ export const TOO_BROAD = new Set(
   ].map((s) => s),
 );
 
+/**
+ * Single sites, which are destinations rather than areas.
+ *
+ * ⚠️ THE OPERATOR READ "Pepper Club Hotel" OFF THE LIVE LIST. "Do you travel
+ * through Pepper Club Hotel regularly" is not a question anybody can answer:
+ * a hotel is one building, and the place extractor picked it up because it is
+ * a proper noun in a crime report.
+ *
+ * ⚠️ A MALL IS DELIBERATELY NOT ON THIS LIST. A shopping centre car park is
+ * exactly where a hijacking happens, and it is somewhere a member genuinely
+ * goes every week — dropping it would lose real evidence to tidy up a list.
+ * The test is "is this one building", not "is this a business".
+ *
+ * ⚠️ NOR IS "Station". Bellville Station and Cape Town Station are places
+ * people travel through daily, and the word is far too load-bearing in South
+ * African place names to spend on this.
+ */
+const VENUE_WORDS = [
+  'HOTEL',
+  'LODGE',
+  'GUESTHOUSE',
+  'GUEST HOUSE',
+  'RESTAURANT',
+  'CASINO',
+  'STADIUM',
+  'CHURCH',
+  'MOSQUE',
+  'PRISON',
+  'AIRPORT',
+  'HOSPITAL',
+  'CLINIC',
+  'SCHOOL',
+  'UNIVERSITY',
+  'COLLEGE',
+  'TAVERN',
+];
+
+/** Is this one building rather than somewhere you drive through? */
+export function isVenue(key: string): boolean {
+  return VENUE_WORDS.some((w) => key === w || key.endsWith(` ${w}`) || key.includes(`${w} `));
+}
+
 /** How many areas a member is asked to read. */
 export const MAX_AREAS = 12;
 
@@ -155,7 +197,7 @@ export function dangerAreas(
   for (const inc of ordered) {
     for (const place of inc.places ?? []) {
       const key = areaKey(place);
-      if (!key || key.length < 3 || TOO_BROAD.has(key)) continue;
+      if (!key || key.length < 3 || TOO_BROAD.has(key) || isVenue(key)) continue;
 
       let area = byKey.get(key);
       if (!area) {

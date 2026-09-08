@@ -5,6 +5,7 @@ import {
   areaKey,
   clippingIdsFor,
   dangerAreas,
+  isVenue,
   parseTravelledAreas,
 } from './motivation-danger-areas';
 
@@ -224,5 +225,42 @@ describe('which clippings the ticks buy', () => {
   it('stops when the areas run out, without looping', () => {
     const out = clippingIdsFor(areas, [{ key: 'CHARLIE' }], 8);
     expect(out).toEqual(['c1']);
+  });
+});
+
+describe('a venue is a destination, not an area', () => {
+  it('⚠️ DROPS "Pepper Club Hotel", which the operator read off the live list', () => {
+    // "Do you travel through Pepper Club Hotel regularly" is not a question
+    // anybody can answer. A hotel is one building; the place extractor picked
+    // it up because it is a proper noun in a crime report.
+    const out = dangerAreas([
+      inc({ places: ['Pepper Club Hotel', 'Loop Street'] }),
+    ]);
+    expect(out.map((a) => a.name)).toEqual(['Loop Street']);
+  });
+
+  it('⚠️ BUT KEEPS A SHOPPING CENTRE, and that is deliberate', () => {
+    // A mall car park is exactly where a hijacking happens and somewhere a
+    // member genuinely goes every week. Dropping it would lose real evidence
+    // to tidy up a list. The test is "is this one building", not "is this a
+    // business".
+    const out = dangerAreas([
+      inc({ places: ['Tygervalley Centre', 'Canal Walk Mall'] }),
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  it('⚠️ AND KEEPS "Station", which is load-bearing in SA place names', () => {
+    // Bellville Station is somewhere people travel through daily.
+    expect(dangerAreas([inc({ places: ['Bellville Station'] })])).toHaveLength(1);
+  });
+
+  it('matches the word, not a fragment of another one', () => {
+    expect(isVenue('SCHOOL')).toBe(true);
+    expect(isVenue('MUIZENBERG HIGH SCHOOL')).toBe(true);
+    expect(isVenue('SCHOOL ROAD')).toBe(true);
+    // Not a venue: the word is inside another word, not a word of its own.
+    expect(isVenue('SCHOONGEZICHT')).toBe(false);
+    expect(isVenue('CLINICVILLE')).toBe(false);
   });
 });

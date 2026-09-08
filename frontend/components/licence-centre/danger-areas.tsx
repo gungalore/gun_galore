@@ -34,6 +34,15 @@ export interface DangerAreasProps {
   /** The applicant's own station, for the empty state's wording. */
   station: string | null;
   withinKm: number;
+  /**
+   * Has the member ever answered this question?
+   *
+   * ⚠️ IT IS WHAT STOPS THE COMMUTE UNDOING A DECISION. An area on the route
+   * is pre-ticked, and a member who deliberately UNTICKS one has said
+   * something — Maps drew a road they do not take. Without this the next load
+   * would tick it again, for ever, because `onRoute` is still true.
+   */
+  answered: boolean;
   busy?: boolean;
   onSave: (ticked: { key: string; reason?: string }[]) => void;
 }
@@ -52,6 +61,7 @@ export default function DangerAreas({
   areas,
   station,
   withinKm,
+  answered,
   busy,
   onSave,
 }: DangerAreasProps) {
@@ -63,7 +73,12 @@ export default function DangerAreas({
    */
   const [ticks, setTicks] = useState<Record<string, string | true>>(() => {
     const seed: Record<string, string | true> = {};
-    for (const a of areas) if (a.ticked) seed[a.key] = a.reason ?? true;
+    for (const a of areas) {
+      // ⚠️ THE COMMUTE PRE-TICKS ONLY UNTIL THEY HAVE ANSWERED ONCE. After
+      // that their ticks are the answer, and an area they removed stays
+      // removed however confidently Maps draws the road.
+      if (a.ticked || (!answered && a.onRoute)) seed[a.key] = a.reason ?? true;
+    }
     return seed;
   });
 

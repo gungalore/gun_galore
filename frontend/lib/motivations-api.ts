@@ -1097,8 +1097,15 @@ export const motivationsApi = {
     request<{
       station: string | null;
       withinKm: number;
+      /** Has the member ever answered? See DangerAreas — it gates the pre-tick. */
+      answered: boolean;
       areas: DangerArea[];
-    }>(t, `/${id}/areas`, {}, { station: null, withinKm: 50, areas: [] }),
+    }>(
+      t,
+      `/${id}/areas`,
+      {},
+      { station: null, withinKm: 50, answered: false, areas: [] },
+    ),
 
   /**
    * Record which of them they travel through.

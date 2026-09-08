@@ -39,6 +39,8 @@ import {
   dangerAreas,
   parseTravelledAreas,
 } from './motivation-danger-areas';
+import { areasOnRoute, decodePolyline } from './motivation-route';
+import { geocodeZa, type LatLng } from '../news/news-geo';
 import {
   buildAnnexures,
   type GeneratedAnnexureId,
@@ -94,6 +96,25 @@ const AREA_RADIUS_KM = 50;
  * reports behind them for the list to be worth reading.
  */
 const AREA_INCIDENT_TAKE = 60;
+
+/**
+ * How many travelled precincts print their figures.
+ *
+ * ⚠️ THREE. Twelve stations of quarterly tables is not evidence, it is a
+ * spreadsheet — and MOTIVATION-CORPUS-LEARNINGS.md's finding about padding
+ * applies to a table as much as to manufacturer copy. The ticked order is the
+ * member's own, so the three that print are the ones they listed first.
+ */
+const TRAVELLED_STATS_MAX = 3;
+
+/**
+ * How long the commute lookup may take.
+ *
+ * ⚠️ SHORT, BECAUSE THE MEMBER IS WAITING FOR A LIST THIS DOES NOT GATE. The
+ * areas render with or without a route; a slow Directions call must degrade to
+ * "nothing pre-ticked", never to a spinner.
+ */
+const COMMUTE_TIMEOUT_MS = 6_000;
 
 /**
  * Statuses a generation may be STARTED from.
@@ -409,6 +430,49 @@ export class MotivationGenerationService {
             this.logger.warn(
               `Motivation ${row.id}: precinct crime figures skipped — ${(err as Error).message}`,
             );
+          }
+
+          /**
+           * ── AND THE PRECINCTS THEY DRIVE THROUGH ──────────────────
+           *
+           * Operator, 2026-09-08: "take the police station areas they travel
+           * through and incorporate each of thems stats in there."
+           *
+           * ⚠️ THE HOME STATION IS WHERE THEY SLEEP; THIS IS WHERE THEY SPEND
+           * THE DAY. An applicant living in a quiet precinct and driving
+           * through three bad ones every morning has an exposure the home
+           * figures do not describe, and until now the pack could not say so.
+           *
+           * ⚠️ AND EVERY LINE CAME OFF THE MEMBER'S OWN TICK. `travelled_areas`
+           * is an answer they gave, not a radius we drew — which is what makes
+           * another precinct's numbers admissible about THIS applicant.
+           *
+           * ⚠️ THREE, NOT ALL OF THEM. Twelve stations of quarterly tables is
+           * not evidence, it is a spreadsheet, and the corpus doc's finding
+           * about padding applies here as much as to manufacturer copy.
+           *
+           * ⚠️ AND THE REASON THEY GAVE TRAVELS WITH IT. "My daughter's school
+           * is there" is what turns a table into this applicant's own exposure;
+           * without it the writer has numbers and no standing to use them.
+           */
+          const ticked = parseTravelledAreas(answers[TRAVELLED_AREAS_KEY]);
+          if (ticked.length) {
+            try {
+              const offered = await this.travelledPrecincts(answers, ticked);
+              if (offered.length) {
+                precinctBlock = [
+                  precinctBlock ?? '',
+                  'PRECINCTS THE APPLICANT TRAVELS THROUGH — supplied fact, from areas they ticked themselves:',
+                  ...offered,
+                ]
+                  .filter(Boolean)
+                  .join('\n');
+              }
+            } catch (err) {
+              this.logger.warn(
+                `Motivation ${row.id}: travelled-area figures skipped — ${(err as Error).message}`,
+              );
+            }
           }
         }
       }
@@ -1075,6 +1139,20 @@ export class MotivationGenerationService {
   ): Promise<{
     station: string | null;
     withinKm: number;
+    /**
+     * Has the member ever answered this question?
+     *
+     * ⚠️ IT IS WHAT STOPS THE ROUTE UNDOING A DECISION. An area on the commute
+     * is pre-ticked, and a member who deliberately UNTICKS one has said
+     * something — Maps drew a road they do not take. Without this flag the next
+     * load would tick it again, for ever, because `onRoute` is still true: the
+     * same failure as "why can't I delete the proof of address?", arriving
+     * through a helpful default.
+     *
+     * True once `travelled_areas` is set, INCLUDING to an empty list — "I
+     * travel through none of these" is an answer.
+     */
+    answered: boolean;
     areas: (DangerArea & {
       station: { name: string; province: string } | null;
       ticked: boolean;
@@ -1088,12 +1166,20 @@ export class MotivationGenerationService {
     });
     if (!row) throw new NotFoundException('Motivation not found');
     if (row.licenceType !== MotivationLicenceType.S13_SELF_DEFENCE) {
-      return { station: null, withinKm: AREA_RADIUS_KM, areas: [] };
+      return {
+        station: null,
+        withinKm: AREA_RADIUS_KM,
+        answered: false,
+        areas: [],
+      };
     }
 
     const answers = this.shared.readAnswers(row.answersEncrypted);
+    const answered = (answers[TRAVELLED_AREAS_KEY] ?? '').trim() !== '';
     const station = (answers.police_station ?? '').trim();
-    if (!station) return { station: null, withinKm: AREA_RADIUS_KM, areas: [] };
+    if (!station) {
+      return { station: null, withinKm: AREA_RADIUS_KM, answered, areas: [] };
+    }
 
     let incidents: NewsIncident[] = [];
     try {
@@ -1113,10 +1199,35 @@ export class MotivationGenerationService {
       this.logger.warn(
         `Motivation ${id}: area lookup failed — ${(err as Error).message}`,
       );
-      return { station, withinKm: AREA_RADIUS_KM, areas: [] };
+      return { station, withinKm: AREA_RADIUS_KM, answered, areas: [] };
     }
 
-    const areas = dangerAreas(incidents);
+    /**
+     * ⚠️ THE ROUTE IS WORKED OUT BEFORE THE ROLL-UP, because `dangerAreas`
+     * orders by it: an area the applicant demonstrably drives through outranks
+     * a busier one across the city, which is the whole reason for asking about
+     * routes at all.
+     *
+     * ⚠️ AND IT NEEDS THE ROLL-UP'S OWN OUTPUT TO KNOW WHAT TO GEOCODE. So the
+     * list is built twice: once to learn the names, once ordered and flagged.
+     * The second pass is pure and free — the geocodes and the Directions call
+     * are the cost, and they happen once.
+     */
+    const provisional = dangerAreas(incidents);
+    let onRoute: string[] = [];
+    try {
+      const line = await this.commuteLine(answers);
+      if (line.length) {
+        onRoute = areasOnRoute(await this.placeAreas(provisional), line);
+      }
+    } catch (err) {
+      // A commute lookup must never cost somebody their area list.
+      this.logger.warn(
+        `Motivation ${id}: commute route skipped — ${(err as Error).message}`,
+      );
+    }
+
+    const areas = dangerAreas(incidents, { onRoute });
     const ticked = new Map(
       parseTravelledAreas(answers[TRAVELLED_AREAS_KEY]).map((t) => [
         t.key,
@@ -1188,6 +1299,7 @@ export class MotivationGenerationService {
     return {
       station,
       withinKm: AREA_RADIUS_KM,
+      answered,
       areas: areas
         .map((a, i) => ({ area: a, found: stations[i] }))
         .filter((x) => x.found !== 'elsewhere')
@@ -1198,6 +1310,139 @@ export class MotivationGenerationService {
           ...(ticked.get(a.key) ? { reason: ticked.get(a.key) } : {}),
         })),
     };
+  }
+
+  /**
+   * The ticked areas' own precinct figures, as fact-pack lines.
+   *
+   * ⚠️ IT RE-RESOLVES THE STATIONS RATHER THAN STORING THEM, and that is the
+   * cheaper mistake. Storing a station against a tick would freeze whichever
+   * geocode answered on the day; re-resolving costs a lookup per ticked area
+   * at generation — three at most — and cannot go stale against a corrected
+   * address or a renamed precinct.
+   *
+   * ⚠️ EACH ONE FAILS ALONE. An area we cannot place, or a station with no
+   * release covering it, drops its own lines and nothing else.
+   */
+  private async travelledPrecincts(
+    answers: Record<string, string>,
+    ticked: readonly TravelledArea[],
+  ): Promise<string[]> {
+    const province = (answers.police_station_province ?? '').trim();
+    const out: string[] = [];
+    for (const t of ticked.slice(0, TRAVELLED_STATS_MAX)) {
+      try {
+        const found = await this.crimeStats.nearestStation(t.key);
+        const station = found?.station;
+        if (!station) continue;
+        // The same province rule the area list itself applies: a station in
+        // another province is proof the place is somewhere else.
+        if (
+          province &&
+          station.province &&
+          station.province.toUpperCase() !== province.toUpperCase()
+        ) {
+          continue;
+        }
+        const figures = await this.crimeStats.precinct(
+          station.name,
+          station.province || undefined,
+        );
+        if (!figures) continue;
+        out.push(
+          `${t.key} — ${station.name} precinct${
+            t.reason ? ` (why the applicant is there: ${t.reason})` : ''
+          }:`,
+          ...precinctFactLines(figures),
+        );
+      } catch {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The line the applicant drives between home and work.
+   *
+   * Operator, 2026-09-08: "we could also use the work address and google maps
+   * routes to see through which areas they travel and link it that way?"
+   *
+   * ⚠️ EVERY FAILURE HERE IS THE SAME OUTCOME: NO PRE-TICKS. No key, no work
+   * address, a quota error, a route Google will not draw — all of them return
+   * an empty line and the member is asked about every area instead, which is
+   * exactly what they were asked before this existed. A commute lookup must
+   * never be able to cost somebody their area list.
+   *
+   * ⚠️ AND IT IS NOT CACHED, ON PURPOSE. It runs once per area-list load,
+   * which is once per application unless the member changes their station —
+   * see the `areasFor` effect's own key. Caching a route against an address
+   * that the member is still correcting would pre-tick the areas around their
+   * old office.
+   */
+  private async commuteLine(
+    answers: Record<string, string>,
+  ): Promise<LatLng[]> {
+    const key = process.env.GOOGLE_MAPS_API_KEY;
+    const home = (answers.residential_address ?? '').trim();
+    const work = (answers.employer_address ?? '').trim();
+    if (!key || !home || !work) return [];
+
+    try {
+      const url =
+        'https://maps.googleapis.com/maps/api/directions/json' +
+        `?origin=${encodeURIComponent(home)}` +
+        `&destination=${encodeURIComponent(work)}` +
+        `&region=za&key=${key}`;
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(COMMUTE_TIMEOUT_MS),
+      });
+      if (!res.ok) return [];
+      const body = (await res.json()) as {
+        status?: string;
+        routes?: { overview_polyline?: { points?: string } }[];
+      };
+      if (body.status !== 'OK') return [];
+      /**
+       * ⚠️ THE FIRST ROUTE ONLY. Google returns alternatives; pre-ticking the
+       * union of every way Google can get there would tick areas the applicant
+       * has never driven, on a document they sign. The first is the one it
+       * recommends, which is the closest thing to "the way they go".
+       */
+      const points = body.routes?.[0]?.overview_polyline?.points;
+      return points ? decodePolyline(points) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Where each area actually is, so the route test has something to test.
+   *
+   * ⚠️ THE AREA'S OWN COORDINATES, NOT THE ARTICLE'S. `distanceKm` on an
+   * incident is measured from the ARTICLE's stored position, which for a
+   * syndicated piece is the paper's patch — that is how a Gauteng airport
+   * arrest arrived 22.7km from a Kraaifontein front door. A pre-tick has to
+   * rest on where the PLACE is.
+   *
+   * ⚠️ EACH GEOCODE FAILS ALONE, AND A FAILURE MEANS "NOT PRE-TICKED" RATHER
+   * THAN "NOT ON THE LIST". Failing to place a suburb is our problem; the
+   * honest consequence is that we do not answer for the member.
+   */
+  private async placeAreas(
+    names: readonly { key: string; name: string }[],
+  ): Promise<{ key: string; at: LatLng }[]> {
+    const found = await Promise.all(
+      names.map(async (a) => {
+        try {
+          const at = await geocodeZa(a.name);
+          return at ? { key: a.key, at } : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return found.filter((x): x is { key: string; at: LatLng } => x !== null);
   }
 
   /**
