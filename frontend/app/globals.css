@@ -1612,3 +1612,36 @@ html[data-standalone='true'] [data-shell-tabs] {
   height: 100vh;
   height: 100dvh;
 }
+
+/* ── DRAG SURFACES DRAW; THEY NEVER SELECT ──────────────────────────
+   Operator, 2026-09-08: "the select all must be disabled because it selects
+   everything if you sign. make this universal for every scanner."
+
+   ⚠️ THERE IS NO "SELECT ALL" CONTROL ANYWHERE IN THIS CODEBASE. What happens
+   is a plain text selection: a finger or a mouse dragged across a signature pad
+   or a scanner's corner handles starts a selection in the page underneath, and
+   the whole screen turns blue while somebody is trying to sign their name.
+
+   ⚠️ IT IS A GLOBAL RULE BECAUSE IT HAS TO REACH THE VENDORED SCANNER.
+   components/scan-v3 and lib/scan-v3 are a copy of an out-of-repo project and
+   must never be edited here — the next sync silently reverts it — so the only
+   place a fix can live that covers V2, V3 and whatever replaces them is this
+   file. `.aos-root` is the V3 overlay's own class; `[data-blocking-overlay]`
+   catches anything else that declares itself a full-screen surface.
+
+   Text INSIDE those surfaces that somebody might genuinely want to copy — an
+   error message with a code in it — opts back in with .gg-selectable. */
+canvas,
+.aos-root,
+[data-blocking-overlay],
+.gg-drag-surface {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.gg-selectable,
+.gg-selectable * {
+  -webkit-user-select: text;
+  user-select: text;
+}

@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import {
+  AddressAutocomplete,
+  type ParsedAddressComponents,
+} from '@/components/address-autocomplete';
 import WitnessSignaturePad from '@/components/witness-signature-pad';
 import { reverseGeocodeArea } from '@/lib/reverse-geocode-area';
 
@@ -109,6 +113,8 @@ export default function SellerConsentPage() {
   const [consentGiven, setConsentGiven] = useState(false);
   const [declaredTrue, setDeclaredTrue] = useState(false);
   const [locating, setLocating] = useState(false);
+  /** The sectioned address fields, opened on demand. See the note below. */
+  const [manualAddress, setManualAddress] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<'signed' | 'declined' | null>(null);
@@ -452,15 +458,83 @@ export default function SellerConsentPage() {
           className="mt-3 block text-xs text-[var(--text-secondary)]"
         >
           {f.label}
-          <input
-            value={sectionF[f.key] ?? ''}
-            onChange={(e) => setF(f.key, e.target.value)}
-            inputMode={f.numeric ? 'numeric' : undefined}
-            placeholder={f.placeholder}
-            className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
-          />
+          {/*
+            ⚠️ THE ADDRESS GETS THE PICKER, AND STAYS TYPEABLE AFTER IT.
+            Operator, 2026-09-08: "google maps autofill must be used as well for
+            address, optional self fill with sections, not just input box." The
+            seller is a stranger doing somebody a favour on a phone; asking them
+            to type a street, a suburb and a town into one box is the step they
+            abandon.
+
+            ⚠️ AND IT FILLS THE POSTAL CODE BESIDE IT. Places already returns
+            the components, so a member who picks a suggestion has answered two
+            questions with one tap — and the code they would otherwise have had
+            to remember is the one they get wrong.
+
+            The manual route is not a fallback here, it is a second door: the
+            sectioned fields below open on demand for an address Places does not
+            know, which on a smallholding or a farm is common.
+          */}
+          {f.key === 'residentialAddress' ? (
+            <AddressAutocomplete
+              value={sectionF[f.key] ?? ''}
+              onChange={(address: string) => setF(f.key, address)}
+              onComponents={(c: ParsedAddressComponents) => {
+                if (c.postalCode) setF('residentialPostalCode', c.postalCode);
+                if (c.street) setF('addressStreet', c.street);
+                if (c.suburb) setF('addressSuburb', c.suburb);
+                if (c.city) setF('addressCity', c.city);
+                if (c.province) setF('addressProvince', c.province);
+              }}
+              placeholder={f.placeholder}
+            />
+          ) : (
+            <input
+              value={sectionF[f.key] ?? ''}
+              onChange={(e) => setF(f.key, e.target.value)}
+              inputMode={f.numeric ? 'numeric' : undefined}
+              placeholder={f.placeholder}
+              className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+            />
+          )}
         </label>
       ))}
+
+      {/*
+        ⚠️ THE SECOND DOOR, NOT A FALLBACK. Places does not know every
+        smallholding, plot or farm in South Africa, and a seller whose address it
+        cannot find must not be stuck staring at a box that refuses to help. The
+        sections open on demand and are stored beside the one-line address, so
+        Part F can be typed either way.
+      */}
+      <button
+        type="button"
+        onClick={() => setManualAddress((v) => !v)}
+        className="mt-2 text-xs underline text-[var(--text-secondary)]"
+      >
+        {manualAddress
+          ? 'Hide the address fields'
+          : 'Type my address in parts instead'}
+      </button>
+
+      {manualAddress ? (
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {MANUAL_ADDRESS_FIELDS.map((f) => (
+            <label
+              key={f.key}
+              className="block text-xs text-[var(--text-secondary)]"
+            >
+              {f.label}
+              <input
+                value={sectionF[f.key] ?? ''}
+                onChange={(e) => setF(f.key, e.target.value)}
+                placeholder={f.placeholder}
+                className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+              />
+            </label>
+          ))}
+        </div>
+      ) : null}
 
       {/* ── 4. The declaration, then the signature ─────────────────── */}
       <h2 className="mt-6 text-sm font-semibold">4. Sign</h2>
@@ -588,6 +662,26 @@ const SECTION_F_FIELDS: {
     numeric: true,
   },
   { key: 'email', label: 'Your email address' },
+];
+
+/**
+ * The address, in parts, for when Places cannot find it.
+ *
+ * ⚠️ THEY ARE STORED BESIDE THE ONE-LINE ADDRESS, NOT INSTEAD OF IT. Part F
+ * prints a single address line, so the one-liner stays the value that matters;
+ * these are what somebody types when the picker is no help, and the printed
+ * line is assembled from them. A smallholding or a farm is exactly the case
+ * Places does not know.
+ */
+const MANUAL_ADDRESS_FIELDS: {
+  key: string;
+  label: string;
+  placeholder?: string;
+}[] = [
+  { key: 'addressStreet', label: 'Street or farm', placeholder: '12 Main Road' },
+  { key: 'addressSuburb', label: 'Suburb or district', placeholder: 'Langeberg Glen' },
+  { key: 'addressCity', label: 'Town or city', placeholder: 'Cape Town' },
+  { key: 'addressProvince', label: 'Province', placeholder: 'Western Cape' },
 ];
 
 // ⚠️ WE DO NOT ASK WHERE THE FIREARM IS KEPT. Items 79 and 80 belong to the

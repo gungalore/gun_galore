@@ -116,7 +116,7 @@ export default function WitnessSignaturePad({
   };
 
   return (
-    <div>
+    <div className="gg-drag-surface">
       <canvas
         ref={canvasRef}
         onPointerDown={start}
