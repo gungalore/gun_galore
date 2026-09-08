@@ -656,3 +656,33 @@ describe('a rule we cannot show the reviewer', () => {
     ).toEqual([]);
   });
 });
+
+describe('South African English', () => {
+  // Rule 8 has forbidden Americanisms since the first draft and nothing
+  // enforced it. The generation that passed every other check wrote
+  // "authorized", "utilized" and "recognized" in a document lodged with the
+  // South African Police Service under an Act that spells it "licence".
+  for (const w of ['authorized', 'utilized', 'recognized', 'caliber', 'defense']) {
+    it(`refuses "${w}"`, () => {
+      const bad = validateReason(
+        result({ paragraph: `${words(215)} ${w} thing` }),
+        ctx(),
+      );
+      expect(bad.join(' ')).toContain('South African English');
+    });
+  }
+
+  it('⚠️ AND NEVER TRIPS ON "licensed", which is correct in both registers', () => {
+    // "licence" is the noun and "license" the verb in British and South
+    // African English alike, and "licensed under section 16" is the commonest
+    // phrase in this whole paragraph.
+    expect(
+      validateReason(
+        result({
+          paragraph: `I hold a CZ, licensed under section 16, on a licence issued in 2024. ${words(206)}`,
+        }),
+        ctx(),
+      ),
+    ).toEqual([]);
+  });
+});

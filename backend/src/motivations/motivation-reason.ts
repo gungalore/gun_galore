@@ -338,7 +338,7 @@ ${
       ? `PREFERRED ANGLE: exercise_eligibility. The input carries association exercises with their equipment rules — a calibre floor or ceiling, a barrel length, an action or a class. Where the applied-for firearm meets one and a held firearm of the same type does not, lead with it and quote the rule. "The association's 7m rapid-fire handgun exercise is open only to 9mmP pistols and larger; my 6.35mm CZ shoots the 5m pocket-pistol exercise and cannot enter it." That is a gap the reviewer can check against the rules annexed to the same pack, and it is what the approved motivations on file actually do.`
       : `NO ASSOCIATION EXERCISES WERE SUPPLIED, so you do not know what any exercise is shot with. Rest the gap on the two things the firearms themselves prove: TYPE and SECTION. "None of my rifles can be used in a handgun exercise" is provable; "cannot meet the capacity requirements" is not.
 
-HOW TO REACH THE WORD FLOOR WITHOUT INVENTING ANYTHING. Name every held firearm in its own clause with make, calibre and the section it is licensed under. Say what class of shooting the applied-for firearm opens that the held ones do not, in plain terms of type and action. Say what the applicant will do with it, in the words the input gives you. That is the length; padding it with capability claims is what rule 16 refuses.`
+HOW TO REACH THE WORD FLOOR WITHOUT INVENTING ANYTHING. Name every held firearm with make, calibre and the section it is licensed under — but as ONE sentence with commas, the way a table row reads, not as one sentence per firearm. "I hold a Mauser in .30-06 Springfield, a Marlin in .45-70 Government and a CZ in 6.35mm Browning, all licensed under section 16." Five sentences each beginning "I hold a" is a list, not a person writing. Say what class of shooting the applied-for firearm opens that the held ones do not, in plain terms of type and action. Say what the applicant will do with it, in the words the input gives you. That is the length; padding it with capability claims is what rule 16 refuses.`
   }
 
 Anything you mark "inferred" in existing_roles is a suggestion the applicant must confirm: keep it out of the paragraph. Anything you mark "none" has no role at all: name the firearm, its calibre and its section, and stop.`;
@@ -488,6 +488,17 @@ export function validateReason(
     if (has(w)) {
       bad.push(`paragraph says "${w}", which reads like a product page`);
     }
+  }
+
+  /**
+   * ⚠️ RULE 8 HAS FORBIDDEN AMERICANISMS SINCE THE FIRST DRAFT AND NOTHING
+   * ENFORCED IT. The generation that passed every other check wrote
+   * "authorized", "utilized" and "recognized" in a document lodged with the
+   * South African Police Service under an Act that spells it "licence". A DFO
+   * notices, and what they notice is that somebody else wrote it.
+   */
+  for (const w of AMERICANISMS) {
+    if (has(w)) bad.push(`paragraph says "${w}" — South African English`);
   }
 
   /**
@@ -740,6 +751,33 @@ const UNPROVABLE_RULE_WORDS = [
   'capacity requirement',
   'minimum calibre',
   'entry rule',
+] as const;
+
+/**
+ * Spellings that are not South African.
+ *
+ * ⚠️ THE UNAMBIGUOUS ONES ONLY. "licence" is the noun and "license" the verb in
+ * both registers, so "licensed under section 16" — which is the correct and
+ * commonest phrase in this paragraph — must never trip. These are matched at a
+ * word boundary, so the stem catches every inflection: "authoriz" takes
+ * authorize, authorized and authorization.
+ */
+const AMERICANISMS = [
+  'caliber',
+  'defense',
+  'offense',
+  'meters',
+  'authoriz',
+  'utiliz',
+  'recogniz',
+  'organiz',
+  'analyz',
+  'specializ',
+  'maximiz',
+  'minimiz',
+  // The corpus's own word is "programme" — the association's shooting
+  // programme, which is what the packs annex.
+  'program ',
 ] as const;
 
 /**
