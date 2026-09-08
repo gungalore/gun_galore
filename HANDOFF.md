@@ -16,8 +16,6 @@ file-by-file plan for all four phases is
 `docs/design/licence-centre/PHASE-0-PLAN.md`; the Phase 3 frontend spec is
 `docs/design/licence-centre/SPEC-BUILD.md`.
 
-**Phases 1 and most of 2 are complete and NOT deployed.** Nothing is committed
-— it is all in the working tree on `feat/the-bench`.
 
 ⚠️ **Phase 2 is HALF DONE AND STOPPED ON PURPOSE.** Brief §0 ruling H makes the
 14 → 12 heading mapping the first step of Phase 2, with its own sign-off,
@@ -26,8 +24,9 @@ before `HEADING_ALTERNATES` may collapse. That mapping is delivered — see
 NOT depend on it has been built. What remains is listed under "What Phase 2
 still owes" below.
 
-**Phases 1, 1B, 3 and 4 are DEPLOYED** — `7f2b2628`, 2026-09-08. **Phase 2 is
-half done** and stopped on the §2.0 heading-mapping sign-off; that mapping,
+**Phases 1, 1B, 3 and 4 are DEPLOYED and committed** — `7f2b2628`, then the
+shelf follow-up `fe78bd12`, both 2026-09-08. **Phase 2 is half done** and
+stopped on the §2.0 heading-mapping sign-off; that mapping,
 in `docs/design/licence-centre/PHASE-0-PLAN.md` §2.0, is the next thing that
 needs the operator rather than a developer.
 
@@ -265,6 +264,39 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### The follow-up deploy — 2026-09-08, `fe78bd12`
+
+Two things the operator found on the live sheet within minutes of `7f2b2628`
+going up. Both were in the shelf, and both were shipped by me.
+
+1. **⚠️ THE DOCUMENT SHELF HAD NO SCANNER.** The empty-state tile read "Scan
+   with your phone or choose files" and the door behind it held a file picker
+   and nothing else. On a laptop, with a licence card in hand, there was no way
+   to photograph it — the copy promised a capability that was never wired.
+   `add-panel.tsx` now mounts `ScanButton` (`handoff={{ dest: 'motivation',
+   motivationId }}`, `shape="a4"`), and `document-shelf.tsx` takes `onScan`
+   alongside `onAdd` and renders a **Scan tile before the Add tile**, so the
+   camera is reachable in one tap rather than two.
+   ⚠️ **`ScanButton` decides the surface and nothing outside it may.** It offers
+   the phone hand-off on a desktop and the on-device camera on a handheld,
+   because a laptop webcam cannot resolve a licence serial. The Scan tile sets
+   `autoScan`, which goes through its own `autoStart` — an earlier attempt
+   elsewhere forced its `open` state from outside and opened a webcam behind a
+   button reading "Scan with phone".
+2. **The tiles printed raw enum names.** `motivation-sheet.service.ts` shipped
+   `label: u.kind`, so the shelf rendered `ADDRESS_CONFIRMATION` and
+   `PROFICIENCY_CERTIFICATE`, clipped to `ADDRESS_CO` in a 72px tile. It now
+   reads `UPLOAD_KIND_LABELS[u.kind] ?? u.kind` — the member's words, with the
+   raw kind only as a last resort so a new kind degrades rather than vanishes.
+
+Full deploy (the diff touches `backend/`). tsc clean both sides; backend
+**4041/4053**, frontend **1562/1563**, 0 failed; frontend build exit 0 in the
+foreground with `.next/BUILD_ID` present. `deploy.sh` clean end to end — backup
+**`alloutdoor-20260908-093317.dump`** (the rollback point), backend health ×2,
+frontend health ×2, warden reloaded and online, public site 200 ×2, three pm2
+services online, box HEAD `fe78bd12`, `prisma migrate status` up to date with
+nothing pending.
+
 ### What Phase 4 did — the old surfaces are gone
 
 **Deleted:** `app/motivations/**` and `app/licence-services/**` (both wizards);
@@ -420,12 +452,12 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `7f2b2628` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `7f2b2628` |
+| Production runs | `fe78bd12` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `fe78bd12` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
-| Last pre-deploy dump | `alloutdoor-20260908-085731.dump` — the rollback point for `7f2b2628` |
+| Last pre-deploy dump | `alloutdoor-20260908-093317.dump` — the rollback point for `fe78bd12` |
 
 **The platform is not trading.** 2 users, 2 listings, **0 transactions**, 1
 motivation, 20 credentials. Nothing has ever been sold. Checkout returns 503
