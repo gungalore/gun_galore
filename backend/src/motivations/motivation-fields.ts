@@ -1211,6 +1211,53 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   // makes the comparison argument sharper — "a .308 bolt-action" is a fact the
   // writer can reason against, "Tikka T3x .308" is a string.
   {
+    // ⚠️ FIRST IN THE SECTION, AND REQUIRED. It decides who completes Part F,
+    // which documents the pack demands, and whether the seller-consent card is
+    // reachable at all — and it was sitting fifth, marked Optional, between
+    // Model and Calibre. The consequence on the live sheet: the card that
+    // carries the seller's "photograph your licence" scanner never rendered,
+    // so an applicant was left hand-typing make, model, calibre and seven
+    // serial rows for a firearm whose card they have never held, while the
+    // pack meter pleaded "Tell us where the firearm is coming from".
+    //
+    // ⚠️ THE THREE COMMENTS BELOW ALREADY ASSUMED IT WAS REQUIRED — "they now
+    // have to say which route they are on", "the field is required, so a
+    // rejected value is a wizard they cannot get past". The `required` line
+    // went missing; the reasoning against it went with SOURCE_UNDECIDED when
+    // that choice was retired. There is no longer an answer that satisfies the
+    // question without answering it.
+    key: FIREARM_SOURCE_KEY,
+    label: 'Where is this firearm coming from?',
+    kind: 'choice',
+    section: 'The firearm',
+    required: true,
+    // ⚠️ TWO ROUTES, NOT FIVE. Operator, 2026-08-28: "lets keep the options
+    // between Individual and dealer for now."
+    // ⚠️ EXACTLY TWO. Operator, 2026-08-29: "The form must only give two
+    // options, Private seller or Dealer. Those are the only two we are going
+    // to support, the rest we will build at a later stage."
+    choices: [SOURCE_DEALER, SOURCE_PRIVATE],
+    // Still ACCEPTED on a save, never offered again. An application written
+    // before this decision carries one of these answers, and refusing it would
+    // break every save those members make — the field is required, so a
+    // rejected value is a wizard they cannot get past.
+    //
+    // ⚠️ "Not decided yet" WENT WITH THE ESTATE ROUTE, and it cost something
+    // real: on a REQUIRED field it was the one answer that satisfied the
+    // requirement without answering the question, so somebody who had not yet
+    // found a firearm could get to the end of the wizard with a document list
+    // built for nobody. They now have to say which route they are on, and can
+    // change it whenever the answer changes.
+    retiredChoices: [SOURCE_ESTATE, SOURCE_UNDECIDED],
+    help: 'A dealer sale and a private transfer need different paperwork at the counter. Telling us which lets us ask for the right documents instead of all of them.',
+    // ⚠️ NOT formOnly, DELIBERATELY, AND IT IS THE WHOLE POINT. formOnly hangs
+    // a field off the SAPS 271 opt-in, so a member whose dealer fills the form
+    // would never be asked — and they are the ones most likely to be buying
+    // from that dealer. The document checklist is needed on BOTH paths.
+    // Withholding it from the writer is NEVER_PROMPTED's job instead; see the
+    // note there about the two jobs formOnly used to do at once.
+  },
+  {
     key: 'firearm_type',
     label: 'Type of firearm',
     kind: 'choice',
@@ -1265,42 +1312,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'The firearm',
     required: true,
     maxLength: 60,
-  },
-  {
-    // ⚠️ NOT REQUIRED, AND "Not decided yet" IS A REAL ANSWER. Plenty of
-    // applications are written before the firearm is found — the motivation is
-    // what a dealer or a seller is shown. Forcing a choice would make somebody
-    // guess, and a guess here silently changes their document list. Undecided
-    // gets both routes described and neither demanded.
-    key: FIREARM_SOURCE_KEY,
-    label: 'Where is this firearm coming from?',
-    kind: 'choice',
-    section: 'The firearm',
-    // ⚠️ TWO ROUTES, NOT FIVE. Operator, 2026-08-28: "lets keep the options
-    // between Individual and dealer for now."
-    // ⚠️ EXACTLY TWO. Operator, 2026-08-29: "The form must only give two
-    // options, Private seller or Dealer. Those are the only two we are going
-    // to support, the rest we will build at a later stage."
-    choices: [SOURCE_DEALER, SOURCE_PRIVATE],
-    // Still ACCEPTED on a save, never offered again. An application written
-    // before this decision carries one of these answers, and refusing it would
-    // break every save those members make — the field is required, so a
-    // rejected value is a wizard they cannot get past.
-    //
-    // ⚠️ "Not decided yet" WENT WITH THE ESTATE ROUTE, and it cost something
-    // real: on a REQUIRED field it was the one answer that satisfied the
-    // requirement without answering the question, so somebody who had not yet
-    // found a firearm could get to the end of the wizard with a document list
-    // built for nobody. They now have to say which route they are on, and can
-    // change it whenever the answer changes.
-    retiredChoices: [SOURCE_ESTATE, SOURCE_UNDECIDED],
-    help: 'A dealer sale and a private transfer need different paperwork at the counter. Telling us which lets us ask for the right documents instead of all of them.',
-    // ⚠️ NOT formOnly, DELIBERATELY, AND IT IS THE WHOLE POINT. formOnly hangs
-    // a field off the SAPS 271 opt-in, so a member whose dealer fills the form
-    // would never be asked — and they are the ones most likely to be buying
-    // from that dealer. The document checklist is needed on BOTH paths.
-    // Withholding it from the writer is NEVER_PROMPTED's job instead; see the
-    // note there about the two jobs formOnly used to do at once.
   },
   {
     key: 'firearm_calibre',

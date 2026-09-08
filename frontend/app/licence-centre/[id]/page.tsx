@@ -11,6 +11,7 @@ import type {
 } from '@/components/licence-centre/contract';
 import SheetHeader from '@/components/licence-centre/sheet-header';
 import SheetSection from '@/components/licence-centre/sheet-section';
+import SheetDisclosure from '@/components/licence-centre/sheet-disclosure';
 import SheetRow from '@/components/licence-centre/sheet-row';
 import DeclarationRow from '@/components/licence-centre/declaration-row';
 import DocumentShelf from '@/components/licence-centre/document-shelf';
@@ -46,6 +47,35 @@ import type { PickableKind } from '@/lib/motivations-api';
 // ────────────────────────────────────────────────────────────────────
 
 /** Which route Part F takes, from `firearm_source`. */
+/**
+ * The six SAPS 271 section E rows that come off the licence card rather than
+ * out of the applicant. `firearm_serial` — the headline number the DFO asks
+ * for — is deliberately NOT one of them and stays in the open.
+ */
+const CARD_COMPONENT_KEYS = new Set([
+  'barrel_serial',
+  'barrel_make',
+  'frame_serial',
+  'frame_make',
+  'receiver_serial',
+  'receiver_make',
+]);
+
+/**
+ * ⚠️ ONLY ON A PRIVATE SALE does the consent card render. A dealer completes
+ * Part F and their own SAPS 350(a); an estate is the executor's. Showing it on
+ * either route asks somebody to chase a signature nobody needs.
+ */
+const SOURCE_PRIVATE = 'From a private owner';
+
+/** Who actually fills those six, by route. Keyed on `firearm_source`. */
+const COMPONENT_NOTE: Record<string, string> = {
+  'From a dealer': 'Your dealer fills these in from the licence card.',
+  'From a private owner':
+    'The seller fills these in when they photograph their licence.',
+  default: 'Read off the licence card — most cards print NONE against two of them.',
+};
+
 const SOURCE_ROUTE: Record<string, 'dealer' | 'seller' | 'estate' | 'unstated'> =
   {
     'From a dealer': 'dealer',
@@ -363,23 +393,106 @@ export default function LicenceCentreSheetPage() {
     const ownWordsKeys = new Set(
       mine.map((i) => i.ownWordsKey).filter(Boolean) as string[],
     );
+    const visible = mine.filter((i) => !ownWordsKeys.has(i.key));
 
-    return mine
-      .filter((i) => !ownWordsKeys.has(i.key))
-      .map((i) => (
-        <SheetRow
-          key={i.key}
-          item={i}
-          onChange={(v) => onChange(i.key, v)}
-          onConfirm={() => onConfirm(i)}
-          ownWords={i.ownWordsKey ? byKey.get(i.ownWordsKey) : undefined}
-          onOwnWordsChange={
-            i.ownWordsKey
-              ? (v) => onChange(i.ownWordsKey as string, v)
-              : undefined
+    const row = (i: SheetItem) => (
+      <SheetRow
+        key={i.key}
+        item={i}
+        onChange={(v) => onChange(i.key, v)}
+        onConfirm={() => onConfirm(i)}
+        ownWords={i.ownWordsKey ? byKey.get(i.ownWordsKey) : undefined}
+        onOwnWordsChange={
+          i.ownWordsKey ? (v) => onChange(i.ownWordsKey as string, v) : undefined
+        }
+      />
+    );
+
+    // ⚠️ THE LICENCE CARD'S COMPONENT ROWS FOLD, AND NOBODY TYPES THEM. Barrel,
+    // frame and receiver each carry a serial and a make on the SAPS 271 because
+    // the frame or receiver IS the firearm in law — but they are read off a
+    // card the applicant has not been handed yet, and on the live sheet they
+    // were six always-open boxes marked Optional, each with two lines of help
+    // about how the answer is usually NONE. The dealer or the seller fills
+    // them; this says which, and gets out of the way.
+    if (sectionId === 'firearm') {
+      const inner = visible.filter((i) => CARD_COMPONENT_KEYS.has(i.key));
+      const out: React.ReactNode[] = [];
+      let placed = false;
+      const fold = () => {
+        placed = true;
+        const filled = inner.filter((i) => i.value.trim()).length;
+        return (
+          <SheetDisclosure
+            key="__card-components"
+            summary="Barrel, frame and receiver"
+            note={COMPONENT_NOTE[sourceValue] ?? COMPONENT_NOTE.default}
+            meta={
+              filled ? (
+                <span className="text-[var(--success)]">{filled} filled</span>
+              ) : (
+                <span className="text-[var(--text-tertiary)]">
+                  {inner.length} rows
+                </span>
+              )
+            }
+          >
+            {inner.map(row)}
+          </SheetDisclosure>
+        );
+      };
+
+      for (const i of visible) {
+        if (CARD_COMPONENT_KEYS.has(i.key)) continue;
+        out.push(row(i));
+
+        // ⚠️ THE TWO CARDS BELONG UNDER THE SOURCE ROW — SPEC-BUILD §8.3 and
+        // §8.4 — and the source row is now the first row of the section, so
+        // this is where they go. They used to render after every row in the
+        // section, which was "under the source row" only while that row was
+        // fifth of seventeen.
+        if (i.key === 'firearm_source') {
+          if (sourceValue === SOURCE_PRIVATE) {
+            out.push(
+              <ConsentCard
+                key="__consent"
+                motivationId={id}
+                applicantName={byKey.get('full_name')?.value ?? ''}
+                firearm={{
+                  make: byKey.get('firearm_make')?.value,
+                  model: byKey.get('firearm_model')?.value,
+                  calibre: byKey.get('firearm_calibre')?.value,
+                  serial: byKey.get('firearm_serial')?.value,
+                }}
+                signed={sellerSigned}
+                onAdopt={(fields) => {
+                  for (const [k, v] of Object.entries(fields)) onChange(k, v);
+                }}
+              />,
+            );
           }
-        />
-      ));
+          out.push(
+            <OverlapCard
+              key="__overlap"
+              prompt={sheet.overlap.prompt}
+              angles={sheet.overlap.suggestedAngle}
+              chosen={byKey.get('overlap_angle')?.value ?? ''}
+              onPick={(csv) => onChange('overlap_angle', csv)}
+            />,
+          );
+        }
+
+        // Straight after the headline serial, which is the number they will
+        // actually be asked for at the counter.
+        if (i.key === 'firearm_serial' && inner.length) out.push(fold());
+      }
+      // A sheet that never rendered the headline serial must not swallow the
+      // six rows with it.
+      if (inner.length && !placed) out.push(fold());
+      return out;
+    }
+
+    return visible.map(row);
   };
 
   return (
@@ -453,45 +566,13 @@ export default function LicenceCentreSheetPage() {
 
         {sheet.sections.map((s) => (
           <SheetSection key={s.id} id={s.id} title={s.title} blurb={s.blurb}>
-            {renderRows(s.id)}
             {/*
-              ⚠️ THE OVERLAP CARD SITS IN FIREARM, UNDER THE SOURCE ROW, and
-              renders itself away when there is no overlap to explain.
+              ⚠️ THE CONSENT AND OVERLAP CARDS ARE EMITTED FROM renderRows NOW,
+              directly under the source row — see the note there. The consent
+              card is the door to the seller's own "photograph your licence"
+              scanner, and it must sit beside the answer that opens it.
             */}
-            {s.id === 'firearm' ? (
-              <>
-                {/*
-                  ⚠️ ONLY ON A PRIVATE SALE. A dealer completes Part F and
-                  their own 350(a); an estate is the executor's. Showing this
-                  on either route asks somebody to chase a signature nobody
-                  needs.
-                */}
-                {sourceValue === 'From a private owner' ? (
-                  <ConsentCard
-                    motivationId={id}
-                    applicantName={byKey.get('full_name')?.value ?? ''}
-                    firearm={{
-                      make: byKey.get('firearm_make')?.value,
-                      model: byKey.get('firearm_model')?.value,
-                      calibre: byKey.get('firearm_calibre')?.value,
-                      serial: byKey.get('firearm_serial')?.value,
-                    }}
-                    signed={sellerSigned}
-                    onAdopt={(fields) => {
-                      for (const [k, v] of Object.entries(fields)) {
-                        onChange(k, v);
-                      }
-                    }}
-                  />
-                ) : null}
-                <OverlapCard
-                  prompt={sheet.overlap.prompt}
-                  angles={sheet.overlap.suggestedAngle}
-                  chosen={byKey.get('overlap_angle')?.value ?? ''}
-                  onPick={(csv) => onChange('overlap_angle', csv)}
-                />
-              </>
-            ) : null}
+            {renderRows(s.id)}
           </SheetSection>
         ))}
 

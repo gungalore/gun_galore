@@ -1095,11 +1095,31 @@ describe('where the firearm is coming from', () => {
     expect(f.retiredChoices).toEqual([SOURCE_ESTATE, SOURCE_UNDECIDED]);
     expect(allowedValues(f)).toContain(SOURCE_ESTATE);
     expect(allowedValues(f)).toContain(SOURCE_UNDECIDED);
-    // ⚠️ NOT REQUIRED. Plenty of applications are written before the firearm
-    // is found — the motivation is what the dealer or seller gets shown.
-    // Forcing a choice makes somebody guess, and a guess here silently
-    // changes their document list.
-    expect(f.required).toBeUndefined();
+    // ⚠️ REQUIRED, AND THE ASSERTION ABOVE ALREADY SAID SO — "the field is
+    // required, so refusing a stored value would be a wizard its owner cannot
+    // get past". It was asserted undefined, and three comments in the registry
+    // assumed the opposite. Changed 2026-09-08 after a live walkthrough:
+    // marked Optional and sitting fifth of seventeen, it was never answered,
+    // so the seller-consent card — the door to the seller's own "photograph
+    // your licence" scanner — never rendered, and the pack meter could only
+    // plead "Tell us where the firearm is coming from".
+    //
+    // The old reasoning ("applications are written before the firearm is
+    // found") went with SOURCE_UNDECIDED when that choice was retired: there
+    // is no longer an answer that satisfies the question without answering it,
+    // and the member can change the route whenever the answer changes.
+    expect(f.required).toBe(true);
+  });
+
+  it('⚠️ NEVER ASKS A RENEWAL WHERE THE FIREARM IS COMING FROM', () => {
+    // Which is why requiring it is safe. A section 24 is a licence already
+    // held — there is no dealer and no seller — so a required question with no
+    // answer would be a pack nobody could finish.
+    expect(
+      fieldsFor(MotivationLicenceType.S24_RENEWAL).find(
+        (x) => x.key === FIREARM_SOURCE_KEY,
+      ),
+    ).toBeUndefined();
   });
 });
 
