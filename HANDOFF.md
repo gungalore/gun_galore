@@ -264,6 +264,95 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### The sheet fixes — 2026-09-08, `9c339ac8` → `95365781`
+
+A live walkthrough of MO000066 (S16 dedicated hunter, five owned firearms,
+four documents) found the review sheet **26,351px tall — 27.7 screens — with
+351 form controls**, and Chrome's renderer timed out screenshotting it. Four
+deploys, in this order, each with the full gate and its own health check.
+
+**`9c339ac8` — copy and layout.**
+- ⚠️ **`sourceLine()` was misspelling every make read off a licence.** It
+  lower-cased character 0 of the provenance string, so five owned-firearm rows
+  read "from mAUSER .30-06 SPRINGFIELD", "from hOWA 6.5MM CREEDMOOR", "from cZ
+  6.35MM BROWNING". It now leaves alone any string carrying a capital of its
+  own. Extracted to `source-line.ts` because `competency-lines.tsx` held a
+  second copy of the same arithmetic.
+- A text row printed `item.help` as the input's placeholder **and** again
+  beneath it. Selects and dates keep the line; they have no placeholder.
+- The competency help was five sentences inside a 44px box.
+- "Six questions everybody is asked" above five. The registry's six is right —
+  `history_negligence` is conditional — so the wrong word was "everybody".
+- ⚠️ **`main` carried `lg:mx-0` for a grid parent that was never built.** At a
+  2133px viewport the sheet sat at x=0 with 1,373px of white beside it;
+  `.gg-shell-pane` measures 0 wide. SPEC-BUILD §3's two-column grid now exists
+  while the preview is open, and `main` centres itself otherwise.
+
+**`3f6a8fac` — a member can delete an application again.**
+⚠️ **Phase 4 deleted both wizards and took the only delete control with them.**
+`delete-application.tsx` had been imported by nothing but its own spec ever
+since. It is now an outlined 44px button with a trash glyph — mounted on the
+sheet past the sticky footer, and on every row of the applications list as a
+**sibling** of the `Link` (a `<button>` inside an `<a>` is invalid HTML and the
+browsers that tolerate it still follow the link). The confirmation dialog was
+already load-bearing and is unchanged: `DELETE :id` is self-serve POPIA
+erasure, and it says what survives as well as what goes.
+
+**`0da85116` — the firearm route, and the seller's scanner.**
+⚠️ **The seller-consent scanner was built, deployed and unreachable.**
+`/consent/[token]` step 1 is "Photograph your licence — both sides of the card
+for this firearm". The card that links to it renders only on a private sale,
+and `firearm_source` was **Optional and fifth of seventeen rows**, so it was
+never answered: the applicant hand-typed make, model, calibre and seven serial
+rows for a firearm whose card they have never held, while the pack meter
+pleaded "Tell us where the firearm is coming from".
+- `firearm_source` is now the **first** row of its section and **required**.
+  Three registry comments and its own spec already asserted it was required.
+  Safe because `NOT_ASKED_BY_TYPE` excludes S24 — a renewal has no dealer and
+  no seller — and there is now a spec pinning that.
+- The consent and overlap cards are emitted under the source row, per
+  SPEC-BUILD §8.3/§8.4. They used to render after every row in the section.
+- New `sheet-disclosure.tsx`. First use: the six barrel/frame/receiver rows
+  fold behind one line naming whoever actually fills them in.
+
+**`95365781` — the folds.**
+- `sheet-section.tsx` collapses. The heading stays an `<h2>` with a button
+  inside it so the page keeps its outline; children are **unmounted**, not
+  hidden. Controlled, so a chip can open what it scrolls to.
+- Every closed section carries its own "N still needed" from the **same**
+  `missing` list the pill, the chip dots and the footer read.
+- The opening fold is the first section that still owes something, computed
+  **once** — recomputing on each post-save refetch would close a section
+  somebody had just opened.
+- ⚠️ **One fold per owned firearm, and nothing at all for the rows nobody
+  owns.** Which rows exist is `sheet.ownedRows`, new on the sheet response and
+  built with the backend's own `ownedRowTaken`. Deciding it in the browser
+  would make the page a fourth reader of "is this row in use", and that
+  function's note records what happened last time its readers disagreed.
+
+**Verified in Chrome on production, signed in, against MO000066:**
+
+| | Before | After |
+|---|---|---|
+| Document height | 26,351px | **3,060px** |
+| Form controls mounted | 351 | **10** |
+| `main` at a 2133px viewport | x=0, 760px | **x=678, centred** |
+| "Firearms you own" | 15,840px, 14 rows flat | **546px, 5 folds** |
+| "from mAUSER …" | 5 rows | **0** |
+
+Selecting "From a private owner" renders the consent card with **Send them the
+link**, and the component fold's note becomes "The seller fills these in when
+they photograph their licence". That answer was set only to prove the path and
+was **put back to blank**; the application is otherwise as it was found.
+
+⚠️ **Not verified: the phone.** `resize_window` reported success but the
+Chrome window would not leave 2133px, so every measurement above is desktop.
+The narrow layout is the default and nothing in these four commits is
+`lg:`-only except the grid — but the new fold headers (title + "N still
+needed" on one 44px row) have not been seen at 390px.
+
+Last pre-deploy dump: **`alloutdoor-20260908-104039.dump`**.
+
 ### The follow-up deploy — 2026-09-08, `fe78bd12`
 
 Two things the operator found on the live sheet within minutes of `7f2b2628`
@@ -452,12 +541,12 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `fe78bd12` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `fe78bd12` |
+| Production runs | `95365781` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `95365781` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
-| Last pre-deploy dump | `alloutdoor-20260908-093317.dump` — the rollback point for `fe78bd12` |
+| Last pre-deploy dump | `alloutdoor-20260908-104039.dump` — the rollback point for `95365781` |
 
 **The platform is not trading.** 2 users, 2 listings, **0 transactions**, 1
 motivation, 20 credentials. Nothing has ever been sold. Checkout returns 503
