@@ -101,6 +101,19 @@ export class MotivationsConsentController {
    * signed/declined, and offer the government card's firearm details for the
    * buyer to confirm into their application. Owner-gated in the service.
    */
+  /**
+   * Remove the consent, so a new one can be sent.
+   *
+   * ⚠️ invite() HAS BEEN NAMING THIS ACTION FOR WEEKS WITH NOTHING BEHIND IT —
+   * "Delete that consent first if you need a new one" against a control that
+   * did not exist. Operator, 2026-09-08: "Must be able to delete the consent."
+   */
+  @Delete(':id/seller-consent')
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  deleteConsent(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.consent.deleteFor(clerkId, id);
+  }
+
   @Get(':id/seller-consent')
   async status(@CurrentUser() clerkId: string, @Param('id') id: string) {
     return this.consent.statusFor(clerkId, id);

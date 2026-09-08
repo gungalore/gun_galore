@@ -115,6 +115,14 @@ export default function MotivationSellerConsent({
    */
   const [adopted, setAdopted] = useState(() => readFlag(motivationId, ADOPTED_FLAG));
   const [frontId, setFrontId] = useState<string | null>(null);
+  /** What the seller signed, in the words the pack will print. */
+  const [statement, setStatement] = useState<{
+    declaration: string;
+    rows: { label: string; value: string }[];
+    signedLine: string;
+  } | null>(null);
+  const [showStatement, setShowStatement] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   /**
    * ⚠️ EVERY setState AFTER AN await IS GUARDED. This panel polls every 30s
@@ -139,6 +147,7 @@ export default function MotivationSellerConsent({
       setStatus(r.status);
       setCardFirearm(r.cardFirearm);
       setFrontId(r.licenceFrontUploadId);
+      setStatement(r.statement);
     } catch {
       /* fail-soft: the send form still works without a status read */
     }
@@ -264,6 +273,81 @@ export default function MotivationSellerConsent({
         <p className="mt-1 text-xs text-[var(--text-secondary)]">
           Their signed consent and a copy of their licence are in your pack.
         </p>
+
+        {/*
+          ⚠️ THE PREVIEW IS THE PACK'S OWN WORDS. declarationFor, firearmRowsFor
+          and signedLineFor are what motivation-render.service.ts prints; a
+          preview written separately is one that can disagree with the document
+          the applicant signs their name beside. Operator, 2026-09-08: "must be
+          a preview consent form."
+        */}
+        {statement ? (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => setShowStatement((v) => !v)}
+              className="min-h-[36px] text-xs font-medium text-[var(--red)] underline"
+            >
+              {showStatement ? 'Hide what they signed' : 'See what they signed'}
+            </button>
+            {showStatement ? (
+              <div className="mt-2 rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-inset)] p-3">
+                <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--text-primary)]">
+                  {statement.declaration}
+                </p>
+                <dl className="mt-2 text-[12.5px]">
+                  {statement.rows.map((r) => (
+                    <div key={r.label} className="flex justify-between gap-3 py-[2px]">
+                      <dt className="text-[var(--text-secondary)]">{r.label}</dt>
+                      <dd className="text-right font-medium">{r.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="m-0 mt-2 text-[12px] text-[var(--text-tertiary)]">
+                  {statement.signedLine}
+                </p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/*
+          ⚠️ invite() HAS BEEN NAMING THIS ACTION WITH NOTHING BEHIND IT — it
+          refuses a resend against a signed consent with "Delete that consent
+          first if you need a new one". Operator: "Must be able to delete the
+          consent." It asks first: the licence photographs and the signature go
+          with it, and they were somebody else's to give.
+        */}
+        <button
+          type="button"
+          disabled={removing}
+          onClick={async () => {
+            if (
+              !window.confirm(
+                'Remove this consent? Their signed page and the photographs of their licence are deleted, and you would have to ask them again.',
+              )
+            ) {
+              return;
+            }
+            setRemoving(true);
+            try {
+              await motivationsApi.deleteSellerConsent(getToken, motivationId);
+              if (!alive.current) return;
+              setStatus('NONE');
+              setCardFirearm(null);
+              setStatement(null);
+              setFrontId(null);
+              setSent(false);
+            } catch {
+              if (alive.current) setError('We could not remove it just now.');
+            } finally {
+              if (alive.current) setRemoving(false);
+            }
+          }}
+          className="mt-3 min-h-[36px] text-xs font-medium text-[var(--text-tertiary)] underline hover:text-[var(--red)]"
+        >
+          {removing ? 'Removing…' : 'Remove this consent'}
+        </button>
 
         {cardFirearm && onAdopt && (!adopted || stillMissing) && (
           <div className="mt-3 rounded-[var(--r-md)] border border-[var(--border)] p-3">

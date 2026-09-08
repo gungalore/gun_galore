@@ -1012,6 +1012,21 @@ export const motivationsApi = {
    * one page of six. `needsConsent` comes back true when they have not been
    * asked yet, which is the one refusal they can act on.
    */
+  /**
+   * Remove the seller's consent, so a new one can be sent.
+   *
+   * ⚠️ THE SERVER HAS BEEN NAMING THIS ACTION WITH NOTHING BEHIND IT — invite()
+   * refuses a resend against a signed consent with "Delete that consent first
+   * if you need a new one".
+   */
+  deleteSellerConsent: (t: TokenGetter, id: string) =>
+    request<{ deleted: boolean }>(
+      t,
+      `/${id}/seller-consent`,
+      { method: 'DELETE' },
+      { deleted: false },
+    ),
+
   keepInCentre: (t: TokenGetter, id: string, uploadIds: string[]) =>
     request<{ kept: number; needsConsent: boolean }>(
       t,
@@ -1165,6 +1180,17 @@ export const motivationsApi = {
       status: 'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED';
       invitedName: string | null;
       cardFirearm: Record<string, string> | null;
+      /**
+       * What the seller signed, in the words that will print.
+       *
+       * ⚠️ THE SAME BUILDERS THE PACK USES, so the preview cannot disagree
+       * with the document.
+       */
+      statement: {
+        declaration: string;
+        rows: { label: string; value: string }[];
+        signedLine: string;
+      } | null;
       /** The front-of-card photograph, to check the details against. */
       licenceFrontUploadId: string | null;
     }>(t, `/${id}/seller-consent`, {}, {
@@ -1172,6 +1198,7 @@ export const motivationsApi = {
       invitedName: null,
       cardFirearm: null,
       licenceFrontUploadId: null,
+      statement: null,
     }),
 
   // ── Character witnesses ─────────────────────────────────────────

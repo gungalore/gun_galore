@@ -1,4 +1,9 @@
 import {
+  declarationFor,
+  firearmRowsFor,
+  signedLineFor,
+} from './motivation-consent-statement';
+import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -1318,6 +1323,20 @@ export class MotivationSellerConsentService {
     cardFirearm: Record<string, string> | null;
     /** The front-of-card photograph, to check the details against. */
     licenceFrontUploadId: string | null;
+    /**
+     * What the seller actually signed, in the words that will print.
+     *
+     * ⚠️ THE SAME BUILDERS THE PACK USES, NOT A SECOND WORDING. declarationFor,
+     * firearmRowsFor and signedLineFor are what motivation-render.service.ts
+     * puts on the page; a preview written separately is a preview that can
+     * disagree with the document, which is worse than no preview at all.
+     * Operator, 2026-09-08: "must be a preview consent form."
+     */
+    statement: {
+      declaration: string;
+      rows: { label: string; value: string }[];
+      signedLine: string;
+    } | null;
   }> {
     const user = await this.prisma.user.findUnique({
       where: { clerkId: applicantClerkId },
@@ -1341,6 +1360,10 @@ export class MotivationSellerConsentService {
         // For the licence photograph the applicant checks the details against.
         motivationId: true,
         licenceFrontKey: true,
+        // For the signed-statement preview, built from the pack's own builders.
+        invitedPhone: true,
+        signedPlace: true,
+        signedAt: true,
       },
     });
     if (!row) {
@@ -1349,6 +1372,7 @@ export class MotivationSellerConsentService {
         invitedName: null,
         cardFirearm: null,
         licenceFrontUploadId: null,
+        statement: null,
       };
     }
 
@@ -1393,12 +1417,115 @@ export class MotivationSellerConsentService {
       licenceFrontUploadId = up?.id ?? null;
     }
 
+    /**
+     * ⚠️ BUILT FROM THE SAME FUNCTIONS THE PACK PRINTS FROM. A preview written
+     * separately is a preview that can disagree with the document.
+     */
+    let statement: {
+      declaration: string;
+      rows: { label: string; value: string }[];
+      signedLine: string;
+    } | null = null;
+    if (status === 'COMPLETED') {
+      const f = await this.sectionF(row.motivationId).catch(() => null);
+      const snap = row.firearmSnapshotEncrypted
+        ? (JSON.parse(
+            tryDecryptText(row.firearmSnapshotEncrypted) ?? '{}',
+          ) as FirearmSnapshot)
+        : ({} as FirearmSnapshot);
+      const st = {
+        sellerFullName: f?.fullName ?? '',
+        sellerIdNumber: f?.idNumber ?? '',
+        sellerPhone: row.invitedPhone ?? '',
+        firearm: snap,
+        signedPlace: row.signedPlace ?? null,
+        signedAt: row.signedAt ?? null,
+      };
+      statement = {
+        declaration: declarationFor(st),
+        rows: firearmRowsFor(st),
+        signedLine: signedLineFor(st),
+      };
+    }
+
     return {
       status,
       invitedName: row.invitedName,
       cardFirearm,
       licenceFrontUploadId,
+      statement,
     };
+  }
+
+  /**
+   * Remove the consent entirely, so a new one can be sent.
+   *
+   * ⚠️ THE SERVICE HAS BEEN TELLING MEMBERS TO DO THIS FOR WEEKS WITH NO
+   * CONTROL TO DO IT WITH. invite() refuses a resend against a signed consent
+   * with "Delete that consent first if you need a new one" — naming an action
+   * that did not exist anywhere. Operator, 2026-09-08: "Must be able to delete
+   * the consent."
+   *
+   * ⚠️ THE BYTES GO WITH THE ROW. A signed consent holds the licence
+   * photographs and a signature — somebody else's identity documents, given for
+   * one purpose — so deleting the record and leaving the files is the worst of
+   * both: the applicant cannot see them and we are still holding them. Each
+   * removal is swallowed individually because a file already gone must not stop
+   * the row going.
+   *
+   * ⚠️ AND IT TAKES THE UPLOAD ROWS WITH IT. The licence pages were copied onto
+   * the application as annexures; leaving them would put a stranger's licence
+   * in a pack whose consent has been withdrawn.
+   */
+  async deleteFor(applicantClerkId: string, motivationId: string): Promise<{ deleted: boolean }> {
+    const user = await this.prisma.user.findUnique({
+      where: { clerkId: applicantClerkId },
+      select: { id: true },
+    });
+    const owns = user
+      ? await this.prisma.motivation.findFirst({
+          where: { id: motivationId, userId: user.id },
+          select: { id: true },
+        })
+      : null;
+    if (!user || !owns) throw new NotFoundException('Motivation not found');
+
+    const row = await this.prisma.motivationSellerConsent.findUnique({
+      where: { motivationId },
+      select: {
+        id: true,
+        licenceFrontKey: true,
+        licenceBackKey: true,
+        signatureKey: true,
+      },
+    });
+    if (!row) return { deleted: false };
+
+    for (const key of [
+      row.licenceFrontKey,
+      row.licenceBackKey,
+      row.signatureKey,
+    ]) {
+      if (key) await this.files.remove(key).catch(() => undefined);
+    }
+
+    // The annexure pages on the application came from this consent.
+    await this.prisma.motivationUpload
+      .deleteMany({
+        where: {
+          motivationId,
+          storageKey: {
+            in: [row.licenceFrontKey, row.licenceBackKey].filter(
+              (k): k is string => !!k,
+            ),
+          },
+        },
+      })
+      .catch(() => undefined);
+
+    await this.prisma.motivationSellerConsent.delete({ where: { id: row.id } });
+    this.logger.log(`Motivation ${motivationId}: seller consent deleted`);
+    return { deleted: true };
   }
 
   /** The signature bytes, for the printed consent. */
