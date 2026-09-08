@@ -427,7 +427,30 @@ export class MotivationDocumentsService {
       }),
     ]);
 
-    const wanted = documentStatus(row.licenceType, [], {}).needs.map(
+    // What firearm is this application for? Null when they have not said, and
+    // null switches the endorsement test off rather than failing it.
+    const answersNow = this.shared.readAnswers(row.answersEncrypted);
+
+    /**
+     * What this application actually wants, by kind.
+     *
+     * ⚠️ WITH THE ANSWERS, AND IT SHIPPED WITH `{}`. Several needs are
+     * CONDITIONAL — CURRENT_LICENCE is required only once the applicant has
+     * said they own something, because "a first-time applicant owns nothing
+     * and is never asked for one". Asking documentStatus with an empty blob
+     * therefore describes a first-time applicant every time, and every
+     * conditional kind was filtered straight out of the candidate list before
+     * decideAutolink ever saw it. The operator's five firearm licences did not
+     * come back as skipped; they came back as nothing at all.
+     *
+     * ⚠️ AND `[]` FOR THE ATTACHED KINDS STAYS. That argument is "what is
+     * already on the application", and passing the real list would mark a need
+     * satisfied and drop it out of `wanted` — which is the opposite of what
+     * this is for. Whether a kind is already held is decided by `haveSet`
+     * inside decideAutolink, which knows the difference between "settled" and
+     * "wants more" (see TAKE_ALL_KINDS).
+     */
+    const wanted = documentStatus(row.licenceType, [], answersNow).needs.map(
       (n) => n.kind,
     );
 
@@ -456,11 +479,7 @@ export class MotivationDocumentsService {
         .filter((x): x is string => x !== null),
     ]);
 
-    // What firearm is this application for? Null when they have not said, and
-    // null switches the endorsement test off rather than failing it.
-    const needed = requiredEndorsement(
-      this.shared.readAnswers(row.answersEncrypted),
-    );
+    const needed = requiredEndorsement(answersNow);
 
     // ⚠️ A TWO-SIDED PROFICIENCY IS ONE CANDIDATE, NOT TWO. The certificate
     // and its statement of results both cover the same firearm, so both
