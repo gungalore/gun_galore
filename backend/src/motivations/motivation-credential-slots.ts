@@ -1,4 +1,4 @@
-import { Endorsement, endorsementSpec } from '../common/sa-competency';
+import { Endorsement, endorsementDisplay } from '../common/sa-competency';
 import type { MandatoryKnowledge } from '../common/sa-proficiency-cover';
 
 // ────────────────────────────────────────────────────────────────────
@@ -72,8 +72,16 @@ export interface CredentialSlot {
 
 export interface SheetCredentials {
   /**
-   * The class this application needs — "Handgun" — or null when the firearm
-   * has not been described well enough to say.
+   * The class this application needs — "Handgun", "Manual Rifle" — or null
+   * when the firearm has not been described well enough to say.
+   *
+   * ⚠️ THE `display` WORDING, NOT `label`, AND THE CHOICE IS LOAD-BEARING.
+   * `label` for a bolt-action rifle is "Rifle or carbine - manually operated";
+   * `display` is "Competency - Manual Rifle", and it is what
+   * derivedCredentialTitle names the member's own vault rows with. Two
+   * vocabularies for one class means the screen calling it one thing while the
+   * document list beside it calls it another — and a caller trying to rank the
+   * matching certificate to the top of that list matches nothing.
    */
   neededLabel: string | null;
   competency: CredentialSlot;
@@ -150,8 +158,10 @@ function pairNoteFor(
 export function credentialSlots(
   input: CredentialSlotsInput,
 ): SheetCredentials {
+  // The class alone: the vault prints "Competency - Handgun" / "Proficiency -
+  // Handgun", and the prefix is the document kind, which the slot already says.
   const neededLabel = input.needed
-    ? (endorsementSpec(input.needed)?.label ?? null)
+    ? (endorsementDisplay(input.needed)?.replace(/^Competency - /, '') ?? null)
     : null;
 
   const slot = (kind: CredentialSlotKind): CredentialSlot => ({

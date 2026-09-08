@@ -33,6 +33,20 @@ describe('the class it names', () => {
     expect(credentialSlots(input()).neededLabel).toBe('Handgun');
   });
 
+  it('⚠️ USES THE WORDING THE MEMBER’S OWN VAULT ROWS CARRY', () => {
+    // `label` for a bolt-action rifle is "Rifle or carbine - manually
+    // operated"; derivedCredentialTitle names their document "Competency -
+    // Manual Rifle". Two vocabularies for one class means the pill calls it
+    // one thing while the list beside it calls it another, and ranking the
+    // matching certificate to the top of that list matches nothing.
+    expect(credentialSlots(input({ needed: 'rifle-mo' })).neededLabel).toBe(
+      'Manual Rifle',
+    );
+    expect(credentialSlots(input({ needed: 'rifle-sl' })).neededLabel).toBe(
+      'Semi-auto Rifle',
+    );
+  });
+
   it('⚠️ SAYS NOTHING WHEN THE FIREARM HAS NOT BEEN DESCRIBED', () => {
     // requiredEndorsement returns null for a combination gun and for a form
     // nobody has filled in yet. Naming a class we have not established would

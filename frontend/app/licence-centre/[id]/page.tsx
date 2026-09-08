@@ -130,6 +130,33 @@ function declarationParts(items: SheetItem[], key: string) {
   return { detail, boxes };
 }
 
+/**
+ * The certificate for the class being applied for, first.
+ *
+ * ⚠️ RANKS, NEVER HIDES, and the difference is H10 read from the other side.
+ * Auto-link once grouped competency candidates by KIND alone and attached a
+ * handgun-only certificate to a rifle application, which is refused before it
+ * is considered — so `competencyCovers` gates the ATTACHING. This is the
+ * member choosing, and the doctrine there is "unknown is a yes": we refuse
+ * only what we have READ and know to be wrong. A title we cannot match is a
+ * document we do not know is wrong, and dropping it out of somebody's own
+ * dropdown on that guess is how they end up unable to attach the right page.
+ *
+ * ⚠️ AND IT IS NOT A STRING GUESS. A vault title is written by
+ * derivedCredentialTitle through endorsementDisplay — "Proficiency - Handgun"
+ * — off the same endorsement list that produced `neededLabel`. Where a member
+ * has renamed one, the match simply does not fire and the order is unchanged.
+ */
+function rankByClass<T extends { title: string }>(
+  items: T[],
+  neededLabel: string | null,
+): T[] {
+  if (!neededLabel) return items;
+  const needle = neededLabel.toLowerCase();
+  const fits = (t: string) => t.toLowerCase().includes(needle);
+  return [...items].sort((a, b) => Number(fits(b.title)) - Number(fits(a.title)));
+}
+
 export default function LicenceCentreSheetPage() {
   const { getToken } = useAuth();
   const router = useRouter();
@@ -679,7 +706,10 @@ export default function LicenceCentreSheetPage() {
                     kind: pickerKind,
                     node: (
                       <LibraryPicker
-                        items={libraryItems.filter((i) => i.kind === pickerKind)}
+                        items={rankByClass(
+                          libraryItems.filter((i) => i.kind === pickerKind),
+                          sheet.credentials.neededLabel,
+                        )}
                         onPick={async (item, placeConfirmed) => {
                           await motivationsApi.addFromLibrary(
                             getToken,
