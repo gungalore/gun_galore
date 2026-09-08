@@ -147,5 +147,11 @@ export const sheet = (over: Partial<SheetResponse> = {}): SheetResponse => ({
   overlap: { verdict: { kind: 'clear' }, prompt: null, suggestedAngle: null },
   preview: [],
   missing: ['firearm_calibre', 's13_reasons'],
+  // Two owned firearms in use; the registry's other twelve rows are served but
+  // hold nothing, and the sheet renders nothing for them.
+  ownedRows: [
+    { index: 1, summary: 'MAUSER · .30-06 SPRINGFIELD', note: '96008993 · licence expires 2034-10-28' },
+    { index: 2, summary: 'CZ · 6.35MM BROWNING', note: '81815 · licence expires 2035-08-26' },
+  ],
   ...over,
 });

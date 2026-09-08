@@ -1,6 +1,9 @@
 import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
 import { encryptJson } from '../common/blob-crypto';
-import { MotivationSheetService } from './motivation-sheet.service';
+import {
+  MotivationSheetService,
+  ownedRowsFor,
+} from './motivation-sheet.service';
 import { MotivationSharedService } from './motivation-shared.service';
 import { MemberProfileAnswersService } from './member-profile-answers.service';
 import { missingRequired } from './motivation-fields';
@@ -305,5 +308,66 @@ describe('the preview rides along', () => {
     const { svc } = build({ full_name: 'Johan Pretorius' });
     const sheet = await svc.sheetFor('c1', 'mo-1');
     await expect(svc.previewOnly('c1', 'mo-1')).resolves.toEqual(sheet.preview);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// WHICH OWNED-FIREARM ROWS EXIST — the decision the page is TOLD, never
+// makes. The registry serves all fourteen whatever a member owns.
+// ────────────────────────────────────────────────────────────────────
+
+describe('ownedRowsFor', () => {
+  const row = (n: number, cols: Record<string, string>) =>
+    Object.fromEntries(
+      Object.entries(cols).map(([k, v]) => [`existing_firearm_${n}_${k}`, v]),
+    );
+
+  it('⚠️ RETURNS NOTHING FOR THE ROWS NOBODY OWNS', () => {
+    // Five firearms rendered as fourteen on the live sheet: nine empty rows,
+    // no heading between them, each carrying the eleven-tile "what it is for"
+    // grid. "Firearms you own" was 15,840px of a 26,351px page.
+    const answers = {
+      ...row(1, { make: 'MAUSER', calibre: '.30-06 SPRINGFIELD' }),
+      ...row(2, { make: 'CZ', calibre: '6.35MM BROWNING' }),
+    };
+    expect(ownedRowsFor(answers).map((r) => r.index)).toEqual([1, 2]);
+  });
+
+  it('heads a fold the way a member says which rifle they mean', () => {
+    const answers = row(3, {
+      make: 'HOWA',
+      calibre: '6.5MM CREEDMOOR',
+      serial: 'B477423',
+      expiry: '2032-11-28',
+    });
+    expect(ownedRowsFor(answers)[0]).toEqual({
+      index: 3,
+      summary: 'HOWA · 6.5MM CREEDMOOR',
+      note: 'B477423 · licence expires 2032-11-28',
+    });
+  });
+
+  it('⚠️ COUNTS A "NONE" ROW AS TAKEN AND STILL DOES NOT PRINT IT', () => {
+    // A card printing NONE against the frame is evidence somebody has been in
+    // the row, and is not a serial. ownedRowTaken must see it; the header
+    // must not, or the fold reads "Firearm 4 · NONE".
+    const answers = row(4, { make: 'MARLIN', serial: 'NONE' });
+    const [only] = ownedRowsFor(answers);
+    expect(only.index).toBe(4);
+    expect(only.summary).toBe('MARLIN');
+    expect(only.note).toBeNull();
+  });
+
+  it('never heads a fold with an empty string', () => {
+    // A row started from something that is not make, model or calibre still
+    // needs a name a member can tap.
+    expect(ownedRowsFor(row(7, { licence_no: 'ABC/123' }))[0].summary).toBe(
+      'Firearm 7',
+    );
+  });
+
+  it('returns them in row order, whatever order the answers arrive in', () => {
+    const answers = { ...row(9, { make: 'B' }), ...row(2, { make: 'A' }) };
+    expect(ownedRowsFor(answers).map((r) => r.index)).toEqual([2, 9]);
   });
 });

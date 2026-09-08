@@ -126,6 +126,28 @@ export default function LicenceCentreSheetPage() {
   const [kinds, setKinds] = useState<PickableKind[]>([]);
 
   /**
+   * Which sections are folded open. Null until the sheet has arrived.
+   *
+   * ⚠️ COMPUTED ONCE, THEN THE MEMBER OWNS IT. The sheet is refetched after
+   * every save, and recomputing this on each one would close a section
+   * somebody had just opened, mid-answer.
+   */
+  const [openSections, setOpenSections] = useState<Record<
+    string,
+    boolean
+  > | null>(null);
+
+  /**
+   * How many empty owned-firearm rows to offer beyond the ones in use.
+   *
+   * ⚠️ ZERO, UNTIL SOMEBODY ASKS. The registry serves fourteen rows whatever a
+   * member owns; the live sheet rendered all fourteen, so five real firearms
+   * came with nine empty ones — no headings between them, and each empty row
+   * carrying the full eleven-tile "what it is for" grid.
+   */
+  const [extraOwned, setExtraOwned] = useState(0);
+
+  /**
    * ⚠️ THE ANSWERS THE SERVER LAST CONFIRMED, HELD SEPARATELY FROM THE SHEET.
    *
    * The sheet is refetched after a save, and a refetch that landed while
@@ -166,6 +188,26 @@ export default function LicenceCentreSheetPage() {
       live = false;
     };
   }, [getToken, id]);
+
+  /**
+   * The opening fold: the first section that still owes something.
+   *
+   * ⚠️ NOT "all closed", AND NOT "the first section". A member coming back to
+   * a half-finished application should land where the work is; a member with
+   * nothing outstanding should land at the top rather than on a page of eight
+   * shut headings with no hint of where to start.
+   */
+  useEffect(() => {
+    if (!sheet || openSections) return;
+    const first =
+      sheet.sections.find((s) => s.missing.length > 0)?.id ??
+      sheet.sections[0]?.id;
+    setOpenSections(first ? { [first]: true } : {});
+  }, [sheet, openSections]);
+
+  const setSectionOpen = useCallback((id: string, open: boolean) => {
+    setOpenSections((prev) => ({ ...(prev ?? {}), [id]: open }));
+  }, []);
 
   /**
    * The active section chip follows the scroll.
@@ -492,6 +534,76 @@ export default function LicenceCentreSheetPage() {
       return out;
     }
 
+    // ⚠️ ONE FOLD PER FIREARM, AND NOTHING AT ALL FOR THE ROWS NOBODY OWNS.
+    // Which rows exist is the server's decision — sheet.ownedRows, built with
+    // the backend's own ownedRowTaken — because deciding it here would make
+    // the browser a fourth reader of "is this row in use", and that function's
+    // note records what happened the last time readers of it disagreed.
+    if (sectionId === 'own') {
+      const byRow = new Map<number, SheetItem[]>();
+      const loose: SheetItem[] = [];
+      for (const i of visible) {
+        const m = /^existing_firearm_(\d+)_/.exec(i.key);
+        if (!m) {
+          loose.push(i);
+          continue;
+        }
+        const n = Number(m[1]);
+        byRow.set(n, [...(byRow.get(n) ?? []), i]);
+      }
+
+      const taken = new Set(sheet.ownedRows.map((r) => r.index));
+      const free = [...byRow.keys()].filter((n) => !taken.has(n)).sort((a, b) => a - b);
+      const offered = free.slice(0, extraOwned);
+      const hasMore = free.length > extraOwned;
+
+      return (
+        <>
+          {sheet.ownedRows.map((r) => (
+            <SheetDisclosure
+              key={`own-${r.index}`}
+              dense
+              summary={r.summary}
+              note={r.note ?? undefined}
+            >
+              {(byRow.get(r.index) ?? []).map(row)}
+            </SheetDisclosure>
+          ))}
+
+          {/* A row the member has just asked for opens straight away — they
+              tapped the button in order to type into it. */}
+          {offered.map((n) => (
+            <SheetDisclosure
+              key={`own-${n}`}
+              dense
+              defaultOpen
+              summary="A firearm you own"
+              note="Photograph the licence card and we will read it for you."
+            >
+              {(byRow.get(n) ?? []).map(row)}
+            </SheetDisclosure>
+          ))}
+
+          {hasMore ? (
+            <button
+              type="button"
+              onClick={() => setExtraOwned((v) => v + 1)}
+              className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[var(--r-sm)] border border-dashed border-[var(--border-hover)] px-4 text-[13.5px] font-medium text-[var(--red)]"
+            >
+              <span aria-hidden="true" className="text-[16px] leading-none">
+                +
+              </span>
+              {sheet.ownedRows.length || offered.length
+                ? 'Add another firearm'
+                : 'Add a firearm you already own'}
+            </button>
+          ) : null}
+
+          {loose.map(row)}
+        </>
+      );
+    }
+
     return visible.map(row);
   };
 
@@ -520,6 +632,10 @@ export default function LicenceCentreSheetPage() {
           missingCount={sheet.missing.length}
           sections={sectionsForStrip}
           active={active}
+          onJump={(sectionId) => {
+            setSectionOpen(sectionId, true);
+            setActive(sectionId);
+          }}
           previewOpen={previewOpen}
           onTogglePreview={() => setPreviewOpen((v) => !v)}
         />
@@ -565,7 +681,29 @@ export default function LicenceCentreSheetPage() {
         ) : null}
 
         {sheet.sections.map((s) => (
-          <SheetSection key={s.id} id={s.id} title={s.title} blurb={s.blurb}>
+          <SheetSection
+            key={s.id}
+            id={s.id}
+            title={s.title}
+            blurb={s.blurb}
+            open={openSections?.[s.id] ?? false}
+            onOpenChange={(v) => setSectionOpen(s.id, v)}
+            /*
+              ⚠️ THE SAME `missing` LIST AS THE PILL, THE CHIP DOTS AND THE
+              FOOTER — a fourth view of one number, not a fourth number. A fold
+              that could hide a "Still needed" without saying so would be a
+              form lying about how much is left.
+            */
+            meta={
+              s.missing.length ? (
+                <span className="text-[var(--warning)]">
+                  {s.missing.length} still needed
+                </span>
+              ) : (
+                <span className="text-[var(--success)]">Done</span>
+              )
+            }
+          >
             {/*
               ⚠️ THE CONSENT AND OVERLAP CARDS ARE EMITTED FROM renderRows NOW,
               directly under the source row — see the note there. The consent

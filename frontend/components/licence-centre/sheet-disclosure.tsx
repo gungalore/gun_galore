@@ -40,7 +40,8 @@ export interface SheetDisclosureProps {
   children: React.ReactNode;
 }
 
-function Chevron({ open }: { open: boolean }) {
+/** Shared with sheet-section.tsx so the two folds cannot rotate differently. */
+export function Chevron({ open }: { open: boolean }) {
   return (
     <svg
       width="18"

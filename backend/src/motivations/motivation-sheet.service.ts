@@ -10,11 +10,14 @@ import { answerValue } from '../common/card-placeholder';
 import {
   LICENCE_TYPE_LABELS,
   MotivationField,
+  OWNED_ROWS,
   OWNED_SECTION,
   PREMISES_SECTION,
   fieldsFor,
   isVisible,
   missingRequired,
+  ownedFirearmSerial,
+  ownedRowTaken,
 } from './motivation-fields';
 import { ServedField, expandFields } from './motivation-field-options';
 import { UPLOAD_KIND_LABELS, buildAnnexures } from './motivation-checklist';
@@ -138,6 +141,73 @@ export interface SheetResponse {
    * read "0%". Three views of one number cannot disagree.
    */
   missing: string[];
+  /**
+   * The owned-firearm rows that actually hold a firearm, in order.
+   *
+   * ⚠️ THE SERVER DECIDES THIS, LIKE EVERY OTHER VISIBILITY DECISION ON THE
+   * SHEET. The registry serves all fourteen rows whatever a member owns, and
+   * the live sheet rendered every one of them flat: five real firearms and
+   * NINE empty ones, no heading between them, and each empty row carrying the
+   * full eleven-tile "what it is for" grid — ninety-nine dead tap targets.
+   * "Firearms you own" alone measured 15,840px, sixty per cent of a 26,351px
+   * page.
+   *
+   * ⚠️ AND IT USES ownedRowTaken, WHICH IS THE ONE RULE. That function's own
+   * note records what happened when three readers disagreed about whether a
+   * row was in use: the next licence uploaded was proposed straight over a
+   * firearm that was already there. A fourth reader in the browser, working
+   * off whichever keys happen to reach it, is exactly that bug again — so the
+   * page is told, not left to work it out.
+   */
+  ownedRows: SheetOwnedRow[];
+}
+
+/** One owned firearm, as its collapsed header reads. */
+export interface SheetOwnedRow {
+  /** 1-based, matching the `existing_firearm_N_` key prefix. */
+  index: number;
+  /** "MAUSER · .30-06 SPRINGFIELD", or "Firearm 3" when nothing names it. */
+  summary: string;
+  /** "96008993 · licence expires 2034-10-28", or null when neither is known. */
+  note: string | null;
+}
+
+/**
+ * The owned rows a member actually holds, headed the way a licence card reads.
+ *
+ * ⚠️ answerValue ON EVERY DISPLAYED FIELD, ownedRowTaken ON THE DECISION. The
+ * two disagree deliberately: a card printing "NONE" against the frame is
+ * EVIDENCE somebody has been in the row (so the row is taken) and is NOT a
+ * serial (so the header must not print it). Running answerValue on the
+ * taken-test would lose a row; skipping it on the header would head a fold
+ * "Firearm 3 · NONE".
+ */
+export function ownedRowsFor(
+  answers: Record<string, string>,
+): SheetOwnedRow[] {
+  const out: SheetOwnedRow[] = [];
+  for (let n = 1; n <= OWNED_ROWS; n++) {
+    if (!ownedRowTaken(answers, n)) continue;
+    const p = `existing_firearm_${n}_`;
+    const at = (col: string) => answerValue(answers[`${p}${col}`] ?? '').trim();
+
+    // Make and calibre, because that is how a member says which rifle they
+    // mean. Model is often blank and the serial means nothing to the eye.
+    const summary =
+      [at('make'), at('calibre')].filter(Boolean).join(' · ') ||
+      at('model') ||
+      `Firearm ${n}`;
+
+    const serial = ownedFirearmSerial(answers, n);
+    const expiry = at('expiry');
+    const note =
+      [serial, expiry ? `licence expires ${expiry}` : '']
+        .filter(Boolean)
+        .join(' · ') || null;
+
+    out.push({ index: n, summary, note });
+  }
+  return out;
 }
 
 /**
@@ -388,6 +458,7 @@ export class MotivationSheetService {
       overlap: overlapFromAnswers(row.licenceType, answers),
       preview: previewFor(row.licenceType, answers).sections,
       missing: [...missingSet],
+      ownedRows: ownedRowsFor(answers),
     };
   }
 

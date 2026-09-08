@@ -193,4 +193,24 @@ export interface SheetResponse {
    * a green tick while its own panel read 0%.
    */
   missing: string[];
+  /**
+   * The owned-firearm rows that actually hold a firearm, in order.
+   *
+   * ⚠️ THE SERVER DECIDES WHICH ROWS EXIST. The registry serves all fourteen
+   * whatever a member owns; the page renders a fold per entry here and nothing
+   * for the rest. Working it out in the browser would be a fourth reader of
+   * "is this row in use", and the backend's ownedRowTaken carries the note
+   * about what happened the last time readers of that disagreed.
+   */
+  ownedRows: SheetOwnedRow[];
+}
+
+/** One owned firearm, as its collapsed header reads. */
+export interface SheetOwnedRow {
+  /** 1-based, matching the `existing_firearm_N_` key prefix. */
+  index: number;
+  /** "MAUSER · .30-06 SPRINGFIELD", or "Firearm 3" when nothing names it. */
+  summary: string;
+  /** "96008993 · licence expires 2034-10-28", or null when neither is known. */
+  note: string | null;
 }

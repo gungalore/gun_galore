@@ -21,6 +21,14 @@ export interface SheetHeaderProps {
   sections: { id: string; label: string; missing: number }[];
   /** Which section the reader is in. Driven by an IntersectionObserver. */
   active: string;
+  /**
+   * Tapped a chip.
+   *
+   * ⚠️ THE ANCHOR STILL DOES THE SCROLLING. This only opens the section it is
+   * about to land on — sections fold now, and a chip that scrolls you to a
+   * closed heading is worse than the scroll it replaced.
+   */
+  onJump?: (id: string) => void;
   previewOpen: boolean;
   onTogglePreview: () => void;
 }
@@ -54,6 +62,7 @@ export default function SheetHeader({
   missingCount,
   sections,
   active,
+  onJump,
   previewOpen,
   onTogglePreview,
 }: SheetHeaderProps) {
@@ -87,6 +96,7 @@ export default function SheetHeader({
             <a
               key={s.id}
               href={`#${s.id}`}
+              onClick={() => onJump?.(s.id)}
               className={`inline-flex h-[30px] flex-shrink-0 items-center gap-[5px] whitespace-nowrap rounded-full border px-[11px] text-[12px] ${
                 s.id === active
                   ? 'border-[var(--red)] bg-[var(--red-wash)] font-medium text-[var(--text-primary)]'
