@@ -208,3 +208,82 @@ describe('what it refuses to invent', () => {
     expect(f.make).toBe('MAUSER');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE THREE COMPONENT MAKES, WHICH WERE NEVER READ.
+//
+// Operator, 2026-09-08, holding his own card: "all the information is on a
+// license card. All of them will always have it. It will either be a serial
+// next to every component or NONE, but it will never be empty."
+//
+// ⚠️ THERE ARE FOUR "MAKE" LABELS ON THE CARD AND `LABELS` HAD ONE. The
+// firearm's own, plus one against each of the barrel, receiver and frame rows.
+// The first band to match won, so the three component makes were dropped: the
+// seller photographed the card, the consent stored what we read, and section E
+// of the SAPS 271 printed three empty Make boxes beside three filled serials.
+// ────────────────────────────────────────────────────────────────────
+describe('the lower block: three serials and three makes', () => {
+  /** The operator's own Glock card, laid out as it prints. */
+  const glock = () =>
+    layout([
+      [[0, 'Serial Number ZABA01892'], [600, 'Type HANDGUN']],
+      [[0, 'Make GLOCK'], [600, 'Model NONE']],
+      [[0, 'Calibre 9MM PAR (9X19MM)']],
+      [[0, 'Barrel Serial No ZABA01892'], [600, 'Make GLOCK']],
+      [[0, 'Receiver Serial No ZABA01892'], [600, 'Make GLOCK']],
+      [[0, 'Frame Serial No ZABA01892'], [600, 'Make GLOCK']],
+    ]);
+
+  it('⚠️ READS ALL SIX COMPONENT FIELDS', () => {
+    const f = parseCard(glock());
+    expect(f.barrelSerial).toBe('ZABA01892');
+    expect(f.receiverSerial).toBe('ZABA01892');
+    expect(f.frameSerial).toBe('ZABA01892');
+    expect(f.barrelMake).toBe('GLOCK');
+    expect(f.receiverMake).toBe('GLOCK');
+    expect(f.frameMake).toBe('GLOCK');
+  });
+
+  it('⚠️ AND STILL READS THE FIREARM’S OWN MAKE FROM ITS OWN ROW', () => {
+    // The bare `Make GLOCK  Model NONE` row has no serial label before it, so
+    // it keeps the unqualified key. Reassigning that one would leave the
+    // firearm itself with no make at all.
+    const f = parseCard(glock());
+    expect(f.make).toBe('GLOCK');
+    expect(f.model).toBe('NONE');
+    expect(f.serial).toBe('ZABA01892');
+  });
+
+  it('⚠️ KEEPS A COMPONENT’S "NONE" AGAINST THAT COMPONENT', () => {
+    // A real card: barrel CZ, receiver NONE, frame NONE. The word NONE is the
+    // card being complete about a component that carries no number, and it has
+    // to land on the row it was printed on.
+    const f = parseCard(
+      layout([
+        [[0, 'Barrel Serial No 81815'], [600, 'Make CZ']],
+        [[0, 'Receiver Serial No NONE'], [600, 'Make NONE']],
+        [[0, 'Frame Serial No NONE'], [600, 'Make NONE']],
+      ]),
+    );
+    expect(f.barrelSerial).toBe('81815');
+    expect(f.barrelMake).toBe('CZ');
+    expect(f.receiverSerial).toBe('NONE');
+    expect(f.receiverMake).toBe('NONE');
+    expect(f.frameSerial).toBe('NONE');
+    expect(f.frameMake).toBe('NONE');
+  });
+
+  it('⚠️ AND A MAKE WITH NO SERIAL LABEL BEFORE IT IS STILL THE FIREARM’S', () => {
+    // The reassignment walks BACKWARDS from the Make to the nearest label in
+    // its own band. A band holding only `Make X` must not inherit a component
+    // from the band above it.
+    const f = parseCard(
+      layout([
+        [[0, 'Barrel Serial No 81815'], [600, 'Make CZ']],
+        [[0, 'Make MARLIN']],
+      ]),
+    );
+    expect(f.barrelMake).toBe('CZ');
+    expect(f.make).toBe('MARLIN');
+  });
+});

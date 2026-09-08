@@ -33,6 +33,23 @@ import type { FirearmSnapshot } from './motivation-seller-consent.service';
 // its right within the same horizontal band, stopping at the next label. That
 // is the only way the Marlin card — whose barrel row reads NONE while the
 // receiver carries the number — parses correctly.
+//
+// ⚠️ THE CARD IS COMPLETE BY CONSTRUCTION, AND THAT IS A RULE, NOT AN
+// OBSERVATION. Operator, 2026-09-08, holding one: "all the information is on a
+// license card. All of them will always have it. It will either be a serial
+// next to every component or NONE, but it will never be empty."
+//
+// So all three component rows are always printed, each with a serial-or-NONE
+// AND a make. A blank we come back with is a READ WE GOT WRONG — never a fact
+// the card did not carry — which is why a missing component is logged rather
+// than shrugged at.
+//
+// ⚠️ AND THERE ARE FOUR "MAKE" LABELS ON THE CARD, NOT ONE. The firearm's own,
+// and one against each of the barrel, receiver and frame rows. LABELS had a
+// single MAKE and the first band to match it won, so the three component makes
+// were never read at all: the seller photographs the card, the consent stores
+// what we read, and section E of the SAPS 271 printed three empty Make boxes
+// beside three filled serials. A MAKE is resolved by WHAT ELSE IS IN ITS BAND.
 // ────────────────────────────────────────────────────────────────────
 
 const VISION_URL = 'https://vision.googleapis.com/v1/images:annotate';
@@ -63,6 +80,30 @@ const LABELS: { label: string; key: keyof FirearmSnapshot }[] = [
   { label: 'TYPE', key: 'type' },
   { label: 'MAKE', key: 'make' },
 ];
+
+/**
+ * The component whose Make follows each serial label, in its own band.
+ *
+ * ⚠️ A LIST OF WHAT TO REASSIGN, NOT A LIST OF WHAT IS ALLOWED. A label
+ * missing from here simply does not claim the Make beside it, which leaves the
+ * firearm's own make — the safe direction to be incomplete in.
+ */
+const COMPONENT_FIELDS: (keyof FirearmSnapshot)[] = [
+  'barrelSerial',
+  'receiverSerial',
+  'frameSerial',
+  'barrelMake',
+  'receiverMake',
+  'frameMake',
+];
+
+const COMPONENT_MAKE: Partial<
+  Record<keyof FirearmSnapshot, keyof FirearmSnapshot>
+> = {
+  barrelSerial: 'barrelMake',
+  receiverSerial: 'receiverMake',
+  frameSerial: 'frameMake',
+};
 
 /** What one read produced, and what it could not. */
 export interface LicenceCardReading {
@@ -168,8 +209,24 @@ export class LicenceCardOcrService {
     }
     if (!words.length) return { ...EMPTY, rawText, ok: true };
 
+    const fields = parseCard(words);
+    /**
+     * ⚠️ SAID OUT LOUD, BECAUSE THE CARD CANNOT BE SHORT. Every licence prints
+     * all three component rows with a serial-or-NONE and a make against each,
+     * so a gap here is OUR read failing — a glare band across the lower block,
+     * a photograph cropped below the frame row — and not a card that did not
+     * carry it. The seller then types it, which is the fallback that has
+     * always been there; this is so we find out it is happening.
+     */
+    const short = COMPONENT_FIELDS.filter((k) => !fields[k]);
+    if (short.length) {
+      this.logger.warn(
+        `Licence card read is short of ${short.length} component field(s): ${short.join(', ')} — the card always prints all six`,
+      );
+    }
+
     return {
-      fields: parseCard(words),
+      fields,
       holderIdNumber: findIdNumber(words),
       holderNameOnCard: findHolderName(words, rawText),
       rawText,
@@ -221,6 +278,27 @@ export function parseCard(words: Word[]): Partial<FirearmSnapshot> {
     }
     if (!hits.length) continue;
     hits.sort((a, b) => a.from - b.from);
+
+    /**
+     * ⚠️ A "Make" BELONGS TO WHATEVER ROW IT IS ON. The lower block of the
+     * card is three rows of `<component> Serial No <value>  Make <value>`, so
+     * a MAKE preceded in its own band by a component serial is that
+     * component's make — and the bare `Make GLOCK  Model NONE` row in the
+     * upper block, which has no serial label before it, is the firearm's.
+     *
+     * Done here rather than with three more entries in LABELS because the
+     * label text really is identical; what tells them apart is the band.
+     */
+    for (let h = 0; h < hits.length; h++) {
+      if (hits[h].key !== 'make') continue;
+      for (let before = h - 1; before >= 0; before--) {
+        const owner = COMPONENT_MAKE[hits[before].key];
+        if (owner) {
+          hits[h].key = owner;
+          break;
+        }
+      }
+    }
 
     for (let h = 0; h < hits.length; h++) {
       const stop = hits[h + 1]?.from ?? band.length;
