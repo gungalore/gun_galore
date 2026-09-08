@@ -243,9 +243,15 @@ export default function MotivationSellerConsent({
    */
   const stillMissing =
     !!cardFirearm &&
-    Object.keys(cardFirearm).some(
-      (k) => !String((firearm as Record<string, string | undefined>)[k] ?? '').trim(),
-    );
+    Object.keys(cardFirearm).some((k) => {
+      const held = String(
+        (firearm as Record<string, string | undefined>)[k] ?? '',
+      ).trim();
+      // Nothing there yet, or what is there is not what the card says — either
+      // way there is something to offer. A read we have since corrected (the
+      // "ZABA01892 VUURWAPEMLISENSIEN" serial) counts as the second case.
+      return !held || held !== cardFirearm[k];
+    });
 
   // ── Signed. The government card is now the source of truth for the firearm,
   //    and the buyer confirms it into their own application. ──────────────

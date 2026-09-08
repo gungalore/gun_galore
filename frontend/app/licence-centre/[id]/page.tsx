@@ -652,7 +652,20 @@ export default function LicenceCentreSheetPage() {
                 */
                 onAdopt={(fields) => {
                   for (const [k, v] of Object.entries(fields)) {
-                    if ((byKey.get(k)?.value ?? '').trim()) continue;
+                    const item = byKey.get(k);
+                    /*
+                      ⚠️ "THEIRS WINS" MEANS THE MEMBER'S, NOT A PREVIOUS READ
+                      OF THE SAME CARD. Skipping every answered field looked
+                      right until a bad read had already landed: the operator's
+                      Glock adopted as "ZABA01892 VUURWAPEMLISENSIEN" before the
+                      serial cleanup, and a rule that refuses to touch anything
+                      answered would leave that on the 271 for ever. A value the
+                      CARD gave us is ours to correct; one the MEMBER typed is
+                      not, and the server's stamp() refuses to overwrite MEMBER
+                      provenance in any case.
+                    */
+                    if (item?.provenance?.source === 'MEMBER') continue;
+                    if (!item?.provenance && (item?.value ?? '').trim()) continue;
                     onChange(k, v);
                   }
                 }}
