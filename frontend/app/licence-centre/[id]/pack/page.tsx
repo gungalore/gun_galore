@@ -11,9 +11,22 @@ import PackSummary from '@/components/licence-centre/pack-summary';
 // ────────────────────────────────────────────────────────────────────
 // YOUR PACK — after the motivation is written.
 //
-// ⚠️ THE MOTIVATION IS READABLE ON THE PAGE, NOT ONLY AS A PDF. It is the
-// thing the member paid for and the thing they sign; making them download a
-// file to find out what it says is the last place to put a step.
+// ⚠️ THE PAGE SHOWS THE DOCUMENT, NOT THE MANUSCRIPT. It used to render the
+// raw draft text — the writer's prose, in body type, with no cover, no
+// annexure index, no page furniture and none of the layout. So a member who
+// had just paid for a 27-page pack opened "Your pack" and met a wall of
+// numbered paragraphs. Operator, 2026-09-09: "why the fuck would I want to see
+// the manuscript? Did I ask generate me a manuscript or a fucking motivation?"
+//
+// The PDF IS the deliverable — masthead, addressed to the Registrar through
+// the DFO, contents, the request for prior notice, the press cuttings, the
+// seller's consent, the annexure index with its certification levels, the
+// take-to-the-station checklist. It is embedded here and read in place.
+//
+// ⚠️ AND THE DOWNLOAD STAYS. An embedded viewer is not a filing cabinet: some
+// browsers refuse to render a PDF inline, and the member needs the file
+// itself to take to a station. The fallback below is shown when the embed
+// cannot render rather than assumed to be unnecessary.
 //
 // ⚠️ NO RED BUTTON ON THIS SCREEN, DELIBERATELY. Print and Download are
 // outlined. The one red button in this surface is "Write my motivation" on the
@@ -34,7 +47,15 @@ export default function PackPage() {
   const id = params?.id ?? '';
 
   const [sheet, setSheet] = useState<SheetResponse | null>(null);
-  const [draft, setDraft] = useState<string | null>(null);
+  /**
+   * The rendered pack, as a blob URL.
+   *
+   * ⚠️ A BLOB, NOT A SRC. The PDF is behind a bearer token, so an <iframe src>
+   * pointed at the API would 401 — the client fetches it with the token and
+   * hands the browser bytes it already holds. Same reason the download does.
+   */
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [written, setWritten] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -43,16 +64,28 @@ export default function PackPage() {
     let live = true;
     void (async () => {
       try {
-        const [s, d] = await Promise.all([
-          motivationsApi.sheet(getToken, id),
-          // ⚠️ FETCHED SEPARATELY FROM THE SHEET, as it always has been: the
-          // sheet is refetched on every save and this is fifteen hundred
-          // words.
-          motivationsApi.draft(getToken, id).catch(() => null),
-        ]);
+        const s = await motivationsApi.sheet(getToken, id);
         if (!live) return;
         setSheet(s);
-        setDraft(d?.text ?? null);
+
+        /**
+         * ⚠️ THE DRAFT IS STILL WHAT SAYS WHETHER ANYTHING WAS WRITTEN. The
+         * PDF endpoint answers for a motivation that does not exist yet too,
+         * and a viewer showing an error page is a worse answer than a sentence
+         * saying it has not been written.
+         */
+        const d = await motivationsApi.draft(getToken, id).catch(() => null);
+        if (!live) return;
+        if (!d?.text) {
+          setWritten(false);
+          return;
+        }
+        const url = await motivationsApi.pdfBlobUrl(getToken, id);
+        if (!live) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setPdfUrl(url);
       } catch (err) {
         if (live) setError((err as Error).message);
       }
@@ -61,6 +94,15 @@ export default function PackPage() {
       live = false;
     };
   }, [getToken, id]);
+
+  // ⚠️ THE BLOB IS RELEASED WHEN THE PAGE GOES. Ten megabytes per visit, held
+  // by the document until something revokes it.
+  useEffect(
+    () => () => {
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+    },
+    [pdfUrl],
+  );
 
   const download = useCallback(async () => {
     setDownloading(true);
@@ -128,17 +170,7 @@ export default function PackPage() {
       </div>
 
       <section className="mt-6">
-        <h2 className="m-0 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.2] text-[var(--text-primary)]">
-          Your motivation
-        </h2>
-        {draft ? (
-          // Pre-wrap rather than a markdown renderer: the writer produces
-          // plain prose with no markup by design, and parsing it as markdown
-          // would invent emphasis nobody asked for.
-          <div className="mt-2 whitespace-pre-wrap text-[13.5px] leading-[1.6] text-[var(--text-secondary)]">
-            {draft}
-          </div>
-        ) : (
+        {!written ? (
           <p className="mt-2 text-[13.5px] text-[var(--text-tertiary)]">
             Your motivation has not been written yet.{' '}
             <Link
@@ -148,6 +180,33 @@ export default function PackPage() {
               Back to your application
             </Link>
             .
+          </p>
+        ) : pdfUrl ? (
+          /*
+            ⚠️ THE DOCUMENT ITSELF, AT THE PAPER'S OWN PROPORTIONS. A4 is
+            1:1.414, so the frame is tall rather than square — a viewer letter-
+            boxed into a 16:9 box shows a third of a page and makes a 27-page
+            pack look like a fragment.
+          */
+          <div className="print:hidden">
+            <iframe
+              src={pdfUrl}
+              title="Your motivation"
+              className="block h-[min(1100px,140vh)] w-full rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-inset)]"
+            />
+            {/*
+              ⚠️ SAID OUT LOUD, BECAUSE AN EMBED CAN FAIL SILENTLY. A browser
+              with its PDF viewer disabled renders an empty box and nothing
+              explains it — and the member is one tap from the file itself.
+            */}
+            <p className="m-0 mt-2 text-[12.5px] leading-[1.45] text-[var(--text-tertiary)]">
+              Not showing? Use Download PDF above — the file is the same one you
+              take to the station.
+            </p>
+          </div>
+        ) : (
+          <p className="mt-2 text-[13.5px] text-[var(--text-tertiary)]">
+            Preparing your document…
           </p>
         )}
       </section>
