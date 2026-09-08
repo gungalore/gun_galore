@@ -354,6 +354,60 @@ into an EMPTY box, so the stored one will not be replaced by itself. It is ours
 (`DERIVED` + `inferred`), not the member's, so clearing it is safe — but it is
 production data and the operator should say so.
 
+### The rewrite, and the four rounds it took — `2d605562` → `c7439b2a`
+
+The operator asked for the new paragraph, so `POST /:id/reason` was called
+directly on MO000069 (the stored one was `DERIVED`, not `MEMBER`, so `stamp()`
+allows the overwrite). Each generation revealed the next fault.
+
+**Round 1 fixed everything the corpus named** — no defence words on a section
+16 firearm, no invented roles, no USPSA division, no catalogue vocabulary, 204
+words in two paragraphs, `warnings: ["roles_unconfirmed"]`. Two faults left:
+
+- **The licence card shouts.** "a NORDISKE PRECISION 223 REM rifle licensed
+  under section 16", because rule 13 says spell a make as the input spells it
+  and the input is the card's own transcription. `proseFirearmName()` fixes it
+  at the PROSE boundary only — same discipline as `answerValue()` and the
+  card's "NONE". ⚠️ **Four letters or more**, so CZ, FN, ADP and REM survive,
+  and a model designation ("T3X", "SP-01") is never touched.
+- **It stated rules nothing can prove.** "restricted to pocket pistol events",
+  "cannot meet the capacity requirements", "entry criteria ... up to twenty
+  five metres". Plausible, probably true, supported by nothing in the pack.
+  `association_activities[]` is now in the contract, empty, and its emptiness
+  is ENFORCED (rule 16 + a validator that refuses a rule-assertion or an
+  unsupported distance).
+
+**Round 2 failed twice, and the cause was mine.** `exercise_eligibility` went
+in as the PREFERRED angle while nothing can feed it, so the model chose it and
+had every sentence it needed refused. One died on "restricted to"; the other,
+told that, shrank to 167 words avoiding it and died on the floor.
+⚠️ **The angle is withheld until `association_activities[]` is non-empty** —
+the same rule as the "Add from your Licence Centre" door: do not draw a door
+onto an empty list. The validator refuses it back too, not just the prompt.
+
+**Round 3 wrote 202 words and passed**, but with five sentences each beginning
+"I hold a" (a list, not a person) and — worse — **"authorized", "utilized" and
+"recognized" on a document lodged with SAPS under an Act that spells it
+"licence"**. Rule 8 had forbidden Americanisms since the first draft and
+nothing enforced it. ⚠️ **The unambiguous spellings only**: "licence" is the
+noun and "license" the verb in both registers, so "licensed under section 16"
+— the commonest phrase in the paragraph — must never trip.
+
+**Round 4 is what is on MO000069 now.** 193 words, angle
+`division_differentiation`, `warnings: ["roles_unconfirmed"]`, one battery row
+with commas the way the approved packs' tables read.
+
+**`c7439b2a` raises the retry budget 2 → 3.** The spec says "retry once, then
+fall back to the templated preview paragraph" — but there is no fallback
+WRITE: a run that fails twice leaves the box empty, and the sheet latches on
+`make|type` so it never tries again for that firearm. Six independent checks
+against two attempts is a coin toss.
+
+⚠️ **`223 REM` AND `9mm PAR` STILL READ ODDLY**, and that is the four-letter
+rule working as designed: renaming a manufacturer is the failure, leaving one
+shouty is merely untidy. A calibre normaliser is a separate job from a
+case-fixer and would want the Bench's cartridge aliases behind it.
+
 ### ⚠️ What the corpus asks for that is NOT built
 
 `exercise_eligibility` is available and **unfed**. The prompt tells the model to
