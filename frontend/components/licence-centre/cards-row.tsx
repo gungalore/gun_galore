@@ -45,6 +45,18 @@ function Tick() {
 export interface CardsRowProps {
   item: SheetItem;
   onChange: (csv: string) => void;
+  /**
+   * The line that makes the question answerable — "You already hold a CZ 75 in
+   * 9mm".
+   *
+   * ⚠️ IT USED TO LIVE IN A SECOND CONTROL. OverlapCard rendered this prompt
+   * with its own copy of the same tiles, writing the same `overlap_angle` key,
+   * while the registry row rendered them again lower down — one question, two
+   * headings, and the operator could not tell which was which. The registry row
+   * is the one that survived: it is the only one with the own-words box and the
+   * only one that sits where the section says it should. The prompt came here.
+   */
+  prompt?: string | null;
   ownWords?: SheetItem;
   onOwnWordsChange?: (value: string) => void;
 }
@@ -52,10 +64,13 @@ export interface CardsRowProps {
 export default function CardsRow({
   item,
   onChange,
+  prompt,
   ownWords,
   onOwnWordsChange,
 }: CardsRowProps) {
   const options = item.options ?? [];
+  /** Long enough that stacking them would run the page off the screen. */
+  const scrolls = (item.options ?? []).length > 8;
   const chosen = parse(item.value);
   const answered = chosen.length > 0;
 
@@ -128,10 +143,29 @@ export default function CardsRow({
           </span>
         </div>
 
+        {prompt ? (
+          <p className="mt-[6px] mb-0 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-inset)] px-3 py-2 text-[13px] leading-[1.45] text-[var(--text-secondary)]">
+            {prompt}
+          </p>
+        ) : null}
+
+        {/*
+          ⚠️ A SCROLLER ONCE THE SET IS LONG, NOT A WALL. Operator, 2026-09-08:
+          "make them a dropdown scrollable box where the user can select from
+          there. They should fit the theme the scroll boxes." Sixteen tiles
+          stacked down the page pushes everything after them off the screen and
+          reads as a form that will not end; a bordered box the same shape as
+          every other control on the sheet reads as one answer.
+
+          Under the threshold it stays a plain grid — a box with a scrollbar
+          round four options is chrome for its own sake.
+        */}
         <div
           className={`mt-[6px] grid gap-2 ${
-            twoUp ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2'
-          }`}
+            scrolls
+              ? 'max-h-[280px] overflow-y-auto rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] p-2'
+              : ''
+          } ${twoUp ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2'}`}
         >
           {options.map((o, i) => {
             const on = chosen.includes(o.key);
@@ -175,11 +209,22 @@ export default function CardsRow({
 
         {ownWords && onOwnWordsChange ? (
           <div className="mt-[10px]">
-            <div className="text-[12.5px] text-[var(--text-secondary)]">
-              In your own words{' '}
-              <span className="text-[11px] text-[var(--text-tertiary)]">
-                — optional, prefilled from the cards you tapped
-              </span>
+            {/*
+              ⚠️ IT HAD TO SAY WHAT IT WAS FOR. "In your own words — optional,
+              prefilled from the cards you tapped" describes where the text came
+              from and never says what the box DOES, so a member reading it
+              cannot tell whether to touch it. Operator, 2026-09-08: "the fill
+              yourself block at the bottom of that, it unclear what the block is
+              for, make it more obvious." It is now a heading and a sentence:
+              this is the paragraph we will write from, edit it or leave it.
+            */}
+            <div className="text-[12.5px] font-medium text-[var(--text-primary)]">
+              Anything you want to add, in your own words
+            </div>
+            <div className="mt-[2px] text-[11.5px] leading-[1.4] text-[var(--text-tertiary)]">
+              We have written this from the cards you tapped. Change it, add to
+              it, or leave it exactly as it is — either way it goes into your
+              motivation.
             </div>
             <textarea
               className="mt-[5px] min-h-[88px] w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-3 py-[10px] text-[14px] leading-[1.45] text-[var(--text-primary)]"

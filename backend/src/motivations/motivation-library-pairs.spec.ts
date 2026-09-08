@@ -871,7 +871,8 @@ describe('auto-link carries the other page, under its own rules', () => {
     // Proficiency - Handgun, Proficiency - Handgun (other side)" on the
     // operator's live section 16 on 2026-09-07. Both pages still attach; the
     // member is told about the document they handed over, once.
-    const prof = out.attached.find((a) => a.title === 'Proficiency — Handgun');
+    const attached = out.attached as { title: string; pages?: number }[];
+    const prof = attached.find((a) => a.title === 'Proficiency — Handgun');
     expect(prof).toBeDefined();
     expect(prof!.pages).toBe(2);
   });

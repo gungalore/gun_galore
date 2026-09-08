@@ -281,6 +281,14 @@ export const PRIMARY_USE: readonly CardOption[] = [
   { key: 'sport_practice', sentence: 'I practise with it between matches.', rankBy: 'calibre' },
   { key: 'collection', sentence: 'I hold it as part of a collection.', rankBy: 'calibre' },
   { key: 'unused', sentence: 'I no longer use it.', rankBy: 'calibre' },
+  { key: 'culling', sentence: 'I use it for culling and problem animals on the farms I hunt.', rankBy: 'calibre' },
+  { key: 'livestock_protection', sentence: 'I use it to protect livestock from predators.', rankBy: 'calibre' },
+  { key: 'training_others', sentence: 'I use it to teach family or new shooters to shoot safely.', rankBy: 'calibre' },
+  { key: 'range_practice', sentence: 'I use it for range practice and keeping my shooting in.', rankBy: 'calibre' },
+  { key: 'dedicated_status', sentence: 'I use it for the activities my dedicated status is assessed on.', rankBy: 'calibre' },
+  { key: 'business_use', sentence: 'I use it in the course of my work.', rankBy: 'calibre' },
+  { key: 'inherited', sentence: 'I hold it because it came to me from family.', rankBy: 'calibre' },
+  { key: 'spare_for_repair', sentence: 'I keep it as the spare for when another is with a gunsmith.', rankBy: 'calibre' },
 ];
 
 // ── THE OVERLAP ANGLE ───────────────────────────────────────────────
@@ -335,6 +343,51 @@ export const OVERLAP_ANGLES: readonly CardOption[] = [
     key: 'different_purpose',
     sentence:
       'The firearm I already hold is for a different purpose and would not be used for this one.',
+  },
+  {
+    key: 'different_calibre',
+    sentence:
+      'This one is a different calibre, and the one I hold is the wrong cartridge for what I need it for.',
+  },
+  {
+    key: 'different_action',
+    sentence:
+      'This one has a different action, and the one I hold cannot be worked quickly enough for it.',
+  },
+  {
+    key: 'ammunition_cost',
+    sentence:
+      'This one shoots a cartridge I can afford to practise with often, which the one I hold does not.',
+  },
+  {
+    key: 'recoil_or_fit',
+    sentence:
+      'This one fits me and recoils in a way I can shoot accurately, which the one I hold does not.',
+  },
+  {
+    key: 'terrain_reach',
+    sentence:
+      'This one reaches across the open country I hunt, where the one I hold is a close-range firearm.',
+  },
+  {
+    key: 'close_cover',
+    sentence:
+      'This one handles in thick bush and close cover, where the one I hold is too long to bring up.',
+  },
+  {
+    key: 'teaching',
+    sentence:
+      'This one is the firearm I would put in a new shooter’s hands, which the one I hold is not.',
+  },
+  {
+    key: 'travel_and_wear',
+    sentence:
+      'This one takes the weather and the travel of the hunting I do, and I would not expose the one I hold to it.',
+  },
+  {
+    key: 'in_for_repair',
+    sentence:
+      'A firearm away at a gunsmith leaves me with nothing, and this one means a season is not lost to a repair.',
   },
 ];
 

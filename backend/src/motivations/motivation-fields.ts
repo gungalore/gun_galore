@@ -1428,7 +1428,13 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // Never required: an applicant who holds nothing has no overlap to
     // explain, and the sheet does not render the card at all in that case.
     key: OVERLAP_ANGLE_KEY,
-    label: 'What this one will be',
+    // ⚠️ TOLD APART FROM THE OWNED-FIREARM SET ON PURPOSE. Both read "What
+    // this one will be" / "What it is for" and both sat in the firearm area,
+    // and the operator could not tell which was which: "There is two What this
+    // one will be. One at the bottom and one that pops up." One is about the
+    // firearm being APPLIED FOR against the ones already held; the other is
+    // about a firearm already held. The labels now say which.
+    label: 'Why this one as well as the ones you hold',
     kind: 'cards',
     section: 'The firearm',
     options: OVERLAP_ANGLES,

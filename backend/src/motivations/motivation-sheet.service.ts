@@ -16,6 +16,7 @@ import {
   fieldsFor,
   isVisible,
   missingRequired,
+  OVERLAP_ANGLE_KEY,
   ownedFirearmSerial,
   ownedRowTaken,
 } from './motivation-fields';
@@ -324,8 +325,25 @@ export class MotivationSheetService {
     field: MotivationField,
     answers: Record<string, string>,
     provenance: ProvenanceMap,
+    overlap: ReturnType<typeof overlapFromAnswers>,
   ): SheetItemState {
     if (!isVisible(field, answers)) return 'na';
+    /**
+     * ⚠️ NEVER ASK SOMEBODY WHY THEY WANT THIS ONE "AS WELL" WHEN THEY HOLD
+     * NOTHING. The overlap question exists to answer a Registrar who has
+     * noticed the applicant already owns something similar; put in front of a
+     * first-time applicant it invents a difficulty to argue against and implies
+     * they hold firearms they do not.
+     *
+     * OverlapCard used to carry this rule by rendering itself away — "⚠️
+     * RENDERS NOTHING WHEN THE VERDICT IS CLEAR" — and that component is gone
+     * now that the question has one control instead of two. The rule outlived
+     * it and belongs here anyway: this service is the only visibility decision
+     * in the system.
+     */
+    if (field.key === OVERLAP_ANGLE_KEY && !overlap.suggestedAngle?.length) {
+      return 'na';
+    }
     if (!answerValue(answers[field.key] ?? '').trim()) return 'needs_you';
     return provenance[field.key]?.inferred ? 'suggested' : 'filled';
   }
@@ -372,10 +390,14 @@ export class MotivationSheetService {
       ...parseProvenance(row.answerProvenance),
     };
 
+    // ⚠️ BEFORE THE ITEMS, because stateOf reads it — the overlap question is
+    // not applicable to somebody who holds nothing similar.
+    const overlap = overlapFromAnswers(row.licenceType, answers);
+
     const served = expandFields(fieldsFor(row.licenceType));
 
     const items: SheetItem[] = served.map((f) => {
-      const state = this.stateOf(f, answers, provenance);
+      const state = this.stateOf(f, answers, provenance, overlap);
       const item: SheetItem = {
         key: f.key,
         label: f.label,
@@ -489,7 +511,7 @@ export class MotivationSheetService {
       coverage: saps271Coverage(row.licenceType, answers, {
         seller: { status: seller.status, name: seller.name },
       }),
-      overlap: overlapFromAnswers(row.licenceType, answers),
+      overlap,
       preview: previewFor(row.licenceType, answers).sections,
       missing: [...missingSet],
       ownedRows: ownedRowsFor(answers),

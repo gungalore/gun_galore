@@ -961,7 +961,11 @@ describe('suggestedAngle', () => {
     const wanted = [...OVERLAP_ANGLES.map((o) => o.key)].sort();
     for (const c of cases) {
       expect(angleKeys(c).sort()).toEqual(wanted);
-      expect(angleKeys(c)).toHaveLength(7);
+      // ⚠️ THE SET'S OWN LENGTH, NOT A LITERAL. This read `toHaveLength(7)`
+      // and broke the day OVERLAP_ANGLES grew — which is the set doing its job,
+      // not a regression. What this case is about is that NOTHING is filtered
+      // out, whichever rule fired first, and `wanted` above already says so.
+      expect(angleKeys(c)).toHaveLength(OVERLAP_ANGLES.length);
     }
   });
 

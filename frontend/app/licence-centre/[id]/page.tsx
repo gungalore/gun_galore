@@ -17,7 +17,6 @@ import DeclarationRow from '@/components/licence-centre/declaration-row';
 import DocumentShelf from '@/components/licence-centre/document-shelf';
 import SheetFooter from '@/components/licence-centre/sheet-footer';
 import SheetToast from '@/components/licence-centre/sheet-toast';
-import OverlapCard from '@/components/licence-centre/overlap-card';
 import ConsentCard from '@/components/licence-centre/consent-card';
 import CompetencyLines from '@/components/licence-centre/competency-lines';
 import PackSummary from '@/components/licence-centre/pack-summary';
@@ -550,6 +549,19 @@ export default function LicenceCentreSheetPage() {
         item={i}
         onChange={(v) => onChange(i.key, v)}
         onConfirm={() => onConfirm(i)}
+        /*
+          ⚠️ ONE CONTROL FOR overlap_angle, NOT TWO. OverlapCard rendered this
+          question near the top of the section with its own copy of the tiles,
+          writing the same key, while the registry row rendered them again lower
+          down — so the sheet asked one question twice under two headings and
+          the operator could not tell them apart. The registry row won: it is
+          the only one carrying the own-words box, and it sits where the section
+          says it should rather than "popping up" beside an unrelated answer.
+          Its prompt — "You already hold a CZ 75 in 9mm" — comes across here.
+        */
+        prompt={
+          i.key === 'overlap_angle' ? sheet.overlap.prompt : undefined
+        }
         ownWords={i.ownWordsKey ? byKey.get(i.ownWordsKey) : undefined}
         onOwnWordsChange={
           i.ownWordsKey ? (v) => onChange(i.ownWordsKey as string, v) : undefined
@@ -620,15 +632,6 @@ export default function LicenceCentreSheetPage() {
               />,
             );
           }
-          out.push(
-            <OverlapCard
-              key="__overlap"
-              prompt={sheet.overlap.prompt}
-              angles={sheet.overlap.suggestedAngle}
-              chosen={byKey.get('overlap_angle')?.value ?? ''}
-              onPick={(csv) => onChange('overlap_angle', csv)}
-            />,
-          );
         }
 
         // Straight after the headline serial, which is the number they will

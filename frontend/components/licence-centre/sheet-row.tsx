@@ -223,6 +223,8 @@ function Control({
 export interface SheetRowProps {
   item: SheetItem;
   onChange: (value: string) => void;
+  /** Context for a cards row — see CardsRowProps.prompt. */
+  prompt?: string | null;
   /** Accept a `suggested` value as-is. Writes MEMBER provenance server-side. */
   onConfirm?: () => void;
   /** The paired "in your own words" item, for a cards row. */
@@ -234,6 +236,7 @@ export default function SheetRow({
   item,
   onChange,
   onConfirm,
+  prompt,
   ownWords,
   onOwnWordsChange,
 }: SheetRowProps) {
@@ -299,6 +302,7 @@ export default function SheetRow({
       <CardsRow
         item={item}
         onChange={onChange}
+        prompt={prompt}
         ownWords={ownWords}
         onOwnWordsChange={onOwnWordsChange}
       />

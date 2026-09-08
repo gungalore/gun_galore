@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import PackSummary from './pack-summary';
 import CompetencyLines from './competency-lines';
-import OverlapCard from './overlap-card';
 import { filled, needsYou } from './__fixtures__/sheet.fixture';
 import type { Saps271Coverage } from '@/lib/motivations-api';
 
@@ -188,47 +187,18 @@ describe('CompetencyLines — one line per certificate', () => {
   });
 });
 
-describe('OverlapCard — only when there is an overlap', () => {
-  it('⚠️ RENDERS NOTHING WHEN THE VERDICT IS CLEAR', () => {
-    // We never invent a difficulty to argue against. An applicant who holds
-    // nothing similar must not be shown a card implying they do.
-    const { container } = render(
-      <OverlapCard prompt={null} angles={null} chosen="" onPick={vi.fn()} />,
-    );
-    expect(container.innerHTML).toBe('');
-  });
-
-  it('shows the ranked angles in the order the server gave them', () => {
-    render(
-      <OverlapCard
-        prompt="You already hold a CZ 75 in 9mm."
-        angles={[
-          { key: 'backup', sentence: 'This one is my backup.' },
-          { key: 'different_division', sentence: 'A different division.' },
-        ]}
-        chosen=""
-        onPick={vi.fn()}
-      />,
-    );
-    const tiles = screen.getAllByRole('button');
-    expect(tiles[0].textContent).toContain('This one is my backup.');
-    expect(screen.getByText('You already hold a CZ 75 in 9mm.')).toBeDefined();
-  });
-
-  it('stores the key, not the sentence', async () => {
-    const onPick = vi.fn();
-    render(
-      <OverlapCard
-        prompt={null}
-        angles={[{ key: 'backup', sentence: 'This one is my backup.' }]}
-        chosen=""
-        onPick={onPick}
-      />,
-    );
-    screen.getByRole('button').click();
-    expect(onPick).toHaveBeenCalledWith('backup');
-  });
-});
+// ⚠️ OverlapCard IS GONE. It rendered `overlap_angle` near the top of the
+// firearm section with its own copy of the tiles, writing the same key, while
+// the registry row rendered them again lower down — one question, two headings,
+// and the operator could not tell them apart: "There is two What this one will
+// be. One at the bottom and one that pops up."
+//
+// The registry row won: it is the only one with the own-words box and the only
+// one that sits where the section says it should. Its prompt moved onto
+// CardsRow, and the rule this component carried — "renders nothing when the
+// verdict is clear", so nobody is asked why they want this one AS WELL when
+// they hold nothing — moved to motivation-sheet.service.ts's stateOf, which is
+// the only visibility decision in the system.
 
 describe('gate (c) — the private-sale variant', () => {
   it('⚠️ THE PART F LINE CHANGES ONCE THE SELLER SIGNS', async () => {
