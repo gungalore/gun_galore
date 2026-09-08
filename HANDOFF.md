@@ -264,6 +264,48 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### One "What this one will be" — 2026-09-08, `047fce9c`
+
+⚠️ **THE SHEET ASKED ONE QUESTION TWICE.** `overlap_angle` is a registry row in
+the firearm section **and** `OverlapCard` rendered the same key near the top
+with its own copy of the tiles. Two headings, two controls, one answer —
+operator: *"There is two What this one will be. One at the bottom and one that
+pops up when selecting the firearm type."*
+
+**The registry row won**, and the reasons are worth keeping: it is the only one
+carrying the own-words box, and it sits where the section orders it rather than
+appearing beside the source answer — which is what *"where it popped up doesnt
+seem right"* was about. OverlapCard's prompt moved onto `CardsRow`; the
+component is **deleted**, not left orphaned.
+
+⚠️ **THE RULE IT CARRIED OUTLIVED IT.** OverlapCard rendered itself away when
+there was no overlap, so nobody is asked why they want this one *as well* when
+they hold nothing. That now lives in `stateOf` — the only visibility decision in
+the system — and the new label makes it matter more, not less.
+
+Labels tell the two sets apart: **"Why this one as well as the ones you hold"**
+for the firearm applied for, against **"What it is for"** on one already held.
+`OVERLAP_ANGLES` 7 → 16 and `PRIMARY_USE` 11 → 19. Past eight options the tiles
+sit in a bordered scroller; under it they stay a plain grid, because a scrollbar
+round four options is chrome for its own sake.
+
+⚠️ **A COUNT ASSERTION PINNED TO A LITERAL BROKE THE MOMENT THE SET GREW.**
+`motivation-overlap.spec.ts` read `toHaveLength(7)`; it reads
+`OVERLAP_ANGLES.length` now. What that case is about is that nothing is
+filtered, and the line above it already said so.
+
+### Still owed from the operator's 2026-09-08 list
+
+**Consent form:** the bottom bar sits over the camera; the address wants Google
+autofill plus a sectioned manual fallback rather than one box; and ⚠️ **the
+scanner's "select all" ticks the signature and declaration boxes too** —
+operator: *"make this universal for every scanner"*.
+
+**Documents:** select / select-all to save member-added documents into the
+Licence Centre **with consent**, the autolink's `skipped` list being the natural
+home for the other half of that surface; the take-with-you list saying "we have
+put a copy in your pack, bring the original"; and consent delete + preview.
+
 ### Typing, pills, and the consent capture I broke — 2026-09-08, `15f6e2c3` + `245db6e2`
 
 ⚠️ **NO FIELD ON THE SHEET COULD BE TYPED INTO BY HAND.** The page merges
@@ -904,8 +946,8 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `245db6e2` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `245db6e2` |
+| Production runs | `047fce9c` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `047fce9c` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
