@@ -265,8 +265,32 @@ export function countWords(text: string): number {
  * a section 13 applicant the sport angles is an invitation to argue the wrong
  * case, and the model reaches for what it is shown.
  */
-export function reasonSystemPrompt(licenceType: MotivationLicenceType): string {
-  const angles = REASON_ANGLES[licenceType].join(' | ');
+/**
+ * The angles this application may actually argue.
+ *
+ * ⚠️ `exercise_eligibility` IS WITHHELD UNTIL SOMETHING CAN FEED IT, and that
+ * is not tidiness — it is the same rule as "do not draw a door onto an empty
+ * list". The angle's whole substance is the association's printed equipment
+ * rule, and rule 16 forbids asserting one we cannot annex. Offering it anyway
+ * is asking the model to argue a case and then refusing every sentence it
+ * writes: two live generations in a row died that way, one on "restricted to"
+ * and one on a paragraph that shrank under the floor while trying to avoid it.
+ */
+export const EXERCISE_ANGLE = 'exercise_eligibility';
+
+export function anglesFor(
+  licenceType: MotivationLicenceType,
+  hasActivityRules: boolean,
+): readonly string[] {
+  const all = REASON_ANGLES[licenceType];
+  return hasActivityRules ? all : all.filter((a) => a !== EXERCISE_ANGLE);
+}
+
+export function reasonSystemPrompt(
+  licenceType: MotivationLicenceType,
+  hasActivityRules = false,
+): string {
+  const angles = anglesFor(licenceType, hasActivityRules).join(' | ');
   return `You write the "reason" section of a South African firearm licence motivation under the Firearms Control Act 60 of 2000. You are given structured facts about one applicant and one firearm. You return one paragraph and a short list of examples. Nothing else.
 
 WHO READS IT
@@ -309,7 +333,13 @@ e. Write the paragraph: the existing firearms and their roles (2-3 sentences), t
 ALLOWED ANGLES
 ${angles}
 
-PREFERRED ANGLE where it is available: exercise_eligibility. When the input carries an association exercise with an equipment rule — a calibre floor or ceiling, a barrel length, an action or a class — that the applied-for firearm meets and a held firearm of the same type does not, lead with it and quote the rule. "The association's 7m rapid-fire handgun exercise is open only to 9mmP pistols and larger; my 6.35mm CZ shoots the 5m pocket-pistol exercise and cannot enter it." That is a gap the reviewer can check against the rules annexed to the same pack, and it is what the approved motivations on file actually do. Where no such rule is supplied, rest the gap on type alone — "none of my rifles can be used in a handgun exercise" — which is still true and still provable.
+${
+    hasActivityRules
+      ? `PREFERRED ANGLE: exercise_eligibility. The input carries association exercises with their equipment rules — a calibre floor or ceiling, a barrel length, an action or a class. Where the applied-for firearm meets one and a held firearm of the same type does not, lead with it and quote the rule. "The association's 7m rapid-fire handgun exercise is open only to 9mmP pistols and larger; my 6.35mm CZ shoots the 5m pocket-pistol exercise and cannot enter it." That is a gap the reviewer can check against the rules annexed to the same pack, and it is what the approved motivations on file actually do.`
+      : `NO ASSOCIATION EXERCISES WERE SUPPLIED, so you do not know what any exercise is shot with. Rest the gap on the two things the firearms themselves prove: TYPE and SECTION. "None of my rifles can be used in a handgun exercise" is provable; "cannot meet the capacity requirements" is not.
+
+HOW TO REACH THE WORD FLOOR WITHOUT INVENTING ANYTHING. Name every held firearm in its own clause with make, calibre and the section it is licensed under. Say what class of shooting the applied-for firearm opens that the held ones do not, in plain terms of type and action. Say what the applicant will do with it, in the words the input gives you. That is the length; padding it with capability claims is what rule 16 refuses.`
+  }
 
 Anything you mark "inferred" in existing_roles is a suggestion the applicant must confirm: keep it out of the paragraph. Anything you mark "none" has no role at all: name the firearm, its calibre and its section, and stop.`;
 }
@@ -381,7 +411,14 @@ export function validateReason(
    * logged, never thrown away.
    */
   if (r.wordCount !== words) r.wordCount = words;
-  if (!REASON_ANGLES[ctx.licenceType].includes(r.angle)) {
+  /**
+   * ⚠️ THE SAME LIST THE PROMPT SHOWED, NOT THE FULL ONE. Hiding an angle from
+   * the prompt and then accepting it back is how a model's memory of an
+   * earlier draft reaches the applicant: `exercise_eligibility` without an
+   * association rule is a case the paragraph cannot make, and every sentence
+   * it would need is refused by rule 16 anyway.
+   */
+  if (!anglesFor(ctx.licenceType, !!ctx.hasActivityRules).includes(r.angle)) {
     bad.push(`angle "${r.angle}" is not allowed for ${ctx.licenceType}`);
   }
 

@@ -245,7 +245,12 @@ export class MotivationReasonService {
     let text: string;
     try {
       const res = await this.llm.complete({
-        system: reasonSystemPrompt(licenceType),
+        // ⚠️ THE SAME FLAG THE VALIDATOR USES. Showing the model an angle it
+        // will then be refused for choosing is how two live generations died.
+        system: reasonSystemPrompt(
+          licenceType,
+          input.association_activities.length > 0,
+        ),
         messages: [
           {
             role: 'user',

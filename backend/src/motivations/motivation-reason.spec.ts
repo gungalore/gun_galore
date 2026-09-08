@@ -1,6 +1,7 @@
 import { MotivationLicenceType } from '@prisma/client';
 import {
   REASON_ANGLES,
+  anglesFor,
   REASON_MAX_WORDS,
   REASON_MIN_WORDS,
   countWords,
@@ -101,7 +102,14 @@ describe('the angle must fit the section', () => {
       expect(
         validateReason(
           result({ angle: angles[0] }),
-          ctx({ licenceType: type as MotivationLicenceType }),
+          ctx({
+            licenceType: type as MotivationLicenceType,
+            // ⚠️ THE FULL LIST NEEDS THE FULL INPUTS. `angles[0]` is
+            // `exercise_eligibility` for the sporting sections, which is
+            // withheld until an association rule can feed it — see the angle
+            // gate below. This asserts the section mapping, not the gate.
+            hasActivityRules: true,
+          }),
         ).filter((b) => b.includes('not allowed')),
       ).toEqual([]);
     }
@@ -442,6 +450,34 @@ describe('the angle list', () => {
     expect(REASON_ANGLES[S16S][0]).toBe('exercise_eligibility');
     expect(REASON_ANGLES[S16H]).toContain('exercise_eligibility');
     expect(REASON_ANGLES[S13]).not.toContain('exercise_eligibility');
+  });
+
+  it('⚠️ BUT WITHHOLDS IT UNTIL SOMETHING CAN FEED IT', () => {
+    // Its whole substance is the association's printed rule, and rule 16
+    // refuses one we cannot annex. Offering it anyway asks the model to argue
+    // a case and then refuses every sentence it writes: two live generations
+    // in a row died that way, one on "restricted to" and one on a paragraph
+    // that shrank under the floor while trying to avoid it.
+    expect(anglesFor(S16S, false)).not.toContain('exercise_eligibility');
+    expect(anglesFor(S16S, true)).toContain('exercise_eligibility');
+    expect(reasonSystemPrompt(S16S)).not.toContain('exercise_eligibility');
+    expect(reasonSystemPrompt(S16S, true)).toContain('exercise_eligibility');
+  });
+
+  it('⚠️ AND THE VALIDATOR REFUSES IT BACK, not just the prompt', () => {
+    // Hiding an angle from the prompt and accepting it back is how a model's
+    // memory of an earlier draft reaches the applicant.
+    const bad = validateReason(
+      result({ angle: 'exercise_eligibility' }),
+      ctx({ hasActivityRules: false }),
+    );
+    expect(bad.join(' ')).toContain('not allowed');
+  });
+
+  it('tells a section without rules how to reach the floor honestly', () => {
+    const p = reasonSystemPrompt(S16S);
+    expect(p).toContain('NO ASSOCIATION EXERCISES WERE SUPPLIED');
+    expect(p).toContain('HOW TO REACH THE WORD FLOOR');
   });
 });
 
