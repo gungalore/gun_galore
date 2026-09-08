@@ -101,7 +101,13 @@ the only surface for a capability the way `pack-finish` was: that is now twice.
 2. **`cipSheetEnabled` and its label.** The spliced page is captioned
    "(C.I.P. data)", which names a source in a contents page. It only renders now
    when we hold no figures. Retire it, or rename the label.
-3. **`MO000072`** is still on file — a test application the operator created.
+3. ⚠️ **`MO000072` is the ONLY motivation on the box**, S13 self-defence, still
+   `DRAFT`. `MOTIVATION-S13-OUTPUT-REVIEW.md` asks for it to be deleted; that
+   ask predates MO000071 going, and deleting it now would leave production with
+   no application at all and nothing to test against. Leave it until the
+   operator says otherwise. Its pack screen shows "not written yet" for the
+   motivation and still offers the SAPS 271, which is correct — the form fills
+   from the answers and does not wait on the writer.
 
 ### Still outstanding from `MOTIVATION-S13-OUTPUT-REVIEW.md` §4
 
