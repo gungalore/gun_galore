@@ -117,6 +117,8 @@ export interface SheetResponse {
     label: string;
     mime: string | null;
     state: 'read' | 'check';
+    /** Copied in from the Document Centre, or added here by the member. */
+    origin: 'vault' | 'member';
   }[];
   /**
    * What the pack still wants, by tier.
@@ -348,6 +350,9 @@ export class MotivationSheetService {
             kind: true,
             mimeType: true,
             extractionOk: true,
+            // Which Document Centre credential this page is a copy of, or null
+            // when the member added it here. It is the whole of `origin`.
+            sourceCredentialId: true,
           },
         },
       },
@@ -452,6 +457,23 @@ export class MotivationSheetService {
         // Gold, not red: a document we could not read is still attached and
         // still goes in the pack. It is a "look at this", never a failure.
         state: u.extractionOk ? ('read' as const) : ('check' as const),
+        /**
+         * ⚠️ DERIVED, NOT STORED, AND `sourceCredentialId` IS ALREADY THE
+         * ANSWER. A page copied in from the Document Centre carries the
+         * credential it came from; one the member scanned or uploaded here
+         * carries null. No column and no migration — the fact was on the row
+         * the whole time, it had simply never been shown.
+         *
+         * Operator, 2026-09-08: "indicate where a document origin is from,
+         * Added by License centre or User added."
+         *
+         * ⚠️ AND IT DECIDES WHO IS OFFERED THE SAVE. Only a `member` document
+         * can be saved INTO the Centre; a `vault` one is already there, and
+         * offering to save it again is an invitation to make a duplicate.
+         */
+        origin: u.sourceCredentialId
+          ? ('vault' as const)
+          : ('member' as const),
       })),
       needs: documentStatus(
         row.licenceType,

@@ -54,6 +54,34 @@ function UploadIcon() {
   );
 }
 
+/**
+ * Where the page came from, as a mark inside its own tile.
+ *
+ * ⚠️ A LETTER IN A BOX, NOT A COLOUR. The shelf already spends colour on the
+ * READ state — green for read cleanly, gold for check this — and a second
+ * colour code on the same 72px tile would be two things to learn and one to
+ * confuse. Origin is not a state and must not compete with one.
+ *
+ * Operator, 2026-09-08: "Just a small indicator inside each file box", with a
+ * legend beneath.
+ */
+function OriginMark({ origin }: { origin: 'vault' | 'member' }) {
+  const vault = origin === 'vault';
+  return (
+    <span
+      aria-label={vault ? 'Added by the Licence Centre' : 'You added this'}
+      title={vault ? 'Added by the Licence Centre' : 'You added this'}
+      className={`absolute bottom-[5px] right-[5px] flex h-[15px] w-[15px] items-center justify-center rounded-[3px] border text-[9px] font-medium leading-none ${
+        vault
+          ? 'border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-secondary)]'
+          : 'border-[var(--red-line)] bg-[var(--red-wash)] text-[var(--red)]'
+      }`}
+    >
+      {vault ? 'LC' : 'U'}
+    </span>
+  );
+}
+
 function FileIcon() {
   return (
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -212,6 +240,7 @@ export default function DocumentShelf({
                     : 'bg-[var(--gold-strong)]'
                 }`}
               />
+              <OriginMark origin={d.origin} />
             </div>
             <div className="mt-[5px] line-clamp-2 text-[11px] leading-[1.25] text-[var(--text-secondary)]">
               {d.label}
@@ -245,6 +274,31 @@ export default function DocumentShelf({
             </>,
           )}
         </div>
+      </div>
+
+      {/*
+        ⚠️ A LEGEND, BECAUSE TWO LETTERS ARE NOT SELF-EXPLANATORY. The marks are
+        deliberately small enough to need one; the alternative was a word on
+        every tile, which does not fit in 72px and would push the name out.
+        It renders only when there is something to explain.
+      */}
+      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 pr-4 text-[11px] text-[var(--text-tertiary)]">
+        {documents.some((d) => d.origin === 'vault') ? (
+          <span className="inline-flex items-center gap-[6px]">
+            <span className="flex h-[15px] w-[15px] items-center justify-center rounded-[3px] border border-[var(--border)] bg-[var(--bg-card)] text-[9px] font-medium leading-none text-[var(--text-secondary)]">
+              LC
+            </span>
+            Added by the Licence Centre
+          </span>
+        ) : null}
+        {documents.some((d) => d.origin === 'member') ? (
+          <span className="inline-flex items-center gap-[6px]">
+            <span className="flex h-[15px] w-[15px] items-center justify-center rounded-[3px] border border-[var(--red-line)] bg-[var(--red-wash)] text-[9px] font-medium leading-none text-[var(--red)]">
+              U
+            </span>
+            You added this
+          </span>
+        ) : null}
       </div>
     </div>
   );

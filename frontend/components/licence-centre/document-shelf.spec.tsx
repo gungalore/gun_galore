@@ -22,6 +22,7 @@ const doc = (over: Partial<SheetDocument> = {}): SheetDocument => ({
   label: 'Identity document',
   mime: 'image/jpeg',
   state: 'read',
+  origin: 'member',
   ...over,
 });
 
@@ -143,5 +144,51 @@ describe('the empty shelf', () => {
     render(<DocumentShelf documents={[]} onUpload={vi.fn()} onScan={vi.fn()} />);
     expect(screen.getAllByRole('button').length).toBe(1);
     expect(document.querySelectorAll('input[type="file"]').length).toBe(1);
+  });
+});
+
+
+describe('where each page came from', () => {
+  // ⚠️ A LETTER, NOT A COLOUR. The shelf already spends colour on the READ
+  // state — green for read cleanly, gold for check this — and a second colour
+  // code on the same 72px tile would be two things to learn and one to confuse.
+  it('marks a Licence Centre page and a member-added one differently', () => {
+    render(
+      <DocumentShelf
+        documents={[
+          doc({ id: 'a', origin: 'vault' }),
+          doc({ id: 'b', origin: 'member' }),
+        ]}
+        onUpload={vi.fn()}
+        onScan={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Added by the Licence Centre')).toBeDefined();
+    expect(screen.getByLabelText('You added this')).toBeDefined();
+  });
+
+  it('⚠️ EXPLAINS THE MARKS, because two letters are not self-evident', () => {
+    render(
+      <DocumentShelf
+        documents={[doc({ origin: 'vault' })]}
+        onUpload={vi.fn()}
+        onScan={vi.fn()}
+      />,
+    );
+    // The legend line, not the tile's own aria-label.
+    expect(
+      screen.getAllByText('Added by the Licence Centre').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('shows only the half of the legend that applies', () => {
+    render(
+      <DocumentShelf
+        documents={[doc({ origin: 'vault' })]}
+        onUpload={vi.fn()}
+        onScan={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('You added this')).toBeNull();
   });
 });

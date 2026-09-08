@@ -140,6 +140,7 @@ export const sheet = (over: Partial<SheetResponse> = {}): SheetResponse => ({
       label: 'Identity document',
       mime: 'image/jpeg',
       state: 'read',
+      origin: 'vault',
     },
   ],
   needs: { needs: [] },

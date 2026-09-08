@@ -141,6 +141,17 @@ export interface SheetDocument {
    * were fine.
    */
   state: 'read' | 'check';
+  /**
+   * Where this page came from.
+   *
+   * ⚠️ DERIVED FROM `sourceCredentialId` ON THE SERVER, not stored. A page
+   * copied in from the Document Centre carries the credential it came from; one
+   * the member scanned or uploaded here carries null.
+   *
+   * ⚠️ AND IT DECIDES WHO IS OFFERED THE SAVE. Only a `member` document can be
+   * saved INTO the Centre; a `vault` one is already there.
+   */
+  origin: 'vault' | 'member';
 }
 
 /** One section of the live preview. See backend motivation-preview.ts. */

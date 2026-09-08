@@ -211,6 +211,56 @@ export default function LicenceCentreSheetPage() {
   }, [getToken, id]);
 
   /**
+   * Attach what the member already holds, without asking.
+   *
+   * ⚠️ THE SERVER SIDE OF THIS HAS ALWAYS EXISTED AND NOTHING CALLED IT.
+   * `POST :id/autolink` and `motivationsApi.autolink` were both written for the
+   * old wizard's "generator open"; Phase 4 deleted those screens and the sheet
+   * never picked the call up, so `motivationsApi.autolink` sat in the client
+   * with no caller at all. A member with twenty documents in their Document
+   * Centre started every application with an empty shelf. Same failure as the
+   * delete button and the seller context: a capability orphaned by the cutover.
+   *
+   * ⚠️ ONCE PER VISIT, BEHIND A REF LATCH. It is a POST that changes what a DFO
+   * will see, and an effect that can re-run must not be what decides that. The
+   * server is idempotent about it — it answers `already-done` — but the latch
+   * is what stops us relying on that.
+   *
+   * ⚠️ `placeConfirmed` STAYS FALSE. Safe photographs are held back until the
+   * member confirms they are of the safe at THIS address: a safe photograph
+   * does not go stale with time, it goes wrong when somebody moves house, and
+   * nothing on the file says so. The server reports `needsPlaceConfirm` and the
+   * library picker asks the question properly.
+   *
+   * The autolink's own refusals are worth knowing before changing any of this:
+   * never a document describing a firearm or a transaction, never one expiring
+   * within ninety days, never without consent, and never a guess between
+   * candidates — except that the endorsement test runs BEFORE the count, so a
+   * member holding a handgun certificate and a rifle certificate gets the one
+   * that covers the firearm being applied for rather than neither.
+   */
+  const autolinked = useRef(false);
+  useEffect(() => {
+    if (!sheet || autolinked.current) return;
+    autolinked.current = true;
+    void (async () => {
+      try {
+        const r = await motivationsApi.autolink(getToken, id);
+        if (!r.attached.length) return;
+        await load();
+        setToast(
+          r.attached.length === 1
+            ? `Added ${r.attached[0].title} from your Licence Centre.`
+            : `Added ${r.attached.length} documents from your Licence Centre.`,
+        );
+      } catch {
+        /* Fail soft: an application must never fail to open because the
+           Centre was slow. The shelf is simply emptier than it could be. */
+      }
+    })();
+  }, [sheet, getToken, id, load]);
+
+  /**
    * The opening fold: the first section that still owes something.
    *
    * ⚠️ NOT "all closed", AND NOT "the first section". A member coming back to
