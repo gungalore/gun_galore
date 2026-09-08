@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import SheetHeader from './sheet-header';
 import SheetFooter from './sheet-footer';
 import { sheet } from './__fixtures__/sheet.fixture';
@@ -45,14 +45,33 @@ function renderBoth(missing: string[]) {
 }
 
 describe('the three views agree', () => {
-  it('nothing outstanding — ready, enabled, no footer line', () => {
+  it('nothing outstanding — ready, and the last thing asked is the declaration', () => {
     renderBoth([]);
     expect(screen.getByText('Ready to write')).toBeDefined();
     const button = screen.getByRole('button', {
       name: 'Write my motivation',
     }) as HTMLButtonElement;
-    expect(button.disabled).toBe(false);
+    /**
+     * ⚠️ THE BUTTON IS STILL SHUT, AND IT IS NOT THE COUNT DOING IT. `generate`
+     * refuses with a 409 until the declaration is accepted — a gate that has
+     * always existed behind a wizard screen Phase 4 deleted, so the sheet
+     * enabled the button and the click failed silently. The footer asks here
+     * now, so the three views still agree about the COUNT and the button says
+     * what it is actually waiting for.
+     */
+    expect(button.disabled).toBe(true);
     expect(document.body.textContent).not.toContain('still needed above');
+    expect(document.body.textContent).toContain('Tick the declaration');
+  });
+
+  it('and opens the moment the declaration is ticked', () => {
+    renderBoth([]);
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    expect(
+      (screen.getByRole('button', {
+        name: 'Write my motivation',
+      }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   it('one outstanding — singular, and the button is blocked', () => {

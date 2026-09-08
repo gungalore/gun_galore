@@ -120,6 +120,8 @@ export const sheet = (over: Partial<SheetResponse> = {}): SheetResponse => ({
     licenceTypeLabel: 'Section 16 — Dedicated sport shooter',
     label: null,
     status: 'DRAFT',
+    // Nothing signed yet — the footer asks, which is the state under test.
+    declarationAcceptedAt: null,
   },
   sections: [
     { id: 'firearm', title: 'The firearm', blurb: 'What you are applying for.', missing: [] },

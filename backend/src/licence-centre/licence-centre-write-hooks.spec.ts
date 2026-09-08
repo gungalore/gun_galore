@@ -581,18 +581,17 @@ describe('filing a new document', () => {
 // if its a double."
 // ────────────────────────────────────────────────────────────────────
 describe('deleting a credential re-arms the sweep', () => {
-  it('⚠️ RE-ARMS, so the survivor can finally be chosen', async () => {
-    const { svc, rearm } = build();
-    svc.prisma.credential.findFirst = jest.fn(async () => ({
-      id: 'c-dup',
-      storageKey: null,
-      kind: 'COMPETENCY_CERTIFICATE',
-      coversKinds: [],
-      attention: null,
-      otherSideId: null,
-    })) as never;
-    svc.prisma.credential.delete = jest.fn(async () => ({})) as never;
+  const dup = {
+    id: 'c-dup',
+    storageKey: null,
+    kind: 'COMPETENCY_CERTIFICATE',
+    coversKinds: [],
+    attention: null,
+    otherSideId: null,
+  } as unknown as Row;
 
+  it('⚠️ RE-ARMS, so the survivor can finally be chosen', async () => {
+    const { svc, rearm } = build(dup);
     await svc.remove('clerk_1', 'c-dup');
     expect(rearm).toHaveBeenCalledWith('user-1');
   });
@@ -600,18 +599,8 @@ describe('deleting a credential re-arms the sweep', () => {
   it('⚠️ AND NEVER LOSES THE DELETE OVER IT', async () => {
     // Same posture as create() and confirmExpiry(): the re-arm is a
     // convenience and the delete is the member's instruction.
-    const { svc, rearm } = build();
+    const { svc, rearm } = build(dup);
     rearm.mockRejectedValueOnce(new Error('module edge down'));
-    svc.prisma.credential.findFirst = jest.fn(async () => ({
-      id: 'c-dup',
-      storageKey: null,
-      kind: 'COMPETENCY_CERTIFICATE',
-      coversKinds: [],
-      attention: null,
-      otherSideId: null,
-    })) as never;
-    svc.prisma.credential.delete = jest.fn(async () => ({})) as never;
-
     await expect(svc.remove('clerk_1', 'c-dup')).resolves.toEqual({
       removed: true,
     });

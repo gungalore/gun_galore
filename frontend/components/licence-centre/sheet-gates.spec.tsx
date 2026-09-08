@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SheetRow from './sheet-row';
 import SheetFooter from './sheet-footer';
@@ -129,6 +129,17 @@ describe('gate (a) — populated vault, S16 sport', () => {
       </>,
     );
 
+    /**
+     * ⚠️ AND ONE LAST TAP, WHICH IS THE DECLARATION. `generate` refuses with a
+     * 409 until it is accepted; the wizard screen that asked was deleted in
+     * Phase 4, so the sheet enabled the button over a gate it did not know
+     * about and the click failed silently. It is a real interaction and it is
+     * counted here rather than excused — a member cannot reach a drafted
+     * document without it.
+     */
+    const declaration = screen.getAllByRole('checkbox')[0];
+    await user.tap(declaration);
+
     const button = screen.getByRole('button', {
       name: 'Write my motivation',
     }) as HTMLButtonElement;
@@ -175,17 +186,40 @@ describe('gate (b) — empty vault', () => {
     expect(screen.getAllByRole('textbox')).toHaveLength(3);
   });
 
-  it('opens the button once every required row is answered', () => {
+  it('opens the button once every required row is answered AND declared', () => {
     const { rerender } = render(
       <SheetFooter missingCount={3} onWrite={vi.fn()} />,
     );
     expect(
-      (screen.getByRole('button') as HTMLButtonElement).disabled,
+      (screen.getByRole('button', { name: 'Write my motivation' }) as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
 
+    // ⚠️ THE COUNT ALONE IS NOT ENOUGH ANY MORE, and the old assertion here is
+    // exactly what let the silent 409 ship: it proved the button opened, and
+    // the button opening was never the same thing as the document being
+    // draftable.
     rerender(<SheetFooter missingCount={0} onWrite={vi.fn()} />);
     expect(
-      (screen.getByRole('button') as HTMLButtonElement).disabled,
+      (screen.getByRole('button', { name: 'Write my motivation' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0]);
+    expect(
+      (screen.getByRole('button', { name: 'Write my motivation' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it('⚠️ AND NEVER ASKS TWICE — a signed declaration survives the reload', () => {
+    // Asking somebody to re-tick on every visit is a confirm step guarding a
+    // value we already hold, which is the shape the operator ruled out.
+    render(<SheetFooter missingCount={0} declared onWrite={vi.fn()} />);
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(
+      (screen.getByRole('button', { name: 'Write my motivation' }) as HTMLButtonElement)
+        .disabled,
     ).toBe(false);
   });
 });

@@ -235,6 +235,15 @@ export interface SheetResponse {
     licenceTypeLabel: string;
     label: string | null;
     status: string;
+    /**
+     * When the applicant confirmed the declaration, or null.
+     *
+     * ⚠️ `generate()` REFUSES WITH A 409 UNTIL IT IS SET, and the wizard screen
+     * that asked was deleted in Phase 4 — so the sheet showed every section
+     * Done, enabled the button, and the click failed silently. The footer asks
+     * once and, because this is served, never asks again.
+     */
+    declarationAcceptedAt: string | null;
   };
   sections: SheetSection[];
   items: SheetItem[];

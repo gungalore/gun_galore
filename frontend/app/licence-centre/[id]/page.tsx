@@ -548,16 +548,38 @@ export default function LicenceCentreSheetPage() {
     [getToken, id, load],
   );
 
-  const onWrite = useCallback(async () => {
-    setBusy(true);
-    try {
-      await motivationsApi.generate(getToken, id);
-      router.push(`/licence-centre/${id}/pack`);
-    } catch (err) {
-      setError((err as Error).message);
-      setBusy(false);
-    }
-  }, [getToken, id, router]);
+  /**
+   * Accept the declaration, then draft.
+   *
+   * ⚠️ THE DECLARATION STEP HAD NO SURFACE AND THE FAILURE HAD NO VOICE.
+   * `generate()` has always refused with 409 "Please confirm the declaration
+   * before we prepare the document" — a gate behind a wizard screen Phase 4
+   * deleted. So every section read Done, the button was enabled, the click
+   * 409'd, and the message went into `error`, which the render only shows when
+   * the sheet FAILED TO LOAD. Operator, 2026-09-08: "It wont create the
+   * motivation. Al sections says their done."
+   *
+   * ⚠️ SO A REFUSAL GOES TO THE TOAST NOW. `error` is for "we could not load
+   * your application" and nothing else; a failure the member can act on has to
+   * be somewhere they can see it.
+   */
+  const onWrite = useCallback(
+    async ({ testimonialConsent }: { testimonialConsent: boolean }) => {
+      setBusy(true);
+      try {
+        await motivationsApi.acceptDeclaration(getToken, id, testimonialConsent);
+        await motivationsApi.generate(getToken, id);
+        router.push(`/licence-centre/${id}/pack`);
+      } catch (err) {
+        setToast(
+          (err as Error).message ||
+            'We could not start writing it just now. Please try again.',
+        );
+        setBusy(false);
+      }
+    },
+    [getToken, id, router],
+  );
 
   /** The items as the member sees them — server values under pending edits. */
   const items = useMemo<SheetItem[]>(() => {
@@ -1200,6 +1222,7 @@ export default function LicenceCentreSheetPage() {
 
         <SheetFooter
           missingCount={sheet.missing.length}
+          declared={!!sheet.application.declarationAcceptedAt}
           onWrite={onWrite}
           busy={busy}
         />

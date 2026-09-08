@@ -154,6 +154,16 @@ export interface SheetResponse {
     licenceTypeLabel: string;
     label: string | null;
     status: MotivationStatus;
+    /**
+     * When the applicant confirmed the declaration, or null.
+     *
+     * ⚠️ THE SHEET HAD NO IDEA THIS GATE EXISTED. `generate()` refuses with a
+     * 409 until it is set, and the wizard screen that asked has been deleted
+     * since Phase 4 — so every section read Done, the button was enabled, and
+     * the click failed. It is served so the footer can ask once and never ask
+     * again.
+     */
+    declarationAcceptedAt: string | null;
   };
   sections: SheetSection[];
   items: SheetItem[];
@@ -508,6 +518,7 @@ export class MotivationSheetService {
         licenceType: true,
         label: true,
         status: true,
+        declarationAcceptedAt: true,
         answersEncrypted: true,
         answerProvenance: true,
         uploads: {
@@ -635,6 +646,9 @@ export class MotivationSheetService {
         licenceTypeLabel: LICENCE_TYPE_LABELS[row.licenceType],
         label: row.label,
         status: row.status,
+        declarationAcceptedAt: row.declarationAcceptedAt
+          ? row.declarationAcceptedAt.toISOString()
+          : null,
       },
       sections,
       items,
