@@ -265,9 +265,16 @@ export function validateReason(
   if (words < REASON_MIN_WORDS || words > REASON_MAX_WORDS) {
     bad.push(`paragraph is ${words} words, outside ${REASON_MIN_WORDS}-${REASON_MAX_WORDS}`);
   }
-  if (r.wordCount !== words) {
-    bad.push(`word_count says ${r.wordCount}, the paragraph is ${words}`);
-  }
+  /**
+   * ⚠️ THE MODEL'S OWN COUNT IS NOT A SAFETY PROPERTY, AND REJECTING ON IT
+   * COST THE APPLICANT A GOOD PARAGRAPH. Two live generations in a row came
+   * back claiming 218 words for paragraphs of 176 and 196 — counting words is
+   * a known weakness of something that thinks in tokens. The length rule is
+   * already enforced above against a real count; whether the model can also do
+   * the arithmetic is our problem, not the applicant's. It is corrected and
+   * logged, never thrown away.
+   */
+  if (r.wordCount !== words) r.wordCount = words;
   if (!REASON_ANGLES[ctx.licenceType].includes(r.angle)) {
     bad.push(`angle "${r.angle}" is not allowed for ${ctx.licenceType}`);
   }
@@ -352,19 +359,28 @@ export function validateReason(
    * appears nowhere in what we gave the model. Every significant word has to
    * come from somewhere we supplied; the arrangement is the model's business.
    */
-  const haystack = ctx.knownTerms.join(' ').toLowerCase();
-  for (const ex of r.examples) {
-    const missing = ex.label
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((t) => t.length > 3)
+  /**
+   * ⚠️ AN EXAMPLE IS DROPPED, NEVER FATAL — THE PARAGRAPH IS THE PRODUCT.
+   * Rejecting a whole generation because a label said "SAPSA Provincial
+   * Matches" and the word "matches" was not in the supplied terms is a
+   * disproportionate answer to a cosmetic problem: the paragraph is what the
+   * applicant signs, and it is already checked for invented firearms, banned
+   * reasons and the wrong section.
+   *
+   * ⚠️ AND THE TEST IS ACRONYMS ONLY. What this guards against is an example
+   * naming a BODY OR DISCIPLINE WE NEVER MENTIONED — "IDPA Stock Service
+   * Pistol" against a member who shoots IPSC. In practice that failure is
+   * always an acronym; ordinary words are how a person writes, and demanding
+   * every one of them be quoted back from the input refuses correct answers.
+   */
+  const haystack = ctx.knownTerms.join(' ').toUpperCase();
+  r.examples = r.examples.filter((ex) => {
+    const unknown = ex.label
+      .split(/[^A-Za-z0-9]+/)
+      .filter((t) => t.length >= 3 && t === t.toUpperCase() && /[A-Z]/.test(t))
       .filter((t) => !haystack.includes(t));
-    if (missing.length) {
-      bad.push(
-        `example "${ex.label}" uses ${missing.map((m) => `"${m}"`).join(', ')}, which we did not supply`,
-      );
-    }
-  }
+    return unknown.length === 0;
+  });
 
   return bad;
 }

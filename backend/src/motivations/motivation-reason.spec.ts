@@ -71,14 +71,15 @@ describe('the length', () => {
     expect(bad.join(' ')).toContain('outside');
   });
 
-  it('⚠️ REFUSES A COUNT THAT DOES NOT MATCH THE PARAGRAPH', () => {
-    // Being asked to count and being asked to obey a range are two different
-    // instructions, and a model can fail either.
-    const bad = validateReason(
-      result({ paragraph: words(180), wordCount: 231 }),
-      ctx(),
-    );
-    expect(bad.join(' ')).toContain('word_count says 231');
+  it('⚠️ CORRECTS A COUNT THAT DOES NOT MATCH, RATHER THAN REFUSING', () => {
+    // Two live generations in a row claimed 218 words for paragraphs of 176
+    // and 196. Counting words is a known weakness of something that thinks in
+    // tokens, the length rule is already enforced against a REAL count above,
+    // and throwing away a good paragraph over the model's arithmetic charges
+    // the applicant for our problem.
+    const r = result({ paragraph: words(180), wordCount: 231 });
+    expect(validateReason(r, ctx())).toEqual([]);
+    expect(r.wordCount).toBe(180);
   });
 });
 
@@ -203,33 +204,50 @@ describe('it may not name a firearm the applicant does not hold', () => {
 });
 
 describe('examples come from what we supplied', () => {
-  it('refuses one invented from nothing', () => {
-    const bad = validateReason(
-      result({
-        examples: [
-          { kind: 'discipline', label: 'Olympic biathlon', detail: 'x' },
-        ],
-      }),
-      ctx(),
-    );
-    expect(bad.join(' ')).toContain('Olympic biathlon');
+  it('⚠️ DROPS AN INVENTED BODY, AND KEEPS THE PARAGRAPH', () => {
+    // The paragraph is what the applicant signs and is already checked for
+    // invented firearms, banned reasons and the wrong section. Throwing the
+    // whole generation away over an example label is disproportionate.
+    const r = result({
+      examples: [
+        { kind: 'discipline', label: 'IDPA Stock Service Pistol', detail: 'x' },
+        {
+          kind: 'discipline',
+          label: 'IPSC Handgun Production Optics',
+          detail: 'y',
+        },
+      ],
+    });
+    expect(validateReason(r, ctx())).toEqual([]);
+    expect(r.examples.map((e) => e.label)).toEqual([
+      'IPSC Handgun Production Optics',
+    ]);
   });
 
-  it('accepts one drawn from the research block', () => {
-    expect(
-      validateReason(
-        result({
-          examples: [
-            {
-              kind: 'discipline',
-              label: 'IPSC Handgun Production Optics',
-              detail: 'Slide-mounted optic permitted.',
-            },
-          ],
-        }),
-        ctx(),
-      ),
-    ).toEqual([]);
+  it('⚠️ DOES NOT DEMAND EVERY ORDINARY WORD BE QUOTED BACK', () => {
+    // "SAPSA Provincial Matches" was refused live because "matches" was not in
+    // the supplied terms. Ordinary words are how a person writes.
+    const r = result({
+      examples: [
+        { kind: 'format', label: 'IPSC Provincial Matches', detail: 'x' },
+      ],
+    });
+    expect(validateReason(r, ctx())).toEqual([]);
+    expect(r.examples).toHaveLength(1);
+  });
+
+  it('keeps one drawn from the research block', () => {
+    const r = result({
+      examples: [
+        {
+          kind: 'discipline',
+          label: 'IPSC Handgun Production Optics',
+          detail: 'Slide-mounted optic permitted.',
+        },
+      ],
+    });
+    expect(validateReason(r, ctx())).toEqual([]);
+    expect(r.examples).toHaveLength(1);
   });
 });
 
