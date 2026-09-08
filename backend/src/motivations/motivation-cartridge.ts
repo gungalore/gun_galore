@@ -111,6 +111,31 @@ export function calibreCandidates(raw: string): string[] {
     .replace(/\bMAG\b/gi, 'Magnum');
   push(expanded);
   push(expanded.replace(/\([^)]*\)/g, ''));
+
+  /**
+   * ⚠️ AND THE CONTRACTION, BECAUSE THE EXPANSION RUNS THE WRONG WAY HALF THE
+   * TIME. The sheets are filed under ".357 Mag." and "308 Winchester" — one
+   * abbreviated, one not — so expanding only ever fixed the second kind. An
+   * applicant typing ".357 Magnum", which is how the round is actually
+   * written, matched nothing at all.
+   */
+  const contracted = text
+    .replace(/\bParabellum\b/gi, 'Luger')
+    .replace(/\bMagnum\b/gi, 'Mag')
+    .replace(/\bAutomatic\b/gi, 'Auto')
+    .replace(/\bSpecial\b/gi, 'Spec');
+  push(contracted);
+
+  /**
+   * ⚠️ PARABELLUM IS LUGER — THAT IS A STANDARDS FACT, NOT A GUESS. The same
+   * round carries two names in different markets and a member writes whichever
+   * one is stamped on their box. Everything in this list is one cartridge under
+   * two published names; nothing here narrows an ambiguous name to a likely one.
+   */
+  for (const v of [text, expanded]) {
+    push(v.replace(/\bParabellum\b/gi, 'Luger'));
+    push(v.replace(/\bACP\b/gi, 'Auto'));
+  }
   return out;
 }
 
@@ -142,18 +167,64 @@ export interface NameableCartridge {
  * the same calibre to the same cartridge, or a pack argues about one round and
  * prints the dimensions of another.
  */
+/** Every name one row answers to, reduced. */
+function keysOf(c: NameableCartridge): string[] {
+  const out = [calibreKey(c.name)];
+  if (c.slug) out.push(calibreKey(c.slug));
+  for (const a of c.aliases ?? []) out.push(calibreKey(a.printed));
+  return out.filter(Boolean);
+}
+
+/**
+ * The rows matching a reduced key under `test`, deduplicated BY ROW.
+ *
+ * ⚠️ COUNTED IN CARTRIDGES, NOT IN STRINGS. "9MM" prefixes four stored names
+ * that belong to three different rounds; counting the strings would say four
+ * and counting them wrong — as one — is how a .380 gets the dimensions of a
+ * 9 mm Luger printed against it.
+ */
+function matching<T extends NameableCartridge>(
+  rows: readonly T[],
+  test: (key: string) => boolean,
+): T[] {
+  return rows.filter((c) => keysOf(c).some(test));
+}
+
 export function findCartridge<T extends NameableCartridge>(
   rows: readonly T[],
   printed: string,
 ): T | null {
-  for (const want of calibreCandidates(printed)) {
-    const hit = rows.find(
-      (c) =>
-        calibreKey(c.name) === want ||
-        (c.slug ? calibreKey(c.slug) === want : false) ||
-        (c.aliases ?? []).some((a) => calibreKey(a.printed) === want),
-    );
+  const wanted = calibreCandidates(printed);
+
+  // 1. An exact name, slug or alias. Nothing beats this and nothing follows it.
+  for (const want of wanted) {
+    const hit = rows.find((c) => keysOf(c).includes(want));
     if (hit) return hit;
+  }
+
+  /**
+   * 2 and 3. A UNIQUE prefix, then a UNIQUE substring.
+   *
+   * ⚠️ UNIQUENESS IS THE WHOLE SAFETY ARGUMENT, and it is why this is not
+   * fuzzy matching. ".357 Magnum" prefixes exactly one round and resolves;
+   * "9x19" appears inside exactly one stored name and resolves; a bare "9mm"
+   * touches 9 mm Luger, 9 mm Makarov and 9 mm Browning court, so it resolves
+   * to NOTHING and the pack goes out with no drawing rather than with the
+   * wrong cartridge's dimensions printed under the applicant's signature.
+   *
+   * ⚠️ AND THE FLOOR IS FOUR CHARACTERS. Below that a candidate is a calibre
+   * family rather than a cartridge — "9MM", "308", "45" — and a family that
+   * happens to have one sheet on file would resolve by accident.
+   */
+  for (const want of wanted) {
+    if (want.length < 4) continue;
+    for (const test of [
+      (k: string) => k.startsWith(want),
+      (k: string) => k.includes(want),
+    ]) {
+      const hits = matching(rows, test);
+      if (hits.length === 1) return hits[0];
+    }
   }
   return null;
 }
