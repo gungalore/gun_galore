@@ -277,7 +277,11 @@ describe('provenance — the make is not misspelled', () => {
         item={filled({
           label: 'Make',
           value: 'MAUSER',
-          provenance: { from: 'MAUSER .30-06 SPRINGFIELD', inferred: false },
+          provenance: {
+            source: 'READ',
+            from: 'MAUSER .30-06 SPRINGFIELD',
+            at: '2026-09-01T00:00:00.000Z',
+          },
         })}
         onChange={vi.fn()}
       />,
@@ -289,7 +293,11 @@ describe('provenance — the make is not misspelled', () => {
     render(
       <SheetRow
         item={filled({
-          provenance: { from: 'Your account address', inferred: false },
+          provenance: {
+            source: 'READ',
+            from: 'Your account address',
+            at: '2026-09-01T00:00:00.000Z',
+          },
         })}
         onChange={vi.fn()}
       />,

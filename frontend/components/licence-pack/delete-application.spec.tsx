@@ -154,3 +154,33 @@ describe('when it fails', () => {
     expect(draft.clearDraft).not.toHaveBeenCalled();
   });
 });
+
+describe('the trigger — a button, and one you can tell apart', () => {
+  it('⚠️ IS NOT SMALL PRINT. It carries a border and a 44px target', () => {
+    // Operator, 2026-09-08: "need a clear button … not just like previous
+    // little red text." The default used to be 12px tertiary text with an
+    // underline.
+    render(<DeleteApplication {...base} />);
+    const cls = screen.getByRole('button', { name: /delete application/i })
+      .className;
+    expect(cls).toContain('border');
+    expect(cls).toContain('min-h-[44px]');
+    expect(cls).not.toContain('underline');
+  });
+
+  it('shortens the visible label without shortening what a screen reader hears', () => {
+    // Five rows on the Centre's list each reading "Delete application" is a
+    // column of noise; five buttons all announcing "Delete" is how somebody
+    // erases the wrong one.
+    render(<DeleteApplication {...base} label="Delete" />);
+    const btn = screen.getByRole('button', { name: 'Delete application MO000046' });
+    expect(btn.textContent).toBe('Delete');
+  });
+
+  it('names the reference in the accessible name by default too', () => {
+    render(<DeleteApplication {...base} />);
+    expect(
+      screen.getByRole('button', { name: 'Delete application MO000046' }),
+    ).toBeDefined();
+  });
+});

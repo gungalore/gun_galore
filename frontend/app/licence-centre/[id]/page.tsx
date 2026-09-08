@@ -22,6 +22,7 @@ import CompetencyLines from '@/components/licence-centre/competency-lines';
 import PackSummary from '@/components/licence-centre/pack-summary';
 import PreviewPanel from '@/components/licence-centre/preview-panel';
 import AddPanel from '@/components/licence-centre/add-panel';
+import DeleteApplication from '@/components/licence-pack/delete-application';
 import type { PickableKind } from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
@@ -499,6 +500,26 @@ export default function LicenceCentreSheetPage() {
           onWrite={onWrite}
           busy={busy}
         />
+
+        {/*
+          ⚠️ PAST THE FOOTER ON PURPOSE, AND STILL A REAL BUTTON. The footer is
+          `sticky bottom-0`, so this is the last thing on the page: a member
+          reaches it only by scrolling to the true end, never by thumbing at
+          the bottom of the viewport. Phase 4 deleted the wizards and took the
+          only delete control with them, so until now an application started by
+          mistake could not be got rid of at all.
+        */}
+        <div className="border-t border-[var(--border-divider)] px-4 pb-6 pt-5">
+          <DeleteApplication
+            token={getToken}
+            motivationId={id}
+            reference={sheet.application.referenceNumber}
+          />
+          <p className="m-0 mt-2 text-[12px] leading-[1.45] text-[var(--text-tertiary)]">
+            Deletes your answers and anything attached only to this
+            application. Your Document Centre is not touched.
+          </p>
+        </div>
       </main>
 
       {/* Desktop: the preview is docked and sticky. Phone: a bottom sheet. */}

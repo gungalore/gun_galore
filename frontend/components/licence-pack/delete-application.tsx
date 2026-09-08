@@ -153,6 +153,7 @@ export default function DeleteApplication({
   motivationId,
   reference,
   className,
+  label = 'Delete application',
   onDeleted,
 }: {
   token: TokenGetter;
@@ -160,6 +161,17 @@ export default function DeleteApplication({
   reference: string;
   /** Lets the chrome bar and the Centre's list style their own trigger. */
   className?: string;
+  /**
+   * Visible trigger text. The Centre's list uses the short form because five
+   * rows each carrying "Delete application" is a column of noise beside the
+   * thing you came to click.
+   *
+   * ⚠️ THE ACCESSIBLE NAME IS NOT THIS. It always carries the reference, so a
+   * screen reader on that list hears which application each button destroys —
+   * five buttons all announcing "Delete" is exactly the case where somebody
+   * loses the wrong one.
+   */
+  label?: string;
   /**
    * What to do once it is gone. Defaults to the Centre.
    *
@@ -176,18 +188,46 @@ export default function DeleteApplication({
 
   return (
     <>
+      {/*
+        ⚠️ A BUTTON, NOT A LINK OF SMALL PRINT. Operator, 2026-09-08: "there is
+        no way to delete a motivation. need a clear button … not just like
+        previous little red text." The default trigger used to be 12px tertiary
+        text with an underline, which is what "delete" looked like on the old
+        wizard's three-thousand-line scroll — and after Phase 4 deleted those
+        screens, this component was left imported by nothing but its own spec,
+        so there was no delete anywhere at all.
+
+        It is outlined, never filled: SPEC-BUILD §8 keeps the one solid red
+        button on the sheet for "Write my motivation", and a destructive
+        control must not out-shout the thing the page is for.
+      */}
       <button
         type="button"
+        aria-label={`Delete application ${reference}`}
         onClick={() => {
           setError(null);
           setOpen(true);
         }}
         className={
           className ??
-          'text-[12px] text-[var(--text-tertiary)] underline underline-offset-2 hover:text-[var(--red)]'
+          'inline-flex min-h-[44px] items-center gap-2 rounded-[var(--r-sm)] border border-[var(--red-line)] bg-[var(--bg-card)] px-4 text-[13.5px] font-medium text-[var(--red)] hover:bg-[var(--red-wash)]'
         }
       >
-        Delete application
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          className="flex-shrink-0"
+        >
+          <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6" />
+        </svg>
+        {label}
       </button>
 
       {open && (
