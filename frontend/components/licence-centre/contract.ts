@@ -182,6 +182,15 @@ export interface CredentialSlot {
    * drawing.
    */
   inCentre: number;
+  /**
+   * Why this slot is empty when the Centre plainly has something for it.
+   *
+   * ⚠️ THE REFUSAL WAS SILENT. The autolink will not choose between two
+   * certificates that both cover the firearm, and said so in a `skipped` list
+   * nothing rendered — so the member saw an empty slot, a button, and no
+   * explanation, and had to work it out from the Document Centre themselves.
+   */
+  note?: string;
 }
 
 /**

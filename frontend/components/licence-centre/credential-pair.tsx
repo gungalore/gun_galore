@@ -175,6 +175,18 @@ function Slot({
         </div>
       )}
 
+      {/*
+        ⚠️ AMBER, AND ONLY WHEN IT EXPLAINS SOMETHING. "We could not tell which
+        one to use" is a job for the member, not a fault they have made — and a
+        slot that is empty for a reason we can name must say the reason rather
+        than a button on its own.
+      */}
+      {!have && slot.note ? (
+        <p className="m-0 mt-[8px] text-[12.5px] leading-[1.45] text-[var(--gold-strong)]">
+          {slot.note}
+        </p>
+      ) : null}
+
       {picker && picker.kind === slot.kind ? (
         <div className="mt-[8px]">{picker.node}</div>
       ) : null}

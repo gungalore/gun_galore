@@ -145,3 +145,48 @@ describe('unit standard 117705', () => {
     expect(r.knowledge).toEqual({ state: 'MISSING', alert: 'We cannot see 117705.' });
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// WHY THE SLOT IS EMPTY.
+//
+// Operator, 2026-09-08, having worked it out from his own Document Centre:
+// "i see there is two handgun competencies popping up in the list, could that
+// be the reason it doesnt pull in and the proficiency also dont follow?"
+//
+// He was right. The autolink refuses to choose between two certificates that
+// both cover the firearm — the wrong one in front of a DFO is the failure that
+// makes automation untrustworthy — and it says so in a `skipped` list that
+// nothing renders. He should not have had to guess.
+// ────────────────────────────────────────────────────────────────────
+describe('the note on an empty slot', () => {
+  it('⚠️ SAYS WE COULD NOT CHOOSE, WHEN THAT IS WHY', () => {
+    const r = credentialSlots(
+      input({ inCentre: { COMPETENCY_CERTIFICATE: 2, PROFICIENCY_CERTIFICATE: 0 } }),
+    );
+    expect(r.competency.note).toContain('2 saved');
+    expect(r.competency.note).toContain('could not tell which one');
+  });
+
+  it('⚠️ SAYS NOTHING WITH ONE IN THE CENTRE — that is a different fault', () => {
+    // One document and an empty slot means something ELSE went wrong, and this
+    // sentence would be a confident wrong answer.
+    const r = credentialSlots(
+      input({ inCentre: { COMPETENCY_CERTIFICATE: 1, PROFICIENCY_CERTIFICATE: 0 } }),
+    );
+    expect(r.competency.note).toBeUndefined();
+  });
+
+  it('says nothing when the Centre is empty, which explains itself', () => {
+    expect(credentialSlots(input()).competency.note).toBeUndefined();
+  });
+
+  it('⚠️ AND NOTHING ONCE THE DOCUMENT IS IN THE PACK', () => {
+    const r = credentialSlots(
+      input({
+        attached: [page('COMPETENCY_CERTIFICATE')],
+        inCentre: { COMPETENCY_CERTIFICATE: 4, PROFICIENCY_CERTIFICATE: 0 },
+      }),
+    );
+    expect(r.competency.note).toBeUndefined();
+  });
+});

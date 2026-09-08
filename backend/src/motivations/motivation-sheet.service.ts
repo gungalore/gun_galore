@@ -22,6 +22,7 @@ import {
 } from './motivation-fields';
 import { ServedField, expandFields } from './motivation-field-options';
 import { UPLOAD_KIND_LABELS, buildAnnexures } from './motivation-checklist';
+import { overlapAnglesFor } from './motivation-cards';
 import { documentStatus } from './motivation-documents';
 import { requiredEndorsement } from './motivation-eligibility';
 import {
@@ -62,6 +63,46 @@ import { MemberProfileAnswersService } from './member-profile-answers.service';
 // "GE••••••••" and an ID as "8905 •••• •••" on the applicant's own
 // application; that is what this rule exists to stop repeating.
 // ────────────────────────────────────────────────────────────────────
+
+/**
+ * Sources that mean "this came off a document".
+ *
+ * ⚠️ A CARD PLACEHOLDER IS A REAL ANSWER WHEN A CARD IS WHAT SAID IT. The
+ * operator's Glock licence prints "Model NONE"; the consent stored NONE, the
+ * SAPS 271 prints NONE — and this sheet blanked it, so the row read "Still
+ * needed" and asked him to fill in a box that was already correctly answered.
+ * Operator, 2026-09-08: "Model is still not filled for sellers firearm", and
+ * before that: "DO NOT LEAVE A NONE BLANK EVER unless I tell you to."
+ *
+ * ⚠️ SCOPED TO DOCUMENT SOURCES, NOT APPLIED EVERYWHERE. `answerValue()` is
+ * still what stops a placeholder becoming an answer at every OFFER boundary —
+ * that rule is why "Firearm 6 — frame serial NONE" stopped being proposed. It
+ * was never meant to blank a value we had already accepted and printed. The
+ * card-placeholder module says so itself: "the readers and the vault keep the
+ * card verbatim". This screen is a reader.
+ */
+const FROM_A_DOCUMENT: ReadonlySet<string> = new Set([
+  'VAULT',
+  'READ',
+  'SELLER',
+]);
+
+/**
+ * The value to SHOW, and whether it counts as answered.
+ *
+ * Returns the card's own word where a document gave us one, and '' where a
+ * placeholder arrived from anywhere else — a profile, a derivation, or a blob
+ * old enough to carry no provenance at all.
+ */
+function shownValue(
+  raw: string | undefined,
+  entry: AnswerProvenance | undefined,
+): string {
+  const text = (raw ?? '').trim();
+  if (!text) return '';
+  if (FROM_A_DOCUMENT.has(entry?.source ?? '')) return text;
+  return answerValue(text);
+}
 
 /** How the sheet renders one item. */
 export type SheetItemState = 'filled' | 'suggested' | 'needs_you' | 'na';
@@ -365,7 +406,15 @@ export class MotivationSheetService {
     if (field.key === OVERLAP_ANGLE_KEY && !overlap.suggestedAngle?.length) {
       return 'na';
     }
-    if (!answerValue(answers[field.key] ?? '').trim()) return 'needs_you';
+    /**
+     * ⚠️ A CARD THAT SAYS "NONE" HAS ANSWERED THE QUESTION. Reading this
+     * through answerValue made a licence printing "Model NONE" render as
+     * `needs_you` — a row marked Still needed, in the outstanding count, on a
+     * fact the seller had already signed for and the 271 already prints.
+     */
+    if (!shownValue(answers[field.key], provenance[field.key]).trim()) {
+      return 'needs_you';
+    }
     return provenance[field.key]?.inferred ? 'suggested' : 'filled';
   }
 
@@ -504,14 +553,33 @@ export class MotivationSheetService {
         kind: f.kind,
         state,
         // ⚠️ IN FULL. See the masking note at the top of this file.
-        value: answerValue(answers[f.key] ?? ''),
+        value: shownValue(answers[f.key], provenance[f.key]),
         provenance: provenance[f.key] ?? null,
         section: SECTION_OF[f.section] ?? 'case',
         scope: f.scope ?? 'application',
         required: !!f.required,
       };
       if (f.help) item.help = f.help;
-      if (f.options) item.options = f.options;
+      /**
+       * ⚠️ THE OVERLAP ANGLES ARE FILTERED BY SECTION, HERE AND NOWHERE ELSE.
+       * The registry serves all sixteen; five argue the sport and four argue
+       * hunting, and the operator's own section 13 carries
+       * `overlap_angle: "different_division"` — "a different division of the
+       * sport" — because that sentence was on the screen of a self-defence
+       * application. The tapped sentence goes into the document verbatim, so
+       * this is not a bad option shown to a model, it is a refusal trigger the
+       * applicant put there because we offered it.
+       *
+       * ⚠️ OFFERED, NEVER ACCEPTED. allowedValues still takes the whole set —
+       * a draft holding a now-unoffered angle must keep saving rather than
+       * failing on every keystroke. See the retiredChoices rule.
+       */
+      if (f.options) {
+        item.options =
+          f.key === OVERLAP_ANGLE_KEY
+            ? overlapAnglesFor(row.licenceType)
+            : f.options;
+      }
       if (f.optionGroups) item.optionGroups = f.optionGroups;
       if (f.choices) item.choices = f.choices;
       if (f.kind === 'cards') {

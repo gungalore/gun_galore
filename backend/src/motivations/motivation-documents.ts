@@ -227,10 +227,32 @@ const EXPECTED: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   // EXPECTED and not REQUIRED, deliberately: this list is the one that must
   // never be described to a member as something the Act demands. The Act does
   // not name this document. Stations do.
-  S13_SELF_DEFENCE: ['FIREARM_SOURCE_PROOF'],
-  S15_OCCASIONAL_HUNTER: ['FIREARM_SOURCE_PROOF'],
-  S16_DEDICATED_HUNTER: ['ASSOCIATION_ENDORSEMENT', 'FIREARM_SOURCE_PROOF'],
-  S16_DEDICATED_SPORT: ['ASSOCIATION_ENDORSEMENT', 'FIREARM_SOURCE_PROOF'],
+  // ⚠️ THE PROFICIENCY IS ON EVERY TIER LIST NOW, AND ITS ABSENCE HERE MADE IT
+  // INVISIBLE RATHER THAN REFUSED. A section 13 wanted no PROFICIENCY_CERTIFICATE
+  // at all, so `wanted` in the autolink never contained it and every proficiency
+  // credential was dropped by `if (!wantedSet.has(c.kind)) continue` — before
+  // the endorsement test, before the pair rule, before anything that could have
+  // reported a reason. The member saw an empty slot and no explanation.
+  //
+  // ⚠️ 'expected', NOT 'strengthens' AND NOT 'required'. The Act does not name
+  // it — the competency certificate is what SAPS issues and what they process —
+  // but a DFO asks for the statement of results behind it, which is the exact
+  // case the 'expected' tier exists for. Operator, 2026-09-08: "the proficiency
+  // needs to be added with the competency from the same category. One can't be
+  // without the other." The pair rule in motivation-autolink enforces that, and
+  // it can only enforce it over kinds this application actually wants.
+  S13_SELF_DEFENCE: ['PROFICIENCY_CERTIFICATE', 'FIREARM_SOURCE_PROOF'],
+  S15_OCCASIONAL_HUNTER: ['PROFICIENCY_CERTIFICATE', 'FIREARM_SOURCE_PROOF'],
+  S16_DEDICATED_HUNTER: [
+    'PROFICIENCY_CERTIFICATE',
+    'ASSOCIATION_ENDORSEMENT',
+    'FIREARM_SOURCE_PROOF',
+  ],
+  S16_DEDICATED_SPORT: [
+    'PROFICIENCY_CERTIFICATE',
+    'ASSOCIATION_ENDORSEMENT',
+    'FIREARM_SOURCE_PROOF',
+  ],
   // A renewal transfers nothing — the applicant already holds the firearm.
   S24_RENEWAL: [],
 };
@@ -271,21 +293,11 @@ const STRENGTHENS: Record<MotivationLicenceType, MotivationUploadKind[]> = {
   // "a first-time applicant owns nothing and is never asked for one". That
   // rule stands; this tier only means the row is known about and honestly
   // labelled when it does appear.
-  S15_OCCASIONAL_HUNTER: [
-    'PROFICIENCY_CERTIFICATE',
-    'SHOOTING_ACTIVITY_LOG',
-    'CURRENT_LICENCE',
-  ],
-  S16_DEDICATED_HUNTER: [
-    'PROFICIENCY_CERTIFICATE',
-    'SHOOTING_ACTIVITY_LOG',
-    'CURRENT_LICENCE',
-  ],
-  S16_DEDICATED_SPORT: [
-    'PROFICIENCY_CERTIFICATE',
-    'SHOOTING_ACTIVITY_LOG',
-    'CURRENT_LICENCE',
-  ],
+  // ⚠️ THE PROFICIENCY MOVED UP TO 'expected' — see the note there. Listing a
+  // kind on two tiers would have documentStatus report it twice.
+  S15_OCCASIONAL_HUNTER: ['SHOOTING_ACTIVITY_LOG', 'CURRENT_LICENCE'],
+  S16_DEDICATED_HUNTER: ['SHOOTING_ACTIVITY_LOG', 'CURRENT_LICENCE'],
+  S16_DEDICATED_SPORT: ['SHOOTING_ACTIVITY_LOG', 'CURRENT_LICENCE'],
   S24_RENEWAL: ['PROFICIENCY_CERTIFICATE', 'SHOOTING_ACTIVITY_LOG'],
 };
 

@@ -68,6 +68,21 @@ export interface CredentialSlot {
    * at all; opening it fetches the real list.
    */
   inCentre: number;
+  /**
+   * Why this slot is empty when the Centre plainly has something for it.
+   *
+   * ⚠️ THE REFUSAL WAS SILENT, AND THAT IS WHAT MADE IT LOOK BROKEN. The
+   * autolink will not choose between two certificates that both cover the
+   * firearm — the wrong one in front of a DFO is the failure that makes
+   * automation untrustworthy — and it says so in a `skipped` list nothing
+   * renders. So the member saw an empty slot, a button, and no explanation.
+   *
+   * Operator, 2026-09-08, working it out from the Document Centre himself:
+   * "i see there is two handgun competencies popping up in the list, could
+   * that be the reason it doesnt pull in and the proficiency also dont
+   * follow?" He was right, and he should not have had to guess.
+   */
+  note?: string;
 }
 
 export interface SheetCredentials {
@@ -177,8 +192,24 @@ export function credentialSlots(
     inCentre: Math.max(0, input.inCentre[kind] ?? 0),
   });
 
+  /**
+   * ⚠️ SAID ONLY WHEN IT EXPLAINS SOMETHING. One document in the Centre and an
+   * empty slot means something else went wrong and this sentence would be a
+   * confident wrong answer; nothing in the Centre is self-explanatory. Two or
+   * more is the case the autolink genuinely refuses, and the case the operator
+   * hit.
+   */
+  const noteFor = (slot: CredentialSlot): string | undefined => {
+    if (slot.held.length || slot.inCentre < 2) return undefined;
+    return `You have ${slot.inCentre} saved in your Licence Centre and we could not tell which one to use, so we did not choose for you. Pick the right one.`;
+  };
+
   const competency = slot('COMPETENCY_CERTIFICATE');
   const proficiency = slot('PROFICIENCY_CERTIFICATE');
+  const compNote = noteFor(competency);
+  const profNote = noteFor(proficiency);
+  if (compNote) competency.note = compNote;
+  if (profNote) proficiency.note = profNote;
 
   return {
     neededLabel,

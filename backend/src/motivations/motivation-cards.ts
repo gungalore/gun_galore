@@ -316,8 +316,12 @@ export const OVERLAP_ANGLES: readonly CardOption[] = [
   },
   {
     key: 'backup',
+    // ⚠️ THE WORDING WAS SPORT-ONLY AND THE CARD WAS OFFERED TO EVERYBODY.
+    // "does not end my season" was being shown to self-defence applicants,
+    // which is what the operator meant by "the reasons underneath this Why
+    // this one as well as the ones you hold does not even make sense".
     sentence:
-      'This one is my backup, so a breakage does not end my season or leave me without a firearm.',
+      'This one is my backup, so a breakage or a repair does not leave me without a firearm.',
   },
   {
     key: 'match_and_practice',
@@ -387,9 +391,107 @@ export const OVERLAP_ANGLES: readonly CardOption[] = [
   {
     key: 'in_for_repair',
     sentence:
-      'A firearm away at a gunsmith leaves me with nothing, and this one means a season is not lost to a repair.',
+      'A firearm away at a gunsmith leaves me with nothing, and this one means I am not without one while it is gone.',
+  },
+  // ── the two a self-defence applicant needs, and had nowhere to say ──
+  //
+  // ⚠️ WITHOUT THESE, S13 HAD NOTHING TRUTHFUL TO TAP. Of the sixteen angles
+  // above, five argued the sport and four argued hunting; what was left was
+  // generic. The commonest real reason somebody licensed for self-defence
+  // applies for a second is exactly this pair, and neither could be said.
+  {
+    key: 'concealable',
+    sentence:
+      'This one I can carry concealed on me; the one I already hold is too large to carry.',
+  },
+  {
+    key: 'home_and_carry',
+    sentence:
+      'I would keep the one I already hold at home and carry this one when I am out.',
   },
 ];
+
+/**
+ * Which angles each section may be offered.
+ *
+ * ⚠️ THE SAME MISTAKE AS THE REASON GENERATOR'S ANGLES, ONE LAYER DOWN. There
+ * the model was shown every angle and argued the wrong case; here the MEMBER
+ * is shown every angle and taps one. The operator's own section 13 carries
+ * `overlap_angle: "different_division"` — "a different division of the sport"
+ * — because that sentence was on the screen of a self-defence application.
+ *
+ * ⚠️ AND THE TAPPED SENTENCE GOES INTO THE DOCUMENT VERBATIM. This is worse
+ * than showing the model a bad option: a sport reason on a section 13 is a
+ * refusal trigger, and the applicant put it there themselves because we
+ * offered it.
+ *
+ * ⚠️ OFFERED, NEVER ACCEPTED — the retiredChoices rule. `allowedValues` still
+ * takes the whole set, so a draft holding a now-unoffered angle keeps saving
+ * instead of failing on every keystroke. Filtering what is ACCEPTED is how a
+ * member ends up with "we could not store your answer" for ever.
+ */
+export const OVERLAP_ANGLES_BY_SECTION: Readonly<
+  Record<'selfDefence' | 'hunting' | 'sport', readonly string[]>
+> = {
+  selfDefence: [
+    'concealable',
+    'home_and_carry',
+    'different_purpose',
+    'different_format',
+    'recoil_or_fit',
+    'different_action',
+    'backup',
+    'in_for_repair',
+  ],
+  hunting: [
+    'different_quarry',
+    'different_range',
+    'terrain_reach',
+    'close_cover',
+    'different_calibre',
+    'different_format',
+    'travel_and_wear',
+    'teaching',
+    'backup',
+    'in_for_repair',
+  ],
+  sport: [
+    'different_division',
+    'match_and_practice',
+    'different_format',
+    'different_action',
+    'ammunition_cost',
+    'recoil_or_fit',
+    'backup',
+    'in_for_repair',
+  ],
+};
+
+/**
+ * The angles to OFFER on this application, in the section's own order.
+ *
+ * A licence type we do not recognise gets the whole set rather than none — the
+ * safe direction, and the same posture every other "list of what to drop"
+ * in this codebase takes.
+ */
+export function overlapAnglesFor(
+  licenceType: string,
+): readonly CardOption[] {
+  const group =
+    licenceType === 'S13_SELF_DEFENCE'
+      ? 'selfDefence'
+      : licenceType === 'S16_DEDICATED_SPORT'
+        ? 'sport'
+        : licenceType === 'S15_OCCASIONAL_HUNTER' ||
+            licenceType === 'S16_DEDICATED_HUNTER'
+          ? 'hunting'
+          : null;
+  if (!group) return OVERLAP_ANGLES;
+  const wanted = OVERLAP_ANGLES_BY_SECTION[group];
+  return wanted
+    .map((k) => OVERLAP_ANGLES.find((o) => o.key === k))
+    .filter((o): o is CardOption => !!o);
+}
 
 /**
  * Every set, for the registry-integrity suite and for the options attacher.

@@ -1,5 +1,10 @@
 import { MotivationLicenceType } from '@prisma/client';
-import { CARD_SETS, OVERLAP_ANGLES } from './motivation-cards';
+import {
+  CARD_SETS,
+  OVERLAP_ANGLES,
+  OVERLAP_ANGLES_BY_SECTION,
+  overlapAnglesFor,
+} from './motivation-cards';
 import {
   OVERLAP_ANGLE_KEY,
   allowedValues,
@@ -182,6 +187,84 @@ describe('the overlap angles', () => {
     for (const t of Object.values(MotivationLicenceType)) {
       const field = fieldsFor(t).find((f) => f.key === OVERLAP_ANGLE_KEY);
       if (field) expect(field.required).toBeUndefined();
+    }
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE ANGLES A SECTION MAY BE OFFERED.
+//
+// Operator, 2026-09-08: "the reasons underneath this Why this one as well as
+// the ones you hold does not even make sense."
+//
+// ⚠️ SIXTEEN ANGLES WERE SERVED TO EVERY LICENCE TYPE. Five argue the sport
+// and four argue hunting, and the operator's own SECTION 13 carries
+// `overlap_angle: "different_division"` — "a different division of the sport"
+// — because that sentence was on the screen of a self-defence application.
+//
+// ⚠️ AND THE TAPPED SENTENCE GOES INTO THE DOCUMENT VERBATIM. This is worse
+// than a bad option shown to a model: a sport reason on a section 13 is a
+// refusal trigger, and the applicant put it there because we offered it.
+// ────────────────────────────────────────────────────────────────────
+describe('overlapAnglesFor', () => {
+  const keys = (t: string) => overlapAnglesFor(t).map((o) => o.key);
+
+  it('⚠️ NEVER OFFERS THE SPORT OR THE HUNT TO A SELF-DEFENCE APPLICANT', () => {
+    const s13 = keys('S13_SELF_DEFENCE');
+    expect(s13).not.toContain('different_division');
+    expect(s13).not.toContain('match_and_practice');
+    expect(s13).not.toContain('different_quarry');
+    expect(s13).not.toContain('terrain_reach');
+  });
+
+  it('⚠️ AND GIVES IT SOMETHING TRUTHFUL TO TAP INSTEAD', () => {
+    // Of the original sixteen, what was left for a section 13 after removing
+    // the sport and the hunt was generic. The commonest real reason somebody
+    // licensed for self-defence applies for a second is this pair, and neither
+    // could be said.
+    const s13 = keys('S13_SELF_DEFENCE');
+    expect(s13).toContain('concealable');
+    expect(s13).toContain('home_and_carry');
+    expect(s13.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('does not offer carry or concealment on a sporting application', () => {
+    for (const t of ['S16_DEDICATED_SPORT', 'S16_DEDICATED_HUNTER']) {
+      expect(keys(t)).not.toContain('concealable');
+      expect(keys(t)).not.toContain('home_and_carry');
+    }
+  });
+
+  it('gives each section its own', () => {
+    expect(keys('S16_DEDICATED_SPORT')).toContain('different_division');
+    expect(keys('S16_DEDICATED_HUNTER')).toContain('different_quarry');
+    expect(keys('S15_OCCASIONAL_HUNTER')).toContain('close_cover');
+  });
+
+  it('⚠️ A TYPE WE DO NOT RECOGNISE GETS THE WHOLE SET, not none', () => {
+    // The safe direction: a member can decline a card they do not recognise,
+    // and cannot tap one we never showed.
+    expect(overlapAnglesFor('S24_RENEWAL')).toEqual(OVERLAP_ANGLES);
+    expect(overlapAnglesFor('WHAT')).toEqual(OVERLAP_ANGLES);
+  });
+
+  it('⚠️ EVERY NAMED KEY EXISTS, or the section silently loses a card', () => {
+    const known = new Set(OVERLAP_ANGLES.map((o) => o.key));
+    for (const [group, list] of Object.entries(OVERLAP_ANGLES_BY_SECTION)) {
+      for (const k of list) {
+        expect(`${group}:${k}`).toBe(`${group}:${known.has(k) ? k : 'MISSING'}`);
+      }
+    }
+  });
+
+  it('⚠️ NO CARD MENTIONS A SEASON OR A DIVISION OUTSIDE THE SPORT', () => {
+    // "This one is my backup, so a breakage does not end my season" was shown
+    // to everybody. The wording is the fault as much as the grouping.
+    for (const t of ['S13_SELF_DEFENCE', 'S16_DEDICATED_HUNTER']) {
+      for (const o of overlapAnglesFor(t)) {
+        expect(o.sentence.toLowerCase()).not.toContain('season');
+        expect(o.sentence.toLowerCase()).not.toContain('division');
+      }
     }
   });
 });
