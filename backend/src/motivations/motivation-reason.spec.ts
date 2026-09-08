@@ -443,3 +443,68 @@ describe('the angle list', () => {
     expect(REASON_ANGLES[S13]).not.toContain('exercise_eligibility');
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE PARAGRAPH ITSELF, WORD FOR WORD.
+//
+// This is what the generator wrote onto the operator's live application on
+// 2026-09-07, and what was still sitting in `firearm_fit_reason` on
+// alloutdoor.co.za when these rules were written. It is reproduced in
+// MOTIVATION-REASON-PROMPT.md as the negative example.
+//
+// ⚠️ THE PARTS THAT MATTER ARE NOT THE UGLY ONES. "Platform" and "split times"
+// are embarrassing; "dedicated to backup use and close protection" on a
+// section 16 firearm is a REFUSAL, in the applicant's own words, on a document
+// he was going to sign. Every rule below existed in the spec; none of them was
+// implemented.
+// ────────────────────────────────────────────────────────────────────
+describe('the paragraph that reached production', () => {
+  const LIVE = `I currently hold a CZ in 6.35mm Browning which is dedicated to backup use and close protection, alongside four rifles comprising a Mauser in .30-06 Springfield for plains game, a Marlin in .45-70 Government for heavy bushveld hunting, a Howa in 6.5mm Creedmoor for precision long-range shooting, and a Nordiske Precision in .223 Rem for small-calibre target work. None of my existing firearms are suited to action shooting sports governed by the South African Practical Shooting Association. To participate competitively in dynamic sport shooting disciplines, I require the Glock semi-automatic handgun in 9mm Parabellum applied for here. This specific platform allows me to compete in the Production and Carry Optics divisions where the 9mm calibre meets the power factor floor efficiently and permits rapid split times and high-volume practice. I will use this Glock strictly for sport shooting matches and training drills at registered shooting ranges.`;
+
+  const battery = [
+    'Glock 9mm Parabellum',
+    'CZ 6.35mm Browning',
+    'Mauser .30-06 Springfield',
+    'Marlin .45-70 Government',
+    'Howa 6.5mm Creedmoor',
+    'Nordiske Precision .223 Rem',
+  ];
+
+  const check = () =>
+    validateReason(
+      result({
+        angle: 'division_differentiation',
+        paragraph: LIVE,
+        existingRoles: [
+          { firearm: 'CZ 6.35mm Browning', role: 'backup and close protection', source: 'inferred' },
+          { firearm: 'Mauser .30-06 Springfield', role: 'plains game', source: 'inferred' },
+        ],
+      }),
+      ctx({
+        licenceType: S16S,
+        knownFirearms: battery,
+        // Not one of the five had a primary_use on file.
+        roleless: battery.slice(1),
+      }),
+    ).join(' | ');
+
+  it('⚠️ REFUSES IT — the whole point of this file', () => {
+    expect(check()).not.toBe('');
+  });
+
+  it('names the section 16 firearm described as defensive', () => {
+    expect(check()).toContain('section 15/16');
+  });
+
+  it('names the invented roles', () => {
+    expect(check()).toContain('nothing on file gives a use for');
+  });
+
+  it('names the USPSA division', () => {
+    expect(check()).toContain('not shot in South Africa');
+  });
+
+  it('names the catalogue words', () => {
+    expect(check()).toContain('product page');
+  });
+});
