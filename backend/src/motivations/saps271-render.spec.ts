@@ -347,10 +347,12 @@ describe('all fourteen owned firearms reach the paper', () => {
     }
   });
 
-  it('leaves the barrel column empty on every row', () => {
-    // One answer must not become two assertions: we hold one serial and it
-    // goes in the column that IS the firearm in law. Nothing is drawn in the
-    // Barrel Serial No column, which the form rules from x 276.9 to ≈369.
+  it('⚠️ DRAWS A SERIAL IN BOTH COLUMNS, ONE PER ROW EACH', () => {
+    // This asserted the Barrel Serial No column was left empty. Operator,
+    // 2026-09-08: "we only need to fill in the first 5 fields." The card
+    // prints the same number against the barrel and the frame in the ordinary
+    // case, so both boxes carry it — the barrel column is ruled from x 276.9
+    // to ≈369, the frame column from ≈370 to 465.
     //
     // ⚠️ THE FRAME COLUMN'S OWN x MOVES BY A POINT HALFWAY DOWN THE TABLE
     // (373.3 for rows 1-8, 372.3 for rows 9-14). That is the paper, not a
@@ -360,8 +362,17 @@ describe('all fourteen owned firearms reach the paper', () => {
     const serialXs = page5
       .filter((m) => /^SERIAL\d+$/.test(m.s))
       .map((m) => m.x);
-    expect(serialXs).toHaveLength(14);
-    for (const x of serialXs) {
+    // Fourteen rows, two columns.
+    expect(serialXs).toHaveLength(28);
+    const barrel = serialXs.filter((x) => x < 370);
+    const frame = serialXs.filter((x) => x >= 370);
+    expect(barrel).toHaveLength(14);
+    expect(frame).toHaveLength(14);
+    for (const x of barrel) {
+      expect(x).toBeGreaterThan(276);
+      expect(x).toBeLessThan(370);
+    }
+    for (const x of frame) {
       expect(x).toBeGreaterThan(370);
       expect(x).toBeLessThan(465);
     }

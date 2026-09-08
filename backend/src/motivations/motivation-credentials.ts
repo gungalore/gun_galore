@@ -928,6 +928,46 @@ export function credentialOffer(
     offer(`${p}make`, `Firearm ${row} — make`, make, c.title, c.id);
     offer(`${p}model`, `Firearm ${row} — model`, model, c.title, c.id);
     offer(`${p}serial`, `Firearm ${row} — serial number`, serial, c.title, c.id);
+    /**
+     * ⚠️ THE TWO COMPONENT ROWS, VERBATIM, INCLUDING "NONE".
+     *
+     * Operator, 2026-09-08: "we need to insert NONE if the barrel serial said
+     * NONE. DO NOT LEAVE A NONE BLANK EVER unless I tell you to."
+     *
+     * Item 2.1 of the SAPS 271 has TWO serial columns — Barrel Serial No and
+     * Frame/receiver Serial No — and this offered ONE number for both. `first()`
+     * runs answerValue, which strips a placeholder, so a card printing NONE
+     * against the barrel and a real number against the receiver came through as
+     * that one number with the NONE thrown away. The form then either went in
+     * blank or, worse, took the receiver's number into the barrel box — a false
+     * statement on a form where section 120(9)(f) makes one an offence.
+     *
+     * ⚠️ SO THESE ARE READ OFF `details` DIRECTLY, NOT THROUGH first(). The card
+     * being complete and the card being empty are different facts, and only the
+     * verbatim value can tell them apart. Same rule section E already applies to
+     * the firearm being applied for.
+     *
+     * ⚠️ AND THEY ARE NOT FORM FIELDS. `_barrel_serial` and `_frame_serial` were
+     * collapsed into `_serial` on 2026-09-07 so nobody types three serial boxes
+     * per row; they stay accepted through fieldByKey, which is what lets these
+     * be stored without rendering anything. Nothing asks — we read them off the
+     * card or we hold nothing.
+     */
+    const cardRow = (k: string) => (c.details[k] ?? '').trim();
+    offer(
+      `${p}barrel_serial`,
+      `Firearm ${row} — barrel serial number`,
+      cardRow('barrel_serial'),
+      c.title,
+      c.id,
+    );
+    offer(
+      `${p}frame_serial`,
+      `Firearm ${row} — frame or receiver serial number`,
+      cardRow('frame_serial') || cardRow('receiver_serial'),
+      c.title,
+      c.id,
+    );
     // A date key, so the settled gate applies: a licence nobody has checked
     // fills the make and the serial and leaves the expiry to the member.
     offer(

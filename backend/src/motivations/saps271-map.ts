@@ -567,13 +567,44 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
   // number over the fix, and after the collapse it printed nothing at all.
   let ownedRowsFilled = 0;
   let ownedRowsWithoutSerial = 0;
+  /** Rows whose barrel column is the frame number, for want of its own. */
+  let ownedDuplicatedSerial = 0;
   for (let n = 1; n <= OWNED_ROWS; n++) {
     const p = `existing_firearm_${n}_`;
     const serialForRow = ownedFirearmSerial(answers, n);
     put(`g_owned_${n}_type` as Saps271FieldName, a(`${p}type`));
     put(`g_owned_${n}_calibre` as Saps271FieldName, a(`${p}calibre`));
     put(`g_owned_${n}_make` as Saps271FieldName, a(`${p}make`));
-    put(`g_owned_${n}_frame_serial` as Saps271FieldName, serialForRow);
+    /**
+     * ⚠️ BOTH SERIAL COLUMNS, AND THE BARREL ONE USED TO GO IN BLANK. This
+     * printed only the frame/receiver box, on the reasoning that copying one
+     * number into the barrel box "would assert a barrel serial we were never
+     * given, on a form where section 120(9)(f) makes a false statement an
+     * offence". Operator, 2026-09-08, who fills these forms: "we only need to
+     * fill in the first 5 fields" — Type, Calibre, Make, Barrel Serial No,
+     * Frame/receiver Serial No. A South African licence card prints the SAME
+     * number against the barrel, the frame and the receiver in the ordinary
+     * case, and leaving a box empty that the applicant would fill with a pen
+     * is not caution, it is work handed back to them.
+     *
+     * ⚠️ AND A CARD THAT SAYS "NONE" STILL SAYS NONE. Read RAW, not through
+     * ownedFirearmSerial — `a()` does not strip placeholders — so a draft that
+     * holds a per-component value prints that component's own word, exactly as
+     * section E does for the firearm being applied for. Only where we hold
+     * nothing for the component does the row's one serial stand in for it.
+     */
+    const barrelCol = a(`${p}barrel_serial`) || serialForRow;
+    const frameCol = a(`${p}frame_serial`) || serialForRow;
+    put(`g_owned_${n}_barrel_serial` as Saps271FieldName, barrelCol);
+    put(`g_owned_${n}_frame_serial` as Saps271FieldName, frameCol);
+    /**
+     * ⚠️ ALMOST ALWAYS BLANK, AND THAT IS CORRECT. Operator, 2026-09-08: "the
+     * License/Permit number is if you have a storage permit for someone elses
+     * weapon which is very uncommon, so we can leave that blank." It is not a
+     * licence number for a firearm the applicant owns — item 2.1's other five
+     * columns already identify that — so an empty box here is the ordinary
+     * answer and is deliberately NOT reported in leftBlank.
+     */
     put(`g_owned_${n}_licence` as Saps271FieldName, a(`${p}licence_no`));
 
     // A row is IN USE once any column this table prints carries something.
@@ -589,6 +620,9 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
     if (!inUse) continue;
     ownedRowsFilled++;
     if (!serialForRow) ownedRowsWithoutSerial++;
+    else if (barrelCol === frameCol && !a(`${p}barrel_serial`)) {
+      ownedDuplicatedSerial++;
+    }
   }
 
   // ⚠️ SAID OUT LOUD, BECAUSE put() DROPS AN EMPTY IN SILENCE. Every serial
@@ -596,11 +630,20 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
   // the applicant would have signed a 271 listing firearms with no serial
   // numbers, and the panel that exists to tell them what still needs a pen
   // said nothing. So the two things this table cannot fill now say themselves.
-  if (ownedRowsFilled) {
+  /**
+   * ⚠️ A CHECK NOW, NOT A BLANK. The barrel column is filled — see the note in
+   * the loop — but for most rows it carries the SAME number as the frame
+   * column because that is the one serial we asked for. Saying so is the
+   * difference between a form the applicant checked and a form they signed
+   * without knowing what we had assumed.
+   */
+  if (ownedDuplicatedSerial) {
     leftBlank.push({
       field: 'saps271_item_2.1_barrel_serial',
       because:
-        'we hold one serial number for each firearm you own and it is printed in the frame/receiver column — if your licence prints a different number against the barrel, write that one in beside it',
+        ownedDuplicatedSerial === 1
+          ? 'one firearm you own has the same serial number printed in both the barrel and the frame/receiver column, because that is the one number we hold — check it against the card, and if the card prints a different number or NONE against the barrel, correct that box'
+          : `${ownedDuplicatedSerial} of the firearms you own have the same serial number printed in both the barrel and the frame/receiver column, because that is the one number we hold — check them against the cards, and correct any box where the card prints a different number or NONE`,
     });
   }
   if (ownedRowsWithoutSerial) {

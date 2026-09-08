@@ -127,29 +127,55 @@ describe('what item 2.1 prints', () => {
     expect(v.text.g_owned_1_frame_serial).toBe('FIXED456');
   });
 
-  it('never prints a card placeholder as a serial', () => {
-    // NONE against the frame is the card saying there is nothing there, not a
-    // serial number. ownedFirearmSerial falls through it to the number that is
-    // really on the card.
+  it('⚠️ PRINTS THE CARD\u2019S "NONE" IN THE COLUMN THE CARD PUT IT IN', () => {
+    // Operator, 2026-09-08: "we need to insert NONE if the barrel serial said
+    // NONE. DO NOT LEAVE A NONE BLANK EVER unless I tell you to."
+    //
+    // NONE against the frame is the card being COMPLETE about a component that
+    // carries no number — it is not an empty box, and a DFO comparing the form
+    // against the card must find the same word in the same place. Blanking it
+    // makes the form say less than the licence does; moving the barrel's
+    // number into it makes the form say something false.
     const v = build({
       existing_firearm_1_make: 'Glock',
       existing_firearm_1_frame_serial: 'NONE',
       existing_firearm_1_barrel_serial: 'ZABA01892',
     });
-    expect(v.text.g_owned_1_frame_serial).toBe('ZABA01892');
+    expect(v.text.g_owned_1_frame_serial).toBe('NONE');
+    expect(v.text.g_owned_1_barrel_serial).toBe('ZABA01892');
   });
 
-  it('leaves the barrel column alone and says so', () => {
-    // ⚠️ ONE ANSWER MUST NOT BECOME TWO ASSERTIONS. We hold one serial; the
-    // form has two serial columns. It goes in the one that IS the firearm in
-    // law, and the other is reported rather than filled with a number nobody
-    // gave us — section 120(9)(f) makes a false statement here an offence.
+  it('⚠️ FILLS BOTH SERIAL COLUMNS, AND SAYS WHERE THE SECOND ONE CAME FROM', () => {
+    // This left the barrel column blank on the reasoning that one answer must
+    // not become two assertions. Operator, 2026-09-08, who fills these forms:
+    // "we only need to fill in the first 5 fields." A South African licence
+    // card prints the SAME number against the barrel, the frame and the
+    // receiver in the ordinary case, and an empty box the applicant would fill
+    // with a pen is work handed back to them, not caution.
+    //
+    // It is still said out loud, because the applicant is signing it.
     const v = build(row(1));
-    expect(v.text.g_owned_1_barrel_serial).toBeUndefined();
+    expect(v.text.g_owned_1_barrel_serial).toBe('SER1');
+    expect(v.text.g_owned_1_frame_serial).toBe('SER1');
     expect(v.leftBlank).toContainEqual({
       field: 'saps271_item_2.1_barrel_serial',
-      because: expect.stringContaining('frame/receiver column'),
+      because: expect.stringContaining('check it against the card'),
     });
+  });
+
+  it('⚠️ AND SAYS NOTHING WHEN THE CARD GAVE US BOTH COLUMNS ITSELF', () => {
+    // Nothing was assumed, so there is nothing to check. The note exists to
+    // disclose a duplication, not to decorate a table that came off a card.
+    const v = build({
+      ...row(1),
+      existing_firearm_1_barrel_serial: 'BAR1',
+      existing_firearm_1_frame_serial: 'FRM1',
+    });
+    expect(v.text.g_owned_1_barrel_serial).toBe('BAR1');
+    expect(v.text.g_owned_1_frame_serial).toBe('FRM1');
+    expect(v.leftBlank.map((b) => b.field)).not.toContain(
+      'saps271_item_2.1_barrel_serial',
+    );
   });
 
   it('says nothing about the barrel column when no firearm is listed', () => {
