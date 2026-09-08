@@ -187,10 +187,22 @@ export class MotivationReasonService {
       .map((a) => [a.make, a.model, a.calibre].filter(Boolean).join(' '))
       .filter(Boolean);
 
-    // ⚠️ ONE RETRY, THEN THE TEMPLATED PREVIEW. The spec's own rule: a second
-    // failure is a signal, not something to keep paying for.
+    /**
+     * ⚠️ TWO RETRIES, NOT ONE, AND THE REASON IS WHAT A FAILURE COSTS. The
+     * spec says "reject and retry once, then fall back to the templated
+     * preview paragraph" — but there is no fallback WRITE: a run that fails
+     * twice leaves `firearm_fit_reason` empty, and the frontend latches on
+     * `make|type` so it will not try again for the life of that firearm. The
+     * applicant is left with the box the whole feature exists to fill.
+     *
+     * ⚠️ AND THE RULES ARE NOW INDEPENDENT, WHICH IS WHAT CHANGED. Live runs
+     * failed on the word floor, then on a rule assertion, then on "platform"
+     * and "utilized" — each fixed, each revealing the next. Six independent
+     * checks against two attempts is a coin toss; the third costs one model
+     * call, once per application, on the paragraph that is the product.
+     */
     let last: string[] = [];
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       /**
        * ⚠️ THE SECOND ATTEMPT IS TOLD WHAT WAS WRONG WITH THE FIRST. A retry
        * that re-sends the identical prompt is a dice roll: the first live
