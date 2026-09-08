@@ -450,6 +450,92 @@ Per-firearm, off the cards. ⚠️ **And the Marlin carries NO section, which is
 feature working** — its card did not match by serial, so nothing is claimed
 about it.
 
+### The section 13 audit — 2026-09-08, `144afd84` + `fb2b1ba4`
+
+Walked MO000070 (S13, Kraaifontein) live: the sheet, the vault, the seller
+consent and both data endpoints.
+
+**⚠️ THE AUTOLINK SHUT 212ms AFTER THE APPLICATION WAS CREATED.**
+`createdAt 18:52:17.572`, `autolinkedAt 18:52:17.784`. The run happens before
+anybody has said what the firearm is, so `requiredEndorsement` is null, every
+competency and proficiency the member holds is an equally valid candidate,
+several-candidates correctly refuses, and the once-only stamp closes. The
+operator attached his by hand from the dropdown.
+
+⚠️ **AND I TOLD HIM OTHERWISE OFF EVIDENCE THAT COULD NOT SETTLE IT.**
+`origin: vault` is stamped identically by the autolink and by
+`addFromLibrary`, so the sheet cannot tell who copied a page. Do not read that
+field as proof of either.
+
+**A firearm reaches an application three ways and only one re-opened the
+autolink.** `saveAnswers` clears the stamp when the endorsement moves — the
+member TYPING it. `applyCardFirearm` (the seller signs) and the document-apply
+path both call `prisma.motivation.update` and never touched `autolinkedAt`. On
+a private sale the firearm arrives on one of those, so the stamp stayed shut
+for ever. `endorsementMoved()` is now one pure predicate and all three ask it.
+
+**ALL THE APPLICANT'S LICENCES.** Operator: *"ALL the applicants licenses must
+be shown. there is even a section in the 271 where you have to list them all."*
+`CURRENT_LICENCE` was in `NEVER_AUTOLINK` because it "names one specific
+firearm" — true of a licence offered as EVIDENCE, false of the applicant's own
+battery. Item 2.1 has fourteen rows and a DFO matches each against a card.
+`TAKE_ALL_KINDS` attaches every one; one already attached does not close the
+slot; the expiry cut is suspended (a licence lapsing in sixty days is still a
+firearm they own, and omitting it makes the declaration false).
+
+⚠️ **AND THAT CHANGED NOTHING UNTIL THE SECOND COMMIT.** The licences came
+back not as skipped but as **nothing at all** — `wanted` was
+`documentStatus(licenceType, [], {})`, an empty answers blob, which describes a
+first-time applicant every time. `CURRENT_LICENCE` is a CONDITIONAL need
+(required only once the applicant owns something), so it and every other
+conditional kind were filtered out one line before the rules meant to decide
+them. Verified live afterwards: five licences attached as annexure F, the
+required need green.
+
+### ⚠️ What the S13 audit found and did NOT fix
+
+1. **The seller's component makes are never read.** The card prints FOUR "Make"
+   labels — the firearm's own plus one on each of the barrel, frame and receiver
+   rows — and `LABELS` in `licence-card-ocr.service.ts` has one. So
+   `barrelMake` / `frameMake` / `receiverMake` are absent from the consent
+   snapshot, `cardToApplicationFirearm` maps three empty values, and section E
+   of the 271 prints three blank Make boxes beside three filled serials. The fix
+   is to treat a MAKE label sharing a band with a component serial as that
+   component's make.
+2. **Press clippings are unreachable.** `ClippingsPicker` and `PrecinctCard` are
+   built, tested and **mounted by nothing** — Phase 4 deleted the wizard that
+   mounted them. `press_clippings` is `internal`, and the registry comment says
+   "the wizard writes the value itself". So the annexure can never be produced.
+   Crime stats DO reach the document (generation pulls them from
+   `police_station`), but the member never sees them.
+   ⚠️ **OPERATOR'S DESIGN FOR IT, 2026-09-08:** *"you can add clippings of
+   surrounding dangerous areas if the user travels a lot. Or you can pull the
+   areas and list them and ask the user if he travels through these areas
+   regularly."* So the surface is not a list of articles — it is the AREAS off
+   the incidents, offered as a question, with the clippings following from the
+   answer. It ties to `s13_movements` and `daily_movements`, which already exist.
+3. **`existing_firearm_N_licence_no` is empty on all five rows**, so item 2.1's
+   licence-number column prints blank. The offer exists
+   (`motivation-credentials.ts:942`); the value is not in the vault details for
+   those cards.
+4. **Dead fields.** `home_dialling_code` and `work_dialling_code` are read by
+   NOTHING — `saps271-map.ts` derives the code itself with
+   `splitTelephone(home_telephone)`. The postal codes ARE printed and stay.
+5. **The employer block is not gated.** `occupation` is "Self employed" and the
+   form still asks for employer name, address and postal code, with help text
+   saying to leave them blank. `occupation` is free text so `showIf` equality
+   cannot fix it.
+6. **Safe photographs are not in the vault** — 20 credentials, zero safe photos.
+   That is the consent flow working as instructed this morning ("stop auto
+   copy"); the route in is the shelf's tick plus Save.
+7. **"Ready to write" while a required document is missing.** `missing` counts
+   answers only; the pack's document needs are a fourth view nobody reconciled.
+8. **`firearm_model` is stored "NONE" and rendered blank**, so a finished row
+   reads as outstanding.
+9. The preview still prints owned firearms in card case ("MAUSER in .30-06
+   SPRINGFIELD") — `proseFirearmName` is applied to the reason generator's input
+   only.
+
 ### ⚠️ What the corpus asks for that is NOT built
 
 `exercise_eligibility` is available and **unfed**. The prompt tells the model to
