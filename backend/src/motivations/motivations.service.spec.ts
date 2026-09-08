@@ -389,6 +389,7 @@ function build(
     render,
     witnessFlow,
     profileAnswers,
+    { keepChosen: jest.fn(async () => ({ kept: 0, needsConsent: false })) } as never,
   );
   return {
     svc,

@@ -690,6 +690,33 @@ export class MotivationsController {
    * 20-second poll silently changing what a DFO will see — every twenty
    * seconds. The wizard calls this once, on purpose, and it is idempotent.
    */
+  /**
+   * Save the pages the member ticked into their Document Centre.
+   *
+   * ⚠️ THE ONLY ROUTE IN, NOW THAT THE AUTOMATIC SWEEP IS GONE. Every upload
+   * used to be copied the moment it landed, behind a blanket consent and with
+   * no UI — a member could neither see what had been kept nor decline one page
+   * of six. Operator, 2026-09-08: "yes, stop auto copy. we need to ask consent
+   * to add items to the license centre."
+   */
+  @Post(':id/keep-in-centre')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  keepInCentre(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    /**
+     * ⚠️ COERCED, NOT TRUSTED. A bare @Body() is not a DTO and the global
+     * ValidationPipe has no forbidNonWhitelisted, so anything at all can arrive
+     * here. Same handling as autolink's placeConfirmed, deliberately.
+     */
+    @Body('uploadIds') uploadIds?: unknown,
+  ) {
+    const ids = Array.isArray(uploadIds)
+      ? uploadIds.filter((x): x is string => typeof x === 'string').slice(0, 50)
+      : [];
+    return this.motivations.keepInCentre(clerkId, id, ids);
+  }
+
   @Post(':id/autolink')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   autolink(

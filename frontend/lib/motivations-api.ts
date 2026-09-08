@@ -1003,6 +1003,23 @@ export const motivationsApi = {
    * application; firing it from an effect that can re-run would silently
    * change what a DFO sees.
    */
+  /**
+   * Save the pages the member ticked into their Document Centre.
+   *
+   * ⚠️ THIS IS THE ONLY ROUTE IN NOW. Every upload used to be swept into the
+   * Centre automatically the moment it landed, behind a blanket consent and
+   * with no UI — the member could neither see what had been kept nor decline
+   * one page of six. `needsConsent` comes back true when they have not been
+   * asked yet, which is the one refusal they can act on.
+   */
+  keepInCentre: (t: TokenGetter, id: string, uploadIds: string[]) =>
+    request<{ kept: number; needsConsent: boolean }>(
+      t,
+      `/${id}/keep-in-centre`,
+      { method: 'POST', body: JSON.stringify({ uploadIds }) },
+      { kept: 0, needsConsent: false },
+    ),
+
   autolink: (
     t: TokenGetter,
     id: string,

@@ -2065,17 +2065,17 @@ export class MotivationDocumentsService {
       // consent lookup timed out. The upload is the thing the member came to
       // do; the copy is a convenience on top of it.
       //
-      // adoptUpload itself decides whether there is consent and whether this
-      // kind is worth keeping — nothing here needs to know.
-      void this.vaultAdoption
-        .adoptUpload(user.id, created.id)
-        .catch((err: unknown) =>
-          this.logger.warn(
-            `Motivation ${row.id}: could not copy upload ${created.id} to the Document Centre: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          ),
-        );
+      // ⚠️ THE AUTOMATIC COPY IS GONE, ON PURPOSE. Every upload used to be
+      // swept into the Document Centre the moment it landed, behind a single
+      // blanket consent and with no UI at all — a member could not see what had
+      // been kept, could not decline one page of six, and the swallowed
+      // `void ... .catch()` meant a refusal left no trace either.
+      //
+      // Operator, 2026-09-08: "yes, stop auto copy. we need to ask consent to
+      // add items to the license centre." The member ticks what they want kept
+      // on the shelf and POSTs :id/keep-in-centre; VaultAdoptionService
+      // .keepChosen is the only route in now, and it reports `needsConsent`
+      // rather than failing quietly.
 
       // The wizard shows what each document was filed as, and `autoFiled` is
       // what tells it which rows to put a correction control on.

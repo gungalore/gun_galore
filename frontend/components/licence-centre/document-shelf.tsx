@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { SheetDocument } from './contract';
 
 // ────────────────────────────────────────────────────────────────────
@@ -113,6 +114,22 @@ export interface DocumentShelfProps {
    */
   onUpload: (files: File[]) => void;
   /**
+   * Save these pages into the member's Document Centre.
+   *
+   * ⚠️ ONLY THE ONES THEY ADDED, AND ONLY BECAUSE THEY TICKED THEM. Every
+   * upload used to be swept into the Centre automatically the moment it landed,
+   * behind a blanket consent and with no UI — a member could not see what had
+   * been kept, and could not decline one page of six. Operator, 2026-09-08:
+   * "the documents that the user added with those two options must have an
+   * option to be added to the vault. thats the select and select all option."
+   *
+   * A `vault` document is already in the Centre; offering to save it again is
+   * an invitation to make a duplicate, so it carries no tick.
+   */
+  onKeep?: (uploadIds: string[]) => void | Promise<void>;
+  /** True while a save is in flight — the button says so and cannot re-fire. */
+  keeping?: boolean;
+  /**
    * Straight into the scanner — the phone hand-off on a desktop, the camera on
    * a handheld.
    *
@@ -130,8 +147,25 @@ export default function DocumentShelf({
   documents,
   onUpload,
   onScan,
+  onKeep,
+  keeping = false,
 }: DocumentShelfProps) {
   const empty = documents.length === 0;
+  const mine = documents.filter((d) => d.origin === 'member');
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+
+  // A document that has just been saved and re-read comes back as `vault`, so
+  // a stale tick would keep pointing at a row that is no longer offered.
+  const chosen = [...picked].filter((id) => mine.some((d) => d.id === id));
+  const allPicked = mine.length > 0 && chosen.length === mine.length;
+
+  const toggle = (id: string) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   /**
    * The upload control, as a label wrapping a hidden input.
@@ -241,6 +275,28 @@ export default function DocumentShelf({
                 }`}
               />
               <OriginMark origin={d.origin} />
+              {/*
+                ⚠️ THE TICK IS ONLY ON WHAT THE MEMBER ADDED. A page that came
+                from the Centre is already there; offering to save it again
+                would make a duplicate.
+              */}
+              {onKeep && d.origin === 'member' ? (
+                <label className="absolute left-[4px] top-[4px] flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-[4px] border border-[var(--border)] bg-[var(--bg-card)]">
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={picked.has(d.id)}
+                    onChange={() => toggle(d.id)}
+                    aria-label={`Save ${d.label} to my Licence Centre`}
+                  />
+                  <span
+                    aria-hidden="true"
+                    className={`h-[10px] w-[10px] rounded-[2px] ${
+                      picked.has(d.id) ? 'bg-[var(--red)]' : 'bg-transparent'
+                    }`}
+                  />
+                </label>
+              ) : null}
             </div>
             <div className="mt-[5px] line-clamp-2 text-[11px] leading-[1.25] text-[var(--text-secondary)]">
               {d.label}
@@ -275,6 +331,35 @@ export default function DocumentShelf({
           )}
         </div>
       </div>
+
+      {/*
+        ⚠️ NOTHING IS SAVED UNTIL THEY ASK. This row appears only where the
+        member has added something of their own; the Centre copy is a choice
+        they make, one document at a time or all at once.
+      */}
+      {onKeep && mine.length ? (
+        <div className="mt-1 flex flex-wrap items-center gap-2 pr-4">
+          <button
+            type="button"
+            onClick={() =>
+              setPicked(allPicked ? new Set() : new Set(mine.map((d) => d.id)))
+            }
+            className="min-h-[36px] rounded-[var(--r-sm)] border border-[var(--border)] px-3 text-[12.5px] font-medium text-[var(--text-secondary)]"
+          >
+            {allPicked ? 'Clear all' : 'Select all'}
+          </button>
+          <button
+            type="button"
+            disabled={!chosen.length || keeping}
+            onClick={() => void onKeep(chosen)}
+            className="min-h-[36px] rounded-[var(--r-sm)] border border-[var(--red-line)] bg-[var(--red-wash)] px-3 text-[12.5px] font-medium text-[var(--red)] disabled:opacity-45"
+          >
+            {keeping
+              ? 'Saving…'
+              : `Save ${chosen.length || ''} to my Licence Centre`.replace('  ', ' ')}
+          </button>
+        </div>
+      ) : null}
 
       {/*
         ⚠️ A LEGEND, BECAUSE TWO LETTERS ARE NOT SELF-EXPLANATORY. The marks are

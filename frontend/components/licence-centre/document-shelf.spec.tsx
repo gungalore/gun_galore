@@ -192,3 +192,79 @@ describe('where each page came from', () => {
     expect(screen.queryByText('You added this')).toBeNull();
   });
 });
+
+describe('saving your own documents to the Licence Centre', () => {
+  // ⚠️ NOTHING IS SWEPT UP ANY MORE. Every upload used to be copied into the
+  // Centre the moment it landed, behind a blanket consent and with no UI — a
+  // member could not see what had been kept, and could not decline one page of
+  // six. Operator, 2026-09-08: "the documents that the user added with those
+  // two options must have an option to be added to the vault. thats the select
+  // and select all option."
+  const mine = () => [
+    doc({ id: 'a', label: 'My ID', origin: 'member' }),
+    doc({ id: 'b', label: 'My address', origin: 'member' }),
+  ];
+
+  it('⚠️ OFFERS A TICK ONLY ON WHAT THE MEMBER ADDED', () => {
+    render(
+      <DocumentShelf
+        documents={[...mine(), doc({ id: 'c', label: 'From LC', origin: 'vault' })]}
+        onUpload={vi.fn()}
+        onScan={vi.fn()}
+        onKeep={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Save My ID to my Licence Centre')).toBeDefined();
+    expect(
+      screen.queryByLabelText('Save From LC to my Licence Centre'),
+    ).toBeNull();
+  });
+
+  it('saves only what was ticked', async () => {
+    const onKeep = vi.fn();
+    render(
+      <DocumentShelf documents={mine()} onUpload={vi.fn()} onScan={vi.fn()} onKeep={onKeep} />,
+    );
+    await userEvent.click(screen.getByLabelText('Save My ID to my Licence Centre'));
+    await userEvent.click(screen.getByRole('button', { name: /Save 1 to my Licence Centre/ }));
+    expect(onKeep).toHaveBeenCalledWith(['a']);
+  });
+
+  it('select all takes every one of them, and clears again', async () => {
+    const onKeep = vi.fn();
+    render(
+      <DocumentShelf documents={mine()} onUpload={vi.fn()} onScan={vi.fn()} onKeep={onKeep} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Select all' }));
+    await userEvent.click(screen.getByRole('button', { name: /Save 2 to my Licence Centre/ }));
+    expect(onKeep).toHaveBeenCalledWith(['a', 'b']);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+    expect(
+      (screen.getByRole('button', { name: /Save to my Licence Centre/ }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it('⚠️ SAVES NOTHING WITH NOTHING TICKED', () => {
+    render(
+      <DocumentShelf documents={mine()} onUpload={vi.fn()} onScan={vi.fn()} onKeep={vi.fn()} />,
+    );
+    expect(
+      (screen.getByRole('button', { name: /Save to my Licence Centre/ }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it('offers nothing at all when every page came from the Centre', () => {
+    render(
+      <DocumentShelf
+        documents={[doc({ origin: 'vault' })]}
+        onUpload={vi.fn()}
+        onScan={vi.fn()}
+        onKeep={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Select all' })).toBeNull();
+  });
+});

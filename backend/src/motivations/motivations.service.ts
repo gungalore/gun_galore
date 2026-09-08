@@ -67,6 +67,7 @@ import {
   MemberProfileAnswersService,
   splitByScope,
 } from './member-profile-answers.service';
+import { VaultAdoptionService } from './vault-adoption.service';
 
 // Re-exported so every existing importer keeps working: both moved to
 // motivation-shared.service.ts when this file was split, and nothing about
@@ -114,6 +115,7 @@ export class MotivationsService {
     private readonly render: MotivationRenderService,
     private readonly witnesses: MotivationWitnessesService,
     private readonly profileAnswers: MemberProfileAnswersService,
+    private readonly vaultAdoption: VaultAdoptionService,
   ) {}
 
   /** Own list. Metadata only — nothing is decrypted here. */
@@ -1036,6 +1038,26 @@ export class MotivationsService {
   /** @see MotivationDocumentsService.autolink */
   autolink(clerkId: string, id: string, placeConfirmed = false) {
     return this.documents.autolink(clerkId, id, placeConfirmed);
+  }
+
+  /**
+   * Save the pages the member ticked into their Document Centre.
+   *
+   * ⚠️ OWNERSHIP IS THE MOTIVATION'S, AND adoptUpload RE-CHECKS IT PER ROW —
+   * its own `where` clause scopes every upload to `motivation: { userId }`, so
+   * an id from another member's application simply finds nothing. This resolves
+   * the user and hands the ids over; it does not trust them.
+   */
+  async keepInCentre(clerkId: string, id: string, uploadIds: string[]) {
+    await this.quota.assertEnabled();
+    const user = await this.shared.requireUser(clerkId);
+    // The motivation must be theirs before we act on ids that name its pages.
+    const owns = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true },
+    });
+    if (!owns) throw new NotFoundException('Motivation not found');
+    return this.vaultAdoption.keepChosen(user.id, uploadIds);
   }
 
   /** @see MotivationDocumentsService.rearmAutolinkFor */

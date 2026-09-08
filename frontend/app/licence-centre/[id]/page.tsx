@@ -167,6 +167,9 @@ export default function LicenceCentreSheetPage() {
    */
   const [extraOwned, setExtraOwned] = useState(0);
 
+  /** A save into the Document Centre is in flight. */
+  const [keeping, setKeeping] = useState(false);
+
   /**
    * ⚠️ THE ANSWERS THE SERVER LAST CONFIRMED, HELD SEPARATELY FROM THE SHEET.
    *
@@ -827,6 +830,38 @@ export default function LicenceCentreSheetPage() {
         */}
         <DocumentShelf
           documents={sheet.documents}
+          keeping={keeping}
+          /*
+            ⚠️ NOTHING REACHES THE DOCUMENT CENTRE UNTIL THEY ASK. The
+            automatic sweep is gone — operator, 2026-09-08: "yes, stop auto
+            copy. we need to ask consent to add items to the license centre" —
+            so this is the only route in, and `needsConsent` is the one refusal
+            a member can act on. Everything else adoptUpload declines (a kind
+            that is not reusable, bytes already purged) is silent by design and
+            reported as a count.
+          */
+          onKeep={async (ids) => {
+            setKeeping(true);
+            try {
+              const r = await motivationsApi.keepInCentre(getToken, id, ids);
+              if (r.needsConsent) {
+                setToast(
+                  'First tell us we may keep documents — Account, then Document Centre.',
+                );
+                return;
+              }
+              await load();
+              setToast(
+                r.kept === 1
+                  ? 'Saved one document to your Licence Centre.'
+                  : `Saved ${r.kept} documents to your Licence Centre.`,
+              );
+            } catch {
+              setToast('We could not save those just now.');
+            } finally {
+              setKeeping(false);
+            }
+          }}
           onScan={() => setAdding(true)}
           onUpload={async (files) => {
             setBusy(true);

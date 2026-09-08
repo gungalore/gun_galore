@@ -70,8 +70,24 @@ export default function PackSummary({
 
       {needs.length ? (
         <div className="mt-4">
-          <p className="m-0 mb-2 text-[11px] font-medium uppercase tracking-[0.11em] text-[var(--text-tertiary)]">
-            Take these with you
+          <p className="m-0 mb-1 text-[11px] font-medium uppercase tracking-[0.11em] text-[var(--text-tertiary)]">
+            What to take to the DFO
+          </p>
+          {/*
+            ⚠️ A TICK HERE USED TO MEAN "NOTHING TO DO", AND IT MEANT THE
+            OPPOSITE. Everything we hold is printed into the pack as an
+            annexure — so a ticked row is not a job finished, it is a job we
+            have done and an ORIGINAL the applicant still has to carry to the
+            counter. Struck through, it read as "leave this at home", which is
+            how somebody arrives at a DFO without their competency certificate.
+
+            Operator, 2026-09-08: "The documents we can add we must add as
+            annexures and make them part of the pack. So the applicant must just
+            take the originals with them, we will provide the copy in the pack."
+          */}
+          <p className="m-0 mb-2 text-[12.5px] leading-[1.4] text-[var(--text-secondary)]">
+            We print a copy of everything we hold into your pack. Take the
+            originals with you — the DFO will want to see them.
           </p>
           <ul className="m-0 list-none p-0">
             {needs.map((n) => (
@@ -87,14 +103,13 @@ export default function PackSummary({
                       : 'border-[var(--border-hover)]'
                   }`}
                 />
-                <span
-                  className={
-                    n.have
-                      ? 'text-[var(--text-tertiary)] line-through'
-                      : 'text-[var(--text-primary)]'
-                  }
-                >
+                <span className="text-[var(--text-primary)]">
                   {n.label}
+                  {n.have ? (
+                    <span className="ml-[6px] text-[11px] text-[var(--success)]">
+                      copy in your pack — bring the original
+                    </span>
+                  ) : null}
                   {/*
                     ⚠️ 'expected' IS NOT 'optional'. The tier exists because a
                     document with no statute behind it can still stop an

@@ -348,6 +348,46 @@ export class VaultAdoptionService {
    * Returns false for every ordinary reason not to — no consent, wrong kind,
    * already held, Centre full — and throws only on something genuinely wrong.
    */
+  /**
+   * Save the pages the member CHOSE into their Document Centre.
+   *
+   * ⚠️ CHOSEN, NOT SWEPT UP. Until 2026-09-08 every upload was copied
+   * automatically the moment it landed, behind a single blanket consent, with
+   * no UI at all — a member could not see what had been kept or decline one
+   * page of six. Operator: "the documents that the user added with those two
+   * options must have an option to be added to the vault. thats the select and
+   * select all option", and "we need to ask consent to add items to the license
+   * centre". So the sweep is gone and this is the only route in.
+   *
+   * ⚠️ IT REPORTS `needsConsent` RATHER THAN FAILING SILENTLY. adoptUpload
+   * returns false for a dozen reasons — no consent, a kind that is not
+   * reusable, bytes already purged — and the automatic caller swallowed all of
+   * them without a log line. A member who taps Save and sees nothing happen is
+   * owed the reason, and "we have not asked you yet" is the only one they can
+   * act on.
+   */
+  async keepChosen(
+    userId: string,
+    uploadIds: readonly string[],
+  ): Promise<{ kept: number; needsConsent: boolean }> {
+    if (!uploadIds.length) return { kept: 0, needsConsent: false };
+    if (!(await this.consent.mayKeepFor(userId))) {
+      return { kept: 0, needsConsent: true };
+    }
+    let kept = 0;
+    for (const id of uploadIds) {
+      try {
+        if (await this.adoptUpload(userId, id)) kept += 1;
+      } catch (err) {
+        // One page that will not copy must not cost the member the other five.
+        this.logger.warn(
+          `Upload ${id} not copied to the Document Centre: ${(err as Error).message}`,
+        );
+      }
+    }
+    return { kept, needsConsent: false };
+  }
+
   async adoptUpload(userId: string, uploadId: string): Promise<boolean> {
     if (!(await this.consent.mayKeepFor(userId))) return false;
 
