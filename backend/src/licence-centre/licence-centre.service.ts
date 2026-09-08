@@ -2105,6 +2105,31 @@ export class LicenceCentreService {
      * already correct.
      */
     await this.recomputeIfLicenceChanged(user.id, row);
+
+    /**
+     * ⚠️ A DELETE CAN MAKE A DOCUMENT ATTACHABLE, AND DELETING HAD NO RE-ARM.
+     * `rearmAutolink` fired on create and on confirmExpiry — the two paths that
+     * add something — and not here, on the reasoning that removing a document
+     * cannot give a draft anything new to attach.
+     *
+     * That is exactly backwards for the commonest case. The auto-attach refuses
+     * to choose between two certificates that both cover the firearm, so TWO
+     * handgun competencies in the Centre mean neither travels and the
+     * proficiency beside them is dropped with its partner. Deleting the
+     * duplicate is the act that makes the survivor decidable — and without this
+     * the member would delete it, the stamp would stay set, the sweep would
+     * never look again, and nothing on any screen would say why.
+     *
+     * Operator, 2026-09-08, about to do precisely this: "i will check and
+     * delete one if its a double."
+     *
+     * ⚠️ AND THE DELETIONS THE MEMBER MADE ON THE APPLICATION STILL STAND.
+     * `autolinkSkippedIds` records what was attached and then REMOVED from a
+     * pack, and a re-armed sweep honours it — which is the whole of "why can't
+     * I delete the proof of address?". Re-arming re-opens the choice; it does
+     * not reopen a decision.
+     */
+    await this.rearmAutolink(user.id);
     return { removed: true };
   }
 

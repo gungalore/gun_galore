@@ -563,3 +563,57 @@ describe('filing a new document', () => {
     ).resolves.toMatchObject({ id: 'cred-new' });
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// DELETING A DUPLICATE IS WHAT MAKES THE SURVIVOR ATTACHABLE.
+//
+// The auto-attach refuses to choose between two certificates that both cover
+// the firearm, so two handgun competencies in the Centre mean neither travels —
+// and the proficiency beside them is dropped with its partner. Deleting the
+// duplicate is the act that resolves it.
+//
+// ⚠️ AND `remove()` HAD NO RE-ARM, on the reasoning that removing a document
+// cannot give a draft anything new. That is backwards for the commonest case:
+// the member would delete the double, the stamp would stay set, the sweep would
+// never look again, and nothing on any screen would say why.
+//
+// Operator, 2026-09-08, about to do exactly this: "i will check and delete one
+// if its a double."
+// ────────────────────────────────────────────────────────────────────
+describe('deleting a credential re-arms the sweep', () => {
+  it('⚠️ RE-ARMS, so the survivor can finally be chosen', async () => {
+    const { svc, rearm } = build();
+    svc.prisma.credential.findFirst = jest.fn(async () => ({
+      id: 'c-dup',
+      storageKey: null,
+      kind: 'COMPETENCY_CERTIFICATE',
+      coversKinds: [],
+      attention: null,
+      otherSideId: null,
+    })) as never;
+    svc.prisma.credential.delete = jest.fn(async () => ({})) as never;
+
+    await svc.remove('clerk_1', 'c-dup');
+    expect(rearm).toHaveBeenCalledWith('user-1');
+  });
+
+  it('⚠️ AND NEVER LOSES THE DELETE OVER IT', async () => {
+    // Same posture as create() and confirmExpiry(): the re-arm is a
+    // convenience and the delete is the member's instruction.
+    const { svc, rearm } = build();
+    rearm.mockRejectedValueOnce(new Error('module edge down'));
+    svc.prisma.credential.findFirst = jest.fn(async () => ({
+      id: 'c-dup',
+      storageKey: null,
+      kind: 'COMPETENCY_CERTIFICATE',
+      coversKinds: [],
+      attention: null,
+      otherSideId: null,
+    })) as never;
+    svc.prisma.credential.delete = jest.fn(async () => ({})) as never;
+
+    await expect(svc.remove('clerk_1', 'c-dup')).resolves.toEqual({
+      removed: true,
+    });
+  });
+});
