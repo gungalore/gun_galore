@@ -1,8 +1,10 @@
 # Motivation Centre rebuild: brief for Claude Code
 
 Date: 2026-09-07. Operator: Gerhard. This is the single entry point. Read it fully, then
-`MOTIVATION-INTAKE-PLAN.md` (question model) and `MOTIVATION-UX-REVIEW.md` (what is wrong
-with the live screens). Where the three disagree, this file wins.
+`MOTIVATION-INTAKE-PLAN.md` (question model), `MOTIVATION-UX-REVIEW.md` (what is wrong
+with the live screens), `MOTIVATION-REASON-PROMPT.md` (the reason generator contract) and
+`MOTIVATION-CORPUS-LEARNINGS.md` (what the approved packs on file actually contain, and
+what the Registrar tolerates). Where they disagree, this file wins.
 
 Work in the pattern this repo already uses: spec, then phased execution with a sign-off
 gate between phases. Do not start Phase 2 until the operator has approved Phase 1 output.
@@ -218,8 +220,39 @@ capability (`make|model|calibre|use_class`, TTL 180 days), calibre role, discipl
 specification (keyed to `shooting-disciplines` entry), species and range bands per game
 class and province, precinct stats (existing `crime-stats`). Output is paraphrased,
 source-attributed, stored in the fact pack under `research{}` so the trace gate treats it
-as ledger content. The Anthropic writer never searches. Cache is a `MotivationResearch`
+as ledger content. The writer never searches. Cache is a `MotivationResearch`
 table keyed as above; a hit costs no call.
+
+Operator, 2026-09-07: Gemini is the generation model for the reason generator as well
+(see `MOTIVATION-REASON-PROMPT.md`); use its native JSON schema output via
+`common/llm/gemini-schema.ts`. Keep the Anthropic writer/gate split for the full document
+unless the operator says otherwise.
+
+### 5.5a Association activity library and endorsement reading
+- `association-activities.ts`: per SAPS-accredited association (keyed on accreditation
+  number: SAHGCA 400001 hunting / 1300091 sport, Natshoot, SAPSA, SA Wingshooters, CHASA,
+  PHASA, SAAACA, ...), every exercise, league, postal shoot and discipline it runs. Per
+  entry: name, distance, firearm class, the ELIGIBILITY RULE verbatim (calibre floor or
+  ceiling, barrel length, action, box-to-fit dimensions, "only 9mmP pistols and larger"),
+  which status it counts toward (hunter / sport), source URL, `verifiedAt`. The rule is
+  the point: it is what lets the reason generator prove that a held 6.35mm pistol cannot
+  enter the exercise a 9mm can (see `MOTIVATION-CORPUS-LEARNINGS.md` §4). Seed NHSA from
+  natshoot.co.za's postal-shooting exercise pages (the list is reproduced in
+  `Example-motivation-or-Sport-handgun.docx` in Downloads) and SAHGCA from
+  sahunters.co.za; operator reviews before it ships. The reason generator may only name
+  activities from the endorsing association's entry.
+- The pack binds the rules of the exercises the reason names as an annexure, in the
+  association's words with a source line (the approved packs all do this; see
+  `MOTIVATION-CORPUS-LEARNINGS.md` §2 item 11).
+- `ASSOCIATION_ENDORSEMENT` reading (`motivation-extract.service.ts`): the SAHGCA form is
+  the reference (three real examples in Downloads: `108828_Endorsement*.pdf`). Extract:
+  association name and both accreditation numbers, member number, dedicated number,
+  status type (hunter / sport shooter), the firearm row (type, calibre, make, action,
+  serial), endorsement number (EN...), issue date, signatory. Store as a vault credential
+  linked to the owned firearm by serial (`motivation-autolink.ts`). An owned firearm's
+  endorsement becomes its `primary_use` with provenance `READ`; the sheet asks
+  `primary_use` only for firearms with none.
+- Both feed `endorsements[]` and `association_activities[]` on the reason-generator call.
 
 ### 5.6 Writer
 `motivation-prompts.ts` and `motivation-structure.ts`, per `MOTIVATION-UX-REVIEW.md` §3:
@@ -232,9 +265,18 @@ table keyed as above; a hit costs no call.
   verbatim), `research{}`, overlap angle, and the statutory text; it writes only the
   argument paragraphs
 - rendered from data, not from the model: page-1 particulars block, owned-firearms
-  table, S13 existing-measures list, statutory quote (from `motivation-statute.ts`,
-  quote-then-apply), annexure index, and the page-2 "take this to SAPS" checklist from
-  `motivation-checklist.ts` by section and source route
+  table (make, calibre, type, issue, section + status, expiry, and a disclosed event such
+  as "stolen, CAS ..." from the history answers, exactly as the approved packs' tables do),
+  S13 existing-measures list, statutory quote (from `motivation-statute.ts`,
+  quote-then-apply), the exercise-rules annexure, annexure index, and the page-2 "take
+  this to SAPS" checklist from `motivation-checklist.ts` by section and source route
+- the reason generator (`MOTIVATION-REASON-PROMPT.md`) supplies the comparison section;
+  the writer does not compose a second one
+- **Renderer (operator, 2026-09-08):** the document is typeset from an HTML/CSS template by
+  headless Chromium, not drawn with pdfkit. `docs/design/motivation-layout-mock.html` is
+  the template and `MOTIVATION-LAYOUT-SPEC.md` the spec. pdfkit is removed; pdf-lib stays
+  for the 271 AcroForm, annexure stamping and the merge. Owned firearms: every one, always,
+  in the section 5 table and in 271 item 2.1 from the same array.
 - gate rubric unchanged; `thinFields` no longer triggers questions, it only lowers the
   score and is logged
 
