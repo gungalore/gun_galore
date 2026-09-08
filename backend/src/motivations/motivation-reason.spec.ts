@@ -4,6 +4,7 @@ import {
   REASON_MAX_WORDS,
   REASON_MIN_WORDS,
   countWords,
+  proseFirearmName,
   reasonSystemPrompt,
   validateReason,
   type ReasonResult,
@@ -506,5 +507,116 @@ describe('the paragraph that reached production', () => {
 
   it('names the catalogue words', () => {
     expect(check()).toContain('product page');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE SECOND GENERATION (2026-09-08), AND WHAT IT STILL GOT WRONG.
+//
+// Rewriting the operator's Glock reason under the new rules fixed everything
+// the corpus doc named: no defence words on a section 16 firearm, no invented
+// roles, no USPSA division, no catalogue vocabulary, 204 words in two
+// paragraphs, `warnings: ["roles_unconfirmed"]`. Two faults survived, and both
+// are the input's fault rather than the model's.
+// ────────────────────────────────────────────────────────────────────
+
+describe('a firearm name in a sentence', () => {
+  it('⚠️ STOPS THE LICENCE CARD SHOUTING', () => {
+    // "a NORDISKE PRECISION 223 REM rifle licensed under section 16" is what
+    // rule 13 produces when the input is the card's own transcription.
+    expect(proseFirearmName('MAUSER')).toBe('Mauser');
+    expect(proseFirearmName('.30-06 SPRINGFIELD')).toBe('.30-06 Springfield');
+    expect(proseFirearmName('NORDISKE PRECISION')).toBe('Nordiske Precision');
+    expect(proseFirearmName('6.35MM BROWNING')).toBe('6.35mm Browning');
+  });
+
+  it('⚠️ AND LEAVES AN INITIALISM ALONE — under four letters is never renamed', () => {
+    // A three-letter all-caps token in this trade is nearly always an
+    // initialism a person also writes in capitals. Renaming a manufacturer is
+    // the failure; leaving one shouty is merely untidy.
+    expect(proseFirearmName('CZ')).toBe('CZ');
+    expect(proseFirearmName('ADP')).toBe('ADP');
+    expect(proseFirearmName('.223 REM')).toBe('.223 REM');
+  });
+
+  it('⚠️ AND NEVER TOUCHES A MODEL DESIGNATION', () => {
+    // "T3X" and "SP-01" begin with a letter and carry a digit. Lower-casing
+    // them prints a firearm nobody sells.
+    expect(proseFirearmName('T3X')).toBe('T3X');
+    expect(proseFirearmName('SP-01')).toBe('SP-01');
+    expect(proseFirearmName('P-10 C')).toBe('P-10 C');
+  });
+
+  it('tidies the card’s own bracket spacing', () => {
+    expect(proseFirearmName('9MM PAR ( 9X19MM )')).toBe('9mm PAR (9x19mm)');
+  });
+
+  it('leaves something already written for a person alone', () => {
+    expect(proseFirearmName('Howa 1500 6.5 Creedmoor')).toBe(
+      'Howa 1500 6.5 Creedmoor',
+    );
+  });
+});
+
+describe('a rule we cannot show the reviewer', () => {
+  // The second generation wrote that the CZ "is restricted to pocket pistol
+  // events and cannot meet the chambering and capacity requirements", and that
+  // the Glock "meets the entry criteria ... up to twenty five metres". Every
+  // one is plausible, probably true, and supported by nothing in the pack.
+  for (const phrase of [
+    'restricted to pocket pistol events',
+    'cannot meet the capacity requirements',
+    'meets the entry criteria',
+    'is not eligible for that exercise',
+  ]) {
+    it(`refuses "${phrase}" while no association rule is supplied`, () => {
+      const bad = validateReason(
+        result({ paragraph: `${words(210)} ${phrase}` }),
+        ctx({ knownTerms: [] }),
+      );
+      expect(bad.join(' ')).toContain('no association rule supplied');
+    });
+  }
+
+  it('⚠️ REFUSES A DISTANCE NOTHING SUPPLIED SUPPORTS', () => {
+    const bad = validateReason(
+      result({ paragraph: `I shoot to 25 metres. ${words(215)}` }),
+      ctx({ knownTerms: [] }),
+    );
+    expect(bad.join(' ')).toContain('distance nothing supplied supports');
+  });
+
+  it('⚠️ BUT A HUNTING RANGE BAND IS SUPPLIED, so it passes', () => {
+    // REASON_BANKS carries "150-300 m open ground" and the service hands the
+    // banks over on every call. A rule that refused those would refuse every
+    // hunting motivation.
+    expect(
+      validateReason(
+        result({
+          angle: 'species_class_gap',
+          paragraph: `I shoot plains game at 200 m. ${words(213)}`,
+        }),
+        ctx({
+          licenceType: S16H,
+          knownFirearms: ['Howa 1500 6.5 Creedmoor'],
+          knownTerms: ['6.5 Creedmoor: kudu, gemsbok; 100-300 m'],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('⚠️ AND ALLOWS THE RULE ONCE WE CAN ANNEX IT', () => {
+    // The whole point of exercise_eligibility. Once association-activities.ts
+    // supplies "only 9mmP pistols and larger" with a source, quoting it is the
+    // strongest thing the paragraph can do.
+    expect(
+      validateReason(
+        result({
+          angle: 'exercise_eligibility',
+          paragraph: `The 7m exercise is restricted to 9mmP and larger. ${words(210)}`,
+        }),
+        ctx({ hasActivityRules: true }),
+      ),
+    ).toEqual([]);
   });
 });

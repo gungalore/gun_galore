@@ -16,6 +16,7 @@ import {
   REASON_BANKS,
   REASON_SCHEMA,
   countWords,
+  proseFirearmName,
   reasonSystemPrompt,
   validateReason,
   type ReasonResult,
@@ -62,6 +63,25 @@ interface ReasonInput {
    * store exists, only the filling changes.
    */
   previous_motivations: Record<string, string>[];
+  /**
+   * What the endorsing association actually runs, and the equipment rule for
+   * each exercise.
+   *
+   * ⚠️ ALSO ALWAYS EMPTY TODAY, AND ITS EMPTINESS IS ENFORCED. Brief §5.5a
+   * builds `association-activities.ts` — per SAPS accreditation number, every
+   * exercise with its printed rule ("7m 2x5 shot: only 9mmP pistols and larger",
+   * "5m Snubby and Pocket Pistol: barrel not longer than 100mm"). That rule is
+   * the whole strength of the `exercise_eligibility` angle, because it is a gap
+   * a reviewer can check against an annexure in the same pack.
+   *
+   * ⚠️ UNTIL IT EXISTS THE MODEL MAY NOT ASSERT ONE. The first generation under
+   * the new rules wrote that the applicant's CZ "is restricted to pocket pistol
+   * events and cannot meet the chambering and capacity requirements" — which is
+   * plausible, is probably true, and is supported by nothing in the pack. An
+   * unprovable claim on a signed document is the failure this whole file is
+   * about. `validateReason` refuses one while this list is empty.
+   */
+  association_activities: Record<string, string>[];
   constraints: Record<string, unknown>;
 }
 
@@ -189,6 +209,9 @@ export class MotivationReasonService {
         knownFirearms: known,
         knownTerms: terms,
         roleless,
+        // Empty until brief §5.5a builds association-activities.ts, and the
+        // validator refuses an asserted exercise rule while it is.
+        hasActivityRules: input.association_activities.length > 0,
       });
       if (bad.length) {
         last = bad;
@@ -329,10 +352,20 @@ export class MotivationReasonService {
       const put = (key: string, v: string) => {
         if (v) row[key] = v;
       };
-      put('make', a(`${p}make`));
-      put('model', a(`${p}model`));
-      put('calibre', a(`${p}calibre`));
-      put('type', a(`${p}type`));
+      /*
+        ⚠️ PROSE-CASED HERE AND NOWHERE ELSE. A licence card prints "MAUSER"
+        and ".30-06 SPRINGFIELD" and the vault keeps that verbatim on purpose;
+        rule 13 then tells the model to spell a make exactly as the input
+        spells it, so the first generation under these rules wrote "a NORDISKE
+        PRECISION 223 REM rifle licensed under section 16" in the middle of an
+        English sentence. Same discipline as answerValue() and the card's
+        "NONE": the stored value never changes, and the one reader that renders
+        prose does the tidying.
+      */
+      put('make', proseFirearmName(a(`${p}make`)));
+      put('model', proseFirearmName(a(`${p}model`)));
+      put('calibre', proseFirearmName(a(`${p}calibre`)));
+      put('type', proseFirearmName(a(`${p}type`)));
       put('serial', ownedFirearmSerial(answers, n));
       put('licence_expiry', a(`${p}expiry`));
       // Their own words about the firearm outrank the tapped card, because it
@@ -349,7 +382,8 @@ export class MotivationReasonService {
       ['model', 'firearm_model'],
       ['calibre', 'firearm_calibre'],
     ] as const) {
-      const v = a(from);
+      // The applied-for firearm comes off the seller's card the same way.
+      const v = proseFirearmName(a(from));
       if (v) applied[key] = v;
     }
 
@@ -410,6 +444,7 @@ export class MotivationReasonService {
       cards_tapped: cards ? cards.split(',').map((s) => s.trim()) : [],
       research,
       previous_motivations: [],
+      association_activities: [],
       constraints: {},
     };
   }

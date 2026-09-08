@@ -295,6 +295,7 @@ SECTION DISCIPLINE FOR EXISTING FIREARMS — THIS IS WHERE REFUSALS COME FROM
 13. Makes, models, calibres and association names appear only as they appear in the input, spelled the same way. If no model was supplied, write "the 9mm handgun applied for", not a model you believe is likely. If no association is in the input, name none.
 14. Discipline, exercise and division names come only from the input. Do not supply divisions from memory and do not name another association's disciplines. "Carry Optics" is a USPSA division and does not exist in South African shooting.
 15. Banned phrasing, because it reads like a product page and not like an applicant: power factor, split times, high-volume, platform, tactical, close protection, engage targets, dynamic, competitively, efficiently, and "dedicated" used as a synonym for "used for".
+16. YOU MAY NOT STATE A RULE NOBODY GAVE YOU. If the input carries no association exercises, then you do not know what any exercise is shot with, what its entry conditions are, or at what distance. Do not write "requirements", "criteria", "eligible", "restricted to" or any distance in metres. Rest the gap on what the pack can prove: the TYPE of firearm and the SECTION it is licensed under. "None of my rifles can be used in a handgun exercise" is provable from the firearms themselves; "cannot meet the capacity requirements" is not, and an applicant who cannot produce the rule they quoted has damaged their own application.
 
 THE BATTERY SENTENCE names each held firearm with make, calibre and the section it is licensed under, the way the approved packs' tables do: "a CZ 6.35mm handgun, licensed under section 16". Where the history answers disclose an event, state it in the same breath and plainly: "(section 13; reported stolen, CAS 123/4/2024)".
 
@@ -351,6 +352,17 @@ export function validateReason(
      * names it; the check is that the model did not claim a source for it.
      */
     roleless?: readonly string[];
+    /**
+     * Did we supply an association's printed exercise rule?
+     *
+     * ⚠️ FALSE IS THE STATE THE PLATFORM IS ACTUALLY IN, and it is what makes
+     * the check below meaningful rather than decorative. `association-
+     * activities.ts` (brief §5.5a) does not exist yet, so nothing in the input
+     * says which exercises exist, what they are shot with, or what their entry
+     * rules are — and a paragraph asserting one is asserting something the pack
+     * cannot prove.
+     */
+    hasActivityRules?: boolean;
   },
 ): ReasonRejection[] {
   const bad: ReasonRejection[] = [];
@@ -455,6 +467,43 @@ export function validateReason(
   }
 
   /**
+   * ⚠️ A RULE WE CANNOT SHOW THE REVIEWER. The first generation under the new
+   * prompt wrote that the applicant's CZ "is restricted to pocket pistol events
+   * and cannot meet the chambering and capacity requirements for standard
+   * semi-automatic handgun disciplines", and that the Glock's chambering "meets
+   * the entry criteria for practical handgun shooting exercises up to twenty
+   * five metres". Every one of those is plausible, probably true, and supported
+   * by NOTHING in the pack — no exercise list, no equipment rule, no distance.
+   *
+   * ⚠️ WHICH IS WORSE THAN VAGUENESS, NOT BETTER. A DFO who shoots can check a
+   * claimed entry criterion, and an applicant who cannot produce the rule they
+   * quoted has damaged their own application. The gap rests on type and section
+   * — "none of my rifles can be used in a handgun exercise" — until
+   * association-activities.ts can supply the rule and the pack can annex it.
+   */
+  if (!ctx.hasActivityRules) {
+    for (const w of UNPROVABLE_RULE_WORDS) {
+      if (has(w)) {
+        bad.push(
+          `paragraph claims "${w}" with no association rule supplied to prove it`,
+        );
+      }
+    }
+    /**
+     * ⚠️ AND A DISTANCE IS A RULE. "up to twenty five metres" reads as the
+     * exercise's own specification. Hunting range bands are different — they
+     * come out of REASON_BANKS, which IS supplied — so the check is skipped
+     * whenever a supplied term already carries a distance.
+     */
+    const suppliedDistance = /\d+\s*(?:m\b|metres|meters)/i.test(
+      ctx.knownTerms.join(' '),
+    );
+    if (!suppliedDistance && /\d+\s*(?:m\b|metres|meters)/i.test(r.paragraph)) {
+      bad.push('paragraph states a distance nothing supplied supports');
+    }
+  }
+
+  /**
    * ⚠️ A ROLE NOBODY GAVE US. See ctx.roleless: the model was handed these
    * firearms with no primary_use, no previous motivation and no endorsement,
    * so any source it claims for one of them is invented — and an invented role
@@ -534,6 +583,58 @@ export function validateReason(
   return bad;
 }
 
+/**
+ * A firearm's name, as a person would write it in a sentence.
+ *
+ * ⚠️ THE CARD SHOUTS AND THE PARAGRAPH MUST NOT. A licence card prints
+ * "MAUSER", ".30-06 SPRINGFIELD", "9MM PAR ( 9X19MM )", and the vault stores
+ * that verbatim on purpose — the confirm panel asks the member to check it
+ * against the card in their hand, and a card reading "S/L RIFLE" must still
+ * read "S/L RIFLE" when they do. But rule 13 tells the model to spell a make
+ * exactly as the input spells it, so the first generation under these rules
+ * produced "a NORDISKE PRECISION 223 REM rifle licensed under section 16" in
+ * the middle of an English sentence.
+ *
+ * ⚠️ SO IT IS FIXED AT THE PROSE BOUNDARY, NOT AT THE SOURCE. Same discipline
+ * as `answerValue()` and the card's "NONE": the stored value never changes,
+ * and the one reader that renders prose does the tidying. Nothing else in the
+ * system sees this.
+ *
+ * ⚠️ FOUR LETTERS OR MORE, WHICH IS WHY "CZ", "FN", "ADP" AND "REM" SURVIVE.
+ * A three-letter all-caps token in this trade is nearly always an initialism a
+ * person also writes in capitals; a six-letter one nearly never is. Being
+ * incomplete in that direction leaves a name as the card had it, which is
+ * merely shouty. Being wrong in the other direction renames a manufacturer.
+ */
+export function proseFirearmName(raw: string): string {
+  return (raw ?? '')
+    .split(/(\s+)/)
+    .map((token) => {
+      if (/^\s+$/.test(token) || !token) return token;
+      // Strip leading punctuation for the tests — ".30-06" is a digit token.
+      const core = token.replace(/^[^A-Za-z0-9]+/, '');
+      const hasDigit = /[0-9]/.test(core);
+      const startsDigit = /^[0-9]/.test(core);
+      // ⚠️ A MODEL DESIGNATION IS LEFT ALONE. "T3X", "P-10", "SP-01" and
+      // "AR-15" begin with a letter and carry a digit; lower-casing them would
+      // print a firearm nobody sells.
+      if (hasDigit && !startsDigit) return token;
+      // A calibre: "9MM" → "9mm", "9X19MM" → "9x19mm", ".30-06" unchanged.
+      if (startsDigit) return token.toLowerCase();
+      if (!/^[A-Z]+$/.test(core) || core.length < 4) return token;
+      return token.replace(
+        /[A-Z]+/,
+        (w) => w[0] + w.slice(1).toLowerCase(),
+      );
+    })
+    .join('')
+    // The card's own bracket spacing: "( 9x19mm )" is not how anybody writes.
+    .replace(/\(\s+/g, '(')
+    .replace(/\s+\)/g, ')')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 /** The sections whose firearms are sporting, and never defensive. */
 const SPORTING_TYPES: readonly MotivationLicenceType[] = [
   MotivationLicenceType.S15_OCCASIONAL_HUNTER,
@@ -580,6 +681,28 @@ const PRODUCT_PAGE_WORDS = [
   'dynamic',
   'competitively',
   'efficiently',
+] as const;
+
+/**
+ * Words that assert an exercise's rules.
+ *
+ * ⚠️ NOT BANNED OUTRIGHT — BANNED WHILE WE CANNOT SHOW THE RULE. Once
+ * `association_activities[]` carries "only 9mmP pistols and larger" with a
+ * source and the pack annexes it, "requirement" is exactly the right word and
+ * quoting it is the strongest thing the paragraph can do.
+ *
+ * ⚠️ "restricted to" AND NOT "restricted", because a legitimate sentence can
+ * say a range is restricted. This list is about a claim, not a word.
+ */
+const UNPROVABLE_RULE_WORDS = [
+  'requirement',
+  'criteria',
+  'criterion',
+  'eligib',
+  'restricted to',
+  'capacity requirement',
+  'minimum calibre',
+  'entry rule',
 ] as const;
 
 /**
