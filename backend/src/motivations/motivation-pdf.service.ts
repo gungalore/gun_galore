@@ -195,6 +195,8 @@ export type Scheme =
   | 'graphite'
   | 'mauve';
 
+import type { DrawingText } from './motivation-cartridge-drawing';
+
 export interface SchemeColours {
   deep: string;
   deep2: string;
@@ -506,6 +508,36 @@ export interface MotivationPdfInput {
    * annexure letter, and appears in the contents as a section.
    */
   cipSheet?: { bytes: Buffer; label: string };
+  /**
+   * The cartridge, drawn from the figures held rather than reproduced from
+   * somebody else's typeset page.
+   *
+   * Operator, 2026-09-09: "why arent we pulling in the dimension sheet of the
+   * cartridge its using from The Bench? And describing the cartridge and how
+   * it would suffice for a self defence round?" and "you can render the
+   * cartridge in 3D with the main measurements and make it half a page with
+   * half a page description".
+   *
+   * ⚠️ IT REPLACES `cipSheet` RATHER THAN JOINING IT. Two cartridge sections
+   * in one pack is a document that has lost its place, and the spliced page is
+   * a facsimile of somebody else's sheet — which is the republication question
+   * `cipSheetFor()` records as still open, and which naming the source in its
+   * own heading only sharpens. A drawing made from figures we hold, captioned
+   * in our own words, does not raise it.
+   *
+   * ⚠️ THE LETTERING TRAVELS BESIDE THE IMAGE, NOT INSIDE IT. See DrawingText:
+   * the rasteriser has no fonts worth trusting, so the callouts are set here
+   * in the document's own type.
+   */
+  cartridgeDrawing?: {
+    /** The geometry, already rasterised. */
+    png: Buffer;
+    widthMm: number;
+    heightMm: number;
+    texts: DrawingText[];
+    /** The section heading, e.g. "The cartridge — 9 mm Luger". */
+    label: string;
+  };
   /**
    * What the applicant physically carries to the DFO.
    *
@@ -1099,6 +1131,73 @@ export class MotivationPdfService {
       doc.x = MARGIN;
     };
 
+    /**
+     * The cartridge, drawn from the figures we hold.
+     *
+     * ⚠️ HALF A PAGE OF DRAWING, HALF A PAGE OF ARGUMENT — which is only true
+     * if the two are on the same page. Anchored after the specification table
+     * instead, the picture came out two sections and one page away from the
+     * paragraphs describing it, and the pack read as though it had illustrated
+     * the wrong thing. So this is called from the body loop the moment the
+     * writer opens a cartridge section, and the prose falls in underneath it.
+     *
+     * ⚠️ AND WHAT IS DRAWN IS ONLY WHAT WAS MEASURED: a rim, a groove, a
+     * taper, a mouth and a seated bullet, at scale, carrying the figures the
+     * sheet printed and no others.
+     */
+    let cartridgeDrawn = false;
+
+    /** How much room the block needs, so a heading is never orphaned above it. */
+    const cartridgeHeight = (): number => {
+      const cd = input.cartridgeDrawing;
+      if (!cd) return 0;
+      return K.mm(cd.heightMm) * (contentWidth / K.mm(cd.widthMm));
+    };
+
+    const drawCartridge = () => {
+      const cd = input.cartridgeDrawing;
+      if (!cd || cartridgeDrawn) return;
+      cartridgeDrawn = true;
+
+      /**
+       * ⚠️ ONE SCALE FOR THE PICTURE AND THE LETTERING BOTH. The drawing is
+       * laid out in millimetres of paper and then fitted to the column; if the
+       * callouts were set at a fixed point size they would drift off their
+       * leader lines the moment the column width changed.
+       */
+      const scale = contentWidth / K.mm(cd.widthMm);
+      const drawH = K.mm(cd.heightMm) * scale;
+
+      const x0 = MARGIN;
+      const y0 = doc.y;
+      doc.image(cd.png, x0, y0, { width: contentWidth });
+
+      for (const t of cd.texts) {
+        doc
+          .font(t.role === 'caption' ? B.bodyItalic : B.body)
+          .fontSize(K.mm(t.size) * scale)
+          .fillColor(t.role === 'caption' ? C.mut : C.ink);
+        const tx = x0 + K.mm(t.x) * scale;
+        const ty = y0 + K.mm(t.y) * scale;
+        /**
+         * ⚠️ MEASURED AND PLACED, NOT ALIGNED. pdfkit centres text inside a
+         * given WIDTH, and the width here would have to be the whole column —
+         * which centres every callout on the page rather than over its own
+         * leader line. `baseline: 'alphabetic'` matters for the same reason:
+         * the y in DrawingText is where the leader stops, which is a baseline,
+         * not the top of a line box.
+         */
+        const w = doc.widthOfString(t.text);
+        doc.text(t.text, t.anchor === 'middle' ? tx - w / 2 : tx, ty, {
+          lineBreak: false,
+          baseline: 'alphabetic',
+        });
+      }
+
+      doc.x = MARGIN;
+      doc.y = y0 + drawH + PARA_GAP;
+    };
+
     doc.addPage();
 
     // ── Body ──────────────────────────────────────────────────────────
@@ -1111,15 +1210,29 @@ export class MotivationPdfService {
 
     for (const block of blocks) {
       if (isHeading(block)) {
+        /**
+         * ⚠️ THE DRAWING GOES UNDER THE WRITER'S OWN HEADING. Every S13 plan
+         * opens a section on the cartridge, and that is the one place in the
+         * document where a picture of the round is an illustration rather than
+         * an interruption.
+         */
+        const wantsCartridge =
+          !!input.cartridgeDrawing &&
+          !cartridgeDrawn &&
+          /\bCARTRIDGE\b/i.test(block);
+
         // Keep a heading with at least a couple of lines of its paragraph:
         // if we are near the bottom, start the page now rather than orphan it.
-        if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - 110) doc.addPage();
+        // A heading about to carry the drawing needs the drawing's room too.
+        const need = wantsCartridge ? cartridgeHeight() + mmGap(24) : 110;
+        if (doc.y > PAGE_HEIGHT - MARGIN_BOTTOM - need) doc.addPage();
         // ⚠️ CENTRED, BOLD, ALL CAPS — measured off Safari Outdoor, where
         // "CURRENT COMPETENCY STATUS" sits centred in Arial-Bold 11 with 49pt
         // above it. Ours were left-aligned sentence case with a trailing
         // colon ("The firearm and why it suits the purpose:"), which is how a
         // letter signposts itself, not how a submission does.
         renderHeading(block.replace(/:\s*$/, '').toUpperCase());
+        if (wantsCartridge) drawCartridge();
       } else {
         // A parenthetical annexure reference is its own line in their
         // documents — "(Refer to Annexure B: Proficiency Certificates)" —
@@ -1194,7 +1307,7 @@ export class MotivationPdfService {
       // table starting underneath it. Without the break the datasheet would
       // be inserted into the middle of that table. Packs with no sheet gain
       // nothing.
-      if (input.cipSheet) {
+      if (input.cipSheet && !input.cartridgeDrawing) {
         const at = doc.bufferedPageRange().count;
         doc.addPage();
         insertions.push({ at, count: 1 });
@@ -1206,6 +1319,23 @@ export class MotivationPdfService {
           final: true,
         });
       }
+    }
+
+    // ⚠️ ONLY IF THE WRITER NEVER GAVE IT A HOME. `drawCartridge` puts the
+    // picture directly under the writer's own cartridge heading, which is
+    // where it belongs — half a page of drawing above half a page of the
+    // argument it illustrates. This is the fallback for a draft that never
+    // raised the subject: the section still appears, on its own, rather than
+    // the figures being dropped in silence.
+    //
+    // ⚠️ AND IT SITS OUTSIDE THE SPECIFICATION BLOCK, which is where it was
+    // written first. That block only runs for a pack carrying `firearmSpec`,
+    // so a draft with no manufacturer data AND no cartridge heading lost the
+    // drawing entirely — the one case the fallback exists for.
+    if (input.cartridgeDrawing && !cartridgeDrawn) {
+      if (doc.y > K.BODY_BOTTOM - cartridgeHeight() - mmGap(20)) doc.addPage();
+      renderHeading(input.cartridgeDrawing.label);
+      drawCartridge();
     }
 
     // ── Firearms already licensed (standard and comprehensive) ────────
@@ -2502,7 +2632,15 @@ export class MotivationPdfService {
     // already accounts for every block.
     // The datasheet is its own block at its own index — see PdfBlock. It has
     // no annexure letter, which is what makes it read as body content.
-    const cipLoaded = input.cipSheet
+    /**
+     * ⚠️ THE SAME PRECEDENCE THE BODY BRANCH TAKES, AND IT HAS TO BE STATED
+     * TWICE. Reserving the page and MERGING the page are separate passes:
+     * the body decides where the sheet goes and this one splices it in. Gated
+     * only in the body, the sheet was skipped in the contents and still
+     * appended — so a pack with a drawing gained an unreferenced facsimile
+     * page at the end, after the signature.
+     */
+    const cipLoaded = input.cipSheet && !input.cartridgeDrawing
       ? await loadPdfAnnexures([
           {
             letter: '',

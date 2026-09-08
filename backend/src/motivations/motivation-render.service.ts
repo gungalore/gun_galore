@@ -42,6 +42,13 @@ import { buildPriorNoticeRequest } from './motivation-prior-notice';
 import { buildCompletedStatement } from './motivation-character-statement';
 import { WITNESS_FORM_VERSION } from './motivation-witness-form';
 import { readFile } from 'node:fs/promises';
+import sharp from 'sharp';
+import { findCartridge } from './motivation-cartridge';
+import {
+  cartridgeDrawing,
+  completeDims,
+  type DrawingText,
+} from './motivation-cartridge-drawing';
 import { FirearmImageService } from './motivation-firearm-image';
 import { markForSection, type MarkName } from './motivation-pdf-marks';
 import { MotivationWitnessService } from './motivation-witness.service';
@@ -622,12 +629,107 @@ export class MotivationRenderService {
       // a WRONG datasheet would assert chamber dimensions and a maximum
       // pressure for another cartridge inside a document the applicant signs.
       cipSheet: await this.cipSheetFor(answers.firearm_calibre),
+      // ⚠️ AND THE DRAWING, WHICH TAKES PRECEDENCE OVER THAT PAGE. Operator,
+      // 2026-09-09: "why arent we pulling in the dimension sheet of the
+      // cartridge its using from The Bench?" Both are still built because the
+      // spliced page is the fallback when we hold no figures for the round;
+      // the renderer prints one or the other, never both.
+      cartridgeDrawing: await this.cartridgeDrawingFor(answers.firearm_calibre),
       // The "take these to the police station" half of the checklist, and only
       // that half — the other half is the pack they are already holding.
       takeWithYou: buildChecklist(row.licenceType, kinds)
         .sections.find((sec) => sec.key === 'theirs')
         ?.items.map((i) => ({ label: i.label, note: i.note })),
     });
+  }
+
+  /**
+   * The cartridge drawn from the figures we hold, or nothing.
+   *
+   * ⚠️ FAIL-SOFT, like every other supplied fact in this pack. A cartridge we
+   * have no sheet for simply arrives without a drawing; the writer's prose
+   * still stands, and the rule against recalled ballistics still holds. The
+   * absence costs a picture, never the document.
+   *
+   * ⚠️ RASTERISED HERE, NOT IN THE RENDERER. pdfkit cannot place an SVG, and
+   * the density is chosen for PAPER rather than for a screen: the drawing is
+   * 166 mm wide, so 300 dpi is a little under two thousand pixels across the
+   * column and the leader lines stay hairlines when printed.
+   */
+  private async cartridgeDrawingFor(calibre: string | undefined): Promise<
+    | {
+        png: Buffer;
+        widthMm: number;
+        heightMm: number;
+        texts: DrawingText[];
+        label: string;
+      }
+    | undefined
+  > {
+    const printed = (calibre ?? '').trim();
+    if (!printed) return undefined;
+    try {
+      const all = await this.prisma.benchCartridge.findMany({
+        select: {
+          name: true,
+          slug: true,
+          pmaxBar: true,
+          aliases: { select: { printed: true } },
+          dims: {
+            select: {
+              R: true,
+              R1: true,
+              E: true,
+              E1: true,
+              P1: true,
+              P2: true,
+              L1: true,
+              L2: true,
+              L3: true,
+              L6: true,
+              H1: true,
+              H2: true,
+              G1: true,
+              pmaxBar: true,
+            },
+          },
+        },
+      });
+      const hit = findCartridge(all, printed);
+      if (!hit?.dims) return undefined;
+
+      const completed = completeDims(hit.dims);
+      if (!completed) return undefined;
+
+      const drawing = cartridgeDrawing(
+        completed.dims,
+        { name: hit.name, pmaxBar: hit.dims.pmaxBar ?? hit.pmaxBar },
+        { derived: completed.derived },
+      );
+      const png = await sharp(Buffer.from(drawing.svg), { density: 300 })
+        .flatten({ background: '#ffffff' })
+        .png()
+        .toBuffer();
+
+      return {
+        png,
+        widthMm: drawing.widthMm,
+        heightMm: drawing.heightMm,
+        texts: drawing.texts,
+        /**
+         * ⚠️ NO SOURCE IN THE HEADING. This lands in the contents page, and
+         * CLAUDE.md's Bench rule is a copyright boundary rather than a style
+         * note — the spliced page it replaces was captioned "(C.I.P. data)"
+         * and printed straight into the table of contents.
+         */
+        label: `The cartridge \u2014 ${hit.name}`,
+      };
+    } catch (err) {
+      this.logger?.warn?.(
+        `Cartridge drawing failed for "${printed}": ${(err as Error).message}`,
+      );
+      return undefined;
+    }
   }
 
   /**

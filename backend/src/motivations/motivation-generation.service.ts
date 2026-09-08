@@ -8,7 +8,12 @@ import { Cron } from '@nestjs/schedule';
 import * as crypto from 'node:crypto';
 import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { encryptJson, encryptText, tryDecryptText } from '../common/blob-crypto';
+import {
+  decryptJson,
+  encryptJson,
+  encryptText,
+  tryDecryptText,
+} from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { applicationBlockers } from './motivation-eligibility';
 import {
@@ -40,6 +45,9 @@ import {
   parseTravelledAreas,
 } from './motivation-danger-areas';
 import { areasOnRoute, decodePolyline } from './motivation-route';
+import { cartridgeFacts, findCartridge } from './motivation-cartridge';
+import { arsenalRows, type ArsenalRow } from './motivation-arsenal';
+import { ownedFirearmSections } from './owned-firearm-sections';
 import { geocodeZa, type LatLng } from '../news/news-geo';
 import {
   buildAnnexures,
@@ -665,9 +673,37 @@ export class MotivationGenerationService {
         }
       }
 
+      /**
+       * ⚠️ THE ARSENAL, IN ROWS. Until now the writer was given
+       * `<derived name="firearms already held">5</derived>` and nothing else —
+       * no makes, calibres, types, sections or serials — and then INSTRUCTED
+       * by `overlapNote` to "meet that head on: say what this one does that
+       * the one held does not". It was ordered to compare against five
+       * firearms it had never been shown, so it invented all five, including
+       * two licence sections. A DFO holding the licence copies in Annexure G
+       * sees the contradiction on the page.
+       *
+       * ⚠️ THE SAME ARRAY THE 271 AND THE TABLE USE. Item 2.1 of the form, the
+       * owned-firearms table in the pack and this block must agree serial for
+       * serial, and the only way that holds is one source.
+       */
+      const arsenal = await this.arsenalFor(row.userId, answers);
+
+      /**
+       * ⚠️ THE CARTRIDGE, MEASURED RATHER THAN RECALLED. Operator, 2026-09-09:
+       * "why arent we pulling in the dimension sheet of the cartridge its
+       * using from The Bench?" MO000071 spent two sections on "115 to 147
+       * grains" and "3 to 5 foot-pounds" — figures nothing supplied and a
+       * Registrar can correct. The Bench holds 215 dimension sheets; this
+       * hands over the one for the calibre applied for, and the block itself
+       * forbids every figure it does not carry.
+       */
+      const cartridge = await this.cartridgeFor(answers);
+
       const pack: FactPack = {
         licenceType: row.licenceType,
         answers,
+        arsenal,
         derived: this.deriveFacts(answers),
         // Only when there is genuinely an overlap. Passing a note otherwise
         // would have the document argue against a problem it does not have.
@@ -682,7 +718,7 @@ export class MotivationGenerationService {
         // the verified, supplied facts before the softer, web-searched
         // material, if any.
         research:
-          [precinctBlock, pressClippingsBlock, research]
+          [precinctBlock, pressClippingsBlock, cartridge, research]
             .filter(Boolean)
             .join('\n\n') || undefined,
         annexures,
@@ -1324,6 +1360,98 @@ export class MotivationGenerationService {
           ...(ticked.get(a.key) ? { reason: ticked.get(a.key) } : {}),
         })),
     };
+  }
+
+  /**
+   * Every firearm the applicant holds, as rows the writer may name.
+   *
+   * ⚠️ THE SECTION COMES OFF THE LICENCE CARD, BY SERIAL, OR IT IS ABSENT.
+   * `ownedFirearmSections` matches an owned row to its vault credential and
+   * refuses a make-and-calibre match — two of a battery can share both, and
+   * the wrong section on a signed document is the fault this exists to stop. A
+   * row we cannot place carries no section, and the prompt then forbids the
+   * writer from naming one.
+   */
+  private async arsenalFor(
+    userId: string,
+    answers: Record<string, string>,
+  ): Promise<ArsenalRow[]> {
+    let sections: Record<number, string> = {};
+    try {
+      const rows = await this.prisma.credential.findMany({
+        where: { userId, kind: 'FIREARM_LICENCE', purgedAt: null },
+        select: { detailsEncrypted: true },
+      });
+      sections = ownedFirearmSections(
+        answers,
+        rows.map((r) => ({
+          details:
+            decryptJson<Record<string, string>>(r.detailsEncrypted ?? '') ?? {},
+        })),
+      );
+    } catch {
+      // A vault read that throws costs the sections, never the rows.
+      sections = {};
+    }
+    return arsenalRows(answers, sections);
+  }
+
+  /**
+   * The dimension sheet for the calibre applied for, or nothing.
+   *
+   * ⚠️ FAILS SOFT AND SILENT, like every other supplied-fact lookup here. A
+   * cartridge we hold no sheet for simply arrives without a block, and the
+   * prompt's rule against recalled ballistics still stands — so the absence
+   * costs a paragraph its measurements, never the document.
+   */
+  private async cartridgeFor(
+    answers: Record<string, string>,
+  ): Promise<string | undefined> {
+    const printed = (answers.firearm_calibre ?? '').trim();
+    if (!printed) return undefined;
+    try {
+      /**
+       * ⚠️ MATCHED IN MEMORY, NOT IN SQL. The key is a reduction — case,
+       * spaces and punctuation removed on BOTH sides — and there is no index
+       * on a reduction. 232 cartridges and their aliases is a page, not a
+       * scan, and the alternative is a LIKE that cannot express "9 mm Luger"
+       * matching "9MMLUGER".
+       */
+      const all = await this.prisma.benchCartridge.findMany({
+        select: {
+          name: true,
+          slug: true,
+          type: true,
+          origin: true,
+          year: true,
+          caseLengthMm: true,
+          maxLengthMm: true,
+          pmaxBar: true,
+          pmaxPsi: true,
+          aliases: { select: { printed: true } },
+          dims: {
+            select: {
+              L3: true,
+              L6: true,
+              bF: true,
+              bZ: true,
+              bN: true,
+              pmaxBar: true,
+            },
+          },
+        },
+      });
+
+      // ⚠️ THE SAME MATCHER THE DRAWING USES. A pack that argues about one
+      // round and prints the dimensions of another is worse than one that
+      // prints no dimensions at all.
+      return cartridgeFacts(findCartridge(all, printed)) ?? undefined;
+    } catch (err) {
+      this.logger.warn(
+        `Cartridge sheet lookup failed for "${printed}": ${(err as Error).message}`,
+      );
+      return undefined;
+    }
   }
 
   /**

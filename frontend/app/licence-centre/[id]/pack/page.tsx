@@ -59,6 +59,18 @@ export default function PackPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
+  /**
+   * The pre-filled SAPS 271, fetched only when asked for.
+   *
+   * ⚠️ NOT LOADED WITH THE PAGE. It is a twelve-page form behind a bearer
+   * token, and the motivation is already a ten-megabyte blob sitting in this
+   * document. Two of those on every visit to "Your pack" is a phone browser
+   * dropping the tab.
+   */
+  const [formUrl, setFormUrl] = useState<string | null>(null);
+  const [formBusy, setFormBusy] = useState(false);
+  const [formErr, setFormErr] = useState<string | null>(null);
+
   useEffect(() => {
     if (!id) return;
     let live = true;
@@ -123,6 +135,55 @@ export default function PackPage() {
     }
   }, [getToken, id, sheet]);
 
+  /**
+   * ⚠️ THE 271 REFUSES BY NAME, AND THE MESSAGE IS THE POINT. A section 24
+   * comes back 409 with a sentence explaining that a renewal is lodged on the
+   * SAPS 518(a); so does a form the map cannot fill against the blank PDF it
+   * was measured on. Both are worth reading, so the server's own wording is
+   * shown rather than "Something went wrong".
+   */
+  const showForm = useCallback(async () => {
+    if (formUrl) {
+      URL.revokeObjectURL(formUrl);
+      setFormUrl(null);
+      return;
+    }
+    setFormBusy(true);
+    setFormErr(null);
+    try {
+      setFormUrl(await motivationsApi.saps271BlobUrl(getToken, id));
+    } catch (err) {
+      setFormErr((err as Error).message);
+    } finally {
+      setFormBusy(false);
+    }
+  }, [formUrl, getToken, id]);
+
+  const downloadForm = useCallback(async () => {
+    setFormBusy(true);
+    setFormErr(null);
+    try {
+      const url = await motivationsApi.saps271BlobUrl(getToken, id);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${sheet?.application.referenceNumber ?? 'application'}-saps271.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setFormErr((err as Error).message);
+    } finally {
+      setFormBusy(false);
+    }
+  }, [getToken, id, sheet]);
+
+  // The form's blob goes the same way the motivation's does.
+  useEffect(
+    () => () => {
+      if (formUrl) URL.revokeObjectURL(formUrl);
+    },
+    [formUrl],
+  );
+
   if (error && !sheet) {
     return (
       <main className="px-4 py-10 text-[14px] text-[var(--text-secondary)]">
@@ -140,6 +201,8 @@ export default function PackPage() {
 
   const source =
     sheet.items.find((i) => i.key === 'firearm_source')?.value ?? '';
+  // A renewal has no 271: it is lodged on the SAPS 518(a), which we do not fill.
+  const isRenewal = sheet.application.licenceType === 'S24_RENEWAL';
 
   return (
     <main className="mx-auto w-full max-w-[760px] px-4 pb-10 pt-5">
@@ -210,6 +273,71 @@ export default function PackPage() {
           </p>
         )}
       </section>
+
+      {/*
+        ⚠️ THE FORM ITSELF, WHICH NOBODY COULD REACH. The pre-filled SAPS 271
+        has been built, mapped and tested since August, and the route
+        (GET /motivations/:id/saps271) and the client helper
+        (motivationsApi.saps271BlobUrl) both still work. The only screen that
+        ever offered it was `components/licence-pack/pack-finish.tsx` — the
+        finish step of the /licence-services wizard deleted on 2026-09-08 —
+        and this page never picked it up. So a member reached "Your pack",
+        read a completeness meter telling them how much of the 271 was done,
+        and had no way to open the thing it was measuring.
+
+        ⚠️ AND IT IS NO LONGER OPT-IN. pack-finish gated the button on
+        `saps271Filled`; that answer is retired and every pack ships a form.
+        The one case with no 271 is a section 24, which is lodged on the
+        518(a) — PackSummary below says so, and the backend refuses by
+        licence type rather than by this flag.
+      */}
+      {!isRenewal ? (
+        <section className="mt-6">
+          <h2 className="m-0 mb-1 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.2] text-[var(--text-primary)]">
+            Your SAPS 271
+          </h2>
+          <p className="m-0 mb-3 text-[13.5px] leading-[1.45] text-[var(--text-secondary)]">
+            The application form, filled in from your answers. Print it, check
+            it, sign it where it asks for a signature and take it in with your
+            pack.
+          </p>
+
+          <div className="flex gap-2 print:hidden">
+            <button
+              type="button"
+              onClick={() => void showForm()}
+              disabled={formBusy}
+              className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)] disabled:opacity-50"
+            >
+              {formBusy ? 'Preparing…' : formUrl ? 'Hide the form' : 'Show the form'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void downloadForm()}
+              disabled={formBusy}
+              className="min-h-[44px] flex-1 rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--bg-card)] px-4 text-[14px] font-medium text-[var(--text-primary)] disabled:opacity-50"
+            >
+              Download the form
+            </button>
+          </div>
+
+          {formErr ? (
+            <p className="m-0 mt-2 text-[12.5px] leading-[1.45] text-[var(--red)]">
+              {formErr}
+            </p>
+          ) : null}
+
+          {formUrl ? (
+            <div className="mt-3 print:hidden">
+              <iframe
+                src={formUrl}
+                title="Your SAPS 271"
+                className="block h-[min(1100px,140vh)] w-full rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-inset)]"
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="mt-6">
         <h2 className="m-0 mb-2 font-[family-name:var(--font-head)] text-[18px] font-medium leading-[1.2] text-[var(--text-primary)]">

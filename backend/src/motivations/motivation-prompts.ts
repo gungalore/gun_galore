@@ -1,4 +1,5 @@
 import { MotivationLicenceType } from '@prisma/client';
+import { arsenalBlock, type ArsenalRow } from './motivation-arsenal';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 import { factPackFields, LICENCE_TYPE_LABELS } from './motivation-fields';
 import { answerValue } from '../common/card-placeholder';
@@ -182,6 +183,20 @@ export interface FactPack {
    * exist.
    */
   annexures?: { letter: string; label: string }[];
+  /**
+   * Every firearm the applicant already holds, one row each.
+   *
+   * ⚠️ IT USED TO BE A COUNT AND NOTHING ELSE. `derived["firearms already
+   * held"] = "5"` was all the writer got, while `overlapNote` told it to "meet
+   * that head on: say what this one does that the one held does not" — an
+   * instruction to compare against firearms it had never been shown. It
+   * invented five, including two licence sections, one of them wrong on a
+   * document the applicant signs.
+   *
+   * ⚠️ AND IT IS THE SAME ARRAY THE TABLE AND SAPS 271 ITEM 2.1 RENDER FROM.
+   * Three readers, one source, so they cannot disagree serial for serial.
+   */
+  arsenal?: ArsenalRow[];
 }
 
 /** The annexure list, rendered as citation instructions. */
@@ -762,6 +777,7 @@ ${OPENING_GUIDE[plan.opening]}
 ${CLOSING_GUIDE[plan.closing]}
 ${CADENCE_GUIDE[plan.cadence]}
 ${renderOverlap(pack.overlapNote)}
+${arsenalBlock(pack.arsenal ?? [])}
 ${renderResearch(pack.research)}
 ${renderAnnexures(pack.annexures)}
 ${UNTRUSTED_NOTICE}
@@ -945,6 +961,20 @@ ${UNTRUSTED_NOTICE}
 ${renderFacts(pack)}
 </applicant-facts>
 
+${
+  /**
+   * ⚠️ WITHOUT THE ARSENAL THE GATE CANNOT CATCH THE WORST FAULT. It scores
+   * groundedness against what it is shown, and it was shown a COUNT — so five
+   * invented licence sections and five invented roles passed it at 94,
+   * because nothing in its input contradicted them. It sees the rows now, and
+   * a section or a purpose attached to a held firearm that is not on its row
+   * is ungrounded.
+   */
+  arsenalBlock(pack.arsenal ?? [])
+    ? `${arsenalBlock(pack.arsenal ?? [])}
+`
+    : ''
+}
 ${
   // ⚠️ THE GATE MUST SEE WHAT THE WRITER SAW. Groundedness is scored against
   // the supplied material, and the writer is now HANDED published research to

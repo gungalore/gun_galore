@@ -880,3 +880,124 @@ describe('the C.I.P. cartridge sheet', () => {
     expect(true).toBe(true);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE CARTRIDGE, DRAWN RATHER THAN REPRODUCED.
+//
+// Operator, 2026-09-09: "why arent we pulling in the dimension sheet of the
+// cartridge its using from The Bench? And describing the cartridge and how it
+// would suffice for a self defence round?", then "you can render the cartridge
+// in 3D with the main measurements and make it half a page with half a page
+// description".
+//
+// ⚠️ HALF A PAGE OF EACH IS ONLY TRUE IF THEY SHARE A PAGE. Anchored after the
+// specification table — where the C.I.P. splice lives — the picture came out
+// two sections and one page away from the paragraphs describing it.
+describe('the cartridge drawing', () => {
+  const svc = new MotivationPdfService();
+
+  /** A real 1×1 PNG, so pdfkit genuinely embeds an image. */
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  const drawing = {
+    png: PNG,
+    widthMm: 166,
+    heightMm: 85,
+    label: 'The cartridge — 9 mm Luger',
+    texts: [
+      { x: 20, y: 12, text: 'Ø9.96', size: 2.7, anchor: 'middle', role: 'callout' },
+      { x: 80, y: 70, text: 'overall 29.69 mm', size: 2.7, anchor: 'middle', role: 'callout' },
+      { x: 13, y: 82, text: '9 mm Luger · drawn to scale', size: 3.1, anchor: 'start', role: 'caption' },
+    ],
+  };
+
+  const withCartridgeSection = [
+    'Introduction:',
+    'I am applying for a licence in terms of section 13.',
+    'The cartridge:',
+    'The round is short enough that a magazine of practical size answers an attack.',
+    'Safe storage:',
+    'The firearm will be stored in a SABS-approved safe.',
+  ].join('\n\n');
+
+  async function pageCount(pdf: Buffer): Promise<number> {
+    const { PDFDocument } = await import('pdf-lib');
+    return (await PDFDocument.load(pdf)).getPageCount();
+  }
+
+  it('⚠️ SETS THE CALLOUTS AS TEXT, not as pixels in the image', async () => {
+    // The rasteriser has no font worth trusting — librsvg has no system-ui and
+    // falls back to whatever fontconfig offers, differently in development and
+    // on the box. Reading the figures back out of the finished PDF is the only
+    // assertion that proves they were set in the document's own type.
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: drawing,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text);
+    expect(t).toContain('Ø9.96');
+    expect(t).toContain('overall 29.69 mm');
+    expect(t).toContain('9 mm Luger · drawn to scale');
+  });
+
+  it('⚠️ GOES UNDER THE WRITER’S OWN HEADING, not into a section of its own', async () => {
+    const { pdf } = await svc.render({
+      ...makeInput(withCartridgeSection),
+      cartridgeDrawing: drawing,
+    } as never);
+    // ⚠️ SQUASHED, BECAUSE THE HEADINGS ARE LETTER-SPACED. A section
+    // header is drawn with tracking, so it extracts as "T H E  C A R T R I D G E"
+    // and a plain toContain() on the words fails against a document that is
+    // perfectly correct.
+    const t = flat((await readPdfAsync(pdf)).text).replace(/\s+/g, '');
+    // The writer's heading is the section; the label is not printed at all.
+    expect(t).toContain('THECARTRIDGE');
+    expect(t).not.toContain('THECARTRIDGE—9MMLUGER');
+  });
+
+  it('still prints the figures when the writer never raised the subject', async () => {
+    // A draft with no cartridge section would otherwise drop the drawing in
+    // silence, which is the one outcome worse than an extra heading.
+    const { pdf } = await svc.render({
+      ...makeInput('Introduction:\n\nI am applying under section 13.'),
+      cartridgeDrawing: drawing,
+    } as never);
+    const t = flat((await readPdfAsync(pdf)).text).replace(/\s+/g, '');
+    expect(t).toContain('THECARTRIDGE—9MMLUGER');
+    expect(t).toContain('Ø9.96');
+  });
+
+  it('⚠️ REPLACES THE SPLICED SHEET RATHER THAN JOINING IT', async () => {
+    // Two cartridge sections in one pack is a document that has lost its
+    // place — and the spliced page is a facsimile of somebody else's sheet,
+    // captioned with their name, printed into our contents page.
+    const base = await svc.render({
+      ...makeInput(withCartridgeSection),
+      firearmSpec: [{ label: 'Make', value: 'CZ' }],
+      cartridgeDrawing: drawing,
+    } as never);
+    const both = await svc.render({
+      ...makeInput(withCartridgeSection),
+      firearmSpec: [{ label: 'Make', value: 'CZ' }],
+      cartridgeDrawing: drawing,
+      cipSheet: { bytes: await onePageSheet(), label: 'The cartridge' },
+    } as never);
+    expect(await pageCount(both.pdf)).toBe(await pageCount(base.pdf));
+  });
+
+  async function onePageSheet(): Promise<Buffer> {
+    const { PDFDocument } = await import('pdf-lib');
+    const d = await PDFDocument.create();
+    d.addPage([595.28, 841.89]);
+    return Buffer.from(await d.save());
+  }
+
+  it('costs a pack with no drawing nothing at all', async () => {
+    const a = await svc.render(makeInput(withCartridgeSection) as never);
+    const b = await svc.render(makeInput(withCartridgeSection) as never);
+    expect(await pageCount(a.pdf)).toBe(await pageCount(b.pdf));
+  });
+});
