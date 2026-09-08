@@ -9,12 +9,32 @@ import { readFlag, writeFlag } from '@/lib/motivation-draft';
 const ADOPTED_FLAG = 'sellerCardAdopted';
 
 /** Card firearm keys → how the buyer sees them in the adopt prompt. */
+/**
+ * Every row the card can hand over, in the order a licence card prints them.
+ *
+ * ⚠️ THE SIX COMPONENT ROWS WERE MISSING, AND SO WAS THE PAPERWORK. The seller
+ * photographs the card, the OCR reads barrel, frame and receiver, the consent
+ * stores all of it — and this list stopped at five, so the applicant confirmed
+ * a make and a serial while section E of the SAPS 271 stayed empty. Operator,
+ * 2026-09-08: "still does not fill these from the seller concent."
+ *
+ * ⚠️ AND THEY MUST BE SHOWN BEFORE THEY ARE ADOPTED. Adopting is the applicant
+ * putting these details on an application they sign, so every value that will
+ * land has to be readable here, against the photograph of the card below it.
+ * A field that adopts silently is a field nobody checked.
+ */
 const ADOPT_LABELS: [string, string][] = [
   ['firearm_make', 'Make'],
   ['firearm_model', 'Model'],
   ['firearm_type', 'Type'],
   ['firearm_calibre', 'Calibre'],
   ['firearm_serial', 'Serial number'],
+  ['barrel_serial', 'Barrel serial number'],
+  ['barrel_make', 'Barrel make'],
+  ['frame_serial', 'Frame serial number'],
+  ['frame_make', 'Frame make'],
+  ['receiver_serial', 'Receiver serial number'],
+  ['receiver_make', 'Receiver make'],
 ];
 
 // ────────────────────────────────────────────────────────────────────
@@ -207,6 +227,26 @@ export default function MotivationSellerConsent({
     }
   };
 
+  /**
+   * Does the card carry a row the application still has nothing for?
+   *
+   * ⚠️ THE ADOPT USED TO BE OFFERED ONCE AND THEN HIDDEN FOR EVER, because
+   * adopting overwrote everything and re-offering "invited them to overwrite
+   * their own corrections with the same card a second time". It fills only
+   * EMPTY fields now, so a second adopt is harmless — and it has to be
+   * available, because the six component rows were added to the map on
+   * 2026-09-08 and every application signed before that has none of them.
+   * Operator: "still does not fill these from the seller concent."
+   *
+   * Their own answers still win: a field they have filled is neither offered
+   * nor written.
+   */
+  const stillMissing =
+    !!cardFirearm &&
+    Object.keys(cardFirearm).some(
+      (k) => !String((firearm as Record<string, string | undefined>)[k] ?? '').trim(),
+    );
+
   // ── Signed. The government card is now the source of truth for the firearm,
   //    and the buyer confirms it into their own application. ──────────────
   if (status === 'COMPLETED') {
@@ -219,7 +259,7 @@ export default function MotivationSellerConsent({
           Their signed consent and a copy of their licence are in your pack.
         </p>
 
-        {cardFirearm && onAdopt && !adopted && (
+        {cardFirearm && onAdopt && (!adopted || stillMissing) && (
           <div className="mt-3 rounded-[var(--r-md)] border border-[var(--border)] p-3">
             <p className="text-xs font-medium">
               Their licence card records this firearm as:

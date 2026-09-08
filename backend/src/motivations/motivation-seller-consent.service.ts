@@ -466,22 +466,59 @@ export function cardToApplicationFirearm(
   f: Partial<FirearmSnapshot>,
 ): Record<string, string> {
   const out: Record<string, string> = {};
-  const keep = (v?: string) => {
+
+  /**
+   * ⚠️ VERBATIM, INCLUDING "NONE". This dropped every placeholder, so a card
+   * reading "Frame Serial No NONE" reached the application as nothing and the
+   * SAPS 271 printed an empty box — which does not say the same thing.
+   * Operator, 2026-09-08, on the seller-consent adopt specifically: "still does
+   * not fill these from the seller concent."
+   *
+   * It is the same ruling already applied at the extract, the vault carry and
+   * the credential offer: the form wants what the card printed, and the WRITER
+   * is protected at the prose boundary instead — see renderFacts.
+   */
+  const put = (key: string, v?: string) => {
     const t = (v ?? '').trim();
-    return t && t.toUpperCase() !== 'NONE' ? t : undefined;
+    if (t) out[key] = t;
   };
-  const make = keep(f.make);
-  if (make) out.firearm_make = make;
-  const model = keep(f.model);
-  if (model) out.firearm_model = model;
+
+  put('firearm_make', f.make);
+  put('firearm_model', f.model);
   const type = mapCardType(f.type);
   if (type) out.firearm_type = type;
   const action = mapCardAction(f.type);
   if (action) out.firearm_action = action;
-  const calibre = keep(f.calibre);
-  if (calibre) out.firearm_calibre = calibre;
+  put('firearm_calibre', f.calibre);
+
+  /**
+   * ⚠️ primarySerial STILL SKIPS PLACEHOLDERS, AND MUST. It is a fallback
+   * CHAIN across the three component rows, picking the one number that
+   * identifies the firearm — a NONE that returns instead of falling through is
+   * how a card with a real receiver number yields no serial at all. Picking a
+   * serial and transcribing a row are different questions; only the second
+   * wants the word NONE. Same reason ownedFirearmSerial and first() are
+   * untouched.
+   */
   const serial = primarySerial(f);
   if (serial) out.firearm_serial = serial;
+
+  /**
+   * ⚠️ THE SIX COMPONENT ROWS WERE NEVER MAPPED AT ALL. The snapshot has
+   * carried barrelSerial, frameSerial, receiverSerial and their makes since
+   * CARD_FIELD_KEYS was written — the seller photographs the card, the OCR
+   * reads every row, the consent stores all of it — and this function simply
+   * did not hand them over. So the applicant confirmed four details and the
+   * 271's section E stayed empty, which is exactly the paperwork the consent
+   * exists to produce.
+   */
+  put('barrel_serial', f.barrelSerial);
+  put('barrel_make', f.barrelMake);
+  put('frame_serial', f.frameSerial);
+  put('frame_make', f.frameMake);
+  put('receiver_serial', f.receiverSerial);
+  put('receiver_make', f.receiverMake);
+
   return out;
 }
 

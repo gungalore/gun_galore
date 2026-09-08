@@ -619,15 +619,42 @@ export default function LicenceCentreSheetPage() {
                 key="__consent"
                 motivationId={id}
                 applicantName={byKey.get('full_name')?.value ?? ''}
+                /*
+                  ⚠️ EVERY KEY THE CARD CAN FILL, not just the four the panel
+                  used to show. The panel compares these against what the card
+                  carries to decide whether there is anything left to adopt, so
+                  a short list here means it stops offering the six component
+                  rows the moment the first four have landed.
+                */
                 firearm={{
                   make: byKey.get('firearm_make')?.value,
                   model: byKey.get('firearm_model')?.value,
+                  type: byKey.get('firearm_type')?.value,
                   calibre: byKey.get('firearm_calibre')?.value,
                   serial: byKey.get('firearm_serial')?.value,
+                  barrel_serial: byKey.get('barrel_serial')?.value,
+                  barrel_make: byKey.get('barrel_make')?.value,
+                  frame_serial: byKey.get('frame_serial')?.value,
+                  frame_make: byKey.get('frame_make')?.value,
+                  receiver_serial: byKey.get('receiver_serial')?.value,
+                  receiver_make: byKey.get('receiver_make')?.value,
                 }}
                 signed={sellerSigned}
+                /*
+                  ⚠️ IT FILLS THE EMPTY ONES AND NEVER OVERWRITES. Adopting used
+                  to write every field the card carried, which is why the offer
+                  had to be shown once and then hidden for good — "inviting them
+                  to overwrite their own corrections with the same card a second
+                  time". Skipping answered fields makes a second adopt harmless,
+                  which is what lets the panel offer again when the card turns
+                  out to carry rows the application still lacks. Theirs wins,
+                  always — the same rule the credential offer already follows.
+                */
                 onAdopt={(fields) => {
-                  for (const [k, v] of Object.entries(fields)) onChange(k, v);
+                  for (const [k, v] of Object.entries(fields)) {
+                    if ((byKey.get(k)?.value ?? '').trim()) continue;
+                    onChange(k, v);
+                  }
                 }}
               />,
             );

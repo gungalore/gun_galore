@@ -356,7 +356,7 @@ describe('primarySerial — first present, never "NONE"', () => {
   });
 });
 
-describe('cardToApplicationFirearm — a usable subset, NONE dropped', () => {
+describe('cardToApplicationFirearm — the whole card, and every row of it', () => {
   it('maps the HOWA card the way the live flow will', () => {
     const out = cardToApplicationFirearm({
       make: 'HOWA',
@@ -368,13 +368,56 @@ describe('cardToApplicationFirearm — a usable subset, NONE dropped', () => {
     });
     expect(out).toEqual({
       firearm_make: 'HOWA',
+      // ⚠️ "NONE" IS KEPT NOW, AND THIS TEST SAID THE OPPOSITE UNTIL
+      // 2026-09-08. It read "model NONE is DROPPED for the application …
+      // writing the word NONE into a free-text field is not a value". The
+      // operator ruled the other way: the card itself prints NONE in a row that
+      // does not apply, an empty 271 box says something different, and the
+      // whole point of the consent is to produce that paperwork. The writer is
+      // protected at the prose boundary instead — see renderFacts.
+      firearm_model: 'NONE',
       firearm_type: 'Rifle',
       firearm_calibre: '6.5MM CREEDMOOR',
       firearm_serial: 'B477423',
+      barrel_serial: 'B477423',
     });
-    // ⚠️ model NONE is DROPPED for the application even though it PRINTS on the
-    // consent — writing the word "NONE" into a free-text field is not a value.
-    expect('firearm_model' in out).toBe(false);
+  });
+
+  it('⚠️ HANDS OVER ALL SIX COMPONENT ROWS, which it never used to', () => {
+    // The snapshot has carried these since CARD_FIELD_KEYS was written — the
+    // seller photographs the card, the OCR reads every row, the consent stores
+    // all of it — and this function simply did not map them. So the applicant
+    // confirmed four details and the 271's section E stayed empty. Operator,
+    // 2026-09-08: "still does not fill these from the seller concent."
+    const out = cardToApplicationFirearm({
+      make: 'CZ',
+      barrelSerial: 'NONE',
+      barrelMake: 'CZ',
+      frameSerial: '81815',
+      frameMake: 'CZ',
+      receiverSerial: 'NONE',
+      receiverMake: 'NONE',
+    });
+    expect(out.barrel_serial).toBe('NONE');
+    expect(out.barrel_make).toBe('CZ');
+    expect(out.frame_serial).toBe('81815');
+    expect(out.frame_make).toBe('CZ');
+    expect(out.receiver_serial).toBe('NONE');
+    expect(out.receiver_make).toBe('NONE');
+  });
+
+  it('⚠️ THE HEADLINE SERIAL STILL FALLS THROUGH A NONE, unlike the rows', () => {
+    // primarySerial is a CHAIN picking the one number that identifies the
+    // firearm; a NONE that returns instead of falling through is how a card
+    // with a real frame number yields no serial at all. Transcribing a row and
+    // picking a serial are different questions.
+    const out = cardToApplicationFirearm({
+      serial: 'NONE',
+      barrelSerial: 'NONE',
+      frameSerial: '81815',
+    });
+    expect(out.firearm_serial).toBe('81815');
+    expect(out.barrel_serial).toBe('NONE');
   });
 
   it('omits a field it cannot supply rather than sending an empty string', () => {
