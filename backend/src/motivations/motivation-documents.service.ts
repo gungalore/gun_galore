@@ -531,12 +531,34 @@ export class MotivationDocumentsService {
       .map((c) => this.readCovers(c.detailsEncrypted, c.extractionOk))
       .filter(Boolean);
 
+    // The same, for the competency side. ⚠️ THE PAIR RULE COMPARES A CANDIDATE
+    // AGAINST WHAT IS ALREADY THERE, not only against the other candidate in
+    // the same run — otherwise a proficiency attached on Monday and a
+    // competency attached on Tuesday end up describing different categories,
+    // and the pack says two different things about what the applicant is
+    // qualified for. Operator, 2026-09-08: "One cant be without the other."
+    const attachedCompetencyIds = new Set(
+      uploads
+        .filter((u) => u.kind === MotivationUploadKind.COMPETENCY_CERTIFICATE)
+        .map((u) => u.sourceCredentialId)
+        .filter((x): x is string => x !== null),
+    );
+    const attachedCompetencyCovers = credentials
+      .filter((c) => attachedCompetencyIds.has(c.id))
+      .map((c) => this.readCovers(c.detailsEncrypted, c.extractionOk))
+      .filter(Boolean);
+
     const decision = decideAutolink(
       candidates,
       wanted,
       uploads.map((u) => u.kind),
       new Date(),
-      { needed, placeConfirmed, attachedProficiencyCovers },
+      {
+        needed,
+        placeConfirmed,
+        attachedProficiencyCovers,
+        attachedCompetencyCovers,
+      },
     );
 
     // ⚠️ THE APPLICATION IS OPENED ONCE FOR THE WHOLE RUN. M17. This used to

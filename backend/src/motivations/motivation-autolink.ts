@@ -1,5 +1,9 @@
 import { MotivationUploadKind } from '@prisma/client';
-import { readStatementOfResults, type Endorsement } from '../common/sa-competency';
+import {
+  parseEndorsements,
+  readStatementOfResults,
+  type Endorsement,
+} from '../common/sa-competency';
 import { competencyCovers, proficiencyCovers } from './motivation-upload-row';
 
 // ────────────────────────────────────────────────────────────────────
@@ -132,7 +136,15 @@ export type SkipReason =
   /** The competency does not cover the firearm this application is for. */
   | 'endorsement-mismatch'
   /** Photographs of a safe, and nobody has confirmed it is THIS address. */
-  | 'needs-place-confirm';
+  | 'needs-place-confirm'
+  /**
+   * A competency with no proficiency beside it, or the other way round.
+   *
+   * ⚠️ THEY TRAVEL TOGETHER OR NOT AT ALL. Operator, 2026-09-08: "the
+   * proficiency needs to be added with the competency from the same category.
+   * One cant be without the other."
+   */
+  | 'needs-its-pair';
 
 export interface AutolinkDecision {
   attach: AutolinkCandidate[];
@@ -168,6 +180,16 @@ export interface AutolinkOptions {
    * ships a pack showing the wrong premises, and nothing on the file says so.
    */
   placeConfirmed?: boolean;
+  /**
+   * What the competency certificate ALREADY on this application covers.
+   *
+   * ⚠️ SYMMETRIC WITH attachedProficiencyCovers, AND FOR THE SAME REASON. The
+   * pair rule has to compare a candidate against what is already there, not
+   * only against the other candidate in the same run — otherwise a proficiency
+   * attached on Monday and a competency attached on Tuesday can end up
+   * describing different categories, which is the pack contradicting itself.
+   */
+  attachedCompetencyCovers?: readonly string[];
   /**
    * The unit-standard text of every proficiency certificate ALREADY on this
    * application. Lets the pair rule finish a half-attached slot: a member who
@@ -381,5 +403,104 @@ export function decideAutolink(
     attach.push(fresh[0]);
   }
 
+  enforcePair(attach, skipped, haveSet, wantedSet, opts);
+
   return { attach, skipped, needsPlaceConfirm };
+}
+
+/**
+ * A competency and a proficiency go on together, from the same category, or
+ * neither goes on at all.
+ *
+ * ⚠️ THE PACK MUST NOT CONTRADICT ITSELF. Operator, 2026-09-08: "the
+ * proficiency needs to be added with the competency from the same category. One
+ * cant be without the other." A DFO reading a handgun proficiency beside a
+ * rifle competency — or a proficiency with no competency at all — is reading a
+ * file that says two different things about what the applicant is qualified
+ * for, and the applicant signed it.
+ *
+ * It runs AFTER the per-kind loop because it is the only rule in this module
+ * that is about two kinds at once: neither kind can see the other while it is
+ * being decided.
+ *
+ * ⚠️ IT DROPS, IT NEVER ADDS. Where the pair cannot be completed the answer is
+ * to attach less, not to guess the partner — the missing half then comes back
+ * as a skip the member can act on, which is what every other refusal here does.
+ */
+function enforcePair(
+  attach: AutolinkCandidate[],
+  skipped: { candidate: AutolinkCandidate; why: SkipReason }[],
+  haveSet: ReadonlySet<MotivationUploadKind>,
+  wantedSet: ReadonlySet<MotivationUploadKind>,
+  opts: AutolinkOptions,
+): void {
+  const COMP = MotivationUploadKind.COMPETENCY_CERTIFICATE;
+  const PROF = MotivationUploadKind.PROFICIENCY_CERTIFICATE;
+
+  // ⚠️ ONLY WHERE THE PACK ASKS FOR BOTH. "One cannot be without the other" is
+  // about a pack that would otherwise contradict itself — so where this licence
+  // type never wanted a proficiency, a competency on its own is not a lonely
+  // half, it is the whole requirement. Demanding a partner the checklist never
+  // asked for would refuse a member a document their application needs.
+  if (!wantedSet.has(COMP) || !wantedSet.has(PROF)) return;
+
+  const comp = attach.filter((c) => c.kind === COMP);
+  const prof = attach.filter((c) => c.kind === PROF);
+  if (!comp.length && !prof.length) return;
+
+  const drop = (list: AutolinkCandidate[]) => {
+    for (const c of list) {
+      const i = attach.indexOf(c);
+      if (i >= 0) attach.splice(i, 1);
+      skipped.push({ candidate: c, why: 'needs-its-pair' });
+    }
+  };
+
+  // Where the application will stand once this run is applied.
+  const willComp = haveSet.has(COMP) || comp.length > 0;
+  const willProf = haveSet.has(PROF) || prof.length > 0;
+  if (willComp !== willProf) {
+    drop(comp);
+    drop(prof);
+    return;
+  }
+
+  // Both sides will be present. Do they describe the same category?
+  const compCovers = comp.length
+    ? comp.map((c) => c.covers ?? '')
+    : [...(opts.attachedCompetencyCovers ?? [])];
+  const profCovers = prof.length
+    ? prof.map((c) => c.covers ?? '')
+    : [...(opts.attachedProficiencyCovers ?? [])];
+
+  if (!agreeOnCategory(compCovers, profCovers)) {
+    drop(comp);
+    drop(prof);
+  }
+}
+
+/**
+ * Do a competency and a proficiency describe the same category?
+ *
+ * ⚠️ UNREADABLE MEANS UNCONSTRAINED, NOT MISMATCHED — the same forgiving rule
+ * competencyCovers and proficiencyCovers already apply. A certificate whose
+ * endorsements we could not parse must not veto a pairing on the strength of
+ * our own failure to read it; that would refuse a member their own documents
+ * because our OCR had a bad day.
+ */
+function agreeOnCategory(
+  competencyCovers: readonly string[],
+  proficiencyCovers: readonly string[],
+): boolean {
+  const held = new Set<Endorsement>();
+  for (const raw of competencyCovers) {
+    for (const e of parseEndorsements(raw ?? '')) held.add(e);
+  }
+  const earned = new Set<Endorsement>();
+  for (const raw of proficiencyCovers) {
+    for (const e of readStatementOfResults(raw ?? '').endorsements) earned.add(e);
+  }
+  if (!held.size || !earned.size) return true;
+  for (const e of earned) if (held.has(e)) return true;
+  return false;
 }

@@ -833,22 +833,47 @@ describe('auto-link carries the other page, under its own rules', () => {
     ...over,
   });
 
+  /**
+   * ⚠️ THE PAIR RULE NEEDS A COMPETENCY IN THE ROOM. Since 2026-09-08 a
+   * proficiency will not attach unless a competency attaches beside it —
+   * operator: "One cant be without the other" — and these cases are about the
+   * front/back RIDE-ALONG, not about that rule. Without a partner they would
+   * be testing the pair rule by accident and asserting the wrong thing.
+   *
+   * Its covers line is unreadable, which is deliberately not a mismatch: the
+   * same forgiving rule competencyCovers already applies, so it pairs with the
+   * handgun proficiency without constraining the category.
+   */
+  const competency = () =>
+    candidate({
+      id: 'comp',
+      kind: 'COMPETENCY_CERTIFICATE',
+      title: 'Competency 2024',
+      otherSideId: null,
+    });
+
   it('attaches both pages when both cleared the settled-date gate', async () => {
     const { service, created } = build(bothSides(), {
       candidates: [
         candidate(),
         candidate({ id: 'front', otherSideId: 'back' }),
+        competency(),
       ],
     });
     const out = await service.autolink('clerk-1', 'mo-1');
-    expect(created.map((c) => c.sourceCredentialId)).toEqual(['back', 'front']);
+    // Both PAGES rode along, which is what this case is about. The competency
+    // beside them is the pair rule's doing and is asserted where it belongs.
+    expect(created.map((c) => c.sourceCredentialId)).toEqual(
+      expect.arrayContaining(['back', 'front']),
+    );
     // ⚠️ ONE DOCUMENT, TWO PAGES — NOT TWO DOCUMENTS. This used to assert the
     // opposite, and the banner it feeds duly read "We added 4 documents ...
     // Proficiency - Handgun, Proficiency - Handgun (other side)" on the
     // operator's live section 16 on 2026-09-07. Both pages still attach; the
     // member is told about the document they handed over, once.
-    expect(out.attached.map((a) => a.title)).toEqual(['Proficiency — Handgun']);
-    expect(out.attached[0].pages).toBe(2);
+    const prof = out.attached.find((a) => a.title === 'Proficiency — Handgun');
+    expect(prof).toBeDefined();
+    expect(prof!.pages).toBe(2);
   });
 
   it('⚠️ LEAVES A PARTNER THAT NEVER CLEARED THE GATE, rather than attaching it unasked', async () => {
@@ -859,10 +884,12 @@ describe('auto-link carries the other page, under its own rules', () => {
     // real bytes here; what it does not have is a settled date, so it is not
     // in the gated set and does not ride along.
     const { service, created } = build(bothSides(), {
-      candidates: [candidate()],
+      candidates: [candidate(), competency()],
     });
     await service.autolink('clerk-1', 'mo-1');
-    expect(created.map((c) => c.sourceCredentialId)).toEqual(['back']);
+    const ids = created.map((c) => c.sourceCredentialId);
+    expect(ids).toContain('back');
+    expect(ids).not.toContain('front');
   });
 
   it('⚠️ THE PICKER IS NOT GATED, because there the member is doing the asking', async () => {

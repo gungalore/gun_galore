@@ -854,12 +854,44 @@ export class MotivationsService {
       ...derivedApplication,
     };
 
+    /**
+     * ⚠️ RE-ARM THE AUTOLINK WHEN THE FIREARM CHANGES WHAT WE ARE LOOKING FOR.
+     *
+     * The autolink runs once per application, and at first open the firearm
+     * type is almost never answered yet. With no firearm to match against,
+     * every competency certificate a member holds is an equally valid
+     * candidate, the several-candidates rule correctly refuses to guess — and
+     * the once-only stamp then means the right certificate can NEVER be
+     * attached. Operator, 2026-09-08: "so will the competency and proficiency
+     * be added when??" On this application, the answer was: never.
+     *
+     * ⚠️ RE-ARMING IS SAFE ONLY BECAUSE THE REFUSALS OUTLIVE IT, and they do.
+     * `Motivation.autolinkSkippedIds` records what was attached and REMOVED,
+     * written at the removal precisely because the upload row is hard-deleted
+     * and takes its own sourceCredentialId with it. So a document the member
+     * deleted does not come back — which is the whole of "why can't I delete
+     * the proof of address?", and the reason the stamp exists at all.
+     * rearmAutolinkFor already relies on the same guarantee when a credential
+     * is added or confirmed; this is the second trigger, not a new rule.
+     *
+     * ⚠️ ONLY WHEN THE ANSWER ACTUALLY MOVES. Comparing the endorsement rather
+     * than the raw fields means editing a model or a serial re-arms nothing:
+     * the only change that can alter which certificate qualifies is a change to
+     * the endorsement the application needs.
+     */
+    const endorsementBefore = requiredEndorsement(
+      this.shared.readAnswers(row.answersEncrypted),
+    );
+    const endorsementAfter = requiredEndorsement(mergedApplication);
+    const endorsementMoved = endorsementBefore !== endorsementAfter;
+
     await this.prisma.motivation.update({
       where: { id: row.id },
       data: {
         answersEncrypted: encryptJson(mergedApplication),
         answersSchemaVersion: FIELD_REGISTRY_VERSION,
         answerProvenance: provenance as unknown as object,
+        ...(endorsementMoved ? { autolinkedAt: null } : {}),
       },
     });
 

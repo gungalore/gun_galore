@@ -426,3 +426,100 @@ describe('the proficiency pair', () => {
     expect(two.attach).toEqual([]);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// THE PAIR RULE — a competency and a proficiency travel together, from the
+// same category, or neither travels at all.
+//
+// Operator, 2026-09-08: "the proficiency needs to be added with the competency
+// from the same category. One cant be without the other."
+//
+// The failure it prevents was live: MO000067 came back with a proficiency
+// certificate attached and no competency beside it, because the proficiency
+// resolved to one candidate and the five competency certificates were an
+// ambiguity the several-candidates rule correctly refused. A DFO reading that
+// file sees a claim about training with nothing certifying it.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the competency/proficiency pair', () => {
+  const C = MotivationUploadKind.COMPETENCY_CERTIFICATE;
+  const P = MotivationUploadKind.PROFICIENCY_CERTIFICATE;
+  const BOTH = [C, P];
+
+  const run = (
+    candidates: AutolinkCandidate[],
+    have: MotivationUploadKind[] = [],
+    opts = {},
+  ) => decideAutolink(candidates, BOTH, have, TODAY, opts);
+
+  it('⚠️ REFUSES A PROFICIENCY WITH NO COMPETENCY BESIDE IT', () => {
+    const out = run([cand(P, { sourceId: 'handgun', covers: '119649' })]);
+    expect(out.attach).toEqual([]);
+    expect(out.skipped.map((s) => s.why)).toContain('needs-its-pair');
+  });
+
+  it('⚠️ REFUSES A COMPETENCY WITH NO PROFICIENCY BESIDE IT', () => {
+    const out = run([cand(C, { covers: 'HANDGUN' })]);
+    expect(out.attach).toEqual([]);
+    expect(out.skipped.map((s) => s.why)).toContain('needs-its-pair');
+  });
+
+  it('attaches both when they agree on the category', () => {
+    const out = run([
+      cand(C, { sourceId: 'comp', covers: 'HANDGUN' }),
+      cand(P, { sourceId: 'prof', covers: '119649' }),
+    ]);
+    expect(out.attach.map((c) => c.sourceId).sort()).toEqual(['comp', 'prof']);
+  });
+
+  it('⚠️ REFUSES BOTH WHEN THEY DESCRIBE DIFFERENT CATEGORIES', () => {
+    // A handgun proficiency beside a rifle competency is a file saying two
+    // different things about what the applicant is qualified for.
+    const out = run([
+      cand(C, { sourceId: 'comp', covers: 'N/S/L RIFLE/CARBINE' }),
+      cand(P, { sourceId: 'prof', covers: '119649' }),
+    ]);
+    expect(out.attach).toEqual([]);
+    expect(out.skipped.map((s) => s.why)).toContain('needs-its-pair');
+  });
+
+  it('⚠️ COMPARES AGAINST WHAT IS ALREADY ATTACHED, not only against this run', () => {
+    // A proficiency attached on Monday and a competency attached on Tuesday can
+    // otherwise end up describing different categories.
+    const out = run([cand(C, { sourceId: 'comp', covers: 'HANDGUN' })], [P], {
+      attachedProficiencyCovers: ['119652'],
+    });
+    expect(out.attach).toEqual([]);
+  });
+
+  it('lets a competency join a matching proficiency already on the file', () => {
+    const out = run([cand(C, { sourceId: 'comp', covers: 'HANDGUN' })], [P], {
+      attachedProficiencyCovers: ['119649'],
+    });
+    expect(out.attach.map((c) => c.sourceId)).toEqual(['comp']);
+  });
+
+  it('⚠️ AN UNREADABLE covers LINE IS NOT A MISMATCH', () => {
+    // Refusing a member their own documents because our OCR had a bad day is
+    // our failure charged to them — the same forgiving rule competencyCovers
+    // and proficiencyCovers already apply.
+    const out = run([
+      cand(C, { sourceId: 'comp', covers: '' }),
+      cand(P, { sourceId: 'prof', covers: '119649' }),
+    ]);
+    expect(out.attach.map((c) => c.sourceId).sort()).toEqual(['comp', 'prof']);
+  });
+
+  it('⚠️ DOES NOT BITE WHERE THE PACK NEVER WANTED A PROFICIENCY', () => {
+    // Then a competency on its own is not a lonely half, it is the whole
+    // requirement — and demanding a partner the checklist never asked for
+    // would refuse a member a document their application needs.
+    const out = decideAutolink(
+      [cand(C, { covers: 'HANDGUN' })],
+      [C],
+      [],
+      TODAY,
+    );
+    expect(out.attach.length).toBe(1);
+  });
+});

@@ -239,10 +239,28 @@ export default function LicenceCentreSheetPage() {
    * member holding a handgun certificate and a rifle certificate gets the one
    * that covers the firearm being applied for rather than neither.
    */
-  const autolinked = useRef(false);
+  const autolinkedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!sheet || autolinked.current) return;
-    autolinked.current = true;
+    if (!sheet) return;
+    /**
+     * ⚠️ KEYED ON THE FIREARM, NOT ON "have we run yet".
+     *
+     * A plain once-per-visit latch is what made the competency unreachable: the
+     * run happens at open, before the firearm type is answered, so every
+     * competency certificate the member holds is an equally valid candidate and
+     * the several-candidates rule correctly refuses to guess. Answering the
+     * firearm afterwards changed nothing, because the latch had closed.
+     *
+     * `firearm_type` and `firearm_action` are the two answers `endorsementNeed`
+     * reads, so this re-asks exactly when the question has a different answer —
+     * and never merely because a model or a serial was edited. The server
+     * re-arms its own once-per-application stamp on the same condition.
+     */
+    const key = `${sheet.items.find((i) => i.key === 'firearm_type')?.value ?? ''}|${
+      sheet.items.find((i) => i.key === 'firearm_action')?.value ?? ''
+    }`;
+    if (autolinkedFor.current === key) return;
+    autolinkedFor.current = key;
     void (async () => {
       try {
         const r = await motivationsApi.autolink(getToken, id);
