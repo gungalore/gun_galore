@@ -264,6 +264,41 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### One scanner, one picker — 2026-09-08, `0c3eaa75`
+
+⚠️ **THE SHELF AND THE PANEL BOTH OFFERED THE WHOLE CHOICE.** The empty shelf
+showed "Add your ID, licences and certificates" and "Upload from this device";
+tapping either opened AddPanel, which mounted a `ScanButton` with its own pair
+underneath — "Use my phone camera" and "Choose files instead". Operator,
+2026-09-08: *"this is double. two scan with phone options."*
+
+**Why it happened:** `ScanButton.autoStart` hides that component's own controls
+while it probes and opens. The Scan tile set it; the Upload tile did not — so
+the Upload route opened a panel that rendered the entire choice a second time.
+
+- **The empty shelf is two dashed boxes, same style, side by side** — scan,
+  and upload beside it. Each says only what it does; the scan box no longer
+  reads "or choose files", because it no longer does.
+- **The upload control is a `<label>` around a hidden file input**, on both the
+  empty shelf and the 72px tile row, so it opens the OS picker directly.
+  "Upload from this device" that opens a screen offering to scan with your
+  phone is not an upload button.
+- **AddPanel renders nothing a member can see.** It mounts only when the SCAN
+  box was tapped, always with `autoStart`, purely to host the scanner or the
+  hand-off. Its fallback picker survives for the one case where nothing opened
+  at all — no camera and no hand-off.
+- The spec pins the count: **exactly one scanner and exactly one file input**,
+  empty shelf and populated.
+
+⚠️ **`licence-pack/bulk-capture.tsx` IS ORPHANED AGAIN.** It was the only door
+to the "we filed this as X — change it" correction, and removing the panel's
+visible half took its mounting point with it. The correction wants a home on
+the shelf tile itself; until it has one, a mis-classified document cannot be
+re-filed from this surface. `onRefile` is still on the page, unused.
+
+**Verified on production against MO000067:** one scan control, one file input,
+no "Choose files instead", no "or choose files", no "ADD A DOCUMENT" panel.
+
 ### The invite bug and the shelf — 2026-09-08, `e75ac24b`
 
 ⚠️ **THE SELLER-CONSENT INVITE HAD NEVER WORKED.** Reported from the live
@@ -594,8 +629,8 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `e75ac24b` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `e75ac24b` |
+| Production runs | `0c3eaa75` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `0c3eaa75` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
