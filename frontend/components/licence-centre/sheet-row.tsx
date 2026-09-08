@@ -13,7 +13,25 @@ import { AddressAutocomplete } from '@/components/address-autocomplete';
  * fold; loading Places for it would spend a billed lookup on a question almost
  * nobody opens.
  */
-const ADDRESS_KEYS = new Set(['residential_address', 'postal_address']);
+/**
+ * Every address on the form gets the Maps autofill, not just the home one.
+ *
+ * ⚠️ `employer_address` WAS THE ONE LEFT TYPING. Operator, 2026-09-08: "have a
+ * google maps autofill for the place of work as well." It is a `long` field,
+ * so without this it rendered as a bare textarea — the exact control the
+ * autofill was built to replace, sitting two rows below one that had it.
+ *
+ * ⚠️ AND IT IS ABOUT TO MATTER MORE THAN THE OTHERS. The route half of the
+ * danger-areas work reads home and work and asks Maps what lies between them;
+ * a hand-typed workplace is the input that makes that lookup fail, and it
+ * fails silently — no route, no areas, no annexure, nothing on screen that
+ * says why.
+ */
+const ADDRESS_KEYS = new Set([
+  'residential_address',
+  'postal_address',
+  'employer_address',
+]);
 
 // ────────────────────────────────────────────────────────────────────
 // THE ONE ROW COMPONENT.

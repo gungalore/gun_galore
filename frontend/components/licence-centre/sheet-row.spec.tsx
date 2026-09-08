@@ -355,6 +355,32 @@ describe('yesno — buttons, not a text box', () => {
   });
 });
 
+describe('every address gets Google’s picker, not just the home one', () => {
+  it('⚠️ THE WORKPLACE TOO — it was the one left typing', () => {
+    // Operator, 2026-09-08: "have a google maps autofill for the place of work
+    // as well." `employer_address` is `long`, so without the key test it fell
+    // to the textarea branch — the exact control the autofill replaces, two
+    // rows below one that had it.
+    //
+    // ⚠️ AND IT IS THE INPUT THE ROUTE LOOKUP DEPENDS ON. The danger-areas
+    // route half asks Maps what lies between home and work; a hand-typed
+    // workplace makes that fail silently — no route, no areas, no annexure,
+    // and nothing on screen saying why.
+    render(
+      <SheetRow
+        item={needsYou({
+          key: 'employer_address',
+          label: "Employer's address",
+          kind: 'long',
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(document.querySelector('textarea')).toBeNull();
+    expect(screen.getByRole('textbox')).toBeDefined();
+  });
+});
+
 describe('the residential address gets Google’s picker', () => {
   it('⚠️ BEATS THE `long` BRANCH, which is what broke it the first time', () => {
     // residential_address is kind `long`. The key test sat BELOW the textarea
