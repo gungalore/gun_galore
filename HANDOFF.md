@@ -715,6 +715,46 @@ So the surface is **not a list of articles to tick**. It is:
 precinct is a different suburb, and a clipping about Dunoon on a Kraaifontein
 application is the kind of padding the corpus doc says not to copy.
 
+### It refused to write, and said so nowhere — 2026-09-08, `25aa11a1`
+
+Operator: *"It wont create the motivation. Al sections says their done."*
+
+`POST :id/generate` answers **409 "Please confirm the declaration before we
+prepare the document"** — a gate that has always existed, behind a wizard screen
+Phase 4 deleted. Every section read Done, `missing` was empty, the button was
+enabled, and the click failed.
+
+⚠️ **AND THE FAILURE HAD NO VOICE.** `onWrite` put the message into `error`,
+which the render only shows when `sheet` is null — the load-failure state. With
+a sheet on screen that branch is unreachable, so the 409 went into a variable
+nobody renders. It failed silently every time, with the server saying exactly
+what was wrong.
+
+The footer asks now: one tick in front of the button, appearing only once
+everything else is answered (a declaration over a form with eleven blanks asks
+somebody to swear to answers they have not given). `declarationAcceptedAt` is
+served on the sheet so it asks once and never again. A refusal goes to the
+TOAST; `error` is for "we could not load your application" and nothing else.
+
+⚠️ **AND THE GATE SPEC PROVED THE WRONG THING.** "opens the button once every
+required row is answered" passed throughout — the button opening was never the
+same as the document being draftable, and that gap is precisely what shipped.
+
+### Also fixed in the same run
+
+- **`Model NONE` shows and counts as answered.** The sheet ran `answerValue()`
+  on every displayed field, so a card printing "Model NONE" rendered blank and
+  read `needs_you`. ⚠️ Scoped to VAULT/READ/SELLER provenance: a placeholder is
+  a real answer when a document is what said it, and `answerValue` still guards
+  every OFFER boundary. Verified live — the seller's card block now reads
+  Model NONE with all three component makes populated.
+- **Overlap angles are filtered by section.** Sixteen were served to every
+  licence type; five argue the sport and four argue hunting. The operator's own
+  S13 carried `different_division` because "a different division of the sport"
+  was on the screen of a self-defence application, and the tapped sentence goes
+  into the document verbatim. `backup` no longer says "does not end my season",
+  and S13 gains `concealable` / `home_and_carry`, which it had no way to say.
+
 ### ⚠️ What the S13 audit found and did NOT fix
 
 1. ~~The seller's component makes are never read~~ — **FIXED**, `dedfcf3b`.
