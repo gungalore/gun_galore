@@ -1121,3 +1121,39 @@ describe('the link goes out on both channels', () => {
     expect(notifierOf(svc).sellerConsentInvite).not.toHaveBeenCalled();
   });
 });
+
+describe('primarySerial — a serial the OCR ran into the label beside it', () => {
+  it('⚠️ TAKES THE NUMBER THE COMPONENT ROWS AGREE ON', () => {
+    // Seen on the operator's own Glock, 2026-09-08: the card came back as
+    // "ZABA01892 VUURWAPEMLISENSIEN" — the number plus a misread of
+    // VUURWAPENLISENSIE bled in from the heading. That would have gone onto a
+    // SAPS 271 as the serial of the firearm being applied for.
+    expect(
+      primarySerial({
+        serial: 'ZABA01892 VUURWAPEMLISENSIEN',
+        barrelSerial: 'ZABA01892',
+        frameSerial: 'ZABA01892',
+        receiverSerial: 'ZABA01892',
+      }),
+    ).toBe('ZABA01892');
+  });
+
+  it('⚠️ LEAVES A SPACED SERIAL ALONE WHEN NOTHING CORROBORATES IT', () => {
+    // Guessing which half of an unfamiliar string is the serial is how a real
+    // serial containing a space gets truncated, and a wrong serial is worse
+    // than an ugly one.
+    expect(primarySerial({ serial: 'AB 1234' })).toBe('AB 1234');
+  });
+
+  it('does not touch a serial with no whitespace in it', () => {
+    expect(
+      primarySerial({ serial: 'MR90189D', barrelSerial: 'NONE' }),
+    ).toBe('MR90189D');
+  });
+
+  it('still falls through NONE to a component row', () => {
+    expect(
+      primarySerial({ serial: 'NONE', frameSerial: '81815' }),
+    ).toBe('81815');
+  });
+});

@@ -447,11 +447,42 @@ export function mapCardAction(cardType?: string): string | undefined {
 
 /** The first serial that is present and is not the card's literal "NONE". */
 export function primarySerial(f: Partial<FirearmSnapshot>): string | undefined {
-  for (const v of [f.serial, f.barrelSerial, f.receiverSerial, f.frameSerial]) {
+  const rows = [f.barrelSerial, f.receiverSerial, f.frameSerial]
+    .map((v) => (v ?? '').trim())
+    .filter((t) => t && t.toUpperCase() !== 'NONE');
+
+  for (const v of [f.serial, ...rows]) {
     const t = (v ?? '').trim();
-    if (t && t.toUpperCase() !== 'NONE') return t;
+    if (!t || t.toUpperCase() === 'NONE') continue;
+    return cleanSerial(t, rows);
   }
   return undefined;
+}
+
+/**
+ * A serial the OCR ran together with the label beside it.
+ *
+ * ⚠️ SEEN ON A REAL CARD. The operator's Glock came back as "ZABA01892
+ * VUURWAPEMLISENSIEN" — the number plus a misread of VUURWAPENLISENSIE, the
+ * Afrikaans for "firearm licence", bled in from the heading next to it. That
+ * string would have gone onto a SAPS 271 as the serial of the firearm being
+ * applied for, and a DFO checks that against the card.
+ *
+ * ⚠️ IT ONLY TRUSTS EVIDENCE FROM THE CARD ITSELF. A token is kept only when a
+ * COMPONENT ROW of the same card reads exactly that — on a licence the barrel,
+ * frame and receiver rows routinely repeat the one number, which is what makes
+ * them a second opinion. Without that agreement the value is returned
+ * untouched: guessing which half of an unfamiliar string is the serial is how a
+ * real serial containing a space gets truncated, and a wrong serial is worse
+ * than an ugly one.
+ */
+function cleanSerial(value: string, componentRows: readonly string[]): string {
+  if (!/\s/.test(value) || !componentRows.length) return value;
+  const rows = new Set(componentRows.map((r) => r.toUpperCase()));
+  const match = value
+    .split(/\s+/)
+    .find((token) => rows.has(token.toUpperCase()));
+  return match ?? value;
 }
 
 /**
