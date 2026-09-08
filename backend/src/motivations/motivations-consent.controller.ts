@@ -55,6 +55,19 @@ export class MotivationsConsentController {
     body: {
       name?: string;
       phone?: string;
+      /**
+       * ⚠️ THE THIRD PLACE THIS FIELD WAS MISSING, AND THE ONE THAT KEPT THE
+       * INVITE BROKEN AFTER THE OTHER TWO WERE FIXED.
+       *
+       * `invite()` refuses without a valid address — deliberately, see "BOTH,
+       * NOT EITHER" in motivation-seller-consent.service.ts. The panel had no
+       * input, the API client's body type had no field, and THIS type had
+       * neither — so even once the browser started sending one, the controller
+       * never read it and handed the service an empty string. The refusal was
+       * identical before and after, which is exactly what makes a three-layer
+       * omission hard to see: fixing two of them changes nothing on screen.
+       */
+      email?: string;
       firearm?: FirearmSnapshot;
       applicantName?: string;
     },
@@ -73,6 +86,7 @@ export class MotivationsConsentController {
       applicantName: (body.applicantName ?? '').trim() || 'A buyer',
       name: body.name ?? '',
       phone: body.phone ?? '',
+      email: body.email ?? '',
       firearm: body.firearm,
       baseUrl: origin,
     });
