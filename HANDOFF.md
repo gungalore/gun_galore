@@ -264,6 +264,62 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### The seller's card, all of it — 2026-09-08, `aa4368bc` → `5e9c70fb`
+
+⚠️ **`cardToApplicationFirearm` MAPPED SIX FIELDS AND THE CARD HAS TWELVE.** The
+snapshot has carried `barrelSerial`, `frameSerial`, `receiverSerial` and their
+makes since `CARD_FIELD_KEYS` was written — the seller photographs the card, the
+OCR reads every row, the consent stores all of it — and **the map to application
+keys simply did not hand them over.** So the applicant confirmed a make, a model,
+a type, a calibre and one serial, and **section E of the SAPS 271 stayed empty**:
+exactly the paperwork the consent exists to produce. It also dropped every
+"NONE", the fourth and last boundary doing that.
+
+⚠️ **`primarySerial` STILL SKIPS PLACEHOLDERS, AND MUST.** It is a fallback
+CHAIN picking the one number that identifies the firearm; a NONE that returns
+instead of falling through is how a card with a real receiver number yields no
+serial at all. **Transcribing a row and picking a serial are different
+questions** — the same reason `first()` and `ownedFirearmSerial()` are untouched.
+
+⚠️ **A SERIAL THE OCR RAN INTO THE LABEL BESIDE IT.** Found while verifying:
+the operator's Glock came back as **`ZABA01892 VUURWAPEMLISENSIEN`** — the number
+plus a misread of VUURWAPENLISENSIE, the Afrikaans for "firearm licence", bled
+in from the heading. The barrel, frame and receiver rows all read a clean
+`ZABA01892`. `cleanSerial` **only trusts evidence from the card itself**: a token
+is kept where a COMPONENT ROW reads exactly that, because a licence routinely
+repeats the one number across the three rows, which makes them a second opinion
+rather than a guess. Without that agreement the value is untouched — deciding
+which half of an unfamiliar string is the serial is how a real serial containing
+a space gets truncated.
+
+⚠️ **"THEIRS WINS" MEANS THE MEMBER'S, NOT A PREVIOUS READ OF THE SAME CARD.**
+The adopt was offered once and then hidden for ever, because it OVERWROTE
+everything. It now fills a field only when the member did not type it — so a
+second adopt is harmless, the panel offers again whenever the card **disagrees**
+with what is held, and a read we have since corrected can replace itself. The
+server's `stamp()` refuses to overwrite MEMBER provenance anyway; the client
+agrees with a rule that already existed rather than inventing one.
+
+**Verified on production against MO000069:** `firearm_serial` `ZABA01892`, all
+three component rows, `firearm_model` `NONE` kept, and the adopt block offering
+eight rows with the licence photograph beneath it.
+
+### Still owed from the operator's 2026-09-08 list
+
+**Consent form:** the bottom bar over the camera — ⚠️ **the scanner marks itself
+`data-blocking-overlay` and NOTHING IN THIS APP CONSUMES THAT**, though its own
+z-index is 2147483000, so the likelier culprit is the SW update banner at z-58,
+which is fixed to the bottom of every route; the address wants Google autofill
+plus a sectioned manual fallback; and ⚠️ **a drag on the signature pad selects
+the page text** — there is no "select all" control anywhere, so "it selects
+everything if you sign" is text selection, wanting `user-select: none` on every
+drag surface.
+
+**Documents:** select / select-all to save member-added documents into the
+Licence Centre with consent, the autolink's `skipped` list being the other half
+of that surface; the take-with-you list saying "we have put a copy in your pack,
+bring the original"; and consent delete + preview.
+
 ### One "What this one will be" — 2026-09-08, `047fce9c`
 
 ⚠️ **THE SHEET ASKED ONE QUESTION TWICE.** `overlap_angle` is a registry row in
@@ -946,8 +1002,8 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `047fce9c` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `047fce9c` |
+| Production runs | `5e9c70fb` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `5e9c70fb` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
