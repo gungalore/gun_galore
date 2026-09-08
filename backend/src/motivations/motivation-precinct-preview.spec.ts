@@ -2,6 +2,7 @@ import { MotivationLicenceType } from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
 import { MotivationGenerationService } from './motivation-generation.service';
 import { MotivationSharedService } from './motivation-shared.service';
+import { MemberProfileAnswersService } from './member-profile-answers.service';
 import { encryptJson } from '../common/blob-crypto';
 
 const ORIGINAL_SECRET = process.env.ID_HASH_SECRET;
@@ -32,7 +33,7 @@ function build(motivation: unknown, precinct: jest.Mock) {
     },
   };
   const crimeStats = { precinct } as unknown as { precinct: jest.Mock };
-  const shared = new MotivationSharedService(prisma as never);
+  const shared = new MotivationSharedService(prisma as never, new MemberProfileAnswersService(prisma as never));
   const svc = new MotivationGenerationService(
     prisma as never,
     {} as never, // quota — unused by this read

@@ -212,7 +212,21 @@ export class MotivationGenerationService {
       );
     }
 
-    const answers = this.shared.readAnswers(row.answersEncrypted);
+    /**
+     * ⚠️ THE PROFILE UNDERNEATH, WHICH THIS READ WITHOUT FOR ITS WHOLE LIFE.
+     * A `scope: 'profile'` answer is saved to the member's profile store and
+     * never into `answersEncrypted`, so reading the blob alone made every one
+     * of them look unanswered: an applicant with every row green was refused
+     * with "Some required answers are still missing" naming `marital_status`
+     * and `safe_present`, both of which he had answered.
+     *
+     * ⚠️ AND THE COUNT WAS THE SMALL HALF. This same `answers` feeds
+     * applicationBlockers and the FACT PACK below, so the writer was being
+     * handed a section 13 with no premises answers at all — no safe, no alarm,
+     * no armed response — and writing "Security and safe storage" out of
+     * nothing.
+     */
+    const answers = await this.shared.answersFor(row.userId, row.answersEncrypted);
     const missing = missingRequired(row.licenceType, answers);
     if (missing.length) {
       throw new ConflictException({

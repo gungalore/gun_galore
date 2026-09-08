@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { costUsdMicros, isPricedModel } from '../common/llm/llm.pricing';
 import { MotivationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { MemberProfileAnswersService } from './member-profile-answers.service';
 import { decryptJson } from '../common/blob-crypto';
 
 import { expiryFromReading, uploadCaution } from './motivation-upload-row';
@@ -112,7 +113,45 @@ export const EDITABLE: MotivationStatus[] = [
 export class MotivationSharedService {
   private readonly logger = new Logger(MotivationSharedService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly profileAnswers: MemberProfileAnswersService,
+  ) {}
+
+  /**
+   * EVERYTHING THIS APPLICATION SAYS — the profile underneath, the application
+   * on top.
+   *
+   * ⚠️ IT EXISTS BECAUSE THE SHEET AND THE GENERATOR DISAGREED ABOUT WHETHER AN
+   * APPLICATION WAS FINISHED. A field with `scope: 'profile'` is saved to the
+   * member's profile store and NOT into `answersEncrypted` — that is the point
+   * of the scope, so a second application inherits it. The review sheet layers
+   * the two and reports what the member can see. `generate()` read the
+   * application blob alone.
+   *
+   * So an applicant with every row green was refused with "Some required
+   * answers are still missing", naming `marital_status` and `safe_present` —
+   * both answered, both on the profile. Operator, 2026-09-08, having ticked the
+   * declaration and pressed the button.
+   *
+   * ⚠️ AND THE COUNT WAS THE SMALL HALF OF IT. The same read feeds
+   * `applicationBlockers` and the FACT PACK, so the writer was being handed a
+   * section 13 with no premises answers at all — no safe, no alarm, no armed
+   * response — and "Security and safe storage" is a section of the document the
+   * corpus says every approved pack carries.
+   *
+   * ⚠️ THE APPLICATION WINS EVERY CONFLICT, and that ordering is the whole
+   * meaning of a profile answer: it is an OFFER, and a value on this
+   * application is the member having changed it here. Same layering `sheetFor`
+   * has always used, in one place now so the two cannot drift again.
+   */
+  async answersFor(
+    userId: string,
+    answersEncrypted: string | null,
+  ): Promise<Record<string, string>> {
+    const profile = await this.profileAnswers.readFor(userId);
+    return { ...profile.answers, ...this.readAnswers(answersEncrypted) };
+  }
 
   /**
    * Where the seller's half of a private sale stands.

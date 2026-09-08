@@ -131,7 +131,11 @@ export class MotivationReasonService {
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
-    const answers = this.shared.readAnswers(row.answersEncrypted);
+    // ⚠️ THE PROFILE UNDERNEATH — see MotivationSharedService.answersFor. The
+    // occupation and the residence type the reason paragraph draws on are
+    // profile-scoped, so reading the application blob alone handed the model an
+    // applicant with no job and nowhere to live.
+    const answers = await this.shared.answersFor(user.id, row.answersEncrypted);
     const provenance = parseProvenance(row.answerProvenance);
 
     /**

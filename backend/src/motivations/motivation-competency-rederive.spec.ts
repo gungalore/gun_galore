@@ -141,7 +141,7 @@ function build(
     nearestStation: jest.fn(async () => ({ station: null })),
   };
 
-  const shared = new MotivationSharedService(prisma as never);
+  const shared = new MotivationSharedService(prisma as never, new MemberProfileAnswersService(prisma as never));
   const prefill = new MotivationPrefillService(
     prisma as never,
     quota as never,

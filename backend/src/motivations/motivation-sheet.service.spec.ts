@@ -98,7 +98,7 @@ function build(
       findMany: jest.fn(async (): Promise<any> => opts.statements ?? []),
     },
   };
-  const shared = new MotivationSharedService(prisma as never);
+  const shared = new MotivationSharedService(prisma as never, new MemberProfileAnswersService(prisma as never));
   return {
     svc: new MotivationSheetService(
       prisma as never,
@@ -523,5 +523,45 @@ describe('the Document Centre count behind the pair', () => {
     expect(sheet.credentials.neededLabel).toBe('Handgun');
     expect(sheet.credentials.pairNote).toContain('statement of results');
     expect(sheet.credentials.competency.held[0].origin).toBe('member');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE SHEET AND THE GENERATOR MUST COUNT THE SAME THING.
+//
+// Operator, 2026-09-08, every row green and the declaration ticked: the button
+// answered "Some required answers are still missing", naming `marital_status`
+// and `safe_present` — both answered, both `scope: 'profile'`.
+//
+// ⚠️ A PROFILE ANSWER IS NOT IN `answersEncrypted`, AND THAT IS THE POINT OF
+// THE SCOPE. It lives on the member so a second application inherits it. The
+// sheet layered the two; generate() read the blob alone. Two readers of one
+// number, which is the failure this whole surface was built to end.
+// ────────────────────────────────────────────────────────────────────
+describe('the profile is part of what the application says', () => {
+  it('⚠️ COUNTS A PROFILE ANSWER AS ANSWERED', async () => {
+    const { svc } = build(
+      { firearm_type: 'Handgun' },
+      { profile: { marital_status: 'Single', safe_present: 'Yes' } },
+    );
+    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    expect(sheet.missing).not.toContain('marital_status');
+    expect(sheet.missing).not.toContain('safe_present');
+  });
+
+  it('⚠️ AND THE APPLICATION STILL WINS THE CONFLICT', () => {
+    // A profile answer is an OFFER; a value on this application is the member
+    // having changed it here. Reversing that would silently overwrite a
+    // correction with the value it corrected.
+    return build(
+      { marital_status: 'Married' },
+      { profile: { marital_status: 'Single' } },
+    )
+      .svc.sheetFor('clerk_1', 'mo-1')
+      .then((sheet) => {
+        expect(
+          sheet.items.find((i) => i.key === 'marital_status')?.value,
+        ).toBe('Married');
+      });
   });
 });

@@ -238,7 +238,7 @@ function build(
   // hands the SAME mock objects to whichever of them uses each one — that is
   // what keeps every assertion in this file (which counts calls on `prisma`,
   // `quota`, `claude`, `files`…) meaning exactly what it meant before.
-  const shared = new MotivationSharedService(prisma as never);
+  const shared = new MotivationSharedService(prisma as never, new MemberProfileAnswersService(prisma as never));
 
   // The C.I.P. datasheet. Returns nothing, so no test in this file depends
   // on 40MB of sheets being on the disk running it — the pack renders one

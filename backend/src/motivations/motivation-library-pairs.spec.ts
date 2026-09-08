@@ -7,6 +7,7 @@ import {
 } from './motivation-library';
 import { MotivationDocumentsService } from './motivation-documents.service';
 import { MotivationSharedService } from './motivation-shared.service';
+import { MemberProfileAnswersService } from './member-profile-answers.service';
 import { encryptJson, decryptJson } from '../common/blob-crypto';
 
 // ────────────────────────────────────────────────────────────────────
@@ -496,7 +497,7 @@ function build(
   const prefill = {
     competencyOffer: jest.fn(async () => opts.competency ?? null),
   };
-  const shared = new MotivationSharedService(prisma as never);
+  const shared = new MotivationSharedService(prisma as never, new MemberProfileAnswersService(prisma as never));
   const service = new MotivationDocumentsService(
     prisma as never,
     { assertEnabled: jest.fn(async () => undefined) } as never,
