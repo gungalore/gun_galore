@@ -17,7 +17,7 @@ import {
   missingRequired,
 } from './motivation-fields';
 import { ServedField, expandFields } from './motivation-field-options';
-import { buildAnnexures } from './motivation-checklist';
+import { UPLOAD_KIND_LABELS, buildAnnexures } from './motivation-checklist';
 import { documentStatus } from './motivation-documents';
 import { overlapFromAnswers } from './motivation-overlap';
 import { saps271Coverage } from './saps271-coverage';
@@ -360,7 +360,12 @@ export class MotivationSheetService {
         id: u.id,
         kind: u.kind,
         letter: byKind.get(u.kind) ?? null,
-        label: u.kind,
+        // ⚠️ THE MEMBER'S WORDS, NOT THE ENUM'S. This shipped as `u.kind`,
+        // so the shelf rendered "ADDRESS_CONFIRMATION" and
+        // "PROFICIENCY_CERTIFICATE" — clipped to "ADDRESS_CO" in a 72px tile.
+        // UPLOAD_KIND_LABELS is the one place those names are written for a
+        // person and it is already imported for the annexures.
+        label: UPLOAD_KIND_LABELS[u.kind] ?? u.kind,
         mime: u.mimeType,
         // Gold, not red: a document we could not read is still attached and
         // still goes in the pack. It is a "look at this", never a failure.

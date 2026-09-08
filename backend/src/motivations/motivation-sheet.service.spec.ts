@@ -273,6 +273,11 @@ describe('documents', () => {
     expect(sheet.documents).toHaveLength(2);
     expect(sheet.documents[0].letter).toBeTruthy();
     expect(sheet.documents[0].state).toBe('read');
+    // ⚠️ THE MEMBER'S WORDS, NOT THE ENUM'S. This shipped rendering
+    // "ADDRESS_CONFIRMATION" on the shelf, clipped to "ADDRESS_CO" in a 72px
+    // tile. A label nobody outside this codebase has seen is not a label.
+    expect(sheet.documents[0].label).toBe('Copy of your ID');
+    expect(sheet.documents[0].label).not.toBe(sheet.documents[0].kind);
     // Gold, not red: a document we could not read is still attached and still
     // goes in the pack.
     expect(sheet.documents[1].state).toBe('check');

@@ -48,12 +48,26 @@ function FileIcon() {
 
 export interface DocumentShelfProps {
   documents: SheetDocument[];
+  /** The file picker and the drag tray. */
   onAdd: () => void;
+  /**
+   * Straight into the scanner — the phone hand-off on a desktop, the camera on
+   * a handheld.
+   *
+   * ⚠️ ITS OWN TILE, NOT A SECOND CLICK. Operator, 2026-08-24, about the
+   * Document Centre's equivalent: "replace the Add button with two buttons,
+   * Upload and Scan with phone (Use Icons)." A member holding a licence card
+   * should see the camera without opening anything first — and behind one
+   * generic "+" they did not: the shelf shipped with only the picker wired
+   * while its own empty-state copy promised scanning.
+   */
+  onScan: () => void;
 }
 
 export default function DocumentShelf({
   documents,
   onAdd,
+  onScan,
 }: DocumentShelfProps) {
   const empty = documents.length === 0;
 
@@ -68,7 +82,7 @@ export default function DocumentShelf({
       <div className="border-b border-[var(--border-divider)] px-4 pb-[14px] pt-3">
         <button
           type="button"
-          onClick={onAdd}
+          onClick={onScan}
           className="flex w-full items-center gap-[14px] rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] px-4 py-[18px] text-left text-[var(--red)]"
         >
           <QrIcon />
@@ -76,11 +90,24 @@ export default function DocumentShelf({
             <span className="block text-[14px] font-medium text-[var(--text-primary)]">
               Add your ID, licences and certificates
             </span>
+            {/*
+              ⚠️ THIS COPY PROMISES SCANNING, SO THE TILE MUST OPEN THE
+              SCANNER. It shipped opening only the file picker, which is the
+              kind of gap nobody reports as a bug — they just conclude the
+              product cannot do it.
+            */}
             <span className="mt-[2px] block text-[12.5px] font-normal text-[var(--text-tertiary)]">
               Scan with your phone or choose files. We read them and fill this
               page in.
             </span>
           </span>
+        </button>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="mt-2 min-h-[44px] text-[13px] font-medium text-[var(--red)]"
+        >
+          Choose files instead
         </button>
       </div>
     );
@@ -122,10 +149,28 @@ export default function DocumentShelf({
           </div>
         ))}
 
+        {/*
+          ⚠️ TWO TILES, AND THE SCANNER IS THE FIRST OF THEM. Most of what
+          belongs on this shelf is a card or a certificate the member is
+          holding, and the fastest route to it is the camera in their pocket.
+          Behind a single "+" it was invisible.
+        */}
+        <div className="w-[72px] flex-shrink-0">
+          <button
+            type="button"
+            onClick={onScan}
+            aria-label="Scan a document with your phone"
+            className="flex h-[92px] w-[72px] flex-col items-center justify-center gap-1 rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] text-[11.5px] font-medium text-[var(--red)]"
+          >
+            <QrIcon />
+            Scan
+          </button>
+        </div>
         <div className="w-[72px] flex-shrink-0">
           <button
             type="button"
             onClick={onAdd}
+            aria-label="Choose files to add"
             className="flex h-[92px] w-[72px] flex-col items-center justify-center gap-1 rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] text-[11.5px] font-medium text-[var(--red)]"
           >
             <span aria-hidden="true" className="text-[18px] leading-none">

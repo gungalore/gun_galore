@@ -21,7 +21,7 @@ import ConsentCard from '@/components/licence-centre/consent-card';
 import CompetencyLines from '@/components/licence-centre/competency-lines';
 import PackSummary from '@/components/licence-centre/pack-summary';
 import PreviewPanel from '@/components/licence-centre/preview-panel';
-import BulkCapture from '@/components/licence-pack/bulk-capture';
+import AddPanel from '@/components/licence-centre/add-panel';
 import type { PickableKind } from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
@@ -90,6 +90,8 @@ export default function LicenceCentreSheetPage() {
   const [active, setActive] = useState<string>('firearm');
   /** The Add-a-document sheet, and the kinds it may file into. */
   const [adding, setAdding] = useState(false);
+  /** Entered through the Scan tile — open the camera without a second click. */
+  const [autoScan, setAutoScan] = useState(false);
   const [kinds, setKinds] = useState<PickableKind[]>([]);
 
   /**
@@ -394,30 +396,42 @@ export default function LicenceCentreSheetPage() {
 
         <DocumentShelf
           documents={sheet.documents}
-          onAdd={() => setAdding(true)}
+          onAdd={() => {
+            setAutoScan(false);
+            setAdding(true);
+          }}
+          onScan={() => {
+            setAutoScan(true);
+            setAdding(true);
+          }}
         />
 
         {/*
-          ⚠️ ONE DOOR, OPENED FROM THE SHELF, AND IT IS THE EXISTING FLOW.
-          bulk-capture.tsx already owns the picker, the phone hand-off and the
-          re-file dropdown, and it is tested where it lives. Phase 4 moves the
-          file; this mounts it.
+          ⚠️ ONE DOOR, OPENED FROM THE SHELF — the scanner AND the picker.
+          The scanner is the primary route: on a laptop it hands off to the
+          member's phone, because a webcam cannot resolve a licence serial.
+          See add-panel.tsx, which owns that decision.
         */}
         {adding ? (
-          <div className="border-b border-[var(--border-divider)] px-4 py-3">
-            <BulkCapture
-              pickable={kinds}
-              onAdd={onAddFile}
-              onRefile={onRefile}
-            />
-            <button
-              type="button"
-              onClick={() => setAdding(false)}
-              className="mt-2 min-h-[44px] text-[13px] font-medium text-[var(--text-tertiary)]"
-            >
-              Done adding
-            </button>
-          </div>
+          <AddPanel
+            motivationId={id}
+            kinds={kinds}
+            onAdd={onAddFile}
+            onRefile={onRefile}
+            onHandoffArrived={(count) => {
+              void load();
+              setToast(
+                count === 1
+                  ? 'Your phone sent one document.'
+                  : `Your phone sent ${count} documents.`,
+              );
+            }}
+            autoScan={autoScan}
+            onClose={() => {
+              setAdding(false);
+              setAutoScan(false);
+            }}
+          />
         ) : null}
 
         {sheet.sections.map((s) => (
