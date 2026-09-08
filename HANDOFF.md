@@ -264,6 +264,57 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### Sheet fixes round 3 — 2026-09-08, `6e1eef04` + `53c11e0f`
+
+⚠️ **SIX PREMISES QUESTIONS WERE FREE-TEXT BOXES.** "Is there an alarm?", "Do
+you have armed response?", "Are there burglar bars?", "Are there security
+gates?", "Do you have the prescribed safe?" and "Is it mounted?" are all
+`yesno` in the registry and `Control` had **no branch for that kind**, so every
+one rendered as an empty text field. Declarations never hit it — the page
+routes that whole section to `DeclarationRow` — which is why it went unseen.
+
+⚠️ **THE ADDRESS PICKER NEVER RENDERED, AND THE REASON IS A RULE WORTH KEEPING:
+A KEY TEST BELOW A KIND TEST ONLY CATCHES THE KINDS NOTHING ELSE CLAIMED.**
+`residential_address` is kind `long`, so `ADDRESS_KEYS.has(item.key)` sat below
+the textarea branch and was unreachable. The member got a plain multi-line box
+and Google Maps was never loaded. Caught on production: the built bundle had
+the Maps loader **and a real key**, and no `<script>` tag ever appeared —
+because the component that injects it was not on the page at all. The branch is
+first now; two specs pin it.
+
+Also: **"Are you the main licence holder"** → **"Will you be"** (they are
+applying, not holding); the declarations pills line up right (they needed
+**both** `w-full` and `ml-auto` — without the first the block sizes to its
+content, without the second they fall left the moment they wrap on a phone);
+section headers carry a `--red-wash` band with a `--red-line` keyline, bled into
+the gutters. **The wash is on the HEADER, not the section** — tinting the
+section would put colour behind every input in it.
+
+**Verified on production against MO000067:** header background
+`rgba(200,16,46,0.09)`, **10 yes/no buttons and 0 text inputs** in Premises, the
+future tense, and the address row opening a real `<input>` prefilled with the
+member's address with `.pac-container` live.
+
+⚠️ **THE SERVICE WORKER SERVES THE OLD BUNDLE UNTIL "Reload" IS TAPPED.**
+`skipWaiting: false` is deliberate, and it means a fresh `navigate` in a
+verification pass gets the PREVIOUS build. Three rounds of "the fix is not
+there" were that. Click the update banner's Reload first, then check.
+
+### Still owed from the operator's 2026-09-08 list
+
+1. ⚠️ **Delete the seller consent, and preview the consent form.** No applicant
+   -facing delete endpoint exists — `motivation-seller-consent.service.ts`
+   already tells members to "Delete that consent first if you need a new one",
+   naming a control that is not built. Preview needs a render of the signed
+   page before it reaches the pack.
+2. ⚠️ **Proficiencies, and documents filing both ways.** The correct
+   proficiencies must be addable from the Licence Centre, scanned, or uploaded;
+   **anything attached to an application must also be filed in the Licence
+   Centre**; and every document wants its own add control plus an "add all".
+   Today the sheet's shelf writes `MotivationUpload` rows only — the vault
+   (`Credential`) is not written, so a document added on the sheet is invisible
+   to the next application.
+
 ### The seller's scanner, and NONE on the form — 2026-09-08, `4170533f` + `e82c1efe`
 
 **"why cant we use the same scanner that the license centre uses"**
@@ -798,8 +849,8 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `e82c1efe` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `e82c1efe` |
+| Production runs | `53c11e0f` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `53c11e0f` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
