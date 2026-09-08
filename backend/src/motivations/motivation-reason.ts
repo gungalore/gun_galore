@@ -340,11 +340,29 @@ export function validateReason(
     }
   }
 
-  const terms = ctx.knownTerms.map((t) => t.toLowerCase());
+  /**
+   * ⚠️ TOKEN OVERLAP, NOT WHOLE-STRING CONTAINMENT. The first version asked
+   * whether the label was a substring of something we supplied, and refused
+   * "IPSC Production Division" against a bank line reading "IPSC Handgun:
+   * Production (no optic, list handguns)" — the same discipline, phrased the
+   * way a shooter would say it. Seen on the first live generation.
+   *
+   * What the rule is actually for is catching an example invented out of
+   * nothing: "IDPA Stock Service Pistol" fails this, correctly, because IDPA
+   * appears nowhere in what we gave the model. Every significant word has to
+   * come from somewhere we supplied; the arrangement is the model's business.
+   */
+  const haystack = ctx.knownTerms.join(' ').toLowerCase();
   for (const ex of r.examples) {
-    const label = ex.label.toLowerCase();
-    if (!terms.some((t) => t.includes(label) || label.includes(t))) {
-      bad.push(`example "${ex.label}" is not in anything we supplied`);
+    const missing = ex.label
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length > 3)
+      .filter((t) => !haystack.includes(t));
+    if (missing.length) {
+      bad.push(
+        `example "${ex.label}" uses ${missing.map((m) => `"${m}"`).join(', ')}, which we did not supply`,
+      );
     }
   }
 

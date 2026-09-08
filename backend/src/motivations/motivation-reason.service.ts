@@ -155,7 +155,15 @@ export class MotivationReasonService {
     // failure is a signal, not something to keep paying for.
     let last: string[] = [];
     for (let attempt = 0; attempt < 2; attempt++) {
-      const result = await this.callModel(row.licenceType, input);
+      /**
+       * ⚠️ THE SECOND ATTEMPT IS TOLD WHAT WAS WRONG WITH THE FIRST. A retry
+       * that re-sends the identical prompt is a dice roll: the first live
+       * generation came back miscounting its own words and offering
+       * "collecting" as a reason, and asking again in the same words would
+       * have had no reason to produce anything different. The rejections are
+       * already written for a person, so they are already the right feedback.
+       */
+      const result = await this.callModel(row.licenceType, input, last);
       if (!result) {
         last = ['the model call failed'];
         continue;
@@ -192,13 +200,31 @@ export class MotivationReasonService {
   private async callModel(
     licenceType: MotivationLicenceType,
     input: ReasonInput,
+    rejections: readonly string[] = [],
   ): Promise<ReasonResult | null> {
     let text: string;
     try {
       const res = await this.llm.complete({
         system: reasonSystemPrompt(licenceType),
         messages: [
-          { role: 'user', content: [{ type: 'text', text: JSON.stringify(input) }] },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: JSON.stringify(input) },
+              ...(rejections.length
+                ? [
+                    {
+                      type: 'text' as const,
+                      text: [
+                        'Your previous answer was rejected for these reasons.',
+                        'Fix every one of them and return the whole JSON again:',
+                        ...rejections.map((r) => `- ${r}`),
+                      ].join('\n'),
+                    },
+                  ]
+                : []),
+            ],
+          },
         ],
         maxTokens: 1600,
         /**
