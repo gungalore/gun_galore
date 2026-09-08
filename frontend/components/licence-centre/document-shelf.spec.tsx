@@ -61,7 +61,7 @@ describe('with documents', () => {
     expect(onScan).toHaveBeenCalled();
 
     await userEvent.click(
-      screen.getByRole('button', { name: 'Choose files to add' }),
+      screen.getByRole('button', { name: 'Upload a file from this device' }),
     );
     expect(onAdd).toHaveBeenCalled();
   });
@@ -105,7 +105,7 @@ describe('the empty shelf', () => {
     const onAdd = vi.fn();
     render(<DocumentShelf documents={[]} onAdd={onAdd} onScan={vi.fn()} />);
     await userEvent.click(
-      screen.getByRole('button', { name: 'Choose files instead' }),
+      screen.getByRole('button', { name: 'Upload from this device' }),
     );
     expect(onAdd).toHaveBeenCalled();
   });

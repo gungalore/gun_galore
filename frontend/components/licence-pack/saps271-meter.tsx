@@ -140,8 +140,19 @@ function SectionRow({ section }: { section: CoverageSection }) {
 
       {(section.note || section.missingRequired > 0) && (
         <div className="ml-[30px] mt-1 text-[11px] text-[var(--text-tertiary)]">
+          {/*
+            ⚠️ "boxes", BECAUSE THIS IS NOT THE SHEET'S COUNT. The strip, the
+            chip dots and the footer all read `missing` — required REGISTRY
+            KEYS. This meter counts BOXES ON THE SAPS 271, which is a different
+            quantity for good reasons (one answer fills several boxes; a "no"
+            closes its follow-ups). Both were saying "still needed" on the same
+            screen and totalling differently, which reads as the page
+            contradicting itself rather than as two honest measures.
+          */}
           {section.note ??
-            `${section.missingRequired} still needed`}
+            `${section.missingRequired} box${
+              section.missingRequired === 1 ? '' : 'es'
+            } still empty`}
         </div>
       )}
     </div>

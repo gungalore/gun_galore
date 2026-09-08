@@ -32,6 +32,28 @@ function QrIcon() {
   );
 }
 
+/**
+ * ⚠️ AN UPLOAD ICON, NOT A "+". Operator, 2026-08-24, about the Document
+ * Centre's equivalent and repeated here on 2026-09-08: "replace the Add button
+ * with two buttons, Upload and Scan with phone (Use Icons)." A bare plus says
+ * "something can be added" and leaves which route to guess at; the tray-and-
+ * arrow says the file is already on the device.
+ */
+function UploadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path
+        d="M12 16V4m0 0L8 8m4-4l4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function FileIcon() {
   return (
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -102,12 +124,20 @@ export default function DocumentShelf({
             </span>
           </span>
         </button>
+        {/*
+          ⚠️ A BUTTON BESIDE THE SCANNER, NOT A LINE OF SMALL PRINT UNDER IT.
+          Same operator instruction as the tiles above: two routes, both
+          visible, both with icons. Somebody who already has their ID as a PDF
+          on the laptop they are sitting at should not have to read past a QR
+          code to find that out.
+        */}
         <button
           type="button"
           onClick={onAdd}
-          className="mt-2 min-h-[44px] text-[13px] font-medium text-[var(--red)]"
+          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--bg)] px-4 text-[13px] font-medium text-[var(--red)]"
         >
-          Choose files instead
+          <UploadIcon />
+          Upload from this device
         </button>
       </div>
     );
@@ -170,13 +200,11 @@ export default function DocumentShelf({
           <button
             type="button"
             onClick={onAdd}
-            aria-label="Choose files to add"
+            aria-label="Upload a file from this device"
             className="flex h-[92px] w-[72px] flex-col items-center justify-center gap-1 rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] text-[11.5px] font-medium text-[var(--red)]"
           >
-            <span aria-hidden="true" className="text-[18px] leading-none">
-              +
-            </span>
-            Add
+            <UploadIcon />
+            Upload
           </button>
         </div>
       </div>

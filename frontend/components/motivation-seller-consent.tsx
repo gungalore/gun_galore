@@ -65,6 +65,11 @@ export default function MotivationSellerConsent({
   const { getToken } = useAuth();
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  /**
+   * ⚠️ THE SERVER HAS ALWAYS REQUIRED THIS AND THE PANEL NEVER ASKED FOR IT.
+   * See the note on the input below.
+   */
+  const [email, setEmail] = useState('');
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
@@ -180,6 +185,7 @@ export default function MotivationSellerConsent({
       await motivationsApi.inviteSellerConsent(getToken, motivationId, {
         name,
         phone,
+        email,
         applicantName,
         firearm: { ...firearm, label: labelToSend },
       });
@@ -348,6 +354,39 @@ export default function MotivationSellerConsent({
         />
       </label>
 
+      {/* ⚠️ THIS BOX DID NOT EXIST, AND THE SERVER HAS ALWAYS DEMANDED IT.
+        *
+        * motivation-seller-consent.service.ts refuses an invite without a
+        * valid address, deliberately — "BOTH, NOT EITHER. The email carries
+        * the link; it survives being read on a desktop, it can hold an
+        * explanation, and it does not cost an SMS credit to resend. The number
+        * is the nudge that makes him look." That reasoning stands. What was
+        * broken is that the panel never asked: no input, no state, and no
+        * `email` field in the API client's own body type. Every "Send them the
+        * link" came back "Enter a valid email address for them." over a form
+        * with nowhere to enter one, so this path has never once worked.
+        *
+        * Which is precisely the failure the comment BELOW that check
+        * describes, about the serial number it used to demand: "The refusal
+        * named a box that was not on screen anywhere." Same function, same
+        * mistake, second time. */}
+      <label className="mt-2 block text-xs text-[var(--text-secondary)]">
+        Their email address
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          inputMode="email"
+          type="email"
+          autoComplete="off"
+          placeholder="them@example.co.za"
+          className="mt-1 w-full rounded-[var(--r-sm)] border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--text-primary)]"
+        />
+        <span className="mt-1 block text-[var(--text-tertiary)]">
+          The link goes here as well as by SMS, so they can open it on a
+          computer and read it properly.
+        </span>
+      </label>
+
       {/* ⚠️ A NAME FOR THE FIREARM, NOT ITS PARTICULARS.
         *
         * This box used to ask for the SERIAL NUMBER, and the whole panel was
@@ -392,10 +431,19 @@ export default function MotivationSellerConsent({
       <button
         type="button"
         onClick={send}
+        /*
+          ⚠️ THE GATE MIRRORS THE SERVER'S OWN CHECKS, INCLUDING THE EMAIL.
+          A button that enables into a refusal is how the missing address went
+          unnoticed: it looked sendable every time. The pattern is deliberately
+          the forgiving one the server uses — anything with an @ between two
+          non-spaces and a dot after it — because a stricter one here would
+          reject real addresses the server would have accepted.
+        */
         disabled={
           busy ||
           name.trim().length < 2 ||
           phone.trim().length < 9 ||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
           !labelToSend
         }
         className="mt-3 w-full rounded-[var(--r-md)] bg-[var(--red)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"

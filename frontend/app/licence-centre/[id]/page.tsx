@@ -68,6 +68,27 @@ const CARD_COMPONENT_KEYS = new Set([
  */
 const SOURCE_PRIVATE = 'From a private owner';
 
+/**
+ * SAPS 271 boxes on the "You" section that a member should never have to think
+ * about, because we already hold the answer or the form is asking twice.
+ *
+ * ⚠️ FOLDED, NOT DELETED. Every one of these is a real box on a statutory
+ * form — a postal address distinct from the residential one, a dialling code
+ * split from its own number, a postal code per address. Removing them would
+ * ship an incomplete 271. What was wrong is that they sat open, marked
+ * Optional, between the questions that matter: on the live sheet "Postal
+ * address, if different" was prefilled with the SAME address as residential,
+ * and the two dialling codes were separate rows from the two phone numbers
+ * they belong to.
+ */
+const YOU_FORM_BOX_KEYS = new Set([
+  'postal_address',
+  'postal_postal_code',
+  'employer_postal_code',
+  'home_dialling_code',
+  'work_dialling_code',
+]);
+
 /** Who actually fills those six, by route. Keyed on `firearm_source`. */
 const COMPONENT_NOTE: Record<string, string> = {
   'From a dealer': 'Your dealer fills these in from the licence card.',
@@ -532,6 +553,33 @@ export default function LicenceCentreSheetPage() {
       // six rows with it.
       if (inner.length && !placed) out.push(fold());
       return out;
+    }
+
+    // ⚠️ THE 271's OWN BOXES FOLD TO THE BOTTOM OF "You". See
+    // YOU_FORM_BOX_KEYS: they are real boxes on a statutory form, so they stay
+    // fillable, but they are not questions anybody should be reading past.
+    if (sectionId === 'you') {
+      const boxes = visible.filter((i) => YOU_FORM_BOX_KEYS.has(i.key));
+      const rest = visible.filter((i) => !YOU_FORM_BOX_KEYS.has(i.key));
+      return (
+        <>
+          {rest.map(row)}
+          {boxes.length ? (
+            <SheetDisclosure
+              key="__form-boxes"
+              summary="Post and dialling codes"
+              note="The SAPS 271 has a box for each. Open this only if post reaches you somewhere else."
+              meta={
+                <span className="text-[var(--text-tertiary)]">
+                  {boxes.length} rows
+                </span>
+              }
+            >
+              {boxes.map(row)}
+            </SheetDisclosure>
+          ) : null}
+        </>
+      );
     }
 
     // ⚠️ ONE FOLD PER FIREARM, AND NOTHING AT ALL FOR THE ROWS NOBODY OWNS.

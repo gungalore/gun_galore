@@ -1120,6 +1120,18 @@ export const motivationsApi = {
     body: {
       name: string;
       phone: string;
+      /**
+       * ⚠️ REQUIRED BY THE SERVER, AND IT WAS NOT IN THIS TYPE.
+       *
+       * motivation-seller-consent.service.ts refuses an invite without a valid
+       * address — "BOTH, NOT EITHER: the email carries the link … the number is
+       * the nudge that makes him look". The panel had no email input, no email
+       * state and no field here, so every "Send them the link" came back
+       * "Enter a valid email address for them." against a form with nowhere to
+       * enter one. Exactly the failure the comment directly beneath that check
+       * describes: a refusal naming a box that was not on screen anywhere.
+       */
+      email: string;
       applicantName: string;
       firearm: Record<string, string | undefined>;
     },
