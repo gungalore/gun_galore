@@ -564,6 +564,99 @@ consent. Either the member types the three makes into the "Barrel, frame and
 receiver" fold, or the consent is deleted and re-sent (`deleteSellerConsent`
 exists for exactly this).
 
+### The areas surface — BUILT, 2026-09-08, `116511d1` → `b3db048f`
+
+The operator's design, in four messages, and it is now live end to end.
+
+**Backend** (`116511d1`). `motivation-danger-areas.ts` is pure: roll incidents
+up by place, one incident landing in every area it names, two spellings folding
+into one, a place too big to drive through dropped (or the commonest area is the
+whole metro), nearest report wins the distance, an unplaced area sorting LAST
+because "we do not know where this is" is not "next door", capped at twelve.
+`GET :id/areas` at **50 km** — this asks where they DRIVE, and a radius that
+cannot reach their workplace cannot offer the areas between. Each area carries
+its own SAPS station, one geocode each, every one failing alone.
+`POST :id/areas` takes keys and reasons and derives the clippings SERVER-SIDE,
+spending the cap **area by area** so every ticked area is represented before any
+gets a second. `travelled_areas` is the answer; `press_clippings` is the
+consequence.
+
+⚠️ **AND MOUNTING THE UI IS WHAT MADE THE ANNEXURE REACHABLE.**
+`press_clippings` is internal; its registry comment says the wizard writes it
+once the member has picked, and Phase 4 deleted that wizard. The endpoint
+worked, the writer supported it, the pack had a letter reserved, and nothing
+could set the value.
+
+**The "OR Tambo" fault, and the fix I got wrong first** (`9c0160b0` →
+`80e182fa`). A Kraaifontein applicant was offered the area "OR Tambo". Bare, it
+resolved to **Edenvale** — a Gauteng precinct on a Western Cape application,
+obviously wrong, and the system saying so. I anchored the geocode to the
+applicant's province on the reasoning that place names are not unique here. It
+then resolved to **Philippi East** and looked entirely plausible. The article
+was *"Man arrested at OR Tambo with suspected cocaine en route to Hong Kong"* —
+the Johannesburg airport, in a Cape Town community paper.
+
+⚠️ **ANCHORING CANNOT TELL "THIS PLACE IS IN THE WESTERN CAPE" FROM "I TOLD IT
+TO ANSWER WITHIN THE WESTERN CAPE."** It laundered the error instead of fixing
+it, and removed the one signal that anything was wrong. Reverted; the province
+mismatch — already there, already correct — drops the area.
+
+⚠️ **AND `distanceKm` IS MEASURED FROM THE ARTICLE'S STORED POSITION, WHICH FOR
+A SYNDICATED PIECE IS THE PAPER'S PATCH.** An airport arrest in Gauteng arrived
+22.7km from a Kraaifontein front door. The province check is currently the only
+thing in the chain that knows better — so a Gauteng story, in a Gauteng paper,
+about a Gauteng place would pass every filter. That is a news-layer accuracy
+problem, not an area-list one, and it is not fixed.
+
+**Frontend** (`eab19c13`). `DangerAreas` renders in "Your case": the reason box
+appears only AFTER the tick (eleven empty boxes is a form; one box under the
+thing they just said yes to is a question), each row carries the report count,
+crime types, distance, the police station whose figures the pack annexes, and
+the headline. The draft is seeded ONCE — re-seeding per render would wipe a
+half-typed reason whenever an unrelated answer landed. An empty list explains
+itself. Its own fetch, keyed on the station, because building the list geocodes
+every area and the sheet refetches after every answer.
+
+**The workplace autofill** (`b3db048f`). `employer_address` is kind `long` and
+fell to the textarea branch — the control the Maps autofill replaces, two rows
+below one that had it. ⚠️ It is also the input the ROUTE half will depend on: a
+hand-typed workplace makes that lookup fail silently.
+
+### ⚠️ Still open on the areas work
+
+1. **The route half is not built.** `onRoute` is in the shape and always false.
+   Home and work are both on the form now and both use the picker;
+   `GOOGLE_MAPS_API_KEY` is set. Directions between them, then a containment
+   test per area, then pre-tick.
+2. **Venue noise.** "Pepper Club Hotel" is a destination, not somewhere you
+   drive through, and its article is filed "other" — a drug case, no use to a
+   self-defence motivation. The place extractor picks up proper nouns.
+3. **The pack does not yet print a ticked area's precinct figures.** The station
+   is resolved and returned; generation still annexes only the applicant's own.
+4. **Crime type is not filtered.** An "other" incident can be a drug bust.
+
+### ⚠️ MO000070 was deleted by the operator, 2026-09-08 ~22:42
+
+Accidentally, and the delete worked exactly as built — answers, uploads and the
+seller consent gone, Document Centre untouched (20 credentials survive).
+
+**The operator chose to start a fresh application rather than restore.** The
+rollback point exists if that changes:
+`/var/backups/alloutdoor/db/alloutdoor-20260908-224005.dump`, taken by deploy.sh
+for `eab19c13` minutes before the deletion, 14-day retention. Never restore over
+production — a scratch database, then lift the rows.
+
+⚠️ **THE SAFE PHOTOGRAPHS EXIST NOWHERE ELSE, AND THAT IS THE LESSON.** They
+were `origin: member` and had never been saved into the Document Centre: the
+consent-based keep flow shipped that morning means nothing is copied unless the
+member ticks and saves. Four photographs, gone with the application.
+
+⚠️ **SO THE SHELF'S "SAVE TO YOUR LICENCE CENTRE" IS NOT A CONVENIENCE, IT IS
+THE ONLY BACKUP A MEMBER HAS.** Nothing on that screen says so. A member who
+deletes an application still believes their documents are kept, because the
+delete copy tells them their Document Centre is not touched — which is true, and
+is exactly why the photographs that were never IN it are the ones that die.
+
 ### The clippings surface — the operator's design, NOT YET BUILT
 
 Two messages, 2026-09-08, and together they are the spec:
