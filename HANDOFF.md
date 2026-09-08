@@ -264,6 +264,61 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### Typing, pills, and the consent capture I broke — 2026-09-08, `15f6e2c3` + `245db6e2`
+
+⚠️ **NO FIELD ON THE SHEET COULD BE TYPED INTO BY HAND.** The page merges
+pending edits back over the server's values, so a keystroke changes
+`item.value` — and `SheetRow`'s reset effect, written to close an editor when a
+document READ moved the value underneath it, could not tell that apart from the
+member's own typing. Tap Change, press one key, the box shuts. A `needs_you` row
+had the same cause with a different symptom: it is open because of its STATE, so
+when the debounced save flipped it to `filled` the control collapsed mid-word.
+A `touched` ref now holds the row open until the member leaves it.
+
+**Section pills** are drawn inside `SheetSection` and the page passes a NUMBER.
+It was `meta?: React.ReactNode` with every caller building its own span, which
+is how two sections end up with two ideas of what "done" looks like.
+⚠️ **`color-mix` for the amber, never `var(--warning)` + an alpha** — that is two
+tokens, not a colour, and there is no `--warning-wash`. A test asserts the class
+carries `color-mix` so nobody "tidies" it into the broken form.
+
+⚠️ **THE V3 SWAP BROKE THE CONSENT CAPTURE, AND THE WRAPPER HAD NO SPEC.**
+`licence-card-capture.tsx` was built around V2's contract: finish() called
+`onClose()` and THEN `onDone()`, synchronously, **one file at a time**. **V3
+collects PAGES, hands them over in a single `onDone(files)`, and never calls
+`onClose()` at all.** One mismatch, three reported symptoms:
+
+| Symptom | Cause |
+|---|---|
+| "the camera does not automaticly return to the form" | nothing closed it; V2's finish() used to |
+| the back silently dropped | the wrapper took `files[0]` and nothing else |
+| "it won't submit" | `photographed` is `!!front && !!back`, so the button stayed disabled forever |
+
+`handleDone` understands both contracts now, closes explicitly, and **takes two
+pages and no more** — a third page is not a third side. Both passes say "two
+pictures" in the scanner's own header.
+
+⚠️ **WHEN SWAPPING A SCANNER, READ ITS finish(). The two do not agree**, and
+nothing in the type system says so: both satisfy `DocumentScannerProps`.
+
+### Still owed from the operator's 2026-09-08 list
+
+**Consent form:** the bottom bar sits over the camera; the address wants Google
+autofill plus a sectioned manual fallback rather than one box; and ⚠️ **the
+scanner's "select all" ticks the signature/declaration boxes too** — operator:
+"make this universal for every scanner".
+
+**The firearm section:** the own-words box under the reason cards does not say
+what it is for; and there are **two headings reading "What this one will be"**
+— the overlap card and the owned-firearm purpose set — which need distinct
+wording, far more realistic options, and a scrollable select styled to the
+theme.
+
+**Earlier and still open:** select / select-all to save member-added documents
+to the Licence Centre with consent (the autolink's `skipped` list is the natural
+home for the other half); the take-with-you list saying "we have put a copy in
+your pack, bring the original"; and consent delete + preview.
+
 ### Sheet fixes round 3 — 2026-09-08, `6e1eef04` + `53c11e0f`
 
 ⚠️ **SIX PREMISES QUESTIONS WERE FREE-TEXT BOXES.** "Is there an alarm?", "Do
@@ -849,8 +904,8 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `53c11e0f` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `53c11e0f` |
+| Production runs | `245db6e2` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `245db6e2` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
