@@ -1,6 +1,7 @@
 'use client';
 
 import type { SheetItem } from './contract';
+import { sourceLine } from './source-line';
 
 // ────────────────────────────────────────────────────────────────────
 // COMPETENCY — one line per certificate, and nothing else.
@@ -65,8 +66,7 @@ export default function CompetencyLines({
             </div>
             {i.provenance ? (
               <div className="mt-1 text-[12px] text-[var(--text-tertiary)]">
-                from {i.provenance.from.charAt(0).toLowerCase()}
-                {i.provenance.from.slice(1)}
+                from {sourceLine(i.provenance.from)}
               </div>
             ) : null}
           </div>

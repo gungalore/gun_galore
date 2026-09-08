@@ -128,7 +128,7 @@ export const sheet = (over: Partial<SheetResponse> = {}): SheetResponse => ({
     { id: 'own', title: 'Firearms you own', blurb: 'What you already hold.', missing: [] },
     { id: 'premises', title: 'Premises and storage', blurb: 'Where the firearm will live.', missing: [] },
     { id: 'case', title: 'Your case', blurb: 'Tap what is true of you.', missing: [] },
-    { id: 'declarations', title: 'Declarations', blurb: 'Six questions everybody is asked.', missing: [] },
+    { id: 'declarations', title: 'Declarations', blurb: 'Five questions everybody is asked.', missing: [] },
     { id: 'pack', title: 'Your pack', blurb: 'What you will take to the DFO.', missing: [] },
   ],
   items: [filled(), suggested(), needsYou(), cardsItem(), ownWordsItem()],

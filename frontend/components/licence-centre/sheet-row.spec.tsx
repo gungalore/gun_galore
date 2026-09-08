@@ -235,3 +235,65 @@ describe('cards', () => {
     );
   });
 });
+
+describe('help — shown once, never twice', () => {
+  const HELP = 'The manufacturer — Glock, CZ, Tikka, Beretta.';
+
+  it('⚠️ A TEXT ROW PRINTS ITS HELP IN THE BOX, NOT ALSO UNDER IT', () => {
+    // The live sheet carried this sentence as the Make field's placeholder AND
+    // again as a help line directly beneath it. Serial number did the same.
+    render(
+      <SheetRow
+        item={needsYou({ kind: 'short', label: 'Make', help: HELP })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByPlaceholderText(HELP)).toBeDefined();
+    expect(screen.queryByText(HELP)).toBeNull();
+  });
+
+  it('a select keeps its help line, because it has no placeholder to carry it', () => {
+    render(
+      <SheetRow
+        item={needsYou({
+          kind: 'choice',
+          label: 'Type',
+          choices: ['Rifle', 'Shotgun'],
+          help: 'Exactly as it appears on the licence.',
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText('Exactly as it appears on the licence.'),
+    ).toBeDefined();
+  });
+});
+
+describe('provenance — the make is not misspelled', () => {
+  it('⚠️ RENDERS "from MAUSER .30-06 SPRINGFIELD", NOT "from mAUSER …"', () => {
+    render(
+      <SheetRow
+        item={filled({
+          label: 'Make',
+          value: 'MAUSER',
+          provenance: { from: 'MAUSER .30-06 SPRINGFIELD', inferred: false },
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('from MAUSER .30-06 SPRINGFIELD')).toBeDefined();
+  });
+
+  it('still folds a sentence-case source', () => {
+    render(
+      <SheetRow
+        item={filled({
+          provenance: { from: 'Your account address', inferred: false },
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('from your account address')).toBeDefined();
+  });
+});

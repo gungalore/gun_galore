@@ -1137,7 +1137,12 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     //
     // Do not name a waiting period in months as a fact — it varies by
     // province and by year, and a number here would be quoted back to us.
-    help: 'As printed on your competency certificate. You need the certificate in hand — SAPS will not take a licence application while competency is still being applied for. If you have not applied for competency yet, that is a separate, earlier application to the same DFO: you complete the prescribed training with an accredited provider or the PFTC, lodge the competency form, have your fingerprints taken at the station and pay its own fee. Section 6(2) of the Act is why the licence cannot be issued until competency has been granted. Come back to this once the certificate is in your hand.',
+    // ⚠️ THE HELP IS THE PLACEHOLDER INSIDE A 44px BOX. The five sentences
+    // this used to carry — training providers, the PFTC, fingerprints, the
+    // separate fee, section 6(2) — were all true and all invisible, clipped
+    // at the width of the input. Keep the operative warning; the rest of the
+    // competency story belongs on a page, not in a placeholder.
+    help: 'As printed on your certificate — you need it in hand, as SAPS will not take a licence application while competency is still being applied for.',
     required: true,
     sensitive: true,
     maxLength: 60,

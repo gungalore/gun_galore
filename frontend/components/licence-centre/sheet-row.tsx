@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { SheetItem } from './contract';
 import CardsRow from './cards-row';
+import { sourceLine } from './source-line';
 
 // ────────────────────────────────────────────────────────────────────
 // THE ONE ROW COMPONENT.
@@ -31,11 +32,18 @@ import CardsRow from './cards-row';
 // told, which is what let the frontend's mirror of isVisible() be retired.
 // ────────────────────────────────────────────────────────────────────
 
-/** "from your licence card" — the server's string, lower-cased after "from". */
-function sourceLine(from: string): string {
-  const t = from.trim();
-  if (!t) return '';
-  return t[0].toLowerCase() + t.slice(1);
+/**
+ * True when `Control` is already showing `item.help` inside the box, so the
+ * row must not print it a second time underneath.
+ *
+ * ⚠️ IT WAS PRINTING BOTH. On the live sheet the Make field carried the
+ * placeholder "The manufacturer — Glock, CZ, Tikka, Beretta." and then that
+ * same sentence again as a help line directly below it; Serial number did the
+ * same. A select and a date input have no placeholder to carry it, so those
+ * keep the line.
+ */
+function helpIsInsideTheControl(kind: SheetItem['kind']): boolean {
+  return kind !== 'choice' && kind !== 'date';
 }
 
 function Pill({
@@ -217,7 +225,7 @@ export default function SheetRow({
           <div className="mt-[6px]">
             <Control item={item} value={item.value} onChange={onChange} />
           </div>
-          {item.help && !editing ? (
+          {item.help && !editing && !helpIsInsideTheControl(item.kind) ? (
             <div className="mt-[5px] text-[12px] text-[var(--text-tertiary)]">
               {item.help}
             </div>

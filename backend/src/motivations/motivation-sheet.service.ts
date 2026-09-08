@@ -179,7 +179,10 @@ const SECTIONS: { id: string; title: string; blurb: string }[] = [
   {
     id: 'competency',
     title: 'Competency',
-    blurb: 'Read off your certificates — there is usually nothing to do here.',
+    // ⚠️ TRUE IN BOTH STATES. It read "there is usually nothing to do here"
+    // above a row marked "Still needed", which is the page arguing with
+    // itself. This says what we do without promising what is left.
+    blurb: 'Read off your certificates wherever we hold them.',
   },
   {
     id: 'own',
@@ -199,7 +202,12 @@ const SECTIONS: { id: string; title: string; blurb: string }[] = [
   {
     id: 'declarations',
     title: 'Declarations',
-    blurb: 'Six questions everybody is asked, and answering "no" adds nothing to your motivation.',
+    // ⚠️ FIVE, NOT SIX, AND THE WORD THAT WAS WRONG WAS "everybody". The
+    // registry does carry six history questions — the coverage meter counts
+    // six and is right to — but `history_negligence` only appears once a
+    // firearm has been lost or stolen. Five is what a member is asked, and
+    // the pack meter on the same screen was already saying so.
+    blurb: 'Five questions everybody is asked, and answering "no" adds nothing to your motivation.',
   },
   {
     id: 'pack',

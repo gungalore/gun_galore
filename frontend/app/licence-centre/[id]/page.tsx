@@ -383,7 +383,23 @@ export default function LicenceCentreSheetPage() {
 
   return (
     <>
-      <main className="mx-auto w-full max-w-[760px] pb-4 lg:mx-0">
+      {/*
+        ⚠️ THE TWO-COLUMN GRID EXISTS ONLY WHILE THE PREVIEW IS OPEN, and the
+        sheet centres itself the rest of the time. This shipped as `lg:mx-0` on
+        `main` with no grid parent anywhere — SPEC-BUILD §3's "1280 content
+        column, grid 760px | 1fr, gap 40" was never built, and `.gg-shell-pane`
+        measures 0 wide — so on a wide screen the whole sheet sat pinned to the
+        left edge. Measured live at a 2133px viewport: main 760px at x=0, with
+        1,373px of empty white beside it.
+      */}
+      <div
+        className={
+          previewOpen
+            ? 'lg:mx-auto lg:grid lg:max-w-[1280px] lg:grid-cols-[760px_minmax(0,1fr)] lg:items-start lg:gap-10'
+            : ''
+        }
+      >
+      <main className="mx-auto w-full max-w-[760px] pb-4">
         <SheetHeader
           reference={sheet.application.referenceNumber}
           licenceType={sheet.application.licenceTypeLabel}
@@ -498,6 +514,7 @@ export default function LicenceCentreSheetPage() {
           </aside>
         </>
       ) : null}
+      </div>
 
       <SheetToast message={toast} onDismiss={() => setToast(null)} />
     </>
