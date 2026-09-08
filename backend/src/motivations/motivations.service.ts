@@ -1475,29 +1475,13 @@ export class MotivationsService {
    * injecting it here would mean touching the module wiring and every
    * construction of MotivationsService for a single string.
    */
-  private async sellerState(motivationId: string): Promise<{
-    status: 'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED';
-    name?: string;
-    openedAt: Date | null;
-  }> {
-    try {
-      const consent = await this.prisma.motivationSellerConsent.findUnique({
-        where: { motivationId },
-        select: { status: true, invitedName: true, openedAt: true },
-      });
-      if (!consent) return { status: 'NONE', openedAt: null };
-      return {
-        status: consent.status as 'INVITED' | 'COMPLETED' | 'DECLINED',
-        name: (consent.invitedName ?? '').trim() || undefined,
-        openedAt: consent.openedAt,
-      };
-    } catch (err) {
-      // A status we cannot read costs the sentence, not the screen.
-      this.logger.warn(
-        `Motivation ${motivationId}: seller consent status unreadable — ${(err as Error).message}`,
-      );
-      return { status: 'NONE', openedAt: null };
-    }
+  /**
+   * ⚠️ DELEGATES. It lived here as a private method, which is why the review
+   * sheet never called it and shipped with section F missing from its coverage
+   * entirely. One copy, on MotivationSharedService, which both surfaces inject.
+   */
+  private sellerState(motivationId: string) {
+    return this.shared.sellerState(motivationId);
   }
 
   private waitingOn(seller: {

@@ -42,6 +42,7 @@ function build(
     profile?: Record<string, string>;
     uploads?: { id: string; kind: string; mimeType: string; extractionOk: boolean }[];
     licenceType?: MotivationLicenceType;
+    seller?: { status: string; invitedName?: string } | null;
   } = {},
 ) {
   const prisma = {
@@ -65,6 +66,21 @@ function build(
           : null,
       ),
       upsert: jest.fn(async () => ({})),
+    },
+    // ⚠️ STUBBED, BECAUSE sellerState FAILS SOFT. Without this the lookup
+    // throws, the catch returns 'NONE', and a test asserting the F row would
+    // fail for the wrong reason — or worse, one asserting its ABSENCE would
+    // pass for the wrong reason.
+    motivationSellerConsent: {
+      findUnique: jest.fn(async (): Promise<any> =>
+        opts.seller
+          ? {
+              status: opts.seller.status,
+              invitedName: opts.seller.invitedName ?? 'Pieter',
+              openedAt: null,
+            }
+          : null,
+      ),
     },
   };
   const shared = new MotivationSharedService(prisma as never);
@@ -369,5 +385,54 @@ describe('ownedRowsFor', () => {
   it('returns them in row order, whatever order the answers arrive in', () => {
     const answers = { ...row(9, { make: 'B' }), ...row(2, { make: 'A' }) };
     expect(ownedRowsFor(answers).map((r) => r.index)).toEqual([2, 9]);
+  });
+});
+
+
+// ────────────────────────────────────────────────────────────────────
+// SECTION F — THE SELLER'S HALF.
+//
+// ⚠️ THE SHEET SHIPPED WITHOUT IT ENTIRELY. saps271Coverage only pushes F when
+// it is TOLD where the seller stands, and this service passed no context — so
+// there was no F row in the coverage at all, the pack meter showed no "Current
+// owner" line, and `sellerSigned` in the page (which reads F.done) was false
+// however signed the consent was. A seller signed at 12:02 and the line under
+// the panel still read "When they sign, Part F … fills in from what they give
+// us", directly under a panel already saying "The owner has signed".
+// ────────────────────────────────────────────────────────────────────
+
+describe('the seller half reaches the sheet', () => {
+  const sections = (c: unknown) =>
+    (c as { sections: { id: string; status?: string; note?: string }[] }).sections;
+
+  it('⚠️ CARRIES AN F ROW ONCE THE SELLER HAS SIGNED', async () => {
+    const { svc } = build(
+      { firearm_source: 'From a private owner' },
+      { seller: { status: 'COMPLETED', invitedName: 'Pieter Botha' } },
+    );
+    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const f = sections(sheet.coverage).find((x) => x.id === 'F');
+    expect(f).toBeDefined();
+    expect(f!.status).toBe('complete');
+    expect(f!.note).toContain('Pieter Botha');
+  });
+
+  it('says who it is waiting on while the invite is out', async () => {
+    const { svc } = build(
+      { firearm_source: 'From a private owner' },
+      { seller: { status: 'INVITED', invitedName: 'Pieter Botha' } },
+    );
+    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    const f = sections(sheet.coverage).find((x) => x.id === 'F');
+    expect(f!.status).toBe('theirs');
+    expect(f!.note).toContain('Nothing for you to do');
+  });
+
+  it('⚠️ SHOWS NO F ROW WHEN NOBODY HAS BEEN ASKED', async () => {
+    // Part F is not the applicant's work. A row scoring them 0% on somebody
+    // else's half reads as their failure.
+    const { svc } = build({ firearm_source: 'From a dealer' });
+    const sheet = await svc.sheetFor('clerk_1', 'mo-1');
+    expect(sections(sheet.coverage).find((x) => x.id === 'F')).toBeUndefined();
   });
 });

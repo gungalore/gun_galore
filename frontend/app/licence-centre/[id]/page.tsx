@@ -382,8 +382,26 @@ export default function LicenceCentreSheetPage() {
    * carries the seller's own answers, so this is the same fact the meter shows
    * — one source, and the card and the meter cannot disagree.
    */
-  const sellerSigned = (sheet.coverage as { sections?: { key?: string; done?: number }[] })
-    ?.sections?.some((c) => c.key === 'F' && (c.done ?? 0) > 0) ?? false;
+  /**
+   * ⚠️ `id` AND `status`, NOT `key` AND `done` — NEITHER OF WHICH EXISTS.
+   *
+   * This shipped as `c.key === 'F' && (c.done ?? 0) > 0`. saps271-coverage.ts
+   * emits `{ id, label, percent, status, note, missingRequired, applicable,
+   * answered }`: there is no `key` and no `done`, so the test was reading two
+   * undefined properties and could only ever be false. And `answered` — the
+   * field `done` was presumably meant to be — is pinned at 0 for F on purpose:
+   * "STATUS, NEVER A PERCENTAGE. Section F is the seller's to complete. A score
+   * would be the applicant being shown a mark for somebody else's homework."
+   * So even spelled correctly it would never have flipped.
+   *
+   * ⚠️ AND THE `as` CAST IS WHY NOBODY SAW IT. Asserting a shape the server
+   * does not send turns a compile error into a silent false. The seller signed
+   * at 12:02 and the line under the panel still read "When they sign…".
+   */
+  const sellerSigned =
+    (
+      sheet.coverage as { sections?: { id?: string; status?: string }[] }
+    )?.sections?.some((c) => c.id === 'F' && c.status === 'complete') ?? false;
 
   const sectionsForStrip = sheet.sections.map((s) => ({
     id: s.id,

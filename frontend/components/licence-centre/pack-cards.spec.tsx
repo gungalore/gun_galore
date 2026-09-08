@@ -18,14 +18,46 @@ vi.mock('@clerk/nextjs', () => {
 // THE THREE CARDS THAT SIT BESIDE THE ROWS.
 // ────────────────────────────────────────────────────────────────────
 
+// ⚠️ THE SHAPE THE SERVER ACTUALLY SENDS. This fixture invented `key`,
+// `total` and `done`; saps271-coverage.ts emits `id`, `applicable`, `answered`,
+// `percent`, `status`, `note` and `missingRequired`, and Saps271Meter reads
+// those. A fixture that agrees with nothing is a test that proves nothing —
+// and the same invented names had been copied into the page, where
+// `sellerSigned` read `c.key`/`c.done` and could only ever be false.
 const coverage = {
   sections: [
-    { key: 'D', label: 'Type of application', total: 2, done: 2, status: 'complete' },
-    { key: 'F', label: 'Current owner', total: 7, done: 0, status: 'not-ours' },
-    { key: 'G', label: 'The applicant', total: 20, done: 18, status: 'partial' },
+    {
+      id: 'D',
+      label: 'Type of application',
+      applicable: 2,
+      answered: 2,
+      percent: 100,
+      missingRequired: 0,
+      status: 'complete',
+    },
+    {
+      id: 'F',
+      label: 'Current owner',
+      applicable: 0,
+      answered: 0,
+      percent: null,
+      missingRequired: 0,
+      status: 'theirs',
+      note: 'Waiting on the seller. Nothing for you to do.',
+    },
+    {
+      id: 'G',
+      label: 'The applicant',
+      applicable: 20,
+      answered: 18,
+      percent: 90,
+      missingRequired: 2,
+      status: 'partial',
+    },
   ],
-  total: 29,
-  done: 20,
+  applicable: 22,
+  answered: 20,
+  percent: 91,
 } as unknown as Saps271Coverage;
 
 describe('PackSummary — Part F is not the applicant’s work', () => {

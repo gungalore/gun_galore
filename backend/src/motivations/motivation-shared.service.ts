@@ -115,6 +115,46 @@ export class MotivationSharedService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Where the seller's half of a private sale stands.
+   *
+   * ⚠️ ONE COPY, ON PURPOSE. It lived as a private method on
+   * MotivationsService, so the review sheet — a second surface reading the
+   * same fact — simply did not call it: `motivation-sheet.service.ts` passed
+   * NO context to saps271Coverage, section F was never pushed into the
+   * coverage at all, and `sellerSigned` on the sheet was therefore false
+   * forever. A seller signed at 12:02 and the page under the panel still read
+   * "When they sign, Part F of your SAPS 271 fills in from what they give us"
+   * while the panel above it said "The owner has signed".
+   *
+   * The same rule the checklist already carries: if two screens compute this
+   * differently, one says "waiting on Piet" and the next says "not started".
+   */
+  async sellerState(motivationId: string): Promise<{
+    status: 'NONE' | 'INVITED' | 'COMPLETED' | 'DECLINED';
+    name?: string;
+    openedAt: Date | null;
+  }> {
+    try {
+      const consent = await this.prisma.motivationSellerConsent.findUnique({
+        where: { motivationId },
+        select: { status: true, invitedName: true, openedAt: true },
+      });
+      if (!consent) return { status: 'NONE', openedAt: null };
+      return {
+        status: consent.status as 'INVITED' | 'COMPLETED' | 'DECLINED',
+        name: (consent.invitedName ?? '').trim() || undefined,
+        openedAt: consent.openedAt,
+      };
+    } catch (err) {
+      // A status we cannot read costs the sentence, not the screen.
+      this.logger.warn(
+        `Motivation ${motivationId}: seller consent status unreadable — ${(err as Error).message}`,
+      );
+      return { status: 'NONE', openedAt: null };
+    }
+  }
+
+  /**
    * Resolve the internal user. Stale dev-era rows have caused this exact
    * lookup to fail in production before, so it is an explicit, readable error
    * rather than a null-deref further down.

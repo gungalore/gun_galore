@@ -420,6 +420,10 @@ export class MotivationSheetService {
       );
     }
 
+    // Where the seller's half stands, for the coverage below. One copy, on the
+    // shared service — see its own note about the two screens that disagreed.
+    const seller = await this.shared.sellerState(row.id);
+
     const annexures = buildAnnexures((row.uploads ?? []).map((u) => u.kind));
     const byKind = new Map(annexures.map((a) => [a.kind, a.letter]));
 
@@ -454,7 +458,15 @@ export class MotivationSheetService {
         (row.uploads ?? []).map((u) => u.kind),
         answers,
       ),
-      coverage: saps271Coverage(row.licenceType, answers),
+      // ⚠️ WITH THE SELLER, WHICH THIS SHIPPED WITHOUT. saps271Coverage only
+      // pushes section F when it is TOLD where the seller's half stands, so
+      // with no context the sheet had no F row at all: the pack meter showed
+      // no "Current owner" line, and `sellerSigned` in the page — which reads
+      // F.done — was false however signed the consent was. A seller signed at
+      // 12:02 and the line under the panel still read "When they sign…".
+      coverage: saps271Coverage(row.licenceType, answers, {
+        seller: { status: seller.status, name: seller.name },
+      }),
       overlap: overlapFromAnswers(row.licenceType, answers),
       preview: previewFor(row.licenceType, answers).sections,
       missing: [...missingSet],
