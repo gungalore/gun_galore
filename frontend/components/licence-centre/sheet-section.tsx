@@ -66,11 +66,24 @@ export default function SheetSection({
       aria-labelledby={`${id}-h`}
     >
       <h2 id={`${id}-h`} className="m-0">
+        {/*
+          ⚠️ A WASH ON THE HEADER, NOT ON THE SECTION. Operator, 2026-09-08:
+          "give the sections a red hue background just to distinguage them from
+          their dropdown content." Tinting the whole section would put a colour
+          behind every input in it; tinting the header alone is what actually
+          separates the two, and it keeps the rows on the white ground the
+          theme is built for.
+
+          ⚠️ --red-wash, NEVER A HAND-MIXED rgba. `var(--red)` + an alpha is two
+          tokens and dies silently, taking the whole declaration with it — see
+          the CSS traps in CLAUDE.md. The negative margin lets it bleed into the
+          section's own 16px gutters so it reads as a band rather than a chip.
+        */}
         <button
           type="button"
           aria-expanded={open}
           onClick={() => onOpenChange(!open)}
-          className="flex min-h-[44px] w-full items-center gap-[10px] bg-transparent py-1 text-left"
+          className="-mx-4 flex min-h-[44px] w-[calc(100%+2rem)] items-center gap-[10px] border-y border-[var(--red-line)] bg-[var(--red-wash)] px-4 py-2 text-left"
         >
           <Chevron open={open} />
           <span className="min-w-0 flex-1">

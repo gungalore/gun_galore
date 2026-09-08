@@ -2139,7 +2139,11 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   },
   {
     key: 'licence_holder_type',
-    label: 'Are you the main licence holder, or an additional one?',
+    // ⚠️ FUTURE TENSE. It asked "Are you the main licence holder, or an
+    // additional one?" of somebody who does not hold the licence yet — they are
+    // applying for it. Operator, 2026-09-08: "needs to change to will you be
+    // since I am not the owner yet and only applying now."
+    label: 'Will you be the main licence holder, or an additional one?',
     kind: 'choice',
     section: 'The firearm',
     choices: ['Main firearm licence holder', 'Additional firearm licence holder'],

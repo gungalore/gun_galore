@@ -4,6 +4,16 @@ import { useEffect, useState } from 'react';
 import type { SheetItem } from './contract';
 import CardsRow from './cards-row';
 import { sourceLine } from './source-line';
+import { AddressAutocomplete } from '@/components/address-autocomplete';
+
+/**
+ * Address fields that get Google's picker.
+ *
+ * ⚠️ RESIDENTIAL AND POSTAL ONLY. The employer's address is a 271 box behind a
+ * fold; loading Places for it would spend a billed lookup on a question almost
+ * nobody opens.
+ */
+const ADDRESS_KEYS = new Set(['residential_address', 'postal_address']);
 
 // ────────────────────────────────────────────────────────────────────
 // THE ONE ROW COMPONENT.
@@ -137,6 +147,58 @@ function Control({
         className={`${base} ${keyline}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+
+  // ⚠️ A yesno FELL THROUGH TO A TEXT BOX, AND SIX OF THEM SHIPPED THAT WAY.
+  // Premises and storage asks "Is there an alarm?", "Do you have armed
+  // response?", "Are there burglar bars?", "Are there security gates?", "Do you
+  // have the prescribed safe?" and "Is it mounted?" — every one of them a
+  // `yesno` in the registry, and every one of them rendered as an empty text
+  // field on the live sheet, because this branch did not exist. Declarations
+  // never hit it: the page routes that whole section to DeclarationRow.
+  // Operator, 2026-09-08: "Premises and storage can have yes/no buttons."
+  if (item.kind === 'yesno') {
+    return (
+      <div className="flex items-center gap-2">
+        {(item.choices?.length ? item.choices : ['No', 'Yes']).map((opt) => {
+          const on = value.trim() === opt;
+          return (
+            <button
+              key={opt}
+              type="button"
+              aria-pressed={on}
+              // Tapping the chosen one again clears it — the same behaviour as
+              // the declarations pills, so one control does not answer two ways.
+              onClick={() => onChange(on ? '' : opt)}
+              className={`min-h-[44px] rounded-[var(--r-sm)] border px-[15px] text-[12.5px] ${
+                on
+                  ? 'border-[var(--red)] bg-[var(--red-wash)] font-medium text-[var(--text-primary)]'
+                  : `${
+                      missing ? 'border-[var(--warning)]' : 'border-[var(--border)]'
+                    } text-[var(--text-tertiary)]`
+              }`}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // ⚠️ THE ADDRESS GETS GOOGLE'S PICKER, AND STAYS TYPEABLE AFTER IT.
+  // Operator, 2026-09-08: "residential address must also use google autofill
+  // api and then be editable if necessary." AddressAutocomplete already wraps
+  // Places for the rest of the site and falls back to a plain input when the
+  // script cannot load, so a member is never left without a box.
+  if (ADDRESS_KEYS.has(item.key)) {
+    return (
+      <AddressAutocomplete
+        value={value}
+        onChange={(address: string) => onChange(address)}
+        placeholder={item.help ?? 'Start typing your address'}
       />
     );
   }

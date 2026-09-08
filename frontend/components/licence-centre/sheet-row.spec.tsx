@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SheetRow from './sheet-row';
+import type { SheetItem } from './contract';
 import {
   cardsItem,
   filled,
@@ -303,5 +304,68 @@ describe('provenance — the make is not misspelled', () => {
       />,
     );
     expect(screen.getByText('from your account address')).toBeDefined();
+  });
+});
+
+describe('yesno — buttons, not a text box', () => {
+  // ⚠️ SIX OF THESE SHIPPED AS EMPTY TEXT FIELDS. Premises and storage asks
+  // "Is there an alarm?", "Do you have armed response?", "Are there burglar
+  // bars?", "Are there security gates?", "Do you have the prescribed safe?"
+  // and "Is it mounted?" — every one a `yesno` in the registry, every one
+  // rendered as a free-text input because Control had no branch for the kind.
+  // Declarations never hit it: the page routes that section to DeclarationRow.
+  const alarm = (over: Partial<SheetItem> = {}) =>
+    needsYou({
+      key: 'alarm_present',
+      label: 'Is there an alarm?',
+      kind: 'yesno',
+      choices: ['No', 'Yes'],
+      required: false,
+      ...over,
+    });
+
+  it('⚠️ RENDERS TWO BUTTONS AND NO TEXTBOX', () => {
+    render(<SheetRow item={alarm()} onChange={vi.fn()} />);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Yes' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'No' })).toBeDefined();
+  });
+
+  it('answers on a tap', async () => {
+    const onChange = vi.fn();
+    render(<SheetRow item={alarm()} onChange={onChange} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Yes' }));
+    expect(onChange).toHaveBeenCalledWith('Yes');
+  });
+
+  it('clears when the chosen one is tapped again, like the declarations pills', async () => {
+    const onChange = vi.fn();
+    render(
+      <SheetRow item={alarm({ value: 'Yes' })} onChange={onChange} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Yes' }));
+    expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('marks the chosen one to a screen reader', () => {
+    render(<SheetRow item={alarm({ value: 'No' })} onChange={vi.fn()} />);
+    expect(
+      screen.getByRole('button', { name: 'No' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+});
+
+describe('the residential address gets Google’s picker', () => {
+  it('⚠️ STAYS A TYPEABLE BOX, so it can be corrected', () => {
+    // Operator: "must also use google autofill api and then be editable if
+    // necessary." AddressAutocomplete renders a real input and falls back to a
+    // plain one when the script cannot load, so a member is never boxed in.
+    render(
+      <SheetRow
+        item={needsYou({ key: 'residential_address', label: 'Residential address' })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('textbox')).toBeDefined();
   });
 });

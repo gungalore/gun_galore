@@ -45,7 +45,13 @@ export default function YesNoPills({
   const chosen = (value ?? '').trim();
 
   return (
-    <div className="flex flex-wrap items-center gap-3.5 py-2.5">
+    // ⚠️ w-full AND ml-auto TOGETHER, OR THE PILLS DO NOT LINE UP. Without
+    // w-full this sizes to its content as a flex item of the row above, so
+    // "right" is wherever the question happens to end; without ml-auto the
+    // pills fall back to the left the moment they wrap to their own line on a
+    // phone. Operator, 2026-09-08: "Declarations answers needs to be lined up
+    // to the right neatly."
+    <div className="flex w-full flex-wrap items-center gap-3.5 py-2.5">
       <div className="min-w-0 flex-1">
         <p className="text-[13.5px] leading-snug text-[var(--text-primary)]">
           {field.label}
@@ -57,7 +63,7 @@ export default function YesNoPills({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         {options.map((opt) => {
           const on = chosen === opt;
           return (
