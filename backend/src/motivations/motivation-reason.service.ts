@@ -92,7 +92,7 @@ export class MotivationReasonService {
     written: boolean;
     angle?: string;
     paragraph?: string;
-    blockers?: string[];
+    warnings?: string[];
     rejections?: string[];
   }> {
     const user = await this.shared.requireUser(clerkId);
@@ -151,6 +151,22 @@ export class MotivationReasonService {
       ...REASON_BANKS.selfDefence,
     ].filter(Boolean) as string[];
 
+    /**
+     * The held firearms nothing on file gives a use for.
+     *
+     * ⚠️ THE HALF THAT MAKES RULE 12 ENFORCEABLE. A live generation off the
+     * operator's own vault gave every one of his five firearms a purpose —
+     * "dedicated to backup use and close protection", "for precision
+     * long-range shooting", "for small-calibre target work" — and not one of
+     * them had a primary_use, a previous motivation or an endorsement behind
+     * it. Nothing in the paragraph itself can distinguish an invented role
+     * from a supplied one; what we handed over can.
+     */
+    const roleless = input.arsenal
+      .filter((a) => !a.primary_use)
+      .map((a) => [a.make, a.model, a.calibre].filter(Boolean).join(' '))
+      .filter(Boolean);
+
     // ⚠️ ONE RETRY, THEN THE TEMPLATED PREVIEW. The spec's own rule: a second
     // failure is a signal, not something to keep paying for.
     let last: string[] = [];
@@ -172,6 +188,7 @@ export class MotivationReasonService {
         licenceType: row.licenceType,
         knownFirearms: known,
         knownTerms: terms,
+        roleless,
       });
       if (bad.length) {
         last = bad;
@@ -183,13 +200,13 @@ export class MotivationReasonService {
 
       await this.persist(row.id, answers, provenance, result);
       this.logger.log(
-        `Motivation ${row.id}: reason written, angle=${result.angle} words=${result.wordCount} blockers=${result.blockers.length}`,
+        `Motivation ${row.id}: reason written, angle=${result.angle} words=${result.wordCount} warnings=${result.warnings.length}`,
       );
       return {
         written: true,
         angle: result.angle,
         paragraph: result.paragraph,
-        blockers: result.blockers,
+        warnings: result.warnings,
       };
     }
 
@@ -262,7 +279,7 @@ export class MotivationReasonService {
           ? (raw.existing_roles as ReasonResult['existingRoles'])
           : [],
         continuity: String(raw.continuity ?? ''),
-        blockers: Array.isArray(raw.blockers) ? raw.blockers.map(String) : [],
+        warnings: Array.isArray(raw.warnings) ? raw.warnings.map(String) : [],
         // A missing count is not a mismatch — count it ourselves and let the
         // validator compare like with like.
         wordCount:

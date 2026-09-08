@@ -1040,7 +1040,17 @@ export const motivationsApi = {
       written: boolean;
       angle?: string;
       paragraph?: string;
-      blockers?: string[];
+      /**
+       * What the Registrar may ask about.
+       *
+       * ⚠️ NOT A REFUSAL, AND IT USED TO BE CALLED `blockers`, which is what
+       * it behaved like. MOTIVATION-CORPUS-LEARNINGS.md read ten motivations
+       * written by paid writers, nine approved: one argued a FOURTH 9mm from a
+       * generic product comparison and passed. Refusing to write because a
+       * distinction is thin is stricter than the Registrar. The paragraph is
+       * always produced; this is for the applicant to read.
+       */
+      warnings?: string[];
       rejections?: string[];
     }>(t, `/${id}/reason`, { method: 'POST' }, { written: false }),
 

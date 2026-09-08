@@ -25,6 +25,27 @@ import { MotivationLicenceType } from '@prisma/client';
 //      prompt is written so an empty list reads as "first application" rather
 //      than as a gap. See the note on `previousMotivations`.
 //
+// ⚠️ WHAT THE APPROVED PACKS CHANGED. MOTIVATION-CORPUS-LEARNINGS.md reads
+// ten motivations written by paid writers, nine of them approved by the CFR,
+// and its finding is uncomfortable: the Registrar approved a fourth 9mm
+// argued from a generic product comparison, a 1,200-word essay that never
+// named the applicant's own firearms, and an S15 pack whose existing-firearms
+// section read "see attached". What carries a pack is the BUNDLE — dedicated
+// status, an endorsement for this serial, the association's exercise rules
+// bound in, competency, safe photographs, every claim pointing at an annexure.
+//
+// So a gate that REFUSES TO WRITE because a distinction is thin is stricter
+// than the Registrar, and would block applications that would pass. Rule 10 is
+// a warning now, not a stop: `warnings` is for the applicant's eyes.
+//
+// ⚠️ AND THE REAL REFUSAL TRIGGER IS THE OPPOSITE MISTAKE. A live generation
+// off the operator's own vault described his section 16 CZ as "dedicated to
+// backup use and close protection" and invented a role for all five of his
+// firearms, none of which had one supplied. Describing a section 16 firearm as
+// backup or carry tells the Registrar the applicant uses a sport firearm
+// outside its licence — that is a refusal on its own, and it is what rules 11,
+// 12 and 15 are for.
+//
 // ⚠️ THE OUTPUT IS A SUGGESTION, NOT AN ANSWER. It lands on `firearm_fit_reason`
 // with inferred provenance, which is what makes the sheet render it as
 // `suggested` — gold wash, "check this", a Confirm button. The operator's
@@ -46,10 +67,28 @@ export interface ReasonResult {
   existingRoles: {
     firearm: string;
     role: string;
-    source: 'primary_use' | 'previous_motivation' | 'inferred';
+    /**
+     * Where the role came from.
+     *
+     * ⚠️ 'none' IS A REAL ANSWER AND THE MOST IMPORTANT ONE. A firearm whose
+     * role nobody has stated has no role, and the model's job is to say so
+     * rather than to supply one. 'endorsement' is the association's own words
+     * on the SAHGCA form — the strongest source there is, because the pack
+     * annexes the form itself.
+     */
+    source: 'primary_use' | 'previous_motivation' | 'endorsement' | 'inferred' | 'none';
   }[];
   continuity: string;
-  blockers: string[];
+  /**
+   * Things the Registrar may ask about.
+   *
+   * ⚠️ FOR THE APPLICANT'S EYES, NEVER A GATE, and it used to be called
+   * `blockers`, which is what it behaved like. The approved packs on file
+   * include a fourth 9mm argued from a product comparison; refusing to write
+   * because a distinction is thin is stricter than the Registrar and blocks
+   * applications that would pass.
+   */
+  warnings: string[];
   wordCount: number;
 }
 
@@ -68,6 +107,7 @@ export const REASON_ANGLES: Record<MotivationLicenceType, readonly string[]> = {
     'first_self_defence_firearm',
   ],
   [MotivationLicenceType.S15_OCCASIONAL_HUNTER]: [
+    'exercise_eligibility',
     'species_class_gap',
     'range_band_gap',
     'terrain_configuration',
@@ -76,6 +116,7 @@ export const REASON_ANGLES: Record<MotivationLicenceType, readonly string[]> = {
     'first_competition_firearm',
   ],
   [MotivationLicenceType.S16_DEDICATED_HUNTER]: [
+    'exercise_eligibility',
     'species_class_gap',
     'range_band_gap',
     'terrain_configuration',
@@ -85,6 +126,16 @@ export const REASON_ANGLES: Record<MotivationLicenceType, readonly string[]> = {
     'first_hunting_rifle',
   ],
   [MotivationLicenceType.S16_DEDICATED_SPORT]: [
+    /**
+     * ⚠️ FIRST BECAUSE IT IS PREFERRED, AND THE ORDER IS WHAT THE MODEL SEES.
+     * The approved packs' strongest argument is an association exercise the
+     * applied-for firearm is eligible for and a held one is not, by the
+     * association's own printed equipment rule — "7m 2x5 shot: only 9mmP
+     * pistols and larger" against a 6.35mm pocket pistol. That is a gap a
+     * reviewer can check against the annexed rules, and it beats any calibre
+     * opinion.
+     */
+    'exercise_eligibility',
     'division_differentiation',
     'primary_and_backup',
     'match_and_practice',
@@ -164,14 +215,20 @@ export const REASON_SCHEMA: Record<string, unknown> = {
           role: { type: 'string' },
           source: {
             type: 'string',
-            enum: ['primary_use', 'previous_motivation', 'inferred'],
+            enum: [
+              'primary_use',
+              'previous_motivation',
+              'endorsement',
+              'inferred',
+              'none',
+            ],
           },
         },
         required: ['firearm', 'role', 'source'],
       },
     },
     continuity: { type: 'string' },
-    blockers: { type: 'array', items: { type: 'string' } },
+    warnings: { type: 'array', items: { type: 'string' } },
     word_count: { type: 'integer' },
   },
   required: [
@@ -180,13 +237,21 @@ export const REASON_SCHEMA: Record<string, unknown> = {
     'examples',
     'existing_roles',
     'continuity',
-    'blockers',
+    'warnings',
     'word_count',
   ],
 };
 
-export const REASON_MIN_WORDS = 150;
-export const REASON_MAX_WORDS = 250;
+/**
+ * ⚠️ 180-320, RAISED FROM 150-250, AND THE REASON IS THE BATTERY SENTENCE.
+ * The paragraph now has to name each held firearm with its calibre and the
+ * section it is licensed under, the way the approved packs' tables do, before
+ * it can get to the gap — and a battery of five does not fit in 150 words
+ * without dropping firearms, which rule 2 forbids. A battery of one still
+ * does, so the prompt says to stay near the floor when there is little to say.
+ */
+export const REASON_MIN_WORDS = 180;
+export const REASON_MAX_WORDS = 320;
 
 /** The count the validator checks `word_count` against. */
 export function countWords(text: string): number {
@@ -216,8 +281,22 @@ ABSOLUTE RULES
 6. Never quote the Act. Name a section by number in plain words if needed.
 7. No marketing copy, no superlatives, no manufacturer history, no ballistics tables. One or two capability facts from the research block, in plain words, are enough.
 8. First person, the applicant's voice, plain South African English, no Americanisms ("calibre", "licence", "metres"). Short sentences. No headings, no bullets, no exclamation marks.
-9. ${REASON_MIN_WORDS} to ${REASON_MAX_WORDS} words for the paragraph. Count them.
-10. If the facts make an honest reason impossible — a fourth 9mm handgun with three already described as backup, match and practice — say so in "blockers" and still return the best available paragraph. Do not manufacture a distinction.
+9. ${REASON_MIN_WORDS} to ${REASON_MAX_WORDS} words, as TWO paragraphs separated by a blank line: the battery and the gap, then this firearm and its use. Count them. A battery of five needs the room; a battery of one does not, so stay near the floor when there is little to say.
+10. If the facts leave the distinction thin — a fourth 9mm handgun with three already described as backup, match and practice — say so in "warnings" and still write the best honest paragraph. Do not manufacture a distinction and do not refuse to write. The warning is for the applicant to read, not a reason to stop.
+
+SECTION DISCIPLINE FOR EXISTING FIREARMS — THIS IS WHERE REFUSALS COME FROM
+11. Every existing firearm is licensed under a section, and that section fixes the words you may use about it:
+    - section 13 or 14: self-defence, carry, protection of the person. Nothing else.
+    - section 15: occasional hunting or sport shooting. Never self-defence, protection, backup, carry or home defence.
+    - section 16: dedicated hunting or dedicated sport shooting. Never self-defence, protection, backup, carry or home defence.
+    - section 17: collection. Never a use of any kind.
+    Describing a section 16 handgun as "backup" or "close protection" tells the Registrar the applicant uses a sport firearm outside its licence. That is a refusal on its own.
+12. A role for an existing firearm comes ONLY from its supplied primary_use, or from a previous motivation, or from an association endorsement. If none was supplied, DO NOT ASSIGN ONE. Write the firearm with its make, calibre and section and nothing more — "a CZ in 6.35mm Browning, licensed under section 16" — list it in existing_roles with source "none", and add "roles_unconfirmed" to warnings. Never write "for precision work", "for small-game", "for backup" or any role you were not given.
+13. Makes, models, calibres and association names appear only as they appear in the input, spelled the same way. If no model was supplied, write "the 9mm handgun applied for", not a model you believe is likely. If no association is in the input, name none.
+14. Discipline, exercise and division names come only from the input. Do not supply divisions from memory and do not name another association's disciplines. "Carry Optics" is a USPSA division and does not exist in South African shooting.
+15. Banned phrasing, because it reads like a product page and not like an applicant: power factor, split times, high-volume, platform, tactical, close protection, engage targets, dynamic, competitively, efficiently, and "dedicated" used as a synonym for "used for".
+
+THE BATTERY SENTENCE names each held firearm with make, calibre and the section it is licensed under, the way the approved packs' tables do: "a CZ 6.35mm handgun, licensed under section 16". Where the history answers disclose an event, state it in the same breath and plainly: "(section 13; reported stolen, CAS 123/4/2024)".
 
 METHOD (do this silently, return only the JSON)
 a. Classify the applied-for firearm: type, action, calibre band, configuration.
@@ -229,7 +308,9 @@ e. Write the paragraph: the existing firearms and their roles (2-3 sentences), t
 ALLOWED ANGLES
 ${angles}
 
-Anything you mark "inferred" in existing_roles is a suggestion the applicant must confirm: keep it out of the paragraph unless no stated role exists.`;
+PREFERRED ANGLE where it is available: exercise_eligibility. When the input carries an association exercise with an equipment rule — a calibre floor or ceiling, a barrel length, an action or a class — that the applied-for firearm meets and a held firearm of the same type does not, lead with it and quote the rule. "The association's 7m rapid-fire handgun exercise is open only to 9mmP pistols and larger; my 6.35mm CZ shoots the 5m pocket-pistol exercise and cannot enter it." That is a gap the reviewer can check against the rules annexed to the same pack, and it is what the approved motivations on file actually do. Where no such rule is supplied, rest the gap on type alone — "none of my rifles can be used in a handgun exercise" — which is still true and still provable.
+
+Anything you mark "inferred" in existing_roles is a suggestion the applicant must confirm: keep it out of the paragraph. Anything you mark "none" has no role at all: name the firearm, its calibre and its section, and stop.`;
 }
 
 /**
@@ -257,6 +338,19 @@ export function validateReason(
     knownFirearms: readonly string[];
     /** Everything an example may legitimately name. */
     knownTerms: readonly string[];
+    /**
+     * The held firearms we supplied NO role for.
+     *
+     * ⚠️ THE ONE FACT THAT MAKES RULE 12 CHECKABLE. "Do not invent a role" is
+     * unverifiable from the paragraph alone — any sentence about a firearm
+     * could be a role or could be a description. It is verifiable against what
+     * we HANDED OVER: a live generation off the operator's own vault gave all
+     * five of his firearms a purpose ("dedicated to backup use and close
+     * protection", "for precision long-range shooting") and not one of them
+     * had a primary_use on file. Each entry is the firearm as the arsenal
+     * names it; the check is that the model did not claim a source for it.
+     */
+    roleless?: readonly string[];
   },
 ): ReasonRejection[] {
   const bad: ReasonRejection[] = [];
@@ -316,11 +410,66 @@ export function validateReason(
       if (has(w)) bad.push(`a self-defence reason says "${w}"`);
     }
   }
-  if (
-    ctx.licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
-    ctx.licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER
-  ) {
-    if (has('self-defence')) bad.push('a hunting reason says "self-defence"');
+  /**
+   * ⚠️ EVERY SPORTING AND HUNTING SECTION, NOT JUST THE HUNTING ONES, AND THE
+   * WHOLE DEFENCE VOCABULARY RATHER THAN ONE WORD OF IT. This checked
+   * "self-defence" on the two hunting types and nothing at all on section 16
+   * sport — which is precisely the paragraph that came back describing the
+   * operator's section 16 CZ as "dedicated to backup use and close
+   * protection". A section 15 or 16 firearm used for protection is a firearm
+   * used outside its licence, and saying so in the applicant's own motivation
+   * is a refusal on its own. There is nothing to defend in a sporting
+   * motivation, so these words have no legitimate use in one.
+   */
+  if (SPORTING_TYPES.includes(ctx.licenceType)) {
+    for (const w of DEFENCE_WORDS) {
+      if (has(w)) bad.push(`a section 15/16 reason says "${w}"`);
+    }
+  }
+
+  /**
+   * ⚠️ PRODUCT-PAGE VOCABULARY, WHICH IS WHAT THE MODEL REACHES FOR UNPROMPTED.
+   * Every one of these came off a single live generation: "this specific
+   * platform", "meets the power factor floor efficiently", "rapid split
+   * times", "high-volume practice", "dynamic sport shooting", "to participate
+   * competitively". It is the register of a catalogue, and a DFO reading
+   * hundreds of these can tell it from an applicant's own words.
+   */
+  for (const w of PRODUCT_PAGE_WORDS) {
+    if (has(w)) {
+      bad.push(`paragraph says "${w}", which reads like a product page`);
+    }
+  }
+
+  /**
+   * ⚠️ A DIVISION THAT DOES NOT EXIST HERE IS WORSE THAN A VAGUE ONE. "Carry
+   * Optics" is a USPSA division; an applicant claiming to shoot it in South
+   * Africa has said something any reviewer who shoots can see is untrue. The
+   * list is what to CATCH, not what is allowed — a division missing from it is
+   * simply not checked, which is the safe direction to be incomplete in.
+   */
+  for (const d of NOT_SOUTH_AFRICAN_DIVISIONS) {
+    if (has(d)) {
+      bad.push(`paragraph names "${d}", which is not shot in South Africa`);
+    }
+  }
+
+  /**
+   * ⚠️ A ROLE NOBODY GAVE US. See ctx.roleless: the model was handed these
+   * firearms with no primary_use, no previous motivation and no endorsement,
+   * so any source it claims for one of them is invented — and an invented role
+   * reads as fact on a document the applicant signs. "none" is the correct
+   * answer and passes; anything else is refused, because the paragraph was
+   * written from it.
+   */
+  const roleless = new Set(ctx.roleless ?? []);
+  for (const entry of r.existingRoles) {
+    if (entry.source === 'none' || !roleless.size) continue;
+    const match = bestFirearmMatch(entry.firearm, ctx.knownFirearms);
+    if (!match || !roleless.has(match)) continue;
+    bad.push(
+      `claims a "${entry.source}" role for ${entry.firearm}, which nothing on file gives a use for`,
+    );
   }
 
   /**
@@ -384,6 +533,136 @@ export function validateReason(
 
   return bad;
 }
+
+/** The sections whose firearms are sporting, and never defensive. */
+const SPORTING_TYPES: readonly MotivationLicenceType[] = [
+  MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+  MotivationLicenceType.S16_DEDICATED_HUNTER,
+  MotivationLicenceType.S16_DEDICATED_SPORT,
+];
+
+/**
+ * The defence vocabulary, banned outright in a sporting motivation.
+ *
+ * ⚠️ "protection" AND NOT "protect", because "protected species" is a
+ * legitimate phrase in a hunting motivation and a substring test would refuse
+ * it. The rule is about a firearm's USE, not about the word.
+ */
+const DEFENCE_WORDS = [
+  'self-defence',
+  'self defence',
+  'protection',
+  'backup',
+  'back-up',
+  'home defence',
+  'concealed',
+  'close protection',
+] as const;
+
+/**
+ * The register of a catalogue, which is not the register of an applicant.
+ *
+ * ⚠️ WORD-BOUNDARY MATCHES, WHICH IS WHY "competitively" AND "dynamic" ARE
+ * SAFE TO BAN. `has()` anchors at the start of a word only, so "competitively"
+ * does not catch "competition" and "dynamic" does not catch a legitimate
+ * sentence about competing — but it DOES catch "dynamics", which is a price
+ * worth paying: a reason paragraph has no business discussing recoil dynamics
+ * either.
+ */
+const PRODUCT_PAGE_WORDS = [
+  'power factor',
+  'split times',
+  'high-volume',
+  'high volume',
+  'platform',
+  'tactical',
+  'engage targets',
+  'dynamic',
+  'competitively',
+  'efficiently',
+] as const;
+
+/**
+ * Divisions that exist elsewhere and not here.
+ *
+ * ⚠️ WHAT TO CATCH, NOT WHAT IS ALLOWED. South African shooting bodies name
+ * their own divisions and the input carries them; this only stops the model
+ * reaching for an American one from memory.
+ */
+const NOT_SOUTH_AFRICAN_DIVISIONS = [
+  'Carry Optics',
+  'Limited 10',
+  'Stock Service Pistol',
+  'Carry Optics Division',
+] as const;
+
+/**
+ * Which firearm in the battery is this string about?
+ *
+ * ⚠️ AN ARGMAX ACROSS THE WHOLE BATTERY, NOT A YES/NO AGAINST ONE ENTRY, and
+ * the difference is a false accusation. A first version asked "does this name
+ * overlap a roleless firearm by two tokens", and a battery holding a CZ P-10 C
+ * (roleless) beside a CZ Shadow 2 (with a stated use) made every sentence
+ * about the Shadow trip it: "cz" and "9mm" are two tokens, and both handguns
+ * have them. A make and a calibre do not identify a firearm — several in one
+ * battery share both — so the only sound question is which entry fits BEST.
+ *
+ * ⚠️ AND A TIE IS NOT A MATCH. Two firearms scoring the same means we cannot
+ * tell which one the model meant, and refusing a generation on a guess costs
+ * the applicant a paragraph they would have signed.
+ *
+ * ⚠️ TOKENS, BECAUSE THE MODEL RE-SPELLS THINGS. The arsenal supplies "Howa
+ * 6.5 Creedmoor"; the model returns "my Howa rifle in 6.5 Creedmoor".
+ * Demanding the strings match lets every invented role through on a
+ * paraphrase, which is the failure this exists to catch.
+ */
+function bestFirearmMatch(
+  named: string,
+  battery: readonly string[],
+): string | null {
+  const tokens = (v: string) =>
+    new Set(
+      v
+        .toLowerCase()
+        .split(/[^a-z0-9.]+/)
+        .filter((t) => t.length > 1 && !FIREARM_NOISE.has(t)),
+    );
+  const want = tokens(named);
+  if (!want.size) return null;
+
+  let best: string | null = null;
+  let bestScore = 0;
+  let tied = false;
+  for (const candidate of battery) {
+    const have = tokens(candidate);
+    let score = 0;
+    for (const t of want) if (have.has(t)) score++;
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+      tied = false;
+    } else if (score === bestScore && score > 0) {
+      tied = true;
+    }
+  }
+  return bestScore > 0 && !tied ? best : null;
+}
+
+/** Words that name no firearm and would match everything. */
+const FIREARM_NOISE = new Set([
+  'my',
+  'the',
+  'and',
+  'in',
+  'a',
+  'an',
+  'handgun',
+  'pistol',
+  'rifle',
+  'shotgun',
+  'carbine',
+  'firearm',
+]);
 
 /**
  * Makers common enough that the model might reach for one unprompted.

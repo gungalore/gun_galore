@@ -356,7 +356,19 @@ export default function LicenceCentreSheetPage() {
         const r = await motivationsApi.reason(getToken, id);
         if (!r.written) return;
         await load();
-        setToast('We have written your reason — read it and change anything.');
+        /*
+          ⚠️ A WARNING IS SHOWN, NOT SWALLOWED, AND IT IS NOT A FAILURE. The
+          paragraph is always written now — MOTIVATION-CORPUS-LEARNINGS.md
+          found the Registrar approving thinner cases than anything we would
+          have refused — so a thin distinction is something the applicant
+          should know a DFO may ask about, on a document they are about to
+          sign, rather than a reason to hand them a blank box.
+        */
+        setToast(
+          r.warnings?.length
+            ? `We have written your reason — read it. ${r.warnings[0]}`
+            : 'We have written your reason — read it and change anything.',
+        );
       } catch {
         /* Fail soft: the box stays empty and they can write it themselves. */
       }
