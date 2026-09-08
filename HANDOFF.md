@@ -264,6 +264,124 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### The mockup's two asks — 2026-09-08, `391e921c` + `91663c2d`
+
+The operator sent `Licence Centre.pdf`, a mockup of the review sheet, with two
+demands: build the live example on the left, and "there still is no proficiency
+section with the links I asked for twice already, why???"
+
+**The honest answer to the second one:** both earlier asks were answered
+SERVER-SIDE. `motivation-autolink.ts`'s `enforcePair` attaches a competency and
+its statement of results together and refuses one without the other, and
+`agreeOnCategory` makes them match. A rule with no surface is a rule nobody can
+see. The Competency section rendered four ANSWERS — number, covers, issued,
+expiry — and never named the two DOCUMENTS behind them, so a member who had
+never uploaded a statement of results saw a section that looked finished.
+
+1. **`motivation-credential-slots.ts`** (new, pure) — the pair as one block:
+   the class this application needs, what is attached (annexure letter and
+   origin), how many the Document Centre could still supply, unit standard
+   117705, and the one sentence saying a half is not enough. Wired into
+   `sheetFor` as `SheetResponse.credentials`.
+2. **`CredentialPair`** renders it in BOTH states, under the answers rather
+   than instead of them. Three doors per half: **Add from your Licence Centre**
+   (only when there is something behind it), **Scan it**, **Upload a file**.
+   The Centre door opens the existing `LibraryPicker` on a list fetched THEN —
+   `GET :id/library` already folds a two-page proficiency into one entry and
+   respects the across-applications consent, and the sheet carries only a
+   count.
+3. **The section is titled "Competency and proficiency"**. The chip strip
+   scrolls; the word being looked for is now on the screen.
+4. **The live preview is docked.** The two-column grid is the page at `lg`, as
+   SPEC-BUILD §3 and the mockup both have it, not a mode a toggle turns on. The
+   drawer and its Preview button stay for the phone.
+   ⚠️ **TWO MOUNTS, NOT ONE THAT CHANGES SHAPE** — a `fixed` ancestor is what
+   stops `position: sticky` sticking, so an element that is a bottom sheet on a
+   phone and a sticky grid child at `lg` scrolls away with the page.
+5. **`91663c2d`** ranks the matching class to the top of the picker. It RANKS,
+   never hides: `competencyCovers` gates the ATTACHING, where a wrong class is
+   a refusal; this is the member choosing, and there the doctrine is "unknown
+   is a yes". `neededLabel` moved to the `display` wording ("Manual Rifle", not
+   "Rifle or carbine - manually operated") because that is what
+   `derivedCredentialTitle` names the member's own vault rows with, and two
+   vocabularies for one class match nothing.
+
+**Verified live on MO000069** at 2133px: two columns with the prose beside the
+form, "Competency and proficiency" in the strip, "The two documents behind it"
+with a Handgun pill, three doors on each half, and the picker listing four
+proficiencies folded to one entry each.
+
+### The corpus, and what it moved — 2026-09-08, `58dc9448` + `03de411d`
+
+The operator added `MOTIVATION-CORPUS-LEARNINGS.md`: ten motivations written by
+paid writers, **nine approved by the CFR**. It moves the gate in both
+directions at once.
+
+**LOOSER, BECAUSE THE REGISTRAR IS.** The approved packs include a fourth 9mm
+argued from a generic product comparison, a 1,200-word essay that never names
+the applicant's own firearms, and an S15 whose existing-firearms section reads
+"see attached". What carries a pack is the BUNDLE — dedicated status, an
+endorsement for this serial, the association's exercise rules bound in,
+competency, safe photographs, every claim pointing at an annexure. So rule 10
+stops being a stop: `blockers` is now `warnings`, the paragraph is always
+written, and the sheet shows the warning in the toast instead of handing
+somebody a blank box.
+
+**STRICTER, BECAUSE THE REAL REFUSAL TRIGGER WAS UNCHECKED.** The generator's
+2026-09-07 output on the operator's own Glock application — still sitting in
+`firearm_fit_reason` on the live site — described his **section 16** CZ as
+"dedicated to backup use and close protection", invented a role for all five of
+his firearms, named a **USPSA** division, and wrote like a catalogue. Not one
+of those was caught.
+
+- The defence vocabulary is refused on **every** section 15/16 paragraph. It
+  was checked on the two hunting types and **not on section 16 sport**, which
+  is the type that application was.
+- A role may only be written for a firearm something on file gives a use for.
+  ⚠️ **CHECKED BY ARGMAX ACROSS THE BATTERY, NOT BY OVERLAP** — a make and a
+  calibre do not identify a firearm, and a first version accused every sentence
+  about a CZ Shadow 2 because a roleless CZ P-10 C shared both. A tie
+  identifies nothing and is not a match.
+- Product-page vocabulary; divisions not shot in South Africa.
+- 180-320 words in two paragraphs, because the battery sentence now names each
+  held firearm with its calibre and section the way the packs' tables do.
+- `exercise_eligibility` is the preferred angle.
+- `03de411d` locks the live paragraph verbatim as a regression fixture, with
+  one assertion per rule it broke.
+
+⚠️ **THE BAD PARAGRAPH IS STILL ON MO000069.** The reason effect only fires
+into an EMPTY box, so the stored one will not be replaced by itself. It is ours
+(`DERIVED` + `inferred`), not the member's, so clearing it is safe — but it is
+production data and the operator should say so.
+
+### ⚠️ What the corpus asks for that is NOT built
+
+`exercise_eligibility` is available and **unfed**. The prompt tells the model to
+fall back to type ("none of my rifles can be used in a handgun exercise"),
+which is still true and still provable, but the angle's whole strength is the
+association's printed equipment rule. Brief §5.5a is the work:
+
+1. **`association-activities.ts`** — per SAPS accreditation number (SAHGCA
+   400001 hunting / 1300091 sport, Natshoot, SAPSA, CHASA, ...), every exercise
+   with its **eligibility rule verbatim** (calibre floor, barrel length, action,
+   box-to-fit), which status it counts toward, source URL, `verifiedAt`. Seed
+   from natshoot.co.za and sahunters.co.za; **operator reviews before it ships**.
+2. **`ASSOCIATION_ENDORSEMENT` reading** — the SAHGCA form (member no,
+   dedicated no, status type, the firearm row, EN number, issue date), linked
+   to the owned firearm by serial. An owned firearm's endorsement becomes its
+   `primary_use` with provenance `READ`, which is also what feeds `roleless`.
+3. **A `section` on each owned-firearm row.** Rule 11 is enforced today as a
+   whole-paragraph ban on defence words in a section 15/16 motivation, which is
+   correct but blunt. Per-firearm sections would let it be scoped to the
+   sentence, and would let the battery sentence print "(section 16, dedicated)"
+   as the approved packs' tables do. The registry has no such field; the
+   vault's `FIREARM_LICENCE` credentials do.
+4. **The exercise-rules annexure**, the battery table with a status column
+   (including a disclosed "reported stolen, CAS ..."), and Engala's cover
+   checklist as page 2.
+5. **`previous_motivations[]`** still travels empty — nothing stores an
+   approved application's angle, stated purpose or outcome.
+
 ### The reason generator — 2026-09-08, `eeabdea0` → `f3259e56`
 
 Implements the operator's `MOTIVATION-REASON-PROMPT.md`: system prompt,
