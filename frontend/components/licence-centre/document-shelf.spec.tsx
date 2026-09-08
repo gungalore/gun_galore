@@ -25,9 +25,12 @@ const doc = (over: Partial<SheetDocument> = {}): SheetDocument => ({
   ...over,
 });
 
+const file = (name: string) =>
+  new File(['x'], name, { type: 'application/pdf' });
+
 describe('with documents', () => {
   it('shows the annexure letter, which is how a DFO finds the page', () => {
-    render(<DocumentShelf documents={[doc()]} onAdd={vi.fn()} onScan={vi.fn()} />);
+    render(<DocumentShelf documents={[doc()]} onUpload={vi.fn()} onScan={vi.fn()} />);
     expect(screen.getByText('A')).toBeDefined();
     expect(screen.getByText('Identity document')).toBeDefined();
   });
@@ -35,14 +38,14 @@ describe('with documents', () => {
   it('still shows a document that has no letter yet', () => {
     // Lettering happens when the pack is assembled. A document uploaded before
     // that must not vanish off the shelf while it waits.
-    render(<DocumentShelf documents={[doc({ letter: null })]} onAdd={vi.fn()} onScan={vi.fn()} />);
+    render(<DocumentShelf documents={[doc({ letter: null })]} onUpload={vi.fn()} onScan={vi.fn()} />);
     expect(screen.getByText('Identity document')).toBeDefined();
   });
 
   it('⚠️ MARKS AN UNREAD DOCUMENT "check this", NOT AS A FAILURE', () => {
     // It is still attached and still goes in the pack. Colouring it as an
     // error teaches members to re-upload documents that were fine.
-    render(<DocumentShelf documents={[doc({ state: 'check' })]} onAdd={vi.fn()} onScan={vi.fn()} />);
+    render(<DocumentShelf documents={[doc({ state: 'check' })]} onUpload={vi.fn()} onScan={vi.fn()} />);
     expect(screen.getByLabelText('Check this')).toBeDefined();
   });
 
@@ -51,25 +54,37 @@ describe('with documents', () => {
     // with two buttons, Upload and Scan with phone." Behind one generic "+"
     // the camera is invisible — and most of what belongs on this shelf is a
     // card the member is holding.
-    const onAdd = vi.fn();
+    const onUpload = vi.fn();
     const onScan = vi.fn();
-    render(<DocumentShelf documents={[doc()]} onAdd={onAdd} onScan={onScan} />);
+    render(<DocumentShelf documents={[doc()]} onUpload={onUpload} onScan={onScan} />);
 
     await userEvent.click(
       screen.getByRole('button', { name: 'Scan a document with your phone' }),
     );
     expect(onScan).toHaveBeenCalled();
 
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Upload a file from this device' }),
-    );
-    expect(onAdd).toHaveBeenCalled();
+    // ⚠️ THE UPLOAD TILE IS A PICKER, NOT A BUTTON THAT OPENS A SCREEN. It
+    // used to open the Add panel, which mounted a second scanner and a second
+    // picker underneath the shelf. Operator: "this is double."
+    const input = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    await userEvent.upload(input, file('id.pdf'));
+    expect(onUpload).toHaveBeenCalledWith([expect.objectContaining({ name: 'id.pdf' })]);
+  });
+
+  it('⚠️ OFFERS EXACTLY ONE SCANNER AND EXACTLY ONE PICKER', () => {
+    render(<DocumentShelf documents={[doc()]} onUpload={vi.fn()} onScan={vi.fn()} />);
+    expect(
+      screen.getAllByRole('button', { name: /scan/i }).length,
+    ).toBe(1);
+    expect(document.querySelectorAll('input[type="file"]').length).toBe(1);
   });
 });
 
 describe('the empty shelf', () => {
   it('offers the wide tile, and says what will happen', () => {
-    render(<DocumentShelf documents={[]} onAdd={vi.fn()} onScan={vi.fn()} />);
+    render(<DocumentShelf documents={[]} onUpload={vi.fn()} onScan={vi.fn()} />);
     expect(
       screen.getByText('Add your ID, licences and certificates'),
     ).toBeDefined();
@@ -79,7 +94,7 @@ describe('the empty shelf', () => {
   });
 
   it('⚠️ APOLOGISES FOR NOTHING — no error, no warning, no empty state copy', () => {
-    render(<DocumentShelf documents={[]} onAdd={vi.fn()} onScan={vi.fn()} />);
+    render(<DocumentShelf documents={[]} onUpload={vi.fn()} onScan={vi.fn()} />);
     const text = document.body.textContent ?? '';
     for (const word of ['no documents', 'nothing', 'missing', 'required']) {
       expect(text.toLowerCase()).not.toContain(word);
@@ -90,23 +105,43 @@ describe('the empty shelf', () => {
     // It reads "Scan with your phone or choose files". It shipped opening only
     // the picker — the kind of gap nobody reports as a bug; they just conclude
     // the product cannot do it.
-    const onAdd = vi.fn();
+    const onUpload = vi.fn();
     const onScan = vi.fn();
-    render(<DocumentShelf documents={[]} onAdd={onAdd} onScan={onScan} />);
+    render(<DocumentShelf documents={[]} onUpload={onUpload} onScan={onScan} />);
 
     await userEvent.click(
       screen.getByText('Add your ID, licences and certificates'),
     );
     expect(onScan).toHaveBeenCalled();
-    expect(onAdd).not.toHaveBeenCalled();
+    expect(onUpload).not.toHaveBeenCalled();
   });
 
-  it('still offers the picker for somebody with files already', async () => {
-    const onAdd = vi.fn();
-    render(<DocumentShelf documents={[]} onAdd={onAdd} onScan={vi.fn()} />);
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Upload from this device' }),
-    );
-    expect(onAdd).toHaveBeenCalled();
+  it('⚠️ THE SECOND BOX IS A PICKER, IN THE SAME STYLE, BESIDE IT', async () => {
+    // Operator, 2026-09-08: "add the upload files next to the Add your ID,
+    // licences and certificates in the same style of box."
+    const onUpload = vi.fn();
+    const onScan = vi.fn();
+    render(<DocumentShelf documents={[]} onUpload={onUpload} onScan={onScan} />);
+
+    expect(screen.getByText('Upload from this device')).toBeDefined();
+    const input = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    await userEvent.upload(input, file('id.pdf'));
+    expect(onUpload).toHaveBeenCalledWith([expect.objectContaining({ name: 'id.pdf' })]);
+    // Choosing a file must not also open the scanner.
+    expect(onScan).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ SAYS "or choose files" NOWHERE, because that box no longer does', () => {
+    // One box per route: the copy on each says only what that box does.
+    render(<DocumentShelf documents={[]} onUpload={vi.fn()} onScan={vi.fn()} />);
+    expect(document.body.textContent).not.toContain('or choose files');
+  });
+
+  it('⚠️ OFFERS EXACTLY ONE SCANNER AND EXACTLY ONE PICKER', () => {
+    render(<DocumentShelf documents={[]} onUpload={vi.fn()} onScan={vi.fn()} />);
+    expect(screen.getAllByRole('button').length).toBe(1);
+    expect(document.querySelectorAll('input[type="file"]').length).toBe(1);
   });
 });

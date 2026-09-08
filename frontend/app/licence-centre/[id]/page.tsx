@@ -688,30 +688,37 @@ export default function LicenceCentreSheetPage() {
           onTogglePreview={() => setPreviewOpen((v) => !v)}
         />
 
+        {/*
+          ⚠️ TWO DOORS, BOTH ON THE SHELF, AND NEITHER OF THEM OPENS A SCREEN
+          THAT OFFERS THE CHOICE AGAIN. Upload goes straight to the operating
+          system's file dialog; Scan mounts AddPanel, which renders nothing a
+          member can see and exists only to host the scanner ScanButton's
+          `autoStart` opens. Operator, 2026-09-08: "this is double. two scan
+          with phone options."
+        */}
         <DocumentShelf
           documents={sheet.documents}
-          onAdd={() => {
-            setAutoScan(false);
-            setAdding(true);
-          }}
-          onScan={() => {
-            setAutoScan(true);
-            setAdding(true);
+          onScan={() => setAdding(true)}
+          onUpload={async (files) => {
+            setBusy(true);
+            try {
+              for (const f of files) await onAddFile('', f);
+              await load();
+              setToast(
+                files.length === 1
+                  ? 'Added one document.'
+                  : `Added ${files.length} documents.`,
+              );
+            } finally {
+              setBusy(false);
+            }
           }}
         />
 
-        {/*
-          ⚠️ ONE DOOR, OPENED FROM THE SHELF — the scanner AND the picker.
-          The scanner is the primary route: on a laptop it hands off to the
-          member's phone, because a webcam cannot resolve a licence serial.
-          See add-panel.tsx, which owns that decision.
-        */}
         {adding ? (
           <AddPanel
             motivationId={id}
-            kinds={kinds}
             onAdd={onAddFile}
-            onRefile={onRefile}
             onHandoffArrived={(count) => {
               void load();
               setToast(
@@ -720,11 +727,7 @@ export default function LicenceCentreSheetPage() {
                   : `Your phone sent ${count} documents.`,
               );
             }}
-            autoScan={autoScan}
-            onClose={() => {
-              setAdding(false);
-              setAutoScan(false);
-            }}
+            onClose={() => setAdding(false)}
           />
         ) : null}
 

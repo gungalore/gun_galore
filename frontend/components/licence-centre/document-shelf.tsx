@@ -68,10 +68,22 @@ function FileIcon() {
   );
 }
 
+/** What the picker will take. Matches the server's accepted upload types. */
+const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
+
 export interface DocumentShelfProps {
   documents: SheetDocument[];
-  /** The file picker and the drag tray. */
-  onAdd: () => void;
+  /**
+   * Files chosen from this device.
+   *
+   * ⚠️ THE SHELF OWNS THE PICKER NOW, AND THAT IS THE POINT. It used to open
+   * the Add panel, which mounted a ScanButton of its own — so the member got
+   * "Add your ID…" and "Upload from this device" on the shelf and then "Use my
+   * phone camera" and "Choose files instead" underneath it. Two scanners and
+   * two pickers on one screen, one of each too many. Operator, 2026-09-08:
+   * "this is double. two scan with phone options."
+   */
+  onUpload: (files: File[]) => void;
   /**
    * Straight into the scanner — the phone hand-off on a desktop, the camera on
    * a handheld.
@@ -88,10 +100,36 @@ export interface DocumentShelfProps {
 
 export default function DocumentShelf({
   documents,
-  onAdd,
+  onUpload,
   onScan,
 }: DocumentShelfProps) {
   const empty = documents.length === 0;
+
+  /**
+   * The upload control, as a label wrapping a hidden input.
+   *
+   * ⚠️ IT OPENS THE OPERATING SYSTEM'S PICKER, NOT A PANEL. "Upload from this
+   * device" that opens a screen offering to scan with your phone is not an
+   * upload button; it is a menu pretending to be one.
+   */
+  const picker = (className: string, children: React.ReactNode) => (
+    <label className={className}>
+      {children}
+      <input
+        type="file"
+        accept={ACCEPT}
+        multiple
+        className="sr-only"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          // Reset first: picking the same file twice in a row fires no change
+          // event otherwise, and the second attempt looks like a dead button.
+          e.target.value = '';
+          if (files.length) onUpload(files);
+        }}
+      />
+    </label>
+  );
 
   // ── the first-timer: one wide tile, and no apology ──────────────────
   //
@@ -100,45 +138,47 @@ export default function DocumentShelf({
   // more rows are `needs_you`, and that is all. There is no separate
   // onboarding wizard and there must not be one.
   if (empty) {
+    // ⚠️ TWO BOXES, SAME STYLE, SIDE BY SIDE — and NOTHING behind either of
+    // them that offers the choice a second time. Operator, 2026-09-08: "remove
+    // the scan with my phone and upload files here, then add the upload files
+    // next to the Add your ID, licences and certificates in the same style of
+    // box."
+    const box =
+      'flex w-full cursor-pointer items-center gap-[14px] rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] px-4 py-[18px] text-left text-[var(--red)]';
     return (
-      <div className="border-b border-[var(--border-divider)] px-4 pb-[14px] pt-3">
-        <button
-          type="button"
-          onClick={onScan}
-          className="flex w-full items-center gap-[14px] rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] px-4 py-[18px] text-left text-[var(--red)]"
-        >
+      <div className="grid gap-2 border-b border-[var(--border-divider)] px-4 pb-[14px] pt-3 sm:grid-cols-2">
+        <button type="button" onClick={onScan} className={box}>
           <QrIcon />
           <span>
             <span className="block text-[14px] font-medium text-[var(--text-primary)]">
               Add your ID, licences and certificates
             </span>
             {/*
-              ⚠️ THIS COPY PROMISES SCANNING, SO THE TILE MUST OPEN THE
-              SCANNER. It shipped opening only the file picker, which is the
-              kind of gap nobody reports as a bug — they just conclude the
-              product cannot do it.
+              ⚠️ THIS COPY NO LONGER PROMISES THE PICKER. It used to read "Scan
+              with your phone or choose files", which was one box offering two
+              routes and then opening a panel that offered them again. There is
+              a box for each now, so each says only what it does.
             */}
             <span className="mt-[2px] block text-[12.5px] font-normal text-[var(--text-tertiary)]">
-              Scan with your phone or choose files. We read them and fill this
-              page in.
+              Scan with your phone. We read them and fill this page in.
             </span>
           </span>
         </button>
-        {/*
-          ⚠️ A BUTTON BESIDE THE SCANNER, NOT A LINE OF SMALL PRINT UNDER IT.
-          Same operator instruction as the tiles above: two routes, both
-          visible, both with icons. Somebody who already has their ID as a PDF
-          on the laptop they are sitting at should not have to read past a QR
-          code to find that out.
-        */}
-        <button
-          type="button"
-          onClick={onAdd}
-          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--bg)] px-4 text-[13px] font-medium text-[var(--red)]"
-        >
-          <UploadIcon />
-          Upload from this device
-        </button>
+
+        {picker(
+          box,
+          <span className="flex items-center gap-[14px]">
+            <UploadIcon />
+            <span>
+              <span className="block text-[14px] font-medium text-[var(--text-primary)]">
+                Upload from this device
+              </span>
+              <span className="mt-[2px] block text-[12.5px] font-normal text-[var(--text-tertiary)]">
+                Photographs or PDFs you already have saved.
+              </span>
+            </span>
+          </span>,
+        )}
       </div>
     );
   }
@@ -197,15 +237,13 @@ export default function DocumentShelf({
           </button>
         </div>
         <div className="w-[72px] flex-shrink-0">
-          <button
-            type="button"
-            onClick={onAdd}
-            aria-label="Upload a file from this device"
-            className="flex h-[92px] w-[72px] flex-col items-center justify-center gap-1 rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] text-[11.5px] font-medium text-[var(--red)]"
-          >
-            <UploadIcon />
-            Upload
-          </button>
+          {picker(
+            'flex h-[92px] w-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-[6px] border border-dashed border-[var(--border-hover)] bg-[var(--bg)] text-[11.5px] font-medium text-[var(--red)]',
+            <>
+              <UploadIcon />
+              Upload
+            </>,
+          )}
         </div>
       </div>
     </div>
