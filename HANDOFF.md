@@ -4,7 +4,116 @@ What the last session did, where everything stands, and what the next one should
 pick up. **Rules do not live here — they live in `CLAUDE.md`.** This file is
 state, and it is meant to be overwritten.
 
-Last updated: **2026-09-08**.
+Last updated: **2026-09-09**.
+
+## 2026-09-09 — the cartridge drawing, the arsenal, and the SAPS 271 back on screen
+
+Deployed: `df04ec15` (full) then `641f79e0` (backend only). Three services
+online, both health checks and the public site twice each.
+
+### The cartridge, drawn rather than reproduced
+
+Operator: *"why arent we pulling in the dimension sheet of the cartridge its
+using from The Bench? And describing the cartridge and how it would suffice for
+a self defence round?"*, then *"you can render the cartridge in 3D with the main
+measurements and make it half a page with half a page description"*.
+
+`backend/src/motivations/motivation-cartridge-drawing.ts` draws a side-on solid
+of revolution — rim, extractor groove, taper, case mouth, seated bullet — shaded
+from one light and dimensioned with the letters the sheet printed. It lands
+**under the writer's own cartridge heading**, so the picture and the argument
+share a page. `motivation-cartridge.ts` puts the same figures into the fact pack
+as text, so the writer stops recalling ballistics.
+
+Three traps, all of which produced a drawing that rendered without error:
+
+- ⚠️ **A gradient in the default object-bounding-box units restarts inside every
+  shape it fills.** The half above the axis and the half below each took a full
+  sweep, so the round was lit from two directions with a seam down the middle.
+  `gradientUnits="userSpaceOnUse"`, and the case and jacket lit separately
+  because they are two metals.
+- ⚠️ **librsvg has no `system-ui`.** SVG `<text>` was set in whatever face
+  fontconfig offered — differently here and on the box. The SVG now carries
+  geometry only; `DrawingText` travels beside it and pdfkit sets the lettering
+  in the document's own type, which also makes it selectable in the PDF.
+- ⚠️ **`completeDims` derives the letters a sheet does not print.** Only **132 of
+  the 215 sheets** carry all thirteen: a case with no shoulder does not print
+  one, and a rimmed revolver case prints no extractor groove either. The strict
+  rule refused 9 mm Luger and .38 Special — the two cartridges a self-defence
+  applicant actually uses. A derived letter is drawn and never dimensioned.
+
+⚠️ **It REPLACES the spliced C.I.P. page** (`cipSheet`), which is now the
+fallback for a round we hold no figures for. Two cartridge sections is a
+document that has lost its place, and that page is a facsimile captioned with
+somebody else's name printed into our contents — which is the republication
+question `cipSheetFor()` already recorded as open. The precedence is stated in
+**two** places, because reserving the page and merging it are separate passes:
+gated only in the body, the sheet was skipped in the contents and still appended
+after the signature.
+
+### Resolving the calibre a member typed
+
+`firearm_calibre` is free text and the stored names are not what anybody writes:
+".357 Magnum" is filed as "357 Mag.", 9 mm Luger's only mention of 9×19 is
+inside a slashed alias, "9mm Parabellum" appears nowhere. `findCartridge` now
+tries exact, then contractions as well as expansions, then a **unique** prefix
+and a **unique** substring with a four-character floor.
+
+⚠️ **Uniqueness is the whole safety argument.** A bare `9mm` touches 9 mm Luger,
+9 mm Makarov and 9 mm Browning court, so it resolves to **nothing** and the pack
+ships without a drawing rather than with another round's dimensions under the
+applicant's signature. Uniqueness counts **cartridges, not strings**.
+
+### The SAPS 271 was unreachable
+
+Operator: *"see why the 271 is not appearing. It needs to be filled in."*
+
+Nothing was broken. `GET /motivations/:id/saps271` works, `buildSaps271` fills
+it, `saps271-coords.ts` still hashes clean, and `motivationsApi.saps271BlobUrl`
+was already in the client. **The only screen that ever offered it was
+`components/licence-pack/pack-finish.tsx`** — the finish step of the
+`/licence-services` wizard deleted in Phase 4 on 2026-09-08 — and
+`/licence-centre/[id]/pack` never picked it up. So a member read a completeness
+meter telling them how much of their 271 was done, with no way to open the thing
+being measured.
+
+It is on the pack screen now: Show the form / Download the form, fetched **on
+demand** rather than with the page (two multi-megabyte blobs on one document is
+a phone tab being dropped), with the section 24 case handled by licence type.
+
+⚠️ **`pack-finish.tsx` gated the button on the retired `fill_saps271` opt-in.**
+That gate is gone from the backend; every pack ships a form.
+
+⚠️ **Nine more components under `components/licence-pack/` are mounted by
+NOBODY** — `attached-documents`, `bulk-capture`, `extraction-review`,
+`owned-firearm-summary`, `section-chooser`, `pack-finish` and their specs. They
+are the deleted wizard's parts. Before deleting any of them, check whether it is
+the only surface for a capability the way `pack-finish` was: that is now twice.
+
+### Open, and needing the operator
+
+1. **The Bench itself still refuses these cartridges.**
+   `frontend/lib/bench/geometry.ts`'s `canDraw` requires all thirteen letters,
+   so a member opening The Bench for 9 mm Luger or .38 Special gets no drawing —
+   83 of 215 sheets. The backend now derives them; the frontend does not. Same
+   fix, same file shape, deliberately not done here because it changes what
+   members see.
+2. **`cipSheetEnabled` and its label.** The spliced page is captioned
+   "(C.I.P. data)", which names a source in a contents page. It only renders now
+   when we hold no figures. Retire it, or rename the label.
+3. **`MO000072`** is still on file — a test application the operator created.
+
+### Still outstanding from `MOTIVATION-S13-OUTPUT-REVIEW.md` §4
+
+Item 1 is half done: the arsenal reaches the writer as rows
+(`motivation-arsenal.ts`, with a section only where a licence card established
+one **by serial**), which stops it inventing five firearms from a count. The
+**endorsement OCR and shelf entry** (brief §5.5a) and the **section/role
+validator** are not. Items 2–5 — competency currency, the writer's section
+order and banned phrases, the annexure work, and the sheet cosmetics — are
+untouched.
+
+---
 
 ## Next up: finish Phase 2 — the rest is DEPLOYED
 
