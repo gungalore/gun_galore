@@ -8,7 +8,7 @@ import { Cron } from '@nestjs/schedule';
 import * as crypto from 'node:crypto';
 import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { encryptText, tryDecryptText } from '../common/blob-crypto';
+import { encryptJson, encryptText, tryDecryptText } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { applicationBlockers } from './motivation-eligibility';
 import {
@@ -33,6 +33,13 @@ import {
 import { NewsService, clippingFactLines } from '../news/news.service';
 import type { NewsIncident } from '../news/news.types';
 import {
+  type DangerArea,
+  type TravelledArea,
+  clippingIdsFor,
+  dangerAreas,
+  parseTravelledAreas,
+} from './motivation-danger-areas';
+import {
   buildAnnexures,
   type GeneratedAnnexureId,
 } from './motivation-checklist';
@@ -41,6 +48,8 @@ import { packConsistency } from './motivation-verify';
 import {
   FIREARM_SOURCE_KEY,
   PRESS_CLIPPINGS_KEY,
+  PRESS_CLIPPINGS_MAX,
+  TRAVELLED_AREAS_KEY,
   SOURCE_DEALER,
   SOURCE_ESTATE,
   SOURCE_PRIVATE,
@@ -64,6 +73,27 @@ import {
 // ────────────────────────────────────────────────────────────────────
 
 const SIMILARITY_CORPUS = 200;
+
+/**
+ * How far out the area list reaches.
+ *
+ * ⚠️ FIFTY, NOT THE PICKER'S TWENTY-FIVE, AND THE DIFFERENCE IS THE QUESTION.
+ * The clippings picker asks about reporting near where the applicant LIVES.
+ * This asks about where they DRIVE, and a commute across a metro routinely
+ * runs further than twenty-five kilometres — a radius that cannot reach the
+ * applicant's workplace cannot offer them the areas in between. Operator,
+ * 2026-09-08: "a 50km radius".
+ */
+const AREA_RADIUS_KM = 50;
+
+/**
+ * How many reports the area roll-up reads.
+ *
+ * ⚠️ MORE THAN THE PICKER TOOK, BECAUSE THEY COLLAPSE. Twelve articles across
+ * a metro is four or five areas, and a member asked to tick areas needs enough
+ * reports behind them for the list to be worth reading.
+ */
+const AREA_INCIDENT_TAKE = 60;
 
 /**
  * Statuses a generation may be STARTED from.
@@ -1013,6 +1043,160 @@ export class MotivationGenerationService {
       );
       return { station, incidents: [] };
     }
+  }
+
+  /**
+   * The dangerous areas around this applicant, for them to tick.
+   *
+   * Operator, 2026-09-08: "generate a list of dangerous areas around the
+   * applicants home in a 50km radius that has articles attached to it and lets
+   * them just tick the ones they travel through with a reason thats optional",
+   * and "take the police station areas they travel through and incorporate
+   * each of thems stats in there".
+   *
+   * ⚠️ FIFTY KILOMETRES, NOT THE PICKER'S TWENTY-FIVE. `incidentsFor` asks for
+   * reporting near the applicant's OWN station, which is a question about
+   * where they live. This is a question about where they DRIVE, and a commute
+   * across a metro is routinely further than twenty-five kilometres — a radius
+   * that cannot reach the applicant's workplace cannot offer the areas between
+   * here and it.
+   *
+   * ⚠️ AND EACH AREA CARRIES ITS OWN PRECINCT. The stats block a section 13
+   * already annexes is the applicant's home station; an area they drive
+   * through every day has a station of its own, and its figures are the
+   * evidence that the drive matters. Resolved by geocoding the area name, one
+   * lookup each, and every one of them is allowed to fail on its own — an area
+   * we cannot place is still an area they can tick, it simply arrives without
+   * numbers.
+   */
+  async areasFor(
+    clerkId: string,
+    id: string,
+  ): Promise<{
+    station: string | null;
+    withinKm: number;
+    areas: (DangerArea & {
+      station: { name: string; province: string } | null;
+      ticked: boolean;
+      reason?: string;
+    })[];
+  }> {
+    const user = await this.shared.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { licenceType: true, answersEncrypted: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+    if (row.licenceType !== MotivationLicenceType.S13_SELF_DEFENCE) {
+      return { station: null, withinKm: AREA_RADIUS_KM, areas: [] };
+    }
+
+    const answers = this.shared.readAnswers(row.answersEncrypted);
+    const station = (answers.police_station ?? '').trim();
+    if (!station) return { station: null, withinKm: AREA_RADIUS_KM, areas: [] };
+
+    let incidents: NewsIncident[] = [];
+    try {
+      incidents = await this.news.incidentsNear({
+        station: {
+          name: station,
+          province: (answers.police_station_province ?? '').trim(),
+        },
+        months: 12,
+        withinKm: AREA_RADIUS_KM,
+        // ⚠️ MORE INCIDENTS THAN THE PICKER TOOK, BECAUSE THEY COLLAPSE. Twelve
+        // articles across a metro is four or five areas; the member is asked
+        // about areas, and a short list of them needs a long list of reports.
+        limit: AREA_INCIDENT_TAKE,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Motivation ${id}: area lookup failed — ${(err as Error).message}`,
+      );
+      return { station, withinKm: AREA_RADIUS_KM, areas: [] };
+    }
+
+    const areas = dangerAreas(incidents);
+    const ticked = new Map(
+      parseTravelledAreas(answers[TRAVELLED_AREAS_KEY]).map((t) => [
+        t.key,
+        t.reason,
+      ]),
+    );
+
+    /**
+     * ⚠️ ONE STATION LOOKUP PER AREA, IN PARALLEL, AND EACH FAILS ALONE. A
+     * geocoder timeout on one suburb must not take the list down: the member
+     * can still tick it, the pack simply annexes its cuttings without a stats
+     * table beside them.
+     */
+    const stations = await Promise.all(
+      areas.map(async (a) => {
+        try {
+          const found = await this.crimeStats.nearestStation(a.name);
+          return found?.station
+            ? {
+                name: found.station.name,
+                province: found.station.province,
+              }
+            : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    return {
+      station,
+      withinKm: AREA_RADIUS_KM,
+      areas: areas.map((a, i) => ({
+        ...a,
+        station: stations[i],
+        ticked: ticked.has(a.key),
+        ...(ticked.get(a.key) ? { reason: ticked.get(a.key) } : {}),
+      })),
+    };
+  }
+
+  /**
+   * Record which areas the applicant travels through.
+   *
+   * ⚠️ THE SERVER DERIVES THE CLIPPINGS, NEVER THE BROWSER. The member ticks
+   * AREAS; which articles that buys is our arithmetic, and a stale bundle
+   * deciding it would put an annexure in a pack the ticked areas do not
+   * account for. See clippingIdsFor for why the cap is spent area by area.
+   */
+  async saveAreasFor(
+    clerkId: string,
+    id: string,
+    ticked: TravelledArea[],
+  ): Promise<{ areas: number; clippings: number }> {
+    const { areas } = await this.areasFor(clerkId, id);
+    const user = await this.shared.requireUser(clerkId);
+    const row = await this.prisma.motivation.findFirst({
+      where: { id, userId: user.id },
+      select: { id: true, licenceType: true, answersEncrypted: true },
+    });
+    if (!row) throw new NotFoundException('Motivation not found');
+
+    // Only areas we actually offered. A key that is not on the list is either
+    // stale or invented, and neither belongs in a signed pack.
+    const offered = new Set(areas.map((a) => a.key));
+    const clean = ticked
+      .filter((t) => offered.has(t.key))
+      .map((t) => (t.reason ? { key: t.key, reason: t.reason } : { key: t.key }));
+
+    const ids = clippingIdsFor(areas, clean, PRESS_CLIPPINGS_MAX);
+    const answers = this.shared.readAnswers(row.answersEncrypted);
+    answers[TRAVELLED_AREAS_KEY] = JSON.stringify(clean);
+    answers[PRESS_CLIPPINGS_KEY] = JSON.stringify(ids);
+
+    await this.prisma.motivation.update({
+      where: { id: row.id },
+      data: { answersEncrypted: encryptJson(answers) },
+    });
+
+    return { areas: clean.length, clippings: ids.length };
   }
 
   /**

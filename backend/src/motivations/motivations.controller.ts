@@ -31,6 +31,7 @@ import { MotivationReasonService } from './motivation-reason.service';
 import { MotivationsService } from './motivations.service';
 import { MotivationSheetService } from './motivation-sheet.service';
 import { MotivationGenerationService } from './motivation-generation.service';
+import { REASON_MAX, areaKey } from './motivation-danger-areas';
 import { RETIRED } from './motivation-documents';
 import {
   FIELD_REGISTRY_VERSION,
@@ -517,6 +518,53 @@ export class MotivationsController {
   @Get(':id/incidents')
   incidents(@CurrentUser() clerkId: string, @Param('id') id: string) {
     return this.generation.incidentsFor(clerkId, id);
+  }
+
+  /**
+   * The dangerous areas around this applicant, for them to tick.
+   *
+   * Operator, 2026-09-08: "pull the areas and list them and ask the user if he
+   * travels through these areas regularly", within "a 50km radius", each with
+   * "the police station areas they travel through and ... each of thems stats".
+   *
+   * ⚠️ THIS IS THE PICKER `press_clippings` HAS BEEN WAITING FOR. That key is
+   * `internal` and its registry comment says the wizard writes it "once the
+   * member has picked from GET /motivations/:id/incidents" — and Phase 4
+   * deleted the wizard, so nothing could set it and the annexure was
+   * unreachable. The member is asked about AREAS, which they can answer, and
+   * the server derives the cuttings.
+   *
+   * `{ station: null, areas: [] }` — never a 404-shaped refusal — for a
+   * non-self-defence application or a station we have nothing near. Owner-
+   * scoped like every other ':id/...' route here.
+   */
+  @Get(':id/areas')
+  areas(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.generation.areasFor(clerkId, id);
+  }
+
+  /**
+   * Record which of them the applicant travels through.
+   *
+   * ⚠️ AREAS IN, CLIPPINGS OUT. The body carries area keys and the member's own
+   * optional reason; the server decides which articles that buys and writes
+   * both `travelled_areas` and `press_clippings`. A browser sending article ids
+   * could put an annexure in a pack the ticked areas do not account for.
+   */
+  @Post(':id/areas')
+  saveAreas(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body() body: { areas?: { key?: string; reason?: string }[] },
+  ) {
+    const ticked = (Array.isArray(body?.areas) ? body.areas : [])
+      .map((a) => ({
+        key: areaKey(String(a?.key ?? '')),
+        reason: String(a?.reason ?? '').trim().slice(0, REASON_MAX),
+      }))
+      .filter((a) => a.key)
+      .map((a) => (a.reason ? a : { key: a.key }));
+    return this.generation.saveAreasFor(clerkId, id, ticked);
   }
 
   // ── the profile and the vault, applied WITHOUT a button ───────────

@@ -226,6 +226,27 @@ export const PRESS_CLIPPINGS_KEY = 'press_clippings';
 export const PRESS_CLIPPINGS_MAX = 8;
 
 /**
+ * The areas the applicant says they travel through, and optionally why.
+ *
+ * Operator, 2026-09-08: "generate a list of dangerous areas around the
+ * applicants home in a 50km radius that has articles attached to it and lets
+ * them just tick the ones they travel through with a reason thats optional for
+ * the reason being in that area."
+ *
+ * ⚠️ IT IS THE ANSWER; `press_clippings` IS THE CONSEQUENCE. The member is
+ * asked a question about their own movements — which they can answer — and the
+ * server works out which cuttings that buys. Storing only the article ids would
+ * throw away the reason they gave and the areas whose cuttings did not fit
+ * under the cap, both of which the writer wants.
+ *
+ * A JSON array of `{ key, reason? }`. See motivation-danger-areas.ts.
+ */
+export const TRAVELLED_AREAS_KEY = 'travelled_areas';
+
+/** One line about being somewhere, not an essay. Mirrors REASON_MAX. */
+export const TRAVELLED_AREAS_MAX = 4000;
+
+/**
  * Read `press_clippings` back off an answers blob.
  *
  * Pure and shared: motivation-generation.service.ts (the fact pack) and
@@ -2334,6 +2355,21 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     // "paste some article ids" ever appears, on either side. The wizard
     // writes the value itself, through the ordinary saveAnswers path, once
     // the member has picked from GET /motivations/:id/incidents.
+    /**
+     * ⚠️ WRITTEN BY THE AREA PICKER, NEVER TYPED — the same two-gate trick as
+     * `police_station_province` and `press_clippings` above it. The member
+     * ticks areas on the sheet and `POST :id/areas` stores this; no text box
+     * for "paste some area names" ever appears.
+     */
+    {
+      key: TRAVELLED_AREAS_KEY,
+      label: 'Areas you travel through',
+      kind: 'short',
+      section: 'Your circumstances',
+      help: 'A JSON array of the areas you ticked, with your reason where you gave one — written by the picker, not typed.',
+      internal: true,
+      maxLength: TRAVELLED_AREAS_MAX,
+    },
     {
       key: PRESS_CLIPPINGS_KEY,
       label: 'Press clippings chosen for the annexure',
