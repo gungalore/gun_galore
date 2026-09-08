@@ -264,6 +264,39 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### The invite was broken in THREE layers — 2026-09-08, `9e6e04a3`
+
+⚠️ **THE CONTROLLER NEVER READ THE EMAIL EITHER.**
+`motivations-consent.controller.ts` declared a body type with no `email` field
+and never passed one to `invite()`, so even after `e75ac24b` added the input
+and the API client's field, the service still received `''` and refused with
+the same sentence.
+
+⚠️ **THE IDENTICAL REFUSAL IS WHAT HID IT.** "Enter a valid email address for
+them." is byte-for-byte the same whether nought, one or two of the three layers
+have been fixed — so a round of fixing changes nothing on screen and reads as
+having not worked at all. When a message cannot distinguish "you did not type
+one" from "we did not send yours", check every layer before believing any of
+them.
+
+The chain is whole now: **input → API client body type → controller body type
+and pass-through → service → `invitedEmail` stored → the link emailed beside
+the SMS.** `motivations-consent.controller.spec.ts` asserts the forwarding
+directly.
+
+**Proved on production without sending anything.** The service validates in
+order — name, phone, email, then the firearm label — so an invite carrying a
+valid address and an empty `firearm: {}` fails at the LAST check and sends no
+SMS, no email and writes no row:
+
+| Probe | Response |
+|---|---|
+| `email: 'not-an-address'` | 400 "Enter a valid email address for them." |
+| `email: 'probe@example.co.za'` | 400 "Say which firearm this is about…" |
+
+The error moving past the email check is the proof. `MotivationSellerConsent`
+is still at 0 rows.
+
 ### One scanner, one picker — 2026-09-08, `0c3eaa75`
 
 ⚠️ **THE SHELF AND THE PANEL BOTH OFFERED THE WHOLE CHOICE.** The empty shelf
@@ -629,8 +662,8 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `0c3eaa75` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `0c3eaa75` |
+| Production runs | `9e6e04a3` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `9e6e04a3` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
