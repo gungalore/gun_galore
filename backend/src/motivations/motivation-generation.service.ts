@@ -1129,18 +1129,43 @@ export class MotivationGenerationService {
      * geocoder timeout on one suburb must not take the list down: the member
      * can still tick it, the pack simply annexes its cuttings without a stats
      * table beside them.
+     *
+     * ⚠️ AND THE QUERY IS ANCHORED TO THE PROVINCE, BECAUSE PLACE NAMES ARE
+     * NOT UNIQUE. The first live run offered a Kraaifontein applicant "OR
+     * Tambo" with the station Edenvale — a Gauteng precinct on a Western Cape
+     * application, because the bare name geocoded to the airport 1,300km away.
+     * The article had merely mentioned it.
      */
+    const province = (answers.police_station_province ?? '').trim();
     const stations = await Promise.all(
       areas.map(async (a) => {
         try {
-          const found = await this.crimeStats.nearestStation(a.name);
-          return found?.station
-            ? {
-                name: found.station.name,
-                province: found.station.province,
-              }
-            : null;
+          const found = await this.crimeStats.nearestStation(
+            province ? `${a.name}, ${province}` : a.name,
+          );
+          if (!found?.station) return null;
+          /**
+           * ⚠️ AN OUT-OF-PROVINCE STATION IS NOT A BAD LOOKUP, IT IS PROOF THE
+           * PLACE IS SOMEWHERE ELSE. The area's distance comes from the
+           * ARTICLE, so a piece written 20km away that names a landmark across
+           * the country still looks near. The station is the first thing that
+           * knows better, and an applicant does not commute through another
+           * province.
+           */
+          if (
+            province &&
+            found.station.province &&
+            found.station.province.toUpperCase() !== province.toUpperCase()
+          ) {
+            return 'elsewhere' as const;
+          }
+          return {
+            name: found.station.name,
+            province: found.station.province,
+          };
         } catch {
+          // ⚠️ A FAILED LOOKUP KEEPS THE AREA. Only a station we successfully
+          // resolved to another province is evidence; silence is not.
           return null;
         }
       }),
@@ -1149,12 +1174,15 @@ export class MotivationGenerationService {
     return {
       station,
       withinKm: AREA_RADIUS_KM,
-      areas: areas.map((a, i) => ({
-        ...a,
-        station: stations[i],
-        ticked: ticked.has(a.key),
-        ...(ticked.get(a.key) ? { reason: ticked.get(a.key) } : {}),
-      })),
+      areas: areas
+        .map((a, i) => ({ area: a, found: stations[i] }))
+        .filter((x) => x.found !== 'elsewhere')
+        .map(({ area: a, found }) => ({
+          ...a,
+          station: found === 'elsewhere' ? null : found,
+          ticked: ticked.has(a.key),
+          ...(ticked.get(a.key) ? { reason: ticked.get(a.key) } : {}),
+        })),
     };
   }
 
