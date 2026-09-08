@@ -309,7 +309,7 @@ ABSOLUTE RULES
 10. If the facts leave the distinction thin — a fourth 9mm handgun with three already described as backup, match and practice — say so in "warnings" and still write the best honest paragraph. Do not manufacture a distinction and do not refuse to write. The warning is for the applicant to read, not a reason to stop.
 
 SECTION DISCIPLINE FOR EXISTING FIREARMS — THIS IS WHERE REFUSALS COME FROM
-11. Every existing firearm is licensed under a section, and that section fixes the words you may use about it:
+11. An existing firearm's entry carries a "section" ONLY when we could read it off the member's own licence card. Where it is there, name it and let it fix the words you may use about that firearm. WHERE IT IS ABSENT, SAY NOTHING ABOUT WHICH SECTION THAT FIREARM IS LICENSED UNDER — do not take it from the section being applied for, do not take it from the other firearms, and do not write "all licensed under section N" over a battery where only some carry one. A wrong section tells the Registrar the applicant does not know what their own licences say. The sections and the words each permits:
     - section 13 or 14: self-defence, carry, protection of the person. Nothing else.
     - section 15: occasional hunting or sport shooting. Never self-defence, protection, backup, carry or home defence.
     - section 16: dedicated hunting or dedicated sport shooting. Never self-defence, protection, backup, carry or home defence.
@@ -321,7 +321,7 @@ SECTION DISCIPLINE FOR EXISTING FIREARMS — THIS IS WHERE REFUSALS COME FROM
 15. Banned phrasing, because it reads like a product page and not like an applicant: power factor, split times, high-volume, platform, tactical, close protection, engage targets, dynamic, competitively, efficiently, and "dedicated" used as a synonym for "used for".
 16. YOU MAY NOT STATE A RULE NOBODY GAVE YOU. If the input carries no association exercises, then you do not know what any exercise is shot with, what its entry conditions are, or at what distance. Do not write "requirements", "criteria", "eligible", "restricted to" or any distance in metres. Rest the gap on what the pack can prove: the TYPE of firearm and the SECTION it is licensed under. "None of my rifles can be used in a handgun exercise" is provable from the firearms themselves; "cannot meet the capacity requirements" is not, and an applicant who cannot produce the rule they quoted has damaged their own application.
 
-THE BATTERY SENTENCE names each held firearm with make, calibre and the section it is licensed under, the way the approved packs' tables do: "a CZ 6.35mm handgun, licensed under section 16". Where the history answers disclose an event, state it in the same breath and plainly: "(section 13; reported stolen, CAS 123/4/2024)".
+THE BATTERY SENTENCE names each held firearm with make and calibre, and its section where its entry carries one, the way the approved packs' tables do: "a CZ 6.35mm handgun, licensed under section 16". A firearm whose entry has no section is named with make and calibre and nothing else. Where the history answers disclose an event, state it in the same breath and plainly: "(section 13; reported stolen, CAS 123/4/2024)".
 
 METHOD (do this silently, return only the JSON)
 a. Classify the applied-for firearm: type, action, calibre band, configuration.
@@ -338,7 +338,7 @@ ${
       ? `PREFERRED ANGLE: exercise_eligibility. The input carries association exercises with their equipment rules — a calibre floor or ceiling, a barrel length, an action or a class. Where the applied-for firearm meets one and a held firearm of the same type does not, lead with it and quote the rule. "The association's 7m rapid-fire handgun exercise is open only to 9mmP pistols and larger; my 6.35mm CZ shoots the 5m pocket-pistol exercise and cannot enter it." That is a gap the reviewer can check against the rules annexed to the same pack, and it is what the approved motivations on file actually do.`
       : `NO ASSOCIATION EXERCISES WERE SUPPLIED, so you do not know what any exercise is shot with. Rest the gap on the two things the firearms themselves prove: TYPE and SECTION. "None of my rifles can be used in a handgun exercise" is provable; "cannot meet the capacity requirements" is not.
 
-HOW TO REACH THE WORD FLOOR WITHOUT INVENTING ANYTHING. Name every held firearm with make, calibre and the section it is licensed under — but as ONE sentence with commas, the way a table row reads, not as one sentence per firearm. "I hold a Mauser in .30-06 Springfield, a Marlin in .45-70 Government and a CZ in 6.35mm Browning, all licensed under section 16." Five sentences each beginning "I hold a" is a list, not a person writing. Say what class of shooting the applied-for firearm opens that the held ones do not, in plain terms of type and action. Say what the applicant will do with it, in the words the input gives you. That is the length; padding it with capability claims is what rule 16 refuses.`
+HOW TO REACH THE WORD FLOOR WITHOUT INVENTING ANYTHING. Name every held firearm with make and calibre, and its own section where its entry carries one — as ONE sentence with commas, the way a table row reads, not as one sentence per firearm. "I hold a Mauser in .30-06 Springfield and a Marlin in .45-70 Government under section 16, and a Howa in 6.5mm Creedmoor under section 15." Five sentences each beginning "I hold a" is a list, not a person writing, and one blanket "all licensed under section 16" over a mixed battery is false. Say what class of shooting the applied-for firearm opens that the held ones do not, in plain terms of type and action. Say what the applicant will do with it, in the words the input gives you. That is the length; padding it with capability claims is what rule 16 refuses.`
   }
 
 Anything you mark "inferred" in existing_roles is a suggestion the applicant must confirm: keep it out of the paragraph. Anything you mark "none" has no role at all: name the firearm, its calibre and its section, and stop.`;
@@ -393,6 +393,23 @@ export function validateReason(
      * cannot prove.
      */
     hasActivityRules?: boolean;
+    /**
+     * Every section number the paragraph may name — "15", "16", "16A".
+     *
+     * ⚠️ THE SECTIONS WE ACTUALLY READ OFF CARDS, PLUS THE ONE BEING APPLIED
+     * FOR. The closing sentence legitimately names the application's own
+     * section; every other mention is a claim about a firearm the applicant
+     * already holds, and it must come from that firearm's licence card.
+     */
+    knownSections?: readonly string[];
+    /**
+     * The section this application itself is lodged under — "16".
+     *
+     * ⚠️ TOLD APART FROM THE CARD SECTIONS ON PURPOSE. It is always legitimate
+     * in the closing sentence and is never evidence about a held firearm, so
+     * the "at most once" rule above has to be able to subtract it.
+     */
+    appliedSection?: string;
   },
 ): ReasonRejection[] {
   const bad: ReasonRejection[] = [];
@@ -549,6 +566,58 @@ export function validateReason(
     if (!suppliedDistance && /\d+\s*(?:m\b|metres|meters)/i.test(r.paragraph)) {
       bad.push('paragraph states a distance nothing supplied supports');
     }
+  }
+
+  /**
+   * ⚠️ A SECTION NOBODY GAVE US, WHICH IS THE SAME CRIME AS AN INVENTED ROLE
+   * AND WAS WRITTEN INTO THE PROMPT BY HAND. The arsenal carried no sections
+   * at all, and rule 11 told the model to name one for every held firearm — so
+   * it took the section of the APPLICATION and produced "all licensed under
+   * section 16" over a battery in which the operator's Howa 6.5mm Creedmoor is
+   * section 15. A wrong section tells the Registrar the applicant does not
+   * know what their own licences say.
+   *
+   * ⚠️ THE TEST IS AGAINST WHAT WE SUPPLIED, not against the paragraph's
+   * grammar. `ctx.knownSections` is every section clause the input actually
+   * carried; a paragraph naming one that is not in it is naming one nobody
+   * read off a card. An empty list means we supplied none, so any section
+   * claim about a held firearm is invented — and the applied-for section is
+   * legitimate in the closing sentence, which is why it is passed in too.
+   */
+  const mentioned = [
+    ...r.paragraph.matchAll(/\bsections?\s+(\d{1,2}A?)\b/gi),
+  ].map((m) => m[1].toUpperCase());
+  for (const n of mentioned) {
+    if (!(ctx.knownSections ?? []).includes(n)) {
+      bad.push(
+        `paragraph says "section ${n}", which nothing we supplied says a firearm is licensed under`,
+      );
+    }
+  }
+
+  /**
+   * ⚠️ AND NAMING THE RIGHT NUMBER IS NOT THE SAME AS BEING ENTITLED TO NAME
+   * IT. "all licensed under section 16" passes the check above whenever the
+   * APPLICATION is a section 16 — which is exactly the sentence the operator
+   * caught, over a battery whose Howa 6.5mm Creedmoor is section 15.
+   *
+   * So when we supplied no firearm sections at all, the paragraph may mention
+   * a section AT MOST ONCE: the closing statutory sentence, "applying under
+   * section 16 as a dedicated sport shooter". A second mention is the
+   * paragraph describing firearms it was told nothing about.
+   *
+   * ⚠️ IT RELAXES ON ITS OWN. The moment ownedFirearmSections can read a card,
+   * that firearm's section is in `knownSections` and this rule stops applying —
+   * which is the correct shape: the constraint exists because of what we do not
+   * know, not because of what the paragraph is allowed to say.
+   */
+  const suppliedFirearmSections = (ctx.knownSections ?? []).filter(
+    (n) => n !== ctx.appliedSection,
+  );
+  if (!suppliedFirearmSections.length && mentioned.length > 1) {
+    bad.push(
+      'paragraph gives held firearms a section, and no licence card supplied one',
+    );
   }
 
   /**

@@ -2,10 +2,14 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { MotivationLicenceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../common/llm/llm.service';
-import { encryptJson } from '../common/blob-crypto';
+import { encryptJson, decryptJson } from '../common/blob-crypto';
 import { answerValue } from '../common/card-placeholder';
 import { parseProvenance, stamp } from '../common/answer-provenance';
 import { MotivationSharedService } from './motivation-shared.service';
+import {
+  appliedSectionNumber,
+  ownedFirearmSections,
+} from './owned-firearm-sections';
 import { MotivationResearchService } from './motivation-research.service';
 import {
   OWNED_ROWS,
@@ -139,7 +143,7 @@ export class MotivationReasonService {
       return { written: false, rejections: ['the applicant has written their own'] };
     }
 
-    const input = await this.buildInput(row.licenceType, answers);
+    const input = await this.buildInput(row.licenceType, answers, user.id);
 
     /**
      * ⚠️ NOTHING TO ARGUE FROM IS NOT A FAILURE. Before the firearm is
@@ -182,6 +186,23 @@ export class MotivationReasonService {
      * it. Nothing in the paragraph itself can distinguish an invented role
      * from a supplied one; what we handed over can.
      */
+    /**
+     * Every section the paragraph may name.
+     *
+     * ⚠️ THE APPLICATION'S OWN SECTION IS ALWAYS ALLOWED, because the closing
+     * sentence names it — "Applying under section 16 as a dedicated sport
+     * shooter". Every other mention is a claim about a firearm already held,
+     * and those come only off the licence cards ownedSections could read.
+     */
+    const knownSections = [
+      ...new Set([
+        ...input.arsenal
+          .map((a) => /(\d{1,2}A?)/.exec(a.section ?? '')?.[1] ?? '')
+          .filter(Boolean),
+        appliedSectionNumber(row.licenceType),
+      ]),
+    ].filter(Boolean);
+
     const roleless = input.arsenal
       .filter((a) => !a.primary_use)
       .map((a) => [a.make, a.model, a.calibre].filter(Boolean).join(' '))
@@ -224,6 +245,8 @@ export class MotivationReasonService {
         // Empty until brief §5.5a builds association-activities.ts, and the
         // validator refuses an asserted exercise rule while it is.
         hasActivityRules: input.association_activities.length > 0,
+        knownSections,
+        appliedSection: appliedSectionNumber(row.licenceType),
       });
       if (bad.length) {
         last = bad;
@@ -354,12 +377,56 @@ export class MotivationReasonService {
     });
   }
 
+  /**
+   * The member's own licence cards, as sections against owned-firearm rows.
+   *
+   * ⚠️ FAILS SOFT AND SILENT. A vault read that throws must not cost the
+   * applicant their paragraph — it costs them the section clause, and the
+   * prompt already handles a row without one by saying nothing about it.
+   */
+  private async ownedSections(
+    userId: string,
+    answers: Record<string, string>,
+  ): Promise<Record<number, string>> {
+    try {
+      const rows = await this.prisma.credential.findMany({
+        where: { userId, kind: 'FIREARM_LICENCE', purgedAt: null },
+        select: { detailsEncrypted: true },
+      });
+      return ownedFirearmSections(
+        answers,
+        rows.map((r) => ({
+          details:
+            decryptJson<Record<string, string>>(r.detailsEncrypted ?? '') ?? {},
+        })),
+      );
+    } catch {
+      return {};
+    }
+  }
+
   /** The spec's user message, built from this application. */
   private async buildInput(
     licenceType: MotivationLicenceType,
     answers: Record<string, string>,
+    userId: string,
   ): Promise<ReasonInput> {
     const a = (k: string) => answerValue(answers[k] ?? '').trim();
+
+    /**
+     * ⚠️ THE SECTION EACH HELD FIREARM IS LICENSED UNDER, AND WHY IT IS HERE.
+     * The arsenal carried make, model, calibre, type, serial and expiry and no
+     * section — and the prompt told the model to name one for every firearm.
+     * It did the only thing it could and took the section of the APPLICATION,
+     * so a five-firearm battery came back "all licensed under section 16" when
+     * the operator's Howa 6.5mm Creedmoor is section 15. The vault has read
+     * `section` off every licence card since the Licence Centre shipped;
+     * nothing had ever joined it to these rows.
+     *
+     * ⚠️ AND A ROW WITH NO MATCH GETS NO SECTION, which is the point. Rule 11
+     * then forbids the claim outright rather than inviting a guess.
+     */
+    const sections = await this.ownedSections(userId, answers);
 
     const arsenal: Record<string, string>[] = [];
     for (let n = 1; n <= OWNED_ROWS; n++) {
@@ -388,6 +455,7 @@ export class MotivationReasonService {
       // Their own words about the firearm outrank the tapped card, because it
       // is the sentence they would use themselves.
       put('primary_use', a(`${p}use`) || a(`${p}primary_use`));
+      put('section', sections[n] ?? '');
       if (Object.keys(row).length) arsenal.push(row);
     }
 

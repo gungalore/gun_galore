@@ -1,4 +1,5 @@
 import { MotivationLicenceType } from '@prisma/client';
+import { appliedSectionNumber } from './owned-firearm-sections';
 import {
   REASON_ANGLES,
   anglesFor,
@@ -55,6 +56,11 @@ const ctx = (over: Partial<Parameters<typeof validateReason>[1]> = {}) => ({
   licenceType: S16S,
   knownFirearms: ['CZ Shadow 2 9mm', 'CZ P-10 C 9mm'],
   knownTerms: ['IPSC Handgun Production Optics'],
+  // A section 16 application whose licence cards supplied nothing — which is
+  // every application until ownedFirearmSections can read one. The cases about
+  // the section rule itself override both.
+  knownSections: ['16'],
+  appliedSection: '16',
   ...over,
 });
 
@@ -684,5 +690,77 @@ describe('South African English', () => {
         ctx(),
       ),
     ).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// THE SECTION THE PARAGRAPH INVENTED.
+//
+// Operator, 2026-09-08, reading his own generated motivation: "Howa in 6.5mm
+// Creedmoor is section 15." The paragraph said "all licensed under section 16".
+//
+// ⚠️ AND THE ARSENAL CARRIED NO SECTIONS AT ALL. Rule 11 told the model to
+// name one for every held firearm, so it took the section of the APPLICATION.
+// That is rule 12's own crime — asserting a fact nobody supplied — written
+// into the prompt by hand.
+// ────────────────────────────────────────────────────────────────────
+describe('a section nobody gave us', () => {
+  const held = ['CZ Shadow 2 9mm', 'Howa 1500 6.5 Creedmoor'];
+
+  it('⚠️ REFUSES A SECTION NO CARD AND NO APPLICATION CARRIES', () => {
+    const bad = validateReason(
+      result({ paragraph: `My Howa is licensed under section 13. ${words(211)}` }),
+      ctx({ knownFirearms: held, knownSections: ['16'], appliedSection: '16' }),
+    );
+    expect(bad.join(' ')).toContain('section 13');
+    expect(bad.join(' ')).toContain('nothing we supplied');
+  });
+
+  it('⚠️ AND REFUSES THE BLANKET CLAIM EVEN WHEN THE NUMBER IS RIGHT', () => {
+    // "all licensed under section 16" names a number the application itself
+    // carries, so the check above passes it — and it is exactly the sentence
+    // the operator caught. With no card section supplied, a paragraph may
+    // mention a section ONCE: the closing statutory sentence.
+    const bad = validateReason(
+      result({
+        paragraph: `I hold a CZ and a Howa, all licensed under section 16. I am applying under section 16. ${words(200)}`,
+      }),
+      ctx({ knownFirearms: held, knownSections: ['16'], appliedSection: '16' }),
+    );
+    expect(bad.join(' ')).toContain('no licence card supplied one');
+  });
+
+  it('⚠️ AND RELAXES THE MOMENT A CARD SUPPLIES ONE', () => {
+    // The constraint exists because of what we do not know. Once
+    // ownedFirearmSections reads the Howa's card, saying so is the correct and
+    // required thing to do.
+    expect(
+      validateReason(
+        result({
+          paragraph: `I hold a CZ under section 16 and a Howa under section 15. I am applying under section 16. ${words(198)}`,
+        }),
+        ctx({
+          knownFirearms: held,
+          knownSections: ['16', '15'],
+          appliedSection: '16',
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('leaves the closing statutory sentence alone', () => {
+    expect(
+      validateReason(
+        result({
+          paragraph: `I am applying under section 16 as a dedicated sport shooter. ${words(206)}`,
+        }),
+        ctx({ knownSections: ['16'], appliedSection: '16' }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('the application’s own section is always allowed', () => {
+    expect(appliedSectionNumber(S16S)).toBe('16');
+    expect(appliedSectionNumber(S13)).toBe('13');
   });
 });
