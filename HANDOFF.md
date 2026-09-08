@@ -264,6 +264,79 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### The seller signed and the sheet did not notice — 2026-09-08, `f0558200`
+
+The consent completed at **12:02 SAST** — front, back, signature, Part F,
+firearm snapshot, all stored — and the applicant's page went on saying "When
+they sign, Part F … fills in from what they give us", directly beneath a panel
+already reading "The owner has signed". **Two bugs, one on each side.**
+
+1. ⚠️ **`saps271Coverage` ONLY PUSHES SECTION F WHEN IT IS TOLD ABOUT THE
+   SELLER, and `motivation-sheet.service.ts` passed no context at all.** So the
+   sheet had no F row: no "Current owner" line on the pack meter, and nothing
+   for the page to read. `motivations.service.ts` has always passed it — the
+   sheet is the newer surface and simply did not.
+
+   ⚠️ **`sellerState()` WAS A PRIVATE METHOD ON `MotivationsService`**, which is
+   why the second surface could not call it. It now lives on
+   `MotivationSharedService`, which both inject; `MotivationsService` delegates.
+   Same rule its sibling `waitingOn()` already carries.
+
+2. ⚠️ **THE PAGE READ PROPERTY NAMES THAT DO NOT EXIST.** `sellerSigned` tested
+   `c.key === 'F' && (c.done ?? 0) > 0`. The server emits `id`, `label`,
+   `percent`, `status`, `note`, `missingRequired`, `applicable`, `answered` —
+   there is no `key` and no `done` anywhere, so it read two undefined properties
+   and could only ever be false. And `answered`, the field `done` was meant to
+   be, is **pinned at 0 for F on purpose** ("STATUS, NEVER A PERCENTAGE"), so
+   even spelled correctly it would never have flipped. The correct read is
+   `id === 'F' && status === 'complete'`.
+
+   ⚠️ **AN `as` CAST IS WHAT HID IT.** Asserting a shape the server does not
+   send turns a compile error into a silent false.
+
+⚠️ **THE LICENCE-CENTRE COVERAGE FIXTURE CARRIED THE SAME INVENTED NAMES** —
+`key` / `total` / `done` — so `PackSummary`'s tests passed against a shape
+nothing produces. Corrected to what `saps271-coverage.ts` emits. Three new
+sheet tests cover the F row: signed, waiting, and absent when nobody was asked.
+
+**Verified on production against MO000067:** the Part F line now reads "Signed.
+Part F of your SAPS 271 is filled in from what the seller gave us"; the shelf
+carries both sides of the owner's licence; the panel offers **"Use these details
+in my application"** with Make CZ / Handgun / 6.35MM BROWNING / 81815 read off
+the card, the photograph beneath it to check against. 21 → 18 things left.
+
+### The scanner auto-trigger — diagnosed, NOT changed
+
+Operator, 2026-09-08: *"The scanner did a auto trigger and quality was
+unreadible, redid it and then the autotrigger didnt want to fire again."*
+
+- ⚠️ **THE SELLER'S CONSENT PAGE USES THE V2 SCANNER REGARDLESS OF THE FLAG.**
+  `components/consent/licence-card-capture.tsx` imports
+  `components/scan/document-scanner` by path. `NEXT_PUBLIC_SCANNER_V3=1` is set
+  on the box, but the flag is only read through `scan-button.tsx` and
+  `/scan/handoff`. So the seller scanned on V2.
+- The gate is `ARM_MS` (1200ms from viewfinder open) → `HOLD_MS` (300ms still)
+  → guidance exactly `'ready'`. All three are deliberate and carry operator
+  history; 700 was "super sensitive", 1100 "way too long", and the motion
+  reading was broken during both verdicts.
+- ⚠️ **`startedAt` IS SET INSIDE THE DETECT-LOOP EFFECT** (deps `[phase,
+  shape]`), so returning to `live` after a retake restarts the arming clock and
+  the member pays the full 1200ms again. `ARM_MS`'s own docstring says the
+  opposite: "This costs nothing after the first shot of a session … from then
+  on the hold alone governs."
+- ⚠️ **DO NOT "FIX" THAT TO MATCH THE SENTENCE WITHOUT EVIDENCE.** Per-session
+  arming makes a retake instant — which is what this report asks for, and is
+  also exactly the "way too fast to take a picture, cant even aim then it snaps"
+  that ARM_MS was introduced to stop, since somebody who has just tapped "Take
+  it again" is still holding the card in frame. Both readings are defensible.
+- A stale comment was corrected: `INK_AT` justified its deliberately weak floor
+  by "the real protection is the 1100ms hold", when `HOLD_MS` has been 300 since
+  the motion reading was fixed.
+
+**What settles it:** open the scanner with **`?diag=1`**. The panel reports the
+live blocker reason, motion and ready% — one capture of that during a failing
+retake replaces the guessing this surface's history is made of.
+
 ### The invite was broken in THREE layers — 2026-09-08, `9e6e04a3`
 
 ⚠️ **THE CONTROLLER NEVER READ THE EMAIL EITHER.**
@@ -662,8 +735,8 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `9e6e04a3` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `9e6e04a3` |
+| Production runs | `f0558200` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `f0558200` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |

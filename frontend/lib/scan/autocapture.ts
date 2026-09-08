@@ -81,9 +81,15 @@ import { MIN_FILL } from './guidance';
  * capture is a straight photograph of the desk — the member lands in the corner
  * editor, presses "Take it again", and the review and the classifier both catch
  * a desk photograph anyway. Before, a misfire cropped whatever rectangle the
- * detector had latched onto and came out skew. The real protection is the
- * 1100ms hold: nobody holds a phone motionless for over a second while still
- * lining a document up.
+ * detector had latched onto and came out skew.
+ *
+ * ⚠️ THE PROTECTION IS ARM_MS, NOT THE HOLD, AND THIS PARAGRAPH USED TO SAY
+ * OTHERWISE. It read "the real protection is the 1100ms hold: nobody holds a
+ * phone motionless for over a second while still lining a document up" — but
+ * HOLD_MS has been 300 since the motion reading was fixed, so the sentence
+ * justified a weak ink floor by a number that no longer exists. What actually
+ * stands between a member and a photograph of the carpet is the 1200ms arming
+ * delay; see ARM_MS, which was added for exactly that reason.
  */
 export const INK_AT = 0.1;
 
@@ -163,6 +169,21 @@ export const HOLD_MS = 300;
  * including the member who is already lined up. This costs nothing after the
  * first shot of a session: the camera opens, the member gets a moment to aim,
  * and from then on the hold alone governs.
+ *
+ * ⚠️ THAT LAST SENTENCE IS NOT WHAT THE CODE DOES, AND IT IS UNRESOLVED.
+ * document-scanner.tsx sets `startedAt` INSIDE the detect-loop effect, whose
+ * deps are [phase, shape] — so returning to `live` after a retake restarts the
+ * clock and the member pays the full 1200ms again, every single time.
+ *
+ * Do not "fix" this to match the sentence without evidence. The two readings
+ * point opposite ways and both are defensible: per-session arming makes a
+ * retake instant, which is what "the autotrigger didn't want to fire again"
+ * (operator, 2026-09-08) asks for — and is also precisely the "way too fast to
+ * take a picture, cant even aim then it snaps" that ARM_MS was introduced to
+ * stop, since a member who has just tapped "Take it again" is still holding the
+ * card in frame. This surface's history is a series of reverted timing guesses;
+ * the diagnostics panel (?diag=1) reports the live blocker reason, motion and
+ * ready%, and one capture of that during a failing retake settles it.
  */
 export const ARM_MS = 1200;
 
