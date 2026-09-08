@@ -1130,27 +1130,41 @@ export class MotivationGenerationService {
      * can still tick it, the pack simply annexes its cuttings without a stats
      * table beside them.
      *
-     * ⚠️ AND THE QUERY IS ANCHORED TO THE PROVINCE, BECAUSE PLACE NAMES ARE
-     * NOT UNIQUE. The first live run offered a Kraaifontein applicant "OR
-     * Tambo" with the station Edenvale — a Gauteng precinct on a Western Cape
-     * application, because the bare name geocoded to the airport 1,300km away.
-     * The article had merely mentioned it.
+     * ⚠️ AND THE NAME IS GEOCODED BARE, WITH NO PROVINCE ATTACHED. It was
+     * anchored — `"${a.name}, ${province}"` — for one deploy, on the reasoning
+     * that place names are not unique in South Africa. That is true and it was
+     * still the wrong fix, because anchoring cannot tell "this place is in the
+     * Western Cape" from "I told it to answer within the Western Cape".
+     *
+     * The live case: a Kraaifontein applicant was offered "OR Tambo". Bare, it
+     * resolved to Edenvale — a Gauteng precinct, obviously wrong, and the
+     * system saying so. Anchored, it resolved to Philippi East and looked
+     * entirely plausible. The article was "Man arrested at OR Tambo with
+     * suspected cocaine en route to Hong Kong": the Johannesburg airport,
+     * carried by a Cape Town community paper. The anchor did not correct the
+     * error, it LAUNDERED it — and the operator caught it by reading the name.
      */
     const province = (answers.police_station_province ?? '').trim();
     const stations = await Promise.all(
       areas.map(async (a) => {
         try {
-          const found = await this.crimeStats.nearestStation(
-            province ? `${a.name}, ${province}` : a.name,
-          );
+          const found = await this.crimeStats.nearestStation(a.name);
           if (!found?.station) return null;
           /**
            * ⚠️ AN OUT-OF-PROVINCE STATION IS NOT A BAD LOOKUP, IT IS PROOF THE
-           * PLACE IS SOMEWHERE ELSE. The area's distance comes from the
-           * ARTICLE, so a piece written 20km away that names a landmark across
-           * the country still looks near. The station is the first thing that
-           * knows better, and an applicant does not commute through another
-           * province.
+           * PLACE IS SOMEWHERE ELSE — AND IT IS THE ONLY CHECK IN THIS CHAIN
+           * THAT KNOWS. `distanceKm` is measured from the ARTICLE's stored
+           * position, which for a syndicated piece is the PAPER's patch and
+           * not where the thing happened: an airport arrest in Gauteng,
+           * published by a Cape Town community paper, arrives 22.7km from a
+           * Kraaifontein applicant's front door.
+           *
+           * ⚠️ SO IT ALSO DROPS A NAME WE CANNOT PLACE CONFIDENTLY, and that is
+           * the right direction to be wrong in. A genuinely local suburb whose
+           * name is ambiguous ("Brooklyn") may geocode to another province and
+           * be dropped — the member loses one row they could have ticked.
+           * Keeping it costs them an annexure about somewhere they have never
+           * been, on a document they sign.
            */
           if (
             province &&
