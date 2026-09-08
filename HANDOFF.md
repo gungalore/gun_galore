@@ -530,6 +530,40 @@ stay accepted through `fieldByKey`, which is what lets them be stored without
 rendering anything. Nothing asks — we read them off the card, or we hold
 nothing and the row's one serial stands in for both.
 
+### The three component makes — 2026-09-08, `dedfcf3b`
+
+Operator, holding his own card: *"all the information is on a license card. All
+of them will always have it. It will either be a serial next to every component
+or NONE, but it will never be empty."*
+
+⚠️ **THERE ARE FOUR "MAKE" LABELS ON A LICENCE CARD AND `LABELS` HAD ONE.** The
+lower block is three rows of `<component> Serial No <value>  Make <value>`. The
+first band to match MAKE won, so the firearm's own Make row claimed it and the
+barrel, receiver and frame makes were **never read at all**. Everything
+downstream was already correct — the consent stores what we read,
+`cardToApplicationFirearm` maps all six, section E of the 271 has boxes for
+them — so the 271 printed three empty Make boxes beside three filled serials.
+
+**A MAKE is resolved by what else is in its band**, not by a fourth entry in
+LABELS: the label text really is identical and what tells them apart is the
+row. A MAKE preceded in its own band by a component serial is that component's;
+the bare `Make GLOCK  Model NONE` row has no serial label before it and stays
+the firearm's. The reassignment walks BACKWARDS within the band only, so a band
+holding just `Make X` cannot inherit a component from the row above.
+
+⚠️ **AND A SHORT READ IS SAID OUT LOUD NOW.** The card cannot be short — that is
+structural, not a hope — so a missing component is OUR read failing (a glare
+band across the lower block, a photograph cropped below the frame row) and not
+a card that did not carry it. The seller types it either way; the log is so we
+find out it is happening.
+
+⚠️ **MO000070's CONSENT SNAPSHOT IS STALE.** It was read by the old parser, so
+it still holds no component makes and `barrel_make` / `frame_make` /
+`receiver_make` are still empty on that application. Nothing backfills a signed
+consent. Either the member types the three makes into the "Barrel, frame and
+receiver" fold, or the consent is deleted and re-sent (`deleteSellerConsent`
+exists for exactly this).
+
 ### The clippings surface — the operator's design, NOT YET BUILT
 
 Two messages, 2026-09-08, and together they are the spec:
@@ -565,14 +599,9 @@ application is the kind of padding the corpus doc says not to copy.
 
 ### ⚠️ What the S13 audit found and did NOT fix
 
-1. **The seller's component makes are never read.** The card prints FOUR "Make"
-   labels — the firearm's own plus one on each of the barrel, frame and receiver
-   rows — and `LABELS` in `licence-card-ocr.service.ts` has one. So
-   `barrelMake` / `frameMake` / `receiverMake` are absent from the consent
-   snapshot, `cardToApplicationFirearm` maps three empty values, and section E
-   of the 271 prints three blank Make boxes beside three filled serials. The fix
-   is to treat a MAKE label sharing a band with a component serial as that
-   component's make.
+1. ~~The seller's component makes are never read~~ — **FIXED**, `dedfcf3b`.
+   See "The three component makes" above. MO000070's own snapshot is stale and
+   will not backfill.
 2. **Press clippings are unreachable.** `ClippingsPicker` and `PrecinctCard` are
    built, tested and **mounted by nothing** — Phase 4 deleted the wizard that
    mounted them. `press_clippings` is `internal`, and the registry comment says
