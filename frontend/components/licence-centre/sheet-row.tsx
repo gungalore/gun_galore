@@ -103,6 +103,27 @@ function Control({
     ? 'border-[var(--warning)]'
     : 'border-[var(--border)]';
 
+  // ⚠️ FIRST, BEFORE EVERY KIND BRANCH, AND THAT ORDER IS THE WHOLE FIX.
+  // `residential_address` is kind `long`, so this sat below the textarea branch
+  // and was never reached — the member got a plain multi-line box and Google
+  // was never even loaded. A key test that runs after a kind test only ever
+  // catches the kinds nothing else claimed.
+  //
+  // ⚠️ THE ADDRESS GETS GOOGLE'S PICKER, AND STAYS TYPEABLE AFTER IT.
+  // Operator, 2026-09-08: "residential address must also use google autofill
+  // api and then be editable if necessary." AddressAutocomplete already wraps
+  // Places for the rest of the site and falls back to a plain input when the
+  // script cannot load, so a member is never left without a box.
+  if (ADDRESS_KEYS.has(item.key)) {
+    return (
+      <AddressAutocomplete
+        value={value}
+        onChange={(address: string) => onChange(address)}
+        placeholder={item.help ?? 'Start typing your address'}
+      />
+    );
+  }
+
   if (item.kind === 'long') {
     return (
       <textarea
@@ -185,21 +206,6 @@ function Control({
           );
         })}
       </div>
-    );
-  }
-
-  // ⚠️ THE ADDRESS GETS GOOGLE'S PICKER, AND STAYS TYPEABLE AFTER IT.
-  // Operator, 2026-09-08: "residential address must also use google autofill
-  // api and then be editable if necessary." AddressAutocomplete already wraps
-  // Places for the rest of the site and falls back to a plain input when the
-  // script cannot load, so a member is never left without a box.
-  if (ADDRESS_KEYS.has(item.key)) {
-    return (
-      <AddressAutocomplete
-        value={value}
-        onChange={(address: string) => onChange(address)}
-        placeholder={item.help ?? 'Start typing your address'}
-      />
     );
   }
 

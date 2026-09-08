@@ -356,6 +356,42 @@ describe('yesno — buttons, not a text box', () => {
 });
 
 describe('the residential address gets Google’s picker', () => {
+  it('⚠️ BEATS THE `long` BRANCH, which is what broke it the first time', () => {
+    // residential_address is kind `long`. The key test sat BELOW the textarea
+    // branch, so it was never reached: the member got a plain multi-line box
+    // and Google was never loaded. A key test that runs after a kind test only
+    // catches the kinds nothing else claimed.
+    render(
+      <SheetRow
+        item={needsYou({
+          key: 'residential_address',
+          label: 'Residential address',
+          kind: 'long',
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(document.querySelector('textarea')).toBeNull();
+    expect(screen.getByRole('textbox')).toBeDefined();
+  });
+
+  it('prefills with the address already held, so Change does not blank it', () => {
+    render(
+      <SheetRow
+        item={needsYou({
+          key: 'residential_address',
+          label: 'Residential address',
+          kind: 'long',
+          value: '36 Sterappel Crescent, Cape Town',
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      (screen.getByRole('textbox') as HTMLInputElement).value,
+    ).toBe('36 Sterappel Crescent, Cape Town');
+  });
+
   it('⚠️ STAYS A TYPEABLE BOX, so it can be corrected', () => {
     // Operator: "must also use google autofill api and then be editable if
     // necessary." AddressAutocomplete renders a real input and falls back to a
