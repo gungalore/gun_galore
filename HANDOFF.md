@@ -264,6 +264,59 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### The invite bug and the shelf — 2026-09-08, `e75ac24b`
+
+⚠️ **THE SELLER-CONSENT INVITE HAD NEVER WORKED.** Reported from the live
+sheet: "Send them the link" returns *"Enter a valid email address for them."*
+over a form with **no email field**. The server is right to want one —
+`motivation-seller-consent.service.ts` argues it deliberately ("BOTH, NOT
+EITHER … the email carries the link … the number is the nudge") — and the panel
+simply never asked: no input, no state, and **no `email` field in the API
+client's own body type**, so the request could not have carried one.
+
+⚠️ **THIS IS THE SECOND TIME THE SAME FUNCTION HAS DONE THIS.** The comment
+directly beneath that check describes the first: the invite used to demand a
+serial number that was `formOnly` and therefore off-screen on the default
+path — *"The refusal named a box that was not on screen anywhere."* There is
+now `components/motivation-seller-consent.spec.tsx` pinning the shape of the
+request against what the server requires, and the button's own gate mirrors the
+server's checks rather than enabling into a refusal.
+
+Also in this deploy:
+
+- **The shelf's second tile is "Upload"**, with a tray-and-arrow icon, not
+  "+ Add". Operator, 2026-08-24 and again 2026-09-08: *"replace the Add button
+  with two buttons, Upload and Scan with phone (Use Icons)."* The empty
+  shelf's "Choose files instead" line became a bordered button beside the
+  scanner for the same reason.
+- **The SAPS 271 meter says "N boxes still empty"**, not "N still needed". It
+  counts boxes on the form; the strip, the chip dots and the footer count
+  required registry keys. Two honest measures, both saying "still needed" and
+  totalling differently, read as the page contradicting itself.
+- **The 271's own boxes on "You" fold to the bottom** — postal address, a
+  postal code per address, dialling codes split from their numbers. ⚠️ **Folded,
+  never deleted:** each is a real box on a statutory form. On the live sheet
+  "Postal address, if different" sat open, marked Optional, prefilled with the
+  SAME address as residential.
+
+**Verified on production against MO000067:** the shelf shows the wide scan tile
+plus **Upload from this device**; the consent card carries **Their email
+address**; "You" carries one fold, *"Post and dialling codes · 5 rows"*; the
+meter reads *"6 boxes still empty"* and the old wording is gone.
+
+### ⚠️ MO000066 was deleted by the operator, and that is the feature working
+
+The one motivation is now **MO000067** (DRAFT, empty vault). MO000066 and its
+four uploads were erased at ~11:02 SAST on 2026-09-08, between the
+`104039` and `111735` dumps, using the Delete button shipped in `3f6a8fac`.
+The cascade behaved as documented and **the Document Centre was untouched** —
+20 `Credential` rows survive (5 firearm licences, 5 competency, 8 proficiency,
+1 ID, 1 address), exactly as the confirmation dialog promises.
+
+⚠️ **`Motivation.createdAt` is stored UTC while `psql now()` renders SAST.**
+That two-hour offset made the delete look like it happened before it did, and
+cost a real detour. Read the backups, not the column, when you need a sequence.
+
 ### The sheet fixes — 2026-09-08, `9c339ac8` → `95365781`
 
 A live walkthrough of MO000066 (S16 dedicated hunter, five owned firearms,
@@ -541,15 +594,15 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `95365781` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `95365781` |
+| Production runs | `e75ac24b` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `e75ac24b` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
-| Last pre-deploy dump | `alloutdoor-20260908-104039.dump` — the rollback point for `95365781` |
+| Last pre-deploy dump | `alloutdoor-20260908-111735.dump` — the rollback point for `e75ac24b` |
 
 **The platform is not trading.** 2 users, 2 listings, **0 transactions**, 1
-motivation, 20 credentials. Nothing has ever been sold. Checkout returns 503
+motivation (MO000067), 20 credentials. Nothing has ever been sold. Checkout returns 503
 because `PAYMENT_MODE` and `PAYMENTS_LIVE` are both unset.
 
 ### Worktrees — read this before running git
