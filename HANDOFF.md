@@ -264,6 +264,73 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### Finishing the 2026-09-08 list — `39171000` → `2f418727`
+
+⚠️ **THERE IS NO "SELECT ALL" CONTROL ANYWHERE IN THIS CODEBASE.** "It selects
+everything if you sign" is a plain **text selection**: a drag across a signature
+pad or a scanner's corner handles starts a selection in the page underneath.
+The rule is in `globals.css` and covers `canvas`, `.aos-root`,
+`[data-blocking-overlay]` and `.gg-drag-surface` — ⚠️ **global because it has to
+reach the vendored scanner**, which must never be edited here. `.gg-selectable`
+opts text back in.
+
+**The seller's address** is an `AddressAutocomplete` that also fills the postal
+code beside it, with **"Type my address in parts instead"** opening street /
+suburb / town / province. ⚠️ **A second door, not a fallback** — Places does not
+know every smallholding or farm, and the parts are stored **beside** the
+one-line address because Part F prints a single line.
+
+⚠️ **THE AUTOMATIC SWEEP INTO THE DOCUMENT CENTRE IS GONE.** Every upload was
+copied the moment it landed, behind a blanket consent, with no UI — a member
+could not see what had been kept, could not decline one page of six, and the
+swallowed `void ... .catch()` left no trace of a refusal.
+`VaultAdoptionService.keepChosen` behind `POST :id/keep-in-centre` is the only
+route in, and it reports **`needsConsent`** rather than failing quietly. On the
+shelf: a tick on every page the MEMBER added, Select all, one Save button. A
+`vault` page carries no tick — it is already there.
+
+⚠️ **A TICK ON "TAKE THESE WITH YOU" USED TO MEAN "NOTHING TO DO", AND IT MEANT
+THE OPPOSITE.** Everything we hold prints into the pack as an annexure, so a
+ticked row is a job WE have done and an **original** the applicant still has to
+carry. Struck through it read as "leave this at home", which is how somebody
+arrives at a DFO without their competency certificate.
+
+⚠️ **`invite()` HAD BEEN NAMING AN ACTION THAT DID NOT EXIST** — "Delete that
+consent first if you need a new one". `DELETE :id/seller-consent` exists now,
+and **the bytes go with the row**: a signed consent holds somebody else's
+licence photographs and signature, given for one purpose, so deleting the record
+and keeping the files is the worst of both. It takes the annexure upload rows
+too. **The preview is the pack's own words** — `declarationFor`,
+`firearmRowsFor`, `signedLineFor` — so it cannot disagree with the document.
+
+### ⚠️ NOT DONE: the bottom bar over the camera
+
+Could not identify it. The V3 overlay sets `z-index: 2147483000` in its own
+stylesheet, which **is** imported and **is** in the built CSS; it handles
+`env(safe-area-inset-bottom)` on its action bars; and every piece of our chrome
+sits far below it — the tab bar at 55, the SW update banner at 58. Nothing of
+ours can be on top of it. Remaining candidates are the mobile browser's own UI
+or something device-specific. **Needs a screenshot from the phone.**
+
+### `MOTIVATION-REASON-PROMPT.md` — usable, with three corrections
+
+Operator-supplied spec for a "why this firearm" generator. Sound, and mostly
+adoptable as-is: the system prompt, the allowed angles, the output JSON, the
+validator and the per-type example banks. Three things in it do not match this
+codebase:
+
+1. ⚠️ **"the writer tier (Anthropic)" does not exist.** One adapter, `LlmService`;
+   `LLM_PROVIDER=anthropic` is a global **rollback lever**, not a per-call tier,
+   and `ANTHROPIC_API_KEY` is rollback-only. This call runs on Gemini.
+2. ⚠️ **"no structured-outputs API (repo rule)" IS THE OLD RULE, REVERSED.** Reads
+   now use `json: { schema }` so the provider enforces the shape. Fenced-JSON
+   parsing would be a step backwards. (Note `grounding` and `json` still cannot
+   combine on Gemini — fine here, this call does no search.)
+3. ⚠️ **`previous_motivations` HAS NO STORE.** Nothing records an approved
+   application's angle, stated purpose or outcome; the storyline needs a new
+   model and a migration. It is the most valuable part of the document and the
+   only part that is net-new work.
+
 ### The seller's card, all of it — 2026-09-08, `aa4368bc` → `5e9c70fb`
 
 ⚠️ **`cardToApplicationFirearm` MAPPED SIX FIELDS AND THE CARD HAS TWELVE.** The
@@ -1002,8 +1069,8 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `5e9c70fb` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `5e9c70fb` |
+| Production runs | `2f418727` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `2f418727` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
