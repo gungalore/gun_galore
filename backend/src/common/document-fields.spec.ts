@@ -176,19 +176,28 @@ describe('a licence fills an owned-firearm row', () => {
     expect(out.existing_firearm_1_make).toBe('CZ');
   });
 
-  it('⚠️ never carries a card placeholder into a box the applicant signs', () => {
-    // ⚠️ THIS BOUNDARY IS NOT REACHED IN PRODUCTION TODAY — see the note on
-    // toMotivationAnswers. The live carry is credentialOffer(), and that is
-    // where the operator's "Firearm 6 — frame serial NONE · barrel serial
-    // NONE" actually came from and where it is actually fixed. This pins the
-    // rule for the day the module is wired, and states the rule the mapping
-    // must obey: a licence card prints NONE in a row that does not apply — the
-    // operator's own Marlin reads "Frame Serial No NONE" — and a NONE that
-    // crosses into `answers` is a false statement on a SAPS 271, which section
-    // 120(9)(f) of the Act makes an offence.
+  it('⚠️ CARRIES A CARD PLACEHOLDER, BECAUSE THE 271 BOX WANTS IT', () => {
+    // ⚠️ THIS TEST SAID THE OPPOSITE UNTIL 2026-09-08. It read "never carries a
+    // card placeholder into a box the applicant signs", arguing that a NONE
+    // crossing into `answers` is a false statement on a SAPS 271 and therefore
+    // an offence under section 120(9)(f).
     //
-    // The card is still stored verbatim; see common/card-placeholder.ts for
-    // why the rule belongs at ANSWER boundaries and nowhere upstream of them.
+    // The operator, who takes these packs to a DFO, ruled the other way on
+    // 2026-09-08: the card ITSELF prints NONE in a row that does not apply, so
+    // transcribing it reproduces the document rather than asserting anything
+    // new — and an empty box says something different, namely that nobody
+    // filled it in. "All those fields needs to be captured on a license card
+    // and filled in on the form, especially on the 271 that requires it."
+    //
+    // ⚠️ THE LEGAL POINT WAS RAISED AND OVERRULED, NOT OVERLOOKED. If it is
+    // ever revisited, it is a question for the operator and the DFO, not for
+    // whoever is next in this file.
+    //
+    // The strip moved to the prose boundary — renderFacts in
+    // motivation-prompts.ts — so the writer still never sees NONE. And
+    // `first()` in motivation-credentials.ts still falls THROUGH a placeholder,
+    // because picking a serial from a chain of columns is a different question
+    // from transcribing a row.
     const out = toMotivationAnswers(
       'FIREARM_LICENCE',
       {
@@ -199,9 +208,9 @@ describe('a licence fills an owned-firearm row', () => {
       },
       6,
     );
-    expect(out).not.toHaveProperty('existing_firearm_6_frame_serial');
-    expect(out).not.toHaveProperty('existing_firearm_6_barrel_serial');
-    expect(out).not.toHaveProperty('existing_firearm_6_calibre');
+    expect(out.existing_firearm_6_frame_serial).toBe('NONE');
+    expect(out.existing_firearm_6_barrel_serial).toBe('N/A');
+    expect(out.existing_firearm_6_calibre).toBe('-');
     // The rest of the card is untouched — a placeholder in one row says
     // nothing about the next.
     expect(out.existing_firearm_6_make).toBe('CZ');

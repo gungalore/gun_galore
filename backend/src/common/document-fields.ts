@@ -250,10 +250,21 @@ export function toMotivationAnswers(
     if (!alias.motivation) continue;
     const value = details[alias.vault];
     if (typeof value !== 'string') continue;
-    // '' means "the card said nothing here" — a placeholder and a blank are
-    // the same absence to a form, and callers already treat absence correctly
-    // by simply not offering the field.
-    const answer = answerValue(value);
+    // ⚠️ THE PLACEHOLDER TRAVELS. This ran answerValue() and dropped the row,
+    // on the reasoning that "a placeholder and a blank are the same absence to
+    // a form". They are not: a SAPS 271 box reading NONE says the firearm has
+    // no frame serial, and an empty one says nobody filled it in. The vault
+    // already stores the card verbatim; this is the hand-off from the vault to
+    // a motivation's answers, and it was the step that lost it.
+    //
+    // Operator, 2026-09-08, naming the Licence Centre specifically: "we do not
+    // need to display all the information there, we can keep what is currently
+    // there but all the information needs to be captured and stored."
+    //
+    // A genuinely absent field is still skipped — trim, not answerValue. The
+    // writer is protected at the prose boundary; see renderFacts in
+    // motivation-prompts.ts and card-placeholder-boundary.spec.ts.
+    const answer = value.trim();
     if (!answer) continue;
     out[ownedFirearmKey(alias.motivation, row)] = answer;
   }

@@ -449,14 +449,21 @@ export function credentialOffer(
     credentialId: string,
   ) => {
     // ⚠️ THE ANSWER BOUNDARY, AND THE ONLY ONE THAT MATTERS IN THIS FILE.
-    // Every value below reaches a box on a SAPS 271 the applicant signs, and
-    // the guard here used to be `if (!v)` — emptiness only. A licence card
-    // prints NONE where a row does not apply, so "Firearm 6 — frame serial
-    // NONE · barrel serial NONE" was offered, accepted and written; seen on
-    // the operator's own application on 2026-09-07. `first()` already skips
-    // placeholders on the way in; this catches everything that does not come
-    // through it — an expiry column, an issue date, a caller's own string.
-    const v = answerValue(value);
+    // ⚠️ THE PLACEHOLDER IS OFFERED NOW, AND THAT REVERSES 2026-09-07.
+    //
+    // This ran answerValue() so that "Firearm 6 — frame serial NONE · barrel
+    // serial NONE" could never be offered, accepted and written. Operator,
+    // 2026-09-08, ruling the other way: "All those fields needs to be captured
+    // on a license card and filled in on the form, especially on the 271 that
+    // requires it." A 271 box reading NONE reproduces the card; an empty one
+    // says nobody filled it in, and those are different statements to a DFO.
+    //
+    // ⚠️ `first()` ABOVE STILL SKIPS PLACEHOLDERS, AND MUST. It is a fallback
+    // CHAIN — frame, then barrel, then receiver — and a NONE that returns
+    // instead of falling through is how a row with a real number in the next
+    // column comes back empty. Picking a serial and transcribing a row are
+    // different questions; only the second one wants the word NONE.
+    const v = (value ?? '').trim();
     if (!v || !keys.has(key)) return;
     // See the note above: a document whose dates nobody stands behind may fill
     // a fact, never a date.
