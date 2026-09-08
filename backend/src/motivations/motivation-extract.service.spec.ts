@@ -141,19 +141,25 @@ describe('what it refuses', () => {
     expect(await run(svc, MotivationUploadKind.IDENTITY_DOCUMENT)).toEqual([]);
   });
 
-  it('⚠️ refuses a card placeholder as an answer, however faithfully it was read', async () => {
-    // ⚠️ THE MODEL IS DOING AS IT IS TOLD HERE, AND THAT IS THE POINT. The
-    // system prompt orders it to transcribe what it can SEE and forbids
-    // interpretation — and what a licence card prints in a row that does not
-    // apply is the word NONE. The operator's Marlin reads "Frame Serial No
-    // NONE", so a perfect read hands us NONE and the guard, `if (!value)`,
-    // waved it through: the live application came back reading "Firearm 6 —
-    // frame serial NONE · barrel serial NONE", which is a false statement on a
-    // SAPS 271.
+  it('⚠️ KEEPS A CARD PLACEHOLDER, BECAUSE THE FORM WANTS IT', async () => {
+    // ⚠️ THIS TEST WAS THE OPPOSITE UNTIL 2026-09-08, AND THE HISTORY MATTERS.
     //
-    // The fix is at THIS boundary, not in the reader: the card is stored as it
-    // was printed, because the seller-consent declaration reproduces the
-    // document. See common/card-placeholder.ts.
+    // It read "refuses a card placeholder as an answer, however faithfully it
+    // was read", on the reasoning that "Firearm 6 — frame serial NONE · barrel
+    // serial NONE" was a false statement on a SAPS 271. The operator, who takes
+    // these packs to a DFO, ruled the other way: the card itself prints NONE in
+    // a row that does not apply, so copying it is reproducing the document, and
+    // an empty box does not say the same thing as a box reading NONE.
+    //
+    // Operator, 2026-09-08: "instruct gemini to read a NONE as NONE and not
+    // leave it out. All those fields needs to be captured on a license card and
+    // filled in on the form, especially on the 271 that requires it."
+    //
+    // The strip did not disappear — it MOVED, to the prose boundary in
+    // renderFacts (motivation-prompts.ts). The writer must never see NONE; the
+    // form must always see it. Before flipping this back, read that note and
+    // ownedFirearmSerial(), which still falls THROUGH a NONE row on purpose
+    // because a frame row reading NONE is not the firearm's serial number.
     const { svc } = build({
       fields: [
         { key: 'existing_firearm_1_make', value: 'MARLIN', confidence: 'high' },
@@ -162,8 +168,29 @@ describe('what it refuses', () => {
       ],
     });
     const out = await run(svc, MotivationUploadKind.CURRENT_LICENCE);
+    expect(out.map((f) => f.key)).toEqual([
+      'existing_firearm_1_make',
+      'existing_firearm_1_serial',
+      'existing_firearm_1_model',
+    ]);
+    expect(out.find((f) => f.key === 'existing_firearm_1_serial')?.value).toBe(
+      'NONE',
+    );
+  });
+
+  it('⚠️ STILL DROPS A GENUINELY EMPTY READ, which means something else', async () => {
+    // NONE is the card saying "there is nothing here". Empty is US saying "we
+    // could not make it out". licence-card-ocr.service.ts is told never to
+    // substitute one for the other, and this is the half of that promise this
+    // boundary owns.
+    const { svc } = build({
+      fields: [
+        { key: 'existing_firearm_1_make', value: 'MARLIN', confidence: 'high' },
+        { key: 'existing_firearm_1_serial', value: '   ', confidence: 'high' },
+      ],
+    });
+    const out = await run(svc, MotivationUploadKind.CURRENT_LICENCE);
     expect(out.map((f) => f.key)).toEqual(['existing_firearm_1_make']);
-    expect(out.map((f) => f.value)).not.toContain('NONE');
   });
 
   it('⚠️ refuses a date that is not a date, rather than putting it in a date box', async () => {

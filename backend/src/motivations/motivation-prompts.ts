@@ -1,6 +1,7 @@
 import { MotivationLicenceType } from '@prisma/client';
 import { sanitizePromptValue } from '../common/prompt-sanitize';
 import { factPackFields, LICENCE_TYPE_LABELS } from './motivation-fields';
+import { answerValue } from '../common/card-placeholder';
 import { cardSentences } from './motivation-preview';
 import { disciplineLabel } from './motivation-field-options';
 import type { SectionId, StructurePlan } from './motivation-structure';
@@ -290,7 +291,21 @@ function renderFacts(pack: FactPack): string {
   };
 
   for (const f of fields) {
-    const value = asProse(f.key, (pack.answers[f.key] ?? '').trim());
+    // ⚠️ THE PLACEHOLDER RULE LIVES HERE NOW, NOT AT THE ANSWER BOUNDARY.
+    //
+    // A licence card prints NONE in a row that does not apply, and that word is
+    // part of the record: SAPS wants it copied onto the 271, and a blank box
+    // says something different from a box reading NONE. So the readers and the
+    // answers keep it (operator, 2026-09-08: "instruct gemini to read a NONE as
+    // NONE and not leave it out … all those fields needs to be captured … and
+    // filled in on the form, especially on the 271 that requires it").
+    //
+    // What must never see it is the WRITER. "Model NONE" handed to a language
+    // model is an invitation to write a sentence about a firearm called None,
+    // and this is the one boundary where that can happen — so the strip that
+    // used to sit between the card and the answer sits between the answer and
+    // the prose instead.
+    const value = asProse(f.key, answerValue(pack.answers[f.key] ?? ''));
     if (!value) continue;
     if (f.kind === 'long' || f.kind === 'cards') {
       const body = f.kind === 'cards' ? cardBody(f.key, value) : value;

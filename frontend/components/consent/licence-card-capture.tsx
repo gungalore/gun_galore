@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { advanceCapture, type CardSide } from '@/lib/scan/two-side-capture';
+import type { DocumentScannerProps } from '../scan/document-scanner';
 
 // ────────────────────────────────────────────────────────────────────
 // PHOTOGRAPHING BOTH SIDES OF A FIREARM LICENCE.
@@ -28,8 +29,30 @@ import { advanceCapture, type CardSide } from '@/lib/scan/two-side-capture';
 // put a spinner in front of a stranger for no reason.
 // ────────────────────────────────────────────────────────────────────
 
-const DocumentScanner = dynamic(
-  () => import('../scan/document-scanner'),
+/**
+ * ⚠️ THE SAME DOOR THE LICENCE CENTRE USES, NOT A HARD-WIRED V2.
+ *
+ * This imported `../scan/document-scanner` by path, so the seller got the OLD
+ * scanner however `NEXT_PUBLIC_SCANNER_V3` was set — and it is set to 1 in
+ * production. The flag was only ever read by `scan/scan-button.tsx` and
+ * `/scan/handoff`, which is how one surface can be on the rebuilt detector
+ * while another quietly is not. Operator, 2026-09-08: "why cant we use the same
+ * scanner that the license centre uses, that one is far better than this."
+ *
+ * ⚠️ THE SWITCH IS COPIED, NOT IMPORTED, and that is forced: `dynamic()` needs
+ * a literal `import()` per branch for the bundler to split it, so a shared
+ * helper returning a promise would defeat the code-splitting the two scanners
+ * exist behind. Keep this expression identical to scan-button.tsx's.
+ *
+ * ⚠️ components/scan-v3 IS A VENDORED COPY — see CLAUDE.md. Import it, never
+ * edit it here; the next sync silently reverts anything changed in place.
+ */
+const SCANNER_V3 = process.env.NEXT_PUBLIC_SCANNER_V3 === '1';
+const DocumentScanner = dynamic<DocumentScannerProps>(
+  () =>
+    SCANNER_V3
+      ? import('../scan-v3/document-scanner')
+      : import('../scan/document-scanner'),
   { ssr: false },
 );
 

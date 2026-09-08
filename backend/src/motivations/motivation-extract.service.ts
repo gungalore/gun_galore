@@ -867,7 +867,22 @@ than a confident wrong one.`.trim();
       // EXTRACTABLE key is a fact printed on a document (a name, a number, an
       // address, a serial), never a question whose answer could legitimately BE
       // "none", so the rule is safe to apply to all of them here.
-      let value = answerValue(row.value);
+      // ⚠️ NONE IS KEPT NOW. This ran answerValue() and dropped the row, so a
+      // card reading "Frame Serial No NONE" reached the answers as nothing and
+      // the SAPS 271 printed an empty box — which does not say the same thing.
+      // Operator, 2026-09-08: "instruct gemini to read a NONE as NONE and not
+      // leave it out. All those fields needs to be captured on a license card
+      // and filled in on the form, especially on the 271 that requires it."
+      //
+      // The read side already did its half correctly: licence-card-ocr.service
+      // is told "if it says NONE, you put NONE" and never INVENTS one, so a
+      // field it could not make out still arrives undefined rather than NONE.
+      // The two remain distinguishable, which is the property that matters.
+      //
+      // The writer is protected at the prose boundary instead — see renderFacts
+      // in motivation-prompts.ts. A serial lookup still falls through a NONE
+      // row: ownedFirearmSerial() runs answerValue() on purpose.
+      let value = (row.value ?? '').trim();
       if (!value) continue;
 
       // ⚠️ THE COMPETENCY ENDORSEMENTS ARE READ, NOT MATCHED. A certificate
