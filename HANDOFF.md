@@ -264,6 +264,69 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### The reason generator — 2026-09-08, `eeabdea0` → `f3259e56`
+
+Implements the operator's `MOTIVATION-REASON-PROMPT.md`: system prompt,
+per-section angles, method, output shape, validator, fallback example banks.
+**Verified live on MO000069** — angle `division_differentiation`, 172 words, no
+blockers, all five held firearms named with roles before the gap is argued.
+
+⚠️ **THREE THINGS IN THE SPEC DO NOT MATCH THIS CODEBASE**, all recorded at the
+top of `motivation-reason.ts`:
+
+1. **There is no "writer tier (Anthropic)".** One adapter, `LlmService`;
+   `LLM_PROVIDER=anthropic` is a global **rollback lever**, not a per-call
+   choice. This runs on Gemini.
+2. **"No structured-outputs API (repo rule)" is the OLD rule, reversed.** Reads
+   use `json: { schema }`; hand-parsing a fenced block would be a step
+   backwards. No grounding — the research arrives already fetched, which is also
+   what keeps the call legal on Gemini, where grounding and json cannot combine.
+3. ⚠️ **`previous_motivations` HAS NO STORE.** Nothing records an approved
+   application's angle, stated purpose or outcome. The field travels **empty**
+   rather than omitted, so the prompt reads it as "first application" and the
+   day a store exists only the filling changes. **It is the most valuable idea
+   in the document and the only part that is net-new work.**
+
+⚠️ **THE OUTPUT LANDS ON `firearm_fit_reason`** — the field that was `required`
+until 2026-09-08 and was "the largest single reason an application stalled: it
+asked the applicant to write the argument the product exists to write for them".
+Stamped `DERIVED` + `inferred`, so the sheet renders it **`suggested`** and
+`stamp()` refuses to overwrite a paragraph the applicant has written. Fired once
+per application from the sheet, only while the box is empty — which is what
+bounds the bill.
+
+**Three corrections to the spec's validator, every one found live:**
+
+- ⚠️ **"automatic (unless semi-automatic)" as a substring test refuses every
+  legitimate self-loading firearm.** Checked after `semi-automatic` is removed.
+- ⚠️ **Banning `"match"` on a section 13 paragraph also catches "matches the
+  description"**, and `"protect"` catches "protected species". Word boundaries.
+- ⚠️ **THE MODEL'S OWN WORD COUNT IS NOT A SAFETY PROPERTY.** Two live
+  generations claimed 218 words for paragraphs of 176 and 196. The length rule
+  is enforced against a **real** count; whether the model can also do the
+  arithmetic is our problem. Corrected, not rejected.
+
+⚠️ **AN EXAMPLE IS DROPPED, NEVER FATAL — THE PARAGRAPH IS THE PRODUCT.** A
+generation was lost because a label read "SAPSA Provincial Matches" and
+"matches" was not among the supplied terms. The test is **acronyms only** now:
+what it guards against is a body we never mentioned ("IDPA Stock Service Pistol"
+for an IPSC shooter), and that failure is always an acronym.
+
+⚠️ **A RETRY THAT RE-SENDS THE IDENTICAL PROMPT IS A DICE ROLL.** The second
+attempt is told what was wrong with the first; the rejections are already
+written for a person, so they are already the right feedback. First live run
+offered "collecting" as a reason and the retry dropped it.
+
+⚠️ **AND ONE BUG OF MY OWN, CAUGHT BY ITS OWN TEST:** the held-firearm token
+filter dropped anything under three characters, excluding **"CZ"** — one of the
+commonest makes in South Africa — so a paragraph correctly naming the
+applicant's own CZ was rejected as naming a firearm they do not hold.
+
+**Worth knowing about the output:** with no `primary_use` answered, every role
+in the paragraph is *inferred* — the prompt permits that only when no stated
+role exists, which was the case. It is why the result is a suggestion the member
+confirms rather than an answer.
+
 ### Finishing the 2026-09-08 list — `39171000` → `2f418727`
 
 ⚠️ **THERE IS NO "SELECT ALL" CONTROL ANYWHERE IN THIS CODEBASE.** "It selects
@@ -1069,8 +1132,8 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `2f418727` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `2f418727` |
+| Production runs | `f3259e56` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `f3259e56` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
