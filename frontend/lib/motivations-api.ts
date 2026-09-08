@@ -894,6 +894,36 @@ export const crimeStatsApi = {
     ),
 };
 
+/**
+ * One place the local press reports crime in.
+ *
+ * ⚠️ MIRRORS backend/src/motivations/motivation-danger-areas.ts. The server
+ * owns the shape; this never leads.
+ */
+export interface DangerArea {
+  /** The place as the papers print it. */
+  name: string;
+  /** What a tick is stored against. Normalised — see areaKey. */
+  key: string;
+  incidentIds: string[];
+  count: number;
+  distanceKm: number | null;
+  crimeTypes: string[];
+  latestHeadline: string;
+  latestOn: string;
+  /**
+   * The applicant's route passes through here.
+   *
+   * ⚠️ ALWAYS FALSE UNTIL THE MAPS WORK LANDS. In the shape so the list can
+   * order and pre-tick by it the day it does.
+   */
+  onRoute: boolean;
+  /** The SAPS precinct covering it, whose figures the pack annexes. */
+  station: { name: string; province: string } | null;
+  ticked: boolean;
+  reason?: string;
+}
+
 export const motivationsApi = {
   /**
    * Whether the module is open, and whether a new one can be started.
@@ -1053,6 +1083,41 @@ export const motivationsApi = {
       warnings?: string[];
       rejections?: string[];
     }>(t, `/${id}/reason`, { method: 'POST' }, { written: false }),
+
+  /**
+   * The dangerous areas around this applicant, for them to tick.
+   *
+   * ⚠️ AREAS, NOT ARTICLES. Operator, 2026-09-08: "pull the areas and list them
+   * and ask the user if he travels through these areas regularly." "Which of
+   * these fourteen articles would you like" is a question about our filing;
+   * "do you drive through Edgemead" is a question about their life, and it is
+   * the one a DFO can weigh.
+   */
+  areas: (t: TokenGetter, id: string) =>
+    request<{
+      station: string | null;
+      withinKm: number;
+      areas: DangerArea[];
+    }>(t, `/${id}/areas`, {}, { station: null, withinKm: 50, areas: [] }),
+
+  /**
+   * Record which of them they travel through.
+   *
+   * ⚠️ KEYS AND REASONS GO UP; THE SERVER DECIDES THE CLIPPINGS. Sending
+   * article ids from here could put an annexure in a pack the ticked areas do
+   * not account for.
+   */
+  saveAreas: (
+    t: TokenGetter,
+    id: string,
+    areas: { key: string; reason?: string }[],
+  ) =>
+    request<{ areas: number; clippings: number }>(
+      t,
+      `/${id}/areas`,
+      { method: 'POST', body: JSON.stringify({ areas }) },
+      { areas: 0, clippings: 0 },
+    ),
 
   keepInCentre: (t: TokenGetter, id: string, uploadIds: string[]) =>
     request<{ kept: number; needsConsent: boolean }>(

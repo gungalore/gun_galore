@@ -21,12 +21,17 @@ import SheetToast from '@/components/licence-centre/sheet-toast';
 import ConsentCard from '@/components/licence-centre/consent-card';
 import CompetencyLines from '@/components/licence-centre/competency-lines';
 import CredentialPair from '@/components/licence-centre/credential-pair';
+import DangerAreas from '@/components/licence-centre/danger-areas';
 import LibraryPicker from '@/components/library-picker';
 import PackSummary from '@/components/licence-centre/pack-summary';
 import PreviewPanel from '@/components/licence-centre/preview-panel';
 import AddPanel from '@/components/licence-centre/add-panel';
 import DeleteApplication from '@/components/licence-pack/delete-application';
-import type { LibraryItem, PickableKind } from '@/lib/motivations-api';
+import type {
+  DangerArea,
+  LibraryItem,
+  PickableKind,
+} from '@/lib/motivations-api';
 
 // ────────────────────────────────────────────────────────────────────
 // THE REVIEW SHEET — one scrolling page per application.
@@ -216,6 +221,25 @@ export default function LicenceCentreSheetPage() {
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
 
   /**
+   * The dangerous areas around the applicant, and their own ticks.
+   *
+   * ⚠️ ITS OWN FETCH, NOT PART OF THE SHEET. Building the list geocodes every
+   * area to find its police station — one Places lookup each — and the sheet is
+   * refetched after every single answer. Folding it in would pay for a dozen
+   * geocodes each time somebody corrects a serial.
+   *
+   * ⚠️ AND SELF-DEFENCE ONLY. The server answers `{ areas: [] }` for anything
+   * else, but there is no reason to ask at all: a hunting application has no
+   * press-clippings annexure.
+   */
+  const [areas, setAreas] = useState<{
+    station: string | null;
+    withinKm: number;
+    areas: DangerArea[];
+  } | null>(null);
+  const [savingAreas, setSavingAreas] = useState(false);
+
+  /**
    * ⚠️ THE ANSWERS THE SERVER LAST CONFIRMED, HELD SEPARATELY FROM THE SHEET.
    *
    * The sheet is refetched after a save, and a refetch that landed while
@@ -374,6 +398,31 @@ export default function LicenceCentreSheetPage() {
       }
     })();
   }, [sheet, getToken, id, load]);
+
+  /**
+   * Load the area list once, for a self-defence application.
+   *
+   * ⚠️ KEYED ON THE STATION, because that is what the list is drawn around.
+   * It arrives from `stationOffer()` at create and the member may correct it;
+   * anything else they change — a serial, a safe photograph — must not spend a
+   * dozen geocodes again.
+   */
+  const areasFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sheet) return;
+    if (sheet.application.licenceType !== 'S13_SELF_DEFENCE') return;
+    const station =
+      sheet.items.find((i) => i.key === 'police_station')?.value ?? '';
+    if (areasFor.current === station) return;
+    areasFor.current = station;
+    void (async () => {
+      try {
+        setAreas(await motivationsApi.areas(getToken, id));
+      } catch {
+        /* Fail soft: the section says it found nothing, which is true. */
+      }
+    })();
+  }, [sheet, getToken, id]);
 
   /**
    * The opening fold: the first section that still owes something.
@@ -952,6 +1001,57 @@ export default function LicenceCentreSheetPage() {
           ) : null}
 
           {loose.map(row)}
+        </>
+      );
+    }
+
+    /**
+     * ⚠️ "Your case" IS WHERE THE AREAS BELONG, under the cards that say what
+     * the applicant's circumstances are. It is the same argument in two
+     * registers: the cards say "I travel at night", and this says which roads.
+     *
+     * ⚠️ AND IT IS THE ONLY THING THAT CAN WRITE `press_clippings`. That key is
+     * internal and its registry comment says the wizard writes it once the
+     * member has picked — Phase 4 deleted the wizard, so the annexure has been
+     * unreachable since. Mounting this is what restores it.
+     */
+    if (sectionId === 'case' && areas) {
+      return (
+        <>
+          {visible.map(row)}
+          <DangerAreas
+            areas={areas.areas}
+            station={areas.station}
+            withinKm={areas.withinKm}
+            busy={savingAreas}
+            onSave={async (ticked) => {
+              setSavingAreas(true);
+              try {
+                const r = await motivationsApi.saveAreas(getToken, id, ticked);
+                /*
+                  ⚠️ THE SERVER'S ANSWER, NOT THE TICK COUNT. The member ticked
+                  areas; how many cuttings that bought is our arithmetic, and
+                  the cap is spent area by area — so "3 areas" can be "3
+                  cuttings" or "8". Saying what actually goes in the pack is the
+                  only honest number.
+                */
+                setToast(
+                  r.areas === 0
+                    ? 'Saved — no areas ticked, so no cuttings go in your pack.'
+                    : `Saved ${r.areas === 1 ? '1 area' : `${r.areas} areas`} — ${
+                        r.clippings === 1
+                          ? '1 cutting'
+                          : `${r.clippings} cuttings`
+                      } will go in your pack.`,
+                );
+                await load();
+              } catch {
+                setToast('We could not save those just now.');
+              } finally {
+                setSavingAreas(false);
+              }
+            }}
+          />
         </>
       );
     }
