@@ -11,6 +11,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { encryptText, tryDecryptText } from '../common/blob-crypto';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { applicationBlockers } from './motivation-eligibility';
+import {
+  MotivationResearchService,
+  type ResearchPack,
+} from './motivation-research.service';
 import { MotivationModelService } from './motivation-model.service';
 import { SettingsService, FLAGS } from '../settings/settings.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -43,12 +47,6 @@ import {
   missingRequired,
   parsePressClippingIds,
 } from './motivation-fields';
-import {
-  FOLLOW_UP_BATCH,
-  fallbackQuestion,
-  findGaps,
-  gapBrief,
-} from './motivation-gaps';
 import { readSaId } from './sa-id';
 import { overlapFromAnswers } from './motivation-overlap';
 import { documentLabel, documentStatus } from './motivation-documents';
@@ -105,6 +103,8 @@ export class MotivationGenerationService {
     private readonly shared: MotivationSharedService,
     private readonly crimeStats: CrimeStatsService,
     private readonly news: NewsService,
+    // Structured, cached background — see the note at the research call below.
+    private readonly research: MotivationResearchService,
   ) {}
 
   /**
@@ -403,44 +403,53 @@ export class MotivationGenerationService {
       // ones to worry about: during the gap research() returned null before
       // reaching the model, so nothing unsearched was ever written to
       // researchEncrypted. Every stored brief was searched when it was made.
+      // ⚠️ STRUCTURED AND CACHED SINCE 2026-09-08, not one free-text brief.
+      //
+      // The old call asked one grounded question built from this applicant's
+      // answers — including their suburb, redacted to an area but still
+      // theirs — and cached the result on THIS motivation only, so the second
+      // applicant for the same firearm paid for the same search again.
+      //
+      // MotivationResearchService asks four narrower questions instead, each
+      // keyed on a fact about the WORLD — the firearm model, the cartridge,
+      // the discipline, the class of game — so they are shared across every
+      // applicant who asks the same one, and NO APPLICANT DATUM REACHES A
+      // SEARCH QUERY AT ALL. Precinct figures come from our own SAPS workbook
+      // above, which is where the area ask went.
+      //
+      // ⚠️ researchEncrypted STAYS, and it is not the same cache. The shared
+      // table makes the FETCH free; this column makes the TEXT stable across
+      // gate cycles, which is what stops attempt two being graded against a
+      // different brief from attempt one.
       let researchIn = 0;
       let researchOut = 0;
       let research = row.researchEncrypted
         ? (tryDecryptText(row.researchEncrypted) ?? undefined)
         : undefined;
       if (!research) {
-        const r = await this.model
-          .research({
-            licenceType: row.licenceType,
-            answers,
-            // ⚠️ THE OTHER FIREARM IS PART OF THE BRIEF NOW. The writer has to
-            // argue the comparison itself rather than wait for the applicant
-            // to hand it over, and rule 1 forbids it any figure it was not
-            // given — so without published material on the held cartridge the
-            // strongest section in a same-class application could only be
-            // written in generalities.
-            heldForComparison:
+        const pack = await this.research
+          .researchFor(row.licenceType, answers, {
+            // Cartridge names only — never a make, a serial or a licence
+            // number. See ResearchPack.held for why both sides are needed.
+            heldCalibres:
               overlap.verdict.kind === 'overlap'
-                ? [
-                    ...overlap.verdict.withCalibres,
-                    ...overlap.verdict.withTypes,
-                  ]
+                ? overlap.verdict.withCalibres
                 : [],
-            // See researchBrief()'s own note: a verified precinct block above
-            // makes the crime-context ask redundant, so drop it rather than
-            // pay a grounded search to approximate a number we already hold
-            // exactly.
-            hasPrecinctFigures: !!precinctBlock,
           })
-          .catch(() => null);
-        if (r) {
-          research = r.text;
-          researchIn = r.usage.promptTokens;
-          researchOut = r.usage.completionTokens;
+          .catch(() => ({}) as ResearchPack);
+        const text = MotivationResearchService.toBlock(pack).trim();
+        // ⚠️ A CACHE HIT CONTRIBUTES ZERO, WHICH IS THE HONEST NUMBER. These
+        // two feed the motivation's own token columns further down; the
+        // AiUsage ledger records every call separately either way.
+        const spent = MotivationResearchService.usageOf(pack);
+        researchIn = spent.promptTokens;
+        researchOut = spent.completionTokens;
+        if (text) {
+          research = text;
           await this.prisma.motivation
             .update({
               where: { id: row.id },
-              data: { researchEncrypted: encryptText(r.text) },
+              data: { researchEncrypted: encryptText(text) },
             })
             .catch(() => undefined);
         }
@@ -780,15 +789,16 @@ export class MotivationGenerationService {
           gateCycles: nextCycles,
         },
       });
-      await this.queueFollowUps(
-        row.id,
-        row.licenceType,
-        graded.verdict.thinFields,
-        answers,
-      );
-      // ⚠️ AFTER queueFollowUps, NEVER BEFORE. The message tells the applicant
-      // the questions are waiting for them; sending it first would race an
-      // applicant who taps the SMS straight away onto a page with none on it.
+      // ⚠️ NO FOLLOW-UP QUESTIONS ARE QUEUED — 2026-09-08. `queueFollowUps`
+      // stood here and turned the gate's thin-field list into questions for
+      // the applicant. No model ever asks the applicant a question now
+      // (MOTIVATION-REBUILD-BRIEF.md §2.3): `thinFields` is still computed,
+      // still stored on the row and still lowers the score, and the review
+      // sheet shows those fields as ordinary empty inputs like any other.
+      //
+      // The status is unchanged. NEEDS_MORE_INFO still means what it said —
+      // we need more from you before this can be written — it is simply no
+      // longer accompanied by an interview.
       await this.notifyOutcome(row, 'held');
       return {
         status: MotivationStatus.NEEDS_MORE_INFO,
@@ -1099,76 +1109,6 @@ export class MotivationGenerationService {
       select: { structureFingerprint: true },
     });
     return rows.map((r) => r.structureFingerprint).filter((f) => f.length > 0);
-  }
-
-  /**
-   * Turn the gate's thin-field list into questions. WE pick the fields; the
-   * model only phrases them. If it cannot, the field's own help text is the fallback
-   * — a plain question beats no question.
-   */
-  private async queueFollowUps(
-    motivationId: string,
-    licenceType: MotivationLicenceType,
-    thinFields: string[],
-    answers: Record<string, string>,
-  ): Promise<void> {
-    // WHAT to ask is worked out in code, for nothing — it is arithmetic over
-    // the field registry. The model is asked only to WORD the questions, which is
-    // the one part it is genuinely better at.
-    // ⚠️ NEVER ASK A QUESTION THAT IS ALREADY ON SCREEN UNANSWERED. Every
-    // gate cycle used to queue its follow-ups blind, so three attempts put
-    // THREE copies of "could you tell me a bit more about your competition
-    // record" in front of the applicant — who read it, reasonably, as the
-    // system falling apart. A question counts as open until a user message
-    // with the same fieldKey arrives after it, which is the same rule the
-    // wizard renders by.
-    const history = await this.prisma.motivationMessage.findMany({
-      where: { motivationId },
-      orderBy: { createdAt: 'asc' },
-      select: { role: true, fieldKey: true },
-    });
-    const open = new Set<string>();
-    for (const m of history) {
-      if (!m.fieldKey) continue;
-      if (m.role === 'assistant') open.add(m.fieldKey);
-      else open.delete(m.fieldKey);
-    }
-
-    const gaps = findGaps(licenceType, answers, { thinFields })
-      .filter((g) => !open.has(g.key))
-      .slice(0, FOLLOW_UP_BATCH);
-    if (!gaps.length) return;
-
-    // ONE request for the batch. This used to be one per field, which meant a
-    // failed gate sent the whole system prompt three times to produce three
-    // sentences.
-    let phrased: Record<string, string> = {};
-    try {
-      const res = await this.model.askFollowUpBatch({
-        licenceType,
-        gaps: gapBrief(gaps),
-      });
-      phrased = res.questions;
-    } catch {
-      // Every gap has a free fallback, so a failure here costs wording, not
-      // the interview.
-      phrased = {};
-    }
-
-    for (const gap of gaps) {
-      await this.prisma.motivationMessage
-        .create({
-          data: {
-            motivationId,
-            role: 'assistant',
-            fieldKey: gap.key,
-            contentEncrypted: encryptText(
-              phrased[gap.key] ?? fallbackQuestion(gap),
-            ),
-          },
-        })
-        .catch(() => undefined);
-    }
   }
 
   /**

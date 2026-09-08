@@ -3,8 +3,17 @@ import { MotivationLicenceType, MotivationUploadKind } from '@prisma/client';
 // documentStatus. Two surfaces disagreeing about it is how a member gets a
 // green tick on one screen and an amber row on the next.
 import { SAFE_PHOTO_MIN } from './motivation-documents';
-// The one spelling of the key the Licence Centre writes its 517(g) finding to.
-import { COMPETENCY_RENEWS_KEY } from './motivation-fields';
+// COMPETENCY_RENEWS_KEY is the one spelling of the key the Licence Centre
+// writes its 517(g) finding to. FIREARM_SOURCE_KEY / SOURCE_DEALER /
+// SOURCE_PRIVATE are read by saps271FormNote below, to say which half of
+// SAPS 271 section F — if any — the applicant's own pack leaves for someone
+// else to complete.
+import {
+  COMPETENCY_RENEWS_KEY,
+  FIREARM_SOURCE_KEY,
+  SOURCE_DEALER,
+  SOURCE_PRIVATE,
+} from './motivation-fields';
 
 // ────────────────────────────────────────────────────────────────────
 // THE SUBMISSION CHECKLIST — a LIVE, TICKABLE SURFACE, not a PDF page.
@@ -655,9 +664,14 @@ const APPLICANT_MUST_BRING: Omit<ChecklistItem, 'done' | 'owner' | 'state' | 'cl
   {
     key: 'saps_form',
     label: 'The SAPS application form for this licence',
-    // Most dealers complete the 271 with the buyer, which is why filling it is
-    // an opt-in extra rather than part of the pack.
-    note: 'Your dealer will usually complete this with you — otherwise get it from your DFO, or ask us to pre-fill it in your application. Do NOT sign it beforehand — it must be signed in front of the DFO.',
+    // ⚠️ THE REAL NOTE IS COMPUTED PER APPLICATION, NOT HERE — see
+    // saps271FormNote below, applied in buildChecklist where the licence type
+    // and firearm_source are both in hand. Which form it even is (271 or
+    // 518(a)) and which half of it is somebody else's to fill depend on both,
+    // and a static sentence here would go stale the moment either changed.
+    // This default is only what shows if buildChecklist is ever called
+    // without a licence type reaching this far, which should not happen.
+    note: 'Do NOT sign it beforehand — it must be signed in front of the DFO.',
     verifyBeforeUse: true,
   },
   {
@@ -982,6 +996,61 @@ function s24Bring(
 }
 
 /**
+ * The one line telling the applicant who fills in the SAPS form, and how
+ * much of it is theirs.
+ *
+ * ⚠️ NOT ALWAYS THE 271. A section 24 renewal is lodged on the SAPS 518(a) —
+ * motivation-render.service.ts refuses to produce a 271 for one, by licence
+ * type, and this product does not fill the 518(a) in at all (out of scope,
+ * brief §9.4). A renewal's row must say so rather than describe a pre-filled
+ * section this pack never produces.
+ *
+ * ⚠️ EVERY OTHER LICENCE TYPE'S 271 STOPPED BEING AN OPT-IN EXTRA ON
+ * 2026-09-08 (brief §2.5, `MOTIVATION-INTAKE-PLAN.md` §1). We now complete
+ * sections D, G and H unconditionally; section F is filled, ticked or left
+ * blank by `firearm_source` alone (saps271.service.ts draws it,
+ * saps271-map.ts decides it) — never by a choice made on this checklist. This
+ * function only puts that outcome into plain words for the applicant in
+ * front of them, and it must never claim more than the map actually draws:
+ * see saps271-map.ts's own section-F comments before changing either route's
+ * wording here.
+ */
+function saps271FormNote(
+  licenceType: MotivationLicenceType,
+  answers: Record<string, string>,
+): string {
+  if (licenceType === MotivationLicenceType.S24_RENEWAL) {
+    return 'A renewal is lodged on the SAPS 518(a), not the 271 — get it from your DFO. Do NOT sign it beforehand — it must be signed in front of the DFO.';
+  }
+
+  const base =
+    'We fill in your half of the SAPS 271 application form — sections D, G and H — from your answers and documents, and it is in your pack. Do NOT sign it beforehand — it must be signed in front of the DFO.';
+
+  const source = (answers[FIREARM_SOURCE_KEY] ?? '').trim();
+  if (source === SOURCE_DEALER) {
+    // ⚠️ NAMES WHO FILLS THE REST, RATHER THAN LEAVING AN UNEXPLAINED GAP.
+    // saps271-map.ts leaves section F blank on this route on purpose —
+    // operator, 2026-08-28: "F. Type B and SAP 350 can be left alone, a
+    // dealer needs to fill in those" — and the form itself carries the same
+    // explanation as a `leftBlank` entry. Said again here so the applicant
+    // knows before they get to the counter, not at it.
+    return `${base} Section F is left blank for your dealer — they complete it along with their own SAPS 350(a); that half is theirs, not yours.`;
+  }
+  if (source === SOURCE_PRIVATE) {
+    // ⚠️ NOT A PROMISE THAT F IS ALREADY DONE. It is filled once the seller
+    // has actually completed and signed his consent (sectionF() in
+    // motivation-seller-consent.service.ts returns nothing before that), so
+    // this only says what the finished route looks like, not that it has
+    // finished — the coverage panel's own 'F' row carries the live status.
+    return `${base} Section F — the current owner's half — is filled from your seller's signed consent and printed as the page he signs.`;
+  }
+  // Unstated, or the estate route (which the 271 does not process at all —
+  // see the "Type A and B only" ruling in saps271-map.ts): say only what is
+  // certain, which is our own half.
+  return base;
+}
+
+/**
  * Build the live checklist.
  *
  * `haveKinds` is what has actually been uploaded and `documentReady` whether the
@@ -1109,6 +1178,15 @@ export function buildChecklist(
     // hold and must never imply we could take an upload of. The section intro
     // carries the regulation detail; this line only answers "so what do I do".
     closer: waitingOn[i.key] ?? 'You bring this with you to the counter.',
+    // ⚠️ THE ONE ROW WHOSE NOTE DEPENDS ON MORE THAN ITSELF. Which form this
+    // even is, and who fills which half of it, turns on the licence type and
+    // `firearm_source` — see saps271FormNote. `context.answers ?? {}` rather
+    // than skipping the override when answers are absent: a caller with no
+    // answers to hand should see the honest "our half, form TBC by route"
+    // sentence, not the stale placeholder above.
+    ...(i.key === 'saps_form'
+      ? { note: saps271FormNote(licenceType, context.answers ?? {}) }
+      : {}),
   }));
 
   const oursDone = ours.filter((i) => i.done).length;

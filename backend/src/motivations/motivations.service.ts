@@ -63,6 +63,10 @@ import { MotivationDocumentsService } from './motivation-documents.service';
 import { MotivationGenerationService } from './motivation-generation.service';
 import { MotivationRenderService } from './motivation-render.service';
 import { MotivationWitnessesService } from './motivation-witnesses-flow.service';
+import {
+  MemberProfileAnswersService,
+  splitByScope,
+} from './member-profile-answers.service';
 
 // Re-exported so every existing importer keeps working: both moved to
 // motivation-shared.service.ts when this file was split, and nothing about
@@ -109,6 +113,7 @@ export class MotivationsService {
     private readonly generation: MotivationGenerationService,
     private readonly render: MotivationRenderService,
     private readonly witnesses: MotivationWitnessesService,
+    private readonly profileAnswers: MemberProfileAnswersService,
   ) {}
 
   /** Own list. Metadata only — nothing is decrypted here. */
@@ -519,21 +524,19 @@ export class MotivationsService {
             // it and it is the one value that addresses a file on our disk.
           },
         },
-        messages: {
-          orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            role: true,
-            contentEncrypted: true,
-            fieldKey: true,
-            createdAt: true,
-          },
-        },
       },
     });
     if (!row) throw new NotFoundException('Motivation not found');
 
-    const answers = this.shared.readAnswers(row.answersEncrypted);
+    // ⚠️ THE PROFILE UNDERNEATH, THE APPLICATION ON TOP. A profile answer is
+    // an OFFER, never an override: if this application already carries a value
+    // for a profile-scoped key, that is the member having changed it here, and
+    // it wins. See MemberProfileAnswersService.
+    const profile = await this.profileAnswers.readFor(user.id);
+    const answers = {
+      ...profile.answers,
+      ...this.shared.readAnswers(row.answersEncrypted),
+    };
     // One clock for every row, so two documents dated the same day cannot land
     // on opposite sides of ninety days.
     const uploadsNow = new Date();
@@ -598,15 +601,12 @@ export class MotivationsService {
         const { extractionEncrypted: _blob, sourceCredential: _src, ...rest } = u;
         return { ...rest, ...this.shared.expiryFor(u, uploadsNow) };
       }),
-      // Decrypt per row rather than in bulk: one unreadable message (a rotated
-      // secret, a partial write) must not take the whole wizard down.
-      messages: row.messages.map((m) => ({
-        id: m.id,
-        role: m.role,
-        fieldKey: m.fieldKey,
-        createdAt: m.createdAt,
-        content: tryDecryptText(m.contentEncrypted) ?? '',
-      })),
+      // ⚠️ `messages` IS GONE AND STAYS GONE. The targeted follow-up interview
+      // is removed — no model asks the applicant a question any more. Where a
+      // required fact is missing the review sheet shows the empty input, and
+      // that is the whole mechanism (MOTIVATION-REBUILD-BRIEF.md §2.3). The
+      // key is not returned as an empty array either: a client branching on
+      // its presence should meet its absence, not a list that never fills.
     };
   }
 
@@ -648,10 +648,32 @@ export class MotivationsService {
       row.licenceType,
       patch,
     );
+    // ⚠️ PROFILE-SCOPED KEYS ARE PEELED OFF HERE AND STORED AGAINST THE
+    // PERSON, NOT THE APPLICATION. The contract with the client does not
+    // change — it sends one whole blob, as it always has, and gets one back —
+    // but marital status, the premises and what each owned firearm is for
+    // follow the member into every application they ever make. See
+    // MemberProfileAnswersService.
+    //
+    // ⚠️ AFTER sanitiseAnswers, NEVER BEFORE IT. splitByScope routes; it does
+    // not validate. Splitting first would let an unregistered key reach the
+    // profile store unchecked.
+    const { application: cleanApplication, profile: cleanProfile } =
+      splitByScope(row.licenceType, clean);
+
     // ⚠️ THE PREVIOUS ANSWERS ARE HELD, NOT INLINED INTO THE SPREAD. The next
     // three lines are the whole of "MEMBER always wins" and they need
     // something to compare against.
-    const before = this.shared.readAnswers(row.answersEncrypted);
+    //
+    // ⚠️ AND THE PROFILE IS UNDERNEATH, so a profile answer that has not
+    // changed does not read as a change on this application. Without it, every
+    // autosave would see the whole profile arrive as "new" against an empty
+    // application blob and stamp all of it MEMBER — which is absorbing.
+    const profileBefore = await this.profileAnswers.readFor(user.id);
+    const before = {
+      ...profileBefore.answers,
+      ...this.shared.readAnswers(row.answersEncrypted),
+    };
     const merged = { ...before, ...clean };
 
     // ⚠️ changedKeys, NOT Object.keys(clean). THIS IS THE BUG THIS FEATURE
@@ -804,14 +826,59 @@ export class MotivationsService {
       }
     }
 
+    // ⚠️ THE APPLICATION BLOB KEEPS ONLY THE APPLICATION'S OWN ANSWERS. Any
+    // profile-scoped key already sitting in it — written before this split
+    // existed — is left exactly where it is rather than migrated out, and it
+    // still wins on read (findOne layers the application over the profile).
+    // Rewriting somebody's stored blob to tidy up a scope boundary is a
+    // migration, not a save, and this is not the place for one.
+    //
+    // ⚠️ AND `derivedValues` IS APPLIED HERE, NOT FORGOTTEN. This is the
+    // "one variable doing two jobs" trap this module has now produced three
+    // times, and it produced it again in this very change: the two hooks above
+    // write what they derived into `merged`, and building the blob from
+    // `readAnswers + cleanApplication` alone silently dropped every one of
+    // them. A station derived from a changed address went into the response,
+    // was reported to the client, and was never stored — so the next autosave
+    // sent it back, `changedKeys` saw it move, and it would have been stamped
+    // MEMBER. Caught by 're-derives the station when the address changes'.
+    //
+    // Split by scope like everything else: a derived value belongs wherever
+    // its field says it does. None is profile-scoped today; the split is here
+    // so the first one that is does not have to find this comment.
+    const { application: derivedApplication, profile: derivedProfile } =
+      splitByScope(row.licenceType, derivedValues);
+    const mergedApplication = {
+      ...this.shared.readAnswers(row.answersEncrypted),
+      ...cleanApplication,
+      ...derivedApplication,
+    };
+
     await this.prisma.motivation.update({
       where: { id: row.id },
       data: {
-        answersEncrypted: encryptJson(merged),
+        answersEncrypted: encryptJson(mergedApplication),
         answersSchemaVersion: FIELD_REGISTRY_VERSION,
         answerProvenance: provenance as unknown as object,
       },
     });
+
+    // ⚠️ AFTER the motivation write, and deliberately not in a transaction
+    // with it. The two stores fail independently: a profile write that fails
+    // costs the member re-answering a premises question on their next
+    // application, while rolling the whole save back would cost them the
+    // answer they just typed on this one. The cheaper failure is the one to
+    // take.
+    const profileWrite = { ...cleanProfile, ...derivedProfile };
+    if (Object.keys(profileWrite).length) {
+      try {
+        await this.profileAnswers.writeFor(user.id, profileWrite);
+      } catch (err) {
+        this.logger.error(
+          `Motivation ${row.id}: profile answers not saved — ${(err as Error).message}`,
+        );
+      }
+    }
 
     const unknown = rejected.filter((k) => !refused.includes(k));
     if (unknown.length) {
@@ -971,25 +1038,11 @@ export class MotivationsService {
     return this.documents.rereadUpload(clerkId, id, uploadId);
   }
 
-  /** @see MotivationPrefillService.licenceCentreOffer */
-  licenceCentreOffer(clerkId: string, id: string) {
-    return this.prefill.licenceCentreOffer(clerkId, id);
-  }
-
-  /** @see MotivationPrefillService.useLicenceCentre */
-  useLicenceCentre(clerkId: string, id: string) {
-    return this.prefill.useLicenceCentre(clerkId, id);
-  }
-
-  /** @see MotivationPrefillService.profilePrefillOffer */
-  profilePrefillOffer(clerkId: string, id: string) {
-    return this.prefill.profilePrefillOffer(clerkId, id);
-  }
-
-  /** @see MotivationPrefillService.useProfile */
-  useProfile(clerkId: string, id: string) {
-    return this.prefill.useProfile(clerkId, id);
-  }
+  // ⚠️ FOUR DELEGATORS STOOD HERE — licenceCentreOffer, useLicenceCentre,
+  // profilePrefillOffer and useProfile — and their four endpoints went with
+  // them on 2026-09-08. See the note where they were declared in
+  // motivations.controller.ts: prefill is automatic now, with provenance, and
+  // a confirm step guarding a value we already hold is work we invented.
 
   /** @see MotivationDocumentsService.addUpload */
   addUpload(
@@ -1027,160 +1080,19 @@ export class MotivationsService {
   }
 
   // ────────────────────────────────────────────────────────────────
-  // THE FOLLOW-UP INTERVIEW
+  // THE FOLLOW-UP INTERVIEW IS GONE — 2026-09-08
+  //
+  // ⚠️ NO MODEL EVER ASKS THE APPLICANT A QUESTION AGAIN. `listMessages` and
+  // `answerFollowUp` stood here, with the MotivationMessage table behind them
+  // (dropped in 20260908090100). Where a required fact is missing, the review
+  // sheet shows the empty input, and that is the whole mechanism —
+  // MOTIVATION-REBUILD-BRIEF.md §2.3.
+  //
+  // ⚠️ `thinFields` SURVIVES AND STILL MEANS SOMETHING. It is still computed,
+  // still stored and still lowers the quality score; what it no longer does is
+  // produce a question. A thin answer is a document problem to log, not an
+  // interrogation to start.
   // ────────────────────────────────────────────────────────────────
-
-  /**
-   * The conversation so far.
-   *
-   * Content is encrypted at rest, so this is the only place it is decrypted,
-   * and only for the person it belongs to.
-   */
-  async listMessages(clerkId: string, id: string) {
-    await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
-    const row = await this.prisma.motivation.findFirst({
-      where: { id, userId: user.id },
-      select: {
-        id: true,
-        licenceType: true,
-        messages: {
-          orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            role: true,
-            contentEncrypted: true,
-            fieldKey: true,
-            createdAt: true,
-          },
-        },
-      },
-    });
-    if (!row) throw new NotFoundException('Motivation not found');
-
-    return row.messages.map((m) => ({
-      id: m.id,
-      role: m.role,
-      // A message that will not decrypt is shown as unavailable rather than
-      // throwing: one bad row must not hide the whole conversation.
-      content: tryDecryptText(m.contentEncrypted) ?? '',
-      fieldKey: m.fieldKey,
-      fieldLabel: m.fieldKey
-        ? (fieldByKey(row.licenceType, m.fieldKey)?.label ?? null)
-        : null,
-      createdAt: m.createdAt,
-    }));
-  }
-
-  /**
-   * Answer a follow-up.
-   *
-   * The answer is BOTH a message and an answer: it is appended to the
-   * conversation so the applicant can see what they said, and merged into the
-   * encrypted answer blob under the field the question was about, because that
-   * blob is what the document is built from. Storing it only as chat would let
-   * someone answer every question and still fail the completeness check.
-   */
-  async answerFollowUp(
-    clerkId: string,
-    id: string,
-    messageId: string,
-    answer: string,
-  ) {
-    await this.quota.assertEnabled();
-    const user = await this.shared.requireUser(clerkId);
-
-    const row = await this.prisma.motivation.findFirst({
-      where: { id, userId: user.id },
-      select: {
-        id: true,
-        licenceType: true,
-        status: true,
-        answersEncrypted: true,
-        answerProvenance: true,
-        messages: {
-          where: { id: messageId, role: 'assistant' },
-          select: { id: true, fieldKey: true },
-        },
-      },
-    });
-    if (!row) throw new NotFoundException('Motivation not found');
-    if (!EDITABLE.includes(row.status)) {
-      throw new ConflictException('This application can no longer be edited.');
-    }
-
-    const question = row.messages[0];
-    if (!question) throw new NotFoundException('Question not found');
-
-    const text = (answer ?? '').trim();
-    if (!text) throw new BadRequestException('Please write an answer first.');
-
-    const answers = this.shared.readAnswers(row.answersEncrypted);
-    let merged = answers;
-    let provenance = parseProvenance(row.answerProvenance);
-
-    if (question.fieldKey) {
-      const field = fieldByKey(row.licenceType, question.fieldKey);
-      if (field) {
-        // A follow-up EXTENDS what is already there rather than replacing it.
-        // The gate asked because the answer was thin, and overwriting would
-        // throw away the part they had already given.
-        const existing = (answers[question.fieldKey] ?? '').trim();
-        const combined = existing ? `${existing}\n\n${text}` : text;
-        const { answers: clean } = sanitiseAnswers(row.licenceType, {
-          [question.fieldKey]: combined,
-        });
-        merged = { ...answers, ...clean };
-
-        // ⚠️ MEMBER FOR THE WHOLE FIELD, even though the value is now part
-        // ours and part theirs. They typed the sentence that changed it, and
-        // MEMBER is absorbing by design: a field somebody has written into in
-        // their own words is not one we may quietly refill later.
-        if (question.fieldKey in clean) {
-          provenance = markMember(provenance, [question.fieldKey]);
-        }
-      }
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.motivationMessage.create({
-        data: {
-          motivationId: row.id,
-          role: 'user',
-          contentEncrypted: encryptText(text),
-          fieldKey: question.fieldKey,
-        },
-      }),
-      this.prisma.motivation.update({
-        where: { id: row.id },
-        data: {
-          answersEncrypted: encryptJson(merged),
-          answersSchemaVersion: FIELD_REGISTRY_VERSION,
-          answerProvenance: provenance as unknown as object,
-          // Back to a state that can generate. The gate moved it to
-          // NEEDS_MORE_INFO; answering is what moves it back.
-          ...(row.status === MotivationStatus.NEEDS_MORE_INFO
-            ? { status: MotivationStatus.DRAFT }
-            : {}),
-        },
-      }),
-    ]);
-
-    const outstanding = await this.prisma.motivationMessage.count({
-      where: {
-        motivationId: row.id,
-        role: 'assistant',
-        fieldKey: { not: null },
-        NOT: { fieldKey: { in: Object.keys(merged).filter((k) => merged[k]) } },
-      },
-    });
-
-    return {
-      answered: true,
-      outstandingQuestions: outstanding,
-      missingRequired: missingRequired(row.licenceType, merged),
-    };
-  }
 
   /**
    * Record the applicant's declaration. No document renders without it — they

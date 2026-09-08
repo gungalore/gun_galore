@@ -123,7 +123,7 @@ describe('once confirmed', () => {
     render(<DeleteApplication {...base} />);
     await userEvent.click(screen.getByRole('button', { name: /delete application/i }));
     await userEvent.click(screen.getByRole('button', { name: /delete it/i }));
-    expect(nav.push).toHaveBeenCalledWith('/motivations');
+    expect(nav.push).toHaveBeenCalledWith('/licence-centre/applications');
   });
 
   it('⚠️ DEFERS TO onDeleted RATHER THAN NAVIGATING', async () => {

@@ -1,0 +1,237 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import SheetRow from './sheet-row';
+import {
+  cardsItem,
+  filled,
+  needsYou,
+  notApplicable,
+  ownWordsItem,
+  suggested,
+} from './__fixtures__/sheet.fixture';
+
+// ────────────────────────────────────────────────────────────────────
+// THE ONE ROW COMPONENT, IN ITS FOUR STATES.
+//
+// ⚠️ THE CASE THAT MATTERS MOST IS "the control is already open". The live
+// walkthrough of the screen this replaces found EVERY question rendered as a
+// grey row reading "You may know it", with no input visible and a narrow
+// invisible button to open one at a time. Seven required answers meant seven
+// open-answer-Done cycles. If that ever comes back, it comes back here.
+// ────────────────────────────────────────────────────────────────────
+
+describe('needs_you — the control is open, always', () => {
+  it('renders an input without anything being clicked first', () => {
+    render(<SheetRow item={needsYou()} onChange={vi.fn()} />);
+    expect(screen.getByRole('textbox')).toBeDefined();
+  });
+
+  it('marks a required empty field, and an optional one differently', () => {
+    const { unmount } = render(<SheetRow item={needsYou()} onChange={vi.fn()} />);
+    expect(screen.getByText('Still needed')).toBeDefined();
+    unmount();
+
+    render(
+      <SheetRow item={needsYou({ required: false })} onChange={vi.fn()} />,
+    );
+    expect(screen.getByText('Optional')).toBeDefined();
+  });
+
+  it('⚠️ NEVER SAYS "You may know it" — the placeholder is the answer shape', () => {
+    render(<SheetRow item={needsYou()} onChange={vi.fn()} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    expect(input.placeholder).toBe('9mm Parabellum');
+    expect(document.body.textContent).not.toContain('You may know it');
+  });
+
+  it('reports every keystroke to the page', async () => {
+    const onChange = vi.fn();
+    render(<SheetRow item={needsYou()} onChange={onChange} />);
+    await userEvent.type(screen.getByRole('textbox'), '9');
+    expect(onChange).toHaveBeenCalledWith('9');
+  });
+
+  it('renders a select for a choice, with the offered values', () => {
+    render(
+      <SheetRow
+        item={needsYou({ kind: 'choice', choices: ['Rifle', 'Handgun'] })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('option', { name: 'Handgun' })).toBeDefined();
+  });
+});
+
+describe('filled — a value we hold, with no task attached', () => {
+  it('shows the value and where it came from', () => {
+    render(<SheetRow item={filled()} onChange={vi.fn()} />);
+    expect(screen.getByText('CZ')).toBeDefined();
+    expect(screen.getByText('from your licence card')).toBeDefined();
+  });
+
+  it('⚠️ SHOWS THE VALUE IN FULL, NEVER MASKED', () => {
+    // The live walkthrough found a full name as "GE••••••••" and an ID as
+    // "8905 •••• •••" on the applicant's OWN application — values they were
+    // about to sign onto a police form and could not read to check.
+    render(
+      <SheetRow
+        item={filled({
+          key: 'id_number',
+          label: 'ID number',
+          value: '8905125800087',
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('8905125800087')).toBeDefined();
+    expect(document.body.textContent).not.toContain('•');
+  });
+
+  it('asks for nothing — no Confirm, only Change', () => {
+    // The operator's standing rule: fill it in, arm it, let them change it. A
+    // value we READ is not a confirmation step we invented.
+    render(<SheetRow item={filled()} onChange={vi.fn()} onConfirm={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Change' })).toBeDefined();
+  });
+
+  it('Change opens the control prefilled, with Done in place of the action', async () => {
+    render(<SheetRow item={filled()} onChange={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Change' }));
+    expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('CZ');
+    expect(screen.getByRole('button', { name: 'Done' })).toBeDefined();
+  });
+
+  it('shows the profile chip on a profile-scoped row', () => {
+    render(
+      <SheetRow item={filled({ scope: 'profile' })} onChange={vi.fn()} />,
+    );
+    expect(screen.getByText('saved to your profile')).toBeDefined();
+  });
+});
+
+describe('suggested — the one state that asks', () => {
+  it('offers Confirm and Change, and flags itself for checking', () => {
+    render(
+      <SheetRow item={suggested()} onChange={vi.fn()} onConfirm={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Change' })).toBeDefined();
+    expect(screen.getByText('check this')).toBeDefined();
+  });
+
+  it('Confirm accepts the value without opening anything', async () => {
+    const onConfirm = vi.fn();
+    render(
+      <SheetRow item={suggested()} onChange={vi.fn()} onConfirm={onConfirm} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    expect(onConfirm).toHaveBeenCalled();
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+});
+
+describe('na — renders nothing at all', () => {
+  it('⚠️ IS ABSENT, NOT HIDDEN, NOT DISABLED, NOT GREYED', () => {
+    // A field that does not apply is not outstanding work, and showing it as
+    // anything at all invites somebody to answer a question about a spouse
+    // they do not have.
+    const { container } = render(
+      <SheetRow item={notApplicable()} onChange={vi.fn()} />,
+    );
+    expect(container.innerHTML).toBe('');
+  });
+});
+
+describe('cards', () => {
+  it('renders one tile per option, none pre-ticked', () => {
+    render(<SheetRow item={cardsItem()} onChange={vi.fn()} />);
+    const tiles = screen.getAllByRole('button');
+    expect(tiles.length).toBeGreaterThanOrEqual(3);
+    for (const t of tiles) expect(t.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('a tap stores the key, in the offered order', async () => {
+    const onChange = vi.fn();
+    render(<SheetRow item={cardsItem()} onChange={onChange} />);
+    await userEvent.click(screen.getByText(/I rent, so I cannot/));
+    expect(onChange).toHaveBeenCalledWith('rented');
+  });
+
+  it('normalises two taps to the offered order, not the tap order', async () => {
+    const onChange = vi.fn();
+    render(
+      <SheetRow item={cardsItem({ value: 'rented' })} onChange={onChange} />,
+    );
+    await userEvent.click(screen.getByText(/I regularly travel at night/));
+    expect(onChange).toHaveBeenCalledWith('night_travel, rented');
+  });
+
+  it('a second tap on a chosen tile clears it', async () => {
+    const onChange = vi.fn();
+    render(
+      <SheetRow item={cardsItem({ value: 'rented' })} onChange={onChange} />,
+    );
+    await userEvent.click(screen.getByText(/I rent, so I cannot/));
+    expect(onChange).toHaveBeenCalledWith('');
+  });
+
+  it('prefills the own-words box from the tapped sentences', () => {
+    render(
+      <SheetRow
+        item={cardsItem({ value: 'night_travel' })}
+        onChange={vi.fn()}
+        ownWords={ownWordsItem()}
+        onOwnWordsChange={vi.fn()}
+      />,
+    );
+    const ta = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(ta.value).toContain('I regularly travel at night');
+  });
+
+  it("⚠️ STOPS FOLLOWING THE TILES ONCE THE MEMBER TYPES", async () => {
+    // Re-joining over their sentence would delete what they wrote. This is the
+    // one box on the screen carrying their own voice into a signed document.
+    const onOwnWordsChange = vi.fn();
+    const { rerender } = render(
+      <SheetRow
+        item={cardsItem({ value: 'night_travel' })}
+        onChange={vi.fn()}
+        ownWords={ownWordsItem()}
+        onOwnWordsChange={onOwnWordsChange}
+      />,
+    );
+    const ta = screen.getByRole('textbox') as HTMLTextAreaElement;
+    await userEvent.clear(ta);
+    await userEvent.type(ta, 'My own account.');
+
+    // Another card lands afterwards — the box must not be rewritten.
+    rerender(
+      <SheetRow
+        item={cardsItem({ value: 'night_travel, rented' })}
+        onChange={vi.fn()}
+        ownWords={ownWordsItem()}
+        onOwnWordsChange={onOwnWordsChange}
+      />,
+    );
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe(
+      'My own account.',
+    );
+  });
+
+  it('keeps what they wrote on an earlier visit', () => {
+    render(
+      <SheetRow
+        item={cardsItem({ value: 'night_travel' })}
+        onChange={vi.fn()}
+        ownWords={ownWordsItem({ value: 'Written last week.' })}
+        onOwnWordsChange={vi.fn()}
+      />,
+    );
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe(
+      'Written last week.',
+    );
+  });
+});

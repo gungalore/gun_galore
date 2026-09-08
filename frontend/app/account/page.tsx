@@ -292,10 +292,14 @@ function findAccountItem(href: string): AccountMenuItem | null {
 
 // Module-level: ACCOUNT_GROUPS is static, so this only needs computing once
 // (not per-request inside the page component).
-const MOTIVATION_ITEM = findAccountItem('/motivations');
+const MOTIVATION_ITEM = findAccountItem('/licence-centre/applications');
 const DOCUMENT_ITEM = findAccountItem('/documents');
 const BENCH_ITEM = findAccountItem('/bench');
-const PROMOTED_HREFS = new Set(['/motivations', '/documents', '/bench']);
+const PROMOTED_HREFS = new Set([
+  '/licence-centre/applications',
+  '/documents',
+  '/bench',
+]);
 
 // TIER 4 — every remaining ACCOUNT_GROUPS destination, grouped exactly as
 // that data defines (Buying / Shipping / Selling / Account / Help). The

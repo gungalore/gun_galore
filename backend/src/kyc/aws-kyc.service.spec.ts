@@ -1,12 +1,17 @@
 // backend/src/kyc/aws-kyc.service.spec.ts
 //
-// Credential vending for the browser liveness challenge.
+// Credential vending for the browser liveness challenge, plus (since
+// 2026-09-08) the Luhn gate on readIdentityDocument()'s Gemini reading —
+// the one behaviour the operator was explicit must be exactly right: a
+// well-formed ID number that fails the SA ID checksum must be discarded as
+// though nothing was read, never merely flagged and passed through.
 //
-// This is the one place in the codebase that deliberately hands AWS
+// This is also the one place in the codebase that deliberately hands AWS
 // credentials to a client, so what those credentials CANNOT do is the thing
-// worth testing. The stubbed STS client keeps it off the network.
+// worth testing there. The stubbed STS client keeps it off the network.
 
 import { AwsKycService } from './aws-kyc.service';
+import type { LlmService } from '../common/llm/llm.service';
 
 const ROLE = 'AWS_KYC_LIVENESS_ROLE_ARN';
 
@@ -126,5 +131,136 @@ describe('AwsKycService.vendBrowserCredentials', () => {
       svc.vendBrowserCredentials('clerk_abc'),
     ).resolves.toBeUndefined();
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('AwsKycService.readIdentityDocument — the Luhn gate', () => {
+  const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+
+  function serviceWithStubbedLlm(response: { text: string; stopReason?: string }) {
+    const complete = jest.fn().mockResolvedValue({ stopReason: 'end', ...response });
+    const llm = { isConfigured: () => true, complete } as unknown as LlmService;
+    return { svc: new AwsKycService(llm), complete };
+  }
+
+  it('keeps a Luhn-valid ID number the model reports', async () => {
+    const { svc } = serviceWithStubbedLlm({
+      text: JSON.stringify({
+        documentType: 'SMART_ID_CARD',
+        idNumber: '5904015035080',
+        surname: 'FOURIE',
+        names: 'PETRUS WILLEM ADRIAAN',
+        dateOfBirth: '1959-04-01',
+      }),
+    });
+    const identity = await svc.readIdentityDocument(JPEG_BYTES);
+    expect(identity.idNumber).toBe('5904015035080');
+    expect(identity.notes).toEqual([]);
+  });
+
+  // 🚨 THE CENTRAL TEST OF THE OPERATOR'S ONE HARD RULE. A schema enforces
+  // shape, never semantics: this is a perfectly well-formed 13-digit
+  // string, exactly what a typo or a hallucination would also produce, and
+  // it must be discarded as though nothing was read at all.
+  it('treats a plausible but Luhn-invalid ID number as unread, not corrected', async () => {
+    const { svc } = serviceWithStubbedLlm({
+      text: JSON.stringify({
+        documentType: 'SMART_ID_CARD',
+        idNumber: '5904015035081', // one digit off a real number — wrong checksum
+        surname: 'FOURIE',
+        names: 'PETRUS WILLEM ADRIAAN',
+        dateOfBirth: '1959-04-01',
+      }),
+    });
+    const identity = await svc.readIdentityDocument(JPEG_BYTES);
+    expect(identity.idNumber).toBeNull();
+    expect(identity.notes.join(' ')).toMatch(/failed the SA ID checksum/);
+  });
+
+  it('normalises spaces and punctuation before checking the checksum', async () => {
+    const { svc } = serviceWithStubbedLlm({
+      text: JSON.stringify({
+        documentType: 'GREEN_BOOK',
+        idNumber: '970724 0045 089',
+        surname: 'DE BEER',
+        names: 'RUANDA',
+        dateOfBirth: '1997-07-24',
+      }),
+    });
+    const identity = await svc.readIdentityDocument(JPEG_BYTES);
+    expect(identity.idNumber).toBe('9707240045089');
+  });
+
+  it('falls back to OTHER for an unrecognised documentType', async () => {
+    const { svc } = serviceWithStubbedLlm({
+      text: JSON.stringify({
+        documentType: 'PASSPORT',
+        idNumber: null,
+        surname: null,
+        names: null,
+        dateOfBirth: null,
+      }),
+    });
+    const identity = await svc.readIdentityDocument(JPEG_BYTES);
+    expect(identity.documentType).toBe('OTHER');
+  });
+
+  it('fills in the date of birth from the ID number when nothing was printed', async () => {
+    const { svc } = serviceWithStubbedLlm({
+      text: JSON.stringify({
+        documentType: 'GREEN_BOOK',
+        idNumber: '9707240045089',
+        surname: 'DE BEER',
+        names: 'RUANDA',
+        dateOfBirth: null,
+      }),
+    });
+    const identity = await svc.readIdentityDocument(JPEG_BYTES);
+    expect(identity.dateOfBirth).toBe('1997-07-24');
+    expect(identity.notes).toEqual([]);
+  });
+
+  it('keeps the printed date of birth but notes it when it disagrees with the ID number', async () => {
+    const { svc } = serviceWithStubbedLlm({
+      text: JSON.stringify({
+        documentType: 'GREEN_BOOK',
+        idNumber: '9707240045089', // implies 1997-07-24
+        surname: 'DE BEER',
+        names: 'RUANDA',
+        dateOfBirth: '1990-01-01',
+      }),
+    });
+    const identity = await svc.readIdentityDocument(JPEG_BYTES);
+    expect(identity.dateOfBirth).toBe('1990-01-01');
+    expect(identity.notes.join(' ')).toMatch(/disagrees with the ID number/);
+  });
+
+  it('throws rather than treating a safety-blocked response as an empty reading', async () => {
+    const { svc } = serviceWithStubbedLlm({ text: '', stopReason: 'safety' });
+    await expect(svc.readIdentityDocument(JPEG_BYTES)).rejects.toThrow(
+      /blocked by the provider/,
+    );
+  });
+
+  it('throws when the model does not return JSON', async () => {
+    const { svc } = serviceWithStubbedLlm({ text: 'sorry, I cannot help with that' });
+    await expect(svc.readIdentityDocument(JPEG_BYTES)).rejects.toThrow(
+      /did not return JSON/,
+    );
+  });
+
+  it('throws rather than silently degrading when no model is configured at all', async () => {
+    const svc = new AwsKycService();
+    await expect(svc.readIdentityDocument(JPEG_BYTES)).rejects.toThrow(
+      /no model configured/,
+    );
+  });
+
+  it('throws when a model is present but not configured (no API key)', async () => {
+    const llm = { isConfigured: () => false, complete: jest.fn() } as unknown as LlmService;
+    const svc = new AwsKycService(llm);
+    await expect(svc.readIdentityDocument(JPEG_BYTES)).rejects.toThrow(
+      /no model configured/,
+    );
   });
 });

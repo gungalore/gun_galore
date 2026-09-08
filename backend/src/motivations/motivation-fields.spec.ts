@@ -207,15 +207,22 @@ describe('the six history questions', () => {
       expect(f.required).toBe(true);
     }
     // All but the negligence question, which is chained to the loss question
-    // and so does not apply until something has been lost. The history
-    // questions are form-tier, so the applicant must have opted into the 271.
+    // and so does not apply until something has been lost.
+    //
+    // ⚠️ NO OPT-IN, SINCE 2026-09-08 — AND THE ASSERTION BELOW IS INVERTED
+    // FROM WHAT IT USED TO SAY. This case used to end with "and on the dealer
+    // path NONE of them are asked at all", which was the harm: a dealer-path
+    // applicant was never asked about a conviction, so it never reached the
+    // writer and the document could not meet it head-on. The live walkthrough
+    // found the Declarations step carrying a green tick from the moment the
+    // application opened. They are asked of everybody now.
     const asked = HISTORY.filter((h) => h !== 'history_negligence');
-    expect(missingRequired(T, WITH_FORM)).toEqual(expect.arrayContaining(asked));
-    expect(missingRequired(T, WITH_FORM)).not.toContain('history_negligence');
+    expect(missingRequired(T, {})).toEqual(expect.arrayContaining(asked));
+    expect(missingRequired(T, {})).not.toContain('history_negligence');
 
-    // …and on the dealer path NONE of them are asked at all.
-    expect(missingRequired(T, {})).not.toEqual(
-      expect.arrayContaining(['history_conviction']),
+    // …and a stale opt-in answer from an older draft changes nothing.
+    expect(missingRequired(T, { [SAPS271_OPT_KEY]: SAPS271_DEALER })).toEqual(
+      expect.arrayContaining(asked),
     );
   });
 
@@ -328,12 +335,30 @@ describe('isVisible', () => {
 
   it('matches on the exact value, not merely on being answered', () => {
     const spouse = fieldsFor(T).find((x) => x.key === 'spouse_name')!;
-    // Form-tier, so the opt-in comes first; then the marital condition.
-    expect(isVisible(spouse, { ...WITH_FORM, marital_status: 'Single' })).toBe(false);
-    expect(isVisible(spouse, { ...WITH_FORM, marital_status: 'Married' })).toBe(true);
-    // Married but NOT opted in: still hidden — the field only exists for the form.
-    expect(isVisible(spouse, { marital_status: 'Married' })).toBe(false);
+    // ⚠️ THE OPT-IN CLAUSES ARE GONE FROM THIS CASE, NOT THE CASE ITSELF. It
+    // used to assert three things: the marital condition, AND that the field
+    // stayed hidden until the SAPS 271 was opted into. The second is retired
+    // with the opt-in (2026-09-08) — spouse_name is asked of every married
+    // applicant now. The first is what this test is named for and is unchanged.
+    expect(isVisible(spouse, { marital_status: 'Single' })).toBe(false);
+    expect(isVisible(spouse, { marital_status: 'Married' })).toBe(true);
     expect(isVisible(spouse, {})).toBe(false);
+  });
+
+  it('hides an internal field whatever anybody answers', () => {
+    // ⚠️ THE REPLACEMENT FOR A CONTRADICTION, AND THE CASE THAT GUARDS IT.
+    // These three are filled in by us — from the precinct lookup, the
+    // clippings picker and the member's own licences — and were hidden by
+    // setting formOnly against a showIf so that no answer satisfied both. That
+    // trick broke the moment formOnly stopped gating, and a draft carrying the
+    // retired opt-in answer would have opened all three.
+    for (const key of ['police_station_province', 'press_clippings']) {
+      const f = fieldsFor(T).find((x) => x.key === key)!;
+      expect(f.internal).toBe(true);
+      expect(isVisible(f, {})).toBe(false);
+      expect(isVisible(f, { [SAPS271_OPT_KEY]: SAPS271_DEALER })).toBe(false);
+      expect(isVisible(f, { [SAPS271_OPT_KEY]: SAPS271_FILL })).toBe(false);
+    }
   });
 
   // ⚠️ REQUIRED AND UNASKABLE AT THE SAME TIME.
@@ -396,49 +421,92 @@ describe('requiredKeys', () => {
 });
 
 
-// ── the SAPS 271 opt-in (operator, 2026-08-19) ──────────────────────
+// ── the SAPS 271 opt-in is RETIRED (2026-09-08) ────────────────────
 //
-// "The 271 form is an addition. The motivation is the big cookie. The user
-// must have the option not to have the 271 filled in — most of the time the
-// dealer will fill in the form for them already."
+// ⚠️ FIVE CASES STOOD HERE AND THEIR SUBJECT IS GONE, NOT MERELY CHANGED. The
+// operator's 2026-08-19 rule was "the user must have the option not to have
+// the 271 filled in — most of the time the dealer will fill in the form for
+// them already", and this block locked the effort collapse that came with it:
+// say the dealer does the form, and phones, postal codes, marital status, the
+// spouse, the owned table and the six history questions never appeared.
+//
+// It was the wrong question, for a structural reason rather than a matter of
+// taste — the form is split by PARTY, not by who fills it in. D, G and H are
+// the applicant's half in every case; a dealer completes E, F and their own
+// 350(a) and never G or H. So the opt-in asked somebody on screen one to
+// decide something the dealer does not decide for them, and a "my dealer will
+// do it" answer silently withheld the six history questions — the one thing a
+// motivation must meet head-on. See MOTIVATION-INTAKE-PLAN.md §1.
+//
+// What replaced each case, so nothing is merely deleted:
+//
+//   "asks the question first"           — the field is retired. Covered below
+//                                         by 'still accepts a retired field'.
+//   "hides EVERY form-only field"       — that is no longer true and must not
+//                                         be. Covered by 'asks every form-only
+//                                         field of everybody'.
+//   "keeps the motivation path down"    — the path is not shortened any more.
+//   "restores the full set"             — there is no set to restore.
+//   "never deletes form answers"        — STILL TRUE and still tested, below.
 
-describe('the SAPS 271 opt-in', () => {
-  it('asks the question first, and requires a deliberate answer', () => {
-    const first = fieldsFor(T)[0];
-    expect(first.key).toBe(SAPS271_OPT_KEY);
-    expect(first.required).toBe(true);
-    expect(first.choices).toContain(SAPS271_FILL);
+describe('the retired SAPS 271 opt-in', () => {
+  it('is no longer asked of anybody', () => {
+    expect(fieldsFor(T).map((f) => f.key)).not.toContain(SAPS271_OPT_KEY);
   });
 
-  it('hides EVERY form-only field on the dealer path', () => {
-    // This is the effort collapse: say the dealer does the form and phones,
-    // postal codes, marital status, the spouse, the firearms table and the six
-    // history questions simply never appear.
-    const hidden = fieldsFor(T).filter(
-      (f) => f.formOnly && f.key !== SAPS271_OPT_KEY && isVisible(f, {}),
-    );
-    expect(hidden).toEqual([]);
+  it('still accepts a retired field, so an old draft still saves', () => {
+    // ⚠️ THE WHOLE REASON RETIRED_FIELDS EXISTS. The wizard resends the WHOLE
+    // answers blob on every autosave, so a key that simply vanished from the
+    // registry would fail sanitiseAnswers on every keystroke anywhere in the
+    // form — for ever — for anybody whose draft already holds it.
+    const { answers, rejected } = sanitiseAnswers(T, {
+      [SAPS271_OPT_KEY]: SAPS271_FILL,
+    });
+    expect(rejected).not.toContain(SAPS271_OPT_KEY);
+    expect(answers[SAPS271_OPT_KEY]).toBe(SAPS271_FILL);
   });
 
-  it('keeps the motivation path down to the answers the document needs', () => {
-    const required = requiredKeys(T, {});
-    // The opt-in itself plus the document tier — nothing form-only.
-    expect(required.length).toBeLessThanOrEqual(16);
-    for (const k of required) {
-      const f = fieldsFor(T).find((x) => x.key === k)!;
-      if (k !== SAPS271_OPT_KEY) expect(f.formOnly).toBeUndefined();
+  it('changes nothing about what is asked, whatever the old answer was', () => {
+    // ⚠️ THE EXACT INVERSE OF THE CASE THIS REPLACED, AND THAT IS THE POINT.
+    // A stored 'My dealer will fill it in' — and there are drafts carrying one
+    // — must no longer hide anything. The dealer path was where a conviction
+    // never reached the writer.
+    //
+    // ⚠️ COMPARED AGAINST THE SAME ANSWERS WITHOUT THE KEY, not against "every
+    // form-only field is visible". Fields behind an unmet showIf (a spouse's
+    // ID number on an unmarried applicant) are legitimately hidden, and
+    // asserting they are not would be asserting a bug.
+    const visible = (answers: Record<string, string>) =>
+      fieldsFor(T)
+        .filter((f) => isVisible(f, answers))
+        .map((f) => f.key);
+
+    for (const value of [SAPS271_DEALER, SAPS271_FILL]) {
+      expect(visible({ [SAPS271_OPT_KEY]: value })).toEqual(visible({}));
     }
   });
 
-  it('restores the full set when the applicant opts in', () => {
-    const dealer = requiredKeys(T, {});
-    const filled = requiredKeys(T, WITH_FORM);
-    expect(filled.length).toBeGreaterThan(dealer.length + 5);
-    expect(filled).toEqual(expect.arrayContaining(['marital_status', 'safe_present']));
+  it('asks the six history questions of everybody', () => {
+    // The specific harm the opt-in did, named. On the dealer path these six
+    // were never asked, so a conviction was never disclosed and the document
+    // could not address it.
+    const asked = fieldsFor(T)
+      .filter((f) => isVisible(f, { [SAPS271_OPT_KEY]: SAPS271_DEALER }))
+      .map((f) => f.key);
+    for (const k of [
+      'history_conviction',
+      'history_pending_case',
+      'history_lost_stolen',
+      'history_declared_unfit',
+      'history_confiscated',
+    ]) {
+      expect(asked).toContain(k);
+    }
   });
 
-  it('never deletes form answers when someone switches to the dealer path', () => {
-    // Hidden is not erased: switching back restores everything they typed.
+  it('never deletes form answers', () => {
+    // Unchanged, and still true: nothing this registry does throws away a
+    // value somebody typed.
     const { answers } = sanitiseAnswers(T, { home_telephone: '0111234567' });
     expect(answers.home_telephone).toBe('0111234567');
   });
@@ -669,14 +737,24 @@ describe('requirements that appear only once something is answered', () => {
     expect(withType).toContain('spouse_id_number');
   });
 
-  it('asks no form-only spouse question at all on the dealer path', () => {
-    // Without the 271 opt-in the whole form-only block is out of scope, so
-    // marital status must not drag spouse fields in behind it.
-    const keys = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, {
+  it('asks the spouse questions of a married applicant, and of nobody else', () => {
+    // ⚠️ INVERTED FROM WHAT IT SAID, 2026-09-08. This used to assert that on
+    // the dealer path the whole form-only block was out of scope, so marital
+    // status could not drag the spouse fields in behind it. There is no dealer
+    // path now: the SAPS 271 is always produced, so both are asked — and the
+    // gate that matters is the one this test is really about, which is that
+    // they hang off being married rather than off a form choice.
+    const married = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, {
       marital_status: 'Married',
     });
-    expect(keys).not.toContain('spouse_name');
-    expect(keys).not.toContain('marital_status');
+    expect(married).toContain('marital_status');
+    expect(married).toContain('spouse_name');
+
+    const single = requiredKeys(MotivationLicenceType.S16_DEDICATED_SPORT, {
+      marital_status: 'Single',
+    });
+    expect(single).toContain('marital_status');
+    expect(single).not.toContain('spouse_name');
   });
 });
 
@@ -1171,7 +1249,22 @@ describe('the owned-firearms table', () => {
         .sort();
     const first = columnsOf(1);
     expect(first).toEqual(
-      ['calibre', 'expiry', 'licence_no', 'make', 'model', 'serial', 'type', 'use'],
+      // ⚠️ `primary_use` JOINED THE ROW ON 2026-09-08 AND `use` STAYED. They
+      // are not duplicates: `use` is free text somebody may already have
+      // typed, `primary_use` is the tapped card that replaced it as the
+      // question, and motivation-overlap.ts reads the second. Nothing this
+      // registry does throws away an answer somebody gave.
+      [
+        'calibre',
+        'expiry',
+        'licence_no',
+        'make',
+        'model',
+        'primary_use',
+        'serial',
+        'type',
+        'use',
+      ],
     );
     for (let n = 2; n <= OWNED_ROWS; n++) expect(columnsOf(n)).toEqual(first);
     // And identically defined, not merely identically named.

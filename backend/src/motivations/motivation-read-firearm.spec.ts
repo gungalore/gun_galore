@@ -1,21 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { MotivationUploadKind } from '@prisma/client';
 import { MotivationExtractService } from './motivation-extract.service';
 import type { LlmResponse } from '../common/llm/llm.types';
 import { answerValue } from '../common/card-placeholder';
-
-// Real Textract responses off the operator's own documents, shared with
-// textract-document-extract.spec.ts — not invented fixtures.
-const TEXTRACT_FIXTURES = join(
-  __dirname,
-  '..',
-  'licence-centre',
-  '__fixtures__',
-  'textract',
-);
-const textractFixture = (doc: string): unknown =>
-  JSON.parse(readFileSync(join(TEXTRACT_FIXTURES, `${doc}.json`), 'utf8'));
 
 // ────────────────────────────────────────────────────────────────────
 // READING THE FIREARM OFF ANYTHING.
@@ -65,38 +51,6 @@ function build(reply: unknown, throws?: Error, configured = true) {
 const fields = (f: { key: string; value: string }[]) => ({ fields: f });
 const bytes = Buffer.from('x');
 
-/** Same shape as build(), plus a fake Textract that answers with `ocr`. */
-function buildWithTextract(ocr: unknown, llmReply: unknown = fields([])) {
-  const complete = jest.fn(async (_req?: any): Promise<LlmResponse> => {
-    const text = typeof llmReply === 'string' ? llmReply : JSON.stringify(llmReply);
-    return {
-      text,
-      parts: [{ type: 'text', text }],
-      toolCalls: [],
-      stopReason: 'end',
-      usage: { inputTokens: 10, outputTokens: 10 },
-      model: 'test-model-2.5',
-      provider: 'gemini',
-      assistantMessage: { role: 'assistant', content: [{ type: 'text', text }] },
-    };
-  });
-  const llm = {
-    complete,
-    stream: jest.fn(),
-    isConfigured: () => true,
-    model: 'test-model-2.5',
-    provider: 'gemini' as const,
-  };
-  const analyse = jest.fn(async () => ocr);
-  const textract = { analyse, enabled: () => true };
-  const svc = new MotivationExtractService(llm as never, undefined, textract as never);
-  (svc as unknown as { logger: unknown }).logger = {
-    warn: jest.fn(),
-    error: jest.fn(),
-    log: jest.fn(),
-  };
-  return { svc, complete, analyse };
-}
 
 describe('which kinds get a firearm read', () => {
   it('reads the kinds that could describe a firearm', () => {
@@ -369,63 +323,56 @@ describe('what a firearm read lands on', () => {
   });
 });
 
-describe('reading via Textract first', () => {
-  it('reads a real licence card off Textract and never calls Gemini', async () => {
-    // doc03: the same card textract-document-extract.spec.ts pins as
-    // make HOWA, calibre 6.5MM CREEDMOOR, frame/barrel serial B477423,
-    // firearm_type MANUALLY OPERATED RIFLE.
-    const { svc, complete, analyse } = buildWithTextract(textractFixture('doc03'));
-    const out = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
-    expect(analyse).toHaveBeenCalledWith(bytes, 'image/jpeg');
-    expect(out).toMatchObject({
-      firearm_make: 'HOWA',
-      firearm_calibre: '6.5MM CREEDMOOR',
-      frame_serial: 'B477423',
-      barrel_serial: 'B477423',
-      firearm_type: 'MANUALLY OPERATED RIFLE',
+// ────────────────────────────────────────────────────────────────────
+// ⚠️ THE "reading via Textract first" BLOCK STOOD HERE — 2026-09-08.
+//
+// Four cases, and their subject is gone: the operator dropped AWS Textract in
+// favour of Gemini alone. What each one was protecting, and where it lives now:
+//
+//   "reads a real licence card off Textract and never calls Gemini" — the
+//     COST argument for reading a form deterministically. Genuinely gone with
+//     the reader. Its replacement is the two-attempt loop plus a
+//     provider-enforced schema; see the note in readFirearm().
+//
+//   "never carries the holder's name, ID or the licence section across" — a
+//     PRIVACY rule, and it survives untouched. It is proven end-to-end on the
+//     surviving path by 'never returns anything about a person' above, which
+//     feeds holder_name and id_number through the service and asserts only
+//     the firearm comes back. Checked before this block was deleted; that
+//     check is the reason it could be.
+//
+//   the two "falls through to Gemini when..." cases — there is nothing left to
+//     fall through FROM. Gemini is the only reader.
+//
+// ⚠️ THE TEXTRACT FIXTURES IN `__fixtures__/textract` GO WITH
+// textract-document-extract.spec.ts, which owns them. Nothing here reads them
+// any more.
+// ────────────────────────────────────────────────────────────────────
+
+describe('the shape is the provider’s job', () => {
+  it('asks for schema-enforced JSON, not prose it has to hunt through', () => {
+    // ⚠️ THE REPLACEMENT FOR THE TEXTRACT PASS, in part. Textract was put
+    // first because a single vision call on a real photograph is inconsistent;
+    // the two-attempt loop and this schema are what carry that load now.
+    const { svc, complete } = build(fields([{ key: 'firearm_make', value: 'CZ' }]));
+    return svc.readFirearm({ bytes, mimeType: 'image/jpeg' }).then(() => {
+      const req = complete.mock.calls[0][0] as any;
+      expect(req.json?.schema).toBeDefined();
+      expect(req.json.schema.properties.fields).toBeDefined();
+      // The budget must be text, not reasoning — this is transcription.
+      expect(req.thinking).toEqual({ budgetTokens: 0 });
     });
-    // The whole point: a card Textract can read costs no vision-model call.
-    expect(complete).not.toHaveBeenCalled();
   });
 
-  it('never carries the holder’s name, ID or the licence section across', async () => {
-    // extractDocument() reads holder_name and section off this same card —
-    // the allowlist in firearmFromTextract is what keeps them out of a
-    // Section E read. Same rule as parseFirearmReading, pinned the same way.
-    const { svc } = buildWithTextract(textractFixture('doc03'));
-    const out = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
-    expect(out).not.toHaveProperty('holder_name');
-    expect(out).not.toHaveProperty('section');
-    expect(out).not.toHaveProperty('id_number');
-  });
-
-  it('falls through to Gemini when Textract has nothing useful', async () => {
-    // null: what analyse() returns whenever AWS is not configured or the
-    // call failed — the same "no reader, no crash" contract as everywhere
-    // else in this file.
-    const { svc, complete } = buildWithTextract(
-      null,
-      fields([
-        { key: 'firearm_make', value: 'CZ' },
-        { key: 'firearm_calibre', value: '.223 REM' },
-      ]),
+  it('⚠️ STILL SURVIVES A FENCED ANSWER, schema or no schema', async () => {
+    // A provider constraint is not a guarantee we control: a provider
+    // fallback, a future model, or the Anthropic rollback path (which is more
+    // permissive) can all still preface the JSON. Two lines of defence cost
+    // nothing; removing the regex would cost a read.
+    const { svc } = build(
+      '```json\n{"fields":[{"key":"firearm_make","value":"Howa"}]}\n```',
     );
     const out = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
-    expect(complete).toHaveBeenCalledTimes(1);
-    expect(out).toEqual({ firearm_make: 'CZ', firearm_calibre: '.223 REM' });
-  });
-
-  it('falls through to Gemini when Textract reads the page but nothing firearm-shaped', async () => {
-    // A document Textract can OCR — an ID book, a proof of address — but
-    // that carries none of TEXTRACT_TO_FIREARM_KEY. Useful is judged on the
-    // firearm fields specifically, not on whether Textract returned anything
-    // at all.
-    const { svc, complete } = buildWithTextract(
-      { Blocks: [{ BlockType: 'LINE', Text: 'MUNICIPALITY OF CAPE TOWN' }] },
-      fields([{ key: 'firearm_make', value: 'Beretta' }]),
-    );
-    const out = await svc.readFirearm({ bytes, mimeType: 'image/jpeg' });
-    expect(complete).toHaveBeenCalledTimes(1);
-    expect(out).toEqual({ firearm_make: 'Beretta' });
+    expect(out).toEqual({ firearm_make: 'Howa' });
   });
 });

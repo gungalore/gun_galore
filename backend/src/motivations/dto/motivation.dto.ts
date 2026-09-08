@@ -68,20 +68,6 @@ export class AcceptDeclarationDto {
 }
 
 /**
- * One answer to one follow-up question.
- *
- * The cap is generous because this is the applicant's own account of their
- * circumstances and the field registry caps it again per field; the point here
- * is only to stop an unbounded body reaching the database.
- */
-export class AnswerFollowUpDto {
-  @IsString()
-  @IsNotEmpty({ message: 'Please write an answer first.' })
-  @MaxLength(4000)
-  answer!: string;
-}
-
-/**
  * The member's own name for this application, e.g. "Home defence" against a
  * Section 13 draft. Operator, board review 2026-08-27: "User must be able to
  * rename the motivation."

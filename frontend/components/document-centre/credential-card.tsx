@@ -6,7 +6,6 @@ import { useState } from 'react';
 import ConfirmPanel from '@/components/document-centre/confirm-panel';
 import { KINDS } from '@/components/document-centre/kinds';
 import { filedUnsure } from '@/lib/document-review-rules';
-import { canOpenPackScreen } from '@/lib/licence-services-preview';
 import {
   CredentialRow,
   CredentialUsage,
@@ -447,16 +446,13 @@ export default function CredentialCard({
                 setRenewErr(null);
                 try {
                   const started = await licenceCentreApi.renew(token, row.id);
-                  // ⚠️ canOpenPackScreen(), NOT a bare /motivations/ push — see
-                  // the identical note in app/motivations/page.tsx. Otherwise a
-                  // member whose tab is on the pack-screen preview starts this
-                  // renewal on the retired wizard instead of the screen they
-                  // have been using for everything else.
-                  router.push(
-                    canOpenPackScreen()
-                      ? `/licence-services/${started.motivationId}`
-                      : `/motivations/${started.motivationId}`,
-                  );
+                  // ⚠️ ONE DESTINATION NOW. This used to be a
+                  // canOpenPackScreen() ternary between two live wizards, and
+                  // three separate call sites had each hand-rolled it — one of
+                  // them wrongly, which sent members to the retired screen.
+                  // Both wizards were deleted on 2026-09-08 and the flag with
+                  // them; there is one review sheet and nothing left to choose.
+                  router.push(`/licence-centre/${started.motivationId}`);
                 } catch (ex) {
                   setRenewErr(
                     ex instanceof LicenceApiError
@@ -519,11 +515,7 @@ export default function CredentialCard({
             {usedIn.map((u) => (
               <Link
                 key={u.motivationId}
-                href={
-                  canOpenPackScreen()
-                    ? `/licence-services/${u.motivationId}`
-                    : `/motivations/${u.motivationId}`
-                }
+                href={`/licence-centre/${u.motivationId}`}
                 className="flex items-center gap-2 text-[12.5px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               >
                 <svg

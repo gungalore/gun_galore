@@ -271,6 +271,19 @@ describe('the owner-type X lands in its own box', () => {
     const xs = await routeMarks('Not decided yet');
     expect(xs).toEqual([]);
   }, 60_000);
+
+  it('leaves the whole row blank for an inherited estate firearm too', async () => {
+    // ⚠️ THE ROUTE THE REBUILD BRIEF DESCRIBES AND THE MAP NO LONGER OFFERS.
+    // Operator, 2026-08-29, in saps271-map.ts: "Only Type A and B from the 271
+    // are what we will process" — Type E stopped being ticked at all, on the
+    // reasoning that a form ticked into a route we cannot complete goes in
+    // wrong, while an honest blank is one a DFO simply queries. Proved here at
+    // the rendered-page level, on the same coordinates the private and dealer
+    // cases above are proved on, so a future coordinate change cannot silently
+    // reopen box E for this route while these two keep passing.
+    const xs = await routeMarks('Inherited from a deceased estate');
+    expect(xs).toEqual([]);
+  }, 60_000);
 });
 
 describe('all fourteen owned firearms reach the paper', () => {

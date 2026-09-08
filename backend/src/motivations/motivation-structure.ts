@@ -442,18 +442,40 @@ const SECTION_SKELETONS: Record<
   ],
 };
 
-const OPENINGS: StructurePlan['opening'][] = [
-  'chronological',
-  'need_first',
-  'circumstance_first',
-  'purpose_first',
-];
+/**
+ * ⚠️ ONE OPENING, NOT FOUR — 2026-09-08.
+ *
+ * Four were randomised so two documents would not begin alike. Every approved
+ * pack on file opens the same way and it works: name, identity number,
+ * citizenship, address, employer, then one sentence naming the firearm and the
+ * section applied for. Randomising away from that meant three applicants in
+ * four got an opening the corpus does not use, to solve a problem — a DFO
+ * comparing two strangers' motivations for sameness — that nobody has ever
+ * reported. MOTIVATION-UX-REVIEW.md §3.5.
+ *
+ * The array stays an array so `pick` and the plan shape are untouched; there
+ * is simply one thing to pick.
+ */
+const OPENINGS: StructurePlan['opening'][] = ['purpose_first'];
 const CLOSINGS: StructurePlan['closing'][] = [
   'summary',
   'undertaking',
   'forward_looking',
 ];
-const CADENCES: StructurePlan['cadence'][] = ['plain', 'measured', 'detailed'];
+/**
+ * ⚠️ FIXED TO `plain` — 2026-09-08.
+ *
+ * Three cadences meant two applicants in three received "measured" or
+ * "detailed" prose, which is to say: longer sentences, for variety's sake, on
+ * a document a reviewing officer reads in a hurry. Variation belongs in the
+ * FACTS, which differ per applicant anyway, not in the register.
+ *
+ * ⚠️ THE SIMILARITY DETECTOR SURVIVES AND IS NOW A TEST-TIME GUARD ONLY —
+ * see SIMILARITY_REGENERATE_THRESHOLD. It stops being a reason to reword and
+ * becomes a way to notice that two documents came out structurally identical,
+ * which would mean the facts stopped reaching the writer.
+ */
+const CADENCES: StructurePlan['cadence'][] = ['plain'];
 
 export interface PlanOptions {
   /**

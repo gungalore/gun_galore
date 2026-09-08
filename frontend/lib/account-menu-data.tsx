@@ -224,7 +224,7 @@ export const ACCOUNT_GROUPS: AccountMenuGroup[] = [
     title: 'Licences',
     items: [
       { href: '/documents', label: 'Document Centre', Icon: ShieldDocIcon },
-      { href: '/motivations', label: 'Motivation Centre', Icon: DocIcon },
+      { href: '/licence-centre/applications', label: 'Licence applications', Icon: DocIcon },
       { href: '/bench', label: 'The Bench', Icon: CartridgeIcon },
     ],
   },

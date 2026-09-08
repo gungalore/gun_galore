@@ -208,7 +208,7 @@ export default function DeleteApplication({
               // from the old page, which learned it the hard way.
               clearDraft(motivationId);
               if (onDeleted) onDeleted();
-              else router.push('/motivations');
+              else router.push('/licence-centre/applications');
             } catch (e) {
               setError(
                 e instanceof MotivationApiError

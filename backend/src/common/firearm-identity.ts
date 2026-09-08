@@ -151,6 +151,42 @@ export const FIREARM_FIELDS: readonly FirearmField[] = [
 const KEYS = new Set(FIREARM_FIELDS.map((f) => f.key));
 
 /**
+ * The shape the model must answer in, enforced by the PROVIDER.
+ *
+ * ⚠️ A SCHEMA CONSTRAINS SHAPE, NEVER MEANING, and every guard below it stays.
+ * `parseFirearmReading` still drops a key it did not ask for, still refuses
+ * none / n/a / unknown / "not visible", and still caps a value's length. All
+ * this buys is that the answer arrives as `{fields:[…]}` rather than as prose
+ * we hunt a `{…}` out of with a regex — which is worth having on a read whose
+ * output ends up as a serial number on a signed application.
+ *
+ * ⚠️ `key` IS DELIBERATELY NOT AN ENUM. Gemini would then be unable to return
+ * anything else, which sounds like a feature and is not: a model that has read
+ * a field it has no key for should say so and be DROPPED by the allow-list in
+ * code, where the drop is visible and testable, rather than be pushed into the
+ * nearest permitted key by the decoder. A wrong serial in the right box is the
+ * failure this whole module is built to avoid.
+ */
+export const FIREARM_READING_SCHEMA = {
+  type: 'object',
+  properties: {
+    fields: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string' },
+          value: { type: 'string' },
+          confidence: { type: 'string', enum: ['high', 'low'] },
+        },
+        required: ['key', 'value'],
+      },
+    },
+  },
+  required: ['fields'],
+} as const;
+
+/**
  * The instruction sent with the document.
  *
  * Deliberately says what the document might be and then tells the model not to

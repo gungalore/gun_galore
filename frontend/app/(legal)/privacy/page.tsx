@@ -100,11 +100,12 @@ export default function PrivacyPage() {
         <li>Number of face-match attempts and outcome</li>
       </ul>
       <p>
-        The identity-document image, the selfie and — where the anchored check
-        is used — the official record photograph returned by the Home Affairs
-        lookup are transmitted to Amazon Web Services in Ireland (AWS Europe,
-        eu-west-1), which runs the automated text extraction, face match and
-        liveness check on our behalf. See paragraphs 7 and 8.
+        The identity-document image is transmitted to Google (Gemini API),
+        which reads the text on it on our behalf. The identity-document image,
+        the selfie and — where the anchored check is used — the official record
+        photograph returned by the Home Affairs lookup are transmitted to
+        Amazon Web Services in Ireland (AWS Europe, eu-west-1), which runs the
+        face match and liveness check on our behalf. See paragraphs 7 and 8.
       </p>
       <p>
         Additional terms apply to regulated categories. See the{' '}
@@ -229,8 +230,8 @@ export default function PrivacyPage() {
             ['Cloudinary', 'United States', 'Listing photos and compliance documents you upload'],
             ['Resend', 'United States', 'Email address, content of transactional emails'],
             ['SMSPortal', 'South Africa', 'Phone number, content of transactional SMS'],
-            ['Google (Gemini API)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation); documents and photographs you ask us to read — licences, competency and training certificates, ID copies and dealer paperwork — for automated text extraction'],
-            ['Amazon Web Services', 'Ireland (eu-west-1)', 'Identity-verification images (ID document, selfie and, where applicable, the official record photograph) for automated text extraction, face match and liveness check'],
+            ['Google (Gemini API)', 'United States', 'Listing title + description + photos (for moderation); pre-purchase question text (for Q&A moderation); documents and photographs you ask us to read — licences, competency and training certificates, ID copies and dealer paperwork — for automated text extraction; and the identity-verification document image, for the same'],
+            ['Amazon Web Services', 'Ireland (eu-west-1)', 'Identity-verification images (ID document, selfie and, where applicable, the official record photograph) for face match and liveness check'],
           ].map(([op, country, share], i) => (
             <tr key={i} style={{ borderBottom: '0.5px solid var(--border)' }}>
               <td style={{ padding: '6px 8px 6px 0' }}>{op}</td>

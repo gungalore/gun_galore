@@ -1,13 +1,20 @@
 import { MotivationLicenceType } from '@prisma/client';
 import {
   checkOverlap,
+  classifyAction,
   classifyCalibre,
   classifyFirearmType,
+  classifyHeldSection,
+  FIREARM_ACTION_LABELS,
   FIREARM_TYPE_LABELS,
+  FirearmAction,
   FirearmType,
+  HELD_SECTION_LABELS,
+  HeldSection,
   QUARRY_LABELS,
   QuarryClass,
 } from './motivation-overlap';
+import { OVERLAP_ANGLES } from './motivation-cards';
 
 // The operator's own example is the first test, because it is the whole point:
 // a .308 already licensed and a .270 applied for are both medium plains game,
@@ -749,5 +756,353 @@ describe('one argument per firearm, not one passage covering them all', () => {
     });
     const hits = (r.writerNote!.match(/• 9mm Glock/g) ?? []).length;
     expect(hits).toBe(1);
+  });
+});
+
+// ── THE ACTION AXIS — SAME CALIBRE CLASS, DIFFERENT WEIGHT ──────────
+//
+// A bolt-action .308 and a semi-automatic .308 are the same calibre class and,
+// until now, read as the identical duplication. Two bolt .308s are the closer
+// one and the harder to explain away; a bolt against a semi-auto is genuinely
+// lighter, because a reviewer sees two rifles built for different jobs. This
+// axis never decides whether there IS an overlap — it only tells the writer
+// how hard to press once calibre or type already has.
+
+describe('classifying an action', () => {
+  it("reads the registry's own seven, whatever the casing", () => {
+    for (const s of ['Bolt action', 'bolt action', ' BOLT ACTION ']) {
+      expect(classifyAction(s)).toBe('bolt');
+    }
+    expect(classifyAction('Semi-automatic (self-loading)')).toBe('semi_auto');
+    expect(classifyAction('Lever action')).toBe('lever');
+    expect(classifyAction('Pump action')).toBe('pump');
+    expect(classifyAction('Single shot')).toBe('single_shot');
+    expect(classifyAction('Revolver')).toBe('revolver');
+    expect(classifyAction('Break action')).toBe('break');
+  });
+
+  it('refuses to guess at a shorthand the registry cannot produce', () => {
+    // `firearm_action` is `kind: 'choice'` over exactly the seven full
+    // strings; a partial word or a synonym cannot come out of it, so
+    // accepting one would be this file guessing again.
+    for (const s of ['Bolt', 'Auto', 'Semi-auto', 'Manual', '', '  ', null, undefined]) {
+      expect(classifyAction(s)).toBeNull();
+    }
+  });
+
+  it('has a label for every action it can return', () => {
+    const actions: FirearmAction[] = [
+      'semi_auto',
+      'bolt',
+      'lever',
+      'pump',
+      'single_shot',
+      'revolver',
+      'break',
+    ];
+    for (const a of actions) expect(FIREARM_ACTION_LABELS[a]).toBeTruthy();
+  });
+});
+
+describe('classifying the section a held firearm is licensed under', () => {
+  it('reads the spellings the licence-card reader and a person might use', () => {
+    for (const s of ['13', 'Section 13', 'SECTION 13', 'S13']) {
+      expect(classifyHeldSection(s)).toBe('13');
+    }
+    expect(classifyHeldSection('SECTION 15')).toBe('15');
+    expect(classifyHeldSection('SECTION 16')).toBe('16');
+  });
+
+  it('is THREE, not four — section 24 is a renewal process, not a grant', () => {
+    // Nothing is ever "held under section 24": a renewed firearm keeps
+    // whichever of 13/15/16 it was originally granted under. See the type's
+    // own comment for the fuller argument.
+    for (const s of ['24', 'Section 24', 'S24', '20', 'S17', '', null, undefined]) {
+      expect(classifyHeldSection(s)).toBeNull();
+    }
+  });
+
+  it('has a label for every section it can return', () => {
+    const sections: HeldSection[] = ['13', '15', '16'];
+    for (const s of sections) expect(HELD_SECTION_LABELS[s]).toBeTruthy();
+  });
+});
+
+describe('the action and section axes weaken or sharpen a matched note', () => {
+  it('reads as a CLOSER duplication when the action also matches', () => {
+    const r = checkOverlap(
+      '.308 Win',
+      [{ calibre: '.308 Win', action: 'Bolt action' }],
+      { appliedForAction: 'Bolt action' },
+    );
+    expect(r.writerNote).toMatch(/CLOSER duplication/);
+  });
+
+  it('reads as a LIGHTER duplication when the action differs', () => {
+    const r = checkOverlap(
+      '.308 Win',
+      [{ calibre: '.308 Win', action: 'Semi-automatic (self-loading)' }],
+      { appliedForAction: 'Bolt action' },
+    );
+    expect(r.writerNote).toMatch(/LIGHTER duplication/);
+    expect(r.writerNote).toMatch(/bolt action/);
+    expect(r.writerNote).toMatch(/semi-automatic/);
+    // Still an instruction to address it, never an excuse to skip it.
+    expect(r.writerNote).toMatch(/do not argue it as if the two were the same firearm/);
+  });
+
+  it('says nothing about action when either side is unknown', () => {
+    // No `action` on the held firearm at all — the overwhelming majority of
+    // rows today, since the registry has no field for it yet.
+    const r = checkOverlap('.308 Win', [{ calibre: '.308 Win' }], {
+      appliedForAction: 'Bolt action',
+    });
+    expect(r.writerNote).not.toMatch(/duplication/);
+  });
+
+  it('names the SAME section when a held firearm was granted under this application\'s own section', () => {
+    const r = checkOverlap(
+      '.308 Win',
+      [{ calibre: '.308 Win', section: 'SECTION 16' }],
+      { licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER },
+    );
+    expect(r.writerNote).toMatch(/licensed under the SAME section/);
+  });
+
+  it('names a DIFFERENT section, and which one, when they do not match', () => {
+    const r = checkOverlap(
+      '.308 Win',
+      [{ calibre: '.308 Win', section: 'SECTION 13' }],
+      { licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER },
+    );
+    expect(r.writerNote).toMatch(/licensed under a DIFFERENT section/);
+    expect(r.writerNote).toMatch(/section 13 \(self-defence\)/);
+  });
+
+  it('says nothing about section on a renewal — nothing is being applied for under a new one', () => {
+    const r = checkOverlap(
+      '.270 Win',
+      [{ calibre: '.308 Win', section: 'SECTION 16' }],
+      { licenceType: MotivationLicenceType.S24_RENEWAL },
+    );
+    // Calibre overlap still fires; the section clause does not, because
+    // sectionAppliedFor is null on S24.
+    expect(r.needsJustification).toBe(true);
+    expect(r.writerNote).not.toMatch(/section/i);
+  });
+
+  it('joins both clauses when both action and section are known', () => {
+    const r = checkOverlap(
+      '.308 Win',
+      [{ calibre: '.308 Win', action: 'Bolt action', section: 'SECTION 13' }],
+      {
+        appliedForAction: 'Bolt action',
+        licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      },
+    );
+    expect(r.writerNote).toMatch(/CLOSER duplication.*DIFFERENT section/);
+  });
+
+  it('never lets the strength clause slip into the applicant-facing prompt', () => {
+    // The prompt stays high-level; the nuance belongs to the writer alone.
+    const r = checkOverlap(
+      '.308 Win',
+      [{ calibre: '.308 Win', action: 'Bolt action' }],
+      { appliedForAction: 'Bolt action' },
+    );
+    expect(r.prompt).not.toMatch(/duplication/);
+  });
+});
+
+// ── suggestedAngle — A RANKED SUBSET OF THE FIXED VOCABULARY ────────
+//
+// motivation-cards.ts owns the seven sentences; this file only ever reorders
+// them. Every test below checks the full seven survive, in a set, alongside
+// the order asserted for the ones that matter.
+
+function angleKeys(check: ReturnType<typeof checkOverlap>): string[] {
+  return (check.suggestedAngle ?? []).map((o) => o.key);
+}
+
+describe('suggestedAngle', () => {
+  it('is null when there is nothing to explain', () => {
+    const clear = checkOverlap('.375 H&H', [{ calibre: '.22 LR' }]);
+    expect(clear.verdict.kind).toBe('clear');
+    expect(clear.suggestedAngle).toBeNull();
+  });
+
+  it('is null when we do not even know what is being compared', () => {
+    const unknownApplied = checkOverlap('some wildcat', [{ calibre: '.308 Win' }]);
+    expect(unknownApplied.verdict.kind).toBe('unknown');
+    expect(unknownApplied.suggestedAngle).toBeNull();
+
+    const unknownHeld = checkOverlap('.270 Win', [
+      { calibre: '6.5-284 Norma Improved' },
+    ]);
+    expect(unknownHeld.verdict.kind).toBe('unknown');
+    expect(unknownHeld.suggestedAngle).toBeNull();
+  });
+
+  it('never filters — every angle survives, whatever fires first', () => {
+    const cases = [
+      checkOverlap('.270 Win', [{ calibre: '.308 Win' }], {
+        dedicatedStatus: true,
+        licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      }),
+      checkOverlap('.375 H&H', [{ calibre: '.22 LR', type: 'Rifle' }], {
+        appliedForType: 'Rifle',
+        licenceType: MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+      }),
+      checkOverlap('.38 Special', [{ calibre: '9mm', type: 'Handgun' }], {
+        appliedForType: 'Handgun',
+        licenceType: MotivationLicenceType.S13_SELF_DEFENCE,
+      }),
+    ];
+    const wanted = [...OVERLAP_ANGLES.map((o) => o.key)].sort();
+    for (const c of cases) {
+      expect(angleKeys(c).sort()).toEqual(wanted);
+      expect(angleKeys(c)).toHaveLength(7);
+    }
+  });
+
+  it('leads with division, backup and match-and-practice for a dedicated shooter with a same-calibre overlap', () => {
+    const r = checkOverlap('.270 Win', [{ calibre: '.308 Win' }], {
+      dedicatedStatus: true,
+      licenceType: MotivationLicenceType.S16_DEDICATED_SPORT,
+    });
+    expect(angleKeys(r).slice(0, 3)).toEqual([
+      'different_division',
+      'backup',
+      'match_and_practice',
+    ]);
+  });
+
+  it('does NOT lead with the dedicated framing for the same overlap without dedicated status', () => {
+    const r = checkOverlap('.270 Win', [{ calibre: '.308 Win' }], {
+      dedicatedStatus: false,
+      licenceType: MotivationLicenceType.S15_OCCASIONAL_HUNTER,
+    });
+    expect(angleKeys(r).slice(0, 3)).not.toEqual([
+      'different_division',
+      'backup',
+      'match_and_practice',
+    ]);
+  });
+
+  it('leads with different quarry and different range when the type matches but the calibre class does not', () => {
+    // Two rifles, genuinely different game — the softer, "secondary" framing
+    // typeParagraph already writes for a hunter.
+    const r = checkOverlap('.375 H&H', [{ calibre: '.22 LR', type: 'Rifle' }], {
+      appliedForType: 'Rifle',
+      licenceType: MotivationLicenceType.S16_DEDICATED_HUNTER,
+      dedicatedStatus: true,
+    });
+    expect(angleKeys(r).slice(0, 2)).toEqual(['different_quarry', 'different_range']);
+  });
+
+  it('falls back to different format and different purpose for a type-led match with no dedicated status', () => {
+    // MO000017's own shape, without dedicated status: two handguns, the
+    // firearm type test is what fires, and there is no Act-recognised
+    // "division" framing to reach for.
+    const r = checkOverlap('.38 Special', [{ calibre: '9mm', type: 'Handgun' }], {
+      appliedForType: 'Handgun',
+      licenceType: MotivationLicenceType.S13_SELF_DEFENCE,
+    });
+    expect(angleKeys(r).slice(0, 2)).toEqual(['different_format', 'different_purpose']);
+  });
+
+  it('ranks different_purpose first when a held firearm is for self-defence and this application is for sport', () => {
+    // The brief's own example. A held handgun tapped as home defence, next to
+    // a dedicated SPORT application in the same calibre class — the mismatch
+    // is worth more than the generic dedicated-shooter framing, so it leads.
+    const r = checkOverlap(
+      '9mm',
+      [{ calibre: '9mm', usedForKeys: ['home_defence'] }],
+      { dedicatedStatus: true, licenceType: MotivationLicenceType.S16_DEDICATED_SPORT },
+    );
+    expect(angleKeys(r)[0]).toBe('different_purpose');
+    expect(angleKeys(r)).toEqual(
+      expect.arrayContaining([
+        'different_division',
+        'backup',
+        'match_and_practice',
+      ]),
+    );
+  });
+
+  it('does not rank by purpose from free text, only from the tapped card', () => {
+    // usedFor is prose for the writer; usedForKeys is the fixed vocabulary
+    // this ranking compares against exactly. Free text has no fixed
+    // vocabulary to match, so it must not move the ranking — only the tapped
+    // PRIMARY_USE card can.
+    const withoutKeys = checkOverlap(
+      '9mm',
+      [{ calibre: '9mm', usedFor: 'I keep it for home defence.' }],
+      { dedicatedStatus: true, licenceType: MotivationLicenceType.S16_DEDICATED_SPORT },
+    );
+    expect(angleKeys(withoutKeys)[0]).not.toBe('different_purpose');
+  });
+
+  it('treats section 15 as hunting for the purpose signal, since it also covers sport shooters', () => {
+    // S15 genuinely covers "an occasional hunter OR an occasional sports
+    // person" and this module has no independent way to tell which. A held
+    // firearm for hunting next to an S15 application is therefore read as
+    // no-conflict, which costs nothing when the S15 applicant actually shoots
+    // sport — ranking only ever reorders, it never removes an angle.
+    const r = checkOverlap(
+      '.270 Win',
+      [{ calibre: '.308 Win', usedForKeys: ['plains_game'] }],
+      { licenceType: MotivationLicenceType.S15_OCCASIONAL_HUNTER },
+    );
+    expect(angleKeys(r)[0]).not.toBe('different_purpose');
+  });
+});
+
+// ── overlapFromAnswers reads the tapped card, action and section ───
+// (overlapFromAnswers is already imported above, ahead of the S24 tests.)
+
+describe('overlapFromAnswers reads existing_firearm_N_primary_use', () => {
+  it('prefers the tapped card over the older free-text answer', () => {
+    const r = overlapFromAnswers(S15, {
+      firearm_calibre: '.270 Winchester',
+      existing_firearm_1_calibre: '.308 Win',
+      existing_firearm_1_primary_use: 'plains_game',
+      existing_firearm_1_use: 'the old free-text answer, never shown once the card is tapped',
+    });
+    expect(r.writerNote).toContain('I use it for plains game.');
+    expect(r.writerNote).not.toContain('the old free-text answer');
+  });
+
+  it('falls back to the free-text answer when the card was never tapped', () => {
+    // ⚠️ NEVER LOSE AN ANSWER SOMEBODY ALREADY TYPED. A draft saved before
+    // the card existed must still reach the writer.
+    const r = overlapFromAnswers(S15, {
+      firearm_calibre: '.270 Winchester',
+      existing_firearm_1_calibre: '.308 Win',
+      existing_firearm_1_use: 'bushveld plains game to 200m',
+    });
+    expect(r.writerNote).toContain('bushveld plains game to 200m');
+  });
+
+  it('drops an unrecognised or retired card key rather than printing the raw slug', () => {
+    const r = overlapFromAnswers(S15, {
+      firearm_calibre: '.270 Winchester',
+      existing_firearm_1_calibre: '.308 Win',
+      existing_firearm_1_primary_use: 'not_a_real_key',
+    });
+    expect(r.writerNote).not.toContain('not_a_real_key');
+    expect(r.writerNote).toContain('no stated use');
+  });
+
+  it('passes firearm_action through so the action axis can fire from real answers', () => {
+    const r = overlapFromAnswers(S16, {
+      firearm_calibre: '.270 Winchester',
+      firearm_action: 'Semi-automatic (self-loading)',
+      existing_firearm_1_calibre: '.308 Win',
+      // ⚠️ NO REGISTRY FIELD YET — read defensively (see HeldFirearm.action).
+      // This proves the plumbing works the day it lands.
+      existing_firearm_1_action: 'Bolt action',
+    });
+    expect(r.writerNote).toMatch(/LIGHTER duplication/);
   });
 });

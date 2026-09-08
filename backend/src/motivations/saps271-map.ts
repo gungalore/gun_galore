@@ -660,8 +660,14 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
     if (SAFE_TYPE_TICK[type]) pointAtSafe(SAFE_DETAIL_BOX[type], '68.1');
     if (a('safe_mounted') === 'Yes') {
       tick('safe_mounted_yes');
-      if (a('safe_mounted_to') === 'Wall') tick('safe_mounted_wall');
-      else if (a('safe_mounted_to') === 'Floor') tick('safe_mounted_floor');
+      // ⚠️ 'Both' TICKS BOTH, AND IT IS WHY THIS IS NOT AN if/else CHAIN.
+      // Item 69 has a wall box and a floor box and no third one, so the
+      // registry's third CHOICE has to become two TICKS here. Written as
+      // `else if` it fell through both branches and the answer vanished off a
+      // form the applicant signs. See safe_mounted_to in motivation-fields.ts.
+      const mountedTo = a('safe_mounted_to');
+      if (mountedTo === 'Wall' || mountedTo === 'Both') tick('safe_mounted_wall');
+      if (mountedTo === 'Floor' || mountedTo === 'Both') tick('safe_mounted_floor');
       // 69.1 is "IF YES", so it is answered only on a mounted safe — and the
       // bolts fixing it down are in the same annexure.
       pointAtSafe('safe_detail_mounted', '69.1');

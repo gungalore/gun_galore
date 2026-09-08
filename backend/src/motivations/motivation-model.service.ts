@@ -10,10 +10,6 @@ import {
   gateUserPrompt,
   generationSystemPrompt,
   generationUserPrompt,
-  followUpBatchSystemPrompt,
-  followUpBatchUserPrompt,
-  followUpSystemPrompt,
-  followUpUserPrompt,
 } from './motivation-prompts';
 import type { StructurePlan } from './motivation-structure';
 
@@ -325,91 +321,22 @@ export class MotivationModelService {
     }
   }
 
-  /**
-   * Research the case before writing it.
-   *
-   * The professional motivations we studied are not templates: the
-   * self-defence one annexes the precinct's own police-station crime figures,
-   * and every section 16 carries pages on the firearm's design and the
-   * cartridge's history. That material is PUBLISHED — it is not something to
-   * ask the applicant for, and not something a writer should recall from
-   * training data and hope. So a cheaper model with web search gathered it
-   * once per motivation, and the writer was handed the brief.
-   *
-   * ⚠️ IT IS A GROUNDED CALL, AND IT MUST STAY ONE. It was off between the
-   * 2026-09-07 provider move and the grounding flag landing later the same
-   * day, because the alternative was worse and was considered: making this
-   * same call WITHOUT a search does not produce "less research", it produces a
-   * model RECALLING precinct crime figures and cartridge histories, which is
-   * exactly the invented fact the gate's groundedness floor exists to catch,
-   * laundered into the brief as though it had a source. The applicant SIGNS
-   * this document and files it with SAPS.
-   *
-   * So the rule that survived the outage is the rule now: if the search cannot
-   * run, the brief is ABSENT rather than guessed. Every failure below returns
-   * null — no key, an empty brief, a provider error, or an answer that came
-   * back with no text — and the caller already treats null as "no brief".
-   * Research is seasoning; a null costs colour, never the document.
-   *
-   * ⚠️ NO `json`, NO `tools`, and the timeout is its own. Gemini 2.5 rejects
-   * grounding beside either of those (see gemini.provider.ts) — this call
-   * wants neither, and the day someone adds one the adapter will say so at the
-   * door rather than quietly returning an unsourced brief.
-   *
-   * ⚠️ PRIVACY IS ENFORCED IN researchBrief(), NOT HERE. The street address is
-   * stripped in CODE before the model sees anything, and the brief's own text
-   * forbids searching a name, an ID number or a serial. That mattered when the
-   * search was Anthropic's and it matters more now: the queries go to Google.
-   * The brief is a pure function with its own tests for exactly this reason —
-   * never build a query in this method.
-   */
-  async research(args: ResearchArgs): Promise<{
-    text: string;
-    usage: ModelUsage;
-  } | null> {
-    const brief = researchBrief(args);
-    if (!brief) return null;
-
-    try {
-      const res = await this.llm.complete({
-        messages: [{ role: 'user', content: brief }],
-        maxTokens: 4000,
-        grounding: { web: true },
-        purpose: 'motivation.research',
-        timeoutMs: RESEARCH_TIMEOUT_MS,
-      });
-      const text = res.text.trim();
-      if (!text) return null;
-      // ⚠️ SOURCELESS IS NOT A FAILURE HERE, and it is not treated as one. A
-      // grounded call that opened nothing reports groundingSources: [], and
-      // the brief itself already says "if a search finds nothing solid, say
-      // nothing on that point". What the writer then receives is a thin
-      // brief, which is the honest outcome. It is logged because a run of
-      // empty ones means the search is broken, not that the cases are dull.
-      const sources = res.groundingSources?.length ?? 0;
-      if (sources === 0) {
-        this.logger.warn(
-          'Motivation research came back with no web sources — the brief is thin, not wrong. Check grounding if this repeats.',
-        );
-      }
-      return {
-        text,
-        usage: {
-          model: res.model,
-          promptTokens: res.usage.inputTokens,
-          completionTokens: res.usage.outputTokens,
-        },
-      };
-    } catch (err) {
-      // ⚠️ NO PROVIDER NAME, and no query text — the brief carries the
-      // applicant's suburb and the firearm they are applying for.
-      const code = err instanceof LlmError ? err.code : 'unknown';
-      this.logger.warn(
-        `Motivation research failed [${code}] — the document is written without it rather than with a remembered brief.`,
-      );
-      return null;
-    }
-  }
+  // ⚠️ research() STOOD HERE AND ITS REPLACEMENT IS A SEPARATE SERVICE —
+  // 2026-09-08. It built ONE grounded brief per motivation out of this
+  // applicant's own answers, including their suburb (redacted to an area, but
+  // still theirs), and cached it on that motivation alone — so the second
+  // applicant for the same firearm paid for the same search again.
+  //
+  // MotivationResearchService asks four narrower questions keyed on facts
+  // about the WORLD — the firearm model, the cartridge, the discipline, the
+  // class of game — so a row is shared by everyone who asks the same one, and
+  // NO APPLICANT DATUM REACHES A SEARCH QUERY AT ALL. See its header.
+  //
+  // ⚠️ redactToArea() SURVIVES AT THE FOOT OF THIS FILE, deliberately, though
+  // nothing calls it today. It is a TESTED PRIVACY PRIMITIVE — strip a
+  // residential address down to what may appear in a web search — and the next
+  // person who needs to put a place into a prompt should find it rather than
+  // write it again, worse. Its tests survive with it.
 
   /**
    * THE SECOND VERIFIER — a fresh pair of eyes on the BUILT document.
@@ -697,267 +624,16 @@ export class MotivationModelService {
     };
   }
 
-  /**
-   * Ask for a batch of follow-ups in ONE request.
-   *
-   * WE pick the fields (the gate named them); the model only asks them nicely.
-   * Replaces a loop that called askFollowUp once per field: same output, a
-   * third of the requests, and the model can vary its phrasing because it sees
-   * the whole batch.
-   *
-   * Returns a key→question map with only the entries it could parse. A missing
-   * key is not an error: the caller has a free fallback question for every
-   * field, so a partial answer degrades to plain wording rather than to
-   * silence.
-   */
-  async askFollowUpBatch(args: {
-    licenceType: MotivationLicenceType;
-    gaps: {
-      key: string;
-      label: string;
-      help?: string;
-      reason: string;
-      wordsSoFar: number;
-    }[];
-  }): Promise<{ questions: Record<string, string>; usage: ModelUsage }> {
-    const empty = {
-      questions: {} as Record<string, string>,
-      usage: { model: this.llm.model, promptTokens: 0, completionTokens: 0 },
-    };
-    if (!args.gaps.length) return empty;
-    if (!this.llm.isConfigured()) return empty;
-
-    let text: string;
-    let usage: ModelUsage;
-    try {
-      const res = await this.llm.complete({
-        maxTokens: 900,
-        // ⚠️ THINKING OFF. Nine hundred tokens is a handful of one-sentence
-        // questions and nothing else; a thinking budget shares that ceiling
-        // and would produce the writer's 2026-08-22 failure in miniature — a
-        // full allowance spent reasoning, no question written, and a caller
-        // that quietly falls back to plain wording so nobody ever notices.
-        thinking: { budgetTokens: 0 },
-        // ⚠️ `temperature: 0.7` WAS HERE, and it was deliberate — variation
-        // between documents is what keeps a CFR reviewer from seeing the same
-        // motivation twice. It still had to go: the parameter was removed on
-        // the model family this ran on and was 400ing the call.
-        //
-        // The variation does not depend on it. It is engineered structurally —
-        // Motivation.variantSeed, the structure plans in motivation-structure.ts,
-        // and the sameness check against the recent corpus. Sampling temperature
-        // was the least of it. If documents ever do start reading alike, the
-        // lever is another structure plan.
-        //
-        // ⚠️ THE VISUAL HALF OF THAT VARIATION IS GONE, deliberately. A
-        // motivation-style.ts used to mix 13 fonts, 10 palettes, 4 leadings and
-        // 6 formats into some 3,120 looks, on the reasoning that a reviewer
-        // with a stack of paper notices a repeated TYPEFACE before they notice
-        // a repeated argument. The design handoff of 2026-08-21 replaced it
-        // with one typeset document in ten colourways, and that is the right
-        // trade: a pack that looks like it came from somebody who does this
-        // for a living beats a pack that is merely hard to pair with another.
-        // The variation that survives is the variation that matters — what the
-        // document says, and in what order.
-        system: followUpBatchSystemPrompt(),
-        messages: [
-          {
-            role: 'user',
-            content: followUpBatchUserPrompt(args.licenceType, args.gaps),
-          },
-        ],
-        purpose: 'motivation.followup.batch',
-      });
-      text = res.text.trim();
-      usage = this.usageOf(res);
-    } catch (err) {
-      this.logger.warn(
-        `Follow-up batch failed, falling back to plain questions: ${MotivationModelService.why(err)}`,
-      );
-      return empty;
-    }
-
-    const questions: Record<string, string> = {};
-    try {
-      const json = text.startsWith('{') ? text : text.slice(text.indexOf('{'));
-      const parsed = JSON.parse(json) as {
-        questions?: { key?: unknown; question?: unknown }[];
-      };
-      const wanted = new Set(args.gaps.map((g) => g.key));
-      for (const q of parsed.questions ?? []) {
-        // Only keys WE asked about. A model that invents a field key would
-        // otherwise have a question stored against a field that does not exist,
-        // which the wizard could never render or clear.
-        if (typeof q?.key !== 'string' || !wanted.has(q.key)) continue;
-        if (typeof q?.question !== 'string') continue;
-        const cleaned = q.question.trim();
-        if (cleaned) questions[q.key] = cleaned.slice(0, 400);
-      }
-    } catch {
-      this.logger.warn('Follow-up batch returned unparseable JSON; using fallbacks');
-    }
-
-    return { questions, usage };
-  }
-
-  /**
-   * Phrase ONE follow-up question. A failure here is not fatal — the caller
-   * falls back to the field's own help text, because a plain question beats no
-   * question.
-   */
-  async askFollowUp(args: {
-    licenceType: MotivationLicenceType;
-    fieldKey: string;
-    fieldLabel: string;
-    fieldHelp?: string;
-    currentAnswer: string;
-  }): Promise<{ question: string | null; usage: ModelUsage }> {
-    const usage: ModelUsage = {
-      model: this.llm.model,
-      promptTokens: 0,
-      completionTokens: 0,
-    };
-    if (!this.llm.isConfigured()) return { question: null, usage };
-
-    try {
-      const res = await this.llm.complete({
-        maxTokens: 300,
-        // ⚠️ THINKING OFF — three hundred tokens is one question. See the
-        // batch call above; the whole ceiling can go to reasoning and leave
-        // nothing for the sentence, and the fallback hides it.
-        thinking: { budgetTokens: 0 },
-        system: followUpSystemPrompt(),
-        messages: [{ role: 'user', content: followUpUserPrompt(args) }],
-        purpose: 'motivation.followup',
-        timeoutMs: GRADE_TIMEOUT_MS,
-      });
-      const q = res.text.trim();
-      return {
-        question: q || null,
-        usage: this.usageOf(res),
-      };
-    } catch (err) {
-      this.logger.warn(
-        `Follow-up question generation failed: ${MotivationModelService.why(err)}`,
-      );
-      return { question: null, usage };
-    }
-  }
-}
-
-export interface ResearchArgs {
-  licenceType: MotivationLicenceType;
-  answers: Record<string, string>;
-  /**
-   * Held firearms the overlap check matched against the one applied for,
-   * as the applicant described them (".308 Win Tikka").
-   *
-   * ⚠️ WITHOUT THIS THE COMPARISON SECTION HAS NOTHING TO ARGUE WITH. The
-   * writer must build the distinction itself rather than wait for the
-   * applicant to supply it (operator, 2026-08-22), and rule 1 forbids it
-   * every figure it was not given — so a comparison with no researched
-   * material on the OTHER cartridge can only be written in generalities.
-   *
-   * Cartridge and make only, never a serial or a licence number; the same
-   * privacy rule that governs the rest of this brief.
-   */
-  heldForComparison?: string[];
-  /**
-   * We already hold VERIFIED SAPS precinct figures for this application —
-   * see CrimeStatsService.precinct() / precinctFactLines(), assembled into
-   * the fact pack in MotivationGenerationService. When true, the crime-context
-   * ask below is dropped entirely: paying a grounded search to go find,
-   * approximately, what our own quarterly workbook already states exactly
-   * would spend the search budget on a WORSE version of a fact we already
-   * have, and rule 1 already tells the writer to prefer the precise figure.
-   */
-  hasPrecinctFigures?: boolean;
-}
-
-/**
- * What the research call ASKS, built from the pack.
- *
- * ⚠️ PRIVACY IS THE HARD CONSTRAINT HERE, AND IT IS WHY THIS IS A PURE
- * FUNCTION WITH ITS OWN TESTS. Search queries leave us for a search engine, so
- * nothing identifying may appear in one: the street address is stripped in CODE
- * before the model sees anything (only suburb/town/province survive), and the
- * prompt forbids searching any name or number besides. The applicant's answers
- * do NOT travel here — only the firearm's make and model, the calibre, the
- * discipline and the redacted area, which is the whole reason this was a
- * separate call rather than a tool on the writer.
- *
- * Returns '' when there is nothing worth asking about.
- */
-export function researchBrief(args: ResearchArgs): string {
-  const a = args.answers;
-  const firearm = ['firearm_type', 'firearm_action', 'firearm_make', 'firearm_model', 'firearm_calibre']
-    .map((k) => (a[k] ?? '').trim())
-    .filter(Boolean)
-    .join(' ');
-  const area = redactToArea(a.residential_address ?? '');
-  const discipline = (a.discipline_other || a.discipline || '').trim();
-  // Deduped and capped: three named cartridges is already a wide brief, and
-  // an owned-firearms table with six rows in the same class would otherwise
-  // spend the search budget on the sixth.
-  const held = [
-    ...new Set((args.heldForComparison ?? []).map((h) => h.trim()).filter(Boolean)),
-  ]
-    .slice(0, 3)
-    .map((h) => sanitizePromptValue(h, 60))
-    .join('; ');
-
-  // ⚠️ SUPPRESSED, NOT JUST UNRENDERED, WHEN WE ALREADY HOLD VERIFIED
-  // FIGURES. `wantArea` used to be pure licence-type; a SAPS precinct lookup
-  // in the fact pack makes the crime-context ask redundant AND worse — we
-  // would be paying a search to approximate a number our own workbook
-  // already states exactly. Folded into the SAME flag the early-return and
-  // the AREA block both read, so a precinct hit and an empty firearm/
-  // discipline/held section together mean nothing is worth asking at all.
-  const wantArea =
-    args.licenceType === 'S13_SELF_DEFENCE' && !args.hasPrecinctFigures;
-  if (!firearm && !(wantArea && area)) return '';
-
-  return [
-    'Prepare a short research brief for a South African firearm licence',
-    'motivation. Search the web for what you do not reliably know. Cite the',
-    'source (publication and URL) after each cluster of facts.',
-    '',
-    "⚠️ PRIVACY, ABSOLUTE: never put a person's name, an ID number, a",
-    'street or a serial number into any search query. Search only the',
-    'firearm, the cartridge, the discipline, and the AREA below as given.',
-    '',
-    firearm ? `THE FIREARM: ${firearm}.` : '',
-    firearm
-      ? 'Find: the manufacturer and model background, its design features,' +
-        ' action and configuration, and what the model is built and used' +
-        ' for. Then the CARTRIDGE: its origin, character (recoil, typical' +
-        ' loads, effective use), and what it is commonly used for in South' +
-        ' Africa.'
-      : '',
-    discipline ? `THE DISCIPLINE: ${discipline}. Find what it involves and what it asks of the firearm.` : '',
-    held
-      ? `ALREADY HELD, AND IT COVERS SIMILAR GROUND: ${held}. The applicant` +
-        ' already holds this, so the motivation has to say what the firearm' +
-        ' applied for does that this one does not. Find the same kind of' +
-        ' detail for THIS cartridge — its character, effective use and what' +
-        ' it is commonly used for here — and then set the two against each' +
-        ' other: where each one is at its best, where each is over- or' +
-        ' under-matched, what one does that the other does not. Report the' +
-        ' comparison as published fact, and take no view on the application.'
-      : '',
-    wantArea && area
-      ? `THE AREA: ${area}. Find the recent crime picture for this area and` +
-        ' its policing precinct — categories like house robbery, home' +
-        ' invasion, hijacking — from SAPS statistics or reputable press.' +
-        ' Figures with periods attached, never vibes.'
-      : '',
-    '',
-    'Write the brief as titled plain-text sections. Facts only, no advice,',
-    'no opinion on the application. If a search finds nothing solid, say',
-    'nothing on that point — an empty section beats a guessed one.',
-  ]
-    .filter(Boolean)
-    .join('\n');
+  // ⚠️ askFollowUpBatch AND askFollowUp STOOD HERE, AND THEY ARE GONE —
+  // 2026-09-08. No model asks the applicant a question any more
+  // (MOTIVATION-REBUILD-BRIEF.md §2.3). If a required fact is missing, the
+  // review sheet shows the empty input; that is the whole mechanism, and it
+  // costs nothing per gate cycle.
+  //
+  // The thing worth keeping from them is the reason they existed: WE picked
+  // the fields and the model only worded the question. That division still
+  // holds everywhere else in this service — we decide what is true, the model
+  // decides how it reads.
 }
 
 /**

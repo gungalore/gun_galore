@@ -191,6 +191,15 @@ export const FIELD_ALIASES: Record<string, readonly FieldAlias[]> = {
     // Printed on both sides of the pair; what joins them. Not a form field.
     { vault: 'scv_number', motivation: null },
     { vault: 'issuer', motivation: null },
+    // ⚠️ WHICH SIDE THIS IS — added 2026-09-08 with Textract's removal. It used
+    // to be decided AFTER the read, by grepping OCR text for "statement of
+    // results", which cost a second Textract call even when the model had done
+    // the actual read. It is now simply one more thing the model is asked for.
+    //
+    // `motivation: null` because it is not a form field and never reaches an
+    // answer: it decides which of a pair a document IS, so the vault can file
+    // the two together. See findOtherSide in credential-duplicates.ts.
+    { vault: 'document_side', motivation: null },
   ],
 
   OTHER: [

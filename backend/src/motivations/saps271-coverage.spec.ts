@@ -28,7 +28,19 @@ const S13 = MotivationLicenceType.S13_SELF_DEFENCE;
 const sectionOf = (c: ReturnType<typeof saps271Coverage>, id: string) =>
   c.sections.find((s) => s.id === id);
 
-/** The 271 opt-in, which is what un-hides every formOnly question. */
+/**
+ * The retired 271 opt-in.
+ *
+ * ⚠️ NO LONGER UN-HIDES ANYTHING. Until 2026-09-08 this answer was what
+ * revealed every `formOnly` question — roughly forty-eight of them — and most
+ * of the tests below used to spread it in for that reason. The SAPS 271 is no
+ * longer something the applicant elects to receive (brief §2.5), so
+ * `fill_saps271` is retired in motivation-fields.ts: `fieldsFor()` no longer
+ * returns it at all, and every question it used to gate is simply asked of
+ * everybody. This constant survives only for the one test below that proves
+ * an OLD DRAFT's stray answer to a question we no longer ask still cannot move
+ * the meter — see saps271-coverage.ts's own EXCLUDED_SECTIONS note.
+ */
 const OPTED_IN = { [SAPS271_OPT_KEY]: SAPS271_FILL };
 
 describe('the section panel', () => {
@@ -113,11 +125,20 @@ describe('the section panel', () => {
     }
   });
 
-  it('never counts the 271 opt-in as an application question', () => {
-    // Otherwise a member raises their own completeness by picking a setting.
+  it('never counts a stray answer to the retired 271 opt-in', () => {
+    // ⚠️ NOT ABOUT SOMEBODY RAISING THEIR OWN SCORE ANY MORE — the question
+    // is not asked, so nobody can tap it today. This is about an OLD DRAFT:
+    // `fill_saps271` is retired, not deleted, and `sanitiseAnswers` still
+    // accepts it so a draft saved before 2026-09-08 keeps loading. `fieldsFor`
+    // no longer returns a field for it at all (see RETIRED_FIELDS in
+    // motivation-fields.ts), so it must count for nothing either way — before
+    // the retirement this held true because the answer un-hid no more
+    // questions than answering it also cost, and now it holds for a simpler
+    // reason: there is no registry field left for the key to match.
     const before = saps271Coverage(S16, {});
     const after = saps271Coverage(S16, { ...OPTED_IN });
     expect(after.answered).toBe(before.answered);
+    expect(after.applicable).toBe(before.applicable);
   });
 
   it('gives every section a percentage and a required-count', () => {
@@ -136,12 +157,15 @@ describe('what applies to this applicant', () => {
     // ⚠️ THE HEADLINE RULE. History is 36 registry fields, 30 of them
     // conditional. Answering the six questions must not leave twenty-four
     // unanswerable ones dragging the section down.
-    const opted = { ...OPTED_IN };
+    //
+    // ⚠️ NO OPT-IN NEEDED TO SEE THIS SECTION AT ALL, SINCE 2026-09-08. These
+    // six used to be `formOnly` themselves, hidden until `fill_saps271` was
+    // answered; the whole 271 is unconditional now, so they are simply asked.
+    const blankAnswers: Record<string, string> = {};
     // ⚠️ SIX QUESTIONS, AND history_negligence IS NOT ONE OF THEM HERE. It is
     // itself conditional — `showIf history_lost_stolen === 'Yes'` — so saying
     // no to the loss closes it too. The unconditional sixth is prior_refusals.
     const allNo = {
-      ...opted,
       history_conviction: 'No',
       history_pending_case: 'No',
       history_lost_stolen: 'No',
@@ -150,7 +174,7 @@ describe('what applies to this applicant', () => {
       prior_refusals: 'No',
     };
 
-    const blank = sectionOf(saps271Coverage(S16, opted), 'H')!;
+    const blank = sectionOf(saps271Coverage(S16, blankAnswers), 'H')!;
     const answered = sectionOf(saps271Coverage(S16, allNo), 'H')!;
 
     expect(answered.applicable).toBeLessThan(blank.applicable + 1);
@@ -163,7 +187,6 @@ describe('what applies to this applicant', () => {
 
   it('opens the follow-ups only for the question answered yes', () => {
     const one = {
-      ...OPTED_IN,
       history_conviction: 'Yes',
       history_pending_case: 'No',
       history_lost_stolen: 'No',
@@ -180,20 +203,15 @@ describe('what applies to this applicant', () => {
     // And it is no longer complete — there are now details to give.
     expect(withYes.percent!).toBeLessThan(100);
   });
-
-  it('hides everything that exists only for the 271 until it is opted into', () => {
-    const out = saps271Coverage(S16, {});
-    const withForm = saps271Coverage(S16, { ...OPTED_IN });
-    expect(withForm.applicable).toBeGreaterThan(out.applicable);
-  });
 });
 
 describe('the owned-firearm grid', () => {
-  // ⚠️ EIGHT COLUMNS SINCE 2026-09-07, NOT SEVEN. `model` and `expiry` were
-  // added (the operator's listing is make / model / serial / expiry) and the
-  // two serial boxes collapsed into one — a licence card prints the same
-  // number against the barrel, the receiver and the frame, and where it does
-  // not it says NONE, which is the card saying there is nothing there.
+  // ⚠️ NINE COLUMNS SINCE 2026-09-08, NOT EIGHT. `existing_firearm_N_primary_use`
+  // joined as the tappable, profile-scoped sibling of `_use` (motivation-fields.ts,
+  // brief §5.1) — same row, one more question the panel counts. It is unrelated
+  // to the SAPS 271 opt-in this file otherwise exists to guard, but COLUMNS is
+  // derived from this fixture rather than restated as a number, precisely so the
+  // next field the registry adds updates this test instead of breaking it.
   const row = (n: number) => ({
     [`existing_firearm_${n}_make`]: 'CZ',
     [`existing_firearm_${n}_model`]: '550',
@@ -202,6 +220,7 @@ describe('the owned-firearm grid', () => {
     [`existing_firearm_${n}_type`]: 'Rifle',
     [`existing_firearm_${n}_calibre`]: '.308 Winchester',
     [`existing_firearm_${n}_use`]: 'Hunting',
+    [`existing_firearm_${n}_primary_use`]: 'plains_game',
     [`existing_firearm_${n}_licence_no`]: '4009117823',
   });
   const COLUMNS = Object.keys(row(1)).length;

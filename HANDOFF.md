@@ -6,14 +6,387 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-08**.
 
-## Next up: the Motivation Centre rebuild (design done, no code yet)
+## Next up: Motivation Centre rebuild — 1, 1B, 3, 4 done; 2 part-done
 
-The operator's brief is `MOTIVATION-REBUILD-BRIEF.md` at the repo root (with
-`MOTIVATION-INTAKE-PLAN.md` and `MOTIVATION-UX-REVIEW.md`). On 2026-09-08 a design
-session produced the canvas for the new `/licence-centre` sheet and the build spec
-`docs/design/licence-centre/SPEC-BUILD.md`. **Start with the brief's Phase 0** (a
-file-by-file plan, then stop for sign-off); the spec is for Phase 3. None of those
-files is committed yet — they are untracked in the worktree.
+The operator's brief is `MOTIVATION-REBUILD-BRIEF.md` (repo root), whose **§0
+amendments table is the ruling set** — it overrides the sections it names. The
+companions are `MOTIVATION-INTAKE-PLAN.md` (the question model) and
+`MOTIVATION-UX-REVIEW.md` (what is wrong with the live screens). The
+file-by-file plan for all four phases is
+`docs/design/licence-centre/PHASE-0-PLAN.md`; the Phase 3 frontend spec is
+`docs/design/licence-centre/SPEC-BUILD.md`.
+
+**Phases 1 and most of 2 are complete and NOT deployed.** Nothing is committed
+— it is all in the working tree on `feat/the-bench`.
+
+⚠️ **Phase 2 is HALF DONE AND STOPPED ON PURPOSE.** Brief §0 ruling H makes the
+14 → 12 heading mapping the first step of Phase 2, with its own sign-off,
+before `HEADING_ALTERNATES` may collapse. That mapping is delivered — see
+`docs/design/licence-centre/PHASE-0-PLAN.md` §2.0 — and everything that does
+NOT depend on it has been built. What remains is listed under "What Phase 2
+still owes" below.
+
+**Phases 1, 1B, 3 and 4 are DONE.** **Phase 2 is half done** and stopped on
+the §2.0 heading-mapping sign-off — that is the only phase work outstanding.
+
+### What Phase 1 did
+
+1. **The registry (`motivation-fields.ts`), `FIELD_REGISTRY_VERSION` → `2026-09-08`.**
+   New `kind: 'cards'`; new field properties `options`, `scope` and `internal`;
+   `showIf.hasAny`. New `'Your premises'` section (profile-scoped) with seven
+   new questions, absorbing the four safe fields out of 'Storage and safety'.
+   `existing_firearm_N_primary_use` on all fourteen owned rows. `overlap_angle`.
+   Nine reason-card sets. Every `long` field lost `required` and became the
+   optional prefilled "anything else" box under the cards that replaced it.
+2. **`fill_saps271` is retired as a QUESTION**, not deleted — `RETIRED_FIELDS`
+   keeps `fieldByKey` finding it so an old draft still saves. `formOnly` no
+   longer decides what is ASKED, only what reaches the writer. Roughly
+   forty-eight questions that hung off the opt-in are asked of everybody now,
+   **including the six history questions**, which on the dealer path were never
+   asked at all — so a conviction never reached the writer.
+3. **`internal: true`** replaced the deliberate `formOnly` × `showIf`
+   contradiction on `police_station_province`, `press_clippings` and
+   `competency_renews_with_licence`. Safe now because the frontend's mirror of
+   `isVisible()` is retired: `motivation-sheet.service.ts` computes item state
+   server-side and is the only visibility decision in the system.
+4. **The profile store.** New `MemberProfileAnswers` model + migration +
+   `member-profile-answers.service.ts`. `saveAnswers()` splits the incoming blob
+   by scope; `findOne()` and the sheet layer the application over the profile.
+5. **`GET :id/sheet` and `GET :id/preview`** — `motivation-sheet.service.ts`
+   composes prefill, documents, coverage, overlap and preview into one read;
+   `motivation-preview.ts` is a pure, deterministic, **no-model-call** preview.
+6. **SAPS 271 F-by-route** — the opt-in gate is gone from
+   `motivation-render.service.ts`; the checklist note now names the route.
+   `saps271-map.ts` gained `'Both'` for `safe_mounted_to` (item 69 has two
+   boxes and no third, so the new choice had to become two ticks).
+7. **Overlap** gained action and section axes and a ranked `suggestedAngle`
+   drawn from the fixed `OVERLAP_ANGLES` vocabulary.
+8. **The follow-up interview is gone** — `motivation-gaps.ts` (+spec) deleted,
+   `queueFollowUps`, `askFollowUpBatch`, `askFollowUp`, the four follow-up
+   prompts, `listMessages`, `answerFollowUp`, both `messages` endpoints, the
+   `MotivationMessage` table and its two frontend client calls.
+9. **Frontend appendix (non-visual).** Both registry fixtures regenerated from
+   the live registry (they were hand-maintained and had gone stale, so
+   `wizard-coverage` was checking the wizard against a registry that no longer
+   existed); `visibleFields()` lost the 271 gate; `STEP_PLAN` and `WIZARD_STEPS`
+   re-pointed at `'Your premises'`; the follow-up UI removed from both wizards.
+
+### What Phase 2 did
+
+1. **The research layer** — `MotivationResearch` table + migration +
+   `motivation-research.service.ts`. Four narrower questions (firearm model,
+   cartridge, discipline, class of game) each keyed on a fact about the WORLD,
+   so a row is shared by everyone who asks the same one and the second
+   applicant for a Beretta 1301 costs no call. 180-day TTL, checked on read
+   rather than swept.
+2. **It is a privacy improvement, not only a cost one.** The free-text brief it
+   replaces carried the applicant's suburb into a web search. Precinct figures
+   already come from our own SAPS workbook, so **no applicant datum reaches a
+   search query at all now** — locked by a spec that asserts no name, ID,
+   address, suburb, station, employer or serial appears in any target.
+3. **The old free-text path is removed** — `research()`, `researchBrief()` and
+   `ResearchArgs`. ⚠️ `redactToArea()` was deliberately KEPT with its tests: it
+   is a tested privacy primitive and the next person who needs to put a place
+   into a prompt should find it rather than write it again, worse.
+4. **Length bands halved** — S13 900–1400, S15/S16 1200–1800, S24 600–900,
+   because ~60% of the approved corpus's page count is manufacturer copy and
+   quoted regulation that rule 7 already forbids.
+5. **Cadence fixed to `plain`, one opening instead of four.** The similarity
+   detector survives as a test-time guard.
+6. **Reloading asked once**, profile-scoped (`reloads`, `reload_calibres`,
+   `reload_since`).
+7. **⚠️ A REAL BUG CAUGHT ON THE WAY: tapped cards were reaching the writer as
+   SLUGS.** `s13_reasons` stores `night_travel, rented`, and the fact-pack
+   renderer would have handed those two tokens to the model as the whole
+   self-defence case. This is the identical failure the file already documents
+   for `discipline`. Card answers now render as their first-person sentences,
+   through the `long` shape so the 200-character scalar cap cannot silently
+   drop somebody's fifth reason. Three new tests.
+
+### What Phase 2 still owes (all blocked on the §2.0 sign-off)
+
+- `HEADING_ALTERNATES` and `TYPE_HEADING_ALTERNATES` collapsing to one title
+  per section.
+- The rendered-from-data blocks: page-1 particulars, the owned-firearms battery
+  table, the S13 existing-measures list, the statutory quote-then-apply, the
+  annexure index, and page 2's take-to-SAPS checklist. Their PLACEMENT is what
+  the mapping decides, which is why they waited.
+- `motivation-pdf.service.ts` table definitions for those blocks.
+- The Document Centre asking `primary_use` at vault-adoption time (brief §5.7).
+  ⚠️ Deliberately NOT stubbed in the backend: the field exists, is
+  profile-scoped and is already served by the sheet; the asking is a Document
+  Centre screen change and belongs with Phase 3 rather than as a backend hook
+  nothing calls.
+- The five sample PDFs to `scan-fixtures/motivation-samples/` (ruling J).
+
+### What Phase 1B did — AWS Textract is gone
+
+Operator, 2026-09-08: "we will also be losing AWS textract and only be using
+gemini going forward. Gemini can write straight into json." Scope: everything,
+KYC included. Removed from all three places it lived.
+
+1. **The Licence Centre reader.** `licence-centre-textract.service.ts` and
+   `textract-document-extract.ts` deleted; `licence-centre-extract.service.ts`
+   is Gemini-only with a per-call `json: { schema }` whose `key` is enumerated
+   to that call's own `wantedFor()` list. `document_side` (front/back of a
+   proficiency pair) used to need a SECOND Textract call to decide, even when
+   the model had done the read — it is now just another key in the prompt.
+2. **`readFirearm()`.** The Textract-first pass, `firearmFromTextract` and the
+   key map are gone; the call takes `FIREARM_READING_SCHEMA`.
+3. **KYC.** `textract-extract.ts` deleted; `readIdentityDocument()` is one
+   Gemini schema call, and **SA ID numbers are validated with `readSaId` in
+   code** — a Luhn failure nulls the number rather than flagging it.
+   `textract:*` out of `infra/aws/kyc-iam-policy.json`.
+4. **`@aws-sdk/client-textract` uninstalled.** Nothing imported it any more and
+   leaving it would tell the next session Textract was still live.
+
+⚠️ **AWS DID NOT LEAVE.** `aws-kyc.service.ts` still uses Rekognition for face
+match and Face Liveness. The client, the region, `AWS_KYC_LIVENESS_ROLE_ARN`
+and every `rekognition:*` IAM statement stay.
+
+### ⚠️ What Phase 1B cost, stated plainly
+
+- **`legibilityScore()` is no longer a legibility measure.** It was Textract's
+  mean per-line OCR confidence × field completeness, and it gates whether a
+  seller is asked to retake their ID. A vision model reports no such
+  confidence and must not be asked to invent one, so it is **completeness
+  alone** now. The "no ID number caps at 40" rule is kept verbatim.
+  **A smudged document the model reads confidently but WRONGLY now scores high,
+  where Textract's low confidence would have forced a retake.**
+- **The Licence Centre lost its marker fast-path.** `readMarkers` ran off
+  Textract's OCR text, so `classify()` could read a form number for free and
+  without hallucinating. It now always costs a model call. **This is fixable** —
+  `GoogleVisionOcrService` already exists and motivations' own classifier uses
+  it for exactly this — but it is a third provider, and the instruction was
+  "only gemini", so it needs an operator call. `UPLOAD_TO_CREDENTIAL` has no
+  production caller left as a result.
+- **The public privacy page was made accurate.** It told members their identity
+  document goes to AWS Ireland for "automated text extraction", which is now
+  Google. Corrected in `frontend/app/(legal)/privacy/page.tsx` — both the
+  paragraph and the cross-border operator table. ⚠️ **This is POPIA §72
+  cross-border disclosure copy and should have an attorney's eye on it.**
+- ⚠️ **Two sets of Textract fixtures are ORPHANED AND TRACKED IN GIT** —
+  `backend/src/kyc/__fixtures__/textract/` (6 real identity documents) and
+  `backend/src/licence-centre/__fixtures__/textract/`. Nothing reads them.
+  They carry real names and identity numbers. Not deleted: that is the
+  operator's call, and git history keeps them regardless, which is the deeper
+  problem worth a decision.
+
+### What Phase 3 did — the surface is built
+
+Fourteen files under `frontend/components/licence-centre/` plus three routes.
+**73 new tests**, `npm run build` exit 0, all four routes registering:
+`/licence-centre` (static — the Document Centre, untouched),
+`/licence-centre/applications`, `/licence-centre/[id]`,
+`/licence-centre/[id]/pack`.
+
+Components: `contract.ts`, `sheet-row`, `cards-row`, `declaration-row`,
+`sheet-header`, `sheet-footer`, `sheet-section`, `document-shelf`,
+`sheet-toast`, `overlap-card`, `consent-card`, `competency-lines`,
+`pack-summary`, `preview-panel`, `__fixtures__/sheet.fixture.ts`.
+Routes: the sheet (the only stateful file), the applications list, the pack.
+
+### The acceptance gates (ruling G — RTL, not Playwright)
+
+`components/licence-centre/sheet-gates.spec.tsx`. The counter **throws on any
+keystroke**, so "zero typing" is enforced rather than observed.
+
+- **(a)** populated vault, S16 sport → enabled button in **1 tap**, zero
+  typing, against a ceiling of 12.
+- **(b)** empty vault → every unanswered item renders an OPEN input; the button
+  opens once they are answered.
+- **(c)** private sale → the consent card's Part F line changes once the seller
+  signs, and never blames the applicant for a signature they cannot hurry
+  (`pack-cards.spec.tsx`).
+
+### Decisions in Phase 3 worth knowing
+
+⚠️ **The two client calls live in `lib/motivations-api.ts`, NOT a client of
+their own** — a departure from the Phase 0 plan.
+`backend/src/common/api-route-contract.spec.ts` parses THAT FILE and asserts
+every call has a matching route; a separate module falls outside the check,
+which is how the two `messages` calls outlived their endpoints. Verified
+passing with both new routes.
+
+⚠️ **`/licence-centre` had to join `PUSH_TITLE_INDEX_ONLY`** in
+`lib/shell-routes.ts`, or that prefix swallows the subtree and heads every
+application "Licence Centre" instead of its own name.
+
+⚠️ **The page holds a `pending` map of unsaved edits separately from the
+sheet**, cleared only AFTER the refetch lands. Clearing on the save's response
+blanks the member's text for one frame, which reads as the form eating what
+they typed.
+
+⚠️ **`cards-row` stops prefilling the own-words box once the member types.**
+Re-joining over their sentence would delete what they wrote, and that box is
+the one place their own voice reaches a signed document.
+
+⚠️ **The shelf's Add tile mounts the EXISTING `bulk-capture.tsx`**, which
+already owns the picker, the phone hand-off and the re-file dropdown and is
+tested where it lives. Phase 4 moves the file; Phase 3 did not rewrite it.
+
+### What Phase 3 did NOT do
+
+- **`witnesses` and the cover-photo chooser are not on the pack page.** Both
+  components exist (`motivation-witnesses.tsx`, `motivation-cover-photo.tsx`)
+  and both are in the §4 move list. The pack page renders the motivation, the
+  271 summary and the take-to-SAPS list; the two chooser panels are a small
+  follow-on rather than something to fake.
+- **Nothing was moved out of `components/licence-pack/` or
+  `components/motivation/`.** They are imported where they stand, exactly as
+  SPEC-BUILD §4 says — a move plus a rewrite in one phase is how a regression
+  hides. Phase 4 moves them.
+- **The old screens are untouched and still work.** No redirects, no deletions;
+  that is Phase 4 and a separate sign-off.
+
+### What Phase 4 did — the old surfaces are gone
+
+**Deleted:** `app/motivations/**` and `app/licence-services/**` (both wizards);
+eight top-level components (`motivation-step-nav`, `motivation-step-rail`,
+`motivation-template-picker`, `motivation-template-preview`,
+`motivation-checklist-panel`, `licence-centre-motivations`,
+`licence-centre-offer-panel`, `motivation-field-input`); sixteen files under
+`components/licence-pack/` (`field-grid`, `pack-row`, `pack-group`,
+`pack-section`, `step-answers`, `follow-up-thread`, `prefill-banner`,
+`proficiency-alert`, `offer-notes`, `capture-cards`, `wizard-rail`, + specs);
+ten files under `lib/` (`motivation-step-plan`, `licence-services-preview`,
+`wizard-coverage`, `wizard-document-coverage.spec`, `wizard-step-offset.spec`,
+`motivations-grouping.spec`, `follow-up-rules.spec`,
+`vault-prefix-coverage.spec`); the four prefill-offer endpoints and their
+facade delegators; and the four client calls behind them.
+
+**Redirects (301, permanent):** `/motivations` and `/licence-services/new` →
+`/licence-centre/applications`; `/motivations/:id` and `/licence-services/:id`
+→ `/licence-centre/:id`. Pinned by `lib/redirects.spec.ts`, whose most
+important case asserts an ABSENCE: **`/licence-centre` must NOT redirect**, or
+every licence-expiry reminder lands on a list of applications.
+
+**The flag is gone** — `NEXT_PUBLIC_LICENCE_SERVICES_ENABLED`,
+`PACK_SCREEN_SHIPPED` and `canOpenPackScreen()` have no references left.
+
+**Links repointed, not left to the redirect:** `notifications.service.ts` was
+still BUILDING `/licence-services/[id]` into every "your document is ready" SMS
+and inbox row. Also the account menu, the account page's promoted tile, and
+`delete-application`'s post-delete push. The old paths still 301 for links
+already in inboxes; a link sent today should not need one.
+
+⚠️ **`read-result.tsx` was deleted even though §4 lists it as reuse.** It
+imported `motivation-field-input` and `step-answers`, both of which §3 names
+explicitly as NOT reused, and it is step-shaped (`stepKey`) on a surface with
+no steps. Its job is done by `sheet-toast.tsx` plus rows changing state in
+place. Recorded in `components/licence-pack/README-phase4.md`.
+
+⚠️ **Specs were re-pointed rather than deleted wherever the RULE survived.**
+`licence-types-coverage.spec.ts` needed no assertion changes at all — it
+compares `LICENCE_TYPES` to the SERVER'S registry, never to a screen, so it
+survived the surface being replaced underneath it. The four provenance cases
+that went through `useLicenceCentre`/`useProfile` now call
+`MotivationPrefillService` directly: the delegators died, the rule they
+protect (a vault value is stamped VAULT with the credential's id, a profile
+value PROFILE with none) did not.
+
+### ⚠️ One capability lost in Phase 4, and it is not a bug to fix blind
+
+`create()` applies the profile and the vault automatically, in the documented
+order, so a NEW application still opens prefilled. But a member who adds a
+licence to their vault **after** starting an application no longer has any way
+to pull it in — that was what `POST :id/use-licence-centre` did behind a
+button. `MotivationPrefillService.licenceCentreOffer/useLicenceCentre` still
+exist and still work; **nothing calls them.**
+
+The right answer is for the sheet to re-run the vault offer on load, with
+provenance, and never over a MEMBER value — but that is design work with a
+real risk of overwriting somebody's answer, not a Phase 4 deletion. Left as
+the operator's call rather than guessed at.
+
+### What is left in `components/licence-pack/`
+
+Eleven files, per brief §4's reuse list, and only three are reached today
+(`saps271-meter`, `yes-no-pills`, `bulk-capture`). The rest are pack-page
+furniture waiting on the follow-on panels. `README-phase4.md` in that
+directory says which is which — an orphaned component is not evidence of a
+live feature.
+
+⚠️ **Nothing was MOVED into `components/licence-centre/`.** SPEC-BUILD §4 asks
+for that in Phase 4; it is cosmetic, it would touch every import, and the
+directory now carries a README explaining itself. Deferred deliberately rather
+than forgotten.
+
+### Verification
+
+Backend `npx tsc --noEmit` CLEAN, `npm test` **4041 passed / 4053** (235 suites;
+8 skipped, 4 todo, 0 failed) against a measured pre-Phase-1 baseline of
+4020/4032. Frontend `npx tsc --noEmit` CLEAN, `npm test` **1561 passed / 1562**, and
+`npm run build` **exit 0** with `.next/BUILD_ID` present (so desk-guard,
+desk-cutover and theme-sync all passed). The build lists exactly four routes:
+`/licence-centre`, `/licence-centre/applications`, `/licence-centre/[id]`,
+`/licence-centre/[id]/pack`.
+
+⚠️ The frontend count fell from 1736 because Phase 4 deleted the two wizards
+and the ~175 tests that existed only to guard them — the wizard rail, the
+field grid, the step plan, the follow-up thread and the four wizard-coverage
+suites. Every deletion was checked against whether the RULE survived; where it
+did, the spec was re-pointed instead.
+
+⚠️ **A STALE `.next/dev/types/validator.ts` FAILED THE BUILD** after the routes
+were deleted, referencing pages that no longer exist. It is a `next dev`
+artefact, not a source problem, and a fresh checkout has none — but it is the
+same class of trap CLAUDE.md warns about with `.next/cache` surviving a
+rebuild. If a build fails on a missing `app/...page.js` right after a route is
+deleted, that is what it is. **Not deployed, not committed.**
+
+⚠️ The backend count DROPPED from Phase 2's 4113 because Phase 1B deleted 44
+Textract tests whose subject is gone — `textract-document-extract.spec.ts` (24),
+`licence-centre-extract-textract.spec.ts` (11) and `kyc/textract-extract.spec.ts`
+(9) — plus three licence-centre specs whose subject was Textract's OCR quirks.
+Each deletion was checked against whether the RULE survived: where it did, it is
+covered elsewhere and the replacement is named in the tombstone comment.
+
+Net test movement. Deleted with their subjects: `motivation-gaps.spec.ts` (8),
+and the two free-text research blocks in `motivation-model.service.spec.ts`
+(14) — whose privacy, grounding and fail-soft rules are all re-covered, more
+strictly, in `motivation-research.service.spec.ts`. Added:
+`motivation-cards.spec.ts` (15), `motivation-preview.spec.ts` (12),
+`member-profile-answers.service.spec.ts` (11),
+`motivation-sheet.service.spec.ts` (21), `motivation-research.service.spec.ts`
+(29), plus extensions to the registry, overlap, 271, checklist and model
+suites. **Every existing test that changed is annotated in place with why**,
+per brief §2.7.
+
+⚠️ `motivation-prompt-cache.spec.ts` was re-baselined TWICE — once in Phase 1
+(S13 label renames) and once in Phase 2 (the halved word bands, all five
+types). Both were content changes, which is what those hashes exist to catch,
+so the baseline moved rather than the assertion being weakened. **All five line
+counts held at 106/106/102/102/94 through both**, which is the check that each
+was a rewording and not a loss.
+
+### ⚠️ Three things the operator has to decide before Phase 2
+
+1. **The brief and the code disagree about estate firearms.** Brief §5.3 and
+   intake plan §1 say `SOURCE_ESTATE` fills Part F **Type E** from the
+   `EXECUTOR_APPOINTMENT` letter and the executor signs items 79–87.
+   `saps271-map.ts` says the opposite, and says it as a dated operator ruling:
+   *"Only Type A and B from the 271 are what we will process"* (2026-08-29), so
+   Type E is never ticked and 79–87 are written on **no route at all**
+   (2026-08-28). The code was left alone and the checklist copy was written to
+   match the code, not the brief. **This needs a ruling.**
+2. **`existing_firearm_N_action` and `existing_firearm_N_section` do not
+   exist.** The overlap engine's new action and section axes read them
+   defensively and are therefore **inert** until those fields are added. The
+   ranking works today off calibre class, firearm type and the tapped
+   `primary_use`; the two new axes are wired and waiting.
+3. **Phase 1B — drop AWS Textract, Gemini only.** Operator instruction
+   2026-09-08, scoped to **everything including KYC**, timed for **after Phase 1
+   sign-off**. Full file list in `PHASE-0-PLAN.md` §1B. Two things to know
+   going in: it reverses `d90fbdcf` (Textract was put FIRST because a single
+   Gemini vision pass on a real photograph was inconsistent — the replacement is
+   a `responseSchema` call plus the existing two-attempt retry), and **AWS does
+   not leave the codebase** because `aws-kyc.service.ts` couples Textract to
+   Rekognition face-match and Face Liveness under one IAM policy.
+
+`MotivationMessage` was counted read-only on production before the drop
+migration was written: **0 rows**. Nothing was exported because there was
+nothing to export.
 
 ---
 
@@ -24,7 +397,7 @@ files is committed yet — they are untracked in the worktree.
 | Production runs | `404dd6f9` on `feat/takealot-ux-parity` |
 | Deploy branch (origin) | matches production — `404dd6f9` |
 | Feature branch | `feat/the-bench` — same tip as the deploy branch, fast-forwarded in |
-| Migrations | 64, all applied. Nothing pending. |
+| Migrations | 64 applied on the box. **Three written and NOT applied** — `20260908090000_member_profile_answers`, `20260908090100_drop_motivation_messages`, `20260908140000_motivation_research`. Nothing is deployed. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
 | Last pre-deploy dump | `alloutdoor-20260907-215338.dump` |
 

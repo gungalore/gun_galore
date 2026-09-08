@@ -14,6 +14,13 @@ import { MotivationDocumentsService } from './motivation-documents.service';
 import { MotivationGenerationService } from './motivation-generation.service';
 import { MotivationRenderService } from './motivation-render.service';
 import { MotivationWitnessesService } from './motivation-witnesses-flow.service';
+// Answers that belong to the PERSON rather than to one application — the
+// premises, marital status, what each owned firearm is for. Provided here and
+// not exported: like the five services above, every caller outside this
+// module goes through the facade.
+import { MemberProfileAnswersService } from './member-profile-answers.service';
+import { MotivationSheetService } from './motivation-sheet.service';
+import { MotivationResearchService } from './motivation-research.service';
 import { MotivationPdfService } from './motivation-pdf.service';
 import { MotivationRetentionService } from './motivation-retention.service';
 import { MotivationExtractService } from './motivation-extract.service';
@@ -36,12 +43,6 @@ import { MotivationModelService } from './motivation-model.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { VaultLogService } from '../common/vault-log.service';
 import { VaultAdoptionService } from './vault-adoption.service';
-// ⚠️ A SECOND, INDEPENDENT REGISTRATION — see the note beside the import in
-// motivation-extract.service.ts. Not routed through LicenceCentreModule: that
-// module imports THIS one for the renewal one-tap, and a spec asserts the
-// edge stays one-way. SecureFileStorageService and VaultLogService above are
-// already provided in both modules the same way.
-import { LicenceCentreTextractService } from '../licence-centre/licence-centre-textract.service';
 
 /**
  * Firearm-licence motivation writer (Phase 1 — LICENCE-SERVICES-AND-FEED.md).
@@ -82,6 +83,8 @@ import { LicenceCentreTextractService } from '../licence-centre/licence-centre-t
     ScanHandoffGuard,
     MotivationsService,
     MotivationSharedService,
+    MemberProfileAnswersService,
+    MotivationSheetService,
     MotivationPrefillService,
     MotivationDocumentsService,
     VaultLogService,
@@ -91,10 +94,10 @@ import { LicenceCentreTextractService } from '../licence-centre/licence-centre-t
     MotivationQuotaService,
     MotivationPdfService,
     MotivationModelService,
+    MotivationResearchService,
     MotivationRetentionService,
     MotivationExtractService,
     GoogleVisionOcrService,
-    LicenceCentreTextractService,
     CipSheetService,
     Saps271Service,
     FirearmImageService,

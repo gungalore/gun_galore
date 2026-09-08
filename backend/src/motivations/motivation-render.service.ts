@@ -57,8 +57,6 @@ import {
   OWNED_ROWS,
   ownedFirearmSerial,
   PRESS_CLIPPINGS_KEY,
-  SAPS271_FILL,
-  SAPS271_OPT_KEY,
   parsePressClippingIds,
 } from './motivation-fields';
 import { Saps271Service } from './saps271.service';
@@ -1077,12 +1075,15 @@ export class MotivationRenderService {
       );
     }
 
+    // ⚠️ NO OPT-IN GATE HERE ANY MORE. Until 2026-09-08 this is where a member
+    // who had answered "My dealer will fill it in" was turned away with a 409.
+    // The 271 is no longer something the applicant elects to receive — every
+    // pack ships one (D, G and H are always ours to complete; section F below
+    // is filled or left blank by `firearm_source`, never by this choice) — so
+    // there is nothing left to check the answer against. Brief §2.5,
+    // `MOTIVATION-INTAKE-PLAN.md` §1. `fill_saps271` itself is retired in
+    // motivation-fields.ts and kept only so an old draft still saves.
     const answers = this.shared.readAnswers(row.answersEncrypted);
-    if ((answers[SAPS271_OPT_KEY] ?? '') !== SAPS271_FILL) {
-      throw new ConflictException(
-        'You chose to let your dealer complete the SAPS 271. If you would like us to fill it in instead, change that choice in your application first.',
-      );
-    }
 
     const account = await this.prisma.user.findUnique({
       where: { id: user.id },

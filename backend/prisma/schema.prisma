@@ -647,6 +647,10 @@ model User {
   motivations Motivation[] @relation("UserMotivations")
   credentials Credential[] @relation("UserCredentials")
 
+  /// Answers that belong to the PERSON rather than to one application.
+  /// At most one row. See the model.
+  profileAnswers MemberProfileAnswers?
+
   // The Bench: the shelf and the load log go with the account (ON DELETE
   // CASCADE, 20260906_bench_audit). Declared here so `migrate diff` sees the
   // constraints the migration added instead of proposing to drop them.
@@ -4178,6 +4182,99 @@ enum MotivationUploadKind {
   OTHER
 }
 
+/// BACKGROUND WE LOOKED UP ONCE, KEPT SO THE NEXT APPLICANT COSTS NOTHING.
+///
+/// ⚠️ IT HOLDS NOTHING ABOUT ANY APPLICANT, AND THAT IS THE WHOLE DESIGN.
+/// A row is about a FIREARM MODEL, a CARTRIDGE, a SHOOTING DISCIPLINE or a
+/// CLASS OF GAME — facts about the world, identical for everyone who applies
+/// for the same thing. The second person applying for a Beretta 1301 costs no
+/// search call, and the row that serves them carries no trace of the first.
+///
+/// That is also why it is NOT encrypted, unlike everything else the motivation
+/// module stores: there is no personal information in it to protect, and
+/// encrypting a shared cache would only stop us reading it back cheaply.
+///
+/// ⚠️ THE OLD FREE-TEXT RESEARCH BRIEF CARRIED THE APPLICANT'S SUBURB into a
+/// web search (redacted to area, but still theirs). The structured targets
+/// replaced it, and precinct figures now come from our own SAPS workbook
+/// (crime-stats) rather than a search — so no applicant datum reaches a search
+/// query at all any more. Keep it that way: a target keyed on anything
+/// personal would be both a privacy regression and an uncacheable row.
+model MotivationResearch {
+  id String @id @default(cuid())
+
+  /// What kind of thing this is about — 'firearm', 'calibre', 'discipline',
+  /// 'game'. Plain string, not an enum, for the same reason templateFormat is:
+  /// adding a target costs a deploy, never a migration.
+  target String @db.VarChar(24)
+
+  /// The normalised lookup key, e.g. "firearm|beretta|1301|12 gauge|hunting".
+  /// ⚠️ UNIQUE, AND IT IS WHAT MAKES A HIT A HIT. Built by one function so a
+  /// writer and a re-read can never key the same fact two ways.
+  cacheKey String @unique @db.VarChar(400)
+
+  /// The paraphrased brief, as prose. Not encrypted — see the note above.
+  payload String @db.Text
+
+  /// The pages the provider actually opened, as [{uri, title}].
+  /// ⚠️ EMPTY IS A REAL ANSWER: a grounded call that read nothing gives us a
+  /// thin brief with nothing to attribute, and the writer must not cite what
+  /// it cannot name.
+  sources Json?
+
+  fetchedAt DateTime @default(now())
+  /// Past this, the row is ignored and refetched. 180 days: a cartridge's
+  /// character does not change, but a discipline's equipment rules do.
+  expiresAt DateTime
+
+  @@index([target, expiresAt])
+}
+
+/// ANSWERS THAT BELONG TO THE PERSON, NOT TO ONE APPLICATION.
+///
+/// ⚠️ THE SECOND APPLICATION MUST NOT ASK WHAT THE FIRST ONE DID. Marital
+/// status, what the premises look like, what each firearm already owned is
+/// used for, whether the member reloads: none of that is a fact about an
+/// application, and asking it again is the clearest possible way to tell
+/// somebody we were not listening the first time. A field says which it is —
+/// `MotivationField.scope` — and this is where 'profile' lands.
+///
+/// ⚠️ ONE ROW PER MEMBER, ENCRYPTED, FOR THE SAME REASONS AS
+/// Motivation.answersEncrypted. It holds a spouse's name, a home's security
+/// arrangements and a list of what is in somebody's safe — which is to say, a
+/// shopping list for anybody who got hold of it. Deliberately not a Json
+/// column: these answers are never queried or indexed, only read whole, by
+/// their owner.
+///
+/// ⚠️ answerProvenance IS DELIBERATELY NOT ENCRYPTED, exactly as on Motivation.
+/// It holds a source NAME, a row id and a timestamp and never a value — see
+/// common/answer-provenance.ts, whose reader drops any entry carrying anything
+/// else. Keeping it in the clear is what lets a screen paint a "saved to your
+/// profile" chip without decrypting the whole blob on every render.
+///
+/// ⚠️ MEMBER PROVENANCE ALWAYS WINS. A profile answer offered back into a new
+/// application is offered, never imposed: `stamp()` refuses to overwrite a
+/// MEMBER entry with an automatic one, so a member who corrects something on
+/// application two does not have it silently reverted from what they said on
+/// application one.
+model MemberProfileAnswers {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // ── POPIA: encrypted at rest (AES-256-GCM, common/blob-crypto.ts) ──
+  answersEncrypted     String? @db.Text
+  // Which registry version the blob was written against, so a later change
+  // here can be migrated rather than guessed at. Same rule as Motivation.
+  answersSchemaVersion String? @db.VarChar(40)
+
+  /// Answer key → { source, sourceId?, from, at }. Never a value.
+  answerProvenance Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Motivation {
   id              String @id @default(cuid())
   // MO000123 — allocated from the atomic ReferenceCounter, printed on the PDF
@@ -4392,7 +4489,6 @@ model Motivation {
   // the row and its stored files past this date.
   retentionPurgeAt DateTime?
 
-  messages      MotivationMessage[]
   uploads       MotivationUpload[]
   witnesses     MotivationWitness[]
   /// At most one — see the model. A private transfer has one current owner.
@@ -4403,30 +4499,6 @@ model Motivation {
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([retentionPurgeAt])
-}
-
-// Boet's targeted follow-up interview. Modelled on AskGgMessage including its
-// per-message cost columns, but scoped to one motivation and carrying fieldKey
-// so an answer writes back into a typed form field rather than living only as
-// chat. Content is encrypted: the follow-ups are exactly where the
-// security-circumstances narrative lands.
-model MotivationMessage {
-  id               String     @id @default(cuid())
-  motivationId     String
-  motivation       Motivation @relation(fields: [motivationId], references: [id], onDelete: Cascade)
-  role             String // 'assistant' | 'user'
-  contentEncrypted String     @db.Text
-  // Which structured field this question targets (null for plain conversation).
-  // The answer is merged into answersEncrypted under this key — this is what
-  // makes the interview a form-filler rather than a transcript.
-  fieldKey         String?
-  model            String?
-  promptTokens     Int?
-  completionTokens Int?
-  costUsd          Decimal?   @db.Decimal(10, 6)
-  createdAt        DateTime   @default(now())
-
-  @@index([motivationId, createdAt])
 }
 
 // Camera-scanned / uploaded source documents.

@@ -4227,11 +4227,15 @@ export class NotificationsService {
     // recalled. Pointing it at the page we are retiring would mean every
     // member who generates from the new wizard is sent back to the old one.
     //
-    // It does NOT need the build flag. /licence-services/[id] redirects to
-    // /motivations/[id] whenever the flag is off, so this path resolves
-    // correctly in both directions — which is exactly the property a link
-    // sitting in somebody's inbox for a year needs.
-    const path = `/licence-services/${d.motivationId}`;
+    // ⚠️ /licence-centre/[id] SINCE 2026-09-08. Both wizards were deleted in
+    // Phase 4 and this used to build a /licence-services/[id] link, chosen
+    // because it redirected correctly whichever way the build flag pointed.
+    // The flag and both screens are gone; there is one review sheet.
+    //
+    // The old paths still 301 (see frontend/next.config.mjs), which is what
+    // keeps the links already sitting in inboxes working — but a link we send
+    // TODAY should not need a redirect to land.
+    const path = `/licence-centre/${d.motivationId}`;
     const url = `${this.appUrl}${path}`;
     const ready = d.outcome === 'ready';
     const failed = d.outcome === 'failed';

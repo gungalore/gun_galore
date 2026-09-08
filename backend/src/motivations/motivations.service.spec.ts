@@ -11,6 +11,8 @@ import { MotivationDocumentsService } from './motivation-documents.service';
 import { MotivationGenerationService } from './motivation-generation.service';
 import { MotivationRenderService } from './motivation-render.service';
 import { MotivationWitnessesService } from './motivation-witnesses-flow.service';
+import { MemberProfileAnswersService } from './member-profile-answers.service';
+import { MotivationResearchService } from './motivation-research.service';
 import { decryptJson, encryptJson, encryptText } from '../common/blob-crypto';
 import {
   sanitiseAnswers,
@@ -62,6 +64,15 @@ function build(
         phone: '0820000000',
         firstName: 'Gerhard',
       })),
+    },
+    // Answers that belong to the PERSON rather than to one application.
+    // ⚠️ EVERY saveAnswers AND findOne NOW READS THIS, so it has to exist on
+    // the double even for a test that never writes a profile-scoped answer —
+    // an absent model reads as `undefined.findUnique` and fails the whole
+    // suite in a way that looks nothing like a missing mock.
+    memberProfileAnswers: {
+      findUnique: jest.fn(async (_a?: any): Promise<any> => null),
+      upsert: jest.fn(async (_a?: any): Promise<any> => ({})),
     },
     motivation: {
       findMany: jest.fn(async (_a?: any): Promise<any> => []),
@@ -332,6 +343,12 @@ function build(
     shared,
     crimeStats as never,
     news as never,
+    // ⚠️ REAL, NOT A STUB, AGAINST THE SAME `prisma` DOUBLE. Generation now
+    // reads the shared research cache, and a stub would let a change that
+    // stopped calling it pass unnoticed. Its findUnique returns null, so every
+    // test here takes the miss path and the llm double decides what comes
+    // back — which is what the generation tests were already asserting on.
+    new MotivationResearchService(prisma as never, claude as never),
   );
   const render = new MotivationRenderService(
     prisma as never,
@@ -353,6 +370,11 @@ function build(
     witnesses as never,
     shared,
   );
+  // Answers that belong to the person rather than the application. Real, not a
+  // stub: it runs against the same `prisma` double as everything else here, so
+  // a test that saves a profile-scoped answer exercises the routing rather
+  // than a mock agreeing with itself.
+  const profileAnswers = new MemberProfileAnswersService(prisma as never);
 
   const svc = new MotivationsService(
     prisma as never,
@@ -366,9 +388,17 @@ function build(
     generation,
     render,
     witnessFlow,
+    profileAnswers,
   );
   return {
     svc,
+    // ⚠️ EXPOSED SINCE 2026-09-08. The four prefill methods used to be reached
+    // through the facade, and their four endpoints were deleted in Phase 4 —
+    // but the RULE they carry (a vault value is stamped VAULT with the
+    // credential's id; a profile value is stamped PROFILE with none) is
+    // unchanged and still enforced. The cases below were re-pointed at the
+    // service that owns it rather than deleted with the delegators.
+    prefill,
     prisma,
     quota,
     refs,
@@ -2052,11 +2082,11 @@ describe('provenance', () => {
     });
 
     it('useLicenceCentre names the document each value came off', async () => {
-      const { svc, prisma } = build();
+      const { prefill, prisma } = build();
       prisma.motivation.findFirst.mockResolvedValueOnce(row({}, null));
       prisma.credential.findMany.mockResolvedValueOnce([licence()]);
 
-      await svc.useLicenceCentre('c1', 'mo-1');
+      await prefill.useLicenceCentre('c1', 'mo-1');
 
       const map = updated(prisma);
       expect(map.existing_firearm_1_make).toMatchObject({
@@ -2067,10 +2097,10 @@ describe('provenance', () => {
     });
 
     it('useProfile records PROFILE and never a sourceId', async () => {
-      const { svc, prisma } = build();
+      const { prefill, prisma } = build();
       prisma.motivation.findFirst.mockResolvedValueOnce(row({}, null));
 
-      await svc.useProfile('c1', 'mo-1');
+      await prefill.useProfile('c1', 'mo-1');
 
       const entries = Object.values(updated(prisma)) as any[];
       expect(entries.length).toBeGreaterThan(0);
@@ -2092,7 +2122,7 @@ describe('provenance', () => {
     it('CANNOT overwrite a field the member corrected by hand', async () => {
       // The whole point. A member fixes a make the extractor misread; a later
       // vault sync must not put the misread value back.
-      const { svc, prisma } = build();
+      const { prefill, prisma } = build();
       prisma.motivation.findFirst.mockResolvedValueOnce(
         row(
           { existing_firearm_1_make: 'Brno' },
@@ -2107,7 +2137,7 @@ describe('provenance', () => {
       );
       prisma.credential.findMany.mockResolvedValueOnce([licence()]);
 
-      await svc.useLicenceCentre('c1', 'mo-1');
+      await prefill.useLicenceCentre('c1', 'mo-1');
 
       expect(updated(prisma).existing_firearm_1_make).toEqual({
         source: 'MEMBER',
@@ -2154,16 +2184,16 @@ describe('provenance is read before it is written', () => {
   });
 
   it('useLicenceCentre selects it', async () => {
-    const { svc, prisma } = build();
+    const { prefill, prisma } = build();
     prisma.motivation.findFirst.mockResolvedValueOnce(row());
-    await svc.useLicenceCentre('c1', 'mo-1');
+    await prefill.useLicenceCentre('c1', 'mo-1');
     expect(selectOf(prisma).answerProvenance).toBe(true);
   });
 
   it('useProfile selects it', async () => {
-    const { svc, prisma } = build();
+    const { prefill, prisma } = build();
     prisma.motivation.findFirst.mockResolvedValueOnce(row());
-    await svc.useProfile('c1', 'mo-1');
+    await prefill.useProfile('c1', 'mo-1');
     expect(selectOf(prisma).answerProvenance).toBe(true);
   });
 
@@ -2174,27 +2204,23 @@ describe('provenance is read before it is written', () => {
     expect(selectOf(prisma).answerProvenance).toBe(true);
   });
 
-  it('answerFollowUp selects it', async () => {
+  // ⚠️ TWO answerFollowUp CASES STOOD HERE AND THEIR SUBJECT IS GONE
+  // (2026-09-08 — no model asks the applicant a question any more). They were
+  // asserting two things, and only one of them died with the feature:
+  //
+  //   "selects answerProvenance"  — the suite-wide rule that EVERY path
+  //     reading answers must also read the provenance map, or a later write
+  //     silently drops everyone's chips. Still enforced, by the eleven other
+  //     cases in this describe block.
+  //   "marks the field the applicant wrote into as theirs" — this one really
+  //     is gone, because there is no longer a path where an applicant's answer
+  //     arrives as a chat message. saveAnswers covers the same rule for the
+  //     path that remains.
+  it('saveAnswers marks a field the applicant changed as theirs', async () => {
     const { svc, prisma } = build();
-    prisma.motivation.findFirst.mockResolvedValueOnce(
-      row({ messages: [{ id: 'msg-1', fieldKey: 'firearm_make' }] }),
-    );
-    await svc.answerFollowUp('c1', 'mo-1', 'msg-1', 'A Marlin, .45-70.');
-    expect(selectOf(prisma).answerProvenance).toBe(true);
-  });
-
-  it('answerFollowUp marks the field the applicant wrote into as theirs', async () => {
-    const { svc, prisma } = build();
-    prisma.motivation.findFirst.mockResolvedValueOnce(
-      row({ messages: [{ id: 'msg-1', fieldKey: 'firearm_make' }] }),
-    );
-    await svc.answerFollowUp('c1', 'mo-1', 'msg-1', 'A Marlin, .45-70.');
-
-    // The write rides inside $transaction, so it is the transaction's second
-    // operation rather than a bare update call.
-    const ops = prisma.$transaction.mock.calls[0][0];
+    prisma.motivation.findFirst.mockResolvedValueOnce(row());
+    await svc.saveAnswers('c1', 'mo-1', { firearm_make: 'Marlin' });
     const data = prisma.motivation.update.mock.calls[0][0].data;
-    expect(ops).toHaveLength(2);
     expect(data.answerProvenance.firearm_make.source).toBe('MEMBER');
   });
 });

@@ -28,6 +28,7 @@ import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { MotivationsService } from './motivations.service';
+import { MotivationSheetService } from './motivation-sheet.service';
 import { MotivationGenerationService } from './motivation-generation.service';
 import { RETIRED } from './motivation-documents';
 import {
@@ -38,7 +39,6 @@ import {
 import { expandFields } from './motivation-field-options';
 import {
   AcceptDeclarationDto,
-  AnswerFollowUpDto,
   CreateMotivationDto,
   RenameMotivationDto,
   SaveAnswersDto,
@@ -88,6 +88,11 @@ export class MotivationsController {
     // pipeline already owns (it fetches the same figures at Generate time),
     // and it needs nothing the facade adds.
     private readonly generation: MotivationGenerationService,
+    // ⚠️ ALSO DIRECT, FOR THE SAME REASON AS `generation` ABOVE. The sheet is
+    // a pure composition of reads the facade already owns; routing it through
+    // MotivationsService would add two delegating methods that do nothing but
+    // forward, on a facade that is already the largest file in the module.
+    private readonly sheets: MotivationSheetService,
   ) {}
 
   /**
@@ -164,6 +169,35 @@ export class MotivationsController {
       dto.licenceType,
       dto.applicationRef ?? '',
     );
+  }
+
+  /**
+   * EVERYTHING THE REVIEW SHEET NEEDS, IN ONE CALL.
+   *
+   * ⚠️ DECLARED BEFORE @Get(':id'), because Nest matches in declaration order
+   * and `sheet` would otherwise be read as an id — the same rule the `fields`
+   * and `templates` routes above are declared under.
+   *
+   * See MotivationSheetService: the item `state` it returns is the ONLY
+   * visibility decision in the system, which is what let the frontend's
+   * hand-written mirror of isVisible() be retired.
+   */
+  @Get(':id/sheet')
+  sheet(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.sheets.sheetFor(clerkId, id);
+  }
+
+  /**
+   * "What your motivation will say", live.
+   *
+   * ⚠️ NO MODEL CALL — see motivation-preview.ts. The drawer refetches this on
+   * every saved answer, debounced, so a member can watch a tapped card become
+   * a sentence. A model call here would cost money per keystroke and, worse,
+   * would reword the document each time.
+   */
+  @Get(':id/preview')
+  preview(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.sheets.previewOnly(clerkId, id);
   }
 
   @Get(':id')
@@ -478,40 +512,27 @@ export class MotivationsController {
     return this.generation.incidentsFor(clerkId, id);
   }
 
-  // ── the profile, with permission ──────────────────────────────────
-
-  /**
-   * What we WOULD fill from their All Outdoor profile, and where each value
-   * comes from. Read-only: showing the list before asking is the point.
-   */
-  @Get(':id/profile-offer')
-  profileOffer(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.profilePrefillOffer(clerkId, id);
-  }
-
-  /** They agree, and we copy. Consent is stamped on this application. */
-  @Post(':id/use-profile')
-  useProfile(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.useProfile(clerkId, id);
-  }
-
-  // ── the Licence Centre ────────────────────────────────────────────
-
-  /**
-   * What their own vault could fill in here, and which document each value
-   * comes from. Read-only: showing the list before asking is the point, and
-   * it is the same shape as the profile offer above.
-   */
-  @Get(':id/licence-centre-offer')
-  licenceCentreOffer(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.licenceCentreOffer(clerkId, id);
-  }
-
-  /** They agree, and we copy. Never overwrites an answer they typed. */
-  @Post(':id/use-licence-centre')
-  useLicenceCentre(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.useLicenceCentre(clerkId, id);
-  }
+  // ── the profile and the vault, applied WITHOUT a button ───────────
+  //
+  // ⚠️ FOUR ENDPOINTS STOOD HERE AND THEY ARE GONE — 2026-09-08, Phase 4.
+  // `GET :id/profile-offer`, `POST :id/use-profile`,
+  // `GET :id/licence-centre-offer` and `POST :id/use-licence-centre` showed a
+  // member what we COULD fill from their own profile and their own vault, and
+  // then asked them to press a button to accept it.
+  //
+  // That was a confirm step guarding values we already held, which is work we
+  // invented for them — the operator's rule of 2026-08-25: fill it in, arm it,
+  // let them change it. `create()` now applies both automatically, with
+  // provenance, in the documented order (profile, then vault, then seed), and
+  // the review sheet shows every value with a chip saying where it came from
+  // and a Change beside it.
+  //
+  // ⚠️ THE MECHANISM SURVIVES IN MotivationPrefillService. Those four methods
+  // are how a vault document becomes an answer, and create() is currently the
+  // only thing that runs them — see the note on them. A member who adds a
+  // licence to their vault AFTER starting an application no longer has a way
+  // to pull it in, which is a gap the sheet should close rather than a reason
+  // to bring the buttons back.
 
   // ── uploads ───────────────────────────────────────────────────────
 
@@ -796,31 +817,6 @@ export class MotivationsController {
     @Param('uploadId') uploadId: string,
   ) {
     return this.motivations.removeUpload(clerkId, id, uploadId);
-  }
-
-  // ── the follow-up interview ───────────────────────────────────────
-
-  /** The conversation so far, decrypted for the person it belongs to. */
-  @Get(':id/messages')
-  listMessages(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.motivations.listMessages(clerkId, id);
-  }
-
-  /**
-   * Answer one follow-up.
-   *
-   * Lands in two places on purpose: the conversation, so they can see what they
-   * said, and the encrypted answer blob under the field the question was about,
-   * because that blob is what the document is built from.
-   */
-  @Post(':id/messages/:messageId')
-  answerFollowUp(
-    @CurrentUser() clerkId: string,
-    @Param('id') id: string,
-    @Param('messageId') messageId: string,
-    @Body() dto: AnswerFollowUpDto,
-  ) {
-    return this.motivations.answerFollowUp(clerkId, id, messageId, dto.answer);
   }
 
   @Post(':id/abandon')

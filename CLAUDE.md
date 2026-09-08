@@ -357,7 +357,15 @@ evaluation. `ODOO_*` and `TCG_*` are gone.
 - **Backend:** NestJS + TypeScript. **ORM:** Prisma 7. **DB:** PostgreSQL.
 - **Search:** Meilisearch. **Images:** Cloudinary.
 - **Auth:** Clerk (buyers + sellers); custom JWT (admin).
-- **SMS:** SMSPortal. **Email:** Resend. **KYC:** VerifyNow (+ AWS for liveness).
+- **SMS:** SMSPortal. **Email:** Resend. **KYC:** VerifyNow (+ AWS Rekognition
+  for face-match and liveness).
+  ⚠️ **AWS Textract is GONE — every document read is Gemini** (operator,
+  2026-09-08). It was removed from all three places it lived: the Licence
+  Centre's credential reader, `readFirearm()`, and the KYC identity read.
+  Reads use `json: { schema }` so the provider enforces the shape. **AWS did
+  not leave** — `aws-kyc.service.ts` still uses Rekognition for face-match
+  and Face Liveness, so the client, the region and
+  `AWS_KYC_LIVENESS_ROLE_ARN` all stay.
 - **Shipping:** Pudo (lockers) + **Bob Go** (door). See Shipping.
 - **Payments:** Peach — built, **inert**. See Money.
 - **Accounting:** Zoho Books (live). Odoo was the earlier plan and is archived —
@@ -833,8 +841,27 @@ check.
 ## The licence stack
 
 Three surfaces that share a vault: the **Document Centre** (member-facing at
-`/documents`), the **Motivations builder** (`/motivations/[id]` and
-`/licence-services/[id]`), and the **scanner**.
+`/documents`), the **review sheet** (`/licence-centre/[id]`), and the
+**scanner**.
+
+⚠️ **THE TWO OLD MOTIVATION WIZARDS ARE GONE** — `/motivations` and
+`/licence-services` were deleted on 2026-09-08 (Motivation Centre rebuild,
+Phase 4), along with `NEXT_PUBLIC_LICENCE_SERVICES_ENABLED` and
+`canOpenPackScreen()`. Both paths **301 to the new surface** (see
+`frontend/next.config.mjs`) because members carry them in bookmarks and in
+links we sent. The surface is now:
+
+| Route | What it is |
+|---|---|
+| `/licence-centre` and `/documents` | the **Document Centre** — two doors, one page, unchanged |
+| `/licence-centre/applications` | the applications list |
+| `/licence-centre/[id]` | the review sheet |
+| `/licence-centre/[id]/pack` | the pack |
+
+⚠️ **`/licence-centre` IS THE DOCUMENT CENTRE, NOT THE APPLICATIONS LIST**, and
+that is why the list took a child path. `notification-module.ts` deep-links
+every `licence_centre_*` reminder to the index; taking it would have sent every
+licence-expiry reminder to a list of applications.
 
 ⚠️ **The member-facing route is `/documents`, but the backend prefix is still
 `licence-centre`** (`@Controller('licence-centre')`). The rename left that split

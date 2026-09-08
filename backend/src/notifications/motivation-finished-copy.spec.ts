@@ -76,16 +76,20 @@ describe('motivationFinished copy', () => {
       const { svc, sent } = makeService();
       await svc.motivationFinished({ ...BASE, outcome: 'ready' });
       expect(sent.sms[0]).toMatch(/is ready/);
-      // ⚠️ THE REBUILT WIZARD, NOT THE OLD PAGE. This link outlives the
+      // ⚠️ THE REVIEW SHEET, NOT EITHER OLD WIZARD. This link outlives the
       // cutover — every SMS already delivered carries whatever path was
-      // hardcoded when it was sent, and none of them can be recalled. It
-      // needs no build flag: /licence-services/[id] redirects to
-      // /motivations/[id] whenever the flag is off, so it resolves in both
-      // directions.
+      // hardcoded when it was sent, and none of them can be recalled.
+      //
+      // It used to be /licence-services/[id], chosen because that path
+      // redirected correctly whichever way the build flag pointed. Both
+      // wizards were deleted on 2026-09-08 and the flag with them. The old
+      // paths still 301 (frontend/next.config.mjs), which is what keeps the
+      // links already in people's inboxes working — but a link we send TODAY
+      // should land without needing a redirect, which is what this pins.
       expect(sent.sms[0]).toContain(
-        `https://alloutdoor.co.za/licence-services/${BASE.motivationId}`,
+        `https://alloutdoor.co.za/licence-centre/${BASE.motivationId}`,
       );
-      expect(sent.inbox[0].url).toBe(`/licence-services/${BASE.motivationId}`);
+      expect(sent.inbox[0].url).toBe(`/licence-centre/${BASE.motivationId}`);
     });
 
     it('promises NOTHING about the outcome at SAPS', async () => {

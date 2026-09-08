@@ -45,6 +45,7 @@ function build(motivation: unknown, incidentsNear: jest.Mock) {
     shared,
     {} as never, // crimeStats — unused by incidentsFor()
     news as never,
+    {} as never, // research — unused by incidentsFor()
   );
   return { svc, prisma };
 }

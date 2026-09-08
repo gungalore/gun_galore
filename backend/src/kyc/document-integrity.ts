@@ -8,7 +8,8 @@
 //   if (any < 50) -> REJECTED          // and >= 70 is required to VERIFY
 //
 // Claude answered `looks_genuine_sa_id` by LOOKING at the card — fonts,
-// layout, the coat of arms. Textract does OCR and Rekognition does faces.
+// layout, the coat of arms. Gemini reads the text (since 2026-09-08 — AWS
+// Textract is gone) and Rekognition does faces.
 // Neither can tell a real card from a good forgery, so after the cut-over
 // there is nobody left to answer that question.
 //
@@ -104,7 +105,20 @@ export interface IntegrityInput {
   dobFromId: string | null;
   /** Recognised SA document layout, or null when unrecognised. */
   documentKind: 'SMART_ID_CARD' | 'GREEN_BOOK' | 'OTHER' | null;
-  /** Mean Textract confidence across the read lines, 0-100. */
+  /**
+   * How complete the identity read was, 0-100.
+   *
+   * ⚠️ IT USED TO BE A LEGIBILITY MEASURE AND IT IS NOT ONE ANY MORE. It was
+   * Textract's mean per-line OCR confidence multiplied by field completeness;
+   * with Textract gone (2026-09-08) there is no confidence signal, because a
+   * vision model reports none and asking it to grade its own read would be a
+   * guess wearing a number. It is completeness alone now — see
+   * legibilityScore() in aws-kyc-findings.ts, which says the same at length.
+   *
+   * The consequence, stated plainly: a smudged document the model reads
+   * confidently but WRONGLY now scores high, where Textract's low confidence
+   * would have forced a retake.
+   */
   legibility: number;
 }
 

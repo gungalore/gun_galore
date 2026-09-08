@@ -25,6 +25,15 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 export type TokenGetter = () => Promise<string | null>;
 
+// ⚠️ THE SHEET'S SHAPES LIVE WITH THE COMPONENTS THAT RENDER THEM, and are
+// imported rather than restated. components/licence-centre/contract.ts is the
+// single mirror of the server's own types; a second copy here would be the
+// drift this file's own header warns about.
+import type {
+  PreviewSection,
+  SheetResponse,
+} from '@/components/licence-centre/contract';
+
 export class MotivationApiError extends Error {
   constructor(
     message: string,
@@ -962,26 +971,17 @@ export const motivationsApi = {
       { missingRequired: [] },
     ),
 
-  profileOffer: (t: TokenGetter, id: string) =>
-    request<ProfileOffer>(t, `/${id}/profile-offer`),
-
-  /**
-   * What their vault would fill in, and where each value comes from.
-   * Read-only: showing the list before asking is the point.
-   */
-  licenceCentreOffer: (t: TokenGetter, id: string) =>
-    request<LicenceCentreOffer>(
-      t,
-      `/${id}/licence-centre-offer`,
-      {},
-      {
-        empty: true,
-        items: [],
-        skipped: [],
-        documents: [],
-        choices: { competency: [], dedicated: [] },
-      },
-    ),
+  // ⚠️ FOUR CALLS STOOD HERE — profileOffer, licenceCentreOffer,
+  // useLicenceCentre and useProfile — and their four endpoints were deleted on
+  // 2026-09-08 (Phase 4). They showed a member what we COULD fill from their
+  // own profile and their own vault, and asked them to press a button to
+  // accept it; create() now applies both automatically, with provenance, and
+  // the review sheet shows each value with a chip saying where it came from.
+  //
+  // ⚠️ backend/src/common/api-route-contract.spec.ts IS WHAT CAUGHT THESE.
+  // It parses this file and refuses a call with no matching route — which is
+  // the whole reason the sheet's two calls were added here rather than to a
+  // client of their own.
 
   /**
    * Everything this member could reuse instead of photographing it again —
@@ -1050,22 +1050,6 @@ export const motivationsApi = {
         method: 'POST',
         body: JSON.stringify({ source, sourceId, placeConfirmed }),
       },
-    ),
-
-  /** They agree, and we copy. Never overwrites an answer they typed. */
-  useLicenceCentre: (t: TokenGetter, id: string) =>
-    request<{
-      filled: number;
-      answers: Record<string, string>;
-      missingRequired: string[];
-    }>(t, `/${id}/use-licence-centre`, { method: 'POST' }),
-
-  useProfile: (t: TokenGetter, id: string) =>
-    request<{ filled: number; missingRequired: string[] }>(
-      t,
-      `/${id}/use-profile`,
-      { method: 'POST' },
-      { filled: 0, missingRequired: [] },
     ),
 
   uploads: (t: TokenGetter, id: string) =>
@@ -1413,8 +1397,25 @@ export const motivationsApi = {
       { erased: true, filesRemoved: 0 },
     ),
 
-  messages: (t: TokenGetter, id: string) =>
-    request<FollowUp[]>(t, `/${id}/messages`, {}, []),
+  /**
+   * EVERYTHING THE REVIEW SHEET NEEDS, IN ONE CALL.
+   *
+   * ⚠️ ADDED HERE RATHER THAN IN A CLIENT OF ITS OWN, DELIBERATELY.
+   * backend/src/common/api-route-contract.spec.ts parses THIS FILE and asserts
+   * every call in it has a matching backend route — a separate module would
+   * silently fall outside that check, which is exactly how the two `messages`
+   * calls survived their endpoints being deleted for as long as they did.
+   *
+   * ⚠️ no-store. The response varies by viewer and carries their identity
+   * document's contents; CLAUDE.md's rule about never caching a viewer-varying
+   * read applies to the browser's own HTTP cache as much as to Next's.
+   */
+  sheet: (t: TokenGetter, id: string) =>
+    request<SheetResponse>(t, `/${id}/sheet`, { cache: 'no-store' }),
+
+  /** The live preview alone — refetched, debounced, after every saved answer. */
+  preview: (t: TokenGetter, id: string) =>
+    request<PreviewSection[]>(t, `/${id}/preview`, { cache: 'no-store' }, []),
 
   /**
    * The draft as written, passed review or not. NOT fetched with the detail —
@@ -1429,18 +1430,12 @@ export const motivationsApi = {
       final: boolean;
     }>(t, `/${id}/draft`),
 
-  answerFollowUp: (
-    t: TokenGetter,
-    id: string,
-    messageId: string,
-    answer: string,
-  ) =>
-    request<{ outstandingQuestions: number; missingRequired: string[] }>(
-      t,
-      `/${id}/messages/${messageId}`,
-      { method: 'POST', body: JSON.stringify({ answer }) },
-      { outstandingQuestions: 0, missingRequired: [] },
-    ),
+  // ⚠️ `messages` AND `answerFollowUp` STOOD HERE AND THEIR ROUTES ARE GONE —
+  // 2026-09-08. No model asks the applicant a question any more; where a
+  // required fact is missing the sheet shows the empty input. The FollowUp
+  // type below is deliberately kept until the old wizard screens are deleted
+  // in Phase 4, so the components that still name it keep compiling — a type
+  // costs no route, and common/api-route-contract.spec.ts checks CALLS.
 
   acceptDeclaration: (t: TokenGetter, id: string, testimonialConsent: boolean) =>
     request<{ accepted: boolean }>(

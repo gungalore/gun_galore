@@ -5,7 +5,13 @@ import {
   buildAnnexures,
   buildChecklist,
 } from './motivation-checklist';
-import { COMPETENCY_RENEWS_KEY } from './motivation-fields';
+import {
+  COMPETENCY_RENEWS_KEY,
+  FIREARM_SOURCE_KEY,
+  SOURCE_DEALER,
+  SOURCE_ESTATE,
+  SOURCE_PRIVATE,
+} from './motivation-fields';
 
 // The checklist is a LIVE surface on the platform and in the PWA, not a PDF
 // page — the pack stays digital until it is printed. So what matters here is
@@ -205,6 +211,109 @@ describe('the live checklist', () => {
     const form = theirs.items.find((i) => i.key === 'saps_form')!;
     expect(form.note).toMatch(/do NOT sign it beforehand/i);
     expect(form.note).toMatch(/in front of the DFO/i);
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // THE SAPS 271 STOPPED BEING AN OPT-IN EXTRA ON 2026-09-08.
+  //
+  // Every pack now ships one, and this row's note is the applicant's plain-
+  // English account of who fills which half — see saps271FormNote in
+  // motivation-checklist.ts, which is what these pin. It must never say more
+  // than saps271-map.ts actually draws onto the form (saps271-section-f.spec.ts
+  // and saps271-render.spec.ts pin THAT half); this only pins the sentence.
+  // ────────────────────────────────────────────────────────────────────
+  describe('the SAPS form row, by where the firearm is coming from', () => {
+    const formNoteFor = (
+      licenceType: MotivationLicenceType,
+      firearm_source?: string,
+    ) => {
+      const theirs = buildChecklist(licenceType, [], false, {
+        answers: firearm_source ? { [FIREARM_SOURCE_KEY]: firearm_source } : {},
+      }).sections.find((s) => s.key === 'theirs')!;
+      return theirs.items.find((i) => i.key === 'saps_form')!.note!;
+    };
+
+    it('says we fill in D, G and H, with no route stated yet', () => {
+      // ⚠️ NO LONGER "your dealer will usually complete this ... or ask us to
+      // pre-fill it" — that sentence described the retired opt-in, where
+      // filling it in was something the applicant had to choose. It is not a
+      // choice any more.
+      const note = formNoteFor(MotivationLicenceType.S16_DEDICATED_SPORT);
+      expect(note).toMatch(/we fill in your half/i);
+      expect(note).toMatch(/271/);
+      expect(note).not.toMatch(/ask us to pre-fill/i);
+      expect(note).not.toMatch(/will usually complete/i);
+    });
+
+    it('names the dealer for section F and their own SAPS 350(a)', () => {
+      // ⚠️ THE LINE THE BRIEF ASKS FOR BY NAME. saps271-map.ts leaves section F
+      // blank on this route and says why in its own leftBlank entry; this is
+      // the same fact said to the applicant before they reach the counter.
+      const note = formNoteFor(
+        MotivationLicenceType.S16_DEDICATED_SPORT,
+        SOURCE_DEALER,
+      );
+      expect(note).toMatch(/section f/i);
+      expect(note).toMatch(/your dealer/i);
+      expect(note).toMatch(/350\(a\)/);
+    });
+
+    it('names the seller’s signed consent for a private sale', () => {
+      const note = formNoteFor(
+        MotivationLicenceType.S16_DEDICATED_SPORT,
+        SOURCE_PRIVATE,
+      );
+      expect(note).toMatch(/section f/i);
+      expect(note).toMatch(/seller/i);
+      expect(note).toMatch(/signed consent/i);
+    });
+
+    it('claims nothing extra for the estate route, which the 271 does not process', () => {
+      // Operator, 2026-08-29: "Only Type A and B from the 271 are what we will
+      // process" — saps271-map.ts ticks nothing for SOURCE_ESTATE. The note
+      // must not promise a dealer or a seller filling anything on this route.
+      const note = formNoteFor(
+        MotivationLicenceType.S16_DEDICATED_SPORT,
+        SOURCE_ESTATE,
+      );
+      expect(note).not.toMatch(/dealer/i);
+      expect(note).not.toMatch(/seller/i);
+      expect(note).toMatch(/we fill in your half/i);
+    });
+
+    it('never mentions the 271 for a section 24 renewal, which uses the 518(a)', () => {
+      // ⚠️ THE ONE LICENCE TYPE THIS ROW MUST NOT NAME THE 271 FOR.
+      // motivation-render.service.ts refuses to produce a 271 for an S24 by
+      // licence type, and this product does not fill the 518(a) in — so the
+      // row must not describe a section this pack never produces for them.
+      const note = formNoteFor(MotivationLicenceType.S24_RENEWAL);
+      expect(note).toMatch(/518\(a\)/);
+      // It is allowed to NAME the 271 to say this is not it; it must never
+      // say we fill one in for a renewal.
+      expect(note).toMatch(/not the 271/i);
+      expect(note).not.toMatch(/we fill in your half/i);
+    });
+
+    it('ignores firearm_source on a renewal, which never asks the question', () => {
+      // NOT_ASKED_BY_TYPE removes firearm_source from S24 entirely, but an old
+      // draft could still carry a stray answer to it. It must not flip the
+      // renewal's note over to 271 wording.
+      const note = formNoteFor(
+        MotivationLicenceType.S24_RENEWAL,
+        SOURCE_DEALER,
+      );
+      expect(note).toMatch(/518\(a\)/);
+      expect(note).toMatch(/not the 271/i);
+      expect(note).not.toMatch(/we fill in your half/i);
+    });
+
+    it('still warns not to sign early, on every route', () => {
+      for (const source of [undefined, SOURCE_DEALER, SOURCE_PRIVATE, SOURCE_ESTATE]) {
+        const note = formNoteFor(MotivationLicenceType.S16_DEDICATED_SPORT, source);
+        expect(note).toMatch(/do NOT sign it beforehand/i);
+        expect(note).toMatch(/in front of the DFO/i);
+      }
+    });
   });
 
   it('tells them to keep their originals and their own copy', () => {

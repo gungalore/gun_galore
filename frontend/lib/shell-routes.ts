@@ -73,7 +73,14 @@ const PUSH_TITLES: Array<[string, string]> = [
   // section), not this fixed title.
   ['/motivations', 'Motivation Centre'],
   ['/bench', 'The Bench'],
+  // ⚠️ THE DOCUMENT CENTRE'S OWN TITLE, AND IT COVERS THE INDEX ONLY. See
+  // PUSH_TITLE_INDEX_ONLY: `/licence-centre` is the Document Centre's second
+  // door, while `/licence-centre/[id]` is a MOTIVATION — a different thing
+  // entirely, which shows its own name in the header. Without the index-only
+  // entry this prefix would swallow the whole subtree and every application
+  // would be headed "Licence Centre".
   ['/licence-centre', 'Licence Centre'],
+  ['/licence-centre/applications', 'Applications'],
   ['/notifications', 'Notifications'],
   ['/my/offers', 'Offers'],
   ['/my/bids', 'Bids'],
@@ -103,7 +110,7 @@ const PUSH_TITLES: Array<[string, string]> = [
  * which sets document.title from the motivation's label or section for
  * exactly this.
  */
-const PUSH_TITLE_INDEX_ONLY = new Set(['/motivations']);
+const PUSH_TITLE_INDEX_ONLY = new Set(['/motivations', '/licence-centre']);
 
 /** The push header's title for a route, or null to show the back button alone. */
 export function pushTitleFor(pathname: string | null): string | null {

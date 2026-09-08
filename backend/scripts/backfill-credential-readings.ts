@@ -50,7 +50,6 @@ import {
   LicenceCentreExtractService,
   WANTED,
 } from '../src/licence-centre/licence-centre-extract.service';
-import { LicenceCentreTextractService } from '../src/licence-centre/licence-centre-textract.service';
 import { LlmService } from '../src/common/llm/llm.service';
 
 const APPLY = process.argv.includes('--apply');
@@ -72,10 +71,10 @@ const files = new SecureFileStorageService();
 // here because a script has no Nest container. It writes the usage ledger
 // through Prisma, so it gets this script's own client (a bare PrismaClient
 // rather than the PrismaService wrapper — same tables).
-const extract = new LicenceCentreExtractService(
-  new LicenceCentreTextractService(),
-  new LlmService(prisma as never),
-);
+//
+// ⚠️ NO MORE LicenceCentreTextractService ARGUMENT (2026-09-08, AWS Textract
+// removed platform-wide). The extractor is Gemini-only now.
+const extract = new LicenceCentreExtractService(new LlmService(prisma as never));
 
 /** Kinds the vault now actually asks something of. */
 function readable(kind: CredentialKind): boolean {

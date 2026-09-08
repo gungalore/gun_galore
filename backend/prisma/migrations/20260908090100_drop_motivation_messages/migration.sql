@@ -1,0 +1,23 @@
+-- Drop the follow-up interview's message table.
+--
+-- The targeted follow-up interview ("Boet") is removed: no model ever asks the
+-- applicant a question again. Where a required fact is missing, the review
+-- sheet shows the empty input, and that is the whole mechanism.
+-- MOTIVATION-REBUILD-BRIEF.md §2.3 and §3.
+--
+-- ⚠️ DROPPED WITHOUT AN EXPORT, AND THE COUNT WAS TAKEN FIRST. Production held
+-- ZERO rows in this table when this migration was written (counted read-only
+-- on 2026-09-08, operator-authorised). This is the one kind of change that
+-- cannot be undone by re-deploying the previous build, so "there is probably
+-- nothing in it" was not good enough — somebody looked.
+--
+-- HAND-WRITTEN, NOT `prisma migrate diff`, for the schema-drift reason in
+-- CLAUDE.md: two services add tsvector GENERATED columns at boot via raw DDL
+-- that a generated diff would emit DROPs for.
+--
+-- The foreign key to Motivation is ON DELETE CASCADE and goes with the table.
+-- Nothing else references it: the relation field on Motivation is a Prisma
+-- back-relation with no column of its own, so no ALTER on Motivation is needed
+-- and none is emitted here.
+
+DROP TABLE "MotivationMessage";

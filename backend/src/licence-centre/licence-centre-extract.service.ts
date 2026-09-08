@@ -2,14 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { LlmService } from '../common/llm/llm.service';
 import type { LlmPart } from '../common/llm/llm.types';
-import { readMarkers } from '../common/document-markers';
-import { UPLOAD_TO_CREDENTIAL } from './upload-to-credential';
-import { LicenceCentreTextractService } from './licence-centre-textract.service';
-import {
-  extractDocument,
-  NO_EXPIRY_ON_THE_PAGE,
-  lines as textractLines,
-} from './textract-document-extract';
 import { CredentialKind } from '@prisma/client';
 import { parseIsoDate } from './licence-dates';
 
@@ -59,50 +51,83 @@ export interface CredentialReading {
   /**
    * What the reader REPAIRED on the way, in a sentence a person can read.
    *
-   * Optional because the model path has nothing to say here — it either reads
-   * a value or does not. The Textract path does repair things (a SAPS 524's
-   * boxed identity number arrives with a fourteenth digit), and a member
-   * looking at their own ID number has the right to be told we changed it.
+   * ⚠️ NEVER SET, NOW (2026-09-08, AWS Textract removed platform-wide —
+   * operator: "we will also be losing AWS textract and only be using gemini
+   * going forward"). This existed for the Textract path, which really did
+   * repair things a transcriber cannot: a SAPS 524's boxed identity number
+   * arriving with a fourteenth digit, a type row's action prefix salvaged off
+   * a second line. Gemini has no repair stage — the SYSTEM_PROMPT rule is to
+   * OMIT a value it cannot read cleanly, never to guess and fix it up — so
+   * there is nothing left to write here on the one reader that remains.
+   *
+   * Kept on the interface rather than deleted because `licence-centre.service.ts`
+   * reads it defensively (`reading.notes?.length ?? 0`) for an audit-log
+   * count that is now always zero; changing that file is outside this
+   * change's scope.
    */
   notes?: string[];
   /**
-   * THE TEXTRACT READER'S OWN VERDICT ON WHETHER THIS MAY BE FILLED IN.
+   * THE READER'S OWN VERDICT ON WHETHER THIS MAY BE FILLED IN.
    *
-   * ⚠️ IT WAS COMPUTED AND THEN THROWN AWAY. `extractDocument` returns
-   * `autoFillable` — false when any material field scored under the floor OR a
-   * field the kind cannot do without came back empty — and `read()` spread
-   * `got.reading` and dropped it on the floor. So the one reader that actually
-   * measures its own confidence per field had no way to say "do not act on
-   * this", and `mayArmReadExpiry` was left checking a `lowConfidence` list
-   * that, on the Textract path, could never name a date: `expiresOn` is its
-   * own field on this interface and is never a key in `details`.
+   * ⚠️ NARROWER THAN IT USED TO BE (2026-09-08, Textract removed). The
+   * Textract path scored every MATERIAL field against a 95% confidence floor
+   * AND separately checked that every field a kind cannot do without
+   * (REQUIRED_FOR_AUTOFILL) came back at all — failing either vetoed the
+   * write. Gemini only ever reports high/low per field, never a number, so
+   * the floor has no equivalent; what survives below is the binary half:
+   * `false` exactly when this read flagged ANY field in `lowConfidence`
+   * (already scoped to fields this kind actually stores — see `parse`),
+   * `true` otherwise.
    *
-   * ⚠️ CARRIED AS A SEPARATE VETO RATHER THAN STUFFED INTO `lowConfidence`.
-   * That list is member-facing — it becomes `readUncertain` on the row and the
-   * panel names the fields we doubted, in their words. Pushing 'expires_on'
-   * into it because the ID NUMBER was misread would tell the member we doubted
-   * a date we were in fact sure of.
+   * The missing-field half is NOT reconstructed, and that is a considered
+   * omission rather than a silent loss of safety. `REQUIRED_FOR_AUTOFILL` only
+   * ever named two kinds: FIREARM_LICENCE (`issuedOn`, `expiresOn`) and
+   * COMPETENCY_CERTIFICATE (`competency_issued`). For a competency,
+   * `expiresOn` is always null regardless of reader — COMPETENCY_CERTIFICATE
+   * is in NO_EXPIRY_ON_THE_PAGE below — so `mayArmReadExpiry`'s very first
+   * check (`if (!expiry) return {arm:false}`) already refuses it before this
+   * flag is even read; the missing-field check was never load-bearing there.
+   * For a licence, `mayArmReadExpiry` independently refuses when `issuedOn`
+   * is absent or the section cannot be matched to a term — the SAME two
+   * fields REQUIRED_FOR_AUTOFILL named, checked again for the same reason.
+   * So the one case this narrowing actually gives up is a document whose
+   * EXPIRY read confidently while some OTHER material field (a serial, a
+   * competency number) did not: Textract refused the whole write on that;
+   * this reader's opinion is scoped to what it actually flagged low.
    *
-   * `undefined` means "no opinion" and vetoes nothing — which is the model
-   * path, where per-field confidence is all there is.
+   * `undefined` still means "no opinion" — the model was never consulted at
+   * all (not configured) — and vetoes nothing, exactly as before.
    */
   autoFillable?: boolean;
   /**
    * Fields this kind of document ALWAYS carries that this read did not get.
    *
-   * ⚠️ SO A BLANK BOX CAN SAY WHICH KIND OF BLANK IT IS. "Not on the document"
-   * is what the member was shown against their competency's date of issue, and
-   * it is untrue: a SAPS 524 always prints one (reference §5.2; the EXPIRY is
-   * what it lacks). The reader knew — it declined a seven-digit date rather
-   * than guess — and had no way to say so. See TextractReading.unread for the
-   * full account.
-   *
-   * `undefined` on the model path, which has no notion of a field a document
-   * must carry. Undefined is "no opinion", never "nothing is missing".
+   * ⚠️ ALWAYS UNDEFINED NOW, AND THAT IS THE HONEST ANSWER, NOT A GAP
+   * (2026-09-08, Textract removed). This was Textract's REQUIRED_FOR_AUTOFILL
+   * cross-check, built because Textract would confidently hand back a partial
+   * form and something had to name which indispensable field was quietly
+   * missing rather than say a false "not on the document". Gemini is not
+   * being asked to certify a document's completeness against a per-kind
+   * checklist — only to transcribe what it can see — so it has no basis to
+   * distinguish "should be here and is not" from "genuinely absent from this
+   * page", and guessing that distinction wrongly is exactly the false
+   * sentence this field exists to prevent. `undefined` already meant "no
+   * opinion" on this interface; the model path now simply holds that
+   * position permanently instead of only when unconfigured.
    */
   unread?: string[];
-  /** For the ledger: which reader produced this. Absent when neither did. */
-  reader?: 'textract' | 'model';
+  /**
+   * For the ledger: which reader produced this. Absent when neither did.
+   *
+   * ⚠️ NARROWED FROM 'textract' | 'model' TO 'model' ONLY (2026-09-08, AWS
+   * Textract removed platform-wide — operator: "we will also be losing AWS
+   * textract and only be using gemini going forward"). Kept as a one-member
+   * union rather than dropped or turned into a boolean because
+   * `licence-centre.service.ts` writes this value into an audit-ledger `code`
+   * column by name, and a literal string type documents what that column can
+   * now actually hold without needing to touch that file.
+   */
+  reader?: 'model';
 }
 
 const EMPTY: CredentialReading = {
@@ -178,23 +203,32 @@ export function cleanAlsoCovers(
 // them was read as "unreadable document" for months; the spec pins the gap so
 // nobody derives a readability verdict from it again.
 /**
- * Kinds where an `expires_on` coming back from vision must be THROWN AWAY.
+ * Kinds where a date on the page is never an expiry.
  *
- * Not "kinds without an expiry column" — every credential has one. These
- * are the documents where a date on the page is never an expiry: a
- * competency card prints its issue date and nothing else, and a proficiency
- * and an ID document do not run out at all.
+ * Not "kinds without an expiry column" — every credential has one. These are
+ * the documents where a date on the page is never an expiry: a competency
+ * card prints its issue date and nothing else, and a proficiency and an ID
+ * document do not run out at all.
  *
- * ⚠️ THIS WAS A SECOND COPY OF THE SET IN textract-document-extract.ts, kept
- * in step by a comment in each file asking the next reader to keep them in
- * step. It is now imported from there — one declaration, so the two readers
- * cannot come to different views about which documents expire.
+ * ⚠️ FORMERLY TWO COPIES OF THIS SET, one here and one in
+ * textract-document-extract.ts, held in step by a comment in each file asking
+ * the next reader to keep them in step — which is exactly the kind of
+ * divergence a comment cannot prevent. It moved to live beside the Textract
+ * reader on 2026-09-07 because that was the reader with the tighter
+ * day-to-day reason to own it. Now that Textract is gone (2026-09-08), this
+ * file is the only reader left, so it comes back here rather than to a
+ * standalone module nothing else would need.
  *
  * Keep it in step with defaultsToNeverExpires in credential-kinds.ts. They
  * answer two halves of one question — what we STORE and what we SHOW — and a
  * kind in one but not the other is a document that either displays an expiry
  * nobody can confirm or asks for a date it will then discard.
  */
+const NO_EXPIRY_ON_THE_PAGE: ReadonlySet<string> = new Set([
+  'COMPETENCY_CERTIFICATE',
+  'PROFICIENCY',
+  'IDENTITY_DOCUMENT',
+]);
 
 /**
  * The WANTED keys that are dates rather than text, and are therefore held to
@@ -300,7 +334,24 @@ export const WANTED: Record<CredentialKind, string[]> = {
   // ⚠️ scv_number AND issuer ADDED 2026-09-07. The S/C/V number is printed on
   // both sides of a proficiency (the provider's certificate and the PFTC
   // statement behind it) and is what lets the vault file the two as one pair.
-  PROFICIENCY: ['certificate_number', 'holder_name', 'unit_standard', 'scv_number', 'issuer'],
+  //
+  // ⚠️ document_side ADDED 2026-09-08, WITH TEXTRACT REMOVED. Which side this
+  // is used to be decided AFTER the read, by grepping Textract's OCR text for
+  // "statement of results" — a second Textract call the model path never had
+  // a use for on its own, so `read()` used to run Textract a second time even
+  // when the MODEL had done the actual read, purely to answer this one
+  // question. There is no OCR text left to grep, and no reason to ask twice:
+  // Gemini can see the same heading in the same image it is already reading,
+  // so this is asked for like any other field and validated in `parse` to be
+  // exactly 'front' or 'back'.
+  PROFICIENCY: [
+    'certificate_number',
+    'holder_name',
+    'unit_standard',
+    'scv_number',
+    'issuer',
+    'document_side',
+  ],
   OTHER: ['reference_number', 'holder_name', 'issuer'],
 
   // ── THE DOCUMENTS WE KEEP RATHER THAN CHASE ────────────────────────
@@ -370,7 +421,6 @@ export class LicenceCentreExtractService {
   private readonly logger = new Logger(LicenceCentreExtractService.name);
 
   constructor(
-    private readonly textract: LicenceCentreTextractService,
     // ⚠️ THE ONE PLACE THE PROVIDER IS NAMED IS INSIDE LlmService. This used
     // to build its own Anthropic client in the constructor (60s timeout, one
     // retry) and hold it as `this.client`, null when the key was absent —
@@ -388,6 +438,22 @@ export class LicenceCentreExtractService {
    * as "something else" quietly loses its renewal path. So this proposes, the
    * member confirms on the same screen where they confirm the expiry date, and
    * an uncertain answer becomes OTHER rather than a confident wrong one.
+   *
+   * ⚠️ ALWAYS A MODEL CALL NOW (2026-09-08, AWS Textract removed platform-wide
+   * — operator: "we will also be losing AWS textract and only be using gemini
+   * going forward"). This used to try a marker match against Textract's OCR
+   * text first: "a firearm licence has 'LICENCE TO POSSESS A FIREARM' printed
+   * across the top — asking a model what a document is, when the document
+   * says so in words, spends a round trip to be told something the paper
+   * already stated", and only fell through to the model on a document the
+   * marker table did not decide. There is no OCR text left to run a marker
+   * match against without Textract, so every classify costs a call now.
+   * `readMarkers` (common/document-markers.ts) and `UPLOAD_TO_CREDENTIAL`
+   * (./upload-to-credential.ts) are consequently unused BY THIS FILE as of
+   * this change — `readMarkers` is still used by motivations' own classifier,
+   * untouched here; `UPLOAD_TO_CREDENTIAL` has no other caller left and is
+   * flagged separately rather than deleted, since deciding its fate is a
+   * judgement call outside removing Textract.
    */
   async classify(args: {
     bytes: Buffer;
@@ -402,56 +468,6 @@ export class LicenceCentreExtractService {
     markers?: string[];
     strength?: string;
   } | null> {
-    // ── TEXTRACT FIRST, AND IT USUALLY ENDS HERE ──────────────────────
-    //
-    // A firearm licence has "LICENCE TO POSSESS A FIREARM" printed across
-    // the top. Asking a model what a document is, when the document says so
-    // in words, spends a round trip to be told something the paper already
-    // stated - and when the guess is wrong it is wrong expensively: a SA
-    // Hunters certificate filed as DEDICATED_HUNTER put the operator's
-    // SPORT-shooter status on a section 16 application.
-    //
-    // Only a DECISIVE match counts. A document scoring well on two kinds,
-    // or on none, falls through to the model below - which is what carries
-    // proof of address, letters of good standing, and every association
-    // certificate whose letterhead is not in the table yet.
-    const ocr = await this.textract.analyse(args.bytes, args.mimeType);
-    if (ocr) {
-      const hit = readMarkers(textractLines(ocr).join('\n'));
-      const kind = hit ? UPLOAD_TO_CREDENTIAL[hit.kind] : undefined;
-      if (hit && kind) {
-        this.logger.log(
-          `classified ${kind} from markers (${hit.strength}: ${hit.matched.map((m) => m.name).join(', ')})`,
-        );
-        return {
-          kind: currentKind(kind),
-          /**
-           * ⚠️ `confident` ONLY ON A DEFINITIVE MARKER. This said `true` for
-           * every hit, including the 'strong' ones — and readMarkers also
-           * DOWNGRADES a definitive hit to 'strong' when it had to match
-           * loosely (see document-markers.ts, `wasLoose`), so the one signal
-           * saying "this was a fuzzy match on a smudged page" was thrown away
-           * at the point it mattered.
-           *
-           * `confident: false` is what puts the correction dropdown in front
-           * of the member. A form number IS the document; a unit-standard code
-           * beside its title, or a green book's field labels without its
-           * authority line, is strong evidence and still worth a glance — and
-           * getting this wrong is not cosmetic: a SA Hunters certificate filed
-           * as the wrong status put the operator's SPORT-shooter status on a
-           * section 16 application.
-           *
-           * Mirrors motivation-extract.service.ts, which has always done this.
-           */
-          confident: hit.strength === 'definitive',
-          alsoCovers: [],
-          via: 'markers',
-          markers: hit.matched.map((m) => m.name),
-          strength: hit.strength,
-        };
-      }
-    }
-
     if (!this.llm.isConfigured()) return null;
 
     let text = '';
@@ -471,11 +487,14 @@ export class LicenceCentreExtractService {
             ],
           },
         ],
-        // The prompt ends "Return STRICT JSON and nothing else". Asking the
-        // provider to enforce that is free; the tolerant brace-match below
-        // stays, because a provider that ignores the flag must not take the
-        // classify offline.
-        json: {},
+        // ⚠️ SCHEMA-ENFORCED. This used to pass `json: {}` (a bare "answer in
+        // JSON" flag) and find the object with a tolerant /\{[\s\S]*\}/ match
+        // in case the provider ignored that and wrapped the answer in prose.
+        // A schema makes the provider enforce the SHAPE, so that hunt is gone
+        // below — but a schema cannot enforce that "kind" is the RIGHT
+        // answer for this photograph, which is why `known.includes(raw)` and
+        // RETIRED_KINDS normalisation still run exactly as they did.
+        json: { schema: CLASSIFY_SCHEMA },
         purpose: 'vault.classify',
       });
       text = res.text.trim();
@@ -485,9 +504,7 @@ export class LicenceCentreExtractService {
     }
 
     try {
-      const m = text.match(/\{[\s\S]*\}/);
-      if (!m) return null;
-      const parsed = JSON.parse(m[0]) as {
+      const parsed = JSON.parse(text) as {
         kind?: string;
         confidence?: string;
         also_covers?: unknown;
@@ -525,27 +542,19 @@ export class LicenceCentreExtractService {
   /**
    * Read the document, and for a proficiency say which side it is.
    *
-   * ⚠️ THE SIDE IS DECIDED ON THE OCR TEXT, WHICHEVER READER WON. A statement
-   * of results names itself in its heading; anything else that classified as a
-   * proficiency is a provider's certificate. The Textract reader records this
-   * itself; the vision fallback drops anything WANTED does not list, so the
-   * side is put back here from the same cached OCR response.
+   * ⚠️ THE SIDE COMES FROM THE MODEL DIRECTLY NOW (2026-09-08, AWS Textract
+   * removed). It used to be decided AFTER the main read, on OCR text: whoever
+   * had answered the fields, a SEPARATE Textract call was made purely to grep
+   * the page for "statement of results" — because a statement names itself in
+   * its heading and a provider's certificate does not, and the vision
+   * fallback dropped anything WANTED did not list, so the side had to be put
+   * back from the cached OCR response afterwards. Gemini is already looking
+   * at the same image; asking it to say which side costs nothing extra, so
+   * `document_side` is simply one more key in WANTED.PROFICIENCY and
+   * userPrompt's PROFICIENCY guidance below, validated in `parse` like any
+   * other detail rather than recovered in a second pass.
    */
   async read(args: {
-    kind: CredentialKind;
-    bytes: Buffer;
-    mimeType: string;
-    alsoCovers?: CredentialKind[];
-  }): Promise<CredentialReading> {
-    const r = await this.readInner(args);
-    if (args.kind !== 'PROFICIENCY' || r.details.document_side) return r;
-    const ocr = await this.textract.analyse(args.bytes, args.mimeType);
-    if (!ocr) return r;
-    const back = /statement\s+of\s+results/i.test(textractLines(ocr).join(' '));
-    return { ...r, details: { ...r.details, document_side: back ? 'back' : 'front' } };
-  }
-
-  private async readInner(args: {
     kind: CredentialKind;
     bytes: Buffer;
     mimeType: string;
@@ -561,44 +570,13 @@ export class LicenceCentreExtractService {
      */
     alsoCovers?: CredentialKind[];
   }): Promise<CredentialReading> {
-    // Same response the classify pass just fetched, served from its cache.
-    const ocr = await this.textract.analyse(args.bytes, args.mimeType);
-    if (ocr) {
-      const material = wantedFor(args.kind, args.alsoCovers ?? []);
-      const got = extractDocument(ocr, args.kind, material);
-      const useful = Object.keys(got.reading.details).some((f) =>
-        material.includes(f),
-      );
-      // ⚠️ "USEFUL" MEANS A FIELD THIS KIND ACTUALLY STORES. Textract will
-      // happily return a street address and a printer's imprint off a
-      // certificate whose real fields it could not resolve; counting those
-      // as a successful read would skip the fallback on exactly the
-      // documents that need it. Operator: "if textract fails or send
-      // information back that does not match use claude."
-      if (useful) {
-        if (got.notes.length) {
-          this.logger.log(`textract read ${args.kind}: ${got.notes.join('; ')}`);
-        }
-        // ⚠️ `autoFillable` TRAVELS WITH THE READING. See the field on
-        // CredentialReading: it was computed here and discarded, so Textract's
-        // own doubt never reached the one guard that decides whether a date
-        // starts driving reminders.
-        return {
-          ...got.reading,
-          notes: got.notes,
-          autoFillable: got.autoFillable,
-          // Which indispensable field this read did not get, by name. The
-          // boolean above says only that something was missing.
-          unread: got.unread,
-          reader: 'textract',
-        };
-      }
-      this.logger.log(
-        `textract read ${args.kind} produced nothing storable — falling back`,
-      );
-    }
-
     if (!this.llm.isConfigured()) return EMPTY;
+
+    const keys = [
+      ...wantedFor(args.kind, args.alsoCovers ?? []),
+      'issued_on',
+      'expires_on',
+    ];
 
     let text = '';
     try {
@@ -618,7 +596,14 @@ export class LicenceCentreExtractService {
             ],
           },
         ],
-        json: {},
+        // ⚠️ SCHEMA-ENFORCED, KEYED TO THIS CALL. `key` is confined to
+        // exactly the keys this kind (and its alsoCovers) can ask for, so the
+        // provider itself now refuses to invent a stray field — the
+        // provider-side half of "WANTED is both the question and the filter".
+        // `parse`'s own allow-list stays regardless: a schema enforces SHAPE,
+        // never semantics, and it cannot validate a date, an ID number or the
+        // 200-character cap. See the guards inside `parse`.
+        json: { schema: fieldsSchema(keys) },
         purpose: 'vault.read',
       });
       text = res.text.trim();
@@ -641,11 +626,13 @@ export class LicenceCentreExtractService {
       fields?: { key?: string; value?: string; confidence?: string }[];
     };
     try {
-      // The outermost braces, not from the first brace to the end — a model
-      // that adds a sentence after the JSON should not break the parse.
-      const m = text.match(/\{[\s\S]*\}/);
-      if (!m) return EMPTY;
-      parsed = JSON.parse(m[0]);
+      // ⚠️ NO MORE /\{[\s\S]*\}/ HUNT. That regex existed to find the JSON
+      // inside a reply that might carry surrounding prose despite being
+      // asked not to. With the response schema-enforced (see the call site),
+      // `text` is already a bare JSON document — there is nothing around it
+      // to hunt out of. A malformed reply still lands here as a thrown
+      // SyntaxError, caught below exactly as before.
+      parsed = JSON.parse(text);
     } catch {
       this.logger.warn(`Credential read returned unparseable JSON (${kind})`);
       return EMPTY;
@@ -737,13 +724,37 @@ export class LicenceCentreExtractService {
         continue;
       }
 
+      // ⚠️ ONE OF TWO LITERAL WORDS, OR IT DOES NOT COUNT. Which side a
+      // proficiency is on is a fact about the PAGE LAYOUT, not something
+      // printed on it, so a model given free rein answers in its own words
+      // ("the front side", "This is the certificate") far more often than the
+      // two tokens actually asked for. `findOtherSide` (credential-duplicates.ts)
+      // reads this to avoid ever pairing two fronts together, so a wrong or
+      // unrecognised answer is worse than none — a fabricated 'front' on what
+      // is really the statement of results would let a genuine pair go
+      // unmatched instead of simply leaving the side unknown.
+      if (key === 'document_side') {
+        const side = value.toLowerCase();
+        if (side !== 'front' && side !== 'back') continue;
+        out.details[key] = side;
+        if ((f?.confidence ?? '').toLowerCase() === 'low') {
+          out.lowConfidence.push(key);
+        }
+        continue;
+      }
+
       out.details[key] = value;
       if ((f?.confidence ?? '').toLowerCase() === 'low') {
         out.lowConfidence.push(key);
       }
     }
 
-    return out;
+    // ⚠️ COMPUTED HERE, ONCE, RATHER THAN AT EVERY CALL SITE. See the long
+    // comment on CredentialReading.autoFillable for what this narrows from
+    // and why the narrowing is safe: it is `false` exactly when this read
+    // flagged some field it actually stores as uncertain, `true` otherwise —
+    // never a judgement about a field that came back empty.
+    return { ...out, autoFillable: out.lowConfidence.length === 0 };
   }
 }
 
@@ -785,6 +796,39 @@ function wantedFor(
   return [
     ...new Set([kind, ...alsoCovers].flatMap((k) => WANTED[k] ?? [])),
   ];
+}
+
+/**
+ * The shape read()/parse() must come back in: one object per transcribed
+ * field, `key` confined to what THIS call actually asked for.
+ *
+ * ⚠️ `key`'s enum is PER-CALL, built from the same list userPrompt() already
+ * recites, not a fixed set — what is askable depends on the kind and its
+ * alsoCovers. This is the provider-side half of "WANTED is both the question
+ * and the filter": the model can no longer even PRODUCE a stray key, where
+ * before it could and `parse`'s allow-list quietly dropped it on the way
+ * back. That allow-list stays anyway (in `parse`) — a schema enforces shape,
+ * never semantics, and shape is all a schema can ever guarantee.
+ */
+function fieldsSchema(keys: readonly string[]): Record<string, unknown> {
+  return {
+    type: 'object',
+    properties: {
+      fields: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            key: { type: 'string', enum: [...keys] },
+            value: { type: 'string' },
+            confidence: { type: 'string', enum: ['high', 'low'] },
+          },
+          required: ['key', 'value'],
+        },
+      },
+    },
+    required: ['fields'],
+  };
 }
 
 /**
@@ -877,6 +921,9 @@ export function userPrompt(
           'issuer is the training provider\'s name as printed. issued_on is the',
           'date of issue; on a certificate reading "this 31 day of MARCH 2021"',
           'that is 2021-03-31.',
+          'document_side is exactly "front" if this is the training provider\'s',
+          'own certificate, or exactly "back" if this is the PFTC statement of',
+          'results - it names itself "Statement of Results" in its heading.',
           '',
         ]
       : []),
@@ -972,6 +1019,30 @@ function blockFor(bytes: Buffer, mimeType: string): LlmPart {
     data: bytes.toString('base64'),
   };
 }
+
+/**
+ * The shape classify() must come back in.
+ *
+ * ⚠️ `kind`'s enum is Object.values(CredentialKind), GENERATED rather than
+ * retyped by hand, so it cannot drift from what Prisma defines the way a
+ * second hand-written list eventually would. This is still only a SHAPE
+ * constraint: a kind that is a real CredentialKind but the WRONG one for this
+ * photograph is a semantic mistake no schema can catch, which is why
+ * classify()'s own `known.includes(raw)` check and the RETIRED_KINDS
+ * normalisation stay exactly as they were.
+ */
+const CLASSIFY_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    kind: { type: 'string', enum: Object.values(CredentialKind) },
+    also_covers: {
+      type: 'array',
+      items: { type: 'string', enum: Object.values(CredentialKind) },
+    },
+    confidence: { type: 'string', enum: ['high', 'low'] },
+  },
+  required: ['kind'],
+};
 
 const CLASSIFY_SYSTEM = `
 You sort a photographed or scanned South African document. You are sorting, not

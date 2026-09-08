@@ -127,6 +127,18 @@ function contentIdentity(prompt: string): { lines: number; sha: string } {
  * re-baseline was a rewording and not a loss: 106 / 106 / 102 / 102 / 94, the
  * same numbers this table has always held. If you find yourself editing these
  * hashes again, edit the counts only when you meant to add or remove a line.
+ *
+ * ⚠️ RE-BASELINED AGAIN, TWICE, ON 2026-09-08 — the Motivation Centre rebuild.
+ * Phase 1 renamed the two self-defence long boxes (they stopped being the
+ * primary input; the applicant taps s13_reasons and s13_movements instead), so
+ * S13 alone moved. Phase 2 then halved the word bands on every type — S13
+ * 1200-2500 → 900-1400, S15/S16 → 1200-1800, S24 → 600-900 — because roughly
+ * 60% of the approved corpus's page count is manufacturer copy and quoted
+ * regulation that rule 7 already forbids, and the renderer now prints the
+ * particulars and the battery as tables rather than prose. See PROSE_TARGET.
+ *
+ * Both were content changes and both moved the baseline rather than weakening
+ * the assertion. All five line counts held at 106/106/102/102/94 through both.
  */
 const BEFORE_THE_REORDER: Record<
   MotivationLicenceType,
@@ -134,23 +146,23 @@ const BEFORE_THE_REORDER: Record<
 > = {
   S13_SELF_DEFENCE: {
     lines: 106,
-    sha: '2d32378bdcde90ee74c486cd6151407d016fe690dd371096df8035498cf0f3e0',
+    sha: '3b1831828752920b0c662f12c294918d3f4b7c5f8a8d9af29077fa750021a423',
   },
   S15_OCCASIONAL_HUNTER: {
     lines: 106,
-    sha: '00b2ca49b048880e0ed0b5ee461ec381bd8b17ad265c5aba68dc43aceb5f36ef',
+    sha: '782aa8f79e49bedb78aafae1b50c5e15911f74490b1fd90b4ea6149cecdbdb09',
   },
   S16_DEDICATED_HUNTER: {
     lines: 102,
-    sha: '20de2d4b60c7d47a6180d2bd89868ee88f59c6e7d45a1a24fb5c5ec6d529abf1',
+    sha: 'f80304303820def343bdfdd3b667b5bbf40da68c742a883017030fba70912dfd',
   },
   S16_DEDICATED_SPORT: {
     lines: 102,
-    sha: 'cbf5250305a30de65c94c33f9c442a30c28ea4371e45563ce32a52df34b0ac1e',
+    sha: '78a42e1a8657ca1cebf4da303b2f6d24fd4c5c0c31bc13e134ea03291b4aa3e8',
   },
   S24_RENEWAL: {
     lines: 94,
-    sha: '615adc7704805c61076ff2fede25f7f562f0458235ae4bbb8b038ff33571a9ed',
+    sha: '69f5d15abf4a1105b172192801fa00d4f31b9951a235615e8a13a14f52f8c1e8',
   },
 };
 

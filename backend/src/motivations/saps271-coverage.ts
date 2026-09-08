@@ -124,10 +124,18 @@ const PANEL: { id: string; label: string; from: string[] }[] = [
 ];
 
 /**
- * ⚠️ 'The SAPS 271 form' IS DELIBERATELY NOT ON THE PANEL. Its one field is
- * the opt-in — a preference about how we help, not a question the Registrar
- * asks. Counting it would let a member raise their completeness by choosing a
- * setting.
+ * ⚠️ 'The SAPS 271 form' IS DELIBERATELY NOT ON THE PANEL, AND ITS OWN FIELD
+ * IS NOW GONE FROM UNDER IT. Its one field was the opt-in — a preference
+ * about how we help, not a question the Registrar asks, so counting it would
+ * have let a member raise their completeness by choosing a setting. Since
+ * 2026-09-08 the 271 is unconditional (brief §2.5) and `fill_saps271` is
+ * retired: it lives on in RETIRED_FIELDS purely so an old draft still saves,
+ * and `fieldsFor()` no longer returns it under this section name at all. So
+ * this entry now excludes a section that can never appear in `fields` in the
+ * first place — it costs nothing to keep, and removing it buys nothing,
+ * except that the day anything is ever filed under this section name again
+ * (it should not be) the exclusion is still here rather than having to be
+ * rediscovered.
  */
 const EXCLUDED_SECTIONS = new Set([
   'The SAPS 271 form',

@@ -1,6 +1,7 @@
 import { MotivationLicenceType, MotivationStatus } from '@prisma/client';
 import { MotivationsService } from './motivations.service';
 import { MotivationSharedService } from './motivation-shared.service';
+import { MemberProfileAnswersService } from './member-profile-answers.service';
 import { MotivationPrefillService } from './motivation-prefill.service';
 import { decryptJson, encryptJson } from '../common/blob-crypto';
 import type { ProvenanceMap } from '../common/answer-provenance';
@@ -106,6 +107,14 @@ function build(
   const updates: { data: Record<string, unknown> }[] = [];
   const prisma = {
     user: { findUnique: jest.fn(async () => ({ id: 'user-1' })) },
+    // ⚠️ saveAnswers READS THE PROFILE STORE ON EVERY CALL now, so the model
+    // has to exist on the double even here, where nothing is profile-scoped.
+    // Absent, it reads as `undefined.findUnique` and fails every case in a way
+    // that looks nothing like a missing mock.
+    memberProfileAnswers: {
+      findUnique: jest.fn(async () => null),
+      upsert: jest.fn(async () => ({})),
+    },
     motivation: {
       findFirst: jest.fn(async () => ({
         id: 'mo-1',
@@ -151,6 +160,10 @@ function build(
     null as never,
     null as never,
     null as never,
+    // The profile store. Real rather than a stub, against the same `prisma`
+    // double: nothing in this file writes a profile-scoped answer, so it is
+    // exercised only as the empty read that saveAnswers now always does.
+    new MemberProfileAnswersService(prisma as never),
   );
 
   /** The answers as they were actually written, decrypted. */

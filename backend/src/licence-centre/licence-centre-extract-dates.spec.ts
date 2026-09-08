@@ -1,6 +1,5 @@
 import { CredentialKind } from '@prisma/client';
 import { LicenceCentreExtractService } from './licence-centre-extract.service';
-import { LicenceCentreTextractService } from './licence-centre-textract.service';
 import type { LlmService } from '../common/llm/llm.service';
 
 // ────────────────────────────────────────────────────────────────────
@@ -24,13 +23,13 @@ type Parse = (
   issuedOn: string | null;
   details: Record<string, string>;
   lowConfidence: string[];
+  autoFillable?: boolean;
 };
 
-// `parse` is pure — it never reaches either reader — so the model stands in
-// as an unconfigured stub. It used to be absent from the constructor
-// entirely, because the service built its own Anthropic client from the env.
+// `parse` is pure — it never reaches the model — so the model stands in as an
+// unconfigured stub. It used to be absent from the constructor entirely,
+// because the service built its own Anthropic client from the env.
 const svc = new LicenceCentreExtractService(
-  new LicenceCentreTextractService(),
   { isConfigured: () => false } as unknown as LlmService,
 );
 // Private by design; reaching it keeps the test honest about where the defect
@@ -150,29 +149,27 @@ describe('a date read off a document', () => {
 // obvious fix would have made things worse: nothing MISFILED the date. It was
 // never read.
 //
-// A SAPS 524 is read by Textract, and on the operator's certificate the boxed
-// date came back as seven digits where a date needs eight — boxedDate returns
-// null rather than guess, REQUIRED_FOR_AUTOFILL marks the certificate not
-// auto-fillable, and it reaches the member. All of that is correct.
-//
-// What was not correct is the fallback. `parse` accepts only wantedFor(kind)
-// plus issued_on and expires_on, and the prompt asked for `date_of_issue` — a
-// key on nobody's list. A model doing exactly as it was told had its answer
-// binned on the way home, silently, which looks identical to a document it
-// could not read.
+// ⚠️ THE ORIGINAL FAILURE WAS ON THE TEXTRACT SIDE (removed 2026-09-08, AWS
+// Textract dropped platform-wide) — a SAPS 524 was read by Textract, and on
+// the operator's certificate the boxed date came back as seven digits where a
+// date needs eight, which was the CORRECT thing for that reader to do rather
+// than guess. What was not correct was the vision path underneath it: `parse`
+// accepts only wantedFor(kind) plus issued_on and expires_on, and the prompt
+// asked for `date_of_issue` — a key on nobody's list. A model doing exactly as
+// it was told had its answer binned on the way home, silently, which looks
+// identical to a document it could not read. Textract is gone now and vision
+// is the only reader left, so this is no longer a fallback path being tested
+// — it is THE path, and the same class of bug (a prompt asking under one
+// name, a parser accepting another) is exactly as costly as it always was.
 // ────────────────────────────────────────────────────────────────────
 
-describe('the vision fallback asks for a key it will accept', () => {
+describe('the vision path asks for a key it will accept', () => {
   /** A configured model that records what it was asked. */
   function asking(reply: unknown) {
     const complete = jest.fn(async () => ({
       text: JSON.stringify(reply),
     }));
-    const textract = new LicenceCentreTextractService();
-    // Null: no Textract answer, so read() falls through to the model. That is
-    // the path under test — on a real SAPS 524 Textract answers first.
-    jest.spyOn(textract, 'analyse').mockResolvedValue(null as never);
-    const service = new LicenceCentreExtractService(textract, {
+    const service = new LicenceCentreExtractService({
       isConfigured: () => true,
       complete,
     } as unknown as LlmService);
@@ -243,5 +240,92 @@ describe('the vision fallback asks for a key it will accept', () => {
         CredentialKind.COMPETENCY_CERTIFICATE,
       ).details.competency_issued,
     ).toBe('2016-10-20');
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// AUTOFILLABLE, RECOMPUTED FOR THE MODEL PATH (2026-09-08, Textract removed).
+//
+// See the long comment on CredentialReading.autoFillable for the full
+// reasoning. In short: Textract scored a numeric confidence floor across
+// every material field AND cross-checked a per-kind indispensable-field list;
+// Gemini only ever says high/low per field, so what survives is narrower —
+// `false` exactly when this read flagged some field it actually stores as
+// uncertain, `true` otherwise. These tests are that narrower contract's only
+// coverage, now that the Textract-specific suite that used to exercise
+// autoFillable (licence-centre-extract-textract.spec.ts) is gone with it.
+// ────────────────────────────────────────────────────────────────────
+
+describe('autoFillable, computed from lowConfidence on the model path', () => {
+  it('is true when nothing came back uncertain', () => {
+    const out = parse(
+      model([
+        { key: 'issued_on', value: '2025-09-22', confidence: 'high' },
+        { key: 'expires_on', value: '2035-09-21', confidence: 'high' },
+        { key: 'make', value: 'HOWA', confidence: 'high' },
+      ]),
+      CredentialKind.FIREARM_LICENCE,
+    );
+    expect(out.autoFillable).toBe(true);
+  });
+
+  it('is false the moment any stored field is flagged low confidence', () => {
+    // Not the date this time — a serial number the model was unsure of is
+    // still reason enough to hold the whole document for review, the same
+    // posture Textract's floor took across every material field.
+    const out = parse(
+      model([
+        { key: 'issued_on', value: '2025-09-22', confidence: 'high' },
+        { key: 'frame_serial', value: 'B477423', confidence: 'low' },
+      ]),
+      CredentialKind.FIREARM_LICENCE,
+    );
+    expect(out.autoFillable).toBe(false);
+  });
+
+  it('is false when the doubt is on the expiry itself', () => {
+    const out = parse(
+      model([{ key: 'expires_on', value: '2035-09-21', confidence: 'low' }]),
+      CredentialKind.FIREARM_LICENCE,
+    );
+    expect(out.autoFillable).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// document_side, ASKED FOR DIRECTLY NOW (2026-09-08, Textract removed).
+//
+// It used to be decided AFTER the read by grepping Textract's OCR text for
+// "statement of results". There is no OCR text left, so it is one more key in
+// WANTED.PROFICIENCY, validated here to the same standard as everything else
+// the model is not free to answer in its own words.
+// ────────────────────────────────────────────────────────────────────
+
+describe('document_side', () => {
+  it('accepts the two literal answers, lower-cased', () => {
+    expect(
+      parse(
+        model([{ key: 'document_side', value: 'front' }]),
+        CredentialKind.PROFICIENCY,
+      ).details.document_side,
+    ).toBe('front');
+    expect(
+      parse(
+        model([{ key: 'document_side', value: 'Back' }]),
+        CredentialKind.PROFICIENCY,
+      ).details.document_side,
+    ).toBe('back');
+  });
+
+  it('drops anything that is not exactly front or back', () => {
+    // A model given free rein answers in its own words far more often than
+    // the two tokens asked for. findOtherSide must never be handed a
+    // fabricated side — an unknown side is safer than a wrong one.
+    expect(
+      parse(
+        model([{ key: 'document_side', value: 'the front side' }]),
+        CredentialKind.PROFICIENCY,
+      ).details.document_side,
+    ).toBeUndefined();
   });
 });

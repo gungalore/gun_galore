@@ -97,12 +97,15 @@ describe('the shipped IAM policy covers what the code calls', () => {
     expect(allowed.has('rekognition:StartFaceLivenessSession')).toBe(true);
   });
 
-  it('the region lock still covers both vision services', () => {
+  it('the region lock covers rekognition — textract left with the reader', () => {
+    // Textract went when the KYC document read moved to Gemini
+    // (2026-09-08, see aws-kyc.service.ts); AWS still runs Rekognition
+    // face-match and Face Liveness, so the region lock has exactly one
+    // service left to cover. A stray textract:* reappearing here would be
+    // dead weight, not a safety net — nothing in the code calls it any more.
     const deny = policy.Statement.find((s) => s.Effect === 'Deny');
     const denied = Array.isArray(deny?.Action) ? deny.Action : [deny?.Action];
-    expect(denied).toEqual(
-      expect.arrayContaining(['textract:*', 'rekognition:*']),
-    );
+    expect(denied).toEqual(['rekognition:*']);
     // ⚠️ AND MUST NOT COVER sts. The deny is region-conditioned, and an
     // over-broad `*` here would block the credential vending that makes the
     // liveness challenge possible at all.

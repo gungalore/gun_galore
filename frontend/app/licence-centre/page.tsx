@@ -2,7 +2,7 @@
 
 import { useAuth } from '@clerk/nextjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import LicenceCentreMotivations from '@/components/licence-centre-motivations';
+import Link from 'next/link';
 import DocumentCentreAdd from '@/components/document-centre-add';
 import CredentialCard from '@/components/document-centre/credential-card';
 import ReviewScreen, {
@@ -749,11 +749,28 @@ export default function LicenceCentrePage() {
 
       </div>
 
-      {/* Motivations, retrievable from the same place the member keeps
-          everything else. Its own section rather than a CredentialKind — see
-          the module for why that distinction is load-bearing. Renders nothing
-          at all when the module is off or the member has none. */}
-      <LicenceCentreMotivations token={token} />
+      {/* Applications, retrievable from the same place the member keeps
+          everything else.
+
+          ⚠️ A LINK NOW, NOT A PANEL. LicenceCentreMotivations listed the
+          member's motivations inline and deep-linked each one into whichever
+          of the two wizards a build flag selected. Both wizards were deleted
+          on 2026-09-08 and the flag with them; there is one review sheet, and
+          it has its own list at /licence-centre/applications.
+
+          ⚠️ AND THE DOCUMENT CENTRE KEEPS THIS ROUTE. `/licence-centre` and
+          `/documents` are two doors to THIS page — reminder emails and
+          notification-module.ts still deep-link the first — which is why the
+          applications list took a child path rather than the index. */}
+      <Link
+        href="/licence-centre/applications"
+        className="mt-8 flex min-h-[44px] items-center justify-between gap-3 rounded-[var(--r-md)] border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3 text-[14px] font-medium text-[var(--text-primary)] no-underline"
+      >
+        Your licence applications
+        <span aria-hidden="true" className="text-[var(--red)]">
+          &rarr;
+        </span>
+      </Link>
 
       <p className="mt-8 text-xs text-[var(--text-tertiary-on-card)]">
         We send reminders as a courtesy. Renewing on time remains your

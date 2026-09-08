@@ -17,6 +17,17 @@ import {
 // there too". They had already drifted once: one copy called S24 "Renewal",
 // the other "Renewing an existing licence".
 //
+// ⚠️ RE-POINTED 2026-09-08 (Phase 4). The door was app/motivations/page.tsx
+// and then, briefly, /licence-services/new; both were deleted with the two
+// wizards. It is now app/licence-centre/applications/page.tsx, which renders
+// LICENCE_TYPES straight through — label, section and blurb verbatim.
+//
+// ⚠️ THE ASSERTIONS DID NOT NEED CHANGING, AND THAT IS THE POINT OF THEM.
+// They compare this list to the SERVER'S OWN registry, never to a screen, so
+// they survived the surface being replaced underneath them. A test written
+// against the chooser's markup would have died with it and taken the
+// guarantee with it.
+//
 // The three are one list now, and the maps are computed from it. What that
 // cannot catch is the direction the mistake actually comes from: somebody adds
 // a sixth type to the Prisma enum and the server's registry, and this list

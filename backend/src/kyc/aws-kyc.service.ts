@@ -1,28 +1,42 @@
 // backend/src/kyc/aws-kyc.service.ts
 //
-// The AWS half of KYC: Textract reads the identity document, Rekognition
-// matches the face and runs the liveness challenge. VerifyNow is unchanged
-// and still checks the ID number against the Home Affairs name and date of
-// birth — AWS replaces the vision work, not the identity lookup.
+// The AWS half of KYC: Rekognition matches the face and runs the liveness
+// challenge. VerifyNow is unchanged and still checks the ID number against
+// the Home Affairs name and date of birth — AWS does the face vision work,
+// not the identity lookup.
 //
-// ⚠️ REGION IS NOT A PREFERENCE. eu-west-1 (Ireland) is the only European
-// region carrying all three of Textract, Rekognition and Face Liveness:
+// ⚠️ TEXTRACT LEFT ON 2026-09-08. Operator: "we will also be losing AWS
+// textract and only be using gemini going forward. Gemini can write
+// straight into json and you can make it work from there." The identity
+// DOCUMENT is now read by readIdentityDocument() below, through the same
+// LlmService/Gemini adapter every model call on the platform now uses — see
+// the comment on that method for exactly what changed and what a schema
+// cannot do for you. Rekognition CompareFaces and Face Liveness are
+// UNCHANGED: neither ever did OCR, and nothing about them depended on
+// Textract being the reader.
+//
+// ⚠️ REGION IS NOT A PREFERENCE, FOR WHAT STAYS ON AWS. eu-west-1 (Ireland)
+// is verified to carry both Rekognition and Face Liveness together:
 // eu-north-1 (Stockholm) has neither service, and eu-central-1 (Frankfurt)
 // has Rekognition but NOT Face Liveness. Verified against the consoles
 // themselves rather than the docs. The IAM policy in
-// infra/aws/kyc-iam-policy.json DENIES textract:* and rekognition:* outside
-// eu-west-1, so a misconfigured region fails loudly instead of quietly
-// sending South African identity documents somewhere unintended.
+// infra/aws/kyc-iam-policy.json DENIES rekognition:* outside eu-west-1, so a
+// misconfigured region fails loudly instead of quietly sending South
+// African selfies and identity photos somewhere unintended. Gemini is a
+// different provider on different infrastructure and is NOT bound by this
+// AWS region lock at all — see LlmService for how ITS provider and model
+// are chosen.
 //
 // ⚖️ POPIA §72(1)(b): the cross-border transfer consent the seller gives
-// must be INFORMED, which means the consent copy has to name AWS Ireland.
-// Do not put live seller documents through this service until it does.
+// must be INFORMED, which means the consent copy has to name AWS Ireland
+// for the face comparison and the liveness challenge. The identity DOCUMENT
+// now goes to Gemini instead — the same provider kyc-model.service.ts's
+// older scan already sends documents and selfies to, so this is not a NEW
+// cross-border question, but it IS a different one from the AWS Ireland
+// consent above, and that consent copy was written before this path also
+// left AWS. Worth the operator's own look; not assumed here.
 
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  AnalyzeDocumentCommand,
-  TextractClient,
-} from '@aws-sdk/client-textract';
 import {
   AssumeRoleCommand,
   GetFederationTokenCommand,
@@ -35,8 +49,69 @@ import {
   RekognitionClient,
 } from '@aws-sdk/client-rekognition';
 
-import { buildAwsFindings, type AwsFindings, type FaceComparison } from './aws-kyc-findings';
-import type { TextractResponse } from './textract-extract';
+import { LlmService } from '../common/llm/llm.service';
+import { LlmError, type LlmPart } from '../common/llm/llm.types';
+import { sniffMime } from '../common/sniff-mime';
+import { readSaId } from '../motivations/sa-id';
+import {
+  buildAwsFindings,
+  dobFromIdNumber,
+  type AwsFindings,
+  type DocumentKind,
+  type ExtractedIdentity,
+  type FaceComparison,
+} from './aws-kyc-findings';
+
+/**
+ * What readIdentityDocument() asks Gemini to do. Deliberately narrow: this
+ * is an OCR read, not a verdict. Authenticity ("does this look forged?")
+ * stays with document-integrity.ts's rules-based check per the operator's
+ * 2026-09-04 decision recorded there, and face-matching stays with
+ * Rekognition below — this prompt reads four fields and nothing else, and
+ * is told explicitly never to guess one.
+ */
+const IDENTITY_READ_SYSTEM_PROMPT = `You are reading a South African identity document for a marketplace identity check. There are exactly two valid formats and BOTH are in wide circulation:
+- GREEN_BOOK — the old green bar-coded identity book. A small booklet with a dark green cover, "I.D. No." printed above a barcode near the photo.
+- SMART_ID_CARD — the newer credit-card sized card, WHITE/pale with a green-and-gold South African coat of arms and a laser-engraved portrait. Introduced in 2013.
+Anything else — a passport, a foreign ID, a driving licence, a birth certificate, a competency certificate or firearm licence that happens to carry an ID number — is OTHER. Do not read identity fields off a document that is not itself proof of identity.
+
+Read, and output ONLY what is actually printed on the document:
+- the 13-digit ID number, as digits only, with no spaces, dashes or other punctuation
+- the surname
+- the given names (forenames)
+- the date of birth, normalised to YYYY-MM-DD
+
+If a field is not clearly legible, output null for it. NEVER guess a digit, a letter or a date you cannot actually read — an invented value is worse than an honest null, because everything downstream trusts what you report as read rather than checking your working. Report only what is printed for the date of birth; do not derive it from the ID number yourself, so the two can be checked against each other afterwards.
+
+Output ONLY a single valid JSON object. The first character of your reply MUST be the literal '{'. No markdown fences, no commentary. Schema:
+{"documentType": "SMART_ID_CARD"|"GREEN_BOOK"|"OTHER", "idNumber": "13 digits or null", "surname": "string or null", "names": "string or null", "dateOfBirth": "YYYY-MM-DD or null"}`;
+
+/**
+ * The shape readIdentityDocument()'s call must answer in. Passed as
+ * LlmRequest.json.schema so the provider enforces it — see the note on
+ * that method for what a schema does and does not guarantee.
+ */
+const IDENTITY_DOCUMENT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    documentType: {
+      type: 'string',
+      enum: ['SMART_ID_CARD', 'GREEN_BOOK', 'OTHER'],
+      description: 'Which of the two valid SA identity documents this is, or OTHER.',
+    },
+    idNumber: {
+      type: ['string', 'null'],
+      description: '13-digit SA ID number, digits only, or null if not clearly legible.',
+    },
+    surname: { type: ['string', 'null'] },
+    names: { type: ['string', 'null'], description: 'Given names / forenames.' },
+    dateOfBirth: {
+      type: ['string', 'null'],
+      description: 'As printed on the document, normalised to YYYY-MM-DD, or null.',
+    },
+  },
+  required: ['documentType', 'idNumber', 'surname', 'names', 'dateOfBirth'],
+};
 
 /**
  * The ceiling on what browser-held credentials can do, passed inline to
@@ -102,9 +177,18 @@ export interface LivenessOutcome {
 @Injectable()
 export class AwsKycService {
   private readonly log = new Logger(AwsKycService.name);
-  private textractClient?: TextractClient;
   private rekognitionClient?: RekognitionClient;
   private stsClient?: STSClient;
+
+  constructor(
+    // Optional for the same reason KycModelService's LlmService is optional:
+    // nothing else in this class needs a model, so a bare `new
+    // AwsKycService()` — which aws-kyc.service.spec.ts and kyc.service.spec.ts
+    // both use to exercise the Rekognition/STS methods off the network —
+    // keeps working with no model configured at all. Only
+    // readIdentityDocument() ever touches this.
+    private readonly llm?: LlmService,
+  ) {}
 
   /** eu-west-1 unless overridden; see the region note at the top. */
   private get region(): string {
@@ -122,20 +206,17 @@ export class AwsKycService {
     );
   }
 
-  private textract(): TextractClient {
-    this.textractClient ??= new TextractClient({ region: this.region });
-    return this.textractClient;
-  }
-
   private rekognition(): RekognitionClient {
     this.rekognitionClient ??= new RekognitionClient({ region: this.region });
     return this.rekognitionClient;
   }
 
   /**
-   * The whole AWS scan: liveness (when a session ran), OCR, and the face
-   * comparisons — composed here so the caller has one seam to stub and
-   * this file owns every AWS-shaped decision.
+   * The whole scan: liveness (when a session ran), the identity document
+   * read, and the face comparisons — composed here so the caller has one
+   * seam to stub. "AWS" in the name is now historical: the document read
+   * moved to Gemini on 2026-09-08, and only the two face comparisons and
+   * the liveness challenge are still AWS-shaped decisions.
    */
   async scan(input: {
     documentBytes: Buffer;
@@ -166,7 +247,7 @@ export class AwsKycService {
       // a spoof, and never score it as a pass.
     }
 
-    const textract = await this.analyzeDocument(input.documentBytes);
+    const identity = await this.readIdentityDocument(input.documentBytes);
     const vsDocument = await this.compareFaces(faceBytes, input.documentBytes);
     const vsHomeAffairs = input.haPhotoBase64
       ? await this.compareFaces(
@@ -176,30 +257,155 @@ export class AwsKycService {
       : undefined;
 
     return buildAwsFindings({
-      textract,
+      identity,
       vsDocument,
       vsHomeAffairs,
       livenessConfidence,
     });
   }
+
   /**
-   * OCR the identity document with FORMS, which is what produces the
-   * key/value block extractIdentity() reads.
+   * Read the identity document with Gemini, straight into the shape
+   * buildAwsFindings() consumes — there is no separate OCR-parsing module
+   * any more. Operator, 2026-09-08: "we will also be losing AWS textract
+   * and only be using gemini going forward. Gemini can write straight into
+   * json and you can make it work from there." This ONE call replaces what
+   * used to be TWO steps — analyzeDocument() (Textract, a raw provider
+   * response) then extractIdentity() (pure functions parsing that
+   * response) — both gone, along with textract-extract.ts and its
+   * six-real-document regression suite.
    *
-   * ⚠️ SYNCHRONOUS AnalyzeDocument TAKES IMAGES. A multi-page PDF needs the
-   * asynchronous S3-based API instead, which this does not implement — a
-   * PDF upload will throw here and park the seller for a human rather than
-   * silently returning nothing. That is the correct failure while the PDF
-   * path is unbuilt; it is not a claim that PDFs work.
+   * ⚠️ A SCHEMA ENFORCES SHAPE, NEVER SEMANTICS. `json.schema` below
+   * guarantees the reply parses into the right fields with the right
+   * types — it does NOT guarantee the ID number printed in it is a real
+   * one. Gemini can hand back a perfectly well-formed 13-digit string that
+   * fails the SA ID checksum, exactly the way a typo or a hallucination
+   * would, and the schema cannot see the difference. readSaId() — the SAME
+   * Luhn check the licence stack runs on every ID number a member ever
+   * types in — is the actual gate here: a reading that fails it is
+   * discarded as though NOTHING was read, never merely flagged and passed
+   * on. See legibilityScore() in aws-kyc-findings.ts for what an unread ID
+   * number costs downstream.
+   *
+   * ⚠️ NO CONFIDENCE FIELD IS ASKED FOR, ON PURPOSE. Textract reported a
+   * real per-line OCR confidence; a vision-language model has no
+   * equivalent signal to report, and asking it for one ("how sure are you,
+   * 0-100?") would be the model scoring its own answer — not a
+   * measurement, just a number shaped like one. legibilityScore() had to
+   * change what it MEANS because of this; do not paper over that by adding
+   * a confidence field here and feeding it back in.
    */
-  async analyzeDocument(bytes: Buffer): Promise<TextractResponse> {
-    const res = await this.textract().send(
-      new AnalyzeDocumentCommand({
-        Document: { Bytes: bytes },
-        FeatureTypes: ['FORMS'],
-      }),
-    );
-    return res as unknown as TextractResponse;
+  async readIdentityDocument(bytes: Buffer): Promise<ExtractedIdentity> {
+    if (!this.llm?.isConfigured()) {
+      throw new Error(
+        'AI identity document read unavailable — no model configured',
+      );
+    }
+
+    const mimeType = sniffMime(bytes);
+    const content: LlmPart[] = [
+      { type: 'text', text: 'South African identity document:' },
+      { type: 'image', mimeType, data: bytes.toString('base64') },
+    ];
+
+    const res = await this.completeOrThrow({
+      system: IDENTITY_READ_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content }],
+      maxTokens: 400,
+      // No `temperature` — see kyc-model.service.ts's note on its own scan
+      // call: the Anthropic rollback path 400s on an explicit temperature
+      // for some models, and because every call site fails soft that cost
+      // two days of silence once already. The platform convention is to
+      // never pass one, rather than let a rollback silently stop reading
+      // documents.
+      thinking: { budgetTokens: 0 },
+      json: { schema: IDENTITY_DOCUMENT_SCHEMA },
+      purpose: 'kyc.document-read',
+    });
+
+    // A blocked response is an outage, not "nothing was read" — same rule
+    // as kyc-model.service.ts's scan(), for the same reason: a provider
+    // refusing to look has told us nothing, so it must never come out
+    // looking like an honest empty reading.
+    if (res.stopReason === 'safety') {
+      throw new Error('AI identity document read was blocked by the provider');
+    }
+
+    // ⚠️ THE REGEX STAYS EVEN THOUGH THE SCHEMA SHOULD MAKE IT UNNECESSARY —
+    // same reasoning as motivation-extract.service.ts's firearm read:
+    // `json.schema` is a provider constraint, not a guarantee we control,
+    // and the more permissive Anthropic rollback path can still hand back a
+    // fenced or prefaced answer.
+    const match = res.text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('AI identity document read did not return JSON');
+    const raw = JSON.parse(match[0]) as {
+      documentType?: string | null;
+      idNumber?: string | null;
+      surname?: string | null;
+      names?: string | null;
+      dateOfBirth?: string | null;
+    };
+
+    const notes: string[] = [];
+    const digits = (raw.idNumber ?? '').replace(/\D/g, '');
+    const idValid = digits.length > 0 && readSaId(digits).valid;
+    if (raw.idNumber && !idValid) {
+      notes.push(
+        `the model read an ID number ("${raw.idNumber}") but it failed the SA ID checksum — treated as unread, not corrected`,
+      );
+    }
+    const idNumber = idValid ? digits : null;
+
+    // The printed date and the date the ID number's own digits imply are
+    // independent reads of the same fact — which is what makes disagreement
+    // meaningful. Falls back to the implied date when nothing was printed
+    // (or wasn't legible): the same "fill in what we can already prove"
+    // rule CLAUDE.md's "Automate it" section applies everywhere else on
+    // this platform.
+    const printedDob = raw.dateOfBirth?.trim() || null;
+    const impliedDob = idNumber ? dobFromIdNumber(idNumber) : null;
+    if (printedDob && impliedDob && printedDob !== impliedDob) {
+      notes.push(
+        `the printed date of birth (${printedDob}) disagrees with the ID number's own digits (${impliedDob}) — one of the two was misread`,
+      );
+    }
+
+    const documentType: DocumentKind =
+      raw.documentType === 'SMART_ID_CARD' || raw.documentType === 'GREEN_BOOK'
+        ? raw.documentType
+        : 'OTHER';
+
+    return {
+      documentType,
+      idNumber,
+      surname: raw.surname?.trim() || null,
+      names: raw.names?.trim() || null,
+      dateOfBirth: printedDob ?? impliedDob,
+      notes,
+    };
+  }
+
+  /**
+   * The model call, with the provider's own failure named in the message.
+   * Same shape as KycModelService's private complete() helper, one
+   * directory over — every code path out of LlmService.complete() comes out
+   * as a throw here too, including 'safety' upstream in the caller, so
+   * readIdentityDocument()'s try-free body never has to distinguish a
+   * network failure from a bad reading.
+   */
+  private async completeOrThrow(
+    req: Parameters<LlmService['complete']>[0],
+  ): ReturnType<LlmService['complete']> {
+    try {
+      return await this.llm!.complete(req);
+    } catch (err) {
+      if (err instanceof LlmError) {
+        throw new Error(
+          `AI identity document read failed (${err.code}): ${err.message}`,
+        );
+      }
+      throw err;
+    }
   }
 
   /**

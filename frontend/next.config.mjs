@@ -23,6 +23,32 @@ const nextConfig = {
   experimental: {
     viewTransition: true,
   },
+  /**
+   * The retired motivation surfaces.
+   *
+   * ⚠️ 301, NOT 302, AND NOT A DELETION. Both wizards were removed on
+   * 2026-09-08 (Phase 4), and members carry these paths in bookmarks, in
+   * reminder emails and in SMS action links that were sent before today. A 404
+   * on a link we sent is worse than a redirect that outlives its usefulness.
+   *
+   * ⚠️ `/licence-services/new` MUST COME BEFORE `/licence-services/:id`, or
+   * Next matches the dynamic segment first and sends somebody starting a new
+   * application to a sheet whose id is the word "new".
+   *
+   * ⚠️ AND `/licence-centre` IS NOT HERE, deliberately. It is the Document
+   * Centre's own second door and still serves that page — see
+   * app/documents/page.tsx and notification-module.ts, which deep-links every
+   * licence_centre_* reminder to it. That is why the applications list took a
+   * child path rather than the index.
+   */
+  async redirects() {
+    return [
+      { source: '/motivations', destination: '/licence-centre/applications', permanent: true },
+      { source: '/licence-services/new', destination: '/licence-centre/applications', permanent: true },
+      { source: '/motivations/:id', destination: '/licence-centre/:id', permanent: true },
+      { source: '/licence-services/:id', destination: '/licence-centre/:id', permanent: true },
+    ];
+  },
   images: {
     remotePatterns: [
       // User-uploaded photos (listings, KYC docs, etc.).

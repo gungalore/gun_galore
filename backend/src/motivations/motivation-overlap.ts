@@ -1,5 +1,12 @@
 import { MotivationLicenceType } from '@prisma/client';
 import { OWNED_ROWS, ownedFirearmSerial } from './motivation-fields';
+import type { CardOption } from './motivation-fields';
+// ⚠️ THE VOCABULARY LIVES IN motivation-cards.ts AND ONLY THERE. This file
+// picks a RANKED SUBSET of OVERLAP_ANGLES and reads the fixed PRIMARY_USE set
+// to translate a tapped `existing_firearm_N_primary_use` answer back into a
+// sentence — it must never invent a card of its own, or allowedValues() would
+// have nothing fixed left to validate a stored answer against.
+import { OVERLAP_ANGLES, PRIMARY_USE } from './motivation-cards';
 // ────────────────────────────────────────────────────────────────────
 // "YOU ALREADY HAVE ONE OF THOSE."
 //
@@ -288,6 +295,212 @@ export function classifyFirearmType(
   }
 }
 
+// ────────────────────────────────────────────────────────────────────
+// TWO MORE AXES — NEITHER ONE DECIDES ON ITS OWN.
+//
+// Calibre and type decide WHETHER there is an overlap to explain. Action and
+// section never do that job: they only tell the writer how HARD to press once
+// calibre or type already has. A bolt-action .308 and a semi-automatic .308
+// are the same calibre class and, on paper, the same duplication — but a
+// reviewer reading the licence record sees two rifles built for different
+// jobs (a still, precise first shot against a fast follow-up), and the
+// motivation reads better for saying so. Two .308 BOLT rifles are the closer
+// duplication and the harder one to explain away.
+//
+// So these two run ONLY after a calibre or type match has already fired, and
+// only ever WEAKEN or SHARPEN the note that match produces — never add a
+// justification requirement of their own, and never turn an overlap into a
+// clear result or vice versa. Same discipline as everything above: a curated
+// table, matched exactly, and an unknown value contributes nothing rather
+// than being guessed at.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * The seven actions `firearm_action` offers (SAPS 271 item 1.1, asked finer
+ * than the form itself — see that field's comment in motivation-fields.ts).
+ *
+ * ⚠️ SIX IN THE BRIEF, SEVEN HERE. The brief that asked for this axis named
+ * "bolt / semi-auto / pump / lever / break / revolver" — six, because that is
+ * the shorthand a person reaches for. The registry's own `firearm_action`
+ * field offers a seventh, "Single shot", and leaving it unclassified would
+ * make a single-shot rifle — a real, common youth or varmint rifle in this
+ * market — silently fall out of the axis on every application, which is
+ * exactly the gap this file exists to close. Classifying it costs nothing and
+ * the registry is the authority on what can actually arrive here.
+ */
+export type FirearmAction =
+  | 'semi_auto'
+  | 'bolt'
+  | 'lever'
+  | 'pump'
+  | 'single_shot'
+  | 'revolver'
+  | 'break';
+
+export const FIREARM_ACTION_LABELS: Record<FirearmAction, string> = {
+  semi_auto: 'semi-automatic',
+  bolt: 'bolt action',
+  lever: 'lever action',
+  pump: 'pump action',
+  single_shot: 'single shot',
+  revolver: 'revolver',
+  break: 'break action',
+};
+
+/**
+ * What action a firearm has, or NULL when we do not know.
+ *
+ * ⚠️ EXACT, LIKE classifyFirearmType, AND FOR THE SAME REASON. `firearm_action`
+ * is `kind: 'choice'` over exactly these seven strings and the document
+ * extractor discards anything that is not one of them verbatim, so the only
+ * variation that can reach here is case and stray whitespace — a switch is
+ * simpler than a table and cannot drift from it. There is no held-firearm
+ * equivalent field in the registry yet (see the note on `HeldFirearm.action`
+ * below), so today this only ever fires for the firearm APPLIED for; it is
+ * written to classify a held one too the day that field lands.
+ */
+export function classifyAction(raw: string | null | undefined): FirearmAction | null {
+  switch ((raw ?? '').trim().toLowerCase()) {
+    case 'semi-automatic (self-loading)':
+      return 'semi_auto';
+    case 'bolt action':
+      return 'bolt';
+    case 'lever action':
+      return 'lever';
+    case 'pump action':
+      return 'pump';
+    case 'single shot':
+      return 'single_shot';
+    case 'revolver':
+      return 'revolver';
+    case 'break action':
+      return 'break';
+    default:
+      return null;
+  }
+}
+
+/**
+ * The section a HELD firearm's OWN licence was granted under — not the
+ * section being applied for now, which is `licenceType`.
+ *
+ * ⚠️ THREE, NOT FOUR. Section 24 is a renewal PROCESS, not a section a firearm
+ * is licensed under — nothing is ever "held under section 24", it is held
+ * under whichever of 13/15/16 it was originally granted under and renewed
+ * under the same section every time. Adding a fourth entry here would invite
+ * a caller to ask "is this held under the same section as an S24 renewal",
+ * which is a question with no answer to give.
+ */
+export type HeldSection = '13' | '15' | '16';
+
+export const HELD_SECTION_LABELS: Record<HeldSection, string> = {
+  '13': 'section 13 (self-defence)',
+  '15': 'section 15 (occasional hunter or sport shooter)',
+  '16': 'section 16 (dedicated hunter or sport shooter)',
+};
+
+/**
+ * Every spelling of a section number we accept, folded the same way the
+ * calibre table is — collapsed to lowercase alphanumerics before lookup.
+ *
+ * `licence-card-ocr.service.ts` prints "SECTION 13" / "SECTION 15" /
+ * "SECTION 16" verbatim off the card, so that spelling is the one that
+ * matters in practice; the shorter forms are here for a member or an operator
+ * typing the value in by hand.
+ */
+const HELD_SECTION_ALIASES: { section: HeldSection; names: string[] }[] = [
+  { section: '13', names: ['13', 'Section 13', 'SECTION 13', 'S13'] },
+  { section: '15', names: ['15', 'Section 15', 'SECTION 15', 'S15'] },
+  { section: '16', names: ['16', 'Section 16', 'SECTION 16', 'S16'] },
+];
+
+const HELD_SECTION_CLASS: Map<string, HeldSection> = (() => {
+  const m = new Map<string, HeldSection>();
+  for (const row of HELD_SECTION_ALIASES) {
+    for (const n of row.names) m.set(collapse(n), row.section);
+  }
+  return m;
+})();
+
+/** What section a held firearm's licence was granted under, or NULL. */
+export function classifyHeldSection(raw: string | null | undefined): HeldSection | null {
+  const key = collapse(raw ?? '');
+  if (!key) return null;
+  return HELD_SECTION_CLASS.get(key) ?? null;
+}
+
+/**
+ * The section THIS APPLICATION falls under, in the same three-value shape as
+ * a held firearm's own section — so the two can be compared directly.
+ *
+ * ⚠️ OFF ON S24, LIKE typeTestFor. A renewal is not "applying under" a
+ * section in the sense this comparison means; it is continuing to hold one.
+ * Comparing a renewal's own section against itself would restate the
+ * application, exactly as the type test's S24 note explains — see there for
+ * the fuller argument. Returning null here simply removes this axis from the
+ * note; the calibre and type tests still run their own, separate S24 rules.
+ */
+function sectionAppliedFor(
+  licenceType: MotivationLicenceType | undefined,
+): HeldSection | null {
+  switch (licenceType) {
+    case MotivationLicenceType.S13_SELF_DEFENCE:
+      return '13';
+    case MotivationLicenceType.S15_OCCASIONAL_HUNTER:
+      return '15';
+    case MotivationLicenceType.S16_DEDICATED_HUNTER:
+    case MotivationLicenceType.S16_DEDICATED_SPORT:
+      return '16';
+    default:
+      return null;
+  }
+}
+
+/**
+ * How much lighter, or heavier, one matched firearm's duplication reads once
+ * action and section are known — folded straight into its bullet in the
+ * writer's note, never into the applicant-facing `prompt`.
+ *
+ * ⚠️ NEVER INVENTS A FACT. Every clause here states something the applicant's
+ * OWN documents already carry — the action on a licence card, the section it
+ * was granted under. That is the line rule 8 draws throughout this file:
+ * facts are supplied, rationale is built. This function supplies two more
+ * facts; ARGUE_IT still tells the writer what to do with them.
+ *
+ * ⚠️ SILENT WHEN EITHER SIDE IS UNKNOWN. `HeldFirearm.action` and `.section`
+ * have no registry field yet (see the note on the interface), so today this
+ * returns '' for almost every held firearm — a no-op, not a weakening, and
+ * exactly the "unknown never lowers the guard" posture the calibre and type
+ * tests already keep.
+ */
+function overlapStrengthClause(
+  h: HeldFirearm,
+  myAction: FirearmAction | null,
+  mySection: HeldSection | null,
+): string {
+  const clauses: string[] = [];
+
+  const heldAction = classifyAction(h.action);
+  if (myAction && heldAction) {
+    clauses.push(
+      heldAction === myAction
+        ? `it is also ${FIREARM_ACTION_LABELS[myAction]}, which makes this a CLOSER duplication — press it`
+        : `it is ${FIREARM_ACTION_LABELS[heldAction]} against the ${FIREARM_ACTION_LABELS[myAction]} applied for, which is a LIGHTER duplication than an identical action would be — say so, do not argue it as if the two were the same firearm`,
+    );
+  }
+
+  const heldSection = classifyHeldSection(h.section);
+  if (mySection && heldSection) {
+    clauses.push(
+      heldSection === mySection
+        ? 'it is licensed under the SAME section as this application'
+        : `it is licensed under a DIFFERENT section (${HELD_SECTION_LABELS[heldSection]}) from this application, which is worth naming`,
+    );
+  }
+
+  return clauses.length ? ` (${clauses.join('; ')})` : '';
+}
+
 /**
  * How much weight the type test carries, per licence type.
  *
@@ -342,8 +555,49 @@ export interface HeldFirearm {
    * the only one here that a licence copy can never supply. Without it the
    * writer knows a .308 bolt-action exists and nothing about what it does, so
    * "it cannot serve this purpose" has nothing to stand on but invention.
+   *
+   * ⚠️ SINCE 2026-09-08 THIS IS USUALLY A CARD SENTENCE, NOT FREE TEXT. It is
+   * fed by `overlapFromAnswers` from `existing_firearm_N_primary_use` — the
+   * tappable version of this fact — falling back to the older free-text
+   * `_use` only where the card was never tapped. See `usedForKeys` for the
+   * machine-readable half of the same answer.
    */
   usedFor?: string;
+  /**
+   * The `PRIMARY_USE` key(s) tapped for this firearm, when it was answered
+   * through the card rather than typed as free text.
+   *
+   * ⚠️ SEPARATE FROM `usedFor` ON PURPOSE. `usedFor` is prose for the writer to
+   * read; this is the fixed vocabulary the RANKING below compares against.
+   * Free text has no fixed vocabulary to match exactly, so it can populate
+   * `usedFor` but never this — the same "curated table, exact match, unknown
+   * contributes nothing" discipline the calibre and type tests already keep,
+   * applied to ranking rather than to the verdict itself.
+   */
+  usedForKeys?: string[];
+  /**
+   * `existing_firearm_N_action`, as stored — the bolt/semi-auto/pump/lever/
+   * break/revolver/single-shot action of a HELD firearm.
+   *
+   * ⚠️ NO SUCH FIELD EXISTS IN THE REGISTRY YET (2026-09-08). `firearm_action`
+   * covers the firearm being APPLIED for; the owned-firearm rows in
+   * motivation-fields.ts do not yet ask this per row. It is on this interface,
+   * and read defensively by `overlapFromAnswers`, so the day that field lands
+   * this module needs no further change — until then it is simply always
+   * undefined, and `overlapStrengthClause` treats an unknown action as
+   * contributing nothing, never as a weakening in itself.
+   */
+  action?: string;
+  /**
+   * The section this HELD firearm's OWN licence was granted under —
+   * `licence-card-ocr.service.ts` reads it off the card as "SECTION 13" /
+   * "SECTION 15" / "SECTION 16".
+   *
+   * ⚠️ SAME GAP AS `action`. No `existing_firearm_N_section` field exists in
+   * the registry yet either, so this is read defensively for the same reason
+   * and is inert until the field is added.
+   */
+  section?: string;
 }
 
 export type OverlapVerdict =
@@ -376,6 +630,24 @@ export interface OverlapCheck {
    * there is nothing to address — we never invent a difficulty to argue with.
    */
   writerNote: string | null;
+  /**
+   * Which of the seven fixed OVERLAP_ANGLES this overlap is best answered by,
+   * RANKED — never a new vocabulary, and never filtered down. See
+   * `suggestedAngleFor` for how the order is chosen.
+   *
+   * ⚠️ THE VOCABULARY IS FIXED IN motivation-cards.ts SO THAT allowedValues()
+   * CAN VALIDATE A STORED ANSWER. A set computed per applicant could not be
+   * checked on save — the sheet offers `overlap_angle` as an ordinary `cards`
+   * field over the fixed OVERLAP_ANGLES, and this array only ever reorders
+   * that same list for this applicant.
+   *
+   * Null exactly when there is no overlap to explain — `verdict.kind` is
+   * `'clear'` or `'unknown'`. We never rank a difficulty that has not been
+   * established, for the same reason `writerNote` stays null there: inventing
+   * one to argue against is a different sin from missing one, but it is
+   * still an invention.
+   */
+  suggestedAngle: CardOption[] | null;
 }
 
 export interface OverlapOptions {
@@ -392,6 +664,12 @@ export interface OverlapOptions {
    * test — we compare what we were given, and nothing else.
    */
   appliedForType?: string;
+  /**
+   * `firearm_action` for the firearm applied for. Without it — or without a
+   * held firearm's own action, which the registry does not carry yet — the
+   * action axis contributes nothing to the note. See `overlapStrengthClause`.
+   */
+  appliedForAction?: string;
   /**
    * Which overlap this licence type actually turns on; see typeTestFor.
    * Absent means the calibre leads and a type match is reported behind it.
@@ -482,8 +760,12 @@ const ARGUE_IT = [
  * sentence — maxSimilarity and fingerprint() exist to catch exactly that, and
  * we would be manufacturing the signal ourselves.
  */
-function perFirearm(h: HeldFirearm): string {
-  const name = describeHeld(h);
+function perFirearm(
+  h: HeldFirearm,
+  myAction: FirearmAction | null,
+  mySection: HeldSection | null,
+): string {
+  const name = describeHeld(h) + overlapStrengthClause(h, myAction, mySection);
   return h.usedFor
     ? `• ${name} — the applicant uses it for: ${h.usedFor}.`
     : // ⚠️ NO USE SUPPLIED MEANS ARGUE FROM THE CHAMBERING AND STOP. Saying
@@ -495,6 +777,158 @@ function perFirearm(h: HeldFirearm): string {
 /** How the applicant would recognise a held firearm in a sentence. */
 function describeHeld(h: HeldFirearm): string {
   return h.describedAs?.trim() || h.calibre?.trim() || (h.type ?? '').trim();
+}
+
+// ────────────────────────────────────────────────────────────────────
+// suggestedAngle — WHICH OF THE SEVEN FIXED ANGLES TO OFFER FIRST.
+//
+// Everything above decides WHETHER there is an overlap. This decides which of
+// motivation-cards.ts's fixed OVERLAP_ANGLES the applicant is most likely to
+// tap — never a new sentence, never a filtered list, only a reordering, so an
+// applicant whose real reason sits fifth can still find it.
+//
+// Three buckets, checked in order, each keyed to what actually matched:
+//
+//   1. dedicated status (S16) + the CALIBRE CLASS matched → division / backup
+//      / match-and-practice lead. The Act recognises a dedicated shooter
+//      holding several similar firearms for exactly these reasons, including
+//      two firearms of the same handgun class for two IPSC divisions.
+//   2. the TYPE matched but the calibre class did not (two rifles, different
+//      game) → different quarry / different range lead. This is the softer,
+//      "secondary" framing typeParagraph already writes for a hunter.
+//   3. everything else — a calibre-only match against a type we cannot or did
+//      not confirm as the same, or a type match without dedicated status
+//      (two handguns for a section 13 applicant, say) → different format /
+//      different purpose lead, because we have the least specific evidence
+//      here and those two angles ask the fewest questions to be true.
+//
+// A held firearm's OWN stated purpose overrides all three when it actually
+// conflicts with what this application is for — a firearm kept for
+// self-defence sitting next to a dedicated SPORT application is not a
+// division question, it is a different-purpose one, and OVERLAP_ANGLES'
+// `different_purpose` is put first regardless of which bucket above would
+// otherwise have led.
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * The three purpose families `PRIMARY_USE` keys fall into, coarse on purpose
+ * — the same reasoning QuarryClass uses for calibres. `collection` and
+ * `unused` are deliberately absent: neither is a purpose a writer can argue
+ * FROM, so neither should ever crowd out a more useful angle.
+ */
+type PurposeFamily = 'self_defence' | 'hunting' | 'sport';
+
+const PURPOSE_FAMILY_BY_USE_KEY: Readonly<Record<string, PurposeFamily>> = {
+  self_defence_carry: 'self_defence',
+  home_defence: 'self_defence',
+  small_game: 'hunting',
+  plains_game: 'hunting',
+  dangerous_game: 'hunting',
+  wingshooting: 'hunting',
+  clays: 'sport',
+  sport_competition: 'sport',
+  sport_practice: 'sport',
+};
+
+/**
+ * What family THIS APPLICATION belongs to, or null when it does not answer
+ * that question (a renewal is not applying for a new purpose).
+ *
+ * ⚠️ SECTION 15 IS TREATED AS HUNTING. The section genuinely covers "an
+ * occasional hunter OR an occasional sports person" (see SPORT_REASONS'
+ * comment), and this module has no independent signal to tell which an S15
+ * applicant is. Defaulting to hunting is the same conservative call the rest
+ * of this file makes when it cannot tell: it costs nothing when wrong,
+ * because ranking only reorders — different_purpose still ranks lower, not
+ * absent, on the S15 sport applicant this misreads.
+ */
+function purposeFamilyOfApplication(
+  licenceType: MotivationLicenceType | undefined,
+): PurposeFamily | null {
+  switch (licenceType) {
+    case MotivationLicenceType.S13_SELF_DEFENCE:
+      return 'self_defence';
+    case MotivationLicenceType.S15_OCCASIONAL_HUNTER:
+    case MotivationLicenceType.S16_DEDICATED_HUNTER:
+      return 'hunting';
+    case MotivationLicenceType.S16_DEDICATED_SPORT:
+      return 'sport';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Does any matched held firearm's OWN stated purpose genuinely conflict with
+ * what this application is for?
+ *
+ * ⚠️ ONLY THE TAPPED CARD COUNTS, NEVER THE FREE-TEXT `usedFor`. Free text has
+ * no fixed vocabulary to compare against exactly, and this file does not
+ * guess — the same discipline classifyCalibre and classifyFirearmType already
+ * keep, applied here to ranking instead of to the verdict. A held firearm
+ * whose purpose was only ever typed as a sentence contributes nothing to this
+ * check; it can still be described in the writer's note, just not ranked by.
+ */
+function purposeConflicts(
+  matched: HeldFirearm[],
+  licenceType: MotivationLicenceType | undefined,
+): boolean {
+  const applied = purposeFamilyOfApplication(licenceType);
+  if (!applied) return false;
+  for (const h of matched) {
+    for (const key of h.usedForKeys ?? []) {
+      const family = PURPOSE_FAMILY_BY_USE_KEY[key];
+      if (family && family !== applied) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Put the named keys first, in the order given, then everything else in
+ * OVERLAP_ANGLES' own order — which is itself grouped to match the three
+ * buckets above (division/backup/match-and-practice, then quarry/range, then
+ * format/purpose), so "the rest" always falls back the same sensible way.
+ *
+ * Never filters — every key from OVERLAP_ANGLES survives, so an applicant
+ * whose real reason is not one of the ones led with can still tap it.
+ */
+function leadWith(keys: readonly string[]): CardOption[] {
+  const uniqueKeys = [...new Set(keys)];
+  const lead = uniqueKeys
+    .map((k) => OVERLAP_ANGLES.find((o) => o.key === k))
+    .filter((o): o is CardOption => !!o);
+  const rest = OVERLAP_ANGLES.filter((o) => !uniqueKeys.includes(o.key));
+  return [...lead, ...rest];
+}
+
+/**
+ * The ranked OVERLAP_ANGLES for one overlap — see the banner above for the
+ * three buckets and the purpose override. Called only when `verdict.kind` is
+ * `'overlap'`; callers elsewhere return null instead of calling this.
+ */
+function suggestedAngleFor(
+  quarry: QuarryClass | null,
+  firearmType: FirearmType | null,
+  dedicatedStatus: boolean | undefined,
+  licenceType: MotivationLicenceType | undefined,
+  matched: HeldFirearm[],
+): CardOption[] {
+  const leadKeys: string[] = [];
+
+  if (purposeConflicts(matched, licenceType)) {
+    leadKeys.push('different_purpose');
+  }
+
+  if (dedicatedStatus && quarry !== null) {
+    leadKeys.push('different_division', 'backup', 'match_and_practice');
+  } else if (firearmType !== null && quarry === null) {
+    leadKeys.push('different_quarry', 'different_range');
+  } else {
+    leadKeys.push('different_format', 'different_purpose');
+  }
+
+  return leadWith(leadKeys);
 }
 
 /**
@@ -514,6 +948,12 @@ export function checkOverlap(
   const typeTest = typeTestFor(opts.licenceType);
   const myType =
     typeTest === 'off' ? null : classifyFirearmType(opts.appliedForType);
+  // ⚠️ NEITHER OF THESE GATES ANYTHING BELOW. Unlike myType, an unknown or
+  // absent action/section never turns a test off — they only ever refine a
+  // note that a calibre or type match already produced. See the banner above
+  // classifyAction for why they run this way.
+  const myAction = classifyAction(opts.appliedForAction);
+  const mySection = sectionAppliedFor(opts.licenceType);
 
   // ⚠️ THE TYPE TEST RUNS FIRST, AND ON PURPOSE. It used to be that an
   // unreadable applied-for calibre returned early and nothing else was
@@ -561,6 +1001,9 @@ export function checkOverlap(
         needsJustification: false,
         prompt: null,
         writerNote: null,
+        // We do not know there IS an overlap yet, so there is nothing to rank
+        // an angle against. See the note on OverlapCheck.suggestedAngle.
+        suggestedAngle: null,
       };
     }
     // An unreadable existing calibre is NOT a clean bill of health. Say so,
@@ -574,6 +1017,7 @@ export function checkOverlap(
           'If any of them is used for the same kind of hunting or shooting, say so in your answers — ' +
           'it is much better to explain it than to leave the Registrar to notice it.',
         writerNote: null,
+        suggestedAngle: null,
       };
     }
     return {
@@ -581,6 +1025,7 @@ export function checkOverlap(
       needsJustification: false,
       prompt: null,
       writerNote: null,
+      suggestedAngle: null,
     };
   }
 
@@ -667,12 +1112,21 @@ export function checkOverlap(
     if (typeNamed.length && myType) typeParagraph();
   }
 
+  const quarry = calibreMatches.length ? (mine as QuarryClass) : null;
+  const firearmType = typeMatches.length ? myType : null;
+  // Dedup by REFERENCE, for the ranking's usedFor signal — every held firearm
+  // that matched either test, each counted once even when it matched both.
+  // (The writerNote below dedups the same set a different way, by the STRING
+  // perFirearm produces for it; both land on the same firearms because both
+  // arrays are built by iterating the SAME `held` list.)
+  const matchedFirearms = [...new Set([...calibreMatched, ...typeMatched])];
+
   return {
     verdict: {
       kind: 'overlap',
-      quarry: calibreMatches.length ? (mine as QuarryClass) : null,
+      quarry,
       withCalibres: calibreMatches,
-      firearmType: typeMatches.length ? myType : null,
+      firearmType,
       withTypes: typeMatches,
     },
     needsJustification: true,
@@ -683,8 +1137,19 @@ export function checkOverlap(
     // passage covering all of them — which is what a joined list reliably
     // produced and what the corpus never does.
     writerNote: `${notes.join(' ')}\n\nTAKE THESE ONE AT A TIME. Write a short paragraph for EACH firearm below — name it, say what it is used for where that is stated, and close on why it cannot do the job this application is about. Do not merge them into one passage, and do not reuse the same closing sentence twice.\n${[
-      ...new Set([...calibreMatched, ...typeMatched].map(perFirearm)),
+      ...new Set(
+        [...calibreMatched, ...typeMatched].map((h) =>
+          perFirearm(h, myAction, mySection),
+        ),
+      ),
     ].join('\n')}`,
+    suggestedAngle: suggestedAngleFor(
+      quarry,
+      firearmType,
+      opts.dedicatedStatus,
+      opts.licenceType,
+      matchedFirearms,
+    ),
   };
 }
 
@@ -730,6 +1195,41 @@ interface OwnedRow {
   serial: string;
 }
 
+/**
+ * Reads a tapped `existing_firearm_N_primary_use` answer into the sentences
+ * the writer sees AND the keys the ranking above compares exactly.
+ *
+ * ⚠️ COMMA LIST, LIKE EVERY OTHER `cards` FIELD. `kind: 'cards'` is "stored
+ * exactly like `multi`" (see the type's own comment in motivation-fields.ts),
+ * so this is the same split-trim-filter every other reader of a multi/cards
+ * answer already does — see e.g. `cardSentences` in motivation-preview.ts,
+ * which this deliberately does not import: that module is Nest-adjacent
+ * scaffolding for the new sheet and this file stays PURE, with no dependency
+ * beyond the fixed vocabulary itself.
+ *
+ * ⚠️ AN UNRECOGNISED KEY IS DROPPED, NOT PRINTED. A retired PRIMARY_USE option
+ * still stored on an old draft must not reach the writer as a raw slug like
+ * `self_defence_carry` — see CardOption's own note on why `key` and `sentence`
+ * are separate. Dropped from both the sentence list and the key list, so a
+ * retired option also cannot skew the ranking.
+ */
+function primaryUseFromCards(raw: string): { keys: string[]; sentences: string[] } {
+  const tapped = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const keys: string[] = [];
+  const sentences: string[] = [];
+  for (const k of tapped) {
+    const found = PRIMARY_USE.find((o) => o.key === k);
+    if (found) {
+      keys.push(k);
+      sentences.push(found.sentence);
+    }
+  }
+  return { keys, sentences };
+}
+
 function ownedRows(answers: Record<string, string>): OwnedRow[] {
   const rows: OwnedRow[] = [];
   for (let n = 1; n <= OWNED_ROWS; n++) {
@@ -747,12 +1247,32 @@ function ownedRows(answers: Record<string, string>): OwnedRow[] {
     // calibre there is nothing to name it by, so it gets an article rather than
     // being read out as "you already hold rifle".
     const named = [calibre, make, type.toLowerCase()].filter(Boolean).join(' ');
+    // ⚠️ THE TAPPED CARD LEADS; THE OLDER FREE TEXT IS THE FALLBACK, NEVER THE
+    // OTHER WAY ROUND — and never both at once. `existing_firearm_N_primary_use`
+    // is what is asked from 2026-09-08 (see PRIMARY_USE's own note); `_use` is
+    // what a draft saved before that date already holds, typed rather than
+    // tapped. Falling back only when the card was never tapped means an answer
+    // somebody already gave is never overwritten by an empty card and never
+    // lost by preferring one source unconditionally.
+    const { keys: usedForKeys, sentences: usedForSentences } = primaryUseFromCards(
+      at('primary_use'),
+    );
     rows.push({
       held: {
         calibre,
         type,
         describedAs: calibre ? named : `a ${named}`,
-        usedFor: at('use') || undefined,
+        usedFor: usedForSentences.length
+          ? usedForSentences.join(' ')
+          : at('use') || undefined,
+        usedForKeys: usedForKeys.length ? usedForKeys : undefined,
+        // ⚠️ NEITHER KEY EXISTS IN THE REGISTRY YET — see the note on
+        // HeldFirearm.action/.section. Read defensively so this file needs no
+        // change the day either field lands; until then `at()` returns '' and
+        // both stay undefined, which the strength clause treats as "no
+        // information" rather than "no overlap".
+        action: at('action') || undefined,
+        section: at('section') || undefined,
       },
       make,
       licenceNo: at('licence_no'),
@@ -837,6 +1357,7 @@ export function overlapFromAnswers(
         needsJustification: false,
         prompt: null,
         writerNote: null,
+        suggestedAngle: null,
       };
     }
     rows.splice(self, 1);
@@ -852,6 +1373,7 @@ export function overlapFromAnswers(
     {
       dedicatedStatus,
       appliedForType: answers.firearm_type,
+      appliedForAction: answers.firearm_action,
       licenceType,
     },
   );

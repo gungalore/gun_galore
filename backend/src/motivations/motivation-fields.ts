@@ -3,6 +3,19 @@ import {
   DISCIPLINE_OTHER,
   disciplinesInScope,
 } from './shooting-disciplines';
+import {
+  HUNT_GAME_CLASS,
+  HUNT_REASONS,
+  HUNT_TERRAIN,
+  HUNT_WHERE,
+  OVERLAP_ANGLES,
+  PRIMARY_USE,
+  S13_CARRY_STYLE,
+  S13_MOVEMENTS,
+  S13_REASONS,
+  SPORT_FORMATS,
+  SPORT_REASONS,
+} from './motivation-cards';
 import { ENDORSEMENT_LABELS } from '../common/sa-competency';
 import { answerValue } from '../common/card-placeholder';
 
@@ -55,24 +68,59 @@ import { answerValue } from '../common/card-placeholder';
 // ownedFirearmSerial() reads them back. That is exactly the "re-meant" case
 // the rule above is about: `_serial` is a key that has never existed, and
 // `_barrel_serial` is a key that has stopped being asked.
-export const FIELD_REGISTRY_VERSION = '2026-09-07c';
+//
+// 2026-09-08: the Motivation Centre rebuild, Phase 1. The largest single
+// change this registry has had, so the version moves a whole day rather than
+// taking a suffix. In summary — see MOTIVATION-REBUILD-BRIEF.md §5.1:
+//
+//   ADDED    kind 'cards' and eleven card sets (motivation-cards.ts); the
+//            'Your premises' section; `existing_firearm_N_primary_use` on all
+//            fourteen owned rows; `overlap_angle`; the field properties
+//            `options`, `scope` and `internal`; `showIf.hasAny`.
+//   RETIRED  `fill_saps271` AS A QUESTION. The SAPS 271 is always produced now
+//            and Part F is filled by source route. The key is still ACCEPTED
+//            (see RETIRED_FIELDS) so a draft holding it still saves.
+//   RE-MEANT `formOnly`. It no longer decides what is ASKED, only what reaches
+//            the writer. Roughly forty-eight questions that hung off the 271
+//            opt-in are now asked of everybody — including the six history
+//            questions, which on the dealer path were never asked at all.
+//   RE-MEANT every `long` field. None is `required` any more; each is now the
+//            optional, prefilled "anything else" box under the cards that
+//            replaced it as the primary input.
+//   MOVED    the four safe fields out of 'Storage and safety' and into
+//            'Your premises', which also gains seven new questions.
+//
+// ⚠️ A BLOB WRITTEN BEFORE THIS VERSION STILL LOADS AND STILL SAVES, which is
+// the whole reason the version is stamped rather than assumed. Every removal
+// above is a RETIREMENT — fieldByKey still finds the key — and not a deletion,
+// so the wizard's whole-blob autosave cannot drop an answer somebody gave.
+export const FIELD_REGISTRY_VERSION = '2026-09-08';
 
-// ── THE SAPS 271 IS AN OPT-IN EXTRA, NOT THE PRODUCT ────────────────
+// ── THE SAPS 271 IS ALWAYS PRODUCED, AND NOBODY IS ASKED ────────────
 //
-// Operator, 2026-08-19: "the 271 form is an addition. The motivation is the
-// big cookie we need to have perfect. The user must have the option not to
-// have the 271 filled in — most of the time the dealer will fill in the form
-// for them already."
+// ⚠️ THIS REPLACED AN OPT-IN, 2026-09-08. It used to be one early question —
+// "should we fill in your SAPS 271 as well?" — and EVERY formOnly field hung
+// off the answer, so choosing the dealer path made roughly half the registry
+// vanish: phones, postal codes, marital status, the spouse, the firearms-owned
+// table, and the six history questions.
 //
-// So one early question decides it, and EVERY formOnly field hangs off the
-// answer. Say the dealer is doing the form and roughly half the registry
-// simply never appears: phones, postal codes, marital status, the spouse, the
-// firearms-owned table, the six history questions. The motivation path
-// collapses to the ~15 answers the document actually needs.
+// It was the wrong question, for a reason that is structural rather than a
+// matter of taste. The form is split by PARTY, not by "the dealer does it or
+// we do": D, G and H are the applicant's half in every case, and a dealer
+// completes E, F and their own 350(a) — never G and H. So the opt-in asked
+// somebody on screen one to decide something the dealer does not actually
+// decide for them, and a "my dealer will do it" answer silently withheld the
+// six history questions, which is the one thing a motivation must address
+// head-on: a conviction never reached the writer at all.
 //
-// The values survive a change of heart: switching to the dealer path hides
-// the fields but never deletes what was typed, and switching back restores
-// them filled.
+// So every pack now ships a pre-filled 271 with D, G and H complete and E from
+// what we read off the firearm, and Part F is filled BY SOURCE ROUTE — dealer
+// leaves F blank with a cover note, a private sale fills 81-87 from the seller
+// consent flow, an estate fills Type E from the executor's letter. See
+// saps271.service.ts, which owns that rule, and MOTIVATION-INTAKE-PLAN.md §1.
+//
+// A 271 nobody uses costs one sheet of paper. A 271 nobody was offered costs
+// a counter visit.
 /**
  * Where the firearm is coming from.
  *
@@ -119,31 +167,37 @@ export const SOURCE_ESTATE = 'Inherited from a deceased estate';
  * See competencyRenewalNote in licence-renewal.ts, which owns the rule. This
  * key is where that answer is PUT so the checklist can read it back.
  *
- * ⚠️ HIDDEN BY TWO RULES THAT CONTRADICT EACH OTHER, AND THAT IS THE POINT.
- * There is no "internal" flag on a field, and inventing one would have to be
- * honoured independently by the wizard's own mirror of isVisible() in
+ * ⚠️ HIDDEN BY `internal`, SINCE 2026-09-08. It used to be hidden by two rules
+ * that contradicted each other — formOnly (hidden unless fill_saps271 was
+ * 'Fill it in for me') set against showIf (shown only when it was 'My dealer
+ * will fill it in'), so no answer satisfied both. That was written because
+ * there WAS no internal flag, and inventing one would have had to be honoured
+ * independently by the wizard's own mirror of isVisible() in
  * frontend/lib/motivations-api.ts — two implementations that must agree, with
  * the failure mode being a Yes/No box turning up in somebody's renewal asking
- * a question we already answered from their own documents. So this uses the
- * two gates BOTH sides already honour, set against each other:
+ * a question we already answered from their own documents.
  *
- *   formOnly  — hidden unless fill_saps271 is 'Fill it in for me'
- *   showIf    — shown only when fill_saps271 is 'My dealer will fill it in'
+ * Both halves of that reasoning have since gone. formOnly stopped deciding
+ * what is asked (brief §2.6), which broke the contradiction outright; and the
+ * frontend mirror is retired in favour of the server-computed item state in
+ * motivation-sheet.service.ts. `internal` is honoured in exactly one place,
+ * which makes it both simpler and safer than the trick it replaced.
  *
- * No answer satisfies both, so it is never asked, on either side, with no new
- * concept to keep in step. Each clause is separately well-formed — it names a
- * real field and a value that field can really hold — which is what the
- * registry-integrity suite checks, and it is the reason this is written as a
- * contradiction rather than as a `showIf` pointing at an impossible value: an
- * unreachable value is exactly the typo that suite exists to catch, and a
- * deliberate one would have to blind it to the accidental ones.
- *
- * ⚠️ formOnly IS ALSO DOING REAL WORK ON ITS OWN. It is what keeps a field
- * out of the fact pack (see factPackFields), and a model handed
+ * ⚠️ AND IT STILL HAS TO STAY OUT OF THE FACT PACK. A model handed
  * "competency_renews_with_licence: Yes" would find a way to argue from it. It
  * is an instruction about a second form, not a reason anybody needs a firearm.
+ * factPackFields excludes `internal` with no escape hatch for exactly this.
  */
 export const COMPETENCY_RENEWS_KEY = 'competency_renews_with_licence';
+
+/**
+ * The confirmed overlap angle — "this one will be my ___".
+ *
+ * Named because three modules reach for it: the registry declares it,
+ * motivation-overlap.ts ranks its options, and the sheet renders it as a card
+ * under the source row. See OVERLAP_ANGLES for the wording.
+ */
+export const OVERLAP_ANGLE_KEY = 'overlap_angle';
 
 export const SAPS271_OPT_KEY = 'fill_saps271';
 export const SAPS271_FILL = 'Fill it in for me';
@@ -206,7 +260,44 @@ export type MotivationFieldKind =
   | 'date'
   | 'choice'
   | 'multi'
-  | 'yesno';
+  | 'yesno'
+  /**
+   * A GRID OF FIRST-PERSON SENTENCES THE APPLICANT TAPS. Stored exactly like
+   * `multi` — a comma list in the offered order — so `showIf` and
+   * sanitiseAnswers need no new storage rule.
+   *
+   * ⚠️ SELECTED MEANS TRUE, AND THAT IS WHY IT IS SENTENCES AND NOT LABELS.
+   * The applicant signs their name under the motivation these produce, so
+   * every option reads as something they are asserting about themselves and
+   * only a tapped one reaches the writer. FCA s120(9)(f) — a false statement
+   * on an application is an offence — is the reason this is selection and
+   * never silent inclusion. See motivation-cards.ts, where the wording lives.
+   */
+  | 'cards';
+
+/**
+ * One tile in a `cards` field.
+ *
+ * ⚠️ THE SENTENCE IS THE VALUE THE MEMBER SIGNS UNDER, NOT A LABEL FOR ONE.
+ * `key` is what is stored and what `showIf` matches; `sentence` is what the
+ * applicant reads and what the writer may use verbatim. They are separate so
+ * the operator can reword a card (§9.2 review) without invalidating every
+ * stored answer — the same discipline as retiredChoices one level down.
+ */
+export interface CardOption {
+  /** Stored value. Stable across rewordings. */
+  key: string;
+  /** First person, one sentence, ends in a full stop. */
+  sentence: string;
+  /**
+   * How the server ranks this set for THIS applicant, when it can.
+   *
+   * Declared in the registry, computed in the research layer — a card set with
+   * no ranking is offered in registry order, which is always correct and never
+   * personalised.
+   */
+  rankBy?: 'calibre' | 'association' | 'precinct' | 'occupation';
+}
 
 export interface MotivationField {
   key: string;
@@ -214,6 +305,55 @@ export interface MotivationField {
   kind: MotivationFieldKind;
   /** Section the wizard groups it under. */
   section: string;
+  /**
+   * The tiles, for `kind: 'cards'`.
+   *
+   * ⚠️ NOT `choices`. A choice is a word in a dropdown; a card is a claim. They
+   * are separate properties so nothing can quietly render fifty-nine
+   * disciplines as tick-boxes, or a card set as a select.
+   */
+  options?: readonly CardOption[];
+  /**
+   * WHO THE ANSWER BELONGS TO — this application, or the person.
+   *
+   * ⚠️ 'profile' ANSWERS ARE SHARED ACROSS EVERY APPLICATION THE MEMBER EVER
+   * MAKES. Marital status, what their premises look like, what each firearm
+   * they already own is used for, whether they reload: none of that is a fact
+   * about an application, and asking it again on the second one is the single
+   * clearest way to tell somebody we were not listening the first time.
+   *
+   * They are stored in MemberProfileAnswers, not in the motivation's own blob,
+   * and offered back through the existing ProvenanceSource 'PROFILE'. Absent
+   * means 'application', which is what almost every field is.
+   */
+  scope?: 'profile' | 'application';
+  /**
+   * A FINDING WE WRITE, NEVER A QUESTION WE ASK.
+   *
+   * ⚠️ ACCEPTED, NEVER ASKED, NEVER SERVED, NEVER IN THE FACT PACK. Three
+   * fields are filled in by us from the member's own documents and lookups —
+   * the province of their police station, the press clippings they picked, and
+   * whether their competency runs to the licence being renewed — and putting
+   * any of them on screen as a box would be asking a question we have already
+   * answered.
+   *
+   * ⚠️ THIS REPLACED A DELIBERATE CONTRADICTION, and the history matters
+   * because it is the reason this flag is safe now and was not before. Those
+   * three used to be hidden by setting `formOnly` (needs fill_saps271 = "Fill
+   * it in for me") against `showIf` (needs fill_saps271 = "My dealer will fill
+   * it in") so no answer satisfied both. That trick was written because
+   * isVisible() had a MIRROR in frontend/lib/motivations-api.ts, and a flag
+   * honoured by one side and not the other puts a box in front of somebody.
+   *
+   * The mirror is gone: motivation-sheet.service.ts computes every item's
+   * state on the server and the screen renders what it is told. One
+   * implementation, so one flag can be trusted.
+   *
+   * ⚠️ AND IT MUST STAY OUT OF factPackFields. "competency_renews_with_licence:
+   * Yes" is an instruction about a second form, not a reason anybody needs a
+   * firearm, and a model handed it will find a way to argue from it.
+   */
+  internal?: true;
   /** Shown under the input. Plain, no legalese. */
   help?: string;
   choices?: readonly string[];
@@ -280,7 +420,22 @@ export interface MotivationField {
    * married, the detail of a conviction when one is disclosed. The wizard hides
    * it, and `missingRequired` does not demand it, until the condition holds.
    */
-  showIf?: { key: string; equals: string };
+  showIf?: {
+    key: string;
+    /** Shown when the named answer is (or, for a list, contains) this value. */
+    equals?: string;
+    /**
+     * Shown when the named `cards` or `multi` field has ANY tap at all.
+     *
+     * ⚠️ THE "IN YOUR OWN WORDS" BOXES NEED THIS AND `equals` CANNOT GIVE IT.
+     * The optional textarea under a card grid is prefilled from whatever was
+     * tapped, so it belongs on screen once anything is tapped and nowhere
+     * before — a condition about the SHAPE of the answer, not its content.
+     * Written as `equals` it would need one clause per option and would silently
+     * stop matching the day the operator adds a tenth card.
+     */
+    hasAny?: true;
+  };
   /**
    * Collected for the SAPS 271 and NEVER put in front of the writer.
    *
@@ -391,6 +546,20 @@ export interface MotivationField {
 export const OWNED_SECTION = 'Firearms you already own';
 
 /**
+ * The premises section — the wall, the gate, the alarm, the safe.
+ *
+ * ⚠️ IT REPLACED 'Storage and safety', WHICH ONLY EVER HELD THE SAFE. Every
+ * approved motivation carries a security paragraph covering the whole
+ * property, and the registry could not write one: it held four questions about
+ * the safe and a free-text box asking the applicant to write the rest
+ * themselves. Named for what it covers, not for what it used to.
+ *
+ * Every field in it is `scope: 'profile'` — a wall does not move between
+ * applications.
+ */
+export const PREMISES_SECTION = 'Your premises';
+
+/**
  * How many owned-firearm rows the registry carries.
  *
  * ⚠️ FOURTEEN, AND IT USED TO BE SIX. The note that stood here read: "Six
@@ -486,6 +655,10 @@ export const OWNED_ROW_COLUMNS = [
   'type',
   'calibre',
   'use',
+  // A tapped purpose is evidence somebody has been in this row, exactly as a
+  // typed one is — see the note on ownedRowTaken about which direction is
+  // safe to be wrong in.
+  'primary_use',
   'licence_no',
   'barrel_serial',
   'frame_serial',
@@ -668,6 +841,29 @@ function ownedFirearmRow(n: number): MotivationField[] {
       maxLength: 120,
     },
     {
+      // ⚠️ THE TAPPABLE VERSION OF `_use` ABOVE, AND BOTH SURVIVE ON PURPOSE.
+      // `_use` is free text somebody may already have typed, and nothing this
+      // module does ever throws that away. This is what is ASKED from
+      // 2026-09-08 — one tap against a ranked list rather than a sentence to
+      // compose — and it is what motivation-overlap.ts reads.
+      //
+      // ⚠️ PROFILE-SCOPED: ASKED ONCE PER FIREARM, EVER. A firearm's purpose
+      // does not change because a second application was started, and the
+      // Document Centre asks it at the moment a licence is adopted into the
+      // vault (vault-adoption.service.ts) so an application usually meets it
+      // already answered.
+      //
+      // ⚠️ NEVER docSourced, AND IT NEVER CAN BE. A licence copy carries make,
+      // calibre and serial; nothing printed on it says what the firearm is
+      // for. This is the one fact in the row that has to come from the person.
+      key: `${p}primary_use`,
+      label: 'What it is for',
+      kind: 'cards',
+      section: OWNED_SECTION,
+      options: PRIMARY_USE,
+      scope: 'profile',
+    },
+    {
       key: `${p}licence_no`,
       docSourced: 'CURRENT_LICENCE',
       label: 'Licence or permit no',
@@ -722,23 +918,41 @@ const LEGACY_OWNED_FIELDS: readonly MotivationField[] = Array.from(
   },
 ]);
 
-const LEGACY_BY_KEY = new Map(LEGACY_OWNED_FIELDS.map((f) => [f.key, f]));
-
-const COMMON_FIELDS: readonly MotivationField[] = [
+/**
+ * A WHOLE FIELD THAT IS NO LONGER ASKED, AND STILL HAS TO SAVE.
+ *
+ * ⚠️ RETIRED, NOT DELETED — the same rule as retiredChoices and
+ * LEGACY_OWNED_FIELDS, applied to the field rather than to one of its values.
+ * The wizard resends the WHOLE answers blob on every autosave, so a key that
+ * simply vanished from the registry would fail sanitiseAnswers on every
+ * keystroke anywhere in the form for anybody whose draft already holds it.
+ *
+ * ⚠️ AND IT IS STILL REACHABLE THROUGH fieldByKey, WHICH IS WHAT MAKES `internal`
+ * NECESSARY RATHER THAN OPTIONAL. Because an answer to this key can still
+ * arrive on the wire and still be stored, any field gated on its value would
+ * still be openable — which is precisely why the three never-asked fields
+ * stopped being gated on it. See `internal`.
+ *
+ * 2026-09-08: the SAPS 271 stopped being an opt-in extra. Part F is filled by
+ * source route instead (dealer blank, private from the seller consent, estate
+ * from the executor letter), so nothing is decided by asking, and the ~48
+ * questions this used to un-hide are simply asked of everybody. Brief §2.5.
+ */
+const RETIRED_FIELDS: readonly MotivationField[] = [
   {
-    // First on purpose: the answer decides whether half the registry exists.
-    // Required, because it is one tap and an accidental default is worse than
-    // a deliberate choice in either direction. formOnly so the writer never
-    // sees it — "the applicant chose to have the form filled" is padding fuel.
     key: SAPS271_OPT_KEY,
     label: 'Should we fill in your SAPS 271 application form as well?',
     kind: 'choice',
     section: 'The SAPS 271 form',
     choices: [SAPS271_DEALER, SAPS271_FILL],
-    help: 'Most dealers complete the SAPS 271 with you when you buy the firearm. If yours will, choose that and we prepare only the motivation pack — far fewer questions. You can change your mind at any time.',
-    required: true,
-    formOnly: true,
   },
+];
+
+const LEGACY_BY_KEY = new Map(
+  [...LEGACY_OWNED_FIELDS, ...RETIRED_FIELDS].map((f) => [f.key, f]),
+);
+
+const COMMON_FIELDS: readonly MotivationField[] = [
   {
     key: 'full_name',
     docSourced: 'IDENTITY_DOCUMENT',
@@ -790,7 +1004,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'About you',
     help: 'Leave blank if post reaches you at the address above.',
     sensitive: true,
-    formOnly: true,
     maxLength: 400,
   },
   {
@@ -823,7 +1036,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'About you',
     sensitive: true,
-    formOnly: true,
     maxLength: 30,
   },
   {
@@ -832,7 +1044,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     kind: 'short',
     section: 'About you',
     sensitive: true,
-    formOnly: true,
     maxLength: 30,
   },
   {
@@ -865,7 +1076,11 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     // back to Other where it cannot be told.
     choices: ['Single', 'Married', 'Life partner', 'Divorced', 'Widowed'],
     required: true,
-    formOnly: true,
+    // ⚠️ PROFILE, NOT APPLICATION. Somebody's marital status is a fact about
+    // them, not about this firearm, and asking it again on their second
+    // application is the clearest way to say we were not listening on the
+    // first. Same for the spouse's name below.
+    scope: 'profile',
   },
   {
     key: 'spouse_name',
@@ -875,7 +1090,7 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     showIf: { key: 'marital_status', equals: 'Married' },
     required: true,
     sensitive: true,
-    formOnly: true,
+    scope: 'profile',
     maxLength: 120,
   },
   {
@@ -1181,23 +1396,121 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     maxLength: 60,
   },
   {
-    key: 'firearm_fit_reason',
-    label: 'Why this particular firearm suits the purpose',
-    kind: 'long',
+    // ⚠️ THE ANSWER THAT USED TO BE AN EMPTY TEXTAREA ON STEP 3.
+    //
+    // "You already hold a CZ 75 in 9mm — what will this one be?" is the
+    // question that gets a second similar firearm refused, and the Registrar
+    // asks it whether or not we raised it first. It arrived as
+    // `overlap_justification`, a blank long box titled "overlap
+    // justification", and almost nobody filled it in.
+    //
+    // ⚠️ THE OPTIONS ARE RANKED BY motivation-overlap.ts, NOT LISTED HERE. The
+    // vocabulary is fixed (OVERLAP_ANGLES) so allowedValues can validate a
+    // stored answer; which of them are offered, and in what order, comes from
+    // the type, action, calibre class and section of what is already held.
+    //
+    // Never required: an applicant who holds nothing has no overlap to
+    // explain, and the sheet does not render the card at all in that case.
+    key: OVERLAP_ANGLE_KEY,
+    label: 'What this one will be',
+    kind: 'cards',
     section: 'The firearm',
-    help: 'Calibre, action and configuration against what you actually intend to do with it.',
-    required: true,
-    maxLength: 2000,
+    options: OVERLAP_ANGLES,
+    help: 'Tap whichever of these are true. We use them to explain how this firearm differs from the ones you already hold.',
   },
   {
-    key: 'safe_storage_detail',
-    label: 'How and where it will be stored',
+    // ⚠️ OPTIONAL SINCE 2026-09-08, AND PREFILLED. It was `required` and it was
+    // the largest single reason an application stalled: it asked the applicant
+    // to write the argument the product exists to write for them, about a
+    // firearm's calibre and action, which is exactly what
+    // motivation-research.service.ts researches and MOTIVATION-REBUILD-BRIEF.md
+    // §2.2 forbids asking. Kept so somebody with something specific to say has
+    // somewhere to say it.
+    key: 'firearm_fit_reason',
+    label: 'Anything specific about why this firearm',
     kind: 'long',
-    section: 'Storage and safety',
-    help: 'The safe, how it is fixed, where it is, and who else can reach it.',
-    required: true,
-    sensitive: true,
+    section: 'The firearm',
+    help: 'Optional. We write this from the firearm, the calibre and what you told us above.',
     maxLength: 2000,
+  },
+  // ── YOUR PREMISES ────────────────────────────────────────────────
+  //
+  // ⚠️ A NEW SECTION, AND THE REGISTRY COULD NOT WRITE ITS PARAGRAPH BEFORE IT
+  // EXISTED. Every approved motivation on file carries a "Security and safe
+  // storage facility" paragraph — the wall, the gate, the alarm, the armed
+  // response, the bars, the safe and who holds its key — and until today the
+  // only thing we held was a free-text box asking the applicant to write that
+  // paragraph themselves. So it was `required`, and it was the box people
+  // stalled on.
+  //
+  // The block is the Engala questionnaire's security section as discrete taps.
+  // Answered once, kept on the member (scope: 'profile'), because a wall does
+  // not move between applications. MOTIVATION-INTAKE-PLAN.md §3.6.
+  {
+    key: 'premises_enclosure',
+    label: 'What encloses the property',
+    kind: 'choice',
+    section: PREMISES_SECTION,
+    choices: [
+      'Walled',
+      'Palisade fence',
+      'Electric fence on the wall',
+      'Wire or mesh fence',
+      'Nothing enclosing it',
+    ],
+    scope: 'profile',
+  },
+  {
+    key: 'premises_access_control',
+    label: 'How people get in',
+    kind: 'choice',
+    section: PREMISES_SECTION,
+    choices: [
+      'Remote-controlled gate',
+      'Manual gate',
+      'Estate or complex boom',
+      'Guarded entrance',
+      'No gate',
+    ],
+    scope: 'profile',
+  },
+  {
+    key: 'alarm_present',
+    label: 'Is there an alarm?',
+    kind: 'yesno',
+    section: PREMISES_SECTION,
+    scope: 'profile',
+  },
+  {
+    key: 'alarm_company',
+    label: 'Who monitors it',
+    kind: 'short',
+    section: PREMISES_SECTION,
+    showIf: { key: 'alarm_present', equals: 'Yes' },
+    help: 'The monitoring company, if it is monitored rather than a siren only.',
+    scope: 'profile',
+    maxLength: 120,
+  },
+  {
+    key: 'armed_response',
+    label: 'Do you have armed response?',
+    kind: 'yesno',
+    section: PREMISES_SECTION,
+    scope: 'profile',
+  },
+  {
+    key: 'burglar_bars',
+    label: 'Are there burglar bars?',
+    kind: 'yesno',
+    section: PREMISES_SECTION,
+    scope: 'profile',
+  },
+  {
+    key: 'security_gates',
+    label: 'Are there security gates?',
+    kind: 'yesno',
+    section: PREMISES_SECTION,
+    scope: 'profile',
   },
   // ── THE SAFE, AS ITEMS 68 AND 69 ASK IT ─────────────────────────
   // safe_storage_detail is prose for the motivation. These are the form's own
@@ -1209,36 +1522,80 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     key: 'safe_present',
     label: 'Do you have the prescribed safe?',
     kind: 'yesno',
-    section: 'Storage and safety',
+    section: PREMISES_SECTION,
     required: true,
-    formOnly: true,
+    scope: 'profile',
   },
   {
     key: 'safe_type',
     label: 'What kind',
     kind: 'choice',
-    section: 'Storage and safety',
+    section: PREMISES_SECTION,
     choices: ['Handgun safe', 'Rifle safe', 'Strongroom', 'Other device'],
     showIf: { key: 'safe_present', equals: 'Yes' },
     required: true,
+    scope: 'profile',
   },
   {
     key: 'safe_mounted',
     label: 'Is it mounted?',
     kind: 'yesno',
-    section: 'Storage and safety',
+    section: PREMISES_SECTION,
     showIf: { key: 'safe_present', equals: 'Yes' },
     required: true,
-    formOnly: true,
+    scope: 'profile',
   },
   {
+    // ⚠️ 'Both' TICKS BOTH BOXES ON THE FORM, IT IS NOT A THIRD BOX. Item 69
+    // of the SAPS 271 has a wall checkbox and a floor checkbox and no third
+    // one; a safe bolted through the corner of a room is genuinely fixed to
+    // both, and offering only two choices made that person pick one and
+    // understate their own storage. See saps271-map.ts, which is where the
+    // value is turned into ticks — adding the choice without teaching the map
+    // about it would tick NEITHER box and lose the answer silently on a signed
+    // form.
     key: 'safe_mounted_to',
     label: 'Mounted to',
     kind: 'choice',
-    section: 'Storage and safety',
-    choices: ['Wall', 'Floor'],
+    section: PREMISES_SECTION,
+    choices: ['Wall', 'Floor', 'Both'],
     showIf: { key: 'safe_mounted', equals: 'Yes' },
     required: true,
+    scope: 'profile',
+  },
+  {
+    key: 'safe_key_holder',
+    label: 'Who can open it',
+    kind: 'choice',
+    section: PREMISES_SECTION,
+    choices: ['Only me', 'Me and one other person in the household'],
+    showIf: { key: 'safe_present', equals: 'Yes' },
+    help: 'Item 70 asks, and a motivation that answers it reads better than one that does not.',
+    scope: 'profile',
+  },
+  {
+    // ⚠️ OPTIONAL SINCE 2026-09-08, AND PREFILLED FROM THE TAPS ABOVE.
+    //
+    // It was `required` and it was the wrong shape of question: a member who
+    // had just told us about their wall, their gate, their alarm, their armed
+    // response, their bars and their safe was then asked to write all of it
+    // out again in prose, and could not generate until they had. The seven
+    // taps above are better data AND a better paragraph, because the writer
+    // composes from facts rather than from somebody's second attempt at
+    // describing their own house.
+    //
+    // It survives because nothing a member has already typed is ever thrown
+    // away (see MotivationField.retiredChoices for the same discipline one
+    // level down), and because somebody with an unusual arrangement — a
+    // strongroom inside a walk-in wardrobe, a safe at a business address —
+    // still needs somewhere to say so.
+    key: 'safe_storage_detail',
+    label: 'Anything else about how it is stored',
+    kind: 'long',
+    section: PREMISES_SECTION,
+    help: 'Optional. We write this from your answers above — add anything they do not cover.',
+    sensitive: true,
+    maxLength: 2000,
   },
   // ⚠️ `other_licensed_firearms` WAS HERE AND IS DELIBERATELY GONE.
   //
@@ -1268,8 +1625,14 @@ const COMMON_FIELDS: readonly MotivationField[] = [
   // later is fatal — and because it is exactly the kind of thing a motivation
   // should meet head-on rather than leave for the Registrar to discover.
   //
-  // The yes/no itself is `formOnly` so a clean record gives the writer nothing
-  // to pad with; the DETAIL is not, so a disclosure reaches it in full.
+  // ⚠️ ASKED OF EVERYBODY, SINCE 2026-09-08. These six used to be `formOnly`,
+  // so on the dealer path they were never asked — and a conviction therefore
+  // never reached the writer, which is the single thing a motivation has to
+  // address head-on. Seen live: a whole Declarations step that ticked itself
+  // complete before anything had been answered.
+  //
+  // The yes/no itself is in NEVER_PROMPTED so a clean record gives the writer
+  // nothing to pad with; the DETAIL is not, so a disclosure reaches it in full.
   //
   // None of them defaults to "No". We are not answering a question about
   // someone's criminal record on their behalf, on a form they sign.
@@ -1281,7 +1644,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     help: 'Every conviction, however old and however minor, including anything you paid an admission-of-guilt fine for.',
     required: true,
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'history_conviction_detail',
@@ -1302,7 +1664,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     help: 'Including a case where you have been charged but not yet tried.',
     required: true,
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'history_pending_case_detail',
@@ -1322,7 +1683,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'History',
     required: true,
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'history_lost_stolen_detail',
@@ -1342,7 +1702,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'History',
     required: true,
     sensitive: true,
-    formOnly: true,
     showIf: { key: 'history_lost_stolen', equals: 'Yes' },
   },
   {
@@ -1364,7 +1723,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     help: 'By a court, or by the Registrar under section 102 or 103 of the Act.',
     required: true,
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'history_declared_unfit_detail',
@@ -1384,7 +1742,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'History',
     required: true,
     sensitive: true,
-    formOnly: true,
   },
   {
     key: 'history_confiscated_detail',
@@ -1716,8 +2073,53 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'About you',
     help: 'Prefilled from your account — change it here if the form should show a different number.',
     sensitive: true,
-    formOnly: true,
+    scope: 'profile',
     maxLength: 20,
+  },
+  // ── RELOADING, ASKED ONCE, EVER ──────────────────────────────────
+  //
+  // Intake plan §6.4. Every approved hunting pack carries a reloading
+  // paragraph where it applies — a handloader who works up a load for a
+  // specific rifle and a specific animal is demonstrating exactly the care the
+  // section is about — and the registry could not write one because it never
+  // asked.
+  //
+  // ⚠️ PROFILE-SCOPED. Whether somebody reloads is a fact about them, not
+  // about an application, and it does not change between the two.
+  //
+  // ⚠️ AND IT IS NOT A LICENCE QUESTION. Reloading needs no permission; the
+  // COMPONENTS do (see CLAUDE.md absolute rule 4 — live ammunition, primers
+  // and propellant are banned platform-wide, which is about what we may SELL,
+  // not about what an applicant may lawfully do at home). Nothing here asks
+  // what anybody holds, and nothing here may start.
+  {
+    key: 'reloads',
+    label: 'Do you reload your own ammunition?',
+    kind: 'yesno',
+    section: 'About you',
+    scope: 'profile',
+  },
+  {
+    key: 'reload_calibres',
+    label: 'Which calibres you load for',
+    kind: 'short',
+    section: 'About you',
+    showIf: { key: 'reloads', equals: 'Yes' },
+    help: 'The cartridges you actually work up loads for.',
+    scope: 'profile',
+    maxLength: 200,
+  },
+  {
+    key: 'reload_since',
+    label: 'Since when',
+    kind: 'date',
+    section: 'About you',
+    showIf: { key: 'reloads', equals: 'Yes' },
+    scope: 'profile',
+    // Somebody who has reloaded for twenty years should not tap an arrow
+    // twenty times to say so.
+    reach: 'far',
+    focusOffsetYears: 10,
   },
   {
     key: 'licence_holder_type',
@@ -1726,7 +2128,6 @@ const COMMON_FIELDS: readonly MotivationField[] = [
     section: 'The firearm',
     choices: ['Main firearm licence holder', 'Additional firearm licence holder'],
     help: 'Additional applies where the firearm is licensed to someone else in the household and you are applying to possess it too.',
-    formOnly: true,
     // ⚠️ REQUIRED, BECAUSE THE FORM ASKS IT AND WE MUST NOT ANSWER IT FOR THEM.
     //
     // Section D of the 271 has two boxes — main holder, additional holder —
@@ -1778,23 +2179,62 @@ const COMMON_FIELDS: readonly MotivationField[] = [
 /** Extra fields per licence type, appended to the common set. */
 const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
   S13_SELF_DEFENCE: [
+    // ── THE CASE, AS CARDS ──────────────────────────────────────────
+    //
+    // ⚠️ THESE THREE REPLACED THREE EMPTY TEXTAREAS AS THE PRIMARY INPUT.
+    // "The circumstances that make you believe you need it" was `required` and
+    // 4000 characters wide, and it asked somebody to compose, unaided, the
+    // hardest paragraph in the document. The boxes survive below as optional
+    // and prefilled; these are what is actually asked.
+    //
+    // ⚠️ ONLY A TAPPED CARD REACHES THE WRITER, and the applicant signs under
+    // it. See motivation-cards.ts for why that is the rule and not a
+    // preference.
     {
+      key: 's13_reasons',
+      label: 'What makes you believe you need it',
+      kind: 'cards',
+      section: 'Your circumstances',
+      options: S13_REASONS,
+      help: 'Tap the ones that are true of you.',
+      required: true,
+      sensitive: true,
+    },
+    {
+      key: 's13_movements',
+      label: 'Where you go',
+      kind: 'cards',
+      section: 'Your circumstances',
+      options: S13_MOVEMENTS,
+      sensitive: true,
+    },
+    {
+      key: 's13_carry_style',
+      label: 'How you would keep it',
+      kind: 'cards',
+      section: 'Your circumstances',
+      options: S13_CARRY_STYLE,
+      sensitive: true,
+    },
+    {
+      // Optional and prefilled from the cards above since 2026-09-08 — see the
+      // note on the card block. Kept because somebody whose circumstances the
+      // cards do not cover still needs somewhere to say so, and because
+      // nothing anybody has already typed is ever thrown away.
       key: 'threat_circumstances',
-      label: 'The circumstances that make you believe you need it',
+      label: 'Anything else about your circumstances',
       kind: 'long',
       section: 'Your circumstances',
-      help: 'Specific to you and where you live or work — times, places, incidents, routes. General crime statistics carry no weight on their own.',
-      required: true,
+      help: 'Optional. Specific to you — times, places, incidents, routes.',
       sensitive: true,
       maxLength: 4000,
     },
     {
       key: 'daily_movements',
-      label: 'Your routine — where you go and when',
+      label: 'Anything else about your routine',
       kind: 'long',
       section: 'Your circumstances',
-      help: 'Travel at night, cash handling, isolated premises, long rural commutes.',
-      required: true,
+      help: 'Optional. We write this from what you tapped above.',
       sensitive: true,
       maxLength: 2000,
     },
@@ -1803,7 +2243,7 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'What else you have done about it',
       kind: 'long',
       section: 'Your circumstances',
-      help: 'Alarms, armed response, changed routines, relocation. Shows a firearm is not the first thing you reached for.',
+      help: 'Optional. We already have your alarm, armed response and security from Your premises — add anything else.',
       maxLength: 2000,
     },
     // ── SAPS PRECINCT CRIME FIGURES ─────────────────────────────────
@@ -1847,8 +2287,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Province of your nearest police station',
       kind: 'short',
       section: 'Your circumstances',
-      formOnly: true,
-      showIf: { key: SAPS271_OPT_KEY, equals: SAPS271_DEALER },
+      // ⚠️ WRITTEN BY US, NEVER ASKED — see `internal`. Was hidden by a
+      // formOnly × showIf contradiction against the retired fill_saps271;
+      // that trick stopped working the day formOnly stopped gating.
+      internal: true,
       maxLength: 60,
     },
     // ── PRESS CLIPPINGS ──────────────────────────────────────────────
@@ -1872,36 +2314,99 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       kind: 'short',
       section: 'Your circumstances',
       help: `A JSON array of up to ${PRESS_CLIPPINGS_MAX} chosen article ids — written by the picker, not typed.`,
-      formOnly: true,
-      showIf: { key: SAPS271_OPT_KEY, equals: SAPS271_DEALER },
+      // ⚠️ WRITTEN BY THE PICKER, NEVER ASKED — see `internal`. Was hidden by a
+      // formOnly × showIf contradiction against the retired fill_saps271.
+      internal: true,
       maxLength: 4000,
     },
   ],
+  // ── SECTION 15 — OCCASIONAL HUNTER *OR OCCASIONAL SPORTS PERSON* ──
+  //
+  // ⚠️ IT NOW SERVES BOTH, AND UNTIL 2026-09-08 IT SERVED ONLY ONE. Section
+  // 15(2) of the Act covers "an occasional hunter or an occasional sports
+  // person", and the chooser has always sold it as "hunts or shoots" — but
+  // every question here was about hunting, and `intended_quarry` ("what you
+  // intend to hunt with it") was REQUIRED. So somebody who shoots occasionally
+  // and holds no dedicated status could not finish the form at all: a required
+  // question with no truthful answer, and no way past it.
+  //
+  // Reported as HANDOFF.md open item 1 and flagged as an operator decision
+  // because it changes what somebody signs. Confirmed to land here.
   S15_OCCASIONAL_HUNTER: [
     {
+      key: 'hunt_game_class',
+      label: 'What you hunt',
+      kind: 'cards',
+      section: 'Experience',
+      options: HUNT_GAME_CLASS,
+      help: 'Tap what applies. Leave it blank if you shoot rather than hunt.',
+    },
+    {
+      key: 'hunt_terrain',
+      label: 'The country you hunt in',
+      kind: 'cards',
+      section: 'Experience',
+      options: HUNT_TERRAIN,
+    },
+    {
+      key: 'hunt_where',
+      label: 'Whose land',
+      kind: 'cards',
+      section: 'Experience',
+      options: HUNT_WHERE,
+    },
+    {
+      key: 'hunt_reasons',
+      label: 'Why you hunt',
+      kind: 'cards',
+      section: 'Experience',
+      options: HUNT_REASONS,
+    },
+    // ⚠️ THE SPORT CARDS, ON THE SECTION 15 PATH. This is the half that was
+    // missing — see the block comment above.
+    {
+      key: 'sport_reasons',
+      label: 'Why you shoot',
+      kind: 'cards',
+      section: 'Experience',
+      options: SPORT_REASONS,
+      help: 'Tap what applies. Leave it blank if you hunt rather than shoot.',
+    },
+    {
+      key: 'sport_formats',
+      label: 'What you shoot',
+      kind: 'cards',
+      section: 'Experience',
+      options: SPORT_FORMATS,
+    },
+    {
       key: 'hunting_history',
-      label: 'Your hunting experience',
+      label: 'Anything else about your experience',
       kind: 'long',
       section: 'Experience',
-      help: 'How long, where, what species, roughly how often. Attach your register pages, permits or photographs if you have them — a record with evidence behind it carries far more weight.',
-      required: true,
+      help: 'Optional. Attach register pages, permits or photographs if you have them — a record with evidence behind it carries far more weight.',
       maxLength: 3000,
       attachKind: 'SHOOTING_ACTIVITY_LOG',
     },
     {
+      // ⚠️ NO LONGER REQUIRED, AND THAT IS THE FIX FOR HANDOFF ITEM 1. An
+      // occasional SPORTS shooter hunts nothing, so a required "what you
+      // intend to hunt with it" was a question they could not answer and could
+      // not get past. The quarry now comes from hunt_game_class, which they
+      // are free to leave empty.
       key: 'intended_quarry',
-      label: 'What you intend to hunt with it',
+      label: 'Anything specific you intend to hunt',
       kind: 'short',
       section: 'Experience',
-      required: true,
+      help: 'Optional — we work this out from what you tapped above.',
       maxLength: 200,
     },
     {
       key: 'hunting_locations',
-      label: 'Where you hunt',
+      label: 'Anything else about where you hunt or shoot',
       kind: 'long',
       section: 'Experience',
-      help: 'Properties, provinces, whether by invitation or as a paying guest.',
+      help: 'Optional. Properties, provinces, clubs, ranges.',
       maxLength: 1500,
     },
   ],
@@ -2062,12 +2567,47 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       reach: 'far',
     },
     {
+      key: 'hunt_game_class',
+      label: 'What you hunt',
+      kind: 'cards',
+      section: 'Experience',
+      options: HUNT_GAME_CLASS,
+      help: 'Tap what applies.',
+      required: true,
+    },
+    {
+      key: 'hunt_terrain',
+      label: 'The country you hunt in',
+      kind: 'cards',
+      section: 'Experience',
+      options: HUNT_TERRAIN,
+    },
+    {
+      key: 'hunt_where',
+      label: 'Whose land',
+      kind: 'cards',
+      section: 'Experience',
+      options: HUNT_WHERE,
+    },
+    {
+      key: 'hunt_reasons',
+      label: 'Why you hunt',
+      kind: 'cards',
+      section: 'Experience',
+      options: HUNT_REASONS,
+    },
+    {
+      // Optional and prefilled from the cards above since 2026-09-08. It was
+      // `required` and 3000 characters wide, and the UX walkthrough found it
+      // rendering as a grey row on the step a DFO actually reads, opening to
+      // an empty textarea hinted "Species, terrain, ranges, roughly how many
+      // hunts a year" — four questions in one box, which is the composition
+      // problem the cards replace.
       key: 'hunting_history',
-      label: 'Your hunting record',
+      label: 'Anything else about your hunting record',
       kind: 'long',
       section: 'Experience',
-      help: 'Species, terrain, ranges, roughly how many hunts a year. Attach your register pages, permits or photographs if you have them — a record with evidence behind it carries far more weight.',
-      required: true,
+      help: 'Optional. Attach register pages, permits or photographs if you have them — a record with evidence behind it carries far more weight.',
       maxLength: 3000,
       attachKind: 'SHOOTING_ACTIVITY_LOG',
     },
@@ -2109,10 +2649,10 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
     },
     {
       key: 'activity_record',
-      label: 'Association activities in the last 24 months',
+      label: 'Anything else about your association activities',
       kind: 'long',
       section: 'Experience',
-      help: 'Hunts logged, shoots attended, courses, committee roles.',
+      help: 'Optional. Hunts logged, shoots attended, courses, committee roles.',
       maxLength: 2000,
     },
   ],
@@ -2306,12 +2846,31 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       maxLength: 160,
     },
     {
+      key: 'sport_reasons',
+      label: 'Why you need your own firearm for it',
+      kind: 'cards',
+      section: 'Experience',
+      options: SPORT_REASONS,
+      help: 'Tap the ones that are true of you.',
+      required: true,
+    },
+    {
+      key: 'sport_formats',
+      label: 'What you shoot, and how often',
+      kind: 'cards',
+      section: 'Experience',
+      options: SPORT_FORMATS,
+    },
+    {
+      // Optional and prefilled from the cards above since 2026-09-08 — the
+      // record itself is what the attached scorecards and register pages show,
+      // and asking somebody to retype it in prose alongside them was asking
+      // twice for the same evidence.
       key: 'competition_record',
-      label: 'Competitions and range attendance',
+      label: 'Anything else about your record',
       kind: 'long',
       section: 'Experience',
-      help: 'Matches shot in the last two years, classifications, results if relevant. Attach scorecards, targets or your attendance register — this is the annexure that shows you actually shoot.',
-      required: true,
+      help: 'Optional. Attach scorecards, targets or your attendance register — that is the annexure which shows you actually shoot.',
       maxLength: 3000,
       attachKind: 'SHOOTING_ACTIVITY_LOG',
     },
@@ -2369,28 +2928,33 @@ const TYPE_FIELDS: Record<MotivationLicenceType, readonly MotivationField[]> = {
       label: 'Your competency in this category runs to this licence',
       kind: 'yesno',
       section: 'The existing licence',
-      // ⚠️ THE TWO GATES CONTRADICT EACH OTHER ON PURPOSE — formOnly wants the
-      // fill path, showIf wants the dealer path, and no answer is both. See
-      // COMPETENCY_RENEWS_KEY. Changing either one alone un-hides it.
+      // ⚠️ ONE FLAG NOW, WHERE TWO CONTRADICTORY ONES USED TO DO THE JOB.
       //
-      // ⚠️ AND BOTH STAY EVEN THOUGH A RENEWAL IS NO LONGER ASKED fill_saps271
-      // AT ALL (see NOT_ASKED_BY_TYPE). Dropping the showIf on the reasoning
-      // that formOnly alone now suffices was tried on 2026-09-07 and is wrong:
-      // isVisible takes a field and the answers, never a licence type, so it
-      // cannot know the opt-in is unasked — and fieldByKey deliberately still
-      // ACCEPTS the key, so an answer can exist in a draft or arrive on the
-      // wire. One gate then opens. The contradiction is robust precisely
-      // because it does not depend on what is served.
-      formOnly: true,
-      showIf: { key: SAPS271_OPT_KEY, equals: SAPS271_DEALER },
+      // This was `formOnly` (wants the fill path) set against `showIf` (wants
+      // the dealer path), so no answer satisfied both. That was written because
+      // isVisible() had a MIRROR on the frontend and a purpose-built "internal"
+      // flag would have had to be honoured by both — two implementations, with
+      // the failure mode being a Yes/No box asking a member something we had
+      // already worked out from their own documents.
+      //
+      // Both halves of that reasoning are now gone: formOnly stopped gating
+      // (brief §2.6), which broke the contradiction outright, and the mirror is
+      // retired in favour of the server-computed state in
+      // motivation-sheet.service.ts. `internal` is honoured in exactly one
+      // place, so it is now the simpler AND the safer of the two.
+      internal: true,
     },
     {
+      // Optional since 2026-09-08. A renewal turns on two facts — the purpose
+      // has not changed, and the applicant is still active — and both are
+      // already asked as yes/no above. Requiring a 3000-character essay on top
+      // of them made the shortest application in the product the one with the
+      // longest compulsory box.
       key: 'continued_use',
-      label: 'How you have used it, and why that continues',
+      label: 'Anything else about how you have used it',
       kind: 'long',
       section: 'The existing licence',
-      help: 'The purpose has not changed — say what you have actually done with it since it was issued.',
-      required: true,
+      help: 'Optional. What you have actually done with it since it was issued.',
       maxLength: 3000,
     },
   ],
@@ -2421,15 +2985,15 @@ export const LICENCE_TYPE_LABELS: Record<MotivationLicenceType, string> = {
  *                    asking them to prove a transfer that is not happening".
  *                    Only the screens the member sees were missed.
  *
- *   fill_saps271     The SAPS 271 is an application for a NEW licence under
- *                    sections 13 to 20; a renewal is lodged on the SAPS 518(a).
- *                    Answering yes un-hid roughly forty-eight formOnly
- *                    questions — postal address, both telephones, marital
- *                    status, spouse name and identity number, the six history
- *                    questions, the fourteen-row owned table — and the render
- *                    then threw, surfacing as a 409, once all of them were
- *                    answered. The field help even read "most dealers complete
- *                    the SAPS 271 with you WHEN YOU BUY THE FIREARM".
+ *   fill_saps271     GONE FROM HERE because the field itself is retired, not
+ *                    because a renewal stopped needing the exemption — see
+ *                    RETIRED_FIELDS. It is no longer in COMMON_FIELDS, so
+ *                    there is nothing for this set to filter out. The reason
+ *                    it was listed still holds and is now enforced where it
+ *                    belongs: the SAPS 271 is an application for a NEW licence
+ *                    under sections 13 to 20, a renewal is lodged on the SAPS
+ *                    518(a), and motivation-render.service.ts refuses a 271
+ *                    for an S24 by licence type.
  *
  * ⚠️ THIS FILTERS WHAT IS ASKED, NEVER WHAT IS ACCEPTED. fieldByKey below
  * deliberately searches the UNFILTERED list, so a draft saved before this — or
@@ -2441,7 +3005,7 @@ export const LICENCE_TYPE_LABELS: Record<MotivationLicenceType, string> = {
 const NOT_ASKED_BY_TYPE: Partial<
   Record<MotivationLicenceType, ReadonlySet<string>>
 > = {
-  S24_RENEWAL: new Set<string>([FIREARM_SOURCE_KEY, SAPS271_OPT_KEY]),
+  S24_RENEWAL: new Set<string>([FIREARM_SOURCE_KEY]),
 };
 
 /**
@@ -2496,19 +3060,32 @@ export function isVisible(
   field: MotivationField,
   answers: Record<string, string>,
 ): boolean {
-  // Every formOnly field exists ONLY for the SAPS 271, so none of them are
-  // asked unless the applicant chose to have the form filled. The opt-in
-  // question itself is exempt or it would hide itself. Unanswered means the
-  // dealer path — the fields stay hidden until a deliberate yes.
-  if (
-    field.formOnly &&
-    field.key !== SAPS271_OPT_KEY &&
-    (answers[SAPS271_OPT_KEY] ?? '').trim() !== SAPS271_FILL
-  ) {
-    return false;
-  }
+  // ⚠️ `internal` IS THE ONLY UNCONDITIONAL HIDE LEFT, and it is about fields
+  // we FILL IN, never about a form the applicant may or may not want. See the
+  // flag itself.
+  if (field.internal) return false;
+
+  // ⚠️ formOnly NO LONGER DECIDES WHAT IS ASKED — 2026-09-08, brief §2.6.
+  //
+  // It used to hide every SAPS-271-only field behind the fill_saps271 opt-in,
+  // and roughly half the registry hung off that one tap: phones, postal codes,
+  // marital status, the spouse, the six history questions. The 271 is no
+  // longer optional (Part F is filled by source route instead — see
+  // saps271.service.ts), so there is nothing left for the gate to gate.
+  //
+  // ⚠️ AND THE FLAG ITSELF STAYS, DOING ITS OTHER JOB. formOnly is still what
+  // keeps a value out of the fact pack (factPackFields below): a dialling
+  // code, a postal code and a spouse's ID number are PII with no argumentative
+  // use, and six "No" answers to the history questions are an invitation to
+  // pad the document with a clean record, which ABSOLUTE RULE 7 forbids. One
+  // flag, one job, from here on.
   if (!field.showIf) return true;
   const chosen = (answers[field.showIf.key] ?? '').trim();
+
+  // A gate on "has anything been tapped" — see showIf.hasAny.
+  if (field.showIf.hasAny) return chosen !== '';
+
+  if (field.showIf.equals === undefined) return true;
   if (chosen === field.showIf.equals) return true;
   // ⚠️ A MULTI ANSWER IS A LIST, AND EQUALITY CANNOT SEE INTO IT.
   //
@@ -2568,8 +3145,44 @@ export function requiredKeys(
  * a blob written before the collapse still carries them, and the fact pack is
  * built from the stored answers.
  */
+/**
+ * ⚠️ THE SIX HISTORY YES/NOS ARE HERE NOW, AND THIS IS THE ONLY THING KEEPING
+ * A CLEAN RECORD OUT OF THE DOCUMENT — 2026-09-08.
+ *
+ * They used to be `formOnly`, which did the job as a side effect of hiding
+ * them behind the SAPS 271 opt-in. That had a cost nobody could see: on the
+ * dealer path they were never ASKED either, so a conviction never reached the
+ * writer at all — the one thing a motivation has to meet head-on. They are now
+ * asked of everybody (brief §2.5), and the anti-padding half of the old
+ * behaviour is stated here, on its own, where it can be read.
+ *
+ * ⚠️ THE BARE YES/NO ONLY — THE `_detail` BOXES ARE DELIBERATELY NOT LISTED.
+ * That asymmetry IS the rule the acceptance criterion states: a "No"
+ * contributes nothing (the yes/no is never prompted, and its detail box is
+ * hidden by showIf so it is empty), while a "Yes" reaches the writer in full
+ * through the detail. Six "No" answers in the fact pack would be an invitation
+ * to pad the document with "the applicant has no convictions, no pending
+ * cases, no lost firearms" — ABSOLUTE RULE 7 forbids exactly that.
+ *
+ * The `$` anchors are load-bearing: `history_conviction` matches,
+ * `history_conviction_detail` and `history_conviction_station` do not.
+ *
+ * ⚠️ THE CONTACT DETAILS AND THE SPOUSE'S NAME ARE HERE FOR THE SAME REASON,
+ * AND THEY WERE ALMOST LOST IN THE SAME CHANGE. `home_telephone`,
+ * `work_telephone`, `cellphone`, `postal_address` and `spouse_name` were kept
+ * from the writer by being `formOnly` — which was doing two unrelated jobs at
+ * once, and taking the wizard-visibility job away from it silently took the
+ * privacy one with it. They are PII with no argumentative value whatever: a
+ * telephone number is not a reason anybody needs a firearm, and a spouse's
+ * name belongs to somebody who is not the applicant and has not asked us for
+ * anything. There is no reason for either to reach a model at all.
+ *
+ * `spouse_id_number`, the postal codes and the dialling codes are still
+ * `formOnly`, so they are still excluded by that route and are deliberately
+ * not repeated here.
+ */
 const NEVER_PROMPTED =
-  /^(existing_firearm_\d+_(serial|frame_serial|barrel_serial|licence_no|expiry)|firearm_source)$/;
+  /^(existing_firearm_\d+_(serial|frame_serial|barrel_serial|licence_no|expiry)|firearm_source|history_(conviction|pending_case|lost_stolen|negligence|declared_unfit|confiscated)|home_telephone|work_telephone|cellphone|postal_address|spouse_name)$/;
 
 /**
  * formOnly fields the writer MUST see anyway.
@@ -2591,6 +3204,11 @@ export function factPackFields(
 ): readonly MotivationField[] {
   return fieldsFor(type).filter(
     (f) =>
+      // ⚠️ `internal` HAS NO ESCAPE HATCH, unlike formOnly's. A field we filled
+      // in from a lookup is never an argument for needing a firearm, and there
+      // is no case — as there was for firearm_serial — where the writer needs
+      // one to do its job.
+      !f.internal &&
       (!f.formOnly || PROMPTED_DESPITE_FORM_ONLY.has(f.key)) &&
       !NEVER_PROMPTED.test(f.key),
   );
@@ -2683,7 +3301,11 @@ export function sanitiseAnswers(
     // tidiness: these values are printed into boxes on a form the applicant
     // signs, so an arbitrary string arriving from a hand-rolled request would
     // become a false statement on a firearm licence application.
-    if (field.kind === 'multi') {
+    // ⚠️ `cards` IS STORED EXACTLY LIKE `multi`, AND THAT IS THE WHOLE POINT
+    // OF THE DECISION. A comma list in the offered order means showIf,
+    // allowedValues, the fact pack and every existing reader work unchanged —
+    // the new kind is a rendering and a meaning, never a storage format.
+    if (field.kind === 'multi' || field.kind === 'cards') {
       // Stored comma-joined. Every part must be a real choice, and the order is
       // normalised to the offered order so two identical answers compare equal.
       //
@@ -2745,6 +3367,13 @@ export function sanitiseAnswers(
  * is not will inherit exactly this bug.
  */
 export function allowedValues(field: MotivationField): readonly string[] {
+  // ⚠️ THE CARD KEYS, NOT THE SENTENCES. What is stored, matched by showIf and
+  // compared on save is `key`; the sentence is display and is free to be
+  // reworded (§9.2 review) without invalidating a stored answer. Reading
+  // sentences here would make every rewording a silent data loss on the next
+  // autosave — exactly the failure retiredChoices exists to prevent one level
+  // down.
+  if (field.options) return field.options.map((o) => o.key);
   if (field.optionSource === 'shooting-disciplines') {
     const values = disciplinesInScope(field.optionScope).map((d) => d.value);
     // "Something else" is a real stored value, and the field that describes it
