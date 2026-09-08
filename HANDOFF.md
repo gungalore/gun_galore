@@ -622,18 +622,43 @@ fell to the textarea branch — the control the Maps autofill replaces, two rows
 below one that had it. ⚠️ It is also the input the ROUTE half will depend on: a
 hand-typed workplace makes that lookup fail silently.
 
-### ⚠️ Still open on the areas work
+### The three that were open — CLOSED, 2026-09-08, `9b3e46d2`
 
-1. **The route half is not built.** `onRoute` is in the shape and always false.
-   Home and work are both on the form now and both use the picker;
-   `GOOGLE_MAPS_API_KEY` is set. Directions between them, then a containment
-   test per area, then pre-tick.
-2. **Venue noise.** "Pepper Club Hotel" is a destination, not somewhere you
-   drive through, and its article is filed "other" — a drug case, no use to a
-   self-defence motivation. The place extractor picks up proper nouns.
-3. **The pack does not yet print a ticked area's precinct figures.** The station
-   is resolved and returned; generation still annexes only the applicant's own.
-4. **Crime type is not filtered.** An "other" incident can be a drug bust.
+1. **The route.** `motivation-route.ts` decodes Google's polyline and tests each
+   area against it. ⚠️ **Against the SEGMENTS, not the vertices** — Google thins
+   a polyline on long straights, so two points can be tens of km apart on the N1
+   and a suburb halfway along is far from both while sitting on the road they
+   drive daily. ⚠️ **The area's own coordinates, not the article's** — that is
+   how a Gauteng airport arrest arrived 22.7km from a Kraaifontein front door.
+   ⚠️ **The first route only**; the union of every way Google can get there
+   ticks roads nobody has driven. ⚠️ **Every failure is the same outcome: no
+   pre-ticks** — no key, no work address, a quota error, a 6s timeout, and the
+   member is asked exactly as before. ⚠️ **AND THE PRE-TICK STOPS ONCE THEY
+   ANSWER** (`answered` on the response): a member who unticks an on-route area
+   has said Maps drew a road they do not take, and `onRoute` is still true next
+   load — without the flag the tick returns for ever, which is "why can't I
+   delete the proof of address?" arriving as a helpful default.
+2. **Venue noise.** `isVenue()` drops one-building places. ⚠️ **A mall is
+   deliberately NOT on the list** — a centre car park is exactly where a
+   hijacking happens and somewhere a member goes weekly. Nor is "Station",
+   far too load-bearing in SA place names.
+3. **The ticked areas' figures reach the pack.** The home station is where they
+   sleep; this is where they spend the day. ⚠️ Every line came off the member's
+   own tick, which is what makes another precinct's numbers admissible about
+   THIS applicant, and **the reason they gave travels with it**. Three at most —
+   twelve stations of quarterly tables is a spreadsheet, not evidence. Stations
+   are re-resolved at generation rather than stored, so a corrected address
+   cannot leave a frozen precinct behind.
+
+### ⚠️ Still open
+
+- **Crime type is not filtered.** An "other" incident can be a drug bust — but
+  "other" also carried a legitimate snatch-thief report on the live list, so
+  dropping the type wholesale would lose real evidence. Deliberately left.
+- **`distanceKm` is the article's position, not the event's.** A syndicated
+  piece carries the paper's patch. The province check is the only thing that
+  catches it, so a Gauteng story in a Gauteng paper about a Gauteng place would
+  pass every filter. News-layer accuracy, not an area-list problem.
 
 ### ⚠️ MO000070 was deleted by the operator, 2026-09-08 ~22:42
 
