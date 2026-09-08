@@ -43,6 +43,7 @@ import { MotivationModelService } from './motivation-model.service';
 import { SecureFileStorageService } from '../common/secure-file-storage.service';
 import { VaultLogService } from '../common/vault-log.service';
 import { VaultAdoptionService } from './vault-adoption.service';
+import { MotivationReasonService } from './motivation-reason.service';
 
 /**
  * Firearm-licence motivation writer (Phase 1 — LICENCE-SERVICES-AND-FEED.md).
@@ -111,6 +112,7 @@ import { VaultAdoptionService } from './vault-adoption.service';
     // live on the other end of it. It talks to Prisma and the file store
     // directly for the same reason.
     VaultAdoptionService,
+    MotivationReasonService,
   ],
   // MotivationRetentionService is exported so the account-deletion path can
   // remove a user's encrypted documents BEFORE the cascade takes the rows that
@@ -120,6 +122,7 @@ import { VaultAdoptionService } from './vault-adoption.service';
   exports: [
     MotivationsService,
     VaultAdoptionService,
+    MotivationReasonService,
     MotivationQuotaService,
     MotivationRetentionService,
   ],

@@ -281,6 +281,44 @@ export default function LicenceCentreSheetPage() {
   }, [sheet, getToken, id, load]);
 
   /**
+   * Write "why this firearm" once the firearm is described.
+   *
+   * ⚠️ AUTOMATIC, BECAUSE A CAUTIOUS BLANK IS NOT SAFER THAN A GOOD ANSWER.
+   * The operator's standing rule (2026-08-25) is fill it in, arm it, let them
+   * change it — and `firearm_fit_reason` was REQUIRED until 2026-09-08 and was
+   * "the largest single reason an application stalled: it asked the applicant
+   * to write the argument the product exists to write for them".
+   *
+   * ⚠️ AND ONLY WHILE THE BOX IS EMPTY, WHICH IS WHAT BOUNDS THE BILL. It is a
+   * model call. The moment it succeeds the box has a value, so the condition is
+   * false for the rest of the application's life; the latch below stops a
+   * failed call being retried on every render. The server refuses anyway if the
+   * member has written their own — stamp() will not overwrite MEMBER.
+   */
+  const reasonedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sheet) return;
+    const fit = sheet.items.find((i) => i.key === 'firearm_fit_reason');
+    if (!fit || fit.value.trim()) return;
+    const make = sheet.items.find((i) => i.key === 'firearm_make')?.value ?? '';
+    const type = sheet.items.find((i) => i.key === 'firearm_type')?.value ?? '';
+    if (!make && !type) return;
+    const key = `${make}|${type}`;
+    if (reasonedFor.current === key) return;
+    reasonedFor.current = key;
+    void (async () => {
+      try {
+        const r = await motivationsApi.reason(getToken, id);
+        if (!r.written) return;
+        await load();
+        setToast('We have written your reason — read it and change anything.');
+      } catch {
+        /* Fail soft: the box stays empty and they can write it themselves. */
+      }
+    })();
+  }, [sheet, getToken, id, load]);
+
+  /**
    * The opening fold: the first section that still owes something.
    *
    * ⚠️ NOT "all closed", AND NOT "the first section". A member coming back to

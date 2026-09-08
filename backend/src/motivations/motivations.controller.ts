@@ -27,6 +27,7 @@ import { Throttle } from '@nestjs/throttler';
 import { ClerkGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { MotivationQuotaService } from './motivation-quota.service';
+import { MotivationReasonService } from './motivation-reason.service';
 import { MotivationsService } from './motivations.service';
 import { MotivationSheetService } from './motivation-sheet.service';
 import { MotivationGenerationService } from './motivation-generation.service';
@@ -93,6 +94,12 @@ export class MotivationsController {
     // MotivationsService would add two delegating methods that do nothing but
     // forward, on a facade that is already the largest file in the module.
     private readonly sheets: MotivationSheetService,
+    /**
+     * ⚠️ INJECTED DIRECTLY, like the precinct read above. It is one model
+     * call behind one route; routing it through the MotivationsService facade
+     * would add a delegate that does nothing but forward.
+     */
+    private readonly reasonService: MotivationReasonService,
   ) {}
 
   /**
@@ -699,6 +706,24 @@ export class MotivationsController {
    * of six. Operator, 2026-09-08: "yes, stop auto copy. we need to ask consent
    * to add items to the license centre."
    */
+  /**
+   * Write the "why this firearm" paragraph.
+   *
+   * ⚠️ IT LANDS AS A SUGGESTION ON `firearm_fit_reason`, not as an answer. The
+   * sheet renders an inferred value with a Confirm button, and stamp() refuses
+   * to overwrite anything the applicant has written themselves — a paragraph
+   * that goes onto a document they sign is exactly the case for "fill it in,
+   * arm it, let them change it".
+   *
+   * Throttled hard: it is a model call, and a page that could fire it on a
+   * poll would be a bill with no ceiling.
+   */
+  @Post(':id/reason')
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  reason(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.reasonService.writeFor(clerkId, id);
+  }
+
   @Post(':id/keep-in-centre')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   keepInCentre(

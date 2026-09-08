@@ -1027,6 +1027,23 @@ export const motivationsApi = {
       { deleted: false },
     ),
 
+  /**
+   * Write the "why this firearm" paragraph.
+   *
+   * ⚠️ IT LANDS AS A SUGGESTION, NOT AN ANSWER. The server stamps it DERIVED +
+   * inferred onto `firearm_fit_reason`, which is what makes the sheet render it
+   * with "check this" and a Confirm button — and stamp() refuses to overwrite
+   * anything the applicant has written themselves.
+   */
+  reason: (t: TokenGetter, id: string) =>
+    request<{
+      written: boolean;
+      angle?: string;
+      paragraph?: string;
+      blockers?: string[];
+      rejections?: string[];
+    }>(t, `/${id}/reason`, { method: 'POST' }, { written: false }),
+
   keepInCentre: (t: TokenGetter, id: string, uploadIds: string[]) =>
     request<{ kept: number; needsConsent: boolean }>(
       t,
