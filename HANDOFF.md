@@ -264,6 +264,69 @@ motivation intact.
 | `/licence-services/:id` | 308 → `/licence-centre/:id` |
 | `/licence-centre` | 307 (Clerk auth wall) — **still the Document Centre** |
 
+### The seller's scanner, and NONE on the form — 2026-09-08, `4170533f` + `e82c1efe`
+
+**"why cant we use the same scanner that the license centre uses"**
+
+⚠️ **`components/consent/licence-card-capture.tsx` IMPORTED THE V2 SCANNER BY
+PATH**, so the seller got the old one however `NEXT_PUBLIC_SCANNER_V3` was set
+— and it is `1` in production. The flag was only ever read by
+`scan/scan-button.tsx` and `/scan/handoff`; that is how one surface sits on the
+rebuilt detector while another quietly does not. It now uses the same switch.
+
+⚠️ **THE SWITCH IS COPIED, NOT SHARED, AND THAT IS FORCED.** `dynamic()` needs a
+literal `import()` per branch or the bundler cannot split the two scanners. Keep
+the expression identical to `scan-button.tsx`'s. `components/scan-v3` stays
+vendored — import it, never edit it here.
+
+**"instruct gemini to read a NONE as NONE and not leave it out"**
+
+⚠️ **THE READ SIDE WAS ALREADY RIGHT.** `licence-card-ocr.service.ts` carries the
+operator's own words — *"if it says NONE, you put NONE"* — and never INVENTS
+one, so a field it could not make out still arrives `undefined` rather than
+NONE. The two stayed distinguishable throughout. **The loss was one step later.**
+
+⚠️ **THE STRIP MOVED FROM THE ANSWER BOUNDARY TO THE PROSE BOUNDARY.** It was not
+deleted. Three places dropped a card placeholder on the way into `answers`:
+
+| Path | Was | Now |
+|---|---|---|
+| `motivation-extract.service.ts` — a fresh scan | dropped the row | keeps NONE |
+| `motivation-credentials.ts` `credentialOffer()` — the vault carry, **the live one** | dropped the row | keeps NONE |
+| `common/document-fields.ts` `toMotivationAnswers()` — not wired today | dropped the row | keeps NONE |
+
+and one place now strips it instead:
+
+| `motivation-prompts.ts` `renderFacts()` | passed answers through | runs `answerValue()` |
+
+**"Model NONE" handed to a language model is an invitation to write a sentence
+about a firearm called None** — that is the only thing this protects against,
+and the prose boundary is where it belongs.
+
+⚠️ **TWO PLACES STILL SKIP PLACEHOLDERS AND MUST.** `first()` in
+`motivation-credentials.ts` and `ownedFirearmSerial()` in `motivation-fields.ts`
+are **fallback chains** — frame, then barrel, then receiver. A NONE that returns
+instead of falling through is how a row with a real number in the next column
+comes back empty. **Picking a serial and transcribing a row are different
+questions; only the second wants the word NONE.**
+
+⚠️ **THIS REVERSES A RULE INTRODUCED 2026-09-07, AND THE LEGAL POINT WAS RAISED
+AND OVERRULED RATHER THAN OVERLOOKED.** The tests being flipped argued that a
+NONE crossing into `answers` is a false statement on a SAPS 271 and therefore an
+offence under **section 120(9)(f)**. The operator, who takes these packs to a
+DFO, ruled that transcribing what the card itself prints reproduces the document
+rather than asserting anything new, and that an empty box says something
+different. **Both positions are recorded in the tests; if it is revisited it is a
+question for the operator and the DFO, not for whoever is next in the file.**
+
+`card-placeholder-boundary.spec.ts` asserts both ends at once — the 271 prints
+NONE, the fact pack does not. Move the strip back and one of the two goes red.
+
+⚠️ **NOT VERIFIED AT RUNTIME: which scanner the consent page loads.** The change
+is the same one-line expression the Licence Centre uses and the build is clean,
+but the consent link is single-use and the only one issued has been consumed. A
+fresh invite would confirm it.
+
 ### The seller signed and the sheet did not notice — 2026-09-08, `f0558200`
 
 The consent completed at **12:02 SAST** — front, back, signature, Part F,
@@ -735,8 +798,8 @@ nothing to export.
 
 | | |
 |---|---|
-| Production runs | `f0558200` on `feat/takealot-ux-parity` |
-| Deploy branch (origin) | matches production — `f0558200` |
+| Production runs | `e82c1efe` on `feat/takealot-ux-parity` |
+| Deploy branch (origin) | matches production — `e82c1efe` |
 | Feature branch | `feat/the-bench` — same tip; fast-forwarded into the deploy branch |
 | Migrations | 67, all applied. Nothing pending. |
 | Services | `alloutdoor-backend`, `alloutdoor-frontend`, `warden` — all online |
