@@ -76,11 +76,11 @@ export interface LicenceCardCaptureProps {
 const COPY: Record<CardSide, { title: string; lead: string }> = {
   front: {
     title: 'Photograph the FRONT of your licence',
-    lead: 'The side with your photograph, the make and the serial numbers. Fit the card inside the green corners, then take the picture.',
+    lead: 'Two pictures in all — this side first, then the back. The side with your photograph, the make and the serial numbers. Fit the card inside the green corners, then take the picture.',
   },
   back: {
     title: 'Now the BACK',
-    lead: 'The side with the barcode and your signature. Same again — fit it inside the green corners.',
+    lead: 'The second and last picture. The side with the barcode and your signature — same again, fit it inside the green corners.',
   },
 };
 
@@ -118,14 +118,58 @@ export default function LicenceCardCapture({
     });
   }, []);
 
+  /**
+   * ⚠️ THE TWO SCANNERS FINISH DIFFERENTLY, AND THIS HANDLES BOTH.
+   *
+   * V2 treated "finished a shot" and "close the camera" as ONE event: its
+   * finish() called onClose() and THEN onDone(), synchronously, one file at a
+   * time. Every line of this component was shaped around that, including the
+   * deferred-close veto below.
+   *
+   * V3 does neither. It collects PAGES and hands them over in a single
+   * onDone(files) — and it never calls onClose() on the way out at all. So when
+   * the consent page moved to V3 on 2026-09-08:
+   *
+   *   the camera never returned to the form, because nothing closed it;
+   *   a member who shot both sides in one pass had the back silently dropped,
+   *   because this took files[0] and nothing else;
+   *   and `photographed` therefore stayed false, so "Give my consent" was
+   *   disabled forever. Operator: "the camera does not automaticly return to
+   *   the form once the scan has been sent" and "it won't submit".
+   *
+   * ⚠️ TWO PAGES, AND THE SECOND ONE ENDS IT. A licence card has a front and a
+   * back; a third page is not a third side. Extra pages are dropped rather than
+   * queued, because the alternative is a consent naming a document nobody can
+   * see. Operator: "it must allow 2 pictures, front and back. no more."
+   */
   const handleDone = useCallback(
     (files: File[]) => {
-      const file = files[0];
       // ⚠️ NO FILE IS NOT AN ERROR TO SHOW A STRANGER. The scanner can close
       // without producing one (permission withdrawn mid-flow, a cancelled
       // review). Treat it as "they backed out of this side" and leave them
       // where they were rather than throwing a dialog at them.
-      if (!file) return;
+      if (!files.length) return;
+
+      // The whole card in one pass — V3's usual shape.
+      if (!front && files.length >= 2) {
+        const [a, b] = files;
+        for (const [sideOf, f] of [['front', a], ['back', b]] as const) {
+          try {
+            onSide(sideOf, f);
+          } catch {
+            /* the caller's problem, never this component's */
+          }
+        }
+        setFront(a);
+        // Nothing to remount for: let the deferred close through and hand the
+        // pair over.
+        advancing.current = false;
+        onDone({ front: a, back: b });
+        closeParent.current();
+        return;
+      }
+
+      const file = files[0];
 
       // Fire and forget: the FRONT's read runs while they shoot the back, so
       // the form they land on is already filled in. Must not block or throw.
@@ -142,10 +186,14 @@ export default function LicenceCardCapture({
       advancing.current = step.keepOpen;
 
       if (step.complete && front) {
-        // Both sides done: the deferred close proceeds and the parent gets the
-        // pair. (onDone and the parent's own onClose both mean "stop
-        // capturing"; calling both is harmless.)
+        // Both sides done: hand the pair over and close.
+        //
+        // ⚠️ closeParent EXPLICITLY, because V3 never calls onClose. Under V2
+        // finish() had already scheduled the close and the microtask below let
+        // it through; under V3 nothing schedules anything and the camera simply
+        // stays up over the form the member is trying to fill in.
         onDone({ front, back: file });
+        closeParent.current();
         return;
       }
       setSide(step.next);
