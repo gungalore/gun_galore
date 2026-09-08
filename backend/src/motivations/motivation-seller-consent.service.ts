@@ -16,6 +16,7 @@ import { SecureFileStorageService } from '../common/secure-file-storage.service'
 import { ActionTokensService } from '../actions/action-tokens.service';
 import { encryptText, tryDecryptText } from '../common/blob-crypto';
 import { parseProvenance, stamp } from '../common/answer-provenance';
+import { endorsementMoved } from './motivation-autolink';
 import { selfLoadingFromText } from '../common/sa-competency';
 import { UPLOAD_MAX_BYTES, UPLOAD_MIME } from '../licence-centre/upload-limits';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -1206,6 +1207,9 @@ export class MotivationSellerConsentService {
           >)
         : {};
 
+      // The answers as they stood, for the endorsement comparison below.
+      const before = { ...answers };
+
       const written: string[] = [];
       for (const [key, value] of Object.entries(mapped)) {
         if ((answers[key] ?? '').trim()) continue;
@@ -1226,6 +1230,20 @@ export class MotivationSellerConsentService {
         data: {
           answersEncrypted: encryptText(JSON.stringify(answers)),
           answerProvenance: provenance as unknown as object,
+          /**
+           * ⚠️ AND THE AUTOLINK IS RE-OPENED, WHICH THIS PATH NEVER DID.
+           * The run happens 200ms after the application is created, before
+           * anybody has said what the firearm is — so the competency and the
+           * proficiency are correctly refused as several-candidates and the
+           * once-only stamp closes. `saveAnswers` re-opens it when the MEMBER
+           * types the firearm; on a private sale the firearm arrives HERE
+           * instead, and the stamp stayed shut for ever. Operator, 2026-09-08:
+           * "I selected the competency and proficiency from the dropdown
+           * lists." He had to.
+           */
+          ...(endorsementMoved(before, answers)
+            ? { autolinkedAt: null }
+            : {}),
         },
       });
       this.logger.log(

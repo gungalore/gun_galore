@@ -24,7 +24,7 @@ import { parseProvenance, stamp } from '../common/answer-provenance';
 import { answerValue } from '../common/card-placeholder';
 import { MotivationQuotaService } from './motivation-quota.service';
 import { requiredEndorsement } from './motivation-eligibility';
-import { decideAutolink } from './motivation-autolink';
+import { decideAutolink, endorsementMoved } from './motivation-autolink';
 import {
   primaryUploadKind,
   asksPlace,
@@ -2227,6 +2227,14 @@ export class MotivationDocumentsService {
         answersEncrypted: encryptJson(merged),
         answersSchemaVersion: FIELD_REGISTRY_VERSION,
         answerProvenance: provenance as unknown as object,
+        /**
+         * ⚠️ THE SAME RE-ARM THE COMPETENCY OFFER ABOVE ALREADY GETS, ON THE
+         * DOCUMENTS RATHER THAN ON THE ANSWERS. Confirming a read that names
+         * the firearm re-derives which certificate is right — and then left
+         * the autolink stamp shut, so the certificate it had just identified
+         * could never be attached. One rule, three doors.
+         */
+        ...(endorsementMoved(answers, merged) ? { autolinkedAt: null } : {}),
       },
     });
 

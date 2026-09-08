@@ -5,6 +5,7 @@ import {
   NEVER_AUTOLINK,
   type AutolinkCandidate,
   decideAutolink,
+  endorsementMoved,
 } from './motivation-autolink';
 
 // ────────────────────────────────────────────────────────────────────
@@ -182,23 +183,68 @@ describe('what it attaches', () => {
     expect(noFirearmYet.attach).toHaveLength(1);
   });
 
-  it('⚠️ NEVER attaches a document that names a firearm', () => {
-    // An endorsement names ONE firearm, so a previous application's endorsement
-    // describes the wrong gun — in front of a DFO, on a signed pack.
+  it('⚠️ NEVER attaches an endorsement, which names ONE firearm', () => {
+    // A previous application's endorsement describes the wrong gun — in front
+    // of a DFO, on a signed pack.
     const out = decideAutolink(
-      [
-        cand(MotivationUploadKind.ASSOCIATION_ENDORSEMENT),
-        cand(MotivationUploadKind.CURRENT_LICENCE),
-      ],
+      [cand(MotivationUploadKind.ASSOCIATION_ENDORSEMENT)],
       WANTED,
       [],
       TODAY,
     );
     expect(out.attach).toEqual([]);
-    expect(out.skipped.map((s) => s.why)).toEqual([
-      'not-a-person-document',
-      'not-a-person-document',
-    ]);
+    expect(out.skipped.map((s) => s.why)).toEqual(['not-a-person-document']);
+  });
+
+  it('⚠️ BUT THE APPLICANT’S OWN LICENCES GO ON, ALL OF THEM', () => {
+    // This kind sat in NEVER_AUTOLINK on the grounds that "which licences are
+    // relevant is the applicant's to say" — true of a licence offered as
+    // EVIDENCE, false of their own battery. Operator, 2026-09-08: "ALL the
+    // applicants licenses must be shown. there is even a section in the 271
+    // where you have to list them all." Item 2.1 has fourteen rows for it.
+    const out = decideAutolink(
+      [
+        cand(MotivationUploadKind.CURRENT_LICENCE, { sourceId: 'a' }),
+        cand(MotivationUploadKind.CURRENT_LICENCE, { sourceId: 'b' }),
+        cand(MotivationUploadKind.CURRENT_LICENCE, { sourceId: 'c' }),
+      ],
+      WANTED,
+      [],
+      TODAY,
+    );
+    expect(out.attach.map((c) => c.sourceId)).toEqual(['a', 'b', 'c']);
+    expect(out.skipped).toEqual([]);
+  });
+
+  it('⚠️ AND ONE ALREADY ON THE APPLICATION DOES NOT CLOSE THE SLOT', () => {
+    // `haveSet` is a set of KINDS, so one licence would have shut the door on
+    // the other four. What reaches decideAutolink is already free of anything
+    // attached — see `refuse` in the caller.
+    const out = decideAutolink(
+      [cand(MotivationUploadKind.CURRENT_LICENCE, { sourceId: 'b' })],
+      WANTED,
+      [MotivationUploadKind.CURRENT_LICENCE],
+      TODAY,
+    );
+    expect(out.attach.map((c) => c.sourceId)).toEqual(['b']);
+  });
+
+  it('⚠️ AND A LICENCE ABOUT TO EXPIRE IS STILL A FIREARM THEY OWN', () => {
+    // The staleness rule is about evidence going out of date. Item 2.1 is a
+    // DECLARATION of what the applicant holds, and dropping a firearm from it
+    // because the card lapses in sixty days makes the declaration false.
+    const out = decideAutolink(
+      [
+        cand(MotivationUploadKind.CURRENT_LICENCE, {
+          sourceId: 'soon',
+          expiresOn: '2026-03-01',
+        }),
+      ],
+      WANTED,
+      [],
+      TODAY,
+    );
+    expect(out.attach.map((c) => c.sourceId)).toEqual(['soon']);
   });
 
   it('⚠️ REFUSES TO CHOOSE between two candidates of the same kind', () => {
@@ -521,5 +567,45 @@ describe('the competency/proficiency pair', () => {
       TODAY,
     );
     expect(out.attach.length).toBe(1);
+  });
+});
+
+
+// ────────────────────────────────────────────────────────────────────
+// THE ONE CONDITION THAT RE-OPENS THE AUTOLINK.
+//
+// The run happens ~200ms after the application is created, before anybody has
+// said what the firearm is — so every competency is an equally valid candidate,
+// the several-candidates rule correctly refuses, and the once-only stamp
+// closes. `saveAnswers` re-opened it when the MEMBER typed the firearm. On a
+// private sale the firearm arrives from the SELLER instead, straight onto the
+// row, and the stamp stayed shut for ever.
+//
+// Operator, 2026-09-08, on his own section 13: "I selected the competency and
+// proficiency from the dropdown lists." He had to.
+// ────────────────────────────────────────────────────────────────────
+describe('endorsementMoved', () => {
+  const handgun = { firearm_type: 'Handgun', firearm_action: 'Semi-automatic (self-loading)' };
+
+  it('⚠️ IS TRUE WHEN THE FIREARM ARRIVES ON AN EMPTY APPLICATION', () => {
+    expect(endorsementMoved({}, handgun)).toBe(true);
+  });
+
+  it('⚠️ AND FALSE WHEN A MODEL OR A SERIAL IS EDITED', () => {
+    // Re-arming on any change would undo the member's own deletions every time
+    // they corrected a typo — which is the whole of "why can't I delete the
+    // proof of address?".
+    expect(
+      endorsementMoved(handgun, { ...handgun, firearm_serial: 'ZABA01892' }),
+    ).toBe(false);
+  });
+
+  it('is true when the class changes', () => {
+    expect(
+      endorsementMoved(handgun, {
+        firearm_type: 'Rifle',
+        firearm_action: 'Manually operated',
+      }),
+    ).toBe(true);
   });
 });

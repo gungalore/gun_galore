@@ -5,6 +5,7 @@ import {
   type Endorsement,
 } from '../common/sa-competency';
 import { competencyCovers, proficiencyCovers } from './motivation-upload-row';
+import { requiredEndorsement } from './motivation-eligibility';
 
 // ────────────────────────────────────────────────────────────────────
 // ATTACHING WHAT THE MEMBER ALREADY HAS, WITHOUT ASKING.
@@ -74,7 +75,36 @@ export const AUTOLINK_KINDS: readonly MotivationUploadKind[] = [
   MotivationUploadKind.ASSOCIATION_CARD,
   MotivationUploadKind.GOOD_STANDING_LETTER,
   MotivationUploadKind.EMPLOYMENT_CONFIRMATION,
+  /**
+   * ⚠️ EVERY LICENCE THE APPLICANT HOLDS, AND IT USED TO BE IN NEVER_AUTOLINK.
+   * The reason given there was "names one specific firearm, and which licences
+   * are relevant is the applicant's to say" — which is true of a licence
+   * offered as EVIDENCE and false of the applicant's own battery. Operator,
+   * 2026-09-08: "ALL the applicants licenses must be shown. there is even a
+   * section in the 271 where you have to list them all." Item 2.1 of the SAPS
+   * 271 has fourteen rows for exactly this, and a DFO matches each one against
+   * a card. There is no choice to make: they all go on.
+   */
+  MotivationUploadKind.CURRENT_LICENCE,
 ];
+
+/**
+ * Kinds where the answer is "all of them", not "the right one".
+ *
+ * ⚠️ THE ONE-OR-NOTHING RULE IS ABOUT AMBIGUITY, AND THERE IS NONE HERE. Two
+ * competency certificates is a question — which one covers this firearm — and
+ * a coin toss puts the wrong one in front of a DFO. Five firearm licences is
+ * not a question: the form asks for all five, so refusing them as
+ * "several-candidates" is the rule firing on a case it was never about.
+ *
+ * ⚠️ AND THE EXPIRY CUT IS SUSPENDED FOR THEM TOO. A document going stale is
+ * not evidence — that is what AUTOLINK_MIN_DAYS is for — but a licence
+ * expiring in sixty days is still a firearm the applicant owns and must
+ * declare, and leaving it off the list makes the declaration false.
+ */
+export const TAKE_ALL_KINDS: ReadonlySet<MotivationUploadKind> = new Set([
+  MotivationUploadKind.CURRENT_LICENCE,
+]);
 
 /**
  * Documents that must NEVER be attached unasked, with the reason.
@@ -85,8 +115,6 @@ export const AUTOLINK_KINDS: readonly MotivationUploadKind[] = [
 export const NEVER_AUTOLINK: Partial<Record<MotivationUploadKind, string>> = {
   ASSOCIATION_ENDORSEMENT:
     'names one specific firearm, so an older one describes the wrong gun',
-  CURRENT_LICENCE:
-    'names one specific firearm, and which licences are relevant is the applicant’s to say',
   FIREARM_SOURCE_PROOF: 'is about this purchase, not about the applicant',
   SELLER_LICENCE: 'belongs to the seller of this particular firearm',
   EXECUTOR_APPOINTMENT: 'is about one estate and one deceased person',
@@ -325,7 +353,15 @@ export function decideAutolink(
     const halfHeld =
       kind === MotivationUploadKind.PROFICIENCY_CERTIFICATE &&
       (opts.attachedProficiencyCovers?.length ?? 0) > 0;
-    if (haveSet.has(kind) && !halfHeld) {
+    /**
+     * ⚠️ AND A TAKE-ALL SLOT IS NEVER SETTLED BY ONE DOCUMENT. `haveSet` is a
+     * set of KINDS, so one firearm licence on the application would have
+     * closed the slot on the other four. The candidate list has already
+     * removed everything attached — see `refuse` in the caller — so what
+     * reaches here is exactly the licences that are NOT on it yet.
+     */
+    const takeAll = TAKE_ALL_KINDS.has(kind);
+    if (haveSet.has(kind) && !halfHeld && !takeAll) {
       for (const c of group) skipped.push({ candidate: c, why: 'already-attached' });
       continue;
     }
@@ -366,6 +402,12 @@ export function decideAutolink(
     if (!covered.length) continue;
 
     const fresh = covered.filter((c) => {
+      // ⚠️ A LICENCE ABOUT TO EXPIRE IS STILL A FIREARM THEY OWN. The
+      // staleness rule is about evidence going out of date; the 271's item 2.1
+      // is a declaration of what the applicant holds, and leaving a firearm
+      // off it because its card lapses in sixty days makes the declaration
+      // false. See TAKE_ALL_KINDS.
+      if (takeAll) return true;
       const left = daysLeft(c.expiresOn, today);
       // No expiry is not staleness — an ID copy has none.
       return left === null || left >= AUTOLINK_MIN_DAYS;
@@ -391,6 +433,14 @@ export function decideAutolink(
         for (const c of fresh) skipped.push({ candidate: c, why: 'already-attached' });
         continue;
       }
+    }
+
+    // ⚠️ ALL OF THEM, WHERE THERE IS NOTHING TO CHOOSE BETWEEN. See
+    // TAKE_ALL_KINDS: the applicant's own firearm licences are a list the form
+    // asks for in full, not a candidate set to pick from.
+    if (takeAll) {
+      attach.push(...fresh);
+      continue;
     }
 
     // ⚠️ ONE OR NOTHING. Two valid competency certificates is a question for
@@ -503,4 +553,32 @@ function agreeOnCategory(
   if (!held.size || !earned.size) return true;
   for (const e of earned) if (held.has(e)) return true;
   return false;
+}
+
+/**
+ * Has the firearm this application is for changed class?
+ *
+ * ⚠️ THE ONE CONDITION THAT RE-OPENS THE AUTOLINK, AND IT HAD ONLY ONE CALLER.
+ * The run happens at first open, before the firearm is described — so
+ * `requiredEndorsement` is null, every competency the member holds is an
+ * equally valid candidate, the several-candidates rule correctly refuses to
+ * guess, and the once-only stamp then means the right certificate can NEVER be
+ * attached. `saveAnswers` clears the stamp on this condition, which covers the
+ * member TYPING the firearm.
+ *
+ * ⚠️ A FIREARM REACHES AN APPLICATION THREE WAYS AND TWO OF THEM WROTE STRAIGHT
+ * TO THE ROW. `applyCardFirearm` (the seller signs a consent) and the
+ * document-apply path both call `prisma.motivation.update` with new answers and
+ * never touched `autolinkedAt` — so on a private sale, which is the commonest
+ * route for the firearm to arrive at all, the stamp set 212ms after creation
+ * stayed set for ever. Operator, 2026-09-08, on his own section 13: "I selected
+ * the competency and proficiency from the dropdown lists." He had to.
+ *
+ * Pure, so all three callers ask the same question in the same words.
+ */
+export function endorsementMoved(
+  before: Record<string, string>,
+  after: Record<string, string>,
+): boolean {
+  return requiredEndorsement(before) !== requiredEndorsement(after);
 }
