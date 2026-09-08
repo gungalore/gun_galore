@@ -492,6 +492,77 @@ conditional kind were filtered out one line before the rules meant to decide
 them. Verified live afterwards: five licences attached as annexure F, the
 required need green.
 
+### Item 2.1's serial columns — 2026-09-08, `4d1650b0`
+
+The operator sent the form's own printed header and ruled on it:
+
+| Type | Calibre | Make | Barrel Serial No | Frame/receiver Serial No | Licence/permit authorization No |
+
+*"we only need to fill in the first 5 fields. the last one the
+License/Permit number is if you have a storage permit for someone elses weapon
+which is very uncommon, so we can leave that blank."*
+
+**The barrel column went in empty on every row**, deliberately — "one answer
+must not become two assertions", s120(9)(f) making a false statement an
+offence. But a South African card prints the SAME number against barrel, frame
+and receiver in the ordinary case, so an empty box the applicant would fill
+with a pen is work handed back to them. Both columns are filled now; where the
+second is a copy, the pack says so and asks them to check it against the card.
+The licence column stays blank and is deliberately NOT reported — an empty box
+there is the ordinary answer.
+
+⚠️ **AND THE CARD'S "NONE" WAS BEING THROWN AWAY BEFORE IT REACHED THE FORM.**
+Operator: *"we need to insert NONE if the barrel serial said NONE. DO NOT LEAVE
+A NONE BLANK EVER unless I tell you to."* The owned-row offer read the serial
+through `first()`, which runs `answerValue` — so a card printing NONE against
+the barrel and a number against the receiver arrived as that one number with
+the NONE gone. The form then either went in blank or took the receiver's number
+into the barrel box, which is the false statement the old rule existed to
+prevent, arriving from the other side.
+
+The two component rows are now offered **verbatim** off `details`, not through
+`first()`. NONE against a component is the card being COMPLETE, and a DFO
+comparing form against licence must find the same word in the same place.
+
+⚠️ **THEY ARE STILL NOT FORM FIELDS.** `_barrel_serial` and `_frame_serial`
+were collapsed into `_serial` so nobody types three serial boxes a row; they
+stay accepted through `fieldByKey`, which is what lets them be stored without
+rendering anything. Nothing asks — we read them off the card, or we hold
+nothing and the row's one serial stands in for both.
+
+### The clippings surface — the operator's design, NOT YET BUILT
+
+Two messages, 2026-09-08, and together they are the spec:
+
+1. *"you can add clippings of surrounding dangerous areas if the user travels a
+   lot. Or you can pull the areas and list them and ask the user if he travels
+   through these areas regularly."*
+2. *"we could also use the work address and google maps routes to see through
+   which areas they travel and link it that way?"*
+
+So the surface is **not a list of articles to tick**. It is:
+
+- `GET :id/incidents` already returns each incident's `places[]` and
+  `distanceKm` (verified live: "Jakkalsvlei Avenue", "Jakes Gerwel Drive",
+  "Edgemead" at 19.1 km from Kraaifontein).
+- Roll those up into AREAS, list them, and ask "do you travel through these
+  regularly?" — which is a question the applicant can answer honestly and which
+  a DFO can weigh, where a raw article list is neither.
+- The answer selects the clippings, so `press_clippings` finally gets written
+  by something. It is `internal`, and the registry comment already says "the
+  wizard writes the value itself" — the wizard Phase 4 deleted.
+- Tier 2: `residential_address` and `employer_address` are both on the form, and
+  `GOOGLE_MAPS_API_KEY` is already in the env. A route between them gives the
+  areas travelled without asking at all, which is the "automate it — do not
+  ask" rule applied to the one S13 question that is genuinely hard to answer
+  from memory.
+- It ties to `s13_movements` and `daily_movements`, which exist and are already
+  answered on MO000070 ("restaurants, camping, hiking, hunting").
+
+⚠️ **AND THE DISTANCE FILTER WANTS A LOOK.** 19 km from the applicant's own
+precinct is a different suburb, and a clipping about Dunoon on a Kraaifontein
+application is the kind of padding the corpus doc says not to copy.
+
 ### ⚠️ What the S13 audit found and did NOT fix
 
 1. **The seller's component makes are never read.** The card prints FOUR "Make"
@@ -514,10 +585,10 @@ required need green.
    regularly."* So the surface is not a list of articles — it is the AREAS off
    the incidents, offered as a question, with the clippings following from the
    answer. It ties to `s13_movements` and `daily_movements`, which already exist.
-3. **`existing_firearm_N_licence_no` is empty on all five rows**, so item 2.1's
-   licence-number column prints blank. The offer exists
-   (`motivation-credentials.ts:942`); the value is not in the vault details for
-   those cards.
+3. ~~`existing_firearm_N_licence_no` is empty~~ — **NOT a gap.** Operator,
+   2026-09-08: that column is for a storage permit over somebody else's
+   firearm, which is very uncommon. Blank is the correct answer and it is
+   deliberately not reported. See item 2.1 above.
 4. **Dead fields.** `home_dialling_code` and `work_dialling_code` are read by
    NOTHING — `saps271-map.ts` derives the code itself with
    `splitTelephone(home_telephone)`. The postal codes ARE printed and stay.
