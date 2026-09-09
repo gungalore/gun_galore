@@ -168,10 +168,17 @@ describe('what item 2.1 prints', () => {
     const v = build(row(1));
     expect(v.text.g_owned_1_barrel_serial).toBeUndefined();
     expect(v.text.g_owned_1_frame_serial).toBe('SER1');
-    // Never silent: put() drops an empty in silence, so the table says so.
+    /**
+     * ⚠️ AND THE NOTE SAYS WE LOST IT, NOT THAT THE CARD WAS SILENT. Operator,
+     * 2026-09-09: "the license card will always have either a serial or say
+     * NONE for all fields. It will never ever have an emty field." An empty
+     * box here is our failed read, and telling the applicant their licence
+     * said nothing about the barrel would be telling them something no licence
+     * ever says.
+     */
     expect(v.leftBlank).toContainEqual({
       field: 'saps271_item_2.1_barrel_serial',
-      because: expect.stringContaining('check it against the card'),
+      because: expect.stringContaining('could not read that row off the licence'),
     });
   });
 

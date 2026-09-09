@@ -676,10 +676,18 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
     if (!inUse) continue;
     ownedRowsFilled++;
     if (!serialForRow) ownedRowsWithoutSerial++;
-    // ⚠️ NOW COUNTS AN EMPTY BARREL BOX, NOT A BORROWED ONE. The box is left
-    // blank where the card gave us nothing for the barrel, so the note that
-    // used to disclose a duplication now asks for the one thing we could not
-    // supply. Same field, same purpose: nothing on this table is silent.
+    /**
+     * ⚠️ AN EMPTY BARREL BOX IS A FAILED READ, NOT A SILENT CARD. Operator,
+     * 2026-09-09: "the license card will always have either a serial or say
+     * NONE for all fields. It will never ever have an emty field."
+     *
+     * So there is no such thing as a card that says nothing about the barrel.
+     * If we hold nothing, WE lost it — and the note says that, rather than
+     * telling the applicant their licence was silent about something no
+     * licence is ever silent about. It also means borrowing the row's serial
+     * for this box can never be right: the card had a word for it and we
+     * simply do not have that word.
+     */
     else if (!barrelCol) ownedDuplicatedSerial++;
   }
 
@@ -700,8 +708,8 @@ export function buildSaps271(input: Saps271Input): Saps271Values {
       field: 'saps271_item_2.1_barrel_serial',
       because:
         ownedDuplicatedSerial === 1
-          ? 'one firearm you own has its barrel serial box blank, because the licence we read gave a number for the frame or receiver and nothing for the barrel — check it against the card and write in whatever it prints there, including NONE'
-          : `${ownedDuplicatedSerial} of the firearms you own have their barrel serial box blank, because the licences we read gave a number for the frame or receiver and nothing for the barrel — check them against the cards and write in whatever each one prints there, including NONE`,
+          ? 'one firearm you own has its barrel serial box blank, because we could not read that row off the licence — check the card and write in what it prints against the barrel, which will be a number or the word NONE'
+          : `${ownedDuplicatedSerial} of the firearms you own have their barrel serial box blank, because we could not read those rows off the licences — check each card and write in what it prints against the barrel, which will be a number or the word NONE`,
     });
   }
   if (ownedRowsWithoutSerial) {
