@@ -145,7 +145,15 @@ const BEFORE_THE_REORDER: Record<
   { lines: number; sha: string }
 > = {
   /**
-   * ⚠️ RE-BASELINED 2026-09-09, AND THE LINE COUNT MOVED — 106 → 98 — WHICH
+   * ⚠️ RE-BASELINED TWICE ON 2026-09-09. First the S13 skeleton lost three
+   * sections and gained one (below). Then the guide book landed and moved
+   * EVERY type: system rule 4 gained the "not every subsection is a test"
+   * paragraph naming ss 13(4), 14(6), 15(4) and 16(3); rule 10 gained the
+   * no-clean-record rule (SAPS 271 items G.62 to G.67 are the declaration and
+   * the CFR checks them); and the conclusion brief was rewritten to the book's
+   * Part 8.5 order. All content changes, all baselined rather than weakened.
+   *
+   * ⚠️ AND THE LINE COUNT MOVED — 106 → 98 on the S13 — WHICH
    * EVERY EARLIER RE-BASELINE DELIBERATELY DID NOT. MOTIVATION-S13-OUTPUT-
    * REVIEW.md §1.5: the S13 skeleton lost `personal_circumstances`,
    * `the_calibre` and `compliance_history` and gained `existing_measures`, so
@@ -155,23 +163,23 @@ const BEFORE_THE_REORDER: Record<
    */
   S13_SELF_DEFENCE: {
     lines: 98,
-    sha: '8fea1dbf6577b0563fdde736831894dbe0775199984cf4a3588c13f60b095c94',
+    sha: '3f40c2dcdc4a878795e1c419b633cc05d0cfa2b5b5e1bd13b8fc76b04c24b673',
   },
   S15_OCCASIONAL_HUNTER: {
     lines: 106,
-    sha: '782aa8f79e49bedb78aafae1b50c5e15911f74490b1fd90b4ea6149cecdbdb09',
+    sha: '54e5f5e17371e965ec3000b247868d76ad75bb02b569bb3081c934630ffe5236',
   },
   S16_DEDICATED_HUNTER: {
     lines: 102,
-    sha: 'f80304303820def343bdfdd3b667b5bbf40da68c742a883017030fba70912dfd',
+    sha: '71ddf4b4a7b1013fec1f88f7103c4271fdad279cec315f8705df75434e248f14',
   },
   S16_DEDICATED_SPORT: {
     lines: 102,
-    sha: '78a42e1a8657ca1cebf4da303b2f6d24fd4c5c0c31bc13e134ea03291b4aa3e8',
+    sha: '3a476793ca0956c0a9e96298282a62b1adf0d0458651b52ee02ca5e4109b9378',
   },
   S24_RENEWAL: {
     lines: 94,
-    sha: '69f5d15abf4a1105b172192801fa00d4f31b9951a235615e8a13a14f52f8c1e8',
+    sha: 'c661649dafae3a8c4e0805bb39d42b7db522ec3247fdb8a15ecc68e23c66ccf3',
   },
 };
 

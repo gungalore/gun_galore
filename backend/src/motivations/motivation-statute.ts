@@ -154,6 +154,16 @@ export function statutoryTextFor(t: MotivationLicenceType): string {
 /**
  * The block as the prompt renders it.
  *
+ * ⚠️ NOT EVERY SUBSECTION IS A TEST, AND QUOTING ONE AS THOUGH IT WERE MAKES
+ * THE DOCUMENT LOOK LIKE IT DOES NOT UNDERSTAND THE ACT. Sections 13(4),
+ * 14(6), 15(4) and 16(3) all read "a firearm in respect of which a licence has
+ * been issued in terms of this section may be used where it is safe to use the
+ * firearm and for a lawful purpose". That is a PERMISSION attached to a licence
+ * once granted — it says what the holder may do, not what the applicant must
+ * show — so there is nothing in it for an applicant to satisfy, and a paragraph
+ * headed with it and answered underneath reads as filler at best.
+ * MOTIVATION-GUIDE-BOOK Part 1, rule 5.
+ *
  * ⚠️ THE INSTRUCTIONS TRAVEL WITH THE TEXT. Rule 4 already says what to do
  * with a supplied block, but the two failure modes worth repeating next to the
  * words themselves are quoting more than is applied, and quoting a section

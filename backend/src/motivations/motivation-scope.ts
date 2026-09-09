@@ -68,6 +68,113 @@ const CATALOGUE_PHRASES = [
 ] as const;
 
 /**
+ * Filler, throat-clearing and self-praise.
+ *
+ * ⚠️ THESE ARE THE WORDS THAT MAKE A DOCUMENT READ AS GENERATED, and they are
+ * worse than merely bland: "I am a law-abiding citizen" and "responsible
+ * firearm owner" are UNEVIDENCED CLAIMS about the applicant's character in a
+ * document a Registrar checks against a record they already hold, and "peace
+ * of mind" and "in case" are the two reasons section 13(2) exists to refuse.
+ * MOTIVATION-GUIDE-BOOK Part 8.3.
+ */
+const SLOP_PHRASES = [
+  'in today',
+  'it is important to note',
+  'it goes without saying',
+  'as mentioned above',
+  'as stated above',
+  'furthermore',
+  'moreover',
+  'in conclusion',
+  'i would like to take this opportunity',
+  'kindly',
+  'humbly request',
+  'your esteemed',
+  'at the end of the day',
+  'peace of mind',
+  'ensure the safety',
+  'demonstrating my commitment',
+  'showcase',
+  'leverage',
+  'utilise',
+  'in order to',
+  'a wide range of',
+  'the realities of',
+  'these realities',
+  'compliance with all regulatory requirements',
+  'responsible firearm owner',
+  'responsible gun owner',
+  'law-abiding',
+  'law abiding',
+  'in case',
+  'you never know',
+] as const;
+
+/**
+ * Claims about a clean record, which are SAPS's to verify and not ours to make.
+ *
+ * ⚠️ ITEMS G.62 TO G.67 OF THE SAPS 271 ARE THE DECLARATION, and the CFR checks
+ * them against its own record. A motivation that asserts a clean record has
+ * volunteered a statement it cannot prove into a document where a false one is
+ * an offence under s120(9)(f) — and the reviewer already knows the answer.
+ */
+const RECORD_CLAIMS = [
+  'no criminal record',
+  'no previous convictions',
+  'never been convicted',
+  'clean record',
+  'clear record',
+  'of sound mind',
+  'stable mental',
+  'not inclined to violence',
+] as const;
+
+/** Predictions and pressure. Rule 3, enforced. */
+const OUTCOME_PHRASES = [
+  'should succeed',
+  'likely to be approved',
+  'meets the threshold',
+  'must grant',
+  'favourable consideration',
+  'successful application',
+  'entitled to a licence',
+  'my right to own',
+  'constitutional right',
+  'urgently',
+  'urgent',
+  'judicial review',
+  'procedurally unfair',
+] as const;
+
+/**
+ * Self-defence vocabulary, forbidden on a hunting or sport application.
+ *
+ * ⚠️ THE MIRROR OF SPORTING_WORDS, AND IT WAS MISSING. `validateReason` has
+ * policed these in the ONE reason paragraph since it shipped; nothing policed
+ * them anywhere else in a section 15 or 16 document. The exception is the same
+ * shape in both directions: a sentence describing a firearm the applicant
+ * already holds under section 13 or 14 must be able to say what that licence
+ * is for. MOTIVATION-GUIDE-BOOK Part 1 rule 6.
+ */
+const DEFENCE_VOCAB = [
+  'self-defence',
+  'self defence',
+  'home defence',
+  'home-defence',
+  'defensive',
+  'protection',
+  'protect myself',
+  'concealed',
+  'conceal',
+  'backup',
+  'back-up',
+  'carry on my person',
+  'attacker',
+  'hijack',
+  'intruder',
+] as const;
+
+/**
  * Hunting, sport and reloading vocabulary.
  *
  * ⚠️ FORBIDDEN ON AN S13 EXCEPT WHERE IT DESCRIBES A LICENCE ALREADY HELD.
@@ -144,6 +251,10 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
   const names = batteryNames(ctx.arsenal);
   const byName = new Map(names.map((n, i) => [n, ctx.arsenal[i]]));
   const isS13 = ctx.licenceType === MotivationLicenceType.S13_SELF_DEFENCE;
+  const isSporting =
+    ctx.licenceType === MotivationLicenceType.S15_OCCASIONAL_HUNTER ||
+    ctx.licenceType === MotivationLicenceType.S16_DEDICATED_HUNTER ||
+    ctx.licenceType === MotivationLicenceType.S16_DEDICATED_SPORT;
 
   /**
    * ⚠️ FIRST HIT PER PHRASE, NOT EVERY HIT. A document that says "platform"
@@ -168,6 +279,35 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
     if (contains(text, d)) {
       flag(`the document names "${d}", which is not shot in South Africa`);
     }
+  }
+  for (const w of SLOP_PHRASES) {
+    if (contains(text, w)) {
+      flag(`the document says "${w}" — filler, and it reads as generated`);
+    }
+  }
+  for (const w of RECORD_CLAIMS) {
+    if (contains(text, w)) {
+      flag(
+        `the document claims "${w}"; the SAPS 271 declaration and the CFR settle that, and the motivation must not volunteer it`,
+      );
+    }
+  }
+  for (const w of OUTCOME_PHRASES) {
+    if (contains(text, w)) {
+      flag(`the document says "${w}", which predicts or presses for an outcome`);
+    }
+  }
+  /**
+   * ⚠️ NO EXCLAMATION MARK AND NO MARKDOWN, EVER. The body is set by pdfkit
+   * straight from this text: a stray "**" or "- " prints as itself on a
+   * document lodged with the Registrar, and an exclamation mark in a letter to
+   * a police official is the register giving way.
+   */
+  if (text.includes('!')) {
+    flag('the document contains an exclamation mark');
+  }
+  if (/(^|\n)\s*[-*•]\s+/.test(text) || /\*\*|^#{1,6}\s/m.test(text)) {
+    flag('the document contains markdown or a bulleted list');
   }
 
   for (const s of sentences(text)) {
@@ -229,6 +369,29 @@ export function documentScope(text: string, ctx: ScopeContext): string[] {
       flag(
         'the document states a date until which the competency is valid; a SAPS competency certificate prints no expiry, so any such date is derived',
       );
+    }
+
+    /**
+     * ⚠️ THE MIRROR RULE. A hunting or sport document carries no self-defence
+     * vocabulary either — except where it describes a firearm already held
+     * under section 13 or 14, which is exactly the sentence that disposes of
+     * the overlap. Same shape as the S13 rule below, same exception, opposite
+     * direction.
+     */
+    if (isSporting) {
+      const heldDefensive =
+        (row && /section 1[34]/i.test(row.section)) ||
+        /\bsection\s+1[34]\b/i.test(s);
+      if (!heldDefensive) {
+        for (const w of DEFENCE_VOCAB) {
+          if (contains(s, w)) {
+            flag(
+              `a hunting or sport application says "${w}" outside any sentence about a firearm already held under section 13 or 14`,
+            );
+            break;
+          }
+        }
+      }
     }
 
     if (!isS13) continue;

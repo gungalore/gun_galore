@@ -491,6 +491,15 @@ ABSOLUTE RULES
    pasted in full with a list of certificates underneath and nothing joining
    them. Requiring the application beneath the quote removes the padding
    without removing the argument.
+   \u26a0\ufe0f AND NOT EVERY SUBSECTION IS A TEST. Sections 13(4), 14(6), 15(4)
+   and 16(3) each say a licensed firearm "may be used where it is safe to use
+   the firearm and for a lawful purpose". That is a PERMISSION attached to the
+   licence once it is granted, not something an applicant shows — quote it and
+   there is nothing to put underneath it. Apply only the subsections that state
+   what the Registrar must be satisfied of, and the caps: for section 13 that
+   is 13(1), 13(2)(a), 13(2)(b) and 13(3); for section 15 it is 15(1), 15(2)
+   and 15(3); for section 16 it is 16(1) and both parts of 16(2).
+
 5. No mascot, no brand, no marketing, no headings other than the ones given.
 6. Plain, sober South African English. No Americanisms. The words that
    actually go wrong, spelled as they must appear here: licence for the noun
@@ -610,6 +619,18 @@ ABSOLUTE RULES
    there. Where the applicant owns nothing comparable, motivate the firearm
    on its own terms — what it lets them practise — with nothing implied
    behind it.
+
+   \u26a0\ufe0f NEVER CLAIM A CLEAN RECORD. Not "I have no criminal record", not
+   "I am a law-abiding citizen", not "I am of stable mental condition", not
+   "I am not inclined to violence". Items G.62 to G.67 of the SAPS 271 are the
+   declaration and the Central Firearms Register checks them against a record
+   it already holds — the reviewer knows the answer before they read a word of
+   this. Volunteering it puts an unprovable claim about character into a
+   document where a false statement is an offence under section 120(9)(f), and
+   it reads as somebody arguing a point nobody raised. Where the applicant
+   answered YES to one of those items, the record section states it plainly:
+   the year, the station, the CAS number, the charge and the outcome, and
+   nothing else.
 
 10. IDENTIFY THE APPLICANT AND THE FIREARM, EXACTLY AND ALWAYS.
    Every professional motivation opens by naming the applicant with their ID
@@ -760,7 +781,7 @@ const SECTION_BRIEFS: Record<SectionId, string> = {
   compliance_history:
     'Licences held, applications made, anything on record, and the applicant\u2019s clean standing where they have stated it. Never assert an absence of a criminal record unless they supplied it \u2014 SAPS verifies this themselves.',
   conclusion:
-    'A short undertaking in my own voice, and then the ask. \u26a0\ufe0f END BY REQUESTING THE LICENCE. Name the section THIS application is made under, the make, the calibre and the serial, and state THIS applicant’s purpose \u2014 "I respectfully request the Registrar to issue me with a licence under section [number] for the [make] [calibre], serial [no], for [the purpose stated in the facts]." ⚠️ THE SECTION NUMBER AND THE PURPOSE COME FROM THE FACTS, NEVER FROM THIS BRIEF. The worked example here named section 16 and dedicated sport shooting, which is right for exactly one of the five licence types and wrong for the other four: a section 13 self-defence applicant, a section 15 occasional hunter, a dedicated HUNTER and a section 24 renewal were each shown a model answer asking for a dedicated sport licence, in the one paragraph whose whole job is to say what is being applied for. That request is what the document is FOR, and a motivation that never asks reads as an essay somebody attached to a form. \u26a0\ufe0f ASKING IS NOT PREDICTING. Rule 3 forbids saying the application should succeed, is likely to be approved, or meets the threshold. It does not forbid the request itself, and an earlier version of this brief confused the two and struck out the ask along with the prediction. No summary of everything above, and no thanks.',
+    'ONE PARAGRAPH, IN THIS ORDER, IN MY OWN WORDS: that the contents are true and correct to the best of my knowledge; that I understand a false statement in an application is an offence in terms of section 120(9)(f) of the Firearms Control Act 60 of 2000; that I will store and use the firearm as the Act requires and will inform the Registrar of any change in my circumstances while the application is pending; and then the request itself \u2014 "I respectfully request that a licence be issued to me under section [N] of the Firearms Control Act 60 of 2000 to possess the [make] [model] [calibre] [type], serial [serial], for [purpose]." No summary of the document, no thanks, no "I trust", no "I look forward to". \u26a0\ufe0f THE SECTION NUMBER, THE FIREARM AND THE PURPOSE COME FROM THE FACTS, never from this brief. \u26a0\ufe0f AND ASKING IS NOT PREDICTING: rule 3 forbids saying the application should succeed; it does not forbid the request, and a motivation that never asks reads as an essay somebody attached to a form. \u2014 previously: A short undertaking in my own voice, and then the ask. \u26a0\ufe0f END BY REQUESTING THE LICENCE. Name the section THIS application is made under, the make, the calibre and the serial, and state THIS applicant’s purpose \u2014 "I respectfully request the Registrar to issue me with a licence under section [number] for the [make] [calibre], serial [no], for [the purpose stated in the facts]." ⚠️ THE SECTION NUMBER AND THE PURPOSE COME FROM THE FACTS, NEVER FROM THIS BRIEF. The worked example here named section 16 and dedicated sport shooting, which is right for exactly one of the five licence types and wrong for the other four: a section 13 self-defence applicant, a section 15 occasional hunter, a dedicated HUNTER and a section 24 renewal were each shown a model answer asking for a dedicated sport licence, in the one paragraph whose whole job is to say what is being applied for. That request is what the document is FOR, and a motivation that never asks reads as an essay somebody attached to a form. \u26a0\ufe0f ASKING IS NOT PREDICTING. Rule 3 forbids saying the application should succeed, is likely to be approved, or meets the threshold. It does not forbid the request itself, and an earlier version of this brief confused the two and struck out the ask along with the prediction. No summary of everything above, and no thanks.',
 };
 
 /**

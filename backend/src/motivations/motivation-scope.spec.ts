@@ -222,3 +222,107 @@ describe('what the document may say about a competency', () => {
     ).toEqual([]);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// MOTIVATION-GUIDE-BOOK PART 8.3 — THE WORDS THAT MAKE A DOCUMENT FAIL.
+//
+// The book's lists, applied over the whole document. Rule 15 of the system
+// prompt has said "banned phrases" since the first draft; before 2026-09-09
+// nothing enforced it past the one paragraph validateReason sees, and even
+// then only the product-page half.
+// ────────────────────────────────────────────────────────────────────
+describe('filler, claims and pressure', () => {
+  it('⚠️ CATCHES THE CLAIM SAPS ALREADY CHECKS', () => {
+    // Items G.62 to G.67 of the SAPS 271 are the declaration and the CFR
+    // verifies them. A motivation that asserts a clean record has volunteered
+    // an unprovable statement into a document where a false one is an offence.
+    const out = documentScope(
+      'I have no criminal record and I am a law-abiding citizen.',
+      s13,
+    );
+    expect(out.join(' ')).toContain('no criminal record');
+    expect(out.join(' ')).toContain('law-abiding');
+  });
+
+  it('catches filler and self-praise', () => {
+    const out = documentScope(
+      'Furthermore, it is important to note that I am a responsible firearm owner who wants peace of mind.',
+      s13,
+    );
+    expect(out.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('⚠️ CATCHES PRESSURE AND PREDICTION, including the appeal threat', () => {
+    const out = documentScope(
+      'I urgently request favourable consideration; failure to grant this would be procedurally unfair.',
+      s13,
+    );
+    const all = out.join(' ');
+    expect(all).toContain('favourable consideration');
+    expect(all).toContain('procedurally unfair');
+  });
+
+  it('⚠️ CATCHES MARKDOWN AND EXCLAMATION MARKS, which print as themselves', () => {
+    // The body is set by pdfkit straight from this text.
+    expect(documentScope('I need this firearm!', s13).join(' ')).toContain(
+      'exclamation mark',
+    );
+    expect(
+      documentScope('My measures are:\n- a wall\n- an alarm', s13).join(' '),
+    ).toContain('markdown');
+    expect(
+      documentScope('This is **important** to me.', s13).join(' '),
+    ).toContain('markdown');
+  });
+
+  it('leaves an ordinary sentence alone', () => {
+    expect(
+      documentScope(
+        'My shift ends at 22:00 and I drive home alone on the R101; the last four kilometres has no street lighting.',
+        s13,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('the mirror of the section discipline', () => {
+  const s16 = {
+    licenceType: MotivationLicenceType.S16_DEDICATED_SPORT,
+    arsenal: arsenalRows(
+      {
+        existing_firearm_1_make: 'CZ',
+        existing_firearm_1_type: 'Handgun',
+        existing_firearm_1_calibre: '9mm Luger',
+        existing_firearm_1_serial: 'CZ81815',
+      },
+      { 1: 'section 13' },
+    ),
+  };
+
+  it('⚠️ REFUSES SELF-DEFENCE WORDS IN A SPORT APPLICATION', () => {
+    const out = documentScope(
+      'I want this pistol for protection when I travel to matches.',
+      s16,
+    );
+    expect(out.join(' ')).toContain(
+      'outside any sentence about a firearm already held under section 13 or 14',
+    );
+  });
+
+  it('⚠️ ALLOWS THEM WHERE THEY DESCRIBE A LICENCE ALREADY HELD', () => {
+    // The exact mirror of the S13 case: this sentence is the one that disposes
+    // of the overlap, and a blanket ban would delete it.
+    expect(
+      documentScope(
+        'My CZ 9mm Luger handgun is licensed under section 13 for self-defence; it is a compact carry pistol and a section 13 licence is not issued for sport.',
+        s16,
+      ),
+    ).toEqual([]);
+  });
+
+  it('says nothing about defence words on a section 13 application', () => {
+    expect(
+      documentScope('I need a firearm for self-defence.', s13),
+    ).toEqual([]);
+  });
+});
