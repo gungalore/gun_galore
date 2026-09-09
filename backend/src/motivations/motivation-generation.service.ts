@@ -827,8 +827,8 @@ export class MotivationGenerationService {
        * that would be. The check stays and now fires only on something this
        * could not fix, which is the signal worth having.
        */
-      const write = async () => {
-        const r = await this.model.generate(pack, plan);
+      const write = async (retryIssues?: readonly string[]) => {
+        const r = await this.model.generate(pack, plan, retryIssues);
         return { ...r, text: southAfricanise(r.text) };
       };
       let attempt = await write();
@@ -897,7 +897,15 @@ export class MotivationGenerationService {
         );
         seed = crypto.randomInt(0, 2 ** 31 - 1);
         plan = planFor(row.licenceType, seed, planOpts);
-        attempt = await write();
+        /**
+         * ⚠️ THE RETRY IS TOLD WHAT IT GOT WRONG, WHICH IT NEVER USED TO BE.
+         * A fresh seed and the identical prompt gave the model no reason to
+         * avoid the mistake it had just made — MO000074 was refused twice for
+         * the same two Americanisms. `mechanics` is our own words about the
+         * previous draft and names nothing about the applicant, so it can add
+         * no fact; see renderRetry.
+         */
+        attempt = await write(mechanics);
         tokensIn += attempt.usage.promptTokens;
         tokensOut += attempt.usage.completionTokens;
         structureOk = followsPlan(attempt.text, plan).ok;
@@ -919,6 +927,19 @@ export class MotivationGenerationService {
             status: MotivationStatus.FAILED,
             failedAt: new Date(),
             failureReason: mechanics.slice(0, 3).join('; ').slice(0, 500),
+            /**
+             * ⚠️ KEEP THE REJECTED DRAFT. A mechanical failure discarded the
+             * text, so the one artefact that could explain the refusal was
+             * gone: `failureReason` names the WORD it tripped on and never the
+             * sentence, and nobody — operator or engineer — could see what the
+             * document actually said. Diagnosing MO000074 meant reasoning about
+             * a document that no longer existed anywhere.
+             *
+             * It is stored exactly as every other draft is, encrypted at rest
+             * in the same column, and it is not shown to the member: the status
+             * is FAILED, so no download path will render it.
+             */
+            documentTextEncrypted: encryptText(attempt.text),
           },
         });
         void this.prisma.adminAlert

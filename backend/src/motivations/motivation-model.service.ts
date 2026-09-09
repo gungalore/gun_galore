@@ -203,6 +203,11 @@ export class MotivationModelService {
   async generate(
     pack: FactPack,
     plan: StructurePlan,
+    /**
+     * What the previous attempt was refused for, handed back so the retry is
+     * not blind. Absent on a first attempt. See renderRetry.
+     */
+    retryIssues?: readonly string[],
   ): Promise<GenerationResult> {
     if (!this.llm.isConfigured()) {
       throw new Error('Document generation is not available right now.');
@@ -247,7 +252,10 @@ export class MotivationModelService {
         thinking: { budgetTokens: 4096 },
         system: generationSystemPrompt(pack.licenceType),
         messages: [
-          { role: 'user', content: generationUserPrompt(pack, plan) },
+          {
+            role: 'user',
+            content: generationUserPrompt(pack, plan, retryIssues),
+          },
         ],
         purpose: 'motivation.generate',
         timeoutMs: GENERATE_TIMEOUT_MS,

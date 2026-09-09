@@ -841,9 +841,44 @@ const BRIEF_OVERRIDES: Partial<
   },
 };
 
+/**
+ * What the LAST attempt got wrong, handed back to the writer.
+ *
+ * ⚠️ THE RETRY USED TO BE BLIND, AND THAT IS WHY IT KEPT FAILING THE SAME WAY.
+ * A mechanical failure regenerates once with a fresh seed and the IDENTICAL
+ * prompt — so the model had no reason to avoid the mistake it had just made,
+ * and the second attempt failed on the same words as the first. MO000074 was
+ * refused twice for the same two Americanisms, and its applicant got an SMS
+ * saying we could not finish their document.
+ *
+ * These are OUR checks, in our words, and every one of them names something
+ * the writer can act on: a word to drop, a claim to remove, a section
+ * discipline to keep. Nothing here is a fact about the applicant, so it cannot
+ * introduce one.
+ *
+ * ⚠️ LAST IN THE PROMPT, AFTER THE FACTS. It is an instruction about the
+ * previous draft, not a fact about the applicant, and it must not sit inside
+ * <applicant-facts> where the writer is told to treat everything as untrusted
+ * data.
+ */
+function renderRetry(issues: readonly string[] | undefined): string {
+  if (!issues?.length) return '';
+  return [
+    '',
+    'YOUR PREVIOUS DRAFT WAS REFUSED. Fix every one of these and change nothing',
+    'else about your approach:',
+    ...issues.map((i) => `  - ${i}`),
+    'These are mechanical checks, not opinions: a document that trips one of',
+    'them is not filed at all, and the applicant is told we could not finish it.',
+    '',
+  ].join('\n');
+}
+
 export function generationUserPrompt(
   pack: FactPack,
   plan: StructurePlan,
+  /** What the previous attempt was refused for. Absent on a first attempt. */
+  retryIssues?: readonly string[],
 ): string {
   const overrides = BRIEF_OVERRIDES[pack.licenceType] ?? {};
   // \u26a0\ufe0f NO INDEX IN FRONT OF THE HEADING. The headings carry their own fixed
@@ -897,7 +932,7 @@ ${UNTRUSTED_NOTICE}
 <applicant-facts>
 ${renderFacts(pack)}
 </applicant-facts>
-
+${renderRetry(retryIssues)}
 Write the document now.`.trim();
 }
 
