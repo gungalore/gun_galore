@@ -104,6 +104,34 @@ export const AUTOLINK_KINDS: readonly MotivationUploadKind[] = [
  */
 export const TAKE_ALL_KINDS: ReadonlySet<MotivationUploadKind> = new Set([
   MotivationUploadKind.CURRENT_LICENCE,
+  /**
+   * ⚠️ A SAFE IS THREE PHOTOGRAPHS, AND THE ONE-OR-NOTHING RULE WAS EATING ALL
+   * THREE OF THEM.
+   *
+   * SAFE_PHOTO_MIN is 3 — closed with the key out, half open with the key in
+   * the door, and the roll bolts that hold it to the wall — and the checklist
+   * row does not tick until all three are on the application. So a member with
+   * a correctly documented safe in their Centre had THREE candidates of one
+   * kind, which is exactly the shape the ambiguity rule refuses: every one of
+   * them came back `several-candidates` and nothing attached. Measured against
+   * the real function: three in, zero attached. One in, one attached — and the
+   * row still read "not done", because it counts to three.
+   *
+   * There is no question here to protect anybody from. The three photographs
+   * are not alternatives; they are one piece of evidence in three frames, and
+   * a DFO wants all of them.
+   *
+   * ⚠️ THIS DOES NOT WEAKEN THE PLACE TICK. `allowed` is tested before any of
+   * this, and SAFE_PHOTOGRAPHS only joins it on an explicit `placeConfirmed` —
+   * see AUTOLINK_KINDS and asksPlace. Without the tick they are still held
+   * back and still reported as `needs-place-confirm`.
+   *
+   * ⚠️ AND THE SUSPENDED EXPIRY CUT IS RIGHT FOR THEM TOO, for a different
+   * reason from a licence: a photograph of a safe carries no expiry at all. It
+   * does not go stale with time. It goes WRONG when somebody moves house,
+   * which is the one thing the place tick asks about.
+   */
+  MotivationUploadKind.SAFE_PHOTOGRAPHS,
 ]);
 
 /**

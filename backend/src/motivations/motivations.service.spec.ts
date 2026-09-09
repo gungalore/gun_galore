@@ -2700,6 +2700,63 @@ describe('auto-linking the Document Centre', () => {
     expect(out.attached).toEqual([]);
     expect(out.needsPlaceConfirm).toBe(true);
   });
+
+  it('⚠️ M6 — THE TICK WORKS ON THE SECOND RUN, WHICH IT NEVER DID', async () => {
+    // The whole M6 design is: run once, hold the safe photographs back, report
+    // needsPlaceConfirm, let the member tick, run AGAIN with placeConfirmed.
+    // The first run stamps `autolinkedAt` — the held-back photographs land in
+    // `skipped`, so `considered > 0` — and the second run then hit the
+    // once-per-application guard and returned `already-done` with nothing
+    // attached. The tick could never do anything, on any application, since the
+    // day it shipped.
+    const photos = [1, 2, 3].map((i) =>
+      cred({ id: `safe-${i}`, kind: 'SAFE_PHOTOGRAPHS', title: `Safe ${i}` }),
+    );
+    const { svc } = autolinkCase({ autolinkedAt: new Date('2026-09-01') }, photos);
+    const out = await svc.autolink('c1', 'mo-1', true);
+    // ⚠️ THE GUARD IS WHAT THIS PINS, NOT THE FILE WRITE. `attached` is empty
+    // here because this harness mocks Prisma and not the storage layer, so no
+    // candidate can actually be copied — every test in this describe is in the
+    // same position. What IS observable is the decision: the run was not
+    // refused, all three photographs were allowed through (nothing skipped),
+    // and the question has been answered. The attach SET is pinned where it
+    // belongs, on the pure function, in motivation-autolink.spec.ts.
+    expect(out.reason).toBe('ok');
+    expect(out.skipped).toEqual([]);
+    expect(out.needsPlaceConfirm).toBe(false);
+  });
+
+  it('⚠️ AND A SECOND RUN MAY TOUCH NOTHING BUT THE SAFE', async () => {
+    // The guard's whole purpose is the operator's "why can't I delete the
+    // proof of address?" — a run nobody asked for putting a deleted document
+    // back. A place re-run is asked for, but it is asked for about a SAFE, so
+    // `wanted` is narrowed to that one kind before any rule runs.
+    const { svc, prisma } = autolinkCase(
+      { autolinkedAt: new Date('2026-09-01') },
+      [
+        cred({ id: 'id-1', kind: 'IDENTITY_DOCUMENT', title: 'My ID' }),
+        cred({ id: 'addr-1', kind: 'ADDRESS_CONFIRMATION', title: 'My bill' }),
+      ],
+    );
+    const out = await svc.autolink('c1', 'mo-1', true);
+    expect(out.attached).toEqual([]);
+    // ⚠️ AND NOT MERELY UNATTACHED — NEVER CONSIDERED. Narrowing `wanted`
+    // drops them before any rule runs, so nothing is decided about them and
+    // the run stamps nothing. Left un-narrowed they would have been decided
+    // and stamped, which is the member's deleted proof of address coming back.
+    expect(prisma.motivation.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { autolinkedAt: expect.any(Date) } }),
+    );
+  });
+
+  it('still refuses an unasked second run', async () => {
+    const { svc } = autolinkCase({ autolinkedAt: new Date('2026-09-01') }, [
+      cred({ id: 'safe-1', kind: 'SAFE_PHOTOGRAPHS', title: 'My safe' }),
+    ]);
+    const out = await svc.autolink('c1', 'mo-1');
+    expect(out.reason).toBe('already-done');
+    expect(out.attached).toEqual([]);
+  });
 });
 
 describe('a library copy remembers where it came from', () => {

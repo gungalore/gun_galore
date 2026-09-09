@@ -15,6 +15,7 @@
 
 import { useState } from 'react';
 import { LibraryItem, MotivationApiError } from '@/lib/motivations-api';
+import PlaceConfirm from './place-confirm';
 
 export default function SuggestedDocuments({
   suggested,
@@ -163,27 +164,11 @@ export default function SuggestedDocuments({
         </div>
       )}
 
-      {/* M6 — the server held the safe photographs back. Ask, then re-run. */}
-      {needsPlaceConfirm && (
-        <div className="mt-3 rounded border border-[var(--gold-line)] bg-[var(--gold-wash)] p-3">
-          <p className="text-sm font-medium">
-            One more thing before we add your safe photographs
-          </p>
-          <label className="mt-2 flex items-start gap-2 text-xs">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-5 w-5"
-              onChange={(e) => {
-                if (!e.target.checked) return;
-                onConfirmPlace();
-              }}
-            />
-            <span>
-              My safe photographs are at the same address as this application.
-            </span>
-          </label>
-        </div>
-      )}
+      {/* M6 — the server held the safe photographs back. Ask, then re-run.
+          ⚠️ THE PANEL LIVES IN ITS OWN FILE NOW, because the review sheet needs
+          the same question and this component is mounted by nobody. One
+          wording, one behaviour. See place-confirm.tsx. */}
+      {needsPlaceConfirm && <PlaceConfirm onConfirm={onConfirmPlace} />}
     </>
   );
 }

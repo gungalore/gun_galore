@@ -358,7 +358,27 @@ export class MotivationDocumentsService {
     // A feature that silently undoes somebody's own deletions is worse than no
     // feature. The routing spec fills vault slots "at generator open", which
     // is once — so this records that it happened, and a delete stays deleted.
-    if (row.autolinkedAt) {
+    /**
+     * ⚠️ EXCEPT WHEN THE MEMBER HAS JUST ANSWERED THE ONE QUESTION THE FIRST
+     * RUN ASKED, WHICH IS WHY THE SAFE PHOTOGRAPHS NEVER ARRIVED.
+     *
+     * The M6 design is: run once, hold the safe photographs back, report
+     * `needsPlaceConfirm`, let the member tick "these are the safe at THIS
+     * address", and run again with `placeConfirmed`. The first run stamps —
+     * the held-back photographs land in `skipped`, so `considered > 0` — and
+     * the second run then hit this guard and returned nothing. The tick could
+     * never do anything, on any application, since the day it shipped.
+     *
+     * ⚠️ THE GUARD'S PURPOSE IS UNTOUCHED, and it is worth restating because
+     * this is the exact bug it exists for: a member deletes a document, the
+     * next load silently puts it back, and they cannot get rid of it. That is
+     * about a run nobody asked for. `placeConfirmed` only ever arrives from a
+     * tick the member just made, so this run is not silent and is not
+     * unasked — and `wanted` is narrowed to the safe photographs below, so a
+     * second run cannot resurrect anything else they deleted.
+     */
+    const placeRerun = !!row.autolinkedAt && placeConfirmed;
+    if (row.autolinkedAt && !placeRerun) {
       return { attached: [], skipped: [], reason: 'already-done' as const };
     }
 
@@ -450,9 +470,21 @@ export class MotivationDocumentsService {
      * inside decideAutolink, which knows the difference between "settled" and
      * "wants more" (see TAKE_ALL_KINDS).
      */
-    const wanted = documentStatus(row.licenceType, [], answersNow).needs.map(
+    const wantedAll = documentStatus(row.licenceType, [], answersNow).needs.map(
       (n) => n.kind,
     );
+    /**
+     * ⚠️ A PLACE RE-RUN MAY ATTACH THE SAFE PHOTOGRAPHS AND NOTHING ELSE.
+     *
+     * The member ticked a box about their safe. That is consent to attach
+     * safe photographs; it is not consent to re-run the whole library and put
+     * back the proof of address they deleted an hour ago. Narrowing `wanted`
+     * is all it takes — decideAutolink drops every candidate whose kind is not
+     * in it, before any other rule runs.
+     */
+    const wanted = placeRerun
+      ? wantedAll.filter((k) => k === MotivationUploadKind.SAFE_PHOTOGRAPHS)
+      : wantedAll;
 
     /**
      * Vault rows this application must never be offered again.

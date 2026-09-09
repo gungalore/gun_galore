@@ -23,6 +23,7 @@ import CompetencyLines from '@/components/licence-centre/competency-lines';
 import CredentialPair from '@/components/licence-centre/credential-pair';
 import DangerAreas from '@/components/licence-centre/danger-areas';
 import LibraryPicker from '@/components/library-picker';
+import PlaceConfirm from '@/components/motivation/place-confirm';
 import PackSummary from '@/components/licence-centre/pack-summary';
 import PreviewPanel from '@/components/licence-centre/preview-panel';
 import AddPanel from '@/components/licence-centre/add-panel';
@@ -312,6 +313,15 @@ export default function LicenceCentreSheetPage() {
    * that covers the firearm being applied for rather than neither.
    */
   const autolinkedFor = useRef<string | null>(null);
+  /**
+   * The server held photographs of a safe back, pending the place tick.
+   *
+   * ⚠️ NOT DERIVED FROM `sheet`. It is the answer to one POST, and the sheet
+   * knows nothing about it — a member with safe photographs in their Centre
+   * and none on the application is indistinguishable, from the sheet alone,
+   * from a member with an empty Centre.
+   */
+  const [needsPlace, setNeedsPlace] = useState(false);
   useEffect(() => {
     if (!sheet) return;
     /**
@@ -336,6 +346,15 @@ export default function LicenceCentreSheetPage() {
     void (async () => {
       try {
         const r = await motivationsApi.autolink(getToken, id);
+        /**
+         * ⚠️ READ BEFORE THE EARLY RETURN, WHICH IS WHERE IT USED TO BE LOST.
+         * The one case that raises this question is an application whose ONLY
+         * candidates are photographs of a safe — nothing attaches, so
+         * `!r.attached.length` returned, and the question the server had just
+         * asked went on the floor. The member saw nothing happen and had no
+         * way to find out why.
+         */
+        setNeedsPlace(r.needsPlaceConfirm);
         if (!r.attached.length) return;
         await load();
         setToast(
@@ -1203,6 +1222,45 @@ export default function LicenceCentreSheetPage() {
             onClose={() => setAdding(false)}
           />
         ) : null}
+
+        {/*
+          ⚠️ PAGE LEVEL, NOT INSIDE A SECTION, and not behind a fold. The
+          question is about a document rather than about any one answer, the
+          automatic attach that raises it runs at open, and every section on
+          this page starts CLOSED — so a prompt inside one would be a question
+          nobody is shown. This is the same reasoning as the beta-full notice
+          on the section chooser: say it where they are, not where it belongs
+          in a taxonomy.
+        */}
+        {needsPlace && (
+          <PlaceConfirm
+            onConfirm={async () => {
+              try {
+                const r = await motivationsApi.autolink(getToken, id, true);
+                setNeedsPlace(false);
+                if (!r.attached.length) {
+                  // The server accepted the answer and still attached
+                  // nothing — say so rather than leaving the panel gone and
+                  // the shelf unchanged.
+                  setToast(
+                    'We could not add your safe photographs. Add them from your Document Centre.',
+                  );
+                  return;
+                }
+                await load();
+                setToast(
+                  r.attached.length === 1
+                    ? 'Added your safe photograph from your Licence Centre.'
+                    : `Added ${r.attached.length} safe photographs from your Licence Centre.`,
+                );
+              } catch {
+                // Fail soft, and put the question back: the member can tick
+                // again, and the picker is still there either way.
+                setToast('We could not reach your Licence Centre just now.');
+              }
+            }}
+          />
+        )}
 
         {sheet.sections.map((s) => (
           <SheetSection

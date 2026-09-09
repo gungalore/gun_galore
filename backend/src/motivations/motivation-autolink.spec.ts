@@ -97,6 +97,84 @@ describe('what it attaches', () => {
     expect(out.needsPlaceConfirm).toBe(false);
   });
 
+  it('⚠️ ATTACHES ALL THREE PHOTOGRAPHS OF THE SAFE, NOT ONE, NOT NONE', () => {
+    // The bug this exists for, measured against this function on 2026-09-09:
+    // three safe photographs in, ZERO attached, all three skipped as
+    // `several-candidates`.
+    //
+    // A safe is documented in three frames — closed with the key out, half
+    // open with the key in the door, and the roll bolts holding it to the wall
+    // — and SAFE_PHOTO_MIN is 3, so the checklist row does not tick until all
+    // three are on the application. The one-or-nothing rule is about
+    // AMBIGUITY: two competency certificates is a question, and a coin toss
+    // puts the wrong one in front of a DFO. Three photographs of one safe is
+    // not a question. See TAKE_ALL_KINDS.
+    //
+    // ⚠️ THE OLD TEST PASSED ONE CANDIDATE, which is why this went unnoticed:
+    // with one there is nothing to be ambiguous about, so the rule never
+    // fired and the case that actually happens was never exercised.
+    const photos = [1, 2, 3].map((i) =>
+      cand(MotivationUploadKind.SAFE_PHOTOGRAPHS, {
+        sourceId: `safe-${i}`,
+        title: `Safe photograph ${i}`,
+      }),
+    );
+    const out = decideAutolink(
+      photos,
+      [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+      [],
+      TODAY,
+      { placeConfirmed: true },
+    );
+    expect(out.attach.map((a) => a.sourceId).sort()).toEqual([
+      'safe-1',
+      'safe-2',
+      'safe-3',
+    ]);
+    expect(out.skipped).toEqual([]);
+  });
+
+  it('⚠️ STILL HOLDS ALL THREE BACK WITHOUT THE TICK', () => {
+    // Taking them all is about ambiguity, not about consent. The place
+    // question is asked before any of this and is unchanged.
+    const photos = [1, 2, 3].map((i) =>
+      cand(MotivationUploadKind.SAFE_PHOTOGRAPHS, { sourceId: `safe-${i}` }),
+    );
+    const out = decideAutolink(
+      photos,
+      [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+      [],
+      TODAY,
+    );
+    expect(out.attach).toEqual([]);
+    expect(out.needsPlaceConfirm).toBe(true);
+    expect(out.skipped.map((sk) => sk.why)).toEqual([
+      'needs-place-confirm',
+      'needs-place-confirm',
+      'needs-place-confirm',
+    ]);
+  });
+
+  it('adds the missing photographs when one is already on the application', () => {
+    // A member who photographed the safe closed and then stopped needs the
+    // other two, and `haveSet` is a set of KINDS — so before TAKE_ALL_KINDS
+    // one photograph closed the slot on the rest.
+    const out = decideAutolink(
+      [
+        cand(MotivationUploadKind.SAFE_PHOTOGRAPHS, { sourceId: 'safe-2' }),
+        cand(MotivationUploadKind.SAFE_PHOTOGRAPHS, { sourceId: 'safe-3' }),
+      ],
+      [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+      [MotivationUploadKind.SAFE_PHOTOGRAPHS],
+      TODAY,
+      { placeConfirmed: true },
+    );
+    expect(out.attach.map((a) => a.sourceId).sort()).toEqual([
+      'safe-2',
+      'safe-3',
+    ]);
+  });
+
   it('M6 — confirming the place does not open the door to anything else', () => {
     // The tick answers ONE question, about ONE kind. An association endorsement
     // still names the wrong firearm whatever the member says about their safe.
