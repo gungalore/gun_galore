@@ -67,6 +67,50 @@ no longer existed. It is kept now, encrypted, unreachable by the member.
 | Negligence tick missing | `history_negligence` is only asked when something was lost or stolen. Nothing lost ⇒ No is the only answer the facts admit; written only where item 64 is an explicit No. |
 | — | **`WESTERN_CAPE`** printed raw in both addresses. Not on the operator's list; found reading the same page. The existing test froze it as expected output. |
 
+### ⚠️ THE OPEN DECISION: a filler word throws away the whole pack
+
+MO000074 was retried six times through the live page. Every mechanical fault
+named in this section was fixed and the writer converged — the last run went
+**3 issues → 1 → failed**, and the one was this:
+
+> "**Furthermore,** my daily work commute takes me through high-risk precincts
+> where violent crime is prevalent."
+
+A complete 1 432-word section 13 motivation was discarded, and the applicant
+sent "we could not finish document MO000074", because one sentence begins with
+"Furthermore".
+
+**The gate does not distinguish a style slip from a corrupted identity.** Its
+own comment says what it is for — *"A wrong serial or a citation to a tab that
+does not exist … is the writer corrupting identity data, our defect, an admin's
+problem."* That is exactly right for a wrong serial. "Furthermore" is a Part 8.3
+style rule and is being enforced with the same weapon.
+
+⚠️ **THIS NEEDS AN OPERATOR DECISION, because it is about what reaches SAPS.**
+Three options, in the order I would rank them:
+
+1. **Split the mechanical checks into fatal and cosmetic.** Fatal keeps its
+   teeth: a wrong serial or ID, a missing calibre, a citation to an annexure
+   that is not in the pack, a section claim that contradicts the card — none of
+   those may ever reach a DFO. Cosmetic (filler, catalogue copy, outcome words,
+   section-discipline slips) is retried, and if it survives the retries the
+   document is still produced with the residue surfaced as a quality note
+   rather than thrown away.
+2. **Fold the deletable fillers**, exactly as `southAfricanise` folds the
+   -ize/-ise alternation. "Furthermore", "Moreover", "In conclusion" and "At the
+   end of the day" can be deleted from the head of a sentence with no loss of
+   meaning. ⚠️ NOT all of SLOP_PHRASES: "peace of mind" and "law-abiding" are
+   CLAIMS inside a sentence, and deleting them leaves a sentence that means
+   something else. Those must stay fatal.
+3. **Leave it as is** and accept that some applications fail on a word.
+
+There is also a data gap worth closing regardless: **the applicant has five
+held firearms and has stated a purpose for none of them.** `licensed_for` is
+empty on every row, so heading 6 cannot say what any of them is for, and the
+writer kept inventing one until the row was made to say NOT STATED out loud.
+Asking `existing_firearm_N_primary_use` during the interview removes a whole
+class of refusals at source and is what the book's heading 6 needs anyway.
+
 ### Where it stands
 
 MO000074 was retried twice through the live page. The calibre and the
