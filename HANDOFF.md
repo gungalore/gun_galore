@@ -96,6 +96,63 @@ Measured against the live model, not asserted:
 | 6.5 Creedmoor, bolt rifle | **4** — no self-defence list exists for a rifle |
 | self-loading shotgun | **3** — loses s13 at one end and s15 at the other |
 
+### Volume, deployed `e66f3d0f` and `157cd9b7` (backend only)
+
+*"what can we querry it to give more reasons? We need a huge list of reasons."*
+
+⚠️ **RAISING THE CAP DID NOTHING AND WAS NEVER GOING TO.** Asked once the model
+answers with its best two to five and stops, whatever `maxItems` says. Three
+things changed it:
+
+- **It is asked THREE TIMES**, and every round after the first is shown
+  everything already collected and told to give only what is not there. That is
+  the lever — a model that cannot see its previous answer rewords it.
+- **The prompt enumerates instead of asking.** Quarry, terrain, method,
+  distance, season, competition format, and the preparation around the
+  shooting, with a use demanded from each axis.
+- **The anti-length bias is gone.** "An honest short list beats a padded one"
+  was doing exactly what it said.
+
+Measured live: a 12 gauge went 12 → 64 sentences across five lists in 12.6 s; a
+6.5 Creedmoor 13 → 78 across four in 10.5 s. Three calls, once per class, ever.
+Rounds are small (twelve per list) because forty in one response invites a
+truncated body, and a truncated body is a `JSON.parse` throw that costs the
+whole class. A round that fails keeps the earlier ones.
+
+⚠️ **A REWORDING IS NOT A NEW REASON.** `merge()` compares CONTENT WORDS with
+the shared scaffolding stripped, measured against the shorter sentence so
+padding cannot get a duplicate back in.
+
+⚠️ **THE TABLE HOLDS EVERYTHING; THE PROMPT DOES NOT.** Forty per list across
+five held firearms is four hundred suggestions wrapped around a handful of
+facts. The writer sees ten per list, in a window seeded on the firearm's serial
+— stable across regenerations, different between members.
+
+### What the model knew that we were not asking for
+
+The operator put the same question to Gemini in a chat window and got back PRS
+from barricades, F-Class prone at 600 m, metal silhouette on animal-shaped
+steel, veld-shooting off sticks, and named bodies. Ours said "I compete in
+national Long Range Rifle shooting leagues".
+
+- **The disciplines are the half worth having**, and the FORMAT axis now demands
+  them by name with positions, distances and target types.
+- **The ballistics are the half that would fail our own gate** — coefficients,
+  recoil, barrel life, component availability. Rule 6 names them and says why:
+  a cartridge's virtues are not uses.
+- ⚠️ **THE ASSOCIATION IS NAMED IN THE DOCUMENT, NOT IN THE TABLE.** Operator:
+  *"if they are member of that mentioned association we can use it as a
+  reason… if the are applying for a section 16 then they must be a member."*
+  True, and the pack carries `association_name`. But this table is written once
+  per class and served to everyone who holds one, so a name baked into a stored
+  sentence reaches the members of every other body. Stored sentences say "my
+  association"; `arsenalBlock` tells the writer to substitute the applicant's
+  own name from the facts, and to keep the generic words where the facts name
+  none.
+- **Storage claims and doubled words are refused** — live runs produced "I keep
+  it loaded…", "I stage the firearm securely…" and "thick coastal coastal
+  thickets". Nothing downstream proofreads a use; the writer lifts it whole.
+
 ### Open, for the operator
 
 ⚠️ **A HANDGUN CANNOT FALL UNDER SECTION 14, so it gets 13/15/16 and not 14.**
