@@ -6,6 +6,45 @@ state, and it is meant to be overwritten.
 
 Last updated: **2026-09-09**.
 
+## 2026-09-09 — a firearm held under another section ANSWERS the overlap
+
+Deployed `3765c07a` (backend only).
+
+Operator: *"If someone owns a handgun and its on section 16. Then the new
+applicant is allowed to apply for a section 13 of that firearm if they do meet
+all the other conditions."*
+
+⚠️ **NOTHING WAS BLOCKING IT, AND NOTHING SHOULD.** `applicationBlockers` tests
+the section against the firearm's TYPE, the competency's endorsement, and the
+competency's currency. It counts holdings nowhere, so a section 16 handgun has
+never stood in the way of a section 13 application. That half was already right.
+
+**What was wrong was how the document argued it.** A licence is issued under a
+section FOR A PURPOSE, so a handgun held under section 16 is held on a sport or
+hunting licence that does not cover keeping or carrying it for defence — the
+section 13 application is asking for the first firearm licensed to do THIS job,
+not a second one to do the same job.
+
+`overlapStrengthClause` knew the sections differed and put it second, as "worth
+naming", behind an ACTION clause reading *"it is also semi-automatic, which
+makes this a CLOSER duplication — press it"*. On exactly this case the writer
+was told to press a duplication the licence card disposes of in a line.
+
+Reversed: the section leads, and where it differs the note says **SAY THIS
+FIRST AND STOP THERE**, names the held section, and points at the licence copy
+in the annexures. Matching actions become "what makes the two look alike on a
+register" rather than what makes them compete for a role.
+
+⚠️ **ONLY WHERE THE SECTIONS DIFFER.** Two bolt rifles both under section 16 do
+compete for one role, and that still gets pressed. The spec pins both.
+
+New card `different_section` leads the overlap angles on every type.
+⚠️ It says the LICENCE does not cover this purpose — not that the firearm may
+not be used. The stronger claim is a proposition about the Act, and the card's
+sentence goes verbatim into a document somebody signs.
+
+---
+
 ## 2026-09-09 (later) — MOTIVATION-S13-OUTPUT-REVIEW.md §4, items 1 to 5
 
 Deployed: `9edf30f9`, `bd966943`, `12b0aacc`, `07289a06`, `aec47df2`. The last
